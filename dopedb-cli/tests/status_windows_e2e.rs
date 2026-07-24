@@ -4,8 +4,10 @@ use std::ffi::OsStr;
 use std::fs;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::ptr;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use dopedb_protocol::{
@@ -78,17 +80,44 @@ async fn status_json_uses_the_owner_local_windows_named_pipe() {
             .unwrap();
     });
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dopedb"))
-        .args(["status", "--json"])
-        .env("DOPEDB_RUNTIME_FILE", &runtime_file)
-        .output()
-        .unwrap();
-    server_task.await.unwrap();
+    let output = command_output_with_timeout(
+        Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
+            .args(["status", "--json"])
+            .env("DOPEDB_RUNTIME_FILE", &runtime_file),
+        Duration::from_secs(15),
+    );
+    let server_finished = tokio::time::timeout(Duration::from_secs(5), server_task).await;
+    assert!(
+        server_finished.is_ok(),
+        "the CLI exited without completing the named-pipe exchange: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    server_finished.unwrap().unwrap();
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     let status: StatusResult = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(status.runtime_id, runtime_id);
+}
+
+fn command_output_with_timeout(command: &mut Command, timeout: Duration) -> Output {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child.try_wait().unwrap().is_some() {
+            return child.wait_with_output().unwrap();
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let output = child.wait_with_output().unwrap();
+            panic!(
+                "the DopeDB CLI did not exit within {timeout:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn restrict_owner_only(path: &Path) {

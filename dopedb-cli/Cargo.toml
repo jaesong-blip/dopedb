@@ -8,7 +8,9 @@ license = "MIT"
 publish = false
 
 [[bin]]
-name = "dopedb"
+# Keep the build artifact distinct from the desktop GUI binary. The app copies this
+# signed sidecar to the user-facing `dopedb` command when installing the global CLI.
+name = "dopedb-cli"
 path = "src/main.rs"
 
 [dependencies]

@@ -54,5 +54,5 @@ stage_binary \
   "$artifact_dir/dopedb-mcp-stdio$bin_ext" \
   "src-tauri/binaries/dopedb-mcp-stdio-$target_triple$bin_ext"
 stage_binary \
-  "$artifact_dir/dopedb$bin_ext" \
+  "$artifact_dir/dopedb-cli$bin_ext" \
   "src-tauri/binaries/dopedb-cli-$target_triple$bin_ext"

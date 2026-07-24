@@ -67,7 +67,7 @@ fn status_json_discovers_and_calls_the_owner_local_runtime() {
             .unwrap();
     });
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dopedb"))
+    let output = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
         .args(["status", "--json"])
         .env("DOPEDB_RUNTIME_FILE", &runtime_file)
         .output()
@@ -85,7 +85,7 @@ fn status_json_discovers_and_calls_the_owner_local_runtime() {
 fn missing_runtime_has_stable_exit_code_and_keeps_stdout_clean() {
     let temp = TempDir::new().unwrap();
     let runtime_file = temp.path().join("missing-runtime.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_dopedb"))
+    let output = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
         .args(["status", "--json"])
         .env("DOPEDB_RUNTIME_FILE", runtime_file)
         .output()
@@ -125,7 +125,7 @@ fn protocol_mismatch_has_stable_exit_code_and_explanation() {
     fs::write(&runtime_file, serde_json::to_vec(&discovery).unwrap()).unwrap();
     fs::set_permissions(&runtime_file, fs::Permissions::from_mode(0o600)).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_dopedb"))
+    let output = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"))
         .args(["status", "--json"])
         .env("DOPEDB_RUNTIME_FILE", runtime_file)
         .output()
