@@ -16,6 +16,7 @@ pub(super) struct ProcessTree {
 
 impl ProcessTree {
     pub(super) fn attach(child: &(dyn Child + Send + Sync)) -> AppResult<Self> {
+        #[cfg(unix)]
         let process_id = child
             .process_id()
             .ok_or_else(|| AppError::Config("the PTY child has no process identifier".into()))?;
