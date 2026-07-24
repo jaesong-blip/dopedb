@@ -1,0 +1,5 @@
+# Skill manifests are byte-addressed and validated again at runtime. Keep their
+# source bytes identical on every checkout, including Windows.
+/skills/dopedb-cli/** text eol=lf
+/src-tauri/resources/skills/*.json text eol=lf
+/scripts/generate-skill-bundle.mjs text eol=lf
