@@ -8,6 +8,7 @@ use crate::error::{AppError, AppResult};
 
 #[derive(Debug)]
 pub(super) struct ProcessTree {
+    #[cfg(unix)]
     process_id: u32,
     #[cfg(windows)]
     job: WindowsJob,
@@ -23,6 +24,7 @@ impl ProcessTree {
         #[cfg(windows)]
         let job = WindowsJob::attach(child)?;
         Ok(Self {
+            #[cfg(unix)]
             process_id,
             #[cfg(windows)]
             job,
