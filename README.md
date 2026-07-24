@@ -1,6 +1,6 @@
 # DopeDB (도프디비)
 
-DopeDB(도프디비)는 **AI 에이전트에게 안전한 데이터베이스 통로를 열어주는 무료 오픈소스 데스크톱 앱**입니다. MCP를 통해 에이전트는 스키마를 살피고 읽기 쿼리를 실행하고 결과를 이해할 수 있습니다. 원본 인증 정보, 읽기 전용 실행, 쓰기 승인, 롤백 미리보기, 감사 로그는 로컬 앱이 통제합니다.
+DopeDB(도프디비)는 **AI 에이전트에게 안전한 데이터베이스 통로를 열어주는 무료 오픈소스 데스크톱 앱**입니다. 선택한 데이터베이스에 고정된 Agent Terminal에서 Codex나 Claude Code를 실행하고, 버전이 맞는 DopeDB Skill과 로컬 CLI로 스키마를 살피고 쿼리를 실행할 수 있습니다. 원본 인증 정보, 읽기 전용 실행, 쓰기 승인, 롤백 미리보기, 감사 로그는 데스크톱 앱이 통제합니다.
 
 - 웹사이트: https://dopedb.dev/ko (English: https://dopedb.dev)
 - 다운로드: [Windows x64](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-windows-x64-setup.exe) · [macOS Apple Silicon](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-macos-arm64.dmg) · [macOS Intel](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-macos-x64.dmg)
@@ -9,8 +9,9 @@ DopeDB(도프디비)는 **AI 에이전트에게 안전한 데이터베이스 통
 
 ## 주요 기능
 
-- PostgreSQL, MySQL/MariaDB, SQLite 연결 관리
-- 내장 MCP 서버: 기존 에이전트에 안전한 데이터베이스 접근면 제공
+- PostgreSQL, MySQL/MariaDB, SQLite, MongoDB 연결 관리
+- 연결에 고정된 Shell/Codex/Claude Agent Terminal과 버전 일치 Skill
+- 포트나 별도 서버 없이 동작하는 로컬 `dopedb` CLI Broker
 - 기본 읽기 전용 실행과 SQL 분류
 - 쓰기/DDL 실행 전 승인 카드와 `allow_writes` 게이트
 - 쿼리 히스토리와 hash-chain 감사 로그
@@ -22,9 +23,10 @@ DopeDB(도프디비)는 **AI 에이전트에게 안전한 데이터베이스 통
 
 좋은 무료 DB 클라이언트도 있고, AI SQL 생성기도 많습니다. DopeDB는 그 사이의 위험한 빈틈을 메웁니다.
 
-- AI 기능이 붙은 SQL 편집기가 아니라, **기존 에이전트가 MCP로 사용할 수 있는 로컬 DB 게이트웨이**입니다.
+- AI 기능이 붙은 SQL 편집기가 아니라, **기존 에이전트가 전용 Terminal과 CLI로 사용할 수 있는 로컬 DB 권한 경계**입니다.
 - 에이전트에게 원본 인증 정보를 넘기지 않고, 로컬 앱이 연결과 비밀값을 관리합니다.
-- 현재 MCP 도구는 읽기 전용입니다. 모든 조회는 실행 전 EXPLAIN과 DB 상태 주의사항을 돌려주는 `plan_query`를 먼저 거칩니다. 쓰기와 DDL은 사람이 보는 승인 게이트 뒤에 둡니다.
+- SQL 조회는 `query plan`과 단일 사용 `query run`의 두 단계로 실행하며, EXPLAIN과 DB 상태 주의사항을 먼저 확인합니다. MongoDB는 쓰기 stage를 거절하는 typed document 명령만 사용합니다.
+- 쓰기와 DDL은 CLI가 승인할 수 없는 불변 제안으로 만들고, 사람이 데스크톱 앱에서 정확한 변경을 승인해야 합니다.
 - 에이전트가 본 맥락, 실행한 쿼리, 결과, 승인 흐름, 감사 로그를 사람이 검토할 수 있는 UI에 남깁니다.
 
 ## 언어 지원
@@ -32,8 +34,6 @@ DopeDB(도프디비)는 **AI 에이전트에게 안전한 데이터베이스 통
 - 소개 사이트: 오른쪽 위 언어 전환 버튼 또는 `?lang=ko` / `?lang=en`
 - 데스크톱 클라이언트: Settings -> Language에서 한국어/English 선택
 - GitHub README: [한국어](./README.md) / [English](./README.en.md)
-
-현재 MCP 도구는 읽기 전용입니다. MCP 쓰기 도구는 아직 제공하지 않으며, 수동 UI의 쓰기 기능만 승인 게이트 뒤에서 동작합니다.
 
 ## 개발 실행
 
@@ -64,15 +64,17 @@ pnpm build:sidecars
 cargo check --workspace
 ```
 
-`pnpm build:sidecars`는 Local Broker용 `dopedb` CLI와 전환 기간의 MCP stdio
-브리지를 함께 staging합니다. 앱의 설정 > 명령줄에서 사용자 전용 CLI 위치와
-PATH 변경 내용을 확인한 뒤 명시적으로 설치할 수 있습니다.
+`pnpm build:sidecars`는 Local Broker용 `dopedb` CLI만 staging합니다. 앱의
+설정 > 명령줄에서 사용자 전용 CLI 위치와 PATH 변경 내용을 확인한 뒤 명시적으로
+설치할 수 있습니다.
 
 설정 > 에이전트 도구에서는 Codex와 Claude Code의 공식 사용자 Skill 경로를
 확인하고 DopeDB Skill을 한 번의 동의로 설치할 수 있습니다. 설치 파일에는 탐색용
 안내만 두고, 실제 전체 가이드는 현재 앱 버전과 함께 빌드된 CLI가 오프라인으로
 제공합니다. 기존 파일이 있거나 사용자가 수정한 경우 자동으로 덮어쓰지 않으며,
 경로별 충돌을 보여준 뒤 명시적으로 복구할 때 기존 디렉터리를 백업합니다.
+같은 화면의 레거시 정리 도구는 이전 DopeDB MCP 설정을 먼저 미리 보여주고,
+사용자가 확인한 정확한 항목만 백업 후 제거합니다.
 
 외부 셸 자동완성 스크립트는 `dopedb completion bash|zsh|fish|powershell|elvish`로
 출력할 수 있으며, 이 명령은 Desktop Runtime이나 세션 자격 증명을 요구하지 않습니다.

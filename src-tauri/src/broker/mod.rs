@@ -22,6 +22,8 @@ use uuid::Uuid;
 use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
 
+#[cfg(windows)]
+pub(crate) use peer::restrict_path_to_current_user;
 pub(crate) use session::{BrokerCapability, BrokerSessionRegistry};
 
 #[derive(Debug, Clone, Default)]

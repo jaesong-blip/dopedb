@@ -1,4 +1,4 @@
-//! Transport-neutral saved-dashboard workflows shared by Tauri and MCP.
+//! Transport-neutral saved-dashboard workflows shared by Tauri and the local broker.
 
 use std::fmt;
 
@@ -18,7 +18,9 @@ use crate::model::{
 use crate::safety::{self, PoolRef};
 use crate::store::{PinnedConnection, Store};
 
-fn is_eligible_agent_run(source: &HistoryEntry) -> bool {
+use super::{TerminalAuthority, TerminalQueryRunRegistry};
+
+fn is_eligible_terminal_run(source: &HistoryEntry) -> bool {
     source.origin == "agent" && source.status == "ok" && matches!(source.kind, QueryKind::Read)
 }
 
@@ -33,18 +35,7 @@ pub(crate) struct AgentDashboardPresentation {
     pub(crate) y_columns: Vec<String>,
 }
 
-/// Explicitly allowlisted context used to preserve the existing MCP event payload.
-/// It intentionally omits the full connection profile and every credential field.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AgentDashboardEventContext {
-    pub(crate) query_run_id: Uuid,
-    pub(crate) connection_id: Uuid,
-    pub(crate) connection_name: String,
-    pub(crate) title: String,
-    pub(crate) sql: String,
-}
-
-/// Domain failures that occur before MCP emits `agent:tool_call`.
+/// Domain failures that occur before a dashboard draft is committed.
 #[derive(Debug)]
 pub(crate) enum AgentDashboardPrepareError {
     QueryRunNotFound,
@@ -52,7 +43,7 @@ pub(crate) enum AgentDashboardPrepareError {
     Application(AppError),
 }
 
-/// Domain failures that occur after MCP has emitted `agent:tool_call`.
+/// Domain failures that occur while committing a dashboard draft.
 #[derive(Debug)]
 pub(crate) enum AgentDashboardCommitError {
     InvalidDraft(AppError),
@@ -145,17 +136,10 @@ pub(crate) struct PreparedAgentDashboard {
     _operation_scope: ConnectionOperationScope,
     connection: PinnedConnection,
     draft: DashboardDraft,
-    event_context: AgentDashboardEventContext,
 }
 
 impl PreparedAgentDashboard {
-    /// Return only the fields required by the compatibility event.
-    pub(crate) fn event_context(&self) -> &AgentDashboardEventContext {
-        &self.event_context
-    }
-
-    /// Validate and persist the capability-bound draft after the adapter announces
-    /// the tool call. Error variants let each transport retain its existing mapping.
+    /// Validate and persist the capability-bound draft.
     pub(crate) async fn commit(self) -> Result<Dashboard, AgentDashboardCommitError> {
         crate::dashboard::validate_draft(&self.draft, self.connection.profile.engine)
             .map_err(AgentDashboardCommitError::InvalidDraft)?;
@@ -166,17 +150,26 @@ impl PreparedAgentDashboard {
     }
 }
 
-/// Scope-aware dashboard metadata service. It contains no Tauri or MCP types and
+/// Scope-aware dashboard metadata service. It contains no transport types and
 /// emits no events; adapters remain responsible for their public wire contracts.
 #[derive(Clone)]
 pub(crate) struct DashboardService {
     store: Store,
     connections: ConnectionManager,
+    terminal_runs: TerminalQueryRunRegistry,
 }
 
 impl DashboardService {
-    pub(super) fn new(store: Store, connections: ConnectionManager) -> Self {
-        Self { store, connections }
+    pub(super) fn new(
+        store: Store,
+        connections: ConnectionManager,
+        terminal_runs: TerminalQueryRunRegistry,
+    ) -> Self {
+        Self {
+            store,
+            connections,
+            terminal_runs,
+        }
     }
 
     /// List dashboards under one stable, view-compatible connection identity.
@@ -186,18 +179,6 @@ impl DashboardService {
             .pin_dashboard_connection(connection_id)
             .await?;
         self.store.list_dashboards_if_current(&connection).await
-    }
-
-    /// Validate and save a dashboard under the same authority snapshot.
-    pub(crate) async fn save(&self, draft: DashboardDraft) -> AppResult<Dashboard> {
-        let operation_scope = self.connections.begin_operation_scope().await;
-        let connection = operation_scope
-            .pin_dashboard_connection(draft.connection_id)
-            .await?;
-        crate::dashboard::validate_draft(&draft, connection.profile.engine)?;
-        self.store
-            .save_dashboard_if_current(&connection, &draft)
-            .await
     }
 
     /// Tombstone a dashboard only while its dashboard and connection pin stay current.
@@ -354,10 +335,10 @@ impl DashboardService {
         }
     }
 
-    /// Resolve an eligible agent query run into an opaque, scope-bound capability.
-    /// Validation intentionally remains in `commit` so MCP can preserve its historic
-    /// `tool_call -> result` event sequence for invalid presentation metadata.
-    pub(crate) async fn prepare_agent_create(
+    /// Resolve an eligible terminal query run into an opaque, scope-bound capability.
+    /// Presentation validation remains in `commit` so the capability owns the
+    /// operation scope throughout validation and persistence.
+    async fn prepare_create(
         &self,
         query_run_id: Uuid,
         presentation: AgentDashboardPresentation,
@@ -372,7 +353,7 @@ impl DashboardService {
             Err(AppError::NotFound(_)) => return Err(AgentDashboardPrepareError::QueryRunNotFound),
             Err(error) => return Err(AgentDashboardPrepareError::Application(error)),
         };
-        if !is_eligible_agent_run(&resolved.history) {
+        if !is_eligible_terminal_run(&resolved.history) {
             return Err(AgentDashboardPrepareError::QueryRunIneligible);
         }
         let connection = operation_scope
@@ -388,17 +369,10 @@ impl DashboardService {
             Err(AppError::NotFound(_)) => return Err(AgentDashboardPrepareError::QueryRunNotFound),
             Err(error) => return Err(AgentDashboardPrepareError::Application(error)),
         };
-        if !is_eligible_agent_run(&source) {
+        if !is_eligible_terminal_run(&source) {
             return Err(AgentDashboardPrepareError::QueryRunIneligible);
         }
 
-        let event_context = AgentDashboardEventContext {
-            query_run_id,
-            connection_id: connection.connection_id,
-            connection_name: connection.profile.name.clone(),
-            title: presentation.title.clone(),
-            sql: source.sql.clone(),
-        };
         let draft = DashboardDraft {
             connection_id: source.connection_id,
             title: presentation.title,
@@ -417,8 +391,23 @@ impl DashboardService {
             _operation_scope: operation_scope,
             connection,
             draft,
-            event_context,
         })
+    }
+
+    pub(crate) async fn prepare_terminal_create(
+        &self,
+        authority: &TerminalAuthority,
+        query_run_id: Uuid,
+        presentation: AgentDashboardPresentation,
+    ) -> Result<PreparedAgentDashboard, AgentDashboardPrepareError> {
+        self.terminal_runs
+            .authorize(query_run_id, authority)
+            .map_err(AgentDashboardPrepareError::Application)?;
+        let prepared = self.prepare_create(query_run_id, presentation).await?;
+        authority
+            .ensure_pin(&prepared.connection)
+            .map_err(AgentDashboardPrepareError::Application)?;
+        Ok(prepared)
     }
 }
 
@@ -547,7 +536,11 @@ mod tests {
             .unwrap();
         let connections = ConnectionManager::new(store.clone());
         (
-            DashboardService::new(store.clone(), connections),
+            DashboardService::new(
+                store.clone(),
+                connections,
+                TerminalQueryRunRegistry::default(),
+            ),
             store,
             connection_id,
         )
@@ -604,9 +597,13 @@ mod tests {
                 .await
                 .unwrap();
             let connections = ConnectionManager::new(store.clone());
-            let service = DashboardService::new(store.clone(), connections.clone());
-            let dashboard = service
-                .save(DashboardDraft {
+            let service = DashboardService::new(
+                store.clone(),
+                connections.clone(),
+                TerminalQueryRunRegistry::default(),
+            );
+            let dashboard = store
+                .save_dashboard(&DashboardDraft {
                     connection_id,
                     title: "People".into(),
                     description: "Dashboard execution contract".into(),
@@ -743,10 +740,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prepare_distinguishes_missing_and_ineligible_query_runs() {
+    async fn prepare_create_distinguishes_missing_and_ineligible_query_runs() {
         let (service, store, connection_id) = harness().await;
         let missing = service
-            .prepare_agent_create(Uuid::new_v4(), presentation("Missing"))
+            .prepare_create(Uuid::new_v4(), presentation("Missing"))
             .await;
         assert!(matches!(
             missing,
@@ -756,7 +753,7 @@ mod tests {
         let manual_run =
             insert_history(&store, connection_id, "manual", "ok", QueryKind::Read).await;
         let ineligible = service
-            .prepare_agent_create(manual_run, presentation("Manual"))
+            .prepare_create(manual_run, presentation("Manual"))
             .await;
         assert!(matches!(
             ineligible,
@@ -767,7 +764,7 @@ mod tests {
             insert_history(&store, connection_id, "agent", "error", QueryKind::Read).await;
         assert!(matches!(
             service
-                .prepare_agent_create(failed_run, presentation("Failed"))
+                .prepare_create(failed_run, presentation("Failed"))
                 .await,
             Err(AgentDashboardPrepareError::QueryRunIneligible)
         ));
@@ -776,31 +773,21 @@ mod tests {
             insert_history(&store, connection_id, "agent", "ok", QueryKind::Write).await;
         assert!(matches!(
             service
-                .prepare_agent_create(write_run, presentation("Write"))
+                .prepare_create(write_run, presentation("Write"))
                 .await,
             Err(AgentDashboardPrepareError::QueryRunIneligible)
         ));
     }
 
     #[tokio::test]
-    async fn prepared_context_is_allowlisted_and_validation_waits_for_commit() {
+    async fn prepared_dashboard_uses_stored_sql_and_validates_on_commit() {
         let (service, store, connection_id) = harness().await;
         let query_run_id =
             insert_history(&store, connection_id, "agent", "ok", QueryKind::Read).await;
         let prepared = service
-            .prepare_agent_create(query_run_id, presentation("Agent result"))
+            .prepare_create(query_run_id, presentation("Agent result"))
             .await
             .unwrap();
-        assert_eq!(
-            prepared.event_context(),
-            &AgentDashboardEventContext {
-                query_run_id,
-                connection_id,
-                connection_name: "dashboard-test".into(),
-                title: "Agent result".into(),
-                sql: "SELECT id, name FROM users".into(),
-            }
-        );
         let saved = prepared.commit().await.unwrap();
         assert_eq!(saved.connection_id, connection_id);
         assert_eq!(saved.sql, "SELECT id, name FROM users");
@@ -808,7 +795,7 @@ mod tests {
         let invalid_run =
             insert_history(&store, connection_id, "agent", "ok", QueryKind::Read).await;
         let invalid = service
-            .prepare_agent_create(invalid_run, presentation(" "))
+            .prepare_create(invalid_run, presentation(" "))
             .await
             .unwrap()
             .commit()

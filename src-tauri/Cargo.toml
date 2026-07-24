@@ -3,7 +3,7 @@ name = "dopedb"
 version = "0.3.3"
 edition = "2021"
 rust-version = "1.94"
-description = "Cross-platform, agent-driven database client (local MCP server)"
+description = "Cross-platform database client with a connection-pinned local CLI broker"
 authors = ["Jaesong Choi"]
 license = "MIT"
 
@@ -60,8 +60,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-normalization = "0.1.25"
 futures = "0.3"
-rmcp = { version = "2.2", features = ["server", "transport-streamable-http-server", "macros", "schemars"] }
-axum = "0.8.9"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 tokio-util = "0.7.19"
 dashmap = "6.2.1"

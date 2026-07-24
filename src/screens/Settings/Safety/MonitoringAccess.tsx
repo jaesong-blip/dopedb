@@ -1,5 +1,5 @@
 // Compact PostgreSQL monitoring-role control. The backend owns the fixed GRANT/REVOKE
-// and MCP safety decision; this panel only exposes status, explicit confirmation, and
+// and Agent planning safety decision; this panel only exposes status, explicit confirmation, and
 // a DBA-copy fallback without turning on arbitrary database writes.
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

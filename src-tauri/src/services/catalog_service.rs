@@ -13,7 +13,6 @@ use super::TerminalAuthority;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CatalogReadPolicy {
     CacheFirst,
-    LiveNoCache,
     Refresh,
 }
 
@@ -21,7 +20,6 @@ impl From<CatalogReadPolicy> for CatalogReadMode {
     fn from(policy: CatalogReadPolicy) -> Self {
         match policy {
             CatalogReadPolicy::CacheFirst => Self::CacheFirst,
-            CatalogReadPolicy::LiveNoCache => Self::LiveNoCache,
             CatalogReadPolicy::Refresh => Self::Refresh,
         }
     }

@@ -9,8 +9,9 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use args::{
-    AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, OperationCommand, QueryCommand,
-    SchemaCommand, SkillCommand, SkillsCommand, SqlCommand, TableCommand,
+    AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, DashboardCommand, DocumentCommand,
+    OperationCommand, QueryCommand, SchemaCommand, SkillCommand, SkillsCommand, SqlCommand,
+    TableCommand,
 };
 use output::OutputMode;
 
@@ -92,6 +93,22 @@ async fn main() -> ExitCode {
                 .await
             }
         },
+        Command::Document(arguments) => match arguments.command {
+            DocumentCommand::Run {
+                connection,
+                file,
+                max_rows,
+                output,
+            } => {
+                commands::document::run(
+                    &connection,
+                    &file,
+                    max_rows,
+                    OutputMode::from_json_flag(output.json),
+                )
+                .await
+            }
+        },
         Command::Query(arguments) => match arguments.command {
             QueryCommand::Plan {
                 connection,
@@ -116,6 +133,28 @@ async fn main() -> ExitCode {
             } => {
                 commands::query::cancel(&operation_id, OutputMode::from_json_flag(output.json))
                     .await
+            }
+        },
+        Command::Dashboard(arguments) => match arguments.command {
+            DashboardCommand::Create {
+                query_run,
+                title,
+                description,
+                kind,
+                x_column,
+                y_column,
+                output,
+            } => {
+                commands::dashboard::create(
+                    &query_run,
+                    title,
+                    description,
+                    kind.into(),
+                    x_column,
+                    y_column,
+                    OutputMode::from_json_flag(output.json),
+                )
+                .await
             }
         },
         Command::Sql(arguments) => match arguments.command {

@@ -6,7 +6,7 @@
 
 ## 결정
 
-UI, Local Broker, MCP 전환 adapter, Plugin은 DB를 직접 실행하지 않는다. 모든 실행은
+UI, Local Broker, Agent CLI, Plugin은 DB를 직접 실행하지 않는다. 모든 실행은
 하나의 Operation Runtime을 통과한다. 저장되는 첫 상태는 `planned`이며 frontend의
 편집 중 draft는 저장하지 않는다.
 

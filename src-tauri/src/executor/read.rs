@@ -4,8 +4,8 @@
 //! sqlx has no single dynamic-row API across engines (PgRow/MySqlRow/SqliteRow
 //! carry different `Column`/`TypeInfo` types), so the per-engine mappers below
 //! are unavoidable duplication rather than a missing abstraction. The mappers and
-//! [`stream_capped`] are `pub(crate)` and reused by `safety::l2_enforce` (the MCP
-//! path) so both paths decode a cell identically.
+//! [`stream_capped`] are `pub(crate)` and reused by `safety::l2_enforce` so all
+//! read paths decode a cell identically.
 
 use std::time::Instant;
 

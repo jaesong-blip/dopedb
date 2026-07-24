@@ -82,6 +82,45 @@
     "resultFixture": "catalog-relation-0"
   },
   {
+    "command": "document.run",
+    "arguments": {
+      "connection": "id:00000000-0000-0000-0000-000000000001",
+      "query": {
+        "op": "find",
+        "collection": "users",
+        "filter": {
+          "active": true
+        },
+        "limit": 10
+      },
+      "maxRows": 10
+    },
+    "result": {
+      "operationId": "00000000-0000-0000-0000-000000000005",
+      "connectionId": "00000000-0000-0000-0000-000000000001",
+      "connectionName": "Production",
+      "query": {
+        "op": "find",
+        "collection": "users",
+        "filter": {
+          "active": true
+        },
+        "limit": 10
+      },
+      "result": {
+        "documents": [
+          {
+            "_id": 1,
+            "active": true
+          }
+        ],
+        "docCount": 1,
+        "truncated": false,
+        "durationMs": 3
+      }
+    }
+  },
+  {
     "command": "query.plan",
     "arguments": {
       "connection": "id:00000000-0000-0000-0000-000000000001",
@@ -147,6 +186,33 @@
       "operationId": "00000000-0000-0000-0000-000000000003"
     },
     "resultFixture": "operation-summary"
+  },
+  {
+    "command": "dashboard.create",
+    "arguments": {
+      "queryRunId": "00000000-0000-0000-0000-000000000004",
+      "title": "Active users",
+      "description": "Current active-user view",
+      "kind": "auto",
+      "yColumns": []
+    },
+    "result": {
+      "queryRunId": "00000000-0000-0000-0000-000000000004",
+      "dashboard": {
+        "id": "00000000-0000-0000-0000-000000000006",
+        "connectionId": "00000000-0000-0000-0000-000000000001",
+        "title": "Active users",
+        "description": "Current active-user view",
+        "sql": "SELECT id, email FROM public.users",
+        "visualization": {
+          "version": 1,
+          "kind": "auto",
+          "yColumns": []
+        },
+        "createdAt": "2026-07-24T00:00:00Z",
+        "updatedAt": "2026-07-24T00:00:00Z"
+      }
+    }
   },
   {
     "command": "sql.propose",

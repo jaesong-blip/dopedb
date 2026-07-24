@@ -22,20 +22,24 @@ pub(crate) enum BrokerCapability {
     ConnectionRead,
     ConnectionTest,
     CatalogRead,
+    DocumentRead,
     QueryPlan,
     QueryRun,
+    DashboardCreate,
     SqlPropose,
     OperationRead,
     OperationCancel,
 }
 
 impl BrokerCapability {
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::ConnectionRead,
         Self::ConnectionTest,
         Self::CatalogRead,
+        Self::DocumentRead,
         Self::QueryPlan,
         Self::QueryRun,
+        Self::DashboardCreate,
         Self::SqlPropose,
         Self::OperationRead,
         Self::OperationCancel,

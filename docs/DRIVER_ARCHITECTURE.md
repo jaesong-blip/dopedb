@@ -12,7 +12,7 @@ DopeDB separates three concepts that database tools often collapse:
   compatible driver.
 
 ```text
-Connection form / MCP
+Connection form / Agent CLI
         |
         v
 Driver registry ---- provider capability overlay

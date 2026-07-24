@@ -1,7 +1,7 @@
 //! Connection management: live sqlx pools (a separate read-only pool per
 //! connection), OS credential-store secret storage, and per-provider connection-string
 //! tuning. Long-lived local credentials live only in the OS credential store; managed
-//! credentials are short-lived process-memory leases. MCP sees connection ids only.
+//! credentials are short-lived process-memory leases. The CLI sees connection ids only.
 
 pub mod keychain;
 pub mod pool;

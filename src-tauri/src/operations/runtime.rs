@@ -49,7 +49,7 @@ impl ClaimedOperation {
     }
 }
 
-/// Opaque capability held by the desktop composition root, never by MCP/CLI/Agent
+/// Opaque capability held by the desktop composition root, never by CLI/Agent
 /// adapters. It intentionally implements no serialization, cloning, or defaulting.
 pub(crate) struct LocalApprovalAuthority {
     runtime_id: Uuid,

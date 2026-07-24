@@ -1,4 +1,4 @@
-//! Saved-dashboard validation shared by the Tauri and MCP entry points.
+//! Saved-dashboard validation shared by Tauri and the local broker.
 
 use crate::error::{AppError, AppResult};
 use crate::model::{DashboardDraft, DashboardVisualization, Engine, QueryKind};

@@ -35,7 +35,7 @@ use super::operation_service::{
     actor_for_pin, agent_actor_for_pin, capture_policy, ensure_operation_scope,
     required_confirmation,
 };
-use super::TerminalAuthority;
+use super::{TerminalAuthority, TerminalQueryRunRegistry};
 
 /// Lifetime of an agent query plan. A plan is valid at exactly this boundary and
 /// expired only when its monotonic age is greater than this value.
@@ -242,30 +242,20 @@ impl DesktopSqlInspectionError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AgentQueryInvocationOrigin {
-    Mcp,
     Cli,
 }
 
 impl AgentQueryInvocationOrigin {
     pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::Mcp => "mcp",
-            Self::Cli => "cli",
-        }
+        "cli"
     }
 
     fn plan_audit_action(self) -> &'static str {
-        match self {
-            Self::Mcp => "mcp:plan_query",
-            Self::Cli => "cli:plan_query",
-        }
+        "cli:plan_query"
     }
 
     fn run_audit_action(self) -> &'static str {
-        match self {
-            Self::Mcp => "mcp:run_query",
-            Self::Cli => "cli:run_query",
-        }
+        "cli:run_query"
     }
 }
 
@@ -279,13 +269,13 @@ struct StoredAgentReadPayload {
 }
 
 /// Inputs whose meaning is frozen into one plan. Connection selection has already
-/// happened in the adapter so legacy selector behavior can remain transport-owned.
+/// happened in the broker adapter, while the service owns the resolved identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AgentQueryPlanRequest {
-    pub(crate) connection_id: Uuid,
-    pub(crate) sql: String,
-    pub(crate) max_rows: Option<u64>,
-    pub(crate) origin: AgentQueryInvocationOrigin,
+struct AgentQueryPlanRequest {
+    connection_id: Uuid,
+    sql: String,
+    max_rows: Option<u64>,
+    origin: AgentQueryInvocationOrigin,
 }
 
 /// Broker-only read-plan input. The terminal/session identity is frozen into the
@@ -298,6 +288,15 @@ pub(crate) struct TerminalQueryPlanRequest {
     pub(crate) authority: TerminalAuthority,
 }
 
+#[cfg(test)]
+struct SeedQueryPlanForTest {
+    plan_id: Uuid,
+    sql: String,
+    max_rows: u64,
+    decision: String,
+    created_at: Instant,
+}
+
 /// Aggregate-only planning result. The allowlist deliberately excludes the full
 /// profile, network endpoint, username, credential reference, and binding details.
 #[derive(Debug, Clone)]
@@ -305,7 +304,6 @@ pub(crate) struct AgentQueryPlan {
     pub(crate) connection_id: Uuid,
     pub(crate) connection_name: String,
     pub(crate) environment: Option<String>,
-    pub(crate) sql: String,
     pub(crate) plan_id: Uuid,
     pub(crate) decision: String,
     pub(crate) notices: Vec<String>,
@@ -335,72 +333,12 @@ pub(crate) enum AgentQueryPlanError {
     /// SQL planning does not apply to a document-family connection.
     DocumentConnection,
     /// Classification did not yield exactly one read-only statement.
-    NotSingleRead(Box<RejectedAgentQueryPlan>),
+    NotSingleRead,
     /// Store, authorization, connection, preview, or monitoring setup failed.
     Application(AppError),
 }
 
-/// Guard-bearing non-read rejection. The adapter emits its compatibility result
-/// first, then calls `audit_after_result`, preserving the Phase 0 event/audit order.
-pub(crate) struct RejectedAgentQueryPlan {
-    store: Store,
-    context: ConnectionContext,
-    connection_id: Uuid,
-    connection_name: String,
-    engine: Engine,
-    sql: String,
-    kind: QueryKind,
-    origin: AgentQueryInvocationOrigin,
-}
-
-impl fmt::Debug for RejectedAgentQueryPlan {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("RejectedAgentQueryPlan")
-            .finish_non_exhaustive()
-    }
-}
-
-impl RejectedAgentQueryPlan {
-    /// Return the id from the authority-pinned profile while this token holds the
-    /// scope guard. Adapters must not reuse a pre-pin selector projection here.
-    pub(crate) fn connection_id(&self) -> Uuid {
-        self.connection_id
-    }
-
-    /// Return the allowlisted display name from the authority-pinned profile.
-    pub(crate) fn connection_name(&self) -> &str {
-        &self.connection_name
-    }
-
-    /// Record the rejection after the adapter has emitted `agent:result`. The
-    /// retained connection context keeps the exact scope guard alive through both.
-    pub(crate) async fn audit_after_result(self) {
-        let Self {
-            store,
-            context,
-            connection_id,
-            connection_name: _,
-            engine,
-            sql,
-            kind,
-            origin,
-        } = self;
-        audit_best_effort(
-            &store,
-            connection_id,
-            engine,
-            &sql,
-            kind,
-            origin.plan_audit_action(),
-            Some("plan_query accepts exactly one read-only SELECT statement".into()),
-        )
-        .await;
-        drop(context);
-    }
-}
-
-/// Explicitly allowlisted fields needed for the compatibility `agent:tool_call`.
+/// Explicitly allowlisted fields carried by a prepared query execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AgentQueryRunEventContext {
     pub(crate) connection_id: Uuid,
@@ -417,7 +355,6 @@ pub(crate) struct AgentQueryRun {
     pub(crate) plan_id: Uuid,
     pub(crate) planning_decision: String,
     pub(crate) query_run_id: Uuid,
-    pub(crate) sql: String,
     pub(crate) result: QueryResult,
 }
 
@@ -454,7 +391,7 @@ pub(crate) enum AgentQueryRunError {
     /// The DB-enforced read-only execution failed.
     Execution(AgentQueryExecutionFailure),
     /// The query succeeded, but the required durable query-run handle did not.
-    ConsentHandlePersistence(AgentQueryConsentFailure),
+    ProvenancePersistence(AgentQueryProvenanceFailure),
 }
 
 /// An execution failure that retains the connection lease until the adapter emits
@@ -477,35 +414,25 @@ impl AgentQueryExecutionFailure {
     pub(crate) fn error(&self) -> &AppError {
         &self.error
     }
-
-    /// Consume after the adapter emitted its error while this token held the guard.
-    pub(crate) fn into_error(self) -> AppError {
-        self.error
-    }
 }
 
-/// A successful database read whose required history receipt failed to persist.
-/// The lease remains alive until the adapter emits the compatibility error.
-pub(crate) struct AgentQueryConsentFailure {
+/// A successful database read whose required provenance receipt failed to persist.
+/// The lease remains alive until the adapter emits the bounded error result.
+pub(crate) struct AgentQueryProvenanceFailure {
     error: AppError,
     _lease: ConnectionLease,
 }
 
-impl fmt::Debug for AgentQueryConsentFailure {
+impl fmt::Debug for AgentQueryProvenanceFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("AgentQueryConsentFailure")
+            .debug_struct("AgentQueryProvenanceFailure")
             .field("error", &self.error)
             .finish_non_exhaustive()
     }
 }
 
-impl AgentQueryConsentFailure {
-    pub(crate) fn error(&self) -> &AppError {
-        &self.error
-    }
-
-    /// Consume after the adapter emitted its error while this token held the guard.
+impl AgentQueryProvenanceFailure {
     pub(crate) fn into_error(self) -> AppError {
         self.error
     }
@@ -523,16 +450,11 @@ pub(crate) struct PreparedAgentQueryRun {
     decision: String,
     max_rows: u64,
     origin: AgentQueryInvocationOrigin,
+    terminal_runs: TerminalQueryRunRegistry,
     cancellation: executor::cancel::CancelHandle,
 }
 
 impl PreparedAgentQueryRun {
-    /// Return only the existing compatibility event fields, never the connection
-    /// profile or its credential material.
-    pub(crate) fn event_context(&self) -> &AgentQueryRunEventContext {
-        &self.event_context
-    }
-
     /// Connect and run the capability-bound statement in the authoritative
     /// database read-only session. The 15-second server timeout and 17-second wall
     /// guard remain owned by `safety::run_read_only`.
@@ -547,6 +469,7 @@ impl PreparedAgentQueryRun {
             decision,
             max_rows,
             origin,
+            terminal_runs,
             cancellation,
         } = self;
         let operation_id = claimed.record().id;
@@ -683,8 +606,8 @@ impl PreparedAgentQueryRun {
                         }),
                     )
                     .await;
-                return Err(AgentQueryRunError::ConsentHandlePersistence(
-                    AgentQueryConsentFailure {
+                return Err(AgentQueryRunError::ProvenancePersistence(
+                    AgentQueryProvenanceFailure {
                         error,
                         _lease: lease,
                     },
@@ -711,12 +634,19 @@ impl PreparedAgentQueryRun {
                     }),
                 )
                 .await;
-            return Err(AgentQueryRunError::ConsentHandlePersistence(
-                AgentQueryConsentFailure {
+            return Err(AgentQueryRunError::ProvenancePersistence(
+                AgentQueryProvenanceFailure {
                     error,
                     _lease: lease,
                 },
             ));
+        }
+        if let Some(terminal_session_id) = claimed.record().terminal_session_id {
+            terminal_runs.register(
+                query_run_id,
+                terminal_session_id,
+                operation_pin.connection_id,
+            );
         }
 
         Ok(AgentQueryRunReceipt {
@@ -726,7 +656,6 @@ impl PreparedAgentQueryRun {
                 plan_id: event_context.plan_id,
                 planning_decision: decision,
                 query_run_id,
-                sql: event_context.sql,
                 result,
             },
             _lease: lease,
@@ -735,13 +664,14 @@ impl PreparedAgentQueryRun {
 }
 
 /// Scope-aware query service. Every clone shares the durable Operation Runtime, so
-/// desktop, HTTP, stdio, and future broker adapters see one single-use capability
-/// namespace that also survives long enough for explicit restart recovery.
+/// desktop commands and the local broker see one single-use capability namespace
+/// that also survives long enough for explicit restart recovery.
 #[derive(Clone)]
 pub(crate) struct QueryService {
     store: Store,
     connections: ConnectionManager,
     operation: OperationRuntime,
+    terminal_runs: TerminalQueryRunRegistry,
 }
 
 impl QueryService {
@@ -749,11 +679,13 @@ impl QueryService {
         store: Store,
         connections: ConnectionManager,
         operation: OperationRuntime,
+        terminal_runs: TerminalQueryRunRegistry,
     ) -> Self {
         Self {
             store,
             connections,
             operation,
+            terminal_runs,
         }
     }
 
@@ -1383,35 +1315,29 @@ impl QueryService {
     }
 
     /// Classify, preview, and inspect aggregate health before minting one immutable
-    /// single-use plan. A `caution` decision is guidance and never an execution block.
-    pub(crate) async fn plan_agent_read(
-        &self,
-        request: AgentQueryPlanRequest,
-    ) -> Result<AgentQueryPlanReceipt, AgentQueryPlanError> {
-        self.plan_agent_read_scoped(request, None).await
-    }
-
+    /// Terminal-bound single-use plan. A `caution` decision is guidance and never an
+    /// execution block.
     pub(crate) async fn plan_terminal_read(
         &self,
         request: TerminalQueryPlanRequest,
     ) -> Result<AgentQueryPlanReceipt, AgentQueryPlanError> {
         let authority = request.authority;
-        self.plan_agent_read_scoped(
+        self.plan_terminal_read_inner(
             AgentQueryPlanRequest {
                 connection_id: request.connection_id,
                 sql: request.sql,
                 max_rows: request.max_rows,
                 origin: AgentQueryInvocationOrigin::Cli,
             },
-            Some(authority),
+            authority,
         )
         .await
     }
 
-    async fn plan_agent_read_scoped(
+    async fn plan_terminal_read_inner(
         &self,
         request: AgentQueryPlanRequest,
-        terminal: Option<TerminalAuthority>,
+        authority: TerminalAuthority,
     ) -> Result<AgentQueryPlanReceipt, AgentQueryPlanError> {
         let context = self
             .connections
@@ -1426,18 +1352,17 @@ impl QueryService {
         let classification = safety::classify(&request.sql, profile.engine)
             .map_err(AgentQueryPlanError::Application)?;
         if !matches!(classification.kind, QueryKind::Read) || classification.statement_count != 1 {
-            return Err(AgentQueryPlanError::NotSingleRead(Box::new(
-                RejectedAgentQueryPlan {
-                    store: self.store.clone(),
-                    context,
-                    connection_id: profile.id,
-                    connection_name: profile.name,
-                    engine: profile.engine,
-                    sql: request.sql,
-                    kind: classification.kind,
-                    origin: request.origin,
-                },
-            )));
+            audit_best_effort(
+                &self.store,
+                profile.id,
+                profile.engine,
+                &request.sql,
+                classification.kind,
+                request.origin.plan_audit_action(),
+                Some("query plan accepts exactly one read-only SELECT statement".into()),
+            )
+            .await;
+            return Err(AgentQueryPlanError::NotSingleRead);
         }
 
         let settings = self
@@ -1447,11 +1372,9 @@ impl QueryService {
             .map_err(AgentQueryPlanError::Application)?;
         let max_rows = bounded_max_rows(request.max_rows, settings.max_rows);
         let operation_pin = context.pin().clone();
-        if let Some(authority) = terminal.as_ref() {
-            authority
-                .ensure_pin(&operation_pin)
-                .map_err(AgentQueryPlanError::Application)?;
-        }
+        authority
+            .ensure_pin(&operation_pin)
+            .map_err(AgentQueryPlanError::Application)?;
         let policy =
             capture_agent_read_policy(&operation_pin).map_err(AgentQueryPlanError::Application)?;
         let lease = context
@@ -1504,9 +1427,7 @@ impl QueryService {
             request.origin.as_str().into(),
             request.origin.as_str().into(),
         );
-        if let Some(authority) = terminal.as_ref() {
-            actor.provenance.client_protocol_version = Some(authority.client_protocol_version);
-        }
+        actor.provenance.client_protocol_version = Some(authority.client_protocol_version);
         self.operation
             .plan(
                 NewOperation {
@@ -1515,9 +1436,7 @@ impl QueryService {
                     account_scope: operation_pin.scope.account_scope.storage_key().into(),
                     connection_id: operation_pin.connection_id,
                     connection_revision: operation_pin.connection_revision,
-                    terminal_session_id: terminal
-                        .as_ref()
-                        .map(|authority| authority.terminal_session_id),
+                    terminal_session_id: Some(authority.terminal_session_id),
                     actor,
                     kind: OperationKind::ReadQuery,
                     payload_schema_version: 1,
@@ -1547,7 +1466,6 @@ impl QueryService {
                 connection_id: profile.id,
                 connection_name: profile.name,
                 environment: profile.env,
-                sql: request.sql,
                 plan_id,
                 decision,
                 notices,
@@ -1560,29 +1478,12 @@ impl QueryService {
         })
     }
 
-    /// Atomically claim a durable plan, then re-pin and compare every authority and
-    /// policy field. The returned capability retains both the claim and connection
-    /// scope through the adapter event and the eventual read-only execution.
-    pub(crate) async fn prepare_agent_run(
-        &self,
-        plan_id: Uuid,
-    ) -> Result<PreparedAgentQueryRun, AgentQueryRunPrepareError> {
-        self.prepare_agent_run_scoped(plan_id, None).await
-    }
-
+    /// Atomically claim a durable plan, then re-pin and compare every Terminal
+    /// authority and policy field.
     pub(crate) async fn prepare_terminal_run(
         &self,
         plan_id: Uuid,
         authority: &TerminalAuthority,
-    ) -> Result<PreparedAgentQueryRun, AgentQueryRunPrepareError> {
-        self.prepare_agent_run_scoped(plan_id, Some(authority))
-            .await
-    }
-
-    async fn prepare_agent_run_scoped(
-        &self,
-        plan_id: Uuid,
-        terminal: Option<&TerminalAuthority>,
     ) -> Result<PreparedAgentQueryRun, AgentQueryRunPrepareError> {
         let planned = match self.operation.get(plan_id).await {
             Ok(planned) => planned,
@@ -1602,13 +1503,9 @@ impl QueryService {
         if planned.actor.id != payload.origin.as_str() {
             return Err(AgentQueryRunPrepareError::StoredPlanInvalid);
         }
-        let terminal_session_id = terminal.map(|authority| authority.terminal_session_id);
-        let expected_origin = if terminal.is_some() {
-            AgentQueryInvocationOrigin::Cli
-        } else {
-            AgentQueryInvocationOrigin::Mcp
-        };
-        if planned.terminal_session_id != terminal_session_id || payload.origin != expected_origin {
+        if planned.terminal_session_id != Some(authority.terminal_session_id)
+            || payload.origin != AgentQueryInvocationOrigin::Cli
+        {
             return Err(AgentQueryRunPrepareError::SessionMismatch);
         }
         if planned.state == OperationState::Expired {
@@ -1649,17 +1546,15 @@ impl QueryService {
             }
         };
         let pin = context.pin().clone();
-        if let Some(authority) = terminal {
-            if authority.ensure_pin(&pin).is_err() {
-                let _ = self
-                    .operation
-                    .fail(
-                        plan_id,
-                        &serde_json::json!({"reason": "terminal_authority_changed"}),
-                    )
-                    .await;
-                return Err(AgentQueryRunPrepareError::AuthorityChanged);
-            }
+        if authority.ensure_pin(&pin).is_err() {
+            let _ = self
+                .operation
+                .fail(
+                    plan_id,
+                    &serde_json::json!({"reason": "terminal_authority_changed"}),
+                )
+                .await;
+            return Err(AgentQueryRunPrepareError::AuthorityChanged);
         }
         if ensure_operation_scope(&planned, &pin).is_err() {
             let _ = self
@@ -1756,6 +1651,7 @@ impl QueryService {
             decision: payload.decision,
             max_rows: payload.max_rows.min(settings.max_rows).min(MAX_AGENT_ROWS),
             origin: payload.origin,
+            terminal_runs: self.terminal_runs.clone(),
             cancellation,
         })
     }
@@ -1763,38 +1659,37 @@ impl QueryService {
     /// Seed a durable plan only in crate tests so compatibility fixtures can cover
     /// deterministic expiry without exposing a production mutation API.
     #[cfg(test)]
-    pub(crate) async fn seed_plan_for_test(
+    async fn seed_plan_for_test(
         &self,
-        plan_id: Uuid,
         pin: &PinnedConnection,
-        sql: String,
-        max_rows: u64,
-        decision: String,
-        created_at: Instant,
+        authority: &TerminalAuthority,
+        seed: SeedQueryPlanForTest,
     ) {
         let policy = capture_agent_read_policy(pin).unwrap();
-        let elapsed = Instant::now().saturating_duration_since(created_at);
+        let elapsed = Instant::now().saturating_duration_since(seed.created_at);
         let remaining = QUERY_PLAN_TTL.saturating_sub(elapsed);
         let expires_at = Utc::now()
             + ChronoDuration::from_std(remaining)
                 .expect("seeded query plan TTL is representable by chrono");
-        let origin = AgentQueryInvocationOrigin::Mcp;
+        let origin = AgentQueryInvocationOrigin::Cli;
+        let mut actor = agent_actor_for_pin(pin, origin.as_str().into(), origin.as_str().into());
+        actor.provenance.client_protocol_version = Some(authority.client_protocol_version);
         self.operation
             .plan(
                 NewOperation {
-                    id: plan_id,
+                    id: seed.plan_id,
                     workspace_id: pin.scope.workspace_id,
                     account_scope: pin.scope.account_scope.storage_key().into(),
                     connection_id: pin.connection_id,
                     connection_revision: pin.connection_revision,
-                    terminal_session_id: None,
-                    actor: agent_actor_for_pin(pin, origin.as_str().into(), origin.as_str().into()),
+                    terminal_session_id: Some(authority.terminal_session_id),
+                    actor,
                     kind: OperationKind::ReadQuery,
                     payload_schema_version: 1,
                     payload: serde_json::to_value(StoredAgentReadPayload {
-                        sql,
-                        max_rows: max_rows.min(MAX_AGENT_ROWS),
-                        decision,
+                        sql: seed.sql,
+                        max_rows: seed.max_rows.min(MAX_AGENT_ROWS),
+                        decision: seed.decision,
                         origin,
                     })
                     .unwrap(),
@@ -1804,7 +1699,7 @@ impl QueryService {
                     policy_snapshot: policy.0,
                     policy_revision: policy.1,
                     single_use: true,
-                    idempotency_key: plan_id.to_string(),
+                    idempotency_key: seed.plan_id.to_string(),
                     expires_at: Some(expires_at),
                 },
                 OperationPlanDisposition::Ready,
@@ -2058,8 +1953,8 @@ async fn persist_history(
                 duration_ms,
                 error,
                 executed_at: Utc::now(),
-                // Both current local agent adapters remain dashboard-eligible.
-                // Finer actor attribution arrives with Operation Runtime.
+                // Preserve the historical value used by dashboard eligibility;
+                // exact CLI attribution lives in the operation and audit records.
                 origin: "agent".into(),
             },
         )
@@ -2280,7 +2175,12 @@ mod tests {
                 connections.clone(),
                 operation.clone(),
             );
-            let service = QueryService::new(store.clone(), connections.clone(), operation);
+            let service = QueryService::new(
+                store.clone(),
+                connections.clone(),
+                operation,
+                TerminalQueryRunRegistry::default(),
+            );
             Self {
                 service,
                 operation_service,
@@ -3413,94 +3313,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sqlite_plan_run_persists_required_provenance() {
-        let harness = SqliteHarness::new().await;
-        let mut settings = harness
-            .store
-            .get_safety(harness.connection_id)
-            .await
-            .unwrap();
-        settings.max_rows = 1;
-        harness
-            .store
-            .set_safety(harness.connection_id, &settings)
-            .await
-            .unwrap();
-
-        let plan_receipt = harness
-            .service
-            .plan_agent_read(AgentQueryPlanRequest {
-                connection_id: harness.connection_id,
-                sql: "SELECT id, name FROM users ORDER BY id".into(),
-                max_rows: None,
-                origin: AgentQueryInvocationOrigin::Mcp,
-            })
-            .await
-            .unwrap();
-        let plan = plan_receipt.plan();
-        assert_eq!(plan.connection_id, harness.connection_id);
-        assert_eq!(plan.connection_name, harness.profile.name);
-        assert_eq!(plan.environment.as_deref(), Some("test"));
-        let plan_id = plan.plan_id;
-        let planning_decision = plan.decision.clone();
-        drop(plan_receipt);
-
-        // The plan freezes the configured cap. Later safety edits cannot widen it.
-        settings.max_rows = MAX_AGENT_ROWS;
-        harness
-            .store
-            .set_safety(harness.connection_id, &settings)
-            .await
-            .unwrap();
-
-        let prepared = harness.service.prepare_agent_run(plan_id).await.unwrap();
-        assert_eq!(
-            prepared.event_context(),
-            &AgentQueryRunEventContext {
-                connection_id: harness.connection_id,
-                connection_name: harness.profile.name.clone(),
-                plan_id,
-                sql: "SELECT id, name FROM users ORDER BY id".into(),
-            }
-        );
-        let run_receipt = prepared.execute().await.unwrap();
-        let run = run_receipt.run();
-        assert_eq!(run.query_run_id.get_version_num(), 4);
-        assert_eq!(run.result.row_count, 1);
-        assert!(run.result.truncated);
-        assert_eq!(run.planning_decision, planning_decision);
-        let query_run_id = run.query_run_id;
-        drop(run_receipt);
-
-        let history = harness
-            .store
-            .list_history(harness.connection_id)
-            .await
-            .unwrap();
-        assert_eq!(history.len(), 1);
-        assert_eq!(history[0].id, query_run_id);
-        assert_eq!(history[0].origin, "agent");
-        assert_eq!(history[0].status, "ok");
-        assert_eq!(history[0].row_count, Some(1));
-
-        let (mut audit, chain_ok, first_bad) =
-            audit::snapshot(&harness.store, harness.connection_id)
-                .await
-                .unwrap();
-        assert!(chain_ok);
-        assert_eq!(first_bad, None);
-        audit.reverse();
-        assert_eq!(
-            audit
-                .iter()
-                .map(|entry| entry.action.as_str())
-                .collect::<Vec<_>>(),
-            ["mcp:plan_query", "mcp:run_query"]
-        );
-        harness.close().await;
-    }
-
-    #[tokio::test]
     async fn cli_origin_separates_audit_but_keeps_dashboard_eligible_history() {
         let harness = SqliteHarness::new().await;
         let authority = harness.terminal_authority().await;
@@ -3636,22 +3448,29 @@ mod tests {
     async fn service_clones_claim_one_durable_operation() {
         let harness = SqliteHarness::new().await;
         let other_transport = harness.service.clone();
+        let authority = harness.terminal_authority().await;
         let receipt = harness
             .service
-            .plan_agent_read(AgentQueryPlanRequest {
+            .plan_terminal_read(TerminalQueryPlanRequest {
                 connection_id: harness.connection_id,
                 sql: "SELECT 1".into(),
                 max_rows: Some(1),
-                origin: AgentQueryInvocationOrigin::Mcp,
+                authority: authority.clone(),
             })
             .await
             .unwrap();
         let plan_id = receipt.plan().plan_id;
         drop(receipt);
 
-        let prepared = other_transport.prepare_agent_run(plan_id).await.unwrap();
+        let prepared = other_transport
+            .prepare_terminal_run(plan_id, &authority)
+            .await
+            .unwrap();
         assert!(matches!(
-            harness.service.prepare_agent_run(plan_id).await,
+            harness
+                .service
+                .prepare_terminal_run(plan_id, &authority)
+                .await,
             Err(AgentQueryRunPrepareError::UnknownOrAlreadyUsed)
         ));
         drop(prepared);
@@ -3661,6 +3480,7 @@ mod tests {
     #[tokio::test]
     async fn execution_failure_keeps_single_use_and_persists_best_effort_history() {
         let harness = SqliteHarness::new().await;
+        let authority = harness.terminal_authority().await;
         let pin = harness
             .store
             .pin_connection_for_read(harness.connection_id)
@@ -3670,25 +3490,35 @@ mod tests {
         harness
             .service
             .seed_plan_for_test(
-                plan_id,
                 &pin,
-                "SELECT no_such_function()".into(),
-                1,
-                "ready".into(),
-                Instant::now(),
+                &authority,
+                SeedQueryPlanForTest {
+                    plan_id,
+                    sql: "SELECT no_such_function()".into(),
+                    max_rows: 1,
+                    decision: "ready".into(),
+                    created_at: Instant::now(),
+                },
             )
             .await;
-        let prepared = harness.service.prepare_agent_run(plan_id).await.unwrap();
+        let prepared = harness
+            .service
+            .prepare_terminal_run(plan_id, &authority)
+            .await
+            .unwrap();
         let failure = match prepared.execute().await {
             Err(AgentQueryRunError::Execution(failure)) => failure,
             _ => panic!("invalid SQLite function must fail during execution"),
         };
         assert!(!failure.error().to_string().is_empty());
         assert!(matches!(
-            harness.service.prepare_agent_run(plan_id).await,
+            harness
+                .service
+                .prepare_terminal_run(plan_id, &authority)
+                .await,
             Err(AgentQueryRunPrepareError::UnknownOrAlreadyUsed)
         ));
-        let _ = failure.into_error();
+        drop(failure);
 
         let history = harness
             .store
@@ -3704,19 +3534,24 @@ mod tests {
     #[tokio::test]
     async fn successful_read_without_consent_history_returns_no_rows_and_consumes_plan() {
         let harness = SqliteHarness::new().await;
+        let authority = harness.terminal_authority().await;
         let receipt = harness
             .service
-            .plan_agent_read(AgentQueryPlanRequest {
+            .plan_terminal_read(TerminalQueryPlanRequest {
                 connection_id: harness.connection_id,
                 sql: "SELECT id, name FROM users ORDER BY id".into(),
                 max_rows: Some(2),
-                origin: AgentQueryInvocationOrigin::Mcp,
+                authority: authority.clone(),
             })
             .await
             .unwrap();
         let plan_id = receipt.plan().plan_id;
         drop(receipt);
-        let prepared = harness.service.prepare_agent_run(plan_id).await.unwrap();
+        let prepared = harness
+            .service
+            .prepare_terminal_run(plan_id, &authority)
+            .await
+            .unwrap();
 
         sqlx::raw_sql(
             "CREATE TRIGGER fail_success_query_history
@@ -3731,7 +3566,7 @@ mod tests {
         .unwrap();
 
         let failure = match prepared.execute().await {
-            Err(AgentQueryRunError::ConsentHandlePersistence(failure)) => failure,
+            Err(AgentQueryRunError::ProvenancePersistence(failure)) => failure,
             _ => panic!("a successful read without durable provenance must fail closed"),
         };
         let debug = format!("{failure:?}");
@@ -3740,7 +3575,10 @@ mod tests {
         assert!(!debug.contains("Linus"));
         assert!(!debug.contains("\"rows\""));
         assert!(matches!(
-            harness.service.prepare_agent_run(plan_id).await,
+            harness
+                .service
+                .prepare_terminal_run(plan_id, &authority)
+                .await,
             Err(AgentQueryRunPrepareError::UnknownOrAlreadyUsed)
         ));
         let _ = failure.into_error();
@@ -3756,6 +3594,7 @@ mod tests {
     #[tokio::test]
     async fn audit_and_failed_history_outages_do_not_mask_execution_error() {
         let harness = SqliteHarness::new().await;
+        let authority = harness.terminal_authority().await;
         sqlx::raw_sql(
             "CREATE TRIGGER fail_query_audit
              BEFORE INSERT ON audit_log
@@ -3782,15 +3621,22 @@ mod tests {
         harness
             .service
             .seed_plan_for_test(
-                plan_id,
                 &pin,
-                "SELECT no_such_function()".into(),
-                1,
-                "ready".into(),
-                Instant::now(),
+                &authority,
+                SeedQueryPlanForTest {
+                    plan_id,
+                    sql: "SELECT no_such_function()".into(),
+                    max_rows: 1,
+                    decision: "ready".into(),
+                    created_at: Instant::now(),
+                },
             )
             .await;
-        let prepared = harness.service.prepare_agent_run(plan_id).await.unwrap();
+        let prepared = harness
+            .service
+            .prepare_terminal_run(plan_id, &authority)
+            .await
+            .unwrap();
         let failure = match prepared.execute().await {
             Err(AgentQueryRunError::Execution(failure)) => failure,
             _ => panic!("the original target-database execution must remain the error"),
@@ -3800,10 +3646,13 @@ mod tests {
         assert!(!original.contains("forced audit failure"));
         assert!(!original.contains("forced failed-history failure"));
         assert!(matches!(
-            harness.service.prepare_agent_run(plan_id).await,
+            harness
+                .service
+                .prepare_terminal_run(plan_id, &authority)
+                .await,
             Err(AgentQueryRunPrepareError::UnknownOrAlreadyUsed)
         ));
-        let _ = failure.into_error();
+        drop(failure);
 
         assert!(audit::snapshot(&harness.store, harness.connection_id)
             .await
@@ -3822,13 +3671,14 @@ mod tests {
     #[tokio::test]
     async fn plan_and_run_receipts_hold_scope_writer_until_adapter_drop() {
         let harness = SqliteHarness::new().await;
+        let authority = harness.terminal_authority().await;
         let plan_receipt = harness
             .service
-            .plan_agent_read(AgentQueryPlanRequest {
+            .plan_terminal_read(TerminalQueryPlanRequest {
                 connection_id: harness.connection_id,
                 sql: "SELECT id FROM users ORDER BY id".into(),
                 max_rows: Some(1),
-                origin: AgentQueryInvocationOrigin::Mcp,
+                authority: authority.clone(),
             })
             .await
             .unwrap();
@@ -3852,7 +3702,11 @@ mod tests {
         .expect("scope writer must proceed after the plan receipt drops");
         drop(mutation);
 
-        let prepared = harness.service.prepare_agent_run(plan_id).await.unwrap();
+        let prepared = harness
+            .service
+            .prepare_terminal_run(plan_id, &authority)
+            .await
+            .unwrap();
         let run_receipt = prepared.execute().await.unwrap();
         let query_run_id = run_receipt.run().query_run_id;
         assert!(
@@ -3877,35 +3731,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_read_rejection_audits_only_after_adapter_result_boundary() {
+    async fn non_read_rejection_is_audited_before_returning() {
         let harness = SqliteHarness::new().await;
-        let rejection = match harness
+        let authority = harness.terminal_authority().await;
+        let rejection = harness
             .service
-            .plan_agent_read(AgentQueryPlanRequest {
+            .plan_terminal_read(TerminalQueryPlanRequest {
                 connection_id: harness.connection_id,
                 sql: "DELETE FROM users".into(),
                 max_rows: None,
-                origin: AgentQueryInvocationOrigin::Mcp,
+                authority,
             })
-            .await
-        {
-            Err(AgentQueryPlanError::NotSingleRead(rejection)) => rejection,
-            _ => panic!("write planning must return a guard-bearing rejection"),
-        };
-        assert_eq!(rejection.connection_id(), harness.connection_id);
-        assert_eq!(rejection.connection_name(), harness.profile.name);
-        let before = audit::snapshot(&harness.store, harness.connection_id)
-            .await
-            .unwrap()
-            .0;
-        assert!(before.is_empty());
-        rejection.audit_after_result().await;
+            .await;
+        assert!(matches!(rejection, Err(AgentQueryPlanError::NotSingleRead)));
         let after = audit::snapshot(&harness.store, harness.connection_id)
             .await
             .unwrap()
             .0;
         assert_eq!(after.len(), 1);
-        assert_eq!(after[0].action, "mcp:plan_query");
+        assert_eq!(after[0].action, "cli:plan_query");
         assert!(after[0].error.is_some());
         harness.close().await;
     }
@@ -3913,6 +3757,7 @@ mod tests {
     #[tokio::test]
     async fn authority_failure_consumes_the_plan_before_awaiting() {
         let harness = SqliteHarness::new().await;
+        let authority = harness.terminal_authority().await;
         let current_pin = harness
             .store
             .pin_connection_for_read(harness.connection_id)
@@ -3922,12 +3767,15 @@ mod tests {
         harness
             .service
             .seed_plan_for_test(
-                plan_id,
                 &current_pin,
-                "SELECT 1".into(),
-                1,
-                "ready".into(),
-                Instant::now(),
+                &authority,
+                SeedQueryPlanForTest {
+                    plan_id,
+                    sql: "SELECT 1".into(),
+                    max_rows: 1,
+                    decision: "ready".into(),
+                    created_at: Instant::now(),
+                },
             )
             .await;
 
@@ -3939,11 +3787,17 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(
-            harness.service.prepare_agent_run(plan_id).await,
+            harness
+                .service
+                .prepare_terminal_run(plan_id, &authority)
+                .await,
             Err(AgentQueryRunPrepareError::AuthorityChanged)
         ));
         assert!(matches!(
-            harness.service.prepare_agent_run(plan_id).await,
+            harness
+                .service
+                .prepare_terminal_run(plan_id, &authority)
+                .await,
             Err(AgentQueryRunPrepareError::UnknownOrAlreadyUsed)
         ));
         harness.close().await;
@@ -3952,6 +3806,7 @@ mod tests {
     #[tokio::test]
     async fn expired_failure_also_consumes_the_plan() {
         let harness = SqliteHarness::new().await;
+        let authority = harness.terminal_authority().await;
         let current_pin = harness
             .store
             .pin_connection_for_read(harness.connection_id)
@@ -3961,21 +3816,30 @@ mod tests {
         harness
             .service
             .seed_plan_for_test(
-                plan_id,
                 &current_pin,
-                "SELECT 1".into(),
-                1,
-                "ready".into(),
-                Instant::now() - QUERY_PLAN_TTL - Duration::from_secs(1),
+                &authority,
+                SeedQueryPlanForTest {
+                    plan_id,
+                    sql: "SELECT 1".into(),
+                    max_rows: 1,
+                    decision: "ready".into(),
+                    created_at: Instant::now() - QUERY_PLAN_TTL - Duration::from_secs(1),
+                },
             )
             .await;
 
         assert!(matches!(
-            harness.service.prepare_agent_run(plan_id).await,
+            harness
+                .service
+                .prepare_terminal_run(plan_id, &authority)
+                .await,
             Err(AgentQueryRunPrepareError::Expired)
         ));
         assert!(matches!(
-            harness.service.prepare_agent_run(plan_id).await,
+            harness
+                .service
+                .prepare_terminal_run(plan_id, &authority)
+                .await,
             Err(AgentQueryRunPrepareError::UnknownOrAlreadyUsed)
         ));
         harness.close().await;

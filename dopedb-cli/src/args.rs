@@ -36,8 +36,12 @@ pub(crate) enum Command {
     Schema(SchemaArguments),
     /// Inspect one exact table or view.
     Table(TableArguments),
+    /// Run one typed, read-only MongoDB document operation.
+    Document(DocumentArguments),
     /// Plan, execute, or cancel a read-only query.
     Query(QueryArguments),
+    /// Save an exact successful query run as a dashboard.
+    Dashboard(DashboardArguments),
     /// Create an exact SQL operation proposal. This never approves it.
     Sql(SqlArguments),
     /// Inspect, wait for, or cancel a Terminal-owned operation.
@@ -219,6 +223,27 @@ pub(crate) enum TableCommand {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct DocumentArguments {
+    #[command(subcommand)]
+    pub(crate) command: DocumentCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum DocumentCommand {
+    /// Run one typed find, aggregate, or count request read from stdin as JSON.
+    Run {
+        #[arg(long)]
+        connection: String,
+        #[arg(long, value_name = "-")]
+        file: String,
+        #[arg(long)]
+        max_rows: Option<u64>,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct QueryArguments {
     #[command(subcommand)]
     pub(crate) command: QueryCommand,
@@ -251,6 +276,54 @@ pub(crate) enum QueryCommand {
         #[command(flatten)]
         output: OutputArguments,
     },
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DashboardArguments {
+    #[command(subcommand)]
+    pub(crate) command: DashboardCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum DashboardCommand {
+    /// Save one successful query run from this Terminal session.
+    Create {
+        #[arg(long)]
+        query_run: String,
+        #[arg(long)]
+        title: String,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long, value_enum, default_value = "auto")]
+        kind: DashboardKindArgument,
+        #[arg(long)]
+        x_column: Option<String>,
+        #[arg(long)]
+        y_column: Vec<String>,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum DashboardKindArgument {
+    Auto,
+    Metric,
+    Line,
+    Bar,
+    Table,
+}
+
+impl From<DashboardKindArgument> for dopedb_protocol::DashboardKind {
+    fn from(value: DashboardKindArgument) -> Self {
+        match value {
+            DashboardKindArgument::Auto => Self::Auto,
+            DashboardKindArgument::Metric => Self::Metric,
+            DashboardKindArgument::Line => Self::Line,
+            DashboardKindArgument::Bar => Self::Bar,
+            DashboardKindArgument::Table => Self::Table,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -336,6 +409,71 @@ mod tests {
                 }
             }) if file == "-"
         ));
+    }
+
+    #[test]
+    fn document_query_keeps_typed_request_out_of_argv() {
+        let parsed = Cli::try_parse_from([
+            "dopedb",
+            "document",
+            "run",
+            "--connection",
+            "current",
+            "--file",
+            "-",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            parsed.command,
+            Command::Document(DocumentArguments {
+                command: DocumentCommand::Run {
+                    file,
+                    output: OutputArguments { json: true },
+                    ..
+                }
+            }) if file == "-"
+        ));
+    }
+
+    #[test]
+    fn dashboard_creation_accepts_only_query_run_provenance() {
+        let parsed = Cli::try_parse_from([
+            "dopedb",
+            "dashboard",
+            "create",
+            "--query-run",
+            "018f1111-2222-7333-8444-555566667777",
+            "--title",
+            "Users",
+            "--kind",
+            "table",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            parsed.command,
+            Command::Dashboard(DashboardArguments {
+                command: DashboardCommand::Create {
+                    query_run,
+                    kind: DashboardKindArgument::Table,
+                    output: OutputArguments { json: true },
+                    ..
+                }
+            }) if query_run == "018f1111-2222-7333-8444-555566667777"
+        ));
+        assert!(Cli::try_parse_from([
+            "dopedb",
+            "dashboard",
+            "create",
+            "--connection",
+            "current",
+            "--query-run",
+            "018f1111-2222-7333-8444-555566667777",
+            "--title",
+            "Users",
+        ])
+        .is_err());
     }
 
     #[test]

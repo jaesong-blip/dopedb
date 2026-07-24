@@ -15,6 +15,10 @@ const RELEASE_MAPPING_JSON: &str = include_str!("../../resources/skills/release-
 const GUIDE: &str = include_str!("../../../skills/dopedb-cli/SKILL.md");
 const SAFETY_REFERENCE: &str = include_str!("../../../skills/dopedb-cli/references/safety.md");
 const QUERIES_REFERENCE: &str = include_str!("../../../skills/dopedb-cli/references/queries.md");
+const DOCUMENTS_REFERENCE: &str =
+    include_str!("../../../skills/dopedb-cli/references/documents.md");
+const DASHBOARDS_REFERENCE: &str =
+    include_str!("../../../skills/dopedb-cli/references/dashboards.md");
 const OPERATIONS_REFERENCE: &str =
     include_str!("../../../skills/dopedb-cli/references/operations.md");
 
@@ -209,6 +213,14 @@ impl SkillBundle {
                         content: QUERIES_REFERENCE.into(),
                     },
                     SkillGuideFile {
+                        path: "references/documents.md".into(),
+                        content: DOCUMENTS_REFERENCE.into(),
+                    },
+                    SkillGuideFile {
+                        path: "references/dashboards.md".into(),
+                        content: DASHBOARDS_REFERENCE.into(),
+                    },
+                    SkillGuideFile {
                         path: "references/operations.md".into(),
                         content: OPERATIONS_REFERENCE.into(),
                     },
@@ -256,6 +268,8 @@ fn validate_current_manifest(manifest: &CurrentManifest) -> AppResult<()> {
     }
     let embedded_sources = BTreeMap::from([
         ("SKILL.md", GUIDE.as_bytes()),
+        ("references/dashboards.md", DASHBOARDS_REFERENCE.as_bytes()),
+        ("references/documents.md", DOCUMENTS_REFERENCE.as_bytes()),
         ("references/operations.md", OPERATIONS_REFERENCE.as_bytes()),
         ("references/queries.md", QUERIES_REFERENCE.as_bytes()),
         ("references/safety.md", SAFETY_REFERENCE.as_bytes()),
@@ -410,9 +424,14 @@ mod tests {
         let bundle = SkillBundle::load().unwrap();
         assert_eq!(bundle.current.app_version, env!("CARGO_PKG_VERSION"));
         assert_eq!(bundle.current.install_files[0].path, "SKILL.md");
-        assert_eq!(bundle.snapshots.len(), 1);
+        assert_eq!(bundle.snapshots.len(), 2);
         assert_eq!(
-            bundle.snapshots[0].package_digest,
+            bundle
+                .snapshots
+                .iter()
+                .find(|snapshot| snapshot.release_revision == bundle.current.release_revision)
+                .unwrap()
+                .package_digest,
             bundle.current.package_digest
         );
     }
@@ -421,7 +440,7 @@ mod tests {
     fn embedded_full_guide_contains_every_reference() {
         let bundle = SkillBundle::load().unwrap();
         let guide = bundle.guide("dopedb-cli", true).unwrap();
-        assert_eq!(guide.references.len(), 3);
+        assert_eq!(guide.references.len(), 5);
         assert!(guide
             .guide
             .contains("An agent can propose a mutation but cannot approve it"));
@@ -429,6 +448,13 @@ mod tests {
             .references
             .iter()
             .any(|reference| reference.content.contains("outcome_unknown")));
+        assert!(guide.references.iter().any(|reference| reference
+            .content
+            .contains("write-capable aggregation stages")));
+        assert!(guide
+            .references
+            .iter()
+            .any(|reference| reference.content.contains("Ask first")));
     }
 
     #[test]

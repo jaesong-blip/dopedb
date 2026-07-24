@@ -14,7 +14,6 @@ pub enum FeatureFlag {
     CliV1,
     SkillManagerV1,
     TerminalDockV1,
-    McpDeprecated,
     /// Gates direct canonical CatalogSnapshot consumers. The scoped V2 persistence
     /// adapter remains always-on because disabling it would weaken cache authority.
     CatalogV2,
@@ -29,13 +28,12 @@ pub enum FeatureFlag {
 }
 
 impl FeatureFlag {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 14] = [
         Self::OperationRuntimeV1,
         Self::LocalBrokerV1,
         Self::CliV1,
         Self::SkillManagerV1,
         Self::TerminalDockV1,
-        Self::McpDeprecated,
         Self::CatalogV2,
         Self::DdlIrV1,
         Self::SqlDocumentsV1,
@@ -54,7 +52,6 @@ impl FeatureFlag {
             Self::CliV1 => "cli_v1",
             Self::SkillManagerV1 => "skill_manager_v1",
             Self::TerminalDockV1 => "terminal_dock_v1",
-            Self::McpDeprecated => "mcp_deprecated",
             Self::CatalogV2 => "catalog_v2",
             Self::DdlIrV1 => "ddl_ir_v1",
             Self::SqlDocumentsV1 => "sql_documents_v1",
@@ -113,10 +110,10 @@ mod tests {
     }
 
     #[test]
-    fn serialized_names_match_the_v1_golden_fixture() {
+    fn serialized_names_match_the_v2_golden_fixture() {
         let actual = serde_json::to_value(FeatureFlag::ALL).unwrap();
         let expected: serde_json::Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/platform-feature-flags-v1.json"
+            "../tests/fixtures/platform-feature-flags-v2.json"
         ))
         .unwrap();
         assert_eq!(actual, expected);

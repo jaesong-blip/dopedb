@@ -58,14 +58,6 @@ impl From<&ConnectionProfile> for AgentConnectionSummary {
     }
 }
 
-/// Domain-level legacy selector failures. Transport adapters map these variants to
-/// their own error envelope without pulling rmcp or Tauri types into this service.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LegacyConnectionResolutionError {
-    NoConnections,
-    NoMatch { selector: String },
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CliConnectionResolutionError {
     NoMatch,
@@ -86,24 +78,6 @@ impl fmt::Display for CliConnectionResolutionError {
 }
 
 impl std::error::Error for CliConnectionResolutionError {}
-
-impl fmt::Display for LegacyConnectionResolutionError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoConnections => formatter.write_str("no connections are available"),
-            Self::NoMatch { selector } => {
-                write!(formatter, "no connection matches selector '{selector}'")
-            }
-        }
-    }
-}
-
-impl std::error::Error for LegacyConnectionResolutionError {}
-
-/// The outer [`AppResult`] of [`ConnectionService::resolve_legacy_mcp`] represents
-/// store/authority failures; this inner result represents only selector semantics.
-pub(crate) type LegacyConnectionResolution =
-    Result<AgentConnectionSummary, LegacyConnectionResolutionError>;
 
 #[derive(Clone)]
 pub(crate) struct ConnectionService {
@@ -390,20 +364,6 @@ impl ConnectionService {
         context.test_fresh().await
     }
 
-    /// Preserve the legacy MCP selector exactly: profiles are already name-ordered by
-    /// [`Store::list_connections`]; `None` chooses the first, while `Some` finds the
-    /// first exact UUID string or exact case-sensitive name.
-    ///
-    /// The outer result is an application/store failure. The inner result is a
-    /// transport-neutral `NoConnections`/`NoMatch` selection outcome.
-    pub(crate) async fn resolve_legacy_mcp(
-        &self,
-        selector: Option<&str>,
-    ) -> AppResult<LegacyConnectionResolution> {
-        let profiles = self.list_profiles().await?;
-        Ok(resolve_legacy_profiles(&profiles, selector))
-    }
-
     /// Resolve an exact CLI selector under the same immutable scope that owns the
     /// Terminal session. The returned summary remains secret-free.
     pub(crate) async fn resolve_terminal_cli(
@@ -453,25 +413,6 @@ fn validate_schema_group_engine(
         )));
     }
     Ok(())
-}
-
-fn resolve_legacy_profiles(
-    profiles: &[ConnectionProfile],
-    selector: Option<&str>,
-) -> LegacyConnectionResolution {
-    match selector {
-        Some(selector) => profiles
-            .iter()
-            .find(|profile| profile.id.to_string() == selector || profile.name == selector)
-            .map(AgentConnectionSummary::from)
-            .ok_or_else(|| LegacyConnectionResolutionError::NoMatch {
-                selector: selector.to_string(),
-            }),
-        None => profiles
-            .first()
-            .map(AgentConnectionSummary::from)
-            .ok_or(LegacyConnectionResolutionError::NoConnections),
-    }
 }
 
 fn resolve_cli_summaries(
@@ -698,47 +639,6 @@ mod tests {
                 "agent summary leaked {forbidden}"
             );
         }
-    }
-
-    #[test]
-    fn legacy_none_selects_the_first_name_ordered_profile() {
-        let resolved = resolve_legacy_profiles(&profiles(), None).unwrap();
-        assert_eq!(resolved.id, Uuid::parse_str(ALPHA_ID).unwrap());
-    }
-
-    #[test]
-    fn legacy_exact_name_and_id_selectors_preserve_find_semantics() {
-        let by_name = resolve_legacy_profiles(&profiles(), Some("beta")).unwrap();
-        let by_id = resolve_legacy_profiles(&profiles(), Some(ALPHA_ID)).unwrap();
-
-        assert_eq!(by_name.id, Uuid::parse_str(BETA_ID).unwrap());
-        assert_eq!(by_id.name, "alpha");
-        assert_eq!(
-            resolve_legacy_profiles(&profiles(), Some("Beta")),
-            Err(LegacyConnectionResolutionError::NoMatch {
-                selector: "Beta".into(),
-            })
-        );
-    }
-
-    #[test]
-    fn legacy_missing_selectors_distinguish_none_from_no_match() {
-        assert_eq!(
-            resolve_legacy_profiles(&[], None),
-            Err(LegacyConnectionResolutionError::NoConnections)
-        );
-        assert_eq!(
-            resolve_legacy_profiles(&[], Some("missing")),
-            Err(LegacyConnectionResolutionError::NoMatch {
-                selector: "missing".into(),
-            })
-        );
-        assert_eq!(
-            resolve_legacy_profiles(&profiles(), Some("missing")),
-            Err(LegacyConnectionResolutionError::NoMatch {
-                selector: "missing".into(),
-            })
-        );
     }
 
     #[test]

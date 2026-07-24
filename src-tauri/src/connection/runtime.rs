@@ -162,7 +162,7 @@ struct ConnectionManagerInner {
 }
 
 /// Process-local owner of every database pool. Clones share the same slots and scope
-/// gate, including the instances handed to the MCP listeners.
+/// gate, including the instances used by the local broker.
 #[derive(Clone)]
 pub(crate) struct ConnectionManager {
     inner: Arc<ConnectionManagerInner>,

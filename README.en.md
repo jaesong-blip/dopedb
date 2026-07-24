@@ -1,6 +1,6 @@
 # DopeDB
 
-DopeDB is a **free, open-source desktop app that gives AI agents a safe path to your databases**. Through MCP, agents can inspect schemas, run read queries, and understand results, while raw credentials, read-only enforcement, write approvals, rollback previews, and audit logs stay under the control of the local app.
+DopeDB is a **free, open-source desktop app that gives AI agents a safe path to your databases**. Run Codex or Claude Code in an Agent Terminal pinned to one selected database, then use the version-matched DopeDB Skill and local CLI to inspect schemas and run queries. Raw credentials, read-only enforcement, write approvals, rollback previews, and audit logs stay under the Desktop app's control.
 
 - Website: https://dopedb.dev (Korean: https://dopedb.dev/?lang=ko)
 - Download: [Windows x64](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-windows-x64-setup.exe) · [macOS Apple Silicon](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-macos-arm64.dmg) · [macOS Intel](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-macos-x64.dmg)
@@ -9,8 +9,9 @@ DopeDB is a **free, open-source desktop app that gives AI agents a safe path to 
 
 ## Features
 
-- PostgreSQL, MySQL/MariaDB, and SQLite connection management
-- Built-in MCP server that gives existing agents a guarded database surface
+- PostgreSQL, MySQL/MariaDB, SQLite, and MongoDB connection management
+- Connection-pinned Shell, Codex, and Claude Agent Terminals with version-matched Skills
+- Local `dopedb` CLI Broker with no listening port or separate server
 - Read-only defaults and SQL classification
 - Approval card plus `allow_writes` gate for writes and DDL
 - Query history and hash-chained audit log
@@ -22,9 +23,10 @@ DopeDB is a **free, open-source desktop app that gives AI agents a safe path to 
 
 There are great free database clients, and there are plenty of AI SQL generators. DopeDB closes the risky gap between them.
 
-- It is not an AI feature bolted onto a SQL editor. It is a **local database gateway your existing agent can use through MCP**.
+- It is not an AI feature bolted onto a SQL editor. It is a **local database authorization boundary your existing agent can use through a dedicated Terminal and CLI**.
 - The agent does not receive raw database credentials; the local app owns connections and secrets.
-- The MCP tool surface is read-only today. Every query first passes through `plan_query`, which returns EXPLAIN and aggregate database-health cautions before execution. Writes and DDL stay behind a human-visible approval gate.
+- SQL reads use a two-step `query plan` and single-use `query run` flow, returning EXPLAIN and aggregate database-health cautions before execution. MongoDB uses typed document commands that reject write stages.
+- Writes and DDL become immutable proposals that the CLI cannot approve; a human must approve the exact change in Desktop.
 - The context your agent saw, the queries it ran, the results, approvals, and audit logs land in a UI humans can review.
 
 ## Language Support
@@ -33,13 +35,11 @@ There are great free database clients, and there are plenty of AI SQL generators
 - Desktop client: choose Korean or English from Settings -> Language
 - GitHub README: [Korean](./README.md) / [English](./README.en.md)
 
-The current MCP tool surface is read-only. MCP write tools are not shipped yet; manual writes in the desktop UI remain behind approval gates.
-
 ## Development
 
 Requirements:
 
-- Rust stable 1.82 or newer
+- Rust stable 1.94 or newer
 - Node.js 24
 - pnpm 10.26.1
 - Xcode Command Line Tools for macOS builds
@@ -58,12 +58,13 @@ pnpm build:sidecars
 cargo check --workspace
 ```
 
-`pnpm build:sidecars` stages the Local Broker `dopedb` CLI and the transition-period
-MCP stdio bridge. Settings -> Agent tools detects the official Codex and Claude Code
-user Skill locations and installs the small DopeDB discovery Skill after one explicit
-confirmation. The version-matched full guide remains embedded in the signed CLI and is
-available offline. Existing or user-modified files are never overwritten silently:
-DopeDB shows each path conflict and preserves the old directory before an explicit repair.
+`pnpm build:sidecars` stages only the Local Broker `dopedb` CLI. Settings -> Agent
+tools detects the official Codex and Claude Code user Skill locations and installs
+the small DopeDB discovery Skill after one explicit confirmation. The version-matched
+full guide remains embedded in the signed CLI and is available offline. Existing or
+user-modified files are never overwritten silently: DopeDB shows each path conflict
+and preserves the old directory before an explicit repair. The same screen can preview
+and remove exact retired DopeDB MCP entries without changing unrelated client settings.
 
 ## Releases
 

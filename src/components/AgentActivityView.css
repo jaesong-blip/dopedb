@@ -1,6 +1,3 @@
-
-
-/* MCP live agent result */
 .agent-workspace {
   display: flex;
   flex-direction: column;
@@ -8,52 +5,53 @@
   height: 100%;
   min-height: 0;
 }
+
 .agent-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--ds-space-3);
 }
-.agent-title-row {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-}
+
+.agent-title-row,
 .agent-empty-title {
   display: inline-flex;
   align-items: center;
   gap: var(--ds-space-2);
 }
+
 .agent-stats {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  margin-left: auto;
   gap: var(--ds-space-2);
+  margin-left: auto;
 }
+
 .agent-stats span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  gap: var(--ds-space-1);
+  padding: 0 var(--ds-space-2);
   border: var(--ds-border-width) solid var(--ds-border-subtle);
   border-radius: var(--ds-radius-sm);
   background: var(--ds-surface-0);
-}
-.agent-stats span {
-  min-height: 24px;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-space-1);
-  padding: 0 var(--ds-space-2);
   color: var(--ds-text-muted);
   font-size: var(--ds-font-size-xs);
 }
+
 .agent-stats .icon {
   font-size: var(--ds-icon-sm);
 }
+
 .agent-view-tabs {
   --ds-row-control-size: var(--ds-control-md);
   display: inline-flex;
   align-self: flex-start;
   gap: var(--ds-space-2);
 }
+
 .seg {
   min-width: 88px;
   min-height: var(--ds-control-md);
@@ -67,17 +65,20 @@
   font: inherit;
   font-size: var(--ds-font-size-ui);
 }
+
 .seg.active {
+  border-bottom-color: var(--ds-accent-text);
   background: transparent;
   color: var(--ds-accent-text);
-  border-bottom-color: var(--ds-accent-text);
 }
+
 .agent-empty-panel {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-  gap: var(--ds-space-3);
   align-items: start;
+  gap: var(--ds-space-3);
 }
+
 .agent-empty-copy h3 {
   margin: 0;
   color: var(--ds-text);
@@ -86,43 +87,43 @@
   letter-spacing: 0;
   text-transform: none;
 }
-.agent-empty-copy p {
-  margin: var(--ds-space-1) 0 0;
-  max-width: 420px;
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-sm);
-  line-height: 1.4;
-}
+
 .agent-empty-rows {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--ds-space-2);
 }
+
 .agent-empty-row {
   min-height: 80px;
 }
+
 .agent-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(264px, 336px);
-  gap: var(--ds-space-3);
   min-height: 0;
   flex: 1;
+  gap: var(--ds-space-3);
 }
+
 .agent-primary,
 .agent-secondary,
 .agent-policy-card {
   min-width: 0;
 }
+
 .agent-primary,
 .agent-secondary {
-  background: transparent;
-  padding: var(--ds-space-2) 0;
   overflow: auto;
+  padding: var(--ds-space-2) 0;
+  background: transparent;
 }
+
 .agent-secondary {
   padding-left: var(--ds-space-3);
   border-left: var(--ds-border-width) solid var(--ds-border-subtle);
 }
+
 .agent-section-head {
   display: flex;
   align-items: center;
@@ -130,17 +131,19 @@
   gap: var(--ds-space-3);
   margin-bottom: var(--ds-space-2);
 }
+
 .agent-section-head h3,
 .agent-secondary h3,
 .agent-policy-card h3 {
   margin-top: 0;
 }
+
 .agent-timeline {
   max-height: 100%;
   overflow: auto;
 }
-/* The <ul> wrapping the timeline rows (class pair: "mcp-feed agent-timeline"). */
-.mcp-feed {
+
+.agent-feed {
   display: flex;
   flex-direction: column;
   gap: var(--ds-segment-gap);
@@ -148,30 +151,25 @@
   padding: 0;
   list-style: none;
 }
+
 .context-card {
   display: grid;
   gap: var(--ds-space-3);
 }
+
 .context-card p {
   margin: 0;
   color: var(--ds-text);
   line-height: 1.45;
 }
-.context-sql {
-  display: block;
-  padding: var(--ds-space-3);
-  overflow: auto;
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-surface-1);
-  white-space: pre-wrap;
-}
+
 .context-grid {
   display: grid;
   overflow: hidden;
   border: var(--ds-border-width) solid var(--ds-border-subtle);
   border-radius: var(--ds-radius-sm);
 }
+
 .context-row {
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr);
@@ -180,81 +178,45 @@
   border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
   font-size: var(--ds-font-size-sm);
 }
+
 .context-row:last-child {
   border-bottom: none;
 }
+
 .context-row span {
   color: var(--ds-text-muted);
 }
+
 .context-row code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .agent-audit-grid {
   display: grid;
   gap: var(--ds-space-3);
 }
+
 .agent-policy-card {
   min-height: 64px;
 }
+
 .agent-policy-card > div {
   display: inline-flex;
   align-items: center;
-  gap: var(--ds-space-1);
   min-width: 0;
+  gap: var(--ds-space-1);
 }
+
 .agent-policy-card.wide {
   grid-column: 1 / -1;
   min-height: 96px;
 }
-.agent-policy-card p {
-  margin: var(--ds-space-2) 0 0;
-  line-height: 1.48;
-}
-.mcp-result {
-  margin-bottom: var(--ds-space-2);
-}
 
-.mcp-result-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-2);
-  margin-bottom: var(--ds-space-1);
-}
-
-.mcp-result-actions {
-  --ds-row-control-size: var(--ds-control-field-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: var(--ds-space-2);
-  margin-left: auto;
-}
-
-.mcp-result-actions .result-tools {
-  margin-left: 0;
-}
-
-.mcp-result-sql {
-  max-width: 70%;
-  overflow: hidden;
-  padding: var(--ds-segment-gap) var(--ds-chip-pad-x);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-hover-strong);
-  font-family: var(--ds-font-mono);
-  font-size: var(--ds-font-size-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Feed row (timeline entry). Moved from screens/Settings/Mcp/mcp.css — only
-   AgentResultView's Timeline renders .act*. */
 .act {
   display: grid;
-  grid-template-columns: 80px 130px 16px minmax(0, 1fr);
+  grid-template-columns: 80px 150px 28px minmax(0, 1fr);
   align-items: baseline;
   gap: var(--ds-space-2);
   padding: var(--ds-space-1) var(--ds-space-2);
@@ -272,37 +234,24 @@
   font-size: var(--ds-font-size-xs);
 }
 
-.act-tool { font-weight: 500; }
-.act-kind { color: var(--ds-text-muted); }
-.act.result .act-kind { color: var(--ds-success); }
-.act.error .act-detail, .act.error .act-kind { color: var(--ds-danger); }
+.act-tool {
+  font-weight: 500;
+}
+
+.act-kind {
+  color: var(--ds-success);
+}
+
+.act.error .act-detail,
+.act.error .act-kind {
+  color: var(--ds-danger);
+}
 
 .act-detail {
   overflow: hidden;
   color: var(--ds-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Clickable feed rows: pointer + a visible "view result" chevron affordance. */
-.act.has-result {
-  position: relative;
-  padding-right: var(--ds-space-5);
-  cursor: pointer;
-}
-
-.act.has-result:hover {
-  background: var(--ds-hover);
-}
-
-.act.has-result::after {
-  content: "›";
-  position: absolute;
-  top: 50%;
-  right: var(--ds-space-2);
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-title);
-  transform: translateY(-50%);
 }
 
 .act.sel {
@@ -315,18 +264,22 @@
   .agent-empty-panel {
     grid-template-columns: minmax(0, 1fr);
   }
+
   .agent-empty-rows {
     grid-template-columns: minmax(0, 1fr);
   }
+
   .agent-head {
     flex-direction: column;
   }
+
   .agent-secondary {
     padding-top: var(--ds-space-3);
     padding-left: 0;
     border-top: var(--ds-border-width) solid var(--ds-border-subtle);
     border-left: 0;
   }
+
   .agent-stats {
     justify-content: flex-start;
   }
@@ -343,27 +296,8 @@
     min-width: 76px;
   }
 
-  .agent-empty-copy p {
-    max-width: none;
-  }
-
   .context-row {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--ds-space-1);
-  }
-
-  .mcp-result-head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .mcp-result-actions {
-    width: 100%;
-    justify-content: flex-start;
-    margin-left: 0;
-  }
-
-  .mcp-result-sql {
-    max-width: 100%;
   }
 }

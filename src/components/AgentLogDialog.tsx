@@ -1,21 +1,18 @@
-// Secondary Agent activity surface: keeps MCP results, context, and audit details available
-// without making the log viewer compete with the connection-scoped conversation tab.
+// Secondary Agent activity surface for Terminal CLI status, context, and policy details.
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import type { ConnectionProfile, Dashboard } from "../ipc/types";
+import type { ConnectionProfile } from "../ipc/types";
 import { useI18n } from "../lib/i18n";
-import AgentResultView from "./AgentResultView";
+import AgentActivityView from "./AgentActivityView";
 import EngineMark from "./EngineMark";
 import { Icon } from "./Icon";
 import "./AgentLogDialog.css";
 
 export default function AgentLogDialog({
   connection,
-  onDashboardSaved,
   onClose,
 }: {
   connection: ConnectionProfile;
-  onDashboardSaved: (dashboard: Dashboard) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -68,7 +65,7 @@ export default function AgentLogDialog({
           <div className="ds-title-line">
             <EngineMark engine={connection.engine} />
             <strong id="agent-log-title">
-              {t("agentChat.logsFor", { name: connection.name || t("app.unnamed") })}
+              {t("agent.logsFor", { name: connection.name || t("app.unnamed") })}
             </strong>
             {connection.env && (
               <span className={`env-chip env-${connection.env}`}>{connection.env}</span>
@@ -86,14 +83,7 @@ export default function AgentLogDialog({
           </button>
         </header>
         <div className="agent-log-body">
-          <AgentResultView
-            compact
-            connectionId={connection.id}
-            onDashboardSaved={(dashboard) => {
-              onClose();
-              onDashboardSaved(dashboard);
-            }}
-          />
+          <AgentActivityView compact connectionId={connection.id} />
         </div>
       </div>
     </div>,

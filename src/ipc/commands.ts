@@ -4,8 +4,6 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
-  AgentModel,
-  AgentProvider,
   AuditSnapshot,
   Catalog,
   ChatMessageRecord,
@@ -16,13 +14,15 @@ import type {
   Classification,
   ConnectionProfile,
   Dashboard,
-  DashboardDraft,
   DocumentPage,
   DocumentOperationProposal,
   DocumentQuery,
   DriverDescriptor,
   ExecOutcome,
   HistoryEntry,
+  LegacyMcpCleanupExpectation,
+  LegacyMcpCleanupReceipt,
+  LegacyMcpCleanupStatus,
   MonitoringOperationProposal,
   MonitoringStatus,
   OperationDecision,
@@ -42,7 +42,6 @@ import type {
   TerminalOutputChunk,
   TerminalSessionSummary,
   TerminalSize,
-  PlatformInfo,
   QueryResult,
   Workspace,
   WorkspaceAuthState,
@@ -154,6 +153,16 @@ export function removeSkill(
 
 export function skillSelfTest(): Promise<SkillSelfTestReceipt> {
   return invoke("skill_self_test");
+}
+
+export function legacyMcpCleanupStatus(): Promise<LegacyMcpCleanupStatus> {
+  return invoke("legacy_mcp_cleanup_status");
+}
+
+export function legacyMcpCleanupApply(
+  expectations: LegacyMcpCleanupExpectation[],
+): Promise<LegacyMcpCleanupReceipt> {
+  return invoke("legacy_mcp_cleanup_apply", { expectations });
 }
 
 export function workspaceAuthState(): Promise<WorkspaceAuthState> {
@@ -454,10 +463,6 @@ export function listDashboards(connectionId: string): Promise<Dashboard[]> {
   return invoke("list_dashboards", { connectionId });
 }
 
-export function saveDashboard(draft: DashboardDraft): Promise<Dashboard> {
-  return invoke("save_dashboard", { draft });
-}
-
 export function deleteDashboard(id: string): Promise<void> {
   return invoke("delete_dashboard", { id });
 }
@@ -466,71 +471,17 @@ export function runDashboard(id: string, queryId?: string): Promise<QueryResult>
   return invoke("run_dashboard", { id, queryId: queryId ?? null });
 }
 
-export interface McpStatus {
-  port: number;
-  url: string;
-  token: string;
-  bridgePort: number;
-  bridgePath: string;
-}
-
-// Local MCP server status (URL + bearer token) for the connection snippets.
-export function mcpStatus(): Promise<McpStatus> {
-  return invoke("mcp_status");
-}
-
-// Live listener state (distinct from the static config above): whether the HTTP/bridge
-// listeners actually bound, plus the last bind error. camelCase per mcp::mcp_runtime_status.
-export interface McpRuntimeStatus {
-  httpRunning: boolean;
-  bridgeRunning: boolean;
-  httpPort: number | null;
-  httpUrl: string | null;
-  httpFallback: boolean;
-  error: string | null;
-}
-
-export function mcpRuntimeStatus(): Promise<McpRuntimeStatus> {
-  return invoke("mcp_runtime_status");
-}
-
-// Detect installed AI platforms for the one-click connect buttons.
-export function mcpPlatforms(): Promise<PlatformInfo[]> {
-  return invoke("mcp_platforms");
-}
-
-// One-click: write/merge the MCP config for a platform. Returns a status message.
-export function connectPlatform(platform: string): Promise<string> {
-  return invoke("connect_platform", { platform });
-}
-
-// One-click disconnect: remove the dopedb entry from a platform's MCP config.
-export function disconnectPlatform(platform: string): Promise<string> {
-  return invoke("disconnect_platform", { platform });
-}
-
-// Open a local AI app after the SQL tab copies the prompt/context.
-export function openAgentApp(platform: string): Promise<string> {
-  return invoke("open_agent_app", { platform });
-}
-
 // Native picker (null = user cancelled the dialog).
 export function pickFile(): Promise<string | null> {
   return invoke("pick_file");
 }
 
-// In-app agent chat: install/auth status for the supported subscription CLIs.
+// Install/auth status for supported subscription-backed Terminal profiles.
 export function detectAgentClis(): Promise<CliInfo[]> {
   return invoke("detect_agent_clis");
 }
 
-// The composer's model picker: codex's own catalog (parsed from `codex debug models`) or
-// claude's static list. Rejects rather than resolving an empty list on a real failure.
-export function listAgentModels(provider: AgentProvider): Promise<AgentModel[]> {
-  return invoke("list_agent_models", { provider });
-}
-
-// Sidebar thread list, newest-updated first.
+// Read-only legacy conversation archive.
 export function listChatThreads(): Promise<ChatThread[]> {
   return invoke("list_chat_threads");
 }
@@ -538,47 +489,4 @@ export function listChatThreads(): Promise<ChatThread[]> {
 // One thread's message history, oldest first.
 export function getChatMessages(threadId: string): Promise<ChatMessageRecord[]> {
   return invoke("get_chat_messages", { threadId });
-}
-
-// Creates the DB row for a still-draft conversation. Called only on its first message,
-// so an abandoned draft never leaves an empty thread in the sidebar. Every conversation
-// is bound to the database selected in the global sidebar context.
-export function createChatThread(
-  provider: AgentProvider,
-  connectionId: string,
-  model?: string,
-  effort?: string,
-): Promise<ChatThread> {
-  return invoke("create_chat_thread", {
-    provider,
-    connectionId,
-    model: model ?? null,
-    effort: effort ?? null,
-  });
-}
-
-// Deletes a thread and (via ON DELETE CASCADE) its messages.
-export function deleteChatThread(threadId: string): Promise<void> {
-  return invoke("delete_chat_thread", { threadId });
-}
-
-// Runs one chat turn against an existing thread (its provider/cli_session_id come from the
-// thread row itself). Progress streams as agent:chat_event/agent:chat_done; this promise
-// itself only resolves once the spawned CLI process exits (or fails to start). model/effort
-// override the provider's CLI default for this turn when set.
-export function sendChatTurn(
-  threadId: string,
-  message: string,
-  turnId: string,
-  userMessageId: string,
-  model?: string,
-  effort?: string,
-): Promise<void> {
-  return invoke("send_chat_turn", {
-    threadId,
-    message,
-    messageIds: { turnId, userMessageId },
-    model: model ?? null,
-    effort: effort ?? null,
-  });
 }

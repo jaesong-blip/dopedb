@@ -223,7 +223,7 @@ export default function WorkspaceConnectionDialog({
         <footer className="form-actions ds-control-row">
           <button ref={cancelRef} className="btn" type="button" onClick={onClose} disabled={pending}>{t("common.cancel")}</button>
           <button className="btn primary" type="submit" disabled={pending || (mode === "copy" && !selectedTargetValue)}>
-            {pending ? t("mcp.working") : mode === "copy" ? t("workspace.copy") : t("workspace.bind")}
+            {pending ? t("common.working") : mode === "copy" ? t("workspace.copy") : t("workspace.bind")}
           </button>
         </footer>
       </form>

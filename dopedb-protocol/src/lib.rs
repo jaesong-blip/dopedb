@@ -6,7 +6,9 @@ pub mod catalog;
 pub mod catalog_command;
 pub mod command;
 pub mod connection;
+pub mod dashboard_command;
 pub mod discovery;
+pub mod document_command;
 pub mod error;
 pub mod frame;
 pub mod operation;
@@ -25,10 +27,12 @@ pub use command::{
     VersionResult,
 };
 pub use connection::*;
+pub use dashboard_command::*;
 pub use discovery::{
     RuntimeDiscovery, RuntimeDiscoveryError, RUNTIME_DIRECTORY_NAME, RUNTIME_FILE_NAME,
     RUNTIME_SCHEMA_VERSION,
 };
+pub use document_command::*;
 pub use error::{ErrorCode, ProtocolError};
 pub use frame::{decode_frame, encode_frame, parse_frame_length, FrameError, FramePayload};
 pub use operation::{

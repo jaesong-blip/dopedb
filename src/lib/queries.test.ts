@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   dashboardTileRunQueries,
   isTransientDbError,
-  mcpPlatformsQuery,
+  legacyMcpCleanupStatusQuery,
   platformFeatureFlagsQuery,
   qk,
   skillStatusQuery,
@@ -23,12 +23,12 @@ describe("isTransientDbError", () => {
   });
 });
 
-describe("MCP platform query lifecycle", () => {
-  it("uses one global key and keeps a warm result between screen mounts", () => {
-    const query = mcpPlatformsQuery();
+describe("legacy cleanup query lifecycle", () => {
+  it("uses one global key and keeps a warm result between settings mounts", () => {
+    const query = legacyMcpCleanupStatusQuery();
 
-    expect(query.queryKey).toEqual(qk.mcpPlatforms());
-    expect(query.staleTime).toBe(5 * 60_000);
+    expect(query.queryKey).toEqual(qk.legacyMcpCleanup());
+    expect(query.staleTime).toBe(30_000);
   });
 });
 

@@ -14,15 +14,12 @@ import {
   getChatMessages,
   getActiveWorkspace,
   getMonitoringStatus,
-  listAgentModels,
+  legacyMcpCleanupStatus,
   listChatThreads,
   listDashboards,
   listDrivers,
   listHistory,
   listWorkspaces,
-  mcpPlatforms,
-  mcpRuntimeStatus,
-  mcpStatus,
   platformFeatureFlags,
   refreshCatalog,
   runDashboard,
@@ -31,7 +28,7 @@ import {
   skillStatus,
   workspaceFeatureState,
 } from "../ipc/commands";
-import type { AgentProvider, CatalogTable, Engine, QueryResult } from "../ipc/types";
+import type { CatalogTable, Engine, QueryResult } from "../ipc/types";
 import { errMessage } from "../ipc/types";
 import { buildCountQuery, buildPageQuery, type GridSort } from "./sqlBuild";
 import { tableKey } from "./tableRef";
@@ -43,10 +40,6 @@ const CATALOG_STALE_MS = Infinity;
 // Logs and row data are cheap to re-read. Repainting from cache is instant either way;
 // this only suppresses a redundant refetch when a user flips between two tabs quickly.
 const LOG_STALE_MS = 10_000;
-// Platform detection starts a local CLI probe. Keep one warm app-wide result so opening
-// Settings or SQL never starts another process on the interaction path.
-const MCP_PLATFORM_STALE_MS = 5 * 60_000;
-const MCP_RUNTIME_STALE_MS = 1_000;
 const SCHEMA_LOAD_TIMEOUT_MS = 12_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -110,13 +103,10 @@ export const qk = {
   drivers: () => ["drivers"] as const,
   cliInstallation: () => ["cliInstallation"] as const,
   skillStatus: () => ["skillStatus"] as const,
+  legacyMcpCleanup: () => ["legacyMcpCleanup"] as const,
   platformFeatureFlags: () => ["platformFeatureFlags"] as const,
-  mcpPlatforms: () => ["mcpPlatforms"] as const,
-  mcpRuntimeStatus: () => ["mcpRuntimeStatus"] as const,
-  mcpStatus: () => ["mcpStatus"] as const,
   chatThreads: () => ["chatThreads"] as const,
   chatMessages: (threadId: string) => ["chatMessages", threadId] as const,
-  agentModels: (provider: AgentProvider) => ["agentModels", provider] as const,
   workspaceContext: () => ["workspaceContext"] as const,
   workspaceAuth: () => ["workspaceAuth"] as const,
   tableRows: (args: TableRowsArgs) =>
@@ -201,33 +191,19 @@ export function skillStatusQuery() {
   });
 }
 
-export function mcpPlatformsQuery() {
+export function legacyMcpCleanupStatusQuery() {
   return queryOptions({
-    queryKey: qk.mcpPlatforms(),
-    staleTime: MCP_PLATFORM_STALE_MS,
-    queryFn: mcpPlatforms,
+    queryKey: qk.legacyMcpCleanup(),
+    staleTime: 30_000,
+    gcTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: true,
+    queryFn: legacyMcpCleanupStatus,
   });
 }
 
-export function mcpRuntimeStatusQuery() {
-  return queryOptions({
-    queryKey: qk.mcpRuntimeStatus(),
-    staleTime: MCP_RUNTIME_STALE_MS,
-    queryFn: mcpRuntimeStatus,
-  });
-}
-
-export function mcpStatusQuery() {
-  return queryOptions({
-    queryKey: qk.mcpStatus(),
-    staleTime: Infinity,
-    queryFn: mcpStatus,
-  });
-}
-
-// Agent chat CLI detection (installed/authenticated). Short staleTime so the gate's
-// "check again" (an explicit refetch) feels immediate, but a re-render doesn't re-spawn
-// `claude`/`codex` on every keystroke.
+// Agent Terminal CLI detection (installed/authenticated). Short staleTime keeps an
+// explicit refresh responsive without re-spawning `claude`/`codex` on each render.
 export function agentCliDetectionQuery() {
   return queryOptions({
     queryKey: ["agentClis"] as const,
@@ -236,8 +212,7 @@ export function agentCliDetectionQuery() {
   });
 }
 
-// Sidebar thread list. Small and cheap to re-read, so a short staleTime is enough to make a
-// just-created thread (or a title set after the first turn) show up on the next paint.
+// Read-only legacy conversation archive.
 export function agentChatThreadsQuery() {
   return queryOptions({
     queryKey: qk.chatThreads(),
@@ -246,24 +221,13 @@ export function agentChatThreadsQuery() {
   });
 }
 
-// One thread's message history. Disabled for a still-draft conversation (threadId null) —
-// there is nothing to read until create_chat_thread has run.
+// One archived thread's message history.
 export function agentChatMessagesQuery(threadId: string | null) {
   return queryOptions({
     queryKey: qk.chatMessages(threadId ?? ""),
     enabled: threadId !== null,
     staleTime: 5_000,
     queryFn: () => getChatMessages(threadId!),
-  });
-}
-
-// Model catalog for the composer's picker. codex re-spawns its CLI to read this and claude's
-// list is static either way, so a several-minute staleTime avoids a re-spawn per keystroke.
-export function agentModelsQuery(provider: AgentProvider) {
-  return queryOptions({
-    queryKey: qk.agentModels(provider),
-    staleTime: 5 * 60_000,
-    queryFn: () => listAgentModels(provider),
   });
 }
 

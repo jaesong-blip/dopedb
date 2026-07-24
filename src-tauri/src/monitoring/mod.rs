@@ -1,4 +1,4 @@
-//! Lightweight, read-mostly database health snapshots for MCP query planning.
+//! Lightweight, read-mostly database health snapshots for Agent query planning.
 //!
 //! The collector deliberately returns aggregates only: no other session's SQL text,
 //! parameters, usernames, or client addresses leave the Rust trust boundary. PostgreSQL
@@ -20,7 +20,7 @@ use crate::operations::ExecutionGrant;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const LONG_QUERY_SECONDS: i64 = 30;
 
-/// Aggregate-only health context supplied to an MCP agent before query execution.
+/// Aggregate-only health context supplied to an Agent before query execution.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthSnapshot {
@@ -85,7 +85,7 @@ pub async fn status(live: &LiveConnection, engine: Engine) -> AppResult<Monitori
                 current_user: Some(row.try_get("current_user")?),
                 can_manage: row.try_get("can_manage")?,
                 note: if role_granted {
-                    "pg_monitor is enabled; MCP planning can see aggregate server activity."
+                    "pg_monitor is enabled; Agent planning can see aggregate server activity."
                 } else if role_available {
                     "Only limited activity is visible until pg_monitor is granted."
                 } else {
@@ -101,7 +101,7 @@ pub async fn status(live: &LiveConnection, engine: Engine) -> AppResult<Monitori
             role_granted: false,
             current_user: None,
             can_manage: false,
-            note: "MCP planning uses available Performance Schema aggregates; no role setup is required."
+            note: "Agent planning uses available Performance Schema aggregates; no role setup is required."
                 .into(),
         }),
         (Engine::Sqlite, Pool::Sqlite(_)) => Ok(MonitoringStatus {
@@ -111,7 +111,7 @@ pub async fn status(live: &LiveConnection, engine: Engine) -> AppResult<Monitori
             role_granted: false,
             current_user: None,
             can_manage: false,
-            note: "SQLite is local; MCP planning relies on query plans and bounded execution."
+            note: "SQLite is local; Agent planning relies on query plans and bounded execution."
                 .into(),
         }),
         _ => Err(AppError::Config(
@@ -152,7 +152,7 @@ pub async fn set_postgres_role(
 }
 
 /// Capture aggregate server pressure without exposing query text or session identity.
-/// Probe failures degrade to a caution snapshot so MCP planning can continue safely.
+/// Probe failures degrade to a caution snapshot so Agent planning can continue safely.
 pub async fn snapshot(live: &LiveConnection, engine: Engine) -> HealthSnapshot {
     let status = match status(live, engine).await {
         Ok(status) => status,

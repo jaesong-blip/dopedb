@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     "DopeDB",
     "도프디비",
     "AI database client",
-    "MCP database tools",
+    "Agent database terminal",
     "Tauri database client",
     "local-first database client",
     "SQL safety",

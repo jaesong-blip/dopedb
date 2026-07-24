@@ -17,7 +17,6 @@ cargo_args=(
   build
   --release
   --package dopedb-cli
-  --package dopedb-mcp-stdio
 )
 target_root="${CARGO_TARGET_DIR:-target}"
 if [[ "$target_root" != /* ]]; then
@@ -57,9 +56,6 @@ stage_binary() {
   trap - RETURN
 }
 
-stage_binary \
-  "$artifact_dir/dopedb-mcp-stdio$bin_ext" \
-  "src-tauri/binaries/dopedb-mcp-stdio-$target_triple$bin_ext"
 stage_binary \
   "$artifact_dir/dopedb-cli$bin_ext" \
   "src-tauri/binaries/dopedb-cli-$target_triple$bin_ext"

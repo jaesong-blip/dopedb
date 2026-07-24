@@ -4,7 +4,6 @@
   "cli_v1",
   "skill_manager_v1",
   "terminal_dock_v1",
-  "mcp_deprecated",
   "catalog_v2",
   "ddl_ir_v1",
   "sql_documents_v1",

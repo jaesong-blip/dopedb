@@ -64,8 +64,8 @@ flowchart LR
     API --> EP["member-specific TTL DB credential"]
     EP -.->|"HTTPS once · memory only"| A
     EP -.->|"HTTPS once · memory only"| B
-    A --> SA["local MCP and safety pipeline"]
-    B --> SB["local MCP and safety pipeline"]
+    A --> SA["local Terminal · CLI · safety pipeline"]
+    B --> SB["local Terminal · CLI · safety pipeline"]
 ```
 
 ## Deployment and Identity Decision
@@ -146,7 +146,7 @@ database work remains in the Tauri app.
 | Analysis report | question, narrative, query provenance, warnings, selected visualization | unpublished intermediate results |
 | Monitoring | desired coverage and policy hints | current load snapshot and credential-specific `pg_monitor` status |
 | Project integration | optional repository-relative configuration | absolute `project_dir` on each device |
-| MCP | workspace-scoped connection identifiers and policy | MCP token, client session, single-use query plans |
+| Agent Terminal/CLI | workspace-scoped connection identifiers and policy | ephemeral Terminal capability, client session, single-use query plans |
 | History and audit | explicit collaboration events and published report provenance | full local query history and hash-chained execution audit |
 
 Connection usernames are member-local in the default mode. Managed mode instead creates
@@ -292,7 +292,7 @@ An analysis report is distinct from a dashboard:
 - A dashboard stores a reusable query and renders current data after a local rerun.
 - A report stores a question, a versioned conclusion, and the exact queries used as
   evidence.
-- Each evidence query records its MCP preflight decision, monitoring coverage,
+- Each evidence query records its Agent CLI preflight decision, monitoring coverage,
   warnings, execution timestamp, row count, duration, and query-run identifier.
 - Result rows remain local unless an editor explicitly publishes a snapshot.
 - Publishing a snapshot requires a row and byte cap, column selection or masking,
@@ -341,7 +341,7 @@ Keep explicit ledgers with distinct trust boundaries:
    must not be presented as stronger evidence than the provider's own audit log.
 
 Workspace application logs must not contain passwords, result rows, full certificates,
-MCP tokens, or unredacted snapshot contents. Collaboration events should reference a
+Terminal session capabilities, or unredacted snapshot contents. Collaboration events should reference a
 resource revision rather than duplicating sensitive payloads.
 
 ## Milestone 0 — Local Workspace Foundation
@@ -363,7 +363,7 @@ Exit criteria:
 - Upgrading and downgrading through a backup preserves every existing connection and
   dashboard.
 - The app remains fully usable offline and without an account.
-- MCP tools cannot resolve a connection outside the currently selected workspace.
+- Agent CLI commands cannot resolve a connection outside the currently selected workspace.
 - No secret value enters the new workspace or sync tables.
 
 ## Milestone 1 — Identity, Membership, and Control Plane
@@ -432,7 +432,7 @@ inside that device's OS credential store. In member-local mode, other members re
 synchronized template with Credentials Required state and bind their own
 username/password locally. Cached
 role authority is enforced in manual queries, scripts, previews, schema introspection,
-dashboards, monitoring grants, and MCP reads. Analyst is read-only; Editor can enter the
+dashboards, monitoring grants, and Agent CLI reads. Analyst is read-only; Editor can enter the
 existing local write/approval path; Admin/Owner can manage membership. Credential references,
 RBAC snapshots, schema caches, query history, and Agent threads are keyed by the exact local
 account scope, so two accounts in the same workspace cannot reuse or overwrite one another's
@@ -441,7 +441,7 @@ back the newly created server template where possible. Target-database credentia
 authoritative and SQLite file connections are not shareable.
 
 The cached role is only a UI hint. Before a shared connection reads, writes, previews a
-write, changes a database monitoring grant, or serves an MCP read, the desktop asks the
+write, changes a database monitoring grant, or serves an Agent CLI read, the desktop asks the
 control plane to revalidate the active session, current membership, role, workspace id,
 and connection id. The check fails closed when the service is unavailable. Removing a
 member in member-local mode cannot revoke a database credential they already possess;
@@ -484,8 +484,8 @@ Exit criteria:
 - Sharing, editing, or deleting a connection never changes another member's local
   credential binding.
 - Analyst execution is read-only. Editor writes still require the target credential,
-  connection safety setting, and explicit local approval. MCP remains read-only and
-  still requires `plan_query` before `run_query`.
+  connection safety setting, and explicit local approval. Agent SQL reads remain
+  read-only and still require `query plan` before `query run`.
 - Workspace roles cannot grant target-database permissions.
 - Removing a connection invalidates future execution but preserves relevant audit
   history.
@@ -545,7 +545,7 @@ dashboards.
 Deliverables:
 
 - Add report list, editor, evidence-query panel, review, and publish flows.
-- Let MCP propose a report only from durable successful query-run identifiers.
+- Let the Agent CLI propose a report only from durable successful query-run identifiers.
 - Store the original question, narrative conclusion, evidence query metadata, and
   preflight warnings as versioned report content.
 - Add explicit rerun and append-new-evidence behavior.

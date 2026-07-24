@@ -1,7 +1,7 @@
-//! dopedb — Rust core entrypoint. Wires modules, state, and the Tauri command
-//! surface. Agents drive the DB through the local MCP server (see the `mcp` module).
+//! dopedb — Rust core entrypoint. Wires modules, state, the Tauri command surface,
+//! and the owner-local CLI broker used by connection-pinned Terminal sessions.
 
-mod agent;
+mod agent_cli;
 mod audit;
 mod broker;
 mod cli_environment;
@@ -14,7 +14,8 @@ mod error;
 mod executor;
 pub mod features;
 mod introspect;
-mod mcp;
+mod legacy_chat;
+mod legacy_mcp_cleanup;
 pub mod model;
 mod mongo;
 mod monitoring;
@@ -72,37 +73,6 @@ pub fn run() {
                     app.handle().clone(),
                 );
             }
-            // Start the local MCP server (Streamable HTTP on 127.0.0.1:7686). It shares
-            // the app's Store + credential-store + safety pipeline via the tools in `mcp`.
-            let st = app.state::<state::AppState>();
-            let token = st.mcp_token.clone();
-            // ApplicationServices owns the same scope-aware connection manager as
-            // AppState; runtime status remains shared so the UI can report the
-            // listener that is actually active.
-            let services = st.services.clone();
-            let runtime = st.mcp_runtime.clone();
-            let handle = app.handle().clone();
-            // HTTP endpoint (Claude Code / Cursor / …).
-            {
-                let (token, handle, services, runtime) = (
-                    token.clone(),
-                    handle.clone(),
-                    services.clone(),
-                    runtime.clone(),
-                );
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = mcp::serve_mcp(handle, token, services, runtime).await {
-                        tracing::error!("MCP HTTP server failed: {e}");
-                    }
-                });
-            }
-            // Raw TCP listener the stdio bridge dials (Claude Desktop).
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = mcp::serve_stdio_bridge(handle, token, services, runtime).await {
-                    tracing::error!("MCP stdio-bridge failed: {e}");
-                }
-            });
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -115,6 +85,8 @@ pub fn run() {
             commands::repair_skill,
             commands::remove_skill,
             commands::skill_self_test,
+            legacy_mcp_cleanup::legacy_mcp_cleanup_status,
+            legacy_mcp_cleanup::legacy_mcp_cleanup_apply,
             terminal::terminal_create,
             terminal::terminal_list,
             terminal::terminal_focus,
@@ -147,7 +119,6 @@ pub fn run() {
             commands::test_connection,
             commands::test_connection_profile,
             commands::list_dashboards,
-            commands::save_dashboard,
             commands::delete_dashboard,
             commands::run_dashboard,
             commands::get_schema,
@@ -171,41 +142,23 @@ pub fn run() {
             commands::audit_verify,
             commands::audit_snapshot,
             commands::list_history,
-            commands::mcp_status,
-            commands::mcp_platforms,
-            commands::connect_platform,
-            commands::disconnect_platform,
-            commands::open_agent_app,
             commands::pick_file,
             commands::detect_agent_clis,
-            commands::list_agent_models,
             commands::list_chat_threads,
             commands::get_chat_messages,
-            commands::create_chat_thread,
-            commands::delete_chat_thread,
-            commands::send_chat_turn,
             executor::cancel::cancel_query,
-            mcp::mcp_runtime_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // A chat turn's CLI child is `kill_on_drop`, but that only fires once its
-            // future is actually dropped by the tokio task polling it — not the instant
-            // `cancel()` sends the signal. Sending the signal and returning immediately
-            // races the process's own exit (this callback runs right before the process
-            // is torn down), so the child can be orphaned. Block here (bounded) until
-            // the turn has actually wound down, so the child is reaped first.
+            // Terminal PTYs and the local broker own process/socket resources outside
+            // ordinary command futures. Close them within a bounded window before the
+            // app process exits so child trees and runtime endpoints are not orphaned.
             if let tauri::RunEvent::Exit = event {
                 let terminals = app_handle.state::<state::AppState>().terminals.clone();
                 terminals.shutdown_all(app_handle, Duration::from_secs(2));
                 let broker = app_handle.state::<state::AppState>().broker.clone();
                 tauri::async_runtime::block_on(broker.shutdown_and_wait(Duration::from_secs(2)));
-                let chat = app_handle.state::<state::AppState>().chat.clone();
-                if let Some(turn_id) = chat.active_turn() {
-                    executor::cancel::cancel(turn_id);
-                    tauri::async_runtime::block_on(chat.wait_idle(Duration::from_secs(5)));
-                }
             }
         });
 }

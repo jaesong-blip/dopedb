@@ -1,6 +1,6 @@
 # DopeDB CLI·Terminal Platform 구현 계획
 
-- 상태: 구현 진행 — Phase 5 Terminal Dock 완료, Phase 6 MCP cutover 준비
+- 상태: 구현 진행 — Phase 6 Terminal/CLI cutover 완료, Phase 7 착수 전
 - 최종 갱신: 2026-07-25
 - 적용 대상: DopeDB Desktop, `workspace-cloud`, 신규 `dopedb-cli`, 향후
   Plugin/Realtime 서비스
@@ -2027,6 +2027,30 @@ ERD layout, dashboard, policy는 먼저 optimistic revision을 사용한다.
 - `dopedb-mcp-stdio`가 bundle에서 제거
 - docs/PROJECT/README/CLAUDE architecture 설명 갱신
 
+구현 결과(2026-07-25):
+
+- MCP HTTP/stdio listener, bridge crate와 build script, Settings 화면, runtime
+  token/state, `rmcp`/MCP 전용 `axum`, Tauri bundle entry를 제거했다.
+- SQL `query plan`/single-use `query run`에 더해 MongoDB typed
+  `document run`과 동일 Terminal의 정확한 `queryRunId`만 받는
+  `dashboard create`를 command schema v2로 제공한다.
+- live in-app chat 실행과 mutation IPC를 제거하고 기존 대화는 연결별 읽기 전용
+  보관함으로 유지한다. Agent activity UI는 최대 200개의 command/status 식별자만
+  메모리에 유지하고 결과 행, SQL, Terminal 출력, token은 보관하지 않는다.
+- Claude Code, Claude Desktop, Codex 설정의 정확한 DopeDB entry를 redacted
+  preview와 SHA-256 expectation 뒤에만 제거한다. 사용자 설정은 private backup
+  후 원자적으로 교체하고, 앱 소유 bearer metadata는 backup 없이 지운다.
+  symlink/reparse point, 비정규 파일, 1 MiB 초과, duplicate key, preview 이후
+  변경은 실패 폐쇄한다.
+- README, PROJECT, CLAUDE, workspace roadmap, 랜딩 사이트, Skill revision 2를
+  Terminal/CLI 구조로 갱신했다.
+- 로컬 최종 검증 기준으로 frontend 177 tests, Rust workspace 373 tests
+  (환경 의존 credential-store test 1개 제외), clippy, UI depth contract,
+  frontend/sidecar/site/workspace-cloud production build와 unsigned debug app
+  bundle이 통과했다. 실제 앱
+  실행에서 새 프로세스가 7686/7687을 포함한 TCP listener를 열지 않고,
+  `dopedb status --json`이 owner-local broker로 응답하는 것을 확인했다.
+
 ### Phase 7 — Catalog V2와 DDL IR
 
 작업:
@@ -2146,7 +2170,6 @@ local_broker_v1
 cli_v1
 skill_manager_v1
 terminal_dock_v1
-mcp_deprecated
 catalog_v2
 ddl_ir_v1
 sql_documents_v1

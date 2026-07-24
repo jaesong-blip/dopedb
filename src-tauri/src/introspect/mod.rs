@@ -1,15 +1,13 @@
 //! Schema introspection into a serde [`Catalog`]. Always reads through the
 //! connection's READ-ONLY pool. The catalog backs `get_schema`/`get_table_ddl`
-//! and the MCP `describe_table` tool.
+//! and the local CLI catalog commands.
 
 mod catalog_v2;
 mod mysql;
 mod pg;
 mod sqlite;
 
-pub(crate) use catalog_v2::{
-    load_cached_catalog, load_catalog, load_catalog_snapshot, CatalogReadMode,
-};
+pub(crate) use catalog_v2::{load_catalog, load_catalog_snapshot, CatalogReadMode};
 
 use serde::{Deserialize, Serialize};
 
@@ -73,7 +71,7 @@ pub struct Table {
 
 /// A non-tabular database object shown in the explorer. Keeping these separate from
 /// [`Table`] prevents routines, triggers, and sequences from accidentally flowing into
-/// data reads, schema diffs, SQL completion, or MCP table tools.
+/// data reads, schema diffs, SQL completion, or CLI table commands.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseObject {

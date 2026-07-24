@@ -40,7 +40,7 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": ["dmg", "app"],
-    "externalBin": ["binaries/dopedb-mcp-stdio", "binaries/dopedb-cli"],
+    "externalBin": ["binaries/dopedb-cli"],
     "resources": ["resources/skills/*.json"],
     "icon": [
       "icons/32x32.png",

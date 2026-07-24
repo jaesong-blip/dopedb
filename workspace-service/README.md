@@ -3,7 +3,7 @@
 The workspace service is a separate trust boundary from the Tauri desktop app. Its
 PostgreSQL database currently stores identity, membership, audit metadata, and redacted
 shared connection templates. It never stores target-database usernames or passwords,
-provider API tokens, certificates, MCP tokens, connection URLs, advanced connection
+provider API tokens, certificates, Terminal session capabilities, connection URLs, advanced connection
 parameters, or ordinary query result rows.
 
 ## Database

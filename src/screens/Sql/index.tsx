@@ -7,7 +7,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   approveOperation,
   classifySql,
-  openAgentApp,
   previewSql,
   proposeScript,
   proposeSql,
@@ -19,7 +18,6 @@ import type {
   AppErrorDetails,
   ConnectionProfile,
   ExecOutcome,
-  PlatformInfo,
   PreviewReport,
   SafetySettings,
   ScriptOperationProposal,
@@ -32,10 +30,9 @@ import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
 import ResultToolbar from "../../components/ResultToolbar";
-import { useToast } from "../../components/Toast";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
-import { catalogQuery, mcpPlatformsQuery } from "../../lib/queries";
+import { catalogQuery } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
 import "./sql.css";
@@ -244,14 +241,15 @@ export default function Sql({
   safety,
   draft,
   setDraft,
+  onOpenAgent,
 }: {
   connection: ConnectionProfile;
   safety: SafetySettings;
   draft: string;
   setDraft: (s: string) => void;
+  onOpenAgent: () => void;
 }) {
   const { t } = useI18n();
-  const toast = useToast();
   const draftStatements = useMemo(() => splitStatements(draft), [draft]);
   const draftIsScript = draftStatements.length > 1;
   const draftSignal = useMemo(
@@ -271,8 +269,6 @@ export default function Sql({
     useState<PendingScriptApproval | null>(null);
   const [scriptConfirmation, setScriptConfirmation] = useState("");
   const [elapsed, setElapsed] = useState(0);
-  const [agentActionErr, setAgentActionErr] = useState<string | null>(null);
-  const [askingAgent, setAskingAgent] = useState<string | null>(null);
 
   // EXPLAIN plan (read-only preview) shown above the results, independent of execution.
   const [plan, setPlan] = useState<PreviewReport | null>(null);
@@ -415,65 +411,24 @@ export default function Sql({
   // #8: feed schema-aware autocomplete. Same introspected Catalog the sidebar tree and the
   // Schema view read, served from the shared query cache. Failure just leaves completion off.
   const { data: catalog } = useQuery(catalogQuery(connection.id));
-  // The app shell keeps this global query warm. SQL consumes the cached result instead of
-  // spawning a platform CLI probe while the editor is trying to paint.
-  const agentPlatformsQ = useQuery(mcpPlatformsQuery());
-  const agentPlatforms = agentPlatformsQ.data ?? [];
-  const agentErr = agentActionErr ?? (agentPlatformsQ.error ? errMessage(agentPlatformsQ.error) : null);
-
-  const openTargets = useMemo(
-    () =>
-      agentPlatforms.filter(
-        (p) => p.installed && (p.id === "codex-desktop" || p.id === "claude-desktop"),
-      ),
-    [agentPlatforms],
-  );
   const promptSql = lastAttempt?.sql || draft;
   const aiPrompt = useMemo(
     () => buildSqlHelpPrompt({ connection, sql: promptSql, error: runErr }),
     [connection, promptSql, runErr],
   );
 
-  function agentLabel(platform: PlatformInfo) {
-    return platform.id.startsWith("codex") ? "Codex" : "Claude";
-  }
-
-  async function openAgent(platform: PlatformInfo) {
-    if (askingAgent) return;
-    setAskingAgent(platform.id);
-    setAgentActionErr(null);
-    try {
-      await openAgentApp(platform.id);
-      toast(t("sql.openAgentReady", { name: agentLabel(platform) }));
-    } catch (e) {
-      const msg = errMessage(e);
-      setAgentActionErr(msg);
-      toast(msg, "error");
-    } finally {
-      setAskingAgent(null);
-    }
-  }
-
   return (
     <div className="screen sqlconsole">
-      {openTargets.length > 0 && (
-        <div className="sql-agent-launchers" aria-label={t("sql.openAgentGroup")}>
-          {openTargets.map((platform) => {
-            const label = agentLabel(platform);
-            return (
-              <button
-                key={platform.id}
-                className="btn small sql-agent-btn"
-                disabled={!!askingAgent}
-                onClick={() => void openAgent(platform)}
-                title={t("sql.openAgentTitle", { name: label })}
-              >
-                {askingAgent === platform.id ? t("mcp.working") : label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div className="sql-agent-launchers">
+        <button
+          className="btn small sql-agent-btn"
+          onClick={onOpenAgent}
+          title={t("sql.openAgentTerminal")}
+        >
+          <Icon name="terminal" />
+          {t("sql.openAgentTerminal")}
+        </button>
+      </div>
       <div className="editor-box">
         <LazySqlViewer
           value={draft}
@@ -541,8 +496,6 @@ export default function Sql({
           )
         )}
       </div>
-
-      {agentErr && <div className="error sql-agent-error">{agentErr}</div>}
 
       {planErr && <div className="error">{planErr}</div>}
       {plan && (

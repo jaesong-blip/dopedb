@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   installSkill,
+  legacyMcpCleanupApply,
   removeSkill,
   repairSkill,
   skillSelfTest,
@@ -23,6 +24,7 @@ import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
 import {
   agentCliDetectionQuery,
+  legacyMcpCleanupStatusQuery,
   qk,
   skillStatusQuery,
 } from "../../../lib/queries";
@@ -99,7 +101,10 @@ export default function AgentTools() {
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
-  const [busy, setBusy] = useState<SkillTargetSelection | "self-test" | null>(null);
+  const cleanupQ = useQuery(legacyMcpCleanupStatusQuery());
+  const [busy, setBusy] = useState<
+    SkillTargetSelection | "self-test" | "legacy-cleanup" | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const status = statusQ.data ?? null;
 
@@ -174,6 +179,37 @@ export default function AgentTools() {
     }
   }
 
+  async function runLegacyCleanup() {
+    const expectations =
+      cleanupQ.data?.targets.flatMap((target) =>
+        target.state === "ready" && target.fingerprint
+          ? [{ id: target.id, fingerprint: target.fingerprint }]
+          : [],
+      ) ?? [];
+    if (expectations.length === 0) return;
+    setBusy("legacy-cleanup");
+    setError(null);
+    try {
+      const receipt = await legacyMcpCleanupApply(expectations);
+      queryClient.setQueryData(qk.legacyMcpCleanup(), receipt.status);
+      for (const backup of receipt.backups) {
+        toast(t("agentTools.legacyCleanupBackup", { path: backup.path }));
+      }
+      toast(
+        t("agentTools.legacyCleanupComplete", {
+          count: receipt.removedTargetIds.length,
+        }),
+      );
+    } catch (reason) {
+      const message = errMessage(reason);
+      setError(message);
+      toast(message, "error");
+      await cleanupQ.refetch();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const installAll =
     !!status &&
     status.targets.some((target) =>
@@ -185,6 +221,10 @@ export default function AgentTools() {
   const anyCurrent = status?.targets.some(
     (target) => target.state === "managed_current",
   );
+  const cleanupReady =
+    cleanupQ.data?.targets.filter((target) => target.state === "ready") ?? [];
+  const cleanupManual =
+    cleanupQ.data?.targets.filter((target) => target.state === "manual_review") ?? [];
 
   return (
     <div className="screen agent-tools-settings">
@@ -340,6 +380,72 @@ export default function AgentTools() {
         )
       )}
 
+      <section className="agent-tools-legacy">
+        <div className="agent-tools-section-head">
+          <div>
+            <h3>{t("agentTools.legacyCleanupTitle")}</h3>
+            <p className="muted">{t("agentTools.legacyCleanupDescription")}</p>
+          </div>
+          {cleanupReady.length > 0 && (
+            <ConfirmButton
+              className="btn"
+              disabled={busy !== null}
+              confirmLabel={t("agentTools.legacyCleanupConfirm", {
+                count: cleanupReady.length,
+              })}
+              onConfirm={() => void runLegacyCleanup()}
+            >
+              {t("agentTools.legacyCleanupAction")}
+            </ConfirmButton>
+          )}
+        </div>
+
+        {cleanupQ.isPending ? (
+          <Skeleton lines={3} />
+        ) : cleanupQ.error ? (
+          <div className="error">
+            {t("agentTools.legacyCleanupError", {
+              error: errMessage(cleanupQ.error),
+            })}
+          </div>
+        ) : (
+          <div className="agent-tools-cleanup-list">
+            {cleanupQ.data?.targets.map((target) => (
+              <div className="agent-tools-cleanup-target" key={target.id}>
+                <div>
+                  <span>{target.displayName}</span>
+                  <span
+                    className={
+                      target.state === "ready"
+                        ? "badge risk-medium"
+                        : target.state === "manual_review"
+                          ? "badge status-error"
+                          : "badge status-ok"
+                    }
+                  >
+                    {t(
+                      target.state === "ready"
+                        ? "agentTools.legacyCleanupReady"
+                        : target.state === "manual_review"
+                          ? "agentTools.legacyCleanupManual"
+                          : "agentTools.legacyCleanupAbsent",
+                    )}
+                  </span>
+                </div>
+                <code>{target.path}</code>
+                {target.redactedDiff && (
+                  <span className="muted">{target.redactedDiff}</span>
+                )}
+                {target.reason && <span className="error">{target.reason}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+        {cleanupManual.length > 0 && (
+          <p className="muted">{t("agentTools.legacyCleanupManualHint")}</p>
+        )}
+      </section>
+
       <div className="agent-tools-footer ds-control-row">
         {installAll && (
           <button
@@ -361,10 +467,19 @@ export default function AgentTools() {
         )}
         <button
           className="btn"
-          disabled={busy !== null || statusQ.isFetching || agentsQ.isFetching}
+          disabled={
+            busy !== null ||
+            statusQ.isFetching ||
+            agentsQ.isFetching ||
+            cleanupQ.isFetching
+          }
           onClick={() => {
             setError(null);
-            void Promise.all([statusQ.refetch(), agentsQ.refetch()]);
+            void Promise.all([
+              statusQ.refetch(),
+              agentsQ.refetch(),
+              cleanupQ.refetch(),
+            ]);
           }}
         >
           {t("agentTools.checkAgain")}

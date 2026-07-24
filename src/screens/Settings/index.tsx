@@ -1,4 +1,4 @@
-// Settings shell for command-line, MCP, safety, language, and update controls.
+// Settings shell for agent tools, command-line, safety, language, and updates.
 // Kept outside the data tabs so navigation remains focused on the selected database.
 import { useEffect, useRef, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
@@ -7,7 +7,6 @@ import InfoTip from "../../components/InfoTip";
 import { useI18n } from "../../lib/i18n";
 import AgentTools from "./AgentTools";
 import CliSettings from "./Cli";
-import Mcp from "./Mcp";
 import Safety from "./Safety";
 import Updates from "./Updates";
 import "./settings.css";
@@ -15,7 +14,6 @@ import "./settings.css";
 export type SettingsSection =
   | "agent-tools"
   | "cli"
-  | "mcp"
   | "safety"
   | "updates"
   | "language";
@@ -79,12 +77,6 @@ export default function Settings({
           {t("settings.agentTools")}
         </button>
         <button
-          className={section === "mcp" ? "snav active" : "snav"}
-          onClick={() => setSection("mcp")}
-        >
-          {t("mcp.server")}
-        </button>
-        <button
           className={section === "cli" ? "snav active" : "snav"}
           onClick={() => setSection("cli")}
         >
@@ -116,7 +108,6 @@ export default function Settings({
       <div className="settings-body">
         {section === "agent-tools" && <AgentTools />}
         {section === "cli" && <CliSettings />}
-        {section === "mcp" && <Mcp />}
         {section === "updates" && (
           <Updates initialUpdate={availableUpdate} onChecked={onUpdateChecked} />
         )}

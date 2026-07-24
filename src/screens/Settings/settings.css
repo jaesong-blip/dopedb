@@ -1,6 +1,6 @@
 
 
-/* Settings menu (Safety + MCP, out of the tab bar) */
+/* Settings menu outside the main workbench navigation */
 .settings {
   display: grid;
   grid-template-columns: 192px minmax(0, 1fr);

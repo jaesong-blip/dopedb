@@ -5,8 +5,9 @@
 Send exactly one SQL statement through stdin:
 
 ```text
-printf '%s\n' 'UPDATE public.users SET active = false WHERE id = 42' |
-  dopedb sql propose --connection id:<uuid> --file - --json
+dopedb sql propose --connection id:<uuid> --file - --json <<'SQL'
+UPDATE public.users SET active = false WHERE id = 42
+SQL
 ```
 
 The proposal is immutable. Report the operation identifier, connection,

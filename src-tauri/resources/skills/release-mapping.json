@@ -4,8 +4,8 @@
   "releases": [
     {
       "appVersion": "0.3.3",
-      "releaseRevision": 1,
-      "packageDigest": "c6592c6c69cc319b63174c6f36e229b4ace60e217483547ae739530c79f3613e"
+      "releaseRevision": 2,
+      "packageDigest": "675f4f8ce34e31e2d934bc53d5d6e2e1cba81856b35fb67b3ff49e22eb8a5352"
     }
   ]
 }

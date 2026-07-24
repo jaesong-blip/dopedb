@@ -14,23 +14,21 @@ use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
 use crate::model::{
-    ConnectionProfile, Dashboard, DashboardDraft, DocumentQuery, HistoryEntry,
-    PlatformFeatureFlags, SafetySettings, Workspace, WorkspaceAuthState,
-    WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceLoginPoll,
-    WorkspaceLoginPollStatus, WorkspaceRole,
+    ConnectionProfile, Dashboard, DocumentQuery, HistoryEntry, PlatformFeatureFlags,
+    SafetySettings, Workspace, WorkspaceAuthState, WorkspaceDeviceAuthorization,
+    WorkspaceFeatureState, WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspaceRole,
 };
 use crate::services::{
-    AgentService, AuditSnapshotReceipt, AuditVerdict, CatalogReadPolicy, ChatThreadCreateRequest,
-    ConnectionProfileTestRequest, ConnectionUpsertRequest, DashboardRunError, DashboardRunReceipt,
-    DashboardRunRequest, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
-    DesktopDocumentReadError, DesktopScriptProposalReceipt, DesktopScriptProposalRequest,
-    DesktopScriptRunError, DesktopScriptRunReceipt, DesktopSqlClassificationReceipt,
-    DesktopSqlClassificationRequest, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
-    DesktopSqlPreviewRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
-    DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt, MonitoringProposalReceipt,
-    MonitoringProposalRequest, MonitoringServiceError, MonitoringStatusReceipt,
-    OperationDecisionReceipt, OperationDecisionRequest, WorkspaceConnectionCopyRequest,
-    WorkspaceCredentialBindingRequest,
+    AuditSnapshotReceipt, AuditVerdict, CatalogReadPolicy, ConnectionProfileTestRequest,
+    ConnectionUpsertRequest, DashboardRunError, DashboardRunReceipt, DashboardRunRequest,
+    DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest, DesktopDocumentReadError,
+    DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
+    DesktopScriptRunReceipt, DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest,
+    DesktopSqlInspectionError, DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest,
+    DesktopSqlProposalReceipt, DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt,
+    DocumentReadReceipt, MonitoringProposalReceipt, MonitoringProposalRequest,
+    MonitoringServiceError, MonitoringStatusReceipt, OperationDecisionReceipt,
+    OperationDecisionRequest, WorkspaceConnectionCopyRequest, WorkspaceCredentialBindingRequest,
 };
 use crate::state::AppState;
 
@@ -469,21 +467,6 @@ pub async fn list_dashboards(
 }
 
 #[tauri::command]
-pub async fn save_dashboard(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    draft: DashboardDraft,
-) -> AppResult<Dashboard> {
-    use tauri::Emitter;
-
-    let saved = state.services.dashboard.save(draft).await?;
-    if let Err(e) = app.emit("dashboard:created", &saved) {
-        tracing::warn!("failed to emit dashboard:created: {e}");
-    }
-    Ok(saved)
-}
-
-#[tauri::command]
 pub async fn delete_dashboard(state: State<'_, AppState>, id: Uuid) -> AppResult<()> {
     state.services.dashboard.delete(id).await
 }
@@ -819,178 +802,30 @@ pub async fn list_history(state: State<'_, AppState>, id: Uuid) -> AppResult<Vec
     state.services.activity.history(id).await
 }
 
-// ── MCP server status ─────────────────────────────────────────────────────────
+// ── Terminal agent discovery + legacy chat archive ────────────────────────────
 
-/// Port / URL / bearer token for the local MCP server, so the UI can render the
-/// per-platform connection snippets.
+/// Claude Code / Codex CLI installed + subscription-login status for the
+/// connection-pinned Terminal profiles.
 #[tauri::command]
-pub fn mcp_status(state: State<'_, AppState>) -> serde_json::Value {
-    serde_json::json!({
-        "port": crate::mcp::MCP_PORT,
-        "url": crate::mcp::mcp_url(),
-        "token": state.mcp_token,
-        "bridgePort": crate::mcp::MCP_BRIDGE_PORT,
-        "bridgePath": crate::mcp::bridge_binary_path(),
-    })
+pub async fn detect_agent_clis() -> Vec<crate::agent_cli::CliInfo> {
+    crate::agent_cli::detect_clis().await
 }
 
-/// Detect which AI platforms are installed (for one-click connect buttons).
-#[tauri::command]
-pub async fn mcp_platforms() -> Vec<crate::mcp::connect::PlatformInfo> {
-    crate::mcp::connect::detect().await
-}
-
-/// One-click connect: write/merge the MCP config for the given platform so the user
-/// doesn't hand-edit JSON/TOML. Their local token is filled in automatically.
-#[tauri::command]
-pub async fn connect_platform(state: State<'_, AppState>, platform: String) -> AppResult<String> {
-    let token = state.mcp_token.clone();
-    let url = crate::mcp::mcp_url();
-    let bridge_path = crate::mcp::bridge_binary_path();
-    tokio::task::spawn_blocking(move || {
-        crate::mcp::connect::connect(&platform, &token, &url, &bridge_path)
-    })
-    .await
-    .map_err(|error| AppError::Config(format!("platform connection task failed: {error}")))?
-    .map_err(AppError::Config)
-}
-
-/// One-click disconnect: remove the dopedb entry from the platform's MCP config.
-#[tauri::command]
-pub async fn disconnect_platform(platform: String) -> AppResult<String> {
-    tokio::task::spawn_blocking(move || crate::mcp::connect::disconnect(&platform))
-        .await
-        .map_err(|error| AppError::Config(format!("platform disconnection task failed: {error}")))?
-        .map_err(AppError::Config)
-}
-
-/// Open a supported local AI app after the frontend has copied a SQL prompt.
-#[tauri::command]
-pub fn open_agent_app(platform: String) -> AppResult<String> {
-    crate::mcp::connect::open_app(&platform).map_err(AppError::Config)
-}
-
-// ── in-app agent chat ───────────────────────────────────────────────────────────
-
-/// Claude Code / Codex CLI installed + subscription-login status. Distinct from
-/// `mcp_platforms` (which asks whether dopedb is *registered* in a platform's MCP
-/// config) — conflating the two would couple this chat gate to the Settings > MCP
-/// screen's state. Async + internally timeout-bounded (see `agent::AGENT_PROBE_TIMEOUT`)
-/// so a hung `claude`/`codex` subprocess can't freeze the app.
-#[tauri::command]
-pub async fn detect_agent_clis() -> Vec<crate::agent::CliInfo> {
-    AgentService::detect_clis().await
-}
-
-/// Models `provider`'s CLI can run a turn against (Codex: its own live catalog;
-/// Claude Code: a static fallback — see `agent::claude_models`). Async + internally
-/// timeout-bounded, same as `detect_agent_clis`.
-#[tauri::command]
-pub async fn list_agent_models(
-    provider: crate::agent::AgentProvider,
-) -> AppResult<Vec<crate::agent::AgentModel>> {
-    AgentService::list_models(provider).await
-}
-
-/// Saved chat threads, most recently updated first.
+/// Read-only archive of conversations created by the retired in-app chat.
 #[tauri::command]
 pub async fn list_chat_threads(
     state: State<'_, AppState>,
-) -> AppResult<Vec<crate::agent::ChatThread>> {
-    state.services.agent.list_threads().await
+) -> AppResult<Vec<crate::legacy_chat::ChatThread>> {
+    state.services.legacy_chat.list_threads().await
 }
 
-/// One thread's messages, oldest first.
+/// One archived thread's messages, oldest first.
 #[tauri::command]
 pub async fn get_chat_messages(
     state: State<'_, AppState>,
     thread_id: Uuid,
-) -> AppResult<Vec<crate::agent::ChatMessageRecord>> {
-    state.services.agent.messages(thread_id).await
-}
-
-/// Create a new (empty) chat thread. The frontend calls this on a draft's first send,
-/// immediately before `send_chat_turn` — an unsent draft never reaches the store.
-/// `connection_id` binds the thread to the globally selected DopeDB connection; it is
-/// fixed at creation and cannot change for this thread. Missing context fails closed.
-#[tauri::command]
-pub async fn create_chat_thread(
-    state: State<'_, AppState>,
-    provider: crate::agent::AgentProvider,
-    connection_id: Uuid,
-    model: Option<String>,
-    effort: Option<String>,
-) -> AppResult<crate::agent::ChatThread> {
-    state
-        .services
-        .agent
-        .create_thread(ChatThreadCreateRequest {
-            provider,
-            connection_id,
-            model,
-            effort,
-        })
-        .await
-}
-
-/// Delete a thread; its messages cascade with it.
-#[tauri::command]
-pub async fn delete_chat_thread(state: State<'_, AppState>, thread_id: Uuid) -> AppResult<()> {
-    state.services.agent.delete_thread(thread_id).await
-}
-
-/// Run one chat turn against an existing thread. Progress streams as
-/// `agent:chat_event`/`agent:chat_done`; this call itself only resolves once the CLI
-/// process exits, so the frontend should treat its rejection as "failed to even
-/// start" (bad binary, etc.) and rely on `agent:chat_done` for the actual turn outcome.
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatTurnMessageIds {
-    turn_id: Uuid,
-    user_message_id: Uuid,
-}
-
-#[tauri::command]
-pub async fn send_chat_turn(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    thread_id: Uuid,
-    message: String,
-    message_ids: ChatTurnMessageIds,
-    model: Option<String>,
-    effort: Option<String>,
-) -> AppResult<()> {
-    // In-app chat must use this process's listener. Development can run beside an
-    // installed DopeDB, in which case the listener has an ephemeral fallback port.
-    // Fail before spawning a paid/slow model turn if no local MCP is available.
-    let mcp_url = {
-        let runtime = state.mcp_runtime.lock().unwrap();
-        if !runtime.http_running {
-            let detail = runtime
-                .last_error
-                .as_deref()
-                .unwrap_or("the local MCP listener has not started");
-            return Err(AppError::Agent(format!(
-                "DopeDB Agent is unavailable: {detail}"
-            )));
-        }
-        runtime.http_url.clone().unwrap_or_else(crate::mcp::mcp_url)
-    };
-    crate::agent::send_turn(
-        app,
-        state.chat.clone(),
-        state.store.clone(),
-        state.connections.clone(),
-        state.mcp_token.clone(),
-        mcp_url,
-        thread_id,
-        message,
-        message_ids.turn_id,
-        message_ids.user_message_id,
-        model,
-        effort,
-    )
-    .await
+) -> AppResult<Vec<crate::legacy_chat::ChatMessageRecord>> {
+    state.services.legacy_chat.messages(thread_id).await
 }
 
 // ── native picker ─────────────────────────────────────────────────────────────

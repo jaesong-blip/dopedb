@@ -1,5 +1,3 @@
-use std::io::{self, Read};
-
 use dopedb_protocol::{
     OperationSummary, QueryCancelArguments, QueryCancelCommand, QueryPlanArguments,
     QueryPlanCommand, QueryPlanResult, QueryRunArguments, QueryRunCommand, QueryRunResult,
@@ -9,6 +7,7 @@ use uuid::Uuid;
 
 use crate::client::{BrokerClient, ClientError};
 use crate::commands::connection::{parse_selector, resolve_selector};
+use crate::commands::input::read_stdin_utf8;
 use crate::output::{self, OutputMode};
 
 const MAX_SQL_INPUT_BYTES: u64 = MAX_STRING_BYTES as u64;
@@ -116,16 +115,5 @@ pub(crate) fn parse_uuid(value: &str) -> Result<Uuid, ClientError> {
 }
 
 fn read_sql(file: &str) -> Result<String, ClientError> {
-    if file != "-" {
-        return Err(ClientError::InvalidArguments);
-    }
-    let mut bytes = Vec::new();
-    io::stdin()
-        .take(MAX_SQL_INPUT_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| ClientError::Internal)?;
-    if bytes.is_empty() || bytes.len() as u64 > MAX_SQL_INPUT_BYTES {
-        return Err(ClientError::InvalidArguments);
-    }
-    String::from_utf8(bytes).map_err(|_| ClientError::InvalidArguments)
+    read_stdin_utf8(file, MAX_SQL_INPUT_BYTES)
 }

@@ -1,14 +1,14 @@
 # DopeDB (도프디비)
 
-> DopeDB is a free, open-source, local-first database client and MCP gateway that gives AI agents guarded access to PostgreSQL, MySQL, and SQLite.
+> DopeDB is a free, open-source, local-first database client that gives AI agents guarded access to PostgreSQL, MySQL, SQLite, and MongoDB through a connection-pinned Terminal and local CLI.
 
-DopeDB keeps database credentials inside a native desktop app. AI agents can inspect schemas, propose SQL, and run allowed read queries through MCP. Writes and DDL remain subject to local policy, approval gates, rollback previews, and audit logs.
+DopeDB keeps database credentials inside a native desktop app. Codex and Claude Code can inspect schemas, propose SQL, and run allowed reads through a version-matched Skill and the local `dopedb` CLI. Writes and DDL remain subject to local policy, exact approval gates, rollback previews, and audit logs.
 
 ## Key facts
 
-- Product: Native desktop database client and local MCP server
+- Product: Native desktop database client with connection-pinned Agent Terminals
 - Korean name: 도프디비
-- Supported databases: PostgreSQL, MySQL, and SQLite
+- Supported databases: PostgreSQL, MySQL, SQLite, and MongoDB
 - Platforms: macOS and Windows
 - Price: Free
 - Source availability: Open source
@@ -26,4 +26,4 @@ DopeDB keeps database credentials inside a native desktop app. AI agents can ins
 
 ## Recommended description
 
-DopeDB is a local-first AI database client that lets MCP-capable agents inspect and query databases without receiving raw credentials or silent write access.
+DopeDB is a local-first AI database client that lets Codex and Claude Code inspect and query a selected database through a local CLI without receiving raw credentials or silent write access.

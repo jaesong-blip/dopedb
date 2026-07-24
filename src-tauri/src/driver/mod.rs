@@ -146,7 +146,7 @@ const DEFINITIONS: &[DriverDefinition] = &[
         install_state: DriverInstallState::Installed,
         supported_providers: &[Provider::Generic],
         // Read-only document surface. Sql/Transactions/SchemaDiff stay absent on
-        // purpose: their omission is what hides SQL-only features in the UI/MCP.
+        // purpose: their omission is what hides SQL-only features in the UI/CLI.
         capabilities: &[
             DriverCapability::DocumentQuery,
             DriverCapability::Collections,
@@ -351,7 +351,7 @@ mod tests {
             .capabilities
             .contains(&DriverCapability::DocumentQuery));
         assert!(mongo.capabilities.contains(&DriverCapability::Collections));
-        // SQL-only capabilities must stay absent — their omission hides SQL UI/MCP.
+        // SQL-only capabilities must stay absent — their omission hides SQL UI/CLI.
         assert!(!mongo.capabilities.contains(&DriverCapability::Sql));
         assert!(!mongo.capabilities.contains(&DriverCapability::Transactions));
         assert!(!mongo.capabilities.contains(&DriverCapability::SchemaDiff));

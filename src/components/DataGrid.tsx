@@ -1,6 +1,6 @@
 // Shared results table. Renders whatever rows it's handed (callers window/cap first).
 // Sticky header + row numbers + null styling. All interactivity is opt-in via callbacks
-// so the plain read-only callers (Sql console, MCP result) render unchanged:
+// so the plain read-only callers (SQL, document, and dashboard results) render unchanged:
 //   - onSort     → clickable headers that cycle asc/desc/none (arrow on the sorted col)
 //   - onFilter   → a per-column filter row under the header
 //   - onSelectRow/onCellClick → row highlight + click-to-open a cell in the side viewer

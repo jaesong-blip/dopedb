@@ -1,13 +1,13 @@
 use dopedb_protocol::{
     catalog::CatalogSnapshot, decode_arguments, AppOpenCommand, AppOpenResult,
     AuthenticationRequirement, CatalogShowCommand, CommandName, CommandSpec, ConnectionListCommand,
-    ConnectionShowCommand, ConnectionTestCommand, ErrorCode, OperationCancelCommand,
-    OperationShowCommand, OperationWaitCommand, ProtocolError, QueryCancelCommand,
-    QueryPlanCommand, QueryRunCommand, RequestEnvelope, ResponseEnvelope, RuntimeDiscovery,
-    SchemaListCommand, SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand,
-    SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand,
-    StatusResult, TableDescribeCommand, VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION,
-    PROTOCOL_MAX,
+    ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand, DocumentRunCommand,
+    ErrorCode, OperationCancelCommand, OperationShowCommand, OperationWaitCommand, ProtocolError,
+    QueryCancelCommand, QueryPlanCommand, QueryRunCommand, RequestEnvelope, ResponseEnvelope,
+    RuntimeDiscovery, SchemaListCommand, SkillInstallCommand, SkillRemoveCommand,
+    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand,
+    StatusCommand, StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
+    COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -102,7 +102,7 @@ fn resolve_result_fixture(contract: &CliCommandContract) -> Value {
 fn skill_summary_fixture() -> Value {
     json!({
         "name": "dopedb-cli",
-        "releaseRevision": 1,
+        "releaseRevision": 2,
         "appVersion": "0.3.3",
         "packageDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     })
@@ -118,7 +118,7 @@ fn skill_status_fixture() -> Value {
                 "installPath": "/home/user/.agents/skills/dopedb-cli",
                 "state": "missing",
                 "repairable": true,
-                "currentRevision": 1,
+                "currentRevision": 2,
                 "installedRevision": null,
                 "installedPackageDigest": null,
                 "inventoryFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -131,8 +131,8 @@ fn skill_status_fixture() -> Value {
                 "installPath": "/home/user/.claude/skills/dopedb-cli",
                 "state": "managed_current",
                 "repairable": true,
-                "currentRevision": 1,
-                "installedRevision": 1,
+                "currentRevision": 2,
+                "installedRevision": 2,
                 "installedPackageDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
                 "inventoryFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 "reason": null,
@@ -150,9 +150,13 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
         CommandName::CatalogShow => typed_cli_contract::<CatalogShowCommand>(request, result),
         CommandName::SchemaList => typed_cli_contract::<SchemaListCommand>(request, result),
         CommandName::TableDescribe => typed_cli_contract::<TableDescribeCommand>(request, result),
+        CommandName::DocumentRun => typed_cli_contract::<DocumentRunCommand>(request, result),
         CommandName::QueryPlan => typed_cli_contract::<QueryPlanCommand>(request, result),
         CommandName::QueryRun => typed_cli_contract::<QueryRunCommand>(request, result),
         CommandName::QueryCancel => typed_cli_contract::<QueryCancelCommand>(request, result),
+        CommandName::DashboardCreate => {
+            typed_cli_contract::<DashboardCreateCommand>(request, result)
+        }
         CommandName::SqlPropose => typed_cli_contract::<SqlProposeCommand>(request, result),
         CommandName::OperationShow => typed_cli_contract::<OperationShowCommand>(request, result),
         CommandName::OperationWait => typed_cli_contract::<OperationWaitCommand>(request, result),
@@ -170,7 +174,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v1_golden_contract() {
+fn query_plan_request_matches_v2_command_schema() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -186,9 +190,9 @@ fn query_plan_request_matches_v1_golden_contract() {
 }
 
 #[test]
-fn every_phase_three_cli_command_has_request_success_error_and_redaction_goldens() {
+fn every_phase_six_cli_command_has_request_success_error_and_redaction_goldens() {
     let contracts: Vec<CliCommandContract> =
-        serde_json::from_str(include_str!("fixtures/cli-command-contract-v1.json"))
+        serde_json::from_str(include_str!("fixtures/cli-command-contract-v2.json"))
             .expect("CLI command manifest must decode");
     let expected = [
         CommandName::ConnectionList,
@@ -197,9 +201,11 @@ fn every_phase_three_cli_command_has_request_success_error_and_redaction_goldens
         CommandName::CatalogShow,
         CommandName::SchemaList,
         CommandName::TableDescribe,
+        CommandName::DocumentRun,
         CommandName::QueryPlan,
         CommandName::QueryRun,
         CommandName::QueryCancel,
+        CommandName::DashboardCreate,
         CommandName::SqlPropose,
         CommandName::OperationShow,
         CommandName::OperationWait,
@@ -454,13 +460,13 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v1_catalog() {
+fn command_names_match_the_v2_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v1.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v2.json")).unwrap();
     assert_eq!(actual, expected);
 }
 

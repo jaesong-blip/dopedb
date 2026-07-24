@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-1 command catalog. Any addition, removal, or meaning change requires a
+/// Version-2 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -41,12 +41,16 @@ pub enum CommandName {
     SchemaList,
     #[serde(rename = "table.describe")]
     TableDescribe,
+    #[serde(rename = "document.run")]
+    DocumentRun,
     #[serde(rename = "query.plan")]
     QueryPlan,
     #[serde(rename = "query.run")]
     QueryRun,
     #[serde(rename = "query.cancel")]
     QueryCancel,
+    #[serde(rename = "dashboard.create")]
+    DashboardCreate,
     #[serde(rename = "sql.propose")]
     SqlPropose,
     #[serde(rename = "operation.show")]
@@ -62,7 +66,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 24] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -78,9 +82,11 @@ impl CommandName {
         Self::CatalogShow,
         Self::SchemaList,
         Self::TableDescribe,
+        Self::DocumentRun,
         Self::QueryPlan,
         Self::QueryRun,
         Self::QueryCancel,
+        Self::DashboardCreate,
         Self::SqlPropose,
         Self::OperationShow,
         Self::OperationWait,
@@ -104,9 +110,11 @@ impl CommandName {
             Self::CatalogShow => "catalog.show",
             Self::SchemaList => "schema.list",
             Self::TableDescribe => "table.describe",
+            Self::DocumentRun => "document.run",
             Self::QueryPlan => "query.plan",
             Self::QueryRun => "query.run",
             Self::QueryCancel => "query.cancel",
+            Self::DashboardCreate => "dashboard.create",
             Self::SqlPropose => "sql.propose",
             Self::OperationShow => "operation.show",
             Self::OperationWait => "operation.wait",

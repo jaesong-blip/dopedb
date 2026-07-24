@@ -43,10 +43,10 @@ const copy = {
       home: "DopeDB home",
     },
     hero: {
-      eyebrow: "Free local MCP database gateway",
+      eyebrow: "Connection-pinned Agent Terminal",
       tag: "Let your agent query data without handing over the keys",
       text:
-        "DopeDB gives MCP-capable agents a guarded path into Postgres, MySQL, and SQLite. Keep using your favorite agent for questions and analysis while credentials, read-only enforcement, write approvals, rollback previews, and audit logs stay inside a native desktop app.",
+        "DopeDB gives Codex and Claude Code a guarded path into Postgres, MySQL, SQLite, and MongoDB through a connection-pinned Terminal and local CLI. Credentials, read-only enforcement, write approvals, rollback previews, and audit logs stay inside a native desktop app.",
       download: "Download for macOS or Windows",
       github: "View on GitHub",
       signals: ["Agent-ready", "Credentials stay local", "Writes stay gated"],
@@ -59,17 +59,17 @@ const copy = {
       eyebrow: "The gap DopeDB fills",
       title: "Your agent needs database context. It does not need your database keys.",
       body:
-        "Database clients help humans operate data. Text-to-SQL tools help generate queries. DopeDB sits between them: a local MCP gateway that lets agents inspect and query databases without raw credentials or silent write access.",
+        "Database clients help humans operate data. Text-to-SQL tools help generate queries. DopeDB sits between them: a local authorization boundary that lets agents inspect and query databases without raw credentials or silent write access.",
       items: [
         {
           title: "Use the agent you already trust",
           body:
-            "Claude Code, Codex, Claude Desktop, or another MCP client can ask DopeDB for schema and read-query context.",
+            "Run Codex or Claude Code in a Terminal pinned to the database you selected. The version-matched Skill teaches it the local DopeDB CLI.",
         },
         {
           title: "Expose context, not credentials",
           body:
-            "Connections and secrets stay in the local app boundary while the agent gets a narrow, auditable tool surface.",
+            "Connections and secrets stay in the local app boundary while the agent gets a narrow, auditable CLI surface with no listening port.",
         },
         {
           title: "Keep risky actions visible",
@@ -109,7 +109,7 @@ const copy = {
       title: "Open your database to an agent without opening the floodgates.",
       steps: [
         "Connect a local, staging, or production database profile.",
-        "Connect your MCP-capable agent to DopeDB.",
+        "Open a Codex or Claude Agent Terminal pinned to that connection.",
         "Ask it to inspect schemas, draft SQL, or explain a result.",
         "Let DopeDB enforce read/write policy before anything runs.",
         "Review writes only after rollback preview and risk classification.",
@@ -168,7 +168,7 @@ DopeDB safety:
       ],
     },
     jsonDescription:
-      "DopeDB is a free local MCP database gateway for AI agents. Agents can inspect schemas and run read queries while credentials, write approvals, rollback previews, and audit logs stay in a native desktop app.",
+      "DopeDB is a free local-first database client with connection-pinned Agent Terminals. Agents can inspect schemas and run guarded queries while credentials, write approvals, rollback previews, and audit logs stay in a native desktop app.",
   },
   ko: {
     nav: {
@@ -180,10 +180,10 @@ DopeDB safety:
       home: "DopeDB 홈",
     },
     hero: {
-      eyebrow: "무료 로컬 MCP 데이터베이스 게이트웨이",
+      eyebrow: "데이터베이스에 고정된 Agent 터미널",
       tag: "키를 넘기지 않고 에이전트에게 데이터 통로를 열어주세요",
       text:
-        "DopeDB(도프디비)는 MCP 지원 에이전트가 Postgres, MySQL, SQLite를 안전하게 읽고 이해할 수 있게 합니다. 질문과 분석은 좋아하는 에이전트에게 맡기고, 인증 정보, 읽기 전용 실행, 쓰기 승인, 롤백 미리보기, 감사 로그는 네이티브 데스크톱 앱 안에 둡니다.",
+        "DopeDB(도프디비)는 선택한 데이터베이스에 고정된 터미널과 로컬 CLI를 통해 Codex와 Claude Code가 Postgres, MySQL, SQLite, MongoDB를 안전하게 읽고 이해할 수 있게 합니다. 인증 정보, 읽기 전용 실행, 쓰기 승인, 롤백 미리보기, 감사 로그는 네이티브 데스크톱 앱 안에 둡니다.",
       download: "macOS/Windows 다운로드",
       github: "GitHub에서 보기",
       signals: ["에이전트 준비 완료", "인증 정보는 로컬에", "쓰기는 승인 뒤에"],
@@ -196,17 +196,17 @@ DopeDB safety:
       eyebrow: "DopeDB가 메우는 빈틈",
       title: "에이전트에게 필요한 건 DB 맥락이지, DB 키가 아닙니다.",
       body:
-        "데이터베이스 클라이언트는 사람이 데이터를 다루게 해주고, text-to-SQL 도구는 쿼리를 만들어줍니다. DopeDB는 그 사이에 있습니다. 에이전트가 데이터베이스를 읽고 쿼리할 수 있게 하되, 원본 인증 정보와 조용한 쓰기 권한은 넘기지 않는 로컬 MCP 게이트웨이입니다.",
+        "데이터베이스 클라이언트는 사람이 데이터를 다루게 해주고, text-to-SQL 도구는 쿼리를 만들어줍니다. DopeDB는 그 사이에 있습니다. 에이전트가 데이터베이스를 읽고 쿼리할 수 있게 하되, 원본 인증 정보와 조용한 쓰기 권한은 넘기지 않는 로컬 권한 경계입니다.",
       items: [
         {
           title: "이미 믿는 에이전트를 그대로",
           body:
-            "Claude Code, Codex, Claude Desktop 같은 MCP 클라이언트가 DopeDB를 통해 스키마와 읽기 쿼리 맥락을 요청할 수 있습니다.",
+            "Codex나 Claude Code를 선택한 데이터베이스에 고정된 터미널에서 실행합니다. 버전이 맞는 Skill이 로컬 DopeDB CLI 사용법을 알려줍니다.",
         },
         {
           title: "인증 정보가 아닌 맥락만 노출",
           body:
-            "연결과 비밀값은 로컬 앱 경계 안에 두고, 에이전트에는 좁고 감사 가능한 도구 표면만 제공합니다.",
+            "연결과 비밀값은 로컬 앱 경계 안에 두고, 에이전트에는 수신 포트가 없는 좁고 감사 가능한 CLI 표면만 제공합니다.",
         },
         {
           title: "위험한 동작은 보이는 곳에",
@@ -246,7 +246,7 @@ DopeDB safety:
       title: "데이터베이스를 에이전트에게 열되, 수문까지 열지는 않습니다.",
       steps: [
         "로컬, 스테이징, 프로덕션 데이터베이스 프로필을 연결합니다.",
-        "MCP 지원 에이전트를 DopeDB에 연결합니다.",
+        "해당 연결에 고정된 Codex 또는 Claude Agent 터미널을 엽니다.",
         "스키마 확인, SQL 초안 작성, 결과 설명을 요청합니다.",
         "무엇이든 실행되기 전에 DopeDB가 읽기/쓰기 정책을 적용합니다.",
         "롤백 미리보기와 위험 분류를 확인한 뒤에만 쓰기를 검토합니다.",
@@ -305,7 +305,7 @@ DopeDB safety:
       ],
     },
     jsonDescription:
-      "DopeDB는 AI 에이전트를 위한 무료 로컬 MCP 데이터베이스 게이트웨이입니다. 에이전트는 스키마를 확인하고 읽기 쿼리를 실행할 수 있고, 인증 정보, 쓰기 승인, 롤백 미리보기, 감사 로그는 네이티브 데스크톱 앱에 남습니다.",
+      "DopeDB는 데이터베이스에 고정된 Agent 터미널을 제공하는 무료 로컬 우선 데이터베이스 클라이언트입니다. 에이전트는 스키마를 확인하고 보호된 쿼리를 실행할 수 있고, 인증 정보, 쓰기 승인, 롤백 미리보기, 감사 로그는 네이티브 데스크톱 앱에 남습니다.",
   },
 };
 
@@ -330,7 +330,7 @@ export async function generateMetadata({ searchParams }: HomeProps): Promise<Met
   if (lang === "ko") {
     const title = "DopeDB(도프디비) - 안전한 AI 데이터베이스 클라이언트";
     const description =
-      "DopeDB(도프디비)는 AI 에이전트가 PostgreSQL, MySQL, SQLite를 안전하게 조회하도록 돕는 무료 오픈소스 MCP 데이터베이스 클라이언트입니다.";
+      "DopeDB(도프디비)는 AI 에이전트가 PostgreSQL, MySQL, SQLite, MongoDB를 안전하게 조회하도록 돕는 무료 오픈소스 데이터베이스 클라이언트입니다.";
 
     return {
       title: { absolute: title },
@@ -339,7 +339,7 @@ export async function generateMetadata({ searchParams }: HomeProps): Promise<Met
         "도프디비",
         "DopeDB",
         "AI 데이터베이스 클라이언트",
-        "MCP 데이터베이스",
+        "Agent 데이터베이스 터미널",
         "무료 DB 클라이언트",
       ],
       alternates: {

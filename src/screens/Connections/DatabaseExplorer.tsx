@@ -892,7 +892,7 @@ export function DatabaseExplorer({
                       void refreshSchema(c.id);
                     }}
                   >
-                    {refreshing === c.id ? t("mcp.working") : t("connections.refreshSchema")}
+                    {refreshing === c.id ? t("common.working") : t("connections.refreshSchema")}
                   </button>
                 ) : null}
                 <label>

@@ -1,5 +1,5 @@
 // First-run onboarding — shown when no database is connected yet. Instead of a blank
-// screen, guide the user to connect a database or wire up the MCP server.
+// screen, guide the user to connect a database or install the local Agent tools.
 import { useI18n } from "../../lib/i18n";
 import "./onboarding.css";
 

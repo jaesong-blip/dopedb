@@ -7,28 +7,33 @@ use dopedb_protocol::{
     decode_arguments, encode_frame, AppOpenCommand, AppOpenResult, CatalogArguments,
     CatalogShowCommand, CatalogSnapshot, CommandName, CommandSpec, ConnectionListCommand,
     ConnectionListResult, ConnectionSelector, ConnectionSelectorArguments, ConnectionShowCommand,
-    ConnectionSummary, ConnectionTestCommand, ConnectionTestResult, DatabaseEngine, EmptyArguments,
-    ErrorCode, OperationCancelCommand, OperationShowCommand, OperationSummary,
-    OperationWaitArguments, OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryHealth,
-    QueryPlanArguments, QueryPlanCommand, QueryPlanResult, QueryResultPage, QueryRunArguments,
-    QueryRunCommand, QueryRunResult, RequestEnvelope, ResponseEnvelope, SchemaListCommand,
-    SchemaListResult, SchemaSummary, SkillInstallCommand, SkillMutationArguments,
-    SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand, SkillsGetCommand,
-    SkillsListCommand, SqlProposeArguments, SqlProposeCommand, StatusCommand, StatusResult,
-    TableDescribeArguments, TableDescribeCommand, TableDescribeResult, VersionCommand,
-    VersionResult, COMMAND_SCHEMA_VERSION, MAX_RESPONSE_BYTES, MAX_STRING_BYTES, PROTOCOL_MAX,
-    PROTOCOL_MIN,
+    ConnectionSummary, ConnectionTestCommand, ConnectionTestResult, DashboardCreateArguments,
+    DashboardCreateCommand, DashboardCreateResult, DashboardKind as ProtocolDashboardKind,
+    DashboardRecord, DashboardVisualization, DatabaseEngine, DocumentPage as ProtocolDocumentPage,
+    DocumentQuery as ProtocolDocumentQuery, DocumentRunArguments, DocumentRunCommand,
+    DocumentRunResult, EmptyArguments, ErrorCode, OperationCancelCommand, OperationShowCommand,
+    OperationSummary, OperationWaitArguments, OperationWaitCommand, ProtocolError,
+    QueryCancelCommand, QueryHealth, QueryPlanArguments, QueryPlanCommand, QueryPlanResult,
+    QueryResultPage, QueryRunArguments, QueryRunCommand, QueryRunResult, RequestEnvelope,
+    ResponseEnvelope, SchemaListCommand, SchemaListResult, SchemaSummary, SkillInstallCommand,
+    SkillMutationArguments, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
+    SkillsGetCommand, SkillsListCommand, SqlProposeArguments, SqlProposeCommand, StatusCommand,
+    StatusResult, TableDescribeArguments, TableDescribeCommand, TableDescribeResult,
+    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, MAX_RESPONSE_BYTES, MAX_STRING_BYTES,
+    PROTOCOL_MAX, PROTOCOL_MIN,
 };
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::model::{Engine, QueryResult};
+use crate::model::{Dashboard, DashboardKind, DocumentPage, DocumentQuery, Engine, QueryResult};
 use crate::monitoring::HealthSnapshot;
 use crate::services::{
-    AgentConnectionSummary, AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError,
-    ApplicationServices, CatalogReadPolicy, CliConnectionResolutionError, TerminalAuthority,
+    AgentConnectionSummary, AgentDashboardCommitError, AgentDashboardPrepareError,
+    AgentDashboardPresentation, AgentDocumentReadError, AgentQueryPlanError, AgentQueryRunError,
+    AgentQueryRunPrepareError, ApplicationServices, CatalogReadPolicy,
+    CliConnectionResolutionError, TerminalAuthority, TerminalDocumentReadRequest,
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
 use crate::skills::SkillManager;
@@ -351,6 +356,21 @@ impl BrokerDispatcher {
                         .await,
                 )
             }
+            CommandName::DocumentRun => {
+                let session = match self.authenticate(&request, BrokerCapability::DocumentRead) {
+                    Ok(session) => session,
+                    Err(code) => return failure(request_id, code, false),
+                };
+                let arguments = match decode_arguments::<DocumentRunCommand>(&request) {
+                    Ok(arguments) => arguments,
+                    Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+                };
+                respond(
+                    request_id,
+                    self.document_run(&session, arguments, client_protocol_version)
+                        .await,
+                )
+            }
             CommandName::QueryPlan => {
                 let session = match self.authenticate(&request, BrokerCapability::QueryPlan) {
                     Ok(session) => session,
@@ -398,6 +418,21 @@ impl BrokerDispatcher {
                         client_protocol_version,
                     )
                     .await,
+                )
+            }
+            CommandName::DashboardCreate => {
+                let session = match self.authenticate(&request, BrokerCapability::DashboardCreate) {
+                    Ok(session) => session,
+                    Err(code) => return failure(request_id, code, false),
+                };
+                let arguments = match decode_arguments::<DashboardCreateCommand>(&request) {
+                    Ok(arguments) => arguments,
+                    Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+                };
+                respond(
+                    request_id,
+                    self.dashboard_create(&session, arguments, client_protocol_version)
+                        .await,
                 )
             }
             CommandName::SqlPropose => {
@@ -719,6 +754,39 @@ impl BrokerDispatcher {
         })
     }
 
+    async fn document_run(
+        &self,
+        session: &AuthenticatedSession,
+        arguments: DocumentRunArguments,
+        client_protocol_version: u16,
+    ) -> Result<DocumentRunResult, ErrorCode> {
+        if arguments.max_rows == Some(0) {
+            return Err(ErrorCode::InvalidRequest);
+        }
+        let connection = self
+            .resolve_connection(session, &arguments.connection, client_protocol_version)
+            .await?;
+        let receipt = self
+            .services()?
+            .document
+            .run_terminal_read(TerminalDocumentReadRequest {
+                connection_id: connection.id,
+                query: document_query_from_protocol(arguments.query),
+                max_rows: arguments.max_rows,
+                authority: terminal_authority(session, client_protocol_version),
+            })
+            .await
+            .map_err(map_document_error)?;
+        let result = receipt.result();
+        Ok(DocumentRunResult {
+            operation_id: result.operation_id,
+            connection_id: result.context.connection_id,
+            connection_name: result.context.connection_name.clone(),
+            query: document_query_to_protocol(&result.query),
+            result: document_page(&result.page),
+        })
+    }
+
     async fn query_plan(
         &self,
         session: &AuthenticatedSession,
@@ -745,10 +813,7 @@ impl BrokerDispatcher {
         let receipt = match receipt {
             Ok(receipt) => receipt,
             Err(AgentQueryPlanError::DocumentConnection) => return Err(ErrorCode::InvalidRequest),
-            Err(AgentQueryPlanError::NotSingleRead(rejected)) => {
-                rejected.audit_after_result().await;
-                return Err(ErrorCode::PolicyBlocked);
-            }
+            Err(AgentQueryPlanError::NotSingleRead) => return Err(ErrorCode::PolicyBlocked),
             Err(AgentQueryPlanError::Application(error)) => {
                 return Err(map_application_error(error))
             }
@@ -790,6 +855,44 @@ impl BrokerDispatcher {
             query_run_id: run.query_run_id,
             planning_decision: run.planning_decision.clone(),
             result: query_result(&run.result),
+        })
+    }
+
+    async fn dashboard_create(
+        &self,
+        session: &AuthenticatedSession,
+        arguments: DashboardCreateArguments,
+        client_protocol_version: u16,
+    ) -> Result<DashboardCreateResult, ErrorCode> {
+        let authority = terminal_authority(session, client_protocol_version);
+        let prepared = self
+            .services()?
+            .dashboard
+            .prepare_terminal_create(
+                &authority,
+                arguments.query_run_id,
+                AgentDashboardPresentation {
+                    title: arguments.title,
+                    description: arguments.description,
+                    kind: dashboard_kind_from_protocol(arguments.kind),
+                    x_column: arguments.x_column,
+                    y_columns: arguments.y_columns,
+                },
+            )
+            .await
+            .map_err(map_dashboard_prepare_error)?;
+        let dashboard = prepared
+            .commit()
+            .await
+            .map_err(map_dashboard_commit_error)?;
+        if let Some(app) = &self.app_handle {
+            if let Err(error) = app.emit("dashboard:created", &dashboard) {
+                tracing::warn!(%error, "failed to emit dashboard creation");
+            }
+        }
+        Ok(DashboardCreateResult {
+            query_run_id: arguments.query_run_id,
+            dashboard: dashboard_record(&dashboard),
         })
     }
 
@@ -943,6 +1046,114 @@ fn query_result(result: &QueryResult) -> QueryResultPage {
     }
 }
 
+fn document_query_from_protocol(query: ProtocolDocumentQuery) -> DocumentQuery {
+    match query {
+        ProtocolDocumentQuery::Find {
+            collection,
+            filter,
+            projection,
+            sort,
+            skip,
+            limit,
+        } => DocumentQuery::Find {
+            collection,
+            filter,
+            projection,
+            sort,
+            skip,
+            limit,
+        },
+        ProtocolDocumentQuery::Aggregate {
+            collection,
+            pipeline,
+        } => DocumentQuery::Aggregate {
+            collection,
+            pipeline,
+        },
+        ProtocolDocumentQuery::Count { collection, filter } => {
+            DocumentQuery::Count { collection, filter }
+        }
+    }
+}
+
+fn document_query_to_protocol(query: &DocumentQuery) -> ProtocolDocumentQuery {
+    match query {
+        DocumentQuery::Find {
+            collection,
+            filter,
+            projection,
+            sort,
+            skip,
+            limit,
+        } => ProtocolDocumentQuery::Find {
+            collection: collection.clone(),
+            filter: filter.clone(),
+            projection: projection.clone(),
+            sort: sort.clone(),
+            skip: *skip,
+            limit: *limit,
+        },
+        DocumentQuery::Aggregate {
+            collection,
+            pipeline,
+        } => ProtocolDocumentQuery::Aggregate {
+            collection: collection.clone(),
+            pipeline: pipeline.clone(),
+        },
+        DocumentQuery::Count { collection, filter } => ProtocolDocumentQuery::Count {
+            collection: collection.clone(),
+            filter: filter.clone(),
+        },
+    }
+}
+
+fn document_page(page: &DocumentPage) -> ProtocolDocumentPage {
+    ProtocolDocumentPage {
+        documents: page.documents.clone(),
+        doc_count: page.doc_count,
+        truncated: page.truncated,
+        duration_ms: page.duration_ms,
+    }
+}
+
+const fn dashboard_kind_from_protocol(kind: ProtocolDashboardKind) -> DashboardKind {
+    match kind {
+        ProtocolDashboardKind::Auto => DashboardKind::Auto,
+        ProtocolDashboardKind::Metric => DashboardKind::Metric,
+        ProtocolDashboardKind::Line => DashboardKind::Line,
+        ProtocolDashboardKind::Bar => DashboardKind::Bar,
+        ProtocolDashboardKind::Table => DashboardKind::Table,
+    }
+}
+
+const fn dashboard_kind_to_protocol(kind: DashboardKind) -> ProtocolDashboardKind {
+    match kind {
+        DashboardKind::Auto => ProtocolDashboardKind::Auto,
+        DashboardKind::Metric => ProtocolDashboardKind::Metric,
+        DashboardKind::Line => ProtocolDashboardKind::Line,
+        DashboardKind::Bar => ProtocolDashboardKind::Bar,
+        DashboardKind::Table => ProtocolDashboardKind::Table,
+    }
+}
+
+fn dashboard_record(dashboard: &Dashboard) -> DashboardRecord {
+    DashboardRecord {
+        id: dashboard.id,
+        connection_id: dashboard.connection_id,
+        title: dashboard.title.clone(),
+        description: dashboard.description.clone(),
+        sql: dashboard.sql.clone(),
+        visualization: DashboardVisualization {
+            version: dashboard.visualization.version,
+            kind: dashboard_kind_to_protocol(dashboard.visualization.kind),
+            x_column: dashboard.visualization.x_column.clone(),
+            y_columns: dashboard.visualization.y_columns.clone(),
+        },
+        created_at: dashboard.created_at,
+        updated_at: dashboard.updated_at,
+    }
+}
+
 fn namespace_name(namespace: &Option<String>) -> String {
     namespace.clone().unwrap_or_else(|| "default".into())
 }
@@ -968,9 +1179,38 @@ fn map_prepare_error(error: AgentQueryRunPrepareError) -> ErrorCode {
 
 fn map_query_run_error(error: AgentQueryRunError) -> ErrorCode {
     match error {
-        AgentQueryRunError::Connection(_) => ErrorCode::TargetExecutionFailed,
+        AgentQueryRunError::Connection(error) => map_target_error(error),
         AgentQueryRunError::Execution(failure) => map_query_execution_error(failure.error()),
-        AgentQueryRunError::ConsentHandlePersistence(_) => ErrorCode::Internal,
+        AgentQueryRunError::ProvenancePersistence(failure) => {
+            map_application_error(failure.into_error())
+        }
+    }
+}
+
+fn map_document_error(error: AgentDocumentReadError) -> ErrorCode {
+    match error {
+        AgentDocumentReadError::NonDocumentConnection => ErrorCode::InvalidRequest,
+        AgentDocumentReadError::Rejected(rejected) => {
+            drop(rejected);
+            ErrorCode::PolicyBlocked
+        }
+        AgentDocumentReadError::Application(error) => map_application_error(error),
+        AgentDocumentReadError::Execution(failure) => map_target_error(failure.into_error()),
+    }
+}
+
+fn map_dashboard_prepare_error(error: AgentDashboardPrepareError) -> ErrorCode {
+    match error {
+        AgentDashboardPrepareError::QueryRunNotFound
+        | AgentDashboardPrepareError::QueryRunIneligible => ErrorCode::InvalidRequest,
+        AgentDashboardPrepareError::Application(error) => map_application_error(error),
+    }
+}
+
+fn map_dashboard_commit_error(error: AgentDashboardCommitError) -> ErrorCode {
+    match error {
+        AgentDashboardCommitError::InvalidDraft(error) => map_application_error(error),
+        AgentDashboardCommitError::Persistence(error) => map_application_error(error),
     }
 }
 
@@ -1436,7 +1676,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn service_dispatch_is_secret_free_and_blocks_cross_terminal_plan_reuse() {
+    async fn phase_six_dispatch_is_secret_free_and_terminal_provenance_bound() {
         let harness = ServiceHarness::new().await;
         let list = harness
             .dispatcher
@@ -1469,6 +1709,26 @@ mod tests {
         assert_eq!(
             wrong_connection.error().map(ProtocolError::code),
             Some(ErrorCode::ScopeDenied)
+        );
+
+        let document_on_sql = harness
+            .dispatcher
+            .dispatch(harness.request(
+                CommandName::DocumentRun,
+                &DocumentRunArguments {
+                    connection: ConnectionSelector::Id(harness.connection_id),
+                    query: ProtocolDocumentQuery::Count {
+                        collection: "users".into(),
+                        filter: None,
+                    },
+                    max_rows: None,
+                },
+                &harness.primary_session,
+            ))
+            .await;
+        assert_eq!(
+            document_on_sql.error().map(ProtocolError::code),
+            Some(ErrorCode::InvalidRequest)
         );
 
         let mut plan_request = harness.request(
@@ -1525,6 +1785,44 @@ mod tests {
             serde_json::from_value(executed.result().cloned().unwrap()).unwrap();
         assert_eq!(run.result.row_count, 2);
         assert_eq!(run.result.rows.len(), 2);
+
+        let dashboard_arguments = DashboardCreateArguments {
+            query_run_id: run.query_run_id,
+            title: "Users".into(),
+            description: "Saved from the exact successful run".into(),
+            kind: ProtocolDashboardKind::Auto,
+            x_column: None,
+            y_columns: Vec::new(),
+        };
+        let denied_dashboard = harness
+            .dispatcher
+            .dispatch(harness.request(
+                CommandName::DashboardCreate,
+                &dashboard_arguments,
+                &harness.other_session,
+            ))
+            .await;
+        assert_eq!(
+            denied_dashboard.error().map(ProtocolError::code),
+            Some(ErrorCode::PolicyBlocked)
+        );
+
+        let created_dashboard = harness
+            .dispatcher
+            .dispatch(harness.request(
+                CommandName::DashboardCreate,
+                &dashboard_arguments,
+                &harness.primary_session,
+            ))
+            .await;
+        let dashboard: DashboardCreateResult =
+            serde_json::from_value(created_dashboard.result().cloned().unwrap()).unwrap();
+        assert_eq!(dashboard.query_run_id, run.query_run_id);
+        assert_eq!(dashboard.dashboard.connection_id, harness.connection_id);
+        assert_eq!(
+            dashboard.dashboard.sql,
+            "SELECT id, name FROM users ORDER BY id"
+        );
 
         harness.close().await;
     }

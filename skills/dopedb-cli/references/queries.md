@@ -30,8 +30,9 @@ Qualify relation names when the engine supports schemas or namespaces.
 Pass SQL through stdin:
 
 ```text
-printf '%s\n' 'SELECT id, email FROM public.users LIMIT 100' |
-  dopedb query plan --connection id:<uuid> --file - --json
+dopedb query plan --connection id:<uuid> --file - --json <<'SQL'
+SELECT id, email FROM public.users LIMIT 100
+SQL
 ```
 
 The planner rejects multiple statements and mutation shapes. Review:

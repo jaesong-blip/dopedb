@@ -110,8 +110,10 @@ fn response_timeout(command: dopedb_protocol::CommandName) -> Duration {
         | CommandName::CatalogShow
         | CommandName::SchemaList
         | CommandName::TableDescribe
+        | CommandName::DocumentRun
         | CommandName::QueryPlan
-        | CommandName::SqlPropose => CONTROL_DATABASE_TIMEOUT,
+        | CommandName::SqlPropose
+        | CommandName::DashboardCreate => CONTROL_DATABASE_TIMEOUT,
         CommandName::QueryRun => CONTROL_QUERY_RUN_TIMEOUT,
         CommandName::OperationWait => CONTROL_OPERATION_WAIT_TIMEOUT,
         _ => CONTROL_METADATA_TIMEOUT,

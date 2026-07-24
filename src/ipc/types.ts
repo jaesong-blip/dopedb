@@ -29,7 +29,6 @@ export type PlatformFeatureFlag =
   | "cli_v1"
   | "skill_manager_v1"
   | "terminal_dock_v1"
-  | "mcp_deprecated"
   | "catalog_v2"
   | "ddl_ir_v1"
   | "sql_documents_v1"
@@ -240,6 +239,39 @@ export interface SkillSelfTestReceipt {
   appVersion: string;
   releaseRevision: number;
   guideBytes: number;
+}
+
+// Mirrors src-tauri/src/legacy_mcp_cleanup.rs.
+export type LegacyMcpCleanupState = "absent" | "ready" | "manual_review";
+
+export interface LegacyMcpCleanupTarget {
+  id: string;
+  displayName: string;
+  path: string;
+  state: LegacyMcpCleanupState;
+  fingerprint: string | null;
+  redactedDiff: string | null;
+  reason: string | null;
+}
+
+export interface LegacyMcpCleanupStatus {
+  targets: LegacyMcpCleanupTarget[];
+}
+
+export interface LegacyMcpCleanupExpectation {
+  id: string;
+  fingerprint: string;
+}
+
+export interface LegacyMcpCleanupBackup {
+  targetId: string;
+  path: string;
+}
+
+export interface LegacyMcpCleanupReceipt {
+  removedTargetIds: string[];
+  backups: LegacyMcpCleanupBackup[];
+  status: LegacyMcpCleanupStatus;
 }
 
 interface WorkspaceAuthUser {
@@ -488,14 +520,6 @@ export interface Dashboard {
   updatedAt: string;
 }
 
-export interface DashboardDraft {
-  connectionId: string;
-  title: string;
-  description: string;
-  sql: string;
-  visualization: DashboardVisualization;
-}
-
 export interface ExecOutcome {
   result: QueryResult | null;
   affected: number | null;
@@ -608,18 +632,8 @@ export interface Catalog {
   objects?: CatalogObject[];
 }
 
-// One-click connect: an AI platform dopedb can wire up (mirrors mcp/connect.rs).
-export interface PlatformInfo {
-  id: string;
-  name: string;
-  installed: boolean;
-  connected: boolean; // dopedb entry already present in the platform's MCP config
-  method: string; // "http" | "bridge"
-  note: string;
-}
-
-// In-app agent chat: which subscription CLI a turn runs through, and its installed/
-// authenticated status. Mirrors src-tauri/src/agent/mod.rs.
+// Subscription-backed Terminal providers and their local CLI status.
+// Mirrors src-tauri/src/agent_cli.rs.
 export type AgentProvider = "claude" | "codex";
 
 export interface CliInfo {
@@ -628,26 +642,10 @@ export interface CliInfo {
   installed: boolean;
   authenticated: boolean;
   authMethod: string | null;
-  // Present on the wire but deliberately unused for display — the onboarding card renders
-  // a per-provider i18n string instead (src/screens/AgentChat/index.tsx PROVIDER_NOTE_KEYS)
-  // so the subscription-login disclosure follows the app's language, not the backend's.
   note: string;
 }
 
-// One selectable model for a provider's chat composer (codex's own catalog, or a static
-// list for claude, which has none). Mirrors src-tauri/src/agent/mod.rs.
-export interface AgentModel {
-  id: string;
-  name: string;
-  efforts: string[];
-  defaultEffort: string | null;
-}
-
-// A persisted conversation (Store/SQLite `agent_chat_threads`). model/effort are the values
-// used by the thread's most recent turn, seeded back into the composer when it's reopened.
-// connectionId is null for an unscoped thread (pre-dating connection scoping, or explicitly
-// started without one) — never used to pre-fill send_turn's context block in that case.
-// Mirrors src-tauri/src/agent/mod.rs.
+// Read-only records from conversations created before the Terminal migration.
 export interface ChatThread {
   id: string;
   provider: AgentProvider;
@@ -660,8 +658,7 @@ export interface ChatThread {
   updatedAt: string;
 }
 
-// One persisted message row (Store/SQLite `agent_chat_messages`). Mirrors
-// src-tauri/src/agent/mod.rs.
+// One archived persisted message row.
 export interface ChatMessageRecord {
   id: string;
   threadId: string;

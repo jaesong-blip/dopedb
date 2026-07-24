@@ -14,7 +14,6 @@
     "workspace:migrate": "bash scripts/migrate-workspace-service.sh",
     "workspace:cloud:dev": "pnpm --dir workspace-cloud dev",
     "workspace:cloud:build": "pnpm --dir workspace-cloud build",
-    "build:bridge": "bash scripts/build-bridge.sh",
     "build:sidecars": "bash scripts/build-sidecars.sh",
     "sign:dev": "bash src-tauri/sign-dev.sh",
     "dev:app": "pnpm tauri dev",

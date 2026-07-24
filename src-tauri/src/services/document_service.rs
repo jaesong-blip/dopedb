@@ -31,45 +31,17 @@ use crate::store::{PinnedConnection, Store};
 use super::operation_service::{
     actor_for_pin, agent_actor_for_pin, capture_policy, ensure_operation_scope,
 };
-use super::query_service::{AgentQueryInvocationOrigin, MAX_AGENT_ROWS, QUERY_PLAN_TTL};
+use super::query_service::{MAX_AGENT_ROWS, QUERY_PLAN_TTL};
+use super::TerminalAuthority;
 
 const MAX_DESKTOP_ROWS: u64 = 100_000;
 
-/// Agent-facing input after the adapter has resolved its legacy connection selector.
 #[derive(Debug, Clone)]
-pub(crate) struct AgentDocumentReadRequest {
-    connection_id: Uuid,
-    query: DocumentQuery,
-    /// Frozen canonical form used by both the pre-execution tool-call event and
-    /// every later audit/history/result record.
-    query_text: String,
-    max_rows: Option<u64>,
-    origin: AgentQueryInvocationOrigin,
-}
-
-impl AgentDocumentReadRequest {
-    pub(crate) fn try_new(
-        connection_id: Uuid,
-        query: DocumentQuery,
-        max_rows: Option<u64>,
-        origin: AgentQueryInvocationOrigin,
-    ) -> Result<Self, AppError> {
-        let query_text = serde_json::to_string(&query)?;
-        Ok(Self {
-            connection_id,
-            query,
-            query_text,
-            max_rows,
-            origin,
-        })
-    }
-
-    /// Canonical text for the adapter's compatibility `agent:tool_call`. Returning
-    /// it from the immutable request prevents the event from describing a different
-    /// request than the service later executes and audits.
-    pub(crate) fn query_text(&self) -> &str {
-        &self.query_text
-    }
+pub(crate) struct TerminalDocumentReadRequest {
+    pub(crate) connection_id: Uuid,
+    pub(crate) query: DocumentQuery,
+    pub(crate) max_rows: Option<u64>,
+    pub(crate) authority: TerminalAuthority,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +50,6 @@ struct StoredAgentDocumentPayload {
     query: DocumentQuery,
     query_text: String,
     max_rows: u64,
-    origin: AgentQueryInvocationOrigin,
 }
 
 /// Desktop typed-document proposal input. The query crosses the transport only at
@@ -119,6 +90,7 @@ pub(crate) struct DocumentReadEventContext {
 /// credential reference, workspace binding, or full connection profile.
 #[derive(Debug, Clone)]
 pub(crate) struct DocumentReadResult {
+    pub(crate) operation_id: Uuid,
     pub(crate) context: DocumentReadEventContext,
     pub(crate) query: DocumentQuery,
     pub(crate) page: DocumentPage,
@@ -148,7 +120,7 @@ impl serde::Serialize for DocumentReadReceipt {
     }
 }
 
-/// Agent-path failures with stable distinctions for MCP/CLI error mapping.
+/// Terminal CLI failures with stable distinctions for broker error mapping.
 #[derive(Debug)]
 pub(crate) enum AgentDocumentReadError {
     /// `run_document_query` was used with a SQL-family connection.
@@ -161,10 +133,8 @@ pub(crate) enum AgentDocumentReadError {
     Execution(Box<AgentDocumentExecutionFailure>),
 }
 
-/// A rejected typed request that retains its authority scope until the adapter has
-/// emitted the compatibility `agent:result` error. The audit entry is already
-/// durable/best-effort when this token is returned, preserving MCP's audit-before-
-/// result ordering.
+/// A rejected typed request that retains its authority scope until the broker maps
+/// the error. The audit entry is already durable/best-effort when this token returns.
 pub(crate) struct RejectedAgentDocumentRead {
     context: DocumentReadEventContext,
     message: String,
@@ -179,21 +149,6 @@ impl fmt::Debug for RejectedAgentDocumentRead {
             .field("connection_name", &self.context.connection_name)
             .field("message", &self.message)
             .finish_non_exhaustive()
-    }
-}
-
-impl RejectedAgentDocumentRead {
-    pub(crate) fn event_context(&self) -> &DocumentReadEventContext {
-        &self.context
-    }
-
-    pub(crate) fn message(&self) -> &str {
-        &self.message
-    }
-
-    /// Consume only after the adapter emitted its error result.
-    pub(crate) fn into_message(self) -> String {
-        self.message
     }
 }
 
@@ -216,15 +171,6 @@ impl fmt::Debug for AgentDocumentExecutionFailure {
 }
 
 impl AgentDocumentExecutionFailure {
-    pub(crate) fn event_context(&self) -> &DocumentReadEventContext {
-        &self.context
-    }
-
-    pub(crate) fn error(&self) -> &AppError {
-        &self.error
-    }
-
-    /// Consume only after the adapter emitted its error result.
     pub(crate) fn into_error(self) -> AppError {
         self.error
     }
@@ -298,8 +244,7 @@ impl DesktopDocumentExecutionFailure {
     }
 }
 
-/// Scope-aware typed document service shared by desktop, MCP, and future CLI
-/// adapters.
+/// Scope-aware typed document service shared by desktop and Terminal CLI adapters.
 #[derive(Clone)]
 pub(crate) struct DocumentService {
     store: Store,
@@ -320,22 +265,24 @@ impl DocumentService {
         }
     }
 
-    /// Execute one typed read for a local agent adapter.
-    ///
-    /// This keeps MCP's established behavior: non-read typed requests are audited
-    /// but do not create history; connection/setup failures do not synthesize an
-    /// `agent:result`; execution outcomes use best-effort audit/history; and success
-    /// does not mint a SQL dashboard consent handle.
-    pub(crate) async fn run_agent_read(
+    /// Execute one typed read for a connection-pinned Terminal CLI session.
+    pub(crate) async fn run_terminal_read(
         &self,
-        request: AgentDocumentReadRequest,
+        request: TerminalDocumentReadRequest,
     ) -> Result<DocumentReadReceipt, AgentDocumentReadError> {
+        let query_text = serde_json::to_string(&request.query)
+            .map_err(AppError::from)
+            .map_err(AgentDocumentReadError::Application)?;
         let authority = self
             .connections
             .pin(request.connection_id, ConnectionAccess::Read)
             .await
             .map_err(AgentDocumentReadError::Application)?;
         let pin = authority.pin().clone();
+        request
+            .authority
+            .ensure_pin(&pin)
+            .map_err(AgentDocumentReadError::Application)?;
         let engine = pin.profile.engine;
         if !engine.is_document() {
             return Err(AgentDocumentReadError::NonDocumentConnection);
@@ -344,7 +291,7 @@ impl DocumentService {
         let event_context = DocumentReadEventContext {
             connection_id: pin.connection_id,
             connection_name: pin.profile.name.clone(),
-            query_text: request.query_text.clone(),
+            query_text: query_text.clone(),
         };
         let classification = crate::mongo::query::classify(&request.query);
         if !matches!(classification.kind, QueryKind::Read) {
@@ -352,13 +299,13 @@ impl DocumentService {
                 .notes
                 .first()
                 .cloned()
-                .unwrap_or_else(|| agent_rejection_fallback(request.origin).into());
+                .unwrap_or_else(|| "document writes are not supported over CLI".into());
             audit_best_effort(
                 &self.store,
                 &pin,
                 &event_context.query_text,
                 classification.kind,
-                agent_audit_action(request.origin),
+                "cli:run_document_query",
                 None,
                 Some(message.clone()),
             )
@@ -384,6 +331,8 @@ impl DocumentService {
         let expires_at = Utc::now()
             + ChronoDuration::from_std(QUERY_PLAN_TTL)
                 .expect("document query plan TTL is representable by chrono");
+        let mut actor = agent_actor_for_pin(&pin, "cli".into(), "cli".into());
+        actor.provenance.client_protocol_version = Some(request.authority.client_protocol_version);
         let operation = self
             .operation
             .plan(
@@ -393,19 +342,14 @@ impl DocumentService {
                     account_scope: pin.scope.account_scope.storage_key().into(),
                     connection_id: pin.connection_id,
                     connection_revision: pin.connection_revision,
-                    terminal_session_id: None,
-                    actor: agent_actor_for_pin(
-                        &pin,
-                        request.origin.as_str().into(),
-                        request.origin.as_str().into(),
-                    ),
+                    terminal_session_id: Some(request.authority.terminal_session_id),
+                    actor,
                     kind: OperationKind::DocumentRead,
                     payload_schema_version: 1,
                     payload: serde_json::to_value(StoredAgentDocumentPayload {
                         query: request.query,
-                        query_text: request.query_text,
+                        query_text,
                         max_rows,
-                        origin: request.origin,
                     })
                     .map_err(AppError::from)
                     .map_err(AgentDocumentReadError::Application)?,
@@ -518,7 +462,6 @@ impl DocumentService {
                     &self.store,
                     &pin,
                     &event_context.query_text,
-                    payload.origin,
                     None,
                     None,
                     Some(error.to_string()),
@@ -548,7 +491,6 @@ impl DocumentService {
             &self.store,
             &pin,
             &event_context.query_text,
-            payload.origin,
             Some(page.doc_count as i64),
             Some(page.duration_ms as i64),
             None,
@@ -585,6 +527,7 @@ impl DocumentService {
         }
         Ok(DocumentReadReceipt {
             result: DocumentReadResult {
+                operation_id,
                 context: event_context,
                 query: payload.query,
                 page,
@@ -824,6 +767,7 @@ impl DocumentService {
                 .await;
                 Ok(DocumentReadReceipt {
                     result: DocumentReadResult {
+                        operation_id,
                         context: DocumentReadEventContext {
                             connection_id: pin.connection_id,
                             connection_name: pin.profile.name.clone(),
@@ -884,23 +828,7 @@ fn bounded_desktop_rows(configured: u64) -> u64 {
     configured.clamp(1, MAX_DESKTOP_ROWS)
 }
 
-fn agent_audit_action(origin: AgentQueryInvocationOrigin) -> &'static str {
-    match origin {
-        AgentQueryInvocationOrigin::Mcp => "mcp:run_document_query",
-        AgentQueryInvocationOrigin::Cli => "cli:run_document_query",
-    }
-}
-
-fn agent_rejection_fallback(origin: AgentQueryInvocationOrigin) -> &'static str {
-    match origin {
-        AgentQueryInvocationOrigin::Mcp => "document writes are not supported over MCP",
-        AgentQueryInvocationOrigin::Cli => "document writes are not supported over CLI",
-    }
-}
-
-fn agent_history_origin(_origin: AgentQueryInvocationOrigin) -> &'static str {
-    // Keep both local agent transports dashboard-compatible until Operation Runtime
-    // introduces a separate actor/source dimension.
+fn agent_history_origin() -> &'static str {
     "agent"
 }
 
@@ -931,13 +859,12 @@ fn document_operation_risk(classification: &crate::model::Classification) -> Ope
     }
 }
 
-/// MCP/CLI audit and history behavior. History is deliberately best-effort for
-/// document reads and deliberately keeps the legacy `"agent"` origin.
+/// Terminal CLI audit and history behavior. History is deliberately best-effort for
+/// document reads and keeps the dashboard-compatible `"agent"` origin.
 async fn record_agent_execution(
     store: &Store,
     pin: &PinnedConnection,
     query_text: &str,
-    origin: AgentQueryInvocationOrigin,
     rows: Option<i64>,
     duration_ms: Option<i64>,
     error: Option<String>,
@@ -947,7 +874,7 @@ async fn record_agent_execution(
         pin,
         query_text,
         QueryKind::Read,
-        agent_audit_action(origin),
+        "cli:run_document_query",
         None,
         error.clone(),
     )
@@ -962,7 +889,7 @@ async fn record_agent_execution(
         rows,
         duration_ms,
         error,
-        agent_history_origin(origin),
+        agent_history_origin(),
     )
     .await
     {
@@ -1172,6 +1099,24 @@ mod tests {
             drop(connections);
             store.pool().close().await;
         }
+
+        async fn terminal_authority(&self) -> TerminalAuthority {
+            let context = self
+                .connections
+                .pin(self.connection_id, ConnectionAccess::Read)
+                .await
+                .unwrap();
+            let pin = context.pin();
+            TerminalAuthority {
+                terminal_session_id: Uuid::new_v4(),
+                workspace_id: pin.scope.workspace_id,
+                account_scope: pin.scope.account_scope.storage_key().to_owned(),
+                scope_generation: pin.scope.generation,
+                connection_id: pin.connection_id,
+                connection_revision: pin.connection_revision,
+                client_protocol_version: dopedb_protocol::PROTOCOL_MAX,
+            }
+        }
     }
 
     #[test]
@@ -1209,6 +1154,7 @@ mod tests {
         let lease = authority.connect().await.unwrap();
         let receipt = DocumentReadReceipt {
             result: DocumentReadResult {
+                operation_id: Uuid::new_v4(),
                 context: DocumentReadEventContext {
                     connection_id: harness.connection_id,
                     connection_name: "must-not-serialize".into(),
@@ -1238,56 +1184,26 @@ mod tests {
         harness.close().await;
     }
 
-    #[test]
-    fn agent_origin_splits_audit_and_preserves_history_origin() {
-        assert_eq!(
-            agent_audit_action(AgentQueryInvocationOrigin::Mcp),
-            "mcp:run_document_query"
-        );
-        assert_eq!(
-            agent_audit_action(AgentQueryInvocationOrigin::Cli),
-            "cli:run_document_query"
-        );
-        assert_eq!(
-            agent_history_origin(AgentQueryInvocationOrigin::Mcp),
-            "agent"
-        );
-        assert_eq!(
-            agent_history_origin(AgentQueryInvocationOrigin::Cli),
-            "agent"
-        );
-    }
-
     #[tokio::test]
-    async fn rejected_agent_query_is_audited_without_history_or_profile_leak() {
+    async fn rejected_terminal_query_is_audited_without_history_or_profile_leak() {
         let harness = Harness::new(Engine::Mongodb).await;
+        let authority = harness.terminal_authority().await;
         let rejected = match harness
             .service
-            .run_agent_read(
-                AgentDocumentReadRequest::try_new(
-                    harness.connection_id,
-                    blocked_aggregate(),
-                    None,
-                    AgentQueryInvocationOrigin::Mcp,
-                )
-                .unwrap(),
-            )
+            .run_terminal_read(TerminalDocumentReadRequest {
+                connection_id: harness.connection_id,
+                query: blocked_aggregate(),
+                max_rows: None,
+                authority,
+            })
             .await
         {
             Err(AgentDocumentReadError::Rejected(rejected)) => rejected,
             Err(other) => panic!("expected typed rejection, got {other:?}"),
             Ok(_) => panic!("unsafe aggregate unexpectedly executed"),
         };
-        assert_eq!(
-            rejected.event_context().connection_id,
-            harness.connection_id
-        );
-        assert_eq!(
-            rejected.event_context().connection_name,
-            "document-service-test"
-        );
-        assert!(rejected.message().contains("$out"));
         let debug = format!("{rejected:?}");
+        assert!(debug.contains("$out"));
         assert!(!debug.contains("sensitive-host.invalid"));
         assert!(!debug.contains("sensitive-user"));
 
@@ -1297,7 +1213,7 @@ mod tests {
         assert!(chain_ok);
         assert_eq!(first_bad, None);
         assert_eq!(audit.len(), 1);
-        assert_eq!(audit[0].action, "mcp:run_document_query");
+        assert_eq!(audit[0].action, "cli:run_document_query");
         assert_eq!(audit[0].kind, QueryKind::Write);
         assert!(harness
             .store
@@ -1305,24 +1221,22 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
-        let _ = rejected.into_message();
+        drop(rejected);
         harness.close().await;
     }
 
     #[tokio::test]
     async fn rejected_token_holds_scope_until_adapter_finishes() {
         let harness = Harness::new(Engine::Mongodb).await;
+        let authority = harness.terminal_authority().await;
         let rejected = match harness
             .service
-            .run_agent_read(
-                AgentDocumentReadRequest::try_new(
-                    harness.connection_id,
-                    blocked_aggregate(),
-                    None,
-                    AgentQueryInvocationOrigin::Mcp,
-                )
-                .unwrap(),
-            )
+            .run_terminal_read(TerminalDocumentReadRequest {
+                connection_id: harness.connection_id,
+                query: blocked_aggregate(),
+                max_rows: None,
+                authority,
+            })
             .await
         {
             Err(AgentDocumentReadError::Rejected(rejected)) => rejected,
@@ -1343,7 +1257,7 @@ mod tests {
                 .is_err(),
             "scope mutation must wait while the adapter owns the rejection token"
         );
-        let _ = rejected.into_message();
+        drop(rejected);
         let mutation = tokio::time::timeout(Duration::from_secs(5), waiter)
             .await
             .expect("scope mutation should resume after the token drops")
@@ -1397,7 +1311,6 @@ mod tests {
             &harness.store,
             &pin,
             r#"{"op":"count","collection":"users"}"#,
-            AgentQueryInvocationOrigin::Cli,
             Some(1),
             Some(2),
             None,
@@ -1425,7 +1338,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agent_execution_error_preserves_audit_and_history_contract() {
+    async fn terminal_execution_error_preserves_audit_and_history_contract() {
         let harness = Harness::new(Engine::Mongodb).await;
         let pin = harness
             .store
@@ -1437,7 +1350,6 @@ mod tests {
             &harness.store,
             &pin,
             query_text,
-            AgentQueryInvocationOrigin::Mcp,
             None,
             None,
             Some("backend unavailable".into()),
@@ -1462,7 +1374,7 @@ mod tests {
         assert!(chain_ok);
         assert_eq!(first_bad, None);
         assert_eq!(audit.len(), 1);
-        assert_eq!(audit[0].action, "mcp:run_document_query");
+        assert_eq!(audit[0].action, "cli:run_document_query");
         assert_eq!(audit[0].kind, QueryKind::Read);
         assert_eq!(audit[0].affected_estimate, None);
         assert_eq!(audit[0].error.as_deref(), Some("backend unavailable"));
@@ -1472,17 +1384,15 @@ mod tests {
     #[tokio::test]
     async fn sql_connection_is_rejected_without_exposing_its_profile() {
         let harness = Harness::new(Engine::Sqlite).await;
+        let authority = harness.terminal_authority().await;
         let error = match harness
             .service
-            .run_agent_read(
-                AgentDocumentReadRequest::try_new(
-                    harness.connection_id,
-                    safe_find(),
-                    None,
-                    AgentQueryInvocationOrigin::Mcp,
-                )
-                .unwrap(),
-            )
+            .run_terminal_read(TerminalDocumentReadRequest {
+                connection_id: harness.connection_id,
+                query: safe_find(),
+                max_rows: None,
+                authority,
+            })
             .await
         {
             Err(error) => error,

@@ -1,6 +1,6 @@
 //! Catalog V2 cache adapter.
 //!
-//! The existing UI/MCP catalog stays wire-compatible while persistence uses the
+//! The existing UI/CLI catalog stays wire-compatible while persistence uses the
 //! canonical protocol DTO. Every read is authorized and pinned before consulting
 //! SQLite, and every write is compare-and-swap against that same pin.
 
@@ -22,27 +22,8 @@ pub(crate) enum CatalogReadMode {
     /// Authorize online, return a current canonical snapshot when present, otherwise
     /// introspect live and write it through.
     CacheFirst,
-    /// Always introspect the target database and do not mutate the cache.
-    LiveNoCache,
     /// Delete the current scoped cache first, introspect live, then write through.
     Refresh,
-}
-
-/// Authorize the exact active scope and return only an already-persisted snapshot.
-/// Agent startup uses this latency-bounded path so a cache miss never opens the
-/// target database or waits for full introspection before spawning the CLI.
-pub(crate) async fn load_cached_catalog(
-    store: &Store,
-    connections: &ConnectionManager,
-    connection_id: Uuid,
-) -> AppResult<Option<Catalog>> {
-    let context = connections
-        .pin(connection_id, ConnectionAccess::Read)
-        .await?;
-    Ok(store
-        .get_catalog_if_current(context.pin())
-        .await?
-        .map(|snapshot| from_snapshot(&snapshot)))
 }
 
 pub(crate) async fn load_catalog(
@@ -65,7 +46,7 @@ pub(crate) async fn load_catalog(
         store.clear_schema_cache(connection_id).await?;
     }
 
-    introspect_and_maybe_store(store, context, mode).await
+    introspect_and_maybe_store(store, context).await
 }
 
 /// Load the canonical Catalog V2 projection for broker/CLI consumers.
@@ -98,14 +79,12 @@ pub(crate) async fn load_catalog_snapshot(
     }
     let catalog = super::introspect(lease.live()).await?;
     let snapshot = to_snapshot(&lease.pin().profile, &catalog)?;
-    if mode != CatalogReadMode::LiveNoCache {
-        match store.put_catalog_if_current(lease.pin(), &snapshot).await? {
-            CacheWriteOutcome::Stored | CacheWriteOutcome::NotPersisted => {}
-            CacheWriteOutcome::Stale => {
-                return Err(AppError::Blocked {
-                    reason: "workspace or connection access changed; retry schema loading".into(),
-                });
-            }
+    match store.put_catalog_if_current(lease.pin(), &snapshot).await? {
+        CacheWriteOutcome::Stored | CacheWriteOutcome::NotPersisted => {}
+        CacheWriteOutcome::Stale => {
+            return Err(AppError::Blocked {
+                reason: "workspace or connection access changed; retry schema loading".into(),
+            });
         }
     }
     Ok(snapshot)
@@ -114,13 +93,9 @@ pub(crate) async fn load_catalog_snapshot(
 async fn introspect_and_maybe_store(
     store: &Store,
     context: ConnectionContext,
-    mode: CatalogReadMode,
 ) -> AppResult<Catalog> {
     let lease = context.connect().await?;
     let catalog = super::introspect(lease.live()).await?;
-    if mode == CatalogReadMode::LiveNoCache {
-        return Ok(catalog);
-    }
     if lease.pin().profile.database.trim().is_empty() {
         // Catalog V2 deliberately requires a stable database identity. Engines that
         // allow an omitted default database remain usable, but are not persisted

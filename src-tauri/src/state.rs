@@ -1,7 +1,5 @@
 //! Shared application state managed by Tauri and injected into commands.
 
-use std::sync::{Arc, Mutex};
-
 use crate::broker::BrokerRuntime;
 use crate::connection::ConnectionManager;
 use crate::error::AppResult;
@@ -12,33 +10,11 @@ use crate::skills::SkillManager;
 use crate::store::Store;
 use crate::terminal::TerminalManager;
 
-/// Live runtime status of the MCP listeners, set by `mcp::serve_*` on bind
-/// success/failure so the UI can tell "actually listening" from "config exists".
-#[derive(Default)]
-pub struct McpRuntime {
-    pub http_running: bool,
-    pub bridge_running: bool,
-    /// Actual HTTP listener chosen for this process. A second development instance
-    /// falls back to an ephemeral port instead of silently talking to another app.
-    pub http_port: Option<u16>,
-    pub http_url: Option<String>,
-    pub http_fallback: bool,
-    pub last_error: Option<String>,
-}
-
 pub struct AppState {
     /// Handle to the local app.db (connections, safety, history, audit, schema cache).
     pub store: Store,
-    /// Scope-pinned, per-connection single-flight pool owner shared with every adapter.
-    pub connections: ConnectionManager,
-    /// Transport-neutral application services shared by Tauri and future adapters.
+    /// Transport-neutral application services shared by Tauri and the local broker.
     pub services: ApplicationServices,
-    /// Bearer token guarding the local MCP server (persisted in mcp.json).
-    pub mcp_token: String,
-    /// Live status of the MCP HTTP + bridge listeners.
-    pub mcp_runtime: Arc<Mutex<McpRuntime>>,
-    /// In-app agent chat memory (resumable CLI session id + active-turn tracking).
-    pub chat: crate::agent::ChatState,
     /// Owner-local CLI broker. Session capabilities live only inside this runtime.
     pub(crate) broker: BrokerRuntime,
     /// Safety-sensitive rollout gates captured once for this app runtime.
@@ -47,7 +23,7 @@ pub struct AppState {
     pub(crate) skills: SkillManager,
     /// PTY sessions, bounded output replay, and process-tree lifecycle.
     pub(crate) terminals: TerminalManager,
-    /// Desktop-only approval capability. MCP/CLI/Agent adapters receive only the
+    /// Desktop-only approval capability. CLI/Terminal adapters receive only the
     /// ApplicationServices facade and therefore cannot obtain this value.
     pub(crate) local_operation_approval: LocalApprovalAuthority,
 }
@@ -73,11 +49,7 @@ impl AppState {
         }
         Ok(Self {
             store,
-            connections,
             services,
-            mcp_token: crate::mcp::load_or_create_token(),
-            mcp_runtime: Arc::new(Mutex::new(McpRuntime::default())),
-            chat: crate::agent::chat_state(),
             broker,
             features,
             skills,

@@ -4,15 +4,15 @@ This is the single maintained project document for DopeDB. Keep the root README 
 
 ## Product
 
-DopeDB is a local-first desktop database client built with Tauri. It lets a user inspect and operate databases manually, and it exposes a local MCP server so AI tools can safely inspect connected databases without receiving raw credentials.
+DopeDB is a local-first desktop database client built with Tauri. It lets a user inspect and operate databases manually, and it runs AI tools in a connection-pinned Terminal that reaches the Desktop trust boundary through the local `dopedb` CLI without receiving raw credentials.
 
 Current scope:
 
 - Desktop app: Tauri v2, Rust core, React UI, Vite
 - Landing site: Next.js under `site/`, hosted at https://dopedb.dev
-- Databases: PostgreSQL, MySQL/MariaDB, SQLite
-- MCP: local Streamable HTTP endpoint plus stdio bridge
-- CLI transition: owner-local UDS/named-pipe Broker plus the bundled `dopedb` sidecar
+- Databases: PostgreSQL, MySQL/MariaDB, SQLite, MongoDB
+- Agent runtime: connection-pinned Shell, Codex, and Claude PTY sessions
+- CLI: owner-local UDS/named-pipe Broker plus the bundled `dopedb` sidecar
 - Distribution: GitHub Releases and Tauri updater metadata
 
 Planned team collaboration, workspace-scoped provider integrations, shared
@@ -34,7 +34,8 @@ The Rust core owns the trust boundary:
 - `cli_install.rs`: bundled in-app resolver and explicit per-user CLI/PATH installation
 - `skills/`: bounded inventory plus atomic Codex/Claude Code Skill install, repair,
   backup, and removal
-- `mcp/`: local MCP server, stdio bridge listener, tool handlers, and client config helpers
+- `terminal/`: connection-pinned PTY lifecycle, secret-free child environment, and process-tree cleanup
+- `legacy_mcp_cleanup.rs`: explicit preview, backup, and targeted cleanup for retired client entries
 - `store/`: local SQLite app store under the platform app data directory, including
   connection-scoped saved dashboard definitions
 
@@ -42,12 +43,11 @@ The frontend renders database state and approval decisions. It does not own the 
 Writes and DDL require an immutable Operation proposal, an exact stored approval, and
 `allow_writes = true`; transports cannot approve a replacement SQL payload.
 
-The Local Broker is the transition path for the bundled `dopedb` CLI. Public
+The Local Broker is the only Agent database path for the bundled `dopedb` CLI. Public
 `version`, `status`, and `app open` calls do not carry a reusable secret. Database
 commands require an ephemeral in-memory Terminal capability pinned to one
 workspace/account/connection revision. The global discovery file contains only
-runtime metadata. MCP remains enabled only during the documented parity and
-cutover period.
+runtime metadata. The app opens no Agent HTTP or TCP listener.
 
 The repository-owned Skill source is `skills/dopedb-cli/`. Build verification records
 exact and normalized hashes in versioned bundled manifests. The installed Skill is a
@@ -56,36 +56,54 @@ references embedded in that app version without contacting the network. Inventor
 are bounded and reject symlinks/reparse points. Only a known, byte-exact managed snapshot
 may be updated or removed automatically; repair preserves every conflicting directory.
 
-## MCP Behavior
+## Agent Terminal and CLI Behavior
 
-The app starts two loopback listeners:
+Opening an Agent Terminal creates a PTY session pinned to the selected workspace,
+account, connection revision, and database policy. Shell, Codex, and Claude profiles
+share the same lifecycle. A connection, account, membership, or authority change
+revokes the session instead of silently retargeting it. The child environment excludes
+database URLs, provider secrets, API keys, and OS credential-store values.
 
-- HTTP MCP endpoint: `http://127.0.0.1:7686/mcp`
-- stdio bridge TCP listener: `127.0.0.1:7687`
+The signed `dopedb` CLI discovers an owner-only Unix socket or Windows named pipe.
+Database commands require an ephemeral Terminal-session capability that lives in
+process memory. The capability is never a database credential, never enters argv, and
+cannot be moved to another Terminal. The command surface covers secret-free connection
+summaries, canonical catalog/schema/table metadata, typed MongoDB reads, SQL read
+planning/execution, provenance-bound dashboard creation, immutable SQL proposals, and
+operation receipts.
 
-The bundled `dopedb-mcp-stdio` sidecar reads `~/Library/Application Support/dopedb/mcp.json`, connects to the running app, and pumps stdio bytes for clients that cannot call localhost HTTP directly.
+The desktop Agent activity view keeps at most 200 in-memory completion records containing
+only command, request/session/connection identifiers, state, and a stable error code. It
+does not retain result rows, SQL text, Terminal output, session tokens, or credentials.
 
-Current MCP tools:
+Every SQL data read is a mandatory two-step operation. `dopedb query plan` validates
+one SELECT, runs non-executing EXPLAIN, gathers aggregate database-pressure signals, and
+returns an expiring single-use plan. `dopedb query run` accepts only that plan identifier,
+not replacement SQL or a connection. The database read-only session remains the
+authoritative guard. MongoDB uses `dopedb document run` with bounded `find`, `aggregate`,
+or `count` JSON shapes; unknown fields and write stages such as `$out` or `$merge` fail
+closed.
 
-- `list_connections`
-- `list_tables`
-- `describe_table`
-- `plan_query`
-- `run_query`
-- `create_dashboard`
+Each successful SQL query returns a durable `queryRunId`. After explicit user agreement,
+`dopedb dashboard create` must reference that exact ID from the same Terminal. DopeDB
+loads the connection and SQL from the successful history row instead of accepting
+replacements. Dashboard creation writes only to `app.db`. Opening a dashboard reloads
+and revalidates its versioned declarative visualization (`auto`, `metric`, `line`, `bar`,
+or `table`) and executes through the read-only database path. Result rows are not stored.
 
-All target-database access exposed by MCP is read-only. Every data query is a mandatory two-step operation: `plan_query` validates one SELECT, runs non-executing EXPLAIN, gathers aggregate database-pressure signals, and returns a 30-second single-use `planId`; `run_query` accepts only that id, not replacement SQL or a connection. This forces the agent to receive the current warnings before execution. The database read-only session remains the authoritative guard. Each successful query returns a durable `queryRunId`. After explicit user agreement, `create_dashboard` must reference that exact ID; DopeDB loads the connection and SQL from the successful agent history row instead of accepting replacements from the agent. Dashboard creation only writes to DopeDB's local app store and never to the target database. MCP target-database write tools are intentionally deferred.
+Query planning never sends other sessions' SQL text, users, client addresses, or
+parameters to the agent. It returns aggregate connection usage, active/long-running
+query counts, lock-wait counts, and replication lag when the engine exposes them.
+PostgreSQL can grant or revoke `pg_monitor` from Safety settings through one fixed,
+explicitly confirmed and separately audited command. MySQL uses available Performance
+Schema aggregates; SQLite reports basic local coverage.
 
-Query planning never sends other sessions' SQL text, users, client addresses, or parameters to the agent. It returns aggregate connection usage, active/long-running query counts, lock-wait counts, and replication lag when the engine exposes them. PostgreSQL connections can grant/revoke the built-in `pg_monitor` role from Safety settings through one fixed, explicitly confirmed command. This narrow command is audited separately and does not enable arbitrary writes. Without that role, planning reports limited monitoring coverage and applies a caution decision. MySQL uses available Performance Schema aggregates; SQLite reports basic local coverage.
-
-Saved dashboards belong to a connection and persist in `app.db`, so they are restored when that connection is opened again. A dashboard stores SQL plus a bounded, versioned declarative visualization (`auto`, `metric`, `line`, `bar`, or `table`); it does not store generated HTML. Opening a dashboard calls the dedicated `run_dashboard` command, which reloads and revalidates the definition against the current engine and always uses the L2 read-only session independently of write/auto-run settings. Result rows are never persisted.
-
-Supported client helpers in the app:
-
-- Claude Code direct HTTP
-- Claude Desktop stdio bridge
-- Codex stdio bridge
-- Manual HTTP snippets for other MCP clients
+Settings -> Agent tools installs the version-matched discovery Skill for Codex and
+Claude Code. It also offers a separate legacy cleanup flow: inspect exact retired DopeDB
+MCP client entries, show a redacted diff, require confirmation, preserve unrelated
+settings, and back up edited client files. Retired app-owned bearer metadata is erased
+without copying the secret into a backup. Existing chat history remains a read-only
+archive; there is no in-app live chat execution path.
 
 ## Safety Model
 
@@ -98,7 +116,7 @@ The important rules are enforced in Rust:
 - Migrations also run through the same write gate.
 - Successful and blocked execution paths are audited.
 
-MCP annotations and prompts are treated as hints, not security boundaries.
+Skill text, agent prompts, and CLI output are guidance, not security boundaries.
 
 ## Development
 
@@ -120,10 +138,9 @@ pnpm build:sidecars
 cargo check --workspace
 ```
 
-The CLI and transition-period MCP bridge sidecars must exist before Tauri validates
-`bundle.externalBin`. `pnpm build:sidecars` builds both host binaries and stages their
-target-qualified artifacts into `src-tauri/binaries/`. `pnpm build:bridge` remains a
-compatibility alias and stages the same complete set.
+The CLI sidecar must exist before Tauri validates `bundle.externalBin`.
+`pnpm build:sidecars` builds the host `dopedb` binary and stages its target-qualified
+artifact into `src-tauri/binaries/`.
 
 ## Landing Site
 
@@ -152,7 +169,7 @@ CI runs on pull requests and `main` pushes:
 - install root and site dependencies
 - build desktop frontend
 - build landing site
-- stage CLI and MCP bridge sidecars
+- stage the CLI sidecar
 - run `cargo check --workspace`
 
 Stable release runs only on an owner-created `app-v*` tag whose commit is already in `main` and whose version matches `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `Cargo.lock`. The `stable-release` environment requires approval from `@json-choi` before the signing key and write token are available:
@@ -178,7 +195,7 @@ The local updater key path used during setup was `~/.tauri/dopedb-updater.key`. 
 ## Dependency Policy
 
 Use the latest stable compatible library versions, including major releases, and
-update the affected safety tests whenever an upgrade changes parser, database, MCP,
+update the affected safety tests whenever an upgrade changes parser, database, broker,
 or credential-store behavior. The desktop currently builds with TypeScript 7; the
 two Next.js apps use TypeScript 6.0.3 because Next.js 16.2.11 cannot load TypeScript
 7's new API yet.
@@ -210,8 +227,7 @@ Only document this command with the release-origin warning. It removes the macOS
 ## Deferred Work
 
 - Developer ID signing and notarization
-- MCP write proposal tool with in-app approval round trip
-- Token rotation UI for MCP configs
+- More structured Agent proposal types beyond SQL
 - SSH tunnel support
-- More granular MCP client origin handling
+- More granular Agent and plugin origin handling
 - Virtualized result grid for very large result sets

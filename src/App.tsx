@@ -23,8 +23,6 @@ import { hasCapability, isDocumentEngine } from "./lib/capabilities";
 import {
   driversQuery,
   isTransientDbError,
-  mcpPlatformsQuery,
-  mcpRuntimeStatusQuery,
   skillStatusQuery,
 } from "./lib/queries";
 import { buildConnectionSections, type SchemaConnectionGroup } from "./lib/schemaDiff";
@@ -69,7 +67,6 @@ type AppArea = "workspace" | "dashboard";
 
 // `null` = not editing; "new" = blank form; a profile = edit that profile.
 type Editing = ConnectionProfile | "new" | null;
-type McpBadgeState = "server" | "disconnected";
 
 export default function App() {
   return (
@@ -89,9 +86,6 @@ const SIDEBAR_DEFAULT = 240;
 const TERMINAL_DOCK_MIN = 360;
 const TERMINAL_DOCK_MAX = 720;
 const TERMINAL_DOCK_DEFAULT = 480;
-const MCP_PLATFORM_REFRESH_INTERVAL_MS = 5 * 60_000;
-const MCP_RUNTIME_REFRESH_INTERVAL_MS = 30_000;
-const MCP_STARTUP_POLL_INTERVAL_MS = 2_000;
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 function preloadSqlEditor() {
@@ -358,28 +352,6 @@ function Shell() {
   const terminalButtonRef = useRef<HTMLButtonElement | null>(null);
   const updateCheckInFlight = useRef(false);
   const lastUpdateCheckAt = useRef(0);
-  const mcpPlatformsQ = useQuery({
-    ...mcpPlatformsQuery(),
-    refetchInterval: MCP_PLATFORM_REFRESH_INTERVAL_MS,
-  });
-  const mcpRuntimeQ = useQuery({
-    ...mcpRuntimeStatusQuery(),
-    refetchInterval: (query) =>
-      query.state.data?.httpRunning
-        ? MCP_RUNTIME_REFRESH_INTERVAL_MS
-        : MCP_STARTUP_POLL_INTERVAL_MS,
-  });
-  const mcpBadgeReady = !mcpPlatformsQ.isPending && !mcpRuntimeQ.isPending;
-  const mcpBadge: McpBadgeState | null = !mcpBadgeReady
-    ? null
-    : mcpRuntimeQ.isError ||
-        !mcpRuntimeQ.data?.httpRunning ||
-        !mcpRuntimeQ.data.bridgeRunning
-      ? "server"
-      : mcpPlatformsQ.isError || !mcpPlatformsQ.data?.some((platform) => platform.connected)
-        ? "disconnected"
-        : null;
-
   const openDashboard = useCallback((dashboard: Dashboard) => {
     setSelectedId(dashboard.connectionId);
     setEditing(null);
@@ -390,8 +362,8 @@ function Shell() {
   }, []);
   const consumeDashboardFocus = useCallback(() => setDashboardFocusId(null), []);
 
-  // Both the local save command and MCP create_dashboard emit the same direct
-  // Dashboard payload. This makes an explicitly requested dashboard visible at once.
+  // Terminal CLI creation emits the saved Dashboard payload so the library can
+  // focus it immediately without accepting SQL or connection replacements in UI IPC.
   useEffect(() => {
     const pending = listen<Dashboard>("dashboard:created", (event) => {
       openDashboard(event.payload);
@@ -579,20 +551,19 @@ function Shell() {
     };
   }, []);
 
-  // Nudge (not hijack) when a new result lands while the Terminal Dock is hidden. Skip
-  // the mount baseline so it doesn't fire on load; guard on result id so it fires once per
-  // result; throttle to one toast per 30s so a burst of agent queries yields a single nudge.
-  const seenResultId = useRef<number | null>(null);
+  // Nudge (not hijack) when a Terminal operation finishes while the dock is hidden.
+  // Skip the mount baseline and throttle bursts to one toast per 30 seconds.
+  const seenOperationId = useRef<number | null>(null);
   const surfaceInit = useRef(true);
   const lastToastAt = useRef(0);
   useEffect(() => {
     if (surfaceInit.current) {
       surfaceInit.current = false;
-      seenResultId.current = latest?.id ?? null;
+      seenOperationId.current = latest?.id ?? null;
       return;
     }
-    if (latest && latest.id !== seenResultId.current) {
-      seenResultId.current = latest.id;
+    if (latest && latest.id !== seenOperationId.current) {
+      seenOperationId.current = latest.id;
       const now = Date.now();
       if (!showTerminalDock && now - lastToastAt.current > 30000) {
         lastToastAt.current = now;
@@ -647,13 +618,6 @@ function Shell() {
     setDocuments((current) => [...current, document]);
     setActiveDocumentId(document.id);
     setArea("workspace");
-  }
-
-  function openMcpSettings() {
-    setSettingsSection("mcp");
-    setSettingsOpen(true);
-    setSchemaDiffGroupKey(null);
-    setEditing(null);
   }
 
   function openAgentToolsSettings() {
@@ -972,6 +936,7 @@ function Shell() {
                 safety={safety}
                 draft={activeDocument.draft}
                 setDraft={setActiveQueryDraft}
+                onOpenAgent={openTerminalDock}
               />
             ) : (
               safetyFallback
@@ -998,14 +963,7 @@ function Shell() {
     );
   }
 
-  const showMcpBadge = mcpBadgeReady && !!mcpBadge && !settingsOpen;
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
-  const mcpBadgeLabel =
-    mcpBadge === "server" ? t("mcp.badgeServerDown") : t("mcp.badgeDisconnected");
-  const mcpBadgeTitle =
-    mcpBadge === "server"
-      ? t("mcp.badgeServerDownTitle")
-      : t("mcp.badgeDisconnectedTitle");
   return (
     <div
       className={`app${IS_MACOS ? " platform-macos" : ""}${
@@ -1115,7 +1073,7 @@ function Shell() {
       />
       <main className="main">
         {renderMain()}
-        {(showUpdateBadge || showMcpBadge) && (
+        {showUpdateBadge && (
           <div className="ds-attention-stack">
             {showUpdateBadge && (
               <button
@@ -1126,20 +1084,6 @@ function Shell() {
               >
                 <Icon name="download" />
                 <span>{t("updates.badge", { version: availableUpdate?.version ?? "" })}</span>
-              </button>
-            )}
-            {showMcpBadge && (
-              <button
-                className={
-                  "ds-attention-badge " +
-                  (mcpBadge === "server" ? "ds-tone-danger" : "ds-tone-risk")
-                }
-                onClick={openMcpSettings}
-                title={mcpBadgeTitle}
-                aria-label={mcpBadgeTitle}
-              >
-                <Icon name={mcpBadge === "server" ? "alert" : "database"} />
-                <span>{mcpBadgeLabel}</span>
               </button>
             )}
           </div>
@@ -1160,7 +1104,6 @@ function Shell() {
       {agentLogOpen && selected && (
         <AgentLogDialog
           connection={selected}
-          onDashboardSaved={openDashboard}
           onClose={() => setAgentLogOpen(false)}
         />
       )}

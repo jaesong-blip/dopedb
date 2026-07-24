@@ -1,33 +1,49 @@
 {
   "schemaVersion": 1,
   "skillName": "dopedb-cli",
-  "releaseRevision": 1,
+  "releaseRevision": 2,
   "sourcePath": "skills/dopedb-cli",
   "appVersion": "0.3.3",
   "sourceFiles": [
     {
       "path": "SKILL.md",
       "sourcePath": "skills/dopedb-cli/SKILL.md",
-      "size": 3270,
+      "size": 4350,
       "executable": false,
-      "sha256": "be7332f5c081b88ae74c7d28c7f003f25c89a2a8e9c284df917abe7afcf53ddc",
-      "normalizedTextSha256": "be7332f5c081b88ae74c7d28c7f003f25c89a2a8e9c284df917abe7afcf53ddc"
+      "sha256": "057947a5f5d767b2031778fefd781141724f46cae07297ad5ef3206ffca28298",
+      "normalizedTextSha256": "057947a5f5d767b2031778fefd781141724f46cae07297ad5ef3206ffca28298"
+    },
+    {
+      "path": "references/dashboards.md",
+      "sourcePath": "skills/dopedb-cli/references/dashboards.md",
+      "size": 928,
+      "executable": false,
+      "sha256": "295f8c27d651246aa87da7267ac44b3dd232fa2f56011223d0103dd1b220c036",
+      "normalizedTextSha256": "295f8c27d651246aa87da7267ac44b3dd232fa2f56011223d0103dd1b220c036"
+    },
+    {
+      "path": "references/documents.md",
+      "sourcePath": "skills/dopedb-cli/references/documents.md",
+      "size": 1288,
+      "executable": false,
+      "sha256": "068b252166e64c58fe5c381da9019779bf47b45dc6129f0523a598b9fd5b3e38",
+      "normalizedTextSha256": "068b252166e64c58fe5c381da9019779bf47b45dc6129f0523a598b9fd5b3e38"
     },
     {
       "path": "references/operations.md",
       "sourcePath": "skills/dopedb-cli/references/operations.md",
-      "size": 1632,
+      "size": 1624,
       "executable": false,
-      "sha256": "7b890252e7263268d2b456023f59bfc6c0a0620475ca34535808c33414201f90",
-      "normalizedTextSha256": "7b890252e7263268d2b456023f59bfc6c0a0620475ca34535808c33414201f90"
+      "sha256": "28320ddbe7f2818421e45f81f12372d07d5a8c7bb1d68d053f51e4c640af2568",
+      "normalizedTextSha256": "28320ddbe7f2818421e45f81f12372d07d5a8c7bb1d68d053f51e4c640af2568"
     },
     {
       "path": "references/queries.md",
       "sourcePath": "skills/dopedb-cli/references/queries.md",
-      "size": 1818,
+      "size": 1810,
       "executable": false,
-      "sha256": "1ba86a33f57d5eca739b374e8cfb07a06ec878b42c87b55420a12c2f865e6bb8",
-      "normalizedTextSha256": "1ba86a33f57d5eca739b374e8cfb07a06ec878b42c87b55420a12c2f865e6bb8"
+      "sha256": "3280066cce2867ce783825c1435c9267919423b82590e7abdcae5cfe0f5c89e5",
+      "normalizedTextSha256": "3280066cce2867ce783825c1435c9267919423b82590e7abdcae5cfe0f5c89e5"
     },
     {
       "path": "references/safety.md",
@@ -49,5 +65,5 @@
       "content": "---\nname: dopedb-cli\ndescription: Use the local DopeDB Desktop runtime safely through the version-matched dopedb CLI.\n---\n\nBefore using DopeDB, run:\ndopedb skills get dopedb-cli\n"
     }
   ],
-  "packageDigest": "c6592c6c69cc319b63174c6f36e229b4ace60e217483547ae739530c79f3613e"
+  "packageDigest": "675f4f8ce34e31e2d934bc53d5d6e2e1cba81856b35fb67b3ff49e22eb8a5352"
 }

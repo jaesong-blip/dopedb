@@ -54,9 +54,9 @@ function CacheInvalidation({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const pending = [
-      listen<{ connectionId?: unknown }>("agent:result", (event) => {
+      listen<{ connectionId: string | null }>("operation:changed", (event) => {
         const connectionId = event.payload.connectionId;
-        if (typeof connectionId !== "string") return;
+        if (!connectionId) return;
         void queryClient.invalidateQueries({ queryKey: qk.history(connectionId) });
         void queryClient.invalidateQueries({ queryKey: qk.audit(connectionId) });
       }),

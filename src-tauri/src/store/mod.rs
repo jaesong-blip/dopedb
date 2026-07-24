@@ -23,8 +23,9 @@ use sqlx::{AssertSqlSafe, Executor, Row, Sqlite, SqlitePool, Transaction};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::agent::{AgentProvider, ChatMessageRecord, ChatThread};
+use crate::agent_cli::AgentProvider;
 use crate::error::{AppError, AppResult};
+use crate::legacy_chat::{ChatMessageRecord, ChatThread};
 use crate::model::{
     ConnectionProfile, Dashboard, DashboardDraft, Engine, HistoryEntry, Provider, QueryKind,
     SafetySettings, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser,
@@ -1955,10 +1956,10 @@ impl Store {
 
     // ── saved dashboards ────────────────────────────────────────────────────
 
-    /// Persist a new saved dashboard. IDs and timestamps are assigned here so
-    /// Tauri and MCP callers share exactly the same creation semantics.
-    #[allow(dead_code)] // Compatibility surface retained while adapters move to DashboardService.
-    pub async fn save_dashboard(&self, draft: &DashboardDraft) -> AppResult<Dashboard> {
+    /// Test-only convenience for seeding dashboards. Production creation must hold
+    /// a scope-pinned capability and call `save_dashboard_if_current`.
+    #[cfg(test)]
+    pub(crate) async fn save_dashboard(&self, draft: &DashboardDraft) -> AppResult<Dashboard> {
         let pin = self
             .pin_connection_for_dashboard(draft.connection_id)
             .await?;
@@ -2327,52 +2328,7 @@ impl Store {
         Ok(())
     }
 
-    // ── agent chat threads & messages ───────────────────────────────────────
-
-    /// Create a new chat thread (the store side of the frontend's "draft" turning
-    /// real). Title starts empty — [`Store::finish_chat_turn`] sets it from the first
-    /// user message once that turn completes.
-    pub async fn create_chat_thread(
-        &self,
-        provider: AgentProvider,
-        connection_id: Uuid,
-        model: Option<String>,
-        effort: Option<String>,
-    ) -> AppResult<ChatThread> {
-        self.get_connection(connection_id).await?;
-        let workspace_id = self.active_workspace_id().await?;
-        let account_scope = self.active_local_scope().await?;
-        let id = Uuid::new_v4();
-        let now = Utc::now();
-        sqlx::query(
-            r#"INSERT INTO agent_chat_threads
-                (id, provider, connection_id, workspace_id, account_scope, title,
-                 cli_session_id, model, effort, created_at, updated_at)
-               VALUES (?1,?2,?3,?4,?5,'',NULL,?6,?7,?8,?8)"#,
-        )
-        .bind(id.to_string())
-        .bind(agent_provider_str(provider))
-        .bind(connection_id.to_string())
-        .bind(workspace_id.to_string())
-        .bind(account_scope)
-        .bind(&model)
-        .bind(&effort)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(ChatThread {
-            id,
-            provider,
-            connection_id: Some(connection_id),
-            title: String::new(),
-            cli_session_id: None,
-            model,
-            effort,
-            created_at: now,
-            updated_at: now,
-        })
-    }
+    // ── read-only archive of retired Agent chat threads and messages ────────
 
     pub async fn list_chat_threads(&self) -> AppResult<Vec<ChatThread>> {
         let workspace_id = self.active_workspace_id().await?;
@@ -2387,112 +2343,6 @@ impl Store {
         .fetch_all(&self.pool)
         .await?;
         rows.iter().map(row_to_chat_thread).collect()
-    }
-
-    pub async fn get_chat_thread(&self, id: Uuid) -> AppResult<ChatThread> {
-        let workspace_id = self.active_workspace_id().await?;
-        let account_scope = self.active_local_scope().await?;
-        let row = sqlx::query(
-            "SELECT * FROM agent_chat_threads
-             WHERE id = ?1 AND workspace_id = ?2 AND account_scope = ?3",
-        )
-        .bind(id.to_string())
-        .bind(workspace_id.to_string())
-        .bind(account_scope)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("chat thread {id}")))?;
-        row_to_chat_thread(&row)
-    }
-
-    /// Deletes the thread; `agent_chat_messages` cascades via its FK.
-    pub async fn delete_chat_thread(&self, id: Uuid) -> AppResult<()> {
-        let workspace_id = self.active_workspace_id().await?;
-        let account_scope = self.active_local_scope().await?;
-        let result = sqlx::query(
-            "DELETE FROM agent_chat_threads
-             WHERE id = ?1 AND workspace_id = ?2 AND account_scope = ?3",
-        )
-        .bind(id.to_string())
-        .bind(workspace_id.to_string())
-        .bind(account_scope)
-        .execute(&self.pool)
-        .await?;
-        if result.rows_affected() == 0 {
-            return Err(AppError::NotFound(format!("chat thread {id}")));
-        }
-        Ok(())
-    }
-
-    /// Update the thread's session/model/effort after a turn ends (success OR
-    /// failure — a failed turn still advances the resumable session and the title),
-    /// and set the title IFF it is still empty (a `CASE` in the same statement, so a
-    /// second turn can never clobber the title the first one set).
-    pub async fn finish_chat_turn(
-        &self,
-        thread_id: Uuid,
-        cli_session_id: Option<String>,
-        model: Option<String>,
-        effort: Option<String>,
-        title_if_empty: &str,
-    ) -> AppResult<()> {
-        let workspace_id = self.active_workspace_id().await?;
-        let account_scope = self.active_local_scope().await?;
-        let result = sqlx::query(
-            r#"UPDATE agent_chat_threads
-               SET cli_session_id = ?2, model = ?3, effort = ?4, updated_at = ?5,
-                   title = CASE WHEN title = '' THEN ?6 ELSE title END
-               WHERE id = ?1 AND workspace_id = ?7 AND account_scope = ?8"#,
-        )
-        .bind(thread_id.to_string())
-        .bind(cli_session_id)
-        .bind(model)
-        .bind(effort)
-        .bind(Utc::now())
-        .bind(title_if_empty)
-        .bind(workspace_id.to_string())
-        .bind(account_scope)
-        .execute(&self.pool)
-        .await?;
-        if result.rows_affected() != 1 {
-            return Err(AppError::NotFound(format!("chat thread {thread_id}")));
-        }
-        Ok(())
-    }
-
-    /// Insert a chat message using the caller's identifier. Agent chat reuses its
-    /// optimistic message UUIDs here so a mid-turn refetch can reconcile each local
-    /// message with the durable row instead of rendering both.
-    pub async fn insert_chat_message_with_id(
-        &self,
-        thread_id: Uuid,
-        id: Uuid,
-        role: &str,
-        text: &str,
-        error: Option<&str>,
-    ) -> AppResult<ChatMessageRecord> {
-        self.get_chat_thread(thread_id).await?;
-        let now = Utc::now();
-        sqlx::query(
-            r#"INSERT INTO agent_chat_messages (id, thread_id, role, text, error, created_at)
-               VALUES (?1,?2,?3,?4,?5,?6)"#,
-        )
-        .bind(id.to_string())
-        .bind(thread_id.to_string())
-        .bind(role)
-        .bind(text)
-        .bind(error)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-        Ok(ChatMessageRecord {
-            id,
-            thread_id,
-            role: role.to_string(),
-            text: text.to_string(),
-            error: error.map(str::to_string),
-            created_at: now,
-        })
     }
 
     pub async fn list_chat_messages(&self, thread_id: Uuid) -> AppResult<Vec<ChatMessageRecord>> {
@@ -3395,13 +3245,6 @@ pub(crate) fn parse_uuid_opt(s: Option<String>) -> AppResult<Option<Uuid>> {
     s.map(parse_uuid).transpose()
 }
 
-pub(crate) fn agent_provider_str(p: AgentProvider) -> &'static str {
-    match p {
-        AgentProvider::Claude => "claude",
-        AgentProvider::Codex => "codex",
-    }
-}
-
 pub(crate) fn parse_agent_provider(s: String) -> AppResult<AgentProvider> {
     match s.as_str() {
         "claude" => Ok(AgentProvider::Claude),
@@ -3420,7 +3263,6 @@ mod tests {
         migrate_schema_cache_scopes, migrate_workspace_foundation, migrations, parse_engine,
         repair_active_scope_on_open, CacheWriteOutcome, CatalogCachePolicy, Store,
     };
-    use crate::agent::AgentProvider;
     use crate::error::AppError;
     use crate::model::{
         ConnectionProfile, DashboardDraft, DashboardKind, DashboardVisualization, Engine,
@@ -3507,6 +3349,51 @@ mod tests {
                 y_columns: Vec::new(),
             },
         }
+    }
+
+    async fn seed_legacy_chat_thread(store: &Store, connection_id: Uuid, title: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        let workspace_id = store.active_workspace_id().await.unwrap();
+        let account_scope = store.active_local_scope().await.unwrap();
+        let now = Utc::now();
+        sqlx::query(
+            r#"INSERT INTO agent_chat_threads
+               (id, provider, connection_id, workspace_id, account_scope, title,
+                cli_session_id, model, effort, created_at, updated_at)
+               VALUES (?1,'codex',?2,?3,?4,?5,'legacy-session','legacy-model','high',?6,?6)"#,
+        )
+        .bind(id.to_string())
+        .bind(connection_id.to_string())
+        .bind(workspace_id.to_string())
+        .bind(account_scope)
+        .bind(title)
+        .bind(now)
+        .execute(store.pool())
+        .await
+        .unwrap();
+        id
+    }
+
+    async fn seed_legacy_chat_message(
+        store: &Store,
+        thread_id: Uuid,
+        role: &str,
+        text: &str,
+    ) -> Uuid {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            r#"INSERT INTO agent_chat_messages (id, thread_id, role, text, error, created_at)
+               VALUES (?1,?2,?3,?4,NULL,?5)"#,
+        )
+        .bind(id.to_string())
+        .bind(thread_id.to_string())
+        .bind(role)
+        .bind(text)
+        .bind(Utc::now())
+        .execute(store.pool())
+        .await
+        .unwrap();
+        id
     }
 
     #[tokio::test]
@@ -4317,10 +4204,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let thread_a = store
-            .create_chat_thread(AgentProvider::Codex, connection_id, None, None)
-            .await
-            .unwrap();
+        seed_legacy_chat_thread(&store, connection_id, "alpha archive").await;
 
         store
             .activate_workspace(workspace_id, Some(&user_b.id))
@@ -4361,10 +4245,6 @@ mod tests {
             .is_none());
         assert!(store.list_history(connection_id).await.unwrap().is_empty());
         assert!(store.list_chat_threads().await.unwrap().is_empty());
-        assert!(matches!(
-            store.get_chat_thread(thread_a.id).await,
-            Err(AppError::NotFound(_))
-        ));
         store
             .set_schema_cache(connection_id, r#"{"owner":"beta"}"#)
             .await
@@ -5635,7 +5515,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chat_thread_and_messages_round_trip_delete_cascades() {
+    async fn legacy_chat_archive_remains_readable_without_mutation_paths() {
         let opts = SqliteConnectOptions::from_str("sqlite::memory:")
             .unwrap()
             .foreign_keys(true);
@@ -5655,82 +5535,23 @@ mod tests {
             .await
             .unwrap();
 
-        let thread = store
-            .create_chat_thread(AgentProvider::Codex, connection_id, None, None)
-            .await
-            .unwrap();
-        assert_eq!(thread.title, "");
-        assert!(thread.cli_session_id.is_none());
+        let thread_id = seed_legacy_chat_thread(&store, connection_id, "Legacy conversation").await;
+        let user_id = seed_legacy_chat_message(&store, thread_id, "user", "hello there").await;
+        let assistant_id = seed_legacy_chat_message(&store, thread_id, "assistant", "hi!").await;
 
-        let optimistic_user_id = Uuid::new_v4();
-        let inserted_user = store
-            .insert_chat_message_with_id(thread.id, optimistic_user_id, "user", "hello there", None)
-            .await
-            .unwrap();
-        assert_eq!(inserted_user.id, optimistic_user_id);
-        let assistant_turn_id = Uuid::new_v4();
-        store
-            .insert_chat_message_with_id(thread.id, assistant_turn_id, "assistant", "hi!", None)
-            .await
-            .unwrap();
-
-        store
-            .finish_chat_turn(
-                thread.id,
-                Some("thr-123".into()),
-                Some("gpt-5.6-sol".into()),
-                Some("high".into()),
-                "hello there",
-            )
-            .await
-            .unwrap();
-
-        let reloaded = store.get_chat_thread(thread.id).await.unwrap();
-        assert_eq!(reloaded.title, "hello there");
-        assert_eq!(reloaded.cli_session_id.as_deref(), Some("thr-123"));
-        assert_eq!(reloaded.model.as_deref(), Some("gpt-5.6-sol"));
-        assert_eq!(reloaded.effort.as_deref(), Some("high"));
-
-        // A second turn must NOT clobber the title the first one set.
-        store
-            .finish_chat_turn(
-                thread.id,
-                Some("thr-124".into()),
-                None,
-                None,
-                "ignored title",
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            store.get_chat_thread(thread.id).await.unwrap().title,
-            "hello there"
-        );
-
-        let messages = store.list_chat_messages(thread.id).await.unwrap();
+        let messages = store.list_chat_messages(thread_id).await.unwrap();
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].id, optimistic_user_id);
+        assert_eq!(messages[0].id, user_id);
         assert_eq!(messages[0].role, "user");
-        assert_eq!(messages[1].id, assistant_turn_id);
+        assert_eq!(messages[1].id, assistant_id);
         assert_eq!(messages[1].role, "assistant");
 
         let listed = store.list_chat_threads().await.unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].id, thread.id);
-
-        store.delete_chat_thread(thread.id).await.unwrap();
-        assert!(store
-            .list_chat_messages(thread.id)
-            .await
-            .unwrap()
-            .is_empty());
-        assert!(matches!(
-            store.get_chat_thread(thread.id).await,
-            Err(AppError::NotFound(_))
-        ));
-        assert!(matches!(
-            store.delete_chat_thread(thread.id).await,
-            Err(AppError::NotFound(_))
-        ));
+        assert_eq!(listed[0].id, thread_id);
+        assert_eq!(listed[0].title, "Legacy conversation");
+        assert_eq!(listed[0].cli_session_id.as_deref(), Some("legacy-session"));
+        assert_eq!(listed[0].model.as_deref(), Some("legacy-model"));
+        assert_eq!(listed[0].effort.as_deref(), Some("high"));
     }
 }

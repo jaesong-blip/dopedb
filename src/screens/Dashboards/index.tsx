@@ -313,7 +313,7 @@ export default function Dashboards({
           <h3>{t("dashboard.emptyTitle")}</h3>
           <p className="muted">{t("dashboard.emptyBody")}</p>
           <button className="btn primary" onClick={onOpenAgent}>
-            <Icon name="play" />
+            <Icon name="terminal" />
             {t("dashboard.openAgent")}
           </button>
         </section>
@@ -325,7 +325,7 @@ export default function Dashboards({
               <span className="muted">{dashboards.length}</span>
             </div>
             <button className="btn small" onClick={onOpenAgent}>
-              <Icon name="play" />
+              <Icon name="terminal" />
               {t("dashboard.openAgent")}
             </button>
           </header>
