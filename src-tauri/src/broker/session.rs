@@ -48,6 +48,7 @@ pub(crate) struct AuthenticatedSession {
     pub(crate) runtime_id: Uuid,
     pub(crate) workspace_id: Uuid,
     pub(crate) account_scope: String,
+    pub(crate) scope_generation: i64,
     pub(crate) connection_id: Uuid,
     pub(crate) connection_revision: i64,
     pub(crate) capabilities: BTreeSet<BrokerCapability>,
@@ -142,6 +143,7 @@ impl BrokerSessionRegistry {
             runtime_id: self.runtime_id,
             workspace_id: pin.scope.workspace_id,
             account_scope: pin.scope.account_scope.storage_key().into(),
+            scope_generation: pin.scope.generation,
             connection_id: pin.connection_id,
             connection_revision: pin.connection_revision,
             capabilities: capabilities.into_iter().collect(),
@@ -309,6 +311,7 @@ mod tests {
         let authenticated = registry.authenticate(&authentication).unwrap();
         assert_eq!(authenticated.connection_id, connection_id);
         assert_eq!(authenticated.connection_revision, 11);
+        assert_eq!(authenticated.scope_generation, 7);
         assert!(authenticated.require(BrokerCapability::QueryPlan).is_ok());
         assert!(authenticated.require(BrokerCapability::SqlPropose).is_err());
 

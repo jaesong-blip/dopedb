@@ -1,5 +1,5 @@
 // App-level in-app agent chat state. Mounted once at the App level (same spot as
-// AgentFeedProvider) so a conversation survives leaving and returning to the Chat tab.
+// OperationActivityProvider) so a conversation survives leaving and returning to the Chat tab.
 // Thread list and message history live in TanStack Query (the DB is the source of truth) —
 // this provider only keeps the two things that must survive an Agent screen unmount mid-turn: which
 // thread is active, and the one globally-active turn's streaming buffer. The backend allows

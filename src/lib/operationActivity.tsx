@@ -1,6 +1,5 @@
-// App-level agent activity feed. The MCP listeners live here (started once from App via
-// AgentFeedProvider) instead of inside the Mcp screen, so agent tool calls/results are
-// captured even when that screen isn't mounted — the app is the visualizer, always on.
+// App-level operation activity. Terminal broker activity is the primary source; legacy
+// MCP events remain readable until the Phase 6 transport removal lands.
 import {
   createContext,
   useCallback,
@@ -16,7 +15,7 @@ import type { QueryResult } from "../ipc/types";
 const CAP = 200; // ponytail: capped in-memory ring; add persistence only if history matters
 const KEEP_ROWS = 25; // retain full rows only for the newest N results; older keep metadata only
 
-export interface AgentActivity {
+export interface OperationActivity {
   id: number;
   ts: string; // short display string (toLocaleTimeString)
   iso: string; // full timestamp, for a hover tooltip — display string alone is ambiguous across midnight
@@ -71,31 +70,53 @@ function sanitizePayload(p: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-interface AgentFeedValue {
-  feed: AgentActivity[];
-  latest: AgentActivity | null; // most recent activity carrying a result
+interface OperationActivityValue {
+  feed: OperationActivity[];
+  latest: OperationActivity | null; // most recent activity carrying a result
   unseen: number;
   markSeen: () => void;
 }
 
-const Ctx = createContext<AgentFeedValue | null>(null);
+interface BrokerOperationEvent {
+  requestId: string;
+  terminalSessionId: string;
+  connectionId: string | null;
+  command: string;
+  state: "completed" | "failed";
+  errorCode: string | null;
+}
 
-export function useAgentFeed(): AgentFeedValue {
+const Ctx = createContext<OperationActivityValue | null>(null);
+
+export function useOperationActivity(): OperationActivityValue {
   const v = useContext(Ctx);
-  if (!v) throw new Error("useAgentFeed must be used within AgentFeedProvider");
+  if (!v) {
+    throw new Error(
+      "useOperationActivity must be used within OperationActivityProvider",
+    );
+  }
   return v;
 }
 
-export function AgentFeedProvider({ children }: { children: ReactNode }) {
-  const [feed, setFeed] = useState<AgentActivity[]>([]);
-  const [latest, setLatest] = useState<AgentActivity | null>(null);
+export function OperationActivityProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const [feed, setFeed] = useState<OperationActivity[]>([]);
+  const [latest, setLatest] = useState<OperationActivity | null>(null);
   const [unseen, setUnseen] = useState(0);
   const idRef = useRef(0);
 
   useEffect(() => {
-    const push = (a: Omit<AgentActivity, "id" | "ts" | "iso">) => {
+    const push = (a: Omit<OperationActivity, "id" | "ts" | "iso">) => {
       const now = new Date();
-      const item: AgentActivity = { ...a, id: idRef.current++, ts: now.toLocaleTimeString(), iso: now.toISOString() };
+      const item: OperationActivity = {
+        ...a,
+        id: idRef.current++,
+        ts: now.toLocaleTimeString(),
+        iso: now.toISOString(),
+      };
       setFeed((f) => {
         // Bound memory: past the newest KEEP_ROWS results, drop rows but keep columns/rowCount
         // so the row stays clickable and shows a "re-run to view" note instead of an empty grid.
@@ -137,10 +158,36 @@ export function AgentFeedProvider({ children }: { children: ReactNode }) {
         payload: sanitizePayload(e.payload),
       }),
     ).catch((e) => console.error("agent feed listen failed:", e));
+    const p3 = listen<BrokerOperationEvent>("operation:changed", (event) => {
+      const {
+        command,
+        connectionId,
+        errorCode,
+        requestId,
+        state,
+        terminalSessionId,
+      } = event.payload;
+      push({
+        kind: "result",
+        tool: command,
+        detail: errorCode ? `${state}: ${errorCode}` : state,
+        error: state === "failed",
+        connectionId: connectionId ?? undefined,
+        payload: {
+          requestId,
+          terminalSessionId,
+          connectionId,
+          command,
+          state,
+          errorCode,
+        },
+      });
+    }).catch((e) => console.error("operation activity listen failed:", e));
     return () => {
       // .catch above widens these to UnlistenFn | void, so guard before calling.
       void p1.then((u) => u && u());
       void p2.then((u) => u && u());
+      void p3.then((u) => u && u());
     };
   }, []);
 

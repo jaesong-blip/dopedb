@@ -20,7 +20,7 @@ use dopedb_protocol::{
     PROTOCOL_MIN,
 };
 use serde::Serialize;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -38,6 +38,17 @@ use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegist
 const MAX_SQL_BYTES: usize = MAX_STRING_BYTES;
 const MAX_TABLE_SELECTOR_BYTES: usize = 512;
 const MAX_OPERATION_WAIT: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OperationActivityEvent {
+    request_id: Uuid,
+    terminal_session_id: Uuid,
+    connection_id: Option<Uuid>,
+    command: &'static str,
+    state: &'static str,
+    error_code: Option<ErrorCode>,
+}
 
 #[derive(Clone)]
 pub(crate) struct BrokerDispatcher {
@@ -70,13 +81,64 @@ impl BrokerDispatcher {
 
     pub(crate) async fn dispatch(&self, request: RequestEnvelope) -> ResponseEnvelope {
         let requested_protocol = request.protocol_version;
+        let activity = request.authentication.as_ref().and_then(|authentication| {
+            self.sessions
+                .authenticate(authentication)
+                .ok()
+                .map(|session| {
+                    (
+                        request.request_id,
+                        authentication.terminal_session_id,
+                        session.connection_id,
+                        request.command,
+                    )
+                })
+        });
         let response_protocol = if (PROTOCOL_MIN..=PROTOCOL_MAX).contains(&requested_protocol) {
             requested_protocol
         } else {
             PROTOCOL_MAX
         };
         let response = self.dispatch_current(request).await;
-        response_at_protocol(response, response_protocol)
+        let response = response_at_protocol(response, response_protocol);
+        if let Some((request_id, terminal_session_id, connection_id, command)) = activity {
+            self.emit_operation_activity(
+                request_id,
+                terminal_session_id,
+                connection_id,
+                command,
+                &response,
+            );
+        }
+        response
+    }
+
+    fn emit_operation_activity(
+        &self,
+        request_id: Uuid,
+        terminal_session_id: Uuid,
+        connection_id: Uuid,
+        command: CommandName,
+        response: &ResponseEnvelope,
+    ) {
+        let Some(app) = &self.app_handle else {
+            return;
+        };
+        let payload = OperationActivityEvent {
+            request_id,
+            terminal_session_id,
+            connection_id: Some(connection_id),
+            command: command.as_str(),
+            state: if response.is_ok() {
+                "completed"
+            } else {
+                "failed"
+            },
+            error_code: response.error().map(ProtocolError::code),
+        };
+        if let Err(error) = app.emit("operation:changed", payload) {
+            tracing::warn!(%error, "failed to emit broker operation activity");
+        }
     }
 
     async fn dispatch_current(&self, request: RequestEnvelope) -> ResponseEnvelope {
@@ -827,6 +889,7 @@ fn terminal_authority(
         terminal_session_id: session.terminal_session_id,
         workspace_id: session.workspace_id,
         account_scope: session.account_scope.clone(),
+        scope_generation: session.scope_generation,
         connection_id: session.connection_id,
         connection_revision: session.connection_revision,
         client_protocol_version,

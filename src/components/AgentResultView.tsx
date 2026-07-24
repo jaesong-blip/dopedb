@@ -1,5 +1,6 @@
-// Agent workspace: result review, MCP context ledger, and policy/audit posture.
+// Operation workspace: result review, sanitized command context, and policy/audit posture.
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import type { Dashboard } from "../ipc/types";
 import DataGrid from "./DataGrid";
 import DashboardDraftPanel from "./DashboardDraftPanel";
 import ResultToolbar from "./ResultToolbar";
@@ -7,18 +8,23 @@ import { Icon } from "./Icon";
 import InfoTip from "./InfoTip";
 import { stamp } from "../lib/export";
 import { fullTime } from "../lib/relTime";
-import { useAgentFeed, type AgentActivity } from "../lib/agentFeed";
+import {
+  useOperationActivity,
+  type OperationActivity,
+} from "../lib/operationActivity";
 import { useI18n, type I18nKey } from "../lib/i18n";
-import type { Dashboard } from "../ipc/types";
 import "./AgentResultView.css";
 
 type AgentView = "result" | "context" | "audit";
 
-function selectedResult(feed: AgentActivity[], latest: AgentActivity | null) {
+function selectedResult(
+  feed: OperationActivity[],
+  latest: OperationActivity | null,
+) {
   return latest ?? feed.find((item) => item.result) ?? null;
 }
 
-function contextSummaryKey(item: AgentActivity): I18nKey {
+function contextSummaryKey(item: OperationActivity): I18nKey {
   switch (item.tool) {
     case "list_connections":
       return "agent.contextSummaryListConnections";
@@ -54,9 +60,9 @@ function Timeline({
   selected,
   onSelect,
 }: {
-  feed: AgentActivity[];
-  selected: AgentActivity | null;
-  onSelect: (item: AgentActivity) => void;
+  feed: OperationActivity[];
+  selected: OperationActivity | null;
+  onSelect: (item: OperationActivity) => void;
 }) {
   return (
     <ul className="mcp-feed agent-timeline">
@@ -159,7 +165,7 @@ export default function AgentResultView({
   onDashboardSaved: (dashboard: Dashboard) => void;
 }) {
   const { t } = useI18n();
-  const { feed: allFeed } = useAgentFeed();
+  const { feed: allFeed } = useOperationActivity();
   const feed = useMemo(
     () =>
       connectionId
@@ -169,7 +175,7 @@ export default function AgentResultView({
   );
   const latest = useMemo(() => feed.find((item) => item.result) ?? null, [feed]);
   const [view, setView] = useState<AgentView>("result");
-  const [selected, setSelected] = useState<AgentActivity | null>(() =>
+  const [selected, setSelected] = useState<OperationActivity | null>(() =>
     selectedResult(feed, latest),
   );
   const [dashboardSourceId, setDashboardSourceId] = useState<number | null>(null);

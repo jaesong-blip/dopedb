@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
 
-pub(crate) use session::BrokerSessionRegistry;
+pub(crate) use session::{BrokerCapability, BrokerSessionRegistry};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BrokerRuntimeStatus {
@@ -68,6 +68,10 @@ impl BrokerRuntime {
 
     pub(crate) fn sessions(&self) -> &BrokerSessionRegistry {
         &self.inner.sessions
+    }
+
+    pub(crate) fn runtime_file(&self) -> Option<PathBuf> {
+        self.inner.status.lock().unwrap().runtime_file.clone()
     }
 
     pub(crate) fn prepare_start(&self) -> bool {

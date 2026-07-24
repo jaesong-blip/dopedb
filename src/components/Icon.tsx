@@ -137,6 +137,22 @@ const glyphs = {
       <path d="M15 3v18" />
     </>
   ),
+  terminal: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m7 9 3 3-3 3M13 15h4" />
+    </>
+  ),
+  maximize: (
+    <>
+      <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
+    </>
+  ),
+  minimize: (
+    <>
+      <path d="M8 8H3V3M16 8h5V3M8 16H3v5M16 16h5v5" />
+    </>
+  ),
   dashboard: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1" />

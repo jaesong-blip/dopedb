@@ -1,6 +1,6 @@
 # DopeDB CLI·Terminal Platform 구현 계획
 
-- 상태: 구현 진행 — Phase 4 Skill Manager
+- 상태: 구현 진행 — Phase 5 Terminal Dock 완료, Phase 6 MCP cutover 준비
 - 최종 갱신: 2026-07-25
 - 적용 대상: DopeDB Desktop, `workspace-cloud`, 신규 `dopedb-cli`, 향후
   Plugin/Realtime 서비스
@@ -1991,6 +1991,23 @@ ERD layout, dashboard, policy는 먼저 optimistic revision을 사용한다.
 - app exit child/grandchild process-tree cleanup
 - connection switch가 기존 session을 retarget하지 않음
 - Agent가 Skill/CLI로 schema 조회와 safe query 실행
+
+구현 결과(2026-07-25):
+
+- `portable-pty` 기반 Rust session manager와 xterm surface를 추가하고 Shell,
+  Codex, Claude profile을 동일한 PTY lifecycle로 통합했다.
+- session은 workspace/account/scope generation/connection revision에 고정되며,
+  연결·계정·권한 변경 시 capability를 폐기하고 process tree를 중지한다.
+- 입력, resize, output replay를 크기 제한하고 OSC/DCS/window control을 Rust에서
+  제거한다. 비활성 tab은 xterm을 유지하지 않고 512 KiB 메모리 replay ring으로
+  복원한다.
+- Unix process group과 Windows Job Object로 child/grandchild cleanup을 구현하고,
+  앱 종료 시 bounded graceful stop 뒤 강제 정리한다.
+- 실제 Terminal session 인증을 사용하는 CLI E2E에서 schema list, query plan,
+  single-use query run과 secret-free output을 검증한다.
+- 로컬 검증 기준으로 frontend 186 tests, Rust workspace 420 tests(환경 의존
+  credential-store test 1개 제외), clippy, UI depth contract, app/sidecar/site/
+  workspace-cloud production build가 통과했다.
 
 ### Phase 6 — MCP cutover
 

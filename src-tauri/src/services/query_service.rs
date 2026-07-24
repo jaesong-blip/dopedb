@@ -2329,6 +2329,7 @@ mod tests {
                 terminal_session_id: Uuid::new_v4(),
                 workspace_id: pin.scope.workspace_id,
                 account_scope: pin.scope.account_scope.storage_key().to_owned(),
+                scope_generation: pin.scope.generation,
                 connection_id: pin.connection_id,
                 connection_revision: pin.connection_revision,
                 client_protocol_version: dopedb_protocol::PROTOCOL_MAX,
@@ -3553,10 +3554,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn terminal_sql_preview_rejects_changed_authority_before_target_access() {
+    async fn terminal_sql_preview_rejects_reselected_scope_before_target_access() {
         let harness = SqliteHarness::new().await;
         let mut authority = harness.terminal_authority().await;
-        authority.workspace_id = Uuid::new_v4();
+        authority.scope_generation += 1;
 
         let error = match harness
             .service

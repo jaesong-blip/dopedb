@@ -23,7 +23,10 @@ import {
   shouldShowStreamingAssistant,
   useAgentChat,
 } from "../../lib/agentChat";
-import { useAgentFeed, type AgentActivity } from "../../lib/agentFeed";
+import {
+  useOperationActivity,
+  type OperationActivity,
+} from "../../lib/operationActivity";
 import { isNearBottom } from "../../lib/autoScroll";
 import {
   agentChatMessagesQuery,
@@ -72,15 +75,18 @@ interface DisplayMessage {
 
 // A turn's tool calls are whatever the agent feed logged from this turn's start onward. Only
 // the live/just-finished turn carries turnStartIso, so past history never grows tool chips.
-function toolsDuringTurn(feed: AgentActivity[], msg: DisplayMessage): AgentActivity[] {
+function toolsDuringTurn(
+  feed: OperationActivity[],
+  msg: DisplayMessage,
+): OperationActivity[] {
   if (!msg.turnStartIso) return [];
   return feed.filter((item) => item.kind === "result" && item.iso >= msg.turnStartIso!);
 }
 
 function latestActivityDuringTurn(
-  feed: AgentActivity[],
+  feed: OperationActivity[],
   msg: DisplayMessage,
-): AgentActivity | null {
+): OperationActivity | null {
   if (!msg.turnStartIso) return null;
   return feed.find((item) => item.iso >= msg.turnStartIso!) ?? null;
 }
@@ -199,7 +205,7 @@ export default function AgentChat({
   const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { feed } = useAgentFeed();
+  const { feed } = useOperationActivity();
   const {
     threadId,
     openThread,

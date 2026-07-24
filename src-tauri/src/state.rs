@@ -10,6 +10,7 @@ use crate::operations::{LocalApprovalAuthority, OperationRuntime};
 use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
 use crate::store::Store;
+use crate::terminal::TerminalManager;
 
 /// Live runtime status of the MCP listeners, set by `mcp::serve_*` on bind
 /// success/failure so the UI can tell "actually listening" from "config exists".
@@ -44,6 +45,8 @@ pub struct AppState {
     pub features: crate::features::FeatureFlags,
     /// Offline Skill bundle inventory and atomic per-user installer.
     pub(crate) skills: SkillManager,
+    /// PTY sessions, bounded output replay, and process-tree lifecycle.
+    pub(crate) terminals: TerminalManager,
     /// Desktop-only approval capability. MCP/CLI/Agent adapters receive only the
     /// ApplicationServices facade and therefore cannot obtain this value.
     pub(crate) local_operation_approval: LocalApprovalAuthority,
@@ -56,11 +59,13 @@ impl AppState {
             FeatureFlag::LocalBrokerV1,
             FeatureFlag::CliV1,
             FeatureFlag::SkillManagerV1,
+            FeatureFlag::TerminalDockV1,
         ]);
         let store = Store::open().await?;
         let connections = ConnectionManager::new(store.clone());
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let broker = BrokerRuntime::new(operation.runtime_id());
+        let terminals = TerminalManager::new(broker.sessions().clone());
         let services = ApplicationServices::new(store.clone(), connections.clone(), operation);
         let skills = SkillManager::new()?;
         if features.is_enabled(FeatureFlag::OperationRuntimeV1) {
@@ -76,6 +81,7 @@ impl AppState {
             broker,
             features,
             skills,
+            terminals,
             local_operation_approval,
         })
     }

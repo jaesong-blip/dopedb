@@ -4,6 +4,7 @@
 mod agent;
 mod audit;
 mod broker;
+mod cli_environment;
 mod cli_install;
 mod commands;
 mod connection;
@@ -24,6 +25,7 @@ mod skills;
 mod sql_script;
 mod state;
 mod store;
+mod terminal;
 mod workspace_auth;
 
 pub use error::{AppError, AppResult};
@@ -113,6 +115,15 @@ pub fn run() {
             commands::repair_skill,
             commands::remove_skill,
             commands::skill_self_test,
+            terminal::terminal_create,
+            terminal::terminal_list,
+            terminal::terminal_focus,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_kill,
+            terminal::terminal_restart,
+            terminal::terminal_rename,
+            terminal::terminal_shutdown_all,
             commands::workspace_auth_state,
             commands::refresh_workspace_auth_state,
             commands::workspace_sign_out,
@@ -186,6 +197,8 @@ pub fn run() {
             // is torn down), so the child can be orphaned. Block here (bounded) until
             // the turn has actually wound down, so the child is reaped first.
             if let tauri::RunEvent::Exit = event {
+                let terminals = app_handle.state::<state::AppState>().terminals.clone();
+                terminals.shutdown_all(app_handle, Duration::from_secs(2));
                 let broker = app_handle.state::<state::AppState>().broker.clone();
                 tauri::async_runtime::block_on(broker.shutdown_and_wait(Duration::from_secs(2)));
                 let chat = app_handle.state::<state::AppState>().chat.clone();

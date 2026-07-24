@@ -1,3 +1,5 @@
+// Desktop workbench shell: coordinates the selected connection, document surface,
+// workspace navigation, and the persistent connection-pinned Terminal Dock.
 import {
   useCallback,
   useEffect,
@@ -38,16 +40,18 @@ import SchemaDiff from "./screens/SchemaDiff";
 import Onboarding from "./screens/Onboarding";
 import Settings from "./screens/Settings";
 import type { SettingsSection } from "./screens/Settings";
-import AgentChat from "./screens/AgentChat";
 import AgentLogDialog from "./components/AgentLogDialog";
 import EngineMark from "./components/EngineMark";
 import { Icon } from "./components/Icon";
+import TerminalDock from "./components/TerminalDock/TerminalDock";
 import WorkbenchDocumentStrip from "./components/WorkbenchDocumentStrip";
 import { ToastProvider, useToast } from "./components/Toast";
 import WorkspaceAccount from "./components/WorkspaceAccount";
 import WorkspaceSwitcher from "./components/WorkspaceSwitcher";
-import { AgentChatProvider } from "./lib/agentChat";
-import { AgentFeedProvider, useAgentFeed } from "./lib/agentFeed";
+import {
+  OperationActivityProvider,
+  useOperationActivity,
+} from "./lib/operationActivity";
 import { useI18n, type I18nKey } from "./lib/i18n";
 import {
   queryDocument,
@@ -60,7 +64,7 @@ import {
 // Chat2DB-style information architecture:
 // - the global rail switches products (database workspace / dashboard);
 // - database tools are real documents inside the selected connection's workbench;
-// - Agent remains a persistent utility dock and inherits that one connection context.
+// - interactive Shell/Agent sessions live in a persistent, connection-pinned Terminal Dock.
 type AppArea = "workspace" | "dashboard";
 
 // `null` = not editing; "new" = blank form; a profile = edit that profile.
@@ -70,11 +74,9 @@ type McpBadgeState = "server" | "disconnected";
 export default function App() {
   return (
     <ToastProvider>
-      <AgentFeedProvider>
-        <AgentChatProvider>
-          <Shell />
-        </AgentChatProvider>
-      </AgentFeedProvider>
+      <OperationActivityProvider>
+        <Shell />
+      </OperationActivityProvider>
     </ToastProvider>
   );
 }
@@ -84,6 +86,9 @@ const IS_MACOS = typeof navigator !== "undefined"
   && /Macintosh|Mac OS X/.test(navigator.userAgent);
 const SIDEBAR_MAX = 520;
 const SIDEBAR_DEFAULT = 240;
+const TERMINAL_DOCK_MIN = 360;
+const TERMINAL_DOCK_MAX = 720;
+const TERMINAL_DOCK_DEFAULT = 480;
 const MCP_PLATFORM_REFRESH_INTERVAL_MS = 5 * 60_000;
 const MCP_RUNTIME_REFRESH_INTERVAL_MS = 30_000;
 const MCP_STARTUP_POLL_INTERVAL_MS = 2_000;
@@ -278,11 +283,11 @@ function WorkbenchRail({
 
 function Shell() {
   const { t } = useI18n();
-  const { unseen, latest, markSeen } = useAgentFeed();
+  const { unseen, latest, markSeen } = useOperationActivity();
   const toast = useToast();
   // Keep one bounded Skill inventory observer alive for the app lifecycle. This performs
   // the required startup scan and rechecks after focus without creating install roots.
-  useQuery(skillStatusQuery());
+  const skillStatusQ = useQuery(skillStatusQuery());
   const [conns, setConns] = useState<ConnectionProfile[]>([]);
   // Resizable sidebar: drag the divider, double-click resets; width persists.
   const [sidebarW, setSidebarW] = useState(() => {
@@ -327,10 +332,18 @@ function Shell() {
   );
   const [documents, setDocuments] = useState<WorkbenchDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
-  const [agentDockOpen, setAgentDockOpen] = useState(
-    () => localStorage.getItem("agentDockOpen") !== "0",
-  );
-  const [agentOverlay, setAgentOverlay] = useState(
+  const [terminalDockOpen, setTerminalDockOpen] = useState(() => {
+    const saved = localStorage.getItem("terminalDockOpen");
+    if (saved !== null) return saved !== "0";
+    return localStorage.getItem("agentDockOpen") !== "0";
+  });
+  const [terminalDockWidth, setTerminalDockWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("terminalDockWidth"));
+    return saved >= TERMINAL_DOCK_MIN && saved <= TERMINAL_DOCK_MAX
+      ? saved
+      : TERMINAL_DOCK_DEFAULT;
+  });
+  const [terminalOverlay, setTerminalOverlay] = useState(
     () => window.matchMedia("(max-width: 900px)").matches,
   );
   const [dashboardFocusId, setDashboardFocusId] = useState<string | null>(null);
@@ -342,12 +355,7 @@ function Shell() {
   const [schemaDiffGroupKey, setSchemaDiffGroupKey] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [agentLogOpen, setAgentLogOpen] = useState(false);
-  const [agentHistoryOpen, setAgentHistoryOpen] = useState(false);
-  const agentButtonRef = useRef<HTMLButtonElement | null>(null);
-  const agentCloseRef = useRef<HTMLButtonElement | null>(null);
-  const agentHistoryButtonRef = useRef<HTMLButtonElement | null>(null);
-  const agentHistoryOpenRef = useRef(false);
-  const agentDockRef = useRef<HTMLElement | null>(null);
+  const terminalButtonRef = useRef<HTMLButtonElement | null>(null);
   const updateCheckInFlight = useRef(false);
   const lastUpdateCheckAt = useRef(0);
   const mcpPlatformsQ = useQuery({
@@ -412,7 +420,8 @@ function Shell() {
   const activeDocument =
     selectedDocuments.find((document) => document.id === activeDocumentId) ?? null;
   const selectedTable = activeDocument?.kind === "data" ? activeDocument.table : null;
-  const showAgentDock = agentDockOpen && !!selected && !settingsOpen && editing === null;
+  const showTerminalDock =
+    terminalDockOpen && !!selected && !settingsOpen && editing === null;
   // Schema diff is a SQL-only comparison feature — a group whose connections are MongoDB
   // is never a valid diff candidate, even if one somehow carries a schemaGroup value.
   const schemaGroups = useMemo(
@@ -479,68 +488,10 @@ function Shell() {
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 900px)");
-    const sync = () => setAgentOverlay(media.matches);
+    const sync = () => setTerminalOverlay(media.matches);
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
-
-  useEffect(() => {
-    agentHistoryOpenRef.current = agentHistoryOpen;
-  }, [agentHistoryOpen]);
-
-  useEffect(() => {
-    if (!showAgentDock || !agentOverlay) return;
-    const close = () => {
-      localStorage.setItem("agentDockOpen", "0");
-      setAgentDockOpen(false);
-      setAgentHistoryOpen(false);
-      window.requestAnimationFrame(() => agentButtonRef.current?.focus());
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        if (agentHistoryOpenRef.current) {
-          setAgentHistoryOpen(false);
-          window.requestAnimationFrame(() => agentHistoryButtonRef.current?.focus());
-          return;
-        }
-        close();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = [
-        ...(agentDockRef.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-        ) ?? []),
-      ];
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (
-        event.shiftKey &&
-        (document.activeElement === first ||
-          !agentDockRef.current?.contains(document.activeElement))
-      ) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    const inertTargets = [
-      document.querySelector<HTMLElement>(".main"),
-      document.querySelector<HTMLElement>(".sidebar"),
-    ].filter((target): target is HTMLElement => target !== null);
-    inertTargets.forEach((target) => target.setAttribute("inert", ""));
-    const focusFrame = window.requestAnimationFrame(() => agentCloseRef.current?.focus());
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.removeEventListener("keydown", onKeyDown);
-      inertTargets.forEach((target) => target.removeAttribute("inert"));
-    };
-  }, [agentOverlay, showAgentDock]);
 
   // CodeMirror is intentionally split out of the startup bundle. Warm that chunk only
   // after a SQL-capable connection exists, using idle time so the first SQL click does
@@ -628,7 +579,7 @@ function Shell() {
     };
   }, []);
 
-  // Nudge (not hijack) when a new result lands while the Agent dock is hidden. Skip
+  // Nudge (not hijack) when a new result lands while the Terminal Dock is hidden. Skip
   // the mount baseline so it doesn't fire on load; guard on result id so it fires once per
   // result; throttle to one toast per 30s so a burst of agent queries yields a single nudge.
   const seenResultId = useRef<number | null>(null);
@@ -643,15 +594,15 @@ function Shell() {
     if (latest && latest.id !== seenResultId.current) {
       seenResultId.current = latest.id;
       const now = Date.now();
-      if (!showAgentDock && now - lastToastAt.current > 30000) {
+      if (!showTerminalDock && now - lastToastAt.current > 30000) {
         lastToastAt.current = now;
         toast(t("app.toastAgentQuery"));
       }
     }
-  }, [latest, showAgentDock, toast]);
+  }, [latest, showTerminalDock, toast]);
 
-  // Agent is now the conversation itself; activity is only considered seen after the user
-  // explicitly opens the secondary log surface.
+  // Operation activity is considered seen only after the user explicitly opens the
+  // secondary log surface.
   useEffect(() => {
     if (agentLogOpen && unseen > 0) markSeen();
   }, [agentLogOpen, unseen, markSeen]);
@@ -719,27 +670,36 @@ function Shell() {
     setEditing(null);
   }
 
-  function openAgentDock() {
-    localStorage.setItem("agentDockOpen", "1");
-    setAgentDockOpen(true);
-  }
+  const openTerminalDock = useCallback(() => {
+    localStorage.setItem("terminalDockOpen", "1");
+    setTerminalDockOpen(true);
+  }, []);
 
-  function closeAgentDock() {
-    localStorage.setItem("agentDockOpen", "0");
-    setAgentDockOpen(false);
-    setAgentHistoryOpen(false);
-  }
+  const closeTerminalDock = useCallback(() => {
+    localStorage.setItem("terminalDockOpen", "0");
+    setTerminalDockOpen(false);
+    window.requestAnimationFrame(() => terminalButtonRef.current?.focus());
+  }, []);
 
-  function toggleAgentDock() {
+  const updateTerminalDockWidth = useCallback((next: number) => {
+    const width = Math.min(
+      TERMINAL_DOCK_MAX,
+      Math.max(TERMINAL_DOCK_MIN, Math.round(next)),
+    );
+    setTerminalDockWidth(width);
+    localStorage.setItem("terminalDockWidth", String(width));
+  }, []);
+
+  function toggleTerminalDock() {
     if (!selected) return;
-    if (showAgentDock) {
-      closeAgentDock();
+    if (showTerminalDock) {
+      closeTerminalDock();
       return;
     }
     setSettingsOpen(false);
     setEditing(null);
     setSchemaDiffGroupKey(null);
-    openAgentDock();
+    openTerminalDock();
   }
 
   function syncAvailableUpdate(update: Update | null) {
@@ -933,15 +893,15 @@ function Shell() {
             </div>
             <div className="main-head-actions ds-control-row">
               <button
-                ref={agentButtonRef}
+                ref={terminalButtonRef}
                 type="button"
-                className={`btn small main-agent-toggle${showAgentDock ? " active" : ""}`}
-                onClick={toggleAgentDock}
-                title={t("tabs.agent")}
-                aria-label={t("tabs.agent")}
-                aria-pressed={showAgentDock}
+                className={`btn small main-terminal-toggle${showTerminalDock ? " active" : ""}`}
+                onClick={toggleTerminalDock}
+                title={t("terminal.title")}
+                aria-label={t("terminal.title")}
+                aria-pressed={showTerminalDock}
               >
-                <Icon name="sidebar" />
+                <Icon name="terminal" />
                 {unseen > 0 && (
                   <span className="workbench-rail-count">
                     {unseen > 9 ? "9+" : unseen}
@@ -973,7 +933,7 @@ function Shell() {
               connection={selected}
               focusId={dashboardFocusId}
               onFocusConsumed={consumeDashboardFocus}
-              onOpenAgent={openAgentDock}
+              onOpenAgent={openTerminalDock}
             />
           ) : !activeDocument ? (
             <div className="workbench-empty">
@@ -1049,11 +1009,13 @@ function Shell() {
   return (
     <div
       className={`app${IS_MACOS ? " platform-macos" : ""}${
-        showAgentDock ? " agent-open" : ""
+        showTerminalDock ? " terminal-open" : ""
       }`}
       style={{
         gridTemplateColumns: `48px ${sidebarW}px 5px minmax(0, 1fr) ${
-          showAgentDock ? "minmax(300px, 340px)" : "0px"
+          showTerminalDock && !terminalOverlay
+            ? `${terminalDockWidth}px`
+            : "0px"
         }`,
       }}
     >
@@ -1183,75 +1145,17 @@ function Shell() {
           </div>
         )}
       </main>
-      {showAgentDock && selected && (
-        <aside
-          ref={agentDockRef}
-          className="agent-dock"
-          aria-label={t("tabs.agent")}
-          role={agentOverlay ? "dialog" : undefined}
-          aria-modal={agentOverlay || undefined}
-        >
-          <header className="agent-dock-head">
-            <strong>{t("tabs.agent")}</strong>
-            <div className="ds-control-row">
-              <button
-                ref={agentHistoryButtonRef}
-                type="button"
-                className={`btn small${agentHistoryOpen ? " active" : ""}`}
-                onClick={() => setAgentHistoryOpen((open) => !open)}
-                title={t("agentChat.toggleThreads")}
-                aria-label={t("agentChat.toggleThreads")}
-                aria-expanded={agentHistoryOpen}
-                aria-controls="agent-chat-history"
-              >
-                <Icon name="history" />
-              </button>
-              <button
-                type="button"
-                className="btn small"
-                onClick={() => setAgentLogOpen(true)}
-                title={t("agentChat.logsFor", {
-                  name: selected.name || t("app.unnamed"),
-                })}
-                aria-label={t("agentChat.logsFor", {
-                  name: selected.name || t("app.unnamed"),
-                })}
-              >
-                <Icon name="list" />
-                {unseen > 0 && (
-                  <span className="tab-dot">{unseen > 9 ? "9+" : unseen}</span>
-                )}
-              </button>
-              <button
-                ref={agentCloseRef}
-                type="button"
-                className="btn small"
-                onClick={closeAgentDock}
-                title={t("common.close")}
-                aria-label={t("common.close")}
-              >
-                <Icon name="close" />
-              </button>
-            </div>
-          </header>
-          <div className="agent-dock-body">
-            <AgentChat
-              compact
-              historyOpen={agentHistoryOpen}
-              onHistoryOpenChange={(open) => {
-                setAgentHistoryOpen(open);
-                if (!open) {
-                  window.requestAnimationFrame(() =>
-                    agentHistoryButtonRef.current?.focus(),
-                  );
-                }
-              }}
-              onOpenLogs={() => setAgentLogOpen(true)}
-              onOpenMcpSettings={openMcpSettings}
-              selectedConnection={selected}
-            />
-          </div>
-        </aside>
+      {showTerminalDock && selected && (
+        <TerminalDock
+          connection={selected}
+          skillStatus={skillStatusQ.data ?? null}
+          overlay={terminalOverlay}
+          width={terminalDockWidth}
+          unseen={unseen}
+          onWidthChange={updateTerminalDockWidth}
+          onOpenLogs={() => setAgentLogOpen(true)}
+          onClose={closeTerminalDock}
+        />
       )}
       {agentLogOpen && selected && (
         <AgentLogDialog

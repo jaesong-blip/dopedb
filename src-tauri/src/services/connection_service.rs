@@ -805,6 +805,7 @@ mod tests {
             terminal_session_id: Uuid::new_v4(),
             workspace_id: pin.scope.workspace_id,
             account_scope: pin.scope.account_scope.storage_key().into(),
+            scope_generation: pin.scope.generation,
             connection_id: pin.connection_id,
             connection_revision: pin.connection_revision,
             client_protocol_version: dopedb_protocol::PROTOCOL_MAX,

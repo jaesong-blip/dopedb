@@ -17,6 +17,7 @@ use crate::model::{
     ConnectionProfile, Dashboard, DashboardDraft, DocumentQuery, HistoryEntry,
     PlatformFeatureFlags, SafetySettings, Workspace, WorkspaceAuthState,
     WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceLoginPoll,
+    WorkspaceLoginPollStatus, WorkspaceRole,
 };
 use crate::services::{
     AgentService, AuditSnapshotReceipt, AuditVerdict, CatalogReadPolicy, ChatThreadCreateRequest,
@@ -32,6 +33,45 @@ use crate::services::{
     WorkspaceCredentialBindingRequest,
 };
 use crate::state::AppState;
+
+type WorkspaceAuthorityFingerprint = (Uuid, String, i64, Vec<(String, Uuid, WorkspaceRole)>);
+
+async fn workspace_authority_fingerprint(
+    state: &AppState,
+) -> AppResult<WorkspaceAuthorityFingerprint> {
+    let scope = state.store.active_resource_scope().await?;
+    let mut grants = state
+        .store
+        .workspace_accounts()
+        .await?
+        .into_iter()
+        .flat_map(|account| {
+            let user_id = account.user.id;
+            account
+                .memberships
+                .into_iter()
+                .map(move |membership| (user_id.clone(), membership.workspace_id, membership.role))
+        })
+        .collect::<Vec<_>>();
+    grants.sort();
+    Ok((
+        scope.workspace_id,
+        scope.account_scope.storage_key().to_owned(),
+        scope.generation,
+        grants,
+    ))
+}
+
+async fn revoke_if_workspace_authority_changed(
+    state: &AppState,
+    app: &tauri::AppHandle,
+    before: &WorkspaceAuthorityFingerprint,
+) {
+    match workspace_authority_fingerprint(state).await {
+        Ok(after) if &after == before => {}
+        Ok(_) | Err(_) => state.terminals.stop_all(app),
+    }
+}
 
 #[tauri::command]
 pub async fn cli_installation_status(
@@ -183,20 +223,30 @@ pub async fn workspace_auth_state(state: State<'_, AppState>) -> AppResult<Works
 #[tauri::command]
 pub async fn refresh_workspace_auth_state(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> AppResult<WorkspaceAuthState> {
-    state.services.workspace.refresh_auth_state().await
+    let before = workspace_authority_fingerprint(&state).await?;
+    let result = state.services.workspace.refresh_auth_state().await;
+    revoke_if_workspace_authority_changed(&state, &app, &before).await;
+    result
 }
 
 #[tauri::command]
 pub async fn workspace_sign_out(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     user_id: Option<String>,
 ) -> AppResult<WorkspaceAuthState> {
+    state.terminals.stop_all(&app);
     state.services.workspace.sign_out(user_id).await
 }
 
 #[tauri::command]
-pub async fn workspace_sign_out_all(state: State<'_, AppState>) -> AppResult<WorkspaceAuthState> {
+pub async fn workspace_sign_out_all(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> AppResult<WorkspaceAuthState> {
+    state.terminals.stop_all(&app);
     state.services.workspace.sign_out_all().await
 }
 
@@ -210,9 +260,14 @@ pub async fn begin_workspace_login(
 #[tauri::command]
 pub async fn poll_workspace_login(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     device_code: String,
 ) -> AppResult<WorkspaceLoginPoll> {
-    state.services.workspace.poll_login(&device_code).await
+    let result = state.services.workspace.poll_login(&device_code).await?;
+    if result.status == WorkspaceLoginPollStatus::SignedIn {
+        state.terminals.stop_all(&app);
+    }
+    Ok(result)
 }
 
 #[tauri::command]
@@ -233,8 +288,12 @@ pub async fn list_workspaces(state: State<'_, AppState>) -> AppResult<Vec<Worksp
 #[tauri::command]
 pub async fn refresh_workspace_memberships(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> AppResult<Vec<Workspace>> {
-    state.services.workspace.refresh_memberships().await
+    let before = workspace_authority_fingerprint(&state).await?;
+    let result = state.services.workspace.refresh_memberships().await;
+    revoke_if_workspace_authority_changed(&state, &app, &before).await;
+    result
 }
 
 #[tauri::command]
@@ -245,18 +304,26 @@ pub async fn get_active_workspace(state: State<'_, AppState>) -> AppResult<Works
 #[tauri::command]
 pub async fn set_active_workspace(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     id: Uuid,
     account_user_id: Option<String>,
 ) -> AppResult<Workspace> {
-    state.services.workspace.activate(id, account_user_id).await
+    let before = workspace_authority_fingerprint(&state).await?;
+    let result = state.services.workspace.activate(id, account_user_id).await;
+    revoke_if_workspace_authority_changed(&state, &app, &before).await;
+    result
 }
 
 #[tauri::command]
 pub async fn set_active_workspace_account(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     user_id: String,
 ) -> AppResult<Workspace> {
-    state.services.workspace.activate_account(user_id).await
+    let before = workspace_authority_fingerprint(&state).await?;
+    let result = state.services.workspace.activate_account(user_id).await;
+    revoke_if_workspace_authority_changed(&state, &app, &before).await;
+    result
 }
 
 /// Copy a local connection into a team workspace. Only its redacted template crosses
@@ -284,11 +351,12 @@ pub async fn copy_connection_to_workspace(
 #[tauri::command]
 pub async fn bind_workspace_connection_credentials(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     id: Uuid,
     username: String,
     password: String,
 ) -> AppResult<ConnectionProfile> {
-    state
+    let profile = state
         .services
         .workspace
         .bind_connection_credentials(WorkspaceCredentialBindingRequest {
@@ -296,7 +364,9 @@ pub async fn bind_workspace_connection_credentials(
             username,
             password: Zeroizing::new(password),
         })
-        .await
+        .await?;
+    state.terminals.stop_connection(id, &app);
+    Ok(profile)
 }
 
 // ── connection CRUD ──────────────────────────────────────────────────────────
@@ -322,35 +392,49 @@ pub async fn list_connections(state: State<'_, AppState>) -> AppResult<Vec<Conne
 #[tauri::command]
 pub async fn upsert_connection(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     profile: ConnectionProfile,
     password: Option<String>,
 ) -> AppResult<ConnectionProfile> {
-    state
+    let saved = state
         .services
         .connections
         .upsert(ConnectionUpsertRequest {
             profile,
             password: password.map(Zeroizing::new),
         })
-        .await
+        .await?;
+    state.terminals.stop_connection(saved.id, &app);
+    Ok(saved)
 }
 
 #[tauri::command]
 pub async fn set_connections_schema_group(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     ids: Vec<Uuid>,
     schema_group: Option<String>,
 ) -> AppResult<Vec<ConnectionProfile>> {
-    state
+    let profiles = state
         .services
         .connections
-        .set_schema_group(ids, schema_group)
-        .await
+        .set_schema_group(ids.clone(), schema_group)
+        .await?;
+    for id in ids {
+        state.terminals.stop_connection(id, &app);
+    }
+    Ok(profiles)
 }
 
 #[tauri::command]
-pub async fn delete_connection(state: State<'_, AppState>, id: Uuid) -> AppResult<()> {
-    state.services.connections.delete(id).await
+pub async fn delete_connection(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    id: Uuid,
+) -> AppResult<()> {
+    state.services.connections.delete(id).await?;
+    state.terminals.stop_connection(id, &app);
+    Ok(())
 }
 
 #[tauri::command]

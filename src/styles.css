@@ -141,39 +141,6 @@
   min-width: 0;
   background: transparent;
 }
-.agent-dock {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-left: var(--ds-border-width) solid var(--ds-border-subtle);
-  background: var(--ds-surface-0);
-}
-.agent-dock-head {
-  min-height: calc(var(--ds-control-lg) + var(--ds-space-2));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-2);
-  padding: var(--ds-space-1) var(--ds-space-2);
-  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
-}
-.agent-dock-head > strong {
-  overflow: hidden;
-  font-size: var(--ds-font-size-ui);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.agent-dock-head .btn.active {
-  border-color: var(--ds-border-strong);
-  background: var(--ds-selection);
-  color: var(--ds-selection-foreground);
-}
-.agent-dock-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
 .main-head {
   display: flex;
   align-items: center;
@@ -187,10 +154,10 @@
   flex: 0 0 auto;
   margin-left: auto;
 }
-.main-agent-toggle {
+.main-terminal-toggle {
   position: relative;
 }
-.main-agent-toggle.active {
+.main-terminal-toggle.active {
   border-color: var(--ds-border-strong);
   background: var(--ds-selection);
   color: var(--ds-selection-foreground);
@@ -587,31 +554,9 @@
   }
 }
 
-@media (min-width: 901px) and (max-width: 1400px) {
-  .app {
-    grid-template-columns: 48px minmax(200px, 23vw) 5px minmax(360px, 1fr) 0 !important;
-  }
-
-  .app.agent-open {
-    grid-template-columns:
-      48px minmax(200px, 23vw) 5px minmax(360px, 1fr)
-      minmax(280px, 28vw) !important;
-  }
-}
-
 @media (min-width: 561px) and (max-width: 900px) {
   .app {
     grid-template-columns: 44px minmax(190px, 34vw) 5px minmax(0, 1fr) 0 !important;
-  }
-}
-
-@media (max-width: 900px) {
-  .agent-dock {
-    position: fixed;
-    inset: 0 0 0 auto;
-    z-index: var(--ds-z-modal);
-    width: min(400px, calc(100vw - 44px));
-    box-shadow: var(--ds-shadow-popover);
   }
 }
 
@@ -674,10 +619,6 @@
     width: var(--ds-border-width);
     height: var(--ds-control-sm);
     margin: 0 var(--ds-space-1);
-  }
-
-  .agent-dock {
-    bottom: 48px;
   }
 
   .main {

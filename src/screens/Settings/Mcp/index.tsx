@@ -1,5 +1,5 @@
 // MCP status + one-click connect + LIVE result viewer + activity feed. The feed itself
-// lives app-wide in AgentFeedProvider (so agent activity is captured even when this screen
+// lives app-wide in OperationActivityProvider (so activity is captured even when this screen
 // is closed); here we render it. Runtime status is the REAL listener state (mcp_runtime_status),
 // not the static config — a bind failure shows a red banner, not a fake "Running".
 import { useState } from "react";
