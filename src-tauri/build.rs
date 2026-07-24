@@ -1,10 +1,15 @@
 fn main() {
-    tauri_build::build();
+    // Keep the icon/version resource, but provide the application manifest through
+    // one linker path shared by the GUI and Rust test harnesses. Embedding it in
+    // `resource.lib` as well would give binary test targets two MANIFEST resources.
+    let attributes = tauri_build::Attributes::new()
+        .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest());
+    tauri_build::try_build(attributes).expect("failed to run the Tauri build script");
 
-    embed_windows_test_manifest();
+    embed_windows_manifest();
 }
 
-fn embed_windows_test_manifest() {
+fn embed_windows_manifest() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows")
         || std::env::var("CARGO_CFG_TARGET_ENV").as_deref() != Ok("msvc")
     {
