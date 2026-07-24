@@ -27,19 +27,18 @@ mod windows {
     use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
     use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
     use windows_sys::Win32::Security::Authorization::{
-        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+        ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
+        SDDL_REVISION_1,
     };
     use windows_sys::Win32::Security::{
         EqualSid, GetTokenInformation, SetFileSecurityW, TokenUser, DACL_SECURITY_INFORMATION,
-        PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES,
-        TOKEN_QUERY, TOKEN_USER,
+        OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
+        SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
     };
     use windows_sys::Win32::System::Pipes::GetNamedPipeClientProcessId;
     use windows_sys::Win32::System::Threading::{
         GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
     };
-
-    const OWNER_ONLY_SDDL: &str = "D:P(A;;GA;;;SY)(A;;GA;;;OW)";
 
     pub(crate) fn create_named_pipe(
         endpoint: &str,
@@ -94,7 +93,9 @@ mod windows {
             .encode_wide()
             .chain(std::iter::once(0))
             .collect::<Vec<_>>();
-        let flags = DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION;
+        let flags = OWNER_SECURITY_INFORMATION
+            | DACL_SECURITY_INFORMATION
+            | PROTECTED_DACL_SECURITY_INFORMATION;
         if unsafe { SetFileSecurityW(wide.as_ptr(), flags, descriptor.raw) } == 0 {
             return Err(io::Error::last_os_error().into());
         }
@@ -107,7 +108,9 @@ mod windows {
 
     impl SecurityDescriptor {
         fn owner_only() -> io::Result<Self> {
-            let sddl = OsStr::new(OWNER_ONLY_SDDL)
+            let user_sid = current_user_sid_string()?;
+            let sddl = format!("O:{user_sid}D:P(A;;GA;;;SY)(A;;GA;;;{user_sid})");
+            let sddl = OsStr::new(&sddl)
                 .encode_wide()
                 .chain(std::iter::once(0))
                 .collect::<Vec<_>>();
@@ -124,6 +127,35 @@ mod windows {
                 return Err(io::Error::last_os_error());
             }
             Ok(Self { raw })
+        }
+    }
+
+    fn current_user_sid_string() -> io::Result<String> {
+        let token = open_process_token(unsafe { GetCurrentProcess() })?;
+        let user = TokenUserBuffer::read(token.raw())?;
+        let mut raw = ptr::null_mut();
+        if unsafe { ConvertSidToStringSidW(user.sid(), &mut raw) } == 0 || raw.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let raw = LocalWideString(raw);
+        let length = unsafe {
+            (0..)
+                .find(|&index| *raw.0.add(index) == 0)
+                .ok_or_else(|| io::Error::other("current user SID is not terminated"))?
+        };
+        String::from_utf16(unsafe { std::slice::from_raw_parts(raw.0, length) })
+            .map_err(|_| io::Error::other("current user SID is not valid UTF-16"))
+    }
+
+    struct LocalWideString(*mut u16);
+
+    impl Drop for LocalWideString {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe {
+                    LocalFree(self.0 as HLOCAL);
+                }
+            }
         }
     }
 

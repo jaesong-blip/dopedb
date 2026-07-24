@@ -21,12 +21,14 @@ use tokio::net::windows::named_pipe::ServerOptions;
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::{LocalFree, HLOCAL};
 use windows_sys::Win32::Security::Authorization::{
-    ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
 use windows_sys::Win32::Security::{
-    SetFileSecurityW, DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION,
-    PSECURITY_DESCRIPTOR,
+    GetTokenInformation, SetFileSecurityW, TokenUser, DACL_SECURITY_INFORMATION,
+    OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
+    TOKEN_QUERY, TOKEN_USER,
 };
+use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn status_json_uses_the_owner_local_windows_named_pipe() {
@@ -121,7 +123,9 @@ fn command_output_with_timeout(command: &mut Command, timeout: Duration) -> Outp
 }
 
 fn restrict_owner_only(path: &Path) {
-    let sddl = wide_null(OsStr::new("D:P(A;;GA;;;SY)(A;;GA;;;OW)"));
+    let sid = current_user_sid_string();
+    let descriptor = format!("O:{sid}D:P(A;;GA;;;SY)(A;;GA;;;{sid})");
+    let sddl = wide_null(OsStr::new(&descriptor));
     let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
     assert_ne!(
         unsafe {
@@ -135,13 +139,76 @@ fn restrict_owner_only(path: &Path) {
         0
     );
     let path = wide_null(path.as_os_str());
-    let flags = DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION;
+    let flags = OWNER_SECURITY_INFORMATION
+        | DACL_SECURITY_INFORMATION
+        | PROTECTED_DACL_SECURITY_INFORMATION;
     assert_ne!(
         unsafe { SetFileSecurityW(path.as_ptr(), flags, descriptor) },
         0
     );
     unsafe {
         LocalFree(descriptor as HLOCAL);
+    }
+}
+
+fn current_user_sid_string() -> String {
+    let mut token = ptr::null_mut();
+    assert_ne!(
+        unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) },
+        0
+    );
+    let token = LocalHandle(token);
+    let mut required = 0u32;
+    unsafe {
+        GetTokenInformation(token.0, TokenUser, ptr::null_mut(), 0, &mut required);
+    }
+    let word_bytes = std::mem::size_of::<usize>();
+    let word_count = usize::try_from(required)
+        .unwrap()
+        .checked_add(word_bytes - 1)
+        .unwrap()
+        / word_bytes;
+    let mut buffer = vec![0usize; word_count];
+    assert_ne!(
+        unsafe {
+            GetTokenInformation(
+                token.0,
+                TokenUser,
+                buffer.as_mut_ptr().cast(),
+                required,
+                &mut required,
+            )
+        },
+        0
+    );
+    let user = unsafe { &*buffer.as_ptr().cast::<TOKEN_USER>() };
+    let mut raw = ptr::null_mut();
+    assert_ne!(
+        unsafe { ConvertSidToStringSidW(user.User.Sid, &mut raw) },
+        0
+    );
+    let raw = LocalWideString(raw);
+    let length = unsafe { (0..).find(|&index| *raw.0.add(index) == 0).unwrap() };
+    String::from_utf16(unsafe { std::slice::from_raw_parts(raw.0, length) }).unwrap()
+}
+
+struct LocalHandle(windows_sys::Win32::Foundation::HANDLE);
+
+impl Drop for LocalHandle {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.0);
+        }
+    }
+}
+
+struct LocalWideString(*mut u16);
+
+impl Drop for LocalWideString {
+    fn drop(&mut self) {
+        unsafe {
+            LocalFree(self.0 as HLOCAL);
+        }
     }
 }
 
