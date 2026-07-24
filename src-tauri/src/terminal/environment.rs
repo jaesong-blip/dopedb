@@ -203,14 +203,17 @@ mod tests {
 
     #[test]
     fn terminal_path_puts_the_bundled_cli_first_without_duplicates() {
-        let directory = Path::new("/tmp/dopedb-cli-fixture");
-        let path = terminal_path(directory).unwrap();
+        let directory = std::env::temp_dir().join("dopedb-cli-fixture");
+        let path = terminal_path(&directory).unwrap();
         let paths = std::env::split_paths(&path).collect::<Vec<_>>();
-        assert_eq!(paths.first().map(PathBuf::as_path), Some(directory));
+        assert_eq!(
+            paths.first().map(PathBuf::as_path),
+            Some(directory.as_path())
+        );
         assert_eq!(
             paths
                 .iter()
-                .filter(|path| path.as_path() == directory)
+                .filter(|path| path.as_path() == directory.as_path())
                 .count(),
             1
         );
