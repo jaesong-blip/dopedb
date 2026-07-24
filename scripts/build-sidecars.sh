@@ -46,7 +46,12 @@ stage_binary() {
   temporary_path="$(mktemp "src-tauri/binaries/.sidecar.XXXXXX")"
   trap 'rm -f "$temporary_path"' RETURN
   cp "$source_path" "$temporary_path"
+  chmod 755 "$temporary_path"
   mv -f "$temporary_path" "$destination_path"
+  if [[ "$target_triple" != *"windows"* && ! -x "$destination_path" ]]; then
+    echo "Staged sidecar is not executable: $destination_path" >&2
+    exit 1
+  fi
   trap - RETURN
 }
 
