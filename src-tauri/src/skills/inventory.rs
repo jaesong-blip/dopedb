@@ -347,26 +347,11 @@ fn scan_level(
                 SkillStatusReason::InstalledSkillSymlink,
             ));
         }
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|_| ScanFailure::UnsafePath(SkillStatusReason::InventoryEscapedRoot))?;
-        let relative = relative.to_str().ok_or(ScanFailure::Invalid(
-            SkillStatusReason::InstalledSkillNonUnicodePath,
-            true,
-        ))?;
-        if relative.contains('\\')
-            || relative
-                .split('/')
-                .any(|component| component.is_empty() || component == "." || component == "..")
-        {
-            return Err(ScanFailure::UnsafePath(
-                SkillStatusReason::InstalledSkillUnsafePath,
-            ));
-        }
+        let relative = portable_relative_path(root, &path)?;
 
         if metadata.is_dir() {
             entries.push(ScannedEntry {
-                path: relative.replace('\\', "/"),
+                path: relative,
                 kind: EntryKind::Directory,
                 size: 0,
                 executable: false,
@@ -397,7 +382,7 @@ fn scan_level(
         }
         let bytes = read_file_no_follow(&path, metadata.len())?;
         entries.push(ScannedEntry {
-            path: relative.replace('\\', "/"),
+            path: relative,
             kind: EntryKind::File,
             size: metadata.len(),
             executable: is_executable(&metadata),
@@ -407,6 +392,36 @@ fn scan_level(
         });
     }
     Ok(())
+}
+
+fn portable_relative_path(root: &Path, path: &Path) -> Result<String, ScanFailure> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| ScanFailure::UnsafePath(SkillStatusReason::InventoryEscapedRoot))?;
+    let mut components = Vec::new();
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            return Err(ScanFailure::UnsafePath(
+                SkillStatusReason::InstalledSkillUnsafePath,
+            ));
+        };
+        let component = component.to_str().ok_or(ScanFailure::Invalid(
+            SkillStatusReason::InstalledSkillNonUnicodePath,
+            true,
+        ))?;
+        if component.is_empty() || component == "." || component == ".." {
+            return Err(ScanFailure::UnsafePath(
+                SkillStatusReason::InstalledSkillUnsafePath,
+            ));
+        }
+        components.push(component);
+    }
+    if components.is_empty() {
+        return Err(ScanFailure::UnsafePath(
+            SkillStatusReason::InstalledSkillUnsafePath,
+        ));
+    }
+    Ok(components.join("/"))
 }
 
 fn read_file_no_follow(path: &Path, expected_size: u64) -> Result<Vec<u8>, ScanFailure> {

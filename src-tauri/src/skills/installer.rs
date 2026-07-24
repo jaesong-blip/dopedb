@@ -405,9 +405,8 @@ mod tests {
             installed.status.targets[0].state,
             SkillInstallState::ManagedCurrent
         );
-        assert!(installed.status.targets[0]
-            .install_path
-            .ends_with(".agents/skills/dopedb-cli"));
+        assert!(Path::new(&installed.status.targets[0].install_path)
+            .ends_with(Path::new(".agents").join("skills").join("dopedb-cli")));
 
         let removed = manager
             .remove(SkillMutationArguments {
