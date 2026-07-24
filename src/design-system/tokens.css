@@ -1,19 +1,19 @@
 /*
- * DopeDB design tokens
+ * DopeDB design tokens, aligned with Orca's UI system.
  *
- * Goals from the DopeDB analysis:
- * - keep dense database work readable
- * - keep connection, schema, execution, and agent safety context visible
- * - support a trust-ledger UI without turning the client into a full IDE clone
+ * The visual contract is monochrome and quiet: neutral surfaces carry the app
+ * chrome, while color is reserved for focus and meaningful database state.
+ * DopeDB keeps its --ds-* API so every existing screen inherits the system.
  */
 
 :root {
   color-scheme: dark;
 
   /* Typography */
-  --ds-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
-    Arial, sans-serif;
-  --ds-font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --ds-font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ds-font-mono:
+    "SF Mono", SFMono-Regular, ui-monospace, "Cascadia Code", Menlo, Consolas,
+    "Liberation Mono", monospace;
   --ds-font-size-2xs: 10px;
   --ds-font-size-xs: 11px;
   --ds-font-size-sm: 12px;
@@ -25,7 +25,7 @@
   --ds-line-ui: 1.35;
   --ds-line-body: 1.55;
 
-  /* Spacing: compact 4px grid for database desktop UI. */
+  /* Compact 4px spacing grid. */
   --ds-space-0: 0;
   --ds-space-1: 4px;
   --ds-space-2: 8px;
@@ -43,8 +43,8 @@
   --ds-segment-gap: 2px;
   --ds-optical-offset-xs: 2px;
   --ds-optical-offset-sm: 3px;
-  --ds-control-pad-x: var(--ds-space-3);
-  --ds-control-pad-x-sm: var(--ds-space-2);
+  --ds-control-pad-x: var(--ds-space-4);
+  --ds-control-pad-x-sm: var(--ds-space-3);
   --ds-control-pad-x-xs: 6px;
   --ds-chip-pad-y: 1px;
   --ds-chip-pad-x: 6px;
@@ -57,11 +57,11 @@
   --ds-motion-distance-sm: 6px;
   --ds-active-offset: -1px;
 
-  /* Shape and glass depth */
-  --ds-radius-xs: 4px;
-  --ds-radius-sm: 6px;
-  --ds-radius-md: 8px;
-  --ds-radius-lg: 8px;
+  /* Orca radius scale: 10px base, tighter controls, softer containers. */
+  --ds-radius-xs: 6px;
+  --ds-radius-sm: 8px;
+  --ds-radius-md: 10px;
+  --ds-radius-lg: 14px;
   --ds-radius-pill: 999px;
   --ds-border-width: 1px;
   --ds-border-width-strong: 2px;
@@ -70,139 +70,143 @@
   --ds-stroke-width-strong: 2.5;
   --ds-focus-width: var(--ds-border-width-strong);
   --ds-focus-offset: var(--ds-border-width-strong);
+
+  /* Layering */
   --ds-z-base: 1;
   --ds-z-raised: 2;
   --ds-z-sticky: 6;
   --ds-z-popover: 8;
   --ds-z-modal: 50;
   --ds-z-toast: 1000;
-  --ds-glass-window-filter: saturate(1.14) blur(22px);
-  --ds-glass-filter: saturate(1.12) blur(18px);
-  --ds-glass-filter-soft: saturate(1.06) blur(10px);
-  --ds-glass-sheen:
-    linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.08) 0%,
-      rgba(255, 255, 255, 0.03) 38%,
-      rgba(255, 255, 255, 0.01) 62%,
-      rgba(255, 255, 255, 0) 100%
-    );
-  --ds-glass-edge:
-    inset 0 var(--ds-border-width) 0 rgba(255, 255, 255, 0.1),
-    inset 0 calc(var(--ds-border-width) * -1) 0 rgba(255, 255, 255, 0.025);
-  --ds-sidebar-inset-shadow: rgba(1, 4, 9, 0.42);
-  --ds-shadow-control: 0 1px 2px rgba(1, 4, 9, 0.28);
-  --ds-shadow-panel:
-    0 1px 2px rgba(1, 4, 9, 0.32),
-    0 3px 10px rgba(1, 4, 9, 0.24);
-  --ds-shadow-popover:
-    0 14px 42px rgba(1, 4, 9, 0.46),
-    var(--ds-glass-edge);
 
-  /* Sizing */
-  --ds-control-xs: 20px;
-  --ds-control-sm: 24px;
-  --ds-control-md: 28px;
-  --ds-control-lg: 32px;
-  --ds-control-xl: 48px;
+  /* Orca keeps ordinary surfaces flat; only floating surfaces receive elevation. */
+  --ds-shadow-control: 0 1px 2px rgb(0 0 0 / 0.18);
+  --ds-shadow-panel: none;
+  --ds-shadow-popover: 0 10px 24px rgb(0 0 0 / 0.18);
+
+  /* Orca control sizes: xs 24, sm 32, default 36, lg 40. */
+  --ds-control-xs: 24px;
+  --ds-control-sm: 28px;
+  --ds-control-md: 32px;
+  --ds-control-lg: 36px;
+  --ds-control-xl: 40px;
   --ds-control-field: var(--ds-control-lg);
   --ds-control-field-sm: var(--ds-control-md);
-  --ds-control-field-xs: var(--ds-control-sm);
+  --ds-control-field-xs: var(--ds-control-xs);
   --ds-icon-sm: 14px;
   --ds-icon-md: 16px;
   --ds-sidebar-min: 180px;
   --ds-sidebar-default: 240px;
   --ds-sidebar-max: 520px;
-  /* The app's .platform-macos scope enables this only for Tauri's overlay title bar. */
   --ds-window-controls-safe-height: 0px;
   --ds-pane-pad: 16px;
   --ds-line: var(--ds-border-width) solid var(--ds-border-subtle);
 
   /*
-   * Familiar dark workspace palette based on the GitHub Primer dark-dimmed
-   * relationship: cool-neutral canvases, blue interaction, semantic statuses.
+   * Canonical Orca dark roles. The aliases below keep DopeDB's existing
+   * semantic API while preserving the surface/foreground pair contract.
    */
-  --ds-bg-app:
-    linear-gradient(135deg, rgba(34, 39, 46, 0.96), rgba(28, 33, 40, 0.94)),
-    #22272e;
-  --ds-bg-sidebar: #1c2128;
-  --ds-sidebar-border: #373e47;
-  --ds-surface-0: #22272e;
-  --ds-surface-1: #1c2128;
-  --ds-surface-2: #2d333b;
-  --ds-surface-elevated: #2d333b;
-  --ds-border-subtle: #373e47;
-  --ds-border-strong: #545d68;
-  --ds-text: #adbac7;
-  --ds-text-muted: #8c959f;
-  --ds-text-subtle: #768390;
-  --ds-text-inverse: #ffffff;
-  --ds-text-on-accent-muted: rgba(255, 255, 255, 0.86);
-  --ds-border-on-accent: rgba(255, 255, 255, 0.36);
-  --ds-overlay: rgba(1, 4, 9, 0.52);
+  --ds-background: #0a0a0a;
+  --ds-foreground: #fafafa;
+  --ds-card: #171717;
+  --ds-card-foreground: #fafafa;
+  --ds-popover: #171717;
+  --ds-popover-foreground: #fafafa;
+  --ds-primary: #e5e5e5;
+  --ds-primary-foreground: #171717;
+  --ds-primary-hover: #d4d4d4;
+  --ds-primary-active: #a3a3a3;
+  --ds-secondary: #262626;
+  --ds-secondary-foreground: #fafafa;
+  --ds-muted: #262626;
+  --ds-muted-foreground: #a1a1a1;
+  --ds-selection: #404040;
+  --ds-selection-foreground: #fafafa;
+  --ds-destructive: #ff6568;
+  --ds-destructive-foreground: #ffffff;
+  --ds-input: rgb(255 255 255 / 0.15);
+  --ds-ring: #737373;
+  --ds-editor-surface: #1e1e1e;
+  --ds-worktree-sidebar: #2a2a2a;
+  --ds-worktree-sidebar-foreground: #fafafa;
+  --ds-worktree-sidebar-accent: #353535;
+  --ds-worktree-sidebar-border: rgb(255 255 255 / 0.07);
 
-  /* Blue is interactive; green, amber, and red are reserved for status meaning. */
-  --ds-primary: #316dca;
-  --ds-primary-hover: #2f6fca;
-  --ds-primary-active: #2b5faa;
-  --ds-primary-text: #539bf5;
-  --ds-primary-soft: rgba(83, 155, 245, 0.14);
-  --ds-positive: #57ab5a;
-  --ds-positive-soft: rgba(87, 171, 90, 0.15);
-  --ds-caution: #c69026;
-  --ds-caution-soft: rgba(198, 144, 38, 0.16);
-  --ds-critical: #f47067;
-  --ds-critical-emphasis: #c93c37;
-  --ds-critical-soft: rgba(244, 112, 103, 0.16);
+  /* DopeDB surface aliases */
+  --ds-bg-app: var(--ds-background);
+  --ds-bg-sidebar: var(--ds-worktree-sidebar);
+  --ds-sidebar-border: var(--ds-worktree-sidebar-border);
+  --ds-surface-0: var(--ds-card);
+  --ds-surface-1: var(--ds-background);
+  --ds-surface-2: var(--ds-secondary);
+  --ds-surface-elevated: var(--ds-popover);
+  --ds-border-subtle: rgb(255 255 255 / 0.07);
+  --ds-border-strong: #525252;
+  --ds-text: var(--ds-foreground);
+  --ds-text-muted: var(--ds-muted-foreground);
+  --ds-text-subtle: #737373;
+  --ds-text-inverse: var(--ds-primary-foreground);
+  --ds-text-on-accent-muted: rgb(255 255 255 / 0.78);
+  --ds-border-on-accent: rgb(255 255 255 / 0.22);
+  --ds-overlay: rgb(0 0 0 / 0.62);
 
-  /* Softened status-color borders: one mix ratio shared by every tone chip/badge. */
-  --ds-status-border-mix: 72%;
-
-  /* Intent aliases: keep UI semantics while limiting the palette. */
+  /*
+   * Primary is the single affirmative action. Accent is a neutral selection
+   * surface; strong color remains reserved for state.
+   */
+  --ds-primary-text: var(--ds-foreground);
+  --ds-primary-soft: var(--ds-muted);
   --ds-accent: var(--ds-primary);
-  --ds-accent-text: var(--ds-primary-text);
+  --ds-accent-text: var(--ds-foreground);
   --ds-accent-hover: var(--ds-primary-hover);
   --ds-accent-active: var(--ds-primary-active);
-  --ds-accent-soft: var(--ds-primary-soft);
-  --ds-info: var(--ds-primary-text);
+  --ds-accent-soft: var(--ds-muted);
+  --ds-hover: var(--ds-muted);
+  --ds-hover-strong: var(--ds-selection);
+
+  /* Status colors mirror Orca's state-only use of color. */
+  --ds-info: #60a5fa;
+  --ds-positive: #86efac;
+  --ds-positive-soft: color-mix(in srgb, var(--ds-positive) 10%, transparent);
+  --ds-caution: #fbbf24;
+  --ds-caution-soft: color-mix(in srgb, var(--ds-caution) 10%, transparent);
+  --ds-critical: var(--ds-destructive);
+  --ds-critical-emphasis: #df2225;
+  --ds-critical-soft: color-mix(in srgb, var(--ds-critical) 10%, transparent);
   --ds-success: var(--ds-positive);
   --ds-warning: var(--ds-caution);
   --ds-danger: var(--ds-critical);
   --ds-danger-emphasis: var(--ds-critical-emphasis);
+  --ds-status-border-mix: 42%;
 
   /* Trust/risk surfaces for agent-native workflows. */
   --ds-trust-bg: var(--ds-positive-soft);
-  --ds-trust-border: rgba(87, 171, 90, 0.36);
+  --ds-trust-border: color-mix(in srgb, var(--ds-positive) 25%, transparent);
   --ds-risk-bg: var(--ds-caution-soft);
-  --ds-risk-border: rgba(198, 144, 38, 0.38);
+  --ds-risk-border: color-mix(in srgb, var(--ds-caution) 25%, transparent);
   --ds-danger-bg: var(--ds-critical-soft);
-  --ds-danger-border: rgba(244, 112, 103, 0.4);
+  --ds-danger-border: color-mix(in srgb, var(--ds-critical) 25%, transparent);
 
-  /* Provider marks reuse the established semantic palette. */
-  --ds-source-blue: var(--ds-primary-text);
-  --ds-source-teal: #39c5cf;
+  /* Provider marks stay secondary to the neutral product chrome. */
+  --ds-source-blue: var(--ds-info);
+  --ds-source-teal: #5eead4;
   --ds-source-green: var(--ds-positive);
   --ds-source-amber: var(--ds-caution);
   --ds-source-red: var(--ds-critical);
 
   /* Interaction */
-  --ds-hover: rgba(173, 186, 199, 0.08);
-  --ds-hover-strong: rgba(173, 186, 199, 0.14);
-  --ds-focus: var(--ds-primary-text);
-  --ds-focus-ring: 0 0 0 var(--ds-focus-width) color-mix(in srgb, var(--ds-focus) 28%, transparent);
+  --ds-focus: var(--ds-ring);
+  --ds-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ds-ring) 50%, transparent);
 
   font-family: var(--ds-font-sans);
   font-size: var(--ds-font-size-ui);
   color: var(--ds-text);
 }
 
-/*
- * The explorer uses the inset canvas, while inheriting all interaction and
- * status colors from the global palette.
- */
+/* The explorer is Orca's dedicated worktree-sidebar role. */
 .sidebar {
-  --ds-surface-0: #1c2128;
-  --ds-surface-1: #161b22;
-  --ds-surface-2: #22272e;
-  --ds-surface-elevated: #2d333b;
+  --ds-surface-0: var(--ds-worktree-sidebar);
+  --ds-surface-1: #171717;
+  --ds-surface-2: var(--ds-worktree-sidebar-accent);
+  --ds-surface-elevated: var(--ds-popover);
 }

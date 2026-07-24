@@ -7,18 +7,13 @@
   padding: var(--ds-space-4);
   overflow: auto;
   background: var(--ds-overlay);
-  backdrop-filter: var(--ds-glass-filter-soft);
-  -webkit-backdrop-filter: var(--ds-glass-filter-soft);
 }
 
 .workspace-connection-dialog {
   width: min(440px, 100%);
   max-height: calc(100dvh - (var(--ds-space-4) * 2));
   overflow: auto;
-  background-image: var(--ds-glass-sheen);
-  background-clip: padding-box;
-  backdrop-filter: var(--ds-glass-filter);
-  -webkit-backdrop-filter: var(--ds-glass-filter);
+  box-shadow: var(--ds-shadow-popover);
 }
 
 .workspace-connection-description {

@@ -57,9 +57,9 @@
   border-color: var(--ds-accent-text);
 }
 .db-table.selected .ddl-btn {
-  color: var(--ds-text-on-accent-muted);
+  color: var(--ds-selection-foreground);
   border-color: var(--ds-border-on-accent);
-  background: var(--ds-accent);
+  background: var(--ds-selection);
 }
 
 /* Schema groups collect dev/staging/prod siblings and surface prod-based drift. */
@@ -543,8 +543,8 @@
   background: var(--ds-hover);
 }
 .db-table.selected {
-  background: var(--ds-accent);
-  color: var(--ds-text-inverse);
+  background: var(--ds-selection);
+  color: var(--ds-selection-foreground);
 }
 .db-table.selected .muted {
   color: var(--ds-text-on-accent-muted);

@@ -40,8 +40,8 @@
 }
 
 .snav.active {
-  background: var(--ds-accent);
-  color: var(--ds-text-inverse);
+  background: var(--ds-selection);
+  color: var(--ds-selection-foreground);
 }
 
 .snav:disabled {

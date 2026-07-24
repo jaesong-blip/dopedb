@@ -18,6 +18,9 @@ body {
 body {
   color: var(--ds-text);
   font-family: var(--ds-font-sans);
+  font-size: var(--ds-font-size-body);
+  letter-spacing: 0.01em;
+  line-height: var(--ds-line-body);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -30,13 +33,13 @@ h1,
 h2,
 h3 {
   margin: 0;
-  letter-spacing: 0;
 }
 
 h1 {
   font-size: var(--ds-font-size-heading);
   line-height: var(--ds-line-tight);
   font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 h2,
@@ -44,6 +47,7 @@ h2,
   font-size: var(--ds-font-size-title);
   line-height: var(--ds-line-tight);
   font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 h3 {
@@ -51,7 +55,7 @@ h3 {
   line-height: var(--ds-line-ui);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   color: var(--ds-text-muted);
 }
 
@@ -76,8 +80,6 @@ h3 {
   inset: 0;
   z-index: 0;
   background: var(--ds-bg-app);
-  backdrop-filter: var(--ds-glass-window-filter);
-  -webkit-backdrop-filter: var(--ds-glass-window-filter);
   pointer-events: none;
 }
 
@@ -88,7 +90,6 @@ h3 {
 
 .sidebar {
   background: var(--ds-bg-sidebar);
-  box-shadow: inset -1px 0 0 var(--ds-sidebar-inset-shadow);
 }
 
 .tab-body,
@@ -182,61 +183,112 @@ h3 {
   justify-content: center;
   gap: var(--ds-control-gap);
   padding: 0 var(--ds-control-pad-x);
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
+  border: var(--ds-border-width) solid var(--ds-input);
   border-radius: var(--ds-radius-sm);
-  background: transparent;
+  background: color-mix(in srgb, var(--ds-input) 30%, transparent);
   color: var(--ds-text);
-  box-shadow: none;
+  box-shadow: var(--ds-shadow-control);
   cursor: pointer;
   font: inherit;
-  font-size: var(--ds-font-size-ui);
+  font-size: var(--ds-font-size-body);
+  font-weight: 500;
   line-height: 1;
   overflow: hidden;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--ds-surface-1);
-  border-color: var(--ds-border-strong);
+  background: color-mix(in srgb, var(--ds-input) 50%, transparent);
+  border-color: var(--ds-input);
 }
 
 .btn:active:not(:disabled) {
-  background: var(--ds-surface-2);
+  background: var(--ds-selection);
+}
+
+.btn:focus-visible {
+  border-color: var(--ds-ring);
+  box-shadow: var(--ds-focus-ring);
+  outline: none;
 }
 
 .btn:disabled {
   cursor: default;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .btn.primary {
-  background: var(--ds-accent);
+  background: var(--ds-primary);
   border-color: transparent;
-  color: var(--ds-text-inverse);
+  color: var(--ds-primary-foreground);
+  box-shadow: none;
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: var(--ds-accent-hover);
+  background: var(--ds-primary-hover);
   border-color: transparent;
 }
 
+.btn.secondary {
+  border-color: transparent;
+  background: var(--ds-secondary);
+  color: var(--ds-secondary-foreground);
+  box-shadow: none;
+}
+
+.btn.secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ds-secondary) 80%, var(--ds-foreground));
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.btn.ghost:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--ds-selection);
+  color: var(--ds-selection-foreground);
+}
+
+.btn.link {
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ds-text);
+  box-shadow: none;
+  text-decoration: underline;
+  text-underline-offset: var(--ds-space-1);
+}
+
 .btn.danger {
-  color: var(--ds-danger);
+  border-color: transparent;
+  background: var(--ds-destructive);
+  color: var(--ds-destructive-foreground);
+  box-shadow: none;
 }
 
 .btn.danger:hover:not(:disabled) {
-  background: var(--ds-danger-bg);
-  border-color: var(--ds-danger-border);
+  border-color: transparent;
+  background: color-mix(in srgb, var(--ds-destructive) 90%, transparent);
 }
 
 .btn.small {
   height: var(--ds-control-field-sm);
   min-height: var(--ds-control-field-sm);
   padding: 0 var(--ds-control-pad-x-sm);
-  font-size: var(--ds-font-size-sm);
+  font-size: var(--ds-font-size-ui);
 }
 
 .btn .icon {
@@ -249,7 +301,7 @@ h3 {
 .ds-panel {
   background: var(--ds-surface-0);
   border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-lg);
   box-shadow: var(--ds-shadow-panel);
 }
 
@@ -265,7 +317,7 @@ h3 {
 .grid-panel {
   background: var(--ds-surface-0);
   border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-lg);
   box-shadow: var(--ds-shadow-panel);
 }
 
@@ -279,7 +331,7 @@ h3 {
   padding: 0 var(--ds-space-2);
   border: var(--ds-border-width) solid var(--ds-border-subtle);
   border-radius: var(--ds-radius-pill);
-  background: transparent;
+  background: var(--ds-secondary);
   color: var(--ds-text-muted);
   font-size: var(--ds-font-size-xs);
   font-weight: 650;
@@ -290,7 +342,7 @@ h3 {
 }
 
 .badge.kind {
-  background: var(--ds-hover-strong);
+  background: var(--ds-selection);
   color: var(--ds-text);
 }
 
@@ -315,7 +367,7 @@ h3 {
 .badge.nowhere {
   background: var(--ds-danger-emphasis);
   border-color: var(--ds-danger-emphasis);
-  color: var(--ds-text-inverse);
+  color: var(--ds-destructive-foreground);
 }
 
 .ds-context-badge {
@@ -598,9 +650,9 @@ h3 {
 .table-filter,
 .filter-input {
   box-sizing: border-box;
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
+  border: var(--ds-border-width) solid var(--ds-input);
   border-radius: var(--ds-radius-sm);
-  background: var(--ds-surface-0);
+  background: color-mix(in srgb, var(--ds-input) 30%, transparent);
   color: var(--ds-text);
   font: inherit;
 }
@@ -632,6 +684,11 @@ h3 {
   line-height: var(--ds-line-body);
 }
 
+.app :where(input, textarea)::placeholder {
+  color: var(--ds-muted-foreground);
+  opacity: 1;
+}
+
 .app :where(
   input:not([type="checkbox"]):not([type="radio"]):focus,
   select:focus,
@@ -646,11 +703,11 @@ h3 {
 
 .tabs {
   --ds-row-control-size: var(--ds-control-md);
-  background: var(--ds-surface-0);
+  background: var(--ds-background);
 }
 
 .tab {
-  min-height: 32px;
+  min-height: var(--ds-control-md);
   color: var(--ds-text-muted);
   min-width: 0;
   overflow: hidden;
@@ -670,7 +727,7 @@ h3 {
   min-width: 0;
   padding: var(--ds-space-4);
   border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-lg);
   background: var(--ds-surface-0);
   box-shadow: var(--ds-shadow-panel);
 }
@@ -692,15 +749,63 @@ h3 {
 
 .ds-object-row[aria-selected="true"],
 .ds-object-row.active {
-  background: var(--ds-accent);
-  color: var(--ds-text-inverse);
+  background: var(--ds-selection);
+  color: var(--ds-selection-foreground);
 }
 
 .grid-scroll {
   border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-lg);
   background: var(--ds-surface-0);
   box-shadow: var(--ds-shadow-panel);
+}
+
+/* Orca's thin neutral scrollbar recipe for dense application surfaces. */
+.scrollbar-sleek,
+.tab-body,
+.settings-body,
+.main-view,
+.editor-pane,
+.workbench-document-tabs {
+  scrollbar-color: var(--ds-border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+:where(
+  .scrollbar-sleek,
+  .tab-body,
+  .settings-body,
+  .main-view,
+  .editor-pane,
+  .workbench-document-tabs
+)::-webkit-scrollbar {
+  width: var(--ds-space-2);
+  height: var(--ds-space-2);
+}
+
+:where(
+  .scrollbar-sleek,
+  .tab-body,
+  .settings-body,
+  .main-view,
+  .editor-pane,
+  .workbench-document-tabs
+)::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-border-strong);
+  background-clip: padding-box;
+}
+
+:where(
+  .scrollbar-sleek,
+  .tab-body,
+  .settings-body,
+  .main-view,
+  .editor-pane,
+  .workbench-document-tabs
+)::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .loading::before {
@@ -840,19 +945,16 @@ h3 {
   white-space: nowrap;
 }
 
-/* Glass stays on transient overlays only — flat chrome elsewhere. */
+/* Floating surfaces use Orca's solid popover role and single elevation level. */
 .ddl-modal,
 .toast {
-  backdrop-filter: var(--ds-glass-filter);
-  -webkit-backdrop-filter: var(--ds-glass-filter);
-  background-image: var(--ds-glass-sheen);
+  background: var(--ds-popover);
+  color: var(--ds-popover-foreground);
   background-clip: padding-box;
 }
 
 .ddl-overlay {
   background: var(--ds-overlay);
-  backdrop-filter: var(--ds-glass-filter-soft);
-  -webkit-backdrop-filter: var(--ds-glass-filter-soft);
 }
 
 .ui-help:hover {

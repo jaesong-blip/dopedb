@@ -105,24 +105,24 @@ table.grid tbody tr:nth-child(even) td {
   background: var(--ds-surface-1);
 }
 table.grid tbody tr:hover td {
-  background: var(--ds-surface-1);
+  background: var(--ds-hover);
 }
 table.grid tbody tr.selected td {
-  background: var(--ds-surface-1);
+  background: var(--ds-selection);
 }
 @supports (background: color-mix(in srgb, white, black)) {
   table.grid tbody tr:hover td {
-    background: color-mix(in srgb, var(--ds-accent) 8%, var(--ds-surface-0));
+    background: color-mix(in srgb, var(--ds-selection) 48%, var(--ds-surface-0));
   }
   table.grid tbody tr.selected td {
-    background: color-mix(in srgb, var(--ds-accent) 18%, var(--ds-surface-0));
+    background: var(--ds-selection);
   }
 }
 
 /* Selected cell (click to select, ⌘C to copy). Inset box-shadow draws an accent
    outline without shifting layout or fighting the cell's own borders. */
 table.grid tbody td.cell-sel {
-  box-shadow: inset 0 0 0 var(--ds-border-width-strong) var(--ds-accent);
+  box-shadow: inset 0 0 0 var(--ds-border-width-strong) var(--ds-ring);
 }
 
 /* Always-visible scrollbars: custom WebKit styling opts out of macOS auto-hiding

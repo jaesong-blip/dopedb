@@ -1,197 +1,214 @@
-# DopeDB 클라이언트 디자인 시스템
+# DopeDB UI 디자인 시스템
 
-이 디자인 시스템은 DopeDB 분석 문서의 결론을 DopeDB 클라이언트에서 바로 사용할 수 있는 토큰과 공통 클래스로 내린 것이다.
+DopeDB의 UI는 Orca의 디자인 시스템을 기준으로 한다. 시각 언어는
+**monochrome and quiet**이며, 중립색이 앱 chrome과 작업 표면을 담당하고 색은
+선택·위험·성공처럼 의미가 있는 상태에만 사용한다.
 
-핵심 방향:
+DopeDB는 기존 React + vanilla CSS 구조를 유지한다. Orca의 Tailwind 클래스나
+shadcn 구현을 그대로 의존성으로 가져오는 대신, 같은 토큰 역할과 컴포넌트 규칙을
+`--ds-*` 토큰과 앱 정본 클래스에 연결한다. 덕분에 데이터 그리드와 Tauri 전용
+레이아웃을 유지하면서 모든 화면이 같은 디자인 계약을 공유한다.
 
-- DopeDB는 DopeDB 전체 IDE를 복제하지 않는다.
-- 공간 규칙은 `explorer -> workbench -> inspector/trust ledger`로 유지한다.
-- 모든 데이터 작업은 connection, schema, 실행 주체, safety state를 드러낸다.
-- 밀도는 높게 유지하되, agent safety와 audit 정보는 더 명확하게 보이게 한다.
+## 정본
 
-## 파일
+| 관심사 | 정본 |
+| --- | --- |
+| 색상·타이포그래피·간격·radius·elevation | `src/design-system/tokens.css` |
+| 버튼·배지·카드·폼·toolbar·상태 | `src/design-system/system.css` |
+| 앱 shell과 workbench 레이아웃 | `src/styles.css` |
+| 화면 고유 배치 | 각 screen/component 옆의 CSS |
 
-- `tokens.css`: 색상, typography, spacing, radius, control size, risk/trust token.
-- `system.css`: 버튼, 배지, 패널, toolbar, filter strip, trust/risk surface, object row.
-- `index.css`: 클라이언트 import용 entry.
-- `src/styles.css`: app shell/layout 전용. 토큰이나 공통 컴포넌트 규칙을 두지 않는다.
-- 화면별 CSS: 각 screen/component 옆에 둔다. 예: `screens/Tables/tables.css`, `components/ApprovalCard.css`.
+컴포넌트 코드에 토큰이 이미 있는데 hex/rgb 값을 직접 추가하지 않는다. 새 역할이
+필요하면 `tokens.css`에 surface/foreground 쌍으로 정의하고 사용한다.
 
-## 토큰 원칙
+## 시각 방향
 
-새 CSS는 `--ds-*` 토큰을 우선 사용한다.
+- 앱 chrome은 눈에 띄지 않고 사용자의 데이터와 도구를 감싼다.
+- 색상보다 `muted`, `selection`, `border`를 먼저 사용한다.
+- 일반 surface는 평평하게 유지한다. 그림자는 popover, dialog, toast처럼 떠 있는
+  surface에만 사용한다.
+- 카드 안에 카드를 중첩하지 않는다.
+- 선택 상태는 `--ds-selection`을 사용한다. primary 색을 선택 배경으로 쓰지 않는다.
+- primary 버튼은 한 흐름에 하나만 둔다.
 
-```css
-.my-panel {
-  padding: var(--ds-space-4);
-  border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-md);
-  background: var(--ds-surface-0);
-}
-```
+## 색상 역할
 
-예전 전역 변수명인 `--bg`, `--panel`, `--accent`, `--risk-low` 등은 사용하지 않는다. 모든 CSS는 `--ds-*` 토큰만 사용한다. 새 스타일을 추가할 때 이전 변수명을 되살리지 말고 필요한 의미가 없으면 `tokens.css`에 정식 `--ds-*` 토큰을 추가한다.
+토큰은 surface와 foreground를 쌍으로 사용한다.
 
-Vibe coding smell을 줄이기 위해 새 UI에서 아래 패턴은 피한다.
+| 역할 | 용도 |
+| --- | --- |
+| `--ds-background` / `--ds-foreground` | 앱 canvas와 기본 텍스트 |
+| `--ds-card` / `--ds-card-foreground` | canvas 위 작업 패널 |
+| `--ds-popover` / `--ds-popover-foreground` | menu, dialog, toast |
+| `--ds-primary` / `--ds-primary-foreground` | 단일 affirmative action |
+| `--ds-secondary` / `--ds-secondary-foreground` | 낮은 강조의 control |
+| `--ds-muted` / `--ds-muted-foreground` | caption, placeholder, 비활성 chrome |
+| `--ds-selection` / `--ds-selection-foreground` | hover, active, current row |
+| `--ds-destructive` / `--ds-destructive-foreground` | 삭제·폐기·차단 |
+| `--ds-input` | form field와 outline control |
+| `--ds-ring` | focus-visible과 selected cell outline |
+| `--ds-editor-surface` | SQL editor와 코드 인접 surface |
+| `--ds-worktree-sidebar*` | database explorer와 navigation |
 
-- 화면 CSS에 직접 hex/rgb/rgba 색상, z-index 숫자, 임의 box-shadow를 쓰지 않는다.
-- `13px`, `8px`, `12px` 같은 값은 먼저 spacing/type/radius 토큰으로 표현한다.
-- 카드, 패널, 코드블록, empty state, toolbar는 기존 정본 클래스(`.card`, `.ds-panel`, `.btn`, `.badge`, `.ds-toolbar` 등, 아래 "공통 클래스" 참고)나 같은 토큰 구조를 재사용한다.
-- 한 줄에 여러 선언을 몰아넣지 않는다. 반복 수정이 필요한 화면 CSS는 읽기 쉬운 블록으로 쓴다.
+DopeDB 기존 화면은 `--ds-surface-*`, `--ds-text*`, `--ds-accent*` 별칭을 사용한다.
+이 별칭은 위 역할 토큰에 연결되어 있으므로 새 화면에서는 역할이 더 명확한 정본
+토큰을 우선한다.
 
-## 미니멀 밀도와 오버플로우
+색상 상태는 다음에만 사용한다.
 
-- 기본 화면 패딩은 `--ds-pane-pad`를 사용하고, 반복 카드/패널은 `--ds-space-3` 중심으로 둔다.
-- 버튼, 탭, 배지, 헤더 제목, 테이블 셀처럼 폭이 줄어드는 요소는 `min-width: 0`, `overflow: hidden`, `text-overflow: ellipsis`를 갖게 한다.
-- 사용자가 읽어야 하는 긴 오류/설명 문구는 `overflow-wrap: anywhere` 또는 `pre-wrap`처럼 의도적으로 줄바꿈한다.
-- 새 고정 치수는 가능한 4px 그리드에 맞춘다. 예외가 필요하면 해당 화면 CSS에 이유가 드러나야 한다.
-- macOS overlay title bar의 좌상단 제어영역은 `.platform-macos`에서만 활성화되는
-  `--ds-window-controls-safe-height`와 `[data-window-controls-safe-zone]` 슬롯으로
-  예약한다. rail이나 workspace header가 이 슬롯보다 앞에 컨트롤을 렌더링하지
-  않도록 하며 Windows/Linux에는 빈 상단 여백을 만들지 않는다.
+- `--ds-info`: 정보와 실행 중 상태
+- `--ds-success`: 성공, 연결됨, trust
+- `--ds-warning`: 검토 필요, medium risk
+- `--ds-danger`: 실패, 차단, destructive
 
-## 컬러 팔레트
+상태색을 navigation 선택이나 장식에 재사용하지 않는다.
 
-GitHub Primer 계열의 익숙한 cool-neutral dark 관계를 기준으로 삼고, 색은 의미별로 분리한다. 데스크톱은 OS 설정과 무관하게 같은 다크 팔레트를 사용해 CodeMirror, 데이터 그리드, 팝오버가 서로 다른 테마로 튀지 않게 한다.
+## 타이포그래피
 
-- Interaction Blue: 선택, 링크, focus, primary action, 정보.
-- Success Green: 성공, 연결됨, trust.
-- Caution Amber: review, warning, medium risk.
-- Critical Red: destructive, error, blocked, high risk.
+- Sans: `Geist` 우선, OS sans-serif fallback.
+- Mono: `--ds-font-mono`. 경로, SQL, 값, 식별자, 숫자 비교에 사용한다.
+- Body: 14px.
+- Dense UI: 13px.
+- 보조 텍스트: 12px.
+- uppercase category label: 11px, 600–700 weight, `0.05em` tracking.
+- 큰 제목은 `-0.02em`, 패널 제목은 `-0.01em` tracking을 사용한다.
+- 데이터 숫자는 `font-variant-numeric: tabular-nums`를 사용한다.
 
-새 UI의 임의 색상은 추가하지 않는다. 상호작용에는 `--ds-accent*`, 성공에는 `--ds-success`/`--ds-trust-*`, 경고에는 `--ds-caution`/`--ds-risk-*`, 위험에는 `--ds-critical`/`--ds-danger-*`를 사용한다. 액센트 배경 fill에는 `--ds-accent`, 링크/아이콘/강조 텍스트에는 대비가 더 높은 `--ds-accent-text`를 사용한다.
+## Radius와 elevation
 
-## 글래스모피즘 표면
+Orca의 10px base scale을 사용한다.
 
-앱의 기본 질감은 단단한 작업 표면 위에 restrained glass shell을 얹는 방식이다. Tauri window material은 `src-tauri/tauri.conf.json`의 `windowEffects`에서 정의하고, 앱 내부 표면은 `tokens.css`의 `--ds-surface-*`, `--ds-bg-*`, `--ds-glass-*` 토큰으로만 만든다.
+- 작은 내부 요소: `--ds-radius-xs` (6px)
+- button/input: `--ds-radius-sm` (8px)
+- 일반 surface: `--ds-radius-md` (10px)
+- card/panel: `--ds-radius-lg` (14px)
+- badge/count: `--ds-radius-pill`
 
-```css
-.my-panel {
-  background: var(--ds-surface-0);
-  border: 1px solid var(--ds-border-subtle);
-  box-shadow: var(--ds-shadow-panel);
-}
-```
+Elevation은 세 단계만 허용한다.
 
-- Glass는 app shell, sidebar, header, tabs, modal, popover, toast, empty/skeleton state에만 제한한다.
-- 읽고 편집하는 본문, tab body, card, panel, button, form, inspector, data grid는 solid `--ds-surface-*`를 기본값으로 쓴다.
-- 데이터 grid는 shell과 cell 모두 blur를 반복하지 않는다.
-- 새 화면은 `.card`, `.ds-panel`, `.ds-toolbar`, `.ds-filter-strip`, `.grid-panel` 같은 정본 클래스를 먼저 사용한다. `ds-*` 클래스는 이 앱 클래스들이 공유하는 원시 스타일을 토큰화한 것뿐이며, 대응하는 앱 클래스가 없는 경우(`ds-context-badge`, `ds-workbench-head` 등)에만 `ds-*` 자체가 정본이다.
-- 불투명 배경색이 필요하면 하드코딩하지 말고 `tokens.css`에 의미 기반 `--ds-*` 토큰을 추가한다.
+1. 기본: border 또는 divider
+2. control: `--ds-shadow-control`
+3. floating: `--ds-shadow-popover`
+
+일반 card/panel에는 shadow를 추가하지 않는다.
+
+## 컴포넌트
+
+### 버튼
+
+기본 클래스는 `.btn`이며 Orca의 outline 버튼 역할이다.
+
+| 조합 | 용도 |
+| --- | --- |
+| `.btn.primary` | 저장·확인·실행 등 한 흐름의 단일 affirmative action |
+| `.btn.secondary` | primary 옆의 낮은 강조 action |
+| `.btn` | toolbar 또는 독립 outline action |
+| `.btn.ghost` | icon button과 list-row action |
+| `.btn.link` | 문장 안의 inline action |
+| `.btn.danger` | 삭제·폐기·되돌릴 수 없는 action |
+| `.btn.small` | 32px dense toolbar control |
+
+Cancel, Close, Dismiss는 destructive가 아니다. 기본 `.btn` 또는 `.btn.ghost`를
+사용한다.
+
+### Surface
+
+- `.card` / `.ds-card`: 반복 항목과 작은 정보 그룹
+- `.ds-panel`: 넓은 작업 surface
+- `.ds-surface`: 자유 형태의 공통 surface
+- `.grid-panel`, `.grid-scroll`: 데이터 결과 surface
+
+Surface는 기본적으로 `card + border + rounded-lg + no shadow`다. floating surface만
+`--ds-shadow-popover`를 사용한다.
+
+### Badge
+
+- `.badge`: 중립 metadata
+- `.badge.kind`: 선택보다 약한 category 표기
+- `.badge.status-ok`, `.badge.risk-low`: 성공/trust
+- `.badge.risk-medium`: warning/review
+- `.badge.status-error`, `.badge.status-blocked`, `.badge.risk-high`: 오류/차단
+- `.badge.nowhere`: 실행 위치가 없어 실제로 차단된 상태
+
+### Form
+
+- label과 control은 `space-2` 수준의 간격을 유지한다.
+- input/select/textarea는 `--ds-input` surface를 사용한다.
+- 오류는 `aria-invalid`와 inline `.error`로 표시한다.
+- 사용자가 읽거나 재시도해야 하는 오류는 toast로만 숨기지 않는다.
+- form action은 destructive → secondary → primary 순으로 배치한다.
+
+### 리스트 행
+
+- idle: 투명
+- hover: `--ds-muted`
+- keyboard selected/current: `--ds-selection`
+- focus: `--ds-ring`
+
+선택 상태를 임의 hex나 primary 버튼 색으로 만들지 않는다.
 
 ## 공통 클래스
 
-정본 이름은 앱에서 실제로 쓰는 클래스(`.btn`, `.badge`, `.card`)다. 대응하는 앱 클래스가 없는 원시 클래스만 `ds-*` 이름 그대로 정본이다. 아래는 `system.css`에 실제로 정의된 클래스만 담는다(더 이상 쓰이지 않는 `ds-button`, `ds-badge`, `ds-status-*`, `ds-stack`, `ds-inline`, `ds-input`, `ds-icon-button`, `ds-grid-shell`, `ds-count`, `ds-page-head`, `ds-surface-grid`, `ds-card-copy`, `ds-inspector`, `ds-code*` 등의 별칭은 제거됐다).
-
-표면(Surface):
-
-- `.card`(`.ds-card`) — 좁은 패딩 카드
-- `.ds-panel` — 넓은 패딩 패널(대응하는 앱 클래스 없음)
-- `.ds-surface` — 카드/패널과 같은 레시피의 자유 형태 표면
-- `.grid-panel`, `.schema-inspector` — 그리드/인스펙터 표면
-
-버튼 & 배지:
-
-- `.btn` (`.primary`, `.danger`, `.small` 조합)
-- `.badge` (`.kind`, `.status-ok`/`.risk-low`, `.risk-medium`, `.status-error`/`.status-blocked`/`.risk-high`, `.nowhere` 조합)
-- `.ds-context-badge` — connection/schema context pill
-
-워크벤치 헤더:
+워크벤치:
 
 - `.ds-workbench-head`, `.ds-workbench-title`, `.ds-title-line`
 - `.ds-meta-row`, `.ds-meta-dot`
 - `.ds-command-group`
 
-툴바 & 필터:
+Toolbar:
 
-- `.ds-toolbar`(`.grid-toolbar`, `.form-actions`, `.ds-action-row`도 같은 레시피를 공유)
-- `.ds-data-toolbar`, `.ds-toolbar-group`, `.ds-toolbar-spacer`
+- `.ds-toolbar`, `.ds-data-toolbar`
+- `.ds-toolbar-group`, `.ds-toolbar-spacer`
 - `.ds-filter-strip`, `.ds-filter-token`
+- `.ds-control-row`
 
-리스트/오브젝트 행:
-
-- `.ds-object-row` (`.active`, `[aria-selected="true"]`)
-- `.grid-scroll`
-
-Agent/safety 카드 시스템:
+Agent/safety:
 
 - `.ds-card-grid`, `.ds-card-stack`, `.ds-card-title-row`, `.ds-card-row`
 - `.ds-tone-trust`, `.ds-tone-risk`, `.ds-tone-danger`
 - `.ds-attention-stack`, `.ds-attention-badge`
 
-폼:
-
-- `.form`, `.form-head`, `.form-close-btn`, `.form-import-row`, `.form-msg`
-- input/select/textarea는 `.app` 스코프에서 전역으로 스타일되므로 별도 클래스가 필요 없다.
-
-유틸리티:
+Utility:
 
 - `.muted`, `.error`, `.empty`, `.label`, `.note`
-- `.loading`, `.icon`, `.ui-help`, `.icon-only-badge`, `.label-with-help`
-- `.ds-engine-mark`
+- `.loading`, `.icon`, `.ui-help`, `.icon-only-badge`
+- `.scrollbar-sleek`
 
-## 사용 예시
+## UX 규칙
 
-```tsx
-<section className="ds-panel">
-  <header className="ds-workbench-head">
-    <div className="ds-workbench-title">
-      <h2>Agent trust ledger</h2>
-      <p className="muted">What the agent can see and what needs approval.</p>
-    </div>
-    <span className="ds-context-badge">prod.public</span>
-  </header>
+1. 0–100ms 작업에는 별도 feedback을 보이지 않는다.
+2. 100ms–1s는 control만 disabled 처리한다.
+3. 1–3s는 spinner 또는 label swap을 사용한다.
+4. 3s 이상은 현재 단계를 구체적인 동사로 표시한다.
+5. loading label이 길어져도 layout이 움직이지 않도록 공간을 예약한다.
+6. tooltip은 icon-only control의 이름을 알려줄 때만 사용한다.
+7. 오류·경고·blocking state는 사용자가 행동할 수 있는 곳에 inline으로 둔다.
+8. `Esc`는 조용히 빠져나가는 경로이며 별도 색상이나 keyboard chip을 붙이지 않는다.
+9. icon-only 버튼에는 `aria-label` 또는 접근 가능한 이름이 있어야 한다.
+10. hover, focus-visible, disabled, empty, error 상태를 함께 구현한다.
+11. 애니메이션은 continuity를 설명할 때만 사용하고 reduced motion을 존중한다.
+12. macOS, Windows, Linux와 좁은 창에서 control label과 shortcut을 확인한다.
 
-  <div className="ds-card-grid">
-    <article className="card ds-card-row ds-tone-trust">
-      <span className="icon" />
-      <div>
-        <span className="muted">Schema access</span>
-        <strong>Allowed after approval</strong>
-      </div>
-    </article>
-  </div>
-</section>
-```
+## 시각적 깊이 계약
 
-## 디자인 규칙
+한 화면의 시각적 깊이는 control을 포함해 최대 3단계다.
 
-1. Button radius는 6px, panel/card radius는 8px 기준으로 쓴다.
-2. 업무용 화면에서는 hero-scale type을 쓰지 않는다. 패널 안 제목은 `h2` 또는 `ds-title` 크기면 충분하다.
-3. 카드 안에 카드를 중첩하지 않는다. 패널 안의 반복 항목만 카드로 쓴다.
-4. 색은 위험/상태/연결 컨텍스트를 설명할 때만 강하게 쓴다.
-5. `Agent` 관련 화면은 chat보다 trust ledger가 먼저 보여야 한다.
-6. icon-only 버튼에는 반드시 `aria-label` 또는 `title`을 둔다.
-7. 신규 화면의 접근성 체크: focus ring, keyboard path, contrast, target size, reduced motion.
-8. `system.css`에는 화면 이름을 넣지 않는다. 반복되는 행은 `ds-action-row`, 반복 카드/표면은 `ds-card*`와 `ds-tone-*`로 조합한다.
-9. 새 토큰은 세 화면 이상에서 반복될 때만 추가한다. 한 화면의 미세 조정 값은 화면 CSS에 둔다.
+1. 화면/영역: 배경 또는 한 방향 divider
+2. 작업 surface/반복 항목: 실제 정보 그룹에만 border
+3. control/상태: button, input, badge
 
-## 시각적 깊이 예산
+`panel -> card -> card`나 `inspector -> bordered list -> bordered row` 구조를 만들지
+않는다. 새 박스보다 여백, 제목, divider를 먼저 사용한다.
 
-한 화면에서 테두리·배경·그림자로 구획되는 깊이는 컨트롤까지 포함해 최대 3단계다.
+새 horizontal control cluster는 `.ds-control-row`를 포함하고, grid track은 `1fr`
+대신 `minmax(0, 1fr)`를 사용한다. `pnpm check:ui`가 이 계약을 검사한다.
 
-1. **화면/영역** — 배경 또는 한 방향 divider만 사용한다. 둥근 사각형으로 감싸지 않는다.
-2. **작업 표면/반복 항목** — 정보 그룹에 경계가 실제로 필요할 때 한 번만 사용한다.
-3. **컨트롤/상태** — 버튼, 입력, 배지처럼 직접 조작하거나 상태를 읽는 요소다.
+## 새 UI를 추가할 때
 
-- `panel -> card -> card`, `inspector -> bordered list -> bordered row` 구조는 금지한다.
-- 섹션 구분은 새 박스 대신 여백, 제목, 한 방향 divider를 우선한다.
-- 카드 안에 버튼은 가능하지만, 그 버튼을 다시 카드나 패널로 감싸지 않는다.
-- 새 grid track은 `1fr` 대신 `minmax(0, 1fr)`를 쓰고, 공통 layout 요소의 `min-width: 0` 규칙을 제거하지 않는다.
-- 툴바·액션·페이지 이동·탭 행은 `ds-control-row`를 함께 쓴다. 화면별 높이는 `--ds-row-control-size`에 `--ds-control-*` 토큰을 지정한다.
-- 버튼·입력·선택 컨트롤의 높이에 px 값을 직접 쓰지 않는다. 같은 행의 컨트롤은 하나의 높이 토큰을 공유한다.
-- 정본 surface 이름과 다른 커스텀 경계를 만들면 JSX에 `data-ui-boundary`를 붙여 구조 검사에 포함한다.
-- `pnpm check:ui`가 데스크톱과 워크스페이스 웹 전체에서 surface/control 중첩, control-row 누락, 안전하지 않은 fractional grid track, 하드코딩된 컨트롤 높이를 검사하며 `pnpm build`와 CI에서도 자동 실행된다.
+1. 가장 가까운 sibling screen을 먼저 확인한다.
+2. `system.css`에 이미 있는 primitive를 조합한다.
+3. 새 token은 세 화면 이상에서 같은 의미로 반복될 때만 추가한다.
+4. 화면 고유 미세 조정은 해당 화면 CSS에 둔다.
+5. `pnpm check:ui`와 `pnpm build`를 실행한다.
 
-## DopeDB 분석에서 반영한 것
-
-- Database Explorer의 계층 구조와 view option 개념.
-- Data editor의 toolbar + filter/sort strip + grid 구조.
-- Query console의 editor/result/output/session 분리.
-- 2026.1 MCP consent 모델의 네 가지 risk category.
-
-반영하지 않은 것:
-
-- 전체 IDE project/file/scratch/service 구조.
-- 과도한 icon-only toolbar 밀도.
-- safety를 Settings 내부에 숨기는 구조.
+참고 구현: [stablyai/orca UI style guide](https://github.com/stablyai/orca/blob/main/docs/STYLEGUIDE.md)
