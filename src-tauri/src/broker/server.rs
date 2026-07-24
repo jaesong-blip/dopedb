@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::services::ApplicationServices;
+use crate::skills::SkillManager;
 
 use super::dispatch::BrokerDispatcher;
 use super::{discovery, peer, BrokerRuntime};
@@ -27,10 +28,20 @@ const MAX_CONCURRENT_CONNECTIONS: usize = 64;
 pub(crate) async fn serve(
     runtime: BrokerRuntime,
     services: ApplicationServices,
+    skills: Option<SkillManager>,
     app_handle: tauri::AppHandle,
 ) -> AppResult<()> {
     match discovery::default_runtime_file() {
-        Ok(runtime_file) => serve_at(runtime, runtime_file, Some(services), Some(app_handle)).await,
+        Ok(runtime_file) => {
+            serve_at(
+                runtime,
+                runtime_file,
+                Some(services),
+                skills,
+                Some(app_handle),
+            )
+            .await
+        }
         Err(error) => {
             runtime.finish(Some(&error));
             Err(error)
@@ -42,9 +53,10 @@ async fn serve_at(
     runtime: BrokerRuntime,
     runtime_file: PathBuf,
     services: Option<ApplicationServices>,
+    skills: Option<SkillManager>,
     app_handle: Option<tauri::AppHandle>,
 ) -> AppResult<()> {
-    let result = platform_serve(&runtime, &runtime_file, services, app_handle).await;
+    let result = platform_serve(&runtime, &runtime_file, services, skills, app_handle).await;
     discovery::remove_if_owned(&runtime_file, runtime.runtime_id());
     runtime.finish(result.as_ref().err());
     result
@@ -55,6 +67,7 @@ async fn platform_serve(
     runtime: &BrokerRuntime,
     runtime_file: &Path,
     services: Option<ApplicationServices>,
+    skills: Option<SkillManager>,
     app_handle: Option<tauri::AppHandle>,
 ) -> AppResult<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -78,6 +91,7 @@ async fn platform_serve(
         env!("CARGO_PKG_VERSION"),
         runtime.sessions().clone(),
         services,
+        skills,
         app_handle,
     );
     let mut tasks = JoinSet::new();
@@ -124,6 +138,7 @@ async fn platform_serve(
     runtime: &BrokerRuntime,
     runtime_file: &Path,
     services: Option<ApplicationServices>,
+    skills: Option<SkillManager>,
     app_handle: Option<tauri::AppHandle>,
 ) -> AppResult<()> {
     let _directory = discovery::prepare_runtime_directory(runtime_file)?;
@@ -137,6 +152,7 @@ async fn platform_serve(
         env!("CARGO_PKG_VERSION"),
         runtime.sessions().clone(),
         services,
+        skills,
         app_handle,
     );
     let mut tasks = JoinSet::new();
@@ -253,7 +269,8 @@ mod tests {
         assert!(runtime.prepare_start());
         let task_runtime = runtime.clone();
         let task_file = runtime_file.clone();
-        let task = tokio::spawn(async move { serve_at(task_runtime, task_file, None, None).await });
+        let task =
+            tokio::spawn(async move { serve_at(task_runtime, task_file, None, None, None).await });
 
         let metadata = tokio::time::timeout(Duration::from_secs(2), async {
             loop {

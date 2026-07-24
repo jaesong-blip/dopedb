@@ -69,6 +69,90 @@ pub async fn install_cli(
         .map_err(|_| AppError::Config("the CLI installer worker stopped unexpectedly".into()))?
 }
 
+#[tauri::command]
+pub async fn skill_status(
+    state: State<'_, AppState>,
+    target: dopedb_protocol::SkillTargetSelection,
+) -> AppResult<dopedb_protocol::SkillStatusResult> {
+    require_skill_manager(&state)?;
+    let skills = state.skills.clone();
+    tokio::task::spawn_blocking(move || skills.status(target))
+        .await
+        .map_err(|_| AppError::Config("the Skill inventory worker stopped unexpectedly".into()))?
+}
+
+#[tauri::command]
+pub async fn install_skill(
+    state: State<'_, AppState>,
+    target: dopedb_protocol::SkillTargetSelection,
+    expected: Vec<dopedb_protocol::SkillTargetExpectation>,
+) -> AppResult<dopedb_protocol::SkillMutationResult> {
+    require_skill_manager(&state)?;
+    let skills = state.skills.clone();
+    tokio::task::spawn_blocking(move || {
+        skills.install(dopedb_protocol::SkillMutationArguments { target, expected })
+    })
+    .await
+    .map_err(|_| AppError::Config("the Skill install worker stopped unexpectedly".into()))?
+}
+
+#[tauri::command]
+pub async fn repair_skill(
+    state: State<'_, AppState>,
+    target: dopedb_protocol::SkillTargetSelection,
+    expected: Vec<dopedb_protocol::SkillTargetExpectation>,
+) -> AppResult<dopedb_protocol::SkillMutationResult> {
+    require_skill_manager(&state)?;
+    let skills = state.skills.clone();
+    tokio::task::spawn_blocking(move || {
+        skills.repair(dopedb_protocol::SkillMutationArguments { target, expected })
+    })
+    .await
+    .map_err(|_| AppError::Config("the Skill repair worker stopped unexpectedly".into()))?
+}
+
+#[tauri::command]
+pub async fn remove_skill(
+    state: State<'_, AppState>,
+    target: dopedb_protocol::SkillTargetSelection,
+    expected: Vec<dopedb_protocol::SkillTargetExpectation>,
+) -> AppResult<dopedb_protocol::SkillMutationResult> {
+    require_skill_manager(&state)?;
+    let skills = state.skills.clone();
+    tokio::task::spawn_blocking(move || {
+        skills.remove(dopedb_protocol::SkillMutationArguments { target, expected })
+    })
+    .await
+    .map_err(|_| AppError::Config("the Skill removal worker stopped unexpectedly".into()))?
+}
+
+#[tauri::command]
+pub async fn skill_self_test(
+    state: State<'_, AppState>,
+) -> AppResult<crate::skills::SkillSelfTestReceipt> {
+    require_skill_manager(&state)?;
+    let skills = state.skills.clone();
+    tokio::task::spawn_blocking(move || {
+        let binary = crate::cli_install::bundled_cli_binary()?;
+        skills.self_test_cli(&binary)
+    })
+    .await
+    .map_err(|_| AppError::Config("the Skill self-test worker stopped unexpectedly".into()))?
+}
+
+fn require_skill_manager(state: &AppState) -> AppResult<()> {
+    if state
+        .features
+        .is_enabled(crate::features::FeatureFlag::SkillManagerV1)
+    {
+        Ok(())
+    } else {
+        Err(AppError::Blocked {
+            reason: "the Skill Manager feature is disabled for this app runtime".into(),
+        })
+    }
+}
+
 // ── workspace context ────────────────────────────────────────────────────────
 
 #[tauri::command]

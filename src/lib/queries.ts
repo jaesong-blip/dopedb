@@ -28,6 +28,7 @@ import {
   runDashboard,
   runDocumentRead,
   runSqlRead,
+  skillStatus,
   workspaceFeatureState,
 } from "../ipc/commands";
 import type { AgentProvider, CatalogTable, Engine, QueryResult } from "../ipc/types";
@@ -108,6 +109,7 @@ export const qk = {
   dashboardRun: (dashboardId: string) => ["dashboardRun", dashboardId] as const,
   drivers: () => ["drivers"] as const,
   cliInstallation: () => ["cliInstallation"] as const,
+  skillStatus: () => ["skillStatus"] as const,
   platformFeatureFlags: () => ["platformFeatureFlags"] as const,
   mcpPlatforms: () => ["mcpPlatforms"] as const,
   mcpRuntimeStatus: () => ["mcpRuntimeStatus"] as const,
@@ -185,6 +187,17 @@ export function cliInstallationStatusQuery() {
     staleTime: 30_000,
     retry: false,
     queryFn: cliInstallationStatus,
+  });
+}
+
+export function skillStatusQuery() {
+  return queryOptions({
+    queryKey: qk.skillStatus(),
+    staleTime: 30_000,
+    gcTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: true,
+    queryFn: () => skillStatus("all"),
   });
 }
 

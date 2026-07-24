@@ -1,0 +1,65 @@
+[
+  {
+    "command": "skills.list",
+    "arguments": {},
+    "resultFixture": "skills-list"
+  },
+  {
+    "command": "skills.get",
+    "arguments": {
+      "name": "dopedb-cli",
+      "full": true
+    },
+    "resultFixture": "skills-get"
+  },
+  {
+    "command": "skill.status",
+    "arguments": {
+      "target": "all"
+    },
+    "resultFixture": "skill-status"
+  },
+  {
+    "command": "skill.install",
+    "arguments": {
+      "target": "codex",
+      "expected": [
+        {
+          "target": "codex",
+          "inventoryFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    },
+    "resultFixture": "skill-mutation"
+  },
+  {
+    "command": "skill.repair",
+    "arguments": {
+      "target": "claude-code",
+      "expected": [
+        {
+          "target": "claude-code",
+          "inventoryFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    },
+    "resultFixture": "skill-mutation"
+  },
+  {
+    "command": "skill.remove",
+    "arguments": {
+      "target": "all",
+      "expected": [
+        {
+          "target": "codex",
+          "inventoryFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "target": "claude-code",
+          "inventoryFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    },
+    "resultFixture": "skill-mutation"
+  }
+]

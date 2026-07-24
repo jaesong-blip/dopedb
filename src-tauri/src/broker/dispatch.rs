@@ -12,10 +12,12 @@ use dopedb_protocol::{
     OperationWaitArguments, OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryHealth,
     QueryPlanArguments, QueryPlanCommand, QueryPlanResult, QueryResultPage, QueryRunArguments,
     QueryRunCommand, QueryRunResult, RequestEnvelope, ResponseEnvelope, SchemaListCommand,
-    SchemaListResult, SchemaSummary, SqlProposeArguments, SqlProposeCommand, StatusCommand,
-    StatusResult, TableDescribeArguments, TableDescribeCommand, TableDescribeResult,
-    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, MAX_RESPONSE_BYTES, MAX_STRING_BYTES,
-    PROTOCOL_MAX, PROTOCOL_MIN,
+    SchemaListResult, SchemaSummary, SkillInstallCommand, SkillMutationArguments,
+    SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand, SkillsGetCommand,
+    SkillsListCommand, SqlProposeArguments, SqlProposeCommand, StatusCommand, StatusResult,
+    TableDescribeArguments, TableDescribeCommand, TableDescribeResult, VersionCommand,
+    VersionResult, COMMAND_SCHEMA_VERSION, MAX_RESPONSE_BYTES, MAX_STRING_BYTES, PROTOCOL_MAX,
+    PROTOCOL_MIN,
 };
 use serde::Serialize;
 use tauri::Manager;
@@ -29,6 +31,7 @@ use crate::services::{
     ApplicationServices, CatalogReadPolicy, CliConnectionResolutionError, TerminalAuthority,
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
+use crate::skills::SkillManager;
 
 use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegistry};
 
@@ -42,6 +45,7 @@ pub(crate) struct BrokerDispatcher {
     app_version: &'static str,
     sessions: BrokerSessionRegistry,
     services: Option<ApplicationServices>,
+    skills: Option<SkillManager>,
     app_handle: Option<tauri::AppHandle>,
 }
 
@@ -51,6 +55,7 @@ impl BrokerDispatcher {
         app_version: &'static str,
         sessions: BrokerSessionRegistry,
         services: Option<ApplicationServices>,
+        skills: Option<SkillManager>,
         app_handle: Option<tauri::AppHandle>,
     ) -> Self {
         Self {
@@ -58,6 +63,7 @@ impl BrokerDispatcher {
             app_version,
             sessions,
             services,
+            skills,
             app_handle,
         }
     }
@@ -110,6 +116,85 @@ impl BrokerDispatcher {
                 };
                 let _wait = arguments.wait;
                 respond(request_id, self.focus_app())
+            }
+            CommandName::SkillsList => {
+                if decode_arguments::<SkillsListCommand>(&request).is_err() {
+                    return failure(request_id, ErrorCode::InvalidRequest, false);
+                }
+                respond(
+                    request_id,
+                    self.skills
+                        .as_ref()
+                        .map(|skills| skills.list())
+                        .ok_or(ErrorCode::PolicyBlocked),
+                )
+            }
+            CommandName::SkillsGet => {
+                let arguments = match decode_arguments::<SkillsGetCommand>(&request) {
+                    Ok(arguments) => arguments,
+                    Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+                };
+                respond(
+                    request_id,
+                    self.skills
+                        .as_ref()
+                        .ok_or(ErrorCode::PolicyBlocked)
+                        .and_then(|skills| {
+                            skills
+                                .guide(&arguments.name, arguments.full)
+                                .map_err(map_skill_error)
+                        }),
+                )
+            }
+            CommandName::SkillStatus => {
+                let arguments = match decode_arguments::<SkillStatusCommand>(&request) {
+                    Ok(arguments) => arguments,
+                    Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+                };
+                let Some(skills) = self.skills.clone() else {
+                    return failure(request_id, ErrorCode::PolicyBlocked, false);
+                };
+                let result =
+                    tokio::task::spawn_blocking(move || skills.status(arguments.target)).await;
+                respond(
+                    request_id,
+                    result
+                        .map_err(|_| ErrorCode::Internal)
+                        .and_then(|result| result.map_err(map_skill_error)),
+                )
+            }
+            CommandName::SkillInstall => {
+                let arguments = match decode_arguments::<SkillInstallCommand>(&request) {
+                    Ok(arguments) => arguments,
+                    Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+                };
+                respond(
+                    request_id,
+                    self.run_skill_mutation(arguments, SkillMutation::Install)
+                        .await,
+                )
+            }
+            CommandName::SkillRepair => {
+                let arguments = match decode_arguments::<SkillRepairCommand>(&request) {
+                    Ok(arguments) => arguments,
+                    Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+                };
+                respond(
+                    request_id,
+                    self.run_skill_mutation(arguments, SkillMutation::Repair)
+                        .await,
+                )
+            }
+            CommandName::SkillRemove => {
+                let arguments = match decode_arguments::<SkillRemoveCommand>(&request) {
+                    Ok(arguments) => arguments,
+                    Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+                };
+                respond(
+                    request_id,
+                    self.run_skill_mutation(arguments, SkillMutation::Remove)
+                        .await,
+                )
             }
             CommandName::ConnectionList => {
                 let session = match self.authenticate(&request, BrokerCapability::ConnectionRead) {
@@ -317,14 +402,24 @@ impl BrokerDispatcher {
                     .await,
                 )
             }
-            CommandName::SkillsList
-            | CommandName::SkillsGet
-            | CommandName::SkillStatus
-            | CommandName::SkillInstall
-            | CommandName::SkillRepair
-            | CommandName::SkillRemove
-            | CommandName::Unknown => failure(request_id, ErrorCode::InvalidRequest, false),
+            CommandName::Unknown => failure(request_id, ErrorCode::InvalidRequest, false),
         }
+    }
+
+    async fn run_skill_mutation(
+        &self,
+        arguments: SkillMutationArguments,
+        mutation: SkillMutation,
+    ) -> Result<dopedb_protocol::SkillMutationResult, ErrorCode> {
+        let skills = self.skills.clone().ok_or(ErrorCode::PolicyBlocked)?;
+        tokio::task::spawn_blocking(move || match mutation {
+            SkillMutation::Install => skills.install(arguments),
+            SkillMutation::Repair => skills.repair(arguments),
+            SkillMutation::Remove => skills.remove(arguments),
+        })
+        .await
+        .map_err(|_| ErrorCode::Internal)?
+        .map_err(map_skill_error)
     }
 
     fn execute_public<C>(&self, request: &RequestEnvelope, result: C::Result) -> ResponseEnvelope
@@ -863,6 +958,22 @@ fn map_application_error(error: AppError) -> ErrorCode {
     }
 }
 
+#[derive(Clone, Copy)]
+enum SkillMutation {
+    Install,
+    Repair,
+    Remove,
+}
+
+fn map_skill_error(error: AppError) -> ErrorCode {
+    match error {
+        AppError::Blocked { .. } => ErrorCode::OperationConflict,
+        AppError::NotFound(_) | AppError::Config(_) => ErrorCode::InvalidRequest,
+        AppError::Io(_) | AppError::Serialization(_) => ErrorCode::Internal,
+        other => map_application_error(other),
+    }
+}
+
 fn respond<T: Serialize>(request_id: Uuid, result: Result<T, ErrorCode>) -> ResponseEnvelope {
     match result {
         Ok(result) => success(request_id, &result),
@@ -911,7 +1022,7 @@ mod tests {
 
     use dopedb_protocol::{
         ConnectionListResult, QueryPlanArguments, QueryPlanResult, QueryRunArguments,
-        QueryRunResult, SessionAuthentication,
+        QueryRunResult, SessionAuthentication, SkillMutationResult, SkillStatusResult,
     };
     use serde_json::json;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -944,6 +1055,7 @@ mod tests {
             BrokerSessionRegistry::new(runtime_id),
             None,
             None,
+            None,
         )
     }
 
@@ -968,6 +1080,67 @@ mod tests {
         assert_eq!(
             rejected.error().map(ProtocolError::code),
             Some(ErrorCode::InvalidRequest)
+        );
+    }
+
+    #[tokio::test]
+    async fn skill_inventory_and_install_use_the_public_typed_broker_path() {
+        let home = TempDir::new().unwrap();
+        let runtime_id = Uuid::new_v4();
+        let dispatcher = BrokerDispatcher::new(
+            runtime_id,
+            "0.3.3",
+            BrokerSessionRegistry::new(runtime_id),
+            None,
+            Some(crate::skills::SkillManager::for_home(home.path().to_path_buf()).unwrap()),
+            None,
+        );
+        let status_response = dispatcher
+            .dispatch(request(
+                CommandName::SkillStatus,
+                json!({"target": "codex"}),
+            ))
+            .await;
+        let status: SkillStatusResult =
+            serde_json::from_value(status_response.result().cloned().unwrap()).unwrap();
+        assert_eq!(status.targets.len(), 1);
+        assert_eq!(
+            status.targets[0].state,
+            dopedb_protocol::SkillInstallState::Missing
+        );
+
+        let install_response = dispatcher
+            .dispatch(request(
+                CommandName::SkillInstall,
+                json!({
+                    "target": "codex",
+                    "expected": [{
+                        "target": "codex",
+                        "inventoryFingerprint": status.targets[0].inventory_fingerprint
+                    }]
+                }),
+            ))
+            .await;
+        let installed: SkillMutationResult =
+            serde_json::from_value(install_response.result().cloned().unwrap()).unwrap();
+        assert_eq!(
+            installed.status.targets[0].state,
+            dopedb_protocol::SkillInstallState::ManagedCurrent
+        );
+        assert_eq!(
+            installed.changed_targets,
+            vec![dopedb_protocol::SkillTarget::Codex]
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_skill_manager_fails_without_reading_the_user_home() {
+        let response = dispatcher()
+            .dispatch(request(CommandName::SkillsList, json!({})))
+            .await;
+        assert_eq!(
+            response.error().map(ProtocolError::code),
+            Some(ErrorCode::PolicyBlocked)
         );
     }
 
@@ -1157,6 +1330,7 @@ mod tests {
                     "0.3.3",
                     sessions,
                     Some(services),
+                    None,
                     None,
                 ),
                 primary_session,

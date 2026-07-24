@@ -5,6 +5,7 @@ import {
   mcpPlatformsQuery,
   platformFeatureFlagsQuery,
   qk,
+  skillStatusQuery,
 } from "./queries";
 
 describe("isTransientDbError", () => {
@@ -37,6 +38,18 @@ describe("platform feature flag lifecycle", () => {
 
     expect(query.queryKey).toEqual(qk.platformFeatureFlags());
     expect(query.staleTime).toBe(Infinity);
+    expect(query.retry).toBe(false);
+  });
+});
+
+describe("Skill inventory lifecycle", () => {
+  it("runs at startup and rechecks the bounded inventory after app focus", () => {
+    const query = skillStatusQuery();
+
+    expect(query.queryKey).toEqual(qk.skillStatus());
+    expect(query.staleTime).toBe(30_000);
+    expect(query.gcTime).toBe(Infinity);
+    expect(query.refetchOnWindowFocus).toBe(true);
     expect(query.retry).toBe(false);
   });
 });

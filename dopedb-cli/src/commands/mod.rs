@@ -4,3 +4,4 @@ pub(crate) mod completion;
 pub(crate) mod connection;
 pub(crate) mod operation;
 pub(crate) mod query;
+pub(crate) mod skills;

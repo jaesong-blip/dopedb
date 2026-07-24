@@ -8,6 +8,7 @@ use crate::error::AppResult;
 use crate::features::{FeatureFlag, FeatureFlags};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
 use crate::services::ApplicationServices;
+use crate::skills::SkillManager;
 use crate::store::Store;
 
 /// Live runtime status of the MCP listeners, set by `mcp::serve_*` on bind
@@ -41,6 +42,8 @@ pub struct AppState {
     pub(crate) broker: BrokerRuntime,
     /// Safety-sensitive rollout gates captured once for this app runtime.
     pub features: crate::features::FeatureFlags,
+    /// Offline Skill bundle inventory and atomic per-user installer.
+    pub(crate) skills: SkillManager,
     /// Desktop-only approval capability. MCP/CLI/Agent adapters receive only the
     /// ApplicationServices facade and therefore cannot obtain this value.
     pub(crate) local_operation_approval: LocalApprovalAuthority,
@@ -52,12 +55,14 @@ impl AppState {
             FeatureFlag::OperationRuntimeV1,
             FeatureFlag::LocalBrokerV1,
             FeatureFlag::CliV1,
+            FeatureFlag::SkillManagerV1,
         ]);
         let store = Store::open().await?;
         let connections = ConnectionManager::new(store.clone());
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let broker = BrokerRuntime::new(operation.runtime_id());
         let services = ApplicationServices::new(store.clone(), connections.clone(), operation);
+        let skills = SkillManager::new()?;
         if features.is_enabled(FeatureFlag::OperationRuntimeV1) {
             services.operation.recover_previous_runtimes().await?;
         }
@@ -70,6 +75,7 @@ impl AppState {
             chat: crate::agent::chat_state(),
             broker,
             features,
+            skills,
             local_operation_approval,
         })
     }

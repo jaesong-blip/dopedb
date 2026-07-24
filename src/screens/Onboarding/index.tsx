@@ -5,10 +5,10 @@ import "./onboarding.css";
 
 export default function Onboarding({
   onNewConnection,
-  onOpenMcp,
+  onOpenAgentTools,
 }: {
   onNewConnection: () => void;
-  onOpenMcp: () => void;
+  onOpenAgentTools: () => void;
 }) {
   const { t } = useI18n();
 
@@ -32,8 +32,8 @@ export default function Onboarding({
             <div className="step-num">2</div>
             <h3>{t("onboarding.agentTitle")}</h3>
             <p className="muted">{t("onboarding.agentBody")}</p>
-            <button className="btn" onClick={onOpenMcp}>
-              {t("onboarding.setupMcp")}
+            <button className="btn" onClick={onOpenAgentTools}>
+              {t("onboarding.setupAgentTools")}
             </button>
           </div>
         </div>

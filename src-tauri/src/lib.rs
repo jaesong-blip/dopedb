@@ -20,6 +20,7 @@ mod monitoring;
 pub mod operations;
 mod safety;
 mod services;
+mod skills;
 mod sql_script;
 mod state;
 mod store;
@@ -58,9 +59,14 @@ pub fn run() {
                 .is_enabled(features::FeatureFlag::LocalBrokerV1)
             {
                 let state = app.state::<state::AppState>();
+                let skills = state
+                    .features
+                    .is_enabled(features::FeatureFlag::SkillManagerV1)
+                    .then(|| state.skills.clone());
                 broker::start(
                     state.broker.clone(),
                     state.services.clone(),
+                    skills,
                     app.handle().clone(),
                 );
             }
@@ -102,6 +108,11 @@ pub fn run() {
             commands::platform_feature_flags,
             commands::cli_installation_status,
             commands::install_cli,
+            commands::skill_status,
+            commands::install_skill,
+            commands::repair_skill,
+            commands::remove_skill,
+            commands::skill_self_test,
             commands::workspace_auth_state,
             commands::refresh_workspace_auth_state,
             commands::workspace_sign_out,

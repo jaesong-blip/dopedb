@@ -5,13 +5,20 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import type { ConnectionProfile } from "../../ipc/types";
 import InfoTip from "../../components/InfoTip";
 import { useI18n } from "../../lib/i18n";
+import AgentTools from "./AgentTools";
 import CliSettings from "./Cli";
 import Mcp from "./Mcp";
 import Safety from "./Safety";
 import Updates from "./Updates";
 import "./settings.css";
 
-type Section = "cli" | "mcp" | "safety" | "updates" | "language";
+export type SettingsSection =
+  | "agent-tools"
+  | "cli"
+  | "mcp"
+  | "safety"
+  | "updates"
+  | "language";
 
 export default function Settings({
   connection,
@@ -25,13 +32,13 @@ export default function Settings({
   onClose: () => void;
   // Re-loads the App's per-connection safety so Safety edits apply without reselecting.
   refreshSafety: () => void;
-  initialSection?: Section;
+  initialSection?: SettingsSection;
   availableUpdate?: Update | null;
   onUpdateChecked?: (update: Update | null) => void;
 }) {
   const { lang, setLang, t } = useI18n();
-  const [section, setSection] = useState<Section>(
-    initialSection ?? (connection ? "safety" : "mcp"),
+  const [section, setSection] = useState<SettingsSection>(
+    initialSection ?? "agent-tools",
   );
 
   // Safety may have changed while this menu was open — refresh App's copy on the way out.
@@ -65,6 +72,12 @@ export default function Settings({
             {t("common.done")}
           </button>
         </div>
+        <button
+          className={section === "agent-tools" ? "snav active" : "snav"}
+          onClick={() => setSection("agent-tools")}
+        >
+          {t("settings.agentTools")}
+        </button>
         <button
           className={section === "mcp" ? "snav active" : "snav"}
           onClick={() => setSection("mcp")}
@@ -101,6 +114,7 @@ export default function Settings({
       </aside>
 
       <div className="settings-body">
+        {section === "agent-tools" && <AgentTools />}
         {section === "cli" && <CliSettings />}
         {section === "mcp" && <Mcp />}
         {section === "updates" && (

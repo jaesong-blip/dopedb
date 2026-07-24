@@ -233,6 +233,92 @@ const messages = {
     "cli.update": "Update CLI",
     "cli.version": "Bundled version",
     "cli.working": "Installing...",
+    "agentTools.authenticated": "Signed in",
+    "agentTools.backupCreated": "Backup preserved at {path}",
+    "agentTools.checkAgain": "Check again",
+    "agentTools.cliMissing": "CLI not detected",
+    "agentTools.conflictInvalidProvenance": "Invalid management marker",
+    "agentTools.conflictMissing": "Missing",
+    "agentTools.conflictModified": "Modified",
+    "agentTools.conflictUnexpected": "Unexpected",
+    "agentTools.conflicts": "{count} exact conflict(s)",
+    "agentTools.description":
+      "Install the small DopeDB discovery Skill for Codex and Claude Code. The version-matched full guide stays inside the signed CLI.",
+    "agentTools.detectError": "Could not detect agent tools: {error}",
+    "agentTools.detected": "CLI detected",
+    "agentTools.error": "Could not manage the DopeDB Skill: {error}",
+    "agentTools.install": "Install",
+    "agentTools.installAll": "Install DopeDB Skill",
+    "agentTools.installedRevision": "Installed revision {revision}",
+    "agentTools.notAuthenticated": "Sign-in required",
+    "agentTools.path": "Install path",
+    "agentTools.remove": "Remove",
+    "agentTools.removeConfirm": "Remove this managed Skill?",
+    "agentTools.removed": "Managed DopeDB Skill removed.",
+    "agentTools.repair": "Back up and repair",
+    "agentTools.repairConfirm":
+      "Preserve the existing files and repair {count} conflict(s)?",
+    "agentTools.reasonFilesDifferFromManagedSnapshot":
+      "Installed files differ from the managed snapshot.",
+    "agentTools.reasonInstallPathInspectionFailed":
+      "The install path could not be inspected safely.",
+    "agentTools.reasonInstallPathSymlink":
+      "The install path contains a symbolic link.",
+    "agentTools.reasonInstallRootNotDirectory":
+      "An install-root component is not a directory.",
+    "agentTools.reasonInstallTargetNotDirectory":
+      "The install target exists but is not a directory.",
+    "agentTools.reasonInstallTargetOutsideHome":
+      "The install target is outside your home directory.",
+    "agentTools.reasonInstallTargetSymlink":
+      "The install target is a symbolic link.",
+    "agentTools.reasonInstalledFileChanged":
+      "An installed file changed while it was being checked.",
+    "agentTools.reasonInstalledFileTooLarge":
+      "An installed file is too large for this platform.",
+    "agentTools.reasonInstalledSkillByteLimit":
+      "The installed Skill exceeds the safe byte limit.",
+    "agentTools.reasonInstalledSkillFileCountLimit":
+      "The installed Skill exceeds the safe file-count limit.",
+    "agentTools.reasonInstalledSkillNestingLimit":
+      "The installed Skill exceeds the safe nesting limit.",
+    "agentTools.reasonInstalledSkillNonUnicodePath":
+      "The installed Skill contains a path that cannot be displayed safely.",
+    "agentTools.reasonInstalledSkillReadFailed":
+      "The installed Skill could not be read safely.",
+    "agentTools.reasonInstalledSkillSymlink":
+      "The installed Skill contains a symbolic link.",
+    "agentTools.reasonInstalledSkillUnsafePath":
+      "The installed Skill contains an unsafe path.",
+    "agentTools.reasonInstalledSkillUnsupportedFile":
+      "The installed Skill contains an unsupported or oversized file.",
+    "agentTools.reasonInventoryEscapedRoot":
+      "An inventory path escaped the install root.",
+    "agentTools.reasonProvenanceMarkerMalformed":
+      "The DopeDB management marker is malformed.",
+    "agentTools.reasonProvenanceMarkerNotFile":
+      "The DopeDB management marker is not a regular file.",
+    "agentTools.reasonProvenanceMarkerUnreadable":
+      "The DopeDB management marker could not be read.",
+    "agentTools.reasonUnknownManagedSnapshot":
+      "The DopeDB management marker names an unknown snapshot.",
+    "agentTools.reasonUnmanagedFiles":
+      "This path contains files not managed by this DopeDB release.",
+    "agentTools.reasonUnsafePathComponent":
+      "The install target contains an unsafe path component.",
+    "agentTools.selfTest": "Test version-matched guide",
+    "agentTools.selfTestPassed":
+      "CLI self-test passed for revision {revision} ({bytes} guide bytes).",
+    "agentTools.stateInvalid": "Invalid installation",
+    "agentTools.stateManagedCurrent": "Current",
+    "agentTools.stateManagedOlder": "Update available",
+    "agentTools.stateMissing": "Not installed",
+    "agentTools.stateNewerKnown": "Newer known revision",
+    "agentTools.stateUnknownConflict": "Existing unknown files",
+    "agentTools.stateUserModified": "User-modified",
+    "agentTools.title": "Agent tools",
+    "agentTools.updated": "DopeDB Skill installation updated.",
+    "agentTools.version": "DopeDB {version} · Skill revision {revision}",
     "common.cancel": "Cancel",
     "common.close": "Close",
     "common.copied": "Copied",
@@ -425,7 +511,7 @@ const messages = {
     "mcp.working": "Working...",
     "onboarding.addConnection": "Add connection",
     "onboarding.agentBody":
-      "DopeDB runs a local MCP server. Point Claude Code, Cursor, or Codex at it - the chat stays in your platform, while this app shows and controls the data.",
+      "Install the version-matched DopeDB Skill for Codex or Claude Code. The agent uses the local DopeDB CLI, while this app keeps database access visible and controlled.",
     "onboarding.agentTitle": "Connect your AI agent",
     "onboarding.databaseBody":
       "Add a PostgreSQL, MySQL, or SQLite connection. Credentials are stored in your OS credential store - never in plain text.",
@@ -434,6 +520,7 @@ const messages = {
       "You can do both, or start with just a database and add the agent later.",
     "onboarding.lead":
       "A safe database client for the AI era. Your agent queries and edits databases through DopeDB, which keeps everything read-only by default, requires a human click for writes, and audits every statement.",
+    "onboarding.setupAgentTools": "Set up agent tools",
     "onboarding.setupMcp": "Set up MCP",
     "onboarding.title": "Welcome to DopeDB",
     "safety.allowWrites": "Allow writes",
@@ -492,6 +579,7 @@ const messages = {
     "safety.wrapWritesInTxHint":
       "BEGIN ... writes ... so they can be rolled back.",
     "settings.cli": "Command line",
+    "settings.agentTools": "Agent tools",
     "settings.languageBody":
       "Choose the UI language for the desktop client. The setting is saved on this device.",
     "settings.languageTitle": "Language",
@@ -977,6 +1065,91 @@ const messages = {
     "cli.update": "CLI 업데이트",
     "cli.version": "번들 버전",
     "cli.working": "설치 중...",
+    "agentTools.authenticated": "로그인됨",
+    "agentTools.backupCreated": "기존 파일을 {path}에 보존했습니다.",
+    "agentTools.checkAgain": "다시 확인",
+    "agentTools.cliMissing": "CLI를 찾지 못함",
+    "agentTools.conflictInvalidProvenance": "잘못된 관리 표식",
+    "agentTools.conflictMissing": "누락됨",
+    "agentTools.conflictModified": "수정됨",
+    "agentTools.conflictUnexpected": "예상하지 않은 파일",
+    "agentTools.conflicts": "정확한 충돌 {count}개",
+    "agentTools.description":
+      "Codex와 Claude Code에 작은 DopeDB 탐색 스킬을 설치합니다. 버전에 맞는 전체 가이드는 서명된 CLI 안에 유지됩니다.",
+    "agentTools.detectError": "에이전트 도구를 확인하지 못했습니다: {error}",
+    "agentTools.detected": "CLI 감지됨",
+    "agentTools.error": "DopeDB 스킬을 관리하지 못했습니다: {error}",
+    "agentTools.install": "설치",
+    "agentTools.installAll": "DopeDB 스킬 설치",
+    "agentTools.installedRevision": "설치된 리비전 {revision}",
+    "agentTools.notAuthenticated": "로그인 필요",
+    "agentTools.path": "설치 경로",
+    "agentTools.remove": "제거",
+    "agentTools.removeConfirm": "이 관리형 스킬을 제거할까요?",
+    "agentTools.removed": "관리형 DopeDB 스킬을 제거했습니다.",
+    "agentTools.repair": "백업 후 복구",
+    "agentTools.repairConfirm": "기존 파일을 보존하고 충돌 {count}개를 복구할까요?",
+    "agentTools.reasonFilesDifferFromManagedSnapshot":
+      "설치된 파일이 관리 기록과 다릅니다.",
+    "agentTools.reasonInstallPathInspectionFailed":
+      "설치 경로를 안전하게 검사하지 못했습니다.",
+    "agentTools.reasonInstallPathSymlink":
+      "설치 경로에 심볼릭 링크가 포함되어 있습니다.",
+    "agentTools.reasonInstallRootNotDirectory":
+      "설치 루트의 일부가 폴더가 아닙니다.",
+    "agentTools.reasonInstallTargetNotDirectory":
+      "설치 대상이 이미 있지만 폴더가 아닙니다.",
+    "agentTools.reasonInstallTargetOutsideHome":
+      "설치 대상이 사용자 홈 폴더 밖에 있습니다.",
+    "agentTools.reasonInstallTargetSymlink":
+      "설치 대상이 심볼릭 링크입니다.",
+    "agentTools.reasonInstalledFileChanged":
+      "검사하는 동안 설치된 파일이 변경되었습니다.",
+    "agentTools.reasonInstalledFileTooLarge":
+      "설치된 파일이 이 플랫폼에서 처리하기에 너무 큽니다.",
+    "agentTools.reasonInstalledSkillByteLimit":
+      "설치된 스킬이 안전한 전체 용량 제한을 넘었습니다.",
+    "agentTools.reasonInstalledSkillFileCountLimit":
+      "설치된 스킬이 안전한 파일 개수 제한을 넘었습니다.",
+    "agentTools.reasonInstalledSkillNestingLimit":
+      "설치된 스킬이 안전한 폴더 깊이 제한을 넘었습니다.",
+    "agentTools.reasonInstalledSkillNonUnicodePath":
+      "설치된 스킬에 안전하게 표시할 수 없는 경로가 있습니다.",
+    "agentTools.reasonInstalledSkillReadFailed":
+      "설치된 스킬을 안전하게 읽지 못했습니다.",
+    "agentTools.reasonInstalledSkillSymlink":
+      "설치된 스킬에 심볼릭 링크가 포함되어 있습니다.",
+    "agentTools.reasonInstalledSkillUnsafePath":
+      "설치된 스킬에 안전하지 않은 경로가 있습니다.",
+    "agentTools.reasonInstalledSkillUnsupportedFile":
+      "설치된 스킬에 지원하지 않거나 너무 큰 파일이 있습니다.",
+    "agentTools.reasonInventoryEscapedRoot":
+      "검사한 경로가 설치 루트 밖으로 벗어났습니다.",
+    "agentTools.reasonProvenanceMarkerMalformed":
+      "DopeDB 관리 표식의 형식이 잘못되었습니다.",
+    "agentTools.reasonProvenanceMarkerNotFile":
+      "DopeDB 관리 표식이 일반 파일이 아닙니다.",
+    "agentTools.reasonProvenanceMarkerUnreadable":
+      "DopeDB 관리 표식을 읽지 못했습니다.",
+    "agentTools.reasonUnknownManagedSnapshot":
+      "DopeDB 관리 표식이 알 수 없는 스냅샷을 가리킵니다.",
+    "agentTools.reasonUnmanagedFiles":
+      "이 경로에 현재 DopeDB 릴리스가 관리하지 않는 파일이 있습니다.",
+    "agentTools.reasonUnsafePathComponent":
+      "설치 대상에 안전하지 않은 경로 요소가 있습니다.",
+    "agentTools.selfTest": "버전 일치 가이드 테스트",
+    "agentTools.selfTestPassed":
+      "리비전 {revision} CLI 자체 테스트를 통과했습니다(가이드 {bytes}바이트).",
+    "agentTools.stateInvalid": "잘못된 설치",
+    "agentTools.stateManagedCurrent": "최신",
+    "agentTools.stateManagedOlder": "업데이트 가능",
+    "agentTools.stateMissing": "설치되지 않음",
+    "agentTools.stateNewerKnown": "알려진 더 최신 리비전",
+    "agentTools.stateUnknownConflict": "알 수 없는 기존 파일",
+    "agentTools.stateUserModified": "사용자 수정됨",
+    "agentTools.title": "에이전트 도구",
+    "agentTools.updated": "DopeDB 스킬 설치를 업데이트했습니다.",
+    "agentTools.version": "DopeDB {version} · 스킬 리비전 {revision}",
     "common.cancel": "취소",
     "common.close": "닫기",
     "common.copied": "복사됨",
@@ -1169,7 +1342,7 @@ const messages = {
     "mcp.working": "처리 중...",
     "onboarding.addConnection": "연결 추가",
     "onboarding.agentBody":
-      "DopeDB는 로컬 MCP 서버를 실행합니다. Claude Code, Cursor, Codex를 연결하면 채팅은 기존 플랫폼에 남고, 이 앱이 데이터를 표시하고 제어합니다.",
+      "Codex 또는 Claude Code에 현재 앱 버전과 맞는 DopeDB 스킬을 설치하세요. 에이전트는 로컬 DopeDB CLI를 사용하고, 이 앱은 데이터베이스 접근을 표시하고 제어합니다.",
     "onboarding.agentTitle": "AI 에이전트 연결",
     "onboarding.databaseBody":
       "PostgreSQL, MySQL, SQLite 연결을 추가하세요. 인증 정보는 OS 보안 저장소에 저장되며 평문으로 남지 않습니다.",
@@ -1178,6 +1351,7 @@ const messages = {
       "둘 다 설정해도 좋고, 데이터베이스부터 연결한 뒤 에이전트를 나중에 추가해도 됩니다.",
     "onboarding.lead":
       "AI 시대를 위한 안전한 데이터베이스 클라이언트입니다. 에이전트는 DopeDB를 통해 데이터베이스를 조회하고 수정하며, 기본은 읽기 전용이고 쓰기는 사람이 클릭으로 승인하며 모든 문장을 감사 로그로 남깁니다.",
+    "onboarding.setupAgentTools": "에이전트 도구 설정",
     "onboarding.setupMcp": "MCP 설정",
     "onboarding.title": "DopeDB에 오신 것을 환영합니다",
     "safety.allowWrites": "쓰기 허용",
@@ -1235,6 +1409,7 @@ const messages = {
     "safety.wrapWritesInTxHint":
       "BEGIN ... writes ... 형태로 실행해 롤백할 수 있게 합니다.",
     "settings.cli": "명령줄",
+    "settings.agentTools": "에이전트 도구",
     "settings.languageBody":
       "데스크톱 클라이언트의 UI 언어를 선택하세요. 이 설정은 이 기기에 저장됩니다.",
     "settings.languageTitle": "언어",

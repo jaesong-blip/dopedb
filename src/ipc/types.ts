@@ -66,6 +66,102 @@ export interface CliInstallReceipt {
   pathChanged: boolean;
 }
 
+// Mirrors dopedb-protocol/src/skill_command.rs and
+// src-tauri/src/skills/mod.rs (SkillSelfTestReceipt).
+export type SkillTarget = "codex" | "claude-code";
+export type SkillTargetSelection = SkillTarget | "all";
+export type SkillInstallState =
+  | "missing"
+  | "managed_current"
+  | "managed_older"
+  | "user_modified"
+  | "newer_known"
+  | "unknown_conflict"
+  | "invalid";
+export type SkillStatusReason =
+  | "files_differ_from_managed_snapshot"
+  | "install_path_inspection_failed"
+  | "install_path_symlink"
+  | "install_root_not_directory"
+  | "install_target_not_directory"
+  | "install_target_outside_home"
+  | "install_target_symlink"
+  | "installed_file_changed"
+  | "installed_file_too_large"
+  | "installed_skill_byte_limit"
+  | "installed_skill_file_count_limit"
+  | "installed_skill_nesting_limit"
+  | "installed_skill_non_unicode_path"
+  | "installed_skill_read_failed"
+  | "installed_skill_symlink"
+  | "installed_skill_unsafe_path"
+  | "installed_skill_unsupported_file"
+  | "inventory_escaped_root"
+  | "provenance_marker_malformed"
+  | "provenance_marker_not_file"
+  | "provenance_marker_unreadable"
+  | "unknown_managed_snapshot"
+  | "unmanaged_files"
+  | "unsafe_path_component";
+export type SkillConflictKind =
+  | "missing"
+  | "modified"
+  | "unexpected"
+  | "invalid_provenance";
+
+export interface SkillConflict {
+  path: string;
+  kind: SkillConflictKind;
+}
+
+export interface SkillSummary {
+  name: string;
+  releaseRevision: number;
+  appVersion: string;
+  packageDigest: string;
+}
+
+export interface SkillTargetStatus {
+  target: SkillTarget;
+  displayName: string;
+  installPath: string;
+  state: SkillInstallState;
+  repairable: boolean;
+  currentRevision: number;
+  installedRevision: number | null;
+  installedPackageDigest: string | null;
+  inventoryFingerprint: string;
+  reason: SkillStatusReason | null;
+  conflicts: SkillConflict[];
+}
+
+export interface SkillStatus {
+  skill: SkillSummary;
+  targets: SkillTargetStatus[];
+}
+
+export interface SkillTargetExpectation {
+  target: SkillTarget;
+  inventoryFingerprint: string;
+}
+
+export interface SkillBackup {
+  target: SkillTarget;
+  path: string;
+}
+
+export interface SkillMutationReceipt {
+  status: SkillStatus;
+  changedTargets: SkillTarget[];
+  backups: SkillBackup[];
+}
+
+export interface SkillSelfTestReceipt {
+  appVersion: string;
+  releaseRevision: number;
+  guideBytes: number;
+}
+
 interface WorkspaceAuthUser {
   id: string;
   email: string;

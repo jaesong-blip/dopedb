@@ -23,6 +23,7 @@ import {
   isTransientDbError,
   mcpPlatformsQuery,
   mcpRuntimeStatusQuery,
+  skillStatusQuery,
 } from "./lib/queries";
 import { buildConnectionSections, type SchemaConnectionGroup } from "./lib/schemaDiff";
 import { tableKey, tableLabel } from "./lib/tableRef";
@@ -36,6 +37,7 @@ import Activity from "./screens/Activity";
 import SchemaDiff from "./screens/SchemaDiff";
 import Onboarding from "./screens/Onboarding";
 import Settings from "./screens/Settings";
+import type { SettingsSection } from "./screens/Settings";
 import AgentChat from "./screens/AgentChat";
 import AgentLogDialog from "./components/AgentLogDialog";
 import EngineMark from "./components/EngineMark";
@@ -278,6 +280,9 @@ function Shell() {
   const { t } = useI18n();
   const { unseen, latest, markSeen } = useAgentFeed();
   const toast = useToast();
+  // Keep one bounded Skill inventory observer alive for the app lifecycle. This performs
+  // the required startup scan and rechecks after focus without creating install roots.
+  useQuery(skillStatusQuery());
   const [conns, setConns] = useState<ConnectionProfile[]>([]);
   // Resizable sidebar: drag the divider, double-click resets; width persists.
   const [sidebarW, setSidebarW] = useState(() => {
@@ -332,7 +337,7 @@ function Shell() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
-    "mcp" | "safety" | "updates" | undefined
+    SettingsSection | undefined
   >(undefined);
   const [schemaDiffGroupKey, setSchemaDiffGroupKey] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
@@ -700,6 +705,13 @@ function Shell() {
     setEditing(null);
   }
 
+  function openAgentToolsSettings() {
+    setSettingsSection("agent-tools");
+    setSettingsOpen(true);
+    setSchemaDiffGroupKey(null);
+    setEditing(null);
+  }
+
   function openUpdateSettings() {
     setSettingsSection("updates");
     setSettingsOpen(true);
@@ -875,7 +887,7 @@ function Shell() {
       return (
         <Onboarding
           onNewConnection={() => setEditing("new")}
-          onOpenMcp={openMcpSettings}
+          onOpenAgentTools={openAgentToolsSettings}
         />
       );
     }

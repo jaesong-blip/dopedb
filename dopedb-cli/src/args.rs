@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -24,6 +24,10 @@ pub(crate) enum Command {
     },
     /// Open or focus the DopeDB Desktop app.
     App(AppArguments),
+    /// Read the version-matched embedded Skill guide.
+    Skills(SkillsArguments),
+    /// Inspect or manage the DopeDB Skill installation.
+    Skill(SkillArguments),
     /// Inspect and test connection metadata in the active Terminal scope.
     Connection(ConnectionArguments),
     /// Load the canonical database catalog.
@@ -56,6 +60,82 @@ pub(crate) enum AppCommand {
         #[command(flatten)]
         output: OutputArguments,
     },
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SkillsArguments {
+    #[command(subcommand)]
+    pub(crate) command: SkillsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SkillsCommand {
+    /// List Skill guides embedded in this CLI.
+    List(OutputArguments),
+    /// Print one version-matched guide without contacting Desktop.
+    Get {
+        name: String,
+        /// Include the reference documents after the main guide.
+        #[arg(long)]
+        full: bool,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SkillArguments {
+    #[command(subcommand)]
+    pub(crate) command: SkillCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum SkillCommand {
+    /// Inspect the bounded installation inventory.
+    Status {
+        #[arg(long, value_enum)]
+        target: SkillTargetArgument,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+    /// Install or update only a missing or known managed snapshot.
+    Install {
+        #[arg(long, value_enum)]
+        target: SkillTargetArgument,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+    /// Back up a conflict and explicitly replace it with the current stub.
+    Repair {
+        #[arg(long, value_enum)]
+        target: SkillTargetArgument,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+    /// Remove only an exact known managed snapshot.
+    Remove {
+        #[arg(long, value_enum)]
+        target: SkillTargetArgument,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum SkillTargetArgument {
+    All,
+    Codex,
+    ClaudeCode,
+}
+
+impl From<SkillTargetArgument> for dopedb_protocol::SkillTargetSelection {
+    fn from(value: SkillTargetArgument) -> Self {
+        match value {
+            SkillTargetArgument::All => Self::All,
+            SkillTargetArgument::Codex => Self::Codex,
+            SkillTargetArgument::ClaudeCode => Self::ClaudeCode,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Args)]
@@ -255,6 +335,44 @@ mod tests {
                     ..
                 }
             }) if file == "-"
+        ));
+    }
+
+    #[test]
+    fn skill_targets_use_explicit_stable_names() {
+        let parsed = Cli::try_parse_from([
+            "dopedb",
+            "skill",
+            "status",
+            "--target",
+            "claude-code",
+            "--json",
+        ])
+        .unwrap();
+        assert!(matches!(
+            parsed.command,
+            Command::Skill(SkillArguments {
+                command: SkillCommand::Status {
+                    target: SkillTargetArgument::ClaudeCode,
+                    output: OutputArguments { json: true },
+                },
+            })
+        ));
+    }
+
+    #[test]
+    fn embedded_skill_get_does_not_require_runtime_arguments() {
+        let parsed =
+            Cli::try_parse_from(["dopedb", "skills", "get", "dopedb-cli", "--full"]).unwrap();
+        assert!(matches!(
+            parsed.command,
+            Command::Skills(SkillsArguments {
+                command: SkillsCommand::Get {
+                    name,
+                    full: true,
+                    output: OutputArguments { json: false },
+                },
+            }) if name == "dopedb-cli"
         ));
     }
 

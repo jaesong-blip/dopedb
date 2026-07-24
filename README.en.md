@@ -54,9 +54,16 @@ Useful checks:
 ```sh
 pnpm build
 pnpm site:build
-pnpm build:bridge
+pnpm build:sidecars
 cargo check --workspace
 ```
+
+`pnpm build:sidecars` stages the Local Broker `dopedb` CLI and the transition-period
+MCP stdio bridge. Settings -> Agent tools detects the official Codex and Claude Code
+user Skill locations and installs the small DopeDB discovery Skill after one explicit
+confirmation. The version-matched full guide remains embedded in the signed CLI and is
+available offline. Existing or user-modified files are never overwritten silently:
+DopeDB shows each path conflict and preserves the old directory before an explicit repair.
 
 ## Releases
 

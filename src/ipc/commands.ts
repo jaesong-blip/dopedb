@@ -32,6 +32,11 @@ import type {
   SafetySettings,
   ScriptOperationProposal,
   SqlOperationProposal,
+  SkillMutationReceipt,
+  SkillSelfTestReceipt,
+  SkillStatus,
+  SkillTargetExpectation,
+  SkillTargetSelection,
   PlatformInfo,
   QueryResult,
   Workspace,
@@ -58,6 +63,35 @@ export function installCli(
   replaceExisting: boolean,
 ): Promise<CliInstallReceipt> {
   return invoke("install_cli", { updatePath, replaceExisting });
+}
+
+export function skillStatus(target: SkillTargetSelection): Promise<SkillStatus> {
+  return invoke("skill_status", { target });
+}
+
+export function installSkill(
+  target: SkillTargetSelection,
+  expected: SkillTargetExpectation[],
+): Promise<SkillMutationReceipt> {
+  return invoke("install_skill", { target, expected });
+}
+
+export function repairSkill(
+  target: SkillTargetSelection,
+  expected: SkillTargetExpectation[],
+): Promise<SkillMutationReceipt> {
+  return invoke("repair_skill", { target, expected });
+}
+
+export function removeSkill(
+  target: SkillTargetSelection,
+  expected: SkillTargetExpectation[],
+): Promise<SkillMutationReceipt> {
+  return invoke("remove_skill", { target, expected });
+}
+
+export function skillSelfTest(): Promise<SkillSelfTestReceipt> {
+  return invoke("skill_self_test");
 }
 
 export function workspaceAuthState(): Promise<WorkspaceAuthState> {

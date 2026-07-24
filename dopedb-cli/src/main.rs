@@ -10,7 +10,7 @@ use clap::Parser;
 
 use args::{
     AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, OperationCommand, QueryCommand,
-    SchemaCommand, SqlCommand, TableCommand,
+    SchemaCommand, SkillCommand, SkillsCommand, SqlCommand, TableCommand,
 };
 use output::OutputMode;
 
@@ -28,6 +28,32 @@ async fn main() -> ExitCode {
         Command::App(arguments) => match arguments.command {
             AppCommand::Open { wait, output } => {
                 commands::app::open(wait, OutputMode::from_json_flag(output.json)).await
+            }
+        },
+        Command::Skills(arguments) => match arguments.command {
+            SkillsCommand::List(output) => {
+                commands::skills::list(OutputMode::from_json_flag(output.json))
+            }
+            SkillsCommand::Get { name, full, output } => {
+                commands::skills::get(&name, full, OutputMode::from_json_flag(output.json))
+            }
+        },
+        Command::Skill(arguments) => match arguments.command {
+            SkillCommand::Status { target, output } => {
+                commands::skills::status(target.into(), OutputMode::from_json_flag(output.json))
+                    .await
+            }
+            SkillCommand::Install { target, output } => {
+                commands::skills::install(target.into(), OutputMode::from_json_flag(output.json))
+                    .await
+            }
+            SkillCommand::Repair { target, output } => {
+                commands::skills::repair(target.into(), OutputMode::from_json_flag(output.json))
+                    .await
+            }
+            SkillCommand::Remove { target, output } => {
+                commands::skills::remove(target.into(), OutputMode::from_json_flag(output.json))
+                    .await
             }
         },
         Command::Connection(arguments) => match arguments.command {

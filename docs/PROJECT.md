@@ -32,6 +32,8 @@ The Rust core owns the trust boundary:
 - `operations/`: immutable exact-payload plans, approvals, claims, and lifecycle receipts
 - `broker/`: owner-local, versioned UDS/named-pipe control messages for the CLI
 - `cli_install.rs`: bundled in-app resolver and explicit per-user CLI/PATH installation
+- `skills/`: bounded inventory plus atomic Codex/Claude Code Skill install, repair,
+  backup, and removal
 - `mcp/`: local MCP server, stdio bridge listener, tool handlers, and client config helpers
 - `store/`: local SQLite app store under the platform app data directory, including
   connection-scoped saved dashboard definitions
@@ -46,6 +48,13 @@ commands require an ephemeral in-memory Terminal capability pinned to one
 workspace/account/connection revision. The global discovery file contains only
 runtime metadata. MCP remains enabled only during the documented parity and
 cutover period.
+
+The repository-owned Skill source is `skills/dopedb-cli/`. Build verification records
+exact and normalized hashes in versioned bundled manifests. The installed Skill is a
+small discovery stub; `dopedb skills get dopedb-cli --full` returns the exact guide and
+references embedded in that app version without contacting the network. Inventory scans
+are bounded and reject symlinks/reparse points. Only a known, byte-exact managed snapshot
+may be updated or removed automatically; repair preserves every conflicting directory.
 
 ## MCP Behavior
 

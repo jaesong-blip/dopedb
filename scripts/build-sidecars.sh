@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+node scripts/generate-skill-bundle.mjs --check
+
 target_triple="${TAURI_ENV_TARGET_TRIPLE:-}"
 if [[ -z "$target_triple" ]]; then
   target_triple="$(rustc -vV | sed -n 's/^host: //p')"

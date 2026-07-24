@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "skillName": "dopedb-cli",
+  "releaseRevision": 1,
+  "sourcePath": "skills/dopedb-cli",
+  "appVersion": "0.3.3",
+  "sourceFiles": [
+    {
+      "path": "SKILL.md",
+      "sourcePath": "skills/dopedb-cli/SKILL.md",
+      "size": 3270,
+      "executable": false,
+      "sha256": "be7332f5c081b88ae74c7d28c7f003f25c89a2a8e9c284df917abe7afcf53ddc",
+      "normalizedTextSha256": "be7332f5c081b88ae74c7d28c7f003f25c89a2a8e9c284df917abe7afcf53ddc"
+    },
+    {
+      "path": "references/operations.md",
+      "sourcePath": "skills/dopedb-cli/references/operations.md",
+      "size": 1632,
+      "executable": false,
+      "sha256": "7b890252e7263268d2b456023f59bfc6c0a0620475ca34535808c33414201f90",
+      "normalizedTextSha256": "7b890252e7263268d2b456023f59bfc6c0a0620475ca34535808c33414201f90"
+    },
+    {
+      "path": "references/queries.md",
+      "sourcePath": "skills/dopedb-cli/references/queries.md",
+      "size": 1818,
+      "executable": false,
+      "sha256": "1ba86a33f57d5eca739b374e8cfb07a06ec878b42c87b55420a12c2f865e6bb8",
+      "normalizedTextSha256": "1ba86a33f57d5eca739b374e8cfb07a06ec878b42c87b55420a12c2f865e6bb8"
+    },
+    {
+      "path": "references/safety.md",
+      "sourcePath": "skills/dopedb-cli/references/safety.md",
+      "size": 2129,
+      "executable": false,
+      "sha256": "6d9d2fe2eb22506fc62897e4d3e372b174e75e9907e8cd0107a8dabd22f14b1a",
+      "normalizedTextSha256": "6d9d2fe2eb22506fc62897e4d3e372b174e75e9907e8cd0107a8dabd22f14b1a"
+    }
+  ],
+  "installFiles": [
+    {
+      "path": "SKILL.md",
+      "sourcePath": "generated:discovery-stub",
+      "size": 178,
+      "executable": false,
+      "sha256": "d77ac534592dea5f54db3a65a532e78bbbd75c6f01a419e93a182205613f967e",
+      "normalizedTextSha256": "d77ac534592dea5f54db3a65a532e78bbbd75c6f01a419e93a182205613f967e",
+      "content": "---\nname: dopedb-cli\ndescription: Use the local DopeDB Desktop runtime safely through the version-matched dopedb CLI.\n---\n\nBefore using DopeDB, run:\ndopedb skills get dopedb-cli\n"
+    }
+  ],
+  "packageDigest": "c6592c6c69cc319b63174c6f36e229b4ace60e217483547ae739530c79f3613e"
+}

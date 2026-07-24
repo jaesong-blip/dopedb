@@ -50,6 +50,8 @@
 }
 
 .settings-body {
+  container-name: settings-body;
+  container-type: inline-size;
   min-width: 0;
   overflow: auto;
   padding: var(--ds-pane-pad);
@@ -61,7 +63,7 @@
   gap: var(--ds-space-2);
 }
 
-@media (max-width: 760px) {
+@container main-pane (max-width: 700px) {
   .settings {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);

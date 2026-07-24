@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "skillName": "dopedb-cli",
+  "releases": [
+    {
+      "appVersion": "0.3.3",
+      "releaseRevision": 1,
+      "packageDigest": "c6592c6c69cc319b63174c6f36e229b4ace60e217483547ae739530c79f3613e"
+    }
+  ]
+}

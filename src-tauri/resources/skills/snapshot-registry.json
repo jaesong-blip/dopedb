@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "skillName": "dopedb-cli",
+  "snapshots": [
+    {
+      "releaseRevision": 1,
+      "appVersion": "0.3.3",
+      "packageDigest": "c6592c6c69cc319b63174c6f36e229b4ace60e217483547ae739530c79f3613e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sourcePath": "generated:discovery-stub",
+          "size": 178,
+          "executable": false,
+          "sha256": "d77ac534592dea5f54db3a65a532e78bbbd75c6f01a419e93a182205613f967e",
+          "normalizedTextSha256": "d77ac534592dea5f54db3a65a532e78bbbd75c6f01a419e93a182205613f967e"
+        }
+      ]
+    }
+  ]
+}

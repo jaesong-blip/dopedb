@@ -4,8 +4,10 @@ use dopedb_protocol::{
     ConnectionShowCommand, ConnectionTestCommand, ErrorCode, OperationCancelCommand,
     OperationShowCommand, OperationWaitCommand, ProtocolError, QueryCancelCommand,
     QueryPlanCommand, QueryRunCommand, RequestEnvelope, ResponseEnvelope, RuntimeDiscovery,
-    SchemaListCommand, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeCommand,
-    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
+    SchemaListCommand, SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand,
+    SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand,
+    StatusResult, TableDescribeCommand, VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION,
+    PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -26,10 +28,19 @@ struct CliCommandContract {
 }
 
 fn typed_cli_contract<C: CommandSpec>(request: &RequestEnvelope, result: &Value) {
-    assert_eq!(
-        C::AUTHENTICATION,
-        AuthenticationRequirement::TerminalSession
-    );
+    typed_contract::<C>(request, result, AuthenticationRequirement::TerminalSession);
+}
+
+fn typed_public_contract<C: CommandSpec>(request: &RequestEnvelope, result: &Value) {
+    typed_contract::<C>(request, result, AuthenticationRequirement::None);
+}
+
+fn typed_contract<C: CommandSpec>(
+    request: &RequestEnvelope,
+    result: &Value,
+    authentication: AuthenticationRequirement,
+) {
+    assert_eq!(C::AUTHENTICATION, authentication);
     let arguments = decode_arguments::<C>(request).expect("typed command arguments");
     assert_eq!(serde_json::to_value(arguments).unwrap(), request.arguments);
     let typed_result: C::Result =
@@ -65,8 +76,70 @@ fn resolve_result_fixture(contract: &CliCommandContract) -> Value {
             })
         }
         Some("operation-summary") => operation_summary_fixture(),
+        Some("skills-list") => json!({
+            "skills": [skill_summary_fixture()]
+        }),
+        Some("skills-get") => json!({
+            "skill": skill_summary_fixture(),
+            "guide": "# DopeDB CLI\n",
+            "references": [
+                {
+                    "path": "references/safety.md",
+                    "content": "# Safety\n"
+                }
+            ]
+        }),
+        Some("skill-status") => skill_status_fixture(),
+        Some("skill-mutation") => json!({
+            "status": skill_status_fixture(),
+            "changedTargets": [],
+            "backups": []
+        }),
         fixture => panic!("unknown result fixture {fixture:?}"),
     }
+}
+
+fn skill_summary_fixture() -> Value {
+    json!({
+        "name": "dopedb-cli",
+        "releaseRevision": 1,
+        "appVersion": "0.3.3",
+        "packageDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    })
+}
+
+fn skill_status_fixture() -> Value {
+    json!({
+        "skill": skill_summary_fixture(),
+        "targets": [
+            {
+                "target": "codex",
+                "displayName": "Codex",
+                "installPath": "/home/user/.agents/skills/dopedb-cli",
+                "state": "missing",
+                "repairable": true,
+                "currentRevision": 1,
+                "installedRevision": null,
+                "installedPackageDigest": null,
+                "inventoryFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "reason": null,
+                "conflicts": []
+            },
+            {
+                "target": "claude-code",
+                "displayName": "Claude Code",
+                "installPath": "/home/user/.claude/skills/dopedb-cli",
+                "state": "managed_current",
+                "repairable": true,
+                "currentRevision": 1,
+                "installedRevision": 1,
+                "installedPackageDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "inventoryFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "reason": null,
+                "conflicts": []
+            }
+        ]
+    })
 }
 
 fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, result: &Value) {
@@ -86,6 +159,12 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
         CommandName::OperationCancel => {
             typed_cli_contract::<OperationCancelCommand>(request, result)
         }
+        CommandName::SkillsList => typed_public_contract::<SkillsListCommand>(request, result),
+        CommandName::SkillsGet => typed_public_contract::<SkillsGetCommand>(request, result),
+        CommandName::SkillStatus => typed_public_contract::<SkillStatusCommand>(request, result),
+        CommandName::SkillInstall => typed_public_contract::<SkillInstallCommand>(request, result),
+        CommandName::SkillRepair => typed_public_contract::<SkillRepairCommand>(request, result),
+        CommandName::SkillRemove => typed_public_contract::<SkillRemoveCommand>(request, result),
         unsupported => panic!("manifest contains unsupported command {unsupported}"),
     }
 }
@@ -201,6 +280,57 @@ fn every_phase_three_cli_command_has_request_success_error_and_redaction_goldens
                 "{} success snapshot contains forbidden material {forbidden}",
                 contract.command
             );
+        }
+    }
+}
+
+#[test]
+fn every_phase_four_skill_command_has_public_versioned_goldens() {
+    let contracts: Vec<CliCommandContract> =
+        serde_json::from_str(include_str!("fixtures/skill-command-contract-v1.json"))
+            .expect("Skill command manifest must decode");
+    let expected = [
+        CommandName::SkillsList,
+        CommandName::SkillsGet,
+        CommandName::SkillStatus,
+        CommandName::SkillInstall,
+        CommandName::SkillRepair,
+        CommandName::SkillRemove,
+    ];
+    assert_eq!(
+        contracts
+            .iter()
+            .map(|contract| contract.command)
+            .collect::<Vec<_>>(),
+        expected
+    );
+
+    for (index, contract) in contracts.iter().enumerate() {
+        let request_id =
+            uuid::Uuid::from_u128(0x018f_4444_2222_7333_8444_5555_0000_0000 + index as u128);
+        let request_value = json!({
+            "protocolVersion": PROTOCOL_MAX,
+            "commandSchemaVersion": COMMAND_SCHEMA_VERSION,
+            "requestId": request_id,
+            "command": contract.command,
+            "arguments": contract.arguments
+        });
+        let request: RequestEnvelope =
+            serde_json::from_value(request_value.clone()).expect("Skill request envelope");
+        assert!(request.authentication.is_none());
+        let result = resolve_result_fixture(contract);
+        assert_cli_command_types(contract.command, &request, &result);
+
+        let response = ResponseEnvelope::success(PROTOCOL_MAX, request_id, result);
+        response.validate().expect("Skill response invariant");
+        let snapshot = serde_json::to_string(&response).unwrap();
+        for forbidden in [
+            "password",
+            "credential",
+            "session-capability",
+            "postgresql://",
+        ] {
+            assert!(!snapshot.to_ascii_lowercase().contains(forbidden));
         }
     }
 }

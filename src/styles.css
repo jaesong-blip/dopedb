@@ -131,6 +131,8 @@
 
 /* Main */
 .main {
+  container-name: main-pane;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   overflow: hidden;

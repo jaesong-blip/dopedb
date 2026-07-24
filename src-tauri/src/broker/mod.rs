@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::services::ApplicationServices;
+use crate::skills::SkillManager;
 
 pub(crate) use session::BrokerSessionRegistry;
 
@@ -116,13 +117,14 @@ impl BrokerRuntime {
 pub(crate) fn start(
     runtime: BrokerRuntime,
     services: ApplicationServices,
+    skills: Option<SkillManager>,
     app_handle: tauri::AppHandle,
 ) {
     if !runtime.prepare_start() {
         return;
     }
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = server::serve(runtime.clone(), services, app_handle).await {
+        if let Err(error) = server::serve(runtime.clone(), services, skills, app_handle).await {
             tracing::error!(error_kind = error.kind(), "local broker stopped");
         }
     });

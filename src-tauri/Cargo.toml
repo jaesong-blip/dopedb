@@ -57,6 +57,7 @@ dirs = "6"
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-normalization = "0.1.25"
 futures = "0.3"
 rmcp = { version = "2.2", features = ["server", "transport-streamable-http-server", "macros", "schemars"] }
 axum = "0.8.9"

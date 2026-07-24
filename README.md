@@ -68,6 +68,12 @@ cargo check --workspace
 브리지를 함께 staging합니다. 앱의 설정 > 명령줄에서 사용자 전용 CLI 위치와
 PATH 변경 내용을 확인한 뒤 명시적으로 설치할 수 있습니다.
 
+설정 > 에이전트 도구에서는 Codex와 Claude Code의 공식 사용자 Skill 경로를
+확인하고 DopeDB Skill을 한 번의 동의로 설치할 수 있습니다. 설치 파일에는 탐색용
+안내만 두고, 실제 전체 가이드는 현재 앱 버전과 함께 빌드된 CLI가 오프라인으로
+제공합니다. 기존 파일이 있거나 사용자가 수정한 경우 자동으로 덮어쓰지 않으며,
+경로별 충돌을 보여준 뒤 명시적으로 복구할 때 기존 디렉터리를 백업합니다.
+
 외부 셸 자동완성 스크립트는 `dopedb completion bash|zsh|fish|powershell|elvish`로
 출력할 수 있으며, 이 명령은 Desktop Runtime이나 세션 자격 증명을 요구하지 않습니다.
 
