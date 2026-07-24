@@ -18,10 +18,11 @@ fn embed_windows_test_manifest() {
     .join("windows-app-manifest.xml");
 
     println!("cargo:rerun-if-changed={}", manifest.display());
-    println!("cargo:rustc-link-arg-tests=/MANIFEST:EMBED");
-    println!(
-        "cargo:rustc-link-arg-tests=/MANIFESTINPUT:{}",
-        manifest.display()
-    );
-    println!("cargo:rustc-link-arg-tests=/WX");
+    // Cargo does not classify lib-crate unit-test harnesses as explicit `[[test]]`
+    // targets, so `rustc-link-arg-tests` is rejected for this package. Match
+    // Tauri's own Windows test workaround and apply these linker arguments to every
+    // final artifact emitted by this crate; the normal app manifest is identical.
+    println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+    println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+    println!("cargo:rustc-link-arg=/WX");
 }
