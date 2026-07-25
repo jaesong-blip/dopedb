@@ -134,14 +134,16 @@ derivation lives in `operations/context.rs`, so the application never depends ba
 a central service facade. `features/jobs/mod.rs` is the only composition boundary.
 
 Architecture checks now reject concrete connection, store, SQLx, filesystem,
-Operation runtime, catalog implementation, and adapter imports from the Job
-application and reject platform types in its ports. The deletion gate covers every
-old Job service path and symbol, while the writer inventory points only at the ledger
-adapter.
+Operation runtime, catalog implementation, and adapter imports from every Job
+application module and reject platform types in its ports. Recovery, file capability,
+planning, and execution lifecycle use cases are separate modules below the feature
+limit; the former monolithic `application.rs` is now a deletion gate. The remaining
+deletion gates cover every old Job service path and symbol, while the writer inventory
+points only at the ledger adapter.
 
-Before this slice is complete, the four remaining large files must be split below the
-general limits. Their current counts remain exact no-growth migration baselines until
-that deletion checkpoint removes the entries entirely.
+Before this slice is complete, the three remaining large adapter files must be split
+below the general limits. Their current counts remain exact no-growth migration
+baselines until that deletion checkpoint removes the entries entirely.
 
 ## Audit checkpoints
 
