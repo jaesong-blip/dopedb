@@ -108,6 +108,7 @@ const removedPaths = [
   "src-tauri/src/services/job_service/repository.rs",
   "src-tauri/src/services/job_service/worker.rs",
   "src-tauri/src/features/jobs/application.rs",
+  "src-tauri/src/features/jobs/adapters/ledger.rs",
   "src-tauri/src/services/workspace_service.rs",
   "src-tauri/src/workspace_auth.rs",
   "src/lib/workbenchDocuments.ts",
@@ -192,14 +193,18 @@ const jobLedgerSql = [
 for (const token of jobLedgerSql) {
   const owners = sourceFiles
     .filter((file) => file.endsWith(".rs"))
+    .filter((file) => !relative(file).endsWith("_tests.rs"))
     .filter((file) => fs.readFileSync(file, "utf8").includes(token))
     .map(relative);
   if (
-    owners.length !== 1 ||
-    owners[0] !== "src-tauri/src/features/jobs/adapters/ledger.rs"
+    owners.length === 0 ||
+    owners.some(
+      (owner) =>
+        !owner.startsWith("src-tauri/src/features/jobs/adapters/ledger/"),
+    )
   ) {
     fail(
-      `job ledger SQL ${token} must belong only to src-tauri/src/features/jobs/adapters/ledger.rs, found ${owners.join(", ") || "none"}`,
+      `job ledger SQL ${token} must belong only to the Job ledger adapter, found ${owners.join(", ") || "none"}`,
     );
   }
 }

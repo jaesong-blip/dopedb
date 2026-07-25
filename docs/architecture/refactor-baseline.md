@@ -137,11 +137,13 @@ Architecture checks now reject concrete connection, store, SQLx, filesystem,
 Operation runtime, catalog implementation, and adapter imports from every Job
 application module and reject platform types in its ports. Recovery, file capability,
 planning, and execution lifecycle use cases are separate modules below the feature
-limit; the former monolithic `application.rs` is now a deletion gate. The remaining
-deletion gates cover every old Job service path and symbol, while the writer inventory
-points only at the ledger adapter.
+limit; the former monolithic `application.rs` is now a deletion gate. The SQLite
+ledger is likewise split into capability, record, transition, recovery, event, and
+mapping modules behind one `JobRepository`; the former `ledger.rs` is a deletion
+gate and mutation SQL is rejected outside that adapter directory. The remaining
+deletion gates cover every old Job service path and symbol.
 
-Before this slice is complete, the three remaining large adapter files must be split
+Before this slice is complete, the two remaining large adapter files must be split
 below the general limits. Their current counts remain exact no-growth migration
 baselines until that deletion checkpoint removes the entries entirely.
 
