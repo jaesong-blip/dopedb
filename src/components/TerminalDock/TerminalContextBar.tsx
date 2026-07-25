@@ -1,29 +1,39 @@
 // Displays immutable session scope and lifecycle controls above the PTY surface.
-// The parent already scopes tabs to the selected connection, so this bar never retargets.
+// Scope mismatch is explicit so a connection switch can never silently retarget a session.
 import type {
   SkillInstallState,
+  TerminalProfile,
   TerminalSessionSummary,
 } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
 import { terminalSessionIsRunning } from "./terminalState";
 
 interface TerminalContextBarProps {
   active: TerminalSessionSummary;
+  connection: ConnectionProfile;
   skillState: SkillInstallState | null;
+  mismatch: boolean;
   replayTruncated: boolean;
+  creatingProfile: TerminalProfile | null;
   onRename: () => void;
   onStop: () => void;
   onRestart: () => void;
+  onCreateForCurrent: () => void;
 }
 
 export default function TerminalContextBar({
   active,
+  connection,
   skillState,
+  mismatch,
   replayTruncated,
+  creatingProfile,
   onRename,
   onStop,
   onRestart,
+  onCreateForCurrent,
 }: TerminalContextBarProps) {
   const { t } = useI18n();
   const lifecycleLabel = (() => {
@@ -131,6 +141,29 @@ export default function TerminalContextBar({
           </button>
         )}
       </div>
+
+      {mismatch && (
+        <div className="terminal-notice warning">
+          <Icon name="alert" />
+          <span>
+            <strong>{t("terminal.connectionMismatchTitle")}</strong>
+            {t("terminal.connectionMismatchBody", {
+              pinned: active.connection.connectionName,
+              current: connection.name || t("app.unnamed"),
+            })}
+          </span>
+          <button
+            type="button"
+            className="btn small"
+            disabled={creatingProfile !== null}
+            onClick={onCreateForCurrent}
+          >
+            {t("terminal.newForCurrent", {
+              name: connection.name || t("app.unnamed"),
+            })}
+          </button>
+        </div>
+      )}
 
       {replayTruncated && (
         <div className="terminal-notice warning">

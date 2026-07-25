@@ -10,7 +10,6 @@ import {
 } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
-  terminalClose,
   terminalCreate,
   terminalFocus,
   terminalKill,
@@ -35,13 +34,11 @@ import LegacyChatArchiveDialog from "./LegacyChatArchiveDialog";
 import TerminalContextBar from "./TerminalContextBar";
 import TerminalSurface from "./TerminalSurface";
 import TerminalTabs, { TerminalEmptyActions } from "./TerminalTabs";
+import TerminalToolbar from "./TerminalToolbar";
 import {
   initialTerminalDockState,
-  terminalActiveIdForConnection,
+  terminalConnectionMismatch,
   terminalDockReducer,
-  terminalSessionIsRunning,
-  terminalSessionsForConnection,
-  type TerminalDockState,
 } from "./terminalState";
 import "./terminalDock.css";
 
@@ -49,7 +46,6 @@ const DEFAULT_DOCK_WIDTH = 480;
 const MIN_DOCK_WIDTH = 360;
 const MAX_DOCK_WIDTH = 720;
 const OUTPUT_REPLAY_BYTES = 512 * 1024;
-const ACTIVE_SESSION_STORAGE = "terminalActiveSessionByConnection";
 
 type OutputWriter = (chunk: TerminalOutputChunk) => void;
 
@@ -58,7 +54,9 @@ interface TerminalDockProps {
   skillStatus: SkillStatus | null;
   overlay: boolean;
   width: number;
+  unseen: number;
   onWidthChange: (width: number) => void;
+  onOpenLogs: () => void;
   onClose: () => void;
 }
 
@@ -72,46 +70,24 @@ function clampDockWidth(width: number): number {
   );
 }
 
-function restoreTerminalDockState(
-  base: TerminalDockState,
-): TerminalDockState {
-  try {
-    const parsed: unknown = JSON.parse(
-      localStorage.getItem(ACTIVE_SESSION_STORAGE) ?? "{}",
-    );
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return base;
-    }
-    const activeIdByConnection = Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] =>
-          typeof entry[1] === "string",
-      ),
-    );
-    return { ...base, activeIdByConnection };
-  } catch {
-    return base;
-  }
-}
-
 export default function TerminalDock({
   connection,
   skillStatus,
   overlay,
   width,
+  unseen,
   onWidthChange,
+  onOpenLogs,
   onClose,
 }: TerminalDockProps) {
   const { t } = useI18n();
   const [state, dispatch] = useReducer(
     terminalDockReducer,
     initialTerminalDockState,
-    restoreTerminalDockState,
   );
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const [closingId, setClosingId] = useState<string | null>(null);
   const dockRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const archiveButtonRef = useRef<HTMLButtonElement>(null);
@@ -125,13 +101,6 @@ export default function TerminalDock({
   const lastSequenceRef = useRef(new Map<string, number>());
   const retiredRef = useRef(new Set<string>());
   currentConnectionIdRef.current = connection.id;
-
-  useEffect(() => {
-    localStorage.setItem(
-      ACTIVE_SESSION_STORAGE,
-      JSON.stringify(state.activeIdByConnection),
-    );
-  }, [state.activeIdByConnection]);
 
   const routeOutput = useCallback((chunk: TerminalOutputChunk) => {
     const previous = lastSequenceRef.current.get(chunk.sessionId) ?? 0;
@@ -361,16 +330,12 @@ export default function TerminalDock({
     };
   }, [archiveOpen, maximized, onClose, overlay, profileMenuOpen]);
 
-  const visibleSessions = useMemo(
-    () => terminalSessionsForConnection(state.sessions, connection.id),
-    [connection.id, state.sessions],
-  );
-  const activeId = terminalActiveIdForConnection(state, connection.id);
   const active = useMemo(
-    () =>
-      visibleSessions.find((session) => session.id === activeId) ?? null,
-    [activeId, visibleSessions],
+    () => state.sessions.find((session) => session.id === state.activeId) ?? null,
+    [state.activeId, state.sessions],
   );
+  const mismatch =
+    active !== null && terminalConnectionMismatch(active, connection.id);
   const activeSkillState = useMemo<SkillInstallState | null>(() => {
     if (!active || active.profile === "shell") return null;
     const target = active.profile === "codex" ? "codex" : "claude-code";
@@ -427,88 +392,24 @@ export default function TerminalDock({
     }
   }
 
-  const retireSessionResources = useCallback((id: string) => {
-    retiredRef.current.add(id);
-    channelsRef.current.delete(id);
-    writersRef.current.delete(id);
-    replayRef.current.delete(id);
-    replayBytesRef.current.delete(id);
-    lastSequenceRef.current.delete(id);
-  }, []);
-
-  const closeSession = useCallback(
-    async (session: TerminalSessionSummary) => {
-      if (closingId) return;
-      if (
-        terminalSessionIsRunning(session) &&
-        !window.confirm(t("terminal.closeConfirm"))
-      ) {
-        return;
-      }
-      setClosingId(session.id);
-      dispatch({ type: "error", error: null });
-      retireSessionResources(session.id);
-      try {
-        await terminalClose(session.id);
-        dispatch({ type: "remove", id: session.id });
-        window.requestAnimationFrame(() => {
-          dockRef.current
-            ?.querySelector<HTMLButtonElement>(
-              '.terminal-session-select[aria-selected="true"]',
-            )
-            ?.focus();
-        });
-      } catch (error) {
-        retiredRef.current.delete(session.id);
-        dispatch({
-          type: "error",
-          error: t("terminal.closeFailed", { error: errMessage(error) }),
-        });
-        await loadSessions();
-      } finally {
-        setClosingId(null);
-      }
-    },
-    [closingId, loadSessions, retireSessionResources, t],
-  );
-
   async function restartSession(session: TerminalSessionSummary) {
     dispatch({ type: "error", error: null });
     const channel = makeChannel();
     try {
       const next = await terminalRestart(session.id, channel);
-      retireSessionResources(session.id);
+      retiredRef.current.add(session.id);
+      channelsRef.current.delete(session.id);
       channelsRef.current.set(next.id, channel);
+      writersRef.current.delete(session.id);
+      replayRef.current.delete(session.id);
+      replayBytesRef.current.delete(session.id);
+      lastSequenceRef.current.delete(session.id);
       dispatch({ type: "replace", previousId: session.id, session: next });
     } catch (error) {
       dispatch({ type: "error", error: errMessage(error) });
       await loadSessions();
     }
   }
-
-  useEffect(() => {
-    const handleCloseShortcut = (event: KeyboardEvent) => {
-      if (
-        !active ||
-        event.key.toLowerCase() !== "w" ||
-        (!event.metaKey && !event.ctrlKey) ||
-        event.altKey ||
-        event.shiftKey ||
-        !dockRef.current?.contains(event.target as Node)
-      ) {
-        return;
-      }
-      const terminalInput =
-        event.target instanceof Element &&
-        event.target.closest(".xterm") !== null;
-      if (event.ctrlKey && !event.metaKey && terminalInput) return;
-      event.preventDefault();
-      void closeSession(active);
-    };
-    document.addEventListener("keydown", handleCloseShortcut);
-    return () =>
-      document.removeEventListener("keydown", handleCloseShortcut);
-  }, [active, closeSession]);
 
   async function renameSession(session: TerminalSessionSummary) {
     const name = window.prompt(t("terminal.renamePrompt"), session.name);
@@ -554,22 +455,26 @@ export default function TerminalDock({
           onMouseDown={beginResize}
           onDoubleClick={() => onWidthChange(DEFAULT_DOCK_WIDTH)}
         />
-        <TerminalTabs
-          sessions={visibleSessions}
-          activeId={activeId}
-          creatingProfile={state.creatingProfile}
-          closingId={closingId}
-          profileMenuOpen={profileMenuOpen}
+        <TerminalToolbar
+          sessionCount={state.sessions.length}
+          unseen={unseen}
           maximized={maximized}
           archiveButtonRef={archiveButtonRef}
           closeButtonRef={closeRef}
+          onOpenArchive={() => setArchiveOpen(true)}
+          onOpenActivity={onOpenLogs}
+          onToggleMaximize={() => setMaximized((value) => !value)}
+          onClose={onClose}
+        />
+
+        <TerminalTabs
+          sessions={state.sessions}
+          activeId={state.activeId}
+          creatingProfile={state.creatingProfile}
+          profileMenuOpen={profileMenuOpen}
           onActivate={(id) => dispatch({ type: "activate", id })}
-          onClose={(session) => void closeSession(session)}
           onToggleProfileMenu={() => setProfileMenuOpen((open) => !open)}
           onCreate={(profile) => void createSession(profile)}
-          onOpenArchive={() => setArchiveOpen(true)}
-          onToggleMaximize={() => setMaximized((value) => !value)}
-          onPanelClose={onClose}
         />
 
         {state.error && (
@@ -591,11 +496,15 @@ export default function TerminalDock({
         {active && (
           <TerminalContextBar
             active={active}
+            connection={connection}
             skillState={activeSkillState}
+            mismatch={mismatch}
             replayTruncated={state.replayTruncated.includes(active.id)}
+            creatingProfile={state.creatingProfile}
             onRename={() => void renameSession(active)}
             onStop={() => void stopSession(active)}
             onRestart={() => void restartSession(active)}
+            onCreateForCurrent={() => void createSession(active.profile)}
           />
         )}
 
@@ -604,7 +513,7 @@ export default function TerminalDock({
             <div className="terminal-empty">
               <span className="loading">{t("common.loading")}</span>
             </div>
-          ) : visibleSessions.length === 0 ? (
+          ) : state.sessions.length === 0 ? (
             <div className="terminal-empty">
               <Icon name="terminal" />
               <strong>{t("terminal.emptyTitle")}</strong>

@@ -7,7 +7,7 @@ import type {
 
 export interface TerminalDockState {
   sessions: TerminalSessionSummary[];
-  activeIdByConnection: Record<string, string>;
+  activeId: string | null;
   loading: boolean;
   error: string | null;
   creatingProfile: TerminalProfile | null;
@@ -27,7 +27,6 @@ export type TerminalDockAction =
       previousId: string;
       session: TerminalSessionSummary;
     }
-  | { type: "remove"; id: string }
   | { type: "activate"; id: string }
   | { type: "creating"; profile: TerminalProfile | null }
   | { type: "error"; error: string | null }
@@ -35,7 +34,7 @@ export type TerminalDockAction =
 
 export const initialTerminalDockState: TerminalDockState = {
   sessions: [],
-  activeIdByConnection: {},
+  activeId: null,
   loading: true,
   error: null,
   creatingProfile: null,
@@ -57,12 +56,16 @@ function sortSessions(
 
 function preferredSessionId(
   sessions: TerminalSessionSummary[],
-  connectionId: string,
+  currentConnectionId: string,
 ): string | null {
   const matching = sessions.filter(
-    (session) => session.connection.connectionId === connectionId,
+    (session) => session.connection.connectionId === currentConnectionId,
   );
-  return matching[matching.length - 1]?.id ?? null;
+  return (
+    matching[matching.length - 1]?.id ??
+    sessions[sessions.length - 1]?.id ??
+    null
+  );
 }
 
 function upsertSession(
@@ -80,28 +83,20 @@ export function terminalDockReducer(
 ): TerminalDockState {
   switch (action.type) {
     case "loaded": {
-      const sessions = sortSessions(action.sessions);
-      const activeIdByConnection = Object.fromEntries(
-        Object.entries(state.activeIdByConnection).filter(
-          ([connectionId, id]) =>
-            sessions.some(
-              (session) =>
-                session.id === id &&
-                session.connection.connectionId === connectionId,
-            ),
-        ),
+      const byId = new Map(
+        state.sessions.map((session) => [session.id, session]),
       );
-      const preferred = preferredSessionId(
-        sessions,
-        action.currentConnectionId,
-      );
-      if (preferred && !activeIdByConnection[action.currentConnectionId]) {
-        activeIdByConnection[action.currentConnectionId] = preferred;
-      }
+      for (const session of action.sessions) byId.set(session.id, session);
+      const sessions = sortSessions(byId.values());
+      const activeId = sessions.some(
+        (session) => session.id === state.activeId,
+      )
+        ? state.activeId
+        : preferredSessionId(sessions, action.currentConnectionId);
       return {
         ...state,
         sessions,
-        activeIdByConnection,
+        activeId,
         loading: false,
         error: null,
       };
@@ -114,15 +109,10 @@ export function terminalDockReducer(
       };
     case "upsert": {
       const sessions = upsertSession(state.sessions, action.session);
-      const connectionId = action.session.connection.connectionId;
       return {
         ...state,
         sessions,
-        activeIdByConnection: {
-          ...state.activeIdByConnection,
-          [connectionId]:
-            state.activeIdByConnection[connectionId] ?? action.session.id,
-        },
+        activeId: state.activeId ?? action.session.id,
       };
     }
     case "replace": {
@@ -130,68 +120,22 @@ export function terminalDockReducer(
         state.sessions.filter((session) => session.id !== action.previousId),
         action.session,
       );
-      const connectionId = action.session.connection.connectionId;
       return {
         ...state,
         sessions,
-        activeIdByConnection: {
-          ...state.activeIdByConnection,
-          [connectionId]:
-            state.activeIdByConnection[connectionId] === action.previousId ||
-            state.activeIdByConnection[connectionId] === undefined
-              ? action.session.id
-              : state.activeIdByConnection[connectionId],
-        },
+        activeId:
+          state.activeId === action.previousId || state.activeId === null
+            ? action.session.id
+            : state.activeId,
         replayTruncated: state.replayTruncated.filter(
           (id) => id !== action.previousId,
         ),
       };
     }
-    case "remove": {
-      const removed = state.sessions.find(
-        (session) => session.id === action.id,
-      );
-      if (!removed) return state;
-      const connectionId = removed.connection.connectionId;
-      const scoped = terminalSessionsForConnection(
-        state.sessions,
-        connectionId,
-      );
-      const removedIndex = scoped.findIndex(
-        (session) => session.id === action.id,
-      );
-      const nextActive =
-        scoped[removedIndex + 1]?.id ?? scoped[removedIndex - 1]?.id;
-      const activeIdByConnection = { ...state.activeIdByConnection };
-      if (activeIdByConnection[connectionId] === action.id) {
-        if (nextActive) activeIdByConnection[connectionId] = nextActive;
-        else delete activeIdByConnection[connectionId];
-      }
-      return {
-        ...state,
-        sessions: state.sessions.filter(
-          (session) => session.id !== action.id,
-        ),
-        activeIdByConnection,
-        replayTruncated: state.replayTruncated.filter(
-          (id) => id !== action.id,
-        ),
-      };
-    }
-    case "activate": {
-      const session = state.sessions.find(
-        (candidate) => candidate.id === action.id,
-      );
-      return session
-        ? {
-            ...state,
-            activeIdByConnection: {
-              ...state.activeIdByConnection,
-              [session.connection.connectionId]: action.id,
-            },
-          }
+    case "activate":
+      return state.sessions.some((session) => session.id === action.id)
+        ? { ...state, activeId: action.id }
         : state;
-    }
     case "creating":
       return {
         ...state,
@@ -212,29 +156,6 @@ export function terminalDockReducer(
   }
 }
 
-export function terminalSessionsForConnection(
-  sessions: TerminalSessionSummary[],
-  connectionId: string,
-): TerminalSessionSummary[] {
-  return sessions.filter(
-    (session) => session.connection.connectionId === connectionId,
-  );
-}
-
-export function terminalActiveIdForConnection(
-  state: TerminalDockState,
-  connectionId: string,
-): string | null {
-  const scoped = terminalSessionsForConnection(
-    state.sessions,
-    connectionId,
-  );
-  const stored = state.activeIdByConnection[connectionId];
-  return scoped.some((session) => session.id === stored)
-    ? stored
-    : preferredSessionId(scoped, connectionId);
-}
-
 export function terminalSessionIsRunning(
   session: TerminalSessionSummary,
 ): boolean {
@@ -243,4 +164,11 @@ export function terminalSessionIsRunning(
     session.lifecycle === "running" ||
     session.lifecycle === "stopping"
   );
+}
+
+export function terminalConnectionMismatch(
+  session: TerminalSessionSummary,
+  currentConnectionId: string,
+): boolean {
+  return session.connection.connectionId !== currentConnectionId;
 }

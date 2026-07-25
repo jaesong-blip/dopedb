@@ -96,10 +96,6 @@ export function terminalKill(id: string): Promise<TerminalSessionSummary> {
   return invoke("terminal_kill", { id });
 }
 
-export function terminalClose(id: string): Promise<void> {
-  return invoke("terminal_close", { id });
-}
-
 export function terminalRestart(
   id: string,
   onOutput: Channel<TerminalOutputChunk>,

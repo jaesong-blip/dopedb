@@ -15,7 +15,6 @@
 
 .erd-flow .react-flow__background {
   background: var(--ds-surface-1);
-  opacity: 0.42;
 }
 
 .erd-flow .react-flow__edge-text {
@@ -96,23 +95,6 @@
 
 .erd-error {
   margin: var(--ds-space-2) var(--ds-space-3) 0;
-}
-
-.erd-layout-warning {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: var(--ds-icon-md) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--ds-space-2);
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border-bottom: var(--ds-border-width) solid var(--ds-risk-border);
-  background: var(--ds-risk-bg);
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-xs);
-}
-
-.erd-layout-warning > .icon {
-  color: var(--ds-warning);
 }
 
 .erd-status {
