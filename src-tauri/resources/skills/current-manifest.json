@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "skillName": "dopedb-cli",
-  "releaseRevision": 2,
+  "releaseRevision": 3,
   "sourcePath": "skills/dopedb-cli",
-  "appVersion": "0.3.3",
+  "appVersion": "0.3.4",
   "sourceFiles": [
     {
       "path": "SKILL.md",
@@ -65,5 +65,5 @@
       "content": "---\nname: dopedb-cli\ndescription: Use the local DopeDB Desktop runtime safely through the version-matched dopedb CLI.\n---\n\nBefore using DopeDB, run:\ndopedb skills get dopedb-cli\n"
     }
   ],
-  "packageDigest": "675f4f8ce34e31e2d934bc53d5d6e2e1cba81856b35fb67b3ff49e22eb8a5352"
+  "packageDigest": "89e99a68f6bea42407f5e4bfe9b0003e72f99a4b22e5d1f1ecfe766397bf37c7"
 }
