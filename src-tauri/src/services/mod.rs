@@ -52,7 +52,7 @@ pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 use crate::connection::ConnectionManager;
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
-use crate::features::jobs::JobUseCases;
+use crate::features::jobs::{self, JobsFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
 use crate::operations::OperationRuntime;
@@ -69,7 +69,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) dashboard: DashboardService,
     pub(crate) document: DocumentService,
     pub(crate) erd: ErdService,
-    pub(crate) job: JobUseCases,
+    pub(crate) job: JobsFeature,
     pub(crate) monitoring: MonitoringService,
     pub(crate) operation: OperationService,
     pub(crate) query: QueryService,
@@ -105,7 +105,7 @@ impl ApplicationServices {
         );
         let sql_documents = sql_documents::compose(store.clone(), connections.clone());
         let erd = ErdService::new(store.clone(), connections.clone());
-        let job = JobUseCases::new(
+        let job = jobs::compose(
             store.clone(),
             connections.clone(),
             catalog.clone(),

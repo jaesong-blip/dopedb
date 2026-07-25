@@ -124,18 +124,24 @@ owner. Central command/type reintroduction is a deletion gate. Renderer camelCas
 fields are accepted as deserialization aliases while stored plan JSON remains
 snake_case, preserving existing plan hashes and resumable jobs.
 
-The midpoint checkpoint deleted the entire former service tree. Orchestration now
-belongs to `features/jobs/application.rs`; SQLite ledger, file-format, and worker
-implementations are visibly bounded under `features/jobs/adapters/`. Shared operation
-actor/policy derivation moved out of the service layer to `operations/context.rs`, so
-the feature does not depend back on a central service facade. The deletion gate covers
-every old Job service path and symbol, while the writer inventory points only at the
-new ledger adapter.
+The midpoint checkpoints deleted the entire former service tree and inverted the
+remaining platform dependencies. Orchestration belongs to
+`features/jobs/application.rs`; its authority, ledger, file, catalog, Operation,
+execution, and generator dependencies are contracts in `features/jobs/ports.rs`.
+SQLite, native file, runtime authority, catalog, Operation, and worker implementations
+are visibly bounded under `features/jobs/adapters/`. Shared operation actor/policy
+derivation lives in `operations/context.rs`, so the application never depends back on
+a central service facade. `features/jobs/mod.rs` is the only composition boundary.
 
-Before this slice is complete, the application must depend on authority, ledger, file,
-operation, catalog, and execution ports rather than concrete adapters. The four moved
-large files remain exact no-growth migration baselines and must be split below the
-general limits before the Job slice is marked complete.
+Architecture checks now reject concrete connection, store, SQLx, filesystem,
+Operation runtime, catalog implementation, and adapter imports from the Job
+application and reject platform types in its ports. The deletion gate covers every
+old Job service path and symbol, while the writer inventory points only at the ledger
+adapter.
+
+Before this slice is complete, the four remaining large files must be split below the
+general limits. Their current counts remain exact no-growth migration baselines until
+that deletion checkpoint removes the entries entirely.
 
 ## Audit checkpoints
 

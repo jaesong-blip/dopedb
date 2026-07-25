@@ -328,6 +328,25 @@ forbid("src-tauri/src/features/jobs/transport.rs", [
   [/crate::store/, "job transport must not access the store directly"],
   [/crate::connection/, "job transport must not authorize connections directly"],
 ]);
+forbid("src-tauri/src/features/jobs/application.rs", [
+  [/crate::connection/, "job application must authorize through its port"],
+  [/crate::store/, "job application must persist through its ledger port"],
+  [/\bsqlx\b/, "job application must not contain database adapter code"],
+  [/super::adapters/, "job application must not depend on concrete adapters"],
+  [/\bOperationRuntime\b/, "job application must use the Operation port"],
+  [/\bCatalogFeature\b/, "job application must use the catalog port"],
+  [/\bstd::fs\b/, "job application must use the file port"],
+  [
+    /tokio::task::spawn_blocking/,
+    "job application must delegate blocking file work to an adapter",
+  ],
+]);
+forbid("src-tauri/src/features/jobs/ports.rs", [
+  [/crate::connection/, "job ports must not expose a concrete connection runtime"],
+  [/crate::store/, "job ports must not expose concrete storage"],
+  [/\bsqlx\b/, "job ports must not expose SQL adapter types"],
+  [/\btauri\b/, "job ports must not expose transport types"],
+]);
 forbid("src-tauri/src/services/mod.rs", [
   [
     /\b(?:JobService|CreateJobRequest|JobDetail|JobFileCapability|JobFormat|JobInputInspection|JobProposal)\b/,

@@ -14,9 +14,8 @@ use sqlx::AssertSqlSafe;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
-use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
+use crate::connection::DbPool;
 use crate::error::{AppError, AppResult};
-use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
 use crate::features::jobs::{
     Job, JobChangedEvent, JobErrorPolicy, JobFieldMapping, JobFileDirection, JobFormat, JobKind,
     JobPlan, JobState, JobValidation,
@@ -25,39 +24,38 @@ use crate::kernel::identity::JobId;
 use crate::model::Engine;
 use crate::operations::{ClaimedOperation, ExecutionGrant};
 
+use super::super::ports::{
+    Checkpoint, JobAuthority, JobAuthorityGuard, JobAuthorityPort, JobCatalogPort,
+    JobExecutionPort, JobLedgerPort, JobPermission, JobRecord, WorkerOutcome,
+};
+use super::authority::RuntimeJobAuthority;
+use super::catalog::JobCatalogAdapter;
 use super::format::{
     create_error_writer, file_sha256, finalize_error_writer, typed_sql_literal, write_error_row,
     ExportSink, ImportDataRow, ImportItem, ImportSource,
 };
-use super::ledger::{Checkpoint, JobRecord, JobRepository};
+use super::ledger::JobRepository;
 
 const MAX_EXPORT_BATCH_BYTES: usize = 16 * 1024 * 1024;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::features::jobs) enum WorkerOutcome {
-    Succeeded,
-    Paused,
-    Cancelled,
-}
 
 #[derive(Clone)]
 pub(in crate::features::jobs) struct JobWorker {
     repository: JobRepository,
-    connections: ConnectionManager,
-    catalog: CatalogFeature,
+    authority: RuntimeJobAuthority,
+    catalog: JobCatalogAdapter,
     events: broadcast::Sender<JobChangedEvent>,
 }
 
 impl JobWorker {
     pub(in crate::features::jobs) fn new(
         repository: JobRepository,
-        connections: ConnectionManager,
-        catalog: CatalogFeature,
+        authority: RuntimeJobAuthority,
+        catalog: JobCatalogAdapter,
         events: broadcast::Sender<JobChangedEvent>,
     ) -> Self {
         Self {
             repository,
-            connections,
+            authority,
             catalog,
             events,
         }
@@ -66,10 +64,7 @@ impl JobWorker {
     /// Validate every durable resume boundary before the Operation runtime issues
     /// a fresh execution grant. The worker repeats these checks after claiming so
     /// a file or catalog change in the small intervening window still fails closed.
-    pub(in crate::features::jobs) async fn validate_resume(
-        &self,
-        record: &JobRecord,
-    ) -> AppResult<()> {
+    async fn validate_resume_inner(&self, record: &JobRecord) -> AppResult<()> {
         if record.job.state != JobState::Paused || !record.job.resumable {
             return Err(AppError::Blocked {
                 reason: "only a resumable paused job can be validated for resume".into(),
@@ -90,25 +85,22 @@ impl JobWorker {
                 relation,
                 ..
             } => {
-                let context = self
-                    .connections
-                    .pin(record.job.connection_id.into(), ConnectionAccess::Read)
+                let guard = self
+                    .authority
+                    .authorize(record.job.connection_id, JobPermission::Read)
                     .await?;
-                ensure_record_scope(record, context.pin())?;
+                ensure_record_scope(record, guard.authority())?;
                 let capability = self
                     .repository
                     .resolve_capability(
-                        context.pin(),
+                        guard.authority(),
                         *capability_id,
                         JobFileDirection::Output,
                         Some(record.job.id),
                     )
                     .await?;
                 validate_output_parent(&capability.path)?;
-                let snapshot = self
-                    .catalog
-                    .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
-                    .await?;
+                let snapshot = self.catalog.refresh(record.job.connection_id).await?;
                 find_relation(&snapshot, relation)?;
                 let partial = partial_path(&capability.path, record.job.id)?;
                 let partial_hash = tokio::task::spawn_blocking(move || file_sha256(&partial))
@@ -127,12 +119,12 @@ impl JobWorker {
                 target_relation,
                 ..
             } => {
-                let context = self
-                    .connections
-                    .pin(record.job.connection_id.into(), ConnectionAccess::Write)
+                let guard = self
+                    .authority
+                    .authorize(record.job.connection_id, JobPermission::Write)
                     .await?;
-                ensure_record_scope(record, context.pin())?;
-                if !context.pin().profile.workspace_access.can_write() {
+                ensure_record_scope(record, guard.authority())?;
+                if !guard.authority().workspace_access.can_write() {
                     return Err(AppError::Blocked {
                         reason: "your workspace role grants read-only database access".into(),
                     });
@@ -140,7 +132,7 @@ impl JobWorker {
                 let capability = self
                     .repository
                     .resolve_capability(
-                        context.pin(),
+                        guard.authority(),
                         *capability_id,
                         JobFileDirection::Input,
                         Some(record.job.id),
@@ -160,10 +152,7 @@ impl JobWorker {
                         reason: "the selected input file changed after the job was reviewed".into(),
                     });
                 }
-                let snapshot = self
-                    .catalog
-                    .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
-                    .await?;
+                let snapshot = self.catalog.refresh(record.job.connection_id).await?;
                 if let Some(reference) = target_relation {
                     find_relation(&snapshot, reference)?;
                 }
@@ -176,7 +165,7 @@ impl JobWorker {
         }
     }
 
-    pub(in crate::features::jobs) async fn run(
+    async fn run_inner(
         &self,
         record: JobRecord,
         claimed: ClaimedOperation,
@@ -219,25 +208,22 @@ impl JobWorker {
         else {
             unreachable!()
         };
-        let context = self
-            .connections
-            .pin(record.job.connection_id.into(), ConnectionAccess::Read)
+        let guard = self
+            .authority
+            .authorize(record.job.connection_id, JobPermission::Read)
             .await?;
-        ensure_record_scope(&record, context.pin())?;
-        let engine = context.pin().profile.engine;
+        ensure_record_scope(&record, guard.authority())?;
+        let engine = guard.authority().engine;
         let capability = self
             .repository
             .resolve_capability(
-                context.pin(),
+                guard.authority(),
                 *capability_id,
                 JobFileDirection::Output,
                 Some(record.job.id),
             )
             .await?;
-        let snapshot = self
-            .catalog
-            .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
-            .await?;
+        let snapshot = self.catalog.refresh(record.job.connection_id).await?;
         let relation_metadata = find_relation(&snapshot, relation)?;
         let source_columns = if columns.is_empty() {
             relation_metadata
@@ -337,7 +323,7 @@ impl JobWorker {
                 )
                 .await;
         }
-        let lease = context.connect().await?;
+        let lease = guard.connect().await?;
         let live = lease.live().sql()?;
         let order_columns = relation_metadata
             .constraints
@@ -533,13 +519,13 @@ impl JobWorker {
         else {
             unreachable!()
         };
-        let context = self
-            .connections
-            .pin(record.job.connection_id.into(), ConnectionAccess::Write)
+        let guard = self
+            .authority
+            .authorize(record.job.connection_id, JobPermission::Write)
             .await?;
-        ensure_record_scope(&record, context.pin())?;
-        let engine = context.pin().profile.engine;
-        if !context.pin().profile.workspace_access.can_write() {
+        ensure_record_scope(&record, guard.authority())?;
+        let engine = guard.authority().engine;
+        if !guard.authority().workspace_access.can_write() {
             return Err(AppError::Blocked {
                 reason: "your workspace role grants read-only database access".into(),
             });
@@ -547,7 +533,7 @@ impl JobWorker {
         let capability = self
             .repository
             .resolve_capability(
-                context.pin(),
+                guard.authority(),
                 *capability_id,
                 JobFileDirection::Input,
                 Some(record.job.id),
@@ -557,10 +543,7 @@ impl JobWorker {
             .source_sha256
             .as_deref()
             .ok_or_else(|| AppError::Config("input capability has no source hash".into()))?;
-        let snapshot = self
-            .catalog
-            .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
-            .await?;
+        let snapshot = self.catalog.refresh(record.job.connection_id).await?;
         let target_fingerprint = snapshot.fingerprint().to_owned();
         let target_metadata = match target_relation {
             Some(reference) => Some(find_relation(&snapshot, reference)?),
@@ -634,7 +617,7 @@ impl JobWorker {
             )
             .await
         } else {
-            let lease = context.connect().await?;
+            let lease = guard.connect().await?;
             let live = lease.live().sql()?;
             let mut execute_batches = async || -> AppResult<WorkerOutcome> {
                 loop {
@@ -906,15 +889,15 @@ impl JobWorker {
         let JobPlan::Export { capability_id, .. } = &record.plan else {
             return Ok(());
         };
-        let context = self
-            .connections
-            .pin(record.job.connection_id.into(), ConnectionAccess::Read)
+        let guard = self
+            .authority
+            .authorize(record.job.connection_id, JobPermission::Read)
             .await?;
-        ensure_record_scope(record, context.pin())?;
+        ensure_record_scope(record, guard.authority())?;
         let capability = self
             .repository
             .resolve_capability(
-                context.pin(),
+                guard.authority(),
                 *capability_id,
                 JobFileDirection::Output,
                 Some(record.job.id),
@@ -942,6 +925,25 @@ impl JobWorker {
     }
 }
 
+impl JobExecutionPort<ClaimedOperation> for JobWorker {
+    async fn validate_resume(&self, record: &JobRecord) -> AppResult<()> {
+        self.validate_resume_inner(record).await
+    }
+
+    async fn run(
+        &self,
+        record: JobRecord,
+        claim: ClaimedOperation,
+        cancellation: CancellationToken,
+    ) -> AppResult<WorkerOutcome> {
+        self.run_inner(record, claim, cancellation).await
+    }
+
+    fn cancel(&self, job_id: JobId) {
+        crate::executor::cancel::cancel(job_id.into());
+    }
+}
+
 fn verify_operation(record: &JobRecord, claimed: &ClaimedOperation) -> AppResult<()> {
     let operation = claimed.record();
     let expected_kind = match record.job.kind {
@@ -951,7 +953,7 @@ fn verify_operation(record: &JobRecord, claimed: &ClaimedOperation) -> AppResult
     let matches = operation.id == uuid::Uuid::from(record.job.operation_id)
         && operation.connection_id == uuid::Uuid::from(record.job.connection_id)
         && operation.workspace_id == uuid::Uuid::from(record.workspace_id)
-        && operation.account_scope == record.account_scope
+        && operation.account_scope == record.account_scope.as_str()
         && operation.kind == expected_kind
         && operation
             .payload
@@ -971,10 +973,10 @@ fn verify_operation(record: &JobRecord, claimed: &ClaimedOperation) -> AppResult
     }
 }
 
-fn ensure_record_scope(record: &JobRecord, pin: &crate::store::PinnedConnection) -> AppResult<()> {
-    if record.workspace_id == pin.scope.workspace_id.into()
-        && record.account_scope == pin.scope.account_scope.storage_key()
-        && record.job.connection_id == pin.connection_id.into()
+fn ensure_record_scope(record: &JobRecord, authority: &JobAuthority) -> AppResult<()> {
+    if record.workspace_id == authority.resource.workspace_id
+        && record.account_scope == authority.account_scope
+        && record.job.connection_id == authority.resource.connection_id
     {
         Ok(())
     } else {

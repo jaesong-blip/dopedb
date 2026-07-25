@@ -16,62 +16,27 @@ use crate::kernel::identity::{
     ConnectionId, JobArtifactId, JobFileCapabilityId, JobId, OperationId, WorkspaceId,
 };
 use crate::operations::canonical_hash;
-use crate::store::{PinnedConnection, Store};
+use crate::store::Store;
+
+use super::super::ports::{
+    Checkpoint, JobAuthority, JobLedgerPort, JobRecord, NewCapability, NewJob, ResolvedCapability,
+};
 
 #[derive(Clone)]
 pub(in crate::features::jobs) struct JobRepository {
     store: Store,
 }
 
-pub(in crate::features::jobs) struct NewCapability {
-    pub connection_id: ConnectionId,
-    pub direction: JobFileDirection,
-    pub path: PathBuf,
-    pub display_name: String,
-    pub size_bytes: Option<u64>,
-    pub modified_at: Option<String>,
-    pub source_sha256: Option<String>,
-    pub expires_at: DateTime<Utc>,
-}
-
-pub(in crate::features::jobs) struct ResolvedCapability {
-    pub path: PathBuf,
-    pub display_name: String,
-    pub size_bytes: Option<u64>,
-    pub source_sha256: Option<String>,
-}
-
-#[derive(Clone)]
-pub(in crate::features::jobs) struct JobRecord {
-    pub job: Job,
-    pub workspace_id: WorkspaceId,
-    pub account_scope: String,
-    pub plan: JobPlan,
-    pub plan_hash: String,
-}
-
-pub(in crate::features::jobs) struct NewJob {
-    pub id: JobId,
-    pub operation_id: OperationId,
-    pub connection_id: ConnectionId,
-    pub kind: JobKind,
-    pub format: JobFormat,
-    pub plan: JobPlan,
-    pub source_summary: String,
-    pub target_summary: String,
-    pub rows_total: Option<u64>,
-    pub bytes_total: Option<u64>,
-    pub resumable: bool,
-}
-
 impl JobRepository {
     pub(in crate::features::jobs) fn new(store: Store) -> Self {
         Self { store }
     }
+}
 
-    pub(in crate::features::jobs) async fn create_capability(
+impl JobLedgerPort for JobRepository {
+    async fn create_capability(
         &self,
-        pin: &PinnedConnection,
+        authority: &JobAuthority,
         capability: NewCapability,
     ) -> AppResult<JobFileCapability> {
         let id = JobFileCapabilityId::from(Uuid::new_v4());
@@ -84,8 +49,8 @@ impl JobRepository {
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,NULL,?11,NULL,?12)",
         )
         .bind(id.to_string())
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
         .bind(capability.connection_id.to_string())
         .bind(capability.direction.storage_key())
         .bind(capability.path.to_string_lossy().into_owned())
@@ -113,9 +78,9 @@ impl JobRepository {
         })
     }
 
-    pub(in crate::features::jobs) async fn resolve_capability(
+    async fn resolve_capability(
         &self,
-        pin: &PinnedConnection,
+        authority: &JobAuthority,
         capability_id: JobFileCapabilityId,
         direction: JobFileDirection,
         job_id: Option<JobId>,
@@ -128,9 +93,9 @@ impl JobRepository {
                AND connection_id = ?4 AND direction = ?5 AND revoked_at IS NULL",
         )
         .bind(capability_id.to_string())
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
-        .bind(pin.connection_id.to_string())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
+        .bind(authority.resource.connection_id.to_string())
         .bind(direction.storage_key())
         .fetch_optional(self.store.pool())
         .await?
@@ -161,10 +126,7 @@ impl JobRepository {
         })
     }
 
-    pub(in crate::features::jobs) async fn retire_input_capability(
-        &self,
-        job_id: JobId,
-    ) -> AppResult<Option<PathBuf>> {
+    async fn retire_input_capability(&self, job_id: JobId) -> AppResult<Option<PathBuf>> {
         let now = Utc::now().to_rfc3339();
         let mut transaction = self.store.pool().begin().await?;
         let path = sqlx::query_scalar::<_, String>(
@@ -188,9 +150,7 @@ impl JobRepository {
         Ok(path.map(PathBuf::from))
     }
 
-    pub(in crate::features::jobs) async fn retire_expired_input_capabilities(
-        &self,
-    ) -> AppResult<Vec<PathBuf>> {
+    async fn retire_expired_input_capabilities(&self) -> AppResult<Vec<PathBuf>> {
         let now = Utc::now().to_rfc3339();
         let mut transaction = self.store.pool().begin().await?;
         let rows = sqlx::query(
@@ -226,9 +186,7 @@ impl JobRepository {
         Ok(paths)
     }
 
-    pub(in crate::features::jobs) async fn active_input_capability_paths(
-        &self,
-    ) -> AppResult<Vec<PathBuf>> {
+    async fn active_input_capability_paths(&self) -> AppResult<Vec<PathBuf>> {
         let paths = sqlx::query_scalar::<_, String>(
             "SELECT local_path FROM job_file_capabilities
              WHERE direction = 'input' AND revoked_at IS NULL",
@@ -238,11 +196,7 @@ impl JobRepository {
         Ok(paths.into_iter().map(PathBuf::from).collect())
     }
 
-    pub(in crate::features::jobs) async fn insert_job(
-        &self,
-        pin: &PinnedConnection,
-        new: NewJob,
-    ) -> AppResult<JobRecord> {
+    async fn insert_job(&self, authority: &JobAuthority, new: NewJob) -> AppResult<JobRecord> {
         let plan_value = serde_json::to_value(&new.plan)?;
         let plan_json = serde_json::to_string(&plan_value)?;
         let plan_hash = canonical_hash(&plan_value)?;
@@ -259,8 +213,8 @@ impl JobRepository {
         )
         .bind(new.id.to_string())
         .bind(new.operation_id.to_string())
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
         .bind(new.connection_id.to_string())
         .bind(new.kind.storage_key())
         .bind(new.format.storage_key())
@@ -283,8 +237,8 @@ impl JobRepository {
         )
         .bind(new.id.to_string())
         .bind(new.plan.capability_id().to_string())
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
         .bind(new.connection_id.to_string())
         .bind(&now)
         .execute(&mut *transaction)
@@ -305,29 +259,26 @@ impl JobRepository {
         self.get_unscoped(new.id).await
     }
 
-    pub(in crate::features::jobs) async fn list(
-        &self,
-        pin: &PinnedConnection,
-    ) -> AppResult<Vec<Job>> {
+    async fn list(&self, authority: &JobAuthority) -> AppResult<Vec<Job>> {
         let rows = sqlx::query(
             "SELECT * FROM jobs
              WHERE workspace_id = ?1 AND account_scope = ?2 AND connection_id = ?3
              ORDER BY created_at DESC, id DESC",
         )
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
-        .bind(pin.connection_id.to_string())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
+        .bind(authority.resource.connection_id.to_string())
         .fetch_all(self.store.pool())
         .await?;
         rows.iter().map(row_to_job).collect()
     }
 
-    pub(in crate::features::jobs) async fn detail(
+    async fn detail(
         &self,
-        pin: &PinnedConnection,
+        authority: &JobAuthority,
         job_id: JobId,
     ) -> AppResult<(Job, Vec<JobArtifact>)> {
-        let record = self.get_scoped(pin, job_id).await?;
+        let record = self.get_scoped(authority, job_id).await?;
         let rows = sqlx::query(
             "SELECT id, job_id, artifact_type, local_path, size_bytes, sha256, created_at
              FROM job_artifacts WHERE job_id = ?1 ORDER BY created_at ASC, id ASC",
@@ -342,30 +293,23 @@ impl JobRepository {
         Ok((record.job, artifacts))
     }
 
-    pub(in crate::features::jobs) async fn get_scoped(
-        &self,
-        pin: &PinnedConnection,
-        job_id: JobId,
-    ) -> AppResult<JobRecord> {
+    async fn get_scoped(&self, authority: &JobAuthority, job_id: JobId) -> AppResult<JobRecord> {
         let row = sqlx::query(
             "SELECT * FROM jobs
              WHERE id = ?1 AND workspace_id = ?2 AND account_scope = ?3
                AND connection_id = ?4",
         )
         .bind(job_id.to_string())
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
-        .bind(pin.connection_id.to_string())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
+        .bind(authority.resource.connection_id.to_string())
         .fetch_optional(self.store.pool())
         .await?
         .ok_or_else(|| AppError::NotFound(format!("job {job_id}")))?;
         row_to_record(&row)
     }
 
-    pub(in crate::features::jobs) async fn get_unscoped(
-        &self,
-        job_id: JobId,
-    ) -> AppResult<JobRecord> {
+    async fn get_unscoped(&self, job_id: JobId) -> AppResult<JobRecord> {
         let row = sqlx::query("SELECT * FROM jobs WHERE id = ?1")
             .bind(job_id.to_string())
             .fetch_optional(self.store.pool())
@@ -374,25 +318,21 @@ impl JobRepository {
         row_to_record(&row)
     }
 
-    pub(in crate::features::jobs) async fn queued_records(&self) -> AppResult<Vec<JobRecord>> {
+    async fn queued_records(&self) -> AppResult<Vec<JobRecord>> {
         let rows = sqlx::query("SELECT * FROM jobs WHERE state = 'queued' ORDER BY created_at ASC")
             .fetch_all(self.store.pool())
             .await?;
         rows.iter().map(row_to_record).collect()
     }
 
-    pub(in crate::features::jobs) async fn paused_records(&self) -> AppResult<Vec<JobRecord>> {
+    async fn paused_records(&self) -> AppResult<Vec<JobRecord>> {
         let rows = sqlx::query("SELECT * FROM jobs WHERE state = 'paused' ORDER BY created_at ASC")
             .fetch_all(self.store.pool())
             .await?;
         rows.iter().map(row_to_record).collect()
     }
 
-    pub(in crate::features::jobs) async fn claim_running(
-        &self,
-        pin: &PinnedConnection,
-        job_id: JobId,
-    ) -> AppResult<JobRecord> {
+    async fn claim_running(&self, authority: &JobAuthority, job_id: JobId) -> AppResult<JobRecord> {
         let now = Utc::now().to_rfc3339();
         let mut transaction = self.store.pool().begin().await?;
         let previous = sqlx::query_scalar::<_, String>(
@@ -401,9 +341,9 @@ impl JobRepository {
                AND connection_id = ?4",
         )
         .bind(job_id.to_string())
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
-        .bind(pin.connection_id.to_string())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
+        .bind(authority.resource.connection_id.to_string())
         .fetch_optional(&mut *transaction)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("job {job_id}")))?;
@@ -422,9 +362,9 @@ impl JobRepository {
         )
         .bind(&now)
         .bind(job_id.to_string())
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
-        .bind(pin.connection_id.to_string())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
+        .bind(authority.resource.connection_id.to_string())
         .bind(&previous)
         .execute(&mut *transaction)
         .await?;
@@ -440,10 +380,10 @@ impl JobRepository {
         };
         append_event(&mut transaction, job_id, event, &json!({})).await?;
         transaction.commit().await?;
-        self.get_scoped(pin, job_id).await
+        self.get_scoped(authority, job_id).await
     }
 
-    pub(in crate::features::jobs) async fn update_progress(
+    async fn update_progress(
         &self,
         job_id: JobId,
         rows_processed: u64,
@@ -512,7 +452,7 @@ impl JobRepository {
         self.get_unscoped(job_id).await
     }
 
-    pub(in crate::features::jobs) async fn update_totals(
+    async fn update_totals(
         &self,
         job_id: JobId,
         rows_total: Option<u64>,
@@ -536,10 +476,7 @@ impl JobRepository {
         self.get_unscoped(job_id).await
     }
 
-    pub(in crate::features::jobs) async fn latest_checkpoint(
-        &self,
-        job_id: JobId,
-    ) -> AppResult<Option<Checkpoint>> {
+    async fn latest_checkpoint(&self, job_id: JobId) -> AppResult<Option<Checkpoint>> {
         let row = sqlx::query(
             "SELECT source_fingerprint, target_fingerprint, checkpoint_json
              FROM job_checkpoints WHERE job_id = ?1 ORDER BY sequence DESC LIMIT 1",
@@ -557,10 +494,7 @@ impl JobRepository {
         .transpose()
     }
 
-    pub(in crate::features::jobs) async fn request_pause(
-        &self,
-        job_id: JobId,
-    ) -> AppResult<JobRecord> {
+    async fn request_pause(&self, job_id: JobId) -> AppResult<JobRecord> {
         let now = Utc::now().to_rfc3339();
         let mut transaction = self.store.pool().begin().await?;
         let update = sqlx::query(
@@ -587,19 +521,13 @@ impl JobRepository {
         self.get_unscoped(job_id).await
     }
 
-    pub(in crate::features::jobs) async fn finish_pause(
-        &self,
-        job_id: JobId,
-    ) -> AppResult<JobRecord> {
-        self.transition_job_state(job_id, JobTransition::PauseCompleted, None, None)
-            .await
+    async fn finish_pause(&self, job_id: JobId) -> AppResult<JobRecord> {
+        transition_job_state(self, job_id, JobTransition::PauseCompleted, None, None).await
     }
 
-    pub(in crate::features::jobs) async fn rollback_initial_start(
-        &self,
-        job_id: JobId,
-    ) -> AppResult<JobRecord> {
-        self.transition_job_state(
+    async fn rollback_initial_start(&self, job_id: JobId) -> AppResult<JobRecord> {
+        transition_job_state(
+            self,
             job_id,
             JobTransition::InitialStartRolledBack,
             Some("operation_claim_failed"),
@@ -608,16 +536,14 @@ impl JobRepository {
         .await
     }
 
-    pub(in crate::features::jobs) async fn request_cancel(
-        &self,
-        job_id: JobId,
-    ) -> AppResult<JobRecord> {
+    async fn request_cancel(&self, job_id: JobId) -> AppResult<JobRecord> {
         let current = self.get_unscoped(job_id).await?;
         if matches!(
             current.job.state,
             JobState::Running | JobState::PauseRequested
         ) {
-            self.transition_job_state(
+            transition_job_state(
+                self,
                 job_id,
                 JobTransition::RunningCancellationRequested,
                 None,
@@ -625,12 +551,11 @@ impl JobRepository {
             )
             .await
         } else {
-            self.transition_job_state(job_id, JobTransition::WaitingCancelled, None, None)
-                .await
+            transition_job_state(self, job_id, JobTransition::WaitingCancelled, None, None).await
         }
     }
 
-    pub(in crate::features::jobs) async fn finish(
+    async fn finish(
         &self,
         job_id: JobId,
         state: JobState,
@@ -647,11 +572,10 @@ impl JobRepository {
                 ))
             }
         };
-        self.transition_job_state(job_id, transition, error_code, redacted_error)
-            .await
+        transition_job_state(self, job_id, transition, error_code, redacted_error).await
     }
 
-    pub(in crate::features::jobs) async fn finish_queued(
+    async fn finish_queued(
         &self,
         job_id: JobId,
         state: JobState,
@@ -668,17 +592,24 @@ impl JobRepository {
         } else {
             JobTransition::QueuedFailed
         };
-        self.transition_job_state(job_id, transition, Some(error_code), Some(redacted_error))
-            .await
+        transition_job_state(
+            self,
+            job_id,
+            transition,
+            Some(error_code),
+            Some(redacted_error),
+        )
+        .await
     }
 
-    pub(in crate::features::jobs) async fn fail_paused(
+    async fn fail_paused(
         &self,
         job_id: JobId,
         error_code: &str,
         redacted_error: &str,
     ) -> AppResult<JobRecord> {
-        self.transition_job_state(
+        transition_job_state(
+            self,
             job_id,
             JobTransition::PausedFailed,
             Some(error_code),
@@ -687,57 +618,7 @@ impl JobRepository {
         .await
     }
 
-    async fn transition_job_state(
-        &self,
-        job_id: JobId,
-        transition: JobTransition,
-        error_code: Option<&str>,
-        redacted_error: Option<&str>,
-    ) -> AppResult<JobRecord> {
-        let rule = transition.rule();
-        let now = Utc::now().to_rfc3339();
-        let placeholders = std::iter::repeat_n("?", rule.from.len())
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!(
-            "UPDATE jobs
-             SET state = ?, error_code = ?, redacted_error = ?,
-                 pause_requested = 0,
-                 finished_at = CASE WHEN ? IN ('cancelled','succeeded','failed') THEN ? ELSE NULL END,
-                 updated_at = ?
-             WHERE id = ? AND state IN ({placeholders})"
-        );
-        let mut transaction = self.store.pool().begin().await?;
-        // Only the number of `?` placeholders is dynamic; every value remains bound.
-        let mut query = sqlx::query(AssertSqlSafe(sql))
-            .bind(rule.to.storage_key())
-            .bind(error_code)
-            .bind(redacted_error)
-            .bind(rule.to.storage_key())
-            .bind(&now)
-            .bind(&now)
-            .bind(job_id.to_string());
-        for state in rule.from {
-            query = query.bind(state.storage_key());
-        }
-        let update = query.execute(&mut *transaction).await?;
-        if update.rows_affected() != 1 {
-            return Err(AppError::Blocked {
-                reason: "job state changed before this transition".into(),
-            });
-        }
-        append_event(
-            &mut transaction,
-            job_id,
-            rule.event,
-            &json!({"errorCode": error_code}),
-        )
-        .await?;
-        transaction.commit().await?;
-        self.get_unscoped(job_id).await
-    }
-
-    pub(in crate::features::jobs) async fn record_artifact(
+    async fn record_artifact(
         &self,
         job_id: JobId,
         artifact_type: &str,
@@ -763,9 +644,9 @@ impl JobRepository {
         Ok(())
     }
 
-    pub(in crate::features::jobs) async fn artifact_path(
+    async fn artifact_path(
         &self,
-        pin: &PinnedConnection,
+        authority: &JobAuthority,
         artifact_id: JobArtifactId,
     ) -> AppResult<PathBuf> {
         let path = sqlx::query_scalar::<_, String>(
@@ -775,16 +656,16 @@ impl JobRepository {
                AND j.connection_id = ?4 AND a.retention_state = 'retained'",
         )
         .bind(artifact_id.to_string())
-        .bind(pin.scope.workspace_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
-        .bind(pin.connection_id.to_string())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
+        .bind(authority.resource.connection_id.to_string())
         .fetch_optional(self.store.pool())
         .await?
         .ok_or_else(|| AppError::NotFound(format!("job artifact {artifact_id}")))?;
         Ok(PathBuf::from(path))
     }
 
-    pub(in crate::features::jobs) async fn recover_interrupted(&self) -> AppResult<Vec<JobRecord>> {
+    async fn recover_interrupted(&self) -> AppResult<Vec<JobRecord>> {
         let interrupted = sqlx::query(
             "SELECT * FROM jobs
              WHERE state IN ('running', 'cancel_requested')
@@ -826,10 +707,54 @@ impl JobRepository {
     }
 }
 
-pub(in crate::features::jobs) struct Checkpoint {
-    pub source_fingerprint: String,
-    pub target_fingerprint: String,
-    pub value: Value,
+async fn transition_job_state(
+    repository: &JobRepository,
+    job_id: JobId,
+    transition: JobTransition,
+    error_code: Option<&str>,
+    redacted_error: Option<&str>,
+) -> AppResult<JobRecord> {
+    let rule = transition.rule();
+    let now = Utc::now().to_rfc3339();
+    let placeholders = std::iter::repeat_n("?", rule.from.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "UPDATE jobs
+         SET state = ?, error_code = ?, redacted_error = ?,
+             pause_requested = 0,
+             finished_at = CASE WHEN ? IN ('cancelled','succeeded','failed') THEN ? ELSE NULL END,
+             updated_at = ?
+         WHERE id = ? AND state IN ({placeholders})"
+    );
+    let mut transaction = repository.store.pool().begin().await?;
+    // Only the number of `?` placeholders is dynamic; every value remains bound.
+    let mut query = sqlx::query(AssertSqlSafe(sql))
+        .bind(rule.to.storage_key())
+        .bind(error_code)
+        .bind(redacted_error)
+        .bind(rule.to.storage_key())
+        .bind(&now)
+        .bind(&now)
+        .bind(job_id.to_string());
+    for state in rule.from {
+        query = query.bind(state.storage_key());
+    }
+    let update = query.execute(&mut *transaction).await?;
+    if update.rows_affected() != 1 {
+        return Err(AppError::Blocked {
+            reason: "job state changed before this transition".into(),
+        });
+    }
+    append_event(
+        &mut transaction,
+        job_id,
+        rule.event,
+        &json!({"errorCode": error_code}),
+    )
+    .await?;
+    transaction.commit().await?;
+    repository.get_unscoped(job_id).await
 }
 
 async fn append_event(
@@ -873,10 +798,13 @@ fn row_to_record(row: &sqlx::sqlite::SqliteRow) -> AppResult<JobRecord> {
             reason: "stored job plan hash does not match its canonical payload".into(),
         });
     }
+    let account_scope =
+        crate::kernel::identity::AccountScopeId::new(row.try_get::<String, _>("account_scope")?)
+            .ok_or_else(|| AppError::Config("stored job account scope is invalid".into()))?;
     Ok(JobRecord {
         job: row_to_job(row)?,
         workspace_id,
-        account_scope: row.try_get("account_scope")?,
+        account_scope,
         plan,
         plan_hash,
     })
@@ -982,7 +910,7 @@ mod tests {
 
     async fn plan_job_operation(
         store: &Store,
-        pin: &PinnedConnection,
+        authority: &JobAuthority,
         kind: OperationKind,
         key: &str,
     ) -> OperationId {
@@ -992,10 +920,10 @@ mod tests {
                 .plan(
                     NewOperation {
                         id: Uuid::new_v4(),
-                        workspace_id: pin.scope.workspace_id,
-                        account_scope: pin.scope.account_scope.storage_key().into(),
-                        connection_id: pin.connection_id,
-                        connection_revision: pin.connection_revision,
+                        workspace_id: authority.resource.workspace_id.into(),
+                        account_scope: authority.account_scope.as_str().into(),
+                        connection_id: authority.resource.connection_id.into(),
+                        connection_revision: authority.connection_revision,
                         terminal_session_id: None,
                         actor: OperationActor {
                             kind: OperationActorKind::LocalUser,
@@ -1029,7 +957,7 @@ mod tests {
         )
     }
 
-    async fn fixture() -> (JobRepository, PinnedConnection, OperationId) {
+    async fn fixture() -> (JobRepository, JobAuthority, OperationId) {
         let options = SqliteConnectOptions::from_str("sqlite::memory:")
             .unwrap()
             .foreign_keys(true);
@@ -1065,26 +993,39 @@ mod tests {
             .await
             .unwrap();
         let pin = store.pin_connection_for_read(connection_id).await.unwrap();
+        let authority = JobAuthority {
+            resource: crate::kernel::identity::WorkspaceConnectionId {
+                workspace_id: pin.scope.workspace_id.into(),
+                connection_id: pin.connection_id.into(),
+            },
+            account_scope: crate::kernel::identity::AccountScopeId::new(
+                pin.scope.account_scope.storage_key(),
+            )
+            .unwrap(),
+            connection_revision: pin.connection_revision,
+            engine: pin.profile.engine,
+            workspace_access: pin.profile.workspace_access,
+        };
         let operation_id = plan_job_operation(
             &store,
-            &pin,
+            &authority,
             OperationKind::Export,
             &format!("job-test:{connection_id}"),
         )
         .await;
-        (JobRepository::new(store), pin, operation_id)
+        (JobRepository::new(store), authority, operation_id)
     }
 
     #[tokio::test]
     async fn progress_pause_resume_and_cancel_are_durable_and_append_only() {
-        let (repository, pin, operation_id) = fixture().await;
+        let (repository, authority, operation_id) = fixture().await;
         let job_id = JobId::from(Uuid::new_v4());
         let output_directory = tempfile::tempdir().unwrap();
         let capability = repository
             .create_capability(
-                &pin,
+                &authority,
                 NewCapability {
-                    connection_id: pin.connection_id.into(),
+                    connection_id: authority.resource.connection_id,
                     direction: JobFileDirection::Output,
                     path: output_directory.path().join("items.ndjson"),
                     display_name: "items.ndjson".into(),
@@ -1098,11 +1039,11 @@ mod tests {
             .unwrap();
         let created = repository
             .insert_job(
-                &pin,
+                &authority,
                 NewJob {
                     id: job_id,
                     operation_id,
-                    connection_id: pin.connection_id.into(),
+                    connection_id: authority.resource.connection_id,
                     kind: JobKind::Export,
                     format: JobFormat::Ndjson,
                     plan: JobPlan::Export {
@@ -1143,7 +1084,7 @@ mod tests {
         .await
         .is_err());
 
-        repository.claim_running(&pin, job_id).await.unwrap();
+        repository.claim_running(&authority, job_id).await.unwrap();
         assert_eq!(
             repository
                 .rollback_initial_start(job_id)
@@ -1153,7 +1094,7 @@ mod tests {
                 .state,
             JobState::Queued
         );
-        repository.claim_running(&pin, job_id).await.unwrap();
+        repository.claim_running(&authority, job_id).await.unwrap();
         repository
             .update_progress(
                 job_id,
@@ -1191,7 +1132,7 @@ mod tests {
             JobState::Paused
         );
 
-        repository.claim_running(&pin, job_id).await.unwrap();
+        repository.claim_running(&authority, job_id).await.unwrap();
         assert_eq!(
             repository.request_pause(job_id).await.unwrap().job.state,
             JobState::PauseRequested
@@ -1249,13 +1190,13 @@ mod tests {
 
     #[tokio::test]
     async fn restart_pauses_resumable_export_but_never_retries_import() {
-        let (repository, pin, export_operation_id) = fixture().await;
+        let (repository, authority, export_operation_id) = fixture().await;
         let directory = tempfile::tempdir().unwrap();
         let export_capability = repository
             .create_capability(
-                &pin,
+                &authority,
                 NewCapability {
-                    connection_id: pin.connection_id.into(),
+                    connection_id: authority.resource.connection_id,
                     direction: JobFileDirection::Output,
                     path: directory.path().join("export.ndjson"),
                     display_name: "export.ndjson".into(),
@@ -1270,11 +1211,11 @@ mod tests {
         let export_id = JobId::from(Uuid::new_v4());
         repository
             .insert_job(
-                &pin,
+                &authority,
                 NewJob {
                     id: export_id,
                     operation_id: export_operation_id,
-                    connection_id: pin.connection_id.into(),
+                    connection_id: authority.resource.connection_id,
                     kind: JobKind::Export,
                     format: JobFormat::Ndjson,
                     plan: JobPlan::Export {
@@ -1300,7 +1241,10 @@ mod tests {
             )
             .await
             .unwrap();
-        repository.claim_running(&pin, export_id).await.unwrap();
+        repository
+            .claim_running(&authority, export_id)
+            .await
+            .unwrap();
         repository
             .update_progress(
                 export_id,
@@ -1317,7 +1261,7 @@ mod tests {
 
         let import_operation_id = plan_job_operation(
             &repository.store,
-            &pin,
+            &authority,
             OperationKind::Import,
             "job-test:interrupted-import",
         )
@@ -1326,9 +1270,9 @@ mod tests {
         std::fs::write(&input_path, "{\"id\":1}\n").unwrap();
         let import_capability = repository
             .create_capability(
-                &pin,
+                &authority,
                 NewCapability {
-                    connection_id: pin.connection_id.into(),
+                    connection_id: authority.resource.connection_id,
                     direction: JobFileDirection::Input,
                     path: input_path,
                     display_name: "input.ndjson".into(),
@@ -1343,11 +1287,11 @@ mod tests {
         let import_id = JobId::from(Uuid::new_v4());
         repository
             .insert_job(
-                &pin,
+                &authority,
                 NewJob {
                     id: import_id,
                     operation_id: import_operation_id,
-                    connection_id: pin.connection_id.into(),
+                    connection_id: authority.resource.connection_id,
                     kind: JobKind::Import,
                     format: JobFormat::Ndjson,
                     plan: JobPlan::Import {
@@ -1372,7 +1316,10 @@ mod tests {
             )
             .await
             .unwrap();
-        repository.claim_running(&pin, import_id).await.unwrap();
+        repository
+            .claim_running(&authority, import_id)
+            .await
+            .unwrap();
 
         repository.recover_interrupted().await.unwrap();
         let export = repository.get_unscoped(export_id).await.unwrap();

@@ -22,6 +22,8 @@ use crate::features::jobs::{JobFormat, JobInputInspection};
 use crate::model::QueryKind;
 use dopedb_protocol::NormalizedTypeFamily;
 
+use super::super::ports::{InputReview, SqlImportAudit};
+
 const XLSX_MAX_ROWS: u32 = 1_048_576;
 const MAX_DOCUMENT_INPUT_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_XLSX_ENTRIES: usize = 10_000;
@@ -1003,18 +1005,6 @@ fn bounded_preview(value: Value, depth: usize) -> Value {
         ),
         value => value,
     }
-}
-
-pub(in crate::features::jobs) struct SqlImportAudit {
-    pub statement_count: u64,
-    pub read_count: u64,
-    pub write_count: u64,
-    pub ddl_count: u64,
-}
-
-pub(in crate::features::jobs) struct InputReview {
-    pub inspection: JobInputInspection,
-    pub sql_audit: Option<SqlImportAudit>,
 }
 
 pub(in crate::features::jobs) fn review_input_verified(
