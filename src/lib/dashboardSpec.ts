@@ -3,8 +3,8 @@
 import type {
   DashboardKind,
   DashboardVisualization,
-  QueryResult,
-} from "../ipc/types";
+} from "../features/dashboards/domain";
+import type { QueryResult } from "../ipc/types";
 
 export interface DashboardMapping {
   xColumn: string | null;

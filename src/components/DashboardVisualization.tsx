@@ -1,6 +1,7 @@
 // Dependency-free dashboard renderer. It consumes a declarative chart spec,
 // draws bounded SVG for visual scanning, and always exposes the raw data grid.
-import type { DashboardVisualization, QueryResult } from "../ipc/types";
+import type { DashboardVisualization } from "../features/dashboards/domain";
+import type { QueryResult } from "../ipc/types";
 import {
   dashboardMapping,
   numericValue,

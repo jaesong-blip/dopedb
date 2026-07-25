@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{Workspace, WorkspaceAuthUser, WorkspaceRole};
-use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
+use crate::kernel::identity::{AccountId, ConnectionId, DashboardId, WorkspaceId};
 use crate::model::{ConnectionProfile, WorkspaceCredentialMode};
 use crate::store::{AccountScope, PinnedConnection, PinnedDashboard, Store};
 
@@ -235,7 +235,7 @@ impl ConnectionOperationScope {
         self.pin_connection_for_view(id).await
     }
 
-    pub(crate) async fn pin_dashboard(&self, id: Uuid) -> AppResult<PinnedDashboard> {
+    pub(crate) async fn pin_dashboard(&self, id: DashboardId) -> AppResult<PinnedDashboard> {
         self.manager.inner.store.pin_dashboard_for_view(id).await
     }
 

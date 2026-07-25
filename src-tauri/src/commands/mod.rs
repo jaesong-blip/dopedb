@@ -12,17 +12,17 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::model::{Dashboard, DocumentQuery, HistoryEntry, PlatformFeatureFlags, SafetySettings};
+use crate::model::{DocumentQuery, HistoryEntry, PlatformFeatureFlags, SafetySettings};
 use crate::services::{
-    AuditSnapshotReceipt, AuditVerdict, DashboardRunError, DashboardRunReceipt,
-    DashboardRunRequest, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
-    DesktopDocumentReadError, DesktopScriptProposalReceipt, DesktopScriptProposalRequest,
-    DesktopScriptRunError, DesktopScriptRunReceipt, DesktopSqlClassificationReceipt,
-    DesktopSqlClassificationRequest, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
-    DesktopSqlPreviewRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
-    DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt, MonitoringProposalReceipt,
-    MonitoringProposalRequest, MonitoringServiceError, MonitoringStatusReceipt,
-    OperationDecisionReceipt, OperationDecisionRequest, TableScriptContext,
+    AuditSnapshotReceipt, AuditVerdict, DesktopDocumentProposalReceipt,
+    DesktopDocumentProposalRequest, DesktopDocumentReadError, DesktopScriptProposalReceipt,
+    DesktopScriptProposalRequest, DesktopScriptRunError, DesktopScriptRunReceipt,
+    DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest, DesktopSqlInspectionError,
+    DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest, DesktopSqlProposalReceipt,
+    DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt,
+    MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringServiceError,
+    MonitoringStatusReceipt, OperationDecisionReceipt, OperationDecisionRequest,
+    TableScriptContext,
 };
 use crate::state::AppState;
 
@@ -156,41 +156,6 @@ pub fn platform_feature_flags(state: State<'_, AppState>) -> PlatformFeatureFlag
             .map(str::to_string)
             .collect(),
     }
-}
-
-// ── saved dashboards ─────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn list_dashboards(
-    state: State<'_, AppState>,
-    connection_id: Uuid,
-) -> AppResult<Vec<Dashboard>> {
-    state.services.dashboard.list(connection_id).await
-}
-
-#[tauri::command]
-pub async fn delete_dashboard(state: State<'_, AppState>, id: Uuid) -> AppResult<()> {
-    state.services.dashboard.delete(id).await
-}
-
-/// Rerun one saved dashboard through the authoritative L2 read-only session.
-/// Connection auto-run/write settings never select a writable executor here; the
-/// current connection engine is used to revalidate the stored SQL on every run.
-#[tauri::command]
-pub async fn run_dashboard(
-    state: State<'_, AppState>,
-    id: Uuid,
-    query_id: Option<Uuid>,
-) -> AppResult<DashboardRunReceipt> {
-    state
-        .services
-        .dashboard
-        .run(DashboardRunRequest {
-            dashboard_id: id,
-            query_id,
-        })
-        .await
-        .map_err(DashboardRunError::into_error)
 }
 
 // ── safety pipeline (L1 / L3) ────────────────────────────────────────────────

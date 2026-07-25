@@ -13,7 +13,6 @@ import type {
   CliInstallationStatus,
   CliInfo,
   Classification,
-  Dashboard,
   DocumentPage,
   DocumentOperationProposal,
   DocumentQuery,
@@ -41,7 +40,6 @@ import type {
   TerminalOutputChunk,
   TerminalSessionSummary,
   TerminalSize,
-  QueryResult,
 } from "./types";
 
 export function terminalOutputChannel(
@@ -354,18 +352,6 @@ export function auditSnapshot(id: string): Promise<AuditSnapshot> {
 
 export function listHistory(id: string): Promise<HistoryEntry[]> {
   return invoke("list_history", { id });
-}
-
-export function listDashboards(connectionId: string): Promise<Dashboard[]> {
-  return invoke("list_dashboards", { connectionId });
-}
-
-export function deleteDashboard(id: string): Promise<void> {
-  return invoke("delete_dashboard", { id });
-}
-
-export function runDashboard(id: string, queryId?: string): Promise<QueryResult> {
-  return invoke("run_dashboard", { id, queryId: queryId ?? null });
 }
 
 // Native picker (null = user cancelled the dialog).

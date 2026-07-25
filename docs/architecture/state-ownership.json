@@ -63,6 +63,14 @@
       "writerTokens": [
         "pub(in crate::features::erd) struct SqliteErdRepository"
       ]
+    },
+    {
+      "name": "dashboardStore",
+      "owner": "src-tauri/src/store/mod.rs",
+      "writerTokens": [
+        "pub(crate) async fn save_dashboard_if_current(",
+        "async fn delete_dashboard_revision_if_current("
+      ]
     }
   ]
 }

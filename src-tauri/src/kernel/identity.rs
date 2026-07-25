@@ -43,6 +43,9 @@ uuid_identity!(ConnectionId);
 uuid_identity!(SqlDocumentId);
 uuid_identity!(ErdLayoutId);
 uuid_identity!(ErdVirtualRelationId);
+uuid_identity!(DashboardId);
+uuid_identity!(QueryRunId);
+uuid_identity!(QueryExecutionId);
 uuid_identity!(JobId);
 uuid_identity!(JobFileCapabilityId);
 uuid_identity!(JobArtifactId);
@@ -157,12 +160,14 @@ mod tests {
         let capability_id = JobFileCapabilityId::from(raw);
         let artifact_id = JobArtifactId::from(raw);
         let operation_id = OperationId::from(raw);
+        let query_execution_id = QueryExecutionId::from(raw);
 
         for encoded in [
             serde_json::to_string(&job_id).unwrap(),
             serde_json::to_string(&capability_id).unwrap(),
             serde_json::to_string(&artifact_id).unwrap(),
             serde_json::to_string(&operation_id).unwrap(),
+            serde_json::to_string(&query_execution_id).unwrap(),
         ] {
             assert_eq!(encoded, format!("\"{raw}\""));
         }

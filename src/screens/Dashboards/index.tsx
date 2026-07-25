@@ -3,12 +3,12 @@
 // execution boundary and explicit per-tile refresh/delete controls.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { deleteDashboard } from "../../ipc/commands";
 import type {
   Dashboard,
   DashboardKind,
-  QueryResult,
-} from "../../ipc/types";
+} from "../../features/dashboards/domain";
+import { deleteDashboard } from "../../features/dashboards/tauriAdapter";
+import type { QueryResult } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import ConfirmButton from "../../components/ConfirmButton";

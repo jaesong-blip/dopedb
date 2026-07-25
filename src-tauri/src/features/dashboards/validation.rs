@@ -1,28 +1,25 @@
-//! Saved-dashboard validation shared by Tauri and the local broker.
+//! Saved-dashboard presentation and read-only SQL policies.
 
 use crate::error::{AppError, AppResult};
-use crate::model::{DashboardDraft, DashboardVisualization, Engine, QueryKind};
+use crate::model::{Engine, QueryKind};
 use crate::safety;
 
-pub const MAX_TITLE_CHARS: usize = 120;
-pub const MAX_DESCRIPTION_CHARS: usize = 2_000;
-pub const MAX_SQL_BYTES: usize = 100_000;
-pub const MAX_COLUMN_NAME_CHARS: usize = 256;
-pub const MAX_Y_COLUMNS: usize = 4;
-pub const VISUALIZATION_VERSION: u32 = 1;
+use super::domain::{DashboardDraft, DashboardVisualization};
 
-/// Reject visualization shapes the current renderer cannot safely consume. This
-/// runs both before persistence and after deserializing stored JSON, so a future
-/// or manually-edited definition fails with a typed config error instead of being
-/// handed to the UI.
-pub fn validate_visualization(visualization: &DashboardVisualization) -> AppResult<()> {
+pub(super) const VISUALIZATION_VERSION: u32 = 1;
+const MAX_TITLE_CHARS: usize = 120;
+const MAX_DESCRIPTION_CHARS: usize = 2_000;
+const MAX_SQL_BYTES: usize = 100_000;
+const MAX_COLUMN_NAME_CHARS: usize = 256;
+const MAX_Y_COLUMNS: usize = 4;
+
+pub(crate) fn validate_visualization(visualization: &DashboardVisualization) -> AppResult<()> {
     if visualization.version != VISUALIZATION_VERSION {
         return Err(AppError::Config(format!(
             "unsupported dashboard visualization version {}",
             visualization.version
         )));
     }
-
     if let Some(x_column) = &visualization.x_column {
         validate_column_name(x_column, "x column")?;
     }
@@ -56,10 +53,7 @@ fn validate_column_name(column: &str, label: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Validate persisted dashboard input. Creation never executes SQL, but only a
-/// single classified read can be saved; every later execution still has to use
-/// the existing L2 read-only query path.
-pub fn validate_draft(draft: &DashboardDraft, engine: Engine) -> AppResult<()> {
+pub(super) fn validate_draft(draft: &DashboardDraft, engine: Engine) -> AppResult<()> {
     let title = draft.title.trim();
     if title.is_empty() {
         return Err(AppError::Config("dashboard title cannot be empty".into()));
@@ -74,7 +68,6 @@ pub fn validate_draft(draft: &DashboardDraft, engine: Engine) -> AppResult<()> {
             "dashboard description cannot exceed {MAX_DESCRIPTION_CHARS} characters"
         )));
     }
-
     if draft.sql.trim().is_empty() {
         return Err(AppError::Config("dashboard SQL cannot be empty".into()));
     }
@@ -84,7 +77,6 @@ pub fn validate_draft(draft: &DashboardDraft, engine: Engine) -> AppResult<()> {
         )));
     }
     validate_visualization(&draft.visualization)?;
-
     let classification = safety::classify(&draft.sql, engine)?;
     if !matches!(classification.kind, QueryKind::Read) || classification.statement_count != 1 {
         return Err(AppError::Blocked {
@@ -96,18 +88,20 @@ pub fn validate_draft(draft: &DashboardDraft, engine: Engine) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::model::{DashboardKind, DashboardVisualization};
     use uuid::Uuid;
+
+    use super::*;
+    use crate::features::dashboards::{DashboardKind, DashboardVisualization};
+    use crate::kernel::identity::ConnectionId;
 
     fn draft(sql: &str) -> DashboardDraft {
         DashboardDraft {
-            connection_id: Uuid::new_v4(),
+            connection_id: ConnectionId::from(Uuid::new_v4()),
             title: "Daily visitors".into(),
             description: String::new(),
             sql: sql.into(),
             visualization: DashboardVisualization {
-                version: 1,
+                version: VISUALIZATION_VERSION,
                 kind: DashboardKind::Line,
                 x_column: Some("day".into()),
                 y_columns: vec!["visitors".into()],

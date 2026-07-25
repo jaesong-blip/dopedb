@@ -104,6 +104,8 @@ const removedPaths = [
   "src-tauri/src/services/catalog_service.rs",
   "src-tauri/src/services/erd_service.rs",
   "src-tauri/src/services/schema_service.rs",
+  "src-tauri/src/services/dashboard_service.rs",
+  "src-tauri/src/dashboard.rs",
   "src-tauri/src/services/job_service/model.rs",
   "src-tauri/src/services/job_service/mod.rs",
   "src-tauri/src/services/job_service/format.rs",
@@ -144,7 +146,9 @@ for (const filePath of [
     [/src\/lib\/workbenchDocuments\.ts/, "active documentation names a removed frontend path"],
     [/src-tauri\/src\/services\/sql_document_service\.rs/, "active documentation names a removed Rust path"],
     [/src-tauri\/src\/services\/connection_service\.rs/, "active documentation names the removed connection service"],
-    [/src-tauri\/src\/services\/catalog_service\.rs/, "active documentation names the removed catalog service"],
+    [/\bcatalog_service\.rs\b/, "active documentation names the removed catalog service"],
+    [/\bdashboard_service\.rs\b/, "active documentation names the removed dashboard service"],
+    [/src-tauri\/src\/dashboard\.rs/, "active documentation names the removed global dashboard policy module"],
     [/src-tauri\/src\/services\/job_service/, "active documentation names the removed job service tree"],
     [/src-tauri\/src\/services\/workspace_service\.rs/, "active documentation names the removed workspace service"],
     [/src-tauri\/src\/workspace_auth\.rs/, "active documentation names the removed global workspace auth module"],
@@ -164,6 +168,10 @@ for (const token of [
   "CatalogService",
   "ErdService",
   "SchemaService",
+  "DashboardService",
+  "AgentDashboardPrepareError",
+  "AgentDashboardCommitError",
+  "PreparedAgentDashboard",
   "JobService",
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",
@@ -226,6 +234,21 @@ for (const token of ["INSERT INTO erd_layouts", "UPDATE erd_layouts"]) {
   ) {
     fail(
       `ERD layout SQL ${token} must belong only to the ERD repository adapter, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
+for (const token of ["INSERT INTO dashboards", "UPDATE dashboards SET deleted_at"]) {
+  const owners = sourceFiles
+    .filter((file) => file.endsWith(".rs"))
+    .filter((file) => !relative(file).endsWith("_tests.rs"))
+    .filter((file) => fs.readFileSync(file, "utf8").includes(token))
+    .map(relative);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src-tauri/src/store/mod.rs"
+  ) {
+    fail(
+      `dashboard mutation SQL ${token} must belong only to the dashboard store writer, found ${owners.join(", ") || "none"}`,
     );
   }
 }
@@ -292,6 +315,14 @@ for (const filePath of [
     [/crate::features::catalog/, "schema-editor core must use its catalog port"],
     [/ScriptService/, "schema-editor core must use its script port"],
   ]);
+}
+for (const filePath of [
+  "src-tauri/src/features/dashboards/domain.rs",
+  "src-tauri/src/features/dashboards/ports.rs",
+  "src-tauri/src/features/dashboards/application.rs",
+]) {
+  requireFile(filePath);
+  forbid(filePath, coreRustRules);
 }
 for (const filePath of [
   "src-tauri/src/features/jobs/domain.rs",
@@ -391,6 +422,9 @@ forbid("src-tauri/src/commands/mod.rs", [
   [/\bpub async fn preview_schema_change\b/, "schema preview returned to the central command module"],
   [/\bpub async fn propose_schema_change\b/, "schema proposal returned to the central command module"],
   [/\bpub async fn run_schema_change\b/, "schema execution returned to the central command module"],
+  [/\bpub async fn list_dashboards\b/, "dashboard list returned to the central command module"],
+  [/\bpub async fn delete_dashboard\b/, "dashboard delete returned to the central command module"],
+  [/\bpub async fn run_dashboard\b/, "dashboard execution returned to the central command module"],
 ]);
 forbid("src-tauri/src/features/jobs/transport.rs", [
   [/\bsqlx\b/, "job transport must delegate instead of writing the ledger"],
@@ -407,6 +441,12 @@ forbid("src-tauri/src/features/schema_editor/transport.rs", [
   [/ScriptService/, "schema-editor transport must not call the script implementation"],
   [/CatalogFeature/, "schema-editor transport must not call the catalog implementation"],
   [/crate::ddl/, "schema-editor transport must not render DDL"],
+]);
+forbid("src-tauri/src/features/dashboards/transport.rs", [
+  [/\bsqlx\b/, "dashboard transport must delegate instead of querying SQLite"],
+  [/crate::store/, "dashboard transport must not read the store directly"],
+  [/crate::connection/, "dashboard transport must not authorize connections directly"],
+  [/crate::services/, "dashboard transport must not use a legacy service contract"],
 ]);
 for (const filePath of walk("src-tauri/src/features/jobs/application")
   .filter((file) => file.endsWith(".rs"))
@@ -444,6 +484,10 @@ forbid("src-tauri/src/services/mod.rs", [
     /\b(?:SchemaService|SchemaChangePreviewRequest|SchemaChangeProposalReceipt)\b/,
     "central service facade must not re-export feature-owned schema-editor contracts",
   ],
+  [
+    /\b(?:DashboardService|DashboardRunRequest|DashboardRunReceipt|AgentDashboard)\b/,
+    "central service facade must not re-export feature-owned dashboard contracts",
+  ],
 ]);
 forbid("src-tauri/src/features/sql_documents/transport.rs", [
   [/\bsqlx\b/, "transport must delegate instead of querying SQLite"],
@@ -467,6 +511,7 @@ for (const filePath of [
   "src/features/jobs/domain.ts",
   "src/features/erd/domain.ts",
   "src/features/schemaEditor/domain.ts",
+  "src/features/dashboards/domain.ts",
   "src/features/sqlDocuments/domain.ts",
   "src/features/workspaces/domain.ts",
   "src/features/workspaces/cache.ts",
@@ -630,6 +675,24 @@ for (const command of schemaEditorCommands) {
     );
   }
 }
+const dashboardCommands = [
+  "list_dashboards",
+  "delete_dashboard",
+  "run_dashboard",
+];
+for (const command of dashboardCommands) {
+  const owners = frontendSource
+    .filter(([, source]) => source.includes(`"${command}"`))
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/dashboards/tauriAdapter.ts"
+  ) {
+    fail(
+      `${command}: expected only src/features/dashboards/tauriAdapter.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 forbid("src/ipc/types.ts", [
   [/\binterface ConnectionProfile\b/, "connection profile returned to the central IPC type file"],
   [/\binterface DriverDescriptor\b/, "driver descriptor returned to the central IPC type file"],
@@ -648,6 +711,10 @@ forbid("src/ipc/types.ts", [
   [
     /\b(?:interface|type)\s+(?:DdlColumnDefinition|DdlDefaultChange|DdlColumnAlteration|SchemaChange|SchemaChangeRequest|DdlPlan|SchemaChangeProposal)\b/,
     "schema-editor contract returned to the central IPC type file",
+  ],
+  [
+    /\b(?:interface|type)\s+Dashboard(?:Kind|Visualization)?\b/,
+    "dashboard contract returned to the central IPC type file",
   ],
 ]);
 forbid("src/ipc/commands.ts", [
@@ -668,6 +735,10 @@ forbid("src/ipc/commands.ts", [
   [
     /\b(?:previewSchemaChange|proposeSchemaChange|runSchemaChange)\b/,
     "schema-editor commands returned to the central IPC facade",
+  ],
+  [
+    /\b(?:listDashboards|deleteDashboard|runDashboard)\b/,
+    "dashboard commands returned to the central IPC facade",
   ],
 ]);
 for (const [filePath, source] of frontendSource) {

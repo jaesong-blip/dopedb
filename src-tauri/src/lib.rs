@@ -8,7 +8,6 @@ mod cli_environment;
 mod cli_install;
 mod commands;
 mod connection;
-mod dashboard;
 mod ddl;
 mod driver;
 mod error;
@@ -139,9 +138,9 @@ pub fn run() {
             features::connections::transport::delete_connection,
             features::connections::transport::test_connection,
             features::connections::transport::test_connection_profile,
-            commands::list_dashboards,
-            commands::delete_dashboard,
-            commands::run_dashboard,
+            features::dashboards::transport::list_dashboards,
+            features::dashboards::transport::delete_dashboard,
+            features::dashboards::transport::run_dashboard,
             features::catalog::transport::get_schema,
             features::catalog::transport::refresh_schema,
             features::catalog::transport::get_catalog_snapshot,

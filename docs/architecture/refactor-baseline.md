@@ -200,6 +200,36 @@ flow. The former schema service, central Tauri commands/re-exports, and central
 frontend commands/types are deletion gates; the renderer owns branded schema
 Operation IDs beside its Tauri adapter.
 
+## Eighth migrated slice: saved dashboards
+
+The start audit found metadata reads, scope-pinned deletion, read-only execution,
+audit/history recording, terminal query provenance, validation, and persistence in
+one service. A second global module owned the validation policy, dashboard contracts
+lived in the generic model file, and central Rust and renderer facades owned the
+transport names. Dashboard, connection, terminal-query-run, and live execution UUIDs
+were also interchangeable.
+
+Saved dashboards now use:
+
+```text
+Tauri / broker transport
+  -> DashboardUseCases<DashboardId, ConnectionId, QueryRunId, QueryExecutionId>
+     -> metadata, read-only runner, and provenance creation ports
+  -> scope-pinned runtime, audit/history, Terminal capability, and SQLite adapters
+```
+
+Creation accepts presentation only; connection identity and SQL are resolved from the
+exact authorized Terminal run and re-read under the same operation scope. Execution
+revalidates stored SQL against the current engine before touching the target database,
+always uses a read lease, records both audit and history outcomes, and retains the
+lease or failed operation scope until the transport maps the result. Durable dashboard
+mutation SQL still has one explicit Store writer pending the Store decomposition, and
+the architecture contract rejects a second writer.
+
+The former dashboard service, global policy module, generic model contracts, central
+Rust commands/re-exports, and central renderer commands/types are deletion gates.
+The renderer owns branded dashboard and execution IDs beside its Tauri adapter.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

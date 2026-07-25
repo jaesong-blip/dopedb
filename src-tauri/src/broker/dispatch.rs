@@ -3,12 +3,14 @@ use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegist
 use crate::error::AppError;
 use crate::features::catalog::CatalogReadPolicy;
 use crate::features::connections::{AgentConnectionSummary, CliConnectionResolutionError};
-use crate::kernel::identity::AccountScopeId;
+use crate::features::dashboards::{
+    AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardKind,
+};
+use crate::kernel::identity::{AccountScopeId, QueryRunId};
 use crate::kernel::TerminalAuthority;
-use crate::model::{Dashboard, DashboardKind, DocumentPage, DocumentQuery, Engine, QueryResult};
+use crate::model::{DocumentPage, DocumentQuery, Engine, QueryResult};
 use crate::monitoring::HealthSnapshot;
 use crate::services::{
-    AgentDashboardCommitError, AgentDashboardPrepareError, AgentDashboardPresentation,
     AgentDocumentReadError, AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError,
     ApplicationServices, TerminalDocumentReadRequest, TerminalQueryPlanRequest,
     TerminalSqlProposalRequest,
@@ -864,12 +866,12 @@ impl BrokerDispatcher {
         client_protocol_version: u16,
     ) -> Result<DashboardCreateResult, ErrorCode> {
         let authority = terminal_authority(session, client_protocol_version);
-        let prepared = self
+        let dashboard = self
             .services()?
             .dashboard
-            .prepare_terminal_create(
+            .create_terminal(
                 &authority,
-                arguments.query_run_id,
+                QueryRunId::from(arguments.query_run_id),
                 AgentDashboardPresentation {
                     title: arguments.title,
                     description: arguments.description,
@@ -879,11 +881,7 @@ impl BrokerDispatcher {
                 },
             )
             .await
-            .map_err(map_dashboard_prepare_error)?;
-        let dashboard = prepared
-            .commit()
-            .await
-            .map_err(map_dashboard_commit_error)?;
+            .map_err(map_dashboard_create_error)?;
         if let Some(app) = &self.app_handle {
             if let Err(error) = app.emit("dashboard:created", &dashboard) {
                 tracing::warn!(%error, "failed to emit dashboard creation");
@@ -1138,8 +1136,8 @@ const fn dashboard_kind_to_protocol(kind: DashboardKind) -> ProtocolDashboardKin
 
 fn dashboard_record(dashboard: &Dashboard) -> DashboardRecord {
     DashboardRecord {
-        id: dashboard.id,
-        connection_id: dashboard.connection_id,
+        id: dashboard.id.into(),
+        connection_id: dashboard.connection_id.into(),
         title: dashboard.title.clone(),
         description: dashboard.description.clone(),
         sql: dashboard.sql.clone(),
@@ -1199,18 +1197,13 @@ fn map_document_error(error: AgentDocumentReadError) -> ErrorCode {
     }
 }
 
-fn map_dashboard_prepare_error(error: AgentDashboardPrepareError) -> ErrorCode {
+fn map_dashboard_create_error(error: AgentDashboardCreateError) -> ErrorCode {
     match error {
-        AgentDashboardPrepareError::QueryRunNotFound
-        | AgentDashboardPrepareError::QueryRunIneligible => ErrorCode::InvalidRequest,
-        AgentDashboardPrepareError::Application(error) => map_application_error(error),
-    }
-}
-
-fn map_dashboard_commit_error(error: AgentDashboardCommitError) -> ErrorCode {
-    match error {
-        AgentDashboardCommitError::InvalidDraft(error) => map_application_error(error),
-        AgentDashboardCommitError::Persistence(error) => map_application_error(error),
+        AgentDashboardCreateError::QueryRunNotFound
+        | AgentDashboardCreateError::QueryRunIneligible => ErrorCode::InvalidRequest,
+        AgentDashboardCreateError::InvalidDraft(error)
+        | AgentDashboardCreateError::Application(error)
+        | AgentDashboardCreateError::Persistence(error) => map_application_error(error),
     }
 }
 

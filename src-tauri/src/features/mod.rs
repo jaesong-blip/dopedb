@@ -6,6 +6,7 @@
 
 pub(crate) mod catalog;
 pub(crate) mod connections;
+pub(crate) mod dashboards;
 pub(crate) mod erd;
 pub(crate) mod jobs;
 mod platform_flags;

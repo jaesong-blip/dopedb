@@ -232,13 +232,23 @@ src-tauri/src/
       domain.rs
       application.rs
       ports.rs
-      adapters.rs
+      adapters/
+      transport.rs
+    catalog/
+      domain.rs
+      application.rs
+      ports.rs
+      adapters/
+      transport.rs
+    dashboards/
+      domain.rs
+      application.rs
+      ports.rs
+      adapters/
       transport.rs
   services/
     mod.rs
-    catalog_service.rs
     query_service.rs
-    dashboard_service.rs
     document_service.rs
   operations/
     mod.rs

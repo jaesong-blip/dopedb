@@ -33,15 +33,16 @@ use uuid::Uuid;
 
 use crate::agent_cli::AgentProvider;
 use crate::error::{AppError, AppResult};
+use crate::features::dashboards::{validate_visualization, Dashboard, DashboardDraft};
 use crate::features::workspaces::{
     Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceKind,
     WorkspaceRole,
 };
-use crate::kernel::identity::{AccountId, WorkspaceId};
+use crate::kernel::identity::{AccountId, ConnectionId, DashboardId, WorkspaceId};
 use crate::legacy_chat::{ChatMessageRecord, ChatThread};
 use crate::model::{
-    ConnectionProfile, Dashboard, DashboardDraft, Engine, HistoryEntry, Provider, QueryKind,
-    SafetySettings, WorkspaceConnectionAccess, WorkspaceCredentialMode,
+    ConnectionProfile, Engine, HistoryEntry, Provider, QueryKind, SafetySettings,
+    WorkspaceConnectionAccess, WorkspaceCredentialMode,
 };
 
 /// Handle to the local app.db. Cheap to clone (the pool is an `Arc` internally).
@@ -110,7 +111,7 @@ pub(crate) struct PinnedConnection {
 /// presentation JSON out of this pin lets users delete malformed legacy rows.
 #[derive(Clone)]
 pub(crate) struct PinnedDashboard {
-    pub dashboard_id: Uuid,
+    pub dashboard_id: DashboardId,
     pub connection_id: Uuid,
     pub dashboard_revision: i64,
     pub connection: PinnedConnection,
@@ -1981,7 +1982,7 @@ impl Store {
     #[cfg(test)]
     pub(crate) async fn save_dashboard(&self, draft: &DashboardDraft) -> AppResult<Dashboard> {
         let pin = self
-            .pin_connection_for_dashboard(draft.connection_id)
+            .pin_connection_for_dashboard(draft.connection_id.into())
             .await?;
         self.save_dashboard_if_current(&pin, draft).await
     }
@@ -1995,12 +1996,12 @@ impl Store {
         pin: &PinnedConnection,
         draft: &DashboardDraft,
     ) -> AppResult<Dashboard> {
-        if draft.connection_id != pin.connection_id {
+        if Uuid::from(draft.connection_id) != pin.connection_id {
             return Err(AppError::Blocked {
                 reason: "dashboard connection does not match the authorized connection".into(),
             });
         }
-        let id = Uuid::new_v4();
+        let id = DashboardId::from(Uuid::new_v4());
         let now = Utc::now();
         let visualization_json = serde_json::to_string(&draft.visualization)?;
         let mut tx = self.pool.begin().await?;
@@ -2031,7 +2032,7 @@ impl Store {
             &mut tx,
             pin.scope.workspace_id,
             "dashboard",
-            id,
+            id.into(),
             "upsert",
             1,
         )
@@ -2079,26 +2080,18 @@ impl Store {
         Ok(dashboards)
     }
 
-    /// Legacy transition entry point. New service callers retain a pin and call
-    /// `list_dashboards_if_current` so their operation guard spans the whole read.
-    #[allow(dead_code)] // Compatibility surface retained for existing callers and tests.
-    pub async fn list_dashboards(&self, connection_id: Uuid) -> AppResult<Vec<Dashboard>> {
-        let workspace_id = self.active_workspace_id().await?;
-        let rows = sqlx::query(
-            "SELECT d.* FROM dashboards d
-             JOIN connections c ON c.id = d.connection_id
-             WHERE d.connection_id = ?1 AND d.workspace_id = ?2 AND d.deleted_at IS NULL
-               AND c.workspace_id = ?2 AND c.deleted_at IS NULL
-             ORDER BY d.updated_at DESC, d.rowid DESC",
-        )
-        .bind(connection_id.to_string())
-        .bind(workspace_id.to_string())
-        .fetch_all(&self.pool)
-        .await?;
-        rows.iter().map(row_to_dashboard).collect()
+    #[cfg(test)]
+    pub(crate) async fn list_dashboards(
+        &self,
+        connection_id: ConnectionId,
+    ) -> AppResult<Vec<Dashboard>> {
+        let pin = self
+            .pin_connection_for_dashboard(connection_id.into())
+            .await?;
+        self.list_dashboards_if_current(&pin).await
     }
 
-    pub async fn get_dashboard(&self, id: Uuid) -> AppResult<Dashboard> {
+    pub(crate) async fn get_dashboard(&self, id: DashboardId) -> AppResult<Dashboard> {
         let workspace_id = self.active_workspace_id().await?;
         let row = sqlx::query(
             "SELECT d.* FROM dashboards d
@@ -2117,7 +2110,10 @@ impl Store {
     /// Pin a dashboard identity for metadata deletion without parsing its
     /// visualization. The connection pin applies membership and account-local
     /// visibility; the final read transaction closes cross-process races.
-    pub(crate) async fn pin_dashboard_for_view(&self, id: Uuid) -> AppResult<PinnedDashboard> {
+    pub(crate) async fn pin_dashboard_for_view(
+        &self,
+        id: DashboardId,
+    ) -> AppResult<PinnedDashboard> {
         let row = sqlx::query(
             "SELECT d.connection_id, d.revision,
                     active.workspace_id AS pinned_workspace_id,
@@ -2209,8 +2205,8 @@ impl Store {
         })
     }
 
-    #[allow(dead_code)] // Compatibility surface retained while adapters move to DashboardService.
-    pub async fn delete_dashboard(&self, id: Uuid) -> AppResult<()> {
+    #[cfg(test)]
+    pub(crate) async fn delete_dashboard(&self, id: DashboardId) -> AppResult<()> {
         let pin = self.pin_dashboard_for_view(id).await?;
         self.delete_dashboard_if_current(&pin).await
     }
@@ -2233,7 +2229,7 @@ impl Store {
     async fn delete_dashboard_revision_if_current(
         &self,
         connection: &PinnedConnection,
-        dashboard_id: Uuid,
+        dashboard_id: DashboardId,
         dashboard_revision: i64,
     ) -> AppResult<()> {
         let mut tx = self.pool.begin().await?;
@@ -2260,7 +2256,7 @@ impl Store {
             &mut tx,
             connection.scope.workspace_id,
             "dashboard",
-            dashboard_id,
+            dashboard_id.into(),
             "delete",
             revision,
         )
@@ -3056,10 +3052,10 @@ fn row_to_history(r: &sqlx::sqlite::SqliteRow) -> AppResult<HistoryEntry> {
 fn row_to_dashboard(r: &sqlx::sqlite::SqliteRow) -> AppResult<Dashboard> {
     let visualization_json: String = r.try_get("visualization_json")?;
     let visualization = serde_json::from_str(&visualization_json)?;
-    crate::dashboard::validate_visualization(&visualization)?;
+    validate_visualization(&visualization)?;
     Ok(Dashboard {
-        id: parse_uuid(r.try_get("id")?)?,
-        connection_id: parse_uuid(r.try_get("connection_id")?)?,
+        id: DashboardId::from(parse_uuid(r.try_get("id")?)?),
+        connection_id: ConnectionId::from(parse_uuid(r.try_get("connection_id")?)?),
         title: r.try_get("title")?,
         description: r.try_get("description")?,
         sql: r.try_get("sql")?,
@@ -3182,12 +3178,10 @@ mod tests {
         repair_active_scope_on_open, CacheWriteOutcome, CatalogCachePolicy, Store,
     };
     use crate::error::AppError;
+    use crate::features::dashboards::{DashboardDraft, DashboardKind, DashboardVisualization};
     use crate::features::workspaces::{WorkspaceAuthUser, WorkspaceRole};
-    use crate::kernel::identity::{AccountId, WorkspaceId};
-    use crate::model::{
-        ConnectionProfile, DashboardDraft, DashboardKind, DashboardVisualization, Engine,
-        HistoryEntry, Provider, QueryKind,
-    };
+    use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
+    use crate::model::{ConnectionProfile, Engine, HistoryEntry, Provider, QueryKind};
     use chrono::{TimeZone, Utc};
     use dopedb_protocol::catalog::{CatalogContents, CatalogSnapshot, DatabaseEngine};
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -3258,7 +3252,7 @@ mod tests {
 
     fn dashboard_draft(connection_id: Uuid, title: &str) -> DashboardDraft {
         DashboardDraft {
-            connection_id,
+            connection_id: ConnectionId::from(connection_id),
             title: title.into(),
             description: String::new(),
             sql: "SELECT 1".into(),
@@ -3600,7 +3594,7 @@ mod tests {
         store.upsert_connection(&personal_connection).await.unwrap();
         let personal_dashboard = store
             .save_dashboard(&DashboardDraft {
-                connection_id: personal_connection.id,
+                connection_id: ConnectionId::from(personal_connection.id),
                 title: "personal dashboard".into(),
                 description: String::new(),
                 sql: "SELECT 1".into(),
@@ -4924,7 +4918,7 @@ mod tests {
         assert_eq!(loaded.driver_id.as_deref(), Some("sqlx-sqlite"));
 
         let draft = DashboardDraft {
-            connection_id,
+            connection_id: ConnectionId::from(connection_id),
             title: "Daily visitors".into(),
             description: "Unique visitors per day".into(),
             sql: "SELECT day, visitors FROM daily_visitors".into(),
@@ -4936,7 +4930,10 @@ mod tests {
             },
         };
         let saved = store.save_dashboard(&draft).await.unwrap();
-        let listed = store.list_dashboards(connection_id).await.unwrap();
+        let listed = store
+            .list_dashboards(ConnectionId::from(connection_id))
+            .await
+            .unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, saved.id);
         assert_eq!(listed[0].visualization, draft.visualization);
@@ -4977,18 +4974,19 @@ mod tests {
 
         store.delete_dashboard(saved.id).await.unwrap();
         assert!(store
-            .list_dashboards(connection_id)
+            .list_dashboards(ConnectionId::from(connection_id))
             .await
             .unwrap()
             .is_empty());
 
         store.save_dashboard(&draft).await.unwrap();
         store.delete_connection(connection_id).await.unwrap();
-        assert!(store
-            .list_dashboards(connection_id)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(matches!(
+            store
+                .list_dashboards(ConnectionId::from(connection_id))
+                .await,
+            Err(AppError::NotFound(_))
+        ));
     }
 
     #[tokio::test]

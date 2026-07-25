@@ -393,26 +393,6 @@ export interface DocumentPage {
   durationMs: number;
 }
 
-export type DashboardKind = "auto" | "metric" | "line" | "bar" | "table";
-
-export interface DashboardVisualization {
-  version: 1;
-  kind: DashboardKind;
-  xColumn: string | null;
-  yColumns: string[];
-}
-
-export interface Dashboard {
-  id: string;
-  connectionId: string;
-  title: string;
-  description: string;
-  sql: string;
-  visualization: DashboardVisualization;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface ExecOutcome {
   result: QueryResult | null;
   affected: number | null;

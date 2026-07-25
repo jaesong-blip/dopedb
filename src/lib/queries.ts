@@ -15,11 +15,9 @@ import {
   getMonitoringStatus,
   legacyMcpCleanupStatus,
   listChatThreads,
-  listDashboards,
   listHistory,
   platformFeatureFlags,
   refreshCatalog,
-  runDashboard,
   runDocumentRead,
   runSqlRead,
   skillStatus,
@@ -28,6 +26,14 @@ import type { CatalogTable, Engine, QueryResult } from "../ipc/types";
 import { errMessage } from "../ipc/types";
 import { listDrivers } from "../features/connections/tauriAdapter";
 import { connectionId as asConnectionId } from "../features/connections/domain";
+import {
+  dashboardId as asDashboardId,
+  queryExecutionId as asQueryExecutionId,
+} from "../features/dashboards/domain";
+import {
+  listDashboards,
+  runDashboard,
+} from "../features/dashboards/tauriAdapter";
 import { listErdLayouts } from "../features/erd/tauriAdapter";
 import { jobConnectionId } from "../features/jobs/domain";
 import { listJobs } from "../features/jobs/tauriAdapter";
@@ -303,7 +309,7 @@ export function dashboardsQuery(connectionId: string) {
   return queryOptions({
     queryKey: qk.dashboards(connectionId),
     staleTime: LOG_STALE_MS,
-    queryFn: () => listDashboards(connectionId),
+    queryFn: () => listDashboards(asConnectionId(connectionId)),
   });
 }
 
@@ -318,7 +324,10 @@ export function dashboardRunQuery(dashboardId: string | null) {
     queryFn: ({ signal }) => {
       const queryId = window.crypto.randomUUID();
       signal.addEventListener("abort", () => void cancelQuery(queryId), { once: true });
-      return runDashboard(dashboardId!, queryId);
+      return runDashboard(
+        asDashboardId(dashboardId!),
+        asQueryExecutionId(queryId),
+      );
     },
   });
 }

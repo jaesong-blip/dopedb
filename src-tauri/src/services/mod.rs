@@ -2,7 +2,6 @@
 //! Services expose domain DTOs and errors, never transport types.
 
 mod activity_service;
-mod dashboard_service;
 mod document_service;
 mod legacy_chat_service;
 mod monitoring_service;
@@ -13,10 +12,6 @@ mod script_service;
 mod terminal_run_registry;
 
 pub(crate) use activity_service::{ActivityService, AuditSnapshotReceipt, AuditVerdict};
-pub(crate) use dashboard_service::{
-    AgentDashboardCommitError, AgentDashboardPrepareError, AgentDashboardPresentation,
-    DashboardRunError, DashboardRunReceipt, DashboardRunRequest, DashboardService,
-};
 pub(crate) use document_service::{
     AgentDocumentReadError, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
     DesktopDocumentReadError, DocumentReadReceipt, DocumentService, TerminalDocumentReadRequest,
@@ -46,6 +41,7 @@ pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 use crate::connection::ConnectionManager;
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
+use crate::features::dashboards::{self, DashboardsFeature};
 use crate::features::erd::{self, ErdFeature};
 use crate::features::jobs::{self, JobsFeature};
 use crate::features::schema_editor::{self, SchemaEditorFeature};
@@ -62,7 +58,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) legacy_chat: LegacyChatService,
     pub(crate) connections: ConnectionsFeature,
     pub(crate) catalog: CatalogFeature,
-    pub(crate) dashboard: DashboardService,
+    pub(crate) dashboard: DashboardsFeature,
     pub(crate) document: DocumentService,
     pub(crate) erd: ErdFeature,
     pub(crate) job: JobsFeature,
@@ -107,16 +103,14 @@ impl ApplicationServices {
             catalog.clone(),
             operation.clone(),
         );
+        let dashboard =
+            dashboards::compose(store.clone(), connections.clone(), terminal_runs.clone());
         Self {
             activity: ActivityService::new(store.clone()),
             legacy_chat: LegacyChatService::new(store.clone()),
             connections: connection_feature,
             catalog,
-            dashboard: DashboardService::new(
-                store.clone(),
-                connections.clone(),
-                terminal_runs.clone(),
-            ),
+            dashboard,
             document: DocumentService::new(store.clone(), connections.clone(), operation.clone()),
             erd,
             job,
