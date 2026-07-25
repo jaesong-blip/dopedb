@@ -483,7 +483,7 @@ export default function TerminalDock({
             <span>{state.error}</span>
             <button
               type="button"
-              className="btn small"
+              className="btn small icon-only icon-xs"
               onClick={() => dispatch({ type: "error", error: null })}
               title={t("common.close")}
               aria-label={t("common.close")}

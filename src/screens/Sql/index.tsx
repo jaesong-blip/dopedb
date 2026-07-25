@@ -622,7 +622,7 @@ export default function Sql({
           </span>
         </div>
         <button
-          className="btn small sql-agent-btn"
+          className="btn small ghost sql-agent-btn"
           onClick={onOpenAgent}
           title={t("sql.openAgentTerminal")}
         >
@@ -642,7 +642,7 @@ export default function Sql({
       </div>
       <div className="form-actions sql-actions ds-control-row">
         <button
-          className="btn primary"
+          className="btn primary small"
           disabled={!draft.trim() || running}
           onClick={() => void executeSql()}
           title={t("sql.runHint")}
@@ -651,7 +651,7 @@ export default function Sql({
           {running ? t("sql.running") : t("sql.run")}
         </button>
         <button
-          className="btn"
+          className="btn small ghost"
           disabled={!draft.trim() || draftIsScript || explaining || running}
           title={draftIsScript ? t("sql.explainSingle") : t("sql.explainTitle")}
           onClick={explain}
@@ -659,7 +659,7 @@ export default function Sql({
           {explaining ? t("sql.planning") : t("sql.explain")}
         </button>
         <button
-          className="btn"
+          className="btn small ghost"
           disabled={!draft.trim() || formatting || running}
           onClick={() => void formatDraft()}
           title={t("sql.formatTitle")}
@@ -681,7 +681,7 @@ export default function Sql({
             >
               <Icon name="refresh" />
             </span>
-            <button className="btn" onClick={cancel}>
+            <button className="btn small" onClick={cancel}>
               {t("sql.cancel")}
             </button>
           </>
@@ -729,7 +729,7 @@ export default function Sql({
         <details open className="card explain-plan">
           <summary>
             {t("sql.queryPlan")}
-            <button className="btn small plan-close" onClick={() => setPlan(null)} title={t("common.close")} aria-label={t("common.close")}>
+            <button className="btn small icon-only icon-xs plan-close" onClick={() => setPlan(null)} title={t("common.close")} aria-label={t("common.close")}>
               <Icon name="close" />
             </button>
           </summary>

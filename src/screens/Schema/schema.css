@@ -40,9 +40,9 @@
 }
 
 .schema-head-actions .btn.active {
-  border-color: var(--ds-accent-text);
-  background: var(--ds-accent-soft);
-  color: var(--ds-accent-text);
+  border-color: transparent;
+  background: var(--ds-selection);
+  color: var(--ds-selection-foreground);
 }
 
 .schema-layout {

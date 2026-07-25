@@ -41,7 +41,7 @@ export default function TerminalToolbar({
         <button
           ref={archiveButtonRef}
           type="button"
-          className="btn small"
+          className="btn small icon-only"
           onClick={onOpenArchive}
           title={t("terminal.openArchive")}
           aria-label={t("terminal.openArchive")}
@@ -50,7 +50,7 @@ export default function TerminalToolbar({
         </button>
         <button
           type="button"
-          className="btn small"
+          className="btn small icon-only"
           onClick={onOpenActivity}
           title={t("terminal.operationActivity")}
           aria-label={t("terminal.operationActivity")}
@@ -62,7 +62,7 @@ export default function TerminalToolbar({
         </button>
         <button
           type="button"
-          className="btn small"
+          className="btn small icon-only"
           onClick={onToggleMaximize}
           title={maximized ? t("terminal.restore") : t("terminal.maximize")}
           aria-label={
@@ -75,7 +75,7 @@ export default function TerminalToolbar({
         <button
           ref={closeButtonRef}
           type="button"
-          className="btn small"
+          className="btn small icon-only"
           onClick={onClose}
           title={t("common.close")}
           aria-label={t("common.close")}

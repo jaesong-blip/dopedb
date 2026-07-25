@@ -59,7 +59,7 @@ export function DashboardSidebar({
   const dashboards = list.data ?? [];
 
   return (
-    <aside className="sidebar dashboard-sidebar">
+    <aside className="sidebar dashboard-sidebar" id="workbench-sidebar">
       {workspaceHeader}
       <div className="dashboard-sidebar-body">
         <label className="dashboard-connection-picker">
@@ -159,7 +159,7 @@ function DashboardTile({
         <div className="ds-control-row">
           <button
             type="button"
-            className="btn small"
+            className="btn small icon-only"
             disabled={running || deleting}
             onClick={onRefresh}
             title={t(selected ? "dashboard.refresh" : "dashboard.clickToRun")}
@@ -168,7 +168,8 @@ function DashboardTile({
             <Icon name={selected ? "refresh" : "play"} />
           </button>
           <ConfirmButton
-            className="btn danger small"
+            className="btn danger small icon-only"
+            label={t("common.delete")}
             disabled={running || deleting}
             confirmLabel={t("dashboard.deleteConfirm")}
             onConfirm={onDelete}

@@ -117,6 +117,10 @@
   background: var(--ds-hover-strong);
 }
 
+.mobile-sidebar-scrim {
+  display: none;
+}
+
 /* Sidebar — solid deep-gray chrome (tokens re-scoped in tokens.css). */
 .sidebar {
   background: var(--ds-bg-sidebar);
@@ -141,6 +145,9 @@
   min-width: 0;
   background: transparent;
 }
+.main:focus {
+  outline: none;
+}
 .main-head {
   display: flex;
   align-items: center;
@@ -158,7 +165,7 @@
   position: relative;
 }
 .main-terminal-toggle.active {
-  border-color: var(--ds-border-strong);
+  border-color: transparent;
   background: var(--ds-selection);
   color: var(--ds-selection-foreground);
 }
@@ -441,29 +448,12 @@
 }
 
 .workbench-document-close {
-  width: var(--ds-control-sm);
-  min-width: var(--ds-control-sm);
-  height: var(--ds-control-sm);
-  display: grid;
-  place-items: center;
   margin-right: var(--ds-space-1);
-  padding: 0;
-  border: 0;
-  border-radius: var(--ds-radius-xs);
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
 }
 
-.workbench-document-select:focus-visible,
-.workbench-document-close:focus-visible {
+.workbench-document-select:focus-visible {
   outline: none;
   box-shadow: var(--ds-focus-ring);
-}
-
-.workbench-document-close:hover {
-  background: var(--ds-hover-strong);
-  color: var(--ds-text);
 }
 
 .workbench-document-actions {
@@ -563,13 +553,49 @@
 @media (max-width: 560px) {
   .app {
     grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: clamp(238px, 44dvh, 300px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     height: calc(100dvh - 48px);
   }
 
   .sidebar {
-    border-right: 0;
-    border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
+    position: fixed;
+    inset: 0 auto 48px 0;
+    z-index: calc(var(--ds-z-modal) - 1);
+    width: min(360px, calc(100vw - var(--ds-space-6)));
+    border-right: var(--ds-border-width) solid var(--ds-border-strong);
+    box-shadow: var(--ds-shadow-popover);
+    pointer-events: none;
+    transform: translateX(-100%);
+    transition:
+      transform 0.16s ease,
+      visibility 0s linear 0.16s;
+    visibility: hidden;
+  }
+
+  .app.mobile-explorer-open .sidebar {
+    pointer-events: auto;
+    transform: translateX(0);
+    transition-delay: 0s;
+    visibility: visible;
+  }
+
+  .mobile-sidebar-scrim {
+    position: fixed;
+    inset: 0 0 48px;
+    z-index: var(--ds-z-sticky);
+    display: block;
+    padding: 0;
+    border: 0;
+    background: var(--ds-overlay);
+    cursor: default;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s ease;
+  }
+
+  .app.mobile-explorer-open .mobile-sidebar-scrim {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .sidebar-resizer {
@@ -623,5 +649,8 @@
 
   .main {
     min-height: 0;
+    grid-column: 1;
+    grid-row: 1;
+    padding-top: var(--ds-window-controls-safe-height);
   }
 }

@@ -100,7 +100,7 @@ export default function WorkbenchDocumentStrip({
               </button>
               <button
                 type="button"
-                className="workbench-document-close"
+                className="btn small icon-only icon-xs workbench-document-close"
                 onClick={() => onClose(document.id)}
                 title={t("common.close")}
                 aria-label={`${t("common.close")}: ${title}`}
@@ -114,7 +114,7 @@ export default function WorkbenchDocumentStrip({
       <div className="workbench-document-actions ds-control-row">
         <button
           type="button"
-          className="btn small"
+          className="btn small icon-only"
           onClick={onOpenActivity}
           title={t("tabs.activity")}
           aria-label={t("tabs.activity")}
@@ -123,7 +123,7 @@ export default function WorkbenchDocumentStrip({
         </button>
         <button
           type="button"
-          className="btn small"
+          className="btn small icon-only"
           onClick={onNewQuery}
           title={supportsSql ? t("tabs.sql") : t("tabs.documents")}
           aria-label={supportsSql ? t("tabs.sql") : t("tabs.documents")}

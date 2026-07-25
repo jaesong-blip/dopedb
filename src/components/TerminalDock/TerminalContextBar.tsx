@@ -123,7 +123,7 @@ export default function TerminalContextBar({
         <span className="terminal-context-spacer" />
         <button
           type="button"
-          className="btn small"
+          className="btn small icon-only"
           onClick={onRename}
           title={t("terminal.rename")}
           aria-label={t("terminal.rename")}

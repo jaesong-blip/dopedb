@@ -282,11 +282,77 @@ h3 {
   background: color-mix(in srgb, var(--ds-destructive) 90%, transparent);
 }
 
+.btn.danger-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ds-danger);
+  box-shadow: none;
+}
+
+.btn.danger-ghost:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--ds-danger-bg);
+  color: var(--ds-danger);
+}
+
 .btn.small {
+  --ds-control-local-size: var(--ds-control-field-sm);
   height: var(--ds-control-field-sm);
   min-height: var(--ds-control-field-sm);
   padding: 0 var(--ds-control-pad-x-sm);
   font-size: var(--ds-font-size-ui);
+}
+
+.btn.icon-only {
+  --ds-icon-button-size: var(--ds-control-field);
+  --ds-control-local-size: var(--ds-icon-button-size);
+  width: var(--ds-icon-button-size);
+  min-width: var(--ds-icon-button-size);
+  height: var(--ds-icon-button-size);
+  min-height: var(--ds-icon-button-size);
+  flex: 0 0 var(--ds-icon-button-size);
+  gap: 0;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ds-text-muted);
+  box-shadow: none;
+}
+
+.btn.small.icon-only {
+  --ds-icon-button-size: var(--ds-control-md);
+  padding: 0;
+}
+
+.btn.icon-only.icon-xs {
+  --ds-icon-button-size: var(--ds-control-xs);
+  border-radius: var(--ds-radius-xs);
+}
+
+.btn.icon-only:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--ds-hover);
+  color: var(--ds-text);
+}
+
+.btn.icon-only:is(.active, [aria-expanded="true"], [aria-pressed="true"]) {
+  border-color: transparent;
+  background: var(--ds-selection);
+  color: var(--ds-selection-foreground);
+}
+
+.btn.icon-only.danger,
+.btn.icon-only.danger-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ds-danger);
+}
+
+.btn.icon-only.danger:hover:not(:disabled),
+.btn.icon-only.danger-ghost:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--ds-danger-bg);
+  color: var(--ds-danger);
 }
 
 .btn .icon {
@@ -472,11 +538,8 @@ h3 {
 }
 
 /* Every horizontal control cluster shares one explicit row height. Screen CSS can
-   choose the size with --ds-row-control-size, but cannot accidentally mix tracks. */
-.ds-control-row {
-  --ds-row-control-size: var(--ds-control-field);
-}
-
+   choose --ds-row-control-size without depending on stylesheet import order; rows
+   that do not choose one fall back to the default field size at the use site. */
 .app .ds-control-row :where(
   button,
   input:not([type="checkbox"]):not([type="radio"]),
@@ -484,8 +547,14 @@ h3 {
   summary,
   .ds-filter-token
 ) {
-  height: var(--ds-row-control-size);
-  min-height: var(--ds-row-control-size);
+  height: var(
+    --ds-control-local-size,
+    var(--ds-row-control-size, var(--ds-control-field))
+  );
+  min-height: var(
+    --ds-control-local-size,
+    var(--ds-row-control-size, var(--ds-control-field))
+  );
 }
 
 .ds-data-toolbar {
@@ -596,7 +665,7 @@ h3 {
 }
 
 :where(.form-actions:not(.sql-actions), .ds-action-row)
-  .btn:not(.danger):not(.primary) {
+  .btn:not(.danger):not(.danger-ghost):not(.primary) {
   order: 10;
 }
 
@@ -606,7 +675,7 @@ h3 {
 }
 
 :where(.form-actions:not(.sql-actions), .ds-action-row)
-  .btn.danger {
+  .btn:is(.danger, .danger-ghost) {
   order: -10;
   margin-right: auto;
 }
@@ -830,6 +899,7 @@ h3 {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  stroke-width: var(--ds-stroke-width);
   vertical-align: -0.125em;
 }
 
@@ -978,27 +1048,6 @@ h3 {
   margin: 0;
 }
 
-.form-close-btn {
-  width: var(--ds-control-md);
-  min-width: var(--ds-control-md);
-  height: var(--ds-control-md);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: var(--ds-border-width) solid transparent;
-  border-radius: var(--ds-radius-sm);
-  background: transparent;
-  color: var(--ds-text-muted);
-  cursor: pointer;
-}
-
-.form-close-btn:hover,
-.form-close-btn:focus-visible {
-  background: var(--ds-hover);
-  color: var(--ds-text);
-  outline: none;
-}
-
 .form-import-row {
   display: flex;
   justify-content: flex-end;
@@ -1012,7 +1061,8 @@ h3 {
   font-size: var(--ds-font-size-sm);
 }
 
-.form .row .btn.small {
+.form .row .btn.small:not(.icon-only) {
+  --ds-control-local-size: var(--ds-control-field);
   height: var(--ds-control-field);
   min-height: var(--ds-control-field);
 }
@@ -1098,12 +1148,12 @@ h3 {
   }
 
   :where(.form-actions:not(.sql-actions), .ds-action-row)
-    .btn {
+    .btn:not(.icon-only) {
     width: 100%;
   }
 
   :where(.form-actions:not(.sql-actions), .ds-action-row)
-    .btn.danger {
+    .btn:is(.danger, .danger-ghost) {
     margin-right: 0;
   }
 

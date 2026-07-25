@@ -106,10 +106,26 @@ Elevation은 세 단계만 허용한다.
 | `.btn.ghost` | icon button과 list-row action |
 | `.btn.link` | 문장 안의 inline action |
 | `.btn.danger` | 삭제·폐기·되돌릴 수 없는 action |
+| `.btn.danger-ghost` | toolbar의 삭제 후보 action; 최종 확인 전에는 채우지 않음 |
 | `.btn.small` | 32px dense toolbar control |
+| `.btn.small.icon-only` | 32px toolbar icon action; padding 없는 정사각형 |
+| `.btn.small.icon-only.icon-xs` | 24px close·dismiss·inline remove action |
 
 Cancel, Close, Dismiss는 destructive가 아니다. 기본 `.btn` 또는 `.btn.ghost`를
 사용한다.
+
+아이콘 버튼은 중요도에 따라 세 단계만 사용한다.
+
+1. 24px: 패널 닫기, tab/목록의 제거처럼 주변 문맥이 분명한 보조 action
+2. 32px: toolbar, pagination, refresh, overflow menu의 기본 icon action
+3. 36px: product rail과 workspace처럼 앱의 주 navigation action
+
+아이콘만 있는 `.btn`에는 반드시 `.icon-only`와 `aria-label`을 함께 둔다. `title`은
+hover tooltip으로 병행할 수 있지만 접근 가능한 이름을 대신하지 않는다. 보통
+icon action은 투명한 surface로 시작하고 hover/active에서만 중립 배경을 드러낸다.
+삭제 icon도 idle 상태에서는 빨간 채움 상자로 만들지 않고 의미색 glyph를 사용하며,
+최종 확인 action만 `.btn.danger`의 채움 surface를 사용한다. `pnpm check:ui`가 단일
+아이콘 `.btn`의 정사각형 규격과 접근 가능한 이름을 검사한다.
 
 ### Surface
 
@@ -161,6 +177,7 @@ Toolbar:
 - `.ds-toolbar-group`, `.ds-toolbar-spacer`
 - `.ds-filter-strip`, `.ds-filter-token`
 - `.ds-control-row`
+- `ToolbarMenu`, `.ds-menu-popover`, `.ds-menu-item`
 
 Agent/safety:
 
@@ -189,6 +206,45 @@ Utility:
 11. 애니메이션은 continuity를 설명할 때만 사용하고 reduced motion을 존중한다.
 12. macOS, Windows, Linux와 좁은 창에서 control label과 shortcut을 확인한다.
 
+## 툴바와 floating menu 계약
+
+데이터·ERD처럼 control 수가 많은 작업 툴바는 두 영역으로 나눈다.
+
+1. 선행 작업 영역은 `min-width: 0`과 수평 overflow를 소유한다.
+2. pagination, 저장, overflow menu 같은 끝단 control은 축소되지 않고 고정된다.
+
+좁은 창에서 툴바 전체를 여러 줄로 쌓지 않는다. 덜 자주 쓰는 명령은
+`ToolbarMenu`로 이동하고, icon-only shortcut은 접근 가능한 이름과 tooltip을
+유지한다. 이 구조는 Chat2DB result toolbar의 수평 overflow와 Orca tab/command
+bar의 고정된 끝단 action을 현재 workbench에 맞게 결합한 것이다.
+
+toolbar의 command overflow menu는 반드시 portal 기반 `ToolbarMenu`를 사용한다.
+
+- `--ds-menu-min-width`보다 작아지지 않으며 항목 label을 숨기지 않는다.
+- `--ds-viewport-gutter` 안으로 좌우 위치를 clamp하고, 아래 공간이 부족하면 위로
+  뒤집는다.
+- pane의 `overflow: hidden/auto`에 잘리지 않는다.
+- `Esc`, 바깥 클릭, 위·아래/Home/End 키 이동을 제공한다.
+- 각 항목은 박스형 `.btn`을 중첩하지 않고 평평한
+  `role="menuitem"` `.ds-menu-item`을 사용한다.
+
+과거의 `.toolbar-menu`와 `.toolbar-menu-panel`은 금지한다. `pnpm check:ui`가 이
+회귀를 차단한다.
+
+## 좁은 창 shell 계약
+
+Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하지 않는다. 고정
+분할은 header와 toolbar가 본문 높이를 모두 소비해 데이터 행을 볼 수 없게 만든다.
+
+- 560px 이하에서는 main이 rail 위의 전체 높이를 소유한다.
+- explorer는 왼쪽 drawer이며 현재 product rail 버튼, 바깥 scrim, `Esc`로
+  열고 닫는다.
+- table/connection을 선택하면 drawer를 닫아 결과에 초점을 돌린다.
+- macOS overlay title bar의 높이는 닫힌 drawer에서도 main 위쪽에 구조적으로
+  예약한다.
+- drawer는 본문을 재배치하지 않고 덮으므로 열고 닫을 때 데이터 grid의 크기와
+  scroll 위치가 바뀌지 않는다.
+
 ## 시각적 깊이 계약
 
 한 화면의 시각적 깊이는 control을 포함해 최대 3단계다.
@@ -202,6 +258,11 @@ Utility:
 
 새 horizontal control cluster는 `.ds-control-row`를 포함하고, grid track은 `1fr`
 대신 `minmax(0, 1fr)`를 사용한다. `pnpm check:ui`가 이 계약을 검사한다.
+화면별 높이는 해당 행에 `--ds-row-control-size`를 지정한다. 공통 규칙은 이 값을
+재정의하지 않고 `--ds-control-field` fallback만 사용하므로 CSS import 순서에 따라
+32px/36px control이 뒤섞이지 않는다. `.btn.small`과 `.icon-only`처럼 크기를
+명시한 control은 `--ds-control-local-size`가 row fallback보다 우선하므로, 뒤에서
+로드된 `.ds-control-row`가 32px 버튼을 다시 36px로 키울 수 없다.
 
 ## 새 UI를 추가할 때
 
@@ -211,4 +272,7 @@ Utility:
 4. 화면 고유 미세 조정은 해당 화면 CSS에 둔다.
 5. `pnpm check:ui`와 `pnpm build`를 실행한다.
 
-참고 구현: [stablyai/orca UI style guide](https://github.com/stablyai/orca/blob/main/docs/STYLEGUIDE.md)
+참고 구현:
+
+- [stablyai/orca UI style guide](https://github.com/stablyai/orca/blob/main/docs/STYLEGUIDE.md)
+- [Chat2DB community client](https://github.com/CodePhiliaX/Chat2DB/tree/main/chat2db-community-client)

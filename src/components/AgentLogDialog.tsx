@@ -74,7 +74,7 @@ export default function AgentLogDialog({
           <button
             ref={closeRef}
             type="button"
-            className="btn small"
+            className="btn small icon-only icon-xs"
             onClick={onClose}
             title={t("common.close")}
             aria-label={t("common.close")}

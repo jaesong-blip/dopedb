@@ -27,6 +27,7 @@ import CellViewer from "../../components/CellViewer";
 import RowEditor, { type RowEditorSubmission } from "../../components/RowEditor";
 import JobPanel from "../../components/JobPanel";
 import Skeleton from "../../components/Skeleton";
+import ToolbarMenu from "../../components/ToolbarMenu";
 import { useToast } from "../../components/Toast";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { documentsToGrid } from "../../lib/documentGrid";
@@ -83,9 +84,13 @@ function Pager({
   const hasPrev = page > 0;
   const hasNext = total != null ? page < (lastPage ?? 0) : rows === pageSize;
   return (
-    <div className="table-pager ds-command-group ds-control-row" aria-label={t("tables.pagination")}>
+    <div
+      className="table-pager ds-command-group ds-control-row"
+      role="group"
+      aria-label={t("tables.pagination")}
+    >
       <button
-        className="btn small"
+        className="btn small icon-only table-edge-page-action"
         disabled={busy || !hasPrev}
         onClick={() => onPage(0)}
         title={t("common.first")}
@@ -94,7 +99,7 @@ function Pager({
         <Icon name="chevronsLeft" />
       </button>
       <button
-        className="btn small"
+        className="btn small icon-only"
         disabled={busy || !hasPrev}
         onClick={() => onPage(page - 1)}
         title={t("common.prev")}
@@ -107,7 +112,7 @@ function Pager({
         {lastPage != null && ` / ${lastPage + 1}`}
       </span>
       <button
-        className="btn small"
+        className="btn small icon-only"
         disabled={busy || !hasNext}
         onClick={() => onPage(page + 1)}
         title={t("common.next")}
@@ -116,7 +121,7 @@ function Pager({
         <Icon name="arrowRight" />
       </button>
       <button
-        className="btn small"
+        className="btn small icon-only table-edge-page-action"
         disabled={busy || lastPage == null || !hasNext}
         onClick={() => lastPage != null && onPage(lastPage)}
         title={t("tables.last")}
@@ -125,7 +130,7 @@ function Pager({
         <Icon name="chevronsRight" />
       </button>
       <button
-        className="btn small refresh"
+        className="btn small icon-only refresh table-refresh-action"
         disabled={busy}
         aria-label={t("common.refresh")}
         title={t("common.refresh")}
@@ -501,104 +506,109 @@ function SqlTableData({
         </div>
       </div>
 
-      <div className="grid-toolbar ds-data-toolbar ds-control-row">
-        <div className="ds-toolbar-group">
-          <button
-            className="btn small"
-            disabled={!canEdit}
-            title={canEdit ? t("tables.insert") : noEditTitle}
-            aria-label={t("tables.insert")}
-            onClick={() => openEdit("insert")}
-          >
-            <Icon name="plus" />
-            <span className="table-action-label">{t("tables.insert")}</span>
-          </button>
-          <button
-            className="btn small"
-            disabled={!canEdit || selected == null}
-            title={canEdit ? t("tables.edit") : noEditTitle}
-            aria-label={t("tables.edit")}
-            onClick={() => openEdit("edit")}
-          >
-            <Icon name="pencil" />
-            <span className="table-action-label">{t("tables.edit")}</span>
-          </button>
-          <button
-            className="btn small danger"
-            disabled={!canEdit || selected == null}
-            title={canEdit ? t("tables.delete") : noEditTitle}
-            aria-label={t("tables.delete")}
-            onClick={doDelete}
-          >
-            <Icon name="trash" />
-            <span className="table-action-label">{t("tables.delete")}</span>
-          </button>
-          {staged.length > 0 && (
-            <>
-              <button
-                className="btn small active"
-                onClick={() => {
-                  setReviewing(true);
-                  setEditor(null);
-                  setPendingDelete(null);
-                  setCellSel(null);
-                }}
-                title={t("tables.reviewStaged")}
-              >
-                <Icon name="check" />
-                {t("tables.stagedCount", { count: staged.length })}
-              </button>
-              <button
-                className="btn small"
-                onClick={() => {
-                  setStaged([]);
-                  setReviewing(false);
-                  setStagedProposal(null);
-                }}
-                title={t("tables.discardStaged")}
-                aria-label={t("tables.discardStaged")}
-              >
-                <Icon name="close" />
-              </button>
-            </>
-          )}
-        </div>
-        <span className="table-toolbar-divider" aria-hidden="true" />
-        <div className="table-query-state" aria-label={t("tables.querySurface")}>
-          <span
-            className={activeFilters ? "table-state active" : "table-state"}
-            title={t("tables.filterState")}
-          >
-            <Icon name="filter" />
-            {activeFilters
-              ? t(activeFilters > 1 ? "tables.activeFiltersPlural" : "tables.activeFilters", {
-                  count: activeFilters,
-                })
-              : t("tables.noFilters")}
-          </span>
-          <span
-            className={sort ? "table-state active" : "table-state"}
-            title={t("tables.sortState")}
-          >
-            <Icon name="sort" />
-            {sort ? `${sort.col} ${sort.dir.toUpperCase()}` : t("tables.unsorted")}
-          </span>
-          <span
-            className={safety.allowWrites ? "table-state risk" : "table-state"}
-            title={t("tables.writePolicy")}
-          >
-            <Icon name={safety.allowWrites ? "pencil" : "circleSlash"} />
-            {safety.allowWrites
-              ? t("tables.writePolicyWrites")
-              : t("tables.writePolicyReadonly")}
-          </span>
-          {activeFilters > 0 && (
-            <button className="btn small" onClick={() => setFilters({})}>
-              {t("tables.clear")}
+      <div
+        className="grid-toolbar ds-data-toolbar ds-control-row"
+        role="toolbar"
+        aria-label={t("tables.querySurface")}
+      >
+        <div className="table-toolbar-scroll scrollbar-sleek">
+          <div className="ds-toolbar-group">
+            <button
+              className="btn small ghost table-row-action"
+              disabled={!canEdit}
+              title={canEdit ? t("tables.insert") : noEditTitle}
+              aria-label={t("tables.insert")}
+              onClick={() => openEdit("insert")}
+            >
+              <Icon name="plus" />
+              <span className="table-action-label">{t("tables.insert")}</span>
             </button>
-          )}
+            <button
+              className="btn small ghost table-row-action"
+              disabled={!canEdit || selected == null}
+              title={canEdit ? t("tables.edit") : noEditTitle}
+              aria-label={t("tables.edit")}
+              onClick={() => openEdit("edit")}
+            >
+              <Icon name="pencil" />
+              <span className="table-action-label">{t("tables.edit")}</span>
+            </button>
+            <button
+              className="btn small danger-ghost table-row-action"
+              disabled={!canEdit || selected == null}
+              title={canEdit ? t("tables.delete") : noEditTitle}
+              aria-label={t("tables.delete")}
+              onClick={doDelete}
+            >
+              <Icon name="trash" />
+              <span className="table-action-label">{t("tables.delete")}</span>
+            </button>
+            {staged.length > 0 && (
+              <>
+                <button
+                  className="btn small active"
+                  onClick={() => {
+                    setReviewing(true);
+                    setEditor(null);
+                    setPendingDelete(null);
+                    setCellSel(null);
+                  }}
+                  title={t("tables.reviewStaged")}
+                >
+                  <Icon name="check" />
+                  {t("tables.stagedCount", { count: staged.length })}
+                </button>
+                <button
+                  className="btn small icon-only"
+                  onClick={() => {
+                    setStaged([]);
+                    setReviewing(false);
+                    setStagedProposal(null);
+                  }}
+                  title={t("tables.discardStaged")}
+                  aria-label={t("tables.discardStaged")}
+                >
+                  <Icon name="close" />
+                </button>
+              </>
+            )}
+          </div>
+          <span className="table-toolbar-divider" aria-hidden="true" />
+          <div className="table-query-state" aria-label={t("tables.querySurface")}>
+            <span
+              className={activeFilters ? "table-state active" : "table-state"}
+              title={t("tables.filterState")}
+            >
+              <Icon name="filter" />
+              {activeFilters
+                ? t(activeFilters > 1 ? "tables.activeFiltersPlural" : "tables.activeFilters", {
+                    count: activeFilters,
+                  })
+                : t("tables.noFilters")}
+            </span>
+            <span
+              className={sort ? "table-state active" : "table-state"}
+              title={t("tables.sortState")}
+            >
+              <Icon name="sort" />
+              {sort ? `${sort.col} ${sort.dir.toUpperCase()}` : t("tables.unsorted")}
+            </span>
+            <span
+              className={safety.allowWrites ? "table-state risk" : "table-state"}
+              title={t("tables.writePolicy")}
+            >
+              <Icon name={safety.allowWrites ? "pencil" : "circleSlash"} />
+              {safety.allowWrites
+                ? t("tables.writePolicyWrites")
+                : t("tables.writePolicyReadonly")}
+            </span>
+            {activeFilters > 0 && (
+              <button className="btn small" onClick={() => setFilters({})}>
+                {t("tables.clear")}
+              </button>
+            )}
+          </div>
         </div>
-        <span className="ds-toolbar-spacer" />
         <Pager
           page={page}
           pageSize={pageSize}
@@ -609,7 +619,7 @@ function SqlTableData({
           onRefresh={() => void rowsQuery.refetch()}
         >
           <button
-            className={`btn small${jobsOpen ? " active" : ""}`}
+            className={`btn small icon-only table-secondary-action${jobsOpen ? " active" : ""}`}
             disabled={!catalogRelation}
             aria-expanded={jobsOpen}
             title={
@@ -629,7 +639,7 @@ function SqlTableData({
             <Icon name="download" />
           </button>
           <button
-            className={`btn small${structure ? " active" : ""}`}
+            className={`btn small icon-only table-secondary-action${structure ? " active" : ""}`}
             aria-expanded={structure}
             title={t("tables.structureTitle")}
             aria-label={t("tables.structureTitle")}
@@ -637,56 +647,100 @@ function SqlTableData({
           >
             <Icon name="columns" />
           </button>
-          <details className="toolbar-menu">
-            <summary
-              className="btn small"
-              title={t("tables.more")}
-              aria-label={t("tables.more")}
+          <ToolbarMenu label={t("tables.more")} icon="moreVertical">
+            <button
+              type="button"
+              role="menuitem"
+              className="ds-menu-item"
+              disabled={busy}
+              onClick={() => void rowsQuery.refetch()}
             >
-              <Icon name="moreVertical" />
-            </summary>
-            <div className="toolbar-menu-panel">
-              <button
-                className="btn small"
-                disabled={!canEdit || selected == null}
-                title={canEdit ? undefined : noEditTitle}
-                onClick={() => openEdit("duplicate")}
-              >
-                <Icon name="copy" />
-                {t("tables.duplicate")}
-              </button>
-              <button className="btn small" disabled={selected == null} onClick={() => copyRow(false)}>
-                <Icon name="copy" />
-                {t("tables.copyTsv")}
-              </button>
-              <button className="btn small" disabled={selected == null} onClick={() => copyRow(true)}>
-                <Icon name="copy" />
-                {t("tables.copyJson")}
-              </button>
-              <button
-                className="btn small"
-                disabled={!rows}
-                title={t("tables.exportPageTitle")}
-                onClick={() =>
-                  result && downloadCsv(`${table.name}-page${page + 1}-${stamp()}`, result.columns, result.rows)
-                }
-              >
-                <Icon name="download" />
-                {t("tables.exportCsv")}
-              </button>
-              <button
-                className="btn small"
-                disabled={!rows}
-                title={t("tables.exportPageTitle")}
-                onClick={() =>
-                  result && downloadJson(`${table.name}-page${page + 1}-${stamp()}`, result.columns, result.rows)
-                }
-              >
-                <Icon name="download" />
-                {t("tables.exportJson")}
-              </button>
-            </div>
-          </details>
+              <Icon name="refresh" />
+              {t("common.refresh")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="ds-menu-item"
+              disabled={!catalogRelation}
+              onClick={() => {
+                setJobsOpen((open) => !open);
+                setReviewing(false);
+                setEditor(null);
+                setPendingDelete(null);
+                setCellSel(null);
+              }}
+            >
+              <Icon name="download" />
+              {t("jobs.open")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="ds-menu-item"
+              onClick={() => setStructure((current) => !current)}
+            >
+              <Icon name="columns" />
+              {t("tables.structureTitle")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="ds-menu-item"
+              disabled={!canEdit || selected == null}
+              title={canEdit ? undefined : noEditTitle}
+              onClick={() => openEdit("duplicate")}
+            >
+              <Icon name="copy" />
+              {t("tables.duplicate")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="ds-menu-item"
+              disabled={selected == null}
+              onClick={() => copyRow(false)}
+            >
+              <Icon name="copy" />
+              {t("tables.copyTsv")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="ds-menu-item"
+              disabled={selected == null}
+              onClick={() => copyRow(true)}
+            >
+              <Icon name="copy" />
+              {t("tables.copyJson")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="ds-menu-item"
+              disabled={!rows}
+              title={t("tables.exportPageTitle")}
+              onClick={() =>
+                result && downloadCsv(`${table.name}-page${page + 1}-${stamp()}`, result.columns, result.rows)
+              }
+            >
+              <Icon name="download" />
+              {t("tables.exportCsv")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="ds-menu-item"
+              disabled={!rows}
+              title={t("tables.exportPageTitle")}
+              onClick={() =>
+                result && downloadJson(`${table.name}-page${page + 1}-${stamp()}`, result.columns, result.rows)
+              }
+            >
+              <Icon name="download" />
+              {t("tables.exportJson")}
+            </button>
+          </ToolbarMenu>
         </Pager>
       </div>
 
@@ -815,7 +869,7 @@ function SqlTableData({
               <div className="row-editor">
                 <div className="panel-head">
                   <strong>{t("tables.deleteRow")}</strong>
-                  <button className="btn small" aria-label={t("common.cancel")} onClick={() => setPendingDelete(null)}>
+                  <button className="btn small icon-only icon-xs" aria-label={t("common.cancel")} onClick={() => setPendingDelete(null)}>
                     <Icon name="close" />
                   </button>
                 </div>
@@ -852,7 +906,7 @@ function SqlTableData({
                     </div>
                   </div>
                   <button
-                    className="btn small"
+                    className="btn small icon-only icon-xs"
                     aria-label={t("common.close")}
                     onClick={() => {
                       setReviewing(false);
@@ -875,7 +929,7 @@ function SqlTableData({
                       </div>
                       {!stagedProposal && (
                         <button
-                          className="btn small"
+                          className="btn small icon-only icon-xs"
                           onClick={() =>
                             setStaged((current) =>
                               current.filter(

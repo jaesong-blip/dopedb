@@ -76,10 +76,21 @@
   gap: var(--ds-space-1);
   flex-wrap: nowrap;
   min-width: 0;
-  /* Popovers are anchored inside this row, so clipping/scroll containment would
-     cut them off. Narrow layouts wrap the row instead of turning it into a scroller. */
-  overflow: visible;
+  overflow: hidden;
   padding: var(--ds-space-1) 0;
+}
+.table-toolbar-scroll {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+}
+.table-toolbar-scroll > * {
+  flex: 0 0 auto;
 }
 .grid-toolbar .ds-toolbar-group {
   flex-wrap: nowrap;
@@ -90,9 +101,9 @@
   gap: var(--ds-icon-text-gap-tight);
 }
 .grid-toolbar .btn.active {
-  border-color: var(--ds-accent-text);
-  background: var(--ds-accent-soft);
-  color: var(--ds-accent-text);
+  border-color: transparent;
+  background: var(--ds-selection);
+  color: var(--ds-selection-foreground);
 }
 .table-toolbar-divider {
   width: var(--ds-border-width);
@@ -126,33 +137,6 @@
 }
 .table-state.risk {
   color: var(--ds-warning);
-}
-.toolbar-menu {
-  position: relative;
-}
-.toolbar-menu summary {
-  list-style: none;
-  cursor: pointer;
-}
-.toolbar-menu summary::-webkit-details-marker {
-  display: none;
-}
-.toolbar-menu-panel {
-  position: absolute;
-  z-index: var(--ds-z-sticky);
-  top: calc(100% + var(--ds-popover-offset-lg));
-  right: 0;
-  min-width: 152px;
-  display: grid;
-  gap: var(--ds-space-2);
-  padding: var(--ds-space-2);
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-surface-0);
-  box-shadow: var(--ds-shadow-panel);
-}
-.toolbar-menu-panel .btn {
-  justify-content: flex-start;
 }
 
 .table-structure {
@@ -269,6 +253,7 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: var(--ds-space-1);
 }
 
@@ -286,16 +271,6 @@
 }
 
 @container table-data-pane (max-width: 920px) {
-  .table-data-context {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--ds-space-1);
-    padding-bottom: var(--ds-space-2);
-  }
-  .table-data-context .ds-meta-row {
-    width: 100%;
-    justify-content: flex-start;
-  }
   .table-structure {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -310,12 +285,6 @@
 }
 
 @container table-data-pane (max-width: 760px) {
-  .toolbar-menu-panel {
-    left: auto;
-    right: 0;
-    min-width: 0;
-  }
-
   .grid-panel {
     max-height: min(360px, 44dvh);
   }
@@ -325,22 +294,39 @@
     display: none;
   }
 
+  .table-data .grid-toolbar .btn.table-row-action {
+    width: var(--ds-control-md);
+    min-width: var(--ds-control-md);
+    flex-basis: var(--ds-control-md);
+    gap: 0;
+    padding-inline: 0;
+  }
+
   .table-toolbar-divider {
     margin-right: 0;
+  }
+
+  .grid-toolbar .table-edge-page-action,
+  .grid-toolbar .table-secondary-action {
+    display: none;
+  }
+}
+
+@container table-data-pane (max-width: 640px) {
+  .table-data-context {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--ds-space-1);
+    padding-bottom: var(--ds-space-2);
+  }
+  .table-data-context .ds-meta-row {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 
 @container table-data-pane (max-width: 480px) {
-  .grid-toolbar {
-    flex-wrap: wrap;
-  }
-
-  .grid-toolbar > .ds-toolbar-spacer {
+  .grid-toolbar .table-refresh-action {
     display: none;
-  }
-
-  .table-pager {
-    width: 100%;
-    justify-content: flex-end;
   }
 }

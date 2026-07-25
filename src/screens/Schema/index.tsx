@@ -139,7 +139,7 @@ export default function SchemaExplorer({
             type="search"
           />
           <button
-            className={`btn small${editorOpen ? " active" : ""}`}
+            className={`btn small icon-only${editorOpen ? " active" : ""}`}
             type="button"
             aria-expanded={editorOpen}
             title={t("schema.editorTitle")}
@@ -149,7 +149,7 @@ export default function SchemaExplorer({
             <Icon name="pencil" />
           </button>
           <button
-            className={`btn small${inspectorOpen ? " active" : ""}`}
+            className={`btn small icon-only${inspectorOpen ? " active" : ""}`}
             type="button"
             aria-expanded={inspectorOpen}
             aria-controls="schema-inspector"

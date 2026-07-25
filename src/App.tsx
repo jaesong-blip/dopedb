@@ -198,6 +198,7 @@ function WorkbenchRail({
   area,
   dashboardAvailable,
   settingsOpen,
+  sidebarExpanded,
   account,
   onArea,
   onSettings,
@@ -205,6 +206,7 @@ function WorkbenchRail({
   area: AppArea | null;
   dashboardAvailable: boolean;
   settingsOpen: boolean;
+  sidebarExpanded: boolean;
   account: ReactNode;
   onArea: (area: AppArea) => void;
   onSettings: () => void;
@@ -258,6 +260,8 @@ function WorkbenchRail({
             title={t(item.label)}
             aria-label={t(item.label)}
             aria-current={area === item.id ? "page" : undefined}
+            aria-controls="workbench-sidebar"
+            aria-expanded={area === item.id ? sidebarExpanded : undefined}
             disabled={item.id === "dashboard" && !dashboardAvailable}
           >
             <Icon name={item.icon} />
@@ -346,6 +350,27 @@ function Shell() {
   const [terminalOverlay, setTerminalOverlay] = useState(
     () => window.matchMedia("(max-width: 900px)").matches,
   );
+  const [compactShell, setCompactShell] = useState(
+    () => window.matchMedia("(max-width: 560px)").matches,
+  );
+  const [mobileExplorerOpen, setMobileExplorerOpen] = useState(false);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const dismissMobileExplorer = useCallback((restoreRailFocus = false) => {
+    setMobileExplorerOpen(false);
+    if (restoreRailFocus) {
+      window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLButtonElement>(
+            '.workbench-rail-button[aria-current="page"]',
+          )
+          ?.focus();
+      });
+    }
+  }, []);
+  const focusMainAfterMobileSelection = useCallback(() => {
+    if (!window.matchMedia("(max-width: 560px)").matches) return;
+    window.requestAnimationFrame(() => mainRef.current?.focus({ preventScroll: true }));
+  }, []);
   const [dashboardFocusId, setDashboardFocusId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -515,6 +540,25 @@ function Shell() {
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 560px)");
+    const sync = () => {
+      setCompactShell(media.matches);
+      if (!media.matches) setMobileExplorerOpen(false);
+    };
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileExplorerOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dismissMobileExplorer(true);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [dismissMobileExplorer, mobileExplorerOpen]);
 
   // CodeMirror is intentionally split out of the startup bundle. Warm that chunk only
   // after a SQL-capable connection exists, using idle time so the first SQL click does
@@ -726,6 +770,7 @@ function Shell() {
     setSettingsOpen(false);
     setEditing(null);
     setSchemaDiffGroupKey(null);
+    setMobileExplorerOpen(false);
     openTerminalDock();
   }
 
@@ -748,10 +793,15 @@ function Shell() {
     setSchemaDiffGroupKey(null);
     setDashboardFocusId(null);
     setAgentLogOpen(false);
+    setMobileExplorerOpen(false);
     setArea(nextArea);
+    focusMainAfterMobileSelection();
   }
 
-  function activateDocument(document: WorkbenchDocument) {
+  function activateDocument(
+    document: WorkbenchDocument,
+    closeMobileExplorer = true,
+  ) {
     setDocuments((current) =>
       current.some((candidate) => candidate.id === document.id)
         ? current
@@ -761,6 +811,10 @@ function Shell() {
     setEditing(null);
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
+    if (closeMobileExplorer) {
+      setMobileExplorerOpen(false);
+      if (mobileExplorerOpen) focusMainAfterMobileSelection();
+    }
     setArea("workspace");
   }
 
@@ -773,9 +827,12 @@ function Shell() {
     activateDocument(tableDocument(connection.id, table));
   }
 
-  function openStableDocument(kind: "schema" | "activity") {
+  function openStableDocument(
+    kind: "schema" | "activity",
+    closeMobileExplorer = true,
+  ) {
     if (!selected) return;
-    activateDocument(stableDocument(selected.id, kind));
+    activateDocument(stableDocument(selected.id, kind), closeMobileExplorer);
   }
 
   async function openQueryDocument() {
@@ -860,6 +917,8 @@ function Shell() {
     setEditing("new");
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
+    setMobileExplorerOpen(false);
+    focusMainAfterMobileSelection();
   }
 
   function renderMain() {
@@ -965,7 +1024,7 @@ function Shell() {
               <button
                 ref={terminalButtonRef}
                 type="button"
-                className={`btn small main-terminal-toggle${showTerminalDock ? " active" : ""}`}
+                className={`btn small icon-only main-terminal-toggle${showTerminalDock ? " active" : ""}`}
                 onClick={toggleTerminalDock}
                 title={t("terminal.title")}
                 aria-label={t("terminal.title")}
@@ -1088,7 +1147,7 @@ function Shell() {
     <div
       className={`app${IS_MACOS ? " platform-macos" : ""}${
         showTerminalDock ? " terminal-open" : ""
-      }`}
+      }${mobileExplorerOpen ? " mobile-explorer-open" : ""}`}
       style={{
         gridTemplateColumns: `48px ${sidebarW}px 5px minmax(0, 1fr) ${
           showTerminalDock && !terminalOverlay
@@ -1101,22 +1160,29 @@ function Shell() {
         area={settingsOpen ? null : area}
         dashboardAvailable={!selected || supportsSql}
         settingsOpen={settingsOpen}
+        sidebarExpanded={!compactShell || mobileExplorerOpen}
         account={
           <WorkspaceAccount compact onScopeChanged={reloadWorkspaceScope} />
         }
         onArea={(next) => {
+          const sameArea = next === area && !settingsOpen;
           setSettingsOpen(false);
           setEditing(null);
           setSchemaDiffGroupKey(null);
           setArea(next);
           if (next === "workspace" && selected) {
-            openStableDocument("schema");
+            openStableDocument("schema", false);
+          }
+          if (compactShell) {
+            if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
+            else setMobileExplorerOpen(true);
           }
         }}
         onSettings={() => {
           setSettingsSection(undefined);
           setSettingsOpen(true);
           setSchemaDiffGroupKey(null);
+          setMobileExplorerOpen(false);
         }}
       />
       {area === "dashboard" && !settingsOpen && editing === null && !activeSchemaGroup ? (
@@ -1182,6 +1248,14 @@ function Shell() {
           }}
         />
       )}
+      <button
+        type="button"
+        className="mobile-sidebar-scrim"
+        aria-label={t("common.close")}
+        aria-hidden={!mobileExplorerOpen}
+        tabIndex={mobileExplorerOpen ? 0 : -1}
+        onClick={() => dismissMobileExplorer(true)}
+      />
       <div
         className="sidebar-resizer"
         title={t("app.dragResize")}
@@ -1191,7 +1265,12 @@ function Shell() {
           localStorage.setItem("sidebarW", String(SIDEBAR_DEFAULT));
         }}
       />
-      <main className="main">
+      <main
+        ref={mainRef}
+        className="main"
+        tabIndex={-1}
+        inert={mobileExplorerOpen ? true : undefined}
+      >
         {renderMain()}
         {showUpdateBadge && (
           <div className="ds-attention-stack">

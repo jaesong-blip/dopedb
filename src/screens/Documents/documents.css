@@ -2,6 +2,7 @@
    lay out per operation below it. */
 
 .documents-toolbar {
+  --ds-row-control-size: var(--ds-control-md);
   min-height: var(--ds-control-lg);
 }
 .documents-toolbar h2 {

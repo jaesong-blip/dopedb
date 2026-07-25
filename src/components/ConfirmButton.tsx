@@ -9,12 +9,14 @@ export default function ConfirmButton({
   className = "btn",
   disabled,
   confirmLabel,
+  label,
 }: {
   children: ReactNode;
   onConfirm: () => void;
   className?: string;
   disabled?: boolean;
   confirmLabel?: string;
+  label?: string;
 }) {
   const { t } = useI18n();
   const [armed, setArmed] = useState(false);
@@ -25,8 +27,11 @@ export default function ConfirmButton({
   if (!armed) {
     return (
       <button
+        type="button"
         className={className}
         disabled={disabled}
+        title={label}
+        aria-label={label}
         onClick={() => {
           setArmed(true);
           timer.current = window.setTimeout(() => setArmed(false), 3000);
@@ -47,6 +52,7 @@ export default function ConfirmButton({
     >
       <span className="muted">{confirmLabel ?? t("common.reallyDelete")}</span>
       <button
+        type="button"
         className="btn danger small"
         disabled={disabled}
         onClick={() => {
@@ -58,6 +64,7 @@ export default function ConfirmButton({
         {t("common.yes")}
       </button>
       <button
+        type="button"
         className="btn small"
         autoFocus
         disabled={disabled}

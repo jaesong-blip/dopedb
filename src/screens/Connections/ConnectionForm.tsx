@@ -461,7 +461,7 @@ export function ConnectionForm({
         <h2>{isNew ? t("connections.new") : t("connections.edit")}</h2>
         <button
           type="button"
-          className="form-close-btn"
+          className="btn small icon-only icon-xs"
           onClick={onCancel}
           title={t("common.close")}
           aria-label={t("common.close")}

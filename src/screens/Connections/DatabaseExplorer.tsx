@@ -839,7 +839,7 @@ export function DatabaseExplorer({
           >
             <button
               type="button"
-              className="db-menu-trigger"
+              className="btn small icon-only icon-xs db-menu-trigger"
               title={t("connections.connectionMenu")}
               aria-label={t("connections.connectionMenu")}
               aria-expanded={openMenuId === c.id}
@@ -1257,7 +1257,7 @@ export function DatabaseExplorer({
   }
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" id="workbench-sidebar">
       {workspaceHeader}
 
       <div className="explorer">

@@ -363,35 +363,20 @@
 }
 
 .db-menu-trigger {
-  width: var(--ds-control-sm);
-  height: var(--ds-control-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: var(--ds-border-width) solid transparent;
-  border-radius: var(--ds-radius-pill);
   /* Solid: the overlaid trigger sits on top of the row's chips when shown. */
   background: var(--ds-surface-2);
-  color: var(--ds-text-muted);
-  cursor: pointer;
-  transition:
-    background 0.12s ease,
-    border-color 0.12s ease,
-    color 0.12s ease,
-    box-shadow 0.12s ease;
 }
 
 .db-menu-trigger .icon {
-  font-size: var(--ds-font-size-ui);
+  font-size: var(--ds-icon-sm);
 }
 
 .db-menu-trigger:hover,
 .db-menu-trigger:focus-visible,
 .db-menu.open .db-menu-trigger {
-  border-color: var(--ds-border-subtle);
-  background: var(--ds-surface-1);
+  border-color: transparent;
+  background: var(--ds-selection);
   color: var(--ds-text);
-  box-shadow: var(--ds-shadow-control);
 }
 
 .db-menu-panel {

@@ -109,7 +109,7 @@ export default function WorkspaceSwitcher({
         <div className="workspace-switcher-actions ds-control-row">
           <button
             type="button"
-            className="btn small workspace-add-button"
+            className="btn small icon-only workspace-add-button"
             onClick={onNew}
             title={t("connections.new")}
             aria-label={t("connections.new")}
@@ -118,7 +118,7 @@ export default function WorkspaceSwitcher({
           </button>
           <button
             type="button"
-            className="btn small workspace-dashboard-button"
+            className="btn small icon-only workspace-dashboard-button"
             onClick={() => void openDashboard()}
             disabled={!context.data?.feature.enabled || dashboardOpening}
             title={dashboardLabel}

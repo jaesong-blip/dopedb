@@ -349,7 +349,7 @@ export default function JobPanel({
           <span>{relationName}</span>
         </div>
         <button
-          className="btn small"
+          className="btn small icon-only icon-xs"
           onClick={onClose}
           aria-label={t("common.close")}
         >
@@ -645,7 +645,7 @@ export default function JobPanel({
         <div className="job-section-head">
           <strong>{t("jobs.history")}</strong>
           <button
-            className="btn small"
+            className="btn small icon-only"
             disabled={jobs.isFetching}
             onClick={() => void jobs.refetch()}
             aria-label={t("common.refresh")}
@@ -751,7 +751,7 @@ export default function JobPanel({
           <div className="job-section-head">
             <strong>{t("jobs.details")}</strong>
             <button
-              className="btn small"
+              className="btn small icon-only icon-xs"
               onClick={() => setDetail(null)}
               aria-label={t("common.close")}
             >

@@ -54,6 +54,9 @@
   --ds-list-indent: 18px;
   --ds-popover-offset: var(--ds-space-1);
   --ds-popover-offset-lg: 6px;
+  --ds-viewport-gutter: var(--ds-space-2);
+  --ds-menu-min-width: 176px;
+  --ds-menu-max-width: 320px;
   --ds-motion-distance-sm: 6px;
   --ds-active-offset: -1px;
 

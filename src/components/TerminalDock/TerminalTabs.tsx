@@ -112,7 +112,7 @@ export default function TerminalTabs({
       <div className="terminal-profile-menu-wrap">
         <button
           type="button"
-          className="btn small"
+          className="btn small icon-only"
           onClick={onToggleProfileMenu}
           title={t("terminal.newSession")}
           aria-label={t("terminal.newSession")}

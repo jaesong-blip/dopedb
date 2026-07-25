@@ -12,6 +12,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoots = [path.join(root, "src"), path.join(root, "workspace-cloud", "app")];
 const maxVisualDepth = 3;
 const controlTags = new Set(["button", "input", "select", "textarea", "summary"]);
+const legacyFloatingMenuClasses = new Set(["toolbar-menu", "toolbar-menu-panel"]);
 const explicitSurfaceClasses = new Set([
   "btn",
   "badge",
@@ -94,6 +95,14 @@ function isVisualBoundary(opening) {
 
 function checkControlRow(opening, file, errors) {
   const names = classNames(opening);
+  for (const name of names) {
+    if (legacyFloatingMenuClasses.has(name)) {
+      errors.push(
+        `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+          `legacy clipped menu class "${name}" is forbidden; use ToolbarMenu`,
+      );
+    }
+  }
   if (
     names.some((name) => controlRowClassPattern.test(name)) &&
     !names.includes("ds-control-row")
@@ -103,12 +112,60 @@ function checkControlRow(opening, file, errors) {
         `control row must include ds-control-row: ${names.join(" ")}`,
     );
   }
+  if (
+    tagName(opening) === "button" &&
+    names.includes("icon-only") &&
+    !attribute(opening, "aria-label") &&
+    !attribute(opening, "aria-labelledby")
+  ) {
+    errors.push(
+      `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+        "icon-only button must have an aria-label or aria-labelledby",
+    );
+  }
+  if (
+    tagName(opening) === "button" &&
+    names.includes("ds-menu-item") &&
+    attribute(opening, "role")?.value?.value !== "menuitem"
+  ) {
+    errors.push(
+      `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+        'ToolbarMenu button must declare role="menuitem"',
+    );
+  }
+}
+
+function checkSimpleIconButton(element, file, errors) {
+  const opening = element.openingElement;
+  if (tagName(opening) !== "button" || !classNames(opening).includes("btn")) return;
+  const meaningfulChildren = element.children.filter((child) => {
+    if (child.type === "JSXText") return child.value.trim().length > 0;
+    return !(
+      child.type === "JSXExpressionContainer" &&
+      child.expression.type === "JSXEmptyExpression"
+    );
+  });
+  if (
+    meaningfulChildren.length !== 1 ||
+    meaningfulChildren[0].type !== "JSXElement" ||
+    tagName(meaningfulChildren[0].openingElement) !== "Icon"
+  ) {
+    return;
+  }
+  if (classNames(opening).includes("icon-only")) return;
+  errors.push(
+    `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+      'single-icon .btn must include "icon-only" to reserve a square hit target',
+  );
 }
 
 function walk(node, file, depth, ancestry, errors) {
   if (!node || typeof node !== "object") return;
   const opening = node.type === "JSXElement" ? node.openingElement : null;
-  if (opening) checkControlRow(opening, file, errors);
+  if (opening) {
+    checkControlRow(opening, file, errors);
+    checkSimpleIconButton(node, file, errors);
+  }
   const boundary = opening ? isVisualBoundary(opening) : false;
   const nextDepth = depth + Number(boundary);
   const nextAncestry = boundary && opening
@@ -146,6 +203,62 @@ const guardFixtureErrors = [];
 walk(guardFixture, "<ui-depth-self-test>", 0, [], guardFixtureErrors);
 if (guardFixtureErrors.length === 0) {
   throw new Error("UI depth guard self-test failed to detect a four-level boundary");
+}
+
+const legacyMenuFixture = parse('<div className="toolbar-menu" />', {
+  sourceType: "module",
+  plugins: ["jsx"],
+});
+const legacyMenuFixtureErrors = [];
+walk(legacyMenuFixture, "<ui-menu-self-test>", 0, [], legacyMenuFixtureErrors);
+if (!legacyMenuFixtureErrors.some((error) => error.includes("legacy clipped menu"))) {
+  throw new Error("UI menu guard self-test failed to detect a clipped legacy menu");
+}
+
+const iconButtonFixture = parse(
+  '<button className="btn small" aria-label="Refresh"><Icon name="refresh" /></button>',
+  { sourceType: "module", plugins: ["jsx"] },
+);
+const iconButtonFixtureErrors = [];
+walk(iconButtonFixture, "<ui-icon-button-self-test>", 0, [], iconButtonFixtureErrors);
+if (!iconButtonFixtureErrors.some((error) => error.includes('must include "icon-only"'))) {
+  throw new Error("UI icon-button guard self-test failed to detect an unbounded icon button");
+}
+
+const unnamedIconButtonFixture = parse(
+  '<button className="btn small icon-only"><Icon name="refresh" /></button>',
+  { sourceType: "module", plugins: ["jsx"] },
+);
+const unnamedIconButtonFixtureErrors = [];
+walk(
+  unnamedIconButtonFixture,
+  "<ui-icon-button-name-self-test>",
+  0,
+  [],
+  unnamedIconButtonFixtureErrors,
+);
+if (
+  !unnamedIconButtonFixtureErrors.some((error) =>
+    error.includes("aria-label or aria-labelledby"),
+  )
+) {
+  throw new Error("UI icon-button guard self-test failed to detect a missing accessible name");
+}
+
+const unnamedMenuItemFixture = parse(
+  '<button className="ds-menu-item">Refresh</button>',
+  { sourceType: "module", plugins: ["jsx"] },
+);
+const unnamedMenuItemFixtureErrors = [];
+walk(
+  unnamedMenuItemFixture,
+  "<ui-menu-item-role-self-test>",
+  0,
+  [],
+  unnamedMenuItemFixtureErrors,
+);
+if (!unnamedMenuItemFixtureErrors.some((error) => error.includes('role="menuitem"'))) {
+  throw new Error("UI menu-item guard self-test failed to detect a missing menu role");
 }
 
 function targetClassNames(selectorList) {
@@ -231,6 +344,13 @@ for (const file of cssFiles) {
     const rule = /([^{}]+)\{([^{}]*)\}/g;
     for (const match of sourceWithoutComments.matchAll(rule)) {
       const selector = match[1];
+      if (/\.toolbar-menu(?:-panel)?(?![\w-])/.test(selector)) {
+        const line = source.slice(0, match.index).split("\n").length;
+        errors.push(
+          `${path.relative(root, file)}:${line} legacy clipped menu selector is forbidden; ` +
+            "use the portalled ToolbarMenu contract",
+        );
+      }
       const targetsControl =
         /(?:^|[\s>+~,(:])(?:button|input|select|summary)(?=[\s.#[:>+~,)\]]|$)/.test(selector) ||
         /[._-](?:btn|button|seg)(?:[^\w-]|$)/.test(selector);

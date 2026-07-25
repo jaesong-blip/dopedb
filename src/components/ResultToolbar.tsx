@@ -23,7 +23,7 @@ export default function ResultToolbar({
   return (
     <span className="result-tools">
       <button
-        className="btn small"
+        className="btn small ghost"
         title={t("results.copyTitle")}
         onClick={() =>
           navigator.clipboard
@@ -35,14 +35,14 @@ export default function ResultToolbar({
         {t("results.copy")}
       </button>
       <button
-        className="btn small"
+        className="btn small ghost"
         title={t("results.downloadCsvTitle")}
         onClick={() => downloadCsv(filenameBase, columns, rows)}
       >
         {scopeLabel ? t("results.exportCsv", { scope: scopeLabel }) : "CSV"}
       </button>
       <button
-        className="btn small"
+        className="btn small ghost"
         title={t("results.downloadJsonTitle")}
         onClick={() => downloadJson(filenameBase, columns, rows)}
       >

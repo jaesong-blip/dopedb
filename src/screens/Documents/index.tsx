@@ -179,7 +179,7 @@ export default function Documents({
         </label>
         <span className="ds-toolbar-spacer" />
         <button
-          className="btn primary"
+          className="btn primary small"
           disabled={!collection || running}
           onClick={() => void execute()}
         >
@@ -187,7 +187,7 @@ export default function Documents({
           {running ? t("documents.running") : t("documents.run")}
         </button>
         {running && (
-          <button className="btn" onClick={cancel}>
+          <button className="btn small" onClick={cancel}>
             {t("documents.cancel")}
           </button>
         )}

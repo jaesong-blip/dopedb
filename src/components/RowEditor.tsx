@@ -143,7 +143,7 @@ export default function RowEditor({
             </span>
           )}
         </div>
-        <button className="btn small" onClick={onCancel} aria-label={t("common.close")}>
+        <button className="btn small icon-only icon-xs" onClick={onCancel} aria-label={t("common.close")}>
           <Icon name="close" />
         </button>
       </div>

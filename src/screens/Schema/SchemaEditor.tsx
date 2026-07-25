@@ -434,7 +434,7 @@ export default function SchemaEditor({
           </span>
         </div>
         <button
-          className="btn small"
+          className="btn small icon-only icon-xs"
           type="button"
           onClick={onClose}
           title={t("common.close")}

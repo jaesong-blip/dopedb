@@ -37,7 +37,7 @@
 }
 
 .workspace-switcher-actions {
-  --ds-row-control-size: var(--ds-control-field);
+  --ds-row-control-size: var(--ds-control-md);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -46,13 +46,13 @@
 
 .workspace-add-button,
 .workspace-dashboard-button {
-  border: var(--ds-border-width) solid var(--ds-sidebar-border);
-  background: var(--ds-surface-1);
-  color: var(--ds-text);
-  width: var(--ds-control-field);
-  min-width: var(--ds-control-field);
-  height: var(--ds-control-field);
-  min-height: var(--ds-control-field);
+  border-color: transparent;
+  background: transparent;
+  color: var(--ds-text-muted);
+  width: var(--ds-control-md);
+  min-width: var(--ds-control-md);
+  height: var(--ds-control-md);
+  min-height: var(--ds-control-md);
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -61,7 +61,7 @@
 
 .workspace-add-button:hover,
 .workspace-dashboard-button:hover {
-  border-color: var(--ds-border-strong);
+  border-color: transparent;
   background: var(--ds-hover);
   color: var(--ds-text);
 }
