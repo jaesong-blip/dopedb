@@ -90,7 +90,7 @@ export default function RowEditor({
         for (const c of pkColumns(table)) pkValues[c.name] = initial[c.name] ?? null;
         const setValues: Record<string, string | null> = {};
         for (const c of changedColumns) setValues[c.name] = vals[c.name] ?? null;
-        sql = buildUpdate(engine, table, pkValues, setValues);
+        sql = buildUpdate(engine, table, pkValues, setValues, initial);
         rationale = rationaleForEdit();
       } else {
         sql = buildInsert(engine, table, vals);

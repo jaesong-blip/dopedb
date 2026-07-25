@@ -7,6 +7,7 @@ pub mod catalog_command;
 pub mod command;
 pub mod connection;
 pub mod dashboard_command;
+pub mod ddl;
 pub mod discovery;
 pub mod document_command;
 pub mod error;
@@ -28,6 +29,7 @@ pub use command::{
 };
 pub use connection::*;
 pub use dashboard_command::*;
+pub use ddl::*;
 pub use discovery::{
     RuntimeDiscovery, RuntimeDiscoveryError, RUNTIME_DIRECTORY_NAME, RUNTIME_FILE_NAME,
     RUNTIME_SCHEMA_VERSION,

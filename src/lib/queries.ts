@@ -11,6 +11,7 @@ import {
   cancelQuery,
   detectAgentClis,
   getCatalog,
+  getCatalogSnapshot,
   getChatMessages,
   getActiveWorkspace,
   getMonitoringStatus,
@@ -18,7 +19,9 @@ import {
   listChatThreads,
   listDashboards,
   listDrivers,
+  listErdLayouts,
   listHistory,
+  listJobs,
   listWorkspaces,
   platformFeatureFlags,
   refreshCatalog,
@@ -93,6 +96,8 @@ export type TableRowsArgs = {
 // invalidation is a prefix match and never has to enumerate sub-resources.
 export const qk = {
   catalog: (connectionId: string) => ["catalog", connectionId] as const,
+  catalogSnapshot: (connectionId: string) =>
+    ["catalogSnapshot", connectionId] as const,
   history: (connectionId: string) => ["history", connectionId] as const,
   audit: (connectionId: string) => ["audit", connectionId] as const,
   auditVerdict: (connectionId: string) => ["audit", connectionId, "verdict"] as const,
@@ -125,6 +130,9 @@ export const qk = {
     ] as const,
   documentCount: (connectionId: string, collection: string) =>
     ["documentCount", connectionId, collection] as const,
+  erdLayouts: (connectionId: string) =>
+    ["erdLayouts", connectionId] as const,
+  jobs: (connectionId: string) => ["jobs", connectionId] as const,
 };
 
 export function workspaceContextQuery() {
@@ -242,6 +250,36 @@ export function catalogQuery(connectionId: string) {
         SCHEMA_LOAD_TIMEOUT_MS,
         "Schema loading timed out. Check the database connection or retry.",
       ),
+  });
+}
+
+export function catalogSnapshotQuery(connectionId: string) {
+  return queryOptions({
+    queryKey: qk.catalogSnapshot(connectionId),
+    staleTime: CATALOG_STALE_MS,
+    ...transientRetry,
+    queryFn: () =>
+      withTimeout(
+        getCatalogSnapshot(connectionId),
+        SCHEMA_LOAD_TIMEOUT_MS,
+        "Catalog snapshot loading timed out. Check the database connection or retry.",
+      ),
+  });
+}
+
+export function erdLayoutsQuery(connectionId: string) {
+  return queryOptions({
+    queryKey: qk.erdLayouts(connectionId),
+    staleTime: Infinity,
+    queryFn: () => listErdLayouts(connectionId),
+  });
+}
+
+export function jobsQuery(connectionId: string) {
+  return queryOptions({
+    queryKey: qk.jobs(connectionId),
+    staleTime: Infinity,
+    queryFn: () => listJobs(connectionId),
   });
 }
 

@@ -214,6 +214,55 @@
   background: transparent;
 }
 
+.staged-change-review .panel-head > div {
+  min-width: 0;
+}
+
+.staged-change-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.staged-change-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+  padding-block: var(--ds-space-2);
+  border-top: var(--ds-border-width) solid var(--ds-border-subtle);
+}
+
+.staged-change-list li > div {
+  min-width: 0;
+}
+
+.staged-change-list strong,
+.staged-change-list code {
+  display: block;
+}
+
+.staged-change-list code {
+  margin-top: var(--ds-space-1);
+  overflow-wrap: anywhere;
+  color: var(--ds-text-muted);
+  font-size: var(--ds-font-size-xs);
+}
+
+.staged-confirmation {
+  display: grid;
+  gap: var(--ds-space-2);
+  margin-top: var(--ds-space-3);
+  font-size: var(--ds-font-size-sm);
+}
+
+.staged-confirmation input {
+  width: 100%;
+  font-family: var(--ds-font-mono);
+}
+
 /* Table data pager + wide-cell handling */
 .table-pager {
   --ds-row-control-size: var(--ds-control-field-sm);

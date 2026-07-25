@@ -6,6 +6,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   AuditSnapshot,
   Catalog,
+  CatalogSnapshot,
   ChatMessageRecord,
   ChatThread,
   CliInstallReceipt,
@@ -13,13 +14,22 @@ import type {
   CliInfo,
   Classification,
   ConnectionProfile,
+  CreateSqlDocumentRequest,
   Dashboard,
   DocumentPage,
   DocumentOperationProposal,
   DocumentQuery,
   DriverDescriptor,
+  ErdLayout,
   ExecOutcome,
   HistoryEntry,
+  CreateJobRequest,
+  Job,
+  JobDetail,
+  JobFileCapability,
+  JobFormat,
+  JobInputInspection,
+  JobProposal,
   LegacyMcpCleanupExpectation,
   LegacyMcpCleanupReceipt,
   LegacyMcpCleanupStatus,
@@ -28,9 +38,17 @@ import type {
   OperationDecision,
   PlatformFeatureFlags,
   PreviewReport,
+  DdlPlan,
   ScriptOutcome,
   SafetySettings,
   ScriptOperationProposal,
+  SaveErdLayoutOutcome,
+  SaveErdLayoutRequest,
+  SaveSqlDocumentOutcome,
+  SaveSqlDocumentRequest,
+  SchemaChangeProposal,
+  SchemaChangeRequest,
+  SqlDocument,
   SqlOperationProposal,
   SkillMutationReceipt,
   SkillSelfTestReceipt,
@@ -292,6 +310,10 @@ export async function refreshCatalog(id: string): Promise<Catalog> {
   return JSON.parse(await invoke<string>("refresh_schema", { id })) as Catalog;
 }
 
+export function getCatalogSnapshot(id: string): Promise<CatalogSnapshot> {
+  return invoke("get_catalog_snapshot", { id });
+}
+
 // The CREATE-TABLE DDL for one table (MySQL/SQLite native; Postgres synthesized).
 export function getTableDdl(
   id: string,
@@ -415,6 +437,145 @@ export function proposeScript(
     sql,
     origin: origin ?? null,
   });
+}
+
+export function proposeTableChanges(
+  id: string,
+  statements: string[],
+  catalogFingerprint: string,
+): Promise<ScriptOperationProposal> {
+  return invoke("propose_table_changes", {
+    id,
+    statements,
+    catalogFingerprint,
+  });
+}
+
+export function previewSchemaChange(
+  id: string,
+  request: SchemaChangeRequest,
+): Promise<DdlPlan> {
+  return invoke("preview_schema_change", { id, request });
+}
+
+export function proposeSchemaChange(
+  id: string,
+  request: SchemaChangeRequest,
+): Promise<SchemaChangeProposal> {
+  return invoke("propose_schema_change", { id, request });
+}
+
+export function runSchemaChange(operationId: string): Promise<ScriptOutcome> {
+  return invoke("run_schema_change", { operationId });
+}
+
+export function listSqlDocuments(id: string): Promise<SqlDocument[]> {
+  return invoke("list_sql_documents", { id });
+}
+
+export function createSqlDocument(
+  request: CreateSqlDocumentRequest,
+): Promise<SqlDocument> {
+  return invoke("create_sql_document", { request });
+}
+
+export function saveSqlDocument(
+  request: SaveSqlDocumentRequest,
+): Promise<SaveSqlDocumentOutcome> {
+  return invoke("save_sql_document", { request });
+}
+
+export function deleteSqlDocument(
+  connectionId: string,
+  id: string,
+  expectedRevision: number,
+): Promise<void> {
+  return invoke("delete_sql_document", {
+    connectionId,
+    id,
+    expectedRevision,
+  });
+}
+
+export function listErdLayouts(id: string): Promise<ErdLayout[]> {
+  return invoke("list_erd_layouts", { id });
+}
+
+export function saveErdLayout(
+  request: SaveErdLayoutRequest,
+): Promise<SaveErdLayoutOutcome> {
+  return invoke("save_erd_layout", { request });
+}
+
+export function deleteErdLayout(
+  connectionId: string,
+  id: string,
+  expectedRevision: number,
+): Promise<void> {
+  return invoke("delete_erd_layout", {
+    connectionId,
+    id,
+    expectedRevision,
+  });
+}
+
+export function pickJobInput(
+  connectionId: string,
+): Promise<JobFileCapability | null> {
+  return invoke("pick_job_input", { connectionId });
+}
+
+export function pickJobOutput(
+  connectionId: string,
+  suggestedName: string,
+): Promise<JobFileCapability | null> {
+  return invoke("pick_job_output", { connectionId, suggestedName });
+}
+
+export function inspectJobInput(
+  connectionId: string,
+  capabilityId: string,
+  format: JobFormat,
+): Promise<JobInputInspection> {
+  return invoke("inspect_job_input", {
+    connectionId,
+    capabilityId,
+    format,
+  });
+}
+
+export function createJob(request: CreateJobRequest): Promise<JobProposal> {
+  return invoke("create_job", { request });
+}
+
+export function listJobs(connectionId: string): Promise<Job[]> {
+  return invoke("list_jobs", { connectionId });
+}
+
+export function getJob(
+  connectionId: string,
+  jobId: string,
+): Promise<JobDetail> {
+  return invoke("get_job", { connectionId, jobId });
+}
+
+export function startJob(connectionId: string, jobId: string): Promise<Job> {
+  return invoke("start_job", { connectionId, jobId });
+}
+
+export function pauseJob(connectionId: string, jobId: string): Promise<Job> {
+  return invoke("pause_job", { connectionId, jobId });
+}
+
+export function cancelJob(connectionId: string, jobId: string): Promise<Job> {
+  return invoke("cancel_job", { connectionId, jobId });
+}
+
+export function revealJobArtifact(
+  connectionId: string,
+  artifactId: string,
+): Promise<void> {
+  return invoke("reveal_job_artifact", { connectionId, artifactId });
 }
 
 export function getSafety(id: string): Promise<SafetySettings> {

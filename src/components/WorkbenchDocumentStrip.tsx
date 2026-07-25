@@ -35,7 +35,10 @@ export default function WorkbenchDocumentStrip({
     if (document.kind === "schema") return t("tabs.schema");
     if (document.kind === "activity") return t("tabs.activity");
     if (document.kind === "documents") return `${t("tabs.documents")} ${index + 1}`;
-    return `${t("tabs.sql")} ${index + 1}`;
+    if (document.kind === "sql") {
+      return document.title || `${t("tabs.sql")} ${index + 1}`;
+    }
+    return t("tabs.schema");
   }
 
   let queryIndex = 0;

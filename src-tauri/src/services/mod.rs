@@ -7,12 +7,16 @@ mod connection_credentials;
 mod connection_service;
 mod dashboard_service;
 mod document_service;
+mod erd_service;
+mod job_service;
 mod legacy_chat_service;
 mod monitoring_service;
 mod operation_service;
 mod query_service;
 mod safety_service;
+mod schema_service;
 mod script_service;
+mod sql_document_service;
 mod terminal_authority;
 mod terminal_run_registry;
 mod workspace_service;
@@ -31,6 +35,11 @@ pub(crate) use document_service::{
     AgentDocumentReadError, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
     DesktopDocumentReadError, DocumentReadReceipt, DocumentService, TerminalDocumentReadRequest,
 };
+pub(crate) use erd_service::{ErdLayout, ErdService, SaveErdLayoutOutcome, SaveErdLayoutRequest};
+pub(crate) use job_service::{
+    CreateJobRequest, Job, JobDetail, JobFileCapability, JobFormat, JobInputInspection,
+    JobProposal, JobService,
+};
 pub(crate) use legacy_chat_service::LegacyChatService;
 pub(crate) use monitoring_service::{
     MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringService,
@@ -47,9 +56,16 @@ pub(crate) use query_service::{
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
 pub(crate) use safety_service::SafetyService;
+pub(crate) use schema_service::{
+    SchemaChangePreviewRequest, SchemaChangeProposalReceipt, SchemaService,
+};
 pub(crate) use script_service::{
     DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
-    DesktopScriptRunReceipt, ScriptService,
+    DesktopScriptRunReceipt, SchemaScriptContext, ScriptService, TableScriptContext,
+};
+pub(crate) use sql_document_service::{
+    CreateSqlDocumentRequest, SaveSqlDocumentOutcome, SaveSqlDocumentRequest, SqlDocument,
+    SqlDocumentService,
 };
 pub(crate) use terminal_authority::TerminalAuthority;
 pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
@@ -71,11 +87,15 @@ pub(crate) struct ApplicationServices {
     pub(crate) catalog: CatalogService,
     pub(crate) dashboard: DashboardService,
     pub(crate) document: DocumentService,
+    pub(crate) erd: ErdService,
+    pub(crate) job: JobService,
     pub(crate) monitoring: MonitoringService,
     pub(crate) operation: OperationService,
     pub(crate) query: QueryService,
     pub(crate) safety: SafetyService,
+    pub(crate) schema: SchemaService,
     pub(crate) script: ScriptService,
+    pub(crate) sql_document: SqlDocumentService,
     pub(crate) workspace: WorkspaceService,
 }
 
@@ -89,6 +109,17 @@ impl ApplicationServices {
         let terminal_runs = TerminalQueryRunRegistry::default();
         let operation_service =
             OperationService::new(store.clone(), connections.clone(), operation.clone());
+        let catalog = CatalogService::new(store.clone(), connections.clone());
+        let script = ScriptService::new(store.clone(), connections.clone(), operation.clone());
+        let schema = SchemaService::new(catalog.clone(), script.clone());
+        let sql_document = SqlDocumentService::new(store.clone(), connections.clone());
+        let erd = ErdService::new(store.clone(), connections.clone());
+        let job = JobService::new(
+            store.clone(),
+            connections.clone(),
+            catalog.clone(),
+            operation.clone(),
+        );
         Self {
             activity: ActivityService::new(store.clone()),
             legacy_chat: LegacyChatService::new(store.clone()),
@@ -97,13 +128,15 @@ impl ApplicationServices {
                 connections.clone(),
                 connection_credentials.clone(),
             ),
-            catalog: CatalogService::new(store.clone(), connections.clone()),
+            catalog,
             dashboard: DashboardService::new(
                 store.clone(),
                 connections.clone(),
                 terminal_runs.clone(),
             ),
             document: DocumentService::new(store.clone(), connections.clone(), operation.clone()),
+            erd,
+            job,
             monitoring: MonitoringService::new(
                 store.clone(),
                 connections.clone(),
@@ -117,7 +150,9 @@ impl ApplicationServices {
                 terminal_runs,
             ),
             safety: SafetyService::new(store.clone(), connections.clone()),
-            script: ScriptService::new(store.clone(), connections.clone(), operation),
+            schema,
+            script,
+            sql_document,
             workspace: WorkspaceService::new(store, connections, connection_credentials),
         }
     }

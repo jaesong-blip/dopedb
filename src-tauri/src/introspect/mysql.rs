@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use dopedb_protocol::{Constraint, ConstraintKind, IndexKey, SortDirection};
 use sqlx::mysql::MySqlRow;
 use sqlx::{AssertSqlSafe, MySqlPool, Row};
 
@@ -11,22 +12,31 @@ use crate::error::{AppError, AppResult};
 use super::{Catalog, Column, DatabaseObject, ForeignKey, Index, Table};
 
 const COLS_SQL: &str = r#"
-SELECT table_name, column_name, column_type, is_nullable, column_key
+SELECT table_name, column_name, column_type, is_nullable, column_key,
+       ordinal_position, character_maximum_length, numeric_precision,
+       numeric_scale, column_default, extra, generation_expression,
+       collation_name, column_comment
 FROM information_schema.columns
 WHERE table_schema = DATABASE()
 ORDER BY table_name, ordinal_position
 "#;
 
 const FK_SQL: &str = r#"
-SELECT table_name, column_name, referenced_table_name, referenced_column_name
-FROM information_schema.key_column_usage
-WHERE table_schema = DATABASE() AND referenced_table_name IS NOT NULL
-ORDER BY table_name, column_name, referenced_table_name, referenced_column_name
+SELECT k.table_name, k.constraint_name, k.ordinal_position, k.column_name,
+       k.referenced_table_name, k.referenced_column_name,
+       r.update_rule, r.delete_rule
+FROM information_schema.key_column_usage k
+JOIN information_schema.referential_constraints r
+  ON r.constraint_schema = k.constraint_schema
+ AND r.constraint_name = k.constraint_name
+ AND r.table_name = k.table_name
+WHERE k.table_schema = DATABASE() AND k.referenced_table_name IS NOT NULL
+ORDER BY k.table_name, k.constraint_name, k.ordinal_position
 "#;
 
 // Secondary indexes (bulk equivalent of `SHOW INDEX` — one round trip). PRIMARY excluded.
 const IDX_SQL: &str = r#"
-SELECT table_name, index_name, non_unique, column_name
+SELECT table_name, index_name, non_unique, column_name, index_type, collation
 FROM information_schema.statistics
 WHERE table_schema = DATABASE() AND index_name <> 'PRIMARY'
 ORDER BY table_name, index_name, seq_in_index
@@ -36,7 +46,8 @@ ORDER BY table_name, index_name, seq_in_index
 // Older MySQL and MariaDB releases do not have that column, so introspect() falls
 // back to IDX_SQL when this query is rejected.
 const IDX_EXPR_SQL: &str = r#"
-SELECT table_name, index_name, non_unique, column_name, `EXPRESSION` AS index_expression
+SELECT table_name, index_name, non_unique, column_name, `EXPRESSION` AS index_expression,
+       index_type, collation
 FROM information_schema.statistics
 WHERE table_schema = DATABASE() AND index_name <> 'PRIMARY'
 ORDER BY table_name, index_name, seq_in_index
@@ -44,16 +55,42 @@ ORDER BY table_name, index_name, seq_in_index
 
 // table_type is 'BASE TABLE' or 'VIEW'; estimate is meaningful only for base tables.
 const EST_SQL: &str = r#"
-SELECT table_name, table_type, CAST(table_rows AS SIGNED) AS estimate
+SELECT table_name, table_type, CAST(table_rows AS SIGNED) AS estimate, table_comment
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
+"#;
+
+const CONSTRAINTS_SQL: &str = r#"
+SELECT tc.table_name, tc.constraint_name, tc.constraint_type,
+       k.column_name, k.ordinal_position
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage k
+  ON k.constraint_schema = tc.constraint_schema
+ AND k.table_name = tc.table_name
+ AND k.constraint_name = tc.constraint_name
+WHERE tc.table_schema = DATABASE()
+  AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+ORDER BY tc.table_name, tc.constraint_name, k.ordinal_position
+"#;
+
+const CHECKS_SQL: &str = r#"
+SELECT tc.table_name, tc.constraint_name, cc.check_clause
+FROM information_schema.table_constraints tc
+JOIN information_schema.check_constraints cc
+  ON cc.constraint_schema = tc.constraint_schema
+ AND cc.constraint_name = tc.constraint_name
+WHERE tc.table_schema = DATABASE() AND tc.constraint_type = 'CHECK'
+ORDER BY tc.table_name, tc.constraint_name
 "#;
 
 const ROUTINES_SQL: &str = r#"
 SELECT routine_schema AS schema_name,
        routine_name AS object_name,
        LOWER(routine_type) AS object_kind,
-       NULLIF(data_type, '') AS object_detail
+       NULLIF(dtd_identifier, '') AS object_detail,
+       NULLIF(data_type, '') AS return_type,
+       external_language AS language,
+       NULLIF(routine_comment, '') AS object_comment
 FROM information_schema.routines
 WHERE routine_schema = DATABASE()
 ORDER BY routine_type, routine_name
@@ -84,17 +121,101 @@ pub async fn introspect(pool: &MySqlPool, skip_fk: bool) -> AppResult<Catalog> {
                 foreign_keys: Vec::new(),
                 indexes: Vec::new(),
                 row_estimate: None,
+                ..Table::default()
             });
             tables.len() - 1
         });
         let nullable: String = r.try_get("is_nullable")?;
         let key: String = r.try_get("column_key")?;
+        let extra: String = r.try_get("extra").unwrap_or_default();
+        let generation_expression: Option<String> = r
+            .try_get::<String, _>("generation_expression")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
         tables[i].columns.push(Column {
             name: r.try_get("column_name")?,
             data_type: r.try_get("column_type")?,
             nullable: nullable.eq_ignore_ascii_case("YES"),
             pk: key == "PRI",
+            ordinal: r
+                .try_get::<i32, _>("ordinal_position")
+                .ok()
+                .and_then(|value| u32::try_from(value).ok())
+                .unwrap_or(0),
+            length: r
+                .try_get::<Option<i64>, _>("character_maximum_length")
+                .unwrap_or(None)
+                .and_then(|value| u64::try_from(value).ok()),
+            precision: r
+                .try_get::<Option<i64>, _>("numeric_precision")
+                .unwrap_or(None)
+                .and_then(|value| u32::try_from(value).ok()),
+            scale: r
+                .try_get::<Option<i64>, _>("numeric_scale")
+                .unwrap_or(None)
+                .and_then(|value| u32::try_from(value).ok()),
+            default_expression: r.try_get("column_default").unwrap_or(None),
+            generated_expression: generation_expression,
+            auto_increment: extra
+                .split_whitespace()
+                .any(|value| value.eq_ignore_ascii_case("auto_increment")),
+            collation: r.try_get("collation_name").unwrap_or(None),
+            comment: r
+                .try_get::<String, _>("column_comment")
+                .ok()
+                .filter(|value| !value.is_empty()),
+            ..Column::default()
         });
+    }
+
+    let mut constraints = HashMap::<(String, String), Constraint>::new();
+    for r in sqlx::query(CONSTRAINTS_SQL).fetch_all(pool).await? {
+        let table: String = r.try_get("table_name")?;
+        let name: String = r.try_get("constraint_name")?;
+        let kind = match r.try_get::<String, _>("constraint_type")?.as_str() {
+            "PRIMARY KEY" => ConstraintKind::Primary,
+            "UNIQUE" => ConstraintKind::Unique,
+            _ => continue,
+        };
+        constraints
+            .entry((table, name.clone()))
+            .or_insert_with(|| Constraint {
+                name,
+                kind,
+                columns: Vec::new(),
+                referenced_relation: None,
+                referenced_columns: Vec::new(),
+                check_expression: None,
+                update_action: None,
+                delete_action: None,
+                deferrable: false,
+                validated: true,
+            })
+            .columns
+            .push(r.try_get("column_name")?);
+    }
+    for ((table, _), constraint) in constraints {
+        if let Some(&i) = idx.get(&table) {
+            tables[i].constraints.push(constraint);
+        }
+    }
+    if let Ok(rows) = sqlx::query(CHECKS_SQL).fetch_all(pool).await {
+        for r in rows {
+            let table: String = r.try_get("table_name")?;
+            let Some(&i) = idx.get(&table) else { continue };
+            tables[i].constraints.push(Constraint {
+                name: r.try_get("constraint_name")?,
+                kind: ConstraintKind::Check,
+                columns: Vec::new(),
+                referenced_relation: None,
+                referenced_columns: Vec::new(),
+                check_expression: r.try_get("check_clause")?,
+                update_action: None,
+                delete_action: None,
+                deferrable: false,
+                validated: true,
+            });
+        }
     }
 
     if !skip_fk {
@@ -102,10 +223,19 @@ pub async fn introspect(pool: &MySqlPool, skip_fk: bool) -> AppResult<Catalog> {
             let name: String = r.try_get("table_name")?;
             if let Some(&i) = idx.get(&name) {
                 tables[i].foreign_keys.push(ForeignKey {
+                    name: r.try_get("constraint_name").ok(),
+                    ordinal: r
+                        .try_get::<i64, _>("ordinal_position")
+                        .ok()
+                        .and_then(|value| u32::try_from(value).ok())
+                        .unwrap_or(0),
                     column: r.try_get("column_name")?,
                     references_table: r.try_get("referenced_table_name")?,
                     references_column: r.try_get("referenced_column_name")?,
                     references_schema: None,
+                    update_action: r.try_get("update_rule").ok(),
+                    delete_action: r.try_get("delete_rule").ok(),
+                    ..ForeignKey::default()
                 });
             }
         }
@@ -126,12 +256,24 @@ pub async fn introspect(pool: &MySqlPool, skip_fk: bool) -> AppResult<Catalog> {
             None
         };
         let non_unique: i64 = r.try_get("non_unique")?;
+        let direction = match r.try_get::<Option<String>, _>("collation")? {
+            Some(value) if value.eq_ignore_ascii_case("D") => Some(SortDirection::Desc),
+            Some(_) => Some(SortDirection::Asc),
+            None => None,
+        };
+        let key = IndexKey {
+            column: col.clone(),
+            expression: expression.clone(),
+            direction,
+        };
         push_index_part(
             &mut tables[i].indexes,
             iname,
             col,
             expression,
             non_unique == 0,
+            key,
+            r.try_get("index_type").ok(),
         );
     }
 
@@ -147,6 +289,10 @@ pub async fn introspect(pool: &MySqlPool, skip_fk: bool) -> AppResult<Catalog> {
                     .unwrap_or(None)
                     .filter(|&n| n >= 0);
             }
+            tables[i].comment = r
+                .try_get::<String, _>("table_comment")
+                .ok()
+                .filter(|value| !value.is_empty());
         }
     }
 
@@ -158,6 +304,10 @@ pub async fn introspect(pool: &MySqlPool, skip_fk: bool) -> AppResult<Catalog> {
             kind: row.try_get("object_kind")?,
             detail: row.try_get("object_detail")?,
             parent: None,
+            return_type: row.try_get("return_type")?,
+            language: row.try_get("language")?,
+            comment: row.try_get("object_comment")?,
+            ..DatabaseObject::default()
         });
     }
     for row in sqlx::query(TRIGGERS_SQL).fetch_all(pool).await? {
@@ -167,6 +317,7 @@ pub async fn introspect(pool: &MySqlPool, skip_fk: bool) -> AppResult<Catalog> {
             kind: "trigger".into(),
             detail: row.try_get("object_detail")?,
             parent: row.try_get("parent_name")?,
+            ..DatabaseObject::default()
         });
     }
     objects.sort_by(|a, b| {
@@ -192,17 +343,25 @@ fn push_index_part(
     column: Option<String>,
     expression: Option<String>,
     unique: bool,
+    key: IndexKey,
+    method: Option<String>,
 ) {
     let column = column
         .filter(|value| !value.is_empty())
         .or_else(|| expression.filter(|value| !value.is_empty()))
         .unwrap_or_else(|| "<expression>".into());
     match indexes.last_mut() {
-        Some(last) if last.name == name => last.columns.push(column),
+        Some(last) if last.name == name => {
+            last.columns.push(column);
+            last.keys.push(key);
+        }
         _ => indexes.push(Index {
             name,
             columns: vec![column],
             unique,
+            method,
+            keys: vec![key],
+            ..Index::default()
         }),
     }
 }
@@ -233,6 +392,12 @@ mod tests {
             Some("tenant_id".into()),
             None,
             false,
+            IndexKey {
+                column: Some("tenant_id".into()),
+                expression: None,
+                direction: Some(SortDirection::Asc),
+            },
+            Some("BTREE".into()),
         );
         push_index_part(
             &mut indexes,
@@ -240,6 +405,12 @@ mod tests {
             None,
             Some("lower(`email`)".into()),
             false,
+            IndexKey {
+                column: None,
+                expression: Some("lower(`email`)".into()),
+                direction: Some(SortDirection::Asc),
+            },
+            Some("BTREE".into()),
         );
 
         assert_eq!(indexes.len(), 1);
@@ -252,7 +423,19 @@ mod tests {
     fn missing_expression_metadata_uses_a_visible_placeholder() {
         let mut indexes = Vec::new();
 
-        push_index_part(&mut indexes, "expr_idx".into(), None, None, true);
+        push_index_part(
+            &mut indexes,
+            "expr_idx".into(),
+            None,
+            None,
+            true,
+            IndexKey {
+                column: None,
+                expression: Some("<expression>".into()),
+                direction: None,
+            },
+            None,
+        );
 
         assert_eq!(indexes[0].columns, ["<expression>"]);
         assert!(indexes[0].unique);

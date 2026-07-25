@@ -162,6 +162,13 @@ const glyphs = {
     </>
   ),
   chart: <path d="M4 19V9m6 10V5m6 14v-7m4 7H2" />,
+  target: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v3M21 12h-3M12 21v-3M3 12h3" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
   externalLink: (
     <>
@@ -203,7 +210,14 @@ const glyphs = {
   ),
   check: <path d="M20 6 9 17l-5-5" />,
   play: <path d="M5 3l14 9-14 9V3z" />,
+  pause: (
+    <>
+      <path d="M8 5v14M16 5v14" />
+    </>
+  ),
   download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />,
+  upload: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />,
+  folder: <path d="M3 5h7l2 3h9v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof glyphs;

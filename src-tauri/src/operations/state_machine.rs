@@ -61,7 +61,7 @@ pub const fn restart_recovery(kind: OperationKind, state: OperationState) -> Res
         RestartRecovery::KeepTerminal
     } else if !matches!(state, OperationState::Executing) {
         RestartRecovery::Expire
-    } else if kind.is_resumable_job() {
+    } else if matches!(kind, OperationKind::Export) {
         RestartRecovery::ValidateJobCheckpoint
     } else if kind.may_mutate_target() {
         RestartRecovery::OutcomeUnknown
@@ -153,12 +153,14 @@ mod tests {
             restart_recovery(OperationKind::WriteSql, OperationState::Executing),
             RestartRecovery::OutcomeUnknown
         );
-        for kind in [OperationKind::Import, OperationKind::Export] {
-            assert_eq!(
-                restart_recovery(kind, OperationState::Executing),
-                RestartRecovery::ValidateJobCheckpoint
-            );
-        }
+        assert_eq!(
+            restart_recovery(OperationKind::Export, OperationState::Executing),
+            RestartRecovery::ValidateJobCheckpoint
+        );
+        assert_eq!(
+            restart_recovery(OperationKind::Import, OperationState::Executing),
+            RestartRecovery::OutcomeUnknown
+        );
         assert_eq!(
             restart_recovery(OperationKind::Ddl, OperationState::Approved),
             RestartRecovery::Expire

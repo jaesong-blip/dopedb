@@ -34,5 +34,7 @@
 - partition parent/children
 - comment와 row estimate
 
-정본 DTO, canonical fingerprint, scoped cache는 이 계약의 V2 fixture를 기준으로
-검증한다. 엔진별 metadata 확장과 완전한 fixture는 `CAT-02/03`에서 계속 추가한다.
+정본 DTO, canonical fingerprint, scoped versioned cache는 이 계약의 V2 fixture를
+기준으로 검증한다. PostgreSQL/MySQL/SQLite의 rich metadata와 MongoDB bounded
+observed field를 수집하며, cache version·connection/binding revision·실제 canonical
+hash가 하나라도 다르면 lazy refresh한다.

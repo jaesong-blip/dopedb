@@ -20,15 +20,19 @@ use crate::model::{
 };
 use crate::services::{
     AuditSnapshotReceipt, AuditVerdict, CatalogReadPolicy, ConnectionProfileTestRequest,
-    ConnectionUpsertRequest, DashboardRunError, DashboardRunReceipt, DashboardRunRequest,
-    DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest, DesktopDocumentReadError,
-    DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
-    DesktopScriptRunReceipt, DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest,
-    DesktopSqlInspectionError, DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest,
-    DesktopSqlProposalReceipt, DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt,
-    DocumentReadReceipt, MonitoringProposalReceipt, MonitoringProposalRequest,
-    MonitoringServiceError, MonitoringStatusReceipt, OperationDecisionReceipt,
-    OperationDecisionRequest, WorkspaceConnectionCopyRequest, WorkspaceCredentialBindingRequest,
+    ConnectionUpsertRequest, CreateJobRequest, CreateSqlDocumentRequest, DashboardRunError,
+    DashboardRunReceipt, DashboardRunRequest, DesktopDocumentProposalReceipt,
+    DesktopDocumentProposalRequest, DesktopDocumentReadError, DesktopScriptProposalReceipt,
+    DesktopScriptProposalRequest, DesktopScriptRunError, DesktopScriptRunReceipt,
+    DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest, DesktopSqlInspectionError,
+    DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest, DesktopSqlProposalReceipt,
+    DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt,
+    ErdLayout, Job, JobDetail, JobFileCapability, JobFormat, JobInputInspection, JobProposal,
+    MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringServiceError,
+    MonitoringStatusReceipt, OperationDecisionReceipt, OperationDecisionRequest,
+    SaveErdLayoutOutcome, SaveErdLayoutRequest, SaveSqlDocumentOutcome, SaveSqlDocumentRequest,
+    SchemaChangePreviewRequest, SchemaChangeProposalReceipt, SqlDocument, TableScriptContext,
+    WorkspaceConnectionCopyRequest, WorkspaceCredentialBindingRequest,
 };
 use crate::state::AppState;
 
@@ -516,6 +520,26 @@ pub async fn refresh_schema(state: State<'_, AppState>, id: Uuid) -> AppResult<S
 }
 
 #[tauri::command]
+pub async fn get_catalog_snapshot(
+    state: State<'_, AppState>,
+    id: Uuid,
+) -> AppResult<dopedb_protocol::CatalogSnapshot> {
+    if !state
+        .features
+        .is_enabled(crate::features::FeatureFlag::CatalogV2)
+    {
+        return Err(AppError::Blocked {
+            reason: "Catalog V2 is disabled for this app runtime".into(),
+        });
+    }
+    state
+        .services
+        .catalog
+        .load_snapshot(id, CatalogReadPolicy::CacheFirst)
+        .await
+}
+
+#[tauri::command]
 pub async fn get_table_ddl(
     state: State<'_, AppState>,
     id: Uuid,
@@ -693,6 +717,46 @@ pub async fn propose_script(
             connection_id: id,
             sql,
             origin,
+            schema_change: None,
+            table_change: None,
+        })
+        .await
+        .map_err(DesktopScriptRunError::into_error)
+}
+
+#[tauri::command]
+pub async fn propose_table_changes(
+    state: State<'_, AppState>,
+    id: Uuid,
+    statements: Vec<String>,
+    catalog_fingerprint: String,
+) -> AppResult<DesktopScriptProposalReceipt> {
+    if !state
+        .features
+        .is_enabled(crate::features::FeatureFlag::TableChangesV1)
+    {
+        return Err(AppError::Blocked {
+            reason: "staged table changes are disabled for this app runtime".into(),
+        });
+    }
+    if statements.is_empty() {
+        return Err(AppError::Config(
+            "at least one staged table change is required".into(),
+        ));
+    }
+    let statement_count = statements.len();
+    state
+        .services
+        .script
+        .propose_desktop(DesktopScriptProposalRequest {
+            connection_id: id,
+            sql: statements.join(";\n"),
+            origin: Some("table_editor".into()),
+            schema_change: None,
+            table_change: Some(TableScriptContext {
+                catalog_fingerprint,
+                expected_affected: vec![1; statement_count],
+            }),
         })
         .await
         .map_err(DesktopScriptRunError::into_error)
@@ -710,6 +774,336 @@ pub async fn run_script(
         .run_desktop(operation_id)
         .await
         .map_err(DesktopScriptRunError::into_error)
+}
+
+fn require_schema_editor(state: &AppState) -> AppResult<()> {
+    if state
+        .features
+        .is_enabled(crate::features::FeatureFlag::CatalogV2)
+        && state
+            .features
+            .is_enabled(crate::features::FeatureFlag::DdlIrV1)
+    {
+        Ok(())
+    } else {
+        Err(AppError::Blocked {
+            reason: "the structured schema editor is disabled for this app runtime".into(),
+        })
+    }
+}
+
+#[tauri::command]
+pub async fn preview_schema_change(
+    state: State<'_, AppState>,
+    id: Uuid,
+    request: dopedb_protocol::SchemaChangeRequest,
+) -> AppResult<dopedb_protocol::DdlPlan> {
+    require_schema_editor(&state)?;
+    state
+        .services
+        .schema
+        .preview(SchemaChangePreviewRequest {
+            connection_id: id,
+            request,
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn propose_schema_change(
+    state: State<'_, AppState>,
+    id: Uuid,
+    request: dopedb_protocol::SchemaChangeRequest,
+) -> AppResult<SchemaChangeProposalReceipt> {
+    require_schema_editor(&state)?;
+    state
+        .services
+        .schema
+        .propose(SchemaChangePreviewRequest {
+            connection_id: id,
+            request,
+        })
+        .await
+        .map_err(DesktopScriptRunError::into_error)
+}
+
+#[tauri::command]
+pub async fn run_schema_change(
+    state: State<'_, AppState>,
+    operation_id: Uuid,
+) -> AppResult<DesktopScriptRunReceipt> {
+    require_schema_editor(&state)?;
+    state
+        .services
+        .schema
+        .run(operation_id)
+        .await
+        .map_err(DesktopScriptRunError::into_error)
+}
+
+fn require_sql_documents(state: &AppState) -> AppResult<()> {
+    if state
+        .features
+        .is_enabled(crate::features::FeatureFlag::SqlDocumentsV1)
+    {
+        Ok(())
+    } else {
+        Err(AppError::Blocked {
+            reason: "persistent SQL documents are disabled for this app runtime".into(),
+        })
+    }
+}
+
+#[tauri::command]
+pub async fn list_sql_documents(
+    state: State<'_, AppState>,
+    id: Uuid,
+) -> AppResult<Vec<SqlDocument>> {
+    require_sql_documents(&state)?;
+    state.services.sql_document.list(id).await
+}
+
+#[tauri::command]
+pub async fn create_sql_document(
+    state: State<'_, AppState>,
+    request: CreateSqlDocumentRequest,
+) -> AppResult<SqlDocument> {
+    require_sql_documents(&state)?;
+    state.services.sql_document.create(request).await
+}
+
+#[tauri::command]
+pub async fn save_sql_document(
+    state: State<'_, AppState>,
+    request: SaveSqlDocumentRequest,
+) -> AppResult<SaveSqlDocumentOutcome> {
+    require_sql_documents(&state)?;
+    state.services.sql_document.save(request).await
+}
+
+#[tauri::command]
+pub async fn delete_sql_document(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    id: Uuid,
+    expected_revision: i64,
+) -> AppResult<()> {
+    require_sql_documents(&state)?;
+    state
+        .services
+        .sql_document
+        .delete(connection_id, id, expected_revision)
+        .await
+}
+
+fn require_erd(state: &AppState) -> AppResult<()> {
+    if state
+        .features
+        .is_enabled(crate::features::FeatureFlag::ErdV1)
+    {
+        Ok(())
+    } else {
+        Err(AppError::Blocked {
+            reason: "persistent ERD layouts are disabled for this app runtime".into(),
+        })
+    }
+}
+
+#[tauri::command]
+pub async fn list_erd_layouts(state: State<'_, AppState>, id: Uuid) -> AppResult<Vec<ErdLayout>> {
+    require_erd(&state)?;
+    state.services.erd.list(id).await
+}
+
+#[tauri::command]
+pub async fn save_erd_layout(
+    state: State<'_, AppState>,
+    request: SaveErdLayoutRequest,
+) -> AppResult<SaveErdLayoutOutcome> {
+    require_erd(&state)?;
+    state.services.erd.save(request).await
+}
+
+#[tauri::command]
+pub async fn delete_erd_layout(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    id: Uuid,
+    expected_revision: i64,
+) -> AppResult<()> {
+    require_erd(&state)?;
+    state
+        .services
+        .erd
+        .delete(connection_id, id, expected_revision)
+        .await
+}
+
+fn require_jobs(state: &AppState) -> AppResult<()> {
+    if state
+        .features
+        .is_enabled(crate::features::FeatureFlag::JobsV1)
+    {
+        Ok(())
+    } else {
+        Err(AppError::Blocked {
+            reason: "the durable import/export job engine is disabled for this app runtime".into(),
+        })
+    }
+}
+
+/// Select an input file in the trusted native shell and return only an opaque,
+/// scope-bound capability to the renderer.
+#[tauri::command]
+pub async fn pick_job_input(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    connection_id: Uuid,
+) -> AppResult<Option<JobFileCapability>> {
+    use tauri_plugin_dialog::DialogExt;
+
+    require_jobs(&state)?;
+    let path = app
+        .dialog()
+        .file()
+        .add_filter(
+            "Data files",
+            &["csv", "tsv", "json", "ndjson", "sql", "xlsx", "gz"],
+        )
+        .blocking_pick_file()
+        .and_then(|path| path.into_path().ok());
+    match path {
+        Some(path) => state
+            .services
+            .job
+            .register_input(connection_id, path)
+            .await
+            .map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Select an output destination in the trusted native shell. The renderer receives
+/// no local path, only an opaque capability that is consumed by one exact job plan.
+#[tauri::command]
+pub async fn pick_job_output(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    connection_id: Uuid,
+    suggested_name: String,
+) -> AppResult<Option<JobFileCapability>> {
+    use tauri_plugin_dialog::DialogExt;
+
+    require_jobs(&state)?;
+    let path = app
+        .dialog()
+        .file()
+        .set_file_name(suggested_name)
+        .add_filter(
+            "Data files",
+            &["csv", "tsv", "json", "ndjson", "sql", "xlsx", "gz"],
+        )
+        .blocking_save_file()
+        .and_then(|path| path.into_path().ok());
+    match path {
+        Some(path) => state
+            .services
+            .job
+            .register_output(connection_id, path)
+            .await
+            .map(Some),
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn inspect_job_input(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    capability_id: Uuid,
+    format: JobFormat,
+) -> AppResult<JobInputInspection> {
+    require_jobs(&state)?;
+    state
+        .services
+        .job
+        .inspect_input(connection_id, capability_id, format)
+        .await
+}
+
+#[tauri::command]
+pub async fn create_job(
+    state: State<'_, AppState>,
+    request: CreateJobRequest,
+) -> AppResult<JobProposal> {
+    require_jobs(&state)?;
+    state.services.job.create(request).await
+}
+
+#[tauri::command]
+pub async fn list_jobs(state: State<'_, AppState>, connection_id: Uuid) -> AppResult<Vec<Job>> {
+    require_jobs(&state)?;
+    state.services.job.list(connection_id).await
+}
+
+#[tauri::command]
+pub async fn get_job(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    job_id: Uuid,
+) -> AppResult<JobDetail> {
+    require_jobs(&state)?;
+    state.services.job.detail(connection_id, job_id).await
+}
+
+#[tauri::command]
+pub async fn start_job(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    job_id: Uuid,
+) -> AppResult<Job> {
+    require_jobs(&state)?;
+    state.services.job.start(connection_id, job_id).await
+}
+
+#[tauri::command]
+pub async fn pause_job(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    job_id: Uuid,
+) -> AppResult<Job> {
+    require_jobs(&state)?;
+    state.services.job.pause(connection_id, job_id).await
+}
+
+#[tauri::command]
+pub async fn cancel_job(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    job_id: Uuid,
+) -> AppResult<Job> {
+    require_jobs(&state)?;
+    state.services.job.cancel(connection_id, job_id).await
+}
+
+#[tauri::command]
+pub async fn reveal_job_artifact(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    connection_id: Uuid,
+    artifact_id: Uuid,
+) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+
+    require_jobs(&state)?;
+    let path = state
+        .services
+        .job
+        .artifact_path(connection_id, artifact_id)
+        .await?;
+    app.opener()
+        .reveal_item_in_dir(path)
+        .map_err(|error| AppError::Config(format!("could not reveal job artifact: {error}")))
 }
 
 // ── safety settings ──────────────────────────────────────────────────────────

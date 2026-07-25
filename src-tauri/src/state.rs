@@ -36,6 +36,12 @@ impl AppState {
             FeatureFlag::CliV1,
             FeatureFlag::SkillManagerV1,
             FeatureFlag::TerminalDockV1,
+            FeatureFlag::CatalogV2,
+            FeatureFlag::DdlIrV1,
+            FeatureFlag::SqlDocumentsV1,
+            FeatureFlag::TableChangesV1,
+            FeatureFlag::ErdV1,
+            FeatureFlag::JobsV1,
         ]);
         let store = Store::open().await?;
         let connections = ConnectionManager::new(store.clone());
@@ -44,6 +50,9 @@ impl AppState {
         let terminals = TerminalManager::new(broker.sessions().clone());
         let services = ApplicationServices::new(store.clone(), connections.clone(), operation);
         let skills = SkillManager::new()?;
+        if features.is_enabled(FeatureFlag::JobsV1) {
+            services.job.recover_interrupted().await?;
+        }
         if features.is_enabled(FeatureFlag::OperationRuntimeV1) {
             services.operation.recover_previous_runtimes().await?;
         }

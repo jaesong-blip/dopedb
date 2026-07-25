@@ -57,6 +57,41 @@ function typeOf(table: CatalogTable, col: string): string {
   return table.columns.find((c) => c.name === col)?.dataType ?? "text";
 }
 
+const VERSION_COLUMN_RE =
+  /^(?:version|row_version|lock_version|revision|updated_at|updatedat|modified_at)$/i;
+
+function comparison(
+  engine: Engine,
+  table: CatalogTable,
+  column: string,
+  value: string | null,
+): string {
+  const identifier = quoteIdent(engine, column);
+  return value === null
+    ? `${identifier} IS NULL`
+    : `${identifier} = ${sqlValue(engine, typeOf(table, column), value)}`;
+}
+
+function optimisticColumns(
+  table: CatalogTable,
+  originalValues: Record<string, string | null>,
+  changedColumns?: Set<string>,
+): string[] {
+  const version = table.columns.find(
+    (column) =>
+      VERSION_COLUMN_RE.test(column.name) && column.name in originalValues,
+  );
+  if (version) return [version.name];
+  return table.columns
+    .filter(
+      (column) =>
+        !column.pk &&
+        column.name in originalValues &&
+        (!changedColumns || changedColumns.has(column.name)),
+    )
+    .map((column) => column.name);
+}
+
 export function pkColumns(table: CatalogTable): CatalogColumn[] {
   return table.columns.filter((c) => c.pk);
 }
@@ -171,21 +206,45 @@ export function buildUpdate(
   table: CatalogTable,
   pkValues: Record<string, string | null>,
   setValues: Record<string, string | null>,
+  originalValues?: Record<string, string | null>,
 ): string {
-  const where = Object.keys(pkValues).map(
-    (c) => `${quoteIdent(engine, c)} = ${sqlValue(engine, typeOf(table, c), pkValues[c])}`,
+  const where = Object.keys(pkValues).map((column) =>
+    comparison(engine, table, column, pkValues[column]),
   );
   if (!where.length) throw new Error("refusing UPDATE without a primary key");
   const set = assignments(engine, table, setValues);
   if (!set.length) throw new Error("UPDATE with no changed columns");
+  if (originalValues) {
+    for (const column of optimisticColumns(
+      table,
+      originalValues,
+      new Set(Object.keys(setValues)),
+    )) {
+      if (!(column in pkValues)) {
+        where.push(comparison(engine, table, column, originalValues[column]));
+      }
+    }
+  }
   return `UPDATE ${tableRef(engine, table)} SET ${set.join(", ")} WHERE ${where.join(" AND ")}`;
 }
 
-export function buildDelete(engine: Engine, table: CatalogTable, pkValues: Record<string, string | null>): string {
-  const where = Object.keys(pkValues).map(
-    (c) => `${quoteIdent(engine, c)} = ${sqlValue(engine, typeOf(table, c), pkValues[c])}`,
+export function buildDelete(
+  engine: Engine,
+  table: CatalogTable,
+  pkValues: Record<string, string | null>,
+  originalValues?: Record<string, string | null>,
+): string {
+  const where = Object.keys(pkValues).map((column) =>
+    comparison(engine, table, column, pkValues[column]),
   );
   if (!where.length) throw new Error("refusing DELETE without a primary key");
+  if (originalValues) {
+    for (const column of optimisticColumns(table, originalValues)) {
+      if (!(column in pkValues)) {
+        where.push(comparison(engine, table, column, originalValues[column]));
+      }
+    }
+  }
   return `DELETE FROM ${tableRef(engine, table)} WHERE ${where.join(" AND ")}`;
 }
 

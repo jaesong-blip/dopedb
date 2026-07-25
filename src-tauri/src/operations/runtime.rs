@@ -180,6 +180,63 @@ impl OperationRuntime {
         Ok(ClaimedOperation { record, grant })
     }
 
+    /// Reissue an in-process capability for an executing import/export only after
+    /// the Job Engine has independently validated its durable checkpoint and exact
+    /// operation payload hash.
+    pub(crate) async fn resume_job_claim(
+        &self,
+        operation_id: Uuid,
+        expected_payload_hash: &str,
+    ) -> AppResult<ClaimedOperation> {
+        let record = self
+            .repository
+            .rebind_resumable_execution(operation_id, self.runtime_id, expected_payload_hash)
+            .await?;
+        let grant = execute::issue(&record)?;
+        Ok(ClaimedOperation { record, grant })
+    }
+
+    pub(crate) async fn rebind_pending_job(
+        &self,
+        operation_id: Uuid,
+        expected_payload_hash: &str,
+    ) -> AppResult<OperationRecord> {
+        self.repository
+            .rebind_pending_job(operation_id, self.runtime_id, expected_payload_hash)
+            .await
+    }
+
+    pub(crate) async fn rebind_paused_job(
+        &self,
+        operation_id: Uuid,
+        expected_payload_hash: &str,
+    ) -> AppResult<OperationRecord> {
+        self.repository
+            .rebind_paused_job(operation_id, self.runtime_id, expected_payload_hash)
+            .await
+    }
+
+    pub(crate) async fn fail_interrupted_export(
+        &self,
+        operation_id: Uuid,
+        expected_payload_hash: &str,
+    ) -> AppResult<OperationRecord> {
+        let rebound = self
+            .repository
+            .rebind_resumable_execution(operation_id, self.runtime_id, expected_payload_hash)
+            .await?;
+        if rebound.kind != dopedb_protocol::OperationKind::Export {
+            return Err(AppError::Blocked {
+                reason: "only an interrupted export can use export recovery".into(),
+            });
+        }
+        self.fail(
+            operation_id,
+            &serde_json::json!({"reason": "non_resumable_export_interrupted"}),
+        )
+        .await
+    }
+
     pub(crate) async fn progress(&self, operation_id: Uuid, details: &Value) -> AppResult<()> {
         self.repository
             .append_progress(operation_id, self.runtime_id, details)
@@ -431,6 +488,111 @@ mod tests {
             OperationState::OutcomeUnknown
         );
         assert!(second.claim(approved.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn queued_job_rebind_preserves_approval_and_immutable_payload() {
+        let (first, authority, store) = runtime().await;
+        let pending = first
+            .plan(
+                operation(OperationKind::Import, "queued-import-restart"),
+                OperationPlanDisposition::ApprovalRequired,
+            )
+            .await
+            .unwrap();
+        let approved = first
+            .approve_exact(&authority, exact_request(&pending))
+            .await
+            .unwrap();
+
+        let (second, _) = OperationRuntime::new(&store);
+        let rebound = second
+            .rebind_pending_job(approved.id, &approved.payload_hash)
+            .await
+            .unwrap();
+
+        assert_eq!(rebound.runtime_id, second.runtime_id());
+        assert_eq!(rebound.state, OperationState::Approved);
+        assert_eq!(rebound.payload, approved.payload);
+        assert_eq!(rebound.payload_hash, approved.payload_hash);
+        assert_eq!(second.approvals(rebound.id).await.unwrap().len(), 1);
+        assert!(second.verify_event_chain(rebound.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn interrupted_import_is_outcome_unknown_but_export_waits_for_checkpoint() {
+        let (first, authority, store) = runtime().await;
+        let import = first
+            .plan(
+                operation(OperationKind::Import, "interrupted-import"),
+                OperationPlanDisposition::ApprovalRequired,
+            )
+            .await
+            .unwrap();
+        let import = first
+            .approve_exact(&authority, exact_request(&import))
+            .await
+            .unwrap();
+        first.claim(import.id).await.unwrap();
+
+        let mut export_request = operation(OperationKind::Export, "interrupted-export");
+        export_request.payload = json!({"relation": "public.items", "format": "ndjson"});
+        let export = first
+            .plan(export_request, OperationPlanDisposition::Ready)
+            .await
+            .unwrap();
+        first.claim(export.id).await.unwrap();
+
+        let (second, _) = OperationRuntime::new(&store);
+        let report = second.recover_previous_runtimes().await.unwrap();
+        assert_eq!(report.outcome_unknown, vec![import.id]);
+        assert_eq!(report.checkpoint_validation_required, vec![export.id]);
+        assert_eq!(
+            second.get(import.id).await.unwrap().state,
+            OperationState::OutcomeUnknown
+        );
+        assert_eq!(
+            second.get(export.id).await.unwrap().state,
+            OperationState::Executing
+        );
+        assert!(second.claim(import.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn paused_job_runtime_transfer_does_not_issue_a_grant_before_resume_validation() {
+        let (first, authority, store) = runtime().await;
+        let import = first
+            .plan(
+                operation(OperationKind::Import, "paused-import-restart"),
+                OperationPlanDisposition::ApprovalRequired,
+            )
+            .await
+            .unwrap();
+        let import = first
+            .approve_exact(&authority, exact_request(&import))
+            .await
+            .unwrap();
+        first.claim(import.id).await.unwrap();
+
+        let (second, _) = OperationRuntime::new(&store);
+        assert!(second
+            .rebind_paused_job(import.id, &"0".repeat(64))
+            .await
+            .is_err());
+        let transferred = second
+            .rebind_paused_job(import.id, &import.payload_hash)
+            .await
+            .unwrap();
+        assert_eq!(transferred.runtime_id, second.runtime_id());
+        assert_eq!(transferred.state, OperationState::Executing);
+
+        let claimed = second
+            .resume_job_claim(import.id, &import.payload_hash)
+            .await
+            .unwrap();
+        assert_eq!(claimed.grant().operation_id(), import.id);
+        assert_eq!(claimed.grant().payload_sha256(), import.payload_hash);
+        assert!(second.verify_event_chain(import.id).await.unwrap());
     }
 
     #[tokio::test]

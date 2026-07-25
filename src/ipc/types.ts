@@ -580,35 +580,139 @@ export interface HistoryEntry {
   origin: string;
 }
 
+export interface SqlDocument {
+  id: string;
+  connectionId: string;
+  title: string;
+  dialect: string;
+  content: string;
+  localRevision: number;
+  remoteId: string | null;
+  remoteRevision: number | null;
+  dirty: boolean;
+  syncStatus: "local" | "dirty" | "synced" | "conflict";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSqlDocumentRequest {
+  connectionId: string;
+  title?: string | null;
+  content?: string | null;
+}
+
+export interface SaveSqlDocumentRequest {
+  id: string;
+  connectionId: string;
+  title: string;
+  content: string;
+  expectedRevision: number;
+}
+
+export interface SaveSqlDocumentOutcome {
+  saved: boolean;
+  document: SqlDocument;
+  expectedRevision: number;
+  attemptedContentHash: string;
+}
+
 // Schema introspection (mirrors src-tauri/src/introspect/mod.rs Catalog).
 export interface CatalogColumn {
   name: string;
   dataType: string;
   nullable: boolean;
   pk: boolean;
+  ordinal?: number;
+  length?: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  defaultExpression?: string | null;
+  generatedExpression?: string | null;
+  identity?: boolean;
+  autoIncrement?: boolean;
+  collation?: string | null;
+  comment?: string | null;
 }
 
-interface CatalogForeignKey {
+export interface CatalogForeignKey {
+  name?: string | null;
+  ordinal?: number;
   column: string;
   referencesTable: string;
   referencesColumn: string;
   referencesSchema: string | null;
+  updateAction?: string | null;
+  deleteAction?: string | null;
+  deferrable?: boolean;
+  validated?: boolean;
 }
 
-interface CatalogIndex {
+export interface CatalogIndexKey {
+  column: string | null;
+  expression: string | null;
+  direction: "asc" | "desc" | null;
+}
+
+export interface CatalogIndex {
   name: string;
   columns: string[];
   unique: boolean;
+  method?: string | null;
+  keys?: CatalogIndexKey[];
+  includedColumns?: string[];
+  predicate?: string | null;
+  valid?: boolean;
 }
 
 export interface CatalogTable {
   schema: string | null;
   name: string;
   kind: string; // "table" | "view"
+  nativeId?: string | null;
+  comment?: string | null;
+  partitionParent?: CatalogObjectRef | null;
+  partitionChildren?: CatalogObjectRef[];
   columns: CatalogColumn[];
   foreignKeys: CatalogForeignKey[];
+  constraints?: CatalogConstraint[];
   indexes: CatalogIndex[];
   rowEstimate: number | null;
+}
+
+export type CatalogObjectKindV2 =
+  | "namespace"
+  | "table"
+  | "view"
+  | "materialized_view"
+  | "routine"
+  | "trigger"
+  | "sequence"
+  | "index"
+  | "constraint"
+  | "collection"
+  | "other";
+
+export interface CatalogObjectRef {
+  catalog: string | null;
+  namespace: string | null;
+  name: string;
+  kind: CatalogObjectKindV2;
+  nativeId: string | null;
+}
+
+export type CatalogConstraintKind = "primary" | "unique" | "foreign" | "check";
+
+export interface CatalogConstraint {
+  name: string;
+  kind: CatalogConstraintKind;
+  columns: string[];
+  referencedRelation: CatalogObjectRef | null;
+  referencedColumns: string[];
+  checkExpression: string | null;
+  updateAction: string | null;
+  deleteAction: string | null;
+  deferrable: boolean;
+  validated: boolean;
 }
 
 export type CatalogObjectKind =
@@ -630,6 +734,343 @@ export interface Catalog {
   tables: CatalogTable[];
   // Optional while schema caches created by older app versions are still present.
   objects?: CatalogObject[];
+}
+
+export interface CatalogNamespace {
+  name: string;
+  comment: string | null;
+}
+
+export interface CatalogRelationV2 {
+  object: CatalogObjectRef;
+  comment: string | null;
+  rowEstimate: number | null;
+  partitionParent: CatalogObjectRef | null;
+  partitionChildren: CatalogObjectRef[];
+  columns: Array<{
+    name: string;
+    ordinal: number;
+    nativeType: string;
+    typeFamily: string;
+    length: number | null;
+    precision: number | null;
+    scale: number | null;
+    nullable: boolean;
+    defaultExpression: string | null;
+    generatedExpression: string | null;
+    identity: boolean;
+    autoIncrement: boolean;
+    collation: string | null;
+    comment: string | null;
+    sensitivity: string | null;
+  }>;
+  constraints: CatalogConstraint[];
+  indexes: Array<{
+    name: string;
+    method: string | null;
+    keys: CatalogIndexKey[];
+    includedColumns: string[];
+    predicate: string | null;
+    unique: boolean;
+    valid: boolean;
+  }>;
+}
+
+export interface CatalogSnapshot {
+  schemaVersion: number;
+  connectionId: string;
+  engine: Engine;
+  database: string;
+  capturedAt: string;
+  fingerprint: string;
+  namespaces: CatalogNamespace[];
+  relations: CatalogRelationV2[];
+  routines: unknown[];
+  otherObjects: unknown[];
+}
+
+// Mirrors src-tauri/src/services/erd_service.rs. Physical relationships always come
+// from Catalog V2; this contract persists only presentation and explicit virtual edges.
+export type ErdLayoutMode = "physical" | "logical" | "uml";
+
+export interface ErdNodePosition {
+  relationKey: string;
+  x: number;
+  y: number;
+}
+
+export interface ErdViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export interface ErdCanvasLayout {
+  nodes: ErdNodePosition[];
+  viewport: ErdViewport;
+  compact: boolean;
+  hiddenRelationKeys: string[];
+}
+
+export interface ErdVirtualRelation {
+  id: string;
+  fromRelation: CatalogObjectRef;
+  fromColumns: string[];
+  toRelation: CatalogObjectRef;
+  toColumns: string[];
+  label: string | null;
+}
+
+export interface ErdLayout {
+  id: string;
+  connectionId: string;
+  name: string;
+  mode: ErdLayoutMode;
+  catalogFingerprint: string;
+  layout: ErdCanvasLayout;
+  virtualRelations: ErdVirtualRelation[];
+  revision: number;
+  remoteId: string | null;
+  remoteRevision: number | null;
+  syncStatus: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveErdLayoutRequest {
+  id?: string | null;
+  connectionId: string;
+  name: string;
+  mode: ErdLayoutMode;
+  catalogFingerprint: string;
+  layout: ErdCanvasLayout;
+  virtualRelations: ErdVirtualRelation[];
+  expectedRevision?: number | null;
+}
+
+export interface SaveErdLayoutOutcome {
+  saved: boolean;
+  layout: ErdLayout;
+}
+
+export type JobKind = "import" | "export";
+export type JobFormat =
+  | "csv"
+  | "tsv"
+  | "json"
+  | "ndjson"
+  | "sql"
+  | "xlsx"
+  | "csv_gzip"
+  | "json_gzip"
+  | "ndjson_gzip"
+  | "sql_gzip";
+export type JobState =
+  | "queued"
+  | "running"
+  | "pause_requested"
+  | "paused"
+  | "cancel_requested"
+  | "cancelled"
+  | "succeeded"
+  | "failed";
+export type JobFileDirection = "input" | "output";
+export type JobErrorPolicy = "stop" | "continue";
+
+export interface JobFileCapability {
+  id: string;
+  connectionId: string;
+  direction: JobFileDirection;
+  displayName: string;
+  sizeBytes: number | null;
+  modifiedAt: string | null;
+  sourceSha256: string | null;
+  expiresAt: string;
+}
+
+export interface JobInputInspection {
+  fields: string[];
+  itemCount: number | null;
+  sampleRows: unknown[];
+  resumable: boolean;
+  warnings: string[];
+}
+
+export interface JobFieldMapping {
+  source: string;
+  target: string;
+  required: boolean;
+}
+
+export interface JobValidation {
+  onError: JobErrorPolicy;
+  maxErrors: number;
+  nullValues: string[];
+}
+
+export type JobPlan =
+  | {
+      kind: "export";
+      capabilityId: string;
+      relation: CatalogObjectRef;
+      consistency: "per_batch_current";
+      columns: string[];
+      fieldNames: JobFieldMapping[];
+      batchSize: number;
+    }
+  | {
+      kind: "import";
+      capabilityId: string;
+      targetRelation: CatalogObjectRef | null;
+      mapping: JobFieldMapping[];
+      validation: JobValidation;
+      batchSize: number;
+    };
+
+export interface CreateJobRequest {
+  connectionId: string;
+  format: JobFormat;
+  plan: JobPlan;
+}
+
+export interface Job {
+  id: string;
+  operationId: string;
+  connectionId: string;
+  kind: JobKind;
+  format: JobFormat;
+  state: JobState;
+  sourceSummary: string;
+  targetSummary: string;
+  rowsProcessed: number;
+  bytesProcessed: number;
+  rowsTotal: number | null;
+  bytesTotal: number | null;
+  resumable: boolean;
+  errorCode: string | null;
+  redactedError: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
+}
+
+export interface JobProposal {
+  job: Job;
+  payloadHash: string;
+  approvalRequired: boolean;
+  confirmationPhrase: string | null;
+}
+
+export interface JobArtifact {
+  id: string;
+  jobId: string;
+  artifactType: string;
+  displayName: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+}
+
+export interface JobDetail {
+  job: Job;
+  artifacts: JobArtifact[];
+  operationState: string;
+  payloadHash: string;
+  approvalRequired: boolean;
+  confirmationPhrase: string | null;
+}
+
+export interface JobChangedEvent {
+  connectionId: string;
+  jobId: string;
+  state: JobState;
+  rowsProcessed: number;
+  bytesProcessed: number;
+}
+
+export interface DdlColumnDefinition {
+  name: string;
+  nativeType: string;
+  nullable: boolean;
+  defaultExpression?: string | null;
+  generatedExpression?: string | null;
+  identity?: boolean;
+  autoIncrement?: boolean;
+  collation?: string | null;
+  comment?: string | null;
+}
+
+export type DdlDefaultChange =
+  | { action: "keep" }
+  | { action: "drop" }
+  | { action: "set"; expression: string };
+
+export interface DdlColumnAlteration {
+  newName?: string | null;
+  nativeType?: string | null;
+  nullable?: boolean | null;
+  default: DdlDefaultChange;
+}
+
+export type SchemaChange =
+  | {
+      kind: "create_table";
+      table: {
+        relation: CatalogObjectRef;
+        columns: DdlColumnDefinition[];
+        constraints: CatalogConstraint[];
+        indexes: CatalogIndex[];
+        comment?: string | null;
+      };
+    }
+  | { kind: "drop_table"; relation: CatalogObjectRef }
+  | { kind: "rename_table"; relation: CatalogObjectRef; newName: string }
+  | {
+      kind: "add_column";
+      relation: CatalogObjectRef;
+      column: DdlColumnDefinition;
+    }
+  | {
+      kind: "alter_column";
+      relation: CatalogObjectRef;
+      column: string;
+      alteration: DdlColumnAlteration;
+    }
+  | { kind: "drop_column"; relation: CatalogObjectRef; column: string }
+  | {
+      kind: "add_constraint";
+      relation: CatalogObjectRef;
+      constraint: CatalogConstraint;
+    }
+  | { kind: "drop_constraint"; relation: CatalogObjectRef; name: string }
+  | { kind: "create_index"; relation: CatalogObjectRef; index: CatalogIndex }
+  | { kind: "drop_index"; relation: CatalogObjectRef; name: string };
+
+export interface SchemaChangeRequest {
+  schemaVersion: 1;
+  catalogFingerprint: string;
+  change: SchemaChange;
+}
+
+export interface DdlPlan {
+  schemaVersion: number;
+  engine: Engine;
+  catalogFingerprint: string;
+  statements: string[];
+  transactional: boolean;
+  requiresRebuild: boolean;
+  warnings: string[];
+}
+
+export interface SchemaChangeProposal {
+  operationId: string;
+  payloadHash: string;
+  state: string;
+  confirmationPhrase: string | null;
+  statementCount: number;
+  expiresAt: string;
+  plan: DdlPlan;
 }
 
 // Subscription-backed Terminal providers and their local CLI status.

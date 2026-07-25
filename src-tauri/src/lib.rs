@@ -9,6 +9,7 @@ mod cli_install;
 mod commands;
 mod connection;
 mod dashboard;
+mod ddl;
 mod driver;
 mod error;
 mod executor;
@@ -33,7 +34,7 @@ pub use error::{AppError, AppResult};
 
 use std::time::Duration;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub fn run() {
     tracing_subscriber::fmt()
@@ -72,6 +73,25 @@ pub fn run() {
                     skills,
                     app.handle().clone(),
                 );
+            }
+            if app
+                .state::<state::AppState>()
+                .features
+                .is_enabled(features::FeatureFlag::JobsV1)
+            {
+                let mut events = app.state::<state::AppState>().services.job.subscribe();
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        match events.recv().await {
+                            Ok(event) => {
+                                let _ = handle.emit("job:changed", event);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        }
+                    }
+                });
             }
             Ok(())
         })
@@ -123,6 +143,7 @@ pub fn run() {
             commands::run_dashboard,
             commands::get_schema,
             commands::refresh_schema,
+            commands::get_catalog_snapshot,
             commands::get_table_ddl,
             commands::classify_sql,
             commands::preview_sql,
@@ -133,7 +154,28 @@ pub fn run() {
             commands::propose_document_query,
             commands::run_document_query,
             commands::propose_script,
+            commands::propose_table_changes,
             commands::run_script,
+            commands::preview_schema_change,
+            commands::propose_schema_change,
+            commands::run_schema_change,
+            commands::list_sql_documents,
+            commands::create_sql_document,
+            commands::save_sql_document,
+            commands::delete_sql_document,
+            commands::list_erd_layouts,
+            commands::save_erd_layout,
+            commands::delete_erd_layout,
+            commands::pick_job_input,
+            commands::pick_job_output,
+            commands::inspect_job_input,
+            commands::create_job,
+            commands::list_jobs,
+            commands::get_job,
+            commands::start_job,
+            commands::pause_job,
+            commands::cancel_job,
+            commands::reveal_job_artifact,
             commands::get_safety,
             commands::set_safety,
             commands::get_monitoring_status,

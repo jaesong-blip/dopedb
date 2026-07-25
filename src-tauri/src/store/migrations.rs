@@ -228,12 +228,15 @@ CREATE INDEX IF NOT EXISTS idx_operations_connection_created
 CREATE INDEX IF NOT EXISTS idx_operations_runtime_state
     ON operations(runtime_id, state);
 
--- Every field that gives an operation its meaning is immutable. The projection may
--- update only lifecycle timestamps and state through the Rust state machine.
-CREATE TRIGGER IF NOT EXISTS operations_reject_immutable_update
+-- Every field that gives an operation its meaning is immutable. `runtime_id` is
+-- deliberately excluded: a durable queued/resumable job may CAS-rebind only its
+-- process-local owner after restart while its payload hash and approval stay fixed.
+-- Recreate the trigger on open so installations made before job recovery support
+-- receive the corrected invariant as well.
+DROP TRIGGER IF EXISTS operations_reject_immutable_update;
+CREATE TRIGGER operations_reject_immutable_update
 BEFORE UPDATE ON operations
-WHEN OLD.runtime_id IS NOT NEW.runtime_id
-  OR OLD.workspace_id IS NOT NEW.workspace_id
+WHEN OLD.workspace_id IS NOT NEW.workspace_id
   OR OLD.account_scope IS NOT NEW.account_scope
   OR OLD.connection_id IS NOT NEW.connection_id
   OR OLD.connection_revision IS NOT NEW.connection_revision
@@ -353,6 +356,45 @@ CREATE TABLE IF NOT EXISTS snippets (
     updated_at    TEXT NOT NULL
 );
 
+-- Persistent SQL workbench documents. `local_revision` is the optimistic-lock
+-- token used by autosave; remote revision fields are reserved for hosted sync.
+CREATE TABLE IF NOT EXISTS sql_documents (
+    id                TEXT PRIMARY KEY,
+    workspace_id      TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    account_scope     TEXT NOT NULL,
+    connection_id     TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    title             TEXT NOT NULL,
+    dialect           TEXT NOT NULL,
+    content           TEXT NOT NULL,
+    local_revision    INTEGER NOT NULL CHECK(local_revision > 0),
+    remote_id         TEXT,
+    remote_revision   INTEGER,
+    dirty             INTEGER NOT NULL DEFAULT 1 CHECK(dirty IN (0, 1)),
+    sync_status       TEXT NOT NULL DEFAULT 'local'
+                      CHECK(sync_status IN ('local', 'dirty', 'synced', 'conflict')),
+    deleted_at        TEXT,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sql_documents_scope_updated
+    ON sql_documents(workspace_id, account_scope, connection_id, updated_at DESC)
+    WHERE deleted_at IS NULL;
+
+-- A bounded revision journal makes a committed autosave recoverable even if the
+-- current row is later conflicted or the renderer crashes while switching documents.
+CREATE TABLE IF NOT EXISTS sql_document_revisions (
+    document_id    TEXT NOT NULL REFERENCES sql_documents(id) ON DELETE CASCADE,
+    local_revision INTEGER NOT NULL CHECK(local_revision > 0),
+    content_hash   TEXT NOT NULL
+                   CHECK(length(content_hash) = 64
+                     AND content_hash NOT GLOB '*[^0-9a-f]*'),
+    content        TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    PRIMARY KEY (document_id, local_revision)
+);
+CREATE INDEX IF NOT EXISTS idx_sql_document_revisions_recent
+    ON sql_document_revisions(document_id, local_revision DESC);
+
 CREATE TABLE IF NOT EXISTS dashboards (
     id                 TEXT PRIMARY KEY,
     connection_id      TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
@@ -420,6 +462,195 @@ CREATE TABLE IF NOT EXISTS schema_cache_v2 (
     catalog_json          TEXT NOT NULL,
     PRIMARY KEY (workspace_id, account_scope, connection_id)
 );
+
+-- ERD layouts keep physical metadata immutable and store only presentation state
+-- plus workspace-scoped virtual relationships.
+CREATE TABLE IF NOT EXISTS erd_layouts (
+    id                  TEXT PRIMARY KEY,
+    workspace_id        TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    account_scope       TEXT NOT NULL,
+    connection_id       TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    name                TEXT NOT NULL,
+    mode                TEXT NOT NULL CHECK(mode IN ('physical', 'logical', 'uml')),
+    catalog_fingerprint TEXT NOT NULL
+                        CHECK(length(catalog_fingerprint) = 64
+                          AND catalog_fingerprint NOT GLOB '*[^0-9a-f]*'),
+    layout_json         TEXT NOT NULL CHECK(json_valid(layout_json)),
+    virtual_relations_json TEXT NOT NULL DEFAULT '[]'
+                           CHECK(json_valid(virtual_relations_json)),
+    revision            INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    remote_id           TEXT,
+    remote_revision     INTEGER,
+    sync_status         TEXT NOT NULL DEFAULT 'local'
+                        CHECK(sync_status IN ('local', 'dirty', 'synced', 'conflict')),
+    deleted_at          TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_erd_layouts_scope_updated
+    ON erd_layouts(workspace_id, account_scope, connection_id, updated_at DESC)
+    WHERE deleted_at IS NULL;
+
+-- Durable import/export scheduler projection. Plans are immutable and hash pinned;
+-- mutable state is constrained to lifecycle/progress fields.
+CREATE TABLE IF NOT EXISTS jobs (
+    id                   TEXT PRIMARY KEY,
+    operation_id         TEXT NOT NULL UNIQUE REFERENCES operations(id),
+    workspace_id         TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    account_scope        TEXT NOT NULL,
+    connection_id        TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    kind                 TEXT NOT NULL CHECK(kind IN ('import', 'export')),
+    format               TEXT NOT NULL
+                         CHECK(format IN (
+                           'csv', 'tsv', 'json', 'ndjson', 'sql', 'xlsx',
+                           'csv_gzip', 'json_gzip', 'ndjson_gzip', 'sql_gzip'
+                         )),
+    plan_json            TEXT NOT NULL CHECK(json_valid(plan_json)),
+    plan_hash            TEXT NOT NULL
+                         CHECK(length(plan_hash) = 64
+                           AND plan_hash NOT GLOB '*[^0-9a-f]*'),
+    state                TEXT NOT NULL
+                         CHECK(state IN (
+                           'queued', 'running', 'paused', 'cancel_requested',
+                           'cancelled', 'succeeded', 'failed'
+                         )),
+    source_summary       TEXT NOT NULL,
+    target_summary       TEXT NOT NULL,
+    rows_processed       INTEGER NOT NULL DEFAULT 0 CHECK(rows_processed >= 0),
+    bytes_processed      INTEGER NOT NULL DEFAULT 0 CHECK(bytes_processed >= 0),
+    rows_total           INTEGER,
+    bytes_total          INTEGER,
+    resumable            INTEGER NOT NULL DEFAULT 0 CHECK(resumable IN (0, 1)),
+    pause_requested      INTEGER NOT NULL DEFAULT 0 CHECK(pause_requested IN (0, 1)),
+    error_code           TEXT,
+    redacted_error       TEXT,
+    created_at           TEXT NOT NULL,
+    started_at           TEXT,
+    finished_at          TEXT,
+    updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_scope_created
+    ON jobs(workspace_id, account_scope, connection_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_state_created
+    ON jobs(state, created_at);
+
+-- Scope, approved plan, and source/target summaries never change after insertion.
+-- Mutable lifecycle/progress fields remain available to the scheduler.
+DROP TRIGGER IF EXISTS jobs_reject_immutable_update;
+CREATE TRIGGER jobs_reject_immutable_update
+BEFORE UPDATE ON jobs
+WHEN OLD.operation_id IS NOT NEW.operation_id
+  OR OLD.workspace_id IS NOT NEW.workspace_id
+  OR OLD.account_scope IS NOT NEW.account_scope
+  OR OLD.connection_id IS NOT NEW.connection_id
+  OR OLD.kind IS NOT NEW.kind
+  OR OLD.format IS NOT NEW.format
+  OR OLD.plan_json IS NOT NEW.plan_json
+  OR OLD.plan_hash IS NOT NEW.plan_hash
+  OR OLD.source_summary IS NOT NEW.source_summary
+  OR OLD.target_summary IS NOT NEW.target_summary
+  OR OLD.resumable IS NOT NEW.resumable
+  OR OLD.created_at IS NOT NEW.created_at
+BEGIN
+    SELECT RAISE(ABORT, 'job immutable fields cannot be changed');
+END;
+
+-- Native file selections become opaque, scope-bound capabilities. Plans persist
+-- only the random capability id; renderer processes never receive a local path.
+CREATE TABLE IF NOT EXISTS job_file_capabilities (
+    id                 TEXT PRIMARY KEY,
+    workspace_id       TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    account_scope      TEXT NOT NULL,
+    connection_id      TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    direction          TEXT NOT NULL CHECK(direction IN ('input', 'output')),
+    local_path         TEXT NOT NULL,
+    display_name       TEXT NOT NULL,
+    size_bytes         INTEGER,
+    modified_at        TEXT,
+    source_sha256      TEXT,
+    claimed_by_job_id  TEXT UNIQUE REFERENCES jobs(id) ON DELETE SET NULL,
+    expires_at         TEXT NOT NULL,
+    revoked_at         TEXT,
+    created_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_job_file_capabilities_scope
+    ON job_file_capabilities(workspace_id, account_scope, connection_id, expires_at)
+    WHERE revoked_at IS NULL;
+
+DROP TRIGGER IF EXISTS job_file_capabilities_reject_immutable_update;
+CREATE TRIGGER job_file_capabilities_reject_immutable_update
+BEFORE UPDATE ON job_file_capabilities
+WHEN OLD.workspace_id IS NOT NEW.workspace_id
+  OR OLD.account_scope IS NOT NEW.account_scope
+  OR OLD.connection_id IS NOT NEW.connection_id
+  OR OLD.direction IS NOT NEW.direction
+  OR OLD.local_path IS NOT NEW.local_path
+  OR OLD.display_name IS NOT NEW.display_name
+  OR OLD.size_bytes IS NOT NEW.size_bytes
+  OR OLD.modified_at IS NOT NEW.modified_at
+  OR OLD.source_sha256 IS NOT NEW.source_sha256
+  OR OLD.expires_at IS NOT NEW.expires_at
+  OR OLD.created_at IS NOT NEW.created_at
+BEGIN
+    SELECT RAISE(ABORT, 'job file capability immutable fields cannot be changed');
+END;
+
+CREATE TABLE IF NOT EXISTS job_checkpoints (
+    job_id               TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    sequence             INTEGER NOT NULL CHECK(sequence > 0),
+    source_fingerprint   TEXT NOT NULL,
+    target_fingerprint   TEXT NOT NULL,
+    checkpoint_json      TEXT NOT NULL CHECK(json_valid(checkpoint_json)),
+    created_at           TEXT NOT NULL,
+    PRIMARY KEY (job_id, sequence)
+);
+
+CREATE TABLE IF NOT EXISTS job_events (
+    id          TEXT PRIMARY KEY,
+    job_id      TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    sequence    INTEGER NOT NULL CHECK(sequence > 0),
+    event_kind  TEXT NOT NULL
+                CHECK(event_kind IN (
+                  'queued', 'started', 'progress', 'warning', 'paused',
+                  'resumed', 'succeeded', 'failed', 'cancelled'
+                )),
+    event_json  TEXT NOT NULL CHECK(json_valid(event_json)),
+    created_at  TEXT NOT NULL,
+    UNIQUE(job_id, sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_job_events_job_sequence
+    ON job_events(job_id, sequence);
+
+CREATE TRIGGER IF NOT EXISTS job_events_reject_update
+BEFORE UPDATE ON job_events
+BEGIN
+    SELECT RAISE(ABORT, 'job events are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS job_events_reject_delete
+BEFORE DELETE ON job_events
+BEGIN
+    SELECT RAISE(ABORT, 'job events are append-only');
+END;
+
+CREATE TABLE IF NOT EXISTS job_artifacts (
+    id              TEXT PRIMARY KEY,
+    job_id          TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    artifact_type   TEXT NOT NULL
+                    CHECK(artifact_type IN (
+                      'output', 'error_rows', 'rejected_rows', 'log', 'partial'
+                    )),
+    local_path      TEXT NOT NULL,
+    size_bytes      INTEGER NOT NULL CHECK(size_bytes >= 0),
+    sha256          TEXT NOT NULL
+                    CHECK(length(sha256) = 64
+                      AND sha256 NOT GLOB '*[^0-9a-f]*'),
+    retention_state TEXT NOT NULL DEFAULT 'retained'
+                    CHECK(retention_state IN ('retained', 'expired', 'deleted')),
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_job_artifacts_job
+    ON job_artifacts(job_id, created_at);
 
 -- In-app agent chat: one row per conversation thread. `cli_session_id` is the
 -- underlying CLI's own resume token (Claude Code `--resume` / Codex `resume <id>`),

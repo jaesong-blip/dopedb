@@ -4,7 +4,7 @@
 //! canonical protocol DTO. Every read is authorized and pinned before consulting
 //! SQLite, and every write is compare-and-swap against that same pin.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use chrono::Utc;
 use dopedb_protocol::catalog as v2;
@@ -144,7 +144,7 @@ fn to_snapshot(profile: &ConnectionProfile, catalog: &Catalog) -> AppResult<v2::
             namespace: object.schema.clone(),
             name: object.name.clone(),
             kind: object_kind(&object.kind),
-            native_id: None,
+            native_id: object.native_id.clone(),
         };
         if matches!(object.kind.as_str(), "function" | "procedure") {
             routines.push(v2::Routine {
@@ -153,10 +153,10 @@ fn to_snapshot(profile: &ConnectionProfile, catalog: &Catalog) -> AppResult<v2::
                     ..object_ref
                 },
                 native_kind: Some(object.kind.clone()),
-                arguments: Vec::new(),
-                return_type: None,
-                language: None,
-                comment: None,
+                arguments: object.arguments.clone(),
+                return_type: object.return_type.clone(),
+                language: object.language.clone(),
+                comment: object.comment.clone(),
                 detail: object.detail.clone(),
                 parent: object.parent.clone(),
             });
@@ -164,7 +164,7 @@ fn to_snapshot(profile: &ConnectionProfile, catalog: &Catalog) -> AppResult<v2::
             other_objects.push(v2::DatabaseObject {
                 object: object_ref,
                 native_kind: Some(object.kind.clone()),
-                comment: None,
+                comment: object.comment.clone(),
                 detail: object.detail.clone(),
                 parent: object.parent.clone(),
             });
@@ -193,8 +193,12 @@ fn table_to_relation(table: &Table) -> v2::Relation {
         .filter(|column| column.pk)
         .map(|column| column.name.clone())
         .collect::<Vec<_>>();
-    let mut constraints = Vec::new();
-    if !primary_columns.is_empty() {
+    let mut constraints = table.constraints.clone();
+    if !primary_columns.is_empty()
+        && !constraints
+            .iter()
+            .any(|constraint| constraint.kind == v2::ConstraintKind::Primary)
+    {
         constraints.push(v2::Constraint {
             name: format!("pk_{}", table.name),
             kind: v2::ConstraintKind::Primary,
@@ -208,44 +212,62 @@ fn table_to_relation(table: &Table) -> v2::Relation {
             validated: true,
         });
     }
-    let mut foreign_keys = table.foreign_keys.iter().collect::<Vec<_>>();
-    foreign_keys.sort_by(|left, right| {
-        (
-            left.column.as_str(),
-            left.references_schema.as_deref(),
-            left.references_table.as_str(),
-            left.references_column.as_str(),
-        )
-            .cmp(&(
-                right.column.as_str(),
-                right.references_schema.as_deref(),
-                right.references_table.as_str(),
-                right.references_column.as_str(),
+    let mut foreign_key_groups =
+        BTreeMap::<(String, Option<String>, String), Vec<&ForeignKey>>::new();
+    for foreign_key in &table.foreign_keys {
+        let name = foreign_key.name.clone().unwrap_or_else(|| {
+            let referenced_namespace = foreign_key
+                .references_schema
+                .as_deref()
+                .unwrap_or("default");
+            format!(
+                "fk_{}_{}_{}_{}_{}",
+                table.name,
+                foreign_key.column,
+                referenced_namespace,
+                foreign_key.references_table,
+                foreign_key.references_column
+            )
+        });
+        foreign_key_groups
+            .entry((
+                name,
+                foreign_key.references_schema.clone(),
+                foreign_key.references_table.clone(),
             ))
-    });
-    constraints.extend(
-        foreign_keys
-            .into_iter()
-            .enumerate()
-            .map(|(index, foreign_key)| v2::Constraint {
-                name: format!("fk_{}_{}_{}", table.name, foreign_key.column, index + 1),
+            .or_default()
+            .push(foreign_key);
+    }
+    constraints.extend(foreign_key_groups.into_iter().map(
+        |((name, namespace, referenced_table), mut columns)| {
+            columns.sort_by_key(|foreign_key| foreign_key.ordinal);
+            let first = columns[0];
+            v2::Constraint {
+                name,
                 kind: v2::ConstraintKind::Foreign,
-                columns: vec![foreign_key.column.clone()],
+                columns: columns
+                    .iter()
+                    .map(|foreign_key| foreign_key.column.clone())
+                    .collect(),
                 referenced_relation: Some(v2::ObjectRef {
                     catalog: None,
-                    namespace: foreign_key.references_schema.clone(),
-                    name: foreign_key.references_table.clone(),
+                    namespace,
+                    name: referenced_table,
                     kind: v2::ObjectKind::Table,
                     native_id: None,
                 }),
-                referenced_columns: vec![foreign_key.references_column.clone()],
+                referenced_columns: columns
+                    .iter()
+                    .map(|foreign_key| foreign_key.references_column.clone())
+                    .collect(),
                 check_expression: None,
-                update_action: None,
-                delete_action: None,
-                deferrable: false,
-                validated: true,
-            }),
-    );
+                update_action: first.update_action.clone(),
+                delete_action: first.delete_action.clone(),
+                deferrable: first.deferrable,
+                validated: first.validated,
+            }
+        },
+    ));
 
     v2::Relation {
         object: v2::ObjectRef {
@@ -253,31 +275,35 @@ fn table_to_relation(table: &Table) -> v2::Relation {
             namespace: table.schema.clone(),
             name: table.name.clone(),
             kind: object_kind(&table.kind),
-            native_id: None,
+            native_id: table.native_id.clone(),
         },
-        comment: None,
+        comment: table.comment.clone(),
         row_estimate: table.row_estimate,
-        partition_parent: None,
-        partition_children: Vec::new(),
+        partition_parent: table.partition_parent.clone(),
+        partition_children: table.partition_children.clone(),
         columns: table
             .columns
             .iter()
             .enumerate()
             .map(|(index, column)| v2::Column {
                 name: column.name.clone(),
-                ordinal: u32::try_from(index + 1).unwrap_or(u32::MAX),
+                ordinal: if column.ordinal == 0 {
+                    u32::try_from(index + 1).unwrap_or(u32::MAX)
+                } else {
+                    column.ordinal
+                },
                 native_type: column.data_type.clone(),
                 type_family: type_family(&column.data_type),
-                length: None,
-                precision: None,
-                scale: None,
+                length: column.length,
+                precision: column.precision,
+                scale: column.scale,
                 nullable: column.nullable,
-                default_expression: None,
-                generated_expression: None,
-                identity: false,
-                auto_increment: false,
-                collation: None,
-                comment: None,
+                default_expression: column.default_expression.clone(),
+                generated_expression: column.generated_expression.clone(),
+                identity: column.identity,
+                auto_increment: column.auto_increment,
+                collation: column.collation.clone(),
+                comment: column.comment.clone(),
                 sensitivity: None,
             })
             .collect(),
@@ -287,20 +313,24 @@ fn table_to_relation(table: &Table) -> v2::Relation {
             .iter()
             .map(|index| v2::Index {
                 name: index.name.clone(),
-                method: None,
-                keys: index
-                    .columns
-                    .iter()
-                    .map(|column| v2::IndexKey {
-                        column: Some(column.clone()),
-                        expression: None,
-                        direction: None,
-                    })
-                    .collect(),
-                included_columns: Vec::new(),
-                predicate: None,
+                method: index.method.clone(),
+                keys: if index.keys.is_empty() {
+                    index
+                        .columns
+                        .iter()
+                        .map(|column| v2::IndexKey {
+                            column: Some(column.clone()),
+                            expression: None,
+                            direction: None,
+                        })
+                        .collect()
+                } else {
+                    index.keys.clone()
+                },
+                included_columns: index.included_columns.clone(),
+                predicate: index.predicate.clone(),
                 unique: index.unique,
-                valid: true,
+                valid: index.valid,
             })
             .collect(),
     }
@@ -323,6 +353,11 @@ fn from_snapshot(snapshot: &v2::CatalogSnapshot) -> Catalog {
                     (!routine.arguments.is_empty()).then(|| routine.arguments.join(", "))
                 }),
                 parent: routine.parent.clone(),
+                native_id: routine.object.native_id.clone(),
+                arguments: routine.arguments.clone(),
+                return_type: routine.return_type.clone(),
+                language: routine.language.clone(),
+                comment: routine.comment.clone(),
             })
             .chain(snapshot.other_objects().iter().map(|object| {
                 DatabaseObject {
@@ -334,6 +369,11 @@ fn from_snapshot(snapshot: &v2::CatalogSnapshot) -> Catalog {
                         .unwrap_or_else(|| object_kind_name(object.object.kind).into()),
                     detail: object.detail.clone().or_else(|| object.comment.clone()),
                     parent: object.parent.clone(),
+                    native_id: object.object.native_id.clone(),
+                    arguments: Vec::new(),
+                    return_type: None,
+                    language: None,
+                    comment: object.comment.clone(),
                 }
             }))
             .collect(),
@@ -360,6 +400,8 @@ fn relation_to_table(relation: &v2::Relation) -> Table {
                 .filter_map(move |(index, column)| {
                     let referenced = referenced?;
                     Some(ForeignKey {
+                        name: Some(constraint.name.clone()),
+                        ordinal: u32::try_from(index + 1).unwrap_or(u32::MAX),
                         column: column.clone(),
                         references_table: referenced.name.clone(),
                         references_column: constraint
@@ -368,6 +410,10 @@ fn relation_to_table(relation: &v2::Relation) -> Table {
                             .cloned()
                             .unwrap_or_default(),
                         references_schema: referenced.namespace.clone(),
+                        update_action: constraint.update_action.clone(),
+                        delete_action: constraint.delete_action.clone(),
+                        deferrable: constraint.deferrable,
+                        validated: constraint.validated,
                     })
                 })
         })
@@ -376,6 +422,10 @@ fn relation_to_table(relation: &v2::Relation) -> Table {
         schema: relation.object.namespace.clone(),
         name: relation.object.name.clone(),
         kind: object_kind_name(relation.object.kind).into(),
+        native_id: relation.object.native_id.clone(),
+        comment: relation.comment.clone(),
+        partition_parent: relation.partition_parent.clone(),
+        partition_children: relation.partition_children.clone(),
         columns: relation
             .columns
             .iter()
@@ -384,9 +434,30 @@ fn relation_to_table(relation: &v2::Relation) -> Table {
                 data_type: column.native_type.clone(),
                 nullable: column.nullable,
                 pk: primary_columns.contains(&column.name),
+                ordinal: column.ordinal,
+                length: column.length,
+                precision: column.precision,
+                scale: column.scale,
+                default_expression: column.default_expression.clone(),
+                generated_expression: column.generated_expression.clone(),
+                identity: column.identity,
+                auto_increment: column.auto_increment,
+                collation: column.collation.clone(),
+                comment: column.comment.clone(),
             })
             .collect(),
         foreign_keys,
+        constraints: relation
+            .constraints
+            .iter()
+            .filter(|constraint| {
+                !matches!(
+                    constraint.kind,
+                    v2::ConstraintKind::Primary | v2::ConstraintKind::Foreign
+                )
+            })
+            .cloned()
+            .collect(),
         indexes: relation
             .indexes
             .iter()
@@ -398,6 +469,11 @@ fn relation_to_table(relation: &v2::Relation) -> Table {
                     .filter_map(|key| key.column.clone())
                     .collect(),
                 unique: index.unique,
+                method: index.method.clone(),
+                keys: index.keys.clone(),
+                included_columns: index.included_columns.clone(),
+                predicate: index.predicate.clone(),
+                valid: index.valid,
             })
             .collect(),
         row_estimate: relation.row_estimate,
@@ -548,14 +624,17 @@ mod tests {
                     data_type: "uuid".into(),
                     nullable: false,
                     pk: true,
+                    ..Column::default()
                 }],
                 foreign_keys: Vec::new(),
                 indexes: vec![Index {
                     name: "users_id_idx".into(),
                     columns: vec!["id".into()],
                     unique: true,
+                    ..Index::default()
                 }],
                 row_estimate: Some(3),
+                ..Table::default()
             }],
             objects: vec![
                 DatabaseObject {
@@ -564,6 +643,7 @@ mod tests {
                     kind: "procedure".into(),
                     detail: Some("(target text)".into()),
                     parent: None,
+                    ..DatabaseObject::default()
                 },
                 DatabaseObject {
                     schema: Some("public".into()),
@@ -571,13 +651,21 @@ mod tests {
                     kind: "trigger".into(),
                     detail: Some("BEFORE UPDATE".into()),
                     parent: Some("users".into()),
+                    ..DatabaseObject::default()
                 },
             ],
         };
 
         let snapshot = to_snapshot(&profile(), &catalog).unwrap();
         assert!(snapshot.has_canonical_fingerprint());
-        assert_eq!(from_snapshot(&snapshot), catalog);
+        let restored = from_snapshot(&snapshot);
+        assert_eq!(restored.tables[0].columns[0].ordinal, 1);
+        assert_eq!(restored.tables[0].indexes[0].keys.len(), 1);
+        let recaptured = to_snapshot(&profile(), &restored).unwrap();
+        assert_eq!(
+            recaptured.canonical_fingerprint(),
+            snapshot.canonical_fingerprint()
+        );
     }
 
     #[test]
@@ -593,16 +681,19 @@ mod tests {
                     references_table: "users".into(),
                     references_column: "id".into(),
                     references_schema: Some("public".into()),
+                    ..ForeignKey::default()
                 },
                 ForeignKey {
                     column: "account_id".into(),
                     references_table: "accounts".into(),
                     references_column: "id".into(),
                     references_schema: Some("public".into()),
+                    ..ForeignKey::default()
                 },
             ],
             indexes: Vec::new(),
             row_estimate: None,
+            ..Table::default()
         };
         let first = table_to_relation(&table);
         table.foreign_keys.reverse();

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
+use dopedb_protocol::{Constraint, ConstraintKind, IndexKey, ObjectKind, ObjectRef, SortDirection};
 use sqlx::{PgPool, Row};
 
 use crate::error::{AppError, AppResult};
@@ -10,9 +11,20 @@ use crate::error::{AppError, AppResult};
 use super::{Catalog, Column, DatabaseObject, ForeignKey, Index, Table};
 
 const COLS_SQL: &str = r#"
-SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_nullable,
+SELECT c.table_schema, c.table_name, c.column_name,
+       format_type(a.atttypid, a.atttypmod) AS formatted_type,
+       c.is_nullable, c.ordinal_position,
+       c.character_maximum_length, c.numeric_precision, c.numeric_scale,
+       c.column_default, c.is_identity, c.collation_name,
+       col_description(cl.oid, a.attnum) AS column_comment,
        COALESCE(pk.is_pk, false) AS is_pk
 FROM information_schema.columns c
+JOIN pg_namespace ns ON ns.nspname = c.table_schema
+JOIN pg_class cl ON cl.relnamespace = ns.oid AND cl.relname = c.table_name
+JOIN pg_attribute a ON a.attrelid = cl.oid
+                   AND a.attname = c.column_name
+                   AND a.attnum > 0
+                   AND NOT a.attisdropped
 LEFT JOIN (
     SELECT tc.table_schema, tc.table_name, kcu.column_name, true AS is_pk
     FROM information_schema.table_constraints tc
@@ -40,9 +52,24 @@ ORDER BY c.table_schema, c.table_name, c.ordinal_position
 
 // Tables vs. views. information_schema.columns returns both, so classify per relation.
 const KIND_SQL: &str = r#"
-SELECT table_schema, table_name, table_type
-FROM information_schema.tables
-WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+SELECT n.nspname AS table_schema,
+       c.relname AS table_name,
+       CASE c.relkind
+         WHEN 'v' THEN 'VIEW'
+         WHEN 'm' THEN 'MATERIALIZED VIEW'
+         ELSE 'BASE TABLE'
+       END AS table_type,
+       c.oid::text AS native_id,
+       obj_description(c.oid, 'pg_class') AS table_comment,
+       pn.nspname AS parent_schema,
+       pc.relname AS parent_table
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN pg_inherits inh ON inh.inhrelid = c.oid
+LEFT JOIN pg_class pc ON pc.oid = inh.inhparent
+LEFT JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+WHERE c.relkind IN ('r', 'p', 'v', 'm')
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
 "#;
 
 // FK edges resolved on pg_catalog so composite keys stay per-column-correct. Zipping
@@ -52,10 +79,24 @@ WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
 const FK_SQL: &str = r#"
 SELECT cn.nspname   AS table_schema,
        cl.relname   AS table_name,
+       con.conname  AS constraint_name,
+       k.ord        AS ordinal_position,
        att.attname  AS column_name,
        fn.nspname   AS foreign_schema,
        fcl.relname  AS foreign_table,
-       fatt.attname AS foreign_column
+       fatt.attname AS foreign_column,
+       CASE con.confupdtype
+         WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
+         WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL'
+         WHEN 'd' THEN 'SET DEFAULT'
+       END AS update_action,
+       CASE con.confdeltype
+         WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
+         WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL'
+         WHEN 'd' THEN 'SET DEFAULT'
+       END AS delete_action,
+       con.condeferrable AS is_deferrable,
+       con.convalidated AS is_validated
 FROM pg_constraint con
 JOIN pg_class cl       ON cl.oid = con.conrelid
 JOIN pg_namespace cn   ON cn.oid = cl.relnamespace
@@ -76,16 +117,53 @@ SELECT n.nspname AS table_schema,
        t.relname AS table_name,
        ic.relname AS index_name,
        i.indisunique AS is_unique,
-       COALESCE(a.attname, '(expression)') AS column_name
+       am.amname AS index_method,
+       a.attname AS column_name,
+       CASE WHEN a.attname IS NULL
+            THEN pg_get_indexdef(i.indexrelid, k.ord::integer, true)
+            ELSE NULL
+       END AS index_expression,
+       CASE WHEN (i.indoption[(k.ord - 1)::integer] & 1) = 1
+            THEN 'desc' ELSE 'asc'
+       END AS sort_direction,
+       pg_get_expr(i.indpred, i.indrelid) AS predicate,
+       i.indisvalid AS is_valid
 FROM pg_index i
 JOIN pg_class t      ON t.oid = i.indrelid
 JOIN pg_class ic     ON ic.oid = i.indexrelid
 JOIN pg_namespace n  ON n.oid = t.relnamespace
+JOIN pg_am am         ON am.oid = ic.relam
 JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
 LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND NOT i.indisprimary
 ORDER BY n.nspname, t.relname, ic.relname, k.ord
+"#;
+
+const CONSTRAINTS_SQL: &str = r#"
+SELECT n.nspname AS table_schema,
+       c.relname AS table_name,
+       con.conname AS constraint_name,
+       con.contype AS constraint_type,
+       COALESCE(
+         ARRAY(
+           SELECT a.attname
+           FROM unnest(con.conkey) WITH ORDINALITY AS key(attnum, ord)
+           JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = key.attnum
+           ORDER BY key.ord
+         ),
+         ARRAY[]::text[]
+       ) AS columns,
+       CASE WHEN con.contype = 'c' THEN pg_get_expr(con.conbin, con.conrelid) END
+         AS check_expression,
+       con.condeferrable AS is_deferrable,
+       con.convalidated AS is_validated
+FROM pg_constraint con
+JOIN pg_class c ON c.oid = con.conrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE con.contype IN ('p', 'u', 'c')
+  AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY n.nspname, c.relname, con.conname
 "#;
 
 const EST_SQL: &str = r#"
@@ -105,9 +183,14 @@ SELECT n.nspname AS schema_name,
        p.proname AS object_name,
        CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS object_kind,
        pg_get_function_identity_arguments(p.oid) AS object_detail,
-       NULL::text AS parent_name
+       NULL::text AS parent_name,
+       p.oid::text AS native_id,
+       pg_get_function_result(p.oid) AS return_type,
+       l.lanname AS language,
+       obj_description(p.oid, 'pg_proc') AS object_comment
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
+JOIN pg_language l ON l.oid = p.prolang
 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND p.prokind IN ('f', 'p', 'w')
   AND NOT EXISTS (
@@ -121,7 +204,11 @@ SELECT n.nspname,
        c.relname,
        CASE c.relkind WHEN 'S' THEN 'sequence' ELSE 'materialized_view' END,
        NULL::text,
-       NULL::text
+       NULL::text,
+       c.oid::text,
+       NULL::text,
+       NULL::text,
+       obj_description(c.oid, 'pg_class')
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('S', 'm')
@@ -137,7 +224,11 @@ SELECT n.nspname,
        t.tgname,
        'trigger',
        pg_get_triggerdef(t.oid, false),
-       c.relname
+       c.relname,
+       t.oid::text,
+       NULL::text,
+       NULL::text,
+       obj_description(t.oid, 'pg_trigger')
 FROM pg_trigger t
 JOIN pg_class c ON c.oid = t.tgrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -160,9 +251,14 @@ SELECT n.nspname AS schema_name,
        p.proname AS object_name,
        'function' AS object_kind,
        pg_get_function_identity_arguments(p.oid) AS object_detail,
-       NULL::text AS parent_name
+       NULL::text AS parent_name,
+       p.oid::text AS native_id,
+       pg_get_function_result(p.oid) AS return_type,
+       l.lanname AS language,
+       obj_description(p.oid, 'pg_proc') AS object_comment
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
+JOIN pg_language l ON l.oid = p.prolang
 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND NOT p.proisagg
   AND NOT EXISTS (
@@ -176,7 +272,11 @@ SELECT n.nspname,
        c.relname,
        CASE c.relkind WHEN 'S' THEN 'sequence' ELSE 'materialized_view' END,
        NULL::text,
-       NULL::text
+       NULL::text,
+       c.oid::text,
+       NULL::text,
+       NULL::text,
+       obj_description(c.oid, 'pg_class')
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('S', 'm')
@@ -192,7 +292,11 @@ SELECT n.nspname,
        t.tgname,
        'trigger',
        pg_get_triggerdef(t.oid, false),
-       c.relname
+       c.relname,
+       t.oid::text,
+       NULL::text,
+       NULL::text,
+       obj_description(t.oid, 'pg_trigger')
 FROM pg_trigger t
 JOIN pg_class c ON c.oid = t.tgrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -233,15 +337,41 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
                     foreign_keys: Vec::new(),
                     indexes: Vec::new(),
                     row_estimate: None,
+                    ..Table::default()
                 });
                 tables.len() - 1
             });
         let nullable: String = r.try_get("is_nullable")?;
+        let ordinal = r
+            .try_get::<i32, _>("ordinal_position")
+            .ok()
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(0);
         tables[i].columns.push(Column {
             name: r.try_get("column_name")?,
-            data_type: r.try_get("data_type")?,
+            data_type: r.try_get("formatted_type")?,
             nullable: nullable.eq_ignore_ascii_case("YES"),
             pk: r.try_get("is_pk")?,
+            ordinal,
+            length: r
+                .try_get::<Option<i32>, _>("character_maximum_length")
+                .unwrap_or(None)
+                .and_then(|value| u64::try_from(value).ok()),
+            precision: r
+                .try_get::<Option<i32>, _>("numeric_precision")
+                .unwrap_or(None)
+                .and_then(|value| u32::try_from(value).ok()),
+            scale: r
+                .try_get::<Option<i32>, _>("numeric_scale")
+                .unwrap_or(None)
+                .and_then(|value| u32::try_from(value).ok()),
+            default_expression: r.try_get("column_default").unwrap_or(None),
+            identity: r
+                .try_get::<String, _>("is_identity")
+                .is_ok_and(|value| value.eq_ignore_ascii_case("YES")),
+            collation: r.try_get("collation_name").unwrap_or(None),
+            comment: r.try_get("column_comment").unwrap_or(None),
+            ..Column::default()
         });
     }
 
@@ -251,18 +381,91 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
             let ty: String = r.try_get("table_type")?;
             if ty.eq_ignore_ascii_case("VIEW") {
                 tables[i].kind = "view".into();
+            } else if ty.eq_ignore_ascii_case("MATERIALIZED VIEW") {
+                tables[i].kind = "materialized_view".into();
+            }
+            tables[i].native_id = r.try_get("native_id").ok();
+            tables[i].comment = r.try_get("table_comment").unwrap_or(None);
+            let parent_table: Option<String> = r.try_get("parent_table").unwrap_or(None);
+            if let Some(parent_table) = parent_table {
+                tables[i].partition_parent = Some(ObjectRef {
+                    catalog: None,
+                    namespace: r.try_get("parent_schema").unwrap_or(None),
+                    name: parent_table,
+                    kind: ObjectKind::Table,
+                    native_id: None,
+                });
             }
         }
+    }
+
+    let table_refs = tables
+        .iter()
+        .map(|table| {
+            (
+                (table.schema.clone(), table.name.clone()),
+                ObjectRef {
+                    catalog: None,
+                    namespace: table.schema.clone(),
+                    name: table.name.clone(),
+                    kind: ObjectKind::Table,
+                    native_id: table.native_id.clone(),
+                },
+                table.partition_parent.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    for (_, child, parent) in table_refs {
+        let Some(parent) = parent else { continue };
+        if let Some(parent_table) = tables
+            .iter_mut()
+            .find(|table| table.schema == parent.namespace && table.name == parent.name)
+        {
+            parent_table.partition_children.push(child);
+        }
+    }
+
+    for r in sqlx::query(CONSTRAINTS_SQL).fetch_all(pool).await? {
+        let key: (String, String) = (r.try_get("table_schema")?, r.try_get("table_name")?);
+        let Some(&i) = idx.get(&key) else { continue };
+        let kind = match r.try_get::<String, _>("constraint_type")?.as_str() {
+            "p" => ConstraintKind::Primary,
+            "u" => ConstraintKind::Unique,
+            "c" => ConstraintKind::Check,
+            _ => continue,
+        };
+        tables[i].constraints.push(Constraint {
+            name: r.try_get("constraint_name")?,
+            kind,
+            columns: r.try_get("columns").unwrap_or_default(),
+            referenced_relation: None,
+            referenced_columns: Vec::new(),
+            check_expression: r.try_get("check_expression").unwrap_or(None),
+            update_action: None,
+            delete_action: None,
+            deferrable: r.try_get("is_deferrable").unwrap_or(false),
+            validated: r.try_get("is_validated").unwrap_or(true),
+        });
     }
 
     for r in sqlx::query(FK_SQL).fetch_all(pool).await? {
         let key: (String, String) = (r.try_get("table_schema")?, r.try_get("table_name")?);
         if let Some(&i) = idx.get(&key) {
             tables[i].foreign_keys.push(ForeignKey {
+                name: r.try_get("constraint_name").ok(),
+                ordinal: r
+                    .try_get::<i64, _>("ordinal_position")
+                    .ok()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .unwrap_or(0),
                 column: r.try_get("column_name")?,
                 references_table: r.try_get("foreign_table")?,
                 references_column: r.try_get("foreign_column")?,
                 references_schema: r.try_get("foreign_schema").ok(),
+                update_action: r.try_get("update_action").unwrap_or(None),
+                delete_action: r.try_get("delete_action").unwrap_or(None),
+                deferrable: r.try_get("is_deferrable").unwrap_or(false),
+                validated: r.try_get("is_validated").unwrap_or(true),
             });
         }
     }
@@ -272,15 +475,36 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
         let key: (String, String) = (r.try_get("table_schema")?, r.try_get("table_name")?);
         let Some(&i) = idx.get(&key) else { continue };
         let iname: String = r.try_get("index_name")?;
-        let col: String = r.try_get("column_name")?;
+        let column: Option<String> = r.try_get("column_name")?;
+        let expression: Option<String> = r.try_get("index_expression")?;
+        let display = column
+            .clone()
+            .or_else(|| expression.clone())
+            .unwrap_or_else(|| "(expression)".into());
         let unique: bool = r.try_get("is_unique")?;
+        let key_part = IndexKey {
+            column,
+            expression,
+            direction: match r.try_get::<String, _>("sort_direction")?.as_str() {
+                "desc" => Some(SortDirection::Desc),
+                _ => Some(SortDirection::Asc),
+            },
+        };
         let idxs = &mut tables[i].indexes;
         match idxs.last_mut() {
-            Some(last) if last.name == iname => last.columns.push(col),
+            Some(last) if last.name == iname => {
+                last.columns.push(display);
+                last.keys.push(key_part);
+            }
             _ => idxs.push(Index {
                 name: iname,
-                columns: vec![col],
+                columns: vec![display],
                 unique,
+                method: r.try_get("index_method").ok(),
+                keys: vec![key_part],
+                predicate: r.try_get("predicate").unwrap_or(None),
+                valid: r.try_get("is_valid").unwrap_or(true),
+                ..Index::default()
             }),
         }
     }
@@ -305,12 +529,21 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
         .await?
         .into_iter()
         .map(|row| {
+            let detail: Option<String> = row.try_get("object_detail")?;
             Ok(DatabaseObject {
                 schema: row.try_get("schema_name")?,
                 name: row.try_get("object_name")?,
                 kind: row.try_get("object_kind")?,
-                detail: row.try_get("object_detail")?,
+                native_id: row.try_get("native_id")?,
+                detail: detail.clone(),
                 parent: row.try_get("parent_name")?,
+                arguments: detail
+                    .filter(|value| !value.trim().is_empty())
+                    .into_iter()
+                    .collect(),
+                return_type: row.try_get("return_type")?,
+                language: row.try_get("language")?,
+                comment: row.try_get("object_comment")?,
             })
         })
         .collect::<AppResult<Vec<_>>>()?;
@@ -420,18 +653,21 @@ mod tests {
                     data_type: "integer".into(),
                     nullable: false,
                     pk: true,
+                    ..Column::default()
                 },
                 Column {
                     name: "user_id".into(),
                     data_type: "integer".into(),
                     nullable: false,
                     pk: false,
+                    ..Column::default()
                 },
                 Column {
                     name: "note".into(),
                     data_type: "text".into(),
                     nullable: true,
                     pk: false,
+                    ..Column::default()
                 },
             ],
             foreign_keys: vec![ForeignKey {
@@ -439,13 +675,16 @@ mod tests {
                 references_table: "users".into(),
                 references_column: "id".into(),
                 references_schema: Some("public".into()),
+                ..ForeignKey::default()
             }],
             indexes: vec![Index {
                 name: "idx_orders_user".into(),
                 columns: vec!["user_id".into()],
                 unique: false,
+                ..Index::default()
             }],
             row_estimate: None,
+            ..Table::default()
         };
         let ddl = synthesize_ddl(&t);
         assert!(ddl.contains("CREATE TABLE \"public\".\"orders\""));

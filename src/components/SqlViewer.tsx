@@ -9,7 +9,7 @@ import type { Catalog } from "../ipc/types";
 
 // Catalog → CodeMirror schema map. Each table contributes its columns under the bare
 // name, and (for Postgres, where `schema` is set) also under a schema namespace so
-// `public.users.` completes. ponytail: bare-name collisions across schemas take the
+// `public.users.` completes. Bare-name collisions across schemas take the
 // last table — fine for autocomplete hints.
 function buildSchema(catalog: Catalog): SQLNamespace {
   const ns: Record<string, SQLNamespace> = {};

@@ -11,7 +11,12 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useQuery } from "@tanstack/react-query";
-import { getSafety, listConnections } from "./ipc/commands";
+import {
+  createSqlDocument,
+  getSafety,
+  listConnections,
+  listSqlDocuments,
+} from "./ipc/commands";
 import type {
   CatalogTable,
   ConnectionProfile,
@@ -52,6 +57,7 @@ import {
 } from "./lib/operationActivity";
 import { useI18n, type I18nKey } from "./lib/i18n";
 import {
+  persistedQueryDocument,
   queryDocument,
   stableDocument,
   supportsDocument,
@@ -417,8 +423,10 @@ function Shell() {
       ? hasCapability(driversQ.data, selected, "sql")
       : !isDocumentEngine(selected.engine));
   const initializedConnection = useRef<string | null>(null);
+  const sqlDocumentsLoadToken = useRef(0);
   useEffect(() => {
     if (!selected) {
+      sqlDocumentsLoadToken.current += 1;
       if (initializedConnection.current !== null || documents.length > 0) {
         initializedConnection.current = null;
         setDocuments([]);
@@ -448,14 +456,57 @@ function Shell() {
         ? "documents"
         : restoredDocumentKind;
     const initial =
-      preferred === "sql" || preferred === "documents"
-        ? queryDocument(selected.id, preferred)
+      preferred === "sql"
+        ? stableDocument(selected.id, "schema")
+        : preferred === "documents"
+          ? queryDocument(selected.id, preferred)
         : stableDocument(
             selected.id,
             preferred === "activity" ? "activity" : "schema",
           );
     setDocuments([initial]);
     setActiveDocumentId(initial.id);
+    if (supportsSql) {
+      const token = ++sqlDocumentsLoadToken.current;
+      void listSqlDocuments(selected.id)
+        .then(async (stored) => {
+          if (
+            token !== sqlDocumentsLoadToken.current ||
+            initializedConnection.current !== selected.id
+          ) {
+            return;
+          }
+          let restored = stored.map(persistedQueryDocument);
+          if (preferred === "sql" && restored.length === 0) {
+            const created = await createSqlDocument({
+              connectionId: selected.id,
+              title: "Untitled query",
+              content: "SELECT 1;",
+            });
+            if (
+              token !== sqlDocumentsLoadToken.current ||
+              initializedConnection.current !== selected.id
+            ) {
+              return;
+            }
+            restored = [persistedQueryDocument(created)];
+          }
+          setDocuments((current) => [
+            ...current.filter(
+              (document) =>
+                document.connectionId !== selected.id ||
+                document.kind !== "sql",
+            ),
+            ...restored,
+          ]);
+          if (preferred === "sql" && restored[0]) {
+            setActiveDocumentId(restored[0].id);
+          }
+        })
+        .catch((error) => {
+          console.error("could not restore SQL documents:", error);
+        });
+    }
   }, [activeDocumentId, documents, restoredDocumentKind, selected, supportsSql]);
 
   useEffect(() => {
@@ -608,13 +659,25 @@ function Shell() {
     if (selectedId) loadSafety(selectedId);
   };
 
-  function loadSql(sql: string) {
+  async function loadSql(sql: string) {
     if (!selected) return;
-    const document = queryDocument(
-      selected.id,
-      supportsSql ? "sql" : "documents",
-      sql,
-    );
+    let document: WorkbenchDocument;
+    if (supportsSql) {
+      try {
+        document = persistedQueryDocument(
+          await createSqlDocument({
+            connectionId: selected.id,
+            title: "History query",
+            content: sql,
+          }),
+        );
+      } catch (error) {
+        toast(errMessage(error), "error");
+        return;
+      }
+    } else {
+      document = queryDocument(selected.id, "documents", sql);
+    }
     setDocuments((current) => [...current, document]);
     setActiveDocumentId(document.id);
     setArea("workspace");
@@ -676,7 +739,7 @@ function Shell() {
     const initial = connection && isDocumentEngine(connection.engine)
       ? queryDocument(id, "documents")
       : stableDocument(id, "schema");
-    initializedConnection.current = id;
+    initializedConnection.current = null;
     setSelectedId(id);
     setDocuments([initial]);
     setActiveDocumentId(initial.id);
@@ -715,10 +778,23 @@ function Shell() {
     activateDocument(stableDocument(selected.id, kind));
   }
 
-  function openQueryDocument() {
+  async function openQueryDocument() {
     if (!selected) return;
     preloadSqlEditor();
-    activateDocument(queryDocument(selected.id, supportsSql ? "sql" : "documents"));
+    if (!supportsSql) {
+      activateDocument(queryDocument(selected.id, "documents"));
+      return;
+    }
+    try {
+      const document = await createSqlDocument({
+        connectionId: selected.id,
+        title: "Untitled query",
+        content: "SELECT 1;",
+      });
+      activateDocument(persistedQueryDocument(document));
+    } catch (error) {
+      toast(errMessage(error), "error");
+    }
   }
 
   function closeDocument(id: string) {
@@ -746,6 +822,36 @@ function Shell() {
     setDocuments((current) =>
       current.map((document) =>
         document.id === activeDocument.id ? { ...document, draft: value } : document,
+      ),
+    );
+  }
+
+  function setActiveQueryTitle(value: string) {
+    if (!activeDocument || activeDocument.kind !== "sql") return;
+    setDocuments((current) =>
+      current.map((document) =>
+        document.id === activeDocument.id ? { ...document, title: value } : document,
+      ),
+    );
+  }
+
+  function applySavedQuery(saved: {
+    content: string;
+    title: string;
+    localRevision: number;
+  }) {
+    if (!activeDocument || activeDocument.kind !== "sql") return;
+    setDocuments((current) =>
+      current.map((document) =>
+        document.id === activeDocument.id
+          ? {
+              ...document,
+              draft: saved.content,
+              title: saved.title,
+              revision: saved.localRevision,
+              recovered: false,
+            }
+          : document,
       ),
     );
   }
@@ -884,7 +990,7 @@ function Shell() {
             supportsSql={supportsSql}
             onActivate={setActiveDocumentId}
             onClose={closeDocument}
-            onNewQuery={openQueryDocument}
+            onNewQuery={() => void openQueryDocument()}
             onOpenActivity={() => openStableDocument("activity")}
           />
         )}
@@ -905,7 +1011,10 @@ function Shell() {
               <span className="muted">
                 {supportsSql ? t("tabs.sql") : t("tabs.documents")}
               </span>
-              <button className="btn primary" onClick={openQueryDocument}>
+              <button
+                className="btn primary"
+                onClick={() => void openQueryDocument()}
+              >
                 <Icon name="plus" />
                 {supportsSql ? t("tabs.sql") : t("tabs.documents")}
               </button>
@@ -922,12 +1031,17 @@ function Shell() {
               safetyFallback
             )
           ) : activeDocument.kind === "schema" ? (
-            <SchemaExplorer
-              key={activeDocument.id}
-              connection={selected}
-              selectedTable={null}
-              onOpenTable={(table) => openTableDocument(selected, table)}
-            />
+            safety ? (
+              <SchemaExplorer
+                key={activeDocument.id}
+                connection={selected}
+                selectedTable={null}
+                safety={safety}
+                onOpenTable={(table) => openTableDocument(selected, table)}
+              />
+            ) : (
+              safetyFallback
+            )
           ) : activeDocument.kind === "sql" ? (
             safety ? (
               <Sql
@@ -936,6 +1050,12 @@ function Shell() {
                 safety={safety}
                 draft={activeDocument.draft}
                 setDraft={setActiveQueryDraft}
+                title={activeDocument.title}
+                setTitle={setActiveQueryTitle}
+                persistedId={activeDocument.persistedId}
+                revision={activeDocument.revision}
+                recovered={activeDocument.recovered}
+                onPersisted={applySavedQuery}
                 onOpenAgent={openTerminalDock}
               />
             ) : (

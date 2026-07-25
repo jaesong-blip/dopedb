@@ -36,15 +36,72 @@
 
 .sql-agent-launchers {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--ds-space-1);
   min-height: var(--ds-control-sm);
+}
+
+.sql-document-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+
+.sql-document-title {
+  width: clamp(140px, 28vw, 360px);
+  height: var(--ds-control-sm);
+  border-color: transparent;
+  background: transparent;
+  font-weight: 600;
+}
+
+.sql-document-title:focus {
+  border-color: var(--ds-border-strong);
+  background: var(--ds-surface-1);
+}
+
+.sql-save-state {
+  flex: none;
+  color: var(--ds-text-muted);
+  font-size: var(--ds-font-size-xs);
+}
+
+.sql-save-state.state-error,
+.sql-save-state.state-conflict {
+  color: var(--ds-danger);
+}
+
+.sql-save-state.state-saving {
+  color: var(--ds-accent);
 }
 
 .sql-agent-btn {
   min-width: 56px;
   padding-inline: var(--ds-space-2);
   font-size: var(--ds-font-size-xs);
+}
+
+.sql-document-conflict {
+  display: flex;
+  min-height: var(--ds-control-lg);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  padding-block: var(--ds-space-2);
+  border-block: var(--ds-border-width) solid
+    color-mix(
+      in srgb,
+      var(--ds-warning) var(--ds-status-border-mix),
+      var(--ds-border-subtle)
+    );
+  color: var(--ds-warning);
+  font-size: var(--ds-font-size-sm);
+}
+
+.sql-save-error {
+  margin: 0;
 }
 
 .sql-actions {
@@ -203,6 +260,20 @@
 
   .sql-agent-launchers {
     flex-wrap: wrap;
+  }
+
+  .sql-document-identity {
+    flex: 1 1 100%;
+  }
+
+  .sql-document-title {
+    flex: 1;
+    width: auto;
+  }
+
+  .sql-document-conflict {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .sql-error-head {

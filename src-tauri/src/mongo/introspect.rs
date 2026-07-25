@@ -90,6 +90,7 @@ async fn table_for(
         foreign_keys: Vec::new(),
         indexes,
         row_estimate,
+        ..Table::default()
     })
 }
 
@@ -114,6 +115,7 @@ async fn collection_indexes(coll: &mongodb::Collection<Document>, is_view: bool)
             name: index_name,
             columns: model.keys.keys().cloned().collect(),
             unique: options.and_then(|o| o.unique).unwrap_or(false),
+            ..Index::default()
         });
     }
     indexes
@@ -152,6 +154,7 @@ async fn sample_columns(coll: &mongodb::Collection<Document>) -> AppResult<Vec<C
                 nullable: nulls > 0 || total < seen,
                 name,
                 data_type,
+                ..Column::default()
             }
         })
         .collect();

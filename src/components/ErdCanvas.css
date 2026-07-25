@@ -1,0 +1,104 @@
+.erd-surface {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  background: var(--ds-surface-1);
+}
+
+.erd-flow {
+  min-width: 0;
+  min-height: 480px;
+  flex: 1;
+}
+
+.erd-flow .react-flow__background {
+  background: var(--ds-surface-1);
+}
+
+.erd-flow .react-flow__edge-text {
+  fill: var(--ds-text-muted);
+  font-size: var(--ds-font-size-2xs);
+}
+
+.erd-flow .react-flow__edge-textbg {
+  fill: var(--ds-surface-0);
+}
+
+.erd-flow .react-flow__controls,
+.erd-flow .react-flow__minimap {
+  overflow: hidden;
+  border: var(--ds-border-width) solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-surface-0);
+  box-shadow: var(--ds-shadow-panel);
+}
+
+.erd-flow .react-flow__controls-button {
+  border-bottom-color: var(--ds-border-subtle);
+  background: var(--ds-surface-0);
+  color: var(--ds-text);
+}
+
+.erd-flow .react-flow__minimap-mask {
+  fill: var(--ds-surface-2);
+}
+
+.erd-flow .react-flow__minimap-node {
+  fill: var(--ds-text-muted);
+}
+
+.erd-virtual-editor {
+  --ds-row-control-size: var(--ds-control-md);
+  flex-wrap: wrap;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
+  background: var(--ds-surface-0);
+}
+
+.erd-virtual-editor input,
+.erd-virtual-editor select {
+  min-width: 120px;
+  min-height: var(--ds-control-md);
+  flex: 1 1 140px;
+  padding: 0 var(--ds-space-2);
+  border: var(--ds-border-width) solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-surface-1);
+  color: var(--ds-text);
+  font: inherit;
+}
+
+.erd-virtual-list {
+  display: flex;
+  gap: var(--ds-space-2);
+  overflow-x: auto;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
+}
+
+.erd-virtual-list .badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--ds-space-1);
+}
+
+.erd-virtual-list button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.erd-error {
+  margin: var(--ds-space-2) var(--ds-space-3) 0;
+}
+
+.erd-status {
+  padding: var(--ds-space-2) var(--ds-space-3);
+  border-top: var(--ds-border-width) solid var(--ds-border-subtle);
+  font-size: var(--ds-font-size-xs);
+}

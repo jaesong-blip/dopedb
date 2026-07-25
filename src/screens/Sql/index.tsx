@@ -2,7 +2,8 @@
 // manual SQL, so execution stays in-place: action bar status first, results below.
 // Multi-statement scripts execute through the backend script runner and return
 // per-statement results. ⌘↩ runs the current draft or selected SQL.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { SqlLanguage } from "sql-formatter";
 import { useQuery } from "@tanstack/react-query";
 import {
   approveOperation,
@@ -13,6 +14,7 @@ import {
   rejectOperation,
   runScript,
   runSql,
+  saveSqlDocument,
 } from "../../ipc/commands";
 import type {
   AppErrorDetails,
@@ -23,6 +25,7 @@ import type {
   ScriptOperationProposal,
   ScriptOutcome,
   SqlOperationProposal,
+  SqlDocument,
 } from "../../ipc/types";
 import { errDetails, errMessage } from "../../ipc/types";
 import ApprovalCard from "../../components/ApprovalCard";
@@ -35,6 +38,7 @@ import { useI18n } from "../../lib/i18n";
 import { catalogQuery } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
+import { sqlRecoveryKey } from "../../lib/workbenchDocuments";
 import "./sql.css";
 
 const STEP = 200;
@@ -74,6 +78,14 @@ interface RunSignal {
   text: string;
   title?: string;
   icon?: "alert" | "info";
+}
+
+type DocumentSaveState = "saved" | "dirty" | "saving" | "error" | "conflict";
+
+interface DocumentConflict {
+  current: SqlDocument;
+  localTitle: string;
+  localContent: string;
 }
 
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -241,12 +253,24 @@ export default function Sql({
   safety,
   draft,
   setDraft,
+  title,
+  setTitle,
+  persistedId,
+  revision,
+  recovered,
+  onPersisted,
   onOpenAgent,
 }: {
   connection: ConnectionProfile;
   safety: SafetySettings;
   draft: string;
   setDraft: (s: string) => void;
+  title: string;
+  setTitle: (title: string) => void;
+  persistedId: string | null;
+  revision: number;
+  recovered: boolean;
+  onPersisted: (document: SqlDocument) => void;
   onOpenAgent: () => void;
 }) {
   const { t } = useI18n();
@@ -274,6 +298,158 @@ export default function Sql({
   const [plan, setPlan] = useState<PreviewReport | null>(null);
   const [planErr, setPlanErr] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
+  const [formatting, setFormatting] = useState(false);
+
+  const [documentSaveState, setDocumentSaveState] =
+    useState<DocumentSaveState>(recovered ? "dirty" : "saved");
+  const [documentSaveError, setDocumentSaveError] = useState<string | null>(null);
+  const [documentConflict, setDocumentConflict] =
+    useState<DocumentConflict | null>(null);
+  const saveSequence = useRef(0);
+  const persistedBaseline = useRef<{
+    revision: number;
+    title: string | null;
+    content: string | null;
+  }>({
+    revision,
+    title: recovered ? null : title,
+    content: recovered ? null : draft,
+  });
+
+  async function persistDocument(
+    expectedRevision: number,
+    nextTitle: string,
+    nextContent: string,
+  ) {
+    if (!persistedId) return;
+    const sequence = ++saveSequence.current;
+    setDocumentSaveState("saving");
+    setDocumentSaveError(null);
+    try {
+      const outcome = await saveSqlDocument({
+        id: persistedId,
+        connectionId: connection.id,
+        title: nextTitle,
+        content: nextContent,
+        expectedRevision,
+      });
+      if (sequence !== saveSequence.current) return;
+      if (!outcome.saved) {
+        setDocumentConflict({
+          current: outcome.document,
+          localTitle: nextTitle,
+          localContent: nextContent,
+        });
+        setDocumentSaveState("conflict");
+        return;
+      }
+      persistedBaseline.current = {
+        revision: outcome.document.localRevision,
+        title: outcome.document.title,
+        content: outcome.document.content,
+      };
+      localStorage.removeItem(sqlRecoveryKey(persistedId));
+      setDocumentConflict(null);
+      setDocumentSaveState("saved");
+      onPersisted(outcome.document);
+    } catch (error) {
+      if (sequence !== saveSequence.current) return;
+      setDocumentSaveError(errMessage(error));
+      setDocumentSaveState("error");
+    }
+  }
+
+  useEffect(() => {
+    if (!persistedId || documentConflict) return;
+    const baseline = persistedBaseline.current;
+    const dirty =
+      recovered ||
+      baseline.revision !== revision ||
+      baseline.title !== title ||
+      baseline.content !== draft;
+    if (!dirty) {
+      setDocumentSaveState("saved");
+      return;
+    }
+    setDocumentSaveState("dirty");
+    localStorage.setItem(
+      sqlRecoveryKey(persistedId),
+      JSON.stringify({ revision, title, draft }),
+    );
+    if (!title.trim()) return;
+    const timer = window.setTimeout(() => {
+      void persistDocument(revision, title, draft);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [
+    connection.id,
+    documentConflict,
+    draft,
+    persistedId,
+    recovered,
+    revision,
+    title,
+  ]);
+
+  useEffect(
+    () => () => {
+      saveSequence.current += 1;
+    },
+    [],
+  );
+
+  async function formatDraft() {
+    if (!draft.trim() || formatting) return;
+    setFormatting(true);
+    try {
+      const formatter = await import("sql-formatter");
+      const language: SqlLanguage =
+        connection.engine === "postgres"
+          ? "postgresql"
+          : connection.engine === "mysql"
+            ? "mysql"
+            : "sqlite";
+      setDraft(
+        formatter.format(draft, {
+          language,
+          keywordCase: "upper",
+          tabWidth: 2,
+          linesBetweenQueries: 2,
+        }),
+      );
+    } catch (error) {
+      setDocumentSaveError(errMessage(error));
+      setDocumentSaveState("error");
+    } finally {
+      setFormatting(false);
+    }
+  }
+
+  function loadSavedConflictVersion() {
+    if (!persistedId || !documentConflict) return;
+    const current = documentConflict.current;
+    saveSequence.current += 1;
+    persistedBaseline.current = {
+      revision: current.localRevision,
+      title: current.title,
+      content: current.content,
+    };
+    localStorage.removeItem(sqlRecoveryKey(persistedId));
+    setTitle(current.title);
+    setDraft(current.content);
+    onPersisted(current);
+    setDocumentConflict(null);
+    setDocumentSaveState("saved");
+  }
+
+  function keepLocalConflictVersion() {
+    if (!documentConflict) return;
+    void persistDocument(
+      documentConflict.current.localRevision,
+      documentConflict.localTitle,
+      documentConflict.localContent,
+    );
+  }
 
   async function executeSql(selectedSql?: string) {
     const sql = selectedSql?.trim() || draft.trim();
@@ -420,6 +596,31 @@ export default function Sql({
   return (
     <div className="screen sqlconsole">
       <div className="sql-agent-launchers">
+        <div className="sql-document-identity">
+          <input
+            className="sql-document-title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            aria-label={t("sql.documentTitle")}
+            spellCheck={false}
+          />
+          <span
+            className={`sql-save-state state-${documentSaveState}`}
+            title={documentSaveError ?? undefined}
+          >
+            {documentSaveState === "saving"
+              ? t("common.saving")
+              : documentSaveState === "saved"
+                ? t("sql.saved")
+                : documentSaveState === "conflict"
+                  ? t("sql.saveConflict")
+                  : documentSaveState === "error"
+                    ? t("sql.saveFailed")
+                    : recovered
+                      ? t("sql.recovered")
+                      : t("sql.unsaved")}
+          </span>
+        </div>
         <button
           className="btn small sql-agent-btn"
           onClick={onOpenAgent}
@@ -456,6 +657,14 @@ export default function Sql({
           onClick={explain}
         >
           {explaining ? t("sql.planning") : t("sql.explain")}
+        </button>
+        <button
+          className="btn"
+          disabled={!draft.trim() || formatting || running}
+          onClick={() => void formatDraft()}
+          title={t("sql.formatTitle")}
+        >
+          {formatting ? t("sql.formatting") : t("sql.format")}
         </button>
         {draftIsScript && (
           <span className="badge script-count">
@@ -497,6 +706,24 @@ export default function Sql({
         )}
       </div>
 
+      {documentConflict && (
+        <div className="sql-document-conflict" role="alert">
+          <span>{t("sql.saveConflictBody")}</span>
+          <div className="ds-control-row">
+            <button className="btn small" onClick={loadSavedConflictVersion}>
+              {t("sql.loadSaved")}
+            </button>
+            <button className="btn small" onClick={keepLocalConflictVersion}>
+              {t("sql.keepMine")}
+            </button>
+          </div>
+        </div>
+      )}
+      {documentSaveError && documentSaveState === "error" && (
+        <div className="error sql-save-error">
+          {t("sql.saveFailed")}: {documentSaveError}
+        </div>
+      )}
       {planErr && <div className="error">{planErr}</div>}
       {plan && (
         <details open className="card explain-plan">

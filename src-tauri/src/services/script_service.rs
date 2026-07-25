@@ -3,6 +3,7 @@
 use std::fmt;
 
 use chrono::{Duration as ChronoDuration, Utc};
+use dopedb_protocol::{DdlPlan, SchemaChangeRequest};
 use serde::{Deserialize, Serialize};
 use sqlx::AssertSqlSafe;
 use uuid::Uuid;
@@ -27,11 +28,31 @@ use super::operation_service::{
 use super::query_service::QUERY_PLAN_TTL;
 
 /// Desktop script input accepted only at the immutable proposal boundary.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesktopScriptProposalRequest {
     pub(crate) connection_id: Uuid,
     pub(crate) sql: String,
     pub(crate) origin: Option<String>,
+    /// Present only for a Catalog-pinned plan produced by the structured schema
+    /// editor. The public manual-script command always supplies `None`.
+    pub(crate) schema_change: Option<SchemaScriptContext>,
+    /// Present only for staged table-editor statements. Each mutation must affect
+    /// exactly the corresponding row count or the entire transaction rolls back.
+    pub(crate) table_change: Option<TableScriptContext>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SchemaScriptContext {
+    pub(crate) request: SchemaChangeRequest,
+    pub(crate) plan: DdlPlan,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct TableScriptContext {
+    pub(crate) catalog_fingerprint: String,
+    pub(crate) expected_affected: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +72,10 @@ pub(crate) struct DesktopScriptProposalReceipt {
 struct StoredDesktopScriptPayload {
     sql: String,
     history_origin: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_change: Option<SchemaScriptContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    table_change: Option<TableScriptContext>,
 }
 
 /// Successful script execution retaining target authority until the adapter has
@@ -243,9 +268,93 @@ impl ScriptService {
         }
         let policy = capture_policy(&pin, &settings).map_err(DesktopScriptRunError::Application)?;
         let history_origin = request.origin.unwrap_or_else(|| "manual".into());
+        if request.schema_change.is_some() && request.table_change.is_some() {
+            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                error: AppError::Blocked {
+                    reason: "a script cannot be both a schema and table-data change".into(),
+                },
+                _scope: operation_scope,
+            }));
+        }
+        if let Some(context) = &request.schema_change {
+            if context.request.catalog_fingerprint != context.plan.catalog_fingerprint
+                || request.sql != context.plan.sql()
+                || context.plan.statements.is_empty()
+            {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "schema-change SQL does not match its exact rendered plan".into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+            if !has_write {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "a schema-change proposal must contain target-mutating DDL".into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+        }
+        if let Some(context) = &request.table_change {
+            if context.expected_affected.len() != statements.len()
+                || context
+                    .expected_affected
+                    .iter()
+                    .any(|expected| *expected != 1)
+                || context.catalog_fingerprint.len() != 64
+                || !context
+                    .catalog_fingerprint
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "staged table changes have an invalid optimistic-lock contract"
+                            .into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+            if classifications.iter().any(|classification| {
+                classification.kind != QueryKind::Write || !classification.rollback_safe
+            }) {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "staged table changes may contain only INSERT, UPDATE, or DELETE"
+                            .into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+        }
+        let schema_fingerprint = request
+            .schema_change
+            .as_ref()
+            .map(|context| context.request.catalog_fingerprint.clone())
+            .or_else(|| {
+                request
+                    .table_change
+                    .as_ref()
+                    .map(|context| context.catalog_fingerprint.clone())
+            });
+        let operation_kind = if request.schema_change.is_some() {
+            OperationKind::SchemaChange
+        } else if request.table_change.is_some() {
+            OperationKind::TableDataChange
+        } else if has_write {
+            OperationKind::SqlScript
+        } else {
+            OperationKind::ReadQuery
+        };
+        let schema_change = request.schema_change;
+        let table_change = request.table_change;
         let payload = serde_json::to_value(StoredDesktopScriptPayload {
             sql: request.sql,
             history_origin: history_origin.clone(),
+            schema_change: schema_change.clone(),
+            table_change: table_change.clone(),
         })
         .map_err(AppError::from)
         .map_err(DesktopScriptRunError::Application)?;
@@ -273,17 +382,15 @@ impl ScriptService {
                     connection_revision: pin.connection_revision,
                     terminal_session_id: None,
                     actor: actor_for_pin(&pin, history_origin),
-                    kind: if has_write {
-                        OperationKind::SqlScript
-                    } else {
-                        OperationKind::ReadQuery
-                    },
+                    kind: operation_kind,
                     payload_schema_version: 1,
                     payload,
-                    schema_fingerprint: None,
+                    schema_fingerprint,
                     risk_level: script_operation_risk(&classifications),
                     preview: serde_json::json!({
                         "classifications": classifications,
+                        "ddlPlan": schema_change.map(|context| context.plan),
+                        "expectedAffected": table_change.map(|context| context.expected_affected),
                         "statementCount": statements.len(),
                     }),
                     policy_snapshot: policy.snapshot,
@@ -321,7 +428,10 @@ impl ScriptService {
         if planned.payload_schema_version != 1
             || !matches!(
                 planned.kind,
-                OperationKind::ReadQuery | OperationKind::SqlScript
+                OperationKind::ReadQuery
+                    | OperationKind::SqlScript
+                    | OperationKind::SchemaChange
+                    | OperationKind::TableDataChange
             )
         {
             return Err(DesktopScriptRunError::Application(AppError::Blocked {
@@ -362,6 +472,93 @@ impl ScriptService {
                 _scope: operation_scope,
             }));
         }
+        if let Some(context) = &payload.schema_change {
+            if planned.kind != OperationKind::SchemaChange
+                || planned.schema_fingerprint.as_deref()
+                    != Some(context.request.catalog_fingerprint.as_str())
+                || payload.sql != context.plan.sql()
+            {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "stored schema-change provenance is inconsistent".into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+            let snapshot = crate::introspect::load_catalog_snapshot(
+                &self.store,
+                &self.connections,
+                planned.connection_id,
+                crate::introspect::CatalogReadMode::Refresh,
+            )
+            .await
+            .map_err(DesktopScriptRunError::Application)?;
+            if snapshot.fingerprint() != context.request.catalog_fingerprint {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "the target schema changed after approval; create a new proposal"
+                            .into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+            let rendered = crate::ddl::render(&snapshot, &context.request)
+                .map_err(DesktopScriptRunError::Application)?;
+            if rendered != context.plan {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "the schema-change renderer no longer matches the approved plan"
+                            .into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+        } else if planned.kind == OperationKind::SchemaChange {
+            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                error: AppError::Blocked {
+                    reason: "schema-change operation is missing its structured payload".into(),
+                },
+                _scope: operation_scope,
+            }));
+        }
+        if let Some(context) = &payload.table_change {
+            if planned.kind != OperationKind::TableDataChange
+                || planned.schema_fingerprint.as_deref()
+                    != Some(context.catalog_fingerprint.as_str())
+            {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "stored table-change provenance is inconsistent".into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+            let snapshot = crate::introspect::load_catalog_snapshot(
+                &self.store,
+                &self.connections,
+                planned.connection_id,
+                crate::introspect::CatalogReadMode::Refresh,
+            )
+            .await
+            .map_err(DesktopScriptRunError::Application)?;
+            if snapshot.fingerprint() != context.catalog_fingerprint {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error: AppError::Blocked {
+                        reason:
+                            "the target schema changed after table edits were staged; reload the table"
+                                .into(),
+                    },
+                    _scope: operation_scope,
+                }));
+            }
+        } else if planned.kind == OperationKind::TableDataChange {
+            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                error: AppError::Blocked {
+                    reason: "table-data operation is missing its optimistic-lock payload".into(),
+                },
+                _scope: operation_scope,
+            }));
+        }
         let engine = operation_pin.profile.engine;
         let history_origin = payload.history_origin.clone();
         let statements = crate::sql_script::split_statements(&payload.sql, engine);
@@ -397,7 +594,11 @@ impl ScriptService {
         }
 
         let has_write = script_has_write(&kinds);
-        let expected_kind = if has_write {
+        let expected_kind = if payload.schema_change.is_some() {
+            OperationKind::SchemaChange
+        } else if payload.table_change.is_some() {
+            OperationKind::TableDataChange
+        } else if has_write {
             OperationKind::SqlScript
         } else {
             OperationKind::ReadQuery
@@ -731,6 +932,10 @@ impl ScriptService {
         let transaction = execute_script_transaction(
             &live.write_pool,
             &statements,
+            payload
+                .table_change
+                .as_ref()
+                .map(|context| context.expected_affected.as_slice()),
             operation.grant(),
             operation_id,
         );
@@ -955,6 +1160,7 @@ fn script_operation_risk(classifications: &[crate::model::Classification]) -> Op
 async fn execute_script_transaction(
     pool: &DbPool,
     statements: &[String],
+    expected_affected: Option<&[u64]>,
     grant: &ExecutionGrant,
     operation_id: Uuid,
 ) -> AppResult<(Vec<ScriptStatement>, bool)> {
@@ -970,13 +1176,28 @@ async fn execute_script_transaction(
             match $pool.begin().await {
                 Ok(mut transaction) => {
                     let mut succeeded = true;
-                    for statement in statements {
+                    for (index, statement) in statements.iter().enumerate() {
                         match sqlx::query(AssertSqlSafe(statement.as_str()))
                             .execute(&mut *transaction)
                             .await
                         {
                             Ok(result) => {
-                                outcomes.push(statement_ok(statement, result.rows_affected()))
+                                let affected = result.rows_affected();
+                                if let Some(expected) =
+                                    expected_affected.and_then(|values| values.get(index))
+                                {
+                                    if affected != *expected {
+                                        outcomes.push(statement_error(
+                                            statement,
+                                            format!(
+                                                "optimistic concurrency conflict: expected {expected} affected row, got {affected}"
+                                            ),
+                                        ));
+                                        succeeded = false;
+                                        break;
+                                    }
+                                }
+                                outcomes.push(statement_ok(statement, affected))
                             }
                             Err(error) => {
                                 outcomes.push(statement_error(statement, error.to_string()));
@@ -1221,6 +1442,34 @@ mod tests {
                     connection_id: self.connection_id,
                     sql: sql.into(),
                     origin: origin.map(str::to_string),
+                    schema_change: None,
+                    table_change: None,
+                })
+                .await
+        }
+
+        async fn propose_table(
+            &self,
+            statements: &[&str],
+        ) -> Result<DesktopScriptProposalReceipt, DesktopScriptRunError> {
+            let snapshot = crate::introspect::load_catalog_snapshot(
+                &self.store,
+                &self.connections,
+                self.connection_id,
+                crate::introspect::CatalogReadMode::Refresh,
+            )
+            .await
+            .unwrap();
+            self.service
+                .propose_desktop(DesktopScriptProposalRequest {
+                    connection_id: self.connection_id,
+                    sql: statements.join(";\n"),
+                    origin: Some("table_editor".into()),
+                    schema_change: None,
+                    table_change: Some(TableScriptContext {
+                        catalog_fingerprint: snapshot.fingerprint().into(),
+                        expected_affected: vec![1; statements.len()],
+                    }),
                 })
                 .await
         }
@@ -1467,6 +1716,35 @@ mod tests {
         assert_eq!(history[0].origin, "data-view");
         assert_eq!(history[0].status, "ok");
         assert_eq!(history[0].row_count, Some(2));
+        harness.close().await;
+    }
+
+    #[tokio::test]
+    async fn staged_table_changes_roll_back_on_optimistic_conflict() {
+        let harness = ScriptHarness::new().await;
+        harness.configure(true, true).await;
+        let proposal = harness
+            .propose_table(&[
+                "UPDATE users SET name = 'Grace' WHERE id = 1 AND name = 'Ada'",
+                "UPDATE users SET name = 'Ken' WHERE id = 2 AND name = 'stale'",
+            ])
+            .await
+            .unwrap();
+        harness.approve(&proposal).await;
+
+        let receipt = harness
+            .service
+            .run_desktop(proposal.operation_id)
+            .await
+            .unwrap();
+
+        assert!(!receipt.outcome.committed);
+        assert!(receipt.outcome.statements[1]
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("optimistic concurrency conflict")));
+        drop(receipt);
+        assert_eq!(harness.user_names().await, ["Ada", "Linus"]);
         harness.close().await;
     }
 

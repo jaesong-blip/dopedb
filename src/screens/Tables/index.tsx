@@ -2,28 +2,40 @@
 // ORDER BY (primary key) + a real COUNT(*) so pages never repeat/skip rows and the
 // total is exact ("rows X-Y of Z"). Column sort and per-column filters go through the
 // same sqlBuild helpers. Row edits (insert/update/delete) are generated as SQL and
-// routed through ApprovalCard, so the full safety pipeline (classify/preview/approve/
-// audit) applies — reads still auto-run and never need approval.
+// staged into one optimistic transaction, then routed through the immutable proposal /
+// approval / audit pipeline. Reads still auto-run and never need approval.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type {
   CatalogTable,
   ConnectionProfile,
-  ExecOutcome,
   QueryResult,
   SafetySettings,
+  ScriptOperationProposal,
+  ScriptOutcome,
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import {
+  approveOperation,
+  proposeTableChanges,
+  rejectOperation,
+  runScript,
+} from "../../ipc/commands";
 import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import CellViewer from "../../components/CellViewer";
 import RowEditor, { type RowEditorSubmission } from "../../components/RowEditor";
-import ApprovalCard from "../../components/ApprovalCard";
+import JobPanel from "../../components/JobPanel";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { documentsToGrid } from "../../lib/documentGrid";
-import { documentCountQuery, documentRowsQuery, tableRowsQuery } from "../../lib/queries";
+import {
+  catalogSnapshotQuery,
+  documentCountQuery,
+  documentRowsQuery,
+  tableRowsQuery,
+} from "../../lib/queries";
 import { tableKey, tableLabel } from "../../lib/tableRef";
 import { downloadCsv, downloadJson, stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
@@ -128,10 +140,14 @@ function Pager({
 
 type Editor = { mode: "insert" | "edit" | "duplicate"; initial: Record<string, string | null> };
 type CellSel = { value: unknown; column: string };
-type PreparedWrite = {
+type StagedWrite = {
+  id: string;
   sql: string;
   rationale?: string;
-  collapseSql?: boolean;
+};
+type PendingDelete = {
+  key: Record<string, string | null>;
+  original: Record<string, string | null>;
 };
 
 export default function TableData({
@@ -173,11 +189,17 @@ function SqlTableData({
   const [selected, setSelected] = useState<number | null>(null);
   const [cellSel, setCellSel] = useState<CellSel | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [prepared, setPrepared] = useState<PreparedWrite | null>(null);
+  const [staged, setStaged] = useState<StagedWrite[]>([]);
+  const [reviewing, setReviewing] = useState(false);
+  const [stagedProposal, setStagedProposal] =
+    useState<ScriptOperationProposal | null>(null);
+  const [stagedConfirmation, setStagedConfirmation] = useState("");
+  const [stagedRunning, setStagedRunning] = useState(false);
   // Readable confirm gate for DELETE: PK pairs of the target row, mirroring how
-  // insert/edit/duplicate pass through RowEditor before arming the ApprovalCard.
-  const [pendingDelete, setPendingDelete] = useState<Record<string, string | null> | null>(null);
+  // insert/edit/duplicate pass through RowEditor before entering the staged transaction.
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [structure, setStructure] = useState(false);
+  const [jobsOpen, setJobsOpen] = useState(false);
 
   const pageSize = Math.min(PAGE, safety.maxRows || PAGE);
   const key = tableKey(table);
@@ -195,9 +217,14 @@ function SqlTableData({
     setSelected(null);
     setCellSel(null);
     setEditor(null);
-    setPrepared(null);
+    setStaged([]);
+    setReviewing(false);
+    setStagedProposal(null);
+    setStagedConfirmation("");
+    setStagedRunning(false);
     setPendingDelete(null);
     setStructure(false);
+    setJobsOpen(false);
     setWriteErr(null);
   }
 
@@ -214,11 +241,17 @@ function SqlTableData({
     // Paging and filtering repaint the previous page (dimmed) instead of blanking the grid.
     placeholderData: keepPreviousData,
   });
+  const snapshotQuery = useQuery(catalogSnapshotQuery(connection.id));
 
   const result = rowsQuery.data?.result ?? null;
   const total = rowsQuery.data?.total ?? null;
   const busy = rowsQuery.isFetching;
   const err = writeErr ?? (rowsQuery.error ? errMessage(rowsQuery.error) : null);
+  const catalogRelation = snapshotQuery.data?.relations.find(
+    (candidate) =>
+      candidate.object.name === table.name &&
+      candidate.object.namespace === table.schema,
+  );
 
   // Settling a filter always returns to the first page; both land in one render so only the
   // final query key is ever fetched. The equality guard keeps this inert on mount and on a
@@ -269,13 +302,13 @@ function SqlTableData({
   }
 
   function openEdit(mode: Editor["mode"]) {
+    setJobsOpen(false);
     if (mode === "insert") setEditor({ mode, initial: {} });
     else if (selRow) setEditor({ mode, initial: rowMap(selRow) });
-    setPrepared(null);
     setCellSel(null);
   }
 
-  // Open a readable confirm (PK pairs) instead of jumping straight to the ApprovalCard —
+  // Open a readable confirm (PK pairs) instead of staging a DELETE immediately —
   // Delete sits next to Duplicate, so a mis-click shouldn't be one approval from a wipe.
   function doDelete() {
     if (!selRow || !result) return;
@@ -284,18 +317,38 @@ function SqlTableData({
       const i = result.columns.indexOf(c.name);
       pkVals[c.name] = i >= 0 ? cellToInput(selRow[i]) : null;
     }
-    setPendingDelete(pkVals);
+    setPendingDelete({ key: pkVals, original: rowMap(selRow) });
     setEditor(null);
     setCellSel(null);
-    setPrepared(null); // drop any abandoned write card so only the delete confirm is live
+    setJobsOpen(false);
   }
 
-  // Confirmed: build the DELETE and arm the ApprovalCard.
+  function stageWrite(write: RowEditorSubmission) {
+    setStaged((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        sql: write.sql,
+        rationale: write.rationale,
+      },
+    ]);
+    setEditor(null);
+    setCellSel(null);
+    setReviewing(false);
+    setStagedProposal(null);
+  }
+
+  // Confirmed: build the DELETE and add it to the staged transaction.
   function armDelete() {
     if (!pendingDelete) return;
     try {
-      setPrepared({
-        sql: buildDelete(engine, table, pendingDelete),
+      stageWrite({
+        sql: buildDelete(
+          engine,
+          table,
+          pendingDelete.key,
+          pendingDelete.original,
+        ),
         rationale: t("rowEditor.rationaleDelete", { table: table.name }),
         collapseSql: true,
       });
@@ -320,11 +373,89 @@ function SqlTableData({
     toast(t("tables.copyRow"));
   }
 
-  function onWritten(o: ExecOutcome) {
-    // A committed write that matched no rows is not a success — flag it, don't green-light it.
-    if (o.affected === 0) toast(t("tables.noRowsWritten"), "error");
-    else toast(o.affected != null ? t("tables.rowsWritten", { count: o.affected }) : t("tables.writeCommitted"));
-    setPrepared(null);
+  async function prepareStagedChanges() {
+    if (!staged.length || stagedRunning) return;
+    const fingerprint = snapshotQuery.data?.fingerprint;
+    if (!fingerprint) {
+      setWriteErr(
+        snapshotQuery.error
+          ? errMessage(snapshotQuery.error)
+          : t("tables.catalogRequired"),
+      );
+      return;
+    }
+    setStagedRunning(true);
+    setWriteErr(null);
+    try {
+      const proposal = await proposeTableChanges(
+        connection.id,
+        staged.map((change) => change.sql),
+        fingerprint,
+      );
+      setStagedProposal(proposal);
+      setReviewing(true);
+      if (!proposal.approvalRequired) {
+        const outcome = await runScript(proposal.operationId);
+        finishStagedChanges(outcome);
+      }
+    } catch (error) {
+      setWriteErr(errMessage(error));
+    } finally {
+      setStagedRunning(false);
+    }
+  }
+
+  async function approveStagedChanges() {
+    if (!stagedProposal || stagedRunning) return;
+    setStagedRunning(true);
+    setWriteErr(null);
+    try {
+      await approveOperation(
+        stagedProposal.operationId,
+        stagedProposal.payloadHash,
+        stagedProposal.confirmationPhrase ? stagedConfirmation : undefined,
+      );
+      finishStagedChanges(await runScript(stagedProposal.operationId));
+    } catch (error) {
+      setWriteErr(errMessage(error));
+    } finally {
+      setStagedRunning(false);
+    }
+  }
+
+  async function rejectStagedChanges() {
+    if (!stagedProposal || stagedRunning) return;
+    try {
+      await rejectOperation(
+        stagedProposal.operationId,
+        stagedProposal.payloadHash,
+      );
+    } catch (error) {
+      setWriteErr(errMessage(error));
+    } finally {
+      setStagedProposal(null);
+      setStagedConfirmation("");
+      setReviewing(false);
+    }
+  }
+
+  function finishStagedChanges(outcome: ScriptOutcome) {
+    const conflict = outcome.statements.find((statement) =>
+      statement.error?.includes("optimistic concurrency conflict"),
+    );
+    if (!outcome.committed || conflict) {
+      setWriteErr(
+        conflict?.error ??
+          outcome.statements.find((statement) => statement.error)?.error ??
+          t("tables.changeSetRolledBack"),
+      );
+      return;
+    }
+    toast(t("tables.rowsWritten", { count: outcome.statements.length }));
+    setStaged([]);
+    setReviewing(false);
+    setStagedProposal(null);
+    setStagedConfirmation("");
     setEditor(null);
     setPendingDelete(null);
     setWriteErr(null);
@@ -334,7 +465,7 @@ function SqlTableData({
   const noEditTitle = nonScalarPk
     ? t("tables.nonScalarPk")
     : t("tables.noTablePk");
-  const panelOpen = !!prepared || !!editor || !!cellSel || !!pendingDelete;
+  const panelOpen = reviewing || !!editor || !!cellSel || !!pendingDelete;
 
   return (
     <div className="table-data">
@@ -402,6 +533,35 @@ function SqlTableData({
             <Icon name="trash" />
             <span className="table-action-label">{t("tables.delete")}</span>
           </button>
+          {staged.length > 0 && (
+            <>
+              <button
+                className="btn small active"
+                onClick={() => {
+                  setReviewing(true);
+                  setEditor(null);
+                  setPendingDelete(null);
+                  setCellSel(null);
+                }}
+                title={t("tables.reviewStaged")}
+              >
+                <Icon name="check" />
+                {t("tables.stagedCount", { count: staged.length })}
+              </button>
+              <button
+                className="btn small"
+                onClick={() => {
+                  setStaged([]);
+                  setReviewing(false);
+                  setStagedProposal(null);
+                }}
+                title={t("tables.discardStaged")}
+                aria-label={t("tables.discardStaged")}
+              >
+                <Icon name="close" />
+              </button>
+            </>
+          )}
         </div>
         <span className="table-toolbar-divider" aria-hidden="true" />
         <div className="table-query-state" aria-label={t("tables.querySurface")}>
@@ -448,6 +608,26 @@ function SqlTableData({
           onPage={setPage}
           onRefresh={() => void rowsQuery.refetch()}
         >
+          <button
+            className={`btn small${jobsOpen ? " active" : ""}`}
+            disabled={!catalogRelation}
+            aria-expanded={jobsOpen}
+            title={
+              catalogRelation
+                ? t("jobs.open")
+                : t("tables.catalogRequired")
+            }
+            aria-label={t("jobs.open")}
+            onClick={() => {
+              setJobsOpen((open) => !open);
+              setReviewing(false);
+              setEditor(null);
+              setPendingDelete(null);
+              setCellSel(null);
+            }}
+          >
+            <Icon name="download" />
+          </button>
           <button
             className={`btn small${structure ? " active" : ""}`}
             aria-expanded={structure}
@@ -586,6 +766,7 @@ function SqlTableData({
               onCellClick={(value, i, column) => {
                 setSelected(i);
                 setCellSel({ value, column });
+                setJobsOpen(false);
               }}
               columnMeta={Object.fromEntries(
                 table.columns.map((column) => [
@@ -609,19 +790,24 @@ function SqlTableData({
           !err && (busy ? <Skeleton lines={8} /> : <div className="muted">{t("tables.noRows")}</div>)
         )}
 
-        {panelOpen && (
+        {jobsOpen && catalogRelation ? (
+          <JobPanel
+            connectionId={connection.id}
+            relation={catalogRelation}
+            onClose={() => setJobsOpen(false)}
+          />
+        ) : panelOpen ? (
           <aside className="grid-panel">
-            {editor && !prepared && (
+            {editor && !reviewing && (
               <RowEditor
                 key={`${editor.mode}-${selected}`}
                 engine={engine}
                 table={table}
                 mode={editor.mode}
                 initial={editor.initial}
-                onSubmit={(write: RowEditorSubmission) => setPrepared(write)}
+                onSubmit={stageWrite}
                 onCancel={() => {
                   setEditor(null);
-                  setPrepared(null);
                 }}
               />
             )}
@@ -634,7 +820,7 @@ function SqlTableData({
                   </button>
                 </div>
                 <div className="row-fields">
-                  {Object.entries(pendingDelete).map(([k, v]) => (
+                  {Object.entries(pendingDelete.key).map(([k, v]) => (
                     <div className="row-field" key={k}>
                       <label>
                         {k}
@@ -654,20 +840,117 @@ function SqlTableData({
                 </div>
               </div>
             )}
-            {prepared && (
-              <ApprovalCard
-                key={prepared.sql}
-                connectionId={connection.id}
-                engine={engine}
-                sql={prepared.sql}
-                safety={safety}
-                rationale={prepared.rationale}
-                collapseSql={prepared.collapseSql}
-                onExecuted={onWritten}
-                onReject={() => setPrepared(null)}
-              />
+            {reviewing && (
+              <div className="row-editor staged-change-review">
+                <div className="panel-head">
+                  <div>
+                    <strong>
+                      {t("tables.stagedCount", { count: staged.length })}
+                    </strong>
+                    <div className="muted">
+                      {t("tables.stagedAtomicHelp")}
+                    </div>
+                  </div>
+                  <button
+                    className="btn small"
+                    aria-label={t("common.close")}
+                    onClick={() => {
+                      setReviewing(false);
+                      setStagedProposal(null);
+                      setStagedConfirmation("");
+                    }}
+                  >
+                    <Icon name="close" />
+                  </button>
+                </div>
+                <ol className="staged-change-list">
+                  {staged.map((change, index) => (
+                    <li key={change.id}>
+                      <div>
+                        <strong>
+                          {change.rationale ||
+                            t("tables.stagedChange", { index: index + 1 })}
+                        </strong>
+                        <code>{change.sql}</code>
+                      </div>
+                      {!stagedProposal && (
+                        <button
+                          className="btn small"
+                          onClick={() =>
+                            setStaged((current) =>
+                              current.filter(
+                                (candidate) => candidate.id !== change.id,
+                              ),
+                            )
+                          }
+                          aria-label={t("common.delete")}
+                        >
+                          <Icon name="close" />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+                {stagedProposal?.confirmationPhrase && (
+                  <label className="staged-confirmation">
+                    <span>
+                      {t("approval.confirmationPrompt")}{" "}
+                      <code>{stagedProposal.confirmationPhrase}</code>
+                    </span>
+                    <input
+                      value={stagedConfirmation}
+                      onChange={(event) =>
+                        setStagedConfirmation(event.target.value)
+                      }
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </label>
+                )}
+                <div className="row-editor-actions ds-action-row ds-control-row">
+                  {!stagedProposal ? (
+                    <button
+                      className="btn primary"
+                      disabled={
+                        staged.length === 0 ||
+                        stagedRunning ||
+                        snapshotQuery.isPending
+                      }
+                      onClick={() => void prepareStagedChanges()}
+                    >
+                      {stagedRunning
+                        ? t("common.loading")
+                        : t("tables.reviewAndApply")}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        className="btn primary"
+                        disabled={
+                          stagedRunning ||
+                          (!!stagedProposal.confirmationPhrase &&
+                            stagedConfirmation !==
+                              stagedProposal.confirmationPhrase)
+                        }
+                        onClick={() => void approveStagedChanges()}
+                      >
+                        {stagedRunning
+                          ? t("common.saving")
+                          : t("approval.approveAndRunWrite")}
+                      </button>
+                      <button
+                        className="btn"
+                        disabled={stagedRunning}
+                        onClick={() => void rejectStagedChanges()}
+                      >
+                        {t("approval.reject")}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             )}
-            {cellSel && !editor && !prepared && (
+            {cellSel && !editor && !reviewing && (
               <CellViewer
                 value={cellSel.value}
                 column={cellSel.column}
@@ -675,7 +958,7 @@ function SqlTableData({
               />
             )}
           </aside>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -22,6 +22,10 @@
 request field나 Agent/Plugin이 flag를 켤 수 없다. migration은 flag와 무관하게
 idempotent하고 이전 binary가 모르는 새 table을 안전하게 무시할 수 있어야 한다.
 
+현재 desktop composition root는 검증을 마친
+`operation_runtime_v1`~`jobs_v1`을 명시적으로 활성화한다. `plugins_v1`,
+`workspace_resources_v1`, `realtime_collaboration_v1`은 계속 비활성 상태다.
+
 현재 UI/CLI의 legacy `Catalog` wire를 보존하는 내부 `schema_cache_v2` adapter는
 권한 scope와 cache CAS를 강화한 졸업된 persistence 기반이므로 이 flag로 되돌리지
 않는다. 이 flag는 향후 canonical `CatalogSnapshot`을 새 CLI/ERD/DDL consumer에

@@ -1,6 +1,6 @@
 # DopeDB CLI·Terminal Platform 구현 계획
 
-- 상태: 구현 진행 — Phase 6 Terminal/CLI cutover 완료, Phase 7 착수 전
+- 상태: 구현 진행 — Phase 7~10 완료, Phase 11 착수 전
 - 최종 갱신: 2026-07-25
 - 적용 대상: DopeDB Desktop, `workspace-cloud`, 신규 `dopedb-cli`, 향후
   Plugin/Realtime 서비스
@@ -2053,6 +2053,8 @@ ERD layout, dashboard, policy는 먼저 optimistic revision을 사용한다.
 
 ### Phase 7 — Catalog V2와 DDL IR
 
+상태: 완료
+
 작업:
 
 - introspection 확장
@@ -2069,6 +2071,8 @@ ERD layout, dashboard, policy는 먼저 optimistic revision을 사용한다.
 - SQLite rebuild preview
 
 ### Phase 8 — SQL IDE와 Table Management
+
+상태: 완료
 
 작업:
 
@@ -2088,6 +2092,15 @@ ERD layout, dashboard, policy는 먼저 optimistic revision을 사용한다.
 
 ### Phase 9 — ERD/UML
 
+상태: 완료
+
+구현 경계:
+
+- ELK 계산은 취소 가능한 worker에서 실행하며 자동 배치는 현재 보이는 객체 2,000개,
+  React Flow 렌더는 3,000개로 제한한다.
+- 초과 스키마는 지연 검색·선택 객체 주변 보기·visible-only 렌더링을 사용하고, 저장된
+  좌표는 필터 전환 중에도 보존한다. 내보내기는 현재 보이는 그래프를 대상으로 한다.
+
 작업:
 
 - graph model
@@ -2104,6 +2117,16 @@ ERD layout, dashboard, policy는 먼저 optimistic revision을 사용한다.
 - virtual relation이 DB를 수정하지 않음
 
 ### Phase 10 — Import/Export
+
+상태: 완료
+
+구현 경계:
+
+- SQL-family relation Job을 제공하고 document-family 연결은 typed adapter가 생길
+  때까지 실패 폐쇄한다.
+- CSV/TSV/JSON/NDJSON/INSERT SQL과 XLSX/gzip 변형을 지원한다.
+- XLSX/gzip 및 SQL import는 안전한 append/replay가 보장되지 않아 재개하지 않는다.
+- 상세 수명주기·메모리·파일 보안 계약은 `docs/contracts/job-engine.md`를 따른다.
 
 작업:
 

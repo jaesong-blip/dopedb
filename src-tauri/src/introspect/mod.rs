@@ -15,25 +15,74 @@ use crate::connection::{DbPool, Live};
 use crate::error::{AppError, AppResult};
 
 /// A relational column.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Column {
     pub name: String,
     pub data_type: String,
     pub nullable: bool,
     pub pk: bool,
+    #[serde(default)]
+    pub ordinal: u32,
+    #[serde(default)]
+    pub length: Option<u64>,
+    #[serde(default)]
+    pub precision: Option<u32>,
+    #[serde(default)]
+    pub scale: Option<u32>,
+    #[serde(default)]
+    pub default_expression: Option<String>,
+    #[serde(default)]
+    pub generated_expression: Option<String>,
+    #[serde(default)]
+    pub identity: bool,
+    #[serde(default)]
+    pub auto_increment: bool,
+    #[serde(default)]
+    pub collation: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 /// A foreign-key edge from one column to a referenced table column.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForeignKey {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub ordinal: u32,
     pub column: String,
     pub references_table: String,
     pub references_column: String,
     /// Schema of the referenced table (Some for Postgres cross-schema FKs; None otherwise).
     #[serde(default)]
     pub references_schema: Option<String>,
+    #[serde(default)]
+    pub update_action: Option<String>,
+    #[serde(default)]
+    pub delete_action: Option<String>,
+    #[serde(default)]
+    pub deferrable: bool,
+    #[serde(default = "default_true")]
+    pub validated: bool,
+}
+
+impl Default for ForeignKey {
+    fn default() -> Self {
+        Self {
+            name: None,
+            ordinal: 0,
+            column: String::new(),
+            references_table: String::new(),
+            references_column: String::new(),
+            references_schema: None,
+            update_action: None,
+            delete_action: None,
+            deferrable: false,
+            validated: true,
+        }
+    }
 }
 
 /// A secondary index on a table (primary-key indexes are excluded — the PK is already
@@ -44,6 +93,35 @@ pub struct Index {
     pub name: String,
     pub columns: Vec<String>,
     pub unique: bool,
+    #[serde(default)]
+    pub method: Option<String>,
+    #[serde(default)]
+    pub keys: Vec<dopedb_protocol::IndexKey>,
+    #[serde(default)]
+    pub included_columns: Vec<String>,
+    #[serde(default)]
+    pub predicate: Option<String>,
+    #[serde(default = "default_true")]
+    pub valid: bool,
+}
+
+impl Default for Index {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            columns: Vec::new(),
+            unique: false,
+            method: None,
+            keys: Vec::new(),
+            included_columns: Vec::new(),
+            predicate: None,
+            valid: true,
+        }
+    }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 fn default_kind() -> String {
@@ -51,7 +129,7 @@ fn default_kind() -> String {
 }
 
 /// A table (or view) with its columns, foreign keys, indexes, and a row-count estimate.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Table {
     /// Schema/namespace (None for SQLite / single-schema MySQL).
@@ -61,8 +139,20 @@ pub struct Table {
     /// predates this field) deserializes as a plain table.
     #[serde(default = "default_kind")]
     pub kind: String,
+    #[serde(default)]
+    pub native_id: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default)]
+    pub partition_parent: Option<dopedb_protocol::ObjectRef>,
+    #[serde(default)]
+    pub partition_children: Vec<dopedb_protocol::ObjectRef>,
     pub columns: Vec<Column>,
     pub foreign_keys: Vec<ForeignKey>,
+    /// Non-PK/FK constraints. PKs and FKs keep their compact legacy projection
+    /// above so existing table UI remains wire-compatible.
+    #[serde(default)]
+    pub constraints: Vec<dopedb_protocol::Constraint>,
     #[serde(default)]
     pub indexes: Vec<Index>,
     /// Planner/statistics row estimate — not an exact count.
@@ -72,7 +162,7 @@ pub struct Table {
 /// A non-tabular database object shown in the explorer. Keeping these separate from
 /// [`Table`] prevents routines, triggers, and sequences from accidentally flowing into
 /// data reads, schema diffs, SQL completion, or CLI table commands.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseObject {
     /// Schema/namespace (None for single-schema engines).
@@ -80,12 +170,22 @@ pub struct DatabaseObject {
     pub name: String,
     /// "function" | "procedure" | "trigger" | "sequence" | "materialized_view".
     pub kind: String,
+    #[serde(default)]
+    pub native_id: Option<String>,
     /// Compact, non-secret metadata such as a routine signature or trigger event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     /// Owning table for a trigger, when the engine exposes one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    #[serde(default)]
+    pub arguments: Vec<String>,
+    #[serde(default)]
+    pub return_type: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 /// The introspected schema for one connection.

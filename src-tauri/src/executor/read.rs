@@ -46,6 +46,66 @@ pub async fn run_read(
     run_read_registered(live, _engine, sql, max_rows, cancellation.as_ref()).await
 }
 
+/// Job-engine read path: retain no more than `max_bytes` of decoded rows per
+/// batch while preserving the same typed cell decoding and read-only session.
+pub(crate) async fn run_read_byte_capped(
+    live: &LiveConnection,
+    _engine: Engine,
+    sql: &str,
+    max_rows: u64,
+    max_bytes: usize,
+    query_id: Option<Uuid>,
+) -> AppResult<QueryResult> {
+    let started = Instant::now();
+    let cancellation = query_id.map(cancel::register);
+    let max = max_rows as usize;
+    let inner = async {
+        let (columns, rows, truncated) = match &live.read_pool {
+            Pool::Postgres(pool) => {
+                let (columns, rows, truncated) = stream_byte_capped(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(pool),
+                    max,
+                    max_bytes,
+                    pg_value,
+                )
+                .await?;
+                (with_headers(columns, pool, sql).await, rows, truncated)
+            }
+            Pool::Mysql(pool) => {
+                let (columns, rows, truncated) = stream_byte_capped(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(pool),
+                    max,
+                    max_bytes,
+                    mysql_value,
+                )
+                .await?;
+                (with_headers(columns, pool, sql).await, rows, truncated)
+            }
+            Pool::Sqlite(pool) => {
+                let (columns, rows, truncated) = stream_byte_capped(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(pool),
+                    max,
+                    max_bytes,
+                    sqlite_value,
+                )
+                .await?;
+                (with_headers(columns, pool, sql).await, rows, truncated)
+            }
+        };
+        Ok(QueryResult {
+            row_count: rows.len(),
+            columns,
+            rows,
+            truncated,
+            duration_ms: 0,
+        })
+    };
+    let mut result =
+        cancel::guard_registered(cancellation.as_ref(), cancel::QUERY_TIMEOUT, inner).await?;
+    result.duration_ms = started.elapsed().as_millis() as u64;
+    Ok(result)
+}
+
 /// Execute through a cancellation slot registered before the caller's durable
 /// operation claim, so an immediate cancel cannot be replaced by a second slot.
 pub(crate) async fn run_read_registered(
@@ -147,6 +207,54 @@ where
         }
         let n = row.columns().len();
         rows.push((0..n).map(|i| f(&row, i)).collect());
+    }
+    Ok((columns, rows, truncated))
+}
+
+async fn stream_byte_capped<S, R>(
+    mut stream: S,
+    max_rows: usize,
+    max_bytes: usize,
+    decode: impl Fn(&R, usize) -> Value,
+) -> AppResult<(Vec<String>, Vec<Vec<Value>>, bool)>
+where
+    S: futures::Stream<Item = Result<R, sqlx::Error>> + Unpin,
+    R: Row,
+{
+    let mut columns = Vec::new();
+    let mut rows = Vec::new();
+    let mut retained_bytes = 0_usize;
+    let mut truncated = false;
+    while let Some(row) = stream.try_next().await? {
+        if columns.is_empty() {
+            columns = row
+                .columns()
+                .iter()
+                .map(|column| column.name().to_owned())
+                .collect();
+        }
+        if rows.len() >= max_rows {
+            truncated = true;
+            break;
+        }
+        let decoded = (0..row.columns().len())
+            .map(|index| decode(&row, index))
+            .collect::<Vec<_>>();
+        let row_bytes = serde_json::to_vec(&decoded)?.len();
+        if row_bytes > max_bytes {
+            return Err(AppError::Blocked {
+                reason: format!(
+                    "one export row exceeds the {} MiB batch safety limit",
+                    max_bytes / 1024 / 1024
+                ),
+            });
+        }
+        if retained_bytes.saturating_add(row_bytes) > max_bytes {
+            truncated = true;
+            break;
+        }
+        retained_bytes += row_bytes;
+        rows.push(decoded);
     }
     Ok((columns, rows, truncated))
 }

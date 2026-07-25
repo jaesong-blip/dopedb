@@ -4,7 +4,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import type { Dashboard } from "../ipc/types";
+import type { Dashboard, JobChangedEvent } from "../ipc/types";
 import { qk } from "./queries";
 
 const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
@@ -19,6 +19,8 @@ const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
   "tableRows",
   "documentRows",
   "documentCount",
+  "erdLayouts",
+  "jobs",
 ]);
 
 /** Clear only data tied to the previous workspace; identity and global catalogs stay warm. */
@@ -63,6 +65,11 @@ function CacheInvalidation({ children }: { children: ReactNode }) {
       listen<Dashboard>("dashboard:created", (event) => {
         void queryClient.invalidateQueries({
           queryKey: qk.dashboards(event.payload.connectionId),
+        });
+      }),
+      listen<JobChangedEvent>("job:changed", (event) => {
+        void queryClient.invalidateQueries({
+          queryKey: qk.jobs(event.payload.connectionId),
         });
       }),
     ];

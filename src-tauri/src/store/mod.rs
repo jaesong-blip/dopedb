@@ -166,6 +166,12 @@ impl Store {
         let _ = sqlx::query("ALTER TABLE agent_chat_threads ADD COLUMN connection_id TEXT")
             .execute(&pool)
             .await;
+        let _ = sqlx::query(
+            "ALTER TABLE jobs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0
+             CHECK(pause_requested IN (0, 1))",
+        )
+        .execute(&pool)
+        .await;
         add_workspace_columns(&pool).await;
         migrate_workspace_foundation(&pool).await?;
         migrate_audit_no_cascade(&pool).await?;

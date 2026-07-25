@@ -1,0 +1,43 @@
+.erd-toolbar {
+  --ds-row-control-size: var(--ds-control-md);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.erd-toolbar > select,
+.erd-toolbar > input {
+  width: auto;
+  min-width: 0;
+  min-height: var(--ds-control-md);
+  padding: 0 var(--ds-space-2);
+  border: var(--ds-border-width) solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-sm);
+  background: var(--ds-surface-0);
+  color: var(--ds-text);
+  font: inherit;
+}
+
+.erd-toolbar > input {
+  width: min(180px, 24vw);
+}
+
+.erd-toolbar > select:first-child {
+  max-width: 180px;
+}
+
+.erd-toolbar .btn.active {
+  border-color: var(--ds-accent-text);
+  background: var(--ds-accent-soft);
+  color: var(--ds-accent-text);
+}
+
+.erd-export-menu {
+  min-width: 128px;
+}
+
+@container schema-pane (max-width: 760px) {
+  .erd-toolbar > input,
+  .erd-toolbar > select:first-child {
+    width: min(100%, 180px);
+  }
+}
