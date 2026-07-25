@@ -339,6 +339,23 @@ impl TerminalManager {
         Ok(summary)
     }
 
+    pub(super) fn close(&self, id: Uuid, app: &AppHandle) -> AppResult<()> {
+        let session = self.session(id)?;
+        if !session.lifecycle().is_terminal() {
+            let _ = self.kill(id, app)?;
+            let deadline = Instant::now() + FORCE_KILL_AFTER;
+            while Instant::now() < deadline && !session.lifecycle().is_terminal() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            if !session.lifecycle().is_terminal() {
+                session.force_stop();
+            }
+        }
+        self.broker_sessions.revoke(id);
+        self.sessions.remove(&id);
+        Ok(())
+    }
+
     pub(super) fn restart_seed(&self, id: Uuid) -> AppResult<RestartSeed> {
         let session = self.session(id)?;
         let metadata = session.metadata.lock().unwrap();

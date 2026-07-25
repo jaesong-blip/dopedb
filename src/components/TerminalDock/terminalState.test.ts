@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { TerminalSessionSummary } from "../../ipc/types";
 import {
   initialTerminalDockState,
-  terminalConnectionMismatch,
+  terminalActiveIdForConnection,
   terminalDockReducer,
+  terminalSessionsForConnection,
 } from "./terminalState";
 
 function session(
@@ -53,7 +54,9 @@ describe("Terminal Dock state", () => {
       currentConnectionId: "db-1",
     });
 
-    expect(state.activeId).toBe("current-new");
+    expect(terminalActiveIdForConnection(state, "db-1")).toBe(
+      "current-new",
+    );
     expect(state.sessions.map(({ id }) => id)).toEqual([
       "current-old",
       "current-new",
@@ -61,22 +64,36 @@ describe("Terminal Dock state", () => {
     ]);
   });
 
-  it("keeps the active session when the workbench connection changes", () => {
+  it("keeps independent active sessions for each connection", () => {
     const loaded = terminalDockReducer(initialTerminalDockState, {
       type: "loaded",
-      sessions: [session("pinned", "db-1", "2026-07-25T00:00:00Z")],
+      sessions: [
+        session("db-1-old", "db-1", "2026-07-25T00:00:00Z"),
+        session("db-1-new", "db-1", "2026-07-25T00:00:01Z"),
+        session("db-2-only", "db-2", "2026-07-25T00:00:02Z"),
+      ],
       currentConnectionId: "db-1",
     });
-    const afterSwitch = terminalDockReducer(loaded, {
-      type: "loaded",
-      sessions: loaded.sessions,
-      currentConnectionId: "db-2",
+    const selectedOld = terminalDockReducer(loaded, {
+      type: "activate",
+      id: "db-1-old",
+    });
+    const selectedOther = terminalDockReducer(selectedOld, {
+      type: "activate",
+      id: "db-2-only",
     });
 
-    expect(afterSwitch.activeId).toBe("pinned");
+    expect(terminalActiveIdForConnection(selectedOther, "db-1")).toBe(
+      "db-1-old",
+    );
+    expect(terminalActiveIdForConnection(selectedOther, "db-2")).toBe(
+      "db-2-only",
+    );
     expect(
-      terminalConnectionMismatch(afterSwitch.sessions[0], "db-2"),
-    ).toBe(true);
+      terminalSessionsForConnection(selectedOther.sessions, "db-1").map(
+        ({ id }) => id,
+      ),
+    ).toEqual(["db-1-old", "db-1-new"]);
   });
 
   it("replaces a restarted process with its new immutable session", () => {
@@ -94,7 +111,57 @@ describe("Terminal Dock state", () => {
     });
 
     expect(restarted.sessions.map(({ id }) => id)).toEqual(["new"]);
-    expect(restarted.activeId).toBe("new");
+    expect(terminalActiveIdForConnection(restarted, "db-1")).toBe("new");
+  });
+
+  it("selects an adjacent scoped tab after closing the active session", () => {
+    const loaded = terminalDockReducer(initialTerminalDockState, {
+      type: "loaded",
+      sessions: [
+        session("first", "db-1", "2026-07-25T00:00:00Z"),
+        session("active", "db-1", "2026-07-25T00:00:01Z"),
+        session("next", "db-1", "2026-07-25T00:00:02Z"),
+        session("other", "db-2", "2026-07-25T00:00:03Z"),
+      ],
+      currentConnectionId: "db-1",
+    });
+    const active = terminalDockReducer(loaded, {
+      type: "activate",
+      id: "active",
+    });
+    const closed = terminalDockReducer(active, {
+      type: "remove",
+      id: "active",
+    });
+
+    expect(terminalActiveIdForConnection(closed, "db-1")).toBe("next");
+    expect(closed.sessions.map(({ id }) => id)).toEqual([
+      "first",
+      "next",
+      "other",
+    ]);
+  });
+
+  it("leaves another connection selection untouched when closing a tab", () => {
+    const loaded = terminalDockReducer(initialTerminalDockState, {
+      type: "loaded",
+      sessions: [
+        session("db-1", "db-1", "2026-07-25T00:00:00Z"),
+        session("db-2", "db-2", "2026-07-25T00:00:01Z"),
+      ],
+      currentConnectionId: "db-1",
+    });
+    const selectedOther = terminalDockReducer(loaded, {
+      type: "activate",
+      id: "db-2",
+    });
+    const closed = terminalDockReducer(selectedOther, {
+      type: "remove",
+      id: "db-1",
+    });
+
+    expect(terminalActiveIdForConnection(closed, "db-1")).toBeNull();
+    expect(terminalActiveIdForConnection(closed, "db-2")).toBe("db-2");
   });
 
   it("records replay truncation once per session", () => {

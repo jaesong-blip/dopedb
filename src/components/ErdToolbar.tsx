@@ -97,8 +97,12 @@ export default function ErdToolbar({
           className={`btn small icon-only${neighborhood ? " active" : ""}`}
           type="button"
           onClick={onToggleNeighborhood}
-          title={t("schema.erdNeighborhood")}
-          aria-label={t("schema.erdNeighborhood")}
+          title={t(
+            neighborhood ? "schema.erdShowAll" : "schema.erdNeighborhood",
+          )}
+          aria-label={t(
+            neighborhood ? "schema.erdShowAll" : "schema.erdNeighborhood",
+          )}
           aria-pressed={neighborhood}
         >
           <Icon name="target" />

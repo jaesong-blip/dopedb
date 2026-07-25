@@ -29,7 +29,6 @@ import {
   type WorkbenchDocument,
 } from "./features/workbench/domain";
 import { useWorkbenchDocuments } from "./features/workbench/useWorkbenchDocuments";
-import AgentLogDialog from "./components/AgentLogDialog";
 import EngineMark from "./components/EngineMark";
 import { Icon } from "./components/Icon";
 import TerminalDock from "./components/TerminalDock/TerminalDock";
@@ -374,7 +373,6 @@ function Shell() {
   >(undefined);
   const [schemaDiffGroupKey, setSchemaDiffGroupKey] = useState<string | null>(null);
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
-  const [agentLogOpen, setAgentLogOpen] = useState(false);
   const terminalButtonRef = useRef<HTMLButtonElement | null>(null);
   const updateCheckInFlight = useRef(false);
   const lastUpdateCheckAt = useRef(0);
@@ -582,11 +580,11 @@ function Shell() {
     }
   }, [latest, showTerminalDock, toast]);
 
-  // Operation activity is considered seen only after the user explicitly opens the
-  // secondary log surface.
+  // Operation activity remains an auditable Workbench document; the retired Agent log
+  // modal no longer owns or duplicates its seen state.
   useEffect(() => {
-    if (agentLogOpen && unseen > 0) markSeen();
-  }, [agentLogOpen, unseen, markSeen]);
+    if (activeDocument?.kind === "activity" && unseen > 0) markSeen();
+  }, [activeDocument?.kind, unseen, markSeen]);
 
   // Per-connection safety drives the Data/SQL views (max rows, auto-run reads).
   // safetyReqId guards against out-of-order resolution: getSafety runs on a pooled
@@ -670,10 +668,16 @@ function Shell() {
     localStorage.setItem("terminalDockWidth", String(width));
   }, []);
 
-  function toggleTerminalDock() {
+  function openOrFocusTerminalDock() {
     if (!selected) return;
     if (showTerminalDock) {
-      closeTerminalDock();
+      window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLButtonElement>(
+            '.terminal-dock .terminal-session-select[aria-selected="true"], .terminal-dock .terminal-profile-menu-wrap > button',
+          )
+          ?.focus();
+      });
       return;
     }
     setSettingsOpen(false);
@@ -699,7 +703,6 @@ function Shell() {
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
     setDashboardFocusId(null);
-    setAgentLogOpen(false);
     setMobileExplorerOpen(false);
     setArea(nextArea);
     focusMainAfterMobileSelection();
@@ -885,17 +888,16 @@ function Shell() {
                 ref={terminalButtonRef}
                 type="button"
                 className={`btn small icon-only main-terminal-toggle${showTerminalDock ? " active" : ""}`}
-                onClick={toggleTerminalDock}
-                title={t("terminal.title")}
-                aria-label={t("terminal.title")}
+                onClick={openOrFocusTerminalDock}
+                title={t(
+                  showTerminalDock ? "terminal.focusPanel" : "terminal.title",
+                )}
+                aria-label={t(
+                  showTerminalDock ? "terminal.focusPanel" : "terminal.title",
+                )}
                 aria-pressed={showTerminalDock}
               >
                 <Icon name="terminal" />
-                {unseen > 0 && (
-                  <span className="workbench-rail-count">
-                    {unseen > 9 ? "9+" : unseen}
-                  </span>
-                )}
               </button>
             </div>
           </header>
@@ -1152,16 +1154,8 @@ function Shell() {
           skillStatus={skillStatusQ.data ?? null}
           overlay={terminalOverlay}
           width={terminalDockWidth}
-          unseen={unseen}
           onWidthChange={updateTerminalDockWidth}
-          onOpenLogs={() => setAgentLogOpen(true)}
           onClose={closeTerminalDock}
-        />
-      )}
-      {agentLogOpen && selected && (
-        <AgentLogDialog
-          connection={selected}
-          onClose={() => setAgentLogOpen(false)}
         />
       )}
     </div>
