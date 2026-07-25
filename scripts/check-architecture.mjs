@@ -151,7 +151,7 @@ for (const token of [
   "crate::workspace_auth",
 ]) {
   if (rustSource.includes(token)) {
-    fail(`removed SQL document runtime token returned: ${token}`);
+    fail(`removed runtime token returned: ${token}`);
   }
 }
 const directCatalogLoaders = sourceFiles
@@ -249,6 +249,9 @@ forbid("src-tauri/src/features/catalog/transport.rs", [
 forbid("src-tauri/src/introspect/mod.rs", [
   [/\bpub struct Catalog\b/, "catalog model returned to the introspection adapter"],
   [/\bpub struct Column\b/, "catalog column model returned to the introspection adapter"],
+  [/\bpub struct DatabaseObject\b/, "catalog object model returned to the introspection adapter"],
+  [/\bpub struct ForeignKey\b/, "catalog foreign-key model returned to the introspection adapter"],
+  [/\bpub struct Index\b/, "catalog index model returned to the introspection adapter"],
   [/\bpub struct Table\b/, "catalog table model returned to the introspection adapter"],
 ]);
 forbid("src-tauri/src/commands/mod.rs", [
