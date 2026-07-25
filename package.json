@@ -6,9 +6,10 @@
   "packageManager": "pnpm@10.26.1",
   "scripts": {
     "dev": "vite",
-    "build": "pnpm check:skills && pnpm check:ui && tsc && vite build",
+    "build": "pnpm check:skills && pnpm check:architecture && pnpm check:ui && tsc && vite build",
     "generate:skills": "node scripts/generate-skill-bundle.mjs",
     "check:skills": "node scripts/generate-skill-bundle.mjs --check",
+    "check:architecture": "node scripts/check-architecture.mjs",
     "check:ui": "node scripts/check-ui-depth.mjs",
     "test": "vitest run",
     "workspace:migrate": "bash scripts/migrate-workspace-service.sh",

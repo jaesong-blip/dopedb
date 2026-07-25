@@ -131,7 +131,7 @@ flowchart TB
 
 - `src/App.tsx`
   - Workbench document와 persistent Agent utility dock을 함께 관리한다.
-- `src/lib/workbenchDocuments.ts`
+- `src/features/workbench/domain.ts`, `state.ts`, `useWorkbenchDocuments.ts`
   - data, schema, activity, sql, documents 문서 타입을 관리한다.
 - `src/screens/AgentChat/`
   - 새 Terminal Dock으로 교체할 대상이다.
@@ -2195,7 +2195,6 @@ skill_manager_v1
 terminal_dock_v1
 catalog_v2
 ddl_ir_v1
-sql_documents_v1
 table_changes_v1
 erd_v1
 jobs_v1
@@ -2263,7 +2262,7 @@ realtime_collaboration_v1
   - operation/job/skill/catalog query options
 - `src/lib/queryClient.tsx`
   - state event invalidation
-- `src/lib/workbenchDocuments.ts`
+- `src/features/workbench/`
   - persistent SQL document id
 - `src/screens/AgentChat/`
   - archive 후 제거

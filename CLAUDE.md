@@ -30,17 +30,21 @@ gh workflow run canary.yml --ref main -f source_ref="$branch"
 ## 아키텍처 지도
 
 - `src/screens/`: 화면 단위 폴더 — 탭 하나 = 폴더 하나. Settings처럼 하위 섹션이 있으면 부모 폴더 아래 같은 패턴으로 중첩(`Settings/AgentTools` 등).
+- `src/features/`: 기능별 수직 슬라이스. 순수 domain/state, application hook, port, Tauri adapter를 기능 폴더 안에 둔다. 이동이 끝난 기능은 `screens`나 `ipc/commands.ts`에 별도 런타임 경로를 남기지 않는다.
 - `src/components/`: 여러 화면이 공유하는 UI 조각.
 - `src/lib/`: 렌더 마크업 없는 순수 로직/헤드리스 상태(i18n, agentFeed 등).
 - `src/lib/queries.ts` + `queryClient.tsx`: TanStack Query 기반 앱 전역 읽기 캐시. 백엔드 읽기는 전부 여기 등록된 쿼리로 접근한다.
 - `src/ipc/`: Tauri invoke 래퍼(`commands.ts`)와 Rust 데이터 계약 미러(`types.ts`).
 - `src/design-system/`: 토큰(`tokens.css`)과 공통 클래스(`system.css`) — 상세는 `src/design-system/README.md`.
 - `src-tauri/src/`: `driver`(레지스트리/선택), `connection`, `introspect`, `executor`, `migrations`, `safety`, `audit`, `services`, `operations`, `broker`, `terminal`, `store`, `commands` 도메인 모듈 + `model.rs`(데이터 계약).
+- `src-tauri/src/features/`: 기능별 `domain → application → ports` 코어와 `adapters`, `transport`, composition 경계. 코어는 Tauri·SQLx·Store·ConnectionManager를 직접 참조하지 않는다.
+- `src-tauri/src/kernel/`: 기능 사이에서 공유하는 타입 식별자·권한·오류 같은 작은 순수 프리미티브.
 - `dopedb-protocol/`, `dopedb-cli/`, `site/`: 별개 하위 프로젝트(각자 자체 빌드).
 
 ## 빌드 · 검증
 
-- `pnpm build` — UI 깊이·컨트롤 행·그리드 계약 검사 + tsc + vite build.
+- `pnpm build` — Skill·아키텍처·UI 깊이·컨트롤 행·그리드 계약 검사 + tsc + vite build.
+- `pnpm check:architecture` — 기능 경계, 단일 상태 writer, 삭제된 레거시 경로, 대형 파일 증가를 검사.
 - `pnpm dev:app` / `pnpm tauri dev` — macOS에서는 안정된 개발 코드 서명 후 앱 실행.
 - `cargo test --manifest-path src-tauri/Cargo.toml` — Rust 테스트.
 
@@ -59,13 +63,17 @@ gh workflow run canary.yml --ref main -f source_ref="$branch"
 
 **export**: 메인 산출물이 하나면 default export. 서로 다른 산출물이 둘 이상(훅+프로바이더, barrel 등)이면 전부 named로 통일하고 default 없음. 단일 default 파일도 보조 타입은 named로 함께 export 가능. `lib/*.ts(x)`는 export 개수와 무관하게 항상 named(default 금지).
 
-**import 순서**: `react` → 기타 외부 패키지(`@tauri-apps/*`) → `../../ipc/commands` → `../../ipc/types`(타입 먼저) → `../../components/*` → `../../lib/*` → 자기 폴더 `./*.css`(항상 마지막, 예외 없음).
+**기능 슬라이스**: 새 기능과 이전 중인 기능은 `src/features/<feature>/`, Rust는 `src-tauri/src/features/<feature>/`에 둔다. UI/transport는 application use case나 port만 호출하며 domain/application/ports에서 Tauri, SQLx, Store, keychain, network, 전역 AppState를 참조하지 않는다. 이전이 끝난 커밋에서는 기존 service, IPC wrapper, re-export, fallback, rollout flag를 함께 삭제한다.
+
+**상태 소유권**: 변경 가능한 상태마다 writer를 하나만 둔다. React 상태는 feature reducer/hook, Rust 장기 작업은 명시적 runtime/state machine이 소유한다. adapter와 화면은 상태를 직접 고치지 않고 command를 전달한다. 소유자는 `docs/architecture/state-ownership.json`에 등록한다.
+
+**import 순서**: `react` → 기타 외부 패키지(`@tauri-apps/*`) → `../../ipc/commands` → `../../ipc/types`(타입 먼저) → `../../features/*` → `../../components/*` → `../../lib/*` → 자기 폴더 `./*.css`(항상 마지막, 예외 없음).
 
 **화면 추가**: `screens/X/index.tsx` + `x.css` 생성 → `App.tsx`에 탭 등록. 하위 화면(Settings 등)은 부모 폴더 아래 같은 패턴 중첩.
 
 **컴포넌트 추가**: `components/PascalCase.tsx`, 자체 렌더 마크업이 있으면 동명 `.css` 동반. 여러 컴포넌트가 공유하는 스타일만 예외적으로 `grid.css`처럼 공용 파일에 둔다.
 
-**IPC 추가**: `src-tauri/src/commands/mod.rs`에 커맨드 추가 → `src/ipc/commands.ts`에 invoke 래퍼 추가 → 새 타입은 `src-tauri/src/model.rs`에 정의하고 `src/ipc/types.ts`에 1:1 미러(`snake_case` → `camelCase`만 다르게, 필드 순서 동일). 두 파일 모두 상단에 "이 파일이 데이터 계약의 authoritative source/mirror"라는 주석을 유지한다. `model.rs` 밖 타입(예: `introspect/mod.rs`, `legacy_mcp_cleanup.rs`)도 `types.ts`에 모으고 `// mirrors src-tauri/src/x.rs` 주석으로 출처를 명시한다.
+**IPC 추가**: 아직 이동하지 않은 공유 커맨드는 `src-tauri/src/commands/mod.rs` → `src/ipc/commands.ts`, 공유 타입은 `src-tauri/src/model.rs` → `src/ipc/types.ts`에 1:1 미러한다. 기능 슬라이스는 Rust `features/<feature>/transport.rs`, frontend `features/<feature>/tauriAdapter.ts`에 transport를 두고 feature domain 타입을 미러한다. `snake_case` → `camelCase`만 바꾸며 필드 순서와 직렬화 형태는 동일하게 유지한다.
 
 **i18n**: `en`+`ko` 둘 다 필수. 키는 항상 `namespace.camelCaseKey`(2세그먼트). namespace는 화면/컴포넌트 이름과 1:1(`connections`, `sql`, `agentTools`, `safety`, `rowEditor` 등). `common`, `app`만 전역 공유 네임스페이스 예외. 사전 내 알파벳 정렬 유지.
 

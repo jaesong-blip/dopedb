@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogTable } from "../ipc/types";
+import type { CatalogTable } from "../../ipc/types";
 import {
   queryDocument,
   stableDocument,
   supportsDocument,
   tableDocument,
-} from "./workbenchDocuments";
+} from "./domain";
 
 const table: CatalogTable = {
   schema: "public",

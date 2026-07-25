@@ -2,7 +2,7 @@
 // manual SQL, so execution stays in-place: action bar status first, results below.
 // Multi-statement scripts execute through the backend script runner and return
 // per-statement results. ⌘↩ runs the current draft or selected SQL.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SqlLanguage } from "sql-formatter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -14,7 +14,6 @@ import {
   rejectOperation,
   runScript,
   runSql,
-  saveSqlDocument,
 } from "../../ipc/commands";
 import type {
   AppErrorDetails,
@@ -25,9 +24,16 @@ import type {
   ScriptOperationProposal,
   ScriptOutcome,
   SqlOperationProposal,
-  SqlDocument,
 } from "../../ipc/types";
 import { errDetails, errMessage } from "../../ipc/types";
+import {
+  connectionId,
+  sqlDocumentId,
+  type SqlDocument,
+} from "../../features/sqlDocuments/domain";
+import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
+import { useSqlDocumentAutosave } from "../../features/sqlDocuments/useSqlDocumentAutosave";
+import { buildRunSignal } from "../../features/query/runSignal";
 import ApprovalCard from "../../components/ApprovalCard";
 import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
@@ -38,7 +44,6 @@ import { useI18n } from "../../lib/i18n";
 import { catalogQuery } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
-import { sqlRecoveryKey } from "../../lib/workbenchDocuments";
 import "./sql.css";
 
 const STEP = 200;
@@ -72,23 +77,6 @@ interface PendingScriptApproval {
 }
 
 type ResultKind = "single" | "script";
-
-interface RunSignal {
-  tone: "muted" | "warning" | "danger";
-  text: string;
-  title?: string;
-  icon?: "alert" | "info";
-}
-
-type DocumentSaveState = "saved" | "dirty" | "saving" | "error" | "conflict";
-
-interface DocumentConflict {
-  current: SqlDocument;
-  localTitle: string;
-  localContent: string;
-}
-
-type Translate = ReturnType<typeof useI18n>["t"];
 
 function buildSqlHelpPrompt({
   connection,
@@ -125,127 +113,6 @@ function buildSqlHelpPrompt({
     );
   }
   return lines.join("\n");
-}
-
-function compactSql(sql: string): string {
-  return sql
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/--[^\n]*/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function likelyMutates(sql: string): boolean {
-  return /^(insert|update|delete|merge|replace|create|alter|drop|truncate|grant|revoke|vacuum|analyze|call|execute)\b/i.test(
-    compactSql(sql),
-  );
-}
-
-function likelyRead(sql: string): boolean {
-  return /^(select|with|show|describe|desc|explain)\b/i.test(compactSql(sql));
-}
-
-function lacksWhereOnBulkMutation(sql: string): boolean {
-  const compact = compactSql(sql);
-  return /^(update|delete)\b/i.test(compact) && !/\bwhere\b/i.test(compact);
-}
-
-function likelyHeavyRead(sql: string): boolean {
-  const compact = compactSql(sql);
-  return likelyRead(compact) && /\b(cross\s+join|generate_series)\b/i.test(compact);
-}
-
-function likelyUnboundedRead(sql: string): boolean {
-  const compact = compactSql(sql);
-  return likelyRead(compact) && !/\blimit\s+\d+\b/i.test(compact);
-}
-
-function buildRunSignal(
-  sql: string,
-  statements: string[],
-  safety: SafetySettings,
-  t: Translate,
-): RunSignal | null {
-  if (!sql.trim()) return null;
-  const effectiveStatements = statements.length > 0 ? statements : [sql];
-  const writes = effectiveStatements.some(likelyMutates);
-
-  if (effectiveStatements.length > 1) {
-    if (writes && !safety.allowWrites) {
-      return {
-        tone: "danger",
-        icon: "alert",
-        text: t("sql.signalWritesDisabled"),
-        title: t("sql.writesDisabledScript"),
-      };
-    }
-    if (effectiveStatements.length >= 12) {
-      return {
-        tone: "warning",
-        icon: "alert",
-        text: t("sql.signalLargeScript", { count: effectiveStatements.length }),
-        title: t("sql.scriptNote"),
-      };
-    }
-    if (writes) {
-      return {
-        tone: "warning",
-        icon: "alert",
-        text: t("sql.signalWriteScript"),
-        title: t("sql.scriptNote"),
-      };
-    }
-    return {
-      tone: "muted",
-      icon: "info",
-      text: t("sql.signalReadScript", { count: effectiveStatements.length }),
-    };
-  }
-
-  const statement = effectiveStatements[0] ?? sql;
-  if (lacksWhereOnBulkMutation(statement)) {
-    return {
-      tone: "warning",
-      icon: "alert",
-      text: t("sql.signalNoWhere"),
-    };
-  }
-  if (/^explain\s+analyze\b/i.test(compactSql(statement))) {
-    return {
-      tone: "warning",
-      icon: "alert",
-      text: t("sql.signalExplainAnalyze"),
-    };
-  }
-  if (likelyMutates(statement)) {
-    if (!safety.allowWrites) {
-      return {
-        tone: "danger",
-        icon: "alert",
-        text: t("sql.signalWritesDisabled"),
-      };
-    }
-    return {
-      tone: "warning",
-      icon: "alert",
-      text: t("sql.signalWriteStatement"),
-    };
-  }
-  if (likelyHeavyRead(statement)) {
-    return {
-      tone: "warning",
-      icon: "alert",
-      text: t("sql.signalHeavyRead"),
-    };
-  }
-  if (likelyUnboundedRead(statement)) {
-    return {
-      tone: "muted",
-      icon: "info",
-      text: t("sql.signalReadCap", { count: safety.maxRows }),
-    };
-  }
-  return null;
 }
 
 export default function Sql({
@@ -300,103 +167,25 @@ export default function Sql({
   const [explaining, setExplaining] = useState(false);
   const [formatting, setFormatting] = useState(false);
 
-  const [documentSaveState, setDocumentSaveState] =
-    useState<DocumentSaveState>(recovered ? "dirty" : "saved");
-  const [documentSaveError, setDocumentSaveError] = useState<string | null>(null);
-  const [documentConflict, setDocumentConflict] =
-    useState<DocumentConflict | null>(null);
-  const saveSequence = useRef(0);
-  const persistedBaseline = useRef<{
-    revision: number;
-    title: string | null;
-    content: string | null;
-  }>({
-    revision,
-    title: recovered ? null : title,
-    content: recovered ? null : draft,
-  });
-
-  async function persistDocument(
-    expectedRevision: number,
-    nextTitle: string,
-    nextContent: string,
-  ) {
-    if (!persistedId) return;
-    const sequence = ++saveSequence.current;
-    setDocumentSaveState("saving");
-    setDocumentSaveError(null);
-    try {
-      const outcome = await saveSqlDocument({
-        id: persistedId,
-        connectionId: connection.id,
-        title: nextTitle,
-        content: nextContent,
-        expectedRevision,
-      });
-      if (sequence !== saveSequence.current) return;
-      if (!outcome.saved) {
-        setDocumentConflict({
-          current: outcome.document,
-          localTitle: nextTitle,
-          localContent: nextContent,
-        });
-        setDocumentSaveState("conflict");
-        return;
-      }
-      persistedBaseline.current = {
-        revision: outcome.document.localRevision,
-        title: outcome.document.title,
-        content: outcome.document.content,
-      };
-      localStorage.removeItem(sqlRecoveryKey(persistedId));
-      setDocumentConflict(null);
-      setDocumentSaveState("saved");
-      onPersisted(outcome.document);
-    } catch (error) {
-      if (sequence !== saveSequence.current) return;
-      setDocumentSaveError(errMessage(error));
-      setDocumentSaveState("error");
-    }
-  }
-
-  useEffect(() => {
-    if (!persistedId || documentConflict) return;
-    const baseline = persistedBaseline.current;
-    const dirty =
-      recovered ||
-      baseline.revision !== revision ||
-      baseline.title !== title ||
-      baseline.content !== draft;
-    if (!dirty) {
-      setDocumentSaveState("saved");
-      return;
-    }
-    setDocumentSaveState("dirty");
-    localStorage.setItem(
-      sqlRecoveryKey(persistedId),
-      JSON.stringify({ revision, title, draft }),
-    );
-    if (!title.trim()) return;
-    const timer = window.setTimeout(() => {
-      void persistDocument(revision, title, draft);
-    }, 700);
-    return () => window.clearTimeout(timer);
-  }, [
-    connection.id,
-    documentConflict,
-    draft,
-    persistedId,
-    recovered,
+  const {
+    saveState: documentSaveState,
+    saveError: documentSaveError,
+    conflict: documentConflict,
+    useSavedVersion: loadSavedConflictVersion,
+    keepLocalVersion: keepLocalConflictVersion,
+    reportError: reportDocumentSaveError,
+  } = useSqlDocumentAutosave({
+    gateway: tauriSqlDocumentGateway,
+    connectionId: connectionId(connection.id),
+    documentId: persistedId ? sqlDocumentId(persistedId) : null,
     revision,
     title,
-  ]);
-
-  useEffect(
-    () => () => {
-      saveSequence.current += 1;
-    },
-    [],
-  );
+    content: draft,
+    recovered,
+    onTitleChange: setTitle,
+    onContentChange: setDraft,
+    onPersisted,
+  });
 
   async function formatDraft() {
     if (!draft.trim() || formatting) return;
@@ -418,37 +207,10 @@ export default function Sql({
         }),
       );
     } catch (error) {
-      setDocumentSaveError(errMessage(error));
-      setDocumentSaveState("error");
+      reportDocumentSaveError(error);
     } finally {
       setFormatting(false);
     }
-  }
-
-  function loadSavedConflictVersion() {
-    if (!persistedId || !documentConflict) return;
-    const current = documentConflict.current;
-    saveSequence.current += 1;
-    persistedBaseline.current = {
-      revision: current.localRevision,
-      title: current.title,
-      content: current.content,
-    };
-    localStorage.removeItem(sqlRecoveryKey(persistedId));
-    setTitle(current.title);
-    setDraft(current.content);
-    onPersisted(current);
-    setDocumentConflict(null);
-    setDocumentSaveState("saved");
-  }
-
-  function keepLocalConflictVersion() {
-    if (!documentConflict) return;
-    void persistDocument(
-      documentConflict.current.localRevision,
-      documentConflict.localTitle,
-      documentConflict.localContent,
-    );
   }
 
   async function executeSql(selectedSql?: string) {

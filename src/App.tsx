@@ -12,10 +12,8 @@ import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useQuery } from "@tanstack/react-query";
 import {
-  createSqlDocument,
   getSafety,
   listConnections,
-  listSqlDocuments,
 } from "./ipc/commands";
 import type {
   CatalogTable,
@@ -24,25 +22,15 @@ import type {
   SafetySettings,
 } from "./ipc/types";
 import { errMessage } from "./ipc/types";
-import { hasCapability, isDocumentEngine } from "./lib/capabilities";
+import type { SqlDocument } from "./features/sqlDocuments/domain";
+import { tauriSqlDocumentGateway } from "./features/sqlDocuments/tauriAdapter";
 import {
-  driversQuery,
-  isTransientDbError,
-  skillStatusQuery,
-} from "./lib/queries";
-import { buildConnectionSections, type SchemaConnectionGroup } from "./lib/schemaDiff";
-import { tableKey, tableLabel } from "./lib/tableRef";
-import { ConnectionForm, DatabaseExplorer } from "./screens/Connections";
-import TableData from "./screens/Tables";
-import SchemaExplorer from "./screens/Schema";
-import Sql from "./screens/Sql";
-import Documents from "./screens/Documents";
-import Dashboards, { DashboardSidebar } from "./screens/Dashboards";
-import Activity from "./screens/Activity";
-import SchemaDiff from "./screens/SchemaDiff";
-import Onboarding from "./screens/Onboarding";
-import Settings from "./screens/Settings";
-import type { SettingsSection } from "./screens/Settings";
+  queryDocument,
+  stableDocument,
+  tableDocument,
+  type WorkbenchDocument,
+} from "./features/workbench/domain";
+import { useWorkbenchDocuments } from "./features/workbench/useWorkbenchDocuments";
 import AgentLogDialog from "./components/AgentLogDialog";
 import EngineMark from "./components/EngineMark";
 import { Icon } from "./components/Icon";
@@ -51,19 +39,30 @@ import WorkbenchDocumentStrip from "./components/WorkbenchDocumentStrip";
 import { ToastProvider, useToast } from "./components/Toast";
 import WorkspaceAccount from "./components/WorkspaceAccount";
 import WorkspaceSwitcher from "./components/WorkspaceSwitcher";
+import { hasCapability, isDocumentEngine } from "./lib/capabilities";
+import { useI18n, type I18nKey } from "./lib/i18n";
 import {
   OperationActivityProvider,
   useOperationActivity,
 } from "./lib/operationActivity";
-import { useI18n, type I18nKey } from "./lib/i18n";
 import {
-  persistedQueryDocument,
-  queryDocument,
-  stableDocument,
-  supportsDocument,
-  tableDocument,
-  type WorkbenchDocument,
-} from "./lib/workbenchDocuments";
+  driversQuery,
+  isTransientDbError,
+  skillStatusQuery,
+} from "./lib/queries";
+import { buildConnectionSections, type SchemaConnectionGroup } from "./lib/schemaDiff";
+import { tableKey, tableLabel } from "./lib/tableRef";
+import Activity from "./screens/Activity";
+import { ConnectionForm, DatabaseExplorer } from "./screens/Connections";
+import Dashboards, { DashboardSidebar } from "./screens/Dashboards";
+import Documents from "./screens/Documents";
+import Onboarding from "./screens/Onboarding";
+import SchemaExplorer from "./screens/Schema";
+import SchemaDiff from "./screens/SchemaDiff";
+import Settings from "./screens/Settings";
+import type { SettingsSection } from "./screens/Settings";
+import Sql from "./screens/Sql";
+import TableData from "./screens/Tables";
 
 // Chat2DB-style information architecture:
 // - the global rail switches products (database workspace / dashboard);
@@ -334,8 +333,6 @@ function Shell() {
       ? "dashboard"
       : "workspace",
   );
-  const [documents, setDocuments] = useState<WorkbenchDocument[]>([]);
-  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [terminalDockOpen, setTerminalDockOpen] = useState(() => {
     const saved = localStorage.getItem("terminalDockOpen");
     if (saved !== null) return saved !== "0";
@@ -416,13 +413,6 @@ function Shell() {
   }, [selectedId]);
 
   const selected = conns.find((c) => c.id === selectedId) ?? null;
-  const selectedDocuments = useMemo(
-    () => documents.filter((document) => document.connectionId === selectedId),
-    [documents, selectedId],
-  );
-  const activeDocument =
-    selectedDocuments.find((document) => document.id === activeDocumentId) ?? null;
-  const selectedTable = activeDocument?.kind === "data" ? activeDocument.table : null;
   const showTerminalDock =
     terminalDockOpen && !!selected && !settingsOpen && editing === null;
   // Schema diff is a SQL-only comparison feature — a group whose connections are MongoDB
@@ -447,92 +437,21 @@ function Shell() {
     (driversQ.data
       ? hasCapability(driversQ.data, selected, "sql")
       : !isDocumentEngine(selected.engine));
-  const initializedConnection = useRef<string | null>(null);
-  const sqlDocumentsLoadToken = useRef(0);
-  useEffect(() => {
-    if (!selected) {
-      sqlDocumentsLoadToken.current += 1;
-      if (initializedConnection.current !== null || documents.length > 0) {
-        initializedConnection.current = null;
-        setDocuments([]);
-      }
-      if (activeDocumentId !== null) setActiveDocumentId(null);
-      return;
-    }
-    if (initializedConnection.current === selected.id) {
-      const valid = documents.filter(
-        (document) => supportsDocument(document, selected.id, supportsSql),
-      );
-      if (valid.length !== documents.length) {
-        setDocuments(valid);
-        setActiveDocumentId((current) =>
-          valid.some((document) => document.id === current) ? current : (valid[0]?.id ?? null),
-        );
-      }
-      return;
-    }
-
-    initializedConnection.current = selected.id;
-    const preferred = supportsSql
-      ? restoredDocumentKind === "documents"
-        ? "schema"
-        : restoredDocumentKind
-      : restoredDocumentKind === "sql"
-        ? "documents"
-        : restoredDocumentKind;
-    const initial =
-      preferred === "sql"
-        ? stableDocument(selected.id, "schema")
-        : preferred === "documents"
-          ? queryDocument(selected.id, preferred)
-        : stableDocument(
-            selected.id,
-            preferred === "activity" ? "activity" : "schema",
-          );
-    setDocuments([initial]);
-    setActiveDocumentId(initial.id);
-    if (supportsSql) {
-      const token = ++sqlDocumentsLoadToken.current;
-      void listSqlDocuments(selected.id)
-        .then(async (stored) => {
-          if (
-            token !== sqlDocumentsLoadToken.current ||
-            initializedConnection.current !== selected.id
-          ) {
-            return;
-          }
-          let restored = stored.map(persistedQueryDocument);
-          if (preferred === "sql" && restored.length === 0) {
-            const created = await createSqlDocument({
-              connectionId: selected.id,
-              title: "Untitled query",
-              content: "SELECT 1;",
-            });
-            if (
-              token !== sqlDocumentsLoadToken.current ||
-              initializedConnection.current !== selected.id
-            ) {
-              return;
-            }
-            restored = [persistedQueryDocument(created)];
-          }
-          setDocuments((current) => [
-            ...current.filter(
-              (document) =>
-                document.connectionId !== selected.id ||
-                document.kind !== "sql",
-            ),
-            ...restored,
-          ]);
-          if (preferred === "sql" && restored[0]) {
-            setActiveDocumentId(restored[0].id);
-          }
-        })
-        .catch((error) => {
-          console.error("could not restore SQL documents:", error);
-        });
-    }
-  }, [activeDocumentId, documents, restoredDocumentKind, selected, supportsSql]);
+  const workbench = useWorkbenchDocuments({
+    selectedConnectionId: selected?.id ?? null,
+    supportsSql,
+    restoredDocumentKind,
+    sqlDocuments: tauriSqlDocumentGateway,
+    onRestoreError: (error) => {
+      console.error("could not restore SQL documents:", error);
+    },
+  });
+  const {
+    selectedDocuments,
+    activeDocument,
+    activeDocumentId,
+  } = workbench;
+  const selectedTable = activeDocument?.kind === "data" ? activeDocument.table : null;
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 900px)");
@@ -600,9 +519,7 @@ function Shell() {
 
   async function reloadWorkspaceScope() {
     setSelectedId(null);
-    initializedConnection.current = null;
-    setDocuments([]);
-    setActiveDocumentId(null);
+    workbench.reset();
     setEditing(null);
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
@@ -706,24 +623,18 @@ function Shell() {
   async function loadSql(sql: string) {
     if (!selected) return;
     let document: WorkbenchDocument;
-    if (supportsSql) {
-      try {
-        document = persistedQueryDocument(
-          await createSqlDocument({
-            connectionId: selected.id,
-            title: "History query",
-            content: sql,
-          }),
-        );
-      } catch (error) {
-        toast(errMessage(error), "error");
-        return;
-      }
-    } else {
-      document = queryDocument(selected.id, "documents", sql);
+    try {
+      document = await workbench.openQuery({
+        connectionId: selected.id,
+        supportsSql,
+        title: "History query",
+        content: sql,
+      });
+    } catch (error) {
+      toast(errMessage(error), "error");
+      return;
     }
-    setDocuments((current) => [...current, document]);
-    setActiveDocumentId(document.id);
+    workbench.activate(document);
     setArea("workspace");
   }
 
@@ -784,10 +695,8 @@ function Shell() {
     const initial = connection && isDocumentEngine(connection.engine)
       ? queryDocument(id, "documents")
       : stableDocument(id, "schema");
-    initializedConnection.current = null;
+    workbench.prime(initial);
     setSelectedId(id);
-    setDocuments([initial]);
-    setActiveDocumentId(initial.id);
     setEditing(null);
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
@@ -802,12 +711,7 @@ function Shell() {
     document: WorkbenchDocument,
     closeMobileExplorer = true,
   ) {
-    setDocuments((current) =>
-      current.some((candidate) => candidate.id === document.id)
-        ? current
-        : [...current, document],
-    );
-    setActiveDocumentId(document.id);
+    workbench.activate(document);
     setEditing(null);
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
@@ -819,12 +723,12 @@ function Shell() {
   }
 
   function openTableDocument(connection: ConnectionProfile, table: CatalogTable) {
+    const document = tableDocument(connection.id, table);
     if (selectedId !== connection.id) {
-      initializedConnection.current = connection.id;
+      workbench.prime(document);
       setSelectedId(connection.id);
-      setDocuments([]);
     }
-    activateDocument(tableDocument(connection.id, table));
+    activateDocument(document);
   }
 
   function openStableDocument(
@@ -838,79 +742,37 @@ function Shell() {
   async function openQueryDocument() {
     if (!selected) return;
     preloadSqlEditor();
-    if (!supportsSql) {
-      activateDocument(queryDocument(selected.id, "documents"));
-      return;
-    }
     try {
-      const document = await createSqlDocument({
+      const document = await workbench.openQuery({
         connectionId: selected.id,
-        title: "Untitled query",
-        content: "SELECT 1;",
+        supportsSql,
       });
-      activateDocument(persistedQueryDocument(document));
+      activateDocument(document);
     } catch (error) {
       toast(errMessage(error), "error");
     }
   }
 
   function closeDocument(id: string) {
-    const index = selectedDocuments.findIndex((document) => document.id === id);
-    if (index < 0) return;
-    let remaining = selectedDocuments.filter((document) => document.id !== id);
-    if (remaining.length === 0 && selected && supportsSql) {
-      remaining = [stableDocument(selected.id, "schema")];
-    }
-    setDocuments((current) => [
-      ...current.filter((document) => document.connectionId !== selectedId),
-      ...remaining,
-    ]);
-    if (activeDocumentId === id) {
-      setActiveDocumentId(
-        remaining[Math.min(index, Math.max(0, remaining.length - 1))]?.id ?? null,
-      );
-    }
+    if (!selected) return;
+    workbench.close(id, selected.id, supportsSql);
   }
 
   function setActiveQueryDraft(value: string) {
     if (!activeDocument || (activeDocument.kind !== "sql" && activeDocument.kind !== "documents")) {
       return;
     }
-    setDocuments((current) =>
-      current.map((document) =>
-        document.id === activeDocument.id ? { ...document, draft: value } : document,
-      ),
-    );
+    workbench.updateDraft(activeDocument.id, value);
   }
 
   function setActiveQueryTitle(value: string) {
     if (!activeDocument || activeDocument.kind !== "sql") return;
-    setDocuments((current) =>
-      current.map((document) =>
-        document.id === activeDocument.id ? { ...document, title: value } : document,
-      ),
-    );
+    workbench.updateTitle(activeDocument.id, value);
   }
 
-  function applySavedQuery(saved: {
-    content: string;
-    title: string;
-    localRevision: number;
-  }) {
+  function applySavedQuery(saved: SqlDocument) {
     if (!activeDocument || activeDocument.kind !== "sql") return;
-    setDocuments((current) =>
-      current.map((document) =>
-        document.id === activeDocument.id
-          ? {
-              ...document,
-              draft: saved.content,
-              title: saved.title,
-              revision: saved.localRevision,
-              recovered: false,
-            }
-          : document,
-      ),
-    );
+    workbench.applyPersisted(activeDocument.id, saved);
   }
 
   function startNewConnection() {
@@ -1047,7 +909,7 @@ function Shell() {
             activeId={activeDocumentId}
             engine={selected.engine}
             supportsSql={supportsSql}
-            onActivate={setActiveDocumentId}
+            onActivate={workbench.activateId}
             onClose={closeDocument}
             onNewQuery={() => void openQueryDocument()}
             onOpenActivity={() => openStableDocument("activity")}
@@ -1224,10 +1086,8 @@ function Shell() {
           onDeleted={async (id) => {
             await refresh();
             if (selectedId === id) {
-              initializedConnection.current = null;
               setSelectedId(null);
-              setDocuments([]);
-              setActiveDocumentId(null);
+              workbench.reset();
             }
             if (schemaDiffGroupKey) setSchemaDiffGroupKey(null);
             setEditing((current) => {

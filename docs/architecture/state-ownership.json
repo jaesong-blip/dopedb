@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "states": [
+    {
+      "name": "workbenchDocuments",
+      "owner": "src/features/workbench/state.ts",
+      "dispatcher": "src/features/workbench/useWorkbenchDocuments.ts",
+      "forbiddenWriterTokens": [
+        "setDocuments(",
+        "setActiveDocumentId(",
+        "useState<WorkbenchDocument"
+      ]
+    }
+  ]
+}

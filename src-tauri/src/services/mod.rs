@@ -16,7 +16,6 @@ mod query_service;
 mod safety_service;
 mod schema_service;
 mod script_service;
-mod sql_document_service;
 mod terminal_authority;
 mod terminal_run_registry;
 mod workspace_service;
@@ -63,10 +62,6 @@ pub(crate) use script_service::{
     DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
     DesktopScriptRunReceipt, SchemaScriptContext, ScriptService, TableScriptContext,
 };
-pub(crate) use sql_document_service::{
-    CreateSqlDocumentRequest, SaveSqlDocumentOutcome, SaveSqlDocumentRequest, SqlDocument,
-    SqlDocumentService,
-};
 pub(crate) use terminal_authority::TerminalAuthority;
 pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 pub(crate) use workspace_service::{
@@ -74,6 +69,7 @@ pub(crate) use workspace_service::{
 };
 
 use crate::connection::ConnectionManager;
+use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::operations::OperationRuntime;
 use crate::store::Store;
 
@@ -95,7 +91,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) safety: SafetyService,
     pub(crate) schema: SchemaService,
     pub(crate) script: ScriptService,
-    pub(crate) sql_document: SqlDocumentService,
+    pub(crate) sql_documents: SqlDocumentsFeature,
     pub(crate) workspace: WorkspaceService,
 }
 
@@ -112,7 +108,7 @@ impl ApplicationServices {
         let catalog = CatalogService::new(store.clone(), connections.clone());
         let script = ScriptService::new(store.clone(), connections.clone(), operation.clone());
         let schema = SchemaService::new(catalog.clone(), script.clone());
-        let sql_document = SqlDocumentService::new(store.clone(), connections.clone());
+        let sql_documents = sql_documents::compose(store.clone(), connections.clone());
         let erd = ErdService::new(store.clone(), connections.clone());
         let job = JobService::new(
             store.clone(),
@@ -152,7 +148,7 @@ impl ApplicationServices {
             safety: SafetyService::new(store.clone(), connections.clone()),
             schema,
             script,
-            sql_document,
+            sql_documents,
             workspace: WorkspaceService::new(store, connections, connection_credentials),
         }
     }

@@ -1,6 +1,6 @@
-// Typed wrappers around Tauri `invoke` for every backend command. Names match the
-// Rust `#[tauri::command]` fns in src-tauri/src/commands/mod.rs exactly; arg keys
-// match the Rust parameter names.
+// Shared typed wrappers around Tauri `invoke`. Migrated vertical slices keep their
+// adapter beside the feature; remaining names match src-tauri/src/commands/mod.rs.
+// Argument keys always match the Rust parameter names.
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
@@ -14,7 +14,6 @@ import type {
   CliInfo,
   Classification,
   ConnectionProfile,
-  CreateSqlDocumentRequest,
   Dashboard,
   DocumentPage,
   DocumentOperationProposal,
@@ -44,11 +43,8 @@ import type {
   ScriptOperationProposal,
   SaveErdLayoutOutcome,
   SaveErdLayoutRequest,
-  SaveSqlDocumentOutcome,
-  SaveSqlDocumentRequest,
   SchemaChangeProposal,
   SchemaChangeRequest,
-  SqlDocument,
   SqlOperationProposal,
   SkillMutationReceipt,
   SkillSelfTestReceipt,
@@ -467,34 +463,6 @@ export function proposeSchemaChange(
 
 export function runSchemaChange(operationId: string): Promise<ScriptOutcome> {
   return invoke("run_schema_change", { operationId });
-}
-
-export function listSqlDocuments(id: string): Promise<SqlDocument[]> {
-  return invoke("list_sql_documents", { id });
-}
-
-export function createSqlDocument(
-  request: CreateSqlDocumentRequest,
-): Promise<SqlDocument> {
-  return invoke("create_sql_document", { request });
-}
-
-export function saveSqlDocument(
-  request: SaveSqlDocumentRequest,
-): Promise<SaveSqlDocumentOutcome> {
-  return invoke("save_sql_document", { request });
-}
-
-export function deleteSqlDocument(
-  connectionId: string,
-  id: string,
-  expectedRevision: number,
-): Promise<void> {
-  return invoke("delete_sql_document", {
-    connectionId,
-    id,
-    expectedRevision,
-  });
 }
 
 export function listErdLayouts(id: string): Promise<ErdLayout[]> {

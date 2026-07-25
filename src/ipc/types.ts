@@ -1,5 +1,5 @@
-// TS mirrors of the Rust `model.rs` serde types. All shapes serialize camelCase.
-// Keep this file in lockstep with src-tauri/src/model.rs — it is the data contract.
+// Shared TS mirrors of Rust serde types. Migrated feature-private contracts live in
+// their feature domain; keep remaining camelCase shapes aligned with their Rust source.
 
 export type Engine = "postgres" | "mysql" | "sqlite" | "mongodb";
 export type Provider = "auto" | "generic" | "neon" | "planetScale" | "gcpCloudSql";
@@ -31,7 +31,6 @@ export type PlatformFeatureFlag =
   | "terminal_dock_v1"
   | "catalog_v2"
   | "ddl_ir_v1"
-  | "sql_documents_v1"
   | "table_changes_v1"
   | "erd_v1"
   | "jobs_v1"
@@ -578,42 +577,6 @@ export interface HistoryEntry {
   error: string | null;
   executedAt: string;
   origin: string;
-}
-
-export interface SqlDocument {
-  id: string;
-  connectionId: string;
-  title: string;
-  dialect: string;
-  content: string;
-  localRevision: number;
-  remoteId: string | null;
-  remoteRevision: number | null;
-  dirty: boolean;
-  syncStatus: "local" | "dirty" | "synced" | "conflict";
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateSqlDocumentRequest {
-  connectionId: string;
-  title?: string | null;
-  content?: string | null;
-}
-
-export interface SaveSqlDocumentRequest {
-  id: string;
-  connectionId: string;
-  title: string;
-  content: string;
-  expectedRevision: number;
-}
-
-export interface SaveSqlDocumentOutcome {
-  saved: boolean;
-  document: SqlDocument;
-  expectedRevision: number;
-  attemptedContentHash: string;
 }
 
 // Schema introspection (mirrors src-tauri/src/introspect/mod.rs Catalog).

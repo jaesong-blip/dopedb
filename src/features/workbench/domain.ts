@@ -1,5 +1,10 @@
-import type { CatalogTable, SqlDocument } from "../ipc/types";
-import { tableKey } from "./tableRef";
+// Workbench document domain. Stable ids describe singleton resources, while query
+// documents use unique ids and retain their connection scope.
+
+import type { CatalogTable } from "../../ipc/types";
+import type { SqlDocument } from "../sqlDocuments/domain";
+import { sqlRecoveryKey } from "../sqlDocuments/domain";
+import { tableKey } from "../../lib/tableRef";
 
 export type WorkbenchDocument =
   | {
@@ -86,10 +91,6 @@ interface SqlRecoverySnapshot {
   revision: number;
   title: string;
   draft: string;
-}
-
-export function sqlRecoveryKey(id: string): string {
-  return `dopedb.sqlRecovery.${id}`;
 }
 
 function readRecovery(document: SqlDocument): SqlRecoverySnapshot | null {

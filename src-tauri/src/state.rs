@@ -38,7 +38,6 @@ impl AppState {
             FeatureFlag::TerminalDockV1,
             FeatureFlag::CatalogV2,
             FeatureFlag::DdlIrV1,
-            FeatureFlag::SqlDocumentsV1,
             FeatureFlag::TableChangesV1,
             FeatureFlag::ErdV1,
             FeatureFlag::JobsV1,

@@ -1,4 +1,4 @@
-//! Runtime feature-flag vocabulary for the staged CLI/Terminal platform rollout.
+//! Runtime feature-flag vocabulary for platform capabilities still under rollout.
 //! Every new execution surface starts disabled until its migration and rollback
 //! behavior are proven.
 
@@ -18,7 +18,6 @@ pub enum FeatureFlag {
     /// adapter remains always-on because disabling it would weaken cache authority.
     CatalogV2,
     DdlIrV1,
-    SqlDocumentsV1,
     TableChangesV1,
     ErdV1,
     JobsV1,
@@ -28,7 +27,7 @@ pub enum FeatureFlag {
 }
 
 impl FeatureFlag {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 13] = [
         Self::OperationRuntimeV1,
         Self::LocalBrokerV1,
         Self::CliV1,
@@ -36,7 +35,6 @@ impl FeatureFlag {
         Self::TerminalDockV1,
         Self::CatalogV2,
         Self::DdlIrV1,
-        Self::SqlDocumentsV1,
         Self::TableChangesV1,
         Self::ErdV1,
         Self::JobsV1,
@@ -54,7 +52,6 @@ impl FeatureFlag {
             Self::TerminalDockV1 => "terminal_dock_v1",
             Self::CatalogV2 => "catalog_v2",
             Self::DdlIrV1 => "ddl_ir_v1",
-            Self::SqlDocumentsV1 => "sql_documents_v1",
             Self::TableChangesV1 => "table_changes_v1",
             Self::ErdV1 => "erd_v1",
             Self::JobsV1 => "jobs_v1",
@@ -113,7 +110,7 @@ mod tests {
     fn serialized_names_match_the_v2_golden_fixture() {
         let actual = serde_json::to_value(FeatureFlag::ALL).unwrap();
         let expected: serde_json::Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/platform-feature-flags-v2.json"
+            "../../tests/fixtures/platform-feature-flags-v2.json"
         ))
         .unwrap();
         assert_eq!(actual, expected);

@@ -20,18 +20,17 @@ use crate::model::{
 };
 use crate::services::{
     AuditSnapshotReceipt, AuditVerdict, CatalogReadPolicy, ConnectionProfileTestRequest,
-    ConnectionUpsertRequest, CreateJobRequest, CreateSqlDocumentRequest, DashboardRunError,
-    DashboardRunReceipt, DashboardRunRequest, DesktopDocumentProposalReceipt,
-    DesktopDocumentProposalRequest, DesktopDocumentReadError, DesktopScriptProposalReceipt,
-    DesktopScriptProposalRequest, DesktopScriptRunError, DesktopScriptRunReceipt,
-    DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest, DesktopSqlInspectionError,
-    DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest, DesktopSqlProposalReceipt,
-    DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt,
-    ErdLayout, Job, JobDetail, JobFileCapability, JobFormat, JobInputInspection, JobProposal,
-    MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringServiceError,
-    MonitoringStatusReceipt, OperationDecisionReceipt, OperationDecisionRequest,
-    SaveErdLayoutOutcome, SaveErdLayoutRequest, SaveSqlDocumentOutcome, SaveSqlDocumentRequest,
-    SchemaChangePreviewRequest, SchemaChangeProposalReceipt, SqlDocument, TableScriptContext,
+    ConnectionUpsertRequest, CreateJobRequest, DashboardRunError, DashboardRunReceipt,
+    DashboardRunRequest, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
+    DesktopDocumentReadError, DesktopScriptProposalReceipt, DesktopScriptProposalRequest,
+    DesktopScriptRunError, DesktopScriptRunReceipt, DesktopSqlClassificationReceipt,
+    DesktopSqlClassificationRequest, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
+    DesktopSqlPreviewRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
+    DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt, ErdLayout, Job, JobDetail,
+    JobFileCapability, JobFormat, JobInputInspection, JobProposal, MonitoringProposalReceipt,
+    MonitoringProposalRequest, MonitoringServiceError, MonitoringStatusReceipt,
+    OperationDecisionReceipt, OperationDecisionRequest, SaveErdLayoutOutcome, SaveErdLayoutRequest,
+    SchemaChangePreviewRequest, SchemaChangeProposalReceipt, TableScriptContext,
     WorkspaceConnectionCopyRequest, WorkspaceCredentialBindingRequest,
 };
 use crate::state::AppState;
@@ -839,61 +838,6 @@ pub async fn run_schema_change(
         .run(operation_id)
         .await
         .map_err(DesktopScriptRunError::into_error)
-}
-
-fn require_sql_documents(state: &AppState) -> AppResult<()> {
-    if state
-        .features
-        .is_enabled(crate::features::FeatureFlag::SqlDocumentsV1)
-    {
-        Ok(())
-    } else {
-        Err(AppError::Blocked {
-            reason: "persistent SQL documents are disabled for this app runtime".into(),
-        })
-    }
-}
-
-#[tauri::command]
-pub async fn list_sql_documents(
-    state: State<'_, AppState>,
-    id: Uuid,
-) -> AppResult<Vec<SqlDocument>> {
-    require_sql_documents(&state)?;
-    state.services.sql_document.list(id).await
-}
-
-#[tauri::command]
-pub async fn create_sql_document(
-    state: State<'_, AppState>,
-    request: CreateSqlDocumentRequest,
-) -> AppResult<SqlDocument> {
-    require_sql_documents(&state)?;
-    state.services.sql_document.create(request).await
-}
-
-#[tauri::command]
-pub async fn save_sql_document(
-    state: State<'_, AppState>,
-    request: SaveSqlDocumentRequest,
-) -> AppResult<SaveSqlDocumentOutcome> {
-    require_sql_documents(&state)?;
-    state.services.sql_document.save(request).await
-}
-
-#[tauri::command]
-pub async fn delete_sql_document(
-    state: State<'_, AppState>,
-    connection_id: Uuid,
-    id: Uuid,
-    expected_revision: i64,
-) -> AppResult<()> {
-    require_sql_documents(&state)?;
-    state
-        .services
-        .sql_document
-        .delete(connection_id, id, expected_revision)
-        .await
 }
 
 fn require_erd(state: &AppState) -> AppResult<()> {

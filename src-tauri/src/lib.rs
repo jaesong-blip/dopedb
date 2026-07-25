@@ -15,6 +15,7 @@ mod error;
 mod executor;
 pub mod features;
 mod introspect;
+mod kernel;
 mod legacy_chat;
 mod legacy_mcp_cleanup;
 pub mod model;
@@ -159,10 +160,10 @@ pub fn run() {
             commands::preview_schema_change,
             commands::propose_schema_change,
             commands::run_schema_change,
-            commands::list_sql_documents,
-            commands::create_sql_document,
-            commands::save_sql_document,
-            commands::delete_sql_document,
+            features::sql_documents::transport::list_sql_documents,
+            features::sql_documents::transport::create_sql_document,
+            features::sql_documents::transport::save_sql_document,
+            features::sql_documents::transport::delete_sql_document,
             commands::list_erd_layouts,
             commands::save_erd_layout,
             commands::delete_erd_layout,

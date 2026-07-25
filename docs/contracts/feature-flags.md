@@ -1,6 +1,6 @@
 # CLI·Terminal Platform feature flags
 
-정본 이름은 `src-tauri/src/features.rs`다. 모든 flag는 기본 `off`다.
+정본 이름은 `src-tauri/src/features/platform_flags.rs`다. 모든 flag는 기본 `off`다.
 
 | Flag | 활성화 전 gate |
 | --- | --- |
@@ -11,7 +11,6 @@
 | `terminal_dock_v1` | CSP, PTY/process-tree/session revocation 검증 |
 | `catalog_v2` | canonical Catalog V2 DTO를 CLI/ERD/DDL 소비자에 노출하기 전 engine fixture/fingerprint 검증 |
 | `ddl_ir_v1` | engine renderer/fail-closed 검증 |
-| `sql_documents_v1` | autosave/crash recovery 검증 |
 | `table_changes_v1` | key/concurrency/exact proposal 검증 |
 | `erd_v1` | Catalog V2/layout 성능 검증 |
 | `jobs_v1` | checkpoint/file capability/bounded memory 검증 |
@@ -22,9 +21,14 @@
 request field나 Agent/Plugin이 flag를 켤 수 없다. migration은 flag와 무관하게
 idempotent하고 이전 binary가 모르는 새 table을 안전하게 무시할 수 있어야 한다.
 
-현재 desktop composition root는 검증을 마친
-`operation_runtime_v1`~`jobs_v1`을 명시적으로 활성화한다. `plugins_v1`,
-`workspace_resources_v1`, `realtime_collaboration_v1`은 계속 비활성 상태다.
+현재 desktop composition root는 검증을 마친 platform flag를 명시적으로
+활성화한다. `plugins_v1`, `workspace_resources_v1`,
+`realtime_collaboration_v1`은 계속 비활성 상태다.
+
+SQL 문서 기능은 autosave, crash recovery, optimistic conflict 경로를 검증하고
+`src-tauri/src/features/sql_documents/` 수직 슬라이스로 졸업했다. 따라서 항상 켜진
+분기였던 이전 rollout flag는 제거했으며 새 adapter가 과거 경로로 되돌아가는
+fallback도 제공하지 않는다.
 
 현재 UI/CLI의 legacy `Catalog` wire를 보존하는 내부 `schema_cache_v2` adapter는
 권한 scope와 cache CAS를 강화한 졸업된 persistence 기반이므로 이 flag로 되돌리지

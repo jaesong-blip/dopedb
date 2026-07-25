@@ -1,0 +1,10 @@
+//! Feature-owned application slices.
+//!
+//! Each feature keeps its domain rules and use cases independent from Tauri, SQLx,
+//! and other platform adapters. This module is also the composition boundary that
+//! wires concrete adapters into those use cases.
+
+mod platform_flags;
+pub(crate) mod sql_documents;
+
+pub use platform_flags::{FeatureFlag, FeatureFlags};

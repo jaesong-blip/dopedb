@@ -1,5 +1,5 @@
 import type { ConnectionProfile } from "../ipc/types";
-import type { WorkbenchDocument } from "../lib/workbenchDocuments";
+import type { WorkbenchDocument } from "../features/workbench/domain";
 import { tableLabel } from "../lib/tableRef";
 import { useI18n } from "../lib/i18n";
 import { Icon } from "./Icon";
