@@ -20,13 +20,6 @@ import type {
   ErdLayout,
   ExecOutcome,
   HistoryEntry,
-  CreateJobRequest,
-  Job,
-  JobDetail,
-  JobFileCapability,
-  JobFormat,
-  JobInputInspection,
-  JobProposal,
   LegacyMcpCleanupExpectation,
   LegacyMcpCleanupReceipt,
   LegacyMcpCleanupStatus,
@@ -365,65 +358,6 @@ export function deleteErdLayout(
     id,
     expectedRevision,
   });
-}
-
-export function pickJobInput(
-  connectionId: string,
-): Promise<JobFileCapability | null> {
-  return invoke("pick_job_input", { connectionId });
-}
-
-export function pickJobOutput(
-  connectionId: string,
-  suggestedName: string,
-): Promise<JobFileCapability | null> {
-  return invoke("pick_job_output", { connectionId, suggestedName });
-}
-
-export function inspectJobInput(
-  connectionId: string,
-  capabilityId: string,
-  format: JobFormat,
-): Promise<JobInputInspection> {
-  return invoke("inspect_job_input", {
-    connectionId,
-    capabilityId,
-    format,
-  });
-}
-
-export function createJob(request: CreateJobRequest): Promise<JobProposal> {
-  return invoke("create_job", { request });
-}
-
-export function listJobs(connectionId: string): Promise<Job[]> {
-  return invoke("list_jobs", { connectionId });
-}
-
-export function getJob(
-  connectionId: string,
-  jobId: string,
-): Promise<JobDetail> {
-  return invoke("get_job", { connectionId, jobId });
-}
-
-export function startJob(connectionId: string, jobId: string): Promise<Job> {
-  return invoke("start_job", { connectionId, jobId });
-}
-
-export function pauseJob(connectionId: string, jobId: string): Promise<Job> {
-  return invoke("pause_job", { connectionId, jobId });
-}
-
-export function cancelJob(connectionId: string, jobId: string): Promise<Job> {
-  return invoke("cancel_job", { connectionId, jobId });
-}
-
-export function revealJobArtifact(
-  connectionId: string,
-  artifactId: string,
-): Promise<void> {
-  return invoke("reveal_job_artifact", { connectionId, artifactId });
 }
 
 export function getSafety(id: string): Promise<SafetySettings> {

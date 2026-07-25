@@ -18,7 +18,6 @@ import {
   listDashboards,
   listErdLayouts,
   listHistory,
-  listJobs,
   platformFeatureFlags,
   refreshCatalog,
   runDashboard,
@@ -29,6 +28,8 @@ import {
 import type { CatalogTable, Engine, QueryResult } from "../ipc/types";
 import { errMessage } from "../ipc/types";
 import { listDrivers } from "../features/connections/tauriAdapter";
+import { jobConnectionId } from "../features/jobs/domain";
+import { listJobs } from "../features/jobs/tauriAdapter";
 import { buildCountQuery, buildPageQuery, type GridSort } from "./sqlBuild";
 import { tableKey } from "./tableRef";
 
@@ -245,7 +246,7 @@ export function jobsQuery(connectionId: string) {
   return queryOptions({
     queryKey: qk.jobs(connectionId),
     staleTime: Infinity,
-    queryFn: () => listJobs(connectionId),
+    queryFn: () => listJobs(jobConnectionId(connectionId)),
   });
 }
 

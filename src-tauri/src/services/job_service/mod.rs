@@ -29,7 +29,7 @@ use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
 use crate::features::jobs::{
     summaries, validate_mapping_sources, validate_plan, validate_required_target_columns,
 };
-pub(crate) use crate::features::jobs::{
+use crate::features::jobs::{
     CreateJobRequest, Job, JobChangedEvent, JobDetail, JobFileCapability, JobFileDirection,
     JobFormat, JobInputInspection, JobKind, JobPlan, JobProposal, JobState,
 };

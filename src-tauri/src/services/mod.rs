@@ -25,10 +25,7 @@ pub(crate) use document_service::{
     DesktopDocumentReadError, DocumentReadReceipt, DocumentService, TerminalDocumentReadRequest,
 };
 pub(crate) use erd_service::{ErdLayout, ErdService, SaveErdLayoutOutcome, SaveErdLayoutRequest};
-pub(crate) use job_service::{
-    CreateJobRequest, Job, JobDetail, JobFileCapability, JobFormat, JobInputInspection,
-    JobProposal, JobService,
-};
+pub(crate) use job_service::JobService;
 pub(crate) use legacy_chat_service::LegacyChatService;
 pub(crate) use monitoring_service::{
     MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringService,

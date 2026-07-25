@@ -117,6 +117,13 @@ application boundary as `ConnectionJobId`. Durable transitions and plan validati
 are pure feature policies with characterization tests. The former service-owned
 `model.rs` path is a deletion gate.
 
+The second checkpoint moved every Rust Tauri command and every frontend command/type
+to Job-owned transport and domain modules. Frontend IDs are branded by resource type,
+and architecture checks require each Job command literal to have exactly one adapter
+owner. Central command/type reintroduction is a deletion gate. Renderer camelCase plan
+fields are accepted as deserialization aliases while stored plan JSON remains
+snake_case, preserving existing plan hashes and resumable jobs.
+
 Before this slice is complete, orchestration must be split into application use cases
 behind authority, ledger, file, operation, catalog, and execution ports; format,
 worker, and SQLite implementations must move into bounded adapters; Tauri commands

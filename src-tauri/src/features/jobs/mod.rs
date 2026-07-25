@@ -2,6 +2,7 @@
 
 pub(crate) mod domain;
 mod state_machine;
+pub(crate) mod transport;
 mod validation;
 
 pub(crate) use domain::{

@@ -16,7 +16,6 @@
     "src/screens/Connections/DatabaseExplorer.tsx": 1308,
     "src/App.tsx": 1163,
     "src/screens/Tables/index.tsx": 1143,
-    "src/ipc/types.ts": 1017,
     "src-tauri/src/services/dashboard_service.rs": 970,
     "src-tauri/src/skills/inventory.rs": 903
   }

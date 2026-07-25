@@ -301,6 +301,33 @@ forbid("src-tauri/src/commands/mod.rs", [
   [/\bpub async fn refresh_schema\b/, "catalog refresh returned to the central command module"],
   [/\bpub async fn get_catalog_snapshot\b/, "catalog snapshot returned to the central command module"],
   [/\bpub async fn get_table_ddl\b/, "catalog DDL command returned to the central command module"],
+  [/\bpub async fn pick_job_input\b/, "job input picker returned to the central command module"],
+  [/\bpub async fn pick_job_output\b/, "job output picker returned to the central command module"],
+  [/\bpub async fn inspect_job_input\b/, "job inspection returned to the central command module"],
+  [/\bpub async fn create_job\b/, "job creation returned to the central command module"],
+  [/\bpub async fn list_jobs\b/, "job listing returned to the central command module"],
+  [/\bpub async fn get_job\b/, "job detail returned to the central command module"],
+  [/\bpub async fn start_job\b/, "job start returned to the central command module"],
+  [/\bpub async fn pause_job\b/, "job pause returned to the central command module"],
+  [/\bpub async fn cancel_job\b/, "job cancellation returned to the central command module"],
+  [/\bpub async fn reveal_job_artifact\b/, "job artifact reveal returned to the central command module"],
+]);
+forbid("src-tauri/src/features/jobs/transport.rs", [
+  [/\bsqlx\b/, "job transport must delegate instead of writing the ledger"],
+  [/crate::store/, "job transport must not access the store directly"],
+  [/crate::connection/, "job transport must not authorize connections directly"],
+]);
+forbid("src-tauri/src/services/job_service/mod.rs", [
+  [
+    /\bpub\(crate\)\s+use\s+crate::features::jobs/,
+    "job service must not re-export feature-owned contracts",
+  ],
+]);
+forbid("src-tauri/src/services/mod.rs", [
+  [
+    /\b(?:CreateJobRequest|JobDetail|JobFileCapability|JobFormat|JobInputInspection|JobProposal)\b/,
+    "central service facade must not re-export feature-owned job contracts",
+  ],
 ]);
 forbid("src-tauri/src/features/sql_documents/transport.rs", [
   [/\bsqlx\b/, "transport must delegate instead of querying SQLite"],
@@ -321,6 +348,7 @@ forbid("src-tauri/src/connection/runtime.rs", [
 
 for (const filePath of [
   "src/features/connections/domain.ts",
+  "src/features/jobs/domain.ts",
   "src/features/sqlDocuments/domain.ts",
   "src/features/workspaces/domain.ts",
   "src/features/workspaces/cache.ts",
@@ -423,11 +451,41 @@ for (const command of workspaceCommands) {
     );
   }
 }
+const jobCommands = [
+  "pick_job_input",
+  "pick_job_output",
+  "inspect_job_input",
+  "create_job",
+  "list_jobs",
+  "get_job",
+  "start_job",
+  "pause_job",
+  "cancel_job",
+  "reveal_job_artifact",
+];
+for (const command of jobCommands) {
+  const owners = frontendSource
+    .filter(([, source]) => source.includes(`"${command}"`))
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/jobs/tauriAdapter.ts"
+  ) {
+    fail(
+      `${command}: expected only src/features/jobs/tauriAdapter.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 forbid("src/ipc/types.ts", [
   [/\binterface ConnectionProfile\b/, "connection profile returned to the central IPC type file"],
   [/\binterface DriverDescriptor\b/, "driver descriptor returned to the central IPC type file"],
   [/\binterface Workspace\b/, "workspace type returned to the central IPC type file"],
   [/\binterface WorkspaceAuth/, "workspace auth type returned to the central IPC type file"],
+  [
+    /\b(?:interface|type)\s+Job(?:Kind|Format|State|FileDirection|ErrorPolicy|FileCapability|InputInspection|FieldMapping|Validation|Plan|Proposal|Artifact|Detail|ChangedEvent)?\b/,
+    "job contract returned to the central IPC type file",
+  ],
+  [/\binterface CreateJobRequest\b/, "job request returned to the central IPC type file"],
 ]);
 forbid("src/ipc/commands.ts", [
   [/\bfunction listConnections\b/, "connection commands returned to the central IPC facade"],
@@ -436,6 +494,10 @@ forbid("src/ipc/commands.ts", [
   [/\bfunction listWorkspaces\b/, "workspace commands returned to the central IPC facade"],
   [/\bfunction workspaceAuthState\b/, "workspace auth returned to the central IPC facade"],
   [/\bfunction setActiveWorkspace\b/, "workspace selection returned to the central IPC facade"],
+  [
+    /\b(?:pickJobInput|pickJobOutput|inspectJobInput|createJob|listJobs|getJob|startJob|pauseJob|cancelJob|revealJobArtifact)\b/,
+    "job commands returned to the central IPC facade",
+  ],
 ]);
 for (const [filePath, source] of frontendSource) {
   if (

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  approveOperation,
   cancelJob,
   createJob,
   getJob,
@@ -13,19 +12,25 @@ import {
   pickJobOutput,
   revealJobArtifact,
   startJob,
-} from "../ipc/commands";
+} from "../features/jobs/tauriAdapter";
+import { approveOperation } from "../ipc/commands";
 import {
-  errMessage,
-  type CatalogObjectRef,
-  type CatalogRelationV2,
+  jobConnectionId,
+  jobRelationRef,
   type Job,
   type JobDetail,
   type JobErrorPolicy,
   type JobFieldMapping,
   type JobFileCapability,
   type JobFormat,
+  type JobId,
   type JobInputInspection,
   type JobKind,
+} from "../features/jobs/domain";
+import {
+  errMessage,
+  type CatalogObjectRef,
+  type CatalogRelationV2,
 } from "../ipc/types";
 import { Icon } from "./Icon";
 import { jobsQuery, qk } from "../lib/queries";
@@ -113,6 +118,7 @@ export default function JobPanel({
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const jobs = useQuery(jobsQuery(connectionId));
+  const scopedConnectionId = jobConnectionId(connectionId);
   const [kind, setKind] = useState<JobKind>("export");
   const [format, setFormat] = useState<JobFormat>("csv");
   const [capability, setCapability] = useState<JobFileCapability | null>(null);
@@ -128,7 +134,7 @@ export default function JobPanel({
   const [confirmation, setConfirmation] = useState("");
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [busy, setBusy] = useState(false);
-  const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const [busyJobId, setBusyJobId] = useState<JobId | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const relationName = relationLabel(relation.object);
@@ -156,20 +162,20 @@ export default function JobPanel({
     try {
       if (kind === "export") {
         const selected = await pickJobOutput(
-          connectionId,
+          scopedConnectionId,
           `${relation.object.name}.${extension(format)}`,
         );
         setCapability(selected);
         setInspection(null);
       } else {
-        const selected = await pickJobInput(connectionId);
+        const selected = await pickJobInput(scopedConnectionId);
         setCapability(selected);
         if (!selected) {
           setInspection(null);
           return;
         }
         const nextInspection = await inspectJobInput(
-          connectionId,
+          scopedConnectionId,
           selected.id,
           format,
         );
@@ -212,7 +218,7 @@ export default function JobPanel({
           ? {
               kind: "export" as const,
               capabilityId: capability.id,
-              relation: relation.object,
+              relation: jobRelationRef(relation.object),
               consistency: "per_batch_current" as const,
               columns: [],
               fieldNames: [],
@@ -224,7 +230,7 @@ export default function JobPanel({
               targetRelation:
                 format === "sql" || format === "sql_gzip"
                   ? null
-                  : relation.object,
+                  : jobRelationRef(relation.object),
               mapping: mappings(),
               validation: {
                 onError: errorPolicy,
@@ -234,7 +240,7 @@ export default function JobPanel({
               batchSize,
             };
       const proposed = await createJob({
-        connectionId,
+        connectionId: scopedConnectionId,
         format,
         plan,
       });
@@ -246,7 +252,7 @@ export default function JobPanel({
           confirmationPhrase: proposed.confirmationPhrase,
         });
       } else {
-        await startJob(connectionId, proposed.job.id);
+        await startJob(scopedConnectionId, proposed.job.id);
         setCapability(null);
         await queryClient.invalidateQueries({ queryKey: qk.jobs(connectionId) });
       }
@@ -267,7 +273,7 @@ export default function JobPanel({
         approval.payloadHash,
         approval.confirmationPhrase ? confirmation : undefined,
       );
-      await startJob(connectionId, approval.job.id);
+      await startJob(scopedConnectionId, approval.job.id);
       setApproval(null);
       setConfirmation("");
       setCapability(null);
@@ -285,7 +291,7 @@ export default function JobPanel({
     setBusy(true);
     setError(null);
     try {
-      await cancelJob(connectionId, approval.job.id);
+      await cancelJob(scopedConnectionId, approval.job.id);
       setApproval(null);
       setConfirmation("");
       setDetail(null);
@@ -301,9 +307,9 @@ export default function JobPanel({
     setBusyJobId(job.id);
     setError(null);
     try {
-      if (action === "start") await startJob(connectionId, job.id);
-      if (action === "pause") await pauseJob(connectionId, job.id);
-      if (action === "cancel") await cancelJob(connectionId, job.id);
+      if (action === "start") await startJob(scopedConnectionId, job.id);
+      if (action === "pause") await pauseJob(scopedConnectionId, job.id);
+      if (action === "cancel") await cancelJob(scopedConnectionId, job.id);
       await queryClient.invalidateQueries({ queryKey: qk.jobs(connectionId) });
     } catch (cause) {
       setError(errMessage(cause));
@@ -316,7 +322,7 @@ export default function JobPanel({
     setBusyJobId(job.id);
     setError(null);
     try {
-      const next = await getJob(connectionId, job.id);
+      const next = await getJob(scopedConnectionId, job.id);
       setDetail(next);
       if (next.approvalRequired) {
         setApproval({
@@ -783,7 +789,7 @@ export default function JobPanel({
               className="btn small job-artifact"
               key={artifact.id}
               onClick={() =>
-                void revealJobArtifact(connectionId, artifact.id).catch((cause) =>
+                void revealJobArtifact(scopedConnectionId, artifact.id).catch((cause) =>
                   setError(errMessage(cause)),
                 )
               }

@@ -236,6 +236,7 @@ impl Default for JobValidation {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum JobPlan {
     Export {
+        #[serde(alias = "capabilityId")]
         capability_id: JobFileCapabilityId,
         relation: ObjectRef,
         #[serde(default)]
@@ -243,17 +244,22 @@ pub(crate) enum JobPlan {
         #[serde(default)]
         columns: Vec<String>,
         #[serde(default)]
+        #[serde(alias = "fieldNames")]
         field_names: Vec<JobFieldMapping>,
+        #[serde(alias = "batchSize")]
         batch_size: u32,
     },
     Import {
+        #[serde(alias = "capabilityId")]
         capability_id: JobFileCapabilityId,
         #[serde(default)]
+        #[serde(alias = "targetRelation")]
         target_relation: Option<ObjectRef>,
         #[serde(default)]
         mapping: Vec<JobFieldMapping>,
         #[serde(default)]
         validation: JobValidation,
+        #[serde(alias = "batchSize")]
         batch_size: u32,
     },
 }
@@ -362,7 +368,7 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn typed_job_request_keeps_the_existing_uuid_wire_shape() {
+    fn typed_job_request_accepts_the_renderer_shape_without_changing_stored_json() {
         let connection = Uuid::parse_str("d20f5314-7122-4cf0-b750-e49c117fcbd4").unwrap();
         let capability = Uuid::parse_str("e9033d5e-af80-434e-9058-6356a6865bc8").unwrap();
         let request: CreateJobRequest = serde_json::from_value(serde_json::json!({
@@ -370,8 +376,8 @@ mod tests {
             "format": "ndjson",
             "plan": {
                 "kind": "import",
-                "capability_id": capability,
-                "batch_size": 500
+                "capabilityId": capability,
+                "batchSize": 500
             }
         }))
         .unwrap();
@@ -382,6 +388,10 @@ mod tests {
             request.plan.capability_id(),
             JobFileCapabilityId::from(capability)
         );
+        let stored = serde_json::to_value(&request.plan).unwrap();
+        assert_eq!(stored["capability_id"], capability.to_string());
+        assert_eq!(stored["batch_size"], 500);
+        assert!(stored.get("capabilityId").is_none());
     }
 
     #[test]
