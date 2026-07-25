@@ -1211,6 +1211,8 @@ fn open_regular_input(path: &Path) -> AppResult<File> {
 }
 
 fn open_output_file(path: &Path, append: bool, private: bool) -> AppResult<File> {
+    #[cfg(not(unix))]
+    let _ = private;
     let mut options = OpenOptions::new();
     options
         .create(true)

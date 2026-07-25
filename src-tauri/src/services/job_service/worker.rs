@@ -1461,11 +1461,10 @@ fn file_len(path: &Path) -> AppResult<u64> {
     Ok(std::fs::metadata(path)?.len())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn output_parent_must_remain_the_original_canonical_directory() {
         use std::os::unix::fs::symlink;
