@@ -1472,17 +1472,27 @@ incremental layout한다.
 ### 15.1 module
 
 ```text
-src-tauri/src/jobs/
-  mod.rs
-  model.rs
-  repository.rs
-  scheduler.rs
-  worker.rs
-  checkpoint.rs
-  progress.rs
-  artifact.rs
-  import/
-  export/
+src-tauri/src/features/jobs/
+  domain.rs
+  state_machine.rs
+  validation.rs
+  ports.rs
+  transport.rs
+  application/
+    recovery.rs
+    files.rs
+    planning.rs
+    execution.rs
+  adapters/
+    ledger/
+    worker/
+      export.rs
+      import.rs
+      resume.rs
+      statements.rs
+      validation.rs
+      files.rs
+    format.rs
 ```
 
 ### 15.2 local tables

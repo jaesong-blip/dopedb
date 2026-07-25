@@ -109,6 +109,7 @@ const removedPaths = [
   "src-tauri/src/services/job_service/worker.rs",
   "src-tauri/src/features/jobs/application.rs",
   "src-tauri/src/features/jobs/adapters/ledger.rs",
+  "src-tauri/src/features/jobs/adapters/worker.rs",
   "src-tauri/src/services/workspace_service.rs",
   "src-tauri/src/workspace_auth.rs",
   "src/lib/workbenchDocuments.ts",

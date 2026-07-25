@@ -140,10 +140,13 @@ planning, and execution lifecycle use cases are separate modules below the featu
 limit; the former monolithic `application.rs` is now a deletion gate. The SQLite
 ledger is likewise split into capability, record, transition, recovery, event, and
 mapping modules behind one `JobRepository`; the former `ledger.rs` is a deletion
-gate and mutation SQL is rejected outside that adapter directory. The remaining
-deletion gates cover every old Job service path and symbol.
+gate and mutation SQL is rejected outside that adapter directory. Worker execution
+has separate export, import, resume validation, statement, validation, and file
+publication modules behind a small execution entrypoint; the former `worker.rs` is
+also a deletion gate. The remaining deletion gates cover every old Job service path
+and symbol.
 
-Before this slice is complete, the two remaining large adapter files must be split
+Before this slice is complete, the remaining large format adapter must be split
 below the general limits. Their current counts remain exact no-growth migration
 baselines until that deletion checkpoint removes the entries entirely.
 

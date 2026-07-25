@@ -4,7 +4,9 @@
 계획·실행 lifecycle은 `application/` 아래 독립 모듈이다. 플랫폼 계약은 `ports.rs`,
 SQLite·파일·권한·catalog·Operation·worker 구현은 `adapters/`에 있다. SQLite ledger는
 단일 `JobRepository` 아래 capability·record·transition·recovery·event·mapping 모듈로
-분리되며, 이 경계 밖에서는 Job 상태 SQL을 쓸 수 없다.
+분리되며, 이 경계 밖에서는 Job 상태 SQL을 쓸 수 없다. worker의 진입점은 실행 순서만
+소유하고 export·import·resume 검증·statement 생성·파일 게시 구현을 각각의 내부
+모듈에 위임한다.
 `mod.rs`만 이 구현들을 조립한다. renderer는 로컬 경로와 데이터베이스 자격증명을 받지
 않으며, SQL-family 연결의 relation 단위 import/export만 이 계약을 사용한다. MongoDB처럼
 document-family인 연결은 typed document adapter가 준비되기 전까지 실패 폐쇄한다.
