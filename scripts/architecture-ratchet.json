@@ -8,7 +8,6 @@
     "src-tauri/src/services/script_service.rs": 1935,
     "src-tauri/src/broker/dispatch.rs": 1829,
     "src-tauri/src/operations/repository.rs": 1803,
-    "src-tauri/src/features/jobs/adapters/format.rs": 1697,
     "src-tauri/src/services/document_service.rs": 1405,
     "src/screens/Connections/DatabaseExplorer.tsx": 1308,
     "src/App.tsx": 1163,

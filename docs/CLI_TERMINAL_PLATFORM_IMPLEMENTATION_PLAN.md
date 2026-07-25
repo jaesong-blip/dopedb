@@ -1492,7 +1492,7 @@ src-tauri/src/features/jobs/
       statements.rs
       validation.rs
       files.rs
-    format.rs
+    format/
 ```
 
 ### 15.2 local tables

@@ -101,7 +101,7 @@ has one documented writer in the SQLite adapter. The feature imports only
 contract shared with the CLI; command envelopes and other protocol modules remain
 forbidden in the core.
 
-## Fifth slice: Job Engine (in progress)
+## Fifth migrated slice: Job Engine
 
 The start audit found four oversized legacy responsibilities in one service tree:
 orchestration, the SQLite ledger, database execution, and file formats. Central Tauri
@@ -143,12 +143,14 @@ mapping modules behind one `JobRepository`; the former `ledger.rs` is a deletion
 gate and mutation SQL is rejected outside that adapter directory. Worker execution
 has separate export, import, resume validation, statement, validation, and file
 publication modules behind a small execution entrypoint; the former `worker.rs` is
-also a deletion gate. The remaining deletion gates cover every old Job service path
-and symbol.
+also a deletion gate. Format writing, typed value encoding, import reading,
+inspection/audit, and hardened file I/O have independent modules, and the former
+`format.rs` is a deletion gate. The remaining deletion gates cover every old Job
+service path and symbol.
 
-Before this slice is complete, the remaining large format adapter must be split
-below the general limits. Their current counts remain exact no-growth migration
-baselines until that deletion checkpoint removes the entries entirely.
+Every Job feature and adapter file is now below the feature limit, so the Job entries
+have been removed from the oversized-file ratchet rather than carried as permanent
+exceptions.
 
 ## Audit checkpoints
 

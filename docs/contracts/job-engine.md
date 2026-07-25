@@ -6,7 +6,8 @@ SQLite·파일·권한·catalog·Operation·worker 구현은 `adapters/`에 있�
 단일 `JobRepository` 아래 capability·record·transition·recovery·event·mapping 모듈로
 분리되며, 이 경계 밖에서는 Job 상태 SQL을 쓸 수 없다. worker의 진입점은 실행 순서만
 소유하고 export·import·resume 검증·statement 생성·파일 게시 구현을 각각의 내부
-모듈에 위임한다.
+모듈에 위임한다. 포맷 어댑터도 writer·typed value·import reader·inspection/audit·
+안전한 파일 I/O를 분리하며, 각 구현 파일은 공통 feature 크기 제한을 따른다.
 `mod.rs`만 이 구현들을 조립한다. renderer는 로컬 경로와 데이터베이스 자격증명을 받지
 않으며, SQL-family 연결의 relation 단위 import/export만 이 계약을 사용한다. MongoDB처럼
 document-family인 연결은 typed document adapter가 준비되기 전까지 실패 폐쇄한다.
