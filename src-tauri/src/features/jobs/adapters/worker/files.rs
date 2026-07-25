@@ -1,5 +1,7 @@
-use std::fs::File;
 use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::fs::File;
 
 use dopedb_protocol::ObjectRef;
 
