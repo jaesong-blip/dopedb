@@ -97,6 +97,7 @@ const removedPaths = [
   "src-tauri/src/services/connection_credentials.rs",
   "src-tauri/src/services/terminal_authority.rs",
   "src-tauri/src/services/catalog_service.rs",
+  "src-tauri/src/services/job_service/model.rs",
   "src-tauri/src/services/workspace_service.rs",
   "src-tauri/src/workspace_auth.rs",
   "src/lib/workbenchDocuments.ts",
@@ -128,6 +129,7 @@ for (const filePath of [
     [/src-tauri\/src\/services\/sql_document_service\.rs/, "active documentation names a removed Rust path"],
     [/src-tauri\/src\/services\/connection_service\.rs/, "active documentation names the removed connection service"],
     [/src-tauri\/src\/services\/catalog_service\.rs/, "active documentation names the removed catalog service"],
+    [/src-tauri\/src\/services\/job_service\/model\.rs/, "active documentation names the removed job model"],
     [/src-tauri\/src\/services\/workspace_service\.rs/, "active documentation names the removed workspace service"],
     [/src-tauri\/src\/workspace_auth\.rs/, "active documentation names the removed global workspace auth module"],
     [/src\/lib\/workspaceAccounts\.ts/, "active documentation names a removed workspace account helper"],
@@ -166,6 +168,29 @@ if (
     `catalog introspection must belong only to src-tauri/src/features/catalog/adapters/local.rs, found ${directCatalogLoaders.join(", ") || "none"}`,
   );
 }
+const jobLedgerSql = [
+  "INSERT INTO job_file_capabilities",
+  "UPDATE job_file_capabilities",
+  "INSERT INTO jobs",
+  "UPDATE jobs",
+  "INSERT INTO job_checkpoints",
+  "INSERT INTO job_artifacts",
+  "INSERT INTO job_events",
+];
+for (const token of jobLedgerSql) {
+  const owners = sourceFiles
+    .filter((file) => file.endsWith(".rs"))
+    .filter((file) => fs.readFileSync(file, "utf8").includes(token))
+    .map(relative);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src-tauri/src/services/job_service/repository.rs"
+  ) {
+    fail(
+      `job ledger SQL ${token} must belong only to src-tauri/src/services/job_service/repository.rs, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 
 const coreRustRules = [
   [/crate::connection/, "feature core must not depend on the connection adapter"],
@@ -193,6 +218,23 @@ for (const filePath of [
 ]) {
   requireFile(filePath);
   forbid(filePath, coreRustRules);
+}
+for (const filePath of [
+  "src-tauri/src/features/jobs/domain.rs",
+  "src-tauri/src/features/jobs/state_machine.rs",
+  "src-tauri/src/features/jobs/validation.rs",
+]) {
+  requireFile(filePath);
+  forbid(
+    filePath,
+    coreRustRules.filter(([pattern]) => pattern.source !== "\\bdopedb_protocol\\b"),
+  );
+  forbid(filePath, [
+    [
+      /\bdopedb_protocol::(?!catalog\b|operation\b)/,
+      "job core may use only canonical catalog and operation contracts",
+    ],
+  ]);
 }
 for (const filePath of [
   "src-tauri/src/features/catalog/domain.rs",

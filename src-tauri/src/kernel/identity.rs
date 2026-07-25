@@ -41,6 +41,18 @@ macro_rules! uuid_identity {
 uuid_identity!(WorkspaceId);
 uuid_identity!(ConnectionId);
 uuid_identity!(SqlDocumentId);
+uuid_identity!(JobId);
+uuid_identity!(JobFileCapabilityId);
+uuid_identity!(JobArtifactId);
+uuid_identity!(OperationId);
+
+/// Complete job lookup identity. A job UUID is never loaded without the
+/// connection scope that gives it meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ConnectionJobId {
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) job_id: JobId,
+}
 
 /// Public account identity returned by the hosted authentication authority.
 ///
@@ -126,6 +138,24 @@ mod tests {
             Uuid::from(serde_json::from_str::<ConnectionId>(&encoded).unwrap()),
             raw
         );
+    }
+
+    #[test]
+    fn job_identities_are_not_interchangeable_but_keep_uuid_json() {
+        let raw = Uuid::parse_str("7d7f5635-f09c-4733-ae63-20aeb25d73c0").unwrap();
+        let job_id = JobId::from(raw);
+        let capability_id = JobFileCapabilityId::from(raw);
+        let artifact_id = JobArtifactId::from(raw);
+        let operation_id = OperationId::from(raw);
+
+        for encoded in [
+            serde_json::to_string(&job_id).unwrap(),
+            serde_json::to_string(&capability_id).unwrap(),
+            serde_json::to_string(&artifact_id).unwrap(),
+            serde_json::to_string(&operation_id).unwrap(),
+        ] {
+            assert_eq!(encoded, format!("\"{raw}\""));
+        }
     }
 
     #[test]

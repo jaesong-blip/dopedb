@@ -101,6 +101,29 @@ has one documented writer in the SQLite adapter. The feature imports only
 contract shared with the CLI; command envelopes and other protocol modules remain
 forbidden in the core.
 
+## Fifth slice: Job Engine (in progress)
+
+The start audit found four oversized legacy responsibilities under
+`services/job_service`: orchestration, the SQLite ledger, database execution, and file
+formats. Central Tauri commands also owned the renderer boundary. The SQLite
+repository is the only current writer for job, capability, checkpoint, artifact, and
+event rows; the architecture check now proves every mutation SQL token has that one
+owner.
+
+The first migration checkpoint moved the wire-compatible job contracts into the
+feature domain and replaced interchangeable UUIDs with `ConnectionId`, `JobId`,
+`JobFileCapabilityId`, `JobArtifactId`, and `OperationId`. Job lookups cross the
+application boundary as `ConnectionJobId`. Durable transitions and plan validation
+are pure feature policies with characterization tests. The former service-owned
+`model.rs` path is a deletion gate.
+
+Before this slice is complete, orchestration must be split into application use cases
+behind authority, ledger, file, operation, catalog, and execution ports; format,
+worker, and SQLite implementations must move into bounded adapters; Tauri commands
+must move to feature transport; and every `services/job_service` path must be deleted.
+The midpoint audit will regenerate the writer and oversized-file inventories before
+those adapters move.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

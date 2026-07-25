@@ -12,6 +12,9 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::identity::{
+    ConnectionId, ConnectionJobId, JobArtifactId, JobFileCapabilityId, JobId,
+};
 use crate::model::{Dashboard, DocumentQuery, HistoryEntry, PlatformFeatureFlags, SafetySettings};
 use crate::services::{
     AuditSnapshotReceipt, AuditVerdict, CreateJobRequest, DashboardRunError, DashboardRunReceipt,
@@ -545,7 +548,7 @@ fn require_jobs(state: &AppState) -> AppResult<()> {
 pub async fn pick_job_input(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
-    connection_id: Uuid,
+    connection_id: ConnectionId,
 ) -> AppResult<Option<JobFileCapability>> {
     use tauri_plugin_dialog::DialogExt;
 
@@ -576,7 +579,7 @@ pub async fn pick_job_input(
 pub async fn pick_job_output(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
-    connection_id: Uuid,
+    connection_id: ConnectionId,
     suggested_name: String,
 ) -> AppResult<Option<JobFileCapability>> {
     use tauri_plugin_dialog::DialogExt;
@@ -606,8 +609,8 @@ pub async fn pick_job_output(
 #[tauri::command]
 pub async fn inspect_job_input(
     state: State<'_, AppState>,
-    connection_id: Uuid,
-    capability_id: Uuid,
+    connection_id: ConnectionId,
+    capability_id: JobFileCapabilityId,
     format: JobFormat,
 ) -> AppResult<JobInputInspection> {
     require_jobs(&state)?;
@@ -628,7 +631,10 @@ pub async fn create_job(
 }
 
 #[tauri::command]
-pub async fn list_jobs(state: State<'_, AppState>, connection_id: Uuid) -> AppResult<Vec<Job>> {
+pub async fn list_jobs(
+    state: State<'_, AppState>,
+    connection_id: ConnectionId,
+) -> AppResult<Vec<Job>> {
     require_jobs(&state)?;
     state.services.job.list(connection_id).await
 }
@@ -636,49 +642,77 @@ pub async fn list_jobs(state: State<'_, AppState>, connection_id: Uuid) -> AppRe
 #[tauri::command]
 pub async fn get_job(
     state: State<'_, AppState>,
-    connection_id: Uuid,
-    job_id: Uuid,
+    connection_id: ConnectionId,
+    job_id: JobId,
 ) -> AppResult<JobDetail> {
     require_jobs(&state)?;
-    state.services.job.detail(connection_id, job_id).await
+    state
+        .services
+        .job
+        .detail(ConnectionJobId {
+            connection_id,
+            job_id,
+        })
+        .await
 }
 
 #[tauri::command]
 pub async fn start_job(
     state: State<'_, AppState>,
-    connection_id: Uuid,
-    job_id: Uuid,
+    connection_id: ConnectionId,
+    job_id: JobId,
 ) -> AppResult<Job> {
     require_jobs(&state)?;
-    state.services.job.start(connection_id, job_id).await
+    state
+        .services
+        .job
+        .start(ConnectionJobId {
+            connection_id,
+            job_id,
+        })
+        .await
 }
 
 #[tauri::command]
 pub async fn pause_job(
     state: State<'_, AppState>,
-    connection_id: Uuid,
-    job_id: Uuid,
+    connection_id: ConnectionId,
+    job_id: JobId,
 ) -> AppResult<Job> {
     require_jobs(&state)?;
-    state.services.job.pause(connection_id, job_id).await
+    state
+        .services
+        .job
+        .pause(ConnectionJobId {
+            connection_id,
+            job_id,
+        })
+        .await
 }
 
 #[tauri::command]
 pub async fn cancel_job(
     state: State<'_, AppState>,
-    connection_id: Uuid,
-    job_id: Uuid,
+    connection_id: ConnectionId,
+    job_id: JobId,
 ) -> AppResult<Job> {
     require_jobs(&state)?;
-    state.services.job.cancel(connection_id, job_id).await
+    state
+        .services
+        .job
+        .cancel(ConnectionJobId {
+            connection_id,
+            job_id,
+        })
+        .await
 }
 
 #[tauri::command]
 pub async fn reveal_job_artifact(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
-    connection_id: Uuid,
-    artifact_id: Uuid,
+    connection_id: ConnectionId,
+    artifact_id: JobArtifactId,
 ) -> AppResult<()> {
     use tauri_plugin_opener::OpenerExt;
 

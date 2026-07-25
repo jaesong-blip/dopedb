@@ -49,6 +49,14 @@
       "writerTokens": [
         "pub(crate) async fn put_catalog_if_current("
       ]
+    },
+    {
+      "name": "jobLedger",
+      "owner": "src-tauri/src/services/job_service/repository.rs",
+      "writerTokens": [
+        "pub(super) struct JobRepository",
+        "async fn transition_job_state("
+      ]
     }
   ]
 }

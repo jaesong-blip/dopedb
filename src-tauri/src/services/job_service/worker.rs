@@ -13,21 +13,21 @@ use sha2::{Digest, Sha256};
 use sqlx::AssertSqlSafe;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
 use crate::error::{AppError, AppResult};
 use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
+use crate::features::jobs::{
+    Job, JobChangedEvent, JobErrorPolicy, JobFieldMapping, JobFileDirection, JobFormat, JobKind,
+    JobPlan, JobState, JobValidation,
+};
+use crate::kernel::identity::JobId;
 use crate::model::Engine;
 use crate::operations::{ClaimedOperation, ExecutionGrant};
 
 use super::format::{
     create_error_writer, file_sha256, finalize_error_writer, typed_sql_literal, write_error_row,
     ExportSink, ImportDataRow, ImportItem, ImportSource,
-};
-use super::model::{
-    JobChangedEvent, JobErrorPolicy, JobFieldMapping, JobFileDirection, JobFormat, JobPlan,
-    JobState, JobValidation,
 };
 use super::repository::{Checkpoint, JobRecord, JobRepository};
 
@@ -89,7 +89,7 @@ impl JobWorker {
             } => {
                 let context = self
                     .connections
-                    .pin(record.job.connection_id, ConnectionAccess::Read)
+                    .pin(record.job.connection_id.into(), ConnectionAccess::Read)
                     .await?;
                 ensure_record_scope(record, context.pin())?;
                 let capability = self
@@ -104,7 +104,7 @@ impl JobWorker {
                 validate_output_parent(&capability.path)?;
                 let snapshot = self
                     .catalog
-                    .load_snapshot(record.job.connection_id.into(), CatalogReadPolicy::Refresh)
+                    .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
                     .await?;
                 find_relation(&snapshot, relation)?;
                 let partial = partial_path(&capability.path, record.job.id)?;
@@ -126,7 +126,7 @@ impl JobWorker {
             } => {
                 let context = self
                     .connections
-                    .pin(record.job.connection_id, ConnectionAccess::Write)
+                    .pin(record.job.connection_id.into(), ConnectionAccess::Write)
                     .await?;
                 ensure_record_scope(record, context.pin())?;
                 if !context.pin().profile.workspace_access.can_write() {
@@ -159,7 +159,7 @@ impl JobWorker {
                 }
                 let snapshot = self
                     .catalog
-                    .load_snapshot(record.job.connection_id.into(), CatalogReadPolicy::Refresh)
+                    .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
                     .await?;
                 if let Some(reference) = target_relation {
                     find_relation(&snapshot, reference)?;
@@ -218,7 +218,7 @@ impl JobWorker {
         };
         let context = self
             .connections
-            .pin(record.job.connection_id, ConnectionAccess::Read)
+            .pin(record.job.connection_id.into(), ConnectionAccess::Read)
             .await?;
         ensure_record_scope(&record, context.pin())?;
         let engine = context.pin().profile.engine;
@@ -233,7 +233,7 @@ impl JobWorker {
             .await?;
         let snapshot = self
             .catalog
-            .load_snapshot(record.job.connection_id.into(), CatalogReadPolicy::Refresh)
+            .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
             .await?;
         let relation_metadata = find_relation(&snapshot, relation)?;
         let source_columns = if columns.is_empty() {
@@ -425,7 +425,7 @@ impl JobWorker {
                 &sql,
                 u64::from(*batch_size),
                 MAX_EXPORT_BATCH_BYTES,
-                Some(record.job.id),
+                Some(record.job.id.into()),
             )
             .await
             {
@@ -532,7 +532,7 @@ impl JobWorker {
         };
         let context = self
             .connections
-            .pin(record.job.connection_id, ConnectionAccess::Write)
+            .pin(record.job.connection_id.into(), ConnectionAccess::Write)
             .await?;
         ensure_record_scope(&record, context.pin())?;
         let engine = context.pin().profile.engine;
@@ -556,7 +556,7 @@ impl JobWorker {
             .ok_or_else(|| AppError::Config("input capability has no source hash".into()))?;
         let snapshot = self
             .catalog
-            .load_snapshot(record.job.connection_id.into(), CatalogReadPolicy::Refresh)
+            .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
             .await?;
         let target_fingerprint = snapshot.fingerprint().to_owned();
         let target_metadata = match target_relation {
@@ -887,7 +887,7 @@ impl JobWorker {
         self.stop_outcome(record.job.id).await
     }
 
-    async fn stop_outcome(&self, job_id: Uuid) -> AppResult<WorkerOutcome> {
+    async fn stop_outcome(&self, job_id: JobId) -> AppResult<WorkerOutcome> {
         let current = self.repository.get_unscoped(job_id).await?;
         match current.job.state {
             JobState::Running | JobState::PauseRequested => Ok(WorkerOutcome::Paused),
@@ -905,7 +905,7 @@ impl JobWorker {
         };
         let context = self
             .connections
-            .pin(record.job.connection_id, ConnectionAccess::Read)
+            .pin(record.job.connection_id.into(), ConnectionAccess::Read)
             .await?;
         ensure_record_scope(record, context.pin())?;
         let capability = self
@@ -928,7 +928,7 @@ impl JobWorker {
             .await
     }
 
-    fn emit(&self, job: &super::model::Job) {
+    fn emit(&self, job: &Job) {
         let _ = self.events.send(JobChangedEvent {
             connection_id: job.connection_id,
             job_id: job.id,
@@ -942,12 +942,12 @@ impl JobWorker {
 fn verify_operation(record: &JobRecord, claimed: &ClaimedOperation) -> AppResult<()> {
     let operation = claimed.record();
     let expected_kind = match record.job.kind {
-        super::model::JobKind::Import => dopedb_protocol::OperationKind::Import,
-        super::model::JobKind::Export => dopedb_protocol::OperationKind::Export,
+        JobKind::Import => dopedb_protocol::OperationKind::Import,
+        JobKind::Export => dopedb_protocol::OperationKind::Export,
     };
-    let matches = operation.id == record.job.operation_id
-        && operation.connection_id == record.job.connection_id
-        && operation.workspace_id == record.workspace_id
+    let matches = operation.id == uuid::Uuid::from(record.job.operation_id)
+        && operation.connection_id == uuid::Uuid::from(record.job.connection_id)
+        && operation.workspace_id == uuid::Uuid::from(record.workspace_id)
         && operation.account_scope == record.account_scope
         && operation.kind == expected_kind
         && operation
@@ -969,9 +969,9 @@ fn verify_operation(record: &JobRecord, claimed: &ClaimedOperation) -> AppResult
 }
 
 fn ensure_record_scope(record: &JobRecord, pin: &crate::store::PinnedConnection) -> AppResult<()> {
-    if record.workspace_id == pin.scope.workspace_id
+    if record.workspace_id == pin.scope.workspace_id.into()
         && record.account_scope == pin.scope.account_scope.storage_key()
-        && record.job.connection_id == pin.connection_id
+        && record.job.connection_id == pin.connection_id.into()
     {
         Ok(())
     } else {
@@ -1042,7 +1042,7 @@ async fn count_rows(
     live: &crate::connection::LiveConnection,
     engine: Engine,
     table_sql: &str,
-    job_id: Uuid,
+    job_id: JobId,
 ) -> AppResult<u64> {
     let result = crate::executor::read::run_read_byte_capped(
         live,
@@ -1050,7 +1050,7 @@ async fn count_rows(
         &format!("SELECT COUNT(*) AS n FROM {table_sql}"),
         1,
         64 * 1024,
-        Some(job_id),
+        Some(job_id.into()),
     )
     .await?;
     let value = result
@@ -1228,7 +1228,7 @@ async fn execute_transaction(
     if statements.is_empty() {
         return Ok(());
     }
-    if grant.connection_id() == Uuid::nil() {
+    if grant.connection_id() == uuid::Uuid::nil() {
         return Err(AppError::Blocked {
             reason: "import execution grant has no connection".into(),
         });
@@ -1356,7 +1356,7 @@ fn quote_identifier(engine: Engine, value: &str) -> String {
     }
 }
 
-fn partial_path(path: &Path, job_id: Uuid) -> AppResult<PathBuf> {
+fn partial_path(path: &Path, job_id: JobId) -> AppResult<PathBuf> {
     let parent = path
         .parent()
         .ok_or_else(|| AppError::Config("output path has no parent directory".into()))?;
@@ -1437,7 +1437,7 @@ fn replace_file(partial: &Path, output: &Path) -> std::io::Result<()> {
     }
 }
 
-fn error_artifact_path(job_id: Uuid) -> AppResult<PathBuf> {
+fn error_artifact_path(job_id: JobId) -> AppResult<PathBuf> {
     let directory = dirs::data_dir()
         .ok_or_else(|| AppError::Config("no OS data directory".into()))?
         .join("dopedb")

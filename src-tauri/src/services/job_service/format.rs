@@ -18,10 +18,9 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::error::{AppError, AppResult};
+use crate::features::jobs::{JobFormat, JobInputInspection};
 use crate::model::QueryKind;
 use dopedb_protocol::NormalizedTypeFamily;
-
-use super::model::{JobFormat, JobInputInspection};
 
 const XLSX_MAX_ROWS: u32 = 1_048_576;
 const MAX_DOCUMENT_INPUT_BYTES: u64 = 512 * 1024 * 1024;

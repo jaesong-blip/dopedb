@@ -5,7 +5,6 @@
 //! becomes an explicit pause rather than an ambiguous retry.
 
 mod format;
-mod model;
 mod repository;
 mod worker;
 
@@ -27,15 +26,20 @@ use uuid::Uuid;
 use crate::connection::{ConnectionAccess, ConnectionManager};
 use crate::error::{AppError, AppResult};
 use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
+use crate::features::jobs::{
+    summaries, validate_mapping_sources, validate_plan, validate_required_target_columns,
+};
+pub(crate) use crate::features::jobs::{
+    CreateJobRequest, Job, JobChangedEvent, JobDetail, JobFileCapability, JobFileDirection,
+    JobFormat, JobInputInspection, JobKind, JobPlan, JobProposal, JobState,
+};
+use crate::kernel::identity::{
+    ConnectionId, ConnectionJobId, JobArtifactId, JobFileCapabilityId, JobId, OperationId,
+};
 use crate::operations::{canonical_hash, NewOperation, OperationPlanDisposition, OperationRuntime};
 use crate::store::Store;
 
 use super::operation_service::{actor_for_pin, capture_policy, required_confirmation};
-pub(crate) use model::{
-    CreateJobRequest, Job, JobChangedEvent, JobDetail, JobErrorPolicy, JobFieldMapping,
-    JobFileCapability, JobFileDirection, JobFormat, JobInputInspection, JobKind, JobPlan,
-    JobProposal, JobState,
-};
 use repository::{JobRepository, NewCapability, NewJob};
 use worker::{JobWorker, WorkerOutcome};
 
@@ -51,7 +55,7 @@ pub(crate) struct JobService {
     operation: OperationRuntime,
     repository: JobRepository,
     worker: JobWorker,
-    running: Arc<DashMap<Uuid, CancellationToken>>,
+    running: Arc<DashMap<JobId, CancellationToken>>,
     concurrency: Arc<Semaphore>,
     events: broadcast::Sender<JobChangedEvent>,
 }
@@ -139,7 +143,7 @@ impl JobService {
                 && record.job.state == JobState::Failed
                 && record.job.error_code.as_deref() == Some("not_resumable")
             {
-                let operation = self.operation.get(record.job.operation_id).await?;
+                let operation = self.operation.get(record.job.operation_id.into()).await?;
                 ensure_job_operation(record, &operation)?;
                 self.operation
                     .fail_interrupted_export(operation.id, &operation.payload_hash)
@@ -150,7 +154,7 @@ impl JobService {
             }
         }
         for record in self.repository.queued_records().await? {
-            let operation = self.operation.get(record.job.operation_id).await?;
+            let operation = self.operation.get(record.job.operation_id.into()).await?;
             ensure_job_operation(&record, &operation)?;
             if operation.state.is_terminal() {
                 let (state, code, message) = match operation.state {
@@ -180,7 +184,7 @@ impl JobService {
             }
         }
         for record in self.repository.paused_records().await? {
-            let operation = self.operation.get(record.job.operation_id).await?;
+            let operation = self.operation.get(record.job.operation_id.into()).await?;
             ensure_job_operation(&record, &operation)?;
             let has_checkpoint = self
                 .repository
@@ -215,12 +219,12 @@ impl JobService {
 
     pub(crate) async fn register_input(
         &self,
-        connection_id: Uuid,
+        connection_id: ConnectionId,
         path: PathBuf,
     ) -> AppResult<JobFileCapability> {
         let context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         let canonical = tokio::task::spawn_blocking(move || snapshot_input(path))
             .await
@@ -250,12 +254,12 @@ impl JobService {
 
     pub(crate) async fn register_output(
         &self,
-        connection_id: Uuid,
+        connection_id: ConnectionId,
         path: PathBuf,
     ) -> AppResult<JobFileCapability> {
         let context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         let canonical = tokio::task::spawn_blocking(move || canonical_output(path))
             .await
@@ -279,13 +283,13 @@ impl JobService {
 
     pub(crate) async fn inspect_input(
         &self,
-        connection_id: Uuid,
-        capability_id: Uuid,
+        connection_id: ConnectionId,
+        capability_id: JobFileCapabilityId,
         format: JobFormat,
     ) -> AppResult<JobInputInspection> {
         let context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         let capability = self
             .repository
@@ -310,7 +314,10 @@ impl JobService {
         } else {
             ConnectionAccess::Read
         };
-        let context = self.connections.pin(request.connection_id, access).await?;
+        let context = self
+            .connections
+            .pin(request.connection_id.into(), access)
+            .await?;
         let pin = context.pin();
         if pin.profile.engine.is_document() {
             return Err(AppError::Blocked {
@@ -325,7 +332,7 @@ impl JobService {
                     reason: "your workspace role grants read-only database access".into(),
                 });
             }
-            let safety = self.store.get_safety(request.connection_id).await?;
+            let safety = self.store.get_safety(request.connection_id.into()).await?;
             if !safety.allow_writes {
                 return Err(AppError::Blocked {
                     reason: "writes are disabled for this connection; enable them before importing"
@@ -361,7 +368,7 @@ impl JobService {
         };
         let snapshot = self
             .catalog
-            .load_snapshot(request.connection_id.into(), CatalogReadPolicy::Refresh)
+            .load_snapshot(request.connection_id, CatalogReadPolicy::Refresh)
             .await?;
         validate_plan(&request, &snapshot)?;
         if let (
@@ -378,9 +385,9 @@ impl JobService {
         }
         let plan_value = serde_json::to_value(&request.plan)?;
         let plan_hash = canonical_hash(&plan_value)?;
-        let job_id = Uuid::new_v4();
-        let operation_id = Uuid::new_v4();
-        let safety = self.store.get_safety(request.connection_id).await?;
+        let job_id = JobId::from(Uuid::new_v4());
+        let operation_id = OperationId::from(Uuid::new_v4());
+        let safety = self.store.get_safety(request.connection_id.into()).await?;
         let policy = capture_policy(pin, &safety)?;
         let (source_summary, target_summary) = summaries(&request.plan, &capability.display_name);
         let operation_kind = if kind == JobKind::Import {
@@ -399,10 +406,10 @@ impl JobService {
             .operation
             .plan(
                 NewOperation {
-                    id: operation_id,
+                    id: operation_id.into(),
                     workspace_id: pin.scope.workspace_id,
                     account_scope: pin.scope.account_scope.storage_key().into(),
-                    connection_id: request.connection_id,
+                    connection_id: request.connection_id.into(),
                     connection_revision: pin.connection_revision,
                     terminal_session_id: None,
                     actor: actor_for_pin(pin, "job_engine".into()),
@@ -492,7 +499,10 @@ impl JobService {
             Err(error) => {
                 let _ = self
                     .operation
-                    .cancel_before_execution(operation_id, &json!({"reason": "job_insert_failed"}))
+                    .cancel_before_execution(
+                        operation_id.into(),
+                        &json!({"reason": "job_insert_failed"}),
+                    )
                     .await;
                 return Err(error);
             }
@@ -505,21 +515,25 @@ impl JobService {
         })
     }
 
-    pub(crate) async fn list(&self, connection_id: Uuid) -> AppResult<Vec<Job>> {
+    pub(crate) async fn list(&self, connection_id: ConnectionId) -> AppResult<Vec<Job>> {
         let context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         self.repository.list(context.pin()).await
     }
 
-    pub(crate) async fn detail(&self, connection_id: Uuid, job_id: Uuid) -> AppResult<JobDetail> {
+    pub(crate) async fn detail(&self, scoped_id: ConnectionJobId) -> AppResult<JobDetail> {
+        let ConnectionJobId {
+            connection_id,
+            job_id,
+        } = scoped_id;
         let context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         let (job, artifacts) = self.repository.detail(context.pin(), job_id).await?;
-        let operation = self.operation.get(job.operation_id).await?;
+        let operation = self.operation.get(job.operation_id.into()).await?;
         Ok(JobDetail {
             job,
             artifacts,
@@ -530,7 +544,11 @@ impl JobService {
         })
     }
 
-    pub(crate) async fn start(&self, connection_id: Uuid, job_id: Uuid) -> AppResult<Job> {
+    pub(crate) async fn start(&self, scoped_id: ConnectionJobId) -> AppResult<Job> {
+        let ConnectionJobId {
+            connection_id,
+            job_id,
+        } = scoped_id;
         if self.running.contains_key(&job_id) {
             return Err(AppError::Blocked {
                 reason: "job is already running".into(),
@@ -538,7 +556,7 @@ impl JobService {
         }
         let read_context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         let current = self
             .repository
@@ -549,16 +567,16 @@ impl JobService {
         } else {
             ConnectionAccess::Read
         };
-        let context = self.connections.pin(connection_id, access).await?;
+        let context = self.connections.pin(connection_id.into(), access).await?;
         if current.job.kind == JobKind::Import {
-            let safety = self.store.get_safety(connection_id).await?;
+            let safety = self.store.get_safety(connection_id.into()).await?;
             if !safety.allow_writes || !context.pin().profile.workspace_access.can_write() {
                 return Err(AppError::Blocked {
                     reason: "current policy no longer allows this import".into(),
                 });
             }
         }
-        let operation = self.operation.get(current.job.operation_id).await?;
+        let operation = self.operation.get(current.job.operation_id.into()).await?;
         if operation.state == OperationState::PendingApproval {
             return Err(AppError::Blocked {
                 reason: "approve the exact import plan before starting it".into(),
@@ -659,7 +677,7 @@ impl JobService {
             .repository
             .finish(record.job.id, JobState::Cancelled, None, None)
             .await?;
-        let operation = self.operation.get(record.job.operation_id).await?;
+        let operation = self.operation.get(record.job.operation_id.into()).await?;
         if operation.state == OperationState::Executing {
             let _ = self
                 .operation
@@ -687,7 +705,7 @@ impl JobService {
                     let _ = self
                         .operation
                         .succeed(
-                            record.job.operation_id,
+                            record.job.operation_id.into(),
                             &json!({
                                 "bytesProcessed": updated.job.bytes_processed,
                                 "rowsProcessed": updated.job.rows_processed,
@@ -724,7 +742,7 @@ impl JobService {
                     let _ = self
                         .operation
                         .confirm_cancelled(
-                            record.job.operation_id,
+                            record.job.operation_id.into(),
                             &json!({"reason": "job_cancelled"}),
                         )
                         .await;
@@ -758,12 +776,15 @@ impl JobService {
                     if outcome_unknown {
                         let _ = self
                             .operation
-                            .mark_outcome_unknown(record.job.operation_id, &json!({"reason": code}))
+                            .mark_outcome_unknown(
+                                record.job.operation_id.into(),
+                                &json!({"reason": code}),
+                            )
                             .await;
                     } else {
                         let _ = self
                             .operation
-                            .fail(record.job.operation_id, &json!({"reason": code}))
+                            .fail(record.job.operation_id.into(), &json!({"reason": code}))
                             .await;
                     }
                     self.emit(&updated.job);
@@ -773,10 +794,14 @@ impl JobService {
         }
     }
 
-    pub(crate) async fn pause(&self, connection_id: Uuid, job_id: Uuid) -> AppResult<Job> {
+    pub(crate) async fn pause(&self, scoped_id: ConnectionJobId) -> AppResult<Job> {
+        let ConnectionJobId {
+            connection_id,
+            job_id,
+        } = scoped_id;
         let context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         let current = self.repository.get_scoped(context.pin(), job_id).await?;
         if !current.job.resumable {
@@ -788,15 +813,19 @@ impl JobService {
         if let Some(token) = self.running.get(&job_id) {
             token.cancel();
         }
-        crate::executor::cancel::cancel(job_id);
+        crate::executor::cancel::cancel(job_id.into());
         self.emit(&updated.job);
         Ok(updated.job)
     }
 
-    pub(crate) async fn cancel(&self, connection_id: Uuid, job_id: Uuid) -> AppResult<Job> {
+    pub(crate) async fn cancel(&self, scoped_id: ConnectionJobId) -> AppResult<Job> {
+        let ConnectionJobId {
+            connection_id,
+            job_id,
+        } = scoped_id;
         let context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         let current = self.repository.get_scoped(context.pin(), job_id).await?;
         if current.job.state.terminal() {
@@ -808,9 +837,9 @@ impl JobService {
         let updated = self.repository.request_cancel(job_id).await?;
         if let Some(token) = self.running.get(&job_id) {
             token.cancel();
-            crate::executor::cancel::cancel(job_id);
+            crate::executor::cancel::cancel(job_id.into());
         } else {
-            let operation = self.operation.get(current.job.operation_id).await?;
+            let operation = self.operation.get(current.job.operation_id.into()).await?;
             if operation.state == OperationState::Executing {
                 let _ = self
                     .operation
@@ -835,12 +864,12 @@ impl JobService {
 
     pub(crate) async fn artifact_path(
         &self,
-        connection_id: Uuid,
-        artifact_id: Uuid,
+        connection_id: ConnectionId,
+        artifact_id: JobArtifactId,
     ) -> AppResult<PathBuf> {
         let context = self
             .connections
-            .pin(connection_id, ConnectionAccess::Read)
+            .pin(connection_id.into(), ConnectionAccess::Read)
             .await?;
         self.repository
             .artifact_path(context.pin(), artifact_id)
@@ -1106,188 +1135,6 @@ fn display_name(path: &Path) -> AppResult<String> {
         .ok_or_else(|| AppError::Config("selected filename is not valid Unicode".into()))
 }
 
-fn validate_plan(
-    request: &CreateJobRequest,
-    snapshot: &dopedb_protocol::CatalogSnapshot,
-) -> AppResult<()> {
-    if !(100..=10_000).contains(&request.plan.batch_size()) {
-        return Err(AppError::Config(
-            "job batch size must be between 100 and 10,000".into(),
-        ));
-    }
-    match &request.plan {
-        JobPlan::Export {
-            relation,
-            columns,
-            field_names,
-            ..
-        } => {
-            let metadata = relation_in_snapshot(snapshot, relation)?;
-            let available = metadata
-                .columns
-                .iter()
-                .map(|column| column.name.as_str())
-                .collect::<Vec<_>>();
-            validate_named_columns(columns, &available)?;
-            validate_mapping(field_names, Some(&available))?;
-        }
-        JobPlan::Import {
-            target_relation,
-            mapping,
-            validation,
-            ..
-        } => {
-            if validation.max_errors == 0 || validation.max_errors > 1_000_000 {
-                return Err(AppError::Config(
-                    "import max errors must be between 1 and 1,000,000".into(),
-                ));
-            }
-            if request.format.base() == JobFormat::Sql {
-                if target_relation.is_some() || !mapping.is_empty() {
-                    return Err(AppError::Config(
-                        "SQL import does not accept a target or field mapping".into(),
-                    ));
-                }
-                if validation.on_error != JobErrorPolicy::Stop {
-                    return Err(AppError::Config(
-                        "SQL import must stop on the first failed statement".into(),
-                    ));
-                }
-            } else {
-                let target = target_relation.as_ref().ok_or_else(|| {
-                    AppError::Config("structured import requires a target relation".into())
-                })?;
-                let metadata = relation_in_snapshot(snapshot, target)?;
-                let available = metadata
-                    .columns
-                    .iter()
-                    .map(|column| column.name.as_str())
-                    .collect::<Vec<_>>();
-                validate_mapping(mapping, Some(&available))?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn relation_in_snapshot<'a>(
-    snapshot: &'a dopedb_protocol::CatalogSnapshot,
-    reference: &dopedb_protocol::ObjectRef,
-) -> AppResult<&'a dopedb_protocol::Relation> {
-    snapshot
-        .relations()
-        .iter()
-        .find(|relation| relation.object == *reference)
-        .ok_or_else(|| AppError::Blocked {
-            reason: "job relation is missing from the current catalog".into(),
-        })
-}
-
-fn validate_named_columns(columns: &[String], available: &[&str]) -> AppResult<()> {
-    let mut unique = std::collections::HashSet::new();
-    if columns.iter().any(|column| {
-        column.trim().is_empty() || !available.contains(&column.as_str()) || !unique.insert(column)
-    }) {
-        return Err(AppError::Config(
-            "job columns contain an unknown, empty, or duplicate name".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_mapping(
-    mapping: &[JobFieldMapping],
-    available_targets: Option<&[&str]>,
-) -> AppResult<()> {
-    let mut sources = std::collections::HashSet::new();
-    let mut targets = std::collections::HashSet::new();
-    if mapping.iter().any(|field| {
-        field.source.trim().is_empty()
-            || field.target.trim().is_empty()
-            || !sources.insert(&field.source)
-            || !targets.insert(&field.target)
-            || available_targets
-                .is_some_and(|available| !available.contains(&field.target.as_str()))
-    }) {
-        return Err(AppError::Config(
-            "field mapping contains an unknown, empty, or duplicate field".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_mapping_sources(mapping: &[JobFieldMapping], available: &[String]) -> AppResult<()> {
-    if mapping
-        .iter()
-        .any(|field| !available.contains(&field.source))
-    {
-        return Err(AppError::Config(
-            "field mapping contains a source that is not present in the selected file".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_required_target_columns(
-    plan: &JobPlan,
-    snapshot: &dopedb_protocol::CatalogSnapshot,
-    source_fields: &[String],
-) -> AppResult<()> {
-    let JobPlan::Import {
-        target_relation: Some(target),
-        mapping,
-        ..
-    } = plan
-    else {
-        return Ok(());
-    };
-    let relation = relation_in_snapshot(snapshot, target)?;
-    let mapped_targets = if mapping.is_empty() {
-        source_fields.iter().map(String::as_str).collect::<Vec<_>>()
-    } else {
-        mapping
-            .iter()
-            .map(|field| field.target.as_str())
-            .collect::<Vec<_>>()
-    };
-    let missing = relation
-        .columns
-        .iter()
-        .filter(|column| {
-            !column.nullable
-                && column.default_expression.is_none()
-                && column.generated_expression.is_none()
-                && !column.identity
-                && !column.auto_increment
-                && !mapped_targets.contains(&column.name.as_str())
-        })
-        .map(|column| column.name.clone())
-        .collect::<Vec<_>>();
-    if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(AppError::Config(format!(
-            "import mapping is missing required target columns: {}",
-            missing.join(", ")
-        )))
-    }
-}
-
-fn summaries(plan: &JobPlan, capability_name: &str) -> (String, String) {
-    match plan {
-        JobPlan::Export { relation, .. } => (relation_label(relation), capability_name.to_owned()),
-        JobPlan::Import {
-            target_relation, ..
-        } => (
-            capability_name.to_owned(),
-            target_relation
-                .as_ref()
-                .map(relation_label)
-                .unwrap_or_else(|| "SQL script".into()),
-        ),
-    }
-}
-
 fn ensure_job_operation(
     record: &repository::JobRecord,
     operation: &crate::operations::OperationRecord,
@@ -1296,9 +1143,9 @@ fn ensure_job_operation(
         JobKind::Import => OperationKind::Import,
         JobKind::Export => OperationKind::Export,
     };
-    let matches = operation.id == record.job.operation_id
-        && operation.connection_id == record.job.connection_id
-        && operation.workspace_id == record.workspace_id
+    let matches = operation.id == Uuid::from(record.job.operation_id)
+        && operation.connection_id == Uuid::from(record.job.connection_id)
+        && operation.workspace_id == Uuid::from(record.workspace_id)
         && operation.account_scope == record.account_scope
         && operation.kind == expected_kind
         && operation
@@ -1318,14 +1165,6 @@ fn ensure_job_operation(
             reason: "job projection does not match its immutable operation".into(),
         })
     }
-}
-
-fn relation_label(reference: &dopedb_protocol::ObjectRef) -> String {
-    reference
-        .namespace
-        .as_ref()
-        .map(|namespace| format!("{namespace}.{}", reference.name))
-        .unwrap_or_else(|| reference.name.clone())
 }
 
 fn error_code(error: &AppError) -> &'static str {

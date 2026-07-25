@@ -1,9 +1,13 @@
 //! Serializable Job Engine contracts. Plans contain opaque file capability ids,
 //! never renderer-supplied paths, and are canonical-hash pinned before execution.
 
-use dopedb_protocol::ObjectRef;
+use dopedb_protocol::catalog::ObjectRef;
+use dopedb_protocol::operation::OperationState;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+
+use crate::kernel::identity::{
+    ConnectionId, JobArtifactId, JobFileCapabilityId, JobId, OperationId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -13,14 +17,14 @@ pub(crate) enum JobKind {
 }
 
 impl JobKind {
-    pub(super) fn storage_key(self) -> &'static str {
+    pub(crate) fn storage_key(self) -> &'static str {
         match self {
             Self::Import => "import",
             Self::Export => "export",
         }
     }
 
-    pub(super) fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "import" => Some(Self::Import),
             "export" => Some(Self::Export),
@@ -45,7 +49,7 @@ pub(crate) enum JobFormat {
 }
 
 impl JobFormat {
-    pub(super) fn storage_key(self) -> &'static str {
+    pub(crate) fn storage_key(self) -> &'static str {
         match self {
             Self::Csv => "csv",
             Self::Tsv => "tsv",
@@ -60,7 +64,7 @@ impl JobFormat {
         }
     }
 
-    pub(super) fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "csv" => Some(Self::Csv),
             "tsv" => Some(Self::Tsv),
@@ -76,21 +80,21 @@ impl JobFormat {
         }
     }
 
-    pub(super) const fn compressed(self) -> bool {
+    pub(crate) const fn compressed(self) -> bool {
         matches!(
             self,
             Self::CsvGzip | Self::JsonGzip | Self::NdjsonGzip | Self::SqlGzip
         )
     }
 
-    pub(super) const fn resumable(self) -> bool {
+    pub(crate) const fn resumable(self) -> bool {
         matches!(
             self,
             Self::Csv | Self::Tsv | Self::Json | Self::Ndjson | Self::Sql
         )
     }
 
-    pub(super) const fn base(self) -> Self {
+    pub(crate) const fn base(self) -> Self {
         match self {
             Self::CsvGzip => Self::Csv,
             Self::JsonGzip => Self::Json,
@@ -115,7 +119,7 @@ pub(crate) enum JobState {
 }
 
 impl JobState {
-    pub(super) fn storage_key(self) -> &'static str {
+    pub(crate) fn storage_key(self) -> &'static str {
         match self {
             Self::Queued => "queued",
             Self::Running => "running",
@@ -128,7 +132,7 @@ impl JobState {
         }
     }
 
-    pub(super) fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "queued" => Some(Self::Queued),
             "running" => Some(Self::Running),
@@ -155,7 +159,7 @@ pub(crate) enum JobFileDirection {
 }
 
 impl JobFileDirection {
-    pub(super) fn storage_key(self) -> &'static str {
+    pub(crate) fn storage_key(self) -> &'static str {
         match self {
             Self::Input => "input",
             Self::Output => "output",
@@ -166,8 +170,8 @@ impl JobFileDirection {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct JobFileCapability {
-    pub(crate) id: Uuid,
-    pub(crate) connection_id: Uuid,
+    pub(crate) id: JobFileCapabilityId,
+    pub(crate) connection_id: ConnectionId,
     pub(crate) direction: JobFileDirection,
     pub(crate) display_name: String,
     pub(crate) size_bytes: Option<u64>,
@@ -232,7 +236,7 @@ impl Default for JobValidation {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum JobPlan {
     Export {
-        capability_id: Uuid,
+        capability_id: JobFileCapabilityId,
         relation: ObjectRef,
         #[serde(default)]
         consistency: JobConsistency,
@@ -243,7 +247,7 @@ pub(crate) enum JobPlan {
         batch_size: u32,
     },
     Import {
-        capability_id: Uuid,
+        capability_id: JobFileCapabilityId,
         #[serde(default)]
         target_relation: Option<ObjectRef>,
         #[serde(default)]
@@ -262,7 +266,7 @@ impl JobPlan {
         }
     }
 
-    pub(super) const fn capability_id(&self) -> Uuid {
+    pub(crate) const fn capability_id(&self) -> JobFileCapabilityId {
         match self {
             Self::Export { capability_id, .. } | Self::Import { capability_id, .. } => {
                 *capability_id
@@ -270,7 +274,7 @@ impl JobPlan {
         }
     }
 
-    pub(super) const fn batch_size(&self) -> u32 {
+    pub(crate) const fn batch_size(&self) -> u32 {
         match self {
             Self::Export { batch_size, .. } | Self::Import { batch_size, .. } => *batch_size,
         }
@@ -280,7 +284,7 @@ impl JobPlan {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct CreateJobRequest {
-    pub(crate) connection_id: Uuid,
+    pub(crate) connection_id: ConnectionId,
     pub(crate) format: JobFormat,
     pub(crate) plan: JobPlan,
 }
@@ -288,9 +292,9 @@ pub(crate) struct CreateJobRequest {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Job {
-    pub(crate) id: Uuid,
-    pub(crate) operation_id: Uuid,
-    pub(crate) connection_id: Uuid,
+    pub(crate) id: JobId,
+    pub(crate) operation_id: OperationId,
+    pub(crate) connection_id: ConnectionId,
     pub(crate) kind: JobKind,
     pub(crate) format: JobFormat,
     pub(crate) state: JobState,
@@ -321,8 +325,8 @@ pub(crate) struct JobProposal {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct JobArtifact {
-    pub(crate) id: Uuid,
-    pub(crate) job_id: Uuid,
+    pub(crate) id: JobArtifactId,
+    pub(crate) job_id: JobId,
     pub(crate) artifact_type: String,
     pub(crate) display_name: String,
     pub(crate) size_bytes: u64,
@@ -335,7 +339,7 @@ pub(crate) struct JobArtifact {
 pub(crate) struct JobDetail {
     pub(crate) job: Job,
     pub(crate) artifacts: Vec<JobArtifact>,
-    pub(crate) operation_state: dopedb_protocol::OperationState,
+    pub(crate) operation_state: OperationState,
     pub(crate) payload_hash: String,
     pub(crate) approval_required: bool,
     pub(crate) confirmation_phrase: Option<String>,
@@ -344,9 +348,55 @@ pub(crate) struct JobDetail {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct JobChangedEvent {
-    pub(crate) connection_id: Uuid,
-    pub(crate) job_id: Uuid,
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) job_id: JobId,
     pub(crate) state: JobState,
     pub(crate) rows_processed: u64,
     pub(crate) bytes_processed: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CreateJobRequest, JobKind};
+    use crate::kernel::identity::{ConnectionId, JobFileCapabilityId};
+    use uuid::Uuid;
+
+    #[test]
+    fn typed_job_request_keeps_the_existing_uuid_wire_shape() {
+        let connection = Uuid::parse_str("d20f5314-7122-4cf0-b750-e49c117fcbd4").unwrap();
+        let capability = Uuid::parse_str("e9033d5e-af80-434e-9058-6356a6865bc8").unwrap();
+        let request: CreateJobRequest = serde_json::from_value(serde_json::json!({
+            "connectionId": connection,
+            "format": "ndjson",
+            "plan": {
+                "kind": "import",
+                "capability_id": capability,
+                "batch_size": 500
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(request.connection_id, ConnectionId::from(connection));
+        assert_eq!(request.plan.kind(), JobKind::Import);
+        assert_eq!(
+            request.plan.capability_id(),
+            JobFileCapabilityId::from(capability)
+        );
+    }
+
+    #[test]
+    fn job_plan_still_rejects_unreviewed_fields() {
+        let request = serde_json::json!({
+            "connectionId": Uuid::new_v4(),
+            "format": "csv",
+            "plan": {
+                "kind": "import",
+                "capability_id": Uuid::new_v4(),
+                "batch_size": 500,
+                "local_path": "/tmp/not-authorized.csv"
+            }
+        });
+
+        assert!(serde_json::from_value::<CreateJobRequest>(request).is_err());
+    }
 }
