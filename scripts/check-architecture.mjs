@@ -115,7 +115,7 @@ const removedPaths = [
 ];
 for (const filePath of removedPaths) {
   if (fs.existsSync(path.join(root, filePath))) {
-    fail(`removed SQL document path returned: ${filePath}`);
+    fail(`removed legacy path returned: ${filePath}`);
   }
 }
 
