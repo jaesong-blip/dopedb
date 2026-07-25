@@ -20,10 +20,9 @@ use crate::services::{
     DesktopScriptRunError, DesktopScriptRunReceipt, DesktopSqlClassificationReceipt,
     DesktopSqlClassificationRequest, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
     DesktopSqlPreviewRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
-    DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt, ErdLayout,
-    MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringServiceError,
-    MonitoringStatusReceipt, OperationDecisionReceipt, OperationDecisionRequest,
-    SaveErdLayoutOutcome, SaveErdLayoutRequest, SchemaChangePreviewRequest,
+    DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt, MonitoringProposalReceipt,
+    MonitoringProposalRequest, MonitoringServiceError, MonitoringStatusReceipt,
+    OperationDecisionReceipt, OperationDecisionRequest, SchemaChangePreviewRequest,
     SchemaChangeProposalReceipt, TableScriptContext,
 };
 use crate::state::AppState;
@@ -481,49 +480,6 @@ pub async fn run_schema_change(
         .run(operation_id)
         .await
         .map_err(DesktopScriptRunError::into_error)
-}
-
-fn require_erd(state: &AppState) -> AppResult<()> {
-    if state
-        .features
-        .is_enabled(crate::features::FeatureFlag::ErdV1)
-    {
-        Ok(())
-    } else {
-        Err(AppError::Blocked {
-            reason: "persistent ERD layouts are disabled for this app runtime".into(),
-        })
-    }
-}
-
-#[tauri::command]
-pub async fn list_erd_layouts(state: State<'_, AppState>, id: Uuid) -> AppResult<Vec<ErdLayout>> {
-    require_erd(&state)?;
-    state.services.erd.list(id).await
-}
-
-#[tauri::command]
-pub async fn save_erd_layout(
-    state: State<'_, AppState>,
-    request: SaveErdLayoutRequest,
-) -> AppResult<SaveErdLayoutOutcome> {
-    require_erd(&state)?;
-    state.services.erd.save(request).await
-}
-
-#[tauri::command]
-pub async fn delete_erd_layout(
-    state: State<'_, AppState>,
-    connection_id: Uuid,
-    id: Uuid,
-    expected_revision: i64,
-) -> AppResult<()> {
-    require_erd(&state)?;
-    state
-        .services
-        .erd
-        .delete(connection_id, id, expected_revision)
-        .await
 }
 
 // ── safety settings ──────────────────────────────────────────────────────────

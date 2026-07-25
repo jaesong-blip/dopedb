@@ -17,7 +17,6 @@ import type {
   DocumentPage,
   DocumentOperationProposal,
   DocumentQuery,
-  ErdLayout,
   ExecOutcome,
   HistoryEntry,
   LegacyMcpCleanupExpectation,
@@ -32,8 +31,6 @@ import type {
   ScriptOutcome,
   SafetySettings,
   ScriptOperationProposal,
-  SaveErdLayoutOutcome,
-  SaveErdLayoutRequest,
   SchemaChangeProposal,
   SchemaChangeRequest,
   SqlOperationProposal,
@@ -336,28 +333,6 @@ export function proposeSchemaChange(
 
 export function runSchemaChange(operationId: string): Promise<ScriptOutcome> {
   return invoke("run_schema_change", { operationId });
-}
-
-export function listErdLayouts(id: string): Promise<ErdLayout[]> {
-  return invoke("list_erd_layouts", { id });
-}
-
-export function saveErdLayout(
-  request: SaveErdLayoutRequest,
-): Promise<SaveErdLayoutOutcome> {
-  return invoke("save_erd_layout", { request });
-}
-
-export function deleteErdLayout(
-  connectionId: string,
-  id: string,
-  expectedRevision: number,
-): Promise<void> {
-  return invoke("delete_erd_layout", {
-    connectionId,
-    id,
-    expectedRevision,
-  });
 }
 
 export function getSafety(id: string): Promise<SafetySettings> {

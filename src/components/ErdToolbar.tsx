@@ -1,5 +1,10 @@
 // Flat command bar for ERD layout, persistence, virtual edges, and local export.
-import type { ErdLayout, ErdLayoutMode } from "../ipc/types";
+import {
+  erdLayoutId,
+  type ErdLayout,
+  type ErdLayoutId,
+  type ErdLayoutMode,
+} from "../features/erd/domain";
 import { Icon } from "./Icon";
 import ToolbarMenu from "./ToolbarMenu";
 import { useI18n } from "../lib/i18n";
@@ -25,14 +30,14 @@ export default function ErdToolbar({
   onExport,
 }: {
   layouts: ErdLayout[];
-  activeLayoutId: string | null;
+  activeLayoutId: ErdLayoutId | null;
   name: string;
   mode: ErdLayoutMode;
   compact: boolean;
   neighborhood: boolean;
   dirty: boolean;
   busy: boolean;
-  onSelectLayout: (id: string | null) => void;
+  onSelectLayout: (id: ErdLayoutId | null) => void;
   onName: (name: string) => void;
   onMode: (mode: ErdLayoutMode) => void;
   onAutoLayout: () => void;
@@ -48,7 +53,11 @@ export default function ErdToolbar({
       <div className="erd-toolbar-scroll scrollbar-sleek">
         <select
           value={activeLayoutId ?? ""}
-          onChange={(event) => onSelectLayout(event.target.value || null)}
+          onChange={(event) =>
+            onSelectLayout(
+              event.target.value ? erdLayoutId(event.target.value) : null,
+            )
+          }
           aria-label={t("schema.erdSavedLayouts")}
         >
           <option value="">{t("schema.erdNewLayout")}</option>

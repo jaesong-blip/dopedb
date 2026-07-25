@@ -4,7 +4,6 @@
 mod activity_service;
 mod dashboard_service;
 mod document_service;
-mod erd_service;
 mod legacy_chat_service;
 mod monitoring_service;
 mod operation_service;
@@ -23,7 +22,6 @@ pub(crate) use document_service::{
     AgentDocumentReadError, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
     DesktopDocumentReadError, DocumentReadReceipt, DocumentService, TerminalDocumentReadRequest,
 };
-pub(crate) use erd_service::{ErdLayout, ErdService, SaveErdLayoutOutcome, SaveErdLayoutRequest};
 pub(crate) use legacy_chat_service::LegacyChatService;
 pub(crate) use monitoring_service::{
     MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringService,
@@ -52,6 +50,7 @@ pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 use crate::connection::ConnectionManager;
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
+use crate::features::erd::{self, ErdFeature};
 use crate::features::jobs::{self, JobsFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
@@ -68,7 +67,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) catalog: CatalogFeature,
     pub(crate) dashboard: DashboardService,
     pub(crate) document: DocumentService,
-    pub(crate) erd: ErdService,
+    pub(crate) erd: ErdFeature,
     pub(crate) job: JobsFeature,
     pub(crate) monitoring: MonitoringService,
     pub(crate) operation: OperationService,
@@ -104,7 +103,7 @@ impl ApplicationServices {
             connection_credentials.clone(),
         );
         let sql_documents = sql_documents::compose(store.clone(), connections.clone());
-        let erd = ErdService::new(store.clone(), connections.clone());
+        let erd = erd::compose(store.clone(), connections.clone());
         let job = jobs::compose(
             store.clone(),
             connections.clone(),

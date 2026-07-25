@@ -41,6 +41,8 @@ macro_rules! uuid_identity {
 uuid_identity!(WorkspaceId);
 uuid_identity!(ConnectionId);
 uuid_identity!(SqlDocumentId);
+uuid_identity!(ErdLayoutId);
+uuid_identity!(ErdVirtualRelationId);
 uuid_identity!(JobId);
 uuid_identity!(JobFileCapabilityId);
 uuid_identity!(JobArtifactId);
@@ -52,6 +54,14 @@ uuid_identity!(OperationId);
 pub(crate) struct ConnectionJobId {
     pub(crate) connection_id: ConnectionId,
     pub(crate) job_id: JobId,
+}
+
+/// Complete ERD layout lookup identity. Layout UUIDs are meaningful only inside
+/// the connection whose catalog they present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ConnectionErdLayoutId {
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) layout_id: ErdLayoutId,
 }
 
 /// Public account identity returned by the hosted authentication authority.
@@ -156,6 +166,17 @@ mod tests {
         ] {
             assert_eq!(encoded, format!("\"{raw}\""));
         }
+    }
+
+    #[test]
+    fn erd_layout_identity_keeps_uuid_json() {
+        let raw = Uuid::parse_str("7367d7c9-9b54-465b-b710-f4251b8442fa").unwrap();
+        let encoded = serde_json::to_string(&ErdLayoutId::from(raw)).unwrap();
+        assert_eq!(encoded, format!("\"{raw}\""));
+        assert_eq!(
+            serde_json::to_string(&ErdVirtualRelationId::from(raw)).unwrap(),
+            format!("\"{raw}\"")
+        );
     }
 
     #[test]

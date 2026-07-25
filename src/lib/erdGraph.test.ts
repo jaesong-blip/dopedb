@@ -3,8 +3,11 @@ import type {
   CatalogObjectRef,
   CatalogRelationV2,
   CatalogSnapshot,
-  ErdVirtualRelation,
 } from "../ipc/types";
+import {
+  erdVirtualRelationId,
+  type ErdVirtualRelation,
+} from "../features/erd/domain";
 import {
   buildErdGraph,
   createErdGraphIndex,
@@ -66,7 +69,7 @@ describe("ERD graph projection", () => {
       validated: true,
     });
     const virtual: ErdVirtualRelation = {
-      id: "01900000-0000-7000-8000-000000000001",
+      id: erdVirtualRelationId("01900000-0000-7000-8000-000000000001"),
       fromRelation: teams.object,
       fromColumns: ["owner_id"],
       toRelation: users.object,

@@ -4,8 +4,8 @@ import type {
   CatalogObjectRef,
   CatalogRelationV2,
   CatalogSnapshot,
-  ErdVirtualRelation,
 } from "../ipc/types";
+import type { ErdVirtualRelation } from "../features/erd/domain";
 
 export interface ErdGraphNode {
   id: string;

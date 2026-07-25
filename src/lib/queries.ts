@@ -16,7 +16,6 @@ import {
   legacyMcpCleanupStatus,
   listChatThreads,
   listDashboards,
-  listErdLayouts,
   listHistory,
   platformFeatureFlags,
   refreshCatalog,
@@ -28,6 +27,8 @@ import {
 import type { CatalogTable, Engine, QueryResult } from "../ipc/types";
 import { errMessage } from "../ipc/types";
 import { listDrivers } from "../features/connections/tauriAdapter";
+import { connectionId as asConnectionId } from "../features/connections/domain";
+import { listErdLayouts } from "../features/erd/tauriAdapter";
 import { jobConnectionId } from "../features/jobs/domain";
 import { listJobs } from "../features/jobs/tauriAdapter";
 import { buildCountQuery, buildPageQuery, type GridSort } from "./sqlBuild";
@@ -239,7 +240,7 @@ export function erdLayoutsQuery(connectionId: string) {
   return queryOptions({
     queryKey: qk.erdLayouts(connectionId),
     staleTime: Infinity,
-    queryFn: () => listErdLayouts(connectionId),
+    queryFn: () => listErdLayouts(asConnectionId(connectionId)),
   });
 }
 

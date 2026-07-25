@@ -152,6 +152,30 @@ Every Job feature and adapter file is now below the feature limit, so the Job en
 have been removed from the oversized-file ratchet rather than carried as permanent
 exceptions.
 
+## Sixth migrated slice: ERD persistence
+
+The start audit found one service owning layout validation, connection authorization,
+workspace scoping, optimistic concurrency, and SQLite writes. ERD layout and virtual
+relation UUIDs were also interchangeable with connection and other resource UUIDs,
+while Rust and renderer contracts were re-exported by central command/type facades.
+
+ERD persistence now uses:
+
+```text
+Tauri transport
+  -> ErdUseCases<ConnectionId, ErdLayoutId>
+     -> authority, repository, and identity/time ports
+  -> scope-pinned connection and single-writer SQLite adapters
+```
+
+`ConnectionErdLayoutId` is required for deletes, validation completes before the
+authority boundary, and optimistic conflicts return the current durable layout instead
+of overwriting it. The renderer owns branded ERD IDs and its Tauri adapter beside the
+feature. The former service, central Rust commands/re-exports, and central frontend
+commands/types are deletion gates. Architecture checks require every ERD mutation SQL
+statement to remain in `SqliteErdRepository`, whose runtime state ownership is recorded
+explicitly.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

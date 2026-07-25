@@ -56,6 +56,13 @@
       "writerTokens": [
         "pub(in crate::features::jobs) struct JobRepository"
       ]
+    },
+    {
+      "name": "erdLayouts",
+      "owner": "src-tauri/src/features/erd/adapters/repository.rs",
+      "writerTokens": [
+        "pub(in crate::features::erd) struct SqliteErdRepository"
+      ]
     }
   ]
 }

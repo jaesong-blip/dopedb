@@ -102,6 +102,7 @@ const removedPaths = [
   "src-tauri/src/services/connection_credentials.rs",
   "src-tauri/src/services/terminal_authority.rs",
   "src-tauri/src/services/catalog_service.rs",
+  "src-tauri/src/services/erd_service.rs",
   "src-tauri/src/services/job_service/model.rs",
   "src-tauri/src/services/job_service/mod.rs",
   "src-tauri/src/services/job_service/format.rs",
@@ -160,6 +161,7 @@ for (const token of [
   "SqlDocumentService",
   "ConnectionService",
   "CatalogService",
+  "ErdService",
   "JobService",
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",
@@ -210,6 +212,21 @@ for (const token of jobLedgerSql) {
     );
   }
 }
+for (const token of ["INSERT INTO erd_layouts", "UPDATE erd_layouts"]) {
+  const owners = sourceFiles
+    .filter((file) => file.endsWith(".rs"))
+    .filter((file) => !relative(file).endsWith("_tests.rs"))
+    .filter((file) => fs.readFileSync(file, "utf8").includes(token))
+    .map(relative);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src-tauri/src/features/erd/adapters/repository.rs"
+  ) {
+    fail(
+      `ERD layout SQL ${token} must belong only to the ERD repository adapter, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 
 const coreRustRules = [
   [/crate::connection/, "feature core must not depend on the connection adapter"],
@@ -237,6 +254,26 @@ for (const filePath of [
 ]) {
   requireFile(filePath);
   forbid(filePath, coreRustRules);
+}
+for (const filePath of [
+  "src-tauri/src/features/erd/ports.rs",
+  "src-tauri/src/features/erd/application.rs",
+]) {
+  requireFile(filePath);
+  forbid(filePath, coreRustRules);
+}
+for (const filePath of ["src-tauri/src/features/erd/domain.rs"]) {
+  requireFile(filePath);
+  forbid(
+    filePath,
+    coreRustRules.filter(([pattern]) => pattern.source !== "\\bdopedb_protocol\\b"),
+  );
+  forbid(filePath, [
+    [
+      /\bdopedb_protocol::(?!catalog\b)/,
+      "ERD core may use only canonical catalog object references",
+    ],
+  ]);
 }
 for (const filePath of [
   "src-tauri/src/features/jobs/domain.rs",
@@ -330,11 +367,19 @@ forbid("src-tauri/src/commands/mod.rs", [
   [/\bpub async fn pause_job\b/, "job pause returned to the central command module"],
   [/\bpub async fn cancel_job\b/, "job cancellation returned to the central command module"],
   [/\bpub async fn reveal_job_artifact\b/, "job artifact reveal returned to the central command module"],
+  [/\bpub async fn list_erd_layouts\b/, "ERD list returned to the central command module"],
+  [/\bpub async fn save_erd_layout\b/, "ERD save returned to the central command module"],
+  [/\bpub async fn delete_erd_layout\b/, "ERD delete returned to the central command module"],
 ]);
 forbid("src-tauri/src/features/jobs/transport.rs", [
   [/\bsqlx\b/, "job transport must delegate instead of writing the ledger"],
   [/crate::store/, "job transport must not access the store directly"],
   [/crate::connection/, "job transport must not authorize connections directly"],
+]);
+forbid("src-tauri/src/features/erd/transport.rs", [
+  [/\bsqlx\b/, "ERD transport must delegate instead of writing layouts"],
+  [/crate::store/, "ERD transport must not access the store directly"],
+  [/crate::connection/, "ERD transport must not authorize connections directly"],
 ]);
 for (const filePath of walk("src-tauri/src/features/jobs/application")
   .filter((file) => file.endsWith(".rs"))
@@ -364,6 +409,10 @@ forbid("src-tauri/src/services/mod.rs", [
     /\b(?:JobService|CreateJobRequest|JobDetail|JobFileCapability|JobFormat|JobInputInspection|JobProposal)\b/,
     "central service facade must not re-export feature-owned job contracts",
   ],
+  [
+    /\b(?:ErdService|SaveErdLayoutOutcome|SaveErdLayoutRequest)\b/,
+    "central service facade must not re-export feature-owned ERD contracts",
+  ],
 ]);
 forbid("src-tauri/src/features/sql_documents/transport.rs", [
   [/\bsqlx\b/, "transport must delegate instead of querying SQLite"],
@@ -385,6 +434,7 @@ forbid("src-tauri/src/connection/runtime.rs", [
 for (const filePath of [
   "src/features/connections/domain.ts",
   "src/features/jobs/domain.ts",
+  "src/features/erd/domain.ts",
   "src/features/sqlDocuments/domain.ts",
   "src/features/workspaces/domain.ts",
   "src/features/workspaces/cache.ts",
@@ -512,6 +562,24 @@ for (const command of jobCommands) {
     );
   }
 }
+const erdCommands = [
+  "list_erd_layouts",
+  "save_erd_layout",
+  "delete_erd_layout",
+];
+for (const command of erdCommands) {
+  const owners = frontendSource
+    .filter(([, source]) => source.includes(`"${command}"`))
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/erd/tauriAdapter.ts"
+  ) {
+    fail(
+      `${command}: expected only src/features/erd/tauriAdapter.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 forbid("src/ipc/types.ts", [
   [/\binterface ConnectionProfile\b/, "connection profile returned to the central IPC type file"],
   [/\binterface DriverDescriptor\b/, "driver descriptor returned to the central IPC type file"],
@@ -522,6 +590,11 @@ forbid("src/ipc/types.ts", [
     "job contract returned to the central IPC type file",
   ],
   [/\binterface CreateJobRequest\b/, "job request returned to the central IPC type file"],
+  [
+    /\b(?:interface|type)\s+Erd(?:Layout|LayoutMode|NodePosition|Viewport|CanvasLayout|VirtualRelation)\b/,
+    "ERD contract returned to the central IPC type file",
+  ],
+  [/\binterface SaveErdLayout/, "ERD request/outcome returned to the central IPC type file"],
 ]);
 forbid("src/ipc/commands.ts", [
   [/\bfunction listConnections\b/, "connection commands returned to the central IPC facade"],
@@ -533,6 +606,10 @@ forbid("src/ipc/commands.ts", [
   [
     /\b(?:pickJobInput|pickJobOutput|inspectJobInput|createJob|listJobs|getJob|startJob|pauseJob|cancelJob|revealJobArtifact)\b/,
     "job commands returned to the central IPC facade",
+  ],
+  [
+    /\b(?:listErdLayouts|saveErdLayout|deleteErdLayout)\b/,
+    "ERD commands returned to the central IPC facade",
   ],
 ]);
 for (const [filePath, source] of frontendSource) {

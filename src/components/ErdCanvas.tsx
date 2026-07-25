@@ -22,16 +22,21 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { saveErdLayout } from "../ipc/commands";
 import type {
   CatalogRelationV2,
   CatalogSnapshot,
-  ErdCanvasLayout,
-  ErdLayout,
-  ErdLayoutMode,
-  ErdVirtualRelation,
 } from "../ipc/types";
 import { errMessage } from "../ipc/types";
+import { connectionId } from "../features/connections/domain";
+import {
+  erdVirtualRelationId,
+  type ErdCanvasLayout,
+  type ErdLayout,
+  type ErdLayoutId,
+  type ErdLayoutMode,
+  type ErdVirtualRelation,
+} from "../features/erd/domain";
+import { saveErdLayout } from "../features/erd/tauriAdapter";
 import ErdRelationNode, {
   type ErdFlowNode,
 } from "./ErdRelationNode";
@@ -114,7 +119,7 @@ export default function ErdCanvas({
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const layoutsQuery = useQuery(erdLayoutsQuery(snapshot.connectionId));
-  const [activeLayoutId, setActiveLayoutId] = useState<string | null>(null);
+  const [activeLayoutId, setActiveLayoutId] = useState<ErdLayoutId | null>(null);
   const [revision, setRevision] = useState<number | null>(null);
   const [name, setName] = useState(t("schema.erdDefaultName"));
   const [mode, setMode] = useState<ErdLayoutMode>("physical");
@@ -341,7 +346,7 @@ export default function ErdCanvas({
     [],
   );
 
-  function selectLayout(id: string | null) {
+  function selectLayout(id: ErdLayoutId | null) {
     if (!id) {
       setActiveLayoutId(null);
       setRevision(null);
@@ -382,7 +387,7 @@ export default function ErdCanvas({
     try {
       const outcome = await saveErdLayout({
         id: activeLayoutId,
-        connectionId: snapshot.connectionId,
+        connectionId: connectionId(snapshot.connectionId),
         name,
         mode,
         catalogFingerprint: snapshot.fingerprint,
@@ -438,7 +443,7 @@ export default function ErdCanvas({
     setVirtualRelations((current) => [
       ...current,
       {
-        id: crypto.randomUUID(),
+        id: erdVirtualRelationId(crypto.randomUUID()),
         fromRelation: from.object,
         fromColumns,
         toRelation: to.object,

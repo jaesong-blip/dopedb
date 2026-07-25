@@ -1,11 +1,11 @@
 // Deterministic ERD export independent of the React Flow DOM. SVG is the source
 // artifact; PNG and PDF are derived locally so schema metadata never leaves the app.
+import type { CatalogSnapshot } from "../ipc/types";
 import type {
-  CatalogSnapshot,
   ErdCanvasLayout,
   ErdLayoutMode,
   ErdVirtualRelation,
-} from "../ipc/types";
+} from "../features/erd/domain";
 import type { ErdGraph } from "./erdGraph";
 import type { ErdPositions } from "./erdLayout";
 import { relationDisplayName } from "./erdGraph";
