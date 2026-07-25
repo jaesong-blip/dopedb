@@ -5,12 +5,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteDashboard } from "../../ipc/commands";
 import type {
-  ConnectionProfile,
   Dashboard,
   DashboardKind,
   QueryResult,
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import ConfirmButton from "../../components/ConfirmButton";
 import DashboardVisualizationView from "../../components/DashboardVisualization";
 import { Icon } from "../../components/Icon";

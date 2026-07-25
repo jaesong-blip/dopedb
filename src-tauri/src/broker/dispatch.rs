@@ -1,8 +1,17 @@
 //! Broker envelope validation and transport-only application-service dispatch.
-
-use std::collections::BTreeMap;
-use std::time::Duration;
-
+use crate::error::AppError;
+use crate::features::connections::{AgentConnectionSummary, CliConnectionResolutionError};
+use crate::kernel::identity::AccountScopeId;
+use crate::kernel::TerminalAuthority;
+use crate::model::{Dashboard, DashboardKind, DocumentPage, DocumentQuery, Engine, QueryResult};
+use crate::monitoring::HealthSnapshot;
+use crate::services::{
+    AgentDashboardCommitError, AgentDashboardPrepareError, AgentDashboardPresentation,
+    AgentDocumentReadError, AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError,
+    ApplicationServices, CatalogReadPolicy, TerminalDocumentReadRequest, TerminalQueryPlanRequest,
+    TerminalSqlProposalRequest,
+};
+use crate::skills::SkillManager;
 use dopedb_protocol::{
     decode_arguments, encode_frame, AppOpenCommand, AppOpenResult, CatalogArguments,
     CatalogShowCommand, CatalogSnapshot, CommandName, CommandSpec, ConnectionListCommand,
@@ -23,20 +32,10 @@ use dopedb_protocol::{
     PROTOCOL_MAX, PROTOCOL_MIN,
 };
 use serde::Serialize;
+use std::collections::BTreeMap;
+use std::time::Duration;
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
-
-use crate::error::AppError;
-use crate::model::{Dashboard, DashboardKind, DocumentPage, DocumentQuery, Engine, QueryResult};
-use crate::monitoring::HealthSnapshot;
-use crate::services::{
-    AgentConnectionSummary, AgentDashboardCommitError, AgentDashboardPrepareError,
-    AgentDashboardPresentation, AgentDocumentReadError, AgentQueryPlanError, AgentQueryRunError,
-    AgentQueryRunPrepareError, ApplicationServices, CatalogReadPolicy,
-    CliConnectionResolutionError, TerminalAuthority, TerminalDocumentReadRequest,
-    TerminalQueryPlanRequest, TerminalSqlProposalRequest,
-};
-use crate::skills::SkillManager;
 
 use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegistry};
 
@@ -601,16 +600,16 @@ impl BrokerDispatcher {
         match selector {
             ConnectionSelector::Current => Ok(connection_summary(&current)),
             ConnectionSelector::Id(id) => {
-                if *id == current.id {
+                if *id == Uuid::from(current.id) {
                     Ok(connection_summary(&current))
                 } else {
                     Err(ErrorCode::ScopeDenied)
                 }
             }
-            ConnectionSelector::Name(_) => {
+            ConnectionSelector::Name(name) => {
                 let resolved = services
                     .connections
-                    .resolve_terminal_cli(&authority, selector)
+                    .resolve_terminal_cli(&authority, name)
                     .await
                     .map_err(map_application_error)?;
                 match resolved {
@@ -990,10 +989,11 @@ fn terminal_authority(
 ) -> TerminalAuthority {
     TerminalAuthority {
         terminal_session_id: session.terminal_session_id,
-        workspace_id: session.workspace_id,
-        account_scope: session.account_scope.clone(),
+        workspace_id: session.workspace_id.into(),
+        account_scope: AccountScopeId::new(session.account_scope.clone())
+            .expect("validated account scope"),
         scope_generation: session.scope_generation,
-        connection_id: session.connection_id,
+        connection_id: session.connection_id.into(),
         connection_revision: session.connection_revision,
         client_protocol_version,
     }
@@ -1001,7 +1001,7 @@ fn terminal_authority(
 
 fn connection_summary(summary: &AgentConnectionSummary) -> ConnectionSummary {
     ConnectionSummary {
-        id: summary.id,
+        id: summary.id.into(),
         name: summary.name.clone(),
         engine: database_engine(summary.engine),
         database: summary.database.clone(),

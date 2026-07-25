@@ -39,6 +39,24 @@ App / SQL screen
 The former service file, central IPC wrappers, rollout flag, and direct workbench state
 setters are deletion gates. The architecture check fails if any of them returns.
 
+## Second migrated slice
+
+Saved connections use:
+
+```text
+Tauri / broker transport
+  -> ConnectionUseCases
+     -> repository, authority, driver, credential, and ad-hoc test ports
+  -> SQLite, scope-pinned runtime, driver registry, and keychain adapters
+```
+
+`ConnectionId` now crosses the use-case and Tauri boundaries as a distinct type, and
+Terminal authority moved into the shared kernel with typed workspace, account-scope,
+and connection identities. The former connection service, credential helper, central
+frontend connection commands/types, and service-owned Terminal authority are deletion
+gates. Credential rotation, rollback cleanup, view-only denial, schema-group atomicity,
+and Terminal non-disclosure remain covered by adapter-level tests.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

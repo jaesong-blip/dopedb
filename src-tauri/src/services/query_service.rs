@@ -14,11 +14,12 @@ use uuid::Uuid;
 
 use crate::audit::{self, RecordArgs};
 use crate::connection::{
-    ConnectionAccess, ConnectionContext, ConnectionLease, ConnectionManager,
+    ensure_terminal_pin, ConnectionAccess, ConnectionContext, ConnectionLease, ConnectionManager,
     ConnectionOperationScope, DbPool,
 };
 use crate::error::AppError;
 use crate::executor;
+use crate::kernel::TerminalAuthority;
 use crate::model::{
     Classification, ConnectionProfile, Engine, ExecOutcome, HistoryEntry, PreviewMode,
     PreviewReport, QueryKind, QueryResult, SafetySettings,
@@ -35,7 +36,7 @@ use super::operation_service::{
     actor_for_pin, agent_actor_for_pin, capture_policy, ensure_operation_scope,
     required_confirmation,
 };
-use super::{TerminalAuthority, TerminalQueryRunRegistry};
+use super::TerminalQueryRunRegistry;
 
 /// Lifetime of an agent query plan. A plan is valid at exactly this boundary and
 /// expired only when its monotonic age is greater than this value.
@@ -733,9 +734,7 @@ impl QueryService {
             .await
             .map_err(DesktopSqlInspectionError::Application)?;
         if let Some(authority) = terminal {
-            authority
-                .ensure_pin(&pin)
-                .map_err(DesktopSqlInspectionError::Application)?;
+            ensure_terminal_pin(authority, &pin).map_err(DesktopSqlInspectionError::Application)?;
         }
         let settings = self
             .store
@@ -1372,8 +1371,7 @@ impl QueryService {
             .map_err(AgentQueryPlanError::Application)?;
         let max_rows = bounded_max_rows(request.max_rows, settings.max_rows);
         let operation_pin = context.pin().clone();
-        authority
-            .ensure_pin(&operation_pin)
+        ensure_terminal_pin(&authority, &operation_pin)
             .map_err(AgentQueryPlanError::Application)?;
         let policy =
             capture_agent_read_policy(&operation_pin).map_err(AgentQueryPlanError::Application)?;
@@ -1546,7 +1544,7 @@ impl QueryService {
             }
         };
         let pin = context.pin().clone();
-        if authority.ensure_pin(&pin).is_err() {
+        if ensure_terminal_pin(authority, &pin).is_err() {
             let _ = self
                 .operation
                 .fail(
@@ -1993,12 +1991,12 @@ mod tests {
     use std::collections::HashMap;
     use std::str::FromStr;
 
-    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-    use tempfile::TempDir;
-
     use super::*;
+    use crate::kernel::identity::AccountScopeId;
     use crate::model::{Provider, RiskLevel, WorkspaceConnectionAccess, WorkspaceCredentialMode};
     use crate::store::TEST_SCHEMA;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use tempfile::TempDir;
 
     fn profile(id: Uuid, database: String) -> ConnectionProfile {
         ConnectionProfile {
@@ -2225,12 +2223,13 @@ mod tests {
                 .await
                 .unwrap();
             let pin = context.pin();
+            let account_scope = AccountScopeId::new(pin.scope.account_scope.storage_key()).unwrap();
             TerminalAuthority {
                 terminal_session_id: Uuid::new_v4(),
-                workspace_id: pin.scope.workspace_id,
-                account_scope: pin.scope.account_scope.storage_key().to_owned(),
+                workspace_id: pin.scope.workspace_id.into(),
+                account_scope,
                 scope_generation: pin.scope.generation,
-                connection_id: pin.connection_id,
+                connection_id: pin.connection_id.into(),
                 connection_revision: pin.connection_revision,
                 client_protocol_version: dopedb_protocol::PROTOCOL_MAX,
             }
@@ -3778,7 +3777,6 @@ mod tests {
                 },
             )
             .await;
-
         let mut revised_profile = harness.profile.clone();
         revised_profile.name = "query-service-revised".into();
         harness
@@ -3802,7 +3800,6 @@ mod tests {
         ));
         harness.close().await;
     }
-
     #[tokio::test]
     async fn expired_failure_also_consumes_the_plan() {
         let harness = SqliteHarness::new().await;
@@ -3827,7 +3824,6 @@ mod tests {
                 },
             )
             .await;
-
         assert!(matches!(
             harness
                 .service

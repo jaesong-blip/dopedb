@@ -3,8 +3,9 @@
 // before/after details without coupling the workflow to sidebar expansion state.
 import { useEffect, useMemo, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import type { Catalog, ConnectionProfile } from "../../ipc/types";
+import type { Catalog } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";

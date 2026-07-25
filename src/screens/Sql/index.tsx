@@ -17,7 +17,6 @@ import {
 } from "../../ipc/commands";
 import type {
   AppErrorDetails,
-  ConnectionProfile,
   ExecOutcome,
   PreviewReport,
   SafetySettings,
@@ -26,6 +25,7 @@ import type {
   SqlOperationProposal,
 } from "../../ipc/types";
 import { errDetails, errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import {
   connectionId,
   sqlDocumentId,

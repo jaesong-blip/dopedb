@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Catalog, CatalogTable, ConnectionProfile, Engine } from "../ipc/types";
+import type { Catalog, CatalogTable, Engine } from "../ipc/types";
+import {
+  connectionId,
+  type ConnectionProfile,
+} from "../features/connections/domain";
 import {
   buildConnectionSections,
   compareCatalogs,
@@ -15,7 +19,7 @@ function connection(
   options: Partial<ConnectionProfile> = {},
 ): ConnectionProfile {
   return {
-    id,
+    id: connectionId(id),
     name: id,
     engine: "postgres",
     provider: "generic",

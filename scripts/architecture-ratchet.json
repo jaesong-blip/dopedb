@@ -3,7 +3,7 @@
   "featureFileLineLimit": 500,
   "oversizedFiles": {
     "src-tauri/src/store/mod.rs": 5563,
-    "src-tauri/src/services/query_service.rs": 3847,
+    "src-tauri/src/services/query_service.rs": 3843,
     "src/lib/i18n.tsx": 1981,
     "src-tauri/src/services/script_service.rs": 1939,
     "src-tauri/src/broker/dispatch.rs": 1829,
@@ -11,17 +11,16 @@
     "src-tauri/src/services/job_service/format.rs": 1700,
     "src-tauri/src/services/job_service/worker.rs": 1484,
     "src-tauri/src/services/job_service/mod.rs": 1421,
-    "src-tauri/src/services/document_service.rs": 1410,
+    "src-tauri/src/services/document_service.rs": 1408,
     "src-tauri/src/services/job_service/repository.rs": 1378,
     "src/screens/Connections/DatabaseExplorer.tsx": 1308,
-    "src-tauri/src/commands/mod.rs": 1180,
-    "src/App.tsx": 1171,
+    "src-tauri/src/commands/mod.rs": 1091,
+    "src/App.tsx": 1169,
     "src/screens/Tables/index.tsx": 1143,
-    "src/ipc/types.ts": 1123,
+    "src/ipc/types.ts": 1076,
     "src-tauri/src/services/dashboard_service.rs": 970,
     "src-tauri/src/workspace_auth.rs": 949,
     "src-tauri/src/connection/runtime.rs": 941,
-    "src-tauri/src/services/connection_service.rs": 928,
     "src-tauri/src/skills/inventory.rs": 903
   }
 }

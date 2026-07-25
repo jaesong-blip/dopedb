@@ -3,6 +3,7 @@
 // Argument keys always match the Rust parameter names.
 
 import { Channel, invoke } from "@tauri-apps/api/core";
+import type { ConnectionProfile } from "../features/connections/domain";
 import type {
   AuditSnapshot,
   Catalog,
@@ -13,12 +14,10 @@ import type {
   CliInstallationStatus,
   CliInfo,
   Classification,
-  ConnectionProfile,
   Dashboard,
   DocumentPage,
   DocumentOperationProposal,
   DocumentQuery,
-  DriverDescriptor,
   ErdLayout,
   ExecOutcome,
   HistoryEntry,
@@ -248,48 +247,6 @@ export function bindWorkspaceConnectionCredentials(
   password: string,
 ): Promise<ConnectionProfile> {
   return invoke("bind_workspace_connection_credentials", { id, username, password });
-}
-
-export function listConnections(): Promise<ConnectionProfile[]> {
-  return invoke("list_connections");
-}
-
-export function listDrivers(): Promise<DriverDescriptor[]> {
-  return invoke("list_drivers");
-}
-
-export function installDriver(id: string): Promise<DriverDescriptor> {
-  return invoke("install_driver", { id });
-}
-
-// NOTE(integrator): ConnectionProfile carries no plaintext secret. The optional
-// `password` is passed alongside the profile so the backend can stash it in the
-// OS credential store and set `secretRef`. If upsert_connection does not accept a `password`
-// arg, drop it here and add a dedicated store_secret command.
-export function upsertConnection(
-  profile: ConnectionProfile,
-  password?: string,
-): Promise<ConnectionProfile> {
-  return invoke("upsert_connection", { profile, password });
-}
-
-export function setConnectionsSchemaGroup(
-  ids: string[],
-  schemaGroup: string | null,
-): Promise<ConnectionProfile[]> {
-  return invoke("set_connections_schema_group", { ids, schemaGroup });
-}
-
-export function deleteConnection(id: string): Promise<void> {
-  return invoke("delete_connection", { id });
-}
-
-// Reachability check for an ad-hoc (possibly unsaved) profile. Persists nothing.
-export function testConnectionProfile(
-  profile: ConnectionProfile,
-  password?: string,
-): Promise<void> {
-  return invoke("test_connection_profile", { profile, password });
 }
 
 function getSchema(id: string): Promise<string> {

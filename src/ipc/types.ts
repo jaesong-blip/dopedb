@@ -7,8 +7,6 @@ export type Provider = "auto" | "generic" | "neon" | "planetScale" | "gcpCloudSq
 type WorkspaceKind = "personal" | "team";
 type WorkspaceLifecycleState = "active" | "archived" | "deleted";
 export type WorkspaceRole = "viewer" | "analyst" | "editor" | "admin" | "owner";
-type WorkspaceConnectionAccess = "view" | "read" | "write" | "manage" | "local";
-export type WorkspaceCredentialMode = "local" | "memberLocal" | "managed";
 
 export interface Workspace {
   id: string;
@@ -313,51 +311,6 @@ type WorkspaceLoginPollStatus =
 export interface WorkspaceLoginPoll {
   status: WorkspaceLoginPollStatus;
   user: WorkspaceAuthUser | null;
-}
-
-export interface ConnectionProfile {
-  id: string; // Uuid
-  name: string;
-  engine: Engine;
-  provider: Provider;
-  driverId: string | null;
-  host: string;
-  port: number;
-  database: string;
-  username: string;
-  sslmode: string;
-  extraParams: Record<string, string>;
-  readonlyDefault: boolean;
-  allowWrites: boolean;
-  secretRef: string | null;
-  env: string | null; // "dev" | "staging" | "prod" | null
-  schemaGroup: string | null; // shared group for dev/staging/prod schema comparison
-  workspaceAccess: WorkspaceConnectionAccess;
-  credentialMode: WorkspaceCredentialMode;
-}
-
-// Mirrors src-tauri/src/driver/mod.rs.
-type DriverInstallMode = "bundled" | "managed";
-type DriverInstallState = "installed" | "available" | "planned";
-export type DriverCapability =
-  | "sql"
-  | "documentQuery"
-  | "transactions"
-  | "introspection"
-  | "collections"
-  | "schemaDiff"
-  | "monitoring";
-
-export interface DriverDescriptor {
-  id: string;
-  name: string;
-  engine: Engine;
-  version: string;
-  installMode: DriverInstallMode;
-  installState: DriverInstallState;
-  supportedProviders: Provider[];
-  capabilities: DriverCapability[];
-  recommended: boolean;
 }
 
 export interface SafetySettings {

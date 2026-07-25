@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::connection::ConnectionManager;
 use crate::error::{AppError, AppResult};
+use crate::kernel::TerminalAuthority;
 use crate::model::SafetySettings;
 use crate::operations::{
     canonical_hash, ExactApprovalRequest, LocalApprovalAuthority, OperationActor,
@@ -18,8 +19,6 @@ use crate::operations::{
     OperationRiskLevel, OperationRuntime,
 };
 use crate::store::{AccountScope, PinnedConnection, Store};
-
-use super::TerminalAuthority;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OperationDecisionRequest {
@@ -183,9 +182,9 @@ impl OperationService {
 
 fn ensure_terminal_scope(record: &OperationRecord, scope: &TerminalAuthority) -> AppResult<()> {
     let matches = record.terminal_session_id == Some(scope.terminal_session_id)
-        && record.workspace_id == scope.workspace_id
-        && record.account_scope == scope.account_scope
-        && record.connection_id == scope.connection_id
+        && record.workspace_id == Uuid::from(scope.workspace_id)
+        && record.account_scope == scope.account_scope.as_str()
+        && record.connection_id == Uuid::from(scope.connection_id)
         && record.connection_revision == scope.connection_revision;
     if matches {
         Ok(())

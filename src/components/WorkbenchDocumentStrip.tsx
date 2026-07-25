@@ -1,4 +1,4 @@
-import type { ConnectionProfile } from "../ipc/types";
+import type { ConnectionProfile } from "../features/connections/domain";
 import type { WorkbenchDocument } from "../features/workbench/domain";
 import { tableLabel } from "../lib/tableRef";
 import { useI18n } from "../lib/i18n";

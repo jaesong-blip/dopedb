@@ -1,6 +1,7 @@
 // Pure schema-group construction and catalog comparison. The diff model feeds both
 // compact sidebar summaries and the full group comparison workspace.
-import type { Catalog, CatalogTable, ConnectionProfile } from "../ipc/types";
+import type { Catalog, CatalogTable } from "../ipc/types";
+import type { ConnectionProfile } from "../features/connections/domain";
 import { tableKey } from "./tableRef";
 
 const ENV_ORDER: Record<string, number> = {

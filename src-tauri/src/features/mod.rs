@@ -4,6 +4,7 @@
 //! and other platform adapters. This module is also the composition boundary that
 //! wires concrete adapters into those use cases.
 
+pub(crate) mod connections;
 mod platform_flags;
 pub(crate) mod sql_documents;
 

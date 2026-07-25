@@ -11,8 +11,7 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-
-use super::TerminalAuthority;
+use crate::kernel::TerminalAuthority;
 
 const RUN_CAPABILITY_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_RUN_CAPABILITIES: usize = 4_096;
@@ -79,7 +78,7 @@ impl TerminalQueryRunRegistry {
             return Err(run_not_authorized());
         }
         if capability.terminal_session_id != authority.terminal_session_id
-            || capability.connection_id != authority.connection_id
+            || capability.connection_id != Uuid::from(authority.connection_id)
         {
             return Err(run_not_authorized());
         }
@@ -96,14 +95,15 @@ fn run_not_authorized() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::identity::{AccountScopeId, ConnectionId, WorkspaceId};
 
     fn authority() -> TerminalAuthority {
         TerminalAuthority {
             terminal_session_id: Uuid::new_v4(),
-            workspace_id: Uuid::new_v4(),
-            account_scope: "personal".into(),
+            workspace_id: WorkspaceId::from(Uuid::new_v4()),
+            account_scope: AccountScopeId::new("personal").unwrap(),
             scope_generation: 1,
-            connection_id: Uuid::new_v4(),
+            connection_id: ConnectionId::from(Uuid::new_v4()),
             connection_revision: 1,
             client_protocol_version: 1,
         }
@@ -114,7 +114,11 @@ mod tests {
         let registry = TerminalQueryRunRegistry::default();
         let owner = authority();
         let run_id = Uuid::new_v4();
-        registry.register(run_id, owner.terminal_session_id, owner.connection_id);
+        registry.register(
+            run_id,
+            owner.terminal_session_id,
+            owner.connection_id.into(),
+        );
         registry.authorize(run_id, &owner).unwrap();
 
         let mut other_terminal = owner.clone();
@@ -122,7 +126,7 @@ mod tests {
         assert!(registry.authorize(run_id, &other_terminal).is_err());
 
         let mut other_connection = owner;
-        other_connection.connection_id = Uuid::new_v4();
+        other_connection.connection_id = ConnectionId::from(Uuid::new_v4());
         assert!(registry.authorize(run_id, &other_connection).is_err());
     }
 }

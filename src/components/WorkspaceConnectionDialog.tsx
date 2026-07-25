@@ -7,8 +7,8 @@ import {
   bindWorkspaceConnectionCredentials,
   copyConnectionToWorkspace,
 } from "../ipc/commands";
-import type { ConnectionProfile } from "../ipc/types";
 import { errDetails } from "../ipc/types";
+import type { ConnectionProfile } from "../features/connections/domain";
 import { useI18n } from "../lib/i18n";
 import { qk, workspaceAuthStateQuery, workspaceContextQuery } from "../lib/queries";
 import {

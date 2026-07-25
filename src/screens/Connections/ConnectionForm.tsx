@@ -3,19 +3,19 @@
 // tree that used to live alongside it).
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { pickFile } from "../../ipc/commands";
+import type { Engine, Provider } from "../../ipc/types";
+import { errMessage } from "../../ipc/types";
+import {
+  connectionId,
+  type ConnectionProfile,
+  type DriverDescriptor,
+} from "../../features/connections/domain";
 import {
   installDriver,
-  pickFile,
   testConnectionProfile,
   upsertConnection,
-} from "../../ipc/commands";
-import type {
-  ConnectionProfile,
-  DriverDescriptor,
-  Engine,
-  Provider,
-} from "../../ipc/types";
-import { errMessage } from "../../ipc/types";
+} from "../../features/connections/tauriAdapter";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { useToast } from "../../components/Toast";
@@ -268,7 +268,7 @@ function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
 
 function blank(): ConnectionProfile {
   return {
-    id: crypto.randomUUID(),
+    id: connectionId(crypto.randomUUID()),
     name: "",
     engine: "postgres",
     provider: "auto",

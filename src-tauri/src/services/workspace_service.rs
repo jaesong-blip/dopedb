@@ -16,7 +16,7 @@ use crate::model::{
 use crate::store::Store;
 use crate::workspace_auth;
 
-use super::connection_credentials::{ConnectionCredentialVault, MAX_CONNECTION_CREDENTIAL_BYTES};
+use crate::features::connections::{ConnectionCredentialVault, MAX_CONNECTION_CREDENTIAL_BYTES};
 
 pub(crate) struct WorkspaceConnectionCopyRequest {
     pub(crate) connection_id: Uuid,

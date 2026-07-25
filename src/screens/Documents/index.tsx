@@ -4,8 +4,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { proposeDocumentQuery, runDocumentQuery } from "../../ipc/commands";
-import type { ConnectionProfile, DocumentPage, DocumentQuery, QueryResult } from "../../ipc/types";
+import type { DocumentPage, DocumentQuery, QueryResult } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import ResultToolbar from "../../components/ResultToolbar";

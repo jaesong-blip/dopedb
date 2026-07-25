@@ -3,8 +3,6 @@
 
 mod activity_service;
 mod catalog_service;
-mod connection_credentials;
-mod connection_service;
 mod dashboard_service;
 mod document_service;
 mod erd_service;
@@ -16,16 +14,11 @@ mod query_service;
 mod safety_service;
 mod schema_service;
 mod script_service;
-mod terminal_authority;
 mod terminal_run_registry;
 mod workspace_service;
 
 pub(crate) use activity_service::{ActivityService, AuditSnapshotReceipt, AuditVerdict};
 pub(crate) use catalog_service::{CatalogReadPolicy, CatalogService};
-pub(crate) use connection_service::{
-    AgentConnectionSummary, CliConnectionResolutionError, ConnectionProfileTestRequest,
-    ConnectionService, ConnectionUpsertRequest,
-};
 pub(crate) use dashboard_service::{
     AgentDashboardCommitError, AgentDashboardPrepareError, AgentDashboardPresentation,
     DashboardRunError, DashboardRunReceipt, DashboardRunRequest, DashboardService,
@@ -62,13 +55,13 @@ pub(crate) use script_service::{
     DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
     DesktopScriptRunReceipt, SchemaScriptContext, ScriptService, TableScriptContext,
 };
-pub(crate) use terminal_authority::TerminalAuthority;
 pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 pub(crate) use workspace_service::{
     WorkspaceConnectionCopyRequest, WorkspaceCredentialBindingRequest, WorkspaceService,
 };
 
 use crate::connection::ConnectionManager;
+use crate::features::connections::{self as connection_feature, ConnectionsFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::operations::OperationRuntime;
 use crate::store::Store;
@@ -79,7 +72,7 @@ use crate::store::Store;
 pub(crate) struct ApplicationServices {
     pub(crate) activity: ActivityService,
     pub(crate) legacy_chat: LegacyChatService,
-    pub(crate) connections: ConnectionService,
+    pub(crate) connections: ConnectionsFeature,
     pub(crate) catalog: CatalogService,
     pub(crate) dashboard: DashboardService,
     pub(crate) document: DocumentService,
@@ -101,13 +94,18 @@ impl ApplicationServices {
         connections: ConnectionManager,
         operation: OperationRuntime,
     ) -> Self {
-        let connection_credentials = connection_credentials::system_connection_credentials();
+        let connection_credentials = connection_feature::system_connection_credentials();
         let terminal_runs = TerminalQueryRunRegistry::default();
         let operation_service =
             OperationService::new(store.clone(), connections.clone(), operation.clone());
         let catalog = CatalogService::new(store.clone(), connections.clone());
         let script = ScriptService::new(store.clone(), connections.clone(), operation.clone());
         let schema = SchemaService::new(catalog.clone(), script.clone());
+        let connection_feature = connection_feature::compose(
+            store.clone(),
+            connections.clone(),
+            connection_credentials.clone(),
+        );
         let sql_documents = sql_documents::compose(store.clone(), connections.clone());
         let erd = ErdService::new(store.clone(), connections.clone());
         let job = JobService::new(
@@ -119,11 +117,7 @@ impl ApplicationServices {
         Self {
             activity: ActivityService::new(store.clone()),
             legacy_chat: LegacyChatService::new(store.clone()),
-            connections: ConnectionService::new(
-                store.clone(),
-                connections.clone(),
-                connection_credentials.clone(),
-            ),
+            connections: connection_feature,
             catalog,
             dashboard: DashboardService::new(
                 store.clone(),

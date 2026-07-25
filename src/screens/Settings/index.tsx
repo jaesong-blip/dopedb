@@ -2,7 +2,7 @@
 // Kept outside the data tabs so navigation remains focused on the selected database.
 import { useEffect, useRef, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
-import type { ConnectionProfile } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import InfoTip from "../../components/InfoTip";
 import { useI18n } from "../../lib/i18n";
 import AgentTools from "./AgentTools";

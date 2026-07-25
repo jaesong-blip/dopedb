@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import type { ConnectionProfile } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../Icon";
 import {
   agentChatMessagesQuery,

@@ -3,12 +3,12 @@
 // A stale/unknown driverId falls back the same way ConnectionForm's activeDriver does
 // (recommended driver for the engine, then the engine's first driver) so the two never
 // disagree; only no driver at all for the engine fails closed to an empty set.
+import type { Engine } from "../ipc/types";
 import type {
   ConnectionProfile,
   DriverCapability,
   DriverDescriptor,
-  Engine,
-} from "../ipc/types";
+} from "../features/connections/domain";
 
 function connectionCapabilities(
   drivers: DriverDescriptor[],

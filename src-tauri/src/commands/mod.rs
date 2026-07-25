@@ -19,19 +19,19 @@ use crate::model::{
     WorkspaceFeatureState, WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspaceRole,
 };
 use crate::services::{
-    AuditSnapshotReceipt, AuditVerdict, CatalogReadPolicy, ConnectionProfileTestRequest,
-    ConnectionUpsertRequest, CreateJobRequest, DashboardRunError, DashboardRunReceipt,
-    DashboardRunRequest, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
-    DesktopDocumentReadError, DesktopScriptProposalReceipt, DesktopScriptProposalRequest,
-    DesktopScriptRunError, DesktopScriptRunReceipt, DesktopSqlClassificationReceipt,
-    DesktopSqlClassificationRequest, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
-    DesktopSqlPreviewRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
-    DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt, ErdLayout, Job, JobDetail,
-    JobFileCapability, JobFormat, JobInputInspection, JobProposal, MonitoringProposalReceipt,
-    MonitoringProposalRequest, MonitoringServiceError, MonitoringStatusReceipt,
-    OperationDecisionReceipt, OperationDecisionRequest, SaveErdLayoutOutcome, SaveErdLayoutRequest,
-    SchemaChangePreviewRequest, SchemaChangeProposalReceipt, TableScriptContext,
-    WorkspaceConnectionCopyRequest, WorkspaceCredentialBindingRequest,
+    AuditSnapshotReceipt, AuditVerdict, CatalogReadPolicy, CreateJobRequest, DashboardRunError,
+    DashboardRunReceipt, DashboardRunRequest, DesktopDocumentProposalReceipt,
+    DesktopDocumentProposalRequest, DesktopDocumentReadError, DesktopScriptProposalReceipt,
+    DesktopScriptProposalRequest, DesktopScriptRunError, DesktopScriptRunReceipt,
+    DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest, DesktopSqlInspectionError,
+    DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest, DesktopSqlProposalReceipt,
+    DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt,
+    ErdLayout, Job, JobDetail, JobFileCapability, JobFormat, JobInputInspection, JobProposal,
+    MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringServiceError,
+    MonitoringStatusReceipt, OperationDecisionReceipt, OperationDecisionRequest,
+    SaveErdLayoutOutcome, SaveErdLayoutRequest, SchemaChangePreviewRequest,
+    SchemaChangeProposalReceipt, TableScriptContext, WorkspaceConnectionCopyRequest,
+    WorkspaceCredentialBindingRequest,
 };
 use crate::state::AppState;
 
@@ -368,95 +368,6 @@ pub async fn bind_workspace_connection_credentials(
         .await?;
     state.terminals.stop_connection(id, &app);
     Ok(profile)
-}
-
-// ── connection CRUD ──────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn list_drivers(state: State<'_, AppState>) -> Vec<crate::driver::DriverDescriptor> {
-    state.services.connections.list_drivers()
-}
-
-#[tauri::command]
-pub fn install_driver(
-    state: State<'_, AppState>,
-    id: String,
-) -> AppResult<crate::driver::DriverDescriptor> {
-    state.services.connections.install_driver(&id)
-}
-
-#[tauri::command]
-pub async fn list_connections(state: State<'_, AppState>) -> AppResult<Vec<ConnectionProfile>> {
-    state.services.connections.list_profiles().await
-}
-
-#[tauri::command]
-pub async fn upsert_connection(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    profile: ConnectionProfile,
-    password: Option<String>,
-) -> AppResult<ConnectionProfile> {
-    let saved = state
-        .services
-        .connections
-        .upsert(ConnectionUpsertRequest {
-            profile,
-            password: password.map(Zeroizing::new),
-        })
-        .await?;
-    state.terminals.stop_connection(saved.id, &app);
-    Ok(saved)
-}
-
-#[tauri::command]
-pub async fn set_connections_schema_group(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    ids: Vec<Uuid>,
-    schema_group: Option<String>,
-) -> AppResult<Vec<ConnectionProfile>> {
-    let profiles = state
-        .services
-        .connections
-        .set_schema_group(ids.clone(), schema_group)
-        .await?;
-    for id in ids {
-        state.terminals.stop_connection(id, &app);
-    }
-    Ok(profiles)
-}
-
-#[tauri::command]
-pub async fn delete_connection(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    id: Uuid,
-) -> AppResult<()> {
-    state.services.connections.delete(id).await?;
-    state.terminals.stop_connection(id, &app);
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn test_connection(state: State<'_, AppState>, id: Uuid) -> AppResult<()> {
-    state.services.connections.test(id).await
-}
-
-#[tauri::command]
-pub async fn test_connection_profile(
-    state: State<'_, AppState>,
-    profile: ConnectionProfile,
-    password: Option<String>,
-) -> AppResult<()> {
-    state
-        .services
-        .connections
-        .test_profile(ConnectionProfileTestRequest {
-            profile,
-            password: password.map(Zeroizing::new),
-        })
-        .await
 }
 
 // ── saved dashboards ─────────────────────────────────────────────────────────

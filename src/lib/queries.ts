@@ -18,7 +18,6 @@ import {
   legacyMcpCleanupStatus,
   listChatThreads,
   listDashboards,
-  listDrivers,
   listErdLayouts,
   listHistory,
   listJobs,
@@ -33,6 +32,7 @@ import {
 } from "../ipc/commands";
 import type { CatalogTable, Engine, QueryResult } from "../ipc/types";
 import { errMessage } from "../ipc/types";
+import { listDrivers } from "../features/connections/tauriAdapter";
 import { buildCountQuery, buildPageQuery, type GridSort } from "./sqlBuild";
 import { tableKey } from "./tableRef";
 import { WORKSPACE_AUTH_RECHECK_MS } from "./workspaceAuthLifecycle";

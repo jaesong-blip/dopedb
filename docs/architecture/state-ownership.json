@@ -11,5 +11,15 @@
         "useState<WorkbenchDocument"
       ]
     }
+  ],
+  "runtimeStates": [
+    {
+      "name": "connectionPools",
+      "owner": "src-tauri/src/connection/runtime.rs",
+      "writerTokens": [
+        "struct ConnectionManagerInner",
+        "slots.remove("
+      ]
+    }
   ]
 }

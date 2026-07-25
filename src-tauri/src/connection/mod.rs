@@ -12,7 +12,7 @@ pub use crate::driver::connect;
 pub use keychain::{delete_secret, fetch_secret, store_secret};
 pub use pool::{DbPool, LiveConnection};
 pub(crate) use runtime::{
-    ConnectionAccess, ConnectionContext, ConnectionLease, ConnectionManager,
+    ConnectionAccess, ConnectionContext, ConnectionLease, ConnectionManager, ConnectionMutation,
     ConnectionOperationScope,
 };
 
@@ -21,8 +21,29 @@ pub(crate) use runtime::{
 pub use pool::DbPool as Pool;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::TerminalAuthority;
 use crate::model::{ConnectionProfile, WorkspaceConnectionAccess, WorkspaceCredentialMode};
+use crate::store::PinnedConnection;
 use uuid::Uuid;
+
+/// Validate a Terminal capability against the exact scope-pinned connection snapshot.
+pub(crate) fn ensure_terminal_pin(
+    authority: &TerminalAuthority,
+    pin: &PinnedConnection,
+) -> AppResult<()> {
+    let matches = pin.scope.workspace_id == Uuid::from(authority.workspace_id)
+        && pin.scope.account_scope.storage_key() == authority.account_scope.as_str()
+        && pin.scope.generation == authority.scope_generation
+        && pin.connection_id == Uuid::from(authority.connection_id)
+        && pin.connection_revision == authority.connection_revision;
+    if matches {
+        Ok(())
+    } else {
+        Err(AppError::Blocked {
+            reason: "Terminal connection authority is no longer current".into(),
+        })
+    }
+}
 
 /// Resolve the credential item referenced by a profile. Shared templates must carry
 /// an account-specific binding; they never fall back to the connection UUID where a

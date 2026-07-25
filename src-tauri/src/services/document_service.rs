@@ -13,11 +13,12 @@ use uuid::Uuid;
 
 use crate::audit::{self, RecordArgs};
 use crate::connection::{
-    ConnectionAccess, ConnectionContext, ConnectionLease, ConnectionManager,
+    ensure_terminal_pin, ConnectionAccess, ConnectionContext, ConnectionLease, ConnectionManager,
     ConnectionOperationScope,
 };
 use crate::error::AppError;
 use crate::executor;
+use crate::kernel::TerminalAuthority;
 #[cfg(test)]
 use crate::model::Engine;
 use crate::model::{DocumentPage, DocumentQuery, HistoryEntry, QueryKind, SafetySettings};
@@ -32,8 +33,6 @@ use super::operation_service::{
     actor_for_pin, agent_actor_for_pin, capture_policy, ensure_operation_scope,
 };
 use super::query_service::{MAX_AGENT_ROWS, QUERY_PLAN_TTL};
-use super::TerminalAuthority;
-
 const MAX_DESKTOP_ROWS: u64 = 100_000;
 
 #[derive(Debug, Clone)]
@@ -279,9 +278,7 @@ impl DocumentService {
             .await
             .map_err(AgentDocumentReadError::Application)?;
         let pin = authority.pin().clone();
-        request
-            .authority
-            .ensure_pin(&pin)
+        ensure_terminal_pin(&request.authority, &pin)
             .map_err(AgentDocumentReadError::Application)?;
         let engine = pin.profile.engine;
         if !engine.is_document() {
@@ -997,6 +994,7 @@ mod tests {
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
     use super::*;
+    use crate::kernel::identity::AccountScopeId;
     use crate::model::{
         ConnectionProfile, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
     };
@@ -1107,12 +1105,13 @@ mod tests {
                 .await
                 .unwrap();
             let pin = context.pin();
+            let account_scope = AccountScopeId::new(pin.scope.account_scope.storage_key()).unwrap();
             TerminalAuthority {
                 terminal_session_id: Uuid::new_v4(),
-                workspace_id: pin.scope.workspace_id,
-                account_scope: pin.scope.account_scope.storage_key().to_owned(),
+                workspace_id: pin.scope.workspace_id.into(),
+                account_scope,
                 scope_generation: pin.scope.generation,
-                connection_id: pin.connection_id,
+                connection_id: pin.connection_id.into(),
                 connection_revision: pin.connection_revision,
                 client_protocol_version: dopedb_protocol::PROTOCOL_MAX,
             }
@@ -1367,7 +1366,6 @@ mod tests {
         assert_eq!(history[0].status, "error");
         assert_eq!(history[0].origin, "agent");
         assert_eq!(history[0].error.as_deref(), Some("backend unavailable"));
-
         let (audit, chain_ok, first_bad) = audit::snapshot(&harness.store, harness.connection_id)
             .await
             .unwrap();

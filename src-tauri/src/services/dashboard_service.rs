@@ -2,23 +2,24 @@
 
 use std::fmt;
 
-use chrono::Utc;
-use uuid::Uuid;
-
 use crate::audit::{self, RecordArgs};
 use crate::connection::{
-    ConnectionAccess, ConnectionLease, ConnectionManager, ConnectionOperationScope, DbPool,
+    ensure_terminal_pin, ConnectionAccess, ConnectionLease, ConnectionManager,
+    ConnectionOperationScope, DbPool,
 };
 use crate::error::{AppError, AppResult};
 use crate::executor;
+use crate::kernel::TerminalAuthority;
 use crate::model::{
     Dashboard, DashboardDraft, DashboardKind, DashboardVisualization, HistoryEntry, QueryKind,
     QueryResult,
 };
 use crate::safety::{self, PoolRef};
 use crate::store::{PinnedConnection, Store};
+use chrono::Utc;
+use uuid::Uuid;
 
-use super::{TerminalAuthority, TerminalQueryRunRegistry};
+use super::TerminalQueryRunRegistry;
 
 fn is_eligible_terminal_run(source: &HistoryEntry) -> bool {
     source.origin == "agent" && source.status == "ok" && matches!(source.kind, QueryKind::Read)
@@ -404,8 +405,7 @@ impl DashboardService {
             .authorize(query_run_id, authority)
             .map_err(AgentDashboardPrepareError::Application)?;
         let prepared = self.prepare_create(query_run_id, presentation).await?;
-        authority
-            .ensure_pin(&prepared.connection)
+        ensure_terminal_pin(authority, &prepared.connection)
             .map_err(AgentDashboardPrepareError::Application)?;
         Ok(prepared)
     }

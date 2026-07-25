@@ -2,8 +2,8 @@
 // append-only audit log remains available as lazy-loaded security detail.
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ConnectionProfile } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon, type IconName } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";

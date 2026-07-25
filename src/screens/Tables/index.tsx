@@ -6,21 +6,21 @@
 // approval / audit pipeline. Reads still auto-run and never need approval.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type {
-  CatalogTable,
-  ConnectionProfile,
-  QueryResult,
-  SafetySettings,
-  ScriptOperationProposal,
-  ScriptOutcome,
-} from "../../ipc/types";
-import { errMessage } from "../../ipc/types";
 import {
   approveOperation,
   proposeTableChanges,
   rejectOperation,
   runScript,
 } from "../../ipc/commands";
+import type {
+  CatalogTable,
+  QueryResult,
+  SafetySettings,
+  ScriptOperationProposal,
+  ScriptOutcome,
+} from "../../ipc/types";
+import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import CellViewer from "../../components/CellViewer";

@@ -2,13 +2,12 @@
 
 use uuid::Uuid;
 
-use crate::connection::{ConnectionAccess, ConnectionManager};
+use crate::connection::{ensure_terminal_pin, ConnectionAccess, ConnectionManager};
 use crate::error::AppResult;
 use crate::introspect::{self, Catalog, CatalogReadMode};
+use crate::kernel::TerminalAuthority;
 use crate::store::Store;
 use dopedb_protocol::CatalogSnapshot;
-
-use super::TerminalAuthority;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CatalogReadPolicy {
@@ -65,10 +64,11 @@ impl CatalogService {
     ) -> AppResult<CatalogSnapshot> {
         let authority_context = self
             .connections
-            .pin(authority.connection_id, ConnectionAccess::Read)
+            .pin(authority.connection_id.into(), ConnectionAccess::Read)
             .await?;
-        authority.ensure_pin(authority_context.pin())?;
-        self.load_snapshot(authority.connection_id, policy).await
+        ensure_terminal_pin(authority, authority_context.pin())?;
+        self.load_snapshot(authority.connection_id.into(), policy)
+            .await
     }
 
     pub(crate) async fn table_ddl(

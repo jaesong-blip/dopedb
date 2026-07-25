@@ -11,17 +11,15 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useQuery } from "@tanstack/react-query";
-import {
-  getSafety,
-  listConnections,
-} from "./ipc/commands";
+import { getSafety } from "./ipc/commands";
 import type {
   CatalogTable,
-  ConnectionProfile,
   Dashboard,
   SafetySettings,
 } from "./ipc/types";
 import { errMessage } from "./ipc/types";
+import type { ConnectionProfile } from "./features/connections/domain";
+import { listConnections } from "./features/connections/tauriAdapter";
 import type { SqlDocument } from "./features/sqlDocuments/domain";
 import { tauriSqlDocumentGateway } from "./features/sqlDocuments/tauriAdapter";
 import {

@@ -227,9 +227,15 @@ dopedb-protocol/
     version.rs
 
 src-tauri/src/
+  features/
+    connections/
+      domain.rs
+      application.rs
+      ports.rs
+      adapters.rs
+      transport.rs
   services/
     mod.rs
-    connection_service.rs
     catalog_service.rs
     query_service.rs
     dashboard_service.rs

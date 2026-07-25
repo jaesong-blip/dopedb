@@ -1,11 +1,11 @@
 // Displays immutable session scope and lifecycle controls above the PTY surface.
 // Scope mismatch is explicit so a connection switch can never silently retarget a session.
 import type {
-  ConnectionProfile,
   SkillInstallState,
   TerminalProfile,
   TerminalSessionSummary,
 } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
 import { terminalSessionIsRunning } from "./terminalState";

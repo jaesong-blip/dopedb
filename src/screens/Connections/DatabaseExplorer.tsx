@@ -10,19 +10,19 @@ import {
   type ReactNode,
 } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import {
-  deleteConnection,
-  getTableDdl,
-  setConnectionsSchemaGroup,
-} from "../../ipc/commands";
+import { getTableDdl } from "../../ipc/commands";
 import type {
   Catalog,
   CatalogObject,
   CatalogObjectKind,
   CatalogTable,
-  ConnectionProfile,
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionId, ConnectionProfile } from "../../features/connections/domain";
+import {
+  deleteConnection,
+  setConnectionsSchemaGroup,
+} from "../../features/connections/tauriAdapter";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { catalogQuery, fetchFreshCatalog, qk } from "../../lib/queries";
 import {
@@ -441,7 +441,7 @@ export function DatabaseExplorer({
     );
   }
 
-  async function saveSchemaGroupUpdates(ids: string[], schemaGroup: string) {
+  async function saveSchemaGroupUpdates(ids: ConnectionId[], schemaGroup: string) {
     const originals = ids
       .map((id) => connectionById(id))
       .filter((conn): conn is ConnectionProfile => !!conn);

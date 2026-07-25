@@ -3,63 +3,14 @@
 //! packs use the same metadata contract as bundled drivers, without pretending Rust
 //! crates can be hot-loaded like JDBC jars.
 
-use serde::{Deserialize, Serialize};
-
 use crate::connection::pool::connect_sqlx;
 use crate::connection::providers;
 use crate::connection::Live;
 use crate::error::{AppError, AppResult};
+use crate::features::connections::{
+    DriverCapability, DriverDescriptor, DriverInstallMode, DriverInstallState,
+};
 use crate::model::{ConnectionProfile, Engine, Provider};
-
-/// How a driver reaches the local installation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DriverInstallMode {
-    /// Compiled into the signed application bundle.
-    Bundled,
-    /// Installed as a separately verified driver-pack sidecar.
-    Managed,
-}
-
-/// Current local availability of a driver.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DriverInstallState {
-    Installed,
-    Available,
-    /// Listed for roadmap visibility but not downloadable or usable in this build.
-    Planned,
-}
-
-/// Features exposed by a driver adapter. Higher layers ask for capabilities instead of
-/// matching on driver ids, so document and graph engines can return different surfaces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DriverCapability {
-    Sql,
-    DocumentQuery,
-    Transactions,
-    Introspection,
-    Collections,
-    SchemaDiff,
-    Monitoring,
-}
-
-/// Serializable driver metadata used by both the connection form and runtime resolver.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DriverDescriptor {
-    pub id: String,
-    pub name: String,
-    pub engine: Engine,
-    pub version: String,
-    pub install_mode: DriverInstallMode,
-    pub install_state: DriverInstallState,
-    pub supported_providers: Vec<Provider>,
-    pub capabilities: Vec<DriverCapability>,
-    /// Registry preference among compatible drivers. Registry order breaks future ties.
-    pub recommended: bool,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RuntimeAdapter {

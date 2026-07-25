@@ -5,10 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   CatalogRelationV2,
   CatalogTable,
-  ConnectionProfile,
   SafetySettings,
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import Skeleton from "../../components/Skeleton";

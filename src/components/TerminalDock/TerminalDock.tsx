@@ -19,7 +19,6 @@ import {
   terminalRestart,
 } from "../../ipc/commands";
 import type {
-  ConnectionProfile,
   SkillInstallState,
   SkillStatus,
   TerminalOutputChunk,
@@ -28,6 +27,7 @@ import type {
   TerminalStateEvent,
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
 import LegacyChatArchiveDialog from "./LegacyChatArchiveDialog";
