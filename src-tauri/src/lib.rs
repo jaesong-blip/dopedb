@@ -113,6 +113,7 @@ pub fn run() {
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_kill,
+            terminal::terminal_close,
             terminal::terminal_restart,
             terminal::terminal_rename,
             terminal::terminal_shutdown_all,

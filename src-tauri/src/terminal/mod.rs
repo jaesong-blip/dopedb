@@ -135,6 +135,15 @@ pub async fn terminal_kill(
 }
 
 #[tauri::command]
+pub async fn terminal_close(id: Uuid, state: State<'_, AppState>, app: AppHandle) -> AppResult<()> {
+    require_terminal(&state)?;
+    let manager = state.terminals.clone();
+    tokio::task::spawn_blocking(move || manager.close(id, &app))
+        .await
+        .map_err(|_| AppError::Config("the Terminal close worker stopped unexpectedly".into()))?
+}
+
+#[tauri::command]
 pub async fn terminal_restart(
     id: Uuid,
     on_output: Channel<TerminalOutputChunk>,

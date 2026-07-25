@@ -36,6 +36,7 @@ import ErdRelationNode, {
   type ErdFlowNode,
 } from "./ErdRelationNode";
 import ErdToolbar from "./ErdToolbar";
+import { Icon } from "./Icon";
 import {
   buildErdGraph,
   createErdGraphIndex,
@@ -62,6 +63,7 @@ const AUTO_COMPACT_THRESHOLD = 100;
 const MINIMAP_THRESHOLD = 500;
 const MAX_AUTO_LAYOUT_NODES = 2_000;
 const MAX_RENDERED_NODES = 3_000;
+const BACKGROUND_MIN_ZOOM = 0.22;
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 const nodeTypes = { relation: ErdRelationNode };
 
@@ -119,7 +121,9 @@ export default function ErdCanvas({
   const [compact, setCompact] = useState(
     snapshot.relations.length > AUTO_COMPACT_THRESHOLD,
   );
-  const [neighborhood, setNeighborhood] = useState(false);
+  const [neighborhood, setNeighborhood] = useState(
+    snapshot.relations.length > AUTO_COMPACT_THRESHOLD,
+  );
   const [virtualRelations, setVirtualRelations] = useState<
     ErdVirtualRelation[]
   >([]);
@@ -135,6 +139,7 @@ export default function ErdCanvas({
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [layoutWarning, setLayoutWarning] = useState<string | null>(null);
   const [virtualEditorOpen, setVirtualEditorOpen] = useState(false);
   const [virtualFrom, setVirtualFrom] = useState("");
   const [virtualTo, setVirtualTo] = useState("");
@@ -146,12 +151,17 @@ export default function ErdCanvas({
   const initializedFor = useRef("");
   const deferredFilter = useDeferredValue(filter);
   const graphIndex = useMemo(() => createErdGraphIndex(snapshot), [snapshot]);
+  const neighborhoodKey =
+    selectedKey ??
+    (neighborhood && snapshot.relations[0]
+      ? erdRelationKey(snapshot.relations[0].object)
+      : null);
 
   const graph = useMemo(
     () =>
       buildErdGraph(snapshot, virtualRelations, {
         filter: deferredFilter,
-        neighborhoodOf: neighborhood ? selectedKey : null,
+        neighborhoodOf: neighborhood ? neighborhoodKey : null,
         limit: MAX_RENDERED_NODES,
         index: graphIndex,
       }),
@@ -159,7 +169,7 @@ export default function ErdCanvas({
       deferredFilter,
       graphIndex,
       neighborhood,
-      selectedKey,
+      neighborhoodKey,
       snapshot,
       virtualRelations,
     ],
@@ -229,13 +239,16 @@ export default function ErdCanvas({
     setBusy(true);
     setError(null);
     try {
-      const next = await requestErdLayout(
+      const result = await requestErdLayout(
         graph.nodes,
         graph.edges,
         compact,
         controller.signal,
       );
-      setPositions((current) => ({ ...current, ...next }));
+      setPositions((current) => ({ ...current, ...result.positions }));
+      setLayoutWarning(
+        result.fallback ? t("schema.erdLayoutFallback") : null,
+      );
       setDirty(true);
       window.requestAnimationFrame(() => {
         void flowRef.current?.fitView({ padding: 0.12, duration: 240 });
@@ -268,7 +281,9 @@ export default function ErdCanvas({
       setRevision(layout.revision);
       setName(layout.name);
       setMode(layout.mode);
+      setNeighborhood(false);
       setDirty(false);
+      setLayoutWarning(null);
       setError(
         layout.catalogFingerprint === snapshot.fingerprint
           ? null
@@ -297,6 +312,7 @@ export default function ErdCanvas({
     setRevision(null);
     setPositions(mergePositions(graphRelations, {}));
     setCompact(snapshot.relations.length > AUTO_COMPACT_THRESHOLD);
+    setNeighborhood(snapshot.relations.length > AUTO_COMPACT_THRESHOLD);
     setVirtualRelations([]);
     setDirty(false);
     void autoLayout();
@@ -314,6 +330,10 @@ export default function ErdCanvas({
     setPositions((current) => mergePositions(graphRelations, current));
   }, [graphRelations]);
 
+  useEffect(() => {
+    if (deferredFilter.trim()) setNeighborhood(false);
+  }, [deferredFilter]);
+
   useEffect(
     () => () => {
       layoutAbort.current?.abort();
@@ -329,6 +349,8 @@ export default function ErdCanvas({
       setMode("physical");
       setVirtualRelations([]);
       setPositions(mergePositions(graphRelations, {}));
+      setNeighborhood(snapshot.relations.length > AUTO_COMPACT_THRESHOLD);
+      setLayoutWarning(null);
       setDirty(true);
       return;
     }
@@ -577,6 +599,21 @@ export default function ErdCanvas({
       )}
 
       {error && <div className="error erd-error">{error}</div>}
+      {layoutWarning && (
+        <div className="erd-layout-warning" role="status">
+          <Icon name="info" />
+          <span>{layoutWarning}</span>
+          <button
+            type="button"
+            className="btn small"
+            disabled={busy}
+            onClick={() => void autoLayout()}
+          >
+            <Icon name="refresh" />
+            {t("common.refresh")}
+          </button>
+        </div>
+      )}
       {layoutsQuery.error && (
         <div className="error erd-error">
           {errMessage(layoutsQuery.error)}
@@ -604,11 +641,13 @@ export default function ErdCanvas({
           fitViewOptions={{ padding: 0.12 }}
           proOptions={{ hideAttribution: true }}
         >
-          <Background
-            variant={BackgroundVariant.Lines}
-            gap={24}
-            size={1}
-          />
+          {viewport.zoom >= BACKGROUND_MIN_ZOOM && (
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={32}
+              size={1}
+            />
+          )}
           <Controls showInteractive={false} />
           {flowNodes.length <= MINIMAP_THRESHOLD && (
             <MiniMap pannable zoomable />
