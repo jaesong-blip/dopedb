@@ -5,10 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   approveOperation,
-  previewSchemaChange,
-  proposeSchemaChange,
   rejectOperation,
-  runSchemaChange,
 } from "../../ipc/commands";
 import type {
   CatalogConstraint,
@@ -16,15 +13,23 @@ import type {
   CatalogObjectRef,
   CatalogRelationV2,
   CatalogSnapshot,
-  DdlDefaultChange,
-  DdlPlan,
   Engine,
   SafetySettings,
+} from "../../ipc/types";
+import { errMessage } from "../../ipc/types";
+import { connectionId as asConnectionId } from "../../features/connections/domain";
+import type {
+  DdlDefaultChange,
+  DdlPlan,
   SchemaChange,
   SchemaChangeProposal,
   SchemaChangeRequest,
-} from "../../ipc/types";
-import { errMessage } from "../../ipc/types";
+} from "../../features/schemaEditor/domain";
+import {
+  previewSchemaChange,
+  proposeSchemaChange,
+  runSchemaChange,
+} from "../../features/schemaEditor/tauriAdapter";
 import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
 import { useToast } from "../../components/Toast";
@@ -345,7 +350,9 @@ export default function SchemaEditor({
     setError(null);
     setProposal(null);
     try {
-      setPlan(await previewSchemaChange(connectionId, buildRequest()));
+      setPlan(
+        await previewSchemaChange(asConnectionId(connectionId), buildRequest()),
+      );
     } catch (cause) {
       setPlan(null);
       setError(errMessage(cause));
@@ -358,7 +365,10 @@ export default function SchemaEditor({
     setBusy(true);
     setError(null);
     try {
-      const next = await proposeSchemaChange(connectionId, buildRequest());
+      const next = await proposeSchemaChange(
+        asConnectionId(connectionId),
+        buildRequest(),
+      );
       setProposal(next);
       setPlan(next.plan);
     } catch (cause) {

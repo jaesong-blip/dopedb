@@ -27,12 +27,9 @@ import type {
   OperationDecision,
   PlatformFeatureFlags,
   PreviewReport,
-  DdlPlan,
   ScriptOutcome,
   SafetySettings,
   ScriptOperationProposal,
-  SchemaChangeProposal,
-  SchemaChangeRequest,
   SqlOperationProposal,
   SkillMutationReceipt,
   SkillSelfTestReceipt,
@@ -315,24 +312,6 @@ export function proposeTableChanges(
     statements,
     catalogFingerprint,
   });
-}
-
-export function previewSchemaChange(
-  id: string,
-  request: SchemaChangeRequest,
-): Promise<DdlPlan> {
-  return invoke("preview_schema_change", { id, request });
-}
-
-export function proposeSchemaChange(
-  id: string,
-  request: SchemaChangeRequest,
-): Promise<SchemaChangeProposal> {
-  return invoke("propose_schema_change", { id, request });
-}
-
-export function runSchemaChange(operationId: string): Promise<ScriptOutcome> {
-  return invoke("run_schema_change", { operationId });
 }
 
 export function getSafety(id: string): Promise<SafetySettings> {

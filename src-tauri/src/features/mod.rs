@@ -9,6 +9,7 @@ pub(crate) mod connections;
 pub(crate) mod erd;
 pub(crate) mod jobs;
 mod platform_flags;
+pub(crate) mod schema_editor;
 pub(crate) mod sql_documents;
 pub(crate) mod workspaces;
 

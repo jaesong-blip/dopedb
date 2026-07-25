@@ -103,6 +103,7 @@ const removedPaths = [
   "src-tauri/src/services/terminal_authority.rs",
   "src-tauri/src/services/catalog_service.rs",
   "src-tauri/src/services/erd_service.rs",
+  "src-tauri/src/services/schema_service.rs",
   "src-tauri/src/services/job_service/model.rs",
   "src-tauri/src/services/job_service/mod.rs",
   "src-tauri/src/services/job_service/format.rs",
@@ -162,6 +163,7 @@ for (const token of [
   "ConnectionService",
   "CatalogService",
   "ErdService",
+  "SchemaService",
   "JobService",
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",
@@ -276,6 +278,22 @@ for (const filePath of ["src-tauri/src/features/erd/domain.rs"]) {
   ]);
 }
 for (const filePath of [
+  "src-tauri/src/features/schema_editor/domain.rs",
+  "src-tauri/src/features/schema_editor/ports.rs",
+  "src-tauri/src/features/schema_editor/application.rs",
+]) {
+  requireFile(filePath);
+  forbid(
+    filePath,
+    coreRustRules.filter(([pattern]) => pattern.source !== "\\bdopedb_protocol\\b"),
+  );
+  forbid(filePath, [
+    [/crate::ddl/, "schema-editor core must use its planner port"],
+    [/crate::features::catalog/, "schema-editor core must use its catalog port"],
+    [/ScriptService/, "schema-editor core must use its script port"],
+  ]);
+}
+for (const filePath of [
   "src-tauri/src/features/jobs/domain.rs",
   "src-tauri/src/features/jobs/state_machine.rs",
   "src-tauri/src/features/jobs/validation.rs",
@@ -370,6 +388,9 @@ forbid("src-tauri/src/commands/mod.rs", [
   [/\bpub async fn list_erd_layouts\b/, "ERD list returned to the central command module"],
   [/\bpub async fn save_erd_layout\b/, "ERD save returned to the central command module"],
   [/\bpub async fn delete_erd_layout\b/, "ERD delete returned to the central command module"],
+  [/\bpub async fn preview_schema_change\b/, "schema preview returned to the central command module"],
+  [/\bpub async fn propose_schema_change\b/, "schema proposal returned to the central command module"],
+  [/\bpub async fn run_schema_change\b/, "schema execution returned to the central command module"],
 ]);
 forbid("src-tauri/src/features/jobs/transport.rs", [
   [/\bsqlx\b/, "job transport must delegate instead of writing the ledger"],
@@ -380,6 +401,12 @@ forbid("src-tauri/src/features/erd/transport.rs", [
   [/\bsqlx\b/, "ERD transport must delegate instead of writing layouts"],
   [/crate::store/, "ERD transport must not access the store directly"],
   [/crate::connection/, "ERD transport must not authorize connections directly"],
+]);
+forbid("src-tauri/src/features/schema_editor/transport.rs", [
+  [/SchemaService/, "schema-editor transport must delegate to the feature"],
+  [/ScriptService/, "schema-editor transport must not call the script implementation"],
+  [/CatalogFeature/, "schema-editor transport must not call the catalog implementation"],
+  [/crate::ddl/, "schema-editor transport must not render DDL"],
 ]);
 for (const filePath of walk("src-tauri/src/features/jobs/application")
   .filter((file) => file.endsWith(".rs"))
@@ -413,6 +440,10 @@ forbid("src-tauri/src/services/mod.rs", [
     /\b(?:ErdService|SaveErdLayoutOutcome|SaveErdLayoutRequest)\b/,
     "central service facade must not re-export feature-owned ERD contracts",
   ],
+  [
+    /\b(?:SchemaService|SchemaChangePreviewRequest|SchemaChangeProposalReceipt)\b/,
+    "central service facade must not re-export feature-owned schema-editor contracts",
+  ],
 ]);
 forbid("src-tauri/src/features/sql_documents/transport.rs", [
   [/\bsqlx\b/, "transport must delegate instead of querying SQLite"],
@@ -435,6 +466,7 @@ for (const filePath of [
   "src/features/connections/domain.ts",
   "src/features/jobs/domain.ts",
   "src/features/erd/domain.ts",
+  "src/features/schemaEditor/domain.ts",
   "src/features/sqlDocuments/domain.ts",
   "src/features/workspaces/domain.ts",
   "src/features/workspaces/cache.ts",
@@ -580,6 +612,24 @@ for (const command of erdCommands) {
     );
   }
 }
+const schemaEditorCommands = [
+  "preview_schema_change",
+  "propose_schema_change",
+  "run_schema_change",
+];
+for (const command of schemaEditorCommands) {
+  const owners = frontendSource
+    .filter(([, source]) => source.includes(`"${command}"`))
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/schemaEditor/tauriAdapter.ts"
+  ) {
+    fail(
+      `${command}: expected only src/features/schemaEditor/tauriAdapter.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 forbid("src/ipc/types.ts", [
   [/\binterface ConnectionProfile\b/, "connection profile returned to the central IPC type file"],
   [/\binterface DriverDescriptor\b/, "driver descriptor returned to the central IPC type file"],
@@ -595,6 +645,10 @@ forbid("src/ipc/types.ts", [
     "ERD contract returned to the central IPC type file",
   ],
   [/\binterface SaveErdLayout/, "ERD request/outcome returned to the central IPC type file"],
+  [
+    /\b(?:interface|type)\s+(?:DdlColumnDefinition|DdlDefaultChange|DdlColumnAlteration|SchemaChange|SchemaChangeRequest|DdlPlan|SchemaChangeProposal)\b/,
+    "schema-editor contract returned to the central IPC type file",
+  ],
 ]);
 forbid("src/ipc/commands.ts", [
   [/\bfunction listConnections\b/, "connection commands returned to the central IPC facade"],
@@ -610,6 +664,10 @@ forbid("src/ipc/commands.ts", [
   [
     /\b(?:listErdLayouts|saveErdLayout|deleteErdLayout)\b/,
     "ERD commands returned to the central IPC facade",
+  ],
+  [
+    /\b(?:previewSchemaChange|proposeSchemaChange|runSchemaChange)\b/,
+    "schema-editor commands returned to the central IPC facade",
   ],
 ]);
 for (const [filePath, source] of frontendSource) {

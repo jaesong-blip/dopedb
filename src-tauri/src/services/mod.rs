@@ -9,7 +9,6 @@ mod monitoring_service;
 mod operation_service;
 mod query_service;
 mod safety_service;
-mod schema_service;
 mod script_service;
 mod terminal_run_registry;
 
@@ -38,9 +37,6 @@ pub(crate) use query_service::{
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
 pub(crate) use safety_service::SafetyService;
-pub(crate) use schema_service::{
-    SchemaChangePreviewRequest, SchemaChangeProposalReceipt, SchemaService,
-};
 pub(crate) use script_service::{
     DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
     DesktopScriptRunReceipt, SchemaScriptContext, ScriptService, TableScriptContext,
@@ -52,6 +48,7 @@ use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
 use crate::features::erd::{self, ErdFeature};
 use crate::features::jobs::{self, JobsFeature};
+use crate::features::schema_editor::{self, SchemaEditorFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
 use crate::operations::OperationRuntime;
@@ -73,7 +70,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) operation: OperationService,
     pub(crate) query: QueryService,
     pub(crate) safety: SafetyService,
-    pub(crate) schema: SchemaService,
+    pub(crate) schema: SchemaEditorFeature,
     pub(crate) script: ScriptService,
     pub(crate) sql_documents: SqlDocumentsFeature,
     pub(crate) workspace: WorkspacesFeature,
@@ -96,7 +93,7 @@ impl ApplicationServices {
             catalog.clone(),
             operation.clone(),
         );
-        let schema = SchemaService::new(catalog.clone(), script.clone());
+        let schema = schema_editor::compose(catalog.clone(), script.clone());
         let connection_feature = connection_feature::compose(
             store.clone(),
             connections.clone(),

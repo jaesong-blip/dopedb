@@ -22,8 +22,7 @@ use crate::services::{
     DesktopSqlPreviewRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
     DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt, MonitoringProposalReceipt,
     MonitoringProposalRequest, MonitoringServiceError, MonitoringStatusReceipt,
-    OperationDecisionReceipt, OperationDecisionRequest, SchemaChangePreviewRequest,
-    SchemaChangeProposalReceipt, TableScriptContext,
+    OperationDecisionReceipt, OperationDecisionRequest, TableScriptContext,
 };
 use crate::state::AppState;
 
@@ -413,71 +412,6 @@ pub async fn run_script(
         .services
         .script
         .run_desktop(operation_id)
-        .await
-        .map_err(DesktopScriptRunError::into_error)
-}
-
-fn require_schema_editor(state: &AppState) -> AppResult<()> {
-    if state
-        .features
-        .is_enabled(crate::features::FeatureFlag::CatalogV2)
-        && state
-            .features
-            .is_enabled(crate::features::FeatureFlag::DdlIrV1)
-    {
-        Ok(())
-    } else {
-        Err(AppError::Blocked {
-            reason: "the structured schema editor is disabled for this app runtime".into(),
-        })
-    }
-}
-
-#[tauri::command]
-pub async fn preview_schema_change(
-    state: State<'_, AppState>,
-    id: Uuid,
-    request: dopedb_protocol::SchemaChangeRequest,
-) -> AppResult<dopedb_protocol::DdlPlan> {
-    require_schema_editor(&state)?;
-    state
-        .services
-        .schema
-        .preview(SchemaChangePreviewRequest {
-            connection_id: id,
-            request,
-        })
-        .await
-}
-
-#[tauri::command]
-pub async fn propose_schema_change(
-    state: State<'_, AppState>,
-    id: Uuid,
-    request: dopedb_protocol::SchemaChangeRequest,
-) -> AppResult<SchemaChangeProposalReceipt> {
-    require_schema_editor(&state)?;
-    state
-        .services
-        .schema
-        .propose(SchemaChangePreviewRequest {
-            connection_id: id,
-            request,
-        })
-        .await
-        .map_err(DesktopScriptRunError::into_error)
-}
-
-#[tauri::command]
-pub async fn run_schema_change(
-    state: State<'_, AppState>,
-    operation_id: Uuid,
-) -> AppResult<DesktopScriptRunReceipt> {
-    require_schema_editor(&state)?;
-    state
-        .services
-        .schema
-        .run(operation_id)
         .await
         .map_err(DesktopScriptRunError::into_error)
 }

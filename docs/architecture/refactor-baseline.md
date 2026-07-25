@@ -176,6 +176,30 @@ commands/types are deletion gates. Architecture checks require every ERD mutatio
 statement to remain in `SqliteErdRepository`, whose runtime state ownership is recorded
 explicitly.
 
+## Seventh migrated slice: structured schema editor
+
+The start audit found a service that directly coordinated catalog refresh, DDL
+rendering, and immutable Script proposals, while central Rust and renderer facades
+owned every command and wire type. Raw UUIDs also crossed the schema command and
+Operation boundaries.
+
+The structured editor now uses:
+
+```text
+Tauri transport
+  -> SchemaEditorUseCases<ConnectionId, OperationId>
+     -> catalog, planner, and script-operation ports
+  -> Catalog, DDL renderer, and immutable Script adapters
+```
+
+The use case refreshes one exact catalog snapshot before rendering and passes that
+same request/plan pair to the immutable Operation path. A planning failure is proven
+not to reach the Script boundary. The existing Script implementation is reachable
+only from the feature adapter, making its later migration independent of the schema
+flow. The former schema service, central Tauri commands/re-exports, and central
+frontend commands/types are deletion gates; the renderer owns branded schema
+Operation IDs beside its Tauri adapter.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.
