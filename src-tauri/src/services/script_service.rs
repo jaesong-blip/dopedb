@@ -17,15 +17,13 @@ use crate::executor;
 use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
 use crate::model::{HistoryEntry, QueryKind, ScriptOutcome, ScriptStatement};
 use crate::operations::{
-    ClaimedOperation, ExecutionGrant, NewOperation, OperationKind, OperationPlanDisposition,
-    OperationRiskLevel, OperationRuntime, OperationState,
+    actor_for_pin, capture_policy, ensure_operation_scope, required_confirmation, ClaimedOperation,
+    ExecutionGrant, NewOperation, OperationKind, OperationPlanDisposition, OperationRiskLevel,
+    OperationRuntime, OperationState,
 };
 use crate::safety;
 use crate::store::{PinnedConnection, Store};
 
-use super::operation_service::{
-    actor_for_pin, capture_policy, ensure_operation_scope, required_confirmation,
-};
 use super::query_service::QUERY_PLAN_TTL;
 
 /// Desktop script input accepted only at the immutable proposal boundary.

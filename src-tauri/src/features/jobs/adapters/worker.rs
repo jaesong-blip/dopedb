@@ -1,4 +1,4 @@
-//! One bounded import/export worker. Database reads are paged, writes commit in
+//! Bounded local worker adapter. Database reads are paged, writes commit in
 //! bounded transactions, and every resumable boundary records exact source/target
 //! fingerprints before progress is published.
 
@@ -29,19 +29,19 @@ use super::format::{
     create_error_writer, file_sha256, finalize_error_writer, typed_sql_literal, write_error_row,
     ExportSink, ImportDataRow, ImportItem, ImportSource,
 };
-use super::repository::{Checkpoint, JobRecord, JobRepository};
+use super::ledger::{Checkpoint, JobRecord, JobRepository};
 
 const MAX_EXPORT_BATCH_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum WorkerOutcome {
+pub(in crate::features::jobs) enum WorkerOutcome {
     Succeeded,
     Paused,
     Cancelled,
 }
 
 #[derive(Clone)]
-pub(super) struct JobWorker {
+pub(in crate::features::jobs) struct JobWorker {
     repository: JobRepository,
     connections: ConnectionManager,
     catalog: CatalogFeature,
@@ -49,7 +49,7 @@ pub(super) struct JobWorker {
 }
 
 impl JobWorker {
-    pub(super) fn new(
+    pub(in crate::features::jobs) fn new(
         repository: JobRepository,
         connections: ConnectionManager,
         catalog: CatalogFeature,
@@ -66,7 +66,10 @@ impl JobWorker {
     /// Validate every durable resume boundary before the Operation runtime issues
     /// a fresh execution grant. The worker repeats these checks after claiming so
     /// a file or catalog change in the small intervening window still fails closed.
-    pub(super) async fn validate_resume(&self, record: &JobRecord) -> AppResult<()> {
+    pub(in crate::features::jobs) async fn validate_resume(
+        &self,
+        record: &JobRecord,
+    ) -> AppResult<()> {
         if record.job.state != JobState::Paused || !record.job.resumable {
             return Err(AppError::Blocked {
                 reason: "only a resumable paused job can be validated for resume".into(),
@@ -173,7 +176,7 @@ impl JobWorker {
         }
     }
 
-    pub(super) async fn run(
+    pub(in crate::features::jobs) async fn run(
         &self,
         record: JobRecord,
         claimed: ClaimedOperation,

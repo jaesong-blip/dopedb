@@ -1,4 +1,4 @@
-//! Bounded file readers and writers for Job Engine formats.
+//! Local bounded file format adapter for the Job Engine.
 //!
 //! CSV/TSV/NDJSON and SQL are streamed. JSON arrays and XLSX use their format
 //! libraries' bounded/document models; callers surface that these formats cannot
@@ -35,7 +35,7 @@ enum TextWriterInner {
     Gzip(Box<GzEncoder<BufWriter<File>>>),
 }
 
-pub(super) struct TextWriter {
+pub(in crate::features::jobs) struct TextWriter {
     inner: TextWriterInner,
     hasher: Sha256,
 }
@@ -79,7 +79,7 @@ impl TextWriter {
     }
 }
 
-pub(super) enum ExportSink {
+pub(in crate::features::jobs) enum ExportSink {
     Text {
         writer: TextWriter,
         format: JobFormat,
@@ -100,7 +100,7 @@ pub(super) enum ExportSink {
 }
 
 impl ExportSink {
-    pub(super) fn open(
+    pub(in crate::features::jobs) fn open(
         path: &Path,
         format: JobFormat,
         columns: Vec<String>,
@@ -221,7 +221,7 @@ impl ExportSink {
         Ok(())
     }
 
-    pub(super) fn write_rows(&mut self, rows: &[Vec<Value>]) -> AppResult<()> {
+    pub(in crate::features::jobs) fn write_rows(&mut self, rows: &[Vec<Value>]) -> AppResult<()> {
         match self {
             Self::Text {
                 writer,
@@ -305,27 +305,27 @@ impl ExportSink {
         Ok(())
     }
 
-    pub(super) fn rows_written(&self) -> u64 {
+    pub(in crate::features::jobs) fn rows_written(&self) -> u64 {
         match self {
             Self::Text { rows_written, .. } | Self::Xlsx { rows_written, .. } => *rows_written,
         }
     }
 
-    pub(super) fn fingerprint(&self) -> Option<String> {
+    pub(in crate::features::jobs) fn fingerprint(&self) -> Option<String> {
         match self {
             Self::Text { writer, .. } => Some(writer.fingerprint()),
             Self::Xlsx { .. } => None,
         }
     }
 
-    pub(super) fn flush(&mut self) -> AppResult<()> {
+    pub(in crate::features::jobs) fn flush(&mut self) -> AppResult<()> {
         if let Self::Text { writer, .. } = self {
             writer.flush()?;
         }
         Ok(())
     }
 
-    pub(super) fn finish(mut self) -> AppResult<()> {
+    pub(in crate::features::jobs) fn finish(mut self) -> AppResult<()> {
         match &mut self {
             Self::Text {
                 writer,
@@ -442,7 +442,7 @@ fn quote_identifier(engine: crate::model::Engine, value: &str) -> String {
     }
 }
 
-pub(super) fn typed_sql_literal(
+pub(in crate::features::jobs) fn typed_sql_literal(
     engine: crate::model::Engine,
     family: NormalizedTypeFamily,
     value: &Value,
@@ -587,18 +587,18 @@ fn xlsx_error(error: rust_xlsxwriter::XlsxError) -> AppError {
     AppError::Config(format!("XLSX writer failed: {error}"))
 }
 
-pub(super) struct ImportDataRow {
+pub(in crate::features::jobs) struct ImportDataRow {
     pub source_line: u64,
     pub values: BTreeMap<String, Value>,
     pub raw: Value,
 }
 
-pub(super) enum ImportItem {
+pub(in crate::features::jobs) enum ImportItem {
     Data(ImportDataRow),
     Sql { source_line: u64, statement: String },
 }
 
-pub(super) enum ImportSource {
+pub(in crate::features::jobs) enum ImportSource {
     Csv {
         reader: csv::Reader<Box<dyn Read + Send>>,
         headers: Vec<String>,
@@ -627,7 +627,7 @@ pub(super) enum ImportSource {
 
 impl ImportSource {
     #[cfg(test)]
-    pub(super) fn open(
+    pub(in crate::features::jobs) fn open(
         path: &Path,
         format: JobFormat,
         resume_rows: u64,
@@ -738,7 +738,7 @@ impl ImportSource {
         })
     }
 
-    pub(super) fn open_verified(
+    pub(in crate::features::jobs) fn open_verified(
         path: &Path,
         format: JobFormat,
         resume_rows: u64,
@@ -766,7 +766,10 @@ impl ImportSource {
         Ok(())
     }
 
-    pub(super) fn next_batch(&mut self, batch_size: usize) -> AppResult<Vec<ImportItem>> {
+    pub(in crate::features::jobs) fn next_batch(
+        &mut self,
+        batch_size: usize,
+    ) -> AppResult<Vec<ImportItem>> {
         let mut items = Vec::with_capacity(batch_size);
         while items.len() < batch_size {
             let Some(item) = self.next_item()? else {
@@ -880,7 +883,7 @@ impl ImportSource {
         }
     }
 
-    pub(super) fn bytes_consumed(&self) -> Option<u64> {
+    pub(in crate::features::jobs) fn bytes_consumed(&self) -> Option<u64> {
         match self {
             Self::Csv { reader, .. } => Some(reader.position().byte()),
             Self::Ndjson { bytes_read, .. } => Some(*bytes_read),
@@ -911,7 +914,7 @@ impl ImportSource {
 }
 
 #[cfg(test)]
-pub(super) fn inspect_input(
+pub(in crate::features::jobs) fn inspect_input(
     path: &Path,
     format: JobFormat,
     engine: crate::model::Engine,
@@ -920,7 +923,7 @@ pub(super) fn inspect_input(
     inspect_source(&mut source, format)
 }
 
-pub(super) fn inspect_input_verified(
+pub(in crate::features::jobs) fn inspect_input_verified(
     path: &Path,
     format: JobFormat,
     engine: crate::model::Engine,
@@ -1002,19 +1005,19 @@ fn bounded_preview(value: Value, depth: usize) -> Value {
     }
 }
 
-pub(super) struct SqlImportAudit {
+pub(in crate::features::jobs) struct SqlImportAudit {
     pub statement_count: u64,
     pub read_count: u64,
     pub write_count: u64,
     pub ddl_count: u64,
 }
 
-pub(super) struct InputReview {
+pub(in crate::features::jobs) struct InputReview {
     pub inspection: JobInputInspection,
     pub sql_audit: Option<SqlImportAudit>,
 }
 
-pub(super) fn review_input_verified(
+pub(in crate::features::jobs) fn review_input_verified(
     path: &Path,
     format: JobFormat,
     engine: crate::model::Engine,
@@ -1034,7 +1037,7 @@ pub(super) fn review_input_verified(
 }
 
 #[cfg(test)]
-pub(super) fn audit_sql_import(
+pub(in crate::features::jobs) fn audit_sql_import(
     path: &Path,
     format: JobFormat,
     engine: crate::model::Engine,
@@ -1245,7 +1248,7 @@ fn open_output_file(path: &Path, append: bool, private: bool) -> AppResult<File>
     Ok(file)
 }
 
-pub(super) fn file_sha256(path: &Path) -> AppResult<String> {
+pub(in crate::features::jobs) fn file_sha256(path: &Path) -> AppResult<String> {
     let mut file = open_regular_input(path)?;
     file_sha256_handle(&mut file)
 }
@@ -1316,7 +1319,7 @@ fn calamine_value(value: &Data) -> Value {
     }
 }
 
-pub(super) fn write_error_row(
+pub(in crate::features::jobs) fn write_error_row(
     writer: &mut BufWriter<File>,
     source_line: u64,
     row: &Value,
@@ -1351,13 +1354,18 @@ pub(super) fn write_error_row(
     Ok(())
 }
 
-pub(super) fn finalize_error_writer(mut writer: BufWriter<File>) -> AppResult<()> {
+pub(in crate::features::jobs) fn finalize_error_writer(
+    mut writer: BufWriter<File>,
+) -> AppResult<()> {
     writer.flush()?;
     writer.get_ref().sync_all()?;
     Ok(())
 }
 
-pub(super) fn create_error_writer(path: &Path, append: bool) -> AppResult<BufWriter<File>> {
+pub(in crate::features::jobs) fn create_error_writer(
+    path: &Path,
+    append: bool,
+) -> AppResult<BufWriter<File>> {
     Ok(BufWriter::new(open_output_file(path, append, true)?))
 }
 

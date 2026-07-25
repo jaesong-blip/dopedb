@@ -5,7 +5,6 @@ mod activity_service;
 mod dashboard_service;
 mod document_service;
 mod erd_service;
-mod job_service;
 mod legacy_chat_service;
 mod monitoring_service;
 mod operation_service;
@@ -25,7 +24,6 @@ pub(crate) use document_service::{
     DesktopDocumentReadError, DocumentReadReceipt, DocumentService, TerminalDocumentReadRequest,
 };
 pub(crate) use erd_service::{ErdLayout, ErdService, SaveErdLayoutOutcome, SaveErdLayoutRequest};
-pub(crate) use job_service::JobService;
 pub(crate) use legacy_chat_service::LegacyChatService;
 pub(crate) use monitoring_service::{
     MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringService,
@@ -54,6 +52,7 @@ pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 use crate::connection::ConnectionManager;
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
+use crate::features::jobs::JobUseCases;
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
 use crate::operations::OperationRuntime;
@@ -70,7 +69,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) dashboard: DashboardService,
     pub(crate) document: DocumentService,
     pub(crate) erd: ErdService,
-    pub(crate) job: JobService,
+    pub(crate) job: JobUseCases,
     pub(crate) monitoring: MonitoringService,
     pub(crate) operation: OperationService,
     pub(crate) query: QueryService,
@@ -106,7 +105,7 @@ impl ApplicationServices {
         );
         let sql_documents = sql_documents::compose(store.clone(), connections.clone());
         let erd = ErdService::new(store.clone(), connections.clone());
-        let job = JobService::new(
+        let job = JobUseCases::new(
             store.clone(),
             connections.clone(),
             catalog.clone(),

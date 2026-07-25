@@ -8,6 +8,7 @@
 //! ```
 
 mod canonicalize;
+mod context;
 mod execute;
 #[allow(
     dead_code,
@@ -27,6 +28,12 @@ mod runtime;
 pub mod state_machine;
 
 pub(crate) use canonicalize::canonical_hash;
+pub(crate) use context::{
+    actor_for_pin, agent_actor_for_pin, approver_for_pin, capture_policy, ensure_operation_scope,
+    required_confirmation,
+};
+#[cfg(test)]
+pub(crate) use context::{CRITICAL_CONFIRMATION, PRODUCTION_CONFIRMATION};
 pub use dopedb_protocol::{
     OperationActorKind, OperationEventKind, OperationKind, OperationRiskLevel, OperationState,
 };

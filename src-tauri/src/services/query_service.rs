@@ -26,16 +26,13 @@ use crate::model::{
 };
 use crate::monitoring::{self, HealthSnapshot};
 use crate::operations::{
-    canonical_hash, ClaimedOperation, NewOperation, OperationActorKind, OperationKind,
+    actor_for_pin, agent_actor_for_pin, canonical_hash, capture_policy, ensure_operation_scope,
+    required_confirmation, ClaimedOperation, NewOperation, OperationActorKind, OperationKind,
     OperationPlanDisposition, OperationRiskLevel, OperationRuntime, OperationState,
 };
 use crate::safety::{self, PoolRef};
 use crate::store::{PinnedConnection, Store};
 
-use super::operation_service::{
-    actor_for_pin, agent_actor_for_pin, capture_policy, ensure_operation_scope,
-    required_confirmation,
-};
 use super::TerminalQueryRunRegistry;
 
 /// Lifetime of an agent query plan. A plan is valid at exactly this boundary and
@@ -3051,7 +3048,7 @@ mod tests {
         let proposal = harness.propose("DELETE FROM users", None).await.unwrap();
         assert_eq!(
             proposal.confirmation_phrase.as_deref(),
-            Some(super::super::operation_service::CRITICAL_CONFIRMATION)
+            Some(crate::operations::CRITICAL_CONFIRMATION)
         );
         let missing = harness
             .operation_service
@@ -3111,7 +3108,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             proposal.confirmation_phrase.as_deref(),
-            Some(super::super::operation_service::PRODUCTION_CONFIRMATION)
+            Some(crate::operations::PRODUCTION_CONFIRMATION)
         );
         let wrong = harness
             .operation_service

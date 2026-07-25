@@ -1,4 +1,4 @@
-//! SQLite projection and append-only ledger for durable import/export jobs.
+//! SQLite projection and append-only ledger adapter for durable import/export jobs.
 
 use std::path::{Path, PathBuf};
 
@@ -19,11 +19,11 @@ use crate::operations::canonical_hash;
 use crate::store::{PinnedConnection, Store};
 
 #[derive(Clone)]
-pub(super) struct JobRepository {
+pub(in crate::features::jobs) struct JobRepository {
     store: Store,
 }
 
-pub(super) struct NewCapability {
+pub(in crate::features::jobs) struct NewCapability {
     pub connection_id: ConnectionId,
     pub direction: JobFileDirection,
     pub path: PathBuf,
@@ -34,7 +34,7 @@ pub(super) struct NewCapability {
     pub expires_at: DateTime<Utc>,
 }
 
-pub(super) struct ResolvedCapability {
+pub(in crate::features::jobs) struct ResolvedCapability {
     pub path: PathBuf,
     pub display_name: String,
     pub size_bytes: Option<u64>,
@@ -42,7 +42,7 @@ pub(super) struct ResolvedCapability {
 }
 
 #[derive(Clone)]
-pub(super) struct JobRecord {
+pub(in crate::features::jobs) struct JobRecord {
     pub job: Job,
     pub workspace_id: WorkspaceId,
     pub account_scope: String,
@@ -50,7 +50,7 @@ pub(super) struct JobRecord {
     pub plan_hash: String,
 }
 
-pub(super) struct NewJob {
+pub(in crate::features::jobs) struct NewJob {
     pub id: JobId,
     pub operation_id: OperationId,
     pub connection_id: ConnectionId,
@@ -65,11 +65,11 @@ pub(super) struct NewJob {
 }
 
 impl JobRepository {
-    pub(super) fn new(store: Store) -> Self {
+    pub(in crate::features::jobs) fn new(store: Store) -> Self {
         Self { store }
     }
 
-    pub(super) async fn create_capability(
+    pub(in crate::features::jobs) async fn create_capability(
         &self,
         pin: &PinnedConnection,
         capability: NewCapability,
@@ -113,7 +113,7 @@ impl JobRepository {
         })
     }
 
-    pub(super) async fn resolve_capability(
+    pub(in crate::features::jobs) async fn resolve_capability(
         &self,
         pin: &PinnedConnection,
         capability_id: JobFileCapabilityId,
@@ -161,7 +161,7 @@ impl JobRepository {
         })
     }
 
-    pub(super) async fn retire_input_capability(
+    pub(in crate::features::jobs) async fn retire_input_capability(
         &self,
         job_id: JobId,
     ) -> AppResult<Option<PathBuf>> {
@@ -188,7 +188,9 @@ impl JobRepository {
         Ok(path.map(PathBuf::from))
     }
 
-    pub(super) async fn retire_expired_input_capabilities(&self) -> AppResult<Vec<PathBuf>> {
+    pub(in crate::features::jobs) async fn retire_expired_input_capabilities(
+        &self,
+    ) -> AppResult<Vec<PathBuf>> {
         let now = Utc::now().to_rfc3339();
         let mut transaction = self.store.pool().begin().await?;
         let rows = sqlx::query(
@@ -224,7 +226,9 @@ impl JobRepository {
         Ok(paths)
     }
 
-    pub(super) async fn active_input_capability_paths(&self) -> AppResult<Vec<PathBuf>> {
+    pub(in crate::features::jobs) async fn active_input_capability_paths(
+        &self,
+    ) -> AppResult<Vec<PathBuf>> {
         let paths = sqlx::query_scalar::<_, String>(
             "SELECT local_path FROM job_file_capabilities
              WHERE direction = 'input' AND revoked_at IS NULL",
@@ -234,7 +238,7 @@ impl JobRepository {
         Ok(paths.into_iter().map(PathBuf::from).collect())
     }
 
-    pub(super) async fn insert_job(
+    pub(in crate::features::jobs) async fn insert_job(
         &self,
         pin: &PinnedConnection,
         new: NewJob,
@@ -301,7 +305,10 @@ impl JobRepository {
         self.get_unscoped(new.id).await
     }
 
-    pub(super) async fn list(&self, pin: &PinnedConnection) -> AppResult<Vec<Job>> {
+    pub(in crate::features::jobs) async fn list(
+        &self,
+        pin: &PinnedConnection,
+    ) -> AppResult<Vec<Job>> {
         let rows = sqlx::query(
             "SELECT * FROM jobs
              WHERE workspace_id = ?1 AND account_scope = ?2 AND connection_id = ?3
@@ -315,7 +322,7 @@ impl JobRepository {
         rows.iter().map(row_to_job).collect()
     }
 
-    pub(super) async fn detail(
+    pub(in crate::features::jobs) async fn detail(
         &self,
         pin: &PinnedConnection,
         job_id: JobId,
@@ -335,7 +342,7 @@ impl JobRepository {
         Ok((record.job, artifacts))
     }
 
-    pub(super) async fn get_scoped(
+    pub(in crate::features::jobs) async fn get_scoped(
         &self,
         pin: &PinnedConnection,
         job_id: JobId,
@@ -355,7 +362,10 @@ impl JobRepository {
         row_to_record(&row)
     }
 
-    pub(super) async fn get_unscoped(&self, job_id: JobId) -> AppResult<JobRecord> {
+    pub(in crate::features::jobs) async fn get_unscoped(
+        &self,
+        job_id: JobId,
+    ) -> AppResult<JobRecord> {
         let row = sqlx::query("SELECT * FROM jobs WHERE id = ?1")
             .bind(job_id.to_string())
             .fetch_optional(self.store.pool())
@@ -364,21 +374,21 @@ impl JobRepository {
         row_to_record(&row)
     }
 
-    pub(super) async fn queued_records(&self) -> AppResult<Vec<JobRecord>> {
+    pub(in crate::features::jobs) async fn queued_records(&self) -> AppResult<Vec<JobRecord>> {
         let rows = sqlx::query("SELECT * FROM jobs WHERE state = 'queued' ORDER BY created_at ASC")
             .fetch_all(self.store.pool())
             .await?;
         rows.iter().map(row_to_record).collect()
     }
 
-    pub(super) async fn paused_records(&self) -> AppResult<Vec<JobRecord>> {
+    pub(in crate::features::jobs) async fn paused_records(&self) -> AppResult<Vec<JobRecord>> {
         let rows = sqlx::query("SELECT * FROM jobs WHERE state = 'paused' ORDER BY created_at ASC")
             .fetch_all(self.store.pool())
             .await?;
         rows.iter().map(row_to_record).collect()
     }
 
-    pub(super) async fn claim_running(
+    pub(in crate::features::jobs) async fn claim_running(
         &self,
         pin: &PinnedConnection,
         job_id: JobId,
@@ -433,7 +443,7 @@ impl JobRepository {
         self.get_scoped(pin, job_id).await
     }
 
-    pub(super) async fn update_progress(
+    pub(in crate::features::jobs) async fn update_progress(
         &self,
         job_id: JobId,
         rows_processed: u64,
@@ -502,7 +512,7 @@ impl JobRepository {
         self.get_unscoped(job_id).await
     }
 
-    pub(super) async fn update_totals(
+    pub(in crate::features::jobs) async fn update_totals(
         &self,
         job_id: JobId,
         rows_total: Option<u64>,
@@ -526,7 +536,10 @@ impl JobRepository {
         self.get_unscoped(job_id).await
     }
 
-    pub(super) async fn latest_checkpoint(&self, job_id: JobId) -> AppResult<Option<Checkpoint>> {
+    pub(in crate::features::jobs) async fn latest_checkpoint(
+        &self,
+        job_id: JobId,
+    ) -> AppResult<Option<Checkpoint>> {
         let row = sqlx::query(
             "SELECT source_fingerprint, target_fingerprint, checkpoint_json
              FROM job_checkpoints WHERE job_id = ?1 ORDER BY sequence DESC LIMIT 1",
@@ -544,7 +557,10 @@ impl JobRepository {
         .transpose()
     }
 
-    pub(super) async fn request_pause(&self, job_id: JobId) -> AppResult<JobRecord> {
+    pub(in crate::features::jobs) async fn request_pause(
+        &self,
+        job_id: JobId,
+    ) -> AppResult<JobRecord> {
         let now = Utc::now().to_rfc3339();
         let mut transaction = self.store.pool().begin().await?;
         let update = sqlx::query(
@@ -571,12 +587,18 @@ impl JobRepository {
         self.get_unscoped(job_id).await
     }
 
-    pub(super) async fn finish_pause(&self, job_id: JobId) -> AppResult<JobRecord> {
+    pub(in crate::features::jobs) async fn finish_pause(
+        &self,
+        job_id: JobId,
+    ) -> AppResult<JobRecord> {
         self.transition_job_state(job_id, JobTransition::PauseCompleted, None, None)
             .await
     }
 
-    pub(super) async fn rollback_initial_start(&self, job_id: JobId) -> AppResult<JobRecord> {
+    pub(in crate::features::jobs) async fn rollback_initial_start(
+        &self,
+        job_id: JobId,
+    ) -> AppResult<JobRecord> {
         self.transition_job_state(
             job_id,
             JobTransition::InitialStartRolledBack,
@@ -586,7 +608,10 @@ impl JobRepository {
         .await
     }
 
-    pub(super) async fn request_cancel(&self, job_id: JobId) -> AppResult<JobRecord> {
+    pub(in crate::features::jobs) async fn request_cancel(
+        &self,
+        job_id: JobId,
+    ) -> AppResult<JobRecord> {
         let current = self.get_unscoped(job_id).await?;
         if matches!(
             current.job.state,
@@ -605,7 +630,7 @@ impl JobRepository {
         }
     }
 
-    pub(super) async fn finish(
+    pub(in crate::features::jobs) async fn finish(
         &self,
         job_id: JobId,
         state: JobState,
@@ -626,7 +651,7 @@ impl JobRepository {
             .await
     }
 
-    pub(super) async fn finish_queued(
+    pub(in crate::features::jobs) async fn finish_queued(
         &self,
         job_id: JobId,
         state: JobState,
@@ -647,7 +672,7 @@ impl JobRepository {
             .await
     }
 
-    pub(super) async fn fail_paused(
+    pub(in crate::features::jobs) async fn fail_paused(
         &self,
         job_id: JobId,
         error_code: &str,
@@ -712,7 +737,7 @@ impl JobRepository {
         self.get_unscoped(job_id).await
     }
 
-    pub(super) async fn record_artifact(
+    pub(in crate::features::jobs) async fn record_artifact(
         &self,
         job_id: JobId,
         artifact_type: &str,
@@ -738,7 +763,7 @@ impl JobRepository {
         Ok(())
     }
 
-    pub(super) async fn artifact_path(
+    pub(in crate::features::jobs) async fn artifact_path(
         &self,
         pin: &PinnedConnection,
         artifact_id: JobArtifactId,
@@ -759,7 +784,7 @@ impl JobRepository {
         Ok(PathBuf::from(path))
     }
 
-    pub(super) async fn recover_interrupted(&self) -> AppResult<Vec<JobRecord>> {
+    pub(in crate::features::jobs) async fn recover_interrupted(&self) -> AppResult<Vec<JobRecord>> {
         let interrupted = sqlx::query(
             "SELECT * FROM jobs
              WHERE state IN ('running', 'cancel_requested')
@@ -801,7 +826,7 @@ impl JobRepository {
     }
 }
 
-pub(super) struct Checkpoint {
+pub(in crate::features::jobs) struct Checkpoint {
     pub source_fingerprint: String,
     pub target_fingerprint: String,
     pub value: Value,

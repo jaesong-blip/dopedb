@@ -23,15 +23,12 @@ use crate::kernel::TerminalAuthority;
 use crate::model::Engine;
 use crate::model::{DocumentPage, DocumentQuery, HistoryEntry, QueryKind, SafetySettings};
 use crate::operations::{
-    NewOperation, OperationKind, OperationPlanDisposition, OperationRiskLevel, OperationRuntime,
-    OperationState,
+    actor_for_pin, agent_actor_for_pin, capture_policy, ensure_operation_scope, NewOperation,
+    OperationKind, OperationPlanDisposition, OperationRiskLevel, OperationRuntime, OperationState,
 };
 use crate::safety::{self, GateDecision};
 use crate::store::{PinnedConnection, Store};
 
-use super::operation_service::{
-    actor_for_pin, agent_actor_for_pin, capture_policy, ensure_operation_scope,
-};
 use super::query_service::{MAX_AGENT_ROWS, QUERY_PLAN_TTL};
 const MAX_DESKTOP_ROWS: u64 = 100_000;
 

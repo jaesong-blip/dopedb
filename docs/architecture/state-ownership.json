@@ -52,9 +52,9 @@
     },
     {
       "name": "jobLedger",
-      "owner": "src-tauri/src/services/job_service/repository.rs",
+      "owner": "src-tauri/src/features/jobs/adapters/ledger.rs",
       "writerTokens": [
-        "pub(super) struct JobRepository",
+        "pub(in crate::features::jobs) struct JobRepository",
         "async fn transition_job_state("
       ]
     }

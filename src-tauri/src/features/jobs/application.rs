@@ -1,12 +1,8 @@
-//! Durable, scope-aware import/export Job Engine.
+//! Durable, scope-aware import/export Job application use cases.
 //!
 //! Native file dialogs mint opaque capabilities, immutable plans are bound to an
 //! exact Operation, and bounded workers persist progress/checkpoints so interruption
 //! becomes an explicit pause rather than an ambiguous retry.
-
-mod format;
-mod repository;
-mod worker;
 
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
@@ -36,19 +32,22 @@ use crate::features::jobs::{
 use crate::kernel::identity::{
     ConnectionId, ConnectionJobId, JobArtifactId, JobFileCapabilityId, JobId, OperationId,
 };
-use crate::operations::{canonical_hash, NewOperation, OperationPlanDisposition, OperationRuntime};
+use crate::operations::{
+    actor_for_pin, canonical_hash, capture_policy, required_confirmation, NewOperation,
+    OperationPlanDisposition, OperationRuntime,
+};
 use crate::store::Store;
 
-use super::operation_service::{actor_for_pin, capture_policy, required_confirmation};
-use repository::{JobRepository, NewCapability, NewJob};
-use worker::{JobWorker, WorkerOutcome};
+use super::adapters::format;
+use super::adapters::ledger::{JobRecord, JobRepository, NewCapability, NewJob};
+use super::adapters::worker::{JobWorker, WorkerOutcome};
 
 const FILE_CAPABILITY_DAYS: i64 = 30;
 const MAX_INPUT_BYTES: u64 = 100 * 1024 * 1024 * 1024;
 const MAX_CONCURRENT_JOBS: usize = 2;
 
 #[derive(Clone)]
-pub(crate) struct JobService {
+pub(crate) struct JobUseCases {
     store: Store,
     connections: ConnectionManager,
     catalog: CatalogFeature,
@@ -60,8 +59,8 @@ pub(crate) struct JobService {
     events: broadcast::Sender<JobChangedEvent>,
 }
 
-impl JobService {
-    pub(super) fn new(
+impl JobUseCases {
+    pub(crate) fn new(
         store: Store,
         connections: ConnectionManager,
         catalog: CatalogFeature,
@@ -669,10 +668,7 @@ impl JobService {
         Ok(latest.job)
     }
 
-    async fn finish_cancelled_without_worker(
-        &self,
-        record: &repository::JobRecord,
-    ) -> AppResult<Job> {
+    async fn finish_cancelled_without_worker(&self, record: &JobRecord) -> AppResult<Job> {
         let updated = self
             .repository
             .finish(record.job.id, JobState::Cancelled, None, None)
@@ -694,7 +690,7 @@ impl JobService {
         Ok(updated.job)
     }
 
-    async fn complete(&self, record: repository::JobRecord, result: AppResult<WorkerOutcome>) {
+    async fn complete(&self, record: JobRecord, result: AppResult<WorkerOutcome>) {
         match result {
             Ok(WorkerOutcome::Succeeded) => {
                 if let Ok(updated) = self
@@ -886,7 +882,7 @@ impl JobService {
         });
     }
 
-    async fn retire_import_source(&self, record: &repository::JobRecord) {
+    async fn retire_import_source(&self, record: &JobRecord) {
         if record.job.kind != JobKind::Import || !record.job.state.terminal() {
             return;
         }
@@ -1136,7 +1132,7 @@ fn display_name(path: &Path) -> AppResult<String> {
 }
 
 fn ensure_job_operation(
-    record: &repository::JobRecord,
+    record: &JobRecord,
     operation: &crate::operations::OperationRecord,
 ) -> AppResult<()> {
     let expected_kind = match record.job.kind {

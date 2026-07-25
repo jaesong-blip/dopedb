@@ -103,9 +103,9 @@ forbidden in the core.
 
 ## Fifth slice: Job Engine (in progress)
 
-The start audit found four oversized legacy responsibilities under
-`services/job_service`: orchestration, the SQLite ledger, database execution, and file
-formats. Central Tauri commands also owned the renderer boundary. The SQLite
+The start audit found four oversized legacy responsibilities in one service tree:
+orchestration, the SQLite ledger, database execution, and file formats. Central Tauri
+commands also owned the renderer boundary. The SQLite
 repository is the only current writer for job, capability, checkpoint, artifact, and
 event rows; the architecture check now proves every mutation SQL token has that one
 owner.
@@ -124,12 +124,18 @@ owner. Central command/type reintroduction is a deletion gate. Renderer camelCas
 fields are accepted as deserialization aliases while stored plan JSON remains
 snake_case, preserving existing plan hashes and resumable jobs.
 
-Before this slice is complete, orchestration must be split into application use cases
-behind authority, ledger, file, operation, catalog, and execution ports; format,
-worker, and SQLite implementations must move into bounded adapters; Tauri commands
-must move to feature transport; and every `services/job_service` path must be deleted.
-The midpoint audit will regenerate the writer and oversized-file inventories before
-those adapters move.
+The midpoint checkpoint deleted the entire former service tree. Orchestration now
+belongs to `features/jobs/application.rs`; SQLite ledger, file-format, and worker
+implementations are visibly bounded under `features/jobs/adapters/`. Shared operation
+actor/policy derivation moved out of the service layer to `operations/context.rs`, so
+the feature does not depend back on a central service facade. The deletion gate covers
+every old Job service path and symbol, while the writer inventory points only at the
+new ledger adapter.
+
+Before this slice is complete, the application must depend on authority, ledger, file,
+operation, catalog, and execution ports rather than concrete adapters. The four moved
+large files remain exact no-growth migration baselines and must be split below the
+general limits before the Job slice is marked complete.
 
 ## Audit checkpoints
 

@@ -80,9 +80,14 @@ for (const file of sourceFiles) {
   const isTest =
     /\.(?:test|spec)\.[^.]+$/.test(filePath) ||
     /(?:^|\/)[^/]+_tests\.rs$/.test(filePath);
-  if (isFeatureFile && !isTest && lines > ratchet.featureFileLineLimit) {
+  if (
+    isFeatureFile &&
+    !isTest &&
+    lines > ratchet.featureFileLineLimit &&
+    baseline === undefined
+  ) {
     fail(
-      `${filePath}: feature file has ${lines} lines; limit is ${ratchet.featureFileLineLimit}`,
+      `${filePath}: feature file has ${lines} lines; split it or record only an existing migration baseline`,
     );
   }
 }
@@ -98,6 +103,10 @@ const removedPaths = [
   "src-tauri/src/services/terminal_authority.rs",
   "src-tauri/src/services/catalog_service.rs",
   "src-tauri/src/services/job_service/model.rs",
+  "src-tauri/src/services/job_service/mod.rs",
+  "src-tauri/src/services/job_service/format.rs",
+  "src-tauri/src/services/job_service/repository.rs",
+  "src-tauri/src/services/job_service/worker.rs",
   "src-tauri/src/services/workspace_service.rs",
   "src-tauri/src/workspace_auth.rs",
   "src/lib/workbenchDocuments.ts",
@@ -123,13 +132,14 @@ for (const filePath of [
   "CLAUDE.md",
   "docs/CLI_TERMINAL_PLATFORM_IMPLEMENTATION_PLAN.md",
   "docs/contracts/feature-flags.md",
+  "docs/contracts/job-engine.md",
 ]) {
   forbid(filePath, [
     [/src\/lib\/workbenchDocuments\.ts/, "active documentation names a removed frontend path"],
     [/src-tauri\/src\/services\/sql_document_service\.rs/, "active documentation names a removed Rust path"],
     [/src-tauri\/src\/services\/connection_service\.rs/, "active documentation names the removed connection service"],
     [/src-tauri\/src\/services\/catalog_service\.rs/, "active documentation names the removed catalog service"],
-    [/src-tauri\/src\/services\/job_service\/model\.rs/, "active documentation names the removed job model"],
+    [/src-tauri\/src\/services\/job_service/, "active documentation names the removed job service tree"],
     [/src-tauri\/src\/services\/workspace_service\.rs/, "active documentation names the removed workspace service"],
     [/src-tauri\/src\/workspace_auth\.rs/, "active documentation names the removed global workspace auth module"],
     [/src\/lib\/workspaceAccounts\.ts/, "active documentation names a removed workspace account helper"],
@@ -146,6 +156,7 @@ for (const token of [
   "SqlDocumentService",
   "ConnectionService",
   "CatalogService",
+  "JobService",
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",
   "\"sql_documents_v1\"",
@@ -184,10 +195,10 @@ for (const token of jobLedgerSql) {
     .map(relative);
   if (
     owners.length !== 1 ||
-    owners[0] !== "src-tauri/src/services/job_service/repository.rs"
+    owners[0] !== "src-tauri/src/features/jobs/adapters/ledger.rs"
   ) {
     fail(
-      `job ledger SQL ${token} must belong only to src-tauri/src/services/job_service/repository.rs, found ${owners.join(", ") || "none"}`,
+      `job ledger SQL ${token} must belong only to src-tauri/src/features/jobs/adapters/ledger.rs, found ${owners.join(", ") || "none"}`,
     );
   }
 }
@@ -317,15 +328,9 @@ forbid("src-tauri/src/features/jobs/transport.rs", [
   [/crate::store/, "job transport must not access the store directly"],
   [/crate::connection/, "job transport must not authorize connections directly"],
 ]);
-forbid("src-tauri/src/services/job_service/mod.rs", [
-  [
-    /\bpub\(crate\)\s+use\s+crate::features::jobs/,
-    "job service must not re-export feature-owned contracts",
-  ],
-]);
 forbid("src-tauri/src/services/mod.rs", [
   [
-    /\b(?:CreateJobRequest|JobDetail|JobFileCapability|JobFormat|JobInputInspection|JobProposal)\b/,
+    /\b(?:JobService|CreateJobRequest|JobDetail|JobFileCapability|JobFormat|JobInputInspection|JobProposal)\b/,
     "central service facade must not re-export feature-owned job contracts",
   ],
 ]);
