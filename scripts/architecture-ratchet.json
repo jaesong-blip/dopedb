@@ -5,7 +5,7 @@
     "src-tauri/src/store/mod.rs": 5486,
     "src-tauri/src/services/query_service.rs": 3843,
     "src/lib/i18n.tsx": 1981,
-    "src-tauri/src/services/script_service.rs": 1939,
+    "src-tauri/src/services/script_service.rs": 1937,
     "src-tauri/src/broker/dispatch.rs": 1829,
     "src-tauri/src/operations/repository.rs": 1803,
     "src-tauri/src/services/job_service/format.rs": 1700,

@@ -1,5 +1,7 @@
 //! Broker envelope validation and transport-only application-service dispatch.
+use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegistry};
 use crate::error::AppError;
+use crate::features::catalog::CatalogReadPolicy;
 use crate::features::connections::{AgentConnectionSummary, CliConnectionResolutionError};
 use crate::kernel::identity::AccountScopeId;
 use crate::kernel::TerminalAuthority;
@@ -8,7 +10,7 @@ use crate::monitoring::HealthSnapshot;
 use crate::services::{
     AgentDashboardCommitError, AgentDashboardPrepareError, AgentDashboardPresentation,
     AgentDocumentReadError, AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError,
-    ApplicationServices, CatalogReadPolicy, TerminalDocumentReadRequest, TerminalQueryPlanRequest,
+    ApplicationServices, TerminalDocumentReadRequest, TerminalQueryPlanRequest,
     TerminalSqlProposalRequest,
 };
 use crate::skills::SkillManager;
@@ -36,8 +38,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
-
-use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegistry};
 
 const MAX_SQL_BYTES: usize = MAX_STRING_BYTES;
 const MAX_TABLE_SELECTOR_BYTES: usize = 512;

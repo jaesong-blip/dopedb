@@ -14,6 +14,7 @@ use crate::connection::{
 };
 use crate::error::{AppError, AppResult};
 use crate::executor;
+use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
 use crate::model::{HistoryEntry, QueryKind, ScriptOutcome, ScriptStatement};
 use crate::operations::{
     ClaimedOperation, ExecutionGrant, NewOperation, OperationKind, OperationPlanDisposition,
@@ -155,6 +156,7 @@ impl DesktopScriptExecutionFailure {
 pub(crate) struct ScriptService {
     store: Store,
     connections: ConnectionManager,
+    catalog: CatalogFeature,
     operation: OperationRuntime,
 }
 
@@ -174,11 +176,13 @@ impl ScriptService {
     pub(super) fn new(
         store: Store,
         connections: ConnectionManager,
+        catalog: CatalogFeature,
         operation: OperationRuntime,
     ) -> Self {
         Self {
             store,
             connections,
+            catalog,
             operation,
         }
     }
@@ -485,14 +489,11 @@ impl ScriptService {
                     _scope: operation_scope,
                 }));
             }
-            let snapshot = crate::introspect::load_catalog_snapshot(
-                &self.store,
-                &self.connections,
-                planned.connection_id,
-                crate::introspect::CatalogReadMode::Refresh,
-            )
-            .await
-            .map_err(DesktopScriptRunError::Application)?;
+            let snapshot = self
+                .catalog
+                .load_snapshot(planned.connection_id.into(), CatalogReadPolicy::Refresh)
+                .await
+                .map_err(DesktopScriptRunError::Application)?;
             if snapshot.fingerprint() != context.request.catalog_fingerprint {
                 return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                     error: AppError::Blocked {
@@ -533,14 +534,11 @@ impl ScriptService {
                     _scope: operation_scope,
                 }));
             }
-            let snapshot = crate::introspect::load_catalog_snapshot(
-                &self.store,
-                &self.connections,
-                planned.connection_id,
-                crate::introspect::CatalogReadMode::Refresh,
-            )
-            .await
-            .map_err(DesktopScriptRunError::Application)?;
+            let snapshot = self
+                .catalog
+                .load_snapshot(planned.connection_id.into(), CatalogReadPolicy::Refresh)
+                .await
+                .map_err(DesktopScriptRunError::Application)?;
             if snapshot.fingerprint() != context.catalog_fingerprint {
                 return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                     error: AppError::Blocked {
@@ -1378,7 +1376,9 @@ mod tests {
                 connections.clone(),
                 operation.clone(),
             );
-            let service = ScriptService::new(store.clone(), connections.clone(), operation);
+            let catalog = crate::features::catalog::compose(store.clone(), connections.clone());
+            let service =
+                ScriptService::new(store.clone(), connections.clone(), catalog, operation);
             Self {
                 directory,
                 store,
@@ -1452,14 +1452,12 @@ mod tests {
             &self,
             statements: &[&str],
         ) -> Result<DesktopScriptProposalReceipt, DesktopScriptRunError> {
-            let snapshot = crate::introspect::load_catalog_snapshot(
-                &self.store,
-                &self.connections,
-                self.connection_id,
-                crate::introspect::CatalogReadMode::Refresh,
-            )
-            .await
-            .unwrap();
+            let snapshot = self
+                .service
+                .catalog
+                .load_snapshot(self.connection_id.into(), CatalogReadPolicy::Refresh)
+                .await
+                .unwrap();
             self.service
                 .propose_desktop(DesktopScriptProposalRequest {
                     connection_id: self.connection_id,

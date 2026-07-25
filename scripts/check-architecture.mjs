@@ -96,6 +96,7 @@ const removedPaths = [
   "src-tauri/src/services/connection_service.rs",
   "src-tauri/src/services/connection_credentials.rs",
   "src-tauri/src/services/terminal_authority.rs",
+  "src-tauri/src/services/catalog_service.rs",
   "src-tauri/src/services/workspace_service.rs",
   "src-tauri/src/workspace_auth.rs",
   "src/lib/workbenchDocuments.ts",
@@ -126,6 +127,7 @@ for (const filePath of [
     [/src\/lib\/workbenchDocuments\.ts/, "active documentation names a removed frontend path"],
     [/src-tauri\/src\/services\/sql_document_service\.rs/, "active documentation names a removed Rust path"],
     [/src-tauri\/src\/services\/connection_service\.rs/, "active documentation names the removed connection service"],
+    [/src-tauri\/src\/services\/catalog_service\.rs/, "active documentation names the removed catalog service"],
     [/src-tauri\/src\/services\/workspace_service\.rs/, "active documentation names the removed workspace service"],
     [/src-tauri\/src\/workspace_auth\.rs/, "active documentation names the removed global workspace auth module"],
     [/src\/lib\/workspaceAccounts\.ts/, "active documentation names a removed workspace account helper"],
@@ -141,6 +143,7 @@ const rustSource = sourceFiles
 for (const token of [
   "SqlDocumentService",
   "ConnectionService",
+  "CatalogService",
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",
   "\"sql_documents_v1\"",
@@ -150,6 +153,18 @@ for (const token of [
   if (rustSource.includes(token)) {
     fail(`removed SQL document runtime token returned: ${token}`);
   }
+}
+const directCatalogLoaders = sourceFiles
+  .filter((file) => file.endsWith(".rs"))
+  .filter((file) => fs.readFileSync(file, "utf8").includes("introspect::load_catalog"))
+  .map(relative);
+if (
+  directCatalogLoaders.length !== 1 ||
+  directCatalogLoaders[0] !== "src-tauri/src/features/catalog/adapters/local.rs"
+) {
+  fail(
+    `catalog introspection must belong only to src-tauri/src/features/catalog/adapters/local.rs, found ${directCatalogLoaders.join(", ") || "none"}`,
+  );
 }
 
 const coreRustRules = [
@@ -180,6 +195,23 @@ for (const filePath of [
   forbid(filePath, coreRustRules);
 }
 for (const filePath of [
+  "src-tauri/src/features/catalog/domain.rs",
+  "src-tauri/src/features/catalog/ports.rs",
+  "src-tauri/src/features/catalog/application.rs",
+]) {
+  requireFile(filePath);
+  forbid(
+    filePath,
+    coreRustRules.filter(([pattern]) => pattern.source !== "\\bdopedb_protocol\\b"),
+  );
+  forbid(filePath, [
+    [
+      /\bdopedb_protocol::(?!catalog\b)/,
+      "catalog core may use only the transport-independent versioned catalog contract",
+    ],
+  ]);
+}
+for (const filePath of [
   "src-tauri/src/features/workspaces/domain.rs",
   "src-tauri/src/features/workspaces/ports.rs",
   "src-tauri/src/features/workspaces/application.rs",
@@ -207,6 +239,23 @@ forbid("src-tauri/src/features/connections/transport.rs", [
   [/crate::store/, "transport must not read the store directly"],
   [/crate::connection/, "transport must not authorize connections directly"],
   [/crate::driver/, "transport must not call the driver registry directly"],
+]);
+forbid("src-tauri/src/features/catalog/transport.rs", [
+  [/\bsqlx\b/, "catalog transport must delegate instead of querying SQLite"],
+  [/crate::store/, "catalog transport must not read the store directly"],
+  [/crate::connection/, "catalog transport must not access connection pools directly"],
+  [/crate::introspect/, "catalog transport must not introspect directly"],
+]);
+forbid("src-tauri/src/introspect/mod.rs", [
+  [/\bpub struct Catalog\b/, "catalog model returned to the introspection adapter"],
+  [/\bpub struct Column\b/, "catalog column model returned to the introspection adapter"],
+  [/\bpub struct Table\b/, "catalog table model returned to the introspection adapter"],
+]);
+forbid("src-tauri/src/commands/mod.rs", [
+  [/\bpub async fn get_schema\b/, "catalog command returned to the central command module"],
+  [/\bpub async fn refresh_schema\b/, "catalog refresh returned to the central command module"],
+  [/\bpub async fn get_catalog_snapshot\b/, "catalog snapshot returned to the central command module"],
+  [/\bpub async fn get_table_ddl\b/, "catalog DDL command returned to the central command module"],
 ]);
 forbid("src-tauri/src/features/sql_documents/transport.rs", [
   [/\bsqlx\b/, "transport must delegate instead of querying SQLite"],

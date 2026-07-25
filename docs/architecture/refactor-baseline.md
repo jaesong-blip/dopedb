@@ -80,6 +80,27 @@ commands/types, generic components, and generic auth/account helpers are deletio
 gates. The architecture check also prevents workspace core modules from importing
 Tauri, SQLite, HTTP, keychain, environment, or concrete adapters.
 
+## Fourth migrated slice
+
+Metadata catalogs use:
+
+```text
+Tauri / broker / schema / script / job consumers
+  -> CatalogUseCases<ConnectionId>
+     -> catalog gateway port
+  -> scope-pinned introspection and cache adapter
+```
+
+Catalog wire values and cache policy now belong to the catalog domain rather than the
+introspection implementation. Every live or cache-first load, including approval-time
+schema and staged-row revalidation, enters through the same typed use case. The former
+catalog service, central Tauri commands, direct script-service introspection, and
+introspection-owned model definitions are deletion gates. The persistent catalog cache
+has one documented writer in the SQLite adapter. The feature imports only
+`dopedb_protocol::catalog`, the versioned, transport-independent canonical metadata
+contract shared with the CLI; command envelopes and other protocol modules remain
+forbidden in the core.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

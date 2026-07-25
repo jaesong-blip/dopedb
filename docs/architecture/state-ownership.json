@@ -42,6 +42,13 @@
         "pub(crate) async fn sync_account_workspaces(",
         "pub(crate) async fn sync_remote_connections("
       ]
+    },
+    {
+      "name": "catalogCache",
+      "owner": "src-tauri/src/store/mod.rs",
+      "writerTokens": [
+        "pub(crate) async fn put_catalog_if_current("
+      ]
     }
   ]
 }

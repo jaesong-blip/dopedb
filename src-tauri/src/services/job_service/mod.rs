@@ -26,11 +26,11 @@ use uuid::Uuid;
 
 use crate::connection::{ConnectionAccess, ConnectionManager};
 use crate::error::{AppError, AppResult};
+use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
 use crate::operations::{canonical_hash, NewOperation, OperationPlanDisposition, OperationRuntime};
 use crate::store::Store;
 
 use super::operation_service::{actor_for_pin, capture_policy, required_confirmation};
-use super::{CatalogReadPolicy, CatalogService};
 pub(crate) use model::{
     CreateJobRequest, Job, JobChangedEvent, JobDetail, JobErrorPolicy, JobFieldMapping,
     JobFileCapability, JobFileDirection, JobFormat, JobInputInspection, JobKind, JobPlan,
@@ -47,7 +47,7 @@ const MAX_CONCURRENT_JOBS: usize = 2;
 pub(crate) struct JobService {
     store: Store,
     connections: ConnectionManager,
-    catalog: CatalogService,
+    catalog: CatalogFeature,
     operation: OperationRuntime,
     repository: JobRepository,
     worker: JobWorker,
@@ -60,7 +60,7 @@ impl JobService {
     pub(super) fn new(
         store: Store,
         connections: ConnectionManager,
-        catalog: CatalogService,
+        catalog: CatalogFeature,
         operation: OperationRuntime,
     ) -> Self {
         let repository = JobRepository::new(store.clone());
@@ -361,7 +361,7 @@ impl JobService {
         };
         let snapshot = self
             .catalog
-            .load_snapshot(request.connection_id, CatalogReadPolicy::Refresh)
+            .load_snapshot(request.connection_id.into(), CatalogReadPolicy::Refresh)
             .await?;
         validate_plan(&request, &snapshot)?;
         if let (

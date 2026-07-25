@@ -17,9 +17,9 @@ use uuid::Uuid;
 
 use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
 use crate::error::{AppError, AppResult};
+use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
 use crate::model::Engine;
 use crate::operations::{ClaimedOperation, ExecutionGrant};
-use crate::services::{CatalogReadPolicy, CatalogService};
 
 use super::format::{
     create_error_writer, file_sha256, finalize_error_writer, typed_sql_literal, write_error_row,
@@ -44,7 +44,7 @@ pub(super) enum WorkerOutcome {
 pub(super) struct JobWorker {
     repository: JobRepository,
     connections: ConnectionManager,
-    catalog: CatalogService,
+    catalog: CatalogFeature,
     events: broadcast::Sender<JobChangedEvent>,
 }
 
@@ -52,7 +52,7 @@ impl JobWorker {
     pub(super) fn new(
         repository: JobRepository,
         connections: ConnectionManager,
-        catalog: CatalogService,
+        catalog: CatalogFeature,
         events: broadcast::Sender<JobChangedEvent>,
     ) -> Self {
         Self {
@@ -104,7 +104,7 @@ impl JobWorker {
                 validate_output_parent(&capability.path)?;
                 let snapshot = self
                     .catalog
-                    .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
+                    .load_snapshot(record.job.connection_id.into(), CatalogReadPolicy::Refresh)
                     .await?;
                 find_relation(&snapshot, relation)?;
                 let partial = partial_path(&capability.path, record.job.id)?;
@@ -159,7 +159,7 @@ impl JobWorker {
                 }
                 let snapshot = self
                     .catalog
-                    .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
+                    .load_snapshot(record.job.connection_id.into(), CatalogReadPolicy::Refresh)
                     .await?;
                 if let Some(reference) = target_relation {
                     find_relation(&snapshot, reference)?;
@@ -233,7 +233,7 @@ impl JobWorker {
             .await?;
         let snapshot = self
             .catalog
-            .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
+            .load_snapshot(record.job.connection_id.into(), CatalogReadPolicy::Refresh)
             .await?;
         let relation_metadata = find_relation(&snapshot, relation)?;
         let source_columns = if columns.is_empty() {
@@ -556,7 +556,7 @@ impl JobWorker {
             .ok_or_else(|| AppError::Config("input capability has no source hash".into()))?;
         let snapshot = self
             .catalog
-            .load_snapshot(record.job.connection_id, CatalogReadPolicy::Refresh)
+            .load_snapshot(record.job.connection_id.into(), CatalogReadPolicy::Refresh)
             .await?;
         let target_fingerprint = snapshot.fingerprint().to_owned();
         let target_metadata = match target_relation {

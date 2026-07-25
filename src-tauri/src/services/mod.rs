@@ -2,7 +2,6 @@
 //! Services expose domain DTOs and errors, never transport types.
 
 mod activity_service;
-mod catalog_service;
 mod dashboard_service;
 mod document_service;
 mod erd_service;
@@ -17,7 +16,6 @@ mod script_service;
 mod terminal_run_registry;
 
 pub(crate) use activity_service::{ActivityService, AuditSnapshotReceipt, AuditVerdict};
-pub(crate) use catalog_service::{CatalogReadPolicy, CatalogService};
 pub(crate) use dashboard_service::{
     AgentDashboardCommitError, AgentDashboardPrepareError, AgentDashboardPresentation,
     DashboardRunError, DashboardRunReceipt, DashboardRunRequest, DashboardService,
@@ -57,6 +55,7 @@ pub(crate) use script_service::{
 pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 
 use crate::connection::ConnectionManager;
+use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
@@ -70,7 +69,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) activity: ActivityService,
     pub(crate) legacy_chat: LegacyChatService,
     pub(crate) connections: ConnectionsFeature,
-    pub(crate) catalog: CatalogService,
+    pub(crate) catalog: CatalogFeature,
     pub(crate) dashboard: DashboardService,
     pub(crate) document: DocumentService,
     pub(crate) erd: ErdService,
@@ -95,8 +94,13 @@ impl ApplicationServices {
         let terminal_runs = TerminalQueryRunRegistry::default();
         let operation_service =
             OperationService::new(store.clone(), connections.clone(), operation.clone());
-        let catalog = CatalogService::new(store.clone(), connections.clone());
-        let script = ScriptService::new(store.clone(), connections.clone(), operation.clone());
+        let catalog = catalog::compose(store.clone(), connections.clone());
+        let script = ScriptService::new(
+            store.clone(),
+            connections.clone(),
+            catalog.clone(),
+            operation.clone(),
+        );
         let schema = SchemaService::new(catalog.clone(), script.clone());
         let connection_feature = connection_feature::compose(
             store.clone(),

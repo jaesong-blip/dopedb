@@ -1,0 +1,38 @@
+//! Platform contract required by catalog use cases.
+
+use std::future::Future;
+
+use dopedb_protocol::catalog::CatalogSnapshot;
+
+use crate::error::AppResult;
+use crate::kernel::identity::ConnectionId;
+use crate::kernel::TerminalAuthority;
+
+use super::domain::{Catalog, CatalogReadPolicy};
+
+pub(crate) trait CatalogGatewayPort: Clone + Send + Sync + 'static {
+    fn load(
+        &self,
+        connection_id: ConnectionId,
+        policy: CatalogReadPolicy,
+    ) -> impl Future<Output = AppResult<Catalog>> + Send;
+
+    fn load_snapshot(
+        &self,
+        connection_id: ConnectionId,
+        policy: CatalogReadPolicy,
+    ) -> impl Future<Output = AppResult<CatalogSnapshot>> + Send;
+
+    fn load_terminal_snapshot(
+        &self,
+        authority: &TerminalAuthority,
+        policy: CatalogReadPolicy,
+    ) -> impl Future<Output = AppResult<CatalogSnapshot>> + Send;
+
+    fn table_ddl(
+        &self,
+        connection_id: ConnectionId,
+        schema: Option<&str>,
+        table: &str,
+    ) -> impl Future<Output = AppResult<String>> + Send;
+}

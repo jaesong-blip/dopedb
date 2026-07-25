@@ -6,10 +6,11 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::error::AppResult;
+use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
 
 use super::{
-    CatalogReadPolicy, CatalogService, DesktopScriptProposalRequest, DesktopScriptRunError,
-    DesktopScriptRunReceipt, SchemaScriptContext, ScriptService,
+    DesktopScriptProposalRequest, DesktopScriptRunError, DesktopScriptRunReceipt,
+    SchemaScriptContext, ScriptService,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,19 +33,19 @@ pub(crate) struct SchemaChangeProposalReceipt {
 
 #[derive(Clone)]
 pub(crate) struct SchemaService {
-    catalog: CatalogService,
+    catalog: CatalogFeature,
     script: ScriptService,
 }
 
 impl SchemaService {
-    pub(super) fn new(catalog: CatalogService, script: ScriptService) -> Self {
+    pub(super) fn new(catalog: CatalogFeature, script: ScriptService) -> Self {
         Self { catalog, script }
     }
 
     pub(crate) async fn preview(&self, request: SchemaChangePreviewRequest) -> AppResult<DdlPlan> {
         let snapshot = self
             .catalog
-            .load_snapshot(request.connection_id, CatalogReadPolicy::Refresh)
+            .load_snapshot(request.connection_id.into(), CatalogReadPolicy::Refresh)
             .await?;
         crate::ddl::render(&snapshot, &request.request)
     }

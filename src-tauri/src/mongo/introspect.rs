@@ -11,7 +11,7 @@ use mongodb::bson::{Bson, Document};
 use mongodb::results::CollectionType;
 
 use crate::error::AppResult;
-use crate::introspect::{Catalog, Column, Index, Table};
+use crate::features::catalog::{Catalog, Column, Index, Table};
 
 use super::MongoConnection;
 
