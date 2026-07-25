@@ -51,10 +51,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 
 // Network-shaped failures (dropped Wi-Fi, DB briefly unreachable) heal on their own; a
 // stuck error card that needs a manual "retry" click after the network recovers is pure
-// friction. Everything else (bad credentials, invalid SQL, missing table) is deterministic
-// and must keep failing fast — retrying it only doubles the wait.
+// friction. Client and server query timeouts deliberately fail fast: a timed-out Tauri
+// invoke cannot cancel the Rust task, so retrying it would multiply live DB work.
 const TRANSIENT_ERROR =
-  /pool timed out|timed out|timeout|connection (refused|reset|closed|aborted)|could not connect|unreachable|broken pipe|network|io error/i;
+  /connection (refused|reset|closed|aborted)|could not connect|unreachable|broken pipe|network|io error/i;
 
 export function isTransientDbError(e: unknown): boolean {
   return TRANSIENT_ERROR.test(errMessage(e));
@@ -220,9 +220,10 @@ export function catalogQuery(connectionId: string) {
   });
 }
 
-export function catalogSnapshotQuery(connectionId: string) {
+export function catalogSnapshotQuery(connectionId: string, enabled = true) {
   return queryOptions({
     queryKey: qk.catalogSnapshot(connectionId),
+    enabled,
     staleTime: CATALOG_STALE_MS,
     ...transientRetry,
     queryFn: () =>

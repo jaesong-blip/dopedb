@@ -22,6 +22,10 @@
   font-size: var(--ds-font-size-sm);
 }
 
+.schema-load-retry {
+  align-self: flex-start;
+}
+
 .schema-head-actions {
   --ds-row-control-size: var(--ds-control-md);
   min-width: 0;

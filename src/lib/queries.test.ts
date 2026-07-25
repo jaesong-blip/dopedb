@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  catalogSnapshotQuery,
   dashboardTileRunQueries,
   isTransientDbError,
   legacyMcpCleanupStatusQuery,
@@ -10,16 +11,24 @@ import {
 
 describe("isTransientDbError", () => {
   it("treats network-shaped failures as transient", () => {
-    expect(isTransientDbError("database error: pool timed out while waiting for an open connection")).toBe(true);
-    expect(isTransientDbError("Schema loading timed out. Check the database connection or retry.")).toBe(true);
     expect(isTransientDbError(new Error("connection refused"))).toBe(true);
     expect(isTransientDbError("host unreachable")).toBe(true);
   });
 
-  it("keeps deterministic failures failing fast", () => {
+  it("keeps deterministic and uncancellable timeout failures failing fast", () => {
+    expect(isTransientDbError("database error: pool timed out while waiting for an open connection")).toBe(false);
+    expect(isTransientDbError("Schema loading timed out. Check the database connection or retry.")).toBe(false);
+    expect(isTransientDbError("canceling statement due to statement timeout")).toBe(false);
     expect(isTransientDbError("password authentication failed for user")).toBe(false);
     expect(isTransientDbError('relation "users" does not exist')).toBe(false);
     expect(isTransientDbError("permission denied for table accounts")).toBe(false);
+  });
+});
+
+describe("catalog snapshot query lifecycle", () => {
+  it("can wait for the legacy catalog to finish a cold introspection", () => {
+    expect(catalogSnapshotQuery("connection-id", false).enabled).toBe(false);
+    expect(catalogSnapshotQuery("connection-id", true).enabled).toBe(true);
   });
 });
 

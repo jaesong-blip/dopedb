@@ -49,7 +49,14 @@ export default function SchemaExplorer({
 }) {
   const { t } = useI18n();
   const catalogQueryResult = useQuery(catalogQuery(connection.id));
-  const snapshotQuery = useQuery(catalogSnapshotQuery(connection.id));
+  // A cold legacy catalog load persists the canonical snapshot before it resolves.
+  // Waiting for it avoids running the same live introspection twice in parallel.
+  const snapshotQuery = useQuery(
+    catalogSnapshotQuery(
+      connection.id,
+      catalogQueryResult.data !== undefined,
+    ),
+  );
   const snapshot = snapshotQuery.data;
   const [filter, setFilter] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -106,11 +113,29 @@ export default function SchemaExplorer({
     if (table) onOpenTable(table);
   }
 
+  async function retryCatalogLoad() {
+    if (catalogQueryResult.error) {
+      await catalogQueryResult.refetch();
+      return;
+    }
+    await snapshotQuery.refetch();
+  }
+
   const error = snapshotQuery.error ?? catalogQueryResult.error;
   if (error) {
     return (
       <div className="screen schema-screen">
         <div className="error">{errMessage(error)}</div>
+        <button
+          className="btn small schema-load-retry"
+          type="button"
+          disabled={catalogQueryResult.isFetching || snapshotQuery.isFetching}
+          aria-busy={catalogQueryResult.isFetching || snapshotQuery.isFetching}
+          onClick={() => void retryCatalogLoad()}
+        >
+          <Icon name="refresh" />
+          {t("common.refresh")}
+        </button>
       </div>
     );
   }

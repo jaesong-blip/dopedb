@@ -320,10 +320,18 @@ fn objects_sql_for_version(server_version_num: u32) -> &'static str {
 }
 
 pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
+    // Keep one server session for the whole scan and bound every metadata statement.
+    // Without SET LOCAL a blocked pg_catalog read can occupy the desktop read pool
+    // indefinitely, while frontend retries keep queueing more scans.
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL statement_timeout = 10000")
+        .execute(&mut *tx)
+        .await?;
+
     let mut tables: Vec<Table> = Vec::new();
     let mut idx: HashMap<(String, String), usize> = HashMap::new();
 
-    for r in sqlx::query(COLS_SQL).fetch_all(pool).await? {
+    for r in sqlx::query(COLS_SQL).fetch_all(&mut *tx).await? {
         let schema: String = r.try_get("table_schema")?;
         let name: String = r.try_get("table_name")?;
         let i = *idx
@@ -375,7 +383,7 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
         });
     }
 
-    for r in sqlx::query(KIND_SQL).fetch_all(pool).await? {
+    for r in sqlx::query(KIND_SQL).fetch_all(&mut *tx).await? {
         let key: (String, String) = (r.try_get("table_schema")?, r.try_get("table_name")?);
         if let Some(&i) = idx.get(&key) {
             let ty: String = r.try_get("table_type")?;
@@ -425,7 +433,7 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
         }
     }
 
-    for r in sqlx::query(CONSTRAINTS_SQL).fetch_all(pool).await? {
+    for r in sqlx::query(CONSTRAINTS_SQL).fetch_all(&mut *tx).await? {
         let key: (String, String) = (r.try_get("table_schema")?, r.try_get("table_name")?);
         let Some(&i) = idx.get(&key) else { continue };
         let kind = match r.try_get::<String, _>("constraint_type")?.as_str() {
@@ -448,7 +456,7 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
         });
     }
 
-    for r in sqlx::query(FK_SQL).fetch_all(pool).await? {
+    for r in sqlx::query(FK_SQL).fetch_all(&mut *tx).await? {
         let key: (String, String) = (r.try_get("table_schema")?, r.try_get("table_name")?);
         if let Some(&i) = idx.get(&key) {
             tables[i].foreign_keys.push(ForeignKey {
@@ -471,7 +479,7 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
     }
 
     // Group index rows (already ordered by table/index/position) into per-index columns.
-    for r in sqlx::query(IDX_SQL).fetch_all(pool).await? {
+    for r in sqlx::query(IDX_SQL).fetch_all(&mut *tx).await? {
         let key: (String, String) = (r.try_get("table_schema")?, r.try_get("table_name")?);
         let Some(&i) = idx.get(&key) else { continue };
         let iname: String = r.try_get("index_name")?;
@@ -509,7 +517,7 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
         }
     }
 
-    for r in sqlx::query(EST_SQL).fetch_all(pool).await? {
+    for r in sqlx::query(EST_SQL).fetch_all(&mut *tx).await? {
         let key: (String, String) = (r.try_get("table_schema")?, r.try_get("table_name")?);
         if let Some(&i) = idx.get(&key) {
             // reltuples is -1 for a relation that has never been ANALYZEd (PG 14+);
@@ -519,13 +527,13 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
     }
 
     let server_version: String = sqlx::query_scalar("SHOW server_version_num")
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await?;
     let server_version_num = server_version.trim().parse::<u32>().map_err(|_| {
         AppError::Config("PostgreSQL returned an invalid server_version_num".into())
     })?;
     let objects = sqlx::query(objects_sql_for_version(server_version_num))
-        .fetch_all(pool)
+        .fetch_all(&mut *tx)
         .await?
         .into_iter()
         .map(|row| {
@@ -548,6 +556,7 @@ pub async fn introspect(pool: &PgPool) -> AppResult<Catalog> {
         })
         .collect::<AppResult<Vec<_>>>()?;
 
+    tx.commit().await?;
     Ok(Catalog { tables, objects })
 }
 
