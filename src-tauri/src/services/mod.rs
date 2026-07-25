@@ -15,7 +15,6 @@ mod safety_service;
 mod schema_service;
 mod script_service;
 mod terminal_run_registry;
-mod workspace_service;
 
 pub(crate) use activity_service::{ActivityService, AuditSnapshotReceipt, AuditVerdict};
 pub(crate) use catalog_service::{CatalogReadPolicy, CatalogService};
@@ -56,13 +55,11 @@ pub(crate) use script_service::{
     DesktopScriptRunReceipt, SchemaScriptContext, ScriptService, TableScriptContext,
 };
 pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
-pub(crate) use workspace_service::{
-    WorkspaceConnectionCopyRequest, WorkspaceCredentialBindingRequest, WorkspaceService,
-};
 
 use crate::connection::ConnectionManager;
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
+use crate::features::workspaces::{self, WorkspacesFeature};
 use crate::operations::OperationRuntime;
 use crate::store::Store;
 
@@ -85,7 +82,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) schema: SchemaService,
     pub(crate) script: ScriptService,
     pub(crate) sql_documents: SqlDocumentsFeature,
-    pub(crate) workspace: WorkspaceService,
+    pub(crate) workspace: WorkspacesFeature,
 }
 
 impl ApplicationServices {
@@ -143,7 +140,7 @@ impl ApplicationServices {
             schema,
             script,
             sql_documents,
-            workspace: WorkspaceService::new(store, connections, connection_credentials),
+            workspace: workspaces::compose(store, connections, connection_credentials),
         }
     }
 }

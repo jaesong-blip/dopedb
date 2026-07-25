@@ -11,15 +11,20 @@ import {
   setActiveWorkspaceAccount,
   signOutAllWorkspaces,
   signOutWorkspace,
-} from "../ipc/commands";
-import type { WorkspaceLoginPoll } from "../ipc/types";
-import { errMessage } from "../ipc/types";
-import { useI18n } from "../lib/i18n";
-import { resetWorkspaceResourceQueries } from "../lib/queryClient";
-import { qk, workspaceAuthStateQuery } from "../lib/queries";
-import { shouldRevalidateWorkspaceAuth } from "../lib/workspaceAuthLifecycle";
-import { Icon } from "./Icon";
-import { useToast } from "./Toast";
+} from "../tauriAdapter";
+import {
+  invalidateWorkspaceContext,
+  invalidateWorkspaceState,
+  replaceWorkspaceAuth,
+  resetWorkspaceScope,
+} from "../cache";
+import type { AccountId, WorkspaceLoginPoll } from "../domain";
+import { workspaceAuthStateQuery } from "../queries";
+import { shouldRevalidateWorkspaceAuth } from "../authPolicy";
+import { errMessage } from "../../../ipc/types";
+import { useI18n } from "../../../lib/i18n";
+import { Icon } from "../../../components/Icon";
+import { useToast } from "../../../components/Toast";
 import "./WorkspaceAccount.css";
 
 export default function WorkspaceAccount({
@@ -34,8 +39,8 @@ export default function WorkspaceAccount({
   const queryClient = useQueryClient();
   const auth = useQuery(workspaceAuthStateQuery());
   const [loginPhase, setLoginPhase] = useState<"idle" | "starting" | "waiting">("idle");
-  const [loggingOut, setLoggingOut] = useState<string | "all" | null>(null);
-  const [switchingAccount, setSwitchingAccount] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState<AccountId | "all" | null>(null);
+  const [switchingAccount, setSwitchingAccount] = useState<AccountId | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -93,7 +98,7 @@ export default function WorkspaceAccount({
 
   useEffect(() => {
     if (!auth.data?.authenticated) return;
-    void queryClient.invalidateQueries({ queryKey: qk.workspaceContext() });
+    void invalidateWorkspaceContext(queryClient);
   }, [auth.data?.authenticated, queryClient]);
 
   useEffect(() => {
@@ -101,8 +106,8 @@ export default function WorkspaceAccount({
     const request = refreshWorkspaceAuthState()
       .then(async (state) => {
         if (!active) return;
-        queryClient.setQueryData(qk.workspaceAuth(), state);
-        await queryClient.invalidateQueries({ queryKey: qk.workspaceContext() });
+        replaceWorkspaceAuth(queryClient, state);
+        await invalidateWorkspaceContext(queryClient);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -150,8 +155,7 @@ export default function WorkspaceAccount({
       pendingLogin.current = null;
       setLoginPhase("idle");
       await auth.refetch();
-      await resetWorkspaceResourceQueries(queryClient);
-      await queryClient.invalidateQueries({ queryKey: qk.workspaceContext() });
+      await resetWorkspaceScope(queryClient);
       await onScopeChanged();
       toast(t("workspace.loginComplete", { name: result.user.displayName }), "success");
       return true;
@@ -200,19 +204,19 @@ export default function WorkspaceAccount({
     );
     const request = (revalidateAuth
       ? refreshWorkspaceAuthState().then((state) => {
-          queryClient.setQueryData(qk.workspaceAuth(), state);
+          replaceWorkspaceAuth(queryClient, state);
         })
       : refreshWorkspaceMemberships()
           .then(() => auth.refetch())
           .then(() => undefined)
     )
-      .then(() => queryClient.invalidateQueries({ queryKey: qk.workspaceContext() }))
+      .then(() => invalidateWorkspaceContext(queryClient))
       .catch(async () => {
         // A membership 401 also invalidates the hosted session. Confirm that state
         // silently so expired team scopes disappear without turning the button into
         // a foreground loading indicator.
         await auth.refetch().catch(() => undefined);
-        await queryClient.invalidateQueries({ queryKey: qk.workspaceContext() });
+        await invalidateWorkspaceContext(queryClient);
       })
       .finally(() => {
         if (membershipRefreshInFlight.current === request) {
@@ -257,15 +261,14 @@ export default function WorkspaceAccount({
     }
   }
 
-  async function logout(userId: string) {
+  async function logout(userId: AccountId) {
     if (loggingOut) return;
     abortLoginAttempt();
     setLoggingOut(userId);
     try {
       const signedOut = await signOutWorkspace(userId);
-      queryClient.setQueryData(qk.workspaceAuth(), signedOut);
-      await resetWorkspaceResourceQueries(queryClient);
-      await queryClient.invalidateQueries({ queryKey: qk.workspaceContext() });
+      replaceWorkspaceAuth(queryClient, signedOut);
+      await resetWorkspaceScope(queryClient);
       await onScopeChanged();
       setMenuOpen(false);
       toast(t("workspace.logoutComplete"), "success");
@@ -273,7 +276,7 @@ export default function WorkspaceAccount({
       // The native command may already have removed the credential before a local
       // workspace-index error. Re-read identity so the UI never displays a stale user.
       await auth.refetch().catch(() => undefined);
-      await queryClient.invalidateQueries({ queryKey: qk.workspaceContext() });
+      await invalidateWorkspaceContext(queryClient);
       toast(t("workspace.logoutFailed", { error: errMessage(error) }), "error");
     } finally {
       setLoggingOut(null);
@@ -286,9 +289,8 @@ export default function WorkspaceAccount({
     setLoggingOut("all");
     try {
       const signedOut = await signOutAllWorkspaces();
-      queryClient.setQueryData(qk.workspaceAuth(), signedOut);
-      await resetWorkspaceResourceQueries(queryClient);
-      await queryClient.invalidateQueries({ queryKey: qk.workspaceContext() });
+      replaceWorkspaceAuth(queryClient, signedOut);
+      await resetWorkspaceScope(queryClient);
       await onScopeChanged();
       setMenuOpen(false);
       toast(t("workspace.logoutAllComplete"), "success");
@@ -300,7 +302,7 @@ export default function WorkspaceAccount({
     }
   }
 
-  async function switchAccount(userId: string) {
+  async function switchAccount(userId: AccountId) {
     if (switchingAccount || auth.data?.user?.id === userId) {
       setMenuOpen(false);
       return;
@@ -309,18 +311,13 @@ export default function WorkspaceAccount({
     setSwitchingAccount(userId);
     try {
       await setActiveWorkspaceAccount(userId);
-      await resetWorkspaceResourceQueries(queryClient);
-      await Promise.all([
-        auth.refetch(),
-        queryClient.invalidateQueries({ queryKey: qk.workspaceContext() }),
-      ]);
+      await resetWorkspaceScope(queryClient);
+      await auth.refetch();
       await onScopeChanged();
       setMenuOpen(false);
     } catch (error) {
-      await Promise.all([
-        auth.refetch(),
-        queryClient.invalidateQueries({ queryKey: qk.workspaceContext() }),
-      ]);
+      await auth.refetch();
+      await invalidateWorkspaceState(queryClient);
       toast(t("workspace.accountSwitchFailed", { error: errMessage(error) }), "error");
     } finally {
       setSwitchingAccount(null);

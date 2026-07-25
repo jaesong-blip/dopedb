@@ -7,13 +7,11 @@ import {
   auditSnapshot,
   auditVerify,
   cliInstallationStatus,
-  workspaceAuthState,
   cancelQuery,
   detectAgentClis,
   getCatalog,
   getCatalogSnapshot,
   getChatMessages,
-  getActiveWorkspace,
   getMonitoringStatus,
   legacyMcpCleanupStatus,
   listChatThreads,
@@ -21,21 +19,18 @@ import {
   listErdLayouts,
   listHistory,
   listJobs,
-  listWorkspaces,
   platformFeatureFlags,
   refreshCatalog,
   runDashboard,
   runDocumentRead,
   runSqlRead,
   skillStatus,
-  workspaceFeatureState,
 } from "../ipc/commands";
 import type { CatalogTable, Engine, QueryResult } from "../ipc/types";
 import { errMessage } from "../ipc/types";
 import { listDrivers } from "../features/connections/tauriAdapter";
 import { buildCountQuery, buildPageQuery, type GridSort } from "./sqlBuild";
 import { tableKey } from "./tableRef";
-import { WORKSPACE_AUTH_RECHECK_MS } from "./workspaceAuthLifecycle";
 
 // Introspection is written to a backend cache that never expires, so the catalog only
 // needs refetching when the user explicitly refreshes it (see invalidateCatalog).
@@ -112,8 +107,6 @@ export const qk = {
   platformFeatureFlags: () => ["platformFeatureFlags"] as const,
   chatThreads: () => ["chatThreads"] as const,
   chatMessages: (threadId: string) => ["chatMessages", threadId] as const,
-  workspaceContext: () => ["workspaceContext"] as const,
-  workspaceAuth: () => ["workspaceAuth"] as const,
   tableRows: (args: TableRowsArgs) =>
     [
       "tableRows",
@@ -135,39 +128,12 @@ export const qk = {
   jobs: (connectionId: string) => ["jobs", connectionId] as const,
 };
 
-export function workspaceContextQuery() {
-  return queryOptions({
-    queryKey: qk.workspaceContext(),
-    staleTime: Infinity,
-    queryFn: async () => {
-      const [feature, workspaces, active] = await Promise.all([
-        workspaceFeatureState(),
-        listWorkspaces(),
-        getActiveWorkspace(),
-      ]);
-      return { feature, workspaces, active };
-    },
-  });
-}
-
 export function platformFeatureFlagsQuery() {
   return queryOptions({
     queryKey: qk.platformFeatureFlags(),
     staleTime: Infinity,
     retry: false,
     queryFn: platformFeatureFlags,
-  });
-}
-
-export function workspaceAuthStateQuery() {
-  return queryOptions({
-    queryKey: qk.workspaceAuth(),
-    // Identity is durable UI state, not a loading spinner. Sensitive workspace APIs
-    // still validate the Bearer session and RBAC membership on every request.
-    staleTime: WORKSPACE_AUTH_RECHECK_MS,
-    gcTime: Infinity,
-    retry: false,
-    queryFn: workspaceAuthState,
   });
 }
 

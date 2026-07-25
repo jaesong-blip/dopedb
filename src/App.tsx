@@ -35,8 +35,8 @@ import { Icon } from "./components/Icon";
 import TerminalDock from "./components/TerminalDock/TerminalDock";
 import WorkbenchDocumentStrip from "./components/WorkbenchDocumentStrip";
 import { ToastProvider, useToast } from "./components/Toast";
-import WorkspaceAccount from "./components/WorkspaceAccount";
-import WorkspaceSwitcher from "./components/WorkspaceSwitcher";
+import WorkspaceAccount from "./features/workspaces/components/WorkspaceAccount";
+import WorkspaceSwitcher from "./features/workspaces/components/WorkspaceSwitcher";
 import { hasCapability, isDocumentEngine } from "./lib/capabilities";
 import { useI18n, type I18nKey } from "./lib/i18n";
 import {

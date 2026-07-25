@@ -6,11 +6,16 @@
 pub mod keychain;
 pub mod pool;
 pub mod providers;
+mod remote_authority;
 mod runtime;
 
 pub use crate::driver::connect;
 pub use keychain::{delete_secret, fetch_secret, store_secret};
 pub use pool::{DbPool, LiveConnection};
+pub(crate) use remote_authority::{
+    ManagedConnectionLease, RemoteAuthorityFuture, RemoteConnectionAuthority,
+    RemoteConnectionAuthorityPort,
+};
 pub(crate) use runtime::{
     ConnectionAccess, ConnectionContext, ConnectionLease, ConnectionManager, ConnectionMutation,
     ConnectionOperationScope,

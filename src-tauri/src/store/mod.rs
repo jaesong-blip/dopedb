@@ -8,9 +8,17 @@
 //! runtime-arbitrary-SQL client.
 
 mod migrations;
+mod workspace_codec;
 
 #[cfg(test)]
 pub(crate) use migrations::SCHEMA as TEST_SCHEMA;
+pub(crate) use workspace_codec::{
+    credential_mode_str, parse_credential_mode, parse_workspace_access, workspace_access_str,
+};
+use workspace_codec::{
+    parse_workspace_kind, parse_workspace_role, row_to_workspace, workspace_kind_str,
+    workspace_role_str,
+};
 
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -25,12 +33,15 @@ use uuid::Uuid;
 
 use crate::agent_cli::AgentProvider;
 use crate::error::{AppError, AppResult};
+use crate::features::workspaces::{
+    Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceKind,
+    WorkspaceRole,
+};
+use crate::kernel::identity::{AccountId, WorkspaceId};
 use crate::legacy_chat::{ChatMessageRecord, ChatThread};
 use crate::model::{
     ConnectionProfile, Dashboard, DashboardDraft, Engine, HistoryEntry, Provider, QueryKind,
-    SafetySettings, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser,
-    WorkspaceConnectionAccess, WorkspaceCredentialMode, WorkspaceKind, WorkspaceLifecycleState,
-    WorkspaceRole,
+    SafetySettings, WorkspaceConnectionAccess, WorkspaceCredentialMode,
 };
 
 /// Handle to the local app.db. Cheap to clone (the pool is an `Arc` internally).
@@ -245,6 +256,7 @@ impl Store {
                 .map(|membership| {
                     Ok(WorkspaceAccountMembership {
                         workspace_id: Uuid::parse_str(membership.try_get("workspace_id")?)
+                            .map(WorkspaceId::from)
                             .map_err(|error| AppError::Config(error.to_string()))?,
                         role: parse_workspace_role(membership.try_get("role")?)?,
                     })
@@ -252,7 +264,9 @@ impl Store {
                 .collect::<AppResult<Vec<_>>>()?;
             accounts.push(WorkspaceAuthAccount {
                 user: WorkspaceAuthUser {
-                    id: user_id,
+                    id: AccountId::new(user_id).ok_or_else(|| {
+                        AppError::Config("stored workspace account id is empty".into())
+                    })?,
                     email: row.try_get("email")?,
                     display_name: row.try_get("display_name")?,
                 },
@@ -316,7 +330,7 @@ impl Store {
                 display_name = excluded.display_name,
                 updated_at = excluded.updated_at",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .bind(&user.email)
         .bind(&user.display_name)
         .bind(now)
@@ -348,7 +362,7 @@ impl Store {
             "UPDATE workspace_members SET status = 'archived'
              WHERE user_id = ?1",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .execute(&mut *tx)
         .await?;
         for (id, name, role) in workspaces {
@@ -379,7 +393,7 @@ impl Store {
             )
             .bind(member_id.to_string())
             .bind(id.to_string())
-            .bind(&user.id)
+            .bind(user.id.as_str())
             .bind(&user.display_name)
             .bind(workspace_role_str(*role))
             .bind(now)
@@ -397,7 +411,7 @@ impl Store {
                    WHERE user_id = ?1 AND status = 'active'
                )",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .execute(&mut *tx)
         .await?;
         sqlx::query(
@@ -411,7 +425,7 @@ impl Store {
              WHERE c.remote_id IS NOT NULL
                AND (c.username != '' OR c.extra_params != '{}' OR c.secret_ref IS NOT NULL)",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .bind(now)
         .execute(&mut *tx)
         .await?;
@@ -424,7 +438,7 @@ impl Store {
                )
                AND (username != '' OR extra_params != '{}' OR secret_ref IS NOT NULL)",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .execute(&mut *tx)
         .await?;
         for table in ["query_history", "schema_cache"] {
@@ -439,7 +453,7 @@ impl Store {
                  )"
             );
             sqlx::query(AssertSqlSafe(statement))
-                .bind(&user.id)
+                .bind(user.id.as_str())
                 .execute(&mut *tx)
                 .await?;
         }
@@ -460,7 +474,7 @@ impl Store {
                    JOIN workspaces w ON w.id = c.workspace_id AND w.kind = 'team'
                )",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .execute(&mut *tx)
         .await?;
         sqlx::query(
@@ -482,7 +496,7 @@ impl Store {
                    AND m.status = 'active'
              )",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .execute(&mut *tx)
         .await?;
         repair_active_scope_after_membership_change(&mut tx, now).await?;
@@ -2962,26 +2976,6 @@ fn row_to_active_resource_scope(row: &sqlx::sqlite::SqliteRow) -> AppResult<Acti
 
 // ── row → model mappers ─────────────────────────────────────────────────────
 
-fn row_to_workspace(r: &sqlx::sqlite::SqliteRow) -> AppResult<Workspace> {
-    Ok(Workspace {
-        id: parse_uuid(r.try_get("id")?)?,
-        name: r.try_get("name")?,
-        kind: parse_workspace_kind(r.try_get("kind")?)?,
-        lifecycle_state: match r.try_get::<String, _>("lifecycle_state")?.as_str() {
-            "active" => WorkspaceLifecycleState::Active,
-            "archived" => WorkspaceLifecycleState::Archived,
-            "deleted" => WorkspaceLifecycleState::Deleted,
-            other => {
-                return Err(AppError::Config(format!(
-                    "unknown workspace lifecycle state '{other}'"
-                )))
-            }
-        },
-        created_at: r.try_get("created_at")?,
-        updated_at: r.try_get("updated_at")?,
-    })
-}
-
 fn row_to_connection(r: &sqlx::sqlite::SqliteRow) -> AppResult<ConnectionProfile> {
     let extra_raw: String = r.try_get("extra_params")?;
     let extra_params: HashMap<String, String> =
@@ -3142,88 +3136,6 @@ pub(crate) fn parse_provider(s: String) -> AppResult<Provider> {
     }
 }
 
-pub(crate) fn workspace_access_str(access: WorkspaceConnectionAccess) -> &'static str {
-    match access {
-        WorkspaceConnectionAccess::View => "view",
-        WorkspaceConnectionAccess::Read => "read",
-        WorkspaceConnectionAccess::Write => "write",
-        WorkspaceConnectionAccess::Manage => "manage",
-        WorkspaceConnectionAccess::Local => "local",
-    }
-}
-
-pub(crate) fn parse_workspace_access(s: String) -> AppResult<WorkspaceConnectionAccess> {
-    match s.as_str() {
-        "view" => Ok(WorkspaceConnectionAccess::View),
-        "read" => Ok(WorkspaceConnectionAccess::Read),
-        "write" => Ok(WorkspaceConnectionAccess::Write),
-        "manage" => Ok(WorkspaceConnectionAccess::Manage),
-        "local" => Ok(WorkspaceConnectionAccess::Local),
-        other => Err(AppError::Config(format!(
-            "unknown workspace connection access '{other}'"
-        ))),
-    }
-}
-
-pub(crate) fn credential_mode_str(mode: WorkspaceCredentialMode) -> &'static str {
-    match mode {
-        WorkspaceCredentialMode::Local => "local",
-        WorkspaceCredentialMode::MemberLocal => "member_local",
-        WorkspaceCredentialMode::Managed => "managed",
-    }
-}
-
-pub(crate) fn parse_credential_mode(s: String) -> AppResult<WorkspaceCredentialMode> {
-    match s.as_str() {
-        "local" => Ok(WorkspaceCredentialMode::Local),
-        "member_local" => Ok(WorkspaceCredentialMode::MemberLocal),
-        "managed" => Ok(WorkspaceCredentialMode::Managed),
-        other => Err(AppError::Config(format!(
-            "unknown workspace credential mode '{other}'"
-        ))),
-    }
-}
-
-fn workspace_kind_str(kind: WorkspaceKind) -> &'static str {
-    match kind {
-        WorkspaceKind::Personal => "personal",
-        WorkspaceKind::Team => "team",
-    }
-}
-
-fn parse_workspace_kind(kind: String) -> AppResult<WorkspaceKind> {
-    match kind.as_str() {
-        "personal" => Ok(WorkspaceKind::Personal),
-        "team" => Ok(WorkspaceKind::Team),
-        other => Err(AppError::Config(format!(
-            "unknown workspace kind '{other}'"
-        ))),
-    }
-}
-
-fn workspace_role_str(role: WorkspaceRole) -> &'static str {
-    match role {
-        WorkspaceRole::Viewer => "viewer",
-        WorkspaceRole::Analyst => "analyst",
-        WorkspaceRole::Editor => "editor",
-        WorkspaceRole::Admin => "admin",
-        WorkspaceRole::Owner => "owner",
-    }
-}
-
-fn parse_workspace_role(role: String) -> AppResult<WorkspaceRole> {
-    match role.as_str() {
-        "viewer" => Ok(WorkspaceRole::Viewer),
-        "analyst" => Ok(WorkspaceRole::Analyst),
-        "editor" => Ok(WorkspaceRole::Editor),
-        "admin" => Ok(WorkspaceRole::Admin),
-        "owner" => Ok(WorkspaceRole::Owner),
-        other => Err(AppError::Config(format!(
-            "unknown workspace role '{other}'"
-        ))),
-    }
-}
-
 pub(crate) fn kind_str(k: QueryKind) -> &'static str {
     match k {
         QueryKind::Read => "read",
@@ -3270,9 +3182,11 @@ mod tests {
         repair_active_scope_on_open, CacheWriteOutcome, CatalogCachePolicy, Store,
     };
     use crate::error::AppError;
+    use crate::features::workspaces::{WorkspaceAuthUser, WorkspaceRole};
+    use crate::kernel::identity::{AccountId, WorkspaceId};
     use crate::model::{
         ConnectionProfile, DashboardDraft, DashboardKind, DashboardVisualization, Engine,
-        HistoryEntry, Provider, QueryKind, WorkspaceAuthUser, WorkspaceRole,
+        HistoryEntry, Provider, QueryKind,
     };
     use chrono::{TimeZone, Utc};
     use dopedb_protocol::catalog::{CatalogContents, CatalogSnapshot, DatabaseEngine};
@@ -3319,7 +3233,7 @@ mod tests {
 
     fn workspace_user(id: &str, name: &str) -> WorkspaceAuthUser {
         WorkspaceAuthUser {
-            id: id.into(),
+            id: AccountId::new(id).unwrap(),
             email: format!("{}@example.com", name.to_lowercase()),
             display_name: name.into(),
         }
@@ -3787,8 +3701,12 @@ mod tests {
             .unwrap();
         let listed = store.list_workspaces().await.unwrap();
         assert_eq!(listed.len(), 3);
-        assert!(listed.iter().any(|workspace| workspace.id == alpha));
-        assert!(listed.iter().any(|workspace| workspace.id == beta));
+        assert!(listed
+            .iter()
+            .any(|workspace| workspace.id == WorkspaceId::from(alpha)));
+        assert!(listed
+            .iter()
+            .any(|workspace| workspace.id == WorkspaceId::from(beta)));
 
         store
             .activate_workspace(alpha, Some(&user_a.id))
@@ -3803,16 +3721,21 @@ mod tests {
             .unwrap();
         let listed = store.list_workspaces().await.unwrap();
         assert_eq!(listed.len(), 3);
-        assert!(listed.iter().any(|workspace| workspace.id == alpha));
+        assert!(listed
+            .iter()
+            .any(|workspace| workspace.id == WorkspaceId::from(alpha)));
         assert_eq!(
             listed
                 .iter()
-                .find(|workspace| workspace.id == beta)
+                .find(|workspace| workspace.id == WorkspaceId::from(beta))
                 .unwrap()
                 .name,
             "Beta renamed"
         );
-        assert_eq!(store.active_workspace().await.unwrap().id, beta);
+        assert_eq!(
+            store.active_workspace().await.unwrap().id,
+            WorkspaceId::from(beta)
+        );
         let accounts = store.workspace_accounts().await.unwrap();
         assert_eq!(accounts.len(), 2);
         assert_eq!(accounts[0].user.id, user_a.id);
@@ -3894,7 +3817,7 @@ mod tests {
                 (user_id, email, display_name, created_at, updated_at, last_used_at)
              VALUES (?1, ?2, ?3, ?4, ?4, ?4)",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .bind(&user.email)
         .bind(&user.display_name)
         .bind(Utc::now())
@@ -3920,7 +3843,7 @@ mod tests {
             "INSERT INTO app_settings (key, value)
              VALUES ('active_workspace_account_id', ?1)",
         )
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .execute(&pool)
         .await
         .unwrap();
@@ -4319,7 +4242,7 @@ mod tests {
             .unwrap();
         let pin_a = store.pin_connection_for_read(connection_id).await.unwrap();
         assert_eq!(pin_a.scope.workspace_id, workspace_id);
-        assert_eq!(pin_a.scope.account_scope.storage_key(), user_a.id);
+        assert_eq!(pin_a.scope.account_scope.storage_key(), user_a.id.as_str());
         assert_eq!(pin_a.profile.username, "alpha-db-user");
         assert!(pin_a.requires_remote_rbac);
         assert_eq!(pin_a.catalog_cache_policy, CatalogCachePolicy::Persistent);
@@ -4332,7 +4255,7 @@ mod tests {
              VALUES (?1, ?2, '2026-01-01', '{\"legacy\":true}')",
         )
         .bind(connection_id.to_string())
-        .bind(&user_a.id)
+        .bind(user_a.id.as_str())
         .execute(store.pool())
         .await
         .unwrap();
@@ -4359,7 +4282,7 @@ mod tests {
              WHERE connection_id = ?1 AND account_scope = ?2",
         )
         .bind(connection_id.to_string())
-        .bind(&user_a.id)
+        .bind(user_a.id.as_str())
         .fetch_one(store.pool())
         .await
         .unwrap();
@@ -4378,7 +4301,7 @@ mod tests {
             CacheWriteOutcome::Stale
         );
         let pin_b = store.pin_connection_for_read(connection_id).await.unwrap();
-        assert_eq!(pin_b.scope.account_scope.storage_key(), user_b.id);
+        assert_eq!(pin_b.scope.account_scope.storage_key(), user_b.id.as_str());
         assert_eq!(pin_b.profile.username, "beta-db-user");
         assert!(store
             .get_catalog_if_current(&pin_b)
@@ -4415,7 +4338,7 @@ mod tests {
                 catalog_json = excluded.catalog_json",
         )
         .bind(connection_id.to_string())
-        .bind(&user_a.id)
+        .bind(user_a.id.as_str())
         .execute(store.pool())
         .await
         .unwrap();
@@ -4446,7 +4369,7 @@ mod tests {
              WHERE workspace_id = ?1 AND account_scope = ?2 AND connection_id = ?3",
         )
         .bind(workspace_id.to_string())
-        .bind(&user_a.id)
+        .bind(user_a.id.as_str())
         .bind(connection_id.to_string())
         .execute(store.pool())
         .await
@@ -4466,7 +4389,7 @@ mod tests {
              WHERE workspace_id = ?1 AND account_scope = ?2 AND connection_id = ?3",
         )
         .bind(workspace_id.to_string())
-        .bind(&user_a.id)
+        .bind(user_a.id.as_str())
         .bind(connection_id.to_string())
         .execute(store.pool())
         .await
@@ -4491,7 +4414,7 @@ mod tests {
         .bind("e".repeat(64))
         .bind(serde_json::to_string(&tampered).unwrap())
         .bind(workspace_id.to_string())
-        .bind(&user_a.id)
+        .bind(user_a.id.as_str())
         .bind(connection_id.to_string())
         .execute(store.pool())
         .await
@@ -4511,7 +4434,7 @@ mod tests {
              WHERE workspace_id = ?1 AND account_scope = ?2 AND connection_id = ?3",
         )
         .bind(workspace_id.to_string())
-        .bind(&user_a.id)
+        .bind(user_a.id.as_str())
         .bind(connection_id.to_string())
         .execute(store.pool())
         .await
@@ -4636,7 +4559,7 @@ mod tests {
              WHERE connection_id = ?1 AND account_user_id = ?2",
         )
         .bind(connection_id.to_string())
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .fetch_one(store.pool())
         .await
         .unwrap();
@@ -4660,7 +4583,7 @@ mod tests {
              WHERE connection_id = ?1 AND account_user_id = ?2",
         )
         .bind(connection_id.to_string())
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .fetch_one(store.pool())
         .await
         .unwrap();
@@ -4677,7 +4600,7 @@ mod tests {
              WHERE connection_id = ?1 AND account_user_id = ?2",
         )
         .bind(connection_id.to_string())
-        .bind(&user.id)
+        .bind(user.id.as_str())
         .fetch_one(store.pool())
         .await
         .unwrap();

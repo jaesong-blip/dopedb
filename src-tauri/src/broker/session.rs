@@ -230,9 +230,9 @@ mod tests {
 
     use std::collections::HashMap;
 
+    use crate::features::workspaces::WorkspaceKind;
     use crate::model::{
         ConnectionProfile, Engine, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
-        WorkspaceKind,
     };
     use crate::store::{AccountScope, ActiveResourceScope, CatalogCachePolicy};
 

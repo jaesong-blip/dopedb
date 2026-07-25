@@ -96,8 +96,20 @@ const removedPaths = [
   "src-tauri/src/services/connection_service.rs",
   "src-tauri/src/services/connection_credentials.rs",
   "src-tauri/src/services/terminal_authority.rs",
+  "src-tauri/src/services/workspace_service.rs",
+  "src-tauri/src/workspace_auth.rs",
   "src/lib/workbenchDocuments.ts",
   "src/lib/workbenchDocuments.test.ts",
+  "src/lib/workspaceAccounts.ts",
+  "src/lib/workspaceAccounts.test.ts",
+  "src/lib/workspaceAuthLifecycle.ts",
+  "src/lib/workspaceAuthLifecycle.test.ts",
+  "src/components/WorkspaceAccount.tsx",
+  "src/components/WorkspaceAccount.css",
+  "src/components/WorkspaceSwitcher.tsx",
+  "src/components/WorkspaceSwitcher.css",
+  "src/components/WorkspaceConnectionDialog.tsx",
+  "src/components/WorkspaceConnectionDialog.css",
 ];
 for (const filePath of removedPaths) {
   if (fs.existsSync(path.join(root, filePath))) {
@@ -114,6 +126,10 @@ for (const filePath of [
     [/src\/lib\/workbenchDocuments\.ts/, "active documentation names a removed frontend path"],
     [/src-tauri\/src\/services\/sql_document_service\.rs/, "active documentation names a removed Rust path"],
     [/src-tauri\/src\/services\/connection_service\.rs/, "active documentation names the removed connection service"],
+    [/src-tauri\/src\/services\/workspace_service\.rs/, "active documentation names the removed workspace service"],
+    [/src-tauri\/src\/workspace_auth\.rs/, "active documentation names the removed global workspace auth module"],
+    [/src\/lib\/workspaceAccounts\.ts/, "active documentation names a removed workspace account helper"],
+    [/src\/lib\/workspaceAuthLifecycle\.ts/, "active documentation names a removed workspace auth helper"],
     [/\bsql_documents_v1\b/, "active documentation names the graduated rollout flag"],
   ]);
 }
@@ -128,6 +144,8 @@ for (const token of [
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",
   "\"sql_documents_v1\"",
+  "WorkspaceService",
+  "crate::workspace_auth",
 ]) {
   if (rustSource.includes(token)) {
     fail(`removed SQL document runtime token returned: ${token}`);
@@ -151,13 +169,35 @@ for (const filePath of [
   "src-tauri/src/features/sql_documents/domain.rs",
   "src-tauri/src/features/sql_documents/ports.rs",
   "src-tauri/src/features/sql_documents/application.rs",
+  "src-tauri/src/features/workspaces/domain.rs",
+  "src-tauri/src/features/workspaces/ports.rs",
+  "src-tauri/src/features/workspaces/application.rs",
+  ...walk("src-tauri/src/features/workspaces/application")
+    .filter((file) => file.endsWith(".rs"))
+    .map(relative),
 ]) {
   requireFile(filePath);
   forbid(filePath, coreRustRules);
 }
 for (const filePath of [
+  "src-tauri/src/features/workspaces/domain.rs",
+  "src-tauri/src/features/workspaces/ports.rs",
+  "src-tauri/src/features/workspaces/application.rs",
+  ...walk("src-tauri/src/features/workspaces/application")
+    .filter((file) => file.endsWith(".rs"))
+    .map(relative),
+]) {
+  forbid(filePath, [
+    [/\breqwest\b/, "workspace core must not depend on HTTP"],
+    [/crate::connection::keychain|keyring::/, "workspace core must not depend on the credential store adapter"],
+    [/\bstd::env\b/, "workspace core must not read process configuration"],
+    [/adapters::/, "workspace core must not depend on concrete adapters"],
+  ]);
+}
+for (const filePath of [
   "src-tauri/src/kernel/identity.rs",
   "src-tauri/src/kernel/terminal_authority.rs",
+  "src-tauri/src/connection/remote_authority.rs",
 ]) {
   requireFile(filePath);
   forbid(filePath, coreRustRules);
@@ -173,10 +213,23 @@ forbid("src-tauri/src/features/sql_documents/transport.rs", [
   [/crate::store/, "transport must not read the store directly"],
   [/crate::connection/, "transport must not authorize connections directly"],
 ]);
+forbid("src-tauri/src/features/workspaces/transport.rs", [
+  [/\bsqlx\b/, "workspace transport must delegate instead of querying SQLite"],
+  [/crate::store/, "workspace transport must not read the store directly"],
+  [/crate::connection/, "workspace transport must not mutate connection pools directly"],
+  [/\breqwest\b/, "workspace transport must not call the control plane directly"],
+  [/\bkeychain\b/, "workspace transport must not access credentials directly"],
+]);
+forbid("src-tauri/src/connection/runtime.rs", [
+  [/workspace_auth/, "connection runtime must use its injected remote authority"],
+  [/HostedWorkspaceControlPlane/, "connection runtime must not construct a hosted adapter"],
+]);
 
 for (const filePath of [
   "src/features/connections/domain.ts",
   "src/features/sqlDocuments/domain.ts",
+  "src/features/workspaces/domain.ts",
+  "src/features/workspaces/cache.ts",
   "src/features/workbench/domain.ts",
   "src/features/workbench/state.ts",
 ]) {
@@ -246,14 +299,49 @@ for (const command of connectionCommands) {
     );
   }
 }
+const workspaceCommands = [
+  "workspace_feature_state",
+  "workspace_auth_state",
+  "refresh_workspace_auth_state",
+  "workspace_sign_out",
+  "workspace_sign_out_all",
+  "begin_workspace_login",
+  "poll_workspace_login",
+  "workspace_console_url",
+  "list_workspaces",
+  "refresh_workspace_memberships",
+  "get_active_workspace",
+  "set_active_workspace",
+  "set_active_workspace_account",
+  "copy_connection_to_workspace",
+  "bind_workspace_connection_credentials",
+];
+for (const command of workspaceCommands) {
+  const owners = frontendSource
+    .filter(([, source]) => source.includes(`"${command}"`))
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/workspaces/tauriAdapter.ts"
+  ) {
+    fail(
+      `${command}: expected only src/features/workspaces/tauriAdapter.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 forbid("src/ipc/types.ts", [
   [/\binterface ConnectionProfile\b/, "connection profile returned to the central IPC type file"],
   [/\binterface DriverDescriptor\b/, "driver descriptor returned to the central IPC type file"],
+  [/\binterface Workspace\b/, "workspace type returned to the central IPC type file"],
+  [/\binterface WorkspaceAuth/, "workspace auth type returned to the central IPC type file"],
 ]);
 forbid("src/ipc/commands.ts", [
   [/\bfunction listConnections\b/, "connection commands returned to the central IPC facade"],
   [/\bfunction upsertConnection\b/, "connection commands returned to the central IPC facade"],
   [/\bfunction deleteConnection\b/, "connection commands returned to the central IPC facade"],
+  [/\bfunction listWorkspaces\b/, "workspace commands returned to the central IPC facade"],
+  [/\bfunction workspaceAuthState\b/, "workspace auth returned to the central IPC facade"],
+  [/\bfunction setActiveWorkspace\b/, "workspace selection returned to the central IPC facade"],
 ]);
 for (const [filePath, source] of frontendSource) {
   if (
@@ -275,6 +363,16 @@ for (const state of ownership.states) {
       .map(([filePath]) => filePath);
     if (owners.length > 0) {
       fail(`${state.name}: forbidden writer token ${token} found in ${owners.join(", ")}`);
+    }
+  }
+  for (const token of state.writerTokens ?? []) {
+    const owners = frontendSource
+      .filter(([, text]) => text.includes(token))
+      .map(([filePath]) => filePath);
+    if (owners.length !== 1 || owners[0] !== state.owner) {
+      fail(
+        `${state.name}: writer token ${token} must belong only to ${state.owner}, found ${owners.join(", ") || "none"}`,
+      );
     }
   }
 }

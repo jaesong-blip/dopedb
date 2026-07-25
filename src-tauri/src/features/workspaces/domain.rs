@@ -1,0 +1,202 @@
+//! Workspace domain values and invariants.
+//!
+//! These contracts contain no Tauri, SQLite, HTTP, keychain, or connection-pool
+//! details. Typed identities keep account, workspace, and connection selectors from
+//! being exchanged accidentally while preserving the existing string/UUID wire shape.
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+use crate::error::{AppError, AppResult};
+use crate::kernel::identity::{AccountId, WorkspaceId};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Workspace {
+    pub(crate) id: WorkspaceId,
+    pub(crate) name: String,
+    pub(crate) kind: WorkspaceKind,
+    pub(crate) lifecycle_state: WorkspaceLifecycleState,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceFeatureState {
+    pub(crate) enabled: bool,
+}
+
+/// Public identity fields returned after the hosted authority validates a session.
+/// The bearer token itself never enters this domain value or crosses IPC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceAuthUser {
+    pub(crate) id: AccountId,
+    pub(crate) email: String,
+    pub(crate) display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceAccountMembership {
+    pub(crate) workspace_id: WorkspaceId,
+    pub(crate) role: WorkspaceRole,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceAuthAccount {
+    pub(crate) user: WorkspaceAuthUser,
+    pub(crate) memberships: Vec<WorkspaceAccountMembership>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceAuthState {
+    pub(crate) authenticated: bool,
+    pub(crate) user: Option<WorkspaceAuthUser>,
+    pub(crate) accounts: Vec<WorkspaceAuthAccount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceDeviceAuthorization {
+    pub(crate) device_code: String,
+    pub(crate) user_code: String,
+    pub(crate) verification_uri_complete: String,
+    pub(crate) expires_in: u64,
+    pub(crate) interval: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WorkspaceLoginPollStatus {
+    Pending,
+    SlowDown,
+    SignedIn,
+    Denied,
+    Expired,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceLoginPoll {
+    pub(crate) status: WorkspaceLoginPollStatus,
+    pub(crate) user: Option<WorkspaceAuthUser>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WorkspaceKind {
+    Personal,
+    Team,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WorkspaceLifecycleState {
+    Active,
+    Archived,
+    Deleted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum WorkspaceRole {
+    Viewer,
+    Analyst,
+    Editor,
+    Admin,
+    Owner,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RemoteWorkspace {
+    pub(crate) id: WorkspaceId,
+    pub(crate) name: String,
+    pub(crate) role: WorkspaceRole,
+}
+
+/// Complete snapshot of the authority that can keep process-local Terminal sessions
+/// alive. Any scope, account partition, generation, or membership-role change revokes
+/// those sessions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkspaceAuthorityFingerprint {
+    pub(crate) workspace_id: WorkspaceId,
+    pub(crate) account_scope: String,
+    pub(crate) generation: i64,
+    pub(crate) grants: Vec<(AccountId, WorkspaceId, WorkspaceRole)>,
+}
+
+pub(crate) fn workspace_feature_enabled(raw: Option<&str>) -> bool {
+    raw.map(|value| {
+        !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "0" | "false" | "off"
+        )
+    })
+    .unwrap_or(true)
+}
+
+pub(crate) fn parse_workspace_role(value: Option<&str>) -> AppResult<WorkspaceRole> {
+    match value.unwrap_or("viewer") {
+        "viewer" => Ok(WorkspaceRole::Viewer),
+        "analyst" => Ok(WorkspaceRole::Analyst),
+        "editor" => Ok(WorkspaceRole::Editor),
+        "admin" => Ok(WorkspaceRole::Admin),
+        "owner" => Ok(WorkspaceRole::Owner),
+        _ => Err(AppError::Network(
+            "workspace membership returned an invalid role".into(),
+        )),
+    }
+}
+
+pub(crate) fn validate_member_username(username: &str) -> AppResult<&str> {
+    let username = username.trim();
+    if username.len() > 320 || username.chars().any(char::is_control) {
+        return Err(AppError::Config("username is invalid".into()));
+    }
+    Ok(username)
+}
+
+pub(crate) fn valid_device_code(device_code: &str) -> bool {
+    device_code.len() == 40
+        && device_code
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn feature_flag_is_fail_open_for_the_existing_default_but_honors_explicit_off_values() {
+        assert!(workspace_feature_enabled(None));
+        assert!(workspace_feature_enabled(Some("yes")));
+        for value in ["0", " false ", "OFF"] {
+            assert!(!workspace_feature_enabled(Some(value)));
+        }
+    }
+
+    #[test]
+    fn device_code_and_username_policies_reject_untrusted_values() {
+        assert!(!valid_device_code("../../not-a-device-code"));
+        assert!(valid_device_code(
+            "aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1zA3bC5dE7f"
+        ));
+        assert_eq!(validate_member_username(" member ").unwrap(), "member");
+        assert!(validate_member_username("bad\nname").is_err());
+    }
+
+    #[test]
+    fn role_parser_is_closed_to_unknown_authority_values() {
+        assert_eq!(
+            parse_workspace_role(Some("owner")).unwrap(),
+            WorkspaceRole::Owner
+        );
+        assert_eq!(parse_workspace_role(None).unwrap(), WorkspaceRole::Viewer);
+        assert!(parse_workspace_role(Some("superuser")).is_err());
+    }
+}

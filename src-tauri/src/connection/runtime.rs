@@ -19,11 +19,14 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
-use crate::model::{
-    ConnectionProfile, Workspace, WorkspaceAuthUser, WorkspaceCredentialMode, WorkspaceRole,
-};
+use crate::features::workspaces::{Workspace, WorkspaceAuthUser, WorkspaceRole};
+use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
+use crate::model::{ConnectionProfile, WorkspaceCredentialMode};
 use crate::store::{AccountScope, PinnedConnection, PinnedDashboard, Store};
 
+#[cfg(test)]
+use super::remote_authority::closed_authority;
+use super::remote_authority::RemoteConnectionAuthorityPort;
 use super::Live;
 
 const MANAGED_RELEASE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -47,21 +50,24 @@ struct OpenedLive {
 
 #[derive(Clone)]
 struct ManagedLeaseHandle {
-    user_id: String,
-    workspace_id: Uuid,
-    connection_id: Uuid,
+    authority: Arc<dyn RemoteConnectionAuthorityPort>,
+    account_id: AccountId,
+    workspace_id: WorkspaceId,
+    connection_id: ConnectionId,
     lease_id: Uuid,
 }
 
 impl ManagedLeaseHandle {
     async fn release(self) {
-        if let Err(error) = crate::workspace_auth::release_managed_connection_lease(
-            &self.user_id,
-            self.workspace_id,
-            self.connection_id,
-            self.lease_id,
-        )
-        .await
+        if let Err(error) = self
+            .authority
+            .release_managed_lease(
+                &self.account_id,
+                self.workspace_id,
+                self.connection_id,
+                self.lease_id,
+            )
+            .await
         {
             tracing::warn!(
                 connection_id = %self.connection_id,
@@ -156,6 +162,7 @@ struct ConnectionSlot {
 
 struct ConnectionManagerInner {
     store: Store,
+    remote_authority: Arc<dyn RemoteConnectionAuthorityPort>,
     scope_gate: Arc<RwLock<()>>,
     slots: DashMap<ConnectionCacheKey, Arc<Mutex<ConnectionSlot>>>,
     next_generation: AtomicU64,
@@ -240,7 +247,8 @@ impl ConnectionOperationScope {
         pin: PinnedConnection,
         access: ConnectionAccess,
     ) -> AppResult<ConnectionLease> {
-        let authorization = authorize_pin(&pin, access).await?;
+        let authorization =
+            authorize_pin(self.manager.inner.remote_authority.as_ref(), &pin, access).await?;
         if !self.manager.inner.store.is_pin_current(&pin).await? {
             return Err(scope_changed());
         }
@@ -317,7 +325,12 @@ impl ConnectionContext {
                     // revoke can occur while another task opens the pool, so authorize
                     // again at the exact cache-use boundary.
                     if self.pin.requires_remote_rbac {
-                        authorize_pin(&self.pin, self.access).await?;
+                        authorize_pin(
+                            self.manager.inner.remote_authority.as_ref(),
+                            &self.pin,
+                            self.access,
+                        )
+                        .await?;
                     }
                     if !self.manager.inner.store.is_pin_current(&self.pin).await? {
                         return Err(scope_changed());
@@ -362,8 +375,13 @@ impl ConnectionContext {
                 continue;
             }
 
-            let opened =
-                connect_authorized(&self.pin.profile, &self.authorization, self.access).await;
+            let opened = connect_authorized(
+                Arc::clone(&self.manager.inner.remote_authority),
+                &self.pin.profile,
+                &self.authorization,
+                self.access,
+            )
+            .await;
             let opened = match opened {
                 Ok(opened) => opened,
                 Err(error) => {
@@ -372,7 +390,13 @@ impl ConnectionContext {
                 }
             };
             if self.pin.requires_remote_rbac {
-                if let Err(error) = authorize_pin(&self.pin, self.access).await {
+                if let Err(error) = authorize_pin(
+                    self.manager.inner.remote_authority.as_ref(),
+                    &self.pin,
+                    self.access,
+                )
+                .await
+                {
                     drop(state);
                     retire_opened(opened).await;
                     return Err(error);
@@ -442,10 +466,21 @@ impl ConnectionContext {
     /// complete reachability check. Connection-form tests intentionally do not warm
     /// the shared pool cache.
     pub(crate) async fn test_fresh(self) -> AppResult<()> {
-        let opened =
-            connect_authorized(&self.pin.profile, &self.authorization, self.access).await?;
+        let opened = connect_authorized(
+            Arc::clone(&self.manager.inner.remote_authority),
+            &self.pin.profile,
+            &self.authorization,
+            self.access,
+        )
+        .await?;
         if self.pin.requires_remote_rbac {
-            if let Err(error) = authorize_pin(&self.pin, self.access).await {
+            if let Err(error) = authorize_pin(
+                self.manager.inner.remote_authority.as_ref(),
+                &self.pin,
+                self.access,
+            )
+            .await
+            {
                 retire_opened(opened).await;
                 return Err(error);
             }
@@ -472,10 +507,19 @@ impl ConnectionContext {
 }
 
 impl ConnectionManager {
+    #[cfg(test)]
     pub(crate) fn new(store: Store) -> Self {
+        Self::with_remote_authority(store, closed_authority())
+    }
+
+    pub(crate) fn with_remote_authority(
+        store: Store,
+        remote_authority: Arc<dyn RemoteConnectionAuthorityPort>,
+    ) -> Self {
         Self {
             inner: Arc::new(ConnectionManagerInner {
                 store,
+                remote_authority,
                 scope_gate: Arc::new(RwLock::new(())),
                 slots: DashMap::new(),
                 next_generation: AtomicU64::new(1),
@@ -490,7 +534,8 @@ impl ConnectionManager {
     ) -> AppResult<ConnectionContext> {
         let scope_guard = Arc::clone(&self.inner.scope_gate).read_owned().await;
         let pin = self.inner.store.pin_connection_for_read(id).await?;
-        let authorization = authorize_pin(&pin, access).await?;
+        let authorization =
+            authorize_pin(self.inner.remote_authority.as_ref(), &pin, access).await?;
         if !self.inner.store.is_pin_current(&pin).await? {
             return Err(scope_changed());
         }
@@ -533,7 +578,7 @@ impl ConnectionManager {
     ) -> AppResult<ConnectionMutation> {
         let scope_guard = Arc::clone(&self.inner.scope_gate).write_owned().await;
         let pin = self.inner.store.pin_connection_for_read(id).await?;
-        authorize_pin(&pin, access).await?;
+        authorize_pin(self.inner.remote_authority.as_ref(), &pin, access).await?;
         if !self.inner.store.is_pin_current(&pin).await? {
             return Err(scope_changed());
         }
@@ -702,6 +747,7 @@ fn scope_changed() -> AppError {
 }
 
 async fn authorize_pin(
+    remote_authority: &dyn RemoteConnectionAuthorityPort,
     pin: &PinnedConnection,
     access: ConnectionAccess,
 ) -> AppResult<ConnectionAuthorization> {
@@ -722,13 +768,16 @@ async fn authorize_pin(
     let user_id = pin.scope.selected_account_id.clone().ok_or_else(|| {
         AppError::Config("shared connection access requires an active workspace account".into())
     })?;
-    let authority = crate::workspace_auth::authorize_connection(
-        &user_id,
-        pin.scope.workspace_id,
-        pin.connection_id,
-        write,
-    )
-    .await?;
+    let account_id = AccountId::new(user_id.clone())
+        .ok_or_else(|| AppError::Config("active workspace account id is invalid".into()))?;
+    let authority = remote_authority
+        .authorize(
+            &account_id,
+            pin.scope.workspace_id.into(),
+            pin.connection_id.into(),
+            write,
+        )
+        .await?;
     if authority.revision != pin.connection_revision {
         return Err(AppError::Blocked {
             reason: "the shared connection changed; refresh the workspace and retry".into(),
@@ -742,6 +791,7 @@ async fn authorize_pin(
 
 /// Open a pool using either an OS credential reference or a short-lived provider lease.
 async fn connect_authorized(
+    remote_authority: Arc<dyn RemoteConnectionAuthorityPort>,
     profile: &ConnectionProfile,
     authorization: &ConnectionAuthorization,
     access: ConnectionAccess,
@@ -753,13 +803,17 @@ async fn connect_authorized(
         let workspace_id = authorization.workspace_id.ok_or_else(|| {
             AppError::Config("managed database access requires a team workspace".into())
         })?;
-        let lease = crate::workspace_auth::issue_managed_connection_lease(
-            user_id,
-            workspace_id,
-            profile,
-            access == ConnectionAccess::Write,
-        )
-        .await?;
+        let account_id = AccountId::new(user_id.to_owned())
+            .ok_or_else(|| AppError::Config("active workspace account id is invalid".into()))?;
+        let workspace_id = WorkspaceId::from(workspace_id);
+        let lease = remote_authority
+            .issue_managed_lease(
+                &account_id,
+                workspace_id,
+                profile,
+                access == ConnectionAccess::Write,
+            )
+            .await?;
         // Anchor retirement immediately after the HTTPS response, before a slow TLS
         // or database handshake can consume part of the provider credential's life.
         let retire_at = Instant::now()
@@ -768,9 +822,10 @@ async fn connect_authorized(
                 .saturating_sub(Duration::from_secs(30))
                 .max(Duration::from_secs(1));
         let managed_lease = ManagedLeaseHandle {
-            user_id: user_id.to_string(),
+            authority: remote_authority,
+            account_id,
             workspace_id,
-            connection_id: profile.id,
+            connection_id: profile.id.into(),
             lease_id: lease.lease_id,
         };
         let live = match crate::driver::connect(&lease.profile, lease.secret.as_str()).await {
@@ -796,146 +851,4 @@ async fn connect_authorized(
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-
-    use sqlx::sqlite::SqlitePoolOptions;
-
-    use crate::connection::pool::{DbPool, LiveConnection};
-    use crate::model::{
-        Engine, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode, WorkspaceKind,
-    };
-    use crate::store::{ActiveResourceScope, CatalogCachePolicy};
-
-    use super::*;
-
-    fn pin(credential_mode: WorkspaceCredentialMode) -> PinnedConnection {
-        PinnedConnection {
-            scope: ActiveResourceScope {
-                workspace_id: Uuid::from_u128(1),
-                workspace_kind: WorkspaceKind::Team,
-                selected_account_id: Some("account-a".into()),
-                account_scope: AccountScope::WorkspaceUser("account-a".into()),
-                generation: 7,
-            },
-            connection_id: Uuid::from_u128(2),
-            connection_revision: 3,
-            binding_revision: 4,
-            binding_updated_at: "2026-07-24T00:00:00Z".into(),
-            profile: ConnectionProfile {
-                id: Uuid::from_u128(2),
-                name: "app".into(),
-                engine: Engine::Postgres,
-                provider: Provider::Neon,
-                driver_id: None,
-                host: "db.example".into(),
-                port: 5432,
-                database: "app".into(),
-                username: "member".into(),
-                sslmode: "verify-full".into(),
-                extra_params: HashMap::new(),
-                readonly_default: true,
-                allow_writes: true,
-                secret_ref: None,
-                env: None,
-                schema_group: None,
-                workspace_access: WorkspaceConnectionAccess::Write,
-                credential_mode,
-            },
-            requires_remote_rbac: true,
-            catalog_cache_policy: CatalogCachePolicy::Persistent,
-        }
-    }
-
-    #[test]
-    fn managed_read_and_write_leases_never_share_a_cache_key() {
-        let pin = pin(WorkspaceCredentialMode::Managed);
-
-        assert_ne!(
-            ConnectionCacheKey::new(&pin, ConnectionAccess::Read),
-            ConnectionCacheKey::new(&pin, ConnectionAccess::Write)
-        );
-    }
-
-    #[test]
-    fn local_material_reuses_the_outer_cache_for_read_and_write() {
-        let pin = pin(WorkspaceCredentialMode::MemberLocal);
-
-        assert_eq!(
-            ConnectionCacheKey::new(&pin, ConnectionAccess::Read),
-            ConnectionCacheKey::new(&pin, ConnectionAccess::Write)
-        );
-    }
-
-    #[tokio::test]
-    async fn expiry_keeps_the_single_flight_slot_for_the_next_generation() {
-        let store_pool = SqlitePoolOptions::new()
-            .connect_lazy("sqlite::memory:")
-            .unwrap();
-        let manager = ConnectionManager::new(Store::from_pool_for_test(store_pool));
-        let key = ConnectionCacheKey::new(
-            &pin(WorkspaceCredentialMode::MemberLocal),
-            ConnectionAccess::Read,
-        );
-        let slot = manager
-            .inner
-            .slots
-            .entry(key.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(ConnectionSlot::default())))
-            .clone();
-
-        let first_pool = SqlitePoolOptions::new()
-            .connect_lazy("sqlite::memory:")
-            .unwrap();
-        let first_entry = Arc::new(CacheEntry {
-            live: Live::Sql(LiveConnection {
-                read_pool: DbPool::Sqlite(first_pool.clone()),
-                write_pool: DbPool::Sqlite(first_pool),
-                skip_fk_metadata: false,
-            }),
-            generation: 1,
-            retire_at: Some(Instant::now()),
-            managed_lease: StdMutex::new(None),
-        });
-        slot.lock().await.entry = Some(first_entry);
-        schedule_expiry(Arc::clone(&slot), 1, Duration::ZERO);
-
-        tokio::time::timeout(Duration::from_secs(1), async {
-            loop {
-                if slot.lock().await.entry.is_none() {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-
-        let second_pool = SqlitePoolOptions::new()
-            .connect_lazy("sqlite::memory:")
-            .unwrap();
-        slot.lock().await.entry = Some(Arc::new(CacheEntry {
-            live: Live::Sql(LiveConnection {
-                read_pool: DbPool::Sqlite(second_pool.clone()),
-                write_pool: DbPool::Sqlite(second_pool),
-                skip_fk_metadata: false,
-            }),
-            generation: 2,
-            retire_at: None,
-            managed_lease: StdMutex::new(None),
-        }));
-        tokio::task::yield_now().await;
-
-        let mapped = manager.inner.slots.get(&key).unwrap().clone();
-        assert!(Arc::ptr_eq(&mapped, &slot));
-        assert_eq!(
-            mapped
-                .lock()
-                .await
-                .entry
-                .as_ref()
-                .map(|entry| entry.generation),
-            Some(2)
-        );
-    }
-}
+mod tests;

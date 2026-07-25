@@ -42,7 +42,7 @@ import ConfirmButton from "../../components/ConfirmButton";
 import EngineMark from "../../components/EngineMark";
 import { Icon, type IconName } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
-import WorkspaceConnectionDialog from "../../components/WorkspaceConnectionDialog";
+import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
 import "./connections.css";

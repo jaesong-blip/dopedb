@@ -1,3 +1,4 @@
+/* Feature-owned workspace switcher surface. */
 .workspace-switcher {
   flex-shrink: 0;
   display: grid;

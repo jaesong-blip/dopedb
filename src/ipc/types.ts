@@ -4,23 +4,6 @@
 export type Engine = "postgres" | "mysql" | "sqlite" | "mongodb";
 export type Provider = "auto" | "generic" | "neon" | "planetScale" | "gcpCloudSql";
 
-type WorkspaceKind = "personal" | "team";
-type WorkspaceLifecycleState = "active" | "archived" | "deleted";
-export type WorkspaceRole = "viewer" | "analyst" | "editor" | "admin" | "owner";
-
-export interface Workspace {
-  id: string;
-  name: string;
-  kind: WorkspaceKind;
-  lifecycleState: WorkspaceLifecycleState;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface WorkspaceFeatureState {
-  enabled: boolean;
-}
-
 export type PlatformFeatureFlag =
   | "operation_runtime_v1"
   | "local_broker_v1"
@@ -269,48 +252,6 @@ export interface LegacyMcpCleanupReceipt {
   removedTargetIds: string[];
   backups: LegacyMcpCleanupBackup[];
   status: LegacyMcpCleanupStatus;
-}
-
-interface WorkspaceAuthUser {
-  id: string;
-  email: string;
-  displayName: string;
-}
-
-interface WorkspaceAccountMembership {
-  workspaceId: string;
-  role: WorkspaceRole;
-}
-
-interface WorkspaceAuthAccount {
-  user: WorkspaceAuthUser;
-  memberships: WorkspaceAccountMembership[];
-}
-
-export interface WorkspaceAuthState {
-  authenticated: boolean;
-  user: WorkspaceAuthUser | null;
-  accounts: WorkspaceAuthAccount[];
-}
-
-export interface WorkspaceDeviceAuthorization {
-  deviceCode: string;
-  userCode: string;
-  verificationUriComplete: string;
-  expiresIn: number;
-  interval: number;
-}
-
-type WorkspaceLoginPollStatus =
-  | "pending"
-  | "slowDown"
-  | "signedIn"
-  | "denied"
-  | "expired";
-
-export interface WorkspaceLoginPoll {
-  status: WorkspaceLoginPollStatus;
-  user: WorkspaceAuthUser | null;
 }
 
 export interface SafetySettings {

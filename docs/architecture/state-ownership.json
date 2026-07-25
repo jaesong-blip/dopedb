@@ -10,6 +10,17 @@
         "setActiveDocumentId(",
         "useState<WorkbenchDocument"
       ]
+    },
+    {
+      "name": "workspaceAuthCache",
+      "owner": "src/features/workspaces/cache.ts",
+      "dispatcher": "src/features/workspaces/cache.ts",
+      "writerTokens": [
+        "setQueryData(workspaceQueryKeys.auth()"
+      ],
+      "forbiddenWriterTokens": [
+        "setQueryData(qk.workspaceAuth"
+      ]
     }
   ],
   "runtimeStates": [
@@ -19,6 +30,17 @@
       "writerTokens": [
         "struct ConnectionManagerInner",
         "slots.remove("
+      ]
+    },
+    {
+      "name": "workspaceScope",
+      "owner": "src-tauri/src/connection/runtime.rs",
+      "writerTokens": [
+        "pub(crate) async fn activate_workspace(",
+        "pub(crate) async fn activate_workspace_account(",
+        "pub(crate) async fn remove_workspace_account(",
+        "pub(crate) async fn sync_account_workspaces(",
+        "pub(crate) async fn sync_remote_connections("
       ]
     }
   ]

@@ -29,7 +29,6 @@ mod sql_script;
 mod state;
 mod store;
 mod terminal;
-mod workspace_auth;
 
 pub use error::{AppError, AppResult};
 
@@ -97,7 +96,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::workspace_feature_state,
+            features::workspaces::transport::workspace_feature_state,
             commands::platform_feature_flags,
             commands::cli_installation_status,
             commands::install_cli,
@@ -117,20 +116,20 @@ pub fn run() {
             terminal::terminal_restart,
             terminal::terminal_rename,
             terminal::terminal_shutdown_all,
-            commands::workspace_auth_state,
-            commands::refresh_workspace_auth_state,
-            commands::workspace_sign_out,
-            commands::workspace_sign_out_all,
-            commands::begin_workspace_login,
-            commands::poll_workspace_login,
-            commands::workspace_console_url,
-            commands::list_workspaces,
-            commands::refresh_workspace_memberships,
-            commands::get_active_workspace,
-            commands::set_active_workspace,
-            commands::set_active_workspace_account,
-            commands::copy_connection_to_workspace,
-            commands::bind_workspace_connection_credentials,
+            features::workspaces::transport::workspace_auth_state,
+            features::workspaces::transport::refresh_workspace_auth_state,
+            features::workspaces::transport::workspace_sign_out,
+            features::workspaces::transport::workspace_sign_out_all,
+            features::workspaces::transport::begin_workspace_login,
+            features::workspaces::transport::poll_workspace_login,
+            features::workspaces::transport::workspace_console_url,
+            features::workspaces::transport::list_workspaces,
+            features::workspaces::transport::refresh_workspace_memberships,
+            features::workspaces::transport::get_active_workspace,
+            features::workspaces::transport::set_active_workspace,
+            features::workspaces::transport::set_active_workspace_account,
+            features::workspaces::transport::copy_connection_to_workspace,
+            features::workspaces::transport::bind_workspace_connection_credentials,
             features::connections::transport::list_connections,
             features::connections::transport::list_drivers,
             features::connections::transport::install_driver,

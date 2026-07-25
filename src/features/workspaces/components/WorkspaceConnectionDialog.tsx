@@ -6,17 +6,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindWorkspaceConnectionCredentials,
   copyConnectionToWorkspace,
-} from "../ipc/commands";
-import { errDetails } from "../ipc/types";
-import type { ConnectionProfile } from "../features/connections/domain";
-import { useI18n } from "../lib/i18n";
-import { qk, workspaceAuthStateQuery, workspaceContextQuery } from "../lib/queries";
+} from "../tauriAdapter";
+import { invalidateWorkspaceContext } from "../cache";
+import { workspaceAuthStateQuery, workspaceContextQuery } from "../queries";
 import {
   buildWorkspaceChoiceGroups,
   canManageWorkspaceConnections,
   parseWorkspaceChoice,
-} from "../lib/workspaceAccounts";
-import { useToast } from "./Toast";
+} from "../choices";
+import type { ConnectionProfile } from "../../connections/domain";
+import { errDetails } from "../../../ipc/types";
+import { useI18n } from "../../../lib/i18n";
+import { useToast } from "../../../components/Toast";
 import "./WorkspaceConnectionDialog.css";
 
 export default function WorkspaceConnectionDialog({
@@ -117,7 +118,7 @@ export default function WorkspaceConnectionDialog({
           target.workspaceId,
           target.accountUserId,
         );
-        await queryClient.invalidateQueries({ queryKey: qk.workspaceContext() });
+        await invalidateWorkspaceContext(queryClient);
         toast(t("workspace.connectionCopied"));
       } else {
         const bound = await bindWorkspaceConnectionCredentials(

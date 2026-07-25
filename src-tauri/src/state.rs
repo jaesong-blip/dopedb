@@ -1,5 +1,7 @@
 //! Shared application state managed by Tauri and injected into commands.
 
+use std::sync::Arc;
+
 use crate::broker::BrokerRuntime;
 use crate::connection::ConnectionManager;
 use crate::error::AppResult;
@@ -43,7 +45,10 @@ impl AppState {
             FeatureFlag::JobsV1,
         ]);
         let store = Store::open().await?;
-        let connections = ConnectionManager::new(store.clone());
+        let connections = ConnectionManager::with_remote_authority(
+            store.clone(),
+            Arc::new(crate::features::workspaces::adapters::HostedWorkspaceControlPlane),
+        );
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let broker = BrokerRuntime::new(operation.runtime_id());
         let terminals = TerminalManager::new(broker.sessions().clone());

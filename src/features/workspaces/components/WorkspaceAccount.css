@@ -1,4 +1,4 @@
-/* Authentication is account identity, not workspace chrome. Keep it in the flat
+/* Workspace authentication is account identity, not workspace chrome. Keep it in the flat
    sidebar footer so the top grid has only workspace controls of one size. */
 .workspace-account {
   position: relative;

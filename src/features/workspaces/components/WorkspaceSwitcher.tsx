@@ -6,18 +6,23 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   setActiveWorkspace,
   workspaceConsoleUrl,
-} from "../ipc/commands";
-import { errMessage } from "../ipc/types";
-import { useI18n } from "../lib/i18n";
-import { resetWorkspaceResourceQueries } from "../lib/queryClient";
-import { qk, workspaceAuthStateQuery, workspaceContextQuery } from "../lib/queries";
+} from "../tauriAdapter";
+import {
+  fetchWorkspaceContext,
+  invalidateWorkspaceAuth,
+  invalidateWorkspaceState,
+  resetWorkspaceScope,
+} from "../cache";
+import { workspaceAuthStateQuery, workspaceContextQuery } from "../queries";
 import {
   buildWorkspaceChoiceGroups,
   parseWorkspaceChoice,
   workspaceChoiceValue,
-} from "../lib/workspaceAccounts";
-import { Icon } from "./Icon";
-import { useToast } from "./Toast";
+} from "../choices";
+import { errMessage } from "../../../ipc/types";
+import { useI18n } from "../../../lib/i18n";
+import { Icon } from "../../../components/Icon";
+import { useToast } from "../../../components/Toast";
 import "./WorkspaceSwitcher.css";
 
 export default function WorkspaceSwitcher({
@@ -64,19 +69,12 @@ export default function WorkspaceSwitcher({
     setSwitching(true);
     try {
       await setActiveWorkspace(choice.workspaceId, accountUserId);
-      await resetWorkspaceResourceQueries(queryClient);
-      await queryClient.invalidateQueries({ queryKey: qk.workspaceAuth() });
-      await queryClient.invalidateQueries({
-        queryKey: qk.workspaceContext(),
-        refetchType: "none",
-      });
-      await queryClient.fetchQuery(workspaceContextQuery());
+      await resetWorkspaceScope(queryClient, "none");
+      await invalidateWorkspaceAuth(queryClient);
+      await fetchWorkspaceContext(queryClient);
       await onChanged();
     } catch (error) {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: qk.workspaceAuth() }),
-        queryClient.invalidateQueries({ queryKey: qk.workspaceContext() }),
-      ]);
+      await invalidateWorkspaceState(queryClient);
       toast(t("workspace.switchFailed", { error: errMessage(error) }), "error");
     } finally {
       setSwitching(false);

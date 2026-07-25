@@ -41,119 +41,11 @@ pub enum Provider {
     GcpCloudSql,
 }
 
-/// Local or synchronized workspace container. Milestone 0 creates one stable,
-/// account-free Personal workspace; team creation arrives with the control plane.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Workspace {
-    pub id: Uuid,
-    pub name: String,
-    pub kind: WorkspaceKind,
-    pub lifecycle_state: WorkspaceLifecycleState,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceFeatureState {
-    pub enabled: bool,
-}
-
 /// Process-stable experimental platform gates. An empty list is fail-closed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformFeatureFlags {
     pub enabled: Vec<String>,
-}
-
-/// Public identity fields returned to the desktop after Better Auth validates a
-/// Bearer session. The session token itself never crosses the IPC boundary.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceAuthUser {
-    pub id: String,
-    pub email: String,
-    pub display_name: String,
-}
-
-/// One hosted workspace membership attached to a locally remembered account.
-/// This is display/navigation metadata only; the control plane re-authorizes every
-/// shared-resource request against the account's current Better Auth session.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceAccountMembership {
-    pub workspace_id: Uuid,
-    pub role: WorkspaceRole,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceAuthAccount {
-    pub user: WorkspaceAuthUser,
-    pub memberships: Vec<WorkspaceAccountMembership>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceAuthState {
-    pub authenticated: bool,
-    pub user: Option<WorkspaceAuthUser>,
-    pub accounts: Vec<WorkspaceAuthAccount>,
-}
-
-/// Expiring RFC 8628 authorization request. The high-entropy device code is kept
-/// only in frontend memory until polling finishes; it is never persisted.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceDeviceAuthorization {
-    pub device_code: String,
-    pub user_code: String,
-    pub verification_uri_complete: String,
-    pub expires_in: u64,
-    pub interval: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum WorkspaceLoginPollStatus {
-    Pending,
-    SlowDown,
-    SignedIn,
-    Denied,
-    Expired,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceLoginPoll {
-    pub status: WorkspaceLoginPollStatus,
-    pub user: Option<WorkspaceAuthUser>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum WorkspaceKind {
-    Personal,
-    Team,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum WorkspaceLifecycleState {
-    Active,
-    Archived,
-    Deleted,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum WorkspaceRole {
-    Viewer,
-    Analyst,
-    Editor,
-    Admin,
-    Owner,
 }
 
 /// Cached server authority for a shared connection. Personal connections are Local;

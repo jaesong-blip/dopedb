@@ -57,6 +57,29 @@ frontend connection commands/types, and service-owned Terminal authority are del
 gates. Credential rotation, rollback cleanup, view-only denial, schema-group atomicity,
 and Terminal non-disclosure remain covered by adapter-level tests.
 
+## Third migrated slice
+
+Workspaces use:
+
+```text
+Tauri transport
+  -> WorkspaceUseCases
+     -> repository, runtime, control-plane, configuration, and credential ports
+  -> SQLite/scope-gated runtime, hosted HTTP, keychain, and environment adapters
+```
+
+`AccountId`, `WorkspaceId`, and `ConnectionId` remain distinct across every workspace
+use-case and transport boundary. Authentication, selection/synchronization, and
+connection sharing have separate application modules. The connection pool receives a
+remote authority port at the composition root; it cannot reach a global hosted-auth
+module. The frontend workspace feature exclusively owns Tauri command names, public
+wire types, Query options, and authentication-cache writes.
+
+The former workspace service, global auth module, central frontend IPC
+commands/types, generic components, and generic auth/account helpers are deletion
+gates. The architecture check also prevents workspace core modules from importing
+Tauri, SQLite, HTTP, keychain, environment, or concrete adapters.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

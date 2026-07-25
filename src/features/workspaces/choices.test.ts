@@ -1,16 +1,21 @@
 // Account/workspace selector projection tests cover duplicate memberships and the
 // composite values used to switch both identity and workspace atomically.
 import { describe, expect, it } from "vitest";
-import type { Workspace, WorkspaceAuthState } from "../ipc/types";
+import {
+  accountId,
+  workspaceId,
+  type Workspace,
+  type WorkspaceAuthState,
+} from "./domain";
 import {
   buildWorkspaceChoiceGroups,
   canManageWorkspaceConnections,
   parseWorkspaceChoice,
   workspaceChoiceValue,
-} from "./workspaceAccounts";
+} from "./choices";
 
 const personal: Workspace = {
-  id: "00000000-0000-0000-0000-000000000001",
+  id: workspaceId("00000000-0000-0000-0000-000000000001"),
   name: "Personal Workspace",
   kind: "personal",
   lifecycleState: "active",
@@ -18,20 +23,25 @@ const personal: Workspace = {
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
-const team: Workspace = { ...personal, id: "team-1", name: "Team", kind: "team" };
+const team: Workspace = {
+  ...personal,
+  id: workspaceId("team-1"),
+  name: "Team",
+  kind: "team",
+};
 
 describe("workspace account choices", () => {
   it("groups the same workspace under every account that can access it", () => {
     const auth: WorkspaceAuthState = {
       authenticated: true,
-      user: { id: "account-a", email: "a@example.com", displayName: "A" },
+      user: { id: accountId("account-a"), email: "a@example.com", displayName: "A" },
       accounts: [
         {
-          user: { id: "account-a", email: "a@example.com", displayName: "A" },
+          user: { id: accountId("account-a"), email: "a@example.com", displayName: "A" },
           memberships: [{ workspaceId: team.id, role: "owner" }],
         },
         {
-          user: { id: "account-b", email: "b@example.com", displayName: "B" },
+          user: { id: accountId("account-b"), email: "b@example.com", displayName: "B" },
           memberships: [{ workspaceId: team.id, role: "viewer" }],
         },
       ],
@@ -49,8 +59,8 @@ describe("workspace account choices", () => {
       accountUserId: null,
     });
     expect(parseWorkspaceChoice("account-a:team-1")).toEqual({
-      workspaceId: "team-1",
-      accountUserId: "account-a",
+      workspaceId: workspaceId("team-1"),
+      accountUserId: accountId("account-a"),
     });
     expect(parseWorkspaceChoice("invalid")).toBeNull();
   });

@@ -10,14 +10,9 @@
 
 use tauri::State;
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
-use crate::model::{
-    ConnectionProfile, Dashboard, DocumentQuery, HistoryEntry, PlatformFeatureFlags,
-    SafetySettings, Workspace, WorkspaceAuthState, WorkspaceDeviceAuthorization,
-    WorkspaceFeatureState, WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspaceRole,
-};
+use crate::model::{Dashboard, DocumentQuery, HistoryEntry, PlatformFeatureFlags, SafetySettings};
 use crate::services::{
     AuditSnapshotReceipt, AuditVerdict, CatalogReadPolicy, CreateJobRequest, DashboardRunError,
     DashboardRunReceipt, DashboardRunRequest, DesktopDocumentProposalReceipt,
@@ -30,49 +25,9 @@ use crate::services::{
     MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringServiceError,
     MonitoringStatusReceipt, OperationDecisionReceipt, OperationDecisionRequest,
     SaveErdLayoutOutcome, SaveErdLayoutRequest, SchemaChangePreviewRequest,
-    SchemaChangeProposalReceipt, TableScriptContext, WorkspaceConnectionCopyRequest,
-    WorkspaceCredentialBindingRequest,
+    SchemaChangeProposalReceipt, TableScriptContext,
 };
 use crate::state::AppState;
-
-type WorkspaceAuthorityFingerprint = (Uuid, String, i64, Vec<(String, Uuid, WorkspaceRole)>);
-
-async fn workspace_authority_fingerprint(
-    state: &AppState,
-) -> AppResult<WorkspaceAuthorityFingerprint> {
-    let scope = state.store.active_resource_scope().await?;
-    let mut grants = state
-        .store
-        .workspace_accounts()
-        .await?
-        .into_iter()
-        .flat_map(|account| {
-            let user_id = account.user.id;
-            account
-                .memberships
-                .into_iter()
-                .map(move |membership| (user_id.clone(), membership.workspace_id, membership.role))
-        })
-        .collect::<Vec<_>>();
-    grants.sort();
-    Ok((
-        scope.workspace_id,
-        scope.account_scope.storage_key().to_owned(),
-        scope.generation,
-        grants,
-    ))
-}
-
-async fn revoke_if_workspace_authority_changed(
-    state: &AppState,
-    app: &tauri::AppHandle,
-    before: &WorkspaceAuthorityFingerprint,
-) {
-    match workspace_authority_fingerprint(state).await {
-        Ok(after) if &after == before => {}
-        Ok(_) | Err(_) => state.terminals.stop_all(app),
-    }
-}
 
 #[tauri::command]
 pub async fn cli_installation_status(
@@ -194,13 +149,6 @@ fn require_skill_manager(state: &AppState) -> AppResult<()> {
     }
 }
 
-// ── workspace context ────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub fn workspace_feature_state(state: State<'_, AppState>) -> WorkspaceFeatureState {
-    state.services.workspace.feature_state()
-}
-
 #[tauri::command]
 pub fn platform_feature_flags(state: State<'_, AppState>) -> PlatformFeatureFlags {
     PlatformFeatureFlags {
@@ -211,163 +159,6 @@ pub fn platform_feature_flags(state: State<'_, AppState>) -> PlatformFeatureFlag
             .map(str::to_string)
             .collect(),
     }
-}
-
-#[tauri::command]
-pub async fn workspace_auth_state(state: State<'_, AppState>) -> AppResult<WorkspaceAuthState> {
-    state.services.workspace.auth_state().await
-}
-
-/// Revalidate the active hosted session and memberships without making initial UI
-/// rendering wait on the OS credential store or network. Cached public identity remains
-/// stable during outages; sensitive resource commands still authorize online.
-#[tauri::command]
-pub async fn refresh_workspace_auth_state(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> AppResult<WorkspaceAuthState> {
-    let before = workspace_authority_fingerprint(&state).await?;
-    let result = state.services.workspace.refresh_auth_state().await;
-    revoke_if_workspace_authority_changed(&state, &app, &before).await;
-    result
-}
-
-#[tauri::command]
-pub async fn workspace_sign_out(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    user_id: Option<String>,
-) -> AppResult<WorkspaceAuthState> {
-    state.terminals.stop_all(&app);
-    state.services.workspace.sign_out(user_id).await
-}
-
-#[tauri::command]
-pub async fn workspace_sign_out_all(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> AppResult<WorkspaceAuthState> {
-    state.terminals.stop_all(&app);
-    state.services.workspace.sign_out_all().await
-}
-
-#[tauri::command]
-pub async fn begin_workspace_login(
-    state: State<'_, AppState>,
-) -> AppResult<WorkspaceDeviceAuthorization> {
-    state.services.workspace.begin_login().await
-}
-
-#[tauri::command]
-pub async fn poll_workspace_login(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    device_code: String,
-) -> AppResult<WorkspaceLoginPoll> {
-    let result = state.services.workspace.poll_login(&device_code).await?;
-    if result.status == WorkspaceLoginPollStatus::SignedIn {
-        state.terminals.stop_all(&app);
-    }
-    Ok(result)
-}
-
-#[tauri::command]
-pub fn workspace_console_url(
-    state: State<'_, AppState>,
-    workspace_id: Option<Uuid>,
-) -> AppResult<String> {
-    state.services.workspace.console_url(workspace_id)
-}
-
-#[tauri::command]
-pub async fn list_workspaces(state: State<'_, AppState>) -> AppResult<Vec<Workspace>> {
-    state.services.workspace.list().await
-}
-
-/// Explicitly refresh hosted memberships without changing the cached authentication
-/// presentation. The desktop calls this after returning from the web settings page.
-#[tauri::command]
-pub async fn refresh_workspace_memberships(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-) -> AppResult<Vec<Workspace>> {
-    let before = workspace_authority_fingerprint(&state).await?;
-    let result = state.services.workspace.refresh_memberships().await;
-    revoke_if_workspace_authority_changed(&state, &app, &before).await;
-    result
-}
-
-#[tauri::command]
-pub async fn get_active_workspace(state: State<'_, AppState>) -> AppResult<Workspace> {
-    state.services.workspace.active().await
-}
-
-#[tauri::command]
-pub async fn set_active_workspace(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    id: Uuid,
-    account_user_id: Option<String>,
-) -> AppResult<Workspace> {
-    let before = workspace_authority_fingerprint(&state).await?;
-    let result = state.services.workspace.activate(id, account_user_id).await;
-    revoke_if_workspace_authority_changed(&state, &app, &before).await;
-    result
-}
-
-#[tauri::command]
-pub async fn set_active_workspace_account(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    user_id: String,
-) -> AppResult<Workspace> {
-    let before = workspace_authority_fingerprint(&state).await?;
-    let result = state.services.workspace.activate_account(user_id).await;
-    revoke_if_workspace_authority_changed(&state, &app, &before).await;
-    result
-}
-
-/// Copy a local connection into a team workspace. Only its redacted template crosses
-/// the network; the caller's credential is duplicated locally under the remote UUID.
-#[tauri::command]
-pub async fn copy_connection_to_workspace(
-    state: State<'_, AppState>,
-    connection_id: Uuid,
-    workspace_id: Uuid,
-    account_user_id: String,
-) -> AppResult<ConnectionProfile> {
-    state
-        .services
-        .workspace
-        .copy_connection(WorkspaceConnectionCopyRequest {
-            connection_id,
-            workspace_id,
-            account_user_id,
-        })
-        .await
-}
-
-/// Bind this member's own DB credential to a shared template. It is stored only in
-/// the OS credential store and is never sent to the control plane.
-#[tauri::command]
-pub async fn bind_workspace_connection_credentials(
-    state: State<'_, AppState>,
-    app: tauri::AppHandle,
-    id: Uuid,
-    username: String,
-    password: String,
-) -> AppResult<ConnectionProfile> {
-    let profile = state
-        .services
-        .workspace
-        .bind_connection_credentials(WorkspaceCredentialBindingRequest {
-            connection_id: id,
-            username,
-            password: Zeroizing::new(password),
-        })
-        .await?;
-    state.terminals.stop_connection(id, &app);
-    Ok(profile)
 }
 
 // ── saved dashboards ─────────────────────────────────────────────────────────

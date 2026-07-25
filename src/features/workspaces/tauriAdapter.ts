@@ -1,0 +1,99 @@
+// The only frontend owner of workspace Tauri command names. Bearer sessions remain
+// behind the Rust adapter and no function here accepts or returns token material.
+import { invoke } from "@tauri-apps/api/core";
+
+import type {
+  ConnectionId,
+  ConnectionProfile,
+} from "../connections/domain";
+import type {
+  AccountId,
+  Workspace,
+  WorkspaceAuthState,
+  WorkspaceDeviceAuthorization,
+  WorkspaceFeatureState,
+  WorkspaceId,
+  WorkspaceLoginPoll,
+} from "./domain";
+
+export function workspaceFeatureState(): Promise<WorkspaceFeatureState> {
+  return invoke("workspace_feature_state");
+}
+
+export function workspaceAuthState(): Promise<WorkspaceAuthState> {
+  return invoke("workspace_auth_state");
+}
+
+export function refreshWorkspaceAuthState(): Promise<WorkspaceAuthState> {
+  return invoke("refresh_workspace_auth_state");
+}
+
+export function signOutWorkspace(userId?: AccountId): Promise<WorkspaceAuthState> {
+  return invoke("workspace_sign_out", { userId: userId ?? null });
+}
+
+export function signOutAllWorkspaces(): Promise<WorkspaceAuthState> {
+  return invoke("workspace_sign_out_all");
+}
+
+export function beginWorkspaceLogin(): Promise<WorkspaceDeviceAuthorization> {
+  return invoke("begin_workspace_login");
+}
+
+export function pollWorkspaceLogin(deviceCode: string): Promise<WorkspaceLoginPoll> {
+  return invoke("poll_workspace_login", { deviceCode });
+}
+
+export function workspaceConsoleUrl(workspaceId?: WorkspaceId): Promise<string> {
+  return invoke("workspace_console_url", { workspaceId: workspaceId ?? null });
+}
+
+export function listWorkspaces(): Promise<Workspace[]> {
+  return invoke("list_workspaces");
+}
+
+export function refreshWorkspaceMemberships(): Promise<Workspace[]> {
+  return invoke("refresh_workspace_memberships");
+}
+
+export function getActiveWorkspace(): Promise<Workspace> {
+  return invoke("get_active_workspace");
+}
+
+export function setActiveWorkspace(
+  id: WorkspaceId,
+  accountUserId?: AccountId,
+): Promise<Workspace> {
+  return invoke("set_active_workspace", {
+    id,
+    accountUserId: accountUserId ?? null,
+  });
+}
+
+export function setActiveWorkspaceAccount(userId: AccountId): Promise<Workspace> {
+  return invoke("set_active_workspace_account", { userId });
+}
+
+export function copyConnectionToWorkspace(
+  connectionId: ConnectionId,
+  workspaceId: WorkspaceId,
+  accountUserId: AccountId,
+): Promise<ConnectionProfile> {
+  return invoke("copy_connection_to_workspace", {
+    connectionId,
+    workspaceId,
+    accountUserId,
+  });
+}
+
+export function bindWorkspaceConnectionCredentials(
+  id: ConnectionId,
+  username: string,
+  password: string,
+): Promise<ConnectionProfile> {
+  return invoke("bind_workspace_connection_credentials", {
+    id,
+    username,
+    password,
+  });
+}

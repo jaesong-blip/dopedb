@@ -1,15 +1,19 @@
 // Pure account/workspace projection used by the desktop switcher and secure-copy
 // dialog. Composite option values keep duplicate cross-account memberships distinct.
-import type {
-  Workspace,
-  WorkspaceAuthState,
-  WorkspaceRole,
-} from "../ipc/types";
+import {
+  accountId,
+  workspaceId,
+  type AccountId,
+  type Workspace,
+  type WorkspaceAuthState,
+  type WorkspaceId,
+  type WorkspaceRole,
+} from "./domain";
 
 interface WorkspaceChoice {
   value: string;
   workspace: Workspace;
-  accountUserId: string | null;
+  accountUserId: AccountId | null;
   role: WorkspaceRole | null;
 }
 
@@ -25,8 +29,8 @@ export function canManageWorkspaceConnections(role: WorkspaceRole | null) {
   return role === "admin" || role === "owner";
 }
 
-export function workspaceChoiceValue(workspaceId: string, accountUserId: string | null) {
-  return `${accountUserId ?? LOCAL_ACCOUNT}:${workspaceId}`;
+export function workspaceChoiceValue(id: WorkspaceId, accountUserId: AccountId | null) {
+  return `${accountUserId ?? LOCAL_ACCOUNT}:${id}`;
 }
 
 export function parseWorkspaceChoice(value: string) {
@@ -34,8 +38,8 @@ export function parseWorkspaceChoice(value: string) {
   if (separator < 1 || separator === value.length - 1) return null;
   const account = value.slice(0, separator);
   return {
-    workspaceId: value.slice(separator + 1),
-    accountUserId: account === LOCAL_ACCOUNT ? null : account,
+    workspaceId: workspaceId(value.slice(separator + 1)),
+    accountUserId: account === LOCAL_ACCOUNT ? null : accountId(account),
   };
 }
 

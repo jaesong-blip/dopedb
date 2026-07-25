@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   shouldRevalidateWorkspaceAuth,
   WORKSPACE_AUTH_RECHECK_MS,
-} from "./workspaceAuthLifecycle";
+} from "./authPolicy";
 
 describe("workspace auth lifecycle", () => {
   it("keeps a recently verified signed-in state stable", () => {

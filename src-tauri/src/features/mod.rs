@@ -7,5 +7,6 @@
 pub(crate) mod connections;
 mod platform_flags;
 pub(crate) mod sql_documents;
+pub(crate) mod workspaces;
 
 pub use platform_flags::{FeatureFlag, FeatureFlags};

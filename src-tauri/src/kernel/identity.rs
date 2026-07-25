@@ -5,6 +5,7 @@
 //! connection, workspace, and document identities distinct inside the Rust core.
 
 use std::fmt;
+use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -40,6 +41,54 @@ macro_rules! uuid_identity {
 uuid_identity!(WorkspaceId);
 uuid_identity!(ConnectionId);
 uuid_identity!(SqlDocumentId);
+
+/// Public account identity returned by the hosted authentication authority.
+///
+/// It is deliberately distinct from [`AccountScopeId`]: an account identifies a
+/// signed-in person, while an account scope is the local storage partition derived
+/// from the currently selected workspace/account pair.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+pub(crate) struct AccountId(String);
+
+impl AccountId {
+    pub(crate) fn new(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        (!value.is_empty()
+            && value.len() <= 255
+            && !value
+                .chars()
+                .any(|character| character.is_whitespace() || character.is_control()))
+        .then_some(Self(value))
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for AccountId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).ok_or_else(|| serde::de::Error::custom("invalid account id"))
+    }
+}
+
+impl fmt::Display for AccountId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl Deref for AccountId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
 
 /// Stable, non-secret account partition used by local synchronized artifacts.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -86,5 +135,15 @@ mod tests {
             AccountScopeId::new("personal").unwrap().as_str(),
             "personal"
         );
+    }
+
+    #[test]
+    fn account_identity_is_distinct_and_keeps_its_wire_shape() {
+        let account = AccountId::new("account-123").unwrap();
+        assert_eq!(serde_json::to_string(&account).unwrap(), "\"account-123\"");
+        assert_eq!(account.as_str(), "account-123");
+        assert!(AccountId::new("").is_none());
+        assert!(serde_json::from_str::<AccountId>("\"\"").is_err());
+        assert!(serde_json::from_str::<AccountId>("\"account id\"").is_err());
     }
 }
