@@ -546,42 +546,6 @@ export interface CatalogSnapshot {
   otherObjects: unknown[];
 }
 
-// Subscription-backed Terminal providers and their local CLI status.
-// Mirrors src-tauri/src/agent_cli.rs.
-export type AgentProvider = "claude" | "codex";
-
-export interface CliInfo {
-  id: AgentProvider;
-  name: string;
-  installed: boolean;
-  authenticated: boolean;
-  authMethod: string | null;
-  note: string;
-}
-
-// Read-only records from conversations created before the Terminal migration.
-export interface ChatThread {
-  id: string;
-  provider: AgentProvider;
-  connectionId: string | null;
-  title: string;
-  cliSessionId: string | null;
-  model: string | null;
-  effort: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// One archived persisted message row.
-export interface ChatMessageRecord {
-  id: string;
-  threadId: string;
-  role: "user" | "assistant";
-  text: string;
-  error: string | null;
-  createdAt: string;
-}
-
 // The `{ kind, message, position? }` object AppError serializes to.
 interface AppErrorShape {
   kind: string;

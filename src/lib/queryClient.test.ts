@@ -1,5 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
+import { retiredChatThreadId } from "../features/agents/domain";
+import { agentQueryKeys } from "../features/agents/queryKeys";
 import {
   accountId,
   type WorkspaceAuthState,
@@ -22,9 +24,12 @@ describe("workspace query lifecycle", () => {
       accounts: [],
     };
     replaceWorkspaceAuth(client, auth);
+    const threadId = retiredChatThreadId("thread-1");
     client.setQueryData(qk.catalog("connection-1"), { tables: [] });
-    client.setQueryData(qk.chatThreads(), [{ id: "thread-1" }]);
-    client.setQueryData(qk.chatMessages("thread-1"), [{ id: "message-1" }]);
+    client.setQueryData(agentQueryKeys.retiredArchiveThreads(), [{ id: threadId }]);
+    client.setQueryData(agentQueryKeys.retiredArchiveMessages(threadId), [
+      { id: "message-1" },
+    ]);
     client.setQueryData(qk.drivers(), [{ id: "bundled" }]);
     client.setQueryData(qk.legacyMcpCleanup(), { targets: [] });
 
@@ -32,8 +37,12 @@ describe("workspace query lifecycle", () => {
 
     expect(client.getQueryData(workspaceQueryKeys.auth())).toEqual(auth);
     expect(client.getQueryData(qk.catalog("connection-1"))).toBeUndefined();
-    expect(client.getQueryData(qk.chatThreads())).toBeUndefined();
-    expect(client.getQueryData(qk.chatMessages("thread-1"))).toBeUndefined();
+    expect(
+      client.getQueryData(agentQueryKeys.retiredArchiveThreads()),
+    ).toBeUndefined();
+    expect(
+      client.getQueryData(agentQueryKeys.retiredArchiveMessages(threadId)),
+    ).toBeUndefined();
     expect(client.getQueryData(qk.drivers())).toEqual([{ id: "bundled" }]);
     expect(client.getQueryData(qk.legacyMcpCleanup())).toEqual({ targets: [] });
   });

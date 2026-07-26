@@ -1,7 +1,6 @@
 //! dopedb — Rust core entrypoint. Wires modules, state, the Tauri command surface,
 //! and the owner-local CLI broker used by connection-pinned Terminal sessions.
 
-mod agent_cli;
 mod audit;
 mod broker;
 mod cli_environment;
@@ -15,7 +14,6 @@ mod executor;
 pub mod features;
 mod introspect;
 mod kernel;
-mod legacy_chat;
 mod legacy_mcp_cleanup;
 pub mod model;
 mod mongo;
@@ -94,6 +92,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            features::agents::transport::detect_agent_clis,
+            features::agents::transport::list_retired_chat_archive_threads,
+            features::agents::transport::get_retired_chat_archive_messages,
             features::workspaces::transport::workspace_feature_state,
             commands::platform_feature_flags,
             commands::cli_installation_status,
@@ -184,9 +185,6 @@ pub fn run() {
             commands::audit_snapshot,
             commands::list_history,
             commands::pick_file,
-            commands::detect_agent_clis,
-            commands::list_chat_threads,
-            commands::get_chat_messages,
             executor::cancel::cancel_query,
         ])
         .build(tauri::generate_context!())

@@ -233,7 +233,7 @@ async fn terminal_name_resolution_holds_authority_through_repository_read() {
         Arc::new(NoopCredentials),
     );
     let authority = TerminalAuthority {
-        terminal_session_id: Uuid::new_v4(),
+        terminal_session_id: Uuid::new_v4().into(),
         workspace_id: WorkspaceId::from(Uuid::new_v4()),
         account_scope: AccountScopeId::new("personal").unwrap(),
         scope_generation: 1,

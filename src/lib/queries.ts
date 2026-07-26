@@ -8,13 +8,10 @@ import {
   auditVerify,
   cliInstallationStatus,
   cancelQuery,
-  detectAgentClis,
   getCatalog,
   getCatalogSnapshot,
-  getChatMessages,
   getMonitoringStatus,
   legacyMcpCleanupStatus,
-  listChatThreads,
   listHistory,
   platformFeatureFlags,
   refreshCatalog,
@@ -113,8 +110,6 @@ export const qk = {
   skillStatus: () => ["skillStatus"] as const,
   legacyMcpCleanup: () => ["legacyMcpCleanup"] as const,
   platformFeatureFlags: () => ["platformFeatureFlags"] as const,
-  chatThreads: () => ["chatThreads"] as const,
-  chatMessages: (threadId: string) => ["chatMessages", threadId] as const,
   tableRows: (args: TableRowsArgs) =>
     [
       "tableRows",
@@ -181,35 +176,6 @@ export function legacyMcpCleanupStatusQuery() {
     retry: false,
     refetchOnWindowFocus: true,
     queryFn: legacyMcpCleanupStatus,
-  });
-}
-
-// Agent Terminal CLI detection (installed/authenticated). Short staleTime keeps an
-// explicit refresh responsive without re-spawning `claude`/`codex` on each render.
-export function agentCliDetectionQuery() {
-  return queryOptions({
-    queryKey: ["agentClis"] as const,
-    staleTime: 15_000,
-    queryFn: detectAgentClis,
-  });
-}
-
-// Read-only legacy conversation archive.
-export function agentChatThreadsQuery() {
-  return queryOptions({
-    queryKey: qk.chatThreads(),
-    staleTime: 5_000,
-    queryFn: listChatThreads,
-  });
-}
-
-// One archived thread's message history.
-export function agentChatMessagesQuery(threadId: string | null) {
-  return queryOptions({
-    queryKey: qk.chatMessages(threadId ?? ""),
-    enabled: threadId !== null,
-    staleTime: 5_000,
-    queryFn: () => getChatMessages(threadId!),
   });
 }
 

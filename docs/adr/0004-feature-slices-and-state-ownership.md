@@ -20,6 +20,11 @@ layers. A folder move alone would not prevent the same drift.
 - Give each mutable state one reducer or runtime owner.
 - Keep process-backed feature state behind one runtime writer; its Tauri transport,
   frontend command literals, and wire contracts stay feature-owned.
+- Keep cross-feature platform dispatchers thin: envelope validation and authentication
+  stay in one router, while bounded handlers delegate to feature use cases and share
+  only explicit wire projections.
+- Preserve retired persisted data through read-only adapters and immutable migrations;
+  delete its former runtime, command, service, and compatibility-facade paths.
 - Model resumable or concurrent work with explicit state machines.
 - Delete the previous runtime path in the same completed feature slice.
 - Enforce boundaries, file-size ratchets, state owners, and removed symbols in CI.

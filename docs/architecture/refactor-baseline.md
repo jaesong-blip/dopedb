@@ -255,6 +255,46 @@ in the state-owner inventory. The former `src-tauri/src/terminal/**` tree and
 literals, public wire types, and adapter functions are owned only by
 `src/features/terminals/`, so the shared IPC facades cannot regain a parallel API.
 
+## Tenth migrated slice: Agent tools and retired chat archive
+
+The start audit found local CLI probing, retired-chat wire contracts, Tauri commands,
+SQLite archive reads, and renderer query options spread across global modules. Archive
+thread and message UUIDs were interchangeable, and temporary central query aliases
+could keep the old ownership path alive after a folder move.
+
+The Agent slice now uses:
+
+```text
+Tauri transport
+  -> AgentsUseCases<RetiredChatThreadId>
+     -> CLI probe and read-only archive ports
+  -> bounded process probe and scoped SQLite read adapters
+```
+
+The CLI probe exposes status only and never transfers provider credentials. It clears
+the inherited child environment, restores only location and locale variables, bounds
+every status process, and never returns provider stderr contents. Retired chat threads
+and messages have separate typed identities, no mutation port, feature-owned renderer
+contracts, command literals, and query keys. The old top-level CLI,
+chat, service, central command/type, and central query paths are deletion gates. The
+historical SQLite tables and migrations remain intact so existing archives stay
+readable, while their SELECT projection is isolated from the already-large Store file.
+
+## Broker platform boundary decomposition
+
+The 1,822-line Broker dispatcher mixed envelope validation, session authentication,
+command routing, feature calls, wire projection, error mapping, and desktop activity
+events. It is now a small envelope router plus bounded Public/Skill,
+Connection/Catalog, Query/Document, Dashboard/Operation, and projection modules.
+Protocol compatibility and authentication sequencing remain owned by the router, and
+handlers cannot authenticate directly against the session registry.
+
+Terminal capability storage is keyed by `TerminalSessionId`; revocation requires
+typed Terminal and connection identities, and raw protocol UUID conversion occurs
+only at authentication boundaries. Capability and Broker runtime status writers are
+recorded in the state-owner inventory. The old monolithic dispatcher is both a
+deletion gate and removed from the oversized-file ratchet.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

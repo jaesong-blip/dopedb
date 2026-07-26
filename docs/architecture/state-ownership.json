@@ -53,6 +53,23 @@
       ]
     },
     {
+      "name": "terminalCapabilityRegistry",
+      "owner": "src-tauri/src/broker/session.rs",
+      "writerTokens": [
+        "sessions: std::sync::Arc<DashMap<TerminalSessionId, SessionRecord>>,",
+        "self.sessions.clear();"
+      ]
+    },
+    {
+      "name": "brokerRuntimeStatus",
+      "owner": "src-tauri/src/broker/mod.rs",
+      "writerTokens": [
+        "status: Mutex<BrokerRuntimeStatus>,",
+        "status.running = true;",
+        "status.running = false;"
+      ]
+    },
+    {
       "name": "catalogCache",
       "owner": "src-tauri/src/store/mod.rs",
       "writerTokens": [

@@ -179,7 +179,7 @@ impl OperationService {
 }
 
 fn ensure_terminal_scope(record: &OperationRecord, scope: &TerminalAuthority) -> AppResult<()> {
-    let matches = record.terminal_session_id == Some(scope.terminal_session_id)
+    let matches = record.terminal_session_id == Some(scope.terminal_session_id.into())
         && record.workspace_id == Uuid::from(scope.workspace_id)
         && record.account_scope == scope.account_scope.as_str()
         && record.connection_id == Uuid::from(scope.connection_id)

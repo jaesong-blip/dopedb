@@ -275,7 +275,7 @@ fn wait_for_child(
     session.killer.lock().unwrap().take();
     session.writer.lock().unwrap().take();
     session.master.lock().unwrap().take();
-    broker_sessions.revoke(session.id.into());
+    broker_sessions.revoke(session.id);
 
     let wait_succeeded = result.is_ok();
     let exit = match result {

@@ -642,8 +642,8 @@ impl PreparedAgentQueryRun {
         if let Some(terminal_session_id) = claimed.record().terminal_session_id {
             terminal_runs.register(
                 query_run_id,
-                terminal_session_id,
-                operation_pin.connection_id,
+                terminal_session_id.into(),
+                operation_pin.connection_id.into(),
             );
         }
 
@@ -909,7 +909,7 @@ impl QueryService {
                     connection_revision: pin.connection_revision,
                     terminal_session_id: terminal
                         .as_ref()
-                        .map(|authority| authority.terminal_session_id),
+                        .map(|authority| authority.terminal_session_id.into()),
                     actor,
                     kind: operation_kind(classification.kind),
                     payload_schema_version: 1,
@@ -1431,7 +1431,7 @@ impl QueryService {
                     account_scope: operation_pin.scope.account_scope.storage_key().into(),
                     connection_id: operation_pin.connection_id,
                     connection_revision: operation_pin.connection_revision,
-                    terminal_session_id: Some(authority.terminal_session_id),
+                    terminal_session_id: Some(authority.terminal_session_id.into()),
                     actor,
                     kind: OperationKind::ReadQuery,
                     payload_schema_version: 1,
@@ -1498,7 +1498,7 @@ impl QueryService {
         if planned.actor.id != payload.origin.as_str() {
             return Err(AgentQueryRunPrepareError::StoredPlanInvalid);
         }
-        if planned.terminal_session_id != Some(authority.terminal_session_id)
+        if planned.terminal_session_id != Some(authority.terminal_session_id.into())
             || payload.origin != AgentQueryInvocationOrigin::Cli
         {
             return Err(AgentQueryRunPrepareError::SessionMismatch);
@@ -1677,7 +1677,7 @@ impl QueryService {
                     account_scope: pin.scope.account_scope.storage_key().into(),
                     connection_id: pin.connection_id,
                     connection_revision: pin.connection_revision,
-                    terminal_session_id: Some(authority.terminal_session_id),
+                    terminal_session_id: Some(authority.terminal_session_id.into()),
                     actor,
                     kind: OperationKind::ReadQuery,
                     payload_schema_version: 1,
@@ -2222,7 +2222,7 @@ mod tests {
             let pin = context.pin();
             let account_scope = AccountScopeId::new(pin.scope.account_scope.storage_key()).unwrap();
             TerminalAuthority {
-                terminal_session_id: Uuid::new_v4(),
+                terminal_session_id: Uuid::new_v4().into(),
                 workspace_id: pin.scope.workspace_id.into(),
                 account_scope,
                 scope_generation: pin.scope.generation,

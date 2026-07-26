@@ -81,7 +81,7 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
             .await?;
         let session_id = TerminalSessionId::from(Uuid::new_v4());
         let issued = self.broker.sessions().issue(
-            session_id.into(),
+            session_id,
             &connection,
             BrokerCapability::ALL,
             TERMINAL_CAPABILITY_TTL,
@@ -110,7 +110,7 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
             AppError::Config("the Terminal creation worker stopped unexpectedly".into())
         })?;
         if result.is_err() {
-            broker_sessions.revoke(session_id.into());
+            broker_sessions.revoke(session_id);
         }
         result
     }
@@ -201,7 +201,7 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
 
         let next_id = TerminalSessionId::from(Uuid::new_v4());
         let issued = self.broker.sessions().issue(
-            next_id.into(),
+            next_id,
             &current,
             BrokerCapability::ALL,
             TERMINAL_CAPABILITY_TTL,
@@ -234,7 +234,7 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
         .await
         .map_err(|_| AppError::Config("the Terminal restart worker stopped unexpectedly".into()))?;
         if result.is_err() {
-            broker_sessions.revoke(next_id.into());
+            broker_sessions.revoke(next_id);
         } else {
             self.runtime.forget(id);
         }

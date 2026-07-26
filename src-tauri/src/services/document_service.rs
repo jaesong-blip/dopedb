@@ -336,7 +336,7 @@ impl DocumentService {
                     account_scope: pin.scope.account_scope.storage_key().into(),
                     connection_id: pin.connection_id,
                     connection_revision: pin.connection_revision,
-                    terminal_session_id: Some(request.authority.terminal_session_id),
+                    terminal_session_id: Some(request.authority.terminal_session_id.into()),
                     actor,
                     kind: OperationKind::DocumentRead,
                     payload_schema_version: 1,
@@ -1104,7 +1104,7 @@ mod tests {
             let pin = context.pin();
             let account_scope = AccountScopeId::new(pin.scope.account_scope.storage_key()).unwrap();
             TerminalAuthority {
-                terminal_session_id: Uuid::new_v4(),
+                terminal_session_id: Uuid::new_v4().into(),
                 workspace_id: pin.scope.workspace_id.into(),
                 account_scope,
                 scope_generation: pin.scope.generation,

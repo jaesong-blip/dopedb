@@ -8,6 +8,7 @@
 //! runtime-arbitrary-SQL client.
 
 mod migrations;
+mod retired_chat_archive;
 mod workspace_codec;
 
 #[cfg(test)]
@@ -31,7 +32,6 @@ use sqlx::{AssertSqlSafe, Executor, Row, Sqlite, SqlitePool, Transaction};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::agent_cli::AgentProvider;
 use crate::error::{AppError, AppResult};
 use crate::features::dashboards::{validate_visualization, Dashboard, DashboardDraft};
 use crate::features::workspaces::{
@@ -39,7 +39,6 @@ use crate::features::workspaces::{
     WorkspaceRole,
 };
 use crate::kernel::identity::{AccountId, ConnectionId, DashboardId, WorkspaceId};
-use crate::legacy_chat::{ChatMessageRecord, ChatThread};
 use crate::model::{
     ConnectionProfile, Engine, HistoryEntry, Provider, QueryKind, SafetySettings,
     WorkspaceConnectionAccess, WorkspaceCredentialMode,
@@ -2343,40 +2342,6 @@ impl Store {
         tx.commit().await?;
         Ok(())
     }
-
-    // ── read-only archive of retired Agent chat threads and messages ────────
-
-    pub async fn list_chat_threads(&self) -> AppResult<Vec<ChatThread>> {
-        let workspace_id = self.active_workspace_id().await?;
-        let account_scope = self.active_local_scope().await?;
-        let rows = sqlx::query(
-            "SELECT * FROM agent_chat_threads
-             WHERE workspace_id = ?1 AND account_scope = ?2
-             ORDER BY updated_at DESC",
-        )
-        .bind(workspace_id.to_string())
-        .bind(account_scope)
-        .fetch_all(&self.pool)
-        .await?;
-        rows.iter().map(row_to_chat_thread).collect()
-    }
-
-    pub async fn list_chat_messages(&self, thread_id: Uuid) -> AppResult<Vec<ChatMessageRecord>> {
-        let workspace_id = self.active_workspace_id().await?;
-        let account_scope = self.active_local_scope().await?;
-        let rows = sqlx::query(
-            "SELECT m.* FROM agent_chat_messages m
-             JOIN agent_chat_threads t ON t.id = m.thread_id
-             WHERE m.thread_id = ?1 AND t.workspace_id = ?2 AND t.account_scope = ?3
-             ORDER BY m.created_at ASC",
-        )
-        .bind(thread_id.to_string())
-        .bind(workspace_id.to_string())
-        .bind(account_scope)
-        .fetch_all(&self.pool)
-        .await?;
-        rows.iter().map(row_to_chat_message).collect()
-    }
 }
 
 fn active_scope_from_row(row: &sqlx::sqlite::SqliteRow) -> AppResult<ActiveResourceScope> {
@@ -3065,31 +3030,6 @@ fn row_to_dashboard(r: &sqlx::sqlite::SqliteRow) -> AppResult<Dashboard> {
     })
 }
 
-fn row_to_chat_thread(r: &sqlx::sqlite::SqliteRow) -> AppResult<ChatThread> {
-    Ok(ChatThread {
-        id: parse_uuid(r.try_get("id")?)?,
-        provider: parse_agent_provider(r.try_get("provider")?)?,
-        connection_id: parse_uuid_opt(r.try_get("connection_id")?)?,
-        title: r.try_get("title")?,
-        cli_session_id: r.try_get("cli_session_id")?,
-        model: r.try_get("model")?,
-        effort: r.try_get("effort")?,
-        created_at: r.try_get("created_at")?,
-        updated_at: r.try_get("updated_at")?,
-    })
-}
-
-fn row_to_chat_message(r: &sqlx::sqlite::SqliteRow) -> AppResult<ChatMessageRecord> {
-    Ok(ChatMessageRecord {
-        id: parse_uuid(r.try_get("id")?)?,
-        thread_id: parse_uuid(r.try_get("thread_id")?)?,
-        role: r.try_get("role")?,
-        text: r.try_get("text")?,
-        error: r.try_get("error")?,
-        created_at: r.try_get("created_at")?,
-    })
-}
-
 // ── enum ⇄ text (kept in sync with model.rs serde `camelCase`) ──────────────
 
 pub(crate) fn engine_str(e: Engine) -> &'static str {
@@ -3159,16 +3099,6 @@ pub(crate) fn parse_uuid_opt(s: Option<String>) -> AppResult<Option<Uuid>> {
     s.map(parse_uuid).transpose()
 }
 
-pub(crate) fn parse_agent_provider(s: String) -> AppResult<AgentProvider> {
-    match s.as_str() {
-        "claude" => Ok(AgentProvider::Claude),
-        "codex" => Ok(AgentProvider::Codex),
-        other => Err(AppError::Config(format!(
-            "unknown agent provider '{other}'"
-        ))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -3180,7 +3110,7 @@ mod tests {
     use crate::error::AppError;
     use crate::features::dashboards::{DashboardDraft, DashboardKind, DashboardVisualization};
     use crate::features::workspaces::{WorkspaceAuthUser, WorkspaceRole};
-    use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
+    use crate::kernel::identity::{AccountId, ConnectionId, RetiredChatThreadId, WorkspaceId};
     use crate::model::{ConnectionProfile, Engine, HistoryEntry, Provider, QueryKind};
     use chrono::{TimeZone, Utc};
     use dopedb_protocol::catalog::{CatalogContents, CatalogSnapshot, DatabaseEngine};
@@ -4167,7 +4097,11 @@ mod tests {
             .unwrap()
             .is_none());
         assert!(store.list_history(connection_id).await.unwrap().is_empty());
-        assert!(store.list_chat_threads().await.unwrap().is_empty());
+        assert!(store
+            .list_retired_chat_archive_threads()
+            .await
+            .unwrap()
+            .is_empty());
         store
             .set_schema_cache(connection_id, r#"{"owner":"beta"}"#)
             .await
@@ -4186,7 +4120,14 @@ mod tests {
             Some(r#"{"owner":"alpha"}"#)
         );
         assert_eq!(store.list_history(connection_id).await.unwrap().len(), 1);
-        assert_eq!(store.list_chat_threads().await.unwrap().len(), 1);
+        assert_eq!(
+            store
+                .list_retired_chat_archive_threads()
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -5466,16 +5407,19 @@ mod tests {
         let user_id = seed_legacy_chat_message(&store, thread_id, "user", "hello there").await;
         let assistant_id = seed_legacy_chat_message(&store, thread_id, "assistant", "hi!").await;
 
-        let messages = store.list_chat_messages(thread_id).await.unwrap();
+        let messages = store
+            .list_retired_chat_archive_messages(RetiredChatThreadId::from(thread_id))
+            .await
+            .unwrap();
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].id, user_id);
+        assert_eq!(Uuid::from(messages[0].id), user_id);
         assert_eq!(messages[0].role, "user");
-        assert_eq!(messages[1].id, assistant_id);
+        assert_eq!(Uuid::from(messages[1].id), assistant_id);
         assert_eq!(messages[1].role, "assistant");
 
-        let listed = store.list_chat_threads().await.unwrap();
+        let listed = store.list_retired_chat_archive_threads().await.unwrap();
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].id, thread_id);
+        assert_eq!(Uuid::from(listed[0].id), thread_id);
         assert_eq!(listed[0].title, "Legacy conversation");
         assert_eq!(listed[0].cli_session_id.as_deref(), Some("legacy-session"));
         assert_eq!(listed[0].model.as_deref(), Some("legacy-model"));

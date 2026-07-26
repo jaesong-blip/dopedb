@@ -2,6 +2,7 @@
 // backup-and-repair, remove, and version-matched CLI self-test actions.
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { agentCliDetectionQuery } from "../../../features/agents/queryOptions";
 import {
   installSkill,
   legacyMcpCleanupApply,
@@ -23,7 +24,6 @@ import InfoTip from "../../../components/InfoTip";
 import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
 import {
-  agentCliDetectionQuery,
   legacyMcpCleanupStatusQuery,
   qk,
   skillStatusQuery,

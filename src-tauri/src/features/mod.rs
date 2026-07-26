@@ -4,6 +4,7 @@
 //! and other platform adapters. This module is also the composition boundary that
 //! wires concrete adapters into those use cases.
 
+pub(crate) mod agents;
 pub(crate) mod catalog;
 pub(crate) mod connections;
 pub(crate) mod dashboards;

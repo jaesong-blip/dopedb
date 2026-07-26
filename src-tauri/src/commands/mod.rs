@@ -471,32 +471,6 @@ pub async fn list_history(state: State<'_, AppState>, id: Uuid) -> AppResult<Vec
     state.services.activity.history(id).await
 }
 
-// ── Terminal agent discovery + legacy chat archive ────────────────────────────
-
-/// Claude Code / Codex CLI installed + subscription-login status for the
-/// connection-pinned Terminal profiles.
-#[tauri::command]
-pub async fn detect_agent_clis() -> Vec<crate::agent_cli::CliInfo> {
-    crate::agent_cli::detect_clis().await
-}
-
-/// Read-only archive of conversations created by the retired in-app chat.
-#[tauri::command]
-pub async fn list_chat_threads(
-    state: State<'_, AppState>,
-) -> AppResult<Vec<crate::legacy_chat::ChatThread>> {
-    state.services.legacy_chat.list_threads().await
-}
-
-/// One archived thread's messages, oldest first.
-#[tauri::command]
-pub async fn get_chat_messages(
-    state: State<'_, AppState>,
-    thread_id: Uuid,
-) -> AppResult<Vec<crate::legacy_chat::ChatMessageRecord>> {
-    state.services.legacy_chat.messages(thread_id).await
-}
-
 // ── native picker ─────────────────────────────────────────────────────────────
 
 /// Native file picker for a SQLite database path. None means the user cancelled.

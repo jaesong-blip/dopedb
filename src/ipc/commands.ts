@@ -7,11 +7,8 @@ import type {
   AuditSnapshot,
   Catalog,
   CatalogSnapshot,
-  ChatMessageRecord,
-  ChatThread,
   CliInstallReceipt,
   CliInstallationStatus,
-  CliInfo,
   Classification,
   DocumentPage,
   DocumentOperationProposal,
@@ -291,19 +288,4 @@ export function listHistory(id: string): Promise<HistoryEntry[]> {
 // Native picker (null = user cancelled the dialog).
 export function pickFile(): Promise<string | null> {
   return invoke("pick_file");
-}
-
-// Install/auth status for supported subscription-backed Terminal profiles.
-export function detectAgentClis(): Promise<CliInfo[]> {
-  return invoke("detect_agent_clis");
-}
-
-// Read-only legacy conversation archive.
-export function listChatThreads(): Promise<ChatThread[]> {
-  return invoke("list_chat_threads");
-}
-
-// One thread's message history, oldest first.
-export function getChatMessages(threadId: string): Promise<ChatMessageRecord[]> {
-  return invoke("get_chat_messages", { threadId });
 }

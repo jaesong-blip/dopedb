@@ -47,6 +47,8 @@ uuid_identity!(DashboardId);
 uuid_identity!(QueryRunId);
 uuid_identity!(QueryExecutionId);
 uuid_identity!(TerminalSessionId);
+uuid_identity!(RetiredChatThreadId);
+uuid_identity!(RetiredChatMessageId);
 uuid_identity!(JobId);
 uuid_identity!(JobFileCapabilityId);
 uuid_identity!(JobArtifactId);
@@ -193,6 +195,19 @@ mod tests {
         assert_eq!(
             Uuid::from(serde_json::from_str::<TerminalSessionId>(&encoded).unwrap()),
             raw
+        );
+    }
+
+    #[test]
+    fn retired_chat_identities_keep_uuid_json() {
+        let raw = Uuid::parse_str("73ed02c8-53a7-4b68-9ee4-bc2381f78ef7").unwrap();
+        assert_eq!(
+            serde_json::to_string(&RetiredChatThreadId::from(raw)).unwrap(),
+            format!("\"{raw}\"")
+        );
+        assert_eq!(
+            serde_json::to_string(&RetiredChatMessageId::from(raw)).unwrap(),
+            format!("\"{raw}\"")
         );
     }
 

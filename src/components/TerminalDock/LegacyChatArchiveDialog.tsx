@@ -5,11 +5,12 @@ import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
-import { Icon } from "../Icon";
+import type { RetiredChatThreadId } from "../../features/agents/domain";
 import {
-  agentChatMessagesQuery,
-  agentChatThreadsQuery,
-} from "../../lib/queries";
+  retiredChatArchiveMessagesQuery,
+  retiredChatArchiveThreadsQuery,
+} from "../../features/agents/queryOptions";
+import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
 
 export default function LegacyChatArchiveDialog({
@@ -22,7 +23,7 @@ export default function LegacyChatArchiveDialog({
   const { lang, t } = useI18n();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const threadsQuery = useQuery(agentChatThreadsQuery());
+  const threadsQuery = useQuery(retiredChatArchiveThreadsQuery());
   const threads = useMemo(
     () =>
       (threadsQuery.data ?? []).filter(
@@ -30,11 +31,11 @@ export default function LegacyChatArchiveDialog({
       ),
     [connection.id, threadsQuery.data],
   );
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<RetiredChatThreadId | null>(null);
   const activeThread =
     threads.find((thread) => thread.id === activeId) ?? threads[0] ?? null;
   const messagesQuery = useQuery(
-    agentChatMessagesQuery(activeThread?.id ?? null),
+    retiredChatArchiveMessagesQuery(activeThread?.id ?? null),
   );
   const date = useMemo(
     () =>

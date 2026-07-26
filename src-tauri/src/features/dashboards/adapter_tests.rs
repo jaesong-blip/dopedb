@@ -70,7 +70,7 @@ async fn terminal_authority(
         .await
         .unwrap();
     TerminalAuthority {
-        terminal_session_id,
+        terminal_session_id: terminal_session_id.into(),
         workspace_id: pin.scope.workspace_id.into(),
         account_scope: AccountScopeId::new(pin.scope.account_scope.storage_key()).unwrap(),
         scope_generation: pin.scope.generation,
@@ -157,7 +157,7 @@ impl CreationHarness {
         self.terminal_runs.register(
             query_run_id,
             self.authority.terminal_session_id,
-            self.connection_id,
+            self.connection_id.into(),
         );
     }
 }

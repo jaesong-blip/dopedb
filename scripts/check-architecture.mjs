@@ -123,6 +123,10 @@ const removedPaths = [
   "src-tauri/src/terminal/model.rs",
   "src-tauri/src/terminal/output.rs",
   "src-tauri/src/terminal/process_tree.rs",
+  "src-tauri/src/agent_cli.rs",
+  "src-tauri/src/legacy_chat.rs",
+  "src-tauri/src/services/legacy_chat_service.rs",
+  "src-tauri/src/broker/dispatch.rs",
   "src/lib/workbenchDocuments.ts",
   "src/lib/workbenchDocuments.test.ts",
   "src/lib/workspaceAccounts.ts",
@@ -156,6 +160,83 @@ if (legacyTerminalStateFiles.length > 0) {
   fail(
     `removed legacy Terminal state path returned: ${legacyTerminalStateFiles.join(", ")}`,
   );
+}
+
+const brokerDispatchFiles = [
+  "src-tauri/src/broker/dispatch/mod.rs",
+  "src-tauri/src/broker/dispatch/public_skill.rs",
+  "src-tauri/src/broker/dispatch/connection_catalog.rs",
+  "src-tauri/src/broker/dispatch/query_document.rs",
+  "src-tauri/src/broker/dispatch/dashboard_operation.rs",
+  "src-tauri/src/broker/dispatch/projection.rs",
+];
+for (const filePath of brokerDispatchFiles) {
+  requireFile(filePath);
+  const lines = lineCount(read(filePath));
+  if (lines > ratchet.featureFileLineLimit) {
+    fail(
+      `${filePath}: Broker production handler has ${lines} lines; keep platform dispatch modules below ${ratchet.featureFileLineLimit}`,
+    );
+  }
+}
+for (const filePath of brokerDispatchFiles.slice(1)) {
+  forbid(filePath, [
+    [
+      /\.sessions\s*\.\s*authenticate/,
+      "Broker handlers must authenticate through the envelope router",
+    ],
+  ]);
+}
+const brokerRouter = read("src-tauri/src/broker/dispatch/mod.rs");
+for (const token of [
+  "self.dispatch_current(request).await",
+  "COMMAND_SCHEMA_VERSION",
+  "pub(super) fn authenticate(",
+]) {
+  if (!brokerRouter.includes(token)) {
+    fail(`Broker envelope router lost required sequencing token: ${token}`);
+  }
+}
+const brokerSessionRegistry = read("src-tauri/src/broker/session.rs");
+for (const token of [
+  "terminal_session_id: TerminalSessionId",
+  "workspace_id: WorkspaceId",
+  "account_scope: AccountScopeId",
+  "connection_id: ConnectionId",
+]) {
+  if (!brokerSessionRegistry.includes(token)) {
+    fail(`Broker authenticated session lost typed identity: ${token}`);
+  }
+}
+for (const filePath of brokerDispatchFiles) {
+  if (
+    read(filePath).includes(
+      "TerminalSessionId::from(authentication.terminal_session_id)",
+    )
+  ) {
+    fail(
+      `${filePath}: raw protocol Terminal UUID conversion must remain inside the session authentication boundary`,
+    );
+  }
+}
+for (const command of [
+  "detect_agent_clis",
+  "list_retired_chat_archive_threads",
+  "get_retired_chat_archive_messages",
+]) {
+  const declaration = new RegExp(`\\bpub\\s+async\\s+fn\\s+${command}\\b`);
+  const owners = sourceFiles
+    .filter((file) => file.endsWith(".rs"))
+    .filter((file) => declaration.test(fs.readFileSync(file, "utf8")))
+    .map(relative);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src-tauri/src/features/agents/transport.rs"
+  ) {
+    fail(
+      `${command}: Rust command must belong only to the Agent transport, found ${owners.join(", ") || "none"}`,
+    );
+  }
 }
 
 for (const filePath of [
@@ -274,6 +355,23 @@ for (const token of ["INSERT INTO dashboards", "UPDATE dashboards SET deleted_at
     );
   }
 }
+for (const token of [
+  "SELECT * FROM agent_chat_threads",
+  "SELECT m.* FROM agent_chat_messages m",
+]) {
+  const owners = sourceFiles
+    .filter((file) => file.endsWith(".rs"))
+    .filter((file) => fs.readFileSync(file, "utf8").includes(token))
+    .map(relative);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src-tauri/src/store/retired_chat_archive.rs"
+  ) {
+    fail(
+      `retired Agent archive SQL ${token} must stay in its read-only projection, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 
 const coreRustRules = [
   [/crate::connection/, "feature core must not depend on the connection adapter"],
@@ -295,12 +393,26 @@ for (const filePath of [
   "src-tauri/src/features/workspaces/domain.rs",
   "src-tauri/src/features/workspaces/ports.rs",
   "src-tauri/src/features/workspaces/application.rs",
+  "src-tauri/src/features/agents/domain.rs",
+  "src-tauri/src/features/agents/ports.rs",
+  "src-tauri/src/features/agents/application.rs",
   ...walk("src-tauri/src/features/workspaces/application")
     .filter((file) => file.endsWith(".rs"))
     .map(relative),
 ]) {
   requireFile(filePath);
   forbid(filePath, coreRustRules);
+}
+for (const filePath of [
+  "src-tauri/src/features/agents/domain.rs",
+  "src-tauri/src/features/agents/ports.rs",
+  "src-tauri/src/features/agents/application.rs",
+]) {
+  forbid(filePath, [
+    [/\bstd::process\b/, "Agent core must use the CLI probe port"],
+    [/crate::cli_environment/, "Agent core must not inspect the process environment"],
+    [/adapters::/, "Agent core must not depend on concrete adapters"],
+  ]);
 }
 for (const filePath of [
   "src-tauri/src/features/erd/ports.rs",
@@ -447,6 +559,15 @@ forbid("src-tauri/src/commands/mod.rs", [
   [/\bpub async fn list_dashboards\b/, "dashboard list returned to the central command module"],
   [/\bpub async fn delete_dashboard\b/, "dashboard delete returned to the central command module"],
   [/\bpub async fn run_dashboard\b/, "dashboard execution returned to the central command module"],
+  [/\bpub async fn detect_agent_clis\b/, "Agent CLI command returned to the central command module"],
+  [
+    /\bpub async fn (?:list_chat_threads|list_retired_chat_archive_threads)\b/,
+    "Agent archive list returned to the central command module",
+  ],
+  [
+    /\bpub async fn (?:get_chat_messages|get_retired_chat_archive_messages)\b/,
+    "Agent archive read returned to the central command module",
+  ],
 ]);
 forbid("src-tauri/src/features/jobs/transport.rs", [
   [/\bsqlx\b/, "job transport must delegate instead of writing the ledger"],
@@ -510,6 +631,10 @@ forbid("src-tauri/src/services/mod.rs", [
     /\b(?:DashboardService|DashboardRunRequest|DashboardRunReceipt|AgentDashboard)\b/,
     "central service facade must not re-export feature-owned dashboard contracts",
   ],
+  [
+    /\b(?:LegacyChatService|ChatThread|ChatMessageRecord|CliInfo)\b/,
+    "central service facade must not restore retired Agent contracts",
+  ],
 ]);
 forbid("src-tauri/src/features/sql_documents/transport.rs", [
   [/\bsqlx\b/, "transport must delegate instead of querying SQLite"],
@@ -548,6 +673,33 @@ forbid("src-tauri/src/features/terminals/transport.rs", [
   [/\b(?:DesktopTerminalAdapter|PtyTerminalRuntime)\b/, "Terminal transport must delegate to the feature use cases"],
   [/\bportable_pty\b/, "Terminal transport must not create or control PTYs"],
 ]);
+forbid("src-tauri/src/features/agents/transport.rs", [
+  [/crate::store/, "Agent transport must delegate archive reads"],
+  [/\bstd::process\b/, "Agent transport must delegate CLI probing"],
+  [/crate::cli_environment/, "Agent transport must not inspect CLI environments"],
+  [/adapters::/, "Agent transport must not depend on concrete adapters"],
+  [
+    /\b(?:ProcessAgentCliProbe|SqliteRetiredChatArchive)\b/,
+    "Agent transport must delegate to the feature use cases",
+  ],
+  [/\bpub async fn list_chat_threads\b/, "removed Agent archive command name returned"],
+  [/\bpub async fn get_chat_messages\b/, "removed Agent archive command name returned"],
+]);
+const agentCliProbe = read(
+  "src-tauri/src/features/agents/adapters/cli_probe.rs",
+);
+for (const token of [
+  "command.env_clear();",
+  "command.kill_on_drop(true);",
+  "CREATE_NO_WINDOW",
+]) {
+  if (!agentCliProbe.includes(token)) {
+    fail(`Agent CLI probe lost its credential/process boundary: ${token}`);
+  }
+}
+if (/from_utf8_lossy\s*\(\s*&output\.stderr\s*\)/.test(agentCliProbe)) {
+  fail("Agent CLI probe must not return provider stderr contents");
+}
 
 for (const filePath of [
   "src/features/connections/domain.ts",
@@ -558,6 +710,8 @@ for (const filePath of [
   "src/features/sqlDocuments/domain.ts",
   "src/features/terminals/domain.ts",
   "src/features/terminals/state.ts",
+  "src/features/agents/domain.ts",
+  "src/features/agents/queryKeys.ts",
   "src/features/workspaces/domain.ts",
   "src/features/workspaces/cache.ts",
   "src/features/workbench/domain.ts",
@@ -766,6 +920,78 @@ for (const command of terminalCommands) {
     );
   }
 }
+const agentCommands = [
+  "detect_agent_clis",
+  "list_retired_chat_archive_threads",
+  "get_retired_chat_archive_messages",
+];
+for (const command of agentCommands) {
+  const owners = frontendSource
+    .filter(
+      ([, source]) =>
+        source.includes(`"${command}"`) || source.includes(`'${command}'`),
+    )
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/agents/tauriAdapter.ts"
+  ) {
+    fail(
+      `${command}: expected only src/features/agents/tauriAdapter.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
+for (const removedCommand of ["list_chat_threads", "get_chat_messages"]) {
+  const owners = frontendSource
+    .filter(
+      ([, source]) =>
+        source.includes(`"${removedCommand}"`) ||
+        source.includes(`'${removedCommand}'`),
+    )
+    .map(([filePath]) => filePath);
+  if (owners.length > 0) {
+    fail(
+      `${removedCommand}: removed Agent command returned in ${owners.join(", ")}`,
+    );
+  }
+}
+for (const [filePath, source] of frontendSource) {
+  const invokeCall = /\binvoke(?:<[^()]*>)?\s*\(\s*/g;
+  for (const match of source.matchAll(invokeCall)) {
+    const commandStart = match.index + match[0].length;
+    const delimiter = source[commandStart];
+    if (delimiter !== '"' && delimiter !== "'") {
+      fail(
+        `${filePath}: Tauri invoke command names must be static quoted literals`,
+      );
+    }
+  }
+}
+const agentContractTypes = [
+  "AgentProvider",
+  "AgentCliInfo",
+  "RetiredChatThreadId",
+  "RetiredChatMessageId",
+  "RetiredChatArchiveThread",
+  "RetiredChatArchiveMessage",
+];
+for (const typeName of agentContractTypes) {
+  const declaration = new RegExp(
+    `^export\\s+(?:interface|type)\\s+${typeName}\\b`,
+    "m",
+  );
+  const owners = frontendSource
+    .filter(([, source]) => declaration.test(source))
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/agents/domain.ts"
+  ) {
+    fail(
+      `${typeName}: expected only src/features/agents/domain.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 const terminalContractTypes = [
   "TerminalSessionId",
   "TerminalProfile",
@@ -822,8 +1048,16 @@ forbid("src/ipc/types.ts", [
     "dashboard contract returned to the central IPC type file",
   ],
   [
-    /\b(?:interface|type)\s+Terminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)\b/,
+    /\bTerminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)\b/,
     "Terminal contract returned to the central IPC type file",
+  ],
+  [
+    /\b(?:AgentProvider|AgentCliInfo|RetiredChatThreadId|RetiredChatMessageId|RetiredChatArchiveThread|RetiredChatArchiveMessage)\b/,
+    "Agent contract returned to the central IPC type file",
+  ],
+  [
+    /export\s+\*\s+from\s+["'][^"']*features\/(?:agents|terminals)\/domain["']/,
+    "feature contracts must not be re-exported through the central IPC type file",
   ],
 ]);
 forbid("src/ipc/commands.ts", [
@@ -853,6 +1087,24 @@ forbid("src/ipc/commands.ts", [
     /\b(?:terminalOutputChannel|terminalCreate|terminalList|terminalFocus|terminalWrite|terminalResize|terminalKill|terminalClose|terminalRestart|terminalRename|terminalShutdownAll)\b/,
     "Terminal commands returned to the central IPC facade",
   ],
+  [
+    /\b(?:detectAgentClis|listRetiredChatArchiveThreads|getRetiredChatArchiveMessages)\b/,
+    "Agent commands returned to the central IPC facade",
+  ],
+  [
+    /export\s+\*\s+from\s+["'][^"']*features\/(?:agents|terminals)\/tauriAdapter["']/,
+    "feature commands must not be re-exported through the central IPC facade",
+  ],
+]);
+forbid("src/lib/queries.ts", [
+  [
+    /\b(?:agentCliDetectionQuery|retiredChatArchiveThreadsQuery|retiredChatArchiveMessagesQuery|chatThreads|chatMessages)\b/,
+    "Agent queries returned to the central query facade",
+  ],
+  [
+    /export\s+\*\s+from\s+["'][^"']*features\/agents\/(?:queryKeys|queryOptions)["']/,
+    "Agent queries must not be re-exported through the central query facade",
+  ],
 ]);
 for (const [filePath, source] of frontendSource) {
   if (
@@ -863,7 +1115,7 @@ for (const [filePath, source] of frontendSource) {
     fail(`${filePath}: imports ConnectionProfile from the removed central owner`);
   }
   if (
-    /import\s+type\s*\{[^}]*\bTerminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
+    /import\s+(?:type\s+)?\{[^}]*\bTerminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
       source,
     )
   ) {
@@ -875,6 +1127,20 @@ for (const [filePath, source] of frontendSource) {
     )
   ) {
     fail(`${filePath}: imports a Terminal command from the removed central owner`);
+  }
+  if (
+    /import\s+(?:type\s+)?\{[^}]*\b(?:AgentProvider|AgentCliInfo|RetiredChatThreadId|RetiredChatMessageId|RetiredChatArchiveThread|RetiredChatArchiveMessage)\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
+      source,
+    )
+  ) {
+    fail(`${filePath}: imports an Agent contract from the removed central owner`);
+  }
+  if (
+    /import\s*\{[^}]*\b(?:detectAgentClis|listRetiredChatArchiveThreads|getRetiredChatArchiveMessages)\b[^}]*\}\s*from\s*["'][^"']*ipc\/commands["']/.test(
+      source,
+    )
+  ) {
+    fail(`${filePath}: imports an Agent command from the removed central owner`);
   }
 }
 

@@ -13,6 +13,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::identity::{AccountScopeId, ConnectionId, TerminalSessionId, WorkspaceId};
 use crate::store::PinnedConnection;
 
 const SESSION_TOKEN_BYTES: usize = 32;
@@ -48,12 +49,12 @@ impl BrokerCapability {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AuthenticatedSession {
-    pub(crate) terminal_session_id: Uuid,
+    pub(crate) terminal_session_id: TerminalSessionId,
     pub(crate) runtime_id: Uuid,
-    pub(crate) workspace_id: Uuid,
-    pub(crate) account_scope: String,
+    pub(crate) workspace_id: WorkspaceId,
+    pub(crate) account_scope: AccountScopeId,
     pub(crate) scope_generation: i64,
-    pub(crate) connection_id: Uuid,
+    pub(crate) connection_id: ConnectionId,
     pub(crate) connection_revision: i64,
     pub(crate) capabilities: BTreeSet<BrokerCapability>,
     pub(crate) expires_at: DateTime<Utc>,
@@ -87,7 +88,7 @@ impl fmt::Debug for SessionRecord {
 }
 
 pub(crate) struct IssuedSessionCapability {
-    pub(crate) terminal_session_id: Uuid,
+    pub(crate) terminal_session_id: TerminalSessionId,
     token: Zeroizing<String>,
     pub(crate) expires_at: DateTime<Utc>,
 }
@@ -112,7 +113,7 @@ impl fmt::Debug for IssuedSessionCapability {
 #[derive(Clone)]
 pub(crate) struct BrokerSessionRegistry {
     runtime_id: Uuid,
-    sessions: std::sync::Arc<DashMap<Uuid, SessionRecord>>,
+    sessions: std::sync::Arc<DashMap<TerminalSessionId, SessionRecord>>,
 }
 
 impl BrokerSessionRegistry {
@@ -125,7 +126,7 @@ impl BrokerSessionRegistry {
 
     pub(crate) fn issue(
         &self,
-        terminal_session_id: Uuid,
+        terminal_session_id: TerminalSessionId,
         pin: &PinnedConnection,
         capabilities: impl IntoIterator<Item = BrokerCapability>,
         ttl: Duration,
@@ -145,10 +146,11 @@ impl BrokerSessionRegistry {
         let metadata = AuthenticatedSession {
             terminal_session_id,
             runtime_id: self.runtime_id,
-            workspace_id: pin.scope.workspace_id,
-            account_scope: pin.scope.account_scope.storage_key().into(),
+            workspace_id: pin.scope.workspace_id.into(),
+            account_scope: AccountScopeId::new(pin.scope.account_scope.storage_key())
+                .expect("active resource scope has a non-empty account partition"),
             scope_generation: pin.scope.generation,
-            connection_id: pin.connection_id,
+            connection_id: pin.connection_id.into(),
             connection_revision: pin.connection_revision,
             capabilities: capabilities.into_iter().collect(),
             expires_at,
@@ -171,13 +173,14 @@ impl BrokerSessionRegistry {
         &self,
         authentication: &SessionAuthentication,
     ) -> AppResult<AuthenticatedSession> {
-        let Some(record) = self.sessions.get(&authentication.terminal_session_id) else {
+        let terminal_session_id = TerminalSessionId::from(authentication.terminal_session_id);
+        let Some(record) = self.sessions.get(&terminal_session_id) else {
             return Err(authentication_denied());
         };
         if record.metadata.runtime_id != self.runtime_id || record.metadata.expires_at <= Utc::now()
         {
             drop(record);
-            self.sessions.remove(&authentication.terminal_session_id);
+            self.sessions.remove(&terminal_session_id);
             return Err(authentication_denied());
         }
         let mut supplied = Zeroizing::new([0u8; SESSION_TOKEN_BYTES]);
@@ -189,11 +192,11 @@ impl BrokerSessionRegistry {
         Ok(record.metadata.clone())
     }
 
-    pub(crate) fn revoke(&self, terminal_session_id: Uuid) -> bool {
+    pub(crate) fn revoke(&self, terminal_session_id: TerminalSessionId) -> bool {
         self.sessions.remove(&terminal_session_id).is_some()
     }
 
-    pub(crate) fn revoke_connection(&self, connection_id: Uuid) -> usize {
+    pub(crate) fn revoke_connection(&self, connection_id: ConnectionId) -> usize {
         let ids = self
             .sessions
             .iter()
@@ -280,7 +283,7 @@ mod tests {
     fn capability_is_256_bit_redacted_and_memory_only() {
         let runtime_id = Uuid::new_v4();
         let registry = BrokerSessionRegistry::new(runtime_id);
-        let session_id = Uuid::new_v4();
+        let session_id = TerminalSessionId::from(Uuid::new_v4());
         let issued = registry
             .issue(
                 session_id,
@@ -294,54 +297,59 @@ mod tests {
         let debug = format!("{issued:?}");
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains(issued.token()));
+        assert_eq!(issued.terminal_session_id, session_id);
         assert_eq!(registry.len(), 1);
     }
 
     #[test]
     fn authentication_is_exact_scope_capability_and_revocation_bound() {
         let runtime_id = Uuid::from_str("018f0000-1111-7222-8333-444455556666").unwrap();
-        let connection_id = Uuid::new_v4();
+        let connection_id = ConnectionId::from(Uuid::new_v4());
+        let terminal_session_id = TerminalSessionId::from(Uuid::new_v4());
         let registry = BrokerSessionRegistry::new(runtime_id);
         let issued = registry
             .issue(
-                Uuid::new_v4(),
-                &pin(connection_id),
+                terminal_session_id,
+                &pin(connection_id.into()),
                 [BrokerCapability::QueryPlan],
                 Duration::from_secs(60),
             )
             .unwrap();
-        let authentication =
-            SessionAuthentication::new(issued.terminal_session_id, issued.token().to_owned());
+        let authentication = SessionAuthentication::new(
+            issued.terminal_session_id.into(),
+            issued.token().to_owned(),
+        );
         let authenticated = registry.authenticate(&authentication).unwrap();
+        assert_eq!(authenticated.terminal_session_id, terminal_session_id);
         assert_eq!(authenticated.connection_id, connection_id);
         assert_eq!(authenticated.connection_revision, 11);
         assert_eq!(authenticated.scope_generation, 7);
         assert!(authenticated.require(BrokerCapability::QueryPlan).is_ok());
         assert!(authenticated.require(BrokerCapability::SqlPropose).is_err());
 
-        let wrong = SessionAuthentication::new(issued.terminal_session_id, "00".repeat(32));
+        let wrong = SessionAuthentication::new(issued.terminal_session_id.into(), "00".repeat(32));
         assert!(registry.authenticate(&wrong).is_err());
-        assert!(registry.revoke(issued.terminal_session_id));
+        assert!(registry.revoke(terminal_session_id));
         assert!(registry.authenticate(&authentication).is_err());
     }
 
     #[test]
     fn connection_revocation_removes_only_matching_sessions() {
         let registry = BrokerSessionRegistry::new(Uuid::new_v4());
-        let first_connection = Uuid::new_v4();
-        let second_connection = Uuid::new_v4();
+        let first_connection = ConnectionId::from(Uuid::new_v4());
+        let second_connection = ConnectionId::from(Uuid::new_v4());
         registry
             .issue(
-                Uuid::new_v4(),
-                &pin(first_connection),
+                TerminalSessionId::from(Uuid::new_v4()),
+                &pin(first_connection.into()),
                 [BrokerCapability::ConnectionRead],
                 Duration::from_secs(60),
             )
             .unwrap();
         registry
             .issue(
-                Uuid::new_v4(),
-                &pin(second_connection),
+                TerminalSessionId::from(Uuid::new_v4()),
+                &pin(second_connection.into()),
                 [BrokerCapability::ConnectionRead],
                 Duration::from_secs(60),
             )
@@ -355,14 +363,16 @@ mod tests {
         let registry = BrokerSessionRegistry::new(Uuid::new_v4());
         let issued = registry
             .issue(
-                Uuid::new_v4(),
+                TerminalSessionId::from(Uuid::new_v4()),
                 &pin(Uuid::new_v4()),
                 [BrokerCapability::ConnectionRead],
                 Duration::from_millis(1),
             )
             .unwrap();
-        let authentication =
-            SessionAuthentication::new(issued.terminal_session_id, issued.token().to_owned());
+        let authentication = SessionAuthentication::new(
+            issued.terminal_session_id.into(),
+            issued.token().to_owned(),
+        );
         std::thread::sleep(Duration::from_millis(5));
         assert!(registry.authenticate(&authentication).is_err());
         assert_eq!(registry.len(), 0);

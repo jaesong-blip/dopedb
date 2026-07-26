@@ -4,14 +4,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
+import { AGENT_WORKSPACE_QUERY_ROOTS } from "../features/agents/queryKeys";
 import type { Dashboard } from "../features/dashboards/domain";
 import type { JobChangedEvent } from "../features/jobs/domain";
 import { qk } from "./queries";
 
 const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
   "catalog",
-  "chatMessages",
-  "chatThreads",
+  ...AGENT_WORKSPACE_QUERY_ROOTS,
   "history",
   "audit",
   "monitoring",

@@ -150,7 +150,7 @@ async fn terminal_list_discloses_only_the_pinned_connection() {
         .unwrap();
     let pin = context.pin();
     let authority = TerminalAuthority {
-        terminal_session_id: Uuid::new_v4(),
+        terminal_session_id: Uuid::new_v4().into(),
         workspace_id: WorkspaceId::from(pin.scope.workspace_id),
         account_scope: AccountScopeId::new(pin.scope.account_scope.storage_key()).unwrap(),
         scope_generation: pin.scope.generation,

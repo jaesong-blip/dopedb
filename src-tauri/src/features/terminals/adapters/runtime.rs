@@ -154,13 +154,13 @@ impl PtyTerminalRuntime {
         {
             self.sessions.remove(&context.id);
             session.request_stop();
-            self.broker_sessions.revoke(context.id.into());
+            self.broker_sessions.revoke(context.id);
             return Err(error.into());
         }
 
         if let Err(error) = session.spawn_reader(reader) {
             session.request_stop();
-            self.broker_sessions.revoke(context.id.into());
+            self.broker_sessions.revoke(context.id);
             return Err(error.into());
         }
 
@@ -224,7 +224,7 @@ impl PtyTerminalRuntime {
         let session = self.session(id)?;
         if !session.lifecycle().is_terminal() {
             session.mark_stopping();
-            self.broker_sessions.revoke(id.into());
+            self.broker_sessions.revoke(id);
             session.request_stop();
             let force_session = session.clone();
             std::thread::spawn(move || {
@@ -251,7 +251,7 @@ impl PtyTerminalRuntime {
                 session.force_stop();
             }
         }
-        self.broker_sessions.revoke(id.into());
+        self.broker_sessions.revoke(id);
         self.sessions.remove(&id);
         Ok(())
     }
@@ -265,7 +265,7 @@ impl PtyTerminalRuntime {
     }
 
     pub(super) fn stop_connection(&self, connection_id: ConnectionId, app: &AppHandle) -> usize {
-        self.broker_sessions.revoke_connection(connection_id.into());
+        self.broker_sessions.revoke_connection(connection_id);
         let ids = self
             .sessions
             .iter()
@@ -316,7 +316,7 @@ impl PtyTerminalRuntime {
                     session.force_stop();
                 }
             }
-            self.broker_sessions.revoke(id.into());
+            self.broker_sessions.revoke(id);
         }
     }
 

@@ -3,7 +3,6 @@
 
 mod activity_service;
 mod document_service;
-mod legacy_chat_service;
 mod monitoring_service;
 mod operation_service;
 mod query_service;
@@ -16,7 +15,6 @@ pub(crate) use document_service::{
     AgentDocumentReadError, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
     DesktopDocumentReadError, DocumentReadReceipt, DocumentService, TerminalDocumentReadRequest,
 };
-pub(crate) use legacy_chat_service::LegacyChatService;
 pub(crate) use monitoring_service::{
     MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringService,
     MonitoringServiceError, MonitoringStatusReceipt,
@@ -39,6 +37,7 @@ pub(crate) use script_service::{
 pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 
 use crate::connection::ConnectionManager;
+use crate::features::agents::{self, AgentsFeature};
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
 use crate::features::dashboards::{self, DashboardsFeature};
@@ -55,7 +54,7 @@ use crate::store::Store;
 #[derive(Clone)]
 pub(crate) struct ApplicationServices {
     pub(crate) activity: ActivityService,
-    pub(crate) legacy_chat: LegacyChatService,
+    pub(crate) agents: AgentsFeature,
     pub(crate) connections: ConnectionsFeature,
     pub(crate) catalog: CatalogFeature,
     pub(crate) dashboard: DashboardsFeature,
@@ -107,7 +106,7 @@ impl ApplicationServices {
             dashboards::compose(store.clone(), connections.clone(), terminal_runs.clone());
         Self {
             activity: ActivityService::new(store.clone()),
-            legacy_chat: LegacyChatService::new(store.clone()),
+            agents: agents::compose(store.clone()),
             connections: connection_feature,
             catalog,
             dashboard,

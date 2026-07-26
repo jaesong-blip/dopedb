@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 use crate::kernel::TerminalAuthority;
 
 const RUN_CAPABILITY_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
@@ -18,8 +19,8 @@ const MAX_RUN_CAPABILITIES: usize = 4_096;
 
 #[derive(Debug, Clone, Copy)]
 struct RunCapability {
-    terminal_session_id: Uuid,
-    connection_id: Uuid,
+    terminal_session_id: TerminalSessionId,
+    connection_id: ConnectionId,
     expires_at: Instant,
 }
 
@@ -32,8 +33,8 @@ impl TerminalQueryRunRegistry {
     pub(crate) fn register(
         &self,
         query_run_id: Uuid,
-        terminal_session_id: Uuid,
-        connection_id: Uuid,
+        terminal_session_id: TerminalSessionId,
+        connection_id: ConnectionId,
     ) {
         let mut runs = self
             .runs
@@ -78,7 +79,7 @@ impl TerminalQueryRunRegistry {
             return Err(run_not_authorized());
         }
         if capability.terminal_session_id != authority.terminal_session_id
-            || capability.connection_id != Uuid::from(authority.connection_id)
+            || capability.connection_id != authority.connection_id
         {
             return Err(run_not_authorized());
         }
@@ -95,11 +96,11 @@ fn run_not_authorized() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::identity::{AccountScopeId, ConnectionId, WorkspaceId};
+    use crate::kernel::identity::{AccountScopeId, ConnectionId, TerminalSessionId, WorkspaceId};
 
     fn authority() -> TerminalAuthority {
         TerminalAuthority {
-            terminal_session_id: Uuid::new_v4(),
+            terminal_session_id: TerminalSessionId::from(Uuid::new_v4()),
             workspace_id: WorkspaceId::from(Uuid::new_v4()),
             account_scope: AccountScopeId::new("personal").unwrap(),
             scope_generation: 1,
@@ -114,15 +115,11 @@ mod tests {
         let registry = TerminalQueryRunRegistry::default();
         let owner = authority();
         let run_id = Uuid::new_v4();
-        registry.register(
-            run_id,
-            owner.terminal_session_id,
-            owner.connection_id.into(),
-        );
+        registry.register(run_id, owner.terminal_session_id, owner.connection_id);
         registry.authorize(run_id, &owner).unwrap();
 
         let mut other_terminal = owner.clone();
-        other_terminal.terminal_session_id = Uuid::new_v4();
+        other_terminal.terminal_session_id = TerminalSessionId::from(Uuid::new_v4());
         assert!(registry.authorize(run_id, &other_terminal).is_err());
 
         let mut other_connection = owner;
