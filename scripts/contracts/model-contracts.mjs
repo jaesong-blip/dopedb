@@ -2,7 +2,14 @@
 // Regenerate Rust serde bindings and verify the checked-in TypeScript facade is an
 // identity-preserving view of those bindings (not a hand-maintained approximation).
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { parse } from "@babel/parser";
@@ -199,20 +206,55 @@ function validateGeneratedFormatting() {
 
 function runContractTests(generate) {
   const env = generate ? { ...process.env, DOPEDB_CONTRACT_GENERATE: "1" } : process.env;
-  for (const [manifest, filter] of [
-    ["src-tauri/Cargo.toml", "generated_model_contracts_are_current"],
-    ["src-tauri/Cargo.toml", "generated_query_receipt_contracts_are_current"],
-    ["src-tauri/Cargo.toml", "generated_catalog_feature_contracts_are_current"],
-    ["dopedb-protocol/Cargo.toml", "generated_protocol_contracts_are_current"],
-  ]) {
-    // Contract-only unit tests run before CI stages the platform sidecars. The
-    // production Tauri config still owns those binaries; this test-only override
-    // prevents tauri-build from requiring bundle resources that the contract
-    // generators neither execute nor inspect.
-    const contractEnv = manifest === "src-tauri/Cargo.toml"
-      ? { ...env, TAURI_CONFIG: JSON.stringify({ bundle: { externalBin: [] } }) }
-      : env;
-    run("cargo", ["test", "--manifest-path", manifest, filter, "--lib"], contractEnv);
+  const checkRoot = generate ? null : mkdtempSync(path.join(tmpdir(), "dopedb-contracts-"));
+  try {
+    for (const [manifest, filter, outputVariable, artifact] of [
+      [
+        "src-tauri/Cargo.toml",
+        "generated_model_contracts_are_current",
+        "DOPEDB_CONTRACT_OUTPUT",
+        "src/ipc/generated/model.ts",
+      ],
+      [
+        "src-tauri/Cargo.toml",
+        "generated_query_receipt_contracts_are_current",
+        "DOPEDB_QUERY_CONTRACT_OUTPUT",
+        "src/features/queries/generated/contracts.ts",
+      ],
+      [
+        "src-tauri/Cargo.toml",
+        "generated_catalog_feature_contracts_are_current",
+        "DOPEDB_CATALOG_FEATURE_CONTRACT_OUTPUT",
+        "src/ipc/generated/catalog-feature-contracts.ts",
+      ],
+      [
+        "dopedb-protocol/Cargo.toml",
+        "generated_protocol_contracts_are_current",
+        "DOPEDB_PROTOCOL_CONTRACT_OUTPUT",
+        "src/ipc/generated/protocol-contracts.ts",
+      ],
+    ]) {
+      // Contract-only unit tests run before CI stages the platform sidecars. The
+      // production Tauri config still owns those binaries; this test-only override
+      // prevents tauri-build from requiring bundle resources that the contract
+      // generators neither execute nor inspect.
+      let contractEnv = manifest === "src-tauri/Cargo.toml"
+        ? { ...env, TAURI_CONFIG: JSON.stringify({ bundle: { externalBin: [] } }) }
+        : env;
+      if (checkRoot) {
+        // Git may materialize the checked-in TypeScript with CRLF on Windows.
+        // Preserve exact contract bytes apart from that platform line-ending
+        // representation before Rust performs its deterministic equality check.
+        const checkPath = path.join(checkRoot, path.basename(artifact));
+        const checkedIn = readFileSync(path.join(root, artifact), "utf8")
+          .replace(/\r\n?/gu, "\n");
+        writeFileSync(checkPath, checkedIn, "utf8");
+        contractEnv = { ...contractEnv, [outputVariable]: checkPath };
+      }
+      run("cargo", ["test", "--manifest-path", manifest, filter, "--lib"], contractEnv);
+    }
+  } finally {
+    if (checkRoot) rmSync(checkRoot, { recursive: true, force: true });
   }
 }
 
