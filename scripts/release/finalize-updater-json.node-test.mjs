@@ -1,3 +1,4 @@
+// Kept outside Vitest's filename pattern; this suite uses Node's built-in runner.
 import assert from "node:assert/strict";
 import test from "node:test";
 

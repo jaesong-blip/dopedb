@@ -10,7 +10,7 @@
     "generate:skills": "node scripts/generate-skill-bundle.mjs",
     "check:skills": "node scripts/generate-skill-bundle.mjs --check",
     "check:architecture": "node scripts/check-architecture.mjs",
-    "check:release": "node --test scripts/release/*.test.mjs",
+    "check:release": "node --test scripts/release/*.node-test.mjs",
     "check:ui": "node scripts/check-ui-depth.mjs",
     "test": "vitest run",
     "workspace:migrate": "bash scripts/migrate-workspace-service.sh",
