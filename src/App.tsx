@@ -671,7 +671,7 @@ function Shell() {
       window.requestAnimationFrame(() => {
         document
           .querySelector<HTMLButtonElement>(
-            '.terminal-dock .terminal-session-select[aria-selected="true"], .terminal-dock .terminal-profile-menu-wrap > button',
+            '[data-terminal-focus-target="active-session"], [data-terminal-focus-target="launcher"]',
           )
           ?.focus();
       });

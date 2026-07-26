@@ -7,12 +7,14 @@ import InfoTip from "../../components/InfoTip";
 import { useI18n } from "../../lib/i18n";
 import AgentTools from "./AgentTools";
 import CliSettings from "./Cli";
+import RetiredChatArchive from "./RetiredChatArchive";
 import Safety from "./Safety";
 import Updates from "./Updates";
 import "./settings.css";
 
 export type SettingsSection =
   | "agent-tools"
+  | "archive"
   | "cli"
   | "safety"
   | "updates"
@@ -83,6 +85,12 @@ export default function Settings({
           {t("settings.cli")}
         </button>
         <button
+          className={section === "archive" ? "snav active" : "snav"}
+          onClick={() => setSection("archive")}
+        >
+          {t("settings.retiredArchive")}
+        </button>
+        <button
           className={section === "safety" ? "snav active" : "snav"}
           onClick={() => setSection("safety")}
           disabled={!connection}
@@ -108,6 +116,7 @@ export default function Settings({
       <div className="settings-body">
         {section === "agent-tools" && <AgentTools />}
         {section === "cli" && <CliSettings />}
+        {section === "archive" && <RetiredChatArchive connection={connection} />}
         {section === "updates" && (
           <Updates initialUpdate={availableUpdate} onChecked={onUpdateChecked} />
         )}

@@ -216,3 +216,118 @@ mod tests {
         );
     }
 }
+
+// Windows CI runs this with the same portable-pty spawn path used by the desktop
+// runtime. The child is only launched after ProcessTree::attach puts its parent in
+// the job, then writes READY before it can attempt the delayed SURVIVOR marker.
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use uuid::Uuid;
+
+    use super::*;
+
+    const MARKER_TIMEOUT: Duration = Duration::from_secs(5);
+    const POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+    struct MarkerFiles {
+        go: PathBuf,
+        ready: PathBuf,
+        survivor: PathBuf,
+        script: PathBuf,
+        child_script: PathBuf,
+    }
+
+    impl MarkerFiles {
+        fn new() -> Self {
+            let id = Uuid::new_v4().simple().to_string();
+            let root = std::env::temp_dir();
+            Self {
+                go: root.join(format!("dopedb_terminal_{id}_go")),
+                ready: root.join(format!("dopedb_terminal_{id}_ready")),
+                survivor: root.join(format!("dopedb_terminal_{id}_survivor")),
+                script: root.join(format!("dopedb_terminal_{id}_script.cmd")),
+                child_script: root.join(format!("dopedb_terminal_{id}_child.cmd")),
+            }
+        }
+
+        fn write_script(&self) {
+            let script = format!(
+                "@echo off\r\n:wait\r\nif exist \"{}\" goto launch\r\nping -n 2 127.0.0.1 >nul\r\ngoto wait\r\n:launch\r\nstart \"\" /B cmd.exe /D /C call \"{}\"\r\nping -n 30 127.0.0.1 >nul\r\n",
+                self.go.display(),
+                self.child_script.display(),
+            );
+            fs::write(&self.script, script).unwrap();
+            let child_script = format!(
+                "@echo off\r\necho READY>\"{}\"\r\nping -n 4 127.0.0.1 >nul\r\necho SURVIVOR>\"{}\"\r\n",
+                self.ready.display(),
+                self.survivor.display(),
+            );
+            fs::write(&self.child_script, child_script).unwrap();
+        }
+    }
+
+    impl Drop for MarkerFiles {
+        fn drop(&mut self) {
+            for path in [
+                &self.go,
+                &self.ready,
+                &self.survivor,
+                &self.script,
+                &self.child_script,
+            ] {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+
+    fn marker_appeared(path: &Path) -> bool {
+        let deadline = Instant::now() + MARKER_TIMEOUT;
+        while !path.exists() && Instant::now() < deadline {
+            std::thread::sleep(POLL_INTERVAL);
+        }
+        path.exists()
+    }
+
+    #[test]
+    fn windows_job_cleanup_prevents_a_descendant_from_outliving_the_pty() {
+        let markers = MarkerFiles::new();
+        markers.write_script();
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        let mut command = CommandBuilder::new("cmd.exe");
+        let script = markers.script.to_string_lossy().into_owned();
+        command.args(["/D", "/C", &script]);
+        let mut child = pair.slave.spawn_command(command).unwrap();
+        // This is the production attach/force_terminate sequence: the GO marker
+        // deliberately delays descendant launch until after the job assignment.
+        let tree = ProcessTree::attach(child.as_ref()).unwrap();
+        fs::write(&markers.go, "go").unwrap();
+        if !marker_appeared(&markers.ready) {
+            let _ = tree.force_terminate();
+            let _ = child.wait();
+            panic!("READY marker was not written before timeout");
+        }
+
+        if let Err(error) = tree.force_terminate() {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("could not terminate the Windows PTY job tree: {error}");
+        }
+        child.wait().unwrap();
+        assert!(
+            !marker_appeared(&markers.survivor),
+            "the Terminal descendant survived Windows job cleanup"
+        );
+    }
+}

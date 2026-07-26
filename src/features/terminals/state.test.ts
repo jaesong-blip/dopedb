@@ -8,15 +8,18 @@ import {
 } from "./domain";
 import {
   initialTerminalDockState,
-  terminalActiveIdForConnection,
+  terminalActiveIdForScope,
   terminalDockReducer,
-  terminalSessionsForConnection,
+  terminalLayoutForScope,
+  terminalSessionsForScope,
+  type TerminalSessionScope,
 } from "./state";
 
 function session(
   id: string,
   connection: string,
   createdAt: string,
+  workspace = "workspace-a",
 ): TerminalSessionSummary {
   const idValue = terminalSessionId(id);
   const connectionIdValue = connectionId(connection);
@@ -32,7 +35,7 @@ function session(
       pixelHeight: 0,
     },
     connection: {
-      workspaceId: workspaceId("workspace"),
+      workspaceId: workspaceId(workspace),
       accountScope: "local",
       scopeGeneration: 1,
       connectionId: connectionIdValue,
@@ -52,6 +55,18 @@ function session(
 describe("Terminal Dock state", () => {
   const db1 = connectionId("db-1");
   const db2 = connectionId("db-2");
+  const scopeA: TerminalSessionScope = {
+    workspaceId: workspaceId("workspace-a"),
+    connectionId: db1,
+  };
+  const scopeB: TerminalSessionScope = {
+    workspaceId: workspaceId("workspace-b"),
+    connectionId: db1,
+  };
+  const db2Scope: TerminalSessionScope = {
+    workspaceId: workspaceId("workspace-a"),
+    connectionId: db2,
+  };
 
   it("prefers the newest session pinned to the current connection", () => {
     const state = terminalDockReducer(initialTerminalDockState, {
@@ -61,10 +76,10 @@ describe("Terminal Dock state", () => {
         session("current-old", "db-1", "2026-07-25T00:00:01Z"),
         session("current-new", "db-1", "2026-07-25T00:00:02Z"),
       ],
-      currentConnectionId: db1,
+      currentScope: scopeA,
     });
 
-    expect(terminalActiveIdForConnection(state, db1)).toBe(
+    expect(terminalActiveIdForScope(state, scopeA)).toBe(
       "current-new",
     );
     expect(state.sessions.map(({ id }) => id)).toEqual([
@@ -82,7 +97,7 @@ describe("Terminal Dock state", () => {
         session("db-1-new", "db-1", "2026-07-25T00:00:01Z"),
         session("db-2-only", "db-2", "2026-07-25T00:00:02Z"),
       ],
-      currentConnectionId: db1,
+      currentScope: scopeA,
     });
     const selectedOld = terminalDockReducer(loaded, {
       type: "activate",
@@ -93,14 +108,14 @@ describe("Terminal Dock state", () => {
       id: terminalSessionId("db-2-only"),
     });
 
-    expect(terminalActiveIdForConnection(selectedOther, db1)).toBe(
+    expect(terminalActiveIdForScope(selectedOther, scopeA)).toBe(
       "db-1-old",
     );
-    expect(terminalActiveIdForConnection(selectedOther, db2)).toBe(
+    expect(terminalActiveIdForScope(selectedOther, db2Scope)).toBe(
       "db-2-only",
     );
     expect(
-      terminalSessionsForConnection(selectedOther.sessions, db1).map(
+      terminalSessionsForScope(selectedOther.sessions, scopeA).map(
         ({ id }) => id,
       ),
     ).toEqual(["db-1-old", "db-1-new"]);
@@ -111,7 +126,7 @@ describe("Terminal Dock state", () => {
     const loaded = terminalDockReducer(initialTerminalDockState, {
       type: "loaded",
       sessions: [previous],
-      currentConnectionId: db1,
+      currentScope: scopeA,
     });
     const next = session("new", "db-1", "2026-07-25T00:00:01Z");
     const restarted = terminalDockReducer(loaded, {
@@ -121,7 +136,7 @@ describe("Terminal Dock state", () => {
     });
 
     expect(restarted.sessions.map(({ id }) => id)).toEqual(["new"]);
-    expect(terminalActiveIdForConnection(restarted, db1)).toBe("new");
+    expect(terminalActiveIdForScope(restarted, scopeA)).toBe("new");
   });
 
   it("selects an adjacent scoped tab after closing the active session", () => {
@@ -133,7 +148,7 @@ describe("Terminal Dock state", () => {
         session("next", "db-1", "2026-07-25T00:00:02Z"),
         session("other", "db-2", "2026-07-25T00:00:03Z"),
       ],
-      currentConnectionId: db1,
+      currentScope: scopeA,
     });
     const active = terminalDockReducer(loaded, {
       type: "activate",
@@ -144,7 +159,7 @@ describe("Terminal Dock state", () => {
       id: terminalSessionId("active"),
     });
 
-    expect(terminalActiveIdForConnection(closed, db1)).toBe("next");
+    expect(terminalActiveIdForScope(closed, scopeA)).toBe("next");
     expect(closed.sessions.map(({ id }) => id)).toEqual([
       "first",
       "next",
@@ -159,7 +174,7 @@ describe("Terminal Dock state", () => {
         session("db-1", "db-1", "2026-07-25T00:00:00Z"),
         session("db-2", "db-2", "2026-07-25T00:00:01Z"),
       ],
-      currentConnectionId: db1,
+      currentScope: scopeA,
     });
     const selectedOther = terminalDockReducer(loaded, {
       type: "activate",
@@ -170,8 +185,49 @@ describe("Terminal Dock state", () => {
       id: terminalSessionId("db-1"),
     });
 
-    expect(terminalActiveIdForConnection(closed, db1)).toBeNull();
-    expect(terminalActiveIdForConnection(closed, db2)).toBe("db-2");
+    expect(terminalActiveIdForScope(closed, scopeA)).toBeNull();
+    expect(terminalActiveIdForScope(closed, db2Scope)).toBe("db-2");
+  });
+
+  it("restores independent selections when a connection id appears in A and B", () => {
+    const loaded = terminalDockReducer(initialTerminalDockState, {
+      type: "loaded",
+      sessions: [
+        session("a-first", "db-1", "2026-07-25T00:00:00Z", "workspace-a"),
+        session("a-last", "db-1", "2026-07-25T00:00:01Z", "workspace-a"),
+        session("b-only", "db-1", "2026-07-25T00:00:02Z", "workspace-b"),
+      ],
+      currentScope: scopeA,
+    });
+    const aSelected = terminalDockReducer(loaded, {
+      type: "activate",
+      id: terminalSessionId("a-first"),
+    });
+    const bSelected = terminalDockReducer(aSelected, {
+      type: "activate",
+      id: terminalSessionId("b-only"),
+    });
+
+    expect(terminalActiveIdForScope(bSelected, scopeA)).toBe("a-first");
+    expect(terminalActiveIdForScope(bSelected, scopeB)).toBe("b-only");
+    expect(terminalSessionsForScope(bSelected.sessions, scopeA)).toHaveLength(2);
+    expect(terminalSessionsForScope(bSelected.sessions, scopeB)).toHaveLength(1);
+  });
+
+  it("keeps dock layout scoped with the workspace selection", () => {
+    const maximizedA = terminalDockReducer(initialTerminalDockState, {
+      type: "setLayout",
+      scope: scopeA,
+      layout: { maximized: true },
+    });
+    const restoredB = terminalDockReducer(maximizedA, {
+      type: "setLayout",
+      scope: scopeB,
+      layout: { maximized: false },
+    });
+
+    expect(terminalLayoutForScope(restoredB, scopeA).maximized).toBe(true);
+    expect(terminalLayoutForScope(restoredB, scopeB).maximized).toBe(false);
   });
 
   it("records replay truncation once per session", () => {

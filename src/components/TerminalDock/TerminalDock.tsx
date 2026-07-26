@@ -8,16 +8,26 @@ import {
   useRef,
   useState,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import type {
   SkillInstallState,
   SkillStatus,
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
+import { workspaceContextQuery } from "../../features/workspaces/queries";
 import {
-  connectionId,
-  type ConnectionProfile,
-} from "../../features/connections/domain";
+  clampTerminalDockWidth,
+  TERMINAL_DOCK_DEFAULT_WIDTH,
+} from "../../features/terminals/layout";
+import {
+  runTerminalCloseBatch,
+  shouldCloseTerminalFromShortcut,
+  terminalCloseTargetIds,
+  type TerminalCloseAction,
+  type TerminalCloseResult,
+} from "../../features/terminals/commands";
 import {
   terminalClose,
   terminalCreate,
@@ -38,25 +48,27 @@ import {
 } from "../../features/terminals/domain";
 import {
   initialTerminalDockState,
-  terminalActiveIdForConnection,
+  terminalActiveIdForScope,
   terminalDockReducer,
+  terminalLayoutForScope,
   terminalSessionIsRunning,
-  terminalSessionsForConnection,
+  terminalSessionsForScope,
+  type TerminalScopeKey,
+  type TerminalSessionScope,
   type TerminalDockState,
 } from "../../features/terminals/state";
 import { Icon } from "../Icon";
-import LegacyChatArchiveDialog from "./LegacyChatArchiveDialog";
 import TerminalContextBar from "./TerminalContextBar";
 import TerminalSurface from "./TerminalSurface";
-import TerminalTabs, { TerminalEmptyActions } from "./TerminalTabs";
+import TerminalTabs, {
+  TerminalEmptyActions,
+  type TerminalPopup,
+} from "./TerminalTabs";
 import { useI18n } from "../../lib/i18n";
 import "./terminalDock.css";
 
-const DEFAULT_DOCK_WIDTH = 480;
-const MIN_DOCK_WIDTH = 360;
-const MAX_DOCK_WIDTH = 720;
 const OUTPUT_REPLAY_BYTES = 512 * 1024;
-const ACTIVE_SESSION_STORAGE = "terminalActiveSessionByConnection";
+const ACTIVE_SESSION_STORAGE = "terminalActiveSessionByScope";
 
 type OutputWriter = (chunk: TerminalOutputChunk) => void;
 
@@ -69,16 +81,6 @@ interface TerminalDockProps {
   onClose: () => void;
 }
 
-function clampDockWidth(width: number): number {
-  const viewportMaximum = Math.max(
-    MIN_DOCK_WIDTH,
-    Math.floor(window.innerWidth * 0.55),
-  );
-  return Math.round(
-    Math.min(MAX_DOCK_WIDTH, viewportMaximum, Math.max(MIN_DOCK_WIDTH, width)),
-  );
-}
-
 function restoreTerminalDockState(
   base: TerminalDockState,
 ): TerminalDockState {
@@ -89,14 +91,39 @@ function restoreTerminalDockState(
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return base;
     }
-    const activeIdByConnection: TerminalDockState["activeIdByConnection"] =
-      {};
-    for (const [id, sessionId] of Object.entries(parsed)) {
+    const saved = parsed as {
+      activeIdByScope?: unknown;
+      layoutByScope?: unknown;
+    };
+    if (
+      !saved.activeIdByScope ||
+      typeof saved.activeIdByScope !== "object" ||
+      Array.isArray(saved.activeIdByScope)
+    ) {
+      return base;
+    }
+    const activeIdByScope: TerminalDockState["activeIdByScope"] = {};
+    for (const [id, sessionId] of Object.entries(saved.activeIdByScope)) {
       if (typeof sessionId === "string") {
-        activeIdByConnection[connectionId(id)] = terminalSessionId(sessionId);
+        activeIdByScope[id as TerminalScopeKey] = terminalSessionId(sessionId);
       }
     }
-    return { ...base, activeIdByConnection };
+    const layoutByScope: TerminalDockState["layoutByScope"] = {};
+    if (saved.layoutByScope && typeof saved.layoutByScope === "object") {
+      for (const [id, layout] of Object.entries(saved.layoutByScope)) {
+        if (
+          layout &&
+          typeof layout === "object" &&
+          "maximized" in layout &&
+          typeof layout.maximized === "boolean"
+        ) {
+          layoutByScope[id as TerminalScopeKey] = {
+            maximized: layout.maximized,
+          };
+        }
+      }
+    }
+    return { ...base, activeIdByScope, layoutByScope };
   } catch {
     return base;
   }
@@ -111,19 +138,19 @@ export default function TerminalDock({
   onClose,
 }: TerminalDockProps) {
   const { t } = useI18n();
+  const workspaceContext = useQuery(workspaceContextQuery());
   const [state, dispatch] = useReducer(
     terminalDockReducer,
     initialTerminalDockState,
     restoreTerminalDockState,
   );
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [maximized, setMaximized] = useState(false);
-  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [popup, setPopup] = useState<TerminalPopup | null>(null);
   const [closingId, setClosingId] = useState<TerminalSessionId | null>(null);
   const dockRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const archiveButtonRef = useRef<HTMLButtonElement>(null);
-  const currentConnectionIdRef = useRef(connection.id);
+  const currentScopeRef = useRef<TerminalSessionScope | null>(null);
+  const visibleSessionsRef = useRef<TerminalSessionSummary[]>([]);
+  const closingIdRef = useRef<TerminalSessionId | null>(null);
   const channelsRef = useRef(
     new Map<TerminalSessionId, ReturnType<typeof terminalOutputChannel>>(),
   );
@@ -132,14 +159,28 @@ export default function TerminalDock({
   const replayBytesRef = useRef(new Map<TerminalSessionId, number>());
   const lastSequenceRef = useRef(new Map<TerminalSessionId, number>());
   const retiredRef = useRef(new Set<TerminalSessionId>());
-  currentConnectionIdRef.current = connection.id;
+  const currentScope = useMemo<TerminalSessionScope | null>(
+    () =>
+      workspaceContext.data
+        ? {
+            workspaceId: workspaceContext.data.active.id,
+            connectionId: connection.id,
+          }
+        : null,
+    [connection.id, workspaceContext.data],
+  );
+  currentScopeRef.current = currentScope;
+  const maximized = terminalLayoutForScope(state, currentScope).maximized;
 
   useEffect(() => {
     localStorage.setItem(
       ACTIVE_SESSION_STORAGE,
-      JSON.stringify(state.activeIdByConnection),
+      JSON.stringify({
+        activeIdByScope: state.activeIdByScope,
+        layoutByScope: state.layoutByScope,
+      }),
     );
-  }, [state.activeIdByConnection]);
+  }, [state.activeIdByScope, state.layoutByScope]);
 
   const routeOutput = useCallback((chunk: TerminalOutputChunk) => {
     const previous = lastSequenceRef.current.get(chunk.sessionId) ?? 0;
@@ -197,7 +238,7 @@ export default function TerminalDock({
       dispatch({
         type: "loaded",
         sessions,
-        currentConnectionId: currentConnectionIdRef.current,
+        currentScope: currentScopeRef.current,
       });
       const attached = await Promise.allSettled(
         sessions.map((session) => attachSession(session.id)),
@@ -260,7 +301,7 @@ export default function TerminalDock({
 
   useEffect(() => {
     const clamp = () => {
-      const next = clampDockWidth(width);
+      const next = clampTerminalDockWidth(width, window.innerWidth);
       if (next !== width) onWidthChange(next);
     };
     window.addEventListener("resize", clamp);
@@ -269,7 +310,7 @@ export default function TerminalDock({
 
   useEffect(() => {
     const modal = overlay || maximized;
-    if ((!modal && !profileMenuOpen) || archiveOpen) return;
+    if (!modal && !popup) return;
     const inertTargets = modal
       ? [
           document.querySelector<HTMLElement>(".main"),
@@ -279,52 +320,27 @@ export default function TerminalDock({
       : [];
     inertTargets.forEach((target) => target.setAttribute("inert", ""));
     const frame = window.requestAnimationFrame(() => {
-      if (profileMenuOpen) {
-        dockRef.current
-          ?.querySelector<HTMLElement>('[role="menuitem"]')
-          ?.focus();
-      } else if (modal) {
+      if (modal && !popup) {
         closeRef.current?.focus();
       }
     });
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        if (profileMenuOpen) {
-          setProfileMenuOpen(false);
-          window.requestAnimationFrame(() =>
-            dockRef.current
-              ?.querySelector<HTMLElement>('[aria-haspopup="menu"]')
-              ?.focus(),
-          );
+        if (popup) {
+          popup.trigger.focus();
+          setPopup(null);
         } else if (maximized) {
-          setMaximized(false);
+          if (currentScope) {
+            dispatch({
+              type: "setLayout",
+              scope: currentScope,
+              layout: { maximized: false },
+            });
+          }
         } else {
           onClose();
         }
-        return;
-      }
-      if (
-        profileMenuOpen &&
-        ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
-      ) {
-        const items = Array.from(
-          dockRef.current?.querySelectorAll<HTMLElement>(
-            '[role="menuitem"]:not(:disabled)',
-          ) ?? [],
-        );
-        if (items.length === 0) return;
-        event.preventDefault();
-        const current = Math.max(0, items.indexOf(document.activeElement as HTMLElement));
-        const index =
-          event.key === "Home"
-            ? 0
-            : event.key === "End"
-              ? items.length - 1
-              : event.key === "ArrowDown"
-                ? (current + 1) % items.length
-                : (current - 1 + items.length) % items.length;
-        items[index]?.focus();
         return;
       }
       if (!modal || event.key !== "Tab") return;
@@ -348,37 +364,34 @@ export default function TerminalDock({
         first.focus();
       }
     };
-    const handlePointerDown = (event: PointerEvent) => {
-      if (
-        profileMenuOpen &&
-        event.target instanceof Node &&
-        !dockRef.current
-          ?.querySelector(".terminal-profile-menu-wrap")
-          ?.contains(event.target)
-      ) {
-        setProfileMenuOpen(false);
-      }
-    };
     document.addEventListener("keydown", handleKeyDown);
-    document.addEventListener("pointerdown", handlePointerDown);
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("pointerdown", handlePointerDown);
       inertTargets.forEach((target) => target.removeAttribute("inert"));
     };
-  }, [archiveOpen, maximized, onClose, overlay, profileMenuOpen]);
+  }, [currentScope, maximized, onClose, overlay, popup]);
 
   const visibleSessions = useMemo(
-    () => terminalSessionsForConnection(state.sessions, connection.id),
-    [connection.id, state.sessions],
+    () =>
+      currentScope ? terminalSessionsForScope(state.sessions, currentScope) : [],
+    [currentScope, state.sessions],
   );
-  const activeId = terminalActiveIdForConnection(state, connection.id);
+  const activeId = terminalActiveIdForScope(state, currentScope);
   const active = useMemo(
     () =>
       visibleSessions.find((session) => session.id === activeId) ?? null,
     [activeId, visibleSessions],
   );
+  visibleSessionsRef.current = visibleSessions;
+  useEffect(() => {
+    setPopup((current) =>
+      current?.kind === "tab" &&
+      !visibleSessions.some((session) => session.id === current.targetId)
+        ? null
+        : current,
+    );
+  }, [currentScope, visibleSessions]);
   const activeSkillState = useMemo<SkillInstallState | null>(() => {
     if (!active || active.profile === "shell") return null;
     const target = active.profile === "codex" ? "codex" : "claude-code";
@@ -393,7 +406,7 @@ export default function TerminalDock({
   }, []);
 
   async function createSession(profile: TerminalProfile) {
-    setProfileMenuOpen(false);
+    setPopup(null);
     dispatch({ type: "error", error: null });
     dispatch({ type: "creating", profile });
     const channel = makeChannel();
@@ -444,15 +457,17 @@ export default function TerminalDock({
     lastSequenceRef.current.delete(id);
   }, []);
 
-  const closeSession = useCallback(
-    async (session: TerminalSessionSummary) => {
-      if (closingId) return;
+  const closeVisibleSession = useCallback(
+    async (id: TerminalSessionId): Promise<TerminalCloseResult> => {
+      const session = visibleSessionsRef.current.find((candidate) => candidate.id === id);
+      if (!session || closingIdRef.current) return "stale";
       if (
         terminalSessionIsRunning(session) &&
         !window.confirm(t("terminal.closeConfirm"))
       ) {
-        return;
+        return "cancelled";
       }
+      closingIdRef.current = id;
       setClosingId(session.id);
       dispatch({ type: "error", error: null });
       retireSessionResources(session.id);
@@ -466,6 +481,7 @@ export default function TerminalDock({
             )
             ?.focus();
         });
+        return "closed";
       } catch (error) {
         retiredRef.current.delete(session.id);
         dispatch({
@@ -473,11 +489,25 @@ export default function TerminalDock({
           error: t("terminal.closeFailed", { error: errMessage(error) }),
         });
         await loadSessions();
+        return "failed";
       } finally {
+        closingIdRef.current = null;
         setClosingId(null);
       }
     },
-    [closingId, loadSessions, retireSessionResources, t],
+    [loadSessions, retireSessionResources, t],
+  );
+
+  const closeAction = useCallback(
+    async (targetId: TerminalSessionId, action: TerminalCloseAction) => {
+      const ids = terminalCloseTargetIds(
+        visibleSessionsRef.current,
+        targetId,
+        action,
+      );
+      await runTerminalCloseBatch(ids, closeVisibleSession);
+    },
+    [closeVisibleSession],
   );
 
   async function restartSession(session: TerminalSessionSummary) {
@@ -496,27 +526,23 @@ export default function TerminalDock({
 
   useEffect(() => {
     const handleCloseShortcut = (event: KeyboardEvent) => {
-      if (
-        !active ||
-        event.key.toLowerCase() !== "w" ||
-        (!event.metaKey && !event.ctrlKey) ||
-        event.altKey ||
-        event.shiftKey ||
-        !dockRef.current?.contains(event.target as Node)
-      ) {
+      if (!active || !shouldCloseTerminalFromShortcut({
+        key: event.key,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        focusInsideDock: dockRef.current?.contains(event.target as Node) ?? false,
+      })) {
         return;
       }
-      const terminalInput =
-        event.target instanceof Element &&
-        event.target.closest(".xterm") !== null;
-      if (event.ctrlKey && !event.metaKey && terminalInput) return;
       event.preventDefault();
-      void closeSession(active);
+      void closeAction(active.id, "one");
     };
     document.addEventListener("keydown", handleCloseShortcut);
     return () =>
       document.removeEventListener("keydown", handleCloseShortcut);
-  }, [active, closeSession]);
+  }, [active, closeAction]);
 
   async function renameSession(session: TerminalSessionSummary) {
     const name = window.prompt(t("terminal.renamePrompt"), session.name);
@@ -535,7 +561,9 @@ export default function TerminalDock({
     const startX = event.clientX;
     const startWidth = width;
     const move = (next: MouseEvent) => {
-      onWidthChange(clampDockWidth(startWidth + startX - next.clientX));
+      onWidthChange(
+        clampTerminalDockWidth(startWidth + startX - next.clientX, window.innerWidth),
+      );
     };
     const up = () => {
       document.removeEventListener("mousemove", move);
@@ -560,23 +588,32 @@ export default function TerminalDock({
           aria-orientation="vertical"
           aria-label={t("app.dragResize")}
           onMouseDown={beginResize}
-          onDoubleClick={() => onWidthChange(DEFAULT_DOCK_WIDTH)}
+          onDoubleClick={() => onWidthChange(TERMINAL_DOCK_DEFAULT_WIDTH)}
         />
         <TerminalTabs
           sessions={visibleSessions}
           activeId={activeId}
           creatingProfile={state.creatingProfile}
           closingId={closingId}
-          profileMenuOpen={profileMenuOpen}
           maximized={maximized}
-          archiveButtonRef={archiveButtonRef}
+          popup={popup}
           closeButtonRef={closeRef}
           onActivate={(id) => dispatch({ type: "activate", id })}
-          onClose={(session) => void closeSession(session)}
-          onToggleProfileMenu={() => setProfileMenuOpen((open) => !open)}
+          onCloseAction={(id, action) => void closeAction(id, action)}
+          onOpenPopup={setPopup}
+          onDismissPopup={() => {
+            popup?.trigger.focus();
+            setPopup(null);
+          }}
           onCreate={(profile) => void createSession(profile)}
-          onOpenArchive={() => setArchiveOpen(true)}
-          onToggleMaximize={() => setMaximized((value) => !value)}
+          onToggleMaximize={() => {
+            if (!currentScope) return;
+            dispatch({
+              type: "setLayout",
+              scope: currentScope,
+              layout: { maximized: !maximized },
+            });
+          }}
           onPanelClose={onClose}
         />
 
@@ -638,17 +675,6 @@ export default function TerminalDock({
         </div>
       </aside>
 
-      {archiveOpen && (
-        <LegacyChatArchiveDialog
-          connection={connection}
-          onClose={() => {
-            setArchiveOpen(false);
-            window.requestAnimationFrame(() =>
-              archiveButtonRef.current?.focus(),
-            );
-          }}
-        />
-      )}
     </>
   );
 }

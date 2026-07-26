@@ -6,12 +6,46 @@ import type {
   TerminalSessionSummary,
 } from "./domain";
 import type { ConnectionId } from "../connections/domain";
+import type { WorkspaceId } from "../workspaces/domain";
+
+/**
+ * A Terminal session is immutable and pinned to both its workspace and its
+ * connection. Keeping the scope as a value instead of a connection-only map
+ * prevents a same-id connection in another workspace from stealing a tab.
+ */
+export interface TerminalSessionScope {
+  workspaceId: WorkspaceId;
+  connectionId: ConnectionId;
+}
+
+export type TerminalScopeKey = string & {
+  readonly __terminalScopeKey: unique symbol;
+};
+
+export interface TerminalDockLayout {
+  maximized: boolean;
+}
+
+export function terminalScopeKey({
+  workspaceId,
+  connectionId,
+}: TerminalSessionScope): TerminalScopeKey {
+  return `${workspaceId}:${connectionId}` as TerminalScopeKey;
+}
+
+export function terminalSessionScope(
+  session: TerminalSessionSummary,
+): TerminalSessionScope {
+  return {
+    workspaceId: session.connection.workspaceId,
+    connectionId: session.connection.connectionId,
+  };
+}
 
 export interface TerminalDockState {
   sessions: TerminalSessionSummary[];
-  activeIdByConnection: Partial<
-    Record<ConnectionId, TerminalSessionId>
-  >;
+  activeIdByScope: Partial<Record<TerminalScopeKey, TerminalSessionId>>;
+  layoutByScope: Partial<Record<TerminalScopeKey, TerminalDockLayout>>;
   loading: boolean;
   error: string | null;
   creatingProfile: TerminalProfile | null;
@@ -22,7 +56,7 @@ export type TerminalDockAction =
   | {
       type: "loaded";
       sessions: TerminalSessionSummary[];
-      currentConnectionId: ConnectionId;
+      currentScope: TerminalSessionScope | null;
     }
   | { type: "loadFailed"; error: string }
   | { type: "upsert"; session: TerminalSessionSummary }
@@ -33,13 +67,19 @@ export type TerminalDockAction =
     }
   | { type: "remove"; id: TerminalSessionId }
   | { type: "activate"; id: TerminalSessionId }
+  | {
+      type: "setLayout";
+      scope: TerminalSessionScope;
+      layout: Partial<TerminalDockLayout>;
+    }
   | { type: "creating"; profile: TerminalProfile | null }
   | { type: "error"; error: string | null }
   | { type: "replayTruncated"; id: TerminalSessionId };
 
 export const initialTerminalDockState: TerminalDockState = {
   sessions: [],
-  activeIdByConnection: {},
+  activeIdByScope: {},
+  layoutByScope: {},
   loading: true,
   error: null,
   creatingProfile: null,
@@ -61,11 +101,9 @@ function sortSessions(
 
 function preferredSessionId(
   sessions: TerminalSessionSummary[],
-  connectionId: ConnectionId,
+  scope: TerminalSessionScope,
 ): TerminalSessionId | null {
-  const matching = sessions.filter(
-    (session) => session.connection.connectionId === connectionId,
-  );
+  const matching = terminalSessionsForScope(sessions, scope);
   return matching[matching.length - 1]?.id ?? null;
 }
 
@@ -85,24 +123,25 @@ export function terminalDockReducer(
   switch (action.type) {
     case "loaded": {
       const sessions = sortSessions(action.sessions);
-      const activeIdByConnection: TerminalDockState["activeIdByConnection"] = {};
+      const activeIdByScope: TerminalDockState["activeIdByScope"] = {};
       for (const session of sessions) {
-        const activeId = state.activeIdByConnection[session.connection.connectionId];
+        const scopeKey = terminalScopeKey(terminalSessionScope(session));
+        const activeId = state.activeIdByScope[scopeKey];
         if (activeId === session.id) {
-          activeIdByConnection[session.connection.connectionId] = activeId;
+          activeIdByScope[scopeKey] = activeId;
         }
       }
-      const preferred = preferredSessionId(
-        sessions,
-        action.currentConnectionId,
-      );
-      if (preferred && !activeIdByConnection[action.currentConnectionId]) {
-        activeIdByConnection[action.currentConnectionId] = preferred;
+      if (action.currentScope) {
+        const key = terminalScopeKey(action.currentScope);
+        const preferred = preferredSessionId(sessions, action.currentScope);
+        if (preferred && !activeIdByScope[key]) {
+          activeIdByScope[key] = preferred;
+        }
       }
       return {
         ...state,
         sessions,
-        activeIdByConnection,
+        activeIdByScope,
         loading: false,
         error: null,
       };
@@ -115,14 +154,13 @@ export function terminalDockReducer(
       };
     case "upsert": {
       const sessions = upsertSession(state.sessions, action.session);
-      const connectionId = action.session.connection.connectionId;
+      const key = terminalScopeKey(terminalSessionScope(action.session));
       return {
         ...state,
         sessions,
-        activeIdByConnection: {
-          ...state.activeIdByConnection,
-          [connectionId]:
-            state.activeIdByConnection[connectionId] ?? action.session.id,
+        activeIdByScope: {
+          ...state.activeIdByScope,
+          [key]: state.activeIdByScope[key] ?? action.session.id,
         },
       };
     }
@@ -131,17 +169,16 @@ export function terminalDockReducer(
         state.sessions.filter((session) => session.id !== action.previousId),
         action.session,
       );
-      const connectionId = action.session.connection.connectionId;
+      const key = terminalScopeKey(terminalSessionScope(action.session));
       return {
         ...state,
         sessions,
-        activeIdByConnection: {
-          ...state.activeIdByConnection,
-          [connectionId]:
-            state.activeIdByConnection[connectionId] === action.previousId ||
-            state.activeIdByConnection[connectionId] === undefined
+        activeIdByScope: {
+          ...state.activeIdByScope,
+          [key]: state.activeIdByScope[key] === action.previousId ||
+            state.activeIdByScope[key] === undefined
               ? action.session.id
-              : state.activeIdByConnection[connectionId],
+              : state.activeIdByScope[key],
         },
         replayTruncated: state.replayTruncated.filter(
           (id) => id !== action.previousId,
@@ -153,27 +190,25 @@ export function terminalDockReducer(
         (session) => session.id === action.id,
       );
       if (!removed) return state;
-      const connectionId = removed.connection.connectionId;
-      const scoped = terminalSessionsForConnection(
-        state.sessions,
-        connectionId,
-      );
+      const scope = terminalSessionScope(removed);
+      const key = terminalScopeKey(scope);
+      const scoped = terminalSessionsForScope(state.sessions, scope);
       const removedIndex = scoped.findIndex(
         (session) => session.id === action.id,
       );
       const nextActive =
         scoped[removedIndex + 1]?.id ?? scoped[removedIndex - 1]?.id;
-      const activeIdByConnection = { ...state.activeIdByConnection };
-      if (activeIdByConnection[connectionId] === action.id) {
-        if (nextActive) activeIdByConnection[connectionId] = nextActive;
-        else delete activeIdByConnection[connectionId];
+      const activeIdByScope = { ...state.activeIdByScope };
+      if (activeIdByScope[key] === action.id) {
+        if (nextActive) activeIdByScope[key] = nextActive;
+        else delete activeIdByScope[key];
       }
       return {
         ...state,
         sessions: state.sessions.filter(
           (session) => session.id !== action.id,
         ),
-        activeIdByConnection,
+        activeIdByScope,
         replayTruncated: state.replayTruncated.filter(
           (id) => id !== action.id,
         ),
@@ -186,12 +221,26 @@ export function terminalDockReducer(
       return session
         ? {
             ...state,
-            activeIdByConnection: {
-              ...state.activeIdByConnection,
-              [session.connection.connectionId]: action.id,
+            activeIdByScope: {
+              ...state.activeIdByScope,
+              [terminalScopeKey(terminalSessionScope(session))]: action.id,
             },
           }
         : state;
+    }
+    case "setLayout": {
+      const key = terminalScopeKey(action.scope);
+      return {
+        ...state,
+        layoutByScope: {
+          ...state.layoutByScope,
+          [key]: {
+            maximized: false,
+            ...state.layoutByScope[key],
+            ...action.layout,
+          },
+        },
+      };
     }
     case "creating":
       return {
@@ -213,27 +262,36 @@ export function terminalDockReducer(
   }
 }
 
-export function terminalSessionsForConnection(
+export function terminalSessionsForScope(
   sessions: TerminalSessionSummary[],
-  connectionId: ConnectionId,
+  scope: TerminalSessionScope,
 ): TerminalSessionSummary[] {
   return sessions.filter(
-    (session) => session.connection.connectionId === connectionId,
+    (session) =>
+      session.connection.workspaceId === scope.workspaceId &&
+      session.connection.connectionId === scope.connectionId,
   );
 }
 
-export function terminalActiveIdForConnection(
+export function terminalActiveIdForScope(
   state: TerminalDockState,
-  connectionId: ConnectionId,
+  scope: TerminalSessionScope | null,
 ): TerminalSessionId | null {
-  const scoped = terminalSessionsForConnection(
-    state.sessions,
-    connectionId,
-  );
-  const stored = state.activeIdByConnection[connectionId];
+  if (!scope) return null;
+  const scoped = terminalSessionsForScope(state.sessions, scope);
+  const stored = state.activeIdByScope[terminalScopeKey(scope)];
   return stored !== undefined && scoped.some((session) => session.id === stored)
     ? stored
-    : preferredSessionId(scoped, connectionId);
+    : preferredSessionId(scoped, scope);
+}
+
+export function terminalLayoutForScope(
+  state: TerminalDockState,
+  scope: TerminalSessionScope | null,
+): TerminalDockLayout {
+  return scope
+    ? (state.layoutByScope[terminalScopeKey(scope)] ?? { maximized: false })
+    : { maximized: false };
 }
 
 export function terminalSessionIsRunning(
