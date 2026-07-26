@@ -60,4 +60,23 @@ describe("workspace authorization revocation gate", () => {
         error: "Workspace access denied",
       });
   });
+
+  it("does not disclose a known workspace id outside the caller membership", async () => {
+    memberFindFirstMock.mockResolvedValue(null);
+
+    await expect(authorizeWorkspace(request, organizationId, "view"))
+      .resolves.toEqual({
+        ok: false,
+        status: 403,
+        error: "Workspace access denied",
+      });
+  });
+
+  it("blocks a session revoked between client sync attempts", async () => {
+    getSessionMock.mockResolvedValue(null);
+
+    await expect(authorizeWorkspace(request, organizationId, "view"))
+      .resolves.toEqual({ ok: false, status: 401, error: "Unauthorized" });
+    expect(memberFindFirstMock).not.toHaveBeenCalled();
+  });
 });

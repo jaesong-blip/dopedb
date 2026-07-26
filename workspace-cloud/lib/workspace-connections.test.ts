@@ -71,6 +71,7 @@ describe("publicConnection", () => {
     allowWrites: true,
     environment: "prod",
     schemaGroup: null,
+    contentRevision: 2,
     revision: 2,
     updatedAt: new Date("2026-07-23T00:00:00Z"),
   };

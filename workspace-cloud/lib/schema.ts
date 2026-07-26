@@ -172,7 +172,9 @@ export const workspaceProfile = workspaceControl.table("workspace_profile", {
   revision: bigint("revision", { mode: "number" }).notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  check("workspace_profile_revision", sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`),
+]);
 
 export const workspaceAuditEvent = workspaceControl.table(
   "workspace_audit_event",
@@ -342,6 +344,8 @@ export const workspaceConnection = workspaceControl.table(
     providerResource: jsonb("provider_resource"),
     environment: text("environment"),
     schemaGroup: text("schema_group"),
+    // Content optimistic-concurrency is separate from the revocation/lease epoch.
+    contentRevision: bigint("content_revision", { mode: "number" }).notNull().default(1),
     revision: bigint("revision", { mode: "number" }).notNull().default(1),
     createdByUserId: text("created_by_user_id").references(() => user.id, {
       onDelete: "set null",
@@ -377,6 +381,150 @@ export const workspaceConnection = workspaceControl.table(
           AND ${table.revocationClaimId} IS NOT NULL
           AND ${table.revocationPendingAt} IS NOT NULL)`,
     ),
+    check("workspace_connection_content_revision", sql`${table.contentRevision} >= 1 AND ${table.contentRevision} <= 9007199254740991`),
+    check("workspace_connection_revision", sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`),
+  ],
+);
+
+// Resource versions are immutable tenant-scoped facts. The mutable connection row
+// remains the current projection; offline candidates are stored on a conflict branch
+// instead of replacing that projection.
+export const workspaceResourceVersion = workspaceControl.table(
+  "workspace_resource_version",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    resourceType: text("resource_type").notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull(),
+    baseRevision: bigint("base_revision", { mode: "number" }),
+    parentVersionId: uuid("parent_version_id"),
+    branch: text("branch").notNull().default("main"),
+    operation: text("operation").notNull(),
+    payload: jsonb("payload").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_resource_version_org_id_idx").on(table.organizationId, table.id),
+    uniqueIndex("workspace_resource_version_main_revision_idx")
+      .on(table.organizationId, table.resourceType, table.resourceId, table.revision)
+      .where(sql`"branch" = 'main'`),
+    index("workspace_resource_version_org_resource_created_idx").on(
+      table.organizationId,
+      table.resourceType,
+      table.resourceId,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.resourceId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "workspace_resource_version_org_connection_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.parentVersionId],
+      foreignColumns: [table.organizationId, table.id],
+      name: "workspace_resource_version_org_parent_fk",
+    }).onDelete("restrict"),
+    check("workspace_resource_version_type", sql`${table.resourceType} = 'connection'`),
+    check("workspace_resource_version_branch", sql`${table.branch} IN ('main', 'conflict')`),
+    check(
+      "workspace_resource_version_revision",
+      sql`(${table.branch} = 'main' AND ${table.revision} >= 1 AND ${table.revision} <= 9007199254740991)
+        OR (${table.branch} = 'conflict' AND ${table.revision} >= 0 AND ${table.revision} <= 9007199254740991)`,
+    ),
+    check(
+      "workspace_resource_version_base_revision",
+      sql`${table.baseRevision} IS NULL OR (${table.baseRevision} >= 0 AND ${table.baseRevision} <= 9007199254740991)`,
+    ),
+    check(
+      "workspace_resource_version_operation",
+      sql`${table.operation} IN ('create', 'update', 'delete', 'restore')`,
+    ),
+    check("workspace_resource_version_payload_hash", sql`${table.payloadHash} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
+// A conflict is an opaque tenant-local handle joining an immutable stale candidate
+// to the main-line version that won the optimistic-concurrency race.
+export const workspaceResourceConflict = workspaceControl.table(
+  "workspace_resource_conflict",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    resourceType: text("resource_type").notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    expectedRevision: bigint("expected_revision", { mode: "number" }).notNull(),
+    serverVersionId: uuid("server_version_id").notNull(),
+    candidateVersionId: uuid("candidate_version_id").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_resource_conflict_org_id_idx").on(table.organizationId, table.id),
+    index("workspace_resource_conflict_org_resource_idx").on(
+      table.organizationId,
+      table.resourceType,
+      table.resourceId,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.resourceId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "workspace_resource_conflict_org_connection_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.serverVersionId],
+      foreignColumns: [workspaceResourceVersion.organizationId, workspaceResourceVersion.id],
+      name: "workspace_resource_conflict_org_server_version_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.candidateVersionId],
+      foreignColumns: [workspaceResourceVersion.organizationId, workspaceResourceVersion.id],
+      name: "workspace_resource_conflict_org_candidate_version_fk",
+    }).onDelete("restrict"),
+    check("workspace_resource_conflict_type", sql`${table.resourceType} = 'connection'`),
+    check("workspace_resource_conflict_expected_revision", sql`${table.expectedRevision} >= 0 AND ${table.expectedRevision} <= 9007199254740991`),
+  ],
+);
+
+// Backup payloads are ciphertext only. Metadata snapshots are immutable after
+// creation; deletion is a retention tombstone and never exposes the envelope.
+export const workspaceMetadataBackup = workspaceControl.table(
+  "workspace_metadata_backup",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    sourceRevision: bigint("source_revision", { mode: "number" }).notNull(),
+    keyReference: text("key_reference").notNull(),
+    keyVersion: text("key_version").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    snapshotHash: text("snapshot_hash").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workspace_metadata_backup_org_id_idx").on(table.organizationId, table.id),
+    index("workspace_metadata_backup_org_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    check("workspace_metadata_backup_snapshot_hash", sql`${table.snapshotHash} ~ '^[0-9a-f]{64}$'`),
+    check("workspace_metadata_backup_source_revision", sql`${table.sourceRevision} >= 1 AND ${table.sourceRevision} <= 9007199254740991`),
   ],
 );
 

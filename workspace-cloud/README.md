@@ -224,9 +224,22 @@ guess a path for legacy records.
   and a redacted provider-resource selector. Usernames,
   passwords, tokens, certificates, connection URLs, SQLite paths, advanced parameters,
   and desktop `secret_ref` values are rejected or absent from the hosted schema.
-- Endpoint metadata currently relies on HTTPS in transit and the managed database's
-  storage controls. The roadmap's application-level per-workspace envelope encryption is
-  not yet implemented, so this release must not be described as end-to-end encrypted.
+- Workspace metadata backups are canonical secretless snapshots: they include workspace
+  lifecycle metadata and shared connection templates only, never provider OAuth tokens,
+  target-database credentials, local secret references, query/result rows, certificates,
+  or URLs with embedded credentials. Each backup uses a workspace-scoped HKDF-SHA-256 key
+  derived in a backup-only domain from the deployment master key, then AES-256-GCM with AAD bound
+  to both its workspace and opaque backup id; it stores that backup-domain key reference/version and ciphertext
+  only, and is never returned as plaintext or ciphertext by the API.
+- A backup restore is additive and conflict-preserving, not a silent rollback. Existing
+  connection ids retain the current server projection while the restored candidate is
+  recorded as an immutable conflict branch; a new opaque conflict id is the only client
+  handle. Backup create/list/restore/delete require the server-side Admin/Owner `manage`
+  capability and each action writes a redacted audit event.
+- Shared connection writes require a quoted `If-Match` revision (`"0"` for a new row).
+  A stale offline update or delete never overwrites the current projection: the server
+  persists its redacted candidate plus parent/base revision and returns HTTP 409 with an
+  opaque conflict id. Connection version history is append-only at the database boundary.
 - Admin/Owner can create, resend, and cancel Better Auth invitations; remove members;
   and assign Viewer (metadata only), Analyst (read-only), Editor (read/write through
   local safety gates), or Admin roles. Resend delivers email when configured, while the
@@ -243,6 +256,16 @@ guess a path for legacy records.
   for token expiry while the desktop closes its leased pools early.
 - Identity, membership, invitation, and connection API responses are private `no-store`
   payloads and are covered by restrictive browser security headers.
+
+## Backup API contract
+
+All endpoints are under `/api/v1/workspaces/:workspaceId/backups`, require an active
+server-verified Admin/Owner membership, and return `private, no-store` responses. `GET /`
+lists only backup metadata (`id`, source revision, key reference/version, hash, timestamp);
+`POST /` creates a ciphertext-only snapshot; `DELETE /:backupId` creates a retention
+tombstone; and `POST /:backupId/restore` requires a quoted `If-Match` workspace revision.
+Neither successful nor failed responses contain provider grants, target credentials,
+envelope ciphertext, decrypted snapshot data, or database result rows.
 
 ## Security references
 

@@ -4,11 +4,23 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
 import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../lib/http";
-import { workspaceAuditEvent, workspaceConnection } from "../../../../../../lib/schema";
+import { workspaceConnection } from "../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
 import { parseSharedConnection, publicConnection } from "../../../../../../lib/workspace-connections";
+import {
+  connectionVersionPayload,
+  parseExpectedRevision,
+} from "../../../../../../lib/workspace-versioning";
+import { commitConnectionCreate, type MutationAuthority } from "../../../../../../lib/workspace-versioning-store";
 
 type RouteContext = { params: Promise<{ workspaceId: string }> };
+
+function mutationAuthority(authorization: {
+  role: string; session: { session: { id: string }; user: { id: string } }; membership: { id: string };
+}): MutationAuthority {
+  return { sessionId: authorization.session.session.id, userId: authorization.session.user.id,
+    membershipId: authorization.membership.id, role: authorization.role as "admin" | "owner" };
+}
 
 export async function GET(request: Request, context: RouteContext) {
   const { workspaceId } = await context.params;
@@ -41,6 +53,17 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  if (authorization.role !== "admin" && authorization.role !== "owner") {
+    return jsonError("Workspace access denied", 403);
+  }
+  let expectedRevision: number | null;
+  try {
+    expectedRevision = parseExpectedRevision(request);
+  } catch (error) {
+    return jsonError(error instanceof Error ? error.message : "Invalid If-Match", 400);
+  }
+  if (expectedRevision === null) return jsonError("If-Match is required", 428);
+  if (expectedRevision !== 0) return jsonError("New connections require If-Match: \"0\"", 409);
   let input;
   try {
     input = parseSharedConnection(await request.json());
@@ -48,39 +71,11 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError(error instanceof Error ? error.message : "Invalid connection template", 400);
   }
   const connectionId = crypto.randomUUID();
-  const [createdRows] = await db.batch([
-    db.insert(workspaceConnection).values({
-      id: connectionId,
-      organizationId: workspaceId,
-      name: input.name,
-      engine: input.engine,
-      provider: input.provider,
-      driverId: input.driverId,
-      host: input.host,
-      port: input.port,
-      databaseName: input.database,
-      sslmode: input.sslmode,
-      readonlyDefault: input.readonlyDefault,
-      allowWrites: input.allowWrites,
-      environment: input.env,
-      schemaGroup: input.schemaGroup,
-      createdByUserId: authorization.session.user.id,
-    }).returning(),
-    db.insert(workspaceAuditEvent).values({
-      organizationId: workspaceId,
-      actorUserId: authorization.session.user.id,
-      action: "connection.share",
-      resourceType: "connection",
-      resourceId: connectionId,
-      redactedSummary: {
-        name: input.name,
-        engine: input.engine,
-        environment: input.env,
-      },
-      requestId: crypto.randomUUID(),
-    }),
-  ]);
-  const created = createdRows[0];
+  const created = await commitConnectionCreate({
+    organizationId: workspaceId, connectionId, authority: mutationAuthority(authorization),
+    input: connectionVersionPayload(input),
+  });
+  if (!created) return jsonError("Connection changed concurrently. Retry creation.", 409);
   return privateJson({
     connection: publicConnection(created, authorization.role, authorization.accessMode),
   }, { status: 201 });

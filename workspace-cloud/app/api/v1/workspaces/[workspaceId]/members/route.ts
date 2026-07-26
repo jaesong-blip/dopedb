@@ -10,6 +10,7 @@ import {
   claimRevocationGate,
   clearRevocationGate,
   releaseRevocationGateClaim,
+  revocationGateLockKey,
   renewRevocationGateClaim,
 } from "../../../../../../lib/revocation-gates";
 import { invitation, member, user, workspaceAuditEvent } from "../../../../../../lib/schema";
@@ -21,6 +22,26 @@ type AssignableRole = (typeof assignableRoles)[number];
 
 function isAssignableRole(value: unknown): value is AssignableRole {
   return typeof value === "string" && assignableRoles.includes(value as AssignableRole);
+}
+
+async function abandonMemberClaim(
+  claim: Awaited<ReturnType<typeof claimRevocationGate>>,
+) {
+  if (!claim) return;
+  await (claim.firstPending
+    ? clearRevocationGate(claim)
+    : releaseRevocationGateClaim(claim)).catch(() => false);
+}
+
+function orderedMemberGateLocks(
+  workspaceId: string,
+  actor: { memberId: string; userId: string },
+  target: { memberId: string; userId: string },
+) {
+  return [...new Set([
+    revocationGateLockKey({ kind: "member", organizationId: workspaceId, ...actor }),
+    revocationGateLockKey({ kind: "member", organizationId: workspaceId, ...target }),
+  ])].sort();
 }
 
 export async function GET(request: Request, context: RouteContext) {
@@ -107,6 +128,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     where: and(eq(member.id, memberId), eq(member.organizationId, workspaceId)),
   });
   if (!existing) return jsonError("Member not found", 404);
+  if (existing.id === authorization.membership.id) {
+    return jsonError("Your own workspace membership cannot be changed here", 403);
+  }
   const claim = await claimRevocationGate({
     kind: "member",
     organizationId: workspaceId,
@@ -159,9 +183,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     renewedClaim.kind !== "member"
     || renewedClaim.memberRole !== claim.memberRole
   ) {
-    await releaseRevocationGateClaim(renewedClaim).catch(() => false);
+    await abandonMemberClaim(renewedClaim);
     return jsonError("Member access changed concurrently. Retry the update.", 409);
   }
+  const [actorGateLock, targetGateLock = actorGateLock] = orderedMemberGateLocks(
+    workspaceId,
+    { memberId: authorization.membership.id, userId: authorization.session.user.id },
+    { memberId, userId: renewedClaim.userId },
+  );
   const result = await db.execute<{
     id: string;
     organizationId: string;
@@ -169,12 +198,35 @@ export async function PATCH(request: Request, context: RouteContext) {
     role: string;
     createdAt: Date | string;
   }>(sql`
-    WITH updated_member AS (
+    WITH actor_gate_lock AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtextextended(${actorGateLock}, 0))
+    ), target_gate_lock AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtextextended(${targetGateLock}, 0))
+      FROM actor_gate_lock
+    ), actor_authority AS MATERIALIZED (
+      SELECT actor_member."id"
+      FROM "workspace_control"."session" actor_session
+      JOIN "workspace_control"."member" actor_member
+        ON actor_member."id" = ${authorization.membership.id}
+       AND actor_member."organization_id" = ${workspaceId}
+       AND actor_member."user_id" = ${authorization.session.user.id}
+      JOIN actor_gate_lock ON TRUE
+      JOIN target_gate_lock ON TRUE
+      WHERE actor_session."id" = ${authorization.session.session.id}
+        AND actor_session."user_id" = ${authorization.session.user.id}
+        AND actor_session."expires_at" > now()
+        AND actor_member."role" = ${authorization.role}
+        AND actor_member."role" IN ('admin', 'owner')
+        AND actor_member."revocation_pending_at" IS NULL
+        AND actor_member."revocation_claim_id" IS NULL
+      FOR UPDATE OF actor_session, actor_member
+    ), updated_member AS (
       UPDATE ${member} AS target
       SET "role" = ${body.role},
           "revocation_pending_at" = NULL,
           "revocation_claimed_at" = NULL,
           "revocation_claim_id" = NULL
+      FROM actor_authority
       WHERE target."id" = ${memberId}
         AND target."organization_id" = ${workspaceId}
         AND target."user_id" = ${renewedClaim.userId}
@@ -206,12 +258,12 @@ export async function PATCH(request: Request, context: RouteContext) {
            "created_at" AS "createdAt"
     FROM updated_member
   `).catch(async (error) => {
-    await releaseRevocationGateClaim(renewedClaim).catch(() => false);
+    await abandonMemberClaim(renewedClaim);
     throw error;
   });
   const updated = result.rows[0];
   if (!updated) {
-    await releaseRevocationGateClaim(renewedClaim).catch(() => false);
+    await abandonMemberClaim(renewedClaim);
     return jsonError("Member access changed concurrently. Retry the update.", 409);
   }
   return privateJson({ member: updated });
@@ -258,6 +310,9 @@ export async function DELETE(request: Request, context: RouteContext) {
       where: and(eq(member.id, body.memberId), eq(member.organizationId, workspaceId)),
     });
     if (!existing) return jsonError("Member not found", 404);
+    if (existing.id === authorization.membership.id) {
+      return jsonError("Your own workspace membership cannot be changed here", 403);
+    }
     const claim = await claimRevocationGate({
       kind: "member",
       organizationId: workspaceId,
@@ -308,12 +363,40 @@ export async function DELETE(request: Request, context: RouteContext) {
       renewedClaim.kind !== "member"
       || renewedClaim.memberRole !== claim.memberRole
     ) {
-      await releaseRevocationGateClaim(renewedClaim).catch(() => false);
+      await abandonMemberClaim(renewedClaim);
       return jsonError("Member access changed concurrently. Retry removal.", 409);
     }
+    const [actorGateLock, targetGateLock = actorGateLock] = orderedMemberGateLocks(
+      workspaceId,
+      { memberId: authorization.membership.id, userId: authorization.session.user.id },
+      { memberId: existing.id, userId: renewedClaim.userId },
+    );
     const result = await db.execute<{ id: string }>(sql`
-      WITH deleted_member AS (
+      WITH actor_gate_lock AS MATERIALIZED (
+        SELECT pg_advisory_xact_lock(hashtextextended(${actorGateLock}, 0))
+      ), target_gate_lock AS MATERIALIZED (
+        SELECT pg_advisory_xact_lock(hashtextextended(${targetGateLock}, 0))
+        FROM actor_gate_lock
+      ), actor_authority AS MATERIALIZED (
+        SELECT actor_member."id"
+        FROM "workspace_control"."session" actor_session
+        JOIN "workspace_control"."member" actor_member
+          ON actor_member."id" = ${authorization.membership.id}
+         AND actor_member."organization_id" = ${workspaceId}
+         AND actor_member."user_id" = ${authorization.session.user.id}
+        JOIN actor_gate_lock ON TRUE
+        JOIN target_gate_lock ON TRUE
+        WHERE actor_session."id" = ${authorization.session.session.id}
+          AND actor_session."user_id" = ${authorization.session.user.id}
+          AND actor_session."expires_at" > now()
+          AND actor_member."role" = ${authorization.role}
+          AND actor_member."role" IN ('admin', 'owner')
+          AND actor_member."revocation_pending_at" IS NULL
+          AND actor_member."revocation_claim_id" IS NULL
+        FOR UPDATE OF actor_session, actor_member
+      ), deleted_member AS (
         DELETE FROM ${member} AS target
+        USING actor_authority
         WHERE target."id" = ${existing.id}
           AND target."organization_id" = ${workspaceId}
           AND target."user_id" = ${renewedClaim.userId}
@@ -340,11 +423,11 @@ export async function DELETE(request: Request, context: RouteContext) {
       )
       SELECT "id" FROM deleted_member
     `).catch(async (error) => {
-      await releaseRevocationGateClaim(renewedClaim).catch(() => false);
+      await abandonMemberClaim(renewedClaim);
       throw error;
     });
     if (result.rows.length !== 1) {
-      await releaseRevocationGateClaim(renewedClaim).catch(() => false);
+      await abandonMemberClaim(renewedClaim);
       return jsonError("Member access changed concurrently. Retry removal.", 409);
     }
     return privateJson({ status: true });

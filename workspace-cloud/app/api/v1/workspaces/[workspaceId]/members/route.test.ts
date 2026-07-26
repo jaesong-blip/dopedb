@@ -52,6 +52,8 @@ vi.mock("../../../../../../lib/revocation-gates", () => ({
   clearRevocationGate: clearRevocationGateMock,
   releaseRevocationGateClaim: releaseRevocationGateClaimMock,
   renewRevocationGateClaim: renewRevocationGateClaimMock,
+  revocationGateLockKey: (target: { organizationId: string; userId: string }) =>
+    `member:${target.organizationId}:${target.userId}`,
 }));
 vi.mock("../../../../../../lib/workspace-authorization", () => ({
   authorizeWorkspace: authorizeWorkspaceMock,
@@ -110,7 +112,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   authorizeWorkspaceMock.mockResolvedValue({
     ok: true,
-    session: { user: { id: "admin-user" } },
+    role: "admin",
+    session: { session: { id: "actor-session" }, user: { id: "admin-user" } },
+    membership: { id: "actor-member" },
   });
   memberFindFirstMock.mockResolvedValue({
     id: memberId,
@@ -207,7 +211,17 @@ describe("workspace member lease revocation gate", () => {
       .toBeLessThan(executeMock.mock.invocationCallOrder[0]);
     const query = compiledExecute();
     expect(query.sql).toContain('target."role" =');
+    expect(query.sql).toContain("actor_authority");
+    expect(query.sql).toContain("pg_advisory_xact_lock");
+    expect(query.sql).toContain('actor_session."expires_at" > now()');
+    expect(query.sql).toContain('actor_member."role" IN (\'admin\', \'owner\')');
+    expect(query.sql).toContain("FROM actor_authority");
+    expect(query.sql).toContain("FROM updated_member");
     expect(query.params).toContain("editor");
+    const memberLocks = query.params.filter((value): value is string =>
+      typeof value === "string" && value.startsWith("member:"),
+    );
+    expect(memberLocks).toEqual([...memberLocks].sort());
   });
 
   it("deletes a member only through a renewed UUID-owned SQL mutation", async () => {
@@ -223,6 +237,10 @@ describe("workspace member lease revocation gate", () => {
     expect(renewRevocationGateClaimMock).toHaveBeenCalledWith(initialClaim);
     expect(executeMock).toHaveBeenCalledOnce();
     expect(releaseRevocationGateClaimMock).not.toHaveBeenCalled();
+    const query = compiledExecute();
+    expect(query.sql).toContain("actor_authority");
+    expect(query.sql).toContain("USING actor_authority");
+    expect(query.sql).toContain("FROM deleted_member");
   });
 
   it("fails before revocation when another UUID claim owns the member gate", async () => {
@@ -336,6 +354,47 @@ describe("workspace member lease revocation gate", () => {
     await expect(response.json()).resolves.toEqual({
       error: "Member access changed concurrently. Retry the update.",
     });
-    expect(releaseRevocationGateClaimMock).toHaveBeenCalledWith(renewedClaim);
+    expect(clearRevocationGateMock).toHaveBeenCalledWith(renewedClaim);
+    expect(releaseRevocationGateClaimMock).not.toHaveBeenCalledWith(renewedClaim);
+  });
+
+  it.each([
+    ["role update", PATCH, { memberId, role: "viewer" }],
+    ["removal", DELETE, { memberId }],
+  ] as const)("keeps projection and audit empty when actor authority is lost during %s", async (_label, handler, body) => {
+    const response = await handler(mutationRequest(handler === PATCH ? "PATCH" : "DELETE", body), context);
+
+    expect(response.status).toBe(409);
+    expect(executeMock).toHaveBeenCalledOnce();
+    const query = compiledExecute();
+    expect(query.sql).toContain("actor_authority");
+    expect(query.sql).toContain('actor_member."revocation_pending_at" IS NULL');
+    expect(query.sql).toMatch(/INSERT INTO .*workspace_audit_event[\s\S]*FROM (updated_member|deleted_member)/);
+    expect(clearRevocationGateMock).toHaveBeenCalledWith(renewedClaim);
+  });
+
+  it.each([
+    ["PATCH", PATCH, { memberId, role: "viewer" }],
+    ["DELETE", DELETE, { memberId }],
+  ] as const)("rejects self %s before claiming a target gate", async (_method, handler, body) => {
+    memberFindFirstMock.mockResolvedValue({
+      id: "actor-member", organizationId: workspaceId, userId: "admin-user", role: "admin",
+    });
+    const response = await handler(mutationRequest(handler === PATCH ? "PATCH" : "DELETE", body), context);
+
+    expect(response.status).toBe(403);
+    expect(claimRevocationGateMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("releases a takeover claim when actor authority is lost after lease revocation", async () => {
+    renewRevocationGateClaimMock.mockResolvedValue({ ...renewedClaim, firstPending: false });
+
+    const response = await PATCH(mutationRequest("PATCH", { memberId, role: "viewer" }), context);
+
+    expect(response.status).toBe(409);
+    expect(releaseRevocationGateClaimMock).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: renewedClaimId, firstPending: false }),
+    );
   });
 });
