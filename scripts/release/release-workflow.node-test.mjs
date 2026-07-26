@@ -412,35 +412,41 @@ export function validateReleaseWorkflow(workflow) {
 }
 
 function mutateCriticalBody(workflow, name, mutate) {
-  const step = exactCriticalSteps(workflow)[name];
+  const source = normalizeYamlBody(workflow);
+  const step = exactCriticalSteps(source)[name];
   const body = mutate(step.body);
-  return workflow.slice(0, step.bodyStart) + body + workflow.slice(step.end);
+  return source.slice(0, step.bodyStart) + body + source.slice(step.end);
 }
 
 function appendStep(workflow, body) {
-  return `${workflow}\n      - name: Adversarial release mutation\n        run: |\n          set -euo pipefail\n${body}\n`;
+  const source = normalizeYamlBody(workflow);
+  return `${source}\n      - name: Adversarial release mutation\n        run: |\n          set -euo pipefail\n${body}\n`;
 }
 
 function insertBeforeNextSibling(workflow, name, addition) {
-  const step = exactCriticalSteps(workflow)[name];
-  return workflow.slice(0, step.end) + addition + workflow.slice(step.end);
+  const source = normalizeYamlBody(workflow);
+  const step = exactCriticalSteps(source)[name];
+  return source.slice(0, step.end) + addition + source.slice(step.end);
 }
 
 function insertSiblingBeforeStep(workflow, name, sibling) {
-  const step = exactCriticalSteps(workflow)[name];
-  return workflow.slice(0, step.index) + sibling + workflow.slice(step.index);
+  const source = normalizeYamlBody(workflow);
+  const step = exactCriticalSteps(source)[name];
+  return source.slice(0, step.index) + sibling + source.slice(step.index);
 }
 
 function insertJobProperty(workflow, jobName, property) {
-  const job = extractJobs(workflow).get(jobName);
+  const source = normalizeYamlBody(workflow);
+  const job = extractJobs(source).get(jobName);
   assert.ok(job, `missing job fixture target ${jobName}`);
-  return workflow.slice(0, job.bodyStart) + property + workflow.slice(job.bodyStart);
+  return source.slice(0, job.bodyStart) + property + source.slice(job.bodyStart);
 }
 
 function mutateJobBody(workflow, jobName, mutate) {
-  const job = extractJobs(workflow).get(jobName);
+  const source = normalizeYamlBody(workflow);
+  const job = extractJobs(source).get(jobName);
   assert.ok(job, `missing job fixture target ${jobName}`);
-  return workflow.slice(0, job.bodyStart) + mutate(job.body) + workflow.slice(job.end);
+  return source.slice(0, job.bodyStart) + mutate(job.body) + source.slice(job.end);
 }
 
 function insertExplicitJobMapping(workflow, jobName, lines) {
@@ -448,10 +454,11 @@ function insertExplicitJobMapping(workflow, jobName, lines) {
 }
 
 function appendJob(workflow, header, stepLines, named = true) {
+  const source = normalizeYamlBody(workflow);
   const step = named
     ? ["      - name: Premature immutable publish", "        run: |", ...stepLines.map((line) => `          ${line}`)]
     : ["      - run: |", ...stepLines.map((line) => `          ${line}`)];
-  return `${workflow}\n${[
+  return `${source}\n${[
     ...header,
     "    needs: publish-tauri",
     "    permissions:",
@@ -487,7 +494,9 @@ function withLineEndings(workflow, ending) {
 }
 
 test("release workflow exactly matches the audited immutable publish contract", async () => {
-  const workflow = await readFile(path.join(root, ".github/workflows/release.yml"), "utf8");
+  const rawWorkflow = await readFile(path.join(root, ".github/workflows/release.yml"), "utf8");
+  const workflow = normalizeYamlBody(rawWorkflow);
+  assert.equal(validateReleaseWorkflow(rawWorkflow), true, "raw checkout workflow");
   assert.equal(validateReleaseWorkflow(workflow), true);
   for (const invalid of ["", "0", "-1", "1.5", "RE_kwDOAa1b2c3d4e5f"]) {
     assert.equal(POSITIVE_DATABASE_ID.test(invalid), false, `${invalid || "empty"} must not reach REST PATCH`);
@@ -496,15 +505,22 @@ test("release workflow exactly matches the audited immutable publish contract", 
 });
 
 test("release workflow validation uses one normalized coordinate system", async () => {
-  const workflow = await readFile(path.join(root, ".github/workflows/release.yml"), "utf8");
+  const rawWorkflow = await readFile(path.join(root, ".github/workflows/release.yml"), "utf8");
+  const workflow = normalizeYamlBody(rawWorkflow);
+  assert.equal(validateReleaseWorkflow(rawWorkflow), true, "raw checkout workflow");
   for (const [name, candidate] of [
-    ["LF", normalizeYamlBody(workflow)],
+    ["LF", workflow],
     ["CRLF", withLineEndings(workflow, "\r\n")],
     ["CR-only", withLineEndings(workflow, "\r")],
   ]) {
     assertActionlintValid(candidate, name);
     assert.equal(validateReleaseWorkflow(candidate), true, name);
   }
+  assert.throws(
+    () => validateReleaseWorkflow(workflow.replace(/\n/g, "\r\r\n")),
+    Error,
+    "CRCRLF is malformed and must not be a positive fixture",
+  );
 
   const prematureJob = appendJob(workflow, ["  premature-crlf-curl:"], [
     "curl --request PATCH \"https://api.github.com/repos/$GITHUB_REPOSITORY/releases/1\" --data 'draft=false'",
@@ -528,7 +544,9 @@ test("release workflow validation uses one normalized coordinate system", async 
 });
 
 test("release workflow validator rejects adversarial command and property mutations", async () => {
-  const workflow = await readFile(path.join(root, ".github/workflows/release.yml"), "utf8");
+  const rawWorkflow = await readFile(path.join(root, ".github/workflows/release.yml"), "utf8");
+  const workflow = normalizeYamlBody(rawWorkflow);
+  assert.equal(validateReleaseWorkflow(rawWorkflow), true, "raw checkout workflow");
   const mutations = [
     ["exit zero after draft closure", mutateCriticalBody(workflow, STEP_NAMES.draftClosure, (body) => body.replace("\n      # GitHub immutable", "\n          exit 0\n\n      # GitHub immutable"))],
     ["exit zero in public verification", mutateCriticalBody(workflow, STEP_NAMES.publicClosure, (body) => body.replace(/\n$/, "\n          exit 0\n"))],
