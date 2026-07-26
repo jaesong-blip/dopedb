@@ -200,6 +200,10 @@ const skillInventoryModules = [
   "src-tauri/src/skills/inventory/ports.rs",
   "src-tauri/src/skills/inventory/status.rs",
 ];
+const skillInventoryTestModules = [
+  "src-tauri/src/skills/inventory/tests.rs",
+  "src-tauri/src/skills/inventory/status_tests.rs",
+];
 const queryFrontendModules = [
   "src/features/queries/domain.ts",
   "src/features/queries/tauriAdapter.ts",
@@ -247,6 +251,7 @@ for (const filePath of skillInventoryModules) {
     );
   }
 }
+for (const filePath of skillInventoryTestModules) requireFile(filePath);
 for (const diagnostic of collectQueryProductionModuleDiagnostics(architectureContext)) {
   fail(diagnostic);
 }
@@ -281,6 +286,22 @@ for (const [directory, expected] of [
   ) {
     fail(
       `${directory}: replacement module set changed; expected ${expectedSorted.join(", ")}, found ${actual.join(", ") || "none"}`,
+    );
+  }
+}
+{
+  const directory = "src-tauri/src/skills/inventory";
+  const expected = [...skillInventoryModules, ...skillInventoryTestModules].sort();
+  const actual = walk(directory)
+    .map(relative)
+    .filter((filePath) => filePath.endsWith(".rs"))
+    .sort();
+  if (
+    actual.length !== expected.length ||
+    actual.some((filePath, index) => filePath !== expected[index])
+  ) {
+    fail(
+      `${directory}: exact Rust module set changed; expected ${expected.join(", ")}, found ${actual.join(", ") || "none"}`,
     );
   }
 }

@@ -7,6 +7,8 @@ mod ports;
 mod status;
 
 #[cfg(test)]
+mod status_tests;
+#[cfg(test)]
 mod tests;
 
 pub(super) use domain::MARKER_FILE;
