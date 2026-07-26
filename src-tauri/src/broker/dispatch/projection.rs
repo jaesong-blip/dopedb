@@ -260,6 +260,7 @@ pub(super) fn map_operation_error(error: AppError) -> ErrorCode {
 pub(super) fn map_application_error(error: AppError) -> ErrorCode {
     match error {
         AppError::Blocked { .. } => ErrorCode::PolicyBlocked,
+        AppError::ProposalRequired => ErrorCode::PolicyBlocked,
         AppError::Safety(_) => ErrorCode::PolicyBlocked,
         AppError::NotFound(_) | AppError::Config(_) | AppError::Parse(_) => {
             ErrorCode::InvalidRequest

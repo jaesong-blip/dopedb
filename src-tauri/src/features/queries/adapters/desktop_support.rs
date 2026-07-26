@@ -1,27 +1,34 @@
-//! Shared desktop SQL policy, preview, and best-effort provenance support.
+//! Shared desktop SQL policy, preview, and read-streaming support.
 
-use chrono::Utc;
 use std::time::Instant;
-use uuid::Uuid;
 
-use crate::audit::{self, RecordArgs};
 use crate::connection::{ConnectionAccess, DbPool};
 use crate::error::AppError;
 use crate::executor;
 use crate::kernel::identity::OperationId;
-use crate::model::{
-    Classification, HistoryEntry, PreviewMode, PreviewReport, QueryKind, SafetySettings,
-};
+use crate::model::{Classification, PreviewMode, PreviewReport, QueryKind, SafetySettings};
 use crate::operations::{
     capture_policy, ensure_operation_scope, OperationKind, OperationRiskLevel,
 };
 use crate::safety;
 use crate::safety::PoolRef;
-use crate::store::{PinnedConnection, Store};
+use crate::store::PinnedConnection;
 
 use super::desktop_contracts::{
     DesktopSqlExecutionFailure, DesktopSqlRunBlocked, DesktopSqlRunError, DesktopSqlStreamReceipt,
     StoredDesktopSqlPayload,
+};
+use super::desktop_provenance::{record_desktop_run, DesktopRunRecord};
+use super::desktop_trace::{
+    BACKEND_COMPLETE as TRACE_BACKEND_COMPLETE,
+    BACKEND_EXECUTE_START as TRACE_BACKEND_EXECUTE_START,
+    CHANNEL_ACK_WAIT as TRACE_CHANNEL_ACK_WAIT, FIRST_BATCH as TRACE_FIRST_BATCH,
+    OPERATION_CLAIM as TRACE_OPERATION_CLAIM,
+    OPERATION_FINALIZE_COMPLETE as TRACE_OPERATION_FINALIZE_COMPLETE,
+    OPERATION_FINALIZE_START as TRACE_OPERATION_FINALIZE_START,
+    POOL_CONNECT_READY as TRACE_POOL_CONNECT_READY, POOL_CONNECT_START as TRACE_POOL_CONNECT_START,
+    PROVENANCE_COMPLETE as TRACE_PROVENANCE_COMPLETE,
+    SERIALIZE_CHANNEL_SEND as TRACE_SERIALIZE_CHANNEL_SEND,
 };
 use super::platform::QueryPlatformAdapter;
 use crate::features::queries::domain::{
@@ -62,73 +69,6 @@ pub(super) fn skipped_preview_report(note: &str) -> PreviewReport {
         exact_rows: None,
         plan: None,
         note: Some(note.into()),
-    }
-}
-
-pub(super) struct DesktopRunRecord<'a> {
-    pub(super) sql: &'a str,
-    pub(super) kind: QueryKind,
-    pub(super) action: &'a str,
-    pub(super) status: &'a str,
-    pub(super) row_count: Option<i64>,
-    pub(super) duration_ms: Option<i64>,
-    pub(super) error: Option<String>,
-    pub(super) origin: &'a str,
-}
-
-/// Append the established desktop audit and history pair. Logging remains
-/// best-effort so provenance outages do not mask the target operation result.
-pub(super) async fn record_desktop_run(
-    store: &Store,
-    pin: &PinnedConnection,
-    record: DesktopRunRecord<'_>,
-) {
-    if let Err(error) = audit::record(
-        store,
-        RecordArgs {
-            connection_id: pin.connection_id,
-            engine: pin.profile.engine,
-            agent_prompt: None,
-            sql: record.sql.to_string(),
-            kind: record.kind,
-            action: record.action.to_string(),
-            approved_by: None,
-            affected_estimate: record.row_count,
-            error: record.error.clone(),
-        },
-    )
-    .await
-    {
-        tracing::error!(
-            connection_id = %pin.connection_id,
-            action = record.action,
-            %error,
-            "desktop SQL audit record failed"
-        );
-    }
-    if let Err(error) = store
-        .insert_history_if_current(
-            pin,
-            &HistoryEntry {
-                id: Uuid::new_v4(),
-                connection_id: pin.connection_id,
-                sql: record.sql.to_string(),
-                kind: record.kind,
-                status: record.status.to_string(),
-                row_count: record.row_count,
-                duration_ms: record.duration_ms,
-                error: record.error,
-                executed_at: Utc::now(),
-                origin: record.origin.to_string(),
-            },
-        )
-        .await
-    {
-        tracing::error!(
-            connection_id = %pin.connection_id,
-            %error,
-            "desktop SQL history insert failed"
-        );
     }
 }
 
@@ -237,7 +177,7 @@ impl QueryPlatformAdapter {
             operation_id,
         );
         tracing::debug!(
-            phase = "desktop_query_stream_operation_claim",
+            phase = TRACE_OPERATION_CLAIM,
             duration_ms = operation_started.elapsed().as_millis() as u64,
             "desktop query stream phase"
         );
@@ -255,6 +195,11 @@ impl QueryPlatformAdapter {
                 "query cancelled".into(),
             )));
         }
+        tracing::debug!(
+            phase = TRACE_POOL_CONNECT_START,
+            duration_ms = operation_started.elapsed().as_millis() as u64,
+            "desktop query stream phase"
+        );
         let lease = match scope.connect(pin.clone(), ConnectionAccess::Read).await {
             Ok(lease) => lease,
             Err(error) => {
@@ -266,7 +211,7 @@ impl QueryPlatformAdapter {
             }
         };
         tracing::debug!(
-            phase = "desktop_query_stream_connection_ready",
+            phase = TRACE_POOL_CONNECT_READY,
             duration_ms = operation_started.elapsed().as_millis() as u64,
             "desktop query stream phase"
         );
@@ -302,6 +247,11 @@ impl QueryPlatformAdapter {
                     return result;
                 }
             };
+        tracing::debug!(
+            phase = TRACE_BACKEND_EXECUTE_START,
+            duration_ms = operation_started.elapsed().as_millis() as u64,
+            "desktop query stream phase"
+        );
         let streamed = executor::read::run_read_streamed_registered(
             live,
             pin.profile.engine,
@@ -312,6 +262,11 @@ impl QueryPlatformAdapter {
             |batch| {
                 if first_batch_ms.is_none() {
                     first_batch_ms = Some(operation_started.elapsed().as_millis() as u64);
+                    tracing::debug!(
+                        phase = TRACE_FIRST_BATCH,
+                        duration_ms = first_batch_ms,
+                        "desktop query stream phase"
+                    );
                 }
                 let batch_sequence = sequence;
                 let event = DesktopSqlStreamBatch {
@@ -327,7 +282,7 @@ impl QueryPlatformAdapter {
                     .dispatch(batch_sequence, event, &mut emit)
                     .map_err(stream_sink_error);
                 tracing::debug!(
-                    phase = "desktop_query_stream_serialize_send",
+                    phase = TRACE_SERIALIZE_CHANNEL_SEND,
                     duration_ms = send_started.elapsed().as_millis() as u64,
                     "desktop query stream phase"
                 );
@@ -340,7 +295,7 @@ impl QueryPlatformAdapter {
                         .await
                         .map_err(stream_sink_error);
                     tracing::debug!(
-                        phase = "desktop_query_stream_ack_wait",
+                        phase = TRACE_CHANNEL_ACK_WAIT,
                         duration_ms = ack_started.elapsed().as_millis() as u64,
                         "desktop query stream phase"
                     );
@@ -353,9 +308,14 @@ impl QueryPlatformAdapter {
         match streamed {
             Ok(summary) => {
                 tracing::debug!(
-                    phase = "desktop_query_stream_backend_complete",
+                    phase = TRACE_BACKEND_COMPLETE,
                     duration_ms = summary.duration_ms,
                     first_batch_ms = ?first_batch_ms,
+                    "desktop query stream phase"
+                );
+                tracing::debug!(
+                    phase = TRACE_OPERATION_FINALIZE_START,
+                    duration_ms = operation_started.elapsed().as_millis() as u64,
                     "desktop query stream phase"
                 );
                 if let Err(error) = self.operation.succeed(operation_id.into(), &serde_json::json!({
@@ -365,6 +325,11 @@ impl QueryPlatformAdapter {
                     finalizer.disarm().await;
                     return Err(DesktopSqlRunError::Execution(Box::new(DesktopSqlExecutionFailure { error, _lease: lease })));
                 }
+                tracing::debug!(
+                    phase = TRACE_OPERATION_FINALIZE_COMPLETE,
+                    duration_ms = operation_started.elapsed().as_millis() as u64,
+                    "desktop query stream phase"
+                );
                 record_desktop_run(
                     &self.store,
                     &pin,
@@ -381,7 +346,7 @@ impl QueryPlatformAdapter {
                 )
                 .await;
                 tracing::debug!(
-                    phase = "desktop_query_stream_provenance_complete",
+                    phase = TRACE_PROVENANCE_COMPLETE,
                     duration_ms = operation_started.elapsed().as_millis() as u64,
                     "desktop query stream phase"
                 );

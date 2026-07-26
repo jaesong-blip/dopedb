@@ -23,8 +23,10 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import {
   inspectSql,
   proposeSql,
-  runSql,
+  runSqlReadStream,
+  runSqlStream,
 } from "../../features/queries/tauriAdapter";
+import { useSqlResultStream } from "../../features/queries/useSqlResultStream";
 import type {
   PreviewReport,
   SqlOperationProposal,
@@ -47,6 +49,12 @@ import { useI18n } from "../../lib/i18n";
 import { catalogQuery } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
+import {
+  canFallbackFromCombinedRead,
+  initialSqlRunPath,
+  proposalSqlRunPath,
+} from "./runPath";
+import StreamOutcome from "./StreamOutcome";
 import "./sql.css";
 
 const STEP = 200;
@@ -153,12 +161,22 @@ export default function Sql({
 
   const [resultKind, setResultKind] = useState<ResultKind | null>(null);
   const [run, setRun] = useState<Run | null>(null);
+  const {
+    stream,
+    start: startDesktopStream,
+    cancel: cancelDesktopStream,
+    reset: resetDesktopStream,
+  } = useSqlResultStream(connection.id);
   const [limit, setLimit] = useState(STEP);
-  const [scriptOut, setScriptOut] = useState<{ outcome: ScriptOutcome; at: string } | null>(null);
+  const [scriptOut, setScriptOut] = useState<{
+    outcome: ScriptOutcome;
+    at: string;
+  } | null>(null);
   const { running, cancelled, execute, cancel, track } = useQueryRun();
   const [runErr, setRunErr] = useState<QueryErrorInfo | null>(null);
   const [lastAttempt, setLastAttempt] = useState<LastAttempt | null>(null);
-  const [pendingApproval, setPendingApproval] = useState<PendingSqlApproval | null>(null);
+  const [pendingApproval, setPendingApproval] =
+    useState<PendingSqlApproval | null>(null);
   const [pendingScriptApproval, setPendingScriptApproval] =
     useState<PendingScriptApproval | null>(null);
   const [scriptConfirmation, setScriptConfirmation] = useState("");
@@ -219,6 +237,10 @@ export default function Sql({
   async function executeSql(selectedSql?: string) {
     const sql = selectedSql?.trim() || draft.trim();
     if (!sql || running) return;
+    globalThis.performance?.clearMarks?.(
+      "desktop_query_interaction_start",
+    );
+    globalThis.performance?.mark?.("desktop_query_interaction_start");
 
     const statements = splitStatements(sql);
     const script = statements.length > 1;
@@ -232,6 +254,7 @@ export default function Sql({
 
     try {
       await execute(async () => {
+        await resetDesktopStream();
         if (script) {
           const proposal = await proposeScript(connection.id, sql, "manual");
           if (proposal.approvalRequired) {
@@ -243,23 +266,48 @@ export default function Sql({
           const outcome = await runScript(proposal.operationId);
           setScriptOut({ outcome, at });
         } else {
-          const proposal = await proposeSql(connection.id, sql, "manual");
-          if (proposal.approvalRequired) {
-            setPendingApproval({ proposal, sql, at });
-            return;
+          const runPlannedSql = async () => {
+            const proposal = await proposeSql(connection.id, sql, "manual");
+            if (proposalSqlRunPath(proposal) === "approval") {
+              setPendingApproval({ proposal, sql, at });
+              return;
+            }
+            setRun(null);
+            await startDesktopStream((onBatch) =>
+              runSqlStream(proposal.operationId, onBatch),
+            );
+          };
+          if (initialSqlRunPath(safety.autoRunReads) === "combinedReadStream") {
+            try {
+              // Exactly one IPC for auto reads. Only the backend's typed,
+              // pre-target `proposalRequired` signal may enter the proposal UI.
+              setRun(null);
+              await startDesktopStream((onBatch) =>
+                runSqlReadStream(connection.id, sql, onBatch, "manual"),
+              );
+            } catch (error) {
+              if (!canFallbackFromCombinedRead(errDetails(error).kind))
+                throw error;
+              await resetDesktopStream();
+              await runPlannedSql();
+            }
+          } else {
+            // Manual/read-only settings still stream after the durable proposal;
+            // only approved write/DDL stays on the legacy materialized outcome.
+            await runPlannedSql();
           }
-          track(proposal.operationId);
-          const outcome = await runSql(proposal.operationId);
-          setRun({ sql, outcome, at });
         }
       });
     } catch (e) {
+      if (!script && stream.phase === "cancelled") return;
       const details = errDetails(e);
       setRunErr({ ...details, sql, at: new Date().toLocaleTimeString() });
       // Clear the attempted kind so a failed run can't leave the previous
       // result sitting under the error card looking current.
       if (script) setScriptOut(null);
-      else setRun(null);
+      else {
+        setRun(null);
+      }
     }
   }
 
@@ -272,9 +320,7 @@ export default function Sql({
         await approveOperation(
           pending.proposal.operationId,
           pending.proposal.payloadHash,
-          pending.proposal.confirmationPhrase
-            ? scriptConfirmation
-            : undefined,
+          pending.proposal.confirmationPhrase ? scriptConfirmation : undefined,
         );
         const outcome = await runScript(pending.proposal.operationId);
         setResultKind("script");
@@ -441,7 +487,13 @@ export default function Sql({
             >
               <Icon name="refresh" />
             </span>
-            <button className="btn small" onClick={cancel}>
+            <button
+              className="btn small"
+              onClick={() => {
+                cancel();
+                void cancelDesktopStream();
+              }}
+            >
               {t("sql.cancel")}
             </button>
           </>
@@ -489,7 +541,12 @@ export default function Sql({
         <details open className="card explain-plan">
           <summary>
             {t("sql.queryPlan")}
-            <button className="btn small icon-only icon-xs plan-close" onClick={() => setPlan(null)} title={t("common.close")} aria-label={t("common.close")}>
+            <button
+              className="btn small icon-only icon-xs plan-close"
+              onClick={() => setPlan(null)}
+              title={t("common.close")}
+              aria-label={t("common.close")}
+            >
               <Icon name="close" />
             </button>
           </summary>
@@ -532,10 +589,7 @@ export default function Sql({
               })}
             </span>
           </div>
-          <LazySqlViewer
-            value={pendingScriptApproval.sql}
-            minHeight="96px"
-          />
+          <LazySqlViewer value={pendingScriptApproval.sql} minHeight="96px" />
           <div className="muted script-approval-hash">
             {t("approval.payloadHash")}{" "}
             <code>{pendingScriptApproval.proposal.payloadHash}</code>
@@ -559,11 +613,10 @@ export default function Sql({
             <button
               className="btn primary"
               disabled={
-                running
-                || (
-                  !!pendingScriptApproval.proposal.confirmationPhrase
-                  && scriptConfirmation !== pendingScriptApproval.proposal.confirmationPhrase
-                )
+                running ||
+                (!!pendingScriptApproval.proposal.confirmationPhrase &&
+                  scriptConfirmation !==
+                    pendingScriptApproval.proposal.confirmationPhrase)
               }
               onClick={() => void approvePendingScript()}
             >
@@ -580,24 +633,47 @@ export default function Sql({
         </section>
       )}
 
-      {runErr && (
-        <SqlErrorCard error={runErr} prompt={aiPrompt} />
+      {runErr && <SqlErrorCard error={runErr} prompt={aiPrompt} />}
+      {cancelled && (
+        <div className="muted sql-run-message">{t("sql.cancelled")}</div>
       )}
-      {cancelled && <div className="muted sql-run-message">{t("sql.cancelled")}</div>}
 
-      <div className={running && (run || scriptOut) ? "sql-results busy" : "sql-results"}>
-        {!running && !run && !scriptOut && !plan && !planErr && !runErr && (
-          <div className="sql-empty">
-            <Icon name="table" />
-            <span>{t("sql.resultsEmpty")}</span>
-          </div>
-        )}
+      <div
+        className={
+          running &&
+          (run ||
+            scriptOut ||
+            stream.phase === "connecting" ||
+            stream.phase === "streaming")
+            ? "sql-results busy"
+            : "sql-results"
+        }
+      >
+        {!running &&
+          !run &&
+          !scriptOut &&
+          stream.phase === "idle" &&
+          !plan &&
+          !planErr &&
+          !runErr && (
+            <div className="sql-empty">
+              <Icon name="table" />
+              <span>{t("sql.resultsEmpty")}</span>
+            </div>
+          )}
         {resultKind === "single" && run && (
           <Outcome
             run={run}
             limit={limit}
             maxRows={safety.maxRows}
             onMore={() => setLimit((l) => l + STEP)}
+          />
+        )}
+        {resultKind === "single" && stream.phase !== "idle" && (
+          <StreamOutcome
+            stream={stream}
+            sql={lastAttempt?.sql ?? draft}
+            maxRows={safety.maxRows}
           />
         )}
         {resultKind === "script" && scriptOut && (
@@ -671,7 +747,13 @@ function SqlErrorCard({
   );
 }
 
-function ScriptResults({ outcome, at }: { outcome: ScriptOutcome; at: string }) {
+function ScriptResults({
+  outcome,
+  at,
+}: {
+  outcome: ScriptOutcome;
+  at: string;
+}) {
   const { t } = useI18n();
   const summary = outcome.allReads
     ? t("sql.readOnlyScript")
@@ -681,7 +763,8 @@ function ScriptResults({ outcome, at }: { outcome: ScriptOutcome; at: string }) 
   return (
     <div className="results script-results">
       <div className="result-meta muted">
-        {summary} · {t("sql.statementCount", { count: outcome.statements.length })} · {at}
+        {summary} ·{" "}
+        {t("sql.statementCount", { count: outcome.statements.length })} · {at}
       </div>
       {outcome.statements.map((s, i) => (
         <div key={i} className="stmt-result">
@@ -696,8 +779,8 @@ function ScriptResults({ outcome, at }: { outcome: ScriptOutcome; at: string }) 
               <div className="muted stmt-rowmeta">
                 {t(s.result.truncated ? "agent.rowsTruncated" : "agent.rows", {
                   count: s.result.rowCount,
-                })} ·{" "}
-                {s.result.durationMs} ms
+                })}{" "}
+                · {s.result.durationMs} ms
                 {" · "}
                 <ResultToolbar
                   columns={s.result.columns}
@@ -708,7 +791,9 @@ function ScriptResults({ outcome, at }: { outcome: ScriptOutcome; at: string }) 
               <DataGrid result={s.result} />
             </>
           ) : (
-            <div className="muted">{t("sql.affected", { count: s.affected ?? 0 })}</div>
+            <div className="muted">
+              {t("sql.affected", { count: s.affected ?? 0 })}
+            </div>
           )}
         </div>
       ))}
@@ -753,14 +838,23 @@ function Outcome({
         ) : (
           <>
             {" · "}
-            {outcome.committed ? t("sql.writeCommitted") : t("sql.noRowsReturned")}
-            {outcome.affected !== null && <> · {t("sql.affected", { count: outcome.affected })}</>} · {at}
+            {outcome.committed
+              ? t("sql.writeCommitted")
+              : t("sql.noRowsReturned")}
+            {outcome.affected !== null && (
+              <> · {t("sql.affected", { count: outcome.affected })}</>
+            )}{" "}
+            · {at}
           </>
         )}
       </div>
       {r && (
         <>
-          <DataGrid result={limit < r.rows.length ? { ...r, rows: r.rows.slice(0, limit) } : r} />
+          <DataGrid
+            result={
+              limit < r.rows.length ? { ...r, rows: r.rows.slice(0, limit) } : r
+            }
+          />
           {r.rows.length > limit && (
             <button className="btn" onClick={onMore}>
               {t("sql.showMore", {

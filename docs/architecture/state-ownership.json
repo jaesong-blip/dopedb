@@ -21,6 +21,15 @@
       "forbiddenWriterTokens": [
         "setQueryData(qk.workspaceAuth"
       ]
+    },
+    {
+      "name": "desktopQueryResultStream",
+      "owner": "src/features/queries/useSqlResultStream.ts",
+      "dispatcher": "src/features/queries/useSqlResultStream.ts",
+      "writerTokens": [
+        "const [stream, setStream]"
+      ],
+      "forbiddenWriterTokens": []
     }
   ],
   "runtimeStates": [

@@ -13,7 +13,8 @@ use super::desktop_contracts::{
     DesktopSqlExecutionFailure, DesktopSqlRunBlocked, DesktopSqlRunError, DesktopSqlRunReceipt,
     StoredDesktopSqlPayload,
 };
-use super::desktop_support::{operation_kind, record_desktop_run, DesktopRunRecord};
+use super::desktop_provenance::{record_desktop_run, DesktopRunRecord};
+use super::desktop_support::operation_kind;
 use super::platform::QueryPlatformAdapter;
 
 impl QueryPlatformAdapter {

@@ -183,9 +183,20 @@ impl QueriesFeature {
             self.forget_pending_desktop_sql_stream(&capability, &owner_webview);
             self.cancel_unstarted_desktop_read(proposal.operation_id)
                 .await;
-            return Err(crate::error::AppError::Blocked {
-                reason: "this SQL read requires the explicit proposal workflow".into(),
-            });
+            // This typed signal is deliberately emitted only for an actual
+            // read: planning completed but it has not claimed a connection,
+            // emitted a batch, or touched the target. A write/DDL submitted to
+            // this endpoint remains a generic block and can never trigger the
+            // frontend's read fallback.
+            return Err(
+                if proposal.classification.kind == crate::model::QueryKind::Read {
+                    crate::error::AppError::ProposalRequired
+                } else {
+                    crate::error::AppError::Blocked {
+                        reason: "this SQL statement requires the explicit proposal workflow".into(),
+                    }
+                },
+            );
         }
         after_proposal(proposal.operation_id).await;
         if let Err(error) = self.desktop_streams.bind_pending(

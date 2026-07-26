@@ -20,7 +20,7 @@ import type { SqlOperationProposal } from "./domain";
 import {
   inspectSql,
   proposeSql,
-  runSqlRead,
+  runSqlBoundedPage,
   runSqlReadStream,
   runSqlStream,
 } from "./tauriAdapter";
@@ -88,12 +88,18 @@ describe("query Tauri adapter", () => {
   });
 
   it("runs only a proposal that is both read-only and approval-free", async () => {
-    const outcome: ExecOutcome = { result: null, affected: null, committed: false };
-    invokeMock.mockResolvedValueOnce(readProposal).mockResolvedValueOnce(outcome);
+    const outcome: ExecOutcome = {
+      result: null,
+      affected: null,
+      committed: false,
+    };
+    invokeMock
+      .mockResolvedValueOnce(readProposal)
+      .mockResolvedValueOnce(outcome);
 
-    await expect(runSqlRead("connection-1", "SELECT 1", "data-view")).resolves.toBe(
-      outcome,
-    );
+    await expect(
+      runSqlBoundedPage("connection-1", "SELECT 1", "data-view"),
+    ).resolves.toBe(outcome);
     expect(invokeMock).toHaveBeenNthCalledWith(1, "propose_sql", {
       id: "connection-1",
       sql: "SELECT 1",
@@ -110,35 +116,51 @@ describe("query Tauri adapter", () => {
       classification: { ...readProposal.classification, kind: "write" },
     });
 
-    await expect(runSqlRead("connection-1", "UPDATE users SET role = 'admin'")).rejects.toThrow(
+    await expect(
+      runSqlBoundedPage("connection-1", "UPDATE users SET role = 'admin'"),
+    ).rejects.toThrow(
       "read execution helper rejected a target-mutating proposal",
     );
     expect(invokeMock).toHaveBeenCalledTimes(1);
   });
 
   it("streams an existing read proposal through one bounded-channel command", async () => {
+    let resolveReceipt:
+      | ((receipt: {
+          operationId: string;
+          rowCount: number;
+          truncated: boolean;
+          durationMs: number;
+        }) => void)
+      | undefined;
     invokeMock.mockImplementation((command) => {
       if (command === "pull_sql_stream_batch") {
-        return Promise.resolve({ operationId: "operation-1", sequence: 0, columns: ["id"], rows: [[1]] });
+        return Promise.resolve({
+          operationId: "operation-1",
+          sequence: 0,
+          columns: ["id"],
+          rows: [[1]],
+        });
       }
       if (command === "run_sql_stream") {
-        return Promise.resolve({ operationId: "operation-1", rowCount: 3, truncated: false, durationMs: 7 });
+        return new Promise((resolve) => {
+          resolveReceipt = resolve;
+        });
       }
       return Promise.resolve(true);
     });
     const batches: unknown[] = [];
 
-    const controller = runSqlStream("operation-1", (batch) => { batches.push(batch); });
-    await expect(controller.completion).resolves.toMatchObject({
-      operationId: "operation-1",
-      rowCount: 3,
+    const controller = runSqlStream("operation-1", (batch) => {
+      batches.push(batch);
     });
     expect(invokeMock).toHaveBeenCalledWith("run_sql_stream", {
       operationId: "operation-1",
       capability: expect.stringMatching(/^[0-9a-f]{64}$/),
       onRows: channels[0],
     });
-    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string }).capability;
+    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string })
+      .capability;
     channels[0]?.onmessage?.({
       operationId: "operation-1",
       sequence: 0,
@@ -153,6 +175,13 @@ describe("query Tauri adapter", () => {
       sequence: 0,
       capability,
     });
+    resolveReceipt?.({
+      operationId: "operation-1",
+      rowCount: 3,
+      truncated: false,
+      durationMs: 7,
+    });
+    await expect(controller.completion).resolves.toMatchObject({ rowCount: 3 });
   });
 
   it("atomically plans and streams an auto-run read in one IPC request", async () => {
@@ -164,7 +193,12 @@ describe("query Tauri adapter", () => {
     });
     const onBatch = vi.fn();
 
-    const controller = runSqlReadStream("connection-1", "SELECT 1", onBatch, "data-view");
+    const controller = runSqlReadStream(
+      "connection-1",
+      "SELECT 1",
+      onBatch,
+      "data-view",
+    );
     await controller.completion;
 
     expect(invokeMock).toHaveBeenCalledOnce();
@@ -176,28 +210,41 @@ describe("query Tauri adapter", () => {
       onRows: channels[0],
     });
     await controller.cancel();
-    expect(invokeMock).toHaveBeenLastCalledWith("cancel_sql_stream", {
-      operationId: null,
-      capability: expect.stringMatching(/^[0-9a-f]{64}$/),
-    });
+    expect(invokeMock).toHaveBeenCalledOnce();
   });
 
   it("cancels the exact stream instead of ACKing when the consumer rejects a batch", async () => {
+    let resolveReceipt:
+      | ((receipt: {
+          operationId: string;
+          rowCount: number;
+          truncated: boolean;
+          durationMs: number;
+        }) => void)
+      | undefined;
     invokeMock.mockImplementation((command) => {
       if (command === "pull_sql_stream_batch") {
-        return Promise.resolve({ operationId: "operation-1", sequence: 0, columns: ["id"], rows: [[1]] });
+        return Promise.resolve({
+          operationId: "operation-1",
+          sequence: 0,
+          columns: ["id"],
+          rows: [[1]],
+        });
       }
       if (command === "run_sql_stream") {
-        return Promise.resolve({ operationId: "operation-1", rowCount: 1, truncated: false, durationMs: 4 });
+        return new Promise((resolve) => {
+          resolveReceipt = resolve;
+        });
       }
       return Promise.resolve(true);
     });
     const controller = runSqlStream("operation-1", () => {
       throw new Error("grid reducer rejected batch");
     });
-    await controller.completion;
+    const completion = controller.completion.catch(() => undefined);
 
-    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string }).capability;
+    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string })
+      .capability;
     channels[0]?.onmessage?.({
       operationId: "operation-1",
       sequence: 0,
@@ -209,40 +256,247 @@ describe("query Tauri adapter", () => {
       operationId: "operation-1",
       capability,
     });
-    expect(invokeMock).not.toHaveBeenCalledWith("ack_sql_stream", expect.anything());
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "ack_sql_stream",
+      expect.anything(),
+    );
+    resolveReceipt?.({
+      operationId: "operation-1",
+      rowCount: 1,
+      truncated: false,
+      durationMs: 4,
+    });
+    await completion;
+  });
+
+  it("cancels without ACK when ready capability or pulled identity differs", async () => {
+    let resolveReceipt:
+      | ((receipt: {
+          operationId: string;
+          rowCount: number;
+          truncated: boolean;
+          durationMs: number;
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation((command, args) => {
+      if (command === "pull_sql_stream_batch") {
+        return Promise.resolve({
+          operationId: "other-operation",
+          sequence: 1,
+          columns: ["id"],
+          rows: [[1]],
+        });
+      }
+      if (command === "run_sql_stream")
+        return new Promise((resolve) => {
+          if ((args as { operationId: string }).operationId === "operation-1")
+            resolveReceipt = resolve;
+          else
+            resolve({
+              operationId: "operation-2",
+              rowCount: 0,
+              truncated: false,
+              durationMs: 1,
+            });
+        });
+      return Promise.resolve(true);
+    });
+    const first = runSqlStream("operation-1", () => {});
+    const firstCompletion = first.completion.catch(() => undefined);
+    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string })
+      .capability;
+    channels[0]?.onmessage?.({
+      operationId: "operation-1",
+      sequence: 0,
+      capability,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(invokeMock).toHaveBeenLastCalledWith("cancel_sql_stream", {
+      operationId: "operation-1",
+      capability,
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "ack_sql_stream",
+      expect.anything(),
+    );
+    resolveReceipt?.({
+      operationId: "operation-1",
+      rowCount: 0,
+      truncated: false,
+      durationMs: 1,
+    });
+    await firstCompletion;
+
+  });
+
+  it("rejects and cancels a completion receipt for another operation", async () => {
+    let resolveReceipt:
+      | ((value: {
+          operationId: string;
+          rowCount: number;
+          truncated: boolean;
+          durationMs: number;
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation((command) => {
+      if (command === "run_sql_stream")
+        return new Promise((resolve) => {
+          resolveReceipt = resolve;
+        });
+      return Promise.resolve(true);
+    });
+    const controller = runSqlStream("operation-1", () => {});
+    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string })
+      .capability;
+    resolveReceipt?.({
+      operationId: "operation-2",
+      rowCount: 0,
+      truncated: false,
+      durationMs: 1,
+    });
+    await expect(controller.completion).rejects.toThrow(
+      "completion did not match",
+    );
+    expect(invokeMock).toHaveBeenCalledWith("cancel_sql_stream", {
+      operationId: "operation-1",
+      capability,
+    });
   });
 
   it("returns a pre-ready controller and never ACKs an async consumer after cancellation", async () => {
     let resolveBatch: (() => void) | undefined;
     invokeMock.mockImplementation((command) => {
       if (command === "pull_sql_stream_batch") {
-        return Promise.resolve({ operationId: "operation-1", sequence: 0, columns: ["id"], rows: [[1]] });
+        return Promise.resolve({
+          operationId: "operation-1",
+          sequence: 0,
+          columns: ["id"],
+          rows: [[1]],
+        });
       }
-      if (command === "run_sql_stream") return Promise.resolve({ operationId: "operation-1", rowCount: 1, truncated: false, durationMs: 1 });
+      if (command === "run_sql_stream")
+        return Promise.resolve({
+          operationId: "operation-1",
+          rowCount: 1,
+          truncated: false,
+          durationMs: 1,
+        });
       return Promise.resolve(true);
     });
     const controller = runSqlStream("operation-1", async () => {
-      await new Promise<void>((resolve) => { resolveBatch = resolve; });
+      await new Promise<void>((resolve) => {
+        resolveBatch = resolve;
+      });
     });
     await controller.cancel();
-    channels[0]?.onmessage?.({ operationId: "operation-1", sequence: 0, capability: "c".repeat(64) });
+    channels[0]?.onmessage?.({
+      operationId: "operation-1",
+      sequence: 0,
+      capability: "c".repeat(64),
+    });
     resolveBatch?.();
     await Promise.resolve();
     await Promise.resolve();
-    expect(invokeMock).not.toHaveBeenCalledWith("ack_sql_stream", expect.anything());
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "ack_sql_stream",
+      expect.anything(),
+    );
   });
 
-  it("retries an auto-read cancellation with the operation revealed by its first ready event", async () => {
-    invokeMock.mockResolvedValue(true);
-    const controller = runSqlReadStream("connection-1", "SELECT 1", () => {});
+  it("cancels a late exact auto-read operation while start is pending, then detaches", async () => {
+    let resolveStart:
+      | ((receipt: {
+          operationId: string;
+          rowCount: number;
+          truncated: boolean;
+          durationMs: number;
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation((command) => {
+      if (command === "run_sql_read_stream")
+        return new Promise((resolve) => {
+          resolveStart = resolve;
+        });
+      return Promise.resolve(true);
+    });
+    const onBatch = vi.fn();
+    const controller = runSqlReadStream(
+      "connection-1",
+      "SELECT 1",
+      onBatch,
+    );
     await controller.cancel();
-    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string }).capability;
-    channels[0]?.onmessage?.({ operationId: "operation-1", sequence: 0, capability });
+    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string })
+      .capability;
+    const attachedHandler = channels[0]?.onmessage;
+    channels[0]?.onmessage?.({
+      operationId: "operation-1",
+      sequence: 0,
+      capability,
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(invokeMock).toHaveBeenLastCalledWith("cancel_sql_stream", {
+    expect(invokeMock).toHaveBeenCalledWith("cancel_sql_stream", {
+      operationId: null,
+      capability,
+    });
+    expect(invokeMock).toHaveBeenCalledWith("cancel_sql_stream", {
       operationId: "operation-1",
       capability,
     });
-    expect(invokeMock).not.toHaveBeenCalledWith("ack_sql_stream", expect.anything());
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "pull_sql_stream_batch",
+      expect.anything(),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "ack_sql_stream",
+      expect.anything(),
+    );
+    expect(onBatch).not.toHaveBeenCalled();
+
+    resolveStart?.({
+      operationId: "operation-1",
+      rowCount: 0,
+      truncated: false,
+      durationMs: 1,
+    });
+    await controller.completion;
+    expect(channels[0]?.onmessage).not.toBe(attachedHandler);
+  });
+
+  it("bounds cleanup when cancellation and start both reject", async () => {
+    let rejectStart: ((error: Error) => void) | undefined;
+    invokeMock.mockImplementation((command) => {
+      if (command === "run_sql_read_stream")
+        return new Promise((_, reject) => {
+          rejectStart = reject;
+        });
+      if (command === "cancel_sql_stream")
+        return Promise.reject(new Error("cancel transport unavailable"));
+      return Promise.resolve(true);
+    });
+    const controller = runSqlReadStream("connection-1", "SELECT 1", () => {});
+    await expect(controller.cancel()).resolves.toBeUndefined();
+    rejectStart?.(new Error("start failed"));
+    await expect(controller.completion).rejects.toThrow("start failed");
+    const cancellationCalls = invokeMock.mock.calls.filter(
+      ([command]) => command === "cancel_sql_stream",
+    );
+    expect(cancellationCalls).toHaveLength(1);
+  });
+
+  it("returns a controller whose completion contains a synchronous start error", async () => {
+    invokeMock.mockImplementation((command) => {
+      if (command === "run_sql_read_stream")
+        throw new Error("synchronous invoke failure");
+      return Promise.resolve(true);
+    });
+    const controller = runSqlReadStream("connection-1", "SELECT 1", () => {});
+    await expect(controller.completion).rejects.toThrow(
+      "synchronous invoke failure",
+    );
+    expect(invokeMock).toHaveBeenCalledWith("cancel_sql_stream", {
+      operationId: null,
+      capability: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
   });
 });

@@ -14,6 +14,7 @@ export const resultsCatalog = defineCatalog(
     "results.downloadJsonTitle": "Download as JSON",
     "results.exportCsv": "Export {scope} (CSV)",
     "results.exportJson": "Export {scope} (JSON)",
+    "results.partialExportUnavailable": "Partial result — export unavailable",
   },
   {
     "grid.filterLabel": "{col} 필터",
@@ -27,5 +28,6 @@ export const resultsCatalog = defineCatalog(
     "results.downloadJsonTitle": "JSON으로 다운로드",
     "results.exportCsv": "{scope} 내보내기 (CSV)",
     "results.exportJson": "{scope} 내보내기 (JSON)",
+    "results.partialExportUnavailable": "부분 결과 — 내보내기 불가",
   },
 );

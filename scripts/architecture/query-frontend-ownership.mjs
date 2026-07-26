@@ -18,9 +18,11 @@ const queryCommandFunctions = [
   "inspectSql",
   "proposeSql",
   "runSql",
-  "runSqlRead",
+  "runSqlStream",
+  "runSqlReadStream",
+  "runSqlBoundedPage",
 ];
-const removedQueryCommandFunctions = ["classifySql", "previewSql"];
+const removedQueryCommandFunctions = ["classifySql", "previewSql", "runSqlRead"];
 const queryContractTypes = [
   "RiskLevel",
   "Classification",
@@ -353,6 +355,13 @@ export function collectQueryFrontendOwnershipDiagnostics({
     if (owners.length !== 1 || owners[0] !== queryAdapterOwner) {
       diagnostics.push(
         `${functionName}: expected only ${queryAdapterOwner}, found ${owners.join(", ") || "none"}`,
+      );
+    }
+  }
+  for (const [filePath, source] of frontendProductionSource) {
+    if (/\brunSqlRead\b/.test(source)) {
+      diagnostics.push(
+        `${filePath}: removed materialized desktop read helper runSqlRead returned`,
       );
     }
   }

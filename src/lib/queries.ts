@@ -33,7 +33,7 @@ import {
 import { listErdLayouts } from "../features/erd/tauriAdapter";
 import { jobConnectionId } from "../features/jobs/domain";
 import { listJobs } from "../features/jobs/tauriAdapter";
-import { runSqlRead } from "../features/queries/tauriAdapter";
+import { runSqlBoundedPage } from "../features/queries/tauriAdapter";
 import { buildCountQuery, buildPageQuery, type GridSort } from "./sqlBuild";
 import { tableKey } from "./tableRef";
 
@@ -362,8 +362,8 @@ export function tableRowsQuery(args: TableRowsArgs) {
         offset: page * pageSize,
       });
       const [pageOut, countOut] = await Promise.all([
-        runSqlRead(connectionId, pageSql, "data-view"),
-        runSqlRead(
+        runSqlBoundedPage(connectionId, pageSql, "data-view"),
+        runSqlBoundedPage(
           connectionId,
           buildCountQuery(engine, table, filters),
           "data-view",

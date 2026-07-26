@@ -29,17 +29,17 @@ const catalogFingerprint = async () => {
 };
 
 describe("i18n catalogues", () => {
-  it("preserves all 875 English and Korean keys with exact parity", () => {
+  it("preserves all 876 English and Korean keys with exact parity", () => {
     const englishKeys = Object.keys(messages.en).sort();
     const koreanKeys = Object.keys(messages.ko).sort();
 
-    expect(englishKeys).toHaveLength(875);
+    expect(englishKeys).toHaveLength(876);
     expect(koreanKeys).toEqual(englishKeys);
   });
 
   it("preserves the legacy key and value contract", async () => {
     await expect(catalogFingerprint()).resolves.toBe(
-      "e5c074b9c7f52fb8732663acf142e812a47b9e8f49afac5e89eff0e4eed0667e",
+      "e71f55f7ad17c4bdfad776b4f9de1479fa542286eab06d5523adf8cf750665d5",
     );
   });
 

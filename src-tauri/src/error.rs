@@ -53,6 +53,13 @@ pub enum AppError {
     #[error("blocked: {reason}")]
     Blocked { reason: String },
 
+    /// The combined desktop read endpoint stopped before any target access
+    /// because this statement must use the explicit proposal UI. This is not a
+    /// general policy block and is the only failure a client may safely retry
+    /// through that separate workflow.
+    #[error("SQL read requires the explicit proposal workflow")]
+    ProposalRequired,
+
     /// A target mutation may have committed, but the driver could not confirm its
     /// final state. Callers must not retry automatically.
     #[error("operation outcome is unknown: {0}")]
@@ -75,6 +82,7 @@ impl AppError {
             AppError::Config(_) => "config",
             AppError::NotFound(_) => "notFound",
             AppError::Blocked { .. } => "blocked",
+            AppError::ProposalRequired => "proposalRequired",
             AppError::OutcomeUnknown(_) => "outcomeUnknown",
         }
     }

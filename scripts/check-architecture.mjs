@@ -213,6 +213,7 @@ const queryFrontendModules = [
   "src/features/queries/domain.ts",
   "src/features/queries/generated/contracts.ts",
   "src/features/queries/tauriAdapter.ts",
+  "src/features/queries/useSqlResultStream.ts",
 ];
 const i18nCatalogModules = [
   "src/lib/i18n/catalogs/activity.ts",

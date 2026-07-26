@@ -40,13 +40,20 @@ export function runSqlStream(
   onBatch: SqlStreamBatchHandler,
 ): SqlStreamController {
   return startSqlStream(operationId, onBatch, (capability, onRows) =>
-    invoke<SqlStreamReceipt>("run_sql_stream", { operationId, capability, onRows }));
+    invoke<SqlStreamReceipt>("run_sql_stream", {
+      operationId,
+      capability,
+      onRows,
+    }),
+  );
 }
 
 function newStreamCapability(): string {
   const bytes = new Uint8Array(32);
   globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 function startSqlStream(
@@ -59,26 +66,108 @@ function startSqlStream(
 ): SqlStreamController {
   const capability = newStreamCapability();
   let activeOperationId = operationId;
-  let cancelled = false;
+  let terminal: "open" | "cancelled" | "completed" | "error" = "open";
+  let terminalError: Error | null = null;
+  let firstBatchReceived = false;
   let readyQueue = Promise.resolve();
   const onRows = new Channel<SqlStreamReady>();
-  const sendCancellation = () => invoke("cancel_sql_stream", {
-    operationId: activeOperationId || null,
-    capability,
-  });
+  const sendCancellation = (knownOperationId = activeOperationId) =>
+    invoke("cancel_sql_stream", {
+      operationId: knownOperationId || null,
+      capability,
+    });
+  const bestEffortCancel = async (knownOperationId = activeOperationId) => {
+    await Promise.resolve(sendCancellation(knownOperationId)).catch(
+      () => undefined,
+    );
+  };
   const cancel = async () => {
-    if (cancelled) return;
-    cancelled = true;
-    await sendCancellation();
+    if (terminal !== "open") return;
+    terminal = "cancelled";
+    await bestEffortCancel();
+  };
+  const fail = async (error: unknown) => {
+    if (terminal !== "open") return;
+    terminal = "error";
+    terminalError =
+      error instanceof Error ? error : new Error("SQL stream transport failed");
+    await bestEffortCancel();
   };
   onRows.onmessage = (ready) => {
+    // A late ready never becomes a late pull/ACK. When auto-read cancellation
+    // learned its operation only after planning, send the exact cancellation.
+    if (terminal !== "open") {
+      void bestEffortCancel(ready.operationId);
+      return;
+    }
+    if (
+      ready.capability !== capability ||
+      (activeOperationId !== "" && ready.operationId !== activeOperationId)
+    ) {
+      void fail(new Error("stream ready notification did not match its owner"));
+      return;
+    }
     activeOperationId = ready.operationId;
-    readyQueue = readyQueue.then(() => pullAcceptAndAcknowledgeStreamBatch(
-      ready, onBatch, () => cancelled, cancel, sendCancellation,
-    ));
+    // Keep the serialized queue usable after failures; a cancellation transport
+    // rejection must not poison later cleanup or make completion hang.
+    readyQueue = readyQueue
+      .then(() =>
+        pullAcceptAndAcknowledgeStreamBatch(
+          ready,
+          onBatch,
+          () => terminal === "open",
+          cancel,
+          fail,
+          bestEffortCancel,
+          () => {
+            if (firstBatchReceived) return;
+            firstBatchReceived = true;
+            globalThis.performance?.mark?.(
+              "desktop_query_stream_first_batch_received",
+            );
+          },
+        ),
+      )
+      .catch(() => undefined);
   };
+  let startPromise: Promise<SqlStreamReceipt>;
+  try {
+    startPromise = start(capability, onRows);
+  } catch (error) {
+    startPromise = Promise.reject(error);
+  }
   return {
-    completion: start(capability, onRows),
+    completion: startPromise
+      .then(async (receipt) => {
+        // The backend only completes after its last credit, but awaiting this
+        // exact queue makes the frontend contract explicit and testable.
+        await readyQueue;
+        if (terminal === "error") throw terminalError;
+        if (
+          activeOperationId !== "" &&
+          receipt.operationId !== activeOperationId
+        ) {
+          terminal = "error";
+          terminalError = new Error(
+            "stream completion did not match the owning operation",
+          );
+          await bestEffortCancel();
+          throw new Error(
+            "stream completion did not match the owning operation",
+          );
+        }
+        if (terminal === "open") terminal = "completed";
+        return receipt;
+      })
+      .catch(async (error) => {
+        if (terminal === "open") await fail(error);
+        throw error;
+      })
+      .finally(() => {
+        // Keep the handler alive while the start command is pending: a
+        // cancellation may learn its exact operation only from a late ready.
+        onRows.onmessage = () => undefined;
+      }),
     cancel,
   };
 }
@@ -97,19 +186,22 @@ export function runSqlReadStream(
       origin: origin ?? null,
       capability,
       onRows,
-    }));
+    }),
+  );
 }
 
 async function pullAcceptAndAcknowledgeStreamBatch(
   ready: SqlStreamReady,
   onBatch: SqlStreamBatchHandler,
-  isCancelled: () => boolean,
+  isOpen: () => boolean,
   cancel: () => Promise<void>,
-  sendCancellation: () => Promise<unknown>,
+  fail: (error: unknown) => Promise<void>,
+  bestEffortCancel: () => Promise<void>,
+  markFirstBatchReceived: () => void,
 ): Promise<void> {
   try {
-    if (isCancelled()) {
-      await sendCancellation();
+    if (!isOpen()) {
+      await bestEffortCancel();
       return;
     }
     const batch = await invoke<SqlStreamBatch | null>("pull_sql_stream_batch", {
@@ -118,7 +210,14 @@ async function pullAcceptAndAcknowledgeStreamBatch(
       capability: ready.capability,
     });
     if (!batch) throw new Error("stream batch is no longer available");
-    if (isCancelled()) return;
+    if (
+      batch.operationId !== ready.operationId ||
+      batch.sequence !== ready.sequence
+    ) {
+      throw new Error("stream batch did not match its ready notification");
+    }
+    if (!isOpen()) return;
+    markFirstBatchReceived();
     await onBatch(batch, {
       operationId: ready.operationId,
       capability: ready.capability,
@@ -126,32 +225,37 @@ async function pullAcceptAndAcknowledgeStreamBatch(
         await cancel();
       },
     });
-    if (isCancelled()) return;
-  } catch {
-    await sendCancellation();
+    if (!isOpen()) return;
+  } catch (error) {
+    await fail(error);
     return;
   }
-  const accepted = await invoke<boolean>("ack_sql_stream", {
-    operationId: ready.operationId,
-    sequence: ready.sequence,
-    capability: ready.capability,
-  }).catch(async () => {
-    await sendCancellation();
-    return false;
-  });
-  if (!accepted || isCancelled()) await sendCancellation();
+  if (!isOpen()) return;
+  try {
+    const accepted = await invoke<boolean>("ack_sql_stream", {
+      operationId: ready.operationId,
+      sequence: ready.sequence,
+      capability: ready.capability,
+    });
+    if (!accepted) throw new Error("stream batch acknowledgement was rejected");
+  } catch (error) {
+    await fail(error);
+  }
 }
 
 // Plan and consume a SQL read without exposing an approval shortcut. Callers that may generate
 // mutations must use the explicit proposal/approval/run sequence.
-export async function runSqlRead(
+/** Bounded legacy page read used only by paginated table data, never SQL console output. */
+export async function runSqlBoundedPage(
   id: string,
   sql: string,
   origin?: string,
 ): Promise<ExecOutcome> {
   const proposal = await proposeSql(id, sql, origin);
   if (proposal.approvalRequired || proposal.classification.kind !== "read") {
-    throw new Error("read execution helper rejected a target-mutating proposal");
+    throw new Error(
+      "read execution helper rejected a target-mutating proposal",
+    );
   }
   return runSql(proposal.operationId);
 }

@@ -147,9 +147,9 @@ struct BenchmarkSample {
     mode: BenchmarkMode,
     temperature: BenchmarkTemperature,
     rows: usize,
-    latency_ms: u64,
+    latency_us: u64,
     peak_rss_bytes: u64,
-    first_batch_ms: Option<u64>,
+    first_batch_us: Option<u64>,
     max_retained_rows: usize,
     max_retained_bytes: usize,
     pages_in_flight: usize,
@@ -162,12 +162,12 @@ struct BenchmarkCase {
     temperature: BenchmarkTemperature,
     rows: usize,
     sample_count: usize,
-    latency_p50_ms: u64,
-    latency_p95_ms: u64,
+    latency_p50_us: u64,
+    latency_p95_us: u64,
     peak_rss_p50_bytes: u64,
     peak_rss_p95_bytes: u64,
-    first_batch_p50_ms: Option<u64>,
-    first_batch_p95_ms: Option<u64>,
+    first_batch_p50_us: Option<u64>,
+    first_batch_p95_us: Option<u64>,
     max_retained_rows: usize,
     max_retained_bytes: usize,
     max_pages_in_flight: usize,
@@ -247,7 +247,7 @@ fn collect_benchmark_artifact() -> Result<BenchmarkArtifact, String> {
         }
     }
     Ok(BenchmarkArtifact {
-        schema_version: 2,
+        schema_version: 3,
         measurement_scope: BenchmarkMeasurementScope::ExecutorOnly,
         environment: BenchmarkEnvironment {
             os: std::env::consts::OS.into(),
@@ -255,7 +255,7 @@ fn collect_benchmark_artifact() -> Result<BenchmarkArtifact, String> {
             cores: std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
             rustc: rustc_version(),
         },
-        methodology: "measurementScope=executor_only: each measured sample runs in a fresh test subprocess. Cold measures a new SQLite pool; warm performs one identical unmeasured warmup in that child before measuring. Materialized fetch_all and bounded streaming are separate executor scenarios. This artifact excludes DesktopSqlStreamRegistry pull/ACK, Tauri Channel/webview transport, and React rendering. Peak RSS is read inside the child after the measured operation, so it belongs to that scenario process. Percentiles use nearest rank ceil(p*N).".into(),
+        methodology: "measurementScope=executor_only: each measured sample runs in a fresh test subprocess. Cold measures a new SQLite pool; warm performs one identical unmeasured warmup in that child before measuring. Materialized fetch_all retains all rows and reports its estimated JSON row payload while bounded streaming retains one page. This artifact excludes DesktopSqlStreamRegistry pull/ACK, Tauri Channel/webview transport, and React rendering. Peak RSS is read inside the child after the measured operation, so it belongs to that scenario process. Latency and first-batch phases use microseconds. Percentiles use nearest rank ceil(p*N).".into(),
         cases,
     })
 }
@@ -329,7 +329,7 @@ async fn execute_benchmark_workload(
         "WITH RECURSIVE n(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM n WHERE value < {rows}) SELECT value FROM n"
     );
     let started = std::time::Instant::now();
-    let mut first_batch_ms = None;
+    let mut first_batch_us = None;
     let (max_retained_rows, max_retained_bytes, pages_in_flight) = match mode {
         BenchmarkMode::Materialized => {
             let materialized = sqlx::query(AssertSqlSafe(sql.as_str()))
@@ -339,8 +339,22 @@ async fn execute_benchmark_workload(
             if materialized.len() != rows {
                 return Err("materialized benchmark row count mismatch".into());
             }
+            // The fixture has one integer column. Sum its actual JSON row
+            // encoding while the full `fetch_all` vector remains retained;
+            // aggregate-only output exposes the byte count, never a value.
+            let mut estimated_json_row_payload_bytes = 2_usize; // `[` + `]`
+            for (index, row) in materialized.iter().enumerate() {
+                let value = row
+                    .try_get::<i64, _>(0)
+                    .map_err(|error| error.to_string())?;
+                let encoded =
+                    serde_json::to_vec(&vec![value]).map_err(|error| error.to_string())?;
+                estimated_json_row_payload_bytes = estimated_json_row_payload_bytes
+                    .saturating_add(encoded.len())
+                    .saturating_add(usize::from(index > 0));
+            }
             drop(materialized);
-            (0, 0, 0)
+            (rows, estimated_json_row_payload_bytes, 1)
         }
         BenchmarkMode::Streaming => {
             let mut seen = 0_usize;
@@ -353,8 +367,8 @@ async fn execute_benchmark_workload(
                 256,
                 sqlite_value,
                 &mut |batch| {
-                    if first_batch_ms.is_none() {
-                        first_batch_ms = Some(started.elapsed().as_millis() as u64);
+                    if first_batch_us.is_none() {
+                        first_batch_us = Some(started.elapsed().as_micros() as u64);
                     }
                     let event = crate::features::queries::DesktopSqlStreamBatch {
                         operation_id: crate::kernel::identity::OperationId::from(uuid::Uuid::nil()),
@@ -391,9 +405,9 @@ async fn execute_benchmark_workload(
             mode,
             temperature: BenchmarkTemperature::Warm,
             rows,
-            latency_ms: 0,
+            latency_us: 0,
             peak_rss_bytes: 0,
-            first_batch_ms: None,
+            first_batch_us: None,
             max_retained_rows,
             max_retained_bytes,
             pages_in_flight,
@@ -403,9 +417,9 @@ async fn execute_benchmark_workload(
         mode,
         temperature: BenchmarkTemperature::Cold,
         rows,
-        latency_ms: started.elapsed().as_millis() as u64,
+        latency_us: started.elapsed().as_micros() as u64,
         peak_rss_bytes: 0,
-        first_batch_ms,
+        first_batch_us,
         max_retained_rows,
         max_retained_bytes,
         pages_in_flight,
@@ -427,7 +441,7 @@ fn aggregate_benchmark_case(
     }
     let mut latency = samples
         .iter()
-        .map(|sample| sample.latency_ms)
+        .map(|sample| sample.latency_us)
         .collect::<Vec<_>>();
     let mut rss = samples
         .iter()
@@ -437,7 +451,7 @@ fn aggregate_benchmark_case(
     rss.sort_unstable();
     let mut first = samples
         .iter()
-        .filter_map(|sample| sample.first_batch_ms)
+        .filter_map(|sample| sample.first_batch_us)
         .collect::<Vec<_>>();
     first.sort_unstable();
     let case = BenchmarkCase {
@@ -445,12 +459,12 @@ fn aggregate_benchmark_case(
         temperature,
         rows,
         sample_count: samples.len(),
-        latency_p50_ms: nearest_rank_percentile(&latency, 50),
-        latency_p95_ms: nearest_rank_percentile(&latency, 95),
+        latency_p50_us: nearest_rank_percentile(&latency, 50),
+        latency_p95_us: nearest_rank_percentile(&latency, 95),
         peak_rss_p50_bytes: nearest_rank_percentile(&rss, 50),
         peak_rss_p95_bytes: nearest_rank_percentile(&rss, 95),
-        first_batch_p50_ms: (!first.is_empty()).then(|| nearest_rank_percentile(&first, 50)),
-        first_batch_p95_ms: (!first.is_empty()).then(|| nearest_rank_percentile(&first, 95)),
+        first_batch_p50_us: (!first.is_empty()).then(|| nearest_rank_percentile(&first, 50)),
+        first_batch_p95_us: (!first.is_empty()).then(|| nearest_rank_percentile(&first, 95)),
         max_retained_rows: samples
             .iter()
             .map(|sample| sample.max_retained_rows)
@@ -472,14 +486,12 @@ fn aggregate_benchmark_case(
 }
 
 fn validate_artifact(artifact: &BenchmarkArtifact) -> Result<(), String> {
-    if artifact.schema_version != 2
+    if artifact.schema_version != 3
         || artifact.measurement_scope != BenchmarkMeasurementScope::ExecutorOnly
         || !artifact
             .methodology
             .contains("measurementScope=executor_only")
-        || !artifact
-            .methodology
-            .contains("excludes DesktopSqlStreamRegistry pull/ACK")
+        || !artifact.methodology.contains("estimated JSON row payload")
         || artifact.cases.len() != 12
     {
         return Err("benchmark aggregate schema or matrix size is invalid".into());
@@ -505,20 +517,25 @@ fn validate_artifact(artifact: &BenchmarkArtifact) -> Result<(), String> {
 
 fn validate_case(case: &BenchmarkCase) -> Result<(), String> {
     if case.sample_count != BENCHMARK_SAMPLES
-        || case.latency_p50_ms > case.latency_p95_ms
+        || case.latency_p50_us > case.latency_p95_us
         || case.peak_rss_p50_bytes > case.peak_rss_p95_bytes
+        || case.first_batch_p50_us > case.first_batch_p95_us
     {
         return Err("benchmark aggregate metric ordering is invalid".into());
     }
     match case.mode {
         BenchmarkMode::Materialized
-            if case.first_batch_p50_ms.is_some() || case.first_batch_p95_ms.is_some() =>
+            if case.first_batch_p50_us.is_some()
+                || case.first_batch_p95_us.is_some()
+                || case.max_retained_rows != case.rows
+                || case.max_retained_bytes == 0
+                || case.max_pages_in_flight != 1 =>
         {
-            Err("materialized benchmark must not claim a first batch".into())
+            Err("materialized benchmark retention accounting is invalid".into())
         }
         BenchmarkMode::Streaming
-            if case.first_batch_p50_ms.is_none()
-                || case.first_batch_p95_ms.is_none()
+            if case.first_batch_p50_us.is_none()
+                || case.first_batch_p95_us.is_none()
                 || case.max_retained_rows > 256
                 || case.max_retained_bytes > DESKTOP_STREAM_BATCH_MAX_BYTES
                 || case.max_pages_in_flight != 1 =>
@@ -600,9 +617,9 @@ fn benchmark_child_parser_rejects_missing_multiple_and_trailing_json() {
         mode: BenchmarkMode::Streaming,
         temperature: BenchmarkTemperature::Cold,
         rows: 1_000,
-        latency_ms: 1,
+        latency_us: 1,
         peak_rss_bytes: 2,
-        first_batch_ms: Some(1),
+        first_batch_us: Some(1),
         max_retained_rows: 1,
         max_retained_bytes: 2,
         pages_in_flight: 1,

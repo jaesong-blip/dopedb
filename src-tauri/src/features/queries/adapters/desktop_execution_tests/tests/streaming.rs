@@ -269,8 +269,7 @@ async fn explicit_read_workflow_cancels_the_unreturned_ready_operation_without_t
         .await;
     assert!(matches!(
         result,
-        Err(crate::error::AppError::Blocked { ref reason })
-            if reason == "this SQL read requires the explicit proposal workflow"
+        Err(crate::error::AppError::ProposalRequired)
     ));
     let operation_id = latest_operation_id(&harness).await;
     assert_eq!(

@@ -8,10 +8,18 @@
 // Columns are drag-resizable: first drag snapshots every column's rendered width and
 // flips the table to fixed layout so only the dragged column moves. Double-click a
 // handle to reset all widths (back to auto layout). Widths reset per column set.
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import type { QueryResult } from "../ipc/types";
 import type { GridSort } from "../lib/sqlBuild";
+import type { SqlStreamRowSource } from "../features/queries/domain";
 import { Icon } from "./Icon";
+import DataGridVirtual from "./DataGridVirtual";
 import { useI18n } from "../lib/i18n";
 import "./grid.css";
 
@@ -38,18 +46,7 @@ function copyText(v: unknown): string {
   return s;
 }
 
-export default function DataGrid({
-  result,
-  startIndex = 0,
-  sort,
-  onSort,
-  filters,
-  onFilter,
-  selectedRow,
-  onSelectRow,
-  onCellClick,
-  columnMeta,
-}: {
+type DataGridProps = {
   result: QueryResult;
   startIndex?: number;
   sort?: GridSort | null;
@@ -60,7 +57,48 @@ export default function DataGrid({
   onSelectRow?: (i: number) => void;
   onCellClick?: (value: unknown, rowIndex: number, col: string) => void;
   columnMeta?: Record<string, { dataType: string; pk: boolean }>;
-}) {
+  /** A chunked streaming source; rows are never flattened for the grid. */
+  rowSource?: SqlStreamRowSource;
+};
+
+export default function DataGrid(props: DataGridProps) {
+  // This wrapper must stay O(columns). In particular, do not add table-only
+  // scans here: virtual results may carry 50k × 50 rows.
+  const shouldVirtualize =
+    !!props.rowSource ||
+    props.result.rows.length > 200 ||
+    props.result.columns.length > 18;
+  if (shouldVirtualize && !props.onFilter) {
+    return (
+      <DataGridVirtual
+        result={props.result}
+        startIndex={props.startIndex ?? 0}
+        sort={props.sort}
+        onSort={props.onSort}
+        selectedRow={props.selectedRow}
+        onSelectRow={props.onSelectRow}
+        onCellClick={props.onCellClick}
+        columnMeta={props.columnMeta}
+        rowSource={props.rowSource}
+      />
+    );
+  }
+  return <DataGridTable {...props} />;
+}
+
+function DataGridTable({
+  result,
+  startIndex = 0,
+  sort,
+  onSort,
+  filters,
+  onFilter,
+  selectedRow,
+  onSelectRow,
+  onCellClick,
+  columnMeta,
+  rowSource: _rowSource,
+}: DataGridProps) {
   const { t } = useI18n();
   const interactive = !!onSelectRow || !!onCellClick;
   // Column widths keyed by header-cell index (0 = rownum). Empty map = auto layout.
@@ -159,17 +197,24 @@ export default function DataGrid({
     if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C") && sel) {
       if ((window.getSelection()?.toString() ?? "") !== "") return; // real selection wins
       e.preventDefault();
-      void navigator.clipboard.writeText(copyText(result.rows[sel.row]?.[sel.col]));
+      void navigator.clipboard.writeText(
+        copyText(result.rows[sel.row]?.[sel.col]),
+      );
       return;
     }
     if (
-      (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+      (e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowRight") &&
       result.rows.length > 0
     ) {
       e.preventDefault();
       const cur = sel ?? { row: 0, col: 0 };
       const row =
-        e.key === "ArrowUp"
+        !sel
+          ? 0
+          : e.key === "ArrowUp"
           ? Math.max(0, cur.row - 1)
           : e.key === "ArrowDown"
             ? Math.min(result.rows.length - 1, cur.row + 1)
@@ -285,10 +330,7 @@ export default function DataGrid({
         </thead>
         <tbody>
           {result.rows.map((row, i) => (
-            <tr
-              key={i}
-              className={selectedRow === i ? "selected" : undefined}
-            >
+            <tr key={i} className={selectedRow === i ? "selected" : undefined}>
               <td
                 className="rownum"
                 role={onSelectRow ? "button" : undefined}
@@ -321,7 +363,9 @@ export default function DataGrid({
                     }
                     // fixed layout clips by width not length, so any value can be truncated → always title it
                     title={
-                      fixed || text.length > 40 || text.includes("\n") ? text : undefined
+                      fixed || text.length > 40 || text.includes("\n")
+                        ? text
+                        : undefined
                     }
                     // Roving tabindex: only the selected cell is a tab stop; arrows move it (onKeyDown above).
                     tabIndex={isSel ? 0 : -1}
