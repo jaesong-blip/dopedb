@@ -19,6 +19,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::sync::lock_unpoisoned;
 
 /// Credential-store service name (bundle id). Must match the signed bundle identifier.
 const SERVICE: &str = "dev.dopedb.desktop";
@@ -27,9 +28,7 @@ static SESSION_CACHE: LazyLock<Mutex<HashMap<String, Zeroizing<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn session_cache() -> MutexGuard<'static, HashMap<String, Zeroizing<String>>> {
-    SESSION_CACHE
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    lock_unpoisoned(&SESSION_CACHE)
 }
 
 fn cached_secret(account: &str) -> Option<String> {

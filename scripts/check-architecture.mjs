@@ -16,6 +16,7 @@ import {
   collectRemovedQueryRuntimeDiagnostics,
   collectRuntimeIdDiagnostics,
 } from "./architecture/query-rust-runtime-guards.mjs";
+import { collectPoisonMutexDiagnostics } from "./architecture/rust-safety-guards.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -84,6 +85,7 @@ const architectureContext = {
 for (const filePath of [
   "scripts/architecture/query-frontend-ownership.mjs",
   "scripts/architecture/query-rust-runtime-guards.mjs",
+  "scripts/architecture/rust-safety-guards.mjs",
 ]) {
   requireFile(filePath);
   const lines = lineCount(read(filePath));
@@ -521,6 +523,7 @@ for (const token of [
   }
 }
 for (const diagnostic of collectRemovedQueryRuntimeDiagnostics(rustSource)) fail(diagnostic);
+for (const diagnostic of collectPoisonMutexDiagnostics(architectureContext)) fail(diagnostic);
 for (const token of [
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",

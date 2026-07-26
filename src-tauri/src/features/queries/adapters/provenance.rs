@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::kernel::identity::{ConnectionId, QueryRunId, TerminalSessionId};
+use crate::kernel::sync::lock_unpoisoned;
 use crate::kernel::TerminalAuthority;
 
 use crate::features::queries::ports::{
@@ -61,10 +62,7 @@ impl TerminalQueryRunRegistry {
         connection_id: ConnectionId,
         now: Instant,
     ) {
-        let mut runs = self
-            .runs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut runs = lock_unpoisoned(&self.runs);
         runs.retain(|_, capability| capability.expires_at > now);
         if runs.len() >= MAX_RUN_CAPABILITIES {
             if let Some(oldest) = runs
@@ -91,10 +89,7 @@ impl TerminalQueryRunRegistry {
         authority: &TerminalAuthority,
         now: Instant,
     ) -> Result<(), QueryRunAuthorizationError> {
-        let mut runs = self
-            .runs
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut runs = lock_unpoisoned(&self.runs);
         let Some(capability) = runs.get(&query_run_id).copied() else {
             return Err(run_not_authorized());
         };

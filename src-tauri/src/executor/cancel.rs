@@ -18,6 +18,7 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::sync::lock_unpoisoned;
 
 /// Default wall-clock ceiling for a desktop read/write.
 pub const QUERY_TIMEOUT: Duration = Duration::from_secs(300);
@@ -59,7 +60,7 @@ impl CancelHandle {
 
 impl Drop for CancelHandle {
     fn drop(&mut self) {
-        let mut registry = REGISTRY.lock().unwrap();
+        let mut registry = lock_unpoisoned(&REGISTRY);
         let Entry::Occupied(mut entry) = registry.entry(self.id) else {
             return;
         };
@@ -75,7 +76,7 @@ impl Drop for CancelHandle {
 /// one immutable operation share the same signal, and the slot remains registered
 /// until every handle has dropped.
 pub fn register(id: Uuid) -> CancelHandle {
-    let mut registry = REGISTRY.lock().unwrap();
+    let mut registry = lock_unpoisoned(&REGISTRY);
     let rx = match registry.entry(id) {
         Entry::Occupied(mut entry) => {
             entry.get_mut().handles += 1;
@@ -92,7 +93,7 @@ pub fn register(id: Uuid) -> CancelHandle {
 
 /// Signal cancellation for `id`. Returns `true` iff a query was registered under it.
 pub fn cancel(id: Uuid) -> bool {
-    match REGISTRY.lock().unwrap().get(&id) {
+    match lock_unpoisoned(&REGISTRY).get(&id) {
         Some(slot) => {
             let _ = slot.sender.send(true);
             true

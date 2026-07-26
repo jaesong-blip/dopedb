@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter};
 use crate::broker::BrokerSessionRegistry;
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{ConnectionId, TerminalSessionId};
+use crate::kernel::sync::lock_unpoisoned;
 use crate::store::PinnedConnection;
 
 use super::super::domain::{
@@ -97,7 +98,7 @@ impl TerminalSession {
     }
 
     pub(super) fn summary(&self) -> TerminalSessionSummary {
-        let metadata = self.metadata.lock().unwrap();
+        let metadata = lock_unpoisoned(&self.metadata);
         TerminalSessionSummary {
             id: self.id,
             name: metadata.name.clone(),
@@ -112,7 +113,7 @@ impl TerminalSession {
     }
 
     pub(super) fn lifecycle(&self) -> TerminalLifecycle {
-        self.metadata.lock().unwrap().lifecycle
+        lock_unpoisoned(&self.metadata).lifecycle
     }
 
     pub(super) fn connection_id(&self) -> ConnectionId {
@@ -120,7 +121,7 @@ impl TerminalSession {
     }
 
     pub(super) fn restart_seed(&self) -> RestartSeed {
-        let metadata = self.metadata.lock().unwrap();
+        let metadata = lock_unpoisoned(&self.metadata);
         RestartSeed {
             connection: self.launch.connection.clone(),
             connection_pin: self.launch.connection_pin.clone(),
@@ -144,7 +145,7 @@ impl TerminalSession {
                 reason: "the Terminal session has already exited".into(),
             });
         }
-        let mut writer = self.writer.lock().unwrap();
+        let mut writer = lock_unpoisoned(&self.writer);
         let writer = writer.as_mut().ok_or_else(|| AppError::Blocked {
             reason: "the Terminal input stream is closed".into(),
         })?;
@@ -158,24 +159,24 @@ impl TerminalSession {
         let size = size
             .validate()
             .map_err(|reason| AppError::Config(reason.into()))?;
-        let master = self.master.lock().unwrap();
+        let master = lock_unpoisoned(&self.master);
         let master = master.as_ref().ok_or_else(|| AppError::Blocked {
             reason: "the Terminal PTY is closed".into(),
         })?;
         master
             .resize(to_pty_size(size))
             .map_err(|error| AppError::Io(std::io::Error::other(error.to_string())))?;
-        self.metadata.lock().unwrap().size = size;
+        lock_unpoisoned(&self.metadata).size = size;
         Ok(())
     }
 
     pub(super) fn rename(&self, name: String) -> TerminalSessionSummary {
-        self.metadata.lock().unwrap().name = name;
+        lock_unpoisoned(&self.metadata).name = name;
         self.summary()
     }
 
     pub(super) fn mark_stopping(&self) {
-        let mut metadata = self.metadata.lock().unwrap();
+        let mut metadata = lock_unpoisoned(&self.metadata);
         metadata.lifecycle = TerminalLifecycle::Stopping;
         metadata.last_activity_at = Utc::now();
     }
@@ -185,30 +186,27 @@ impl TerminalSession {
         after_sequence: Option<u64>,
         subscriber: Channel<TerminalOutputChunk>,
     ) -> AppResult<ReplayReceipt> {
-        self.output
-            .lock()
-            .unwrap()
-            .attach(self.id, after_sequence, subscriber)
+        lock_unpoisoned(&self.output).attach(self.id, after_sequence, subscriber)
     }
 
     pub(super) fn request_stop(&self) {
-        if let Some(tree) = self.process_tree.lock().unwrap().as_ref() {
+        if let Some(tree) = lock_unpoisoned(&self.process_tree).as_ref() {
             if let Err(error) = tree.terminate() {
                 tracing::warn!(session_id = %self.id, "failed to terminate Terminal process tree: {error}");
             }
         }
-        if let Some(killer) = self.killer.lock().unwrap().as_mut() {
+        if let Some(killer) = lock_unpoisoned(&self.killer).as_mut() {
             let _ = killer.kill();
         }
     }
 
     pub(super) fn force_stop(&self) {
-        if let Some(tree) = self.process_tree.lock().unwrap().as_ref() {
+        if let Some(tree) = lock_unpoisoned(&self.process_tree).as_ref() {
             if let Err(error) = tree.force_terminate() {
                 tracing::warn!(session_id = %self.id, "failed to force-terminate Terminal process tree: {error}");
             }
         }
-        if let Some(killer) = self.killer.lock().unwrap().as_mut() {
+        if let Some(killer) = lock_unpoisoned(&self.killer).as_mut() {
             let _ = killer.kill();
         }
     }
@@ -236,7 +234,7 @@ impl TerminalSession {
     }
 
     fn touch(&self) {
-        self.metadata.lock().unwrap().last_activity_at = Utc::now();
+        lock_unpoisoned(&self.metadata).last_activity_at = Utc::now();
     }
 
     fn publish(&self, bytes: Vec<u8>) {
@@ -244,7 +242,7 @@ impl TerminalSession {
             return;
         }
         self.touch();
-        self.output.lock().unwrap().publish(self.id, bytes);
+        lock_unpoisoned(&self.output).publish(self.id, bytes);
     }
 }
 
@@ -266,15 +264,15 @@ fn wait_for_child(
     app: AppHandle,
 ) {
     let result = child.wait();
-    if let Some(tree) = session.process_tree.lock().unwrap().take() {
+    if let Some(tree) = lock_unpoisoned(&session.process_tree).take() {
         // The leader can exit before its descendants. Closing a Windows Job or
         // force-signaling the Unix process group ensures no helper survives after
         // the session is already terminal and no longer has a graceful-stop window.
         let _ = tree.force_terminate();
     }
-    session.killer.lock().unwrap().take();
-    session.writer.lock().unwrap().take();
-    session.master.lock().unwrap().take();
+    lock_unpoisoned(&session.killer).take();
+    lock_unpoisoned(&session.writer).take();
+    lock_unpoisoned(&session.master).take();
     broker_sessions.revoke(session.id);
 
     let wait_succeeded = result.is_ok();
@@ -296,7 +294,7 @@ fn wait_for_child(
         }
     };
     {
-        let mut metadata = session.metadata.lock().unwrap();
+        let mut metadata = lock_unpoisoned(&session.metadata);
         metadata.lifecycle = if wait_succeeded {
             TerminalLifecycle::Exited
         } else {

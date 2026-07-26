@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::kernel::identity::RuntimeId;
+use crate::kernel::sync::lock_unpoisoned;
 use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
 use tokio::sync::Notify;
@@ -72,7 +73,7 @@ impl BrokerRuntime {
     }
 
     pub(crate) fn runtime_file(&self) -> Option<PathBuf> {
-        self.inner.status.lock().unwrap().runtime_file.clone()
+        lock_unpoisoned(&self.inner.status).runtime_file.clone()
     }
 
     pub(crate) fn prepare_start(&self) -> bool {
@@ -83,7 +84,7 @@ impl BrokerRuntime {
     }
 
     pub(crate) fn mark_running(&self, endpoint: String, runtime_file: PathBuf) {
-        let mut status = self.inner.status.lock().unwrap();
+        let mut status = lock_unpoisoned(&self.inner.status);
         status.running = true;
         status.endpoint = Some(endpoint);
         status.runtime_file = Some(runtime_file);
@@ -92,7 +93,7 @@ impl BrokerRuntime {
 
     pub(crate) fn finish(&self, error: Option<&crate::AppError>) {
         {
-            let mut status = self.inner.status.lock().unwrap();
+            let mut status = lock_unpoisoned(&self.inner.status);
             status.running = false;
             status.endpoint = None;
             status.last_error_kind = error.map(crate::AppError::kind);

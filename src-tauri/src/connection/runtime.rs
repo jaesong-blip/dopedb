@@ -21,6 +21,7 @@ use zeroize::Zeroizing;
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{Workspace, WorkspaceAuthUser, WorkspaceRole};
 use crate::kernel::identity::{AccountId, ConnectionId, DashboardId, WorkspaceId};
+use crate::kernel::sync::lock_unpoisoned;
 use crate::model::{ConnectionProfile, WorkspaceCredentialMode};
 use crate::store::{AccountScope, PinnedConnection, PinnedDashboard, Store};
 
@@ -134,10 +135,7 @@ struct CacheEntry {
 
 impl CacheEntry {
     fn take_managed_lease(&self) -> Option<ManagedLeaseHandle> {
-        self.managed_lease
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
+        lock_unpoisoned(&self.managed_lease).take()
     }
 }
 
