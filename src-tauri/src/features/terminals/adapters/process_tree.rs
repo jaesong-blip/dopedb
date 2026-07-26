@@ -224,7 +224,6 @@ mod tests {
 #[cfg(all(test, windows))]
 mod windows_tests {
     use std::fs;
-    use std::io::Read;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, Instant};
 
@@ -239,12 +238,15 @@ mod windows_tests {
     use super::*;
 
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
-    const SURVIVOR_DELAY: Duration = Duration::from_secs(8);
+    const CHILD_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
+    const DESCENDANT_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
+    const SURVIVOR_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
     const POLL_INTERVAL: Duration = Duration::from_millis(25);
 
     struct MarkerFiles {
         go: PathBuf,
         ready: PathBuf,
+        survivor_probe: PathBuf,
         survivor: PathBuf,
     }
 
@@ -255,6 +257,7 @@ mod windows_tests {
             Self {
                 go: root.join(format!("dopedb_terminal_{id}_go")),
                 ready: root.join(format!("dopedb_terminal_{id}_ready")),
+                survivor_probe: root.join(format!("dopedb_terminal_{id}_survivor_probe")),
                 survivor: root.join(format!("dopedb_terminal_{id}_survivor")),
             }
         }
@@ -262,7 +265,7 @@ mod windows_tests {
 
     impl Drop for MarkerFiles {
         fn drop(&mut self) {
-            for path in [&self.go, &self.ready, &self.survivor] {
+            for path in [&self.go, &self.ready, &self.survivor_probe, &self.survivor] {
                 let _ = fs::remove_file(path);
             }
         }
@@ -276,10 +279,45 @@ mod windows_tests {
         path.exists()
     }
 
-    fn terminate_and_wait(tree: &ProcessTree, child: &mut Box<dyn Child + Send + Sync>) -> String {
-        let _ = tree.force_terminate();
-        let _ = child.kill();
-        format!("{:?}", child.wait())
+    fn wait_for_child_exit(child: &mut Box<dyn Child + Send + Sync>, timeout: Duration) -> String {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return format!("exited {status:?}"),
+                Ok(None) if Instant::now() < deadline => std::thread::sleep(POLL_INTERVAL),
+                Ok(None) => return "timed out".to_owned(),
+                Err(error) => return format!("poll error: {error}"),
+            }
+        }
+    }
+
+    fn descendant_exited(process_id: u32, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        while descendant_is_running(process_id) && Instant::now() < deadline {
+            std::thread::sleep(POLL_INTERVAL);
+        }
+        !descendant_is_running(process_id)
+    }
+
+    fn terminate_and_collect(
+        tree: &ProcessTree,
+        child: &mut Box<dyn Child + Send + Sync>,
+        descendant_process_id: Option<u32>,
+    ) -> String {
+        // `portable_pty::Child::wait` blocks until every inherited handle is
+        // closed. An escaped descendant can retain the PTY, so all cleanup and
+        // diagnostics use bounded try_wait polling instead.
+        let job = format!("{:?}", tree.force_terminate());
+        let child_kill = format!("{:?}", child.kill());
+        if let Some(process_id) = descendant_process_id {
+            terminate_descendant(process_id);
+        }
+        let child_exit = wait_for_child_exit(child, CHILD_EXIT_TIMEOUT);
+        let descendant_exit = descendant_process_id
+            .map(|process_id| descendant_exited(process_id, DESCENDANT_EXIT_TIMEOUT));
+        format!(
+            "job={job}; child_kill={child_kill}; child_exit={child_exit}; descendant_exited={descendant_exit:?}"
+        )
     }
 
     fn powershell_encoded(script: &str) -> String {
@@ -322,14 +360,15 @@ mod windows_tests {
     fn parent_script(markers: &MarkerFiles) -> String {
         let go = powershell_path(&markers.go);
         let ready = powershell_path(&markers.ready);
+        let survivor_probe = powershell_path(&markers.survivor_probe);
         let survivor = powershell_path(&markers.survivor);
         format!(
             r#"$decode = {{ param([string]$s) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($s)) }}
-$go = & $decode '{go}'; $ready = & $decode '{ready}'; $survivor = & $decode '{survivor}'
+$go = & $decode '{go}'; $ready = & $decode '{ready}'; $survivorProbe = & $decode '{survivor_probe}'; $survivor = & $decode '{survivor}'
 while (-not (Test-Path -LiteralPath $go)) {{ Start-Sleep -Milliseconds 25 }}
 $child = @"
 [IO.File]::WriteAllText('$ready', [string]`$PID)
-Start-Sleep -Seconds 8
+while (-not (Test-Path -LiteralPath '$survivorProbe')) {{ Start-Sleep -Milliseconds 25 }}
 [IO.File]::WriteAllText('$survivor', 'survived')
 "@
 $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($child))
@@ -374,7 +413,6 @@ $process.WaitForExit()"#,
                 pixel_height: 0,
             })
             .unwrap();
-        let reader = pair.master.try_clone_reader().unwrap();
         let encoded_script = powershell_encoded(&parent_script(&markers));
         let mut command = CommandBuilder::new("powershell.exe");
         command.args([
@@ -386,9 +424,7 @@ $process.WaitForExit()"#,
             &encoded_script,
         ]);
         let mut child = pair.slave.spawn_command(command).unwrap();
-        // Keep only the child-side handle owned by the spawned process. Otherwise
-        // failure diagnostics can wait forever for EOF while this test still owns
-        // an open PTY slave.
+        // Keep only the child-side handle owned by the spawned process.
         drop(pair.slave);
         // This is the production attach/force_terminate sequence. The GO marker
         // deliberately delays descendant launch until after job assignment.
@@ -396,60 +432,60 @@ $process.WaitForExit()"#,
             Ok(tree) => tree,
             Err(error) => {
                 let _ = child.kill();
-                let _ = child.wait();
-                panic!("could not attach the Windows PTY process to its job: {error}");
+                let child_exit = wait_for_child_exit(&mut child, CHILD_EXIT_TIMEOUT);
+                panic!(
+                    "could not attach the Windows PTY process to its job: {error}; child_exit={child_exit}"
+                );
             }
         };
         if let Err(error) = fs::write(&markers.go, "go") {
-            let status = terminate_and_wait(&tree, &mut child);
-            panic!("could not release the Windows process-tree parent: {error}; PTY exit={status}");
+            let status = terminate_and_collect(&tree, &mut child, None);
+            panic!("could not release the Windows process-tree parent: {error}; cleanup={status}");
         }
         if !marker_appeared(&markers.ready, HANDSHAKE_TIMEOUT) {
-            let status = terminate_and_wait(&tree, &mut child);
-            let mut output = String::new();
-            let _ = reader.take(16 * 1024).read_to_string(&mut output);
-            panic!("READY marker timeout; PTY exit={status}; output={output:?}");
+            let status = terminate_and_collect(&tree, &mut child, None);
+            panic!("READY marker timeout; cleanup={status}");
         }
 
         let ready = match fs::read_to_string(&markers.ready) {
             Ok(ready) => ready,
             Err(error) => {
-                let status = terminate_and_wait(&tree, &mut child);
-                panic!("could not read the Windows process-tree READY marker: {error}; PTY exit={status}");
+                let status = terminate_and_collect(&tree, &mut child, None);
+                panic!("could not read the Windows process-tree READY marker: {error}; cleanup={status}");
             }
         };
         let descendant_process_id = match ready.trim().parse::<u32>() {
             Ok(process_id) => process_id,
             Err(error) => {
-                let status = terminate_and_wait(&tree, &mut child);
-                panic!("could not parse the Windows process-tree descendant PID: {error}; PTY exit={status}");
+                let status = terminate_and_collect(&tree, &mut child, None);
+                panic!("could not parse the Windows process-tree descendant PID: {error}; cleanup={status}");
             }
         };
         if !descendant_is_running(descendant_process_id) {
-            let status = terminate_and_wait(&tree, &mut child);
-            panic!("the Windows process-tree descendant was not alive before job cleanup; PTY exit={status}");
+            let status = terminate_and_collect(&tree, &mut child, Some(descendant_process_id));
+            panic!("the Windows process-tree descendant was not alive before job cleanup; cleanup={status}");
         }
 
         if let Err(error) = tree.force_terminate() {
-            terminate_descendant(descendant_process_id);
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("could not terminate the Windows PTY job tree: {error}");
+            let status = terminate_and_collect(&tree, &mut child, Some(descendant_process_id));
+            panic!("could not terminate the Windows PTY job tree: {error}; cleanup={status}");
         }
-        if let Err(error) = child.wait() {
-            terminate_descendant(descendant_process_id);
-            panic!("could not wait for the terminated Windows PTY child: {error}");
+        let child_exit = wait_for_child_exit(&mut child, CHILD_EXIT_TIMEOUT);
+        if child_exit == "timed out" || child_exit.starts_with("poll error:") {
+            let status = terminate_and_collect(&tree, &mut child, Some(descendant_process_id));
+            panic!("the terminated Windows PTY parent did not exit cleanly: {child_exit}; cleanup={status}");
         }
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while descendant_is_running(descendant_process_id) && Instant::now() < deadline {
-            std::thread::sleep(POLL_INTERVAL);
+        if !descendant_exited(descendant_process_id, DESCENDANT_EXIT_TIMEOUT) {
+            let status = terminate_and_collect(&tree, &mut child, Some(descendant_process_id));
+            panic!("the exact Windows descendant PID survived Job Object termination; cleanup={status}");
         }
-        if descendant_is_running(descendant_process_id) {
-            terminate_descendant(descendant_process_id);
-            panic!("the exact Windows descendant PID survived Job Object termination");
+        // The PID check above is the primary proof. This probe makes an escaped
+        // descendant reveal itself immediately without an 8-second absence sleep.
+        if let Err(error) = fs::write(&markers.survivor_probe, "probe") {
+            panic!("could not release the Windows survivor probe: {error}");
         }
         assert!(
-            !marker_appeared(&markers.survivor, SURVIVOR_DELAY + Duration::from_secs(3)),
+            !marker_appeared(&markers.survivor, SURVIVOR_PROBE_TIMEOUT),
             "the Terminal descendant survived Windows job cleanup"
         );
     }
