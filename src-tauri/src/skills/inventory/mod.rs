@@ -1,0 +1,22 @@
+//! Bounded Skill inventory split into status policy and filesystem inspection.
+
+mod application;
+mod domain;
+mod filesystem;
+mod ports;
+mod status;
+
+#[cfg(test)]
+mod tests;
+
+pub(super) use domain::MARKER_FILE;
+pub(super) use filesystem::{is_link_or_reparse, prepare_root};
+pub(super) use status::Inventory;
+
+pub(super) fn inventory(
+    home: &std::path::Path,
+    bundle: &super::bundle::SkillBundle,
+    target: dopedb_protocol::SkillTarget,
+) -> Inventory {
+    application::inventory(&filesystem::Filesystem, home, bundle, target)
+}

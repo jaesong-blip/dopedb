@@ -15,13 +15,13 @@ use super::{
 use crate::audit;
 use crate::connection::{ConnectionAccess, ConnectionManager};
 use crate::error::AppError;
+use crate::features::queries::{QueryRunProvenancePort, TerminalQueryRunRegistry};
 use crate::kernel::identity::{AccountScopeId, ConnectionId, DashboardId, QueryRunId};
 use crate::kernel::TerminalAuthority;
 use crate::model::{
     ConnectionProfile, Engine, HistoryEntry, Provider, QueryKind, WorkspaceConnectionAccess,
     WorkspaceCredentialMode,
 };
-use crate::services::TerminalQueryRunRegistry;
 use crate::store::{Store, TEST_SCHEMA};
 
 fn sqlite_profile(id: Uuid, database: String, name: &str) -> ConnectionProfile {
@@ -121,7 +121,7 @@ async fn insert_history(
 }
 
 struct CreationHarness {
-    feature: DashboardsFeature,
+    feature: DashboardsFeature<TerminalQueryRunRegistry>,
     store: Store,
     terminal_runs: TerminalQueryRunRegistry,
     authority: TerminalAuthority,
@@ -154,8 +154,9 @@ impl CreationHarness {
     }
 
     fn authorize(&self, query_run_id: Uuid) {
-        self.terminal_runs.register(
-            query_run_id,
+        QueryRunProvenancePort::register(
+            &self.terminal_runs,
+            query_run_id.into(),
             self.authority.terminal_session_id,
             self.connection_id.into(),
         );
@@ -254,7 +255,7 @@ struct DashboardRunHarness {
     _temp_dir: TempDir,
     store: Store,
     connections: ConnectionManager,
-    feature: DashboardsFeature,
+    feature: DashboardsFeature<TerminalQueryRunRegistry>,
     connection_id: Uuid,
     dashboard_id: DashboardId,
     target_path: std::path::PathBuf,

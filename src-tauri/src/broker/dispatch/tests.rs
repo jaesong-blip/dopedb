@@ -12,6 +12,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::connection::ConnectionManager;
+use crate::features::queries::AgentQueryRunPrepareError;
 use crate::model::{
     ConnectionProfile, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
 };
@@ -39,6 +40,18 @@ fn dispatcher() -> BrokerDispatcher {
         None,
         None,
     )
+}
+
+#[test]
+fn query_prepare_projection_distinguishes_tampered_actor_from_session_mismatch() {
+    assert_eq!(
+        super::projection::map_prepare_error(AgentQueryRunPrepareError::StoredPlanInvalid),
+        ErrorCode::InvalidRequest
+    );
+    assert_eq!(
+        super::projection::map_prepare_error(AgentQueryRunPrepareError::SessionMismatch),
+        ErrorCode::ScopeDenied
+    );
 }
 
 #[tokio::test]

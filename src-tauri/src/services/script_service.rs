@@ -15,6 +15,7 @@ use crate::connection::{
 use crate::error::{AppError, AppResult};
 use crate::executor;
 use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
+use crate::kernel::agent_policy::QUERY_PLAN_TTL;
 use crate::model::{HistoryEntry, QueryKind, ScriptOutcome, ScriptStatement};
 use crate::operations::{
     actor_for_pin, capture_policy, ensure_operation_scope, required_confirmation, ClaimedOperation,
@@ -23,8 +24,6 @@ use crate::operations::{
 };
 use crate::safety;
 use crate::store::{PinnedConnection, Store};
-
-use super::query_service::QUERY_PLAN_TTL;
 
 /// Desktop script input accepted only at the immutable proposal boundary.
 #[derive(Debug, Clone, PartialEq)]

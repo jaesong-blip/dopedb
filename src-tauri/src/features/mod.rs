@@ -11,6 +11,7 @@ pub(crate) mod dashboards;
 pub(crate) mod erd;
 pub(crate) mod jobs;
 mod platform_flags;
+pub(crate) mod queries;
 pub(crate) mod schema_editor;
 pub(crate) mod sql_documents;
 pub(crate) mod terminals;

@@ -18,6 +18,7 @@ use crate::connection::{
 };
 use crate::error::AppError;
 use crate::executor;
+use crate::kernel::agent_policy::{MAX_AGENT_ROWS, QUERY_PLAN_TTL};
 use crate::kernel::TerminalAuthority;
 #[cfg(test)]
 use crate::model::Engine;
@@ -29,7 +30,6 @@ use crate::operations::{
 use crate::safety::{self, GateDecision};
 use crate::store::{PinnedConnection, Store};
 
-use super::query_service::{MAX_AGENT_ROWS, QUERY_PLAN_TTL};
 const MAX_DESKTOP_ROWS: u64 = 100_000;
 
 #[derive(Debug, Clone)]

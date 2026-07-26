@@ -8,7 +8,6 @@ mod operation_service;
 mod query_service;
 mod safety_service;
 mod script_service;
-mod terminal_run_registry;
 
 pub(crate) use activity_service::{ActivityService, AuditSnapshotReceipt, AuditVerdict};
 pub(crate) use document_service::{
@@ -23,31 +22,32 @@ pub(crate) use operation_service::{
     OperationDecisionReceipt, OperationDecisionRequest, OperationService,
 };
 pub(crate) use query_service::{
-    AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError,
     DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest, DesktopSqlInspectionError,
     DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest, DesktopSqlProposalReceipt,
     DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt, QueryService,
-    TerminalQueryPlanRequest, TerminalSqlProposalRequest,
+    TerminalSqlProposalRequest,
 };
 pub(crate) use safety_service::SafetyService;
 pub(crate) use script_service::{
     DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
     DesktopScriptRunReceipt, SchemaScriptContext, ScriptService, TableScriptContext,
 };
-pub(crate) use terminal_run_registry::TerminalQueryRunRegistry;
 
 use crate::connection::ConnectionManager;
 use crate::features::agents::{self, AgentsFeature};
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
-use crate::features::dashboards::{self, DashboardsFeature};
+use crate::features::dashboards::{self, ErasedDashboardsFeature};
 use crate::features::erd::{self, ErdFeature};
 use crate::features::jobs::{self, JobsFeature};
+use crate::features::queries::QueriesFeature;
+use crate::features::queries::QueryRunAuthorizationPort;
 use crate::features::schema_editor::{self, SchemaEditorFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
 use crate::operations::OperationRuntime;
 use crate::store::Store;
+use std::sync::Arc;
 
 /// Cloneable application-service facade. Every clone retains the same local store and
 /// scope-aware connection runtime, so every service method uses one authority boundary.
@@ -57,13 +57,14 @@ pub(crate) struct ApplicationServices {
     pub(crate) agents: AgentsFeature,
     pub(crate) connections: ConnectionsFeature,
     pub(crate) catalog: CatalogFeature,
-    pub(crate) dashboard: DashboardsFeature,
+    pub(crate) dashboard: ErasedDashboardsFeature,
     pub(crate) document: DocumentService,
     pub(crate) erd: ErdFeature,
     pub(crate) job: JobsFeature,
     pub(crate) monitoring: MonitoringService,
     pub(crate) operation: OperationService,
     pub(crate) query: QueryService,
+    pub(crate) queries: QueriesFeature,
     pub(crate) safety: SafetyService,
     pub(crate) schema: SchemaEditorFeature,
     pub(crate) script: ScriptService,
@@ -78,7 +79,11 @@ impl ApplicationServices {
         operation: OperationRuntime,
     ) -> Self {
         let connection_credentials = connection_feature::system_connection_credentials();
-        let terminal_runs = TerminalQueryRunRegistry::default();
+        let query = crate::features::queries::compose(
+            store.clone(),
+            connections.clone(),
+            operation.clone(),
+        );
         let operation_service =
             OperationService::new(store.clone(), connections.clone(), operation.clone());
         let catalog = catalog::compose(store.clone(), connections.clone());
@@ -102,8 +107,9 @@ impl ApplicationServices {
             catalog.clone(),
             operation.clone(),
         );
+        let query_provenance: Arc<dyn QueryRunAuthorizationPort> = Arc::new(query.provenance());
         let dashboard =
-            dashboards::compose(store.clone(), connections.clone(), terminal_runs.clone());
+            dashboards::compose_erased(store.clone(), connections.clone(), query_provenance);
         Self {
             activity: ActivityService::new(store.clone()),
             agents: agents::compose(store.clone()),
@@ -119,12 +125,8 @@ impl ApplicationServices {
                 operation.clone(),
             ),
             operation: operation_service,
-            query: QueryService::new(
-                store.clone(),
-                connections.clone(),
-                operation.clone(),
-                terminal_runs,
-            ),
+            query: QueryService::new(store.clone(), connections.clone(), operation.clone()),
+            queries: query,
             safety: SafetyService::new(store.clone(), connections.clone()),
             schema,
             script,

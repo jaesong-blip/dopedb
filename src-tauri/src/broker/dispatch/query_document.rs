@@ -120,9 +120,9 @@ impl BrokerDispatcher {
             .await?;
         let receipt = self
             .services()?
-            .query
+            .queries
             .plan_terminal_read(TerminalQueryPlanRequest {
-                connection_id: connection.id,
+                connection_id: connection.id.into(),
                 sql: arguments.sql,
                 max_rows: arguments.max_rows,
                 authority: terminal_authority(session, client_protocol_version),
@@ -138,10 +138,10 @@ impl BrokerDispatcher {
         };
         let plan = receipt.plan();
         Ok(QueryPlanResult {
-            connection_id: plan.connection_id,
+            connection_id: plan.connection_id.into(),
             connection_name: plan.connection_name.clone(),
             environment: plan.environment.clone(),
-            plan_id: plan.plan_id,
+            plan_id: plan.plan_id.into(),
             decision: plan.decision.clone(),
             notices: plan.notices.clone(),
             suggestions: plan.suggestions.clone(),
@@ -160,17 +160,17 @@ impl BrokerDispatcher {
         let authority = terminal_authority(session, client_protocol_version);
         let prepared = self
             .services()?
-            .query
-            .prepare_terminal_run(arguments.plan_id, &authority)
+            .queries
+            .prepare_terminal_run(arguments.plan_id.into(), &authority)
             .await
             .map_err(map_prepare_error)?;
         let receipt = prepared.execute().await.map_err(map_query_run_error)?;
         let run = receipt.run();
         Ok(QueryRunResult {
-            connection_id: run.connection_id,
+            connection_id: run.connection_id.into(),
             connection_name: run.connection_name.clone(),
-            plan_id: run.plan_id,
-            query_run_id: run.query_run_id,
+            plan_id: run.plan_id.into(),
+            query_run_id: run.query_run_id.into(),
             planning_decision: run.planning_decision.clone(),
             result: query_result(&run.result),
         })

@@ -5,8 +5,9 @@ use crate::error::AppError;
 use crate::kernel::identity::QueryRunId;
 use crate::kernel::TerminalAuthority;
 use crate::model::{HistoryEntry, QueryKind};
-use crate::services::TerminalQueryRunRegistry;
 use crate::store::Store;
+
+use crate::features::queries::{QueryRunAuthorizationError, QueryRunAuthorizationPort};
 
 use super::super::domain::{
     AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardDraft,
@@ -20,17 +21,20 @@ fn is_eligible_terminal_run(source: &HistoryEntry) -> bool {
 }
 
 #[derive(Clone)]
-pub(in crate::features::dashboards) struct TerminalDashboardCreator {
+pub(in crate::features::dashboards) struct TerminalDashboardCreator<P> {
     store: Store,
     connections: ConnectionManager,
-    terminal_runs: TerminalQueryRunRegistry,
+    terminal_runs: P,
 }
 
-impl TerminalDashboardCreator {
+impl<P> TerminalDashboardCreator<P>
+where
+    P: QueryRunAuthorizationPort + Clone,
+{
     pub(in crate::features::dashboards) fn new(
         store: Store,
         connections: ConnectionManager,
-        terminal_runs: TerminalQueryRunRegistry,
+        terminal_runs: P,
     ) -> Self {
         Self {
             store,
@@ -40,7 +44,10 @@ impl TerminalDashboardCreator {
     }
 }
 
-impl DashboardCreatePort for TerminalDashboardCreator {
+impl<P> DashboardCreatePort for TerminalDashboardCreator<P>
+where
+    P: QueryRunAuthorizationPort + Clone,
+{
     async fn create_terminal(
         &self,
         authority: &TerminalAuthority,
@@ -48,8 +55,8 @@ impl DashboardCreatePort for TerminalDashboardCreator {
         presentation: AgentDashboardPresentation,
     ) -> Result<Dashboard, AgentDashboardCreateError> {
         self.terminal_runs
-            .authorize(query_run_id.into(), authority)
-            .map_err(AgentDashboardCreateError::Application)?;
+            .authorize(query_run_id, authority)
+            .map_err(map_query_run_authorization_error)?;
         let operation_scope = self.connections.begin_operation_scope().await;
         let resolved = match self
             .store
@@ -99,5 +106,17 @@ impl DashboardCreatePort for TerminalDashboardCreator {
             .save_dashboard_if_current(&connection, &draft)
             .await
             .map_err(AgentDashboardCreateError::Persistence)
+    }
+}
+
+fn map_query_run_authorization_error(
+    error: QueryRunAuthorizationError,
+) -> AgentDashboardCreateError {
+    match error {
+        QueryRunAuthorizationError::NotAuthorized => {
+            AgentDashboardCreateError::Application(AppError::Blocked {
+                reason: "query run does not belong to this live Terminal session".into(),
+            })
+        }
     }
 }

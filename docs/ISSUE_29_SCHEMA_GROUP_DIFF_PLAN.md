@@ -211,7 +211,7 @@ interface SchemaObjectDiff {
 | Rust 계약 | `src-tauri/src/model.rs` | project_dir 제거 |
 | 로컬 저장소 | `src-tauri/src/store/` | 신규 project_dir 사용 제거, 구 DB 호환 유지 |
 | 의존성 | `src-tauri/Cargo.toml` | notify 제거 여부 확인 |
-| 번역 | `src/lib/i18n.tsx` | migration 키 제거, schema diff 키 추가 |
+| 번역 | `src/lib/i18n/catalogs/` | migration 키 제거, schema diff 키 추가 |
 
 ## 8. 위험과 대응
 

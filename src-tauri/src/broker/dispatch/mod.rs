@@ -17,13 +17,13 @@ use crate::features::connections::{AgentConnectionSummary, CliConnectionResoluti
 use crate::features::dashboards::{
     AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardKind,
 };
+use crate::features::queries::{AgentQueryPlanError, TerminalQueryPlanRequest};
 use crate::kernel::identity::{ConnectionId, QueryRunId, TerminalSessionId};
 use crate::kernel::TerminalAuthority;
 use crate::model::{DocumentPage, DocumentQuery, Engine, QueryResult};
 use crate::monitoring::HealthSnapshot;
 use crate::services::{
-    AgentDocumentReadError, AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError,
-    ApplicationServices, TerminalDocumentReadRequest, TerminalQueryPlanRequest,
+    AgentDocumentReadError, ApplicationServices, TerminalDocumentReadRequest,
     TerminalSqlProposalRequest,
 };
 use crate::skills::SkillManager;

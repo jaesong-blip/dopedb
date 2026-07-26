@@ -3,14 +3,12 @@
   "featureFileLineLimit": 500,
   "oversizedFiles": {
     "src-tauri/src/store/mod.rs": 5428,
-    "src-tauri/src/services/query_service.rs": 3840,
-    "src/lib/i18n.tsx": 1981,
-    "src-tauri/src/services/script_service.rs": 1935,
+    "src-tauri/src/services/query_service.rs": 2291,
+    "src-tauri/src/services/script_service.rs": 1934,
     "src-tauri/src/operations/repository.rs": 1803,
     "src-tauri/src/services/document_service.rs": 1405,
     "src/screens/Connections/DatabaseExplorer.tsx": 1308,
     "src/App.tsx": 1160,
-    "src/screens/Tables/index.tsx": 1143,
-    "src-tauri/src/skills/inventory.rs": 903
+    "src/screens/Tables/index.tsx": 1143
   }
 }

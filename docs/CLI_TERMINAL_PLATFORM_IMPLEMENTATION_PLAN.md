@@ -2301,8 +2301,8 @@ realtime_collaboration_v1
   - Catalog V2/ERD entry
 - `src/design-system/`
   - Terminal/graph/job 상태에 필요한 공용 token만 추가
-- `src/lib/i18n.tsx`
-  - en/ko 동시 추가
+- `src/lib/i18n/catalogs/`
+  - 기능별 정적 catalogue에 en/ko를 동시에 추가
 
 ### Workspace Cloud
 

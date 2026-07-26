@@ -23,6 +23,13 @@ layers. A folder move alone would not prevent the same drift.
 - Keep cross-feature platform dispatchers thin: envelope validation and authentication
   stay in one router, while bounded handlers delegate to feature use cases and share
   only explicit wire projections.
+- Express cross-feature authorization through a least-authority read port; producers
+  retain a separate write port instead of exposing another feature's store or runtime.
+- Split security-sensitive filesystem inspection behind a domain-only port and
+  application use case; keep status policy pure and the concrete adapter bounded and
+  fail-closed while preserving one public feature facade.
+- Compose large static catalogues from bounded namespace owners and enforce exact
+  language parity, collision freedom, and a fixed compatibility contract in tests.
 - Preserve retired persisted data through read-only adapters and immutable migrations;
   delete its former runtime, command, service, and compatibility-facade paths.
 - Model resumable or concurrent work with explicit state machines.

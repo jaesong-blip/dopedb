@@ -295,6 +295,45 @@ only at authentication boundaries. Capability and Broker runtime status writers 
 recorded in the state-owner inventory. The old monolithic dispatcher is both a
 deletion gate and removed from the oversized-file ratchet.
 
+## Terminal query read boundary
+
+Terminal read planning, single-use claiming, cancellable read-only execution,
+history provenance, and query-run dashboard authorization now form the
+`features/queries` slice. Broker handlers call its composition facade with typed
+Terminal, connection, operation, and query-run identities. Store, pool, Operation
+Runtime, audit, and ephemeral capability storage remain adapter concerns, while the
+capability registry has one writer recorded in the state-owner inventory. Dashboard
+composition receives only an authorization port; successful query producers retain
+the separate registration capability.
+
+The former central Terminal run registry and the Terminal read contracts in
+`QueryService` are deletion gates. Characterization tests stay with the feature and
+cover row caps, rejection audit, cancellation registration, atomic single-use
+claims, authority and expiry failures, failure history, provenance fail-closed
+behavior, and scope/lease lifetime. Desktop SQL and the not-yet-migrated Terminal
+proposal flow remain under the shrinking `QueryService` ratchet for a later complete
+slice; this checkpoint does not hide them behind a compatibility facade. Its stale
+Terminal-authority rejection remains characterized until that proposal slice moves.
+
+## Bounded Skill inventory
+
+The former Skill inventory file is replaced by domain, port, application, status, and
+filesystem modules. The application use case receives domain-only filesystem
+observations through its port; only the adapter performs path and file I/O. Marker
+schema v1, official snapshot matching, deterministic fingerprints, fail-closed
+symlink and Windows reparse handling, no-follow reads, and the existing
+file/depth/byte limits remain characterized. The old file is a deletion gate and no
+replacement production module may exceed the feature-size limit.
+
+## Static localization catalogue
+
+The former localization monolith is replaced by a browser runtime, exact catalogue
+types, one collision-checking composer, and bounded namespace catalogues. The public
+provider and hook API is unchanged. English and Korean retain the same fixed 870-key
+and value contract, placeholder parity, deterministic ordering, and English fallback.
+The old file is a deletion gate, and tests pin both the complete catalogue digest and
+the language preference lifecycle.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

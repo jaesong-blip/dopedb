@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "@babel/parser";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -79,7 +80,7 @@ for (const file of sourceFiles) {
     filePath.startsWith("src-tauri/src/features/");
   const isTest =
     /\.(?:test|spec)\.[^.]+$/.test(filePath) ||
-    /(?:^|\/)[^/]+_tests\.rs$/.test(filePath);
+    /(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(filePath);
   if (
     isFeatureFile &&
     !isTest &&
@@ -126,7 +127,10 @@ const removedPaths = [
   "src-tauri/src/agent_cli.rs",
   "src-tauri/src/legacy_chat.rs",
   "src-tauri/src/services/legacy_chat_service.rs",
+  "src-tauri/src/services/terminal_run_registry.rs",
+  "src-tauri/src/skills/inventory.rs",
   "src-tauri/src/broker/dispatch.rs",
+  "src/lib/i18n.tsx",
   "src/lib/workbenchDocuments.ts",
   "src/lib/workbenchDocuments.test.ts",
   "src/lib/workspaceAccounts.ts",
@@ -145,6 +149,195 @@ const removedPaths = [
 for (const filePath of removedPaths) {
   if (fs.existsSync(path.join(root, filePath))) {
     fail(`removed legacy path returned: ${filePath}`);
+  }
+}
+
+const skillInventoryModules = [
+  "src-tauri/src/skills/inventory/mod.rs",
+  "src-tauri/src/skills/inventory/application.rs",
+  "src-tauri/src/skills/inventory/domain.rs",
+  "src-tauri/src/skills/inventory/filesystem.rs",
+  "src-tauri/src/skills/inventory/ports.rs",
+  "src-tauri/src/skills/inventory/status.rs",
+];
+const queryFeatureModules = [
+  "src-tauri/src/features/queries/mod.rs",
+  "src-tauri/src/features/queries/application.rs",
+  "src-tauri/src/features/queries/domain.rs",
+  "src-tauri/src/features/queries/ports.rs",
+  "src-tauri/src/features/queries/adapters/mod.rs",
+  "src-tauri/src/features/queries/adapters/errors.rs",
+  "src-tauri/src/features/queries/adapters/provenance.rs",
+  "src-tauri/src/features/queries/adapters/terminal_plan.rs",
+  "src-tauri/src/features/queries/adapters/terminal_run.rs",
+  "src-tauri/src/features/queries/adapters/terminal_support.rs",
+];
+const i18nCatalogModules = [
+  "src/lib/i18n/catalogs/activity.ts",
+  "src/lib/i18n/catalogs/agents.ts",
+  "src/lib/i18n/catalogs/app.ts",
+  "src/lib/i18n/catalogs/approval.ts",
+  "src/lib/i18n/catalogs/cli.ts",
+  "src/lib/i18n/catalogs/connections.ts",
+  "src/lib/i18n/catalogs/dashboard.ts",
+  "src/lib/i18n/catalogs/documents.ts",
+  "src/lib/i18n/catalogs/jobs.ts",
+  "src/lib/i18n/catalogs/onboarding.ts",
+  "src/lib/i18n/catalogs/results.ts",
+  "src/lib/i18n/catalogs/rowEditor.ts",
+  "src/lib/i18n/catalogs/safety.ts",
+  "src/lib/i18n/catalogs/schema.ts",
+  "src/lib/i18n/catalogs/schemaDiff.ts",
+  "src/lib/i18n/catalogs/sql.ts",
+  "src/lib/i18n/catalogs/tables.ts",
+  "src/lib/i18n/catalogs/terminal.ts",
+  "src/lib/i18n/catalogs/updates.ts",
+  "src/lib/i18n/catalogs/workspace.ts",
+];
+const i18nCoreModules = [
+  "src/lib/i18n/index.ts",
+  "src/lib/i18n/types.ts",
+  "src/lib/i18n/runtime.tsx",
+  "src/lib/i18n/catalog.ts",
+];
+const boundedReplacementModules = [
+  ...skillInventoryModules,
+  ...queryFeatureModules,
+  ...i18nCoreModules,
+  ...i18nCatalogModules,
+];
+for (const filePath of boundedReplacementModules) {
+  requireFile(filePath);
+  const lines = lineCount(read(filePath));
+  if (lines > ratchet.featureFileLineLimit) {
+    fail(
+      `${filePath}: replacement module has ${lines} lines; keep migrated modules below ${ratchet.featureFileLineLimit}`,
+    );
+  }
+}
+for (const [directory, expected] of [
+  ["src-tauri/src/skills/inventory", skillInventoryModules],
+  ["src-tauri/src/features/queries", queryFeatureModules],
+  ["src/lib/i18n", [...i18nCoreModules, ...i18nCatalogModules]],
+]) {
+  const actual = walk(directory)
+    .map(relative)
+    .filter((filePath) => /\.(?:rs|ts|tsx)$/.test(filePath))
+    .filter(
+      (filePath) =>
+        !/\.(?:test|spec)\.[^.]+$/.test(filePath) &&
+        !/(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(filePath),
+    )
+    .sort();
+  const expectedSorted = [...expected].sort();
+  if (
+    actual.length !== expectedSorted.length ||
+    actual.some((filePath, index) => filePath !== expectedSorted[index])
+  ) {
+    fail(
+      `${directory}: replacement module set changed; expected ${expectedSorted.join(", ")}, found ${actual.join(", ") || "none"}`,
+    );
+  }
+}
+for (const filePath of [
+  "src/lib/i18n/catalog.test.ts",
+  "src/lib/i18n/runtime.test.ts",
+  "src/lib/i18n/types.test.ts",
+]) {
+  requireFile(filePath);
+}
+forbid("src-tauri/src/skills/inventory/mod.rs", [
+  [/\bstd::fs\b/, "Skill inventory facade must delegate filesystem access"],
+  [/\bsha2\b/, "Skill inventory facade must delegate fingerprinting"],
+  [/\bserde_json\b/, "Skill inventory facade must delegate marker parsing"],
+]);
+forbid("src-tauri/src/skills/inventory/status.rs", [
+  [/\bstd::fs\b/, "Skill inventory status policy must use its filesystem adapter"],
+  [/\bsymlink_metadata\b/, "Skill inventory status policy must not inspect paths directly"],
+  [/\.exists\(\)/, "Skill inventory status policy must not probe paths directly"],
+  [
+    /\bsuper::filesystem\b/,
+    "Skill inventory status policy must depend only on domain observations",
+  ],
+]);
+for (const filePath of [
+  "src-tauri/src/skills/inventory/domain.rs",
+  "src-tauri/src/skills/inventory/ports.rs",
+  "src-tauri/src/skills/inventory/application.rs",
+]) {
+  forbid(filePath, [
+    [/\bstd::fs\b/, "Skill inventory core must not perform filesystem I/O"],
+    [
+      /\bsuper::filesystem\b/,
+      "Skill inventory core must not depend on its concrete filesystem adapter",
+    ],
+    [/\bAppError\b|\bAppResult\b/, "Skill inventory ports must expose domain failures"],
+  ]);
+}
+for (const filePath of walk("docs").filter((file) => file.endsWith(".md")).map(relative)) {
+  forbid(filePath, [
+    [
+      /\bsrc\/lib\/i18n\.tsx\b/,
+      "documentation must use the feature-owned localization catalogue path",
+    ],
+    [
+      /\bsrc-tauri\/src\/skills\/inventory\.rs\b/,
+      "documentation must not restore the removed Skill inventory path",
+    ],
+    [
+      /\bsrc-tauri\/src\/services\/terminal_run_registry\.rs\b/,
+      "documentation must not restore the removed Terminal query registry path",
+    ],
+  ]);
+}
+for (const filePath of i18nCatalogModules) {
+  let module;
+  try {
+    module = parse(read(filePath), {
+      sourceType: "module",
+      plugins: ["typescript"],
+    }).program;
+  } catch (error) {
+    fail(`${filePath}: failed to parse static catalogue: ${error.message}`);
+    continue;
+  }
+  const [importDeclaration, exportDeclaration] = module.body;
+  const validImport =
+    module.body.length === 2 &&
+    importDeclaration?.type === "ImportDeclaration" &&
+    importDeclaration.source.value === "../types" &&
+    importDeclaration.specifiers.length === 1 &&
+    importDeclaration.specifiers[0]?.type === "ImportSpecifier" &&
+    importDeclaration.specifiers[0].imported?.type === "Identifier" &&
+    importDeclaration.specifiers[0].imported.name === "defineCatalog";
+  const declaration = exportDeclaration?.declaration;
+  const declarator = declaration?.declarations?.[0];
+  const call = declarator?.init;
+  const validExport =
+    exportDeclaration?.type === "ExportNamedDeclaration" &&
+    declaration?.type === "VariableDeclaration" &&
+    declaration.kind === "const" &&
+    declaration.declarations.length === 1 &&
+    declarator?.id?.type === "Identifier" &&
+    call?.type === "CallExpression" &&
+    call.callee?.type === "Identifier" &&
+    call.callee.name === "defineCatalog" &&
+    call.arguments.length === 2 &&
+    call.arguments.every(
+      (argument) =>
+        argument.type === "ObjectExpression" &&
+        argument.properties.every(
+          (property) =>
+            property.type === "ObjectProperty" &&
+            property.computed === false &&
+            property.key.type === "StringLiteral" &&
+            property.value.type === "StringLiteral",
+        ),
+    );
+  if (!validImport || !validExport) {
+    fail(
+      `${filePath}: i18n catalogue must contain only one defineCatalog import and one literal catalogue export`,
+    );
   }
 }
 const returnedLegacyTerminalFiles = walk("src-tauri/src/terminal").map(relative);
@@ -396,6 +589,9 @@ for (const filePath of [
   "src-tauri/src/features/agents/domain.rs",
   "src-tauri/src/features/agents/ports.rs",
   "src-tauri/src/features/agents/application.rs",
+  "src-tauri/src/features/queries/domain.rs",
+  "src-tauri/src/features/queries/ports.rs",
+  "src-tauri/src/features/queries/application.rs",
   ...walk("src-tauri/src/features/workspaces/application")
     .filter((file) => file.endsWith(".rs"))
     .map(relative),
@@ -412,6 +608,17 @@ for (const filePath of [
     [/\bstd::process\b/, "Agent core must use the CLI probe port"],
     [/crate::cli_environment/, "Agent core must not inspect the process environment"],
     [/adapters::/, "Agent core must not depend on concrete adapters"],
+  ]);
+}
+for (const filePath of [
+  "src-tauri/src/features/queries/domain.rs",
+  "src-tauri/src/features/queries/ports.rs",
+  "src-tauri/src/features/queries/application.rs",
+]) {
+  forbid(filePath, [
+    [/\bConnectionLease\b/, "Query core must keep lease guards in adapters"],
+    [/\bAppError\b|\bAppResult\b/, "Query core must expose feature errors through ports"],
+    [/\badapters::/, "Query core must not depend on concrete adapters"],
   ]);
 }
 for (const filePath of [
@@ -634,6 +841,38 @@ forbid("src-tauri/src/services/mod.rs", [
   [
     /\b(?:LegacyChatService|ChatThread|ChatMessageRecord|CliInfo)\b/,
     "central service facade must not restore retired Agent contracts",
+  ],
+  [
+    /\b(?:AgentQueryPlanError|AgentQueryRunError|AgentQueryRunPrepareError|TerminalQueryPlanRequest|TerminalQueryRunRegistry|QueryRunProvenancePort)\b/,
+    "central service facade must not restore migrated Terminal query-read contracts",
+  ],
+]);
+for (const filePath of walk("src-tauri/src/features/dashboards")
+  .map(relative)
+  .filter((filePath) => filePath.endsWith(".rs"))
+  .filter(
+    (filePath) =>
+      !/(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(filePath),
+  )) {
+  forbid(filePath, [
+    [
+      /\bQueryRunProvenancePort\b/,
+      "dashboard consumers must receive only query-run authorization authority",
+    ],
+    [
+      /\.register\(/,
+      "dashboard consumers must not register query-run capabilities",
+    ],
+  ]);
+}
+forbid("src-tauri/src/services/query_service.rs", [
+  [
+    /\b(?:AgentQueryInvocationOrigin|AgentQueryPlan|AgentQueryPlanError|AgentQueryRun|AgentQueryRunError|AgentQueryRunPrepareError|PreparedAgentQueryRun|StoredAgentReadPayload|TerminalQueryPlanRequest|TerminalQueryRunRegistry)\b/,
+    "legacy QueryService must not restore migrated Terminal query-read contracts",
+  ],
+  [
+    /\b(?:plan_terminal_read|prepare_terminal_run)\b/,
+    "legacy QueryService must not restore the migrated Terminal query-read flow",
   ],
 ]);
 forbid("src-tauri/src/features/sql_documents/transport.rs", [

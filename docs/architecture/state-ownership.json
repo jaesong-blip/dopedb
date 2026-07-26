@@ -70,6 +70,16 @@
       ]
     },
     {
+      "name": "terminalQueryRunCapabilities",
+      "owner": "src-tauri/src/features/queries/adapters/provenance.rs",
+      "writerTokens": [
+        "runs: Arc<Mutex<HashMap<QueryRunId, RunCapability>>>,",
+        "runs.retain(",
+        "runs.remove(",
+        "runs.insert("
+      ]
+    },
+    {
       "name": "catalogCache",
       "owner": "src-tauri/src/store/mod.rs",
       "writerTokens": [

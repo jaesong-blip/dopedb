@@ -1,0 +1,41 @@
+// documents messages are owned by this bounded feature catalogue.
+import { defineCatalog } from "../types";
+
+export const documentsCatalog = defineCatalog(
+  {
+    "documents.cancel": "Cancel query",
+    "documents.cancelled": "Query cancelled.",
+    "documents.collection": "Collection",
+    "documents.docCount": "{count} documents",
+    "documents.filter": "Filter (JSON)",
+    "documents.limit": "Limit",
+    "documents.noCollections": "No collections",
+    "documents.noDocuments": "No documents returned.",
+    "documents.operation": "Operation",
+    "documents.pipeline": "Pipeline (JSON array)",
+    "documents.projection": "Projection (JSON)",
+    "documents.run": "Run",
+    "documents.running": "Running",
+    "documents.sort": "Sort (JSON)",
+    "documents.title": "Document query",
+    "documents.truncated": "capped - refine the query to see more",
+  },
+  {
+    "documents.cancel": "쿼리 취소",
+    "documents.cancelled": "쿼리가 취소되었습니다.",
+    "documents.collection": "컬렉션",
+    "documents.docCount": "{count}개 문서",
+    "documents.filter": "필터 (JSON)",
+    "documents.limit": "제한",
+    "documents.noCollections": "컬렉션 없음",
+    "documents.noDocuments": "반환된 문서가 없습니다.",
+    "documents.operation": "작업",
+    "documents.pipeline": "파이프라인 (JSON 배열)",
+    "documents.projection": "프로젝션 (JSON)",
+    "documents.run": "실행",
+    "documents.running": "실행 중",
+    "documents.sort": "정렬 (JSON)",
+    "documents.title": "문서 쿼리",
+    "documents.truncated": "제한됨 - 쿼리를 조정해 더 보세요",
+  },
+);

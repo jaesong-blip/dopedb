@@ -1,5 +1,6 @@
 //! Shared broker authority conversion, wire projection, and stable error mapping.
 use super::*;
+use crate::features::queries::{AgentQueryRunError, AgentQueryRunPrepareError};
 
 pub(super) fn terminal_authority(
     session: &AuthenticatedSession,

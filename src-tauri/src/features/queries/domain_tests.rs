@@ -1,0 +1,61 @@
+use std::collections::HashMap;
+
+use chrono::Utc;
+use uuid::Uuid;
+
+use super::domain::planning_guidance;
+use crate::model::{
+    ConnectionProfile, Engine, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
+};
+use crate::monitoring::HealthSnapshot;
+
+#[test]
+fn production_and_limited_monitoring_are_guidance_not_blocks() {
+    let production = ConnectionProfile {
+        id: Uuid::new_v4(),
+        name: "query-feature-test".into(),
+        engine: Engine::Sqlite,
+        provider: Provider::Generic,
+        driver_id: Some("sqlx-sqlite".into()),
+        host: String::new(),
+        port: 0,
+        database: "test.db".into(),
+        username: String::new(),
+        sslmode: "disable".into(),
+        extra_params: HashMap::new(),
+        readonly_default: true,
+        allow_writes: false,
+        secret_ref: None,
+        env: Some("prod".into()),
+        schema_group: None,
+        workspace_access: WorkspaceConnectionAccess::Local,
+        credential_mode: WorkspaceCredentialMode::Local,
+    };
+    let health = HealthSnapshot {
+        level: "normal".into(),
+        coverage: "limited".into(),
+        total_connections: Some(1),
+        max_connections: Some(100),
+        connection_usage_percent: Some(1.0),
+        active_queries: Some(1),
+        long_running_queries: Some(0),
+        lock_waits: Some(0),
+        replication_lag_seconds: None,
+        reasons: vec!["Monitoring coverage is limited without pg_monitor.".into()],
+        captured_at: Utc::now(),
+    };
+    let (decision, notices, suggestions) =
+        planning_guidance(&production, &health, Some(100_001), 50_000);
+
+    assert_eq!(decision, "caution");
+    assert!(notices
+        .iter()
+        .any(|notice| notice == "This connection is labeled production."));
+    assert!(notices
+        .iter()
+        .any(|notice| notice.contains("EXPLAIN estimates 100001")));
+    assert!(suggestions
+        .iter()
+        .any(|suggestion| suggestion.contains("pg_monitor")));
+    assert!(suggestions.windows(2).all(|pair| pair[0] <= pair[1]));
+}
