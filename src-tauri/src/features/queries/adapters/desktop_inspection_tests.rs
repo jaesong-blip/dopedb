@@ -126,6 +126,8 @@ mod tests {
                 connections.clone(),
                 operation,
                 super::super::TerminalQueryRunRegistry::default(),
+                super::super::DesktopSqlStreamRegistry::default(),
+                super::super::DesktopStreamCleanupRuntime::default(),
             );
             Self {
                 service,

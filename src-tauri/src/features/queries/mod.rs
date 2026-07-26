@@ -9,7 +9,7 @@ pub(crate) mod transport;
 use crate::connection::ConnectionManager;
 use crate::kernel::identity::OperationId;
 use crate::kernel::TerminalAuthority;
-use crate::operations::OperationRuntime;
+use crate::operations::{OperationRuntime, OperationState};
 use crate::store::Store;
 
 #[cfg(test)]
@@ -18,14 +18,18 @@ pub(crate) use adapters::QueryPlatformAdapter;
 use adapters::QueryPlatformAdapter;
 pub(crate) use adapters::TerminalQueryRunRegistry;
 pub(crate) use adapters::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};
-use adapters::{AgentQueryPlanReceipt, PreparedAgentQueryRun};
+use adapters::{
+    AgentQueryPlanReceipt, DesktopSqlStreamRegistry, DesktopStreamCleanupOwner,
+    DesktopStreamCleanupRuntime, PreparedAgentQueryRun,
+};
 pub(crate) use adapters::{
     DesktopSqlInspectionError, DesktopSqlInspectionReceipt, DesktopSqlProposalReceipt,
-    DesktopSqlRunError, DesktopSqlRunReceipt,
+    DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamReceipt,
 };
 use application::QueryUseCases;
 pub(crate) use domain::{
     DesktopPreviewIntent, DesktopSqlInspectionRequest, DesktopSqlProposalRequest,
+    DesktopSqlStreamBatch, DesktopSqlStreamReady, DesktopSqlStreamSinkError,
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
 #[cfg(test)]
@@ -43,10 +47,41 @@ type ComposedQueryApplication = QueryUseCases<QueryPlatformAdapter>;
 #[derive(Clone)]
 pub(crate) struct QueriesFeature {
     application: ComposedQueryApplication,
+    operation: OperationRuntime,
     provenance: TerminalQueryRunRegistry,
+    desktop_streams: DesktopSqlStreamRegistry,
+    desktop_stream_cleanup: DesktopStreamCleanupRuntime,
+    _desktop_stream_cleanup_owner: DesktopStreamCleanupOwner,
 }
 
 impl QueriesFeature {
+    /// App shutdown owns a bounded drain before the Tauri runtime tears down
+    /// command futures and their connection leases.
+    pub(crate) async fn shutdown_desktop_streams(&self, timeout: std::time::Duration) {
+        self.desktop_stream_cleanup
+            .shutdown_and_drain(timeout)
+            .await;
+    }
+
+    pub(crate) fn reserve_pending_desktop_sql_stream(
+        &self,
+        owner_webview: String,
+        capability: String,
+    ) -> Result<(), DesktopSqlStreamSinkError> {
+        self.desktop_streams
+            .reserve_pending(owner_webview, capability)
+    }
+
+    pub(crate) fn reserve_desktop_sql_stream(
+        &self,
+        operation_id: OperationId,
+        owner_webview: String,
+        capability: String,
+    ) -> Result<(), DesktopSqlStreamSinkError> {
+        self.desktop_streams
+            .reserve(operation_id, owner_webview, capability)
+    }
+
     pub(crate) async fn inspect_desktop_sql(
         &self,
         request: DesktopSqlInspectionRequest,
@@ -75,6 +110,141 @@ impl QueriesFeature {
         self.application.run_desktop_sql(operation_id).await
     }
 
+    pub(crate) async fn run_desktop_sql_stream<F>(
+        &self,
+        operation_id: OperationId,
+        owner_webview: String,
+        capability: String,
+        emit: F,
+    ) -> Result<DesktopSqlStreamReceipt, DesktopSqlRunError>
+    where
+        F: FnMut(DesktopSqlStreamReady) -> Result<(), DesktopSqlStreamSinkError> + Send,
+    {
+        let result = self
+            .application
+            .run_desktop_sql_stream(operation_id, owner_webview, capability, emit)
+            .await;
+        if result.is_err() {
+            // Transport reserves before the future reaches the durable claim so
+            // an authorization/policy failure cannot strand a pre-ready credit.
+            self.desktop_streams.close(operation_id);
+            self.cancel_unstarted_desktop_read(operation_id).await;
+        }
+        result
+    }
+
+    /// Plan and consume a safe desktop read without a frontend proposal/run gap.
+    pub(crate) async fn run_desktop_sql_read_stream<F>(
+        &self,
+        request: DesktopSqlProposalRequest,
+        owner_webview: String,
+        capability: String,
+        emit: F,
+    ) -> crate::error::AppResult<DesktopSqlStreamReceipt>
+    where
+        F: FnMut(DesktopSqlStreamReady) -> Result<(), DesktopSqlStreamSinkError> + Send,
+    {
+        self.run_desktop_sql_read_stream_after_proposal(
+            request,
+            owner_webview,
+            capability,
+            emit,
+            |_| std::future::ready(()),
+        )
+        .await
+    }
+
+    /// The proposal is durable before its pending transport capability is
+    /// bound. Keeping this hook local makes that handoff explicit: every
+    /// failure in the gap must finish the ready operation before returning.
+    async fn run_desktop_sql_read_stream_after_proposal<F, H, Future>(
+        &self,
+        request: DesktopSqlProposalRequest,
+        owner_webview: String,
+        capability: String,
+        emit: F,
+        after_proposal: H,
+    ) -> crate::error::AppResult<DesktopSqlStreamReceipt>
+    where
+        F: FnMut(DesktopSqlStreamReady) -> Result<(), DesktopSqlStreamSinkError> + Send,
+        H: FnOnce(OperationId) -> Future + Send,
+        Future: std::future::Future<Output = ()> + Send,
+    {
+        let proposal = self
+            .application
+            .propose_desktop_sql(request)
+            .await
+            .map_err(DesktopSqlInspectionError::into_error)?;
+        if proposal.approval_required || !proposal.auto_run {
+            // The atomic helper owns a pending capability before planning, but
+            // it cannot return an explicit-workflow proposal ID. Release that
+            // capability and terminalize the durable plan rather than leaving
+            // an unreachable Ready/PendingApproval operation executable.
+            self.forget_pending_desktop_sql_stream(&capability, &owner_webview);
+            self.cancel_unstarted_desktop_read(proposal.operation_id)
+                .await;
+            return Err(crate::error::AppError::Blocked {
+                reason: "this SQL read requires the explicit proposal workflow".into(),
+            });
+        }
+        after_proposal(proposal.operation_id).await;
+        if let Err(error) = self.desktop_streams.bind_pending(
+            proposal.operation_id,
+            owner_webview.clone(),
+            capability.clone(),
+        ) {
+            self.cancel_unstarted_desktop_read(proposal.operation_id)
+                .await;
+            // The existing invoke contract reports the binding failure, even
+            // though the durable plan is now safely terminal as well.
+            return Err(crate::error::AppError::Safety(error.to_string()));
+        }
+        self.run_desktop_sql_stream(proposal.operation_id, owner_webview, capability, emit)
+            .await
+            .map_err(DesktopSqlRunError::into_error)
+    }
+
+    /// Release a proposal that never reached target execution. `Ready` can
+    /// transition directly to `Cancelled`; an unexpected concurrent claim is
+    /// conservatively marked `OutcomeUnknown` after executor cancellation so
+    /// it never remains executable or silently resumes.
+    async fn cancel_unstarted_desktop_read(&self, operation_id: OperationId) {
+        self.desktop_streams.close(operation_id);
+        crate::executor::cancel::cancel(operation_id.into());
+        let cancelled = self
+            .operation
+            .cancel_before_execution(
+                operation_id.into(),
+                &serde_json::json!({"reason":"desktop_stream_cancelled_before_execution"}),
+            )
+            .await;
+        if cancelled.is_ok() {
+            return;
+        }
+
+        // A terminal record proves another path already completed ownership.
+        let Ok(record) = self.operation.get(operation_id.into()).await else {
+            return;
+        };
+        if record.state.is_terminal() {
+            return;
+        }
+
+        // The only legal route to OutcomeUnknown is from Executing. Claiming a
+        // still-ready operation here performs no target I/O and makes the
+        // otherwise unprovable cancellation durable rather than stranding it.
+        if record.state == OperationState::Ready {
+            let _ = self.operation.claim(operation_id.into()).await;
+        }
+        let _ = self
+            .operation
+            .mark_outcome_unknown(
+                operation_id.into(),
+                &serde_json::json!({"reason":"desktop_stream_pre_execution_cancel_unconfirmed"}),
+            )
+            .await;
+    }
+
     pub(crate) async fn plan_terminal_read(
         &self,
         request: TerminalQueryPlanRequest,
@@ -95,6 +265,60 @@ impl QueriesFeature {
     pub(crate) fn provenance(&self) -> TerminalQueryRunRegistry {
         self.provenance.clone()
     }
+
+    /// Feature-owned ACK gate for one desktop result-stream operation.
+    pub(crate) fn acknowledge_desktop_sql_stream(
+        &self,
+        operation_id: OperationId,
+        sequence: u64,
+        capability: &str,
+        owner_webview: &str,
+    ) -> bool {
+        self.desktop_streams
+            .acknowledge(operation_id, sequence, capability, owner_webview)
+    }
+
+    pub(crate) fn pull_desktop_sql_stream(
+        &self,
+        operation_id: OperationId,
+        sequence: u64,
+        capability: &str,
+        owner_webview: &str,
+    ) -> Option<DesktopSqlStreamBatch> {
+        self.desktop_streams
+            .pull(operation_id, sequence, capability, owner_webview)
+    }
+
+    /// Cancels a blocked stream and releases its ACK state before the executor
+    /// observes the operation cancellation signal.
+    pub(crate) fn cancel_desktop_sql_stream(
+        &self,
+        operation_id: OperationId,
+        capability: &str,
+        owner_webview: &str,
+    ) -> bool {
+        let cancelled = self
+            .desktop_streams
+            .cancel(operation_id, capability, owner_webview);
+        if cancelled {
+            crate::executor::cancel::cancel(operation_id.into());
+        }
+        cancelled
+    }
+
+    pub(crate) fn cancel_pending_desktop_sql_stream(
+        &self,
+        capability: &str,
+        owner_webview: &str,
+    ) -> bool {
+        self.desktop_streams
+            .cancel_pending(capability, owner_webview)
+    }
+
+    pub(crate) fn forget_pending_desktop_sql_stream(&self, capability: &str, owner_webview: &str) {
+        self.desktop_streams
+            .forget_pending(capability, owner_webview);
+    }
 }
 
 pub(crate) fn compose(
@@ -103,10 +327,24 @@ pub(crate) fn compose(
     operation: OperationRuntime,
 ) -> QueriesFeature {
     let provenance = TerminalQueryRunRegistry::default();
-    let adapter = QueryPlatformAdapter::new(store, connections, operation, provenance.clone());
+    let desktop_streams = DesktopSqlStreamRegistry::default();
+    let desktop_stream_cleanup = DesktopStreamCleanupRuntime::default();
+    let desktop_stream_cleanup_owner = desktop_stream_cleanup.composition_owner();
+    let adapter = QueryPlatformAdapter::new(
+        store,
+        connections,
+        operation.clone(),
+        provenance.clone(),
+        desktop_streams.clone(),
+        desktop_stream_cleanup.clone(),
+    );
     QueriesFeature {
         application: QueryUseCases::new(adapter),
+        operation,
         provenance,
+        desktop_streams,
+        desktop_stream_cleanup,
+        _desktop_stream_cleanup_owner: desktop_stream_cleanup_owner,
     }
 }
 
@@ -117,11 +355,25 @@ fn compose_with_adapter(
     operation: OperationRuntime,
 ) -> (QueriesFeature, QueryPlatformAdapter) {
     let provenance = TerminalQueryRunRegistry::default();
-    let adapter = QueryPlatformAdapter::new(store, connections, operation, provenance.clone());
+    let desktop_streams = DesktopSqlStreamRegistry::default();
+    let desktop_stream_cleanup = DesktopStreamCleanupRuntime::default();
+    let desktop_stream_cleanup_owner = desktop_stream_cleanup.composition_owner();
+    let adapter = QueryPlatformAdapter::new(
+        store,
+        connections,
+        operation.clone(),
+        provenance.clone(),
+        desktop_streams.clone(),
+        desktop_stream_cleanup.clone(),
+    );
     (
         QueriesFeature {
             application: QueryUseCases::new(adapter.clone()),
+            operation,
             provenance,
+            desktop_streams,
+            desktop_stream_cleanup,
+            _desktop_stream_cleanup_owner: desktop_stream_cleanup_owner,
         },
         adapter,
     )

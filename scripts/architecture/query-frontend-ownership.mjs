@@ -3,7 +3,16 @@ import { parse } from "@babel/parser";
 
 const queryAdapterOwner = "src/features/queries/tauriAdapter.ts";
 const queryDomainOwner = "src/features/queries/domain.ts";
-const queryCommands = ["inspect_sql", "propose_sql", "run_sql"];
+const queryCommands = [
+  "inspect_sql",
+  "propose_sql",
+  "run_sql",
+  "run_sql_stream",
+  "pull_sql_stream_batch",
+  "run_sql_read_stream",
+  "ack_sql_stream",
+  "cancel_sql_stream",
+];
 const removedQueryCommands = ["classify_sql", "preview_sql"];
 const queryCommandFunctions = [
   "inspectSql",

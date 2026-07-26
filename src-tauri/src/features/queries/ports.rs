@@ -6,8 +6,8 @@ use crate::kernel::identity::{OperationId, QueryRunId, TerminalSessionId};
 use crate::kernel::TerminalAuthority;
 
 use super::domain::{
-    DesktopSqlInspectionRequest, DesktopSqlProposalRequest, TerminalQueryPlanRequest,
-    TerminalSqlProposalRequest,
+    DesktopSqlInspectionRequest, DesktopSqlProposalRequest, DesktopSqlStreamReady,
+    DesktopSqlStreamSinkError, TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
 
 pub(crate) trait TerminalQueryPort: Clone + Send + Sync + 'static {
@@ -36,6 +36,7 @@ pub(crate) trait DesktopQueryPort: Clone + Send + Sync + 'static {
     type InspectionReceipt: Send;
     type ProposalReceipt: Send;
     type RunReceipt: Send;
+    type StreamReceipt: Send;
     type InspectionError: Send;
     type RunError: Send;
 
@@ -58,6 +59,16 @@ pub(crate) trait DesktopQueryPort: Clone + Send + Sync + 'static {
         &self,
         operation_id: OperationId,
     ) -> impl Future<Output = Result<Self::RunReceipt, Self::RunError>> + Send;
+
+    fn run_desktop_sql_stream<F>(
+        &self,
+        operation_id: OperationId,
+        owner_webview: String,
+        capability: String,
+        emit: F,
+    ) -> impl Future<Output = Result<Self::StreamReceipt, Self::RunError>> + Send
+    where
+        F: FnMut(DesktopSqlStreamReady) -> Result<(), DesktopSqlStreamSinkError> + Send;
 }
 
 /// Minimal capability a dashboard needs to authorize a Terminal query-run source.

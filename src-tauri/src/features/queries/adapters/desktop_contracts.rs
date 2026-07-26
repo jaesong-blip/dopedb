@@ -86,6 +86,39 @@ pub(crate) struct DesktopSqlRunReceipt {
     pub(super) _lease: ConnectionLease,
 }
 
+/// Final metadata for a desktop channel stream. Rows are deliberately emitted
+/// only through bounded batches and are never retained in this receipt.
+pub(crate) struct DesktopSqlStreamReceipt {
+    pub(super) operation_id: OperationId,
+    pub(super) row_count: usize,
+    pub(super) truncated: bool,
+    pub(super) duration_ms: u64,
+    pub(super) _lease: ConnectionLease,
+}
+
+impl serde::Serialize for DesktopSqlStreamReceipt {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire {
+            operation_id: OperationId,
+            row_count: usize,
+            truncated: bool,
+            duration_ms: u64,
+        }
+        Wire {
+            operation_id: self.operation_id,
+            row_count: self.row_count,
+            truncated: self.truncated,
+            duration_ms: self.duration_ms,
+        }
+        .serialize(serializer)
+    }
+}
+
 impl serde::Serialize for DesktopSqlRunReceipt {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

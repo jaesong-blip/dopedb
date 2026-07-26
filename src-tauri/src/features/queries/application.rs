@@ -4,8 +4,8 @@ use crate::kernel::identity::OperationId;
 use crate::kernel::TerminalAuthority;
 
 use super::domain::{
-    DesktopSqlInspectionRequest, DesktopSqlProposalRequest, TerminalQueryPlanRequest,
-    TerminalSqlProposalRequest,
+    DesktopSqlInspectionRequest, DesktopSqlProposalRequest, DesktopSqlStreamReady,
+    DesktopSqlStreamSinkError, TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
 use super::ports::{DesktopQueryPort, TerminalQueryPort};
 
@@ -68,5 +68,20 @@ where
         operation_id: OperationId,
     ) -> Result<P::RunReceipt, P::RunError> {
         self.port.run_desktop_sql(operation_id).await
+    }
+
+    pub(crate) async fn run_desktop_sql_stream<F>(
+        &self,
+        operation_id: OperationId,
+        owner_webview: String,
+        capability: String,
+        emit: F,
+    ) -> Result<P::StreamReceipt, P::RunError>
+    where
+        F: FnMut(DesktopSqlStreamReady) -> Result<(), DesktopSqlStreamSinkError> + Send,
+    {
+        self.port
+            .run_desktop_sql_stream(operation_id, owner_webview, capability, emit)
+            .await
     }
 }

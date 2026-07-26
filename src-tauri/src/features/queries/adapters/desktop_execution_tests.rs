@@ -1,47 +1,28 @@
 //! Desktop SQL characterization tests.
 
-#[cfg(test)]
-use std::time::Duration;
-
-#[cfg(test)]
-use uuid::Uuid;
-
-#[cfg(test)]
-use crate::audit;
-#[cfg(test)]
-use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
-#[cfg(test)]
-use crate::error::AppError;
-#[cfg(test)]
-use crate::model::{PreviewMode, QueryKind};
-#[cfg(test)]
-use crate::operations::{OperationRuntime, OperationState};
-#[cfg(test)]
-use crate::store::Store;
-
-#[cfg(test)]
-use super::super::domain::DesktopSqlProposalRequest;
-#[cfg(test)]
+use super::super::domain::{DesktopSqlProposalRequest, DesktopSqlStreamSinkError};
 use super::desktop_contracts::*;
-#[cfg(test)]
 use super::desktop_support::skipped_preview_report;
-#[cfg(test)]
-#[cfg(test)]
 use super::platform::QueryPlatformAdapter;
-
+use crate::audit;
+use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
+use crate::error::AppError;
+use crate::model::{PreviewMode, QueryKind};
+use crate::operations::{OperationRuntime, OperationState};
+use crate::store::Store;
+use std::time::Duration;
+use uuid::Uuid;
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::str::FromStr;
-
     use super::*;
     use crate::model::{
         ConnectionProfile, Engine, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
     };
     use crate::store::TEST_SCHEMA;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::collections::HashMap;
+    use std::str::FromStr;
     use tempfile::TempDir;
-
     fn profile(id: Uuid, database: String) -> ConnectionProfile {
         ConnectionProfile {
             id,
@@ -64,7 +45,6 @@ mod tests {
             credential_mode: WorkspaceCredentialMode::Local,
         }
     }
-
     #[test]
     fn desktop_static_preview_reports_keep_exact_legacy_messages() {
         let workspace =
@@ -87,7 +67,6 @@ mod tests {
             )
         );
     }
-
     struct SqliteHarness {
         service: QueryPlatformAdapter,
         operation: OperationRuntime,
@@ -98,7 +77,6 @@ mod tests {
         profile: ConnectionProfile,
         directory: TempDir,
     }
-
     impl SqliteHarness {
         async fn new() -> Self {
             let app_options = SqliteConnectOptions::from_str("sqlite::memory:")
@@ -111,7 +89,6 @@ mod tests {
                 .unwrap();
             sqlx::raw_sql(TEST_SCHEMA).execute(&app_pool).await.unwrap();
             let store = Store::from_pool_for_test(app_pool);
-
             let directory = tempfile::tempdir().unwrap();
             let target_path = directory.path().join("query-service-target.db");
             let target_options = SqliteConnectOptions::new()
@@ -131,7 +108,6 @@ mod tests {
             .await
             .unwrap();
             target_pool.close().await;
-
             let connection_id = Uuid::new_v4();
             let profile = profile(connection_id, target_path.to_string_lossy().into_owned());
             store.upsert_connection(&profile).await.unwrap();
@@ -142,6 +118,8 @@ mod tests {
                 connections.clone(),
                 operation.clone(),
                 super::super::TerminalQueryRunRegistry::default(),
+                super::super::DesktopSqlStreamRegistry::default(),
+                super::super::DesktopStreamCleanupRuntime::default(),
             );
             Self {
                 service,
@@ -154,7 +132,6 @@ mod tests {
                 directory,
             }
         }
-
         async fn close(self) {
             let mutation = self
                 .connections
@@ -179,7 +156,6 @@ mod tests {
                 .close()
                 .expect("temporary SQLite directory must be removable after pool shutdown");
         }
-
         async fn propose(
             &self,
             sql: &str,
@@ -193,11 +169,9 @@ mod tests {
                 })
                 .await
         }
-
         async fn approve(&self, proposal: &DesktopSqlProposalReceipt) {
             self.approve_with_reason(proposal, None).await.unwrap();
         }
-
         async fn approve_with_reason(
             &self,
             proposal: &DesktopSqlProposalReceipt,
@@ -232,7 +206,6 @@ mod tests {
                 .await?;
             Ok(())
         }
-
         async fn user_name(&self, id: i64) -> String {
             let lease = self
                 .connections
@@ -249,7 +222,6 @@ mod tests {
                 _ => panic!("query-service harness must use SQLite"),
             }
         }
-
         async fn set_connection_access_for_test(&self, access: &str) {
             sqlx::query(
                 "UPDATE connections
@@ -262,12 +234,10 @@ mod tests {
             .await
             .unwrap();
         }
-
         async fn enable_writes(&self, require_approval: bool) {
             let mut writable = self.profile.clone();
             writable.allow_writes = true;
             self.store.upsert_connection(&writable).await.unwrap();
-
             let mut settings = self.store.get_safety(self.connection_id).await.unwrap();
             settings.allow_writes = true;
             settings.require_approval = require_approval;
@@ -276,7 +246,6 @@ mod tests {
                 .await
                 .unwrap();
         }
-
         async fn audit_actions_in_order(&self) -> Vec<String> {
             let (mut entries, valid, first_bad) = audit::snapshot(&self.store, self.connection_id)
                 .await
@@ -287,7 +256,6 @@ mod tests {
             entries.into_iter().map(|entry| entry.action).collect()
         }
     }
-
     #[tokio::test]
     async fn desktop_sql_read_preserves_wire_provenance_and_lease_guard() {
         let harness = SqliteHarness::new().await;
@@ -332,7 +300,6 @@ mod tests {
             .is_err(),
             "desktop SQL receipt must retain the live lease through serialization"
         );
-
         let history = harness
             .store
             .list_history(harness.connection_id)
@@ -351,7 +318,6 @@ mod tests {
         assert_eq!(audit.len(), 1);
         assert_eq!(audit[0].action, "read");
         assert_eq!(audit[0].affected_estimate, Some(2));
-
         drop(receipt);
         let mutation = tokio::time::timeout(
             Duration::from_secs(5),
@@ -362,7 +328,6 @@ mod tests {
         drop(mutation);
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_sql_write_gate_rejects_before_persist_or_target_touch() {
         let harness = SqliteHarness::new().await;
@@ -390,7 +355,6 @@ mod tests {
             .is_empty());
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_arbitrary_privilege_sql_is_blocked_before_persistence() {
         let harness = SqliteHarness::new().await;
@@ -409,13 +373,11 @@ mod tests {
         assert!(harness.audit_actions_in_order().await.is_empty());
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_sql_workspace_view_role_blocks_without_audit_or_target_touch() {
         let harness = SqliteHarness::new().await;
         harness.enable_writes(true).await;
         harness.set_connection_access_for_test("view").await;
-
         let error = match harness
             .propose("UPDATE users SET name = 'Grace' WHERE id = 1", None)
             .await
@@ -439,10 +401,8 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
-
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_sql_exact_approval_commits_and_records_both_ledgers() {
         let harness = SqliteHarness::new().await;
@@ -786,4 +746,6 @@ mod tests {
         );
         harness.close().await;
     }
+
+    mod streaming;
 }

@@ -10,7 +10,9 @@ export const queryFeatureModules = [
   "src-tauri/src/features/queries/adapters/desktop_inspection.rs",
   "src-tauri/src/features/queries/adapters/desktop_planning.rs",
   "src-tauri/src/features/queries/adapters/desktop_port.rs",
+  "src-tauri/src/features/queries/adapters/desktop_stream_lifecycle.rs",
   "src-tauri/src/features/queries/adapters/desktop_support.rs",
+  "src-tauri/src/features/queries/adapters/desktop_stream_registry.rs",
   "src-tauri/src/features/queries/adapters/errors.rs",
   "src-tauri/src/features/queries/adapters/platform.rs",
   "src-tauri/src/features/queries/adapters/provenance.rs",
@@ -24,6 +26,8 @@ export const queryFeatureTestModules = [
   "src-tauri/src/features/queries/tests.rs",
   "src-tauri/src/features/queries/adapters/desktop_execution_tests.rs",
   "src-tauri/src/features/queries/adapters/desktop_inspection_tests.rs",
+  "src-tauri/src/features/queries/adapters/desktop_stream_registry_tests.rs",
+  "src-tauri/src/features/queries/adapters/desktop_execution_tests/tests/streaming.rs",
 ];
 
 const queryFeatureTestLineLimit = 800;
@@ -271,7 +275,7 @@ export function collectQueryCentralCommandDiagnostics({ read }) {
 
 function tauriCommandDeclaration(command) {
   return new RegExp(
-    String.raw`#\[\s*tauri::command(?:\s*\([^\]]*\))?\s*\][\s\S]*?\b(?:pub(?:\s*\([^)]*\))?\s+)?async\s+fn\s+${command}\b`,
+    String.raw`#\[\s*tauri::command(?:\s*\([^\]]*\))?\s*\][\s\S]*?\b(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+${command}\b`,
   );
 }
 
@@ -282,7 +286,7 @@ export function collectQueryTauriCommandDiagnostics({ read, relative, sourceFile
       diagnostics.push(`Rust Tauri command guard self-test failed for ${visibility || "private"} visibility`);
     }
   }
-  for (const command of ["inspect_sql", "propose_sql", "run_sql"]) {
+  for (const command of ["inspect_sql", "propose_sql", "run_sql", "run_sql_stream", "run_sql_read_stream", "pull_sql_stream_batch", "ack_sql_stream", "cancel_sql_stream"]) {
     const owners = sourceFiles
       .filter((file) => file.endsWith(".rs"))
       .filter((file) => tauriCommandDeclaration(command).test(read(relative(file))))
@@ -325,6 +329,12 @@ export function collectQueryRuntimeOwnershipDiagnostics(context) {
   const { read, relative, sourceFiles } = context;
   const diagnostics = [];
   const transport = "src-tauri/src/features/queries/transport.rs";
+  const appEntrypoint = "src-tauri/src/lib.rs";
+  if (!read(appEntrypoint).includes("queries.shutdown_desktop_streams(Duration::from_secs(2))")) {
+    diagnostics.push(
+      `${appEntrypoint}: Tauri Exit must bounded-drain owned desktop SQL streams before runtime teardown`,
+    );
+  }
   forbid(context, diagnostics, transport, [
     [/\bsqlx\b/, "Query transport must delegate instead of executing SQL"],
     [/crate::store/, "Query transport must not access the store directly"],
@@ -338,6 +348,11 @@ export function collectQueryRuntimeOwnershipDiagnostics(context) {
     ["inspect_sql", "inspect_desktop_sql"],
     ["propose_sql", "propose_desktop_sql"],
     ["run_sql", "run_desktop_sql"],
+    ["run_sql_stream", "run_desktop_sql_stream"],
+    ["run_sql_read_stream", "run_desktop_sql_read_stream"],
+    ["pull_sql_stream_batch", "pull_desktop_sql_stream"],
+    ["ack_sql_stream", "acknowledge_desktop_sql_stream"],
+    ["cancel_sql_stream", "cancel_desktop_sql_stream"],
   ]) {
     if (!tauriCommandDeclaration(command).test(transportSource) || !transportSource.includes(useCase)) {
       diagnostics.push(`${transport}: ${command} must delegate only through ${useCase}`);

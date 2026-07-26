@@ -7,6 +7,7 @@
 //! [`stream_capped`] are `pub(crate)` and reused by `safety::l2_enforce` so all
 //! read paths decode a cell identically.
 
+use std::future::Future;
 use std::time::Instant;
 
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
@@ -30,6 +31,115 @@ use crate::connection::{LiveConnection, Pool};
 use crate::error::{AppError, AppResult};
 use crate::executor::cancel;
 use crate::model::{Engine, QueryResult};
+
+/// A row-bearing desktop page must remain small enough for a direct IPC callback.
+/// This is intentionally below Tauri's 8KiB fetch-queue threshold only for the
+/// notification path; row pages are pulled separately by the feature adapter.
+pub(crate) const DESKTOP_STREAM_BATCH_MAX_BYTES: usize = 512 * 1024;
+// Reserve envelope/column/identity JSON space before the adapter validates the
+// exact serialized `DesktopSqlStreamBatch`; pathological metadata still fails
+// closed at that boundary instead of retaining an oversized page.
+const DESKTOP_STREAM_ROW_BUDGET_BYTES: usize = DESKTOP_STREAM_BATCH_MAX_BYTES - 4 * 1024;
+
+/// A bounded decoded page emitted by the desktop-only streaming query path.
+/// The producer never retains prior pages; a receiver that rejects a page aborts
+/// the cursor through the normal cancellation/timeout guard.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ReadBatch {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Value>>,
+}
+
+/// Summary retained after a streamed read. Result rows intentionally never enter
+/// operation/history/audit state or the final IPC receipt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StreamedRead {
+    pub columns: Vec<String>,
+    pub row_count: usize,
+    pub truncated: bool,
+    pub duration_ms: u64,
+}
+
+/// Desktop streaming read with an application-owned bounded batch size. This is
+/// deliberately separate from [`run_read_registered`], whose compatibility users
+/// still require a materialized `QueryResult`.
+pub(crate) async fn run_read_streamed_registered<F, Fut>(
+    live: &LiveConnection,
+    _engine: Engine,
+    sql: &str,
+    max_rows: u64,
+    batch_rows: usize,
+    cancellation: Option<&cancel::CancelHandle>,
+    mut on_batch: F,
+) -> AppResult<StreamedRead>
+where
+    F: FnMut(ReadBatch) -> Fut + Send,
+    Fut: Future<Output = AppResult<()>> + Send,
+{
+    let started = Instant::now();
+    // The adapter contract is an absolute producer guarantee, not a caller
+    // preference: a legacy or future caller cannot request an oversized page.
+    let batch_rows = batch_rows.clamp(1, 256);
+    let max = max_rows as usize;
+    let inner = async {
+        let (mut columns, row_count, truncated) = match &live.read_pool {
+            Pool::Postgres(pool) => {
+                stream_batched(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(pool),
+                    max,
+                    batch_rows,
+                    pg_value,
+                    &mut on_batch,
+                )
+                .await?
+            }
+            Pool::Mysql(pool) => {
+                stream_batched(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(pool),
+                    max,
+                    batch_rows,
+                    mysql_value,
+                    &mut on_batch,
+                )
+                .await?
+            }
+            Pool::Sqlite(pool) => {
+                stream_batched(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(pool),
+                    max,
+                    batch_rows,
+                    sqlite_value,
+                    &mut on_batch,
+                )
+                .await?
+            }
+        };
+        // Keep zero-row metadata inside the same cancellation/timeout envelope as
+        // cursor iteration. It must also become a page so renderers can build an
+        // empty grid with the real column names.
+        if columns.is_empty() {
+            columns = match &live.read_pool {
+                Pool::Postgres(pool) => with_headers(Vec::new(), pool, sql).await,
+                Pool::Mysql(pool) => with_headers(Vec::new(), pool, sql).await,
+                Pool::Sqlite(pool) => with_headers(Vec::new(), pool, sql).await,
+            };
+            on_batch(ReadBatch {
+                columns: columns.clone(),
+                rows: Vec::new(),
+            })
+            .await?;
+        }
+        Ok::<_, AppError>((columns, row_count, truncated))
+    };
+    let (columns, row_count, truncated) =
+        cancel::guard_registered(cancellation, cancel::QUERY_TIMEOUT, inner).await?;
+    Ok(StreamedRead {
+        columns,
+        row_count,
+        truncated,
+        duration_ms: started.elapsed().as_millis() as u64,
+    })
+}
 
 /// Run a read (`SELECT`/`EXPLAIN`) against the read-only pool (L2). Streams rows,
 /// caps at `max_rows` (setting `truncated` when more exist), maps values by type.
@@ -209,6 +319,82 @@ where
         rows.push((0..n).map(|i| f(&row, i)).collect());
     }
     Ok((columns, rows, truncated))
+}
+
+async fn stream_batched<S, R, F, Fut>(
+    mut stream: S,
+    max_rows: usize,
+    batch_rows: usize,
+    decode: impl Fn(&R, usize) -> Value,
+    on_batch: &mut F,
+) -> AppResult<(Vec<String>, usize, bool)>
+where
+    S: futures::Stream<Item = Result<R, sqlx::Error>> + Unpin,
+    R: Row,
+    F: FnMut(ReadBatch) -> Fut + Send,
+    Fut: Future<Output = AppResult<()>> + Send,
+{
+    // `stream_batched` also backs the benchmark and direct executor tests, so
+    // keep the same cap at the primitive rather than relying on its caller.
+    let batch_rows = batch_rows.clamp(1, 256);
+    let mut columns = Vec::new();
+    let mut batch = Vec::with_capacity(batch_rows);
+    let mut batch_bytes = 0_usize;
+    let mut row_count = 0_usize;
+    let mut truncated = false;
+    while let Some(row) = stream.try_next().await? {
+        if columns.is_empty() {
+            columns = row
+                .columns()
+                .iter()
+                .map(|column| column.name().to_owned())
+                .collect();
+        }
+        if row_count >= max_rows {
+            truncated = true;
+            break;
+        }
+        let decoded = (0..row.columns().len())
+            .map(|index| decode(&row, index))
+            .collect::<Vec<_>>();
+        let row_bytes = serde_json::to_vec(&decoded)?.len();
+        if row_bytes > DESKTOP_STREAM_ROW_BUDGET_BYTES {
+            return Err(AppError::Blocked {
+                reason: "one streamed result row exceeds the 512 KiB batch safety limit".into(),
+            });
+        }
+        if !batch.is_empty()
+            && batch_bytes.saturating_add(row_bytes) > DESKTOP_STREAM_ROW_BUDGET_BYTES
+        {
+            on_batch(ReadBatch {
+                columns: columns.clone(),
+                rows: std::mem::take(&mut batch),
+            })
+            .await?;
+            batch = Vec::with_capacity(batch_rows);
+            batch_bytes = 0;
+        }
+        batch_bytes += row_bytes;
+        batch.push(decoded);
+        row_count += 1;
+        if batch.len() == batch_rows {
+            on_batch(ReadBatch {
+                columns: columns.clone(),
+                rows: std::mem::take(&mut batch),
+            })
+            .await?;
+            batch = Vec::with_capacity(batch_rows);
+            batch_bytes = 0;
+        }
+    }
+    if !batch.is_empty() {
+        on_batch(ReadBatch {
+            columns: columns.clone(),
+            rows: batch,
+        })
+        .await?;
+    }
+    Ok((columns, row_count, truncated))
 }
 
 async fn stream_byte_capped<S, R>(
@@ -697,115 +883,5 @@ pub(crate) fn sqlite_value(row: &SqliteRow, i: usize) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mysql_time_preserves_duration_range_sign_and_fraction() {
-        let negative = MySqlTime::new(MySqlTimeSign::Negative, 25, 1, 2, 123_400).unwrap();
-        let long = MySqlTime::new(MySqlTimeSign::Positive, 838, 59, 59, 0).unwrap();
-        let short = MySqlTime::new(MySqlTimeSign::Positive, 1, 2, 3, 0).unwrap();
-
-        assert_eq!(fmt_mysql_time(&negative), "-25:01:02.1234");
-        assert_eq!(fmt_mysql_time(&long), "838:59:59");
-        assert_eq!(fmt_mysql_time(&short), "01:02:03");
-    }
-
-    #[test]
-    fn mysql_year_and_set_use_their_required_decoder_routes() {
-        assert_eq!(
-            mysql_decode_route("YEAR"),
-            MySqlDecodeRoute::UnsignedInteger
-        );
-        assert_eq!(
-            mysql_decode_route("BIGINT UNSIGNED"),
-            MySqlDecodeRoute::UnsignedInteger
-        );
-        assert_eq!(
-            mysql_decode_route("BIGINT"),
-            MySqlDecodeRoute::SignedInteger
-        );
-        assert_eq!(mysql_decode_route("SET"), MySqlDecodeRoute::Set);
-    }
-
-    #[test]
-    fn big_ints_become_strings() {
-        assert_eq!(int_json(2), Value::from(2));
-        assert_eq!(int_json(1 << 53), Value::from(9_007_199_254_740_992_i64)); // exactly 2^53 stays a number
-        assert_eq!(
-            int_json(9_007_199_254_740_993),
-            Value::String("9007199254740993".into())
-        );
-        assert_eq!(
-            int_json(-9_007_199_254_740_993),
-            Value::String("-9007199254740993".into())
-        );
-        assert_eq!(uint_json(u64::MAX), Value::String(u64::MAX.to_string()));
-        assert_eq!(uint_json(10), Value::from(10u64));
-    }
-
-    #[test]
-    fn interval_formats_psql_style() {
-        let iv = |months, days, microseconds| PgInterval {
-            months,
-            days,
-            microseconds,
-        };
-        assert_eq!(fmt_interval(&iv(0, 0, 0)), "00:00:00");
-        assert_eq!(fmt_interval(&iv(0, 1, 7_380_000_000)), "1 day 02:03:00");
-        assert_eq!(fmt_interval(&iv(14, 5, 0)), "1 year 2 mons 5 days");
-        assert_eq!(fmt_interval(&iv(1, 0, 0)), "1 mon");
-        assert_eq!(fmt_interval(&iv(0, 2, 0)), "2 days");
-        // fractional seconds keep only significant digits
-        assert_eq!(fmt_interval(&iv(0, 0, 4_500_000)), "00:00:04.5");
-        // negative time part
-        assert_eq!(fmt_interval(&iv(0, 0, -3_600_000_000)), "-01:00:00");
-    }
-
-    #[test]
-    fn range_display_is_canonical() {
-        // pg_range delegates to PgRange's Display; lock the "[start,end)" rendering.
-        use std::ops::Bound;
-        let r = PgRange {
-            start: Bound::Included(1_i32),
-            end: Bound::Excluded(5_i32),
-        };
-        assert_eq!(r.to_string(), "[1,5)");
-    }
-
-    #[test]
-    fn enum_bytes_decode_to_label_utf8_only() {
-        // enum wire bytes are the label; valid UTF-8 -> label, binary garbage -> None (marker).
-        assert_eq!(bytes_as_label(b"active"), Some("active".to_string()));
-        assert_eq!(bytes_as_label(&[0xff, 0xfe, 0x00]), None);
-    }
-
-    #[test]
-    fn array_element_name_is_base_minus_suffix() {
-        // pg_array strips the "[]" sqlx appends to array display names.
-        assert_eq!("INT4[]".strip_suffix("[]"), Some("INT4"));
-        assert_eq!(
-            "CALLS_STATUS_ENUM[]".strip_suffix("[]"),
-            Some("CALLS_STATUS_ENUM")
-        );
-        // scalar rendering used by array arms: big int8 elements stay strings, ints stay numbers
-        let elems: Vec<Value> = vec![1_i64, 9_007_199_254_740_993]
-            .into_iter()
-            .map(int_json)
-            .collect();
-        assert_eq!(
-            Value::Array(elems),
-            serde_json::json!([1, "9007199254740993"])
-        );
-    }
-
-    #[test]
-    fn array_null_elements_become_json_null() {
-        // A NULL element must map to Value::Null, not collapse the whole cell to a marker.
-        let ok: Result<Vec<Option<i32>>, sqlx::Error> = Ok(vec![Some(1), None, Some(3)]);
-        assert_eq!(
-            Value::Array(arr(ok, |x: i32| Value::from(x as i64)).unwrap()),
-            serde_json::json!([1, null, 3])
-        );
-    }
-}
+#[path = "read_tests.rs"]
+mod tests;

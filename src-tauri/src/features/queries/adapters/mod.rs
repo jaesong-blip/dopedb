@@ -9,6 +9,8 @@ mod desktop_inspection;
 mod desktop_inspection_tests;
 mod desktop_planning;
 mod desktop_port;
+mod desktop_stream_lifecycle;
+mod desktop_stream_registry;
 mod desktop_support;
 mod errors;
 mod platform;
@@ -19,8 +21,10 @@ mod terminal_support;
 
 pub(crate) use desktop_contracts::{
     DesktopSqlInspectionError, DesktopSqlInspectionReceipt, DesktopSqlProposalReceipt,
-    DesktopSqlRunError, DesktopSqlRunReceipt,
+    DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamReceipt,
 };
+pub(crate) use desktop_stream_lifecycle::{DesktopStreamCleanupOwner, DesktopStreamCleanupRuntime};
+pub(crate) use desktop_stream_registry::DesktopSqlStreamRegistry;
 pub(crate) use errors::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};
 pub(crate) use platform::QueryPlatformAdapter;
 pub(crate) use provenance::TerminalQueryRunRegistry;

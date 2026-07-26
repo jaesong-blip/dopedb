@@ -150,6 +150,11 @@ pub fn run() {
             commands::approve_operation,
             commands::reject_operation,
             features::queries::transport::run_sql,
+            features::queries::transport::run_sql_stream,
+            features::queries::transport::run_sql_read_stream,
+            features::queries::transport::pull_sql_stream_batch,
+            features::queries::transport::ack_sql_stream,
+            features::queries::transport::cancel_sql_stream,
             commands::propose_document_query,
             commands::run_document_query,
             commands::propose_script,
@@ -193,6 +198,14 @@ pub fn run() {
             // ordinary command futures. Close them within a bounded window before the
             // app process exits so child trees and runtime endpoints are not orphaned.
             if let tauri::RunEvent::Exit = event {
+                let queries = app_handle
+                    .state::<state::AppState>()
+                    .services
+                    .queries
+                    .clone();
+                tauri::async_runtime::block_on(
+                    queries.shutdown_desktop_streams(Duration::from_secs(2)),
+                );
                 let terminals = app_handle.state::<state::AppState>().terminals.clone();
                 terminals.shutdown_all(app_handle, Duration::from_secs(2));
                 let broker = app_handle.state::<state::AppState>().broker.clone();

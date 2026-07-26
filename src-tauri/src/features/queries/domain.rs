@@ -52,6 +52,65 @@ pub(crate) struct DesktopSqlProposalRequest {
     pub(crate) origin: Option<String>,
 }
 
+/// One bounded desktop-only page of a read result. It is intentionally not a
+/// model contract: CLI, Broker, dashboards, and legacy `run_sql` retain their
+/// materialized bounded receipt wire.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DesktopSqlStreamBatch {
+    pub(crate) operation_id: OperationId,
+    pub(crate) sequence: u64,
+    pub(crate) columns: Vec<String>,
+    pub(crate) rows: Vec<Vec<serde_json::Value>>,
+}
+
+/// Small notification sent over Tauri Channel; rows remain in the feature-owned
+/// registry until the originating renderer proves its one-time capability.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DesktopSqlStreamReady {
+    pub(crate) operation_id: OperationId,
+    pub(crate) sequence: u64,
+    pub(crate) capability: String,
+}
+
+/// A transport-only sink outcome. It is deliberately feature-owned so core query
+/// use cases do not expose the application's platform error type through a port.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DesktopSqlStreamSinkError {
+    ReceiverDropped,
+    AcknowledgementTimedOut,
+    StreamAlreadyActive,
+    StreamNotActive,
+    InvalidAcknowledgement,
+    BatchTooLarge,
+    Cancelled,
+}
+
+impl std::fmt::Display for DesktopSqlStreamSinkError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ReceiverDropped => {
+                formatter.write_str("desktop query result receiver disconnected")
+            }
+            Self::AcknowledgementTimedOut => {
+                formatter.write_str("desktop query stream acknowledgement timed out")
+            }
+            Self::StreamAlreadyActive => {
+                formatter.write_str("desktop query stream is already active")
+            }
+            Self::StreamNotActive => formatter.write_str("desktop query stream is not active"),
+            Self::InvalidAcknowledgement => {
+                formatter.write_str("desktop query stream acknowledgement is invalid")
+            }
+            Self::BatchTooLarge => {
+                formatter.write_str("desktop query stream batch exceeds its safe wire limit")
+            }
+            Self::Cancelled => formatter.write_str("query cancelled"),
+        }
+    }
+}
+
 /// Terminal SQL proposal input bound to an authenticated authority.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TerminalSqlProposalRequest {

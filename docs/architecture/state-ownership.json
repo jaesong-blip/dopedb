@@ -80,6 +80,29 @@
       ]
     },
     {
+      "name": "desktopQueryStreamCredits",
+      "owner": "src-tauri/src/features/queries/adapters/desktop_stream_registry.rs",
+      "writerTokens": [
+        "streams: Arc<Mutex<HashMap<OperationId, StreamCredit>>>",
+        "streams.insert(",
+        "stream.in_flight = Some(sequence);",
+        "stream.batch = Some(batch);",
+        "stream.pulled = true;",
+        "stream.next_sequence = stream.next_sequence.saturating_add(1);",
+        "lock_unpoisoned(&self.streams).remove(&operation_id)"
+      ]
+    },
+    {
+      "name": "desktopQueryStreamAbortCleanup",
+      "owner": "src-tauri/src/features/queries/adapters/desktop_stream_lifecycle.rs",
+      "writerTokens": [
+        "entries: Mutex<HashMap<OperationId, CleanupEntry>>",
+        "lock_unpoisoned(&self.state.entries).insert(",
+        "lock_unpoisoned(&state.entries).remove(&operation_id)",
+        "pub(crate) async fn shutdown_and_drain("
+      ]
+    },
+    {
       "name": "catalogCache",
       "owner": "src-tauri/src/store/mod.rs",
       "writerTokens": [
