@@ -52,6 +52,7 @@ import {
   terminalDockReducer,
   terminalLayoutForScope,
   terminalSessionIsRunning,
+  terminalScopeKey,
   terminalSessionsForScope,
   type TerminalScopeKey,
   type TerminalSessionScope,
@@ -149,6 +150,7 @@ export default function TerminalDock({
   const dockRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const currentScopeRef = useRef<TerminalSessionScope | null>(null);
+  const popupScopeKeyRef = useRef<TerminalScopeKey | null>(null);
   const visibleSessionsRef = useRef<TerminalSessionSummary[]>([]);
   const closingIdRef = useRef<TerminalSessionId | null>(null);
   const channelsRef = useRef(
@@ -170,7 +172,33 @@ export default function TerminalDock({
     [connection.id, workspaceContext.data],
   );
   currentScopeRef.current = currentScope;
+  const currentScopeKey = currentScope ? terminalScopeKey(currentScope) : null;
   const maximized = terminalLayoutForScope(state, currentScope).maximized;
+
+  const focusDockTarget = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      dockRef.current
+        ?.querySelector<HTMLElement>(
+          '[data-terminal-focus-target="active-session"], [data-terminal-focus-target="launcher"]',
+        )
+        ?.focus();
+    });
+  }, []);
+
+  const dismissPopup = useCallback(() => {
+    const trigger = popup?.trigger;
+    setPopup(null);
+    window.requestAnimationFrame(() => {
+      if (
+        trigger?.isConnected &&
+        dockRef.current?.contains(trigger)
+      ) {
+        trigger.focus();
+      } else {
+        focusDockTarget();
+      }
+    });
+  }, [focusDockTarget, popup]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -325,11 +353,11 @@ export default function TerminalDock({
       }
     });
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         event.preventDefault();
         if (popup) {
-          popup.trigger.focus();
-          setPopup(null);
+          dismissPopup();
         } else if (maximized) {
           if (currentScope) {
             dispatch({
@@ -370,7 +398,7 @@ export default function TerminalDock({
       document.removeEventListener("keydown", handleKeyDown);
       inertTargets.forEach((target) => target.removeAttribute("inert"));
     };
-  }, [currentScope, maximized, onClose, overlay, popup]);
+  }, [currentScope, dismissPopup, maximized, onClose, overlay, popup]);
 
   const visibleSessions = useMemo(
     () =>
@@ -385,13 +413,14 @@ export default function TerminalDock({
   );
   visibleSessionsRef.current = visibleSessions;
   useEffect(() => {
-    setPopup((current) =>
-      current?.kind === "tab" &&
-      !visibleSessions.some((session) => session.id === current.targetId)
-        ? null
-        : current,
-    );
-  }, [currentScope, visibleSessions]);
+    if (!popup) return;
+    const targetIsStale =
+      popup.kind === "tab" &&
+      !visibleSessions.some((session) => session.id === popup.targetId);
+    if (popupScopeKeyRef.current !== currentScopeKey || targetIsStale) {
+      dismissPopup();
+    }
+  }, [currentScopeKey, dismissPopup, popup, visibleSessions]);
   const activeSkillState = useMemo<SkillInstallState | null>(() => {
     if (!active || active.profile === "shell") return null;
     const target = active.profile === "codex" ? "codex" : "claude-code";
@@ -474,13 +503,7 @@ export default function TerminalDock({
       try {
         await terminalClose(session.id);
         dispatch({ type: "remove", id: session.id });
-        window.requestAnimationFrame(() => {
-          dockRef.current
-            ?.querySelector<HTMLButtonElement>(
-              '.terminal-session-select[aria-selected="true"]',
-            )
-            ?.focus();
-        });
+        focusDockTarget();
         return "closed";
       } catch (error) {
         retiredRef.current.delete(session.id);
@@ -495,7 +518,7 @@ export default function TerminalDock({
         setClosingId(null);
       }
     },
-    [loadSessions, retireSessionResources, t],
+    [focusDockTarget, loadSessions, retireSessionResources, t],
   );
 
   const closeAction = useCallback(
@@ -532,17 +555,25 @@ export default function TerminalDock({
         ctrlKey: event.ctrlKey,
         altKey: event.altKey,
         shiftKey: event.shiftKey,
-        focusInsideDock: dockRef.current?.contains(event.target as Node) ?? false,
+        focusInsideDock:
+          (event.target instanceof Node &&
+            (dockRef.current?.contains(event.target) ?? false)) ||
+          (popup !== null &&
+            event.target instanceof Node &&
+            (document
+              .querySelector<HTMLElement>("[data-terminal-popup]")
+              ?.contains(event.target) ?? false)),
       })) {
         return;
       }
       event.preventDefault();
+      if (popup) dismissPopup();
       void closeAction(active.id, "one");
     };
     document.addEventListener("keydown", handleCloseShortcut);
     return () =>
       document.removeEventListener("keydown", handleCloseShortcut);
-  }, [active, closeAction]);
+  }, [active, closeAction, dismissPopup, popup]);
 
   async function renameSession(session: TerminalSessionSummary) {
     const name = window.prompt(t("terminal.renamePrompt"), session.name);
@@ -600,11 +631,11 @@ export default function TerminalDock({
           closeButtonRef={closeRef}
           onActivate={(id) => dispatch({ type: "activate", id })}
           onCloseAction={(id, action) => void closeAction(id, action)}
-          onOpenPopup={setPopup}
-          onDismissPopup={() => {
-            popup?.trigger.focus();
-            setPopup(null);
+          onOpenPopup={(next) => {
+            popupScopeKeyRef.current = currentScopeKey;
+            setPopup(next);
           }}
+          onDismissPopup={dismissPopup}
           onCreate={(profile) => void createSession(profile)}
           onToggleMaximize={() => {
             if (!currentScope) return;

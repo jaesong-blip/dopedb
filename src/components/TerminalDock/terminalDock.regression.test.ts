@@ -20,7 +20,9 @@ describe("Terminal Dock regression guards", () => {
       appSource.indexOf("function syncAvailableUpdate"),
     );
 
-    expect(tabsSource).toContain('data-terminal-focus-target={session.id === activeId ? "active-session" : undefined}');
+    expect(tabsSource).toMatch(
+      /data-terminal-focus-target=\{\s*session\.id === activeId \? "active-session" : undefined\s*\}/,
+    );
     expect(tabsSource).toContain('data-terminal-focus-target="launcher"');
     expect(openOrFocus).toContain(
       "[data-terminal-focus-target=\"active-session\"], [data-terminal-focus-target=\"launcher\"]",
@@ -37,5 +39,14 @@ describe("Terminal Dock regression guards", () => {
     expect(Object.keys(terminalDockFiles)).not.toContain(
       "./LegacyChatArchiveDialog.tsx",
     );
+  });
+
+  it("keeps portal focus in the current dock scope and returns to its launcher after the last tab closes", () => {
+    expect(tabsSource).toContain("data-terminal-popup");
+    expect(dockSource).toContain("if (event.defaultPrevented) return;");
+    expect(dockSource).toContain(
+      "popupScopeKeyRef.current !== currentScopeKey || targetIsStale",
+    );
+    expect(dockSource).toContain("focusDockTarget();");
   });
 });
