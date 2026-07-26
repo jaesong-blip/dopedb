@@ -54,6 +54,22 @@ describe("parseSharedConnection", () => {
   it.each([0, 65536, 12.5])("rejects invalid port %s", (port) => {
     expect(() => parseSharedConnection({ ...validTemplate, port })).toThrow(/Invalid port/);
   });
+
+  it.each([
+    ["readonly default disabled", { readonlyDefault: false }],
+    ["write default enabled", { allowWrites: true }],
+  ])("rejects %s before a shared template is persisted", (_label, patch) => {
+    expect(() => parseSharedConnection({ ...validTemplate, ...patch }))
+      .toThrow(/read-only member-local/);
+  });
+
+  it("defaults omitted safety fields to a read-only member-local template", () => {
+    const { readonlyDefault: _readonlyDefault, allowWrites: _allowWrites, ...withoutSafety } = validTemplate;
+    expect(parseSharedConnection(withoutSafety)).toMatchObject({
+      readonlyDefault: true,
+      allowWrites: false,
+    });
+  });
 });
 
 describe("publicConnection", () => {
@@ -68,7 +84,7 @@ describe("publicConnection", () => {
     databaseName: "analytics",
     sslmode: "require",
     readonlyDefault: true,
-    allowWrites: true,
+    allowWrites: false,
     environment: "prod",
     schemaGroup: null,
     contentRevision: 2,
@@ -84,7 +100,7 @@ describe("publicConnection", () => {
     )).toMatchObject({
       credentialMode: "managed",
       credentialsRequired: false,
-      allowWrites: true,
+      allowWrites: false,
     });
   });
 

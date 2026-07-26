@@ -57,8 +57,13 @@ export function parseSharedConnection(value: unknown): SharedConnectionInput {
   if (!Number.isInteger(body.port) || Number(body.port) < 1 || Number(body.port) > 65535) {
     throw new Error("Invalid port");
   }
-  if (typeof body.readonlyDefault !== "boolean" || typeof body.allowWrites !== "boolean") {
-    throw new Error("Invalid safety policy");
+  // Shared templates never carry a target write capability. Accept the fixed values
+  // for backwards-compatible clients, but reject any attempt to weaken them.
+  if (
+    (body.readonlyDefault !== undefined && body.readonlyDefault !== true)
+    || (body.allowWrites !== undefined && body.allowWrites !== false)
+  ) {
+    throw new Error("Shared connections are read-only member-local templates");
   }
   const host = text(body.host, 512, true)!;
   if (/[@/?#\s]/.test(host) || host.includes("://")) {
@@ -75,8 +80,8 @@ export function parseSharedConnection(value: unknown): SharedConnectionInput {
     port: Number(body.port),
     database,
     sslmode: text(body.sslmode, 64, true)!,
-    readonlyDefault: body.readonlyDefault,
-    allowWrites: body.allowWrites,
+    readonlyDefault: true,
+    allowWrites: false,
     env: text(body.env, 32),
     schemaGroup: text(body.schemaGroup, 120),
   };
@@ -102,8 +107,8 @@ export function publicConnection(
     port: row.port,
     database: row.databaseName,
     sslmode: row.sslmode,
-    readonlyDefault: row.readonlyDefault,
-    allowWrites: row.allowWrites && (accessMode === "write" || accessMode === "manage"),
+    readonlyDefault: true,
+    allowWrites: false,
     env: row.environment,
     schemaGroup: row.schemaGroup,
     revision: row.contentRevision,

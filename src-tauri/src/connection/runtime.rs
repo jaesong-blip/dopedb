@@ -758,6 +758,14 @@ async fn authorize_pin(
     access: ConnectionAccess,
 ) -> AppResult<ConnectionAuthorization> {
     let write = access == ConnectionAccess::Write;
+    if pin.requires_remote_rbac
+        && pin.profile.credential_mode == WorkspaceCredentialMode::MemberLocal
+        && write
+    {
+        return Err(AppError::Blocked {
+            reason: "shared member-local connections are read-only".into(),
+        });
+    }
     if !pin.profile.workspace_access.can_read()
         || (write && (!pin.profile.workspace_access.can_write() || !pin.profile.allow_writes))
     {

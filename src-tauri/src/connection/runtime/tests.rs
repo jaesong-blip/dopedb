@@ -58,12 +58,17 @@ fn pin(credential_mode: WorkspaceCredentialMode) -> PinnedConnection {
 }
 
 struct RecordingManagedAuthority {
+    authorized_writes: StdSyncMutex<Vec<bool>>,
     requested_writes: StdSyncMutex<Vec<bool>>,
 }
 
 impl RecordingManagedAuthority {
     fn requested_writes(&self) -> Vec<bool> {
         self.requested_writes.lock().unwrap().clone()
+    }
+
+    fn authorized_writes(&self) -> Vec<bool> {
+        self.authorized_writes.lock().unwrap().clone()
     }
 }
 
@@ -73,8 +78,9 @@ impl RemoteConnectionAuthorityPort for RecordingManagedAuthority {
         _account_id: &'a AccountId,
         _workspace_id: WorkspaceId,
         _connection_id: ConnectionId,
-        _write: bool,
+        write: bool,
     ) -> RemoteAuthorityFuture<'a, RemoteConnectionAuthority> {
+        self.authorized_writes.lock().unwrap().push(write);
         Box::pin(async { Ok(RemoteConnectionAuthority { revision: 3 }) })
     }
 
@@ -155,9 +161,31 @@ fn local_and_member_local_read_and_write_never_share_a_cache_key() {
 }
 
 #[tokio::test]
+async fn shared_member_local_write_is_denied_before_remote_authority_or_target_access() {
+    let authority = RecordingManagedAuthority {
+        authorized_writes: StdSyncMutex::new(Vec::new()),
+        requested_writes: StdSyncMutex::new(Vec::new()),
+    };
+    let result = authorize_pin(
+        &authority,
+        &pin(WorkspaceCredentialMode::MemberLocal),
+        ConnectionAccess::Write,
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(crate::error::AppError::Blocked { .. })
+    ));
+    assert!(authority.authorized_writes().is_empty());
+    assert!(authority.requested_writes().is_empty());
+}
+
+#[tokio::test]
 async fn managed_read_requests_read_lease_and_write_opens_a_separate_writable_live() {
     let (profile, path) = managed_sqlite_profile().await;
     let authority = Arc::new(RecordingManagedAuthority {
+        authorized_writes: StdSyncMutex::new(Vec::new()),
         requested_writes: StdSyncMutex::new(Vec::new()),
     });
     let authorization = ConnectionAuthorization {

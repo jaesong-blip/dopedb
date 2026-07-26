@@ -1,10 +1,10 @@
 // Workspace-scoped shared connection collection. Templates intentionally exclude
 // credentials; role and membership are resolved server-side on every request.
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
 import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../lib/http";
-import { workspaceConnection } from "../../../../../../lib/schema";
+import { workspaceConnection, workspaceConnectionGrant } from "../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
 import { parseSharedConnection, publicConnection } from "../../../../../../lib/workspace-connections";
 import {
@@ -28,21 +28,38 @@ export async function GET(request: Request, context: RouteContext) {
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const rows = await db
-    .select()
-    .from(workspaceConnection)
+    .select({ connection: workspaceConnection, capability: workspaceConnectionGrant.capability })
+    .from(workspaceConnectionGrant)
+    .innerJoin(
+      workspaceConnection,
+      and(
+        eq(workspaceConnection.organizationId, workspaceConnectionGrant.organizationId),
+        eq(workspaceConnection.id, workspaceConnectionGrant.connectionId),
+      ),
+    )
     .where(and(
-      eq(workspaceConnection.organizationId, workspaceId),
+      eq(workspaceConnectionGrant.organizationId, workspaceId),
+      eq(workspaceConnectionGrant.memberId, authorization.membership.id),
+      or(
+        eq(workspaceConnection.credentialMode, "managed"),
+        and(
+          eq(workspaceConnection.credentialMode, "member_local"),
+          eq(workspaceConnection.readonlyDefault, true),
+          eq(workspaceConnection.allowWrites, false),
+        ),
+      ),
       isNull(workspaceConnection.deletedAt),
+      isNull(workspaceConnection.revocationPendingAt),
     ))
     .orderBy(desc(workspaceConnection.updatedAt));
   return privateJson({
     workspaceId,
     role: authorization.role,
     accessMode: authorization.accessMode,
-    connections: rows.map((row) => publicConnection(
-      row,
+    connections: rows.map(({ connection, capability }) => publicConnection(
+      connection,
       authorization.role,
-      authorization.accessMode,
+      capability === "manage" ? "manage" : capability === "use" ? "read" : "view",
     )),
   });
 }

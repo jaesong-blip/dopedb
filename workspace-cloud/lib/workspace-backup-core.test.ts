@@ -50,4 +50,22 @@ describe("workspace metadata backup envelope", () => {
       connections: [snapshot.connections[0], { ...snapshot.connections[0] }],
     }, workspaceId)).toThrow(/Invalid workspace backup snapshot/);
   });
+
+  it("keeps a legacy write preference in authenticated backup bytes for safe restore normalization", () => {
+    const legacy = {
+      ...snapshot,
+      connections: [{
+        ...snapshot.connections[0],
+        readonlyDefault: false,
+        allowWrites: true,
+      }],
+    };
+
+    const parsed = parseWorkspaceMetadataSnapshot(legacy, workspaceId);
+    expect(parsed.connections[0]).toMatchObject({
+      readonlyDefault: false,
+      allowWrites: true,
+    });
+    expect(snapshotHash(parsed)).toBe(snapshotHash(legacy));
+  });
 });

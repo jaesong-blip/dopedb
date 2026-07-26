@@ -9,6 +9,7 @@ import { revocationGateLockKey } from "./revocation-gates";
 import {
   workspaceAuditEvent,
   workspaceConnection,
+  workspaceConnectionGrant,
   workspaceResourceConflict,
   workspaceResourceVersion,
 } from "./schema";
@@ -23,7 +24,7 @@ export type MutationAuthority = {
   sessionId: string;
   userId: string;
   membershipId: string;
-  role: "admin" | "owner";
+  role: string;
 };
 
 
@@ -54,12 +55,15 @@ export async function conflictConnectionCandidate({
       JOIN "workspace_control"."member" member
         ON member."id" = ${authority.membershipId} AND member."organization_id" = ${organizationId}
         AND member."user_id" = ${authority.userId}
+      JOIN "workspace_control"."workspace_connection_grant" grant
+        ON grant."organization_id" = ${organizationId}
+        AND grant."connection_id" = ${connectionId}::uuid
+        AND grant."member_id" = member."id" AND grant."capability" = 'manage'
       JOIN authority_lock ON TRUE
       WHERE session."id" = ${authority.sessionId} AND session."user_id" = ${authority.userId}
-        AND session."expires_at" > now() AND member."role" = ${authority.role}
-        AND member."role" IN ('admin', 'owner') AND member."revocation_pending_at" IS NULL
+        AND session."expires_at" > now() AND member."revocation_pending_at" IS NULL
         AND member."revocation_claim_id" IS NULL
-      FOR UPDATE OF session, member
+      FOR UPDATE OF session, member, grant
     ), locked_connection AS MATERIALIZED (
       SELECT "content_revision" FROM ${workspaceConnection}
       WHERE "organization_id" = ${organizationId} AND "id" = ${connectionId}::uuid
@@ -187,20 +191,26 @@ export async function commitConnectionCreate({
         "sslmode" AS "sslmode", "readonly_default" AS "readonlyDefault", "allow_writes" AS "allowWrites",
         "environment" AS "environment", "schema_group" AS "schemaGroup", "credential_mode" AS "credentialMode",
         "content_revision" AS "contentRevision", "updated_at" AS "updatedAt"
+    ), creator_grant AS MATERIALIZED (
+      INSERT INTO ${workspaceConnectionGrant}
+        ("organization_id", "connection_id", "member_id", "capability")
+      SELECT ${organizationId}, inserted."id", ${authority.membershipId}, 'manage'
+      FROM inserted
+      RETURNING "id"
     ), version AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_resource_version"
         ("id", "organization_id", "resource_type", "resource_id", "revision", "base_revision",
          "parent_version_id", "branch", "operation", "payload", "payload_hash", "created_by_user_id")
       SELECT gen_random_uuid(), ${organizationId}, 'connection', inserted."id", 1, 0, NULL, 'main', 'create',
         ${JSON.stringify(input)}::jsonb, ${canonicalHash(input)}, ${authority.userId}
-      FROM inserted RETURNING "id"
+      FROM inserted JOIN creator_grant ON TRUE RETURNING "id"
     ), audit AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_audit_event"
         ("organization_id", "actor_user_id", "action", "resource_type", "resource_id", "redacted_summary", "request_id")
       SELECT ${organizationId}, ${authority.userId}, 'connection.share', 'connection', inserted."id"::text,
         jsonb_build_object('name', inserted."name", 'engine', inserted."engine"), ${requestId}::uuid
       FROM inserted JOIN version ON TRUE RETURNING "id"
-    ) SELECT inserted.* FROM inserted JOIN version ON TRUE JOIN audit ON TRUE
+    ) SELECT inserted.* FROM inserted JOIN creator_grant ON TRUE JOIN version ON TRUE JOIN audit ON TRUE
   `);
   return returnedConnection(result.rows[0]);
 }
@@ -254,12 +264,15 @@ export async function commitConnectionMutation({
       JOIN "workspace_control"."member" member
         ON member."id" = ${authority.membershipId} AND member."organization_id" = ${organizationId}
         AND member."user_id" = ${authority.userId}
+      JOIN "workspace_control"."workspace_connection_grant" grant
+        ON grant."organization_id" = ${organizationId}
+        AND grant."connection_id" = ${connectionId}::uuid
+        AND grant."member_id" = member."id" AND grant."capability" = 'manage'
       JOIN authority_lock ON TRUE
       WHERE session."id" = ${authority.sessionId} AND session."user_id" = ${authority.userId}
-        AND session."expires_at" > now() AND member."role" = ${authority.role}
-        AND member."role" IN ('admin', 'owner') AND member."revocation_pending_at" IS NULL
+        AND session."expires_at" > now() AND member."revocation_pending_at" IS NULL
         AND member."revocation_claim_id" IS NULL
-      FOR UPDATE OF session, member
+      FOR UPDATE OF session, member, grant
     ), parent AS MATERIALIZED (
       SELECT version."id" FROM "workspace_control"."workspace_resource_version" version
       JOIN authority ON TRUE
@@ -327,24 +340,34 @@ export async function restoreWorkspaceSnapshot({
   };
   snapshot: WorkspaceMetadataSnapshot;
 }) {
-  const items = snapshot.connections.map((item) => ({
-    id: item.id,
-    content_revision: item.contentRevision,
-    name: item.name,
-    engine: item.engine,
-    provider: item.provider,
-    driver_id: item.driverId,
-    host: item.host,
-    port: item.port,
-    database_name: item.database,
-    sslmode: item.sslmode,
-    readonly_default: item.readonlyDefault,
-    allow_writes: item.allowWrites,
-    environment: item.env,
-    schema_group: item.schemaGroup,
-    payload: connectionVersionPayload(item),
-    payload_hash: canonicalHash(connectionVersionPayload(item)),
-  }));
+  const items = snapshot.connections.map((item) => {
+    // Historical encrypted snapshots can predate #23's member-local read-only
+    // invariant. Their hash was checked before this point; restore creates a new,
+    // safe immutable version rather than replaying the obsolete write preference.
+    const normalized = {
+      ...item,
+      readonlyDefault: true,
+      allowWrites: false,
+    };
+    return {
+      id: normalized.id,
+      content_revision: normalized.contentRevision,
+      name: normalized.name,
+      engine: normalized.engine,
+      provider: normalized.provider,
+      driver_id: normalized.driverId,
+      host: normalized.host,
+      port: normalized.port,
+      database_name: normalized.database,
+      sslmode: normalized.sslmode,
+      readonly_default: normalized.readonlyDefault,
+      allow_writes: normalized.allowWrites,
+      environment: normalized.env,
+      schema_group: normalized.schemaGroup,
+      payload: connectionVersionPayload(normalized),
+      payload_hash: canonicalHash(connectionVersionPayload(normalized)),
+    };
+  });
   const result = await db.execute<{
     revision: number;
     restored: number;
@@ -465,6 +488,13 @@ export async function restoreWorkspaceSnapshot({
         "content_revision", ${authority.userId}
       FROM missing
       RETURNING "id"
+    ), restored_grants AS MATERIALIZED (
+      INSERT INTO "workspace_control"."workspace_connection_grant"
+        ("organization_id", "connection_id", "member_id", "capability")
+      SELECT ${organizationId}, inserted."id", ${authority.membershipId}, 'manage'
+      FROM inserted
+      ON CONFLICT ("organization_id", "connection_id", "member_id") DO NOTHING
+      RETURNING "connection_id"
     ), created_versions AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_resource_version"
         ("id", "organization_id", "resource_type", "resource_id", "revision", "base_revision",
@@ -473,6 +503,7 @@ export async function restoreWorkspaceSnapshot({
         missing."content_revision" - 1, NULL, 'main', 'restore', missing."payload", missing."payload_hash",
         ${authority.userId}
       FROM missing JOIN inserted ON inserted."id" = missing."id"
+      JOIN restored_grants ON restored_grants."connection_id" = inserted."id"
     ), audit AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_audit_event"
         ("organization_id", "actor_user_id", "action", "resource_type", "resource_id",

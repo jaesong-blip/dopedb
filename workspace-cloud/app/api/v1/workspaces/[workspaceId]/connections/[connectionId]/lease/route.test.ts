@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   activeProviderIntegrationMock,
   auditValuesMock,
-  authorizeWorkspaceMock,
+  authorizeWorkspaceConnectionMock,
   connectionFindFirstMock,
   dbExecuteMock,
   issueManagedLeaseMock,
@@ -15,7 +15,7 @@ const {
 } = vi.hoisted(() => ({
   activeProviderIntegrationMock: vi.fn(),
   auditValuesMock: vi.fn(async () => undefined),
-  authorizeWorkspaceMock: vi.fn(),
+  authorizeWorkspaceConnectionMock: vi.fn(),
   connectionFindFirstMock: vi.fn(),
   dbExecuteMock: vi.fn(async () => ({ rows: [{ value: 1 }] })),
   issueManagedLeaseMock: vi.fn(),
@@ -52,7 +52,7 @@ vi.mock("../../../../../../../../lib/revocation-gates", () => ({
   managedLeaseStillDeliverable: managedLeaseStillDeliverableMock,
 }));
 vi.mock("../../../../../../../../lib/workspace-authorization", () => ({
-  authorizeWorkspace: authorizeWorkspaceMock,
+  authorizeWorkspaceConnection: authorizeWorkspaceConnectionMock,
 }));
 
 import { DELETE, POST } from "./route";
@@ -139,7 +139,7 @@ function releaseRequest(id = leaseId) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  authorizeWorkspaceMock.mockResolvedValue({
+  authorizeWorkspaceConnectionMock.mockResolvedValue({
     ok: true,
     session: { user: { id: "member-user" } },
     membership: { id: memberId },
@@ -164,7 +164,7 @@ beforeEach(() => {
 
 describe("managed credential lease delivery", () => {
   it("passes the exact membership authority snapshot and returns a deliverable lease", async () => {
-    const response = await POST(leaseRequest("write"), context);
+    const response = await POST(leaseRequest("read"), context);
 
     expect(response.status).toBe(200);
     expect(issueManagedLeaseMock).toHaveBeenCalledWith({
@@ -175,7 +175,7 @@ describe("managed credential lease delivery", () => {
       role: "admin",
       connectionRevision: 17,
       engine: "postgres",
-      accessMode: "write",
+      accessMode: "read",
       integration,
       resource,
       oidcToken: "vercel-oidc",
@@ -191,14 +191,14 @@ describe("managed credential lease delivery", () => {
       engine: "postgres",
       integrationId,
       provider: "neon",
-      accessMode: "write",
+      accessMode: "read",
     }, lease);
     await expect(response.json()).resolves.toMatchObject({
       lease: {
         id: leaseId,
         engine: "postgres",
         password: "one-time-secret",
-        accessMode: "write",
+        accessMode: "read",
       },
     });
     expect(revokeActiveLeasesMock).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe("managed credential lease delivery", () => {
   it("revokes only the issued lease and returns no secret when the final gate closes", async () => {
     managedLeaseStillDeliverableMock.mockResolvedValue(false);
 
-    const response = await POST(leaseRequest("write"), context);
+    const response = await POST(leaseRequest("read"), context);
     const body = await response.json();
 
     expect(response.status).toBe(409);
@@ -278,10 +278,11 @@ describe("managed credential lease delivery", () => {
     const response = await POST(leaseRequest("read"), context);
 
     expect(response.status).toBe(200);
-    expect(authorizeWorkspaceMock).toHaveBeenCalledWith(
+    expect(authorizeWorkspaceConnectionMock).toHaveBeenCalledWith(
       expect.any(Request),
       workspaceId,
-      "read",
+      connectionId,
+      "use",
     );
     expect(issueManagedLeaseMock).toHaveBeenCalledWith(
       expect.objectContaining({ accessMode: "read" }),
@@ -291,23 +292,13 @@ describe("managed credential lease delivery", () => {
     });
   });
 
-  it("rejects write access when the shared connection is read-only", async () => {
-    connectionFindFirstMock.mockResolvedValue({
-      id: connectionId,
-      engine: "postgres",
-      allowWrites: false,
-      credentialMode: "managed",
-      providerIntegrationId: integrationId,
-      providerResource: resource,
-      revision: 17,
-    });
-
+  it("rejects managed write leases before any authority or provider touch", async () => {
     const response = await POST(leaseRequest("write"), context);
 
     expect(response.status).toBe(403);
     expect(issueManagedLeaseMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
-      error: "Writing is disabled for this connection",
+      error: "Managed write leases are not available through shared connections",
     });
   });
 
@@ -328,10 +319,10 @@ describe("managed credential lease delivery", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(authorizeWorkspaceMock).not.toHaveBeenCalled();
+    expect(authorizeWorkspaceConnectionMock).not.toHaveBeenCalled();
     expect(issueManagedLeaseMock).not.toHaveBeenCalled();
     await expect(response.json()).resolves.toEqual({
-      error: "Managed access mode must be read or write",
+      error: "Managed access mode must be read",
     });
   });
 
@@ -339,9 +330,10 @@ describe("managed credential lease delivery", () => {
     const response = await DELETE(releaseRequest(), context);
 
     expect(response.status).toBe(200);
-    expect(authorizeWorkspaceMock).toHaveBeenCalledWith(
+    expect(authorizeWorkspaceConnectionMock).toHaveBeenCalledWith(
       expect.any(Request),
       workspaceId,
+      connectionId,
       "view",
     );
     expect(revokeActiveLeasesMock).toHaveBeenCalledWith({

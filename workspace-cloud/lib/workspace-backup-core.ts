@@ -119,7 +119,39 @@ export function parseWorkspaceMetadataSnapshot(
       ) {
         throw new Error("Invalid workspace backup snapshot");
       }
-      return { id, contentRevision: Number(contentRevision), ...parseSharedConnection(template) };
+      return {
+        id,
+        contentRevision: Number(contentRevision),
+        ...parseBackupConnection(template),
+      };
     }),
   };
+}
+
+/**
+ * Backups created before the member-local read-only migration may contain an
+ * old write preference. They are encrypted and hash-verified as their exact
+ * historical bytes, then normalized only when restore writes a new projection.
+ * Every other field still goes through the same strict secret/unknown-key parser.
+ */
+function parseBackupConnection(template: Record<string, unknown>) {
+  const readonlyDefault = template.readonlyDefault;
+  const allowWrites = template.allowWrites;
+  if (
+    (readonlyDefault === undefined || typeof readonlyDefault === "boolean")
+    && (allowWrites === undefined || typeof allowWrites === "boolean")
+    && (readonlyDefault === false || allowWrites === true)
+  ) {
+    const safe = parseSharedConnection({
+      ...template,
+      readonlyDefault: true,
+      allowWrites: false,
+    });
+    return {
+      ...safe,
+      readonlyDefault: readonlyDefault ?? true,
+      allowWrites: allowWrites ?? false,
+    };
+  }
+  return parseSharedConnection(template);
 }

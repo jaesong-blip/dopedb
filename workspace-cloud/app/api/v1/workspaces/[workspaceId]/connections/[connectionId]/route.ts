@@ -11,7 +11,7 @@ import {
   releaseRevocationGateClaim,
 } from "../../../../../../../lib/revocation-gates";
 import { workspaceConnection, workspaceProviderIntegration } from "../../../../../../../lib/schema";
-import { authorizeWorkspace } from "../../../../../../../lib/workspace-authorization";
+import { authorizeWorkspaceConnection } from "../../../../../../../lib/workspace-authorization";
 import { parseSharedConnection, publicConnection } from "../../../../../../../lib/workspace-connections";
 import {
   connectionVersionPayload,
@@ -35,7 +35,7 @@ function mutationAuthority(authorization: {
     sessionId: authorization.session.session.id,
     userId: authorization.session.user.id,
     membershipId: authorization.membership.id,
-    role: authorization.role as "admin" | "owner",
+    role: authorization.role,
   };
 }
 
@@ -51,15 +51,25 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Invalid workspace or connection id", 400);
   }
   const body = (await request.json().catch(() => null)) as { action?: unknown } | null;
-  if (body?.action !== "read" && body?.action !== "write") {
-    return jsonError("Action must be read or write", 400);
+  if (body?.action === "write") {
+    // A member-local shared template never carries a target write capability.
+    return jsonError("Shared connections are read-only", 403);
   }
-  const authorization = await authorizeWorkspace(request, workspaceId, body.action);
+  if (body?.action !== "read") {
+    return jsonError("Action must be read", 400);
+  }
+  const authorization = await authorizeWorkspaceConnection(
+    request,
+    workspaceId,
+    connectionId,
+    "use",
+  );
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const [connection] = await db.select({
     id: workspaceConnection.id,
     revision: workspaceConnection.revision,
     contentRevision: workspaceConnection.contentRevision,
+    readonlyDefault: workspaceConnection.readonlyDefault,
     allowWrites: workspaceConnection.allowWrites,
     credentialMode: workspaceConnection.credentialMode,
     provider: workspaceConnection.provider,
@@ -93,21 +103,23 @@ export async function POST(request: Request, context: RouteContext) {
   if (connection.revocationPendingAt) {
     return jsonError("Connection access is changing. Retry shortly.", 409);
   }
-  if (
-    connection.credentialMode === "managed"
-    && (
-      !connection.providerIntegrationId
-      || connection.integrationProvider !== connection.provider
-      || connection.integrationStatus !== "active"
-      || connection.integrationRevokedAt !== null
-      || connection.integrationRevocationPendingAt !== null
-      || connection.integrationRevocationClaimId !== null
-    )
-  ) {
-    return jsonError("Managed provider access is unavailable or changing", 409);
+  if (connection.credentialMode === "member_local" && (
+    !connection.readonlyDefault || connection.allowWrites
+  )) {
+    return jsonError("Shared connection template is unsafe", 409);
   }
-  if (body.action === "write" && !connection.allowWrites) {
-    return jsonError("Writing is disabled for this connection", 403);
+  if (connection.credentialMode === "managed" && (
+    !connection.providerIntegrationId
+    || connection.integrationStatus !== "active"
+    || connection.integrationProvider !== connection.provider
+    || connection.integrationRevokedAt
+    || connection.integrationRevocationPendingAt
+    || connection.integrationRevocationClaimId
+  )) {
+    return jsonError("Shared connection template is unsafe", 409);
+  }
+  if (connection.credentialMode !== "member_local" && connection.credentialMode !== "managed") {
+    return jsonError("Shared connection template is unsafe", 409);
   }
   return privateJson({
     allowed: true,
@@ -124,11 +136,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
-  const authorization = await authorizeWorkspace(request, workspaceId, "manage");
+  const authorization = await authorizeWorkspaceConnection(
+    request, workspaceId, connectionId, "manage",
+  );
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  if (authorization.role !== "admin" && authorization.role !== "owner") {
-    return jsonError("Workspace access denied", 403);
-  }
   const authority = mutationAuthority(authorization);
   let expectedRevision: number | null;
   try {
@@ -240,11 +251,10 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
-  const authorization = await authorizeWorkspace(request, workspaceId, "manage");
+  const authorization = await authorizeWorkspaceConnection(
+    request, workspaceId, connectionId, "manage",
+  );
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  if (authorization.role !== "admin" && authorization.role !== "owner") {
-    return jsonError("Workspace access denied", 403);
-  }
   const authority = mutationAuthority(authorization);
   let expectedRevision: number | null;
   try {

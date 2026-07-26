@@ -7,6 +7,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("./db", () => ({ db: { execute: executeMock } }));
 
 import {
+  commitConnectionCreate,
   commitConnectionMutation,
   conflictConnectionCandidate,
   restoreWorkspaceSnapshot,
@@ -45,6 +46,8 @@ describe("atomic backup restore command", () => {
     expect(query.sql).toContain('UPDATE "workspace_control"."workspace_profile"');
     expect(query.sql).toContain('INSERT INTO "workspace_control"."workspace_resource_conflict"');
     expect(query.sql).toContain('INSERT INTO "workspace_control"."workspace_connection"');
+    expect(query.sql).toContain('INSERT INTO "workspace_control"."workspace_connection_grant"');
+    expect(query.sql).toContain("restored_grants AS MATERIALIZED");
     expect(query.sql).toContain('INSERT INTO "workspace_control"."workspace_resource_version"');
     expect(query.sql).toContain('INSERT INTO "workspace_control"."workspace_audit_event"');
     expect(query.sql).toContain("pg_advisory_xact_lock");
@@ -73,6 +76,35 @@ describe("atomic backup restore command", () => {
     })).resolves.toBeNull();
     expect(executeMock).toHaveBeenCalledOnce();
   });
+
+  it("restores a pre-read-only backup as a newly safe projection without changing its input identity", async () => {
+    executeMock.mockResolvedValue({ rows: [] });
+    const legacySnapshot = {
+      ...snapshot,
+      connections: [{
+        ...snapshot.connections[0],
+        readonlyDefault: false,
+        allowWrites: true,
+      }],
+    };
+
+    await restoreWorkspaceSnapshot({
+      organizationId, backupId, expectedRevision: 4, sourceRevision: 4,
+      authority: { sessionId: "session-id", userId: "admin-user", membershipId: "member-id", role: "admin" },
+      snapshot: legacySnapshot,
+    });
+
+    const query = new PgDialect().sqlToQuery(executeMock.mock.calls[0]![0]);
+    expect(query.params.some((param) => (
+      typeof param === "string"
+      && param.includes('"readonly_default":true')
+      && param.includes('"allow_writes":false')
+    ))).toBe(true);
+    expect(legacySnapshot.connections[0]).toMatchObject({
+      readonlyDefault: false,
+      allowWrites: true,
+    });
+  });
 });
 
 describe("atomic connection mutation commands", () => {
@@ -84,6 +116,18 @@ describe("atomic connection mutation commands", () => {
     host: "db.example.com", port: 5432, database: "analytics", sslmode: "require",
     readonlyDefault: true, allowWrites: false, env: "prod", schemaGroup: null, deleted: false,
   };
+
+  it("creates an explicit manage grant atomically with a new shared template", async () => {
+    executeMock.mockResolvedValue({ rows: [] });
+    await expect(commitConnectionCreate({
+      organizationId, connectionId, authority, input: payload,
+    })).resolves.toBeNull();
+    const query = new PgDialect().sqlToQuery(executeMock.mock.calls[0]![0]);
+    expect(query.sql).toContain('INSERT INTO "workspace_control"."workspace_connection_grant"');
+    expect(query.sql).toContain("creator_grant AS MATERIALIZED");
+    expect(query.sql).toContain("FROM inserted JOIN creator_grant ON TRUE");
+    expect(query.sql).toContain("JOIN creator_grant ON TRUE JOIN version ON TRUE");
+  });
 
   it("makes projection, version, and audit depend on the exact authority and claim", async () => {
     executeMock.mockResolvedValue({ rows: [] });
@@ -104,6 +148,8 @@ describe("atomic connection mutation commands", () => {
     expect(query.sql).toContain('FROM updated JOIN version ON TRUE');
     expect(query.sql).toContain('session."expires_at" > now()');
     expect(query.sql).toContain('member."revocation_pending_at" IS NULL');
+    expect(query.sql).toContain('grant."capability" = \'manage\'');
+    expect(query.sql).toContain('FOR UPDATE OF session, member, grant');
   });
 
   it("maps raw SQL aliases and int8/timestamp wire values before public projection", async () => {

@@ -107,6 +107,8 @@ export const member = workspaceControl.table(
   },
   (table) => [
     uniqueIndex("member_organization_user_idx").on(table.organizationId, table.userId),
+    // Makes a connection grant's tenant/member composite foreign key enforceable.
+    uniqueIndex("member_organization_id_idx").on(table.organizationId, table.id),
     index("member_user_idx").on(table.userId),
     check(
       "member_revocation_claim_consistent",
@@ -383,6 +385,51 @@ export const workspaceConnection = workspaceControl.table(
     ),
     check("workspace_connection_content_revision", sql`${table.contentRevision} >= 1 AND ${table.contentRevision} <= 9007199254740991`),
     check("workspace_connection_revision", sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`),
+    // A shared template is a member-local, secretless read template. Managed
+    // integrations remain a separately named provider-control-plane capability.
+    check(
+      "workspace_connection_member_local_read_only",
+      sql`(${table.credentialMode} = 'member_local' AND ${table.readonlyDefault} = TRUE AND ${table.allowWrites} = FALSE)
+        OR ${table.credentialMode} = 'managed'`,
+    ),
+  ],
+);
+
+// Target-database access is an explicit resource grant, never an implication of a
+// workspace role. Composite foreign keys keep both the member and template in the
+// same tenant even when an otherwise valid UUID is supplied by another workspace.
+export const workspaceConnectionGrant = workspaceControl.table(
+  "workspace_connection_grant",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    memberId: text("member_id").notNull(),
+    capability: text("capability").notNull().default("view"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_connection_grant_org_connection_member_idx").on(
+      table.organizationId,
+      table.connectionId,
+      table.memberId,
+    ),
+    index("workspace_connection_grant_org_member_idx").on(table.organizationId, table.memberId),
+    foreignKey({
+      columns: [table.organizationId, table.connectionId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "workspace_connection_grant_org_connection_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.memberId],
+      foreignColumns: [member.organizationId, member.id],
+      name: "workspace_connection_grant_org_member_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_connection_grant_capability",
+      sql`${table.capability} IN ('view', 'use', 'manage')`,
+    ),
   ],
 );
 

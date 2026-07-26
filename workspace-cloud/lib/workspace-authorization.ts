@@ -5,7 +5,7 @@ import "server-only";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "./db";
 import { auth } from "./auth";
-import { member } from "./schema";
+import { member, workspaceConnection, workspaceConnectionGrant } from "./schema";
 import {
   accessModeForRole,
   hasWorkspaceCapability,
@@ -14,6 +14,20 @@ import {
 } from "./workspace-permissions";
 
 export type { WorkspaceRoleName } from "./workspace-permissions";
+
+export type WorkspaceConnectionCapability = "view" | "use" | "manage";
+
+const connectionCapabilityRank: Record<WorkspaceConnectionCapability, number> = {
+  view: 0,
+  use: 1,
+  manage: 2,
+};
+
+function connectionAccessMode(capability: WorkspaceConnectionCapability) {
+  if (capability === "manage") return "manage" as const;
+  if (capability === "use") return "read" as const;
+  return "view" as const;
+}
 
 export async function authorizeWorkspace(
   request: Request,
@@ -46,5 +60,47 @@ export async function authorizeWorkspace(
     membership,
     role: membership.role,
     accessMode: accessModeForRole(membership.role),
+  };
+}
+
+/**
+ * Authorizes a target-database template separately from the workspace role.
+ * A known UUID is joined through the tenant-scoped grant and non-deleted
+ * connection, so membership alone can never turn into database access.
+ */
+export async function authorizeWorkspaceConnection(
+  request: Request,
+  organizationId: string,
+  connectionId: string,
+  required: WorkspaceConnectionCapability,
+) {
+  const workspace = await authorizeWorkspace(request, organizationId, "view");
+  if (!workspace.ok) return workspace;
+  const [grant] = await db.select({ capability: workspaceConnectionGrant.capability })
+    .from(workspaceConnectionGrant)
+    .innerJoin(
+      workspaceConnection,
+      and(
+        eq(workspaceConnection.organizationId, workspaceConnectionGrant.organizationId),
+        eq(workspaceConnection.id, workspaceConnectionGrant.connectionId),
+      ),
+    )
+    .where(and(
+      eq(workspaceConnectionGrant.organizationId, organizationId),
+      eq(workspaceConnectionGrant.connectionId, connectionId),
+      eq(workspaceConnectionGrant.memberId, workspace.membership.id),
+      isNull(workspaceConnection.deletedAt),
+      isNull(workspaceConnection.revocationPendingAt),
+    ))
+    .limit(1);
+  const capability = grant?.capability as WorkspaceConnectionCapability | undefined;
+  if (!capability || connectionCapabilityRank[capability] < connectionCapabilityRank[required]) {
+    return { ok: false as const, status: 403, error: "Connection grant denied" };
+  }
+  return {
+    ...workspace,
+    ok: true as const,
+    connectionCapability: capability,
+    accessMode: connectionAccessMode(capability),
   };
 }

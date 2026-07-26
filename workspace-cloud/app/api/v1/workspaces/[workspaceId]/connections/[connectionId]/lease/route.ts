@@ -18,7 +18,7 @@ import {
   workspaceCredentialLease,
   rateLimit,
 } from "../../../../../../../../lib/schema";
-import { authorizeWorkspace } from "../../../../../../../../lib/workspace-authorization";
+import { authorizeWorkspaceConnection } from "../../../../../../../../lib/workspace-authorization";
 
 type RouteContext = {
   params: Promise<{ workspaceId: string; connectionId: string }>;
@@ -71,9 +71,9 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Managed access request is too large", 413);
   }
   if (!payloadText.trim()) {
-    return jsonError("Managed access mode must be read or write", 400);
+    return jsonError("Managed access mode must be read", 400);
   }
-  let requestedAccessMode: "read" | "write";
+  let requestedAccessMode: "read";
   try {
     const payload = JSON.parse(payloadText) as { accessMode?: unknown };
     if (
@@ -82,16 +82,17 @@ export async function POST(request: Request, context: RouteContext) {
       || typeof payload.accessMode !== "string"
       || !["read", "write"].includes(payload.accessMode)
     ) {
-      return jsonError("Managed access mode must be read or write", 400);
+      return jsonError("Managed access mode must be read", 400);
     }
-    requestedAccessMode = payload.accessMode as "read" | "write";
+    if (payload.accessMode === "write") {
+      return jsonError("Managed write leases are not available through shared connections", 403);
+    }
+    requestedAccessMode = "read";
   } catch {
     return jsonError("Managed access request must be valid JSON", 400);
   }
-  const authorization = await authorizeWorkspace(
-    request,
-    workspaceId,
-    requestedAccessMode,
+  const authorization = await authorizeWorkspaceConnection(
+    request, workspaceId, connectionId, "use",
   );
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const connection = await db.query.workspaceConnection.findFirst({
@@ -116,9 +117,6 @@ export async function POST(request: Request, context: RouteContext) {
     || !connection.providerIntegrationId
   ) {
     return jsonError("Managed database access is not available", 409);
-  }
-  if (requestedAccessMode === "write" && !connection.allowWrites) {
-    return jsonError("Writing is disabled for this connection", 403);
   }
   const integration = await activeProviderIntegration(
     workspaceId,
@@ -191,10 +189,8 @@ export async function POST(request: Request, context: RouteContext) {
       return jsonError("Database access could not be audited", 500);
     }
     const [currentAuthorization, deliverable] = await Promise.all([
-      authorizeWorkspace(
-        request,
-        workspaceId,
-        accessMode === "write" ? "write" : "read",
+      authorizeWorkspaceConnection(
+        request, workspaceId, connectionId, "use",
       ),
       managedLeaseStillDeliverable({
         leaseId: lease.leaseId,
@@ -283,7 +279,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   // Cleanup remains available after a write/read downgrade, but not after membership
   // removal; an unreachable credential then expires through the durable sweeper.
-  const authorization = await authorizeWorkspace(request, workspaceId, "view");
+  const authorization = await authorizeWorkspaceConnection(request, workspaceId, connectionId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   if (
     !await consumeLeaseReleaseBudget(

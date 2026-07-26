@@ -5,9 +5,14 @@ use super::*;
 fn remote_connection(value: RemoteConnectionResponse) -> AppResult<(ConnectionProfile, i64)> {
     let id = Uuid::parse_str(&value.id)
         .map_err(|_| AppError::Network("shared connection returned an invalid id".into()))?;
-    if value.name.trim().is_empty() || value.name.len() > 120 || value.host.len() > 512 {
+    if value.name.trim().is_empty()
+        || value.name.len() > 120
+        || value.host.len() > 512
+        || !value.readonly_default
+        || value.allow_writes
+    {
         return Err(AppError::Network(
-            "shared connection returned invalid metadata".into(),
+            "shared connection returned an unsafe member-local template".into(),
         ));
     }
     let access = crate::store::parse_workspace_access(value.access_mode)?;
@@ -43,7 +48,8 @@ fn remote_connection(value: RemoteConnectionResponse) -> AppResult<(ConnectionPr
             sslmode: value.sslmode,
             extra_params: Default::default(),
             readonly_default: value.readonly_default,
-            allow_writes: value.allow_writes && access.can_write(),
+            // A shared member-local template never delegates target write authority.
+            allow_writes: false,
             secret_ref: None,
             env: value.env,
             schema_group: value.schema_group,
@@ -116,8 +122,9 @@ pub(super) async fn share_connection(
         port: profile.port,
         database: &profile.database,
         sslmode: &profile.sslmode,
-        readonly_default: profile.readonly_default,
-        allow_writes: profile.allow_writes,
+        // Do not let a local write preference cross the shared-template boundary.
+        readonly_default: true,
+        allow_writes: false,
         env: &profile.env,
         schema_group: &profile.schema_group,
     };
@@ -381,4 +388,65 @@ pub(super) async fn release_managed_connection_lease(
         return Err(oauth_error(response).await);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn response() -> RemoteConnectionResponse {
+        RemoteConnectionResponse {
+            id: Uuid::from_u128(9).to_string(),
+            name: "analytics".into(),
+            engine: "postgres".into(),
+            provider: "generic".into(),
+            driver_id: None,
+            host: "db.example.test".into(),
+            port: 5432,
+            database: "analytics".into(),
+            sslmode: "require".into(),
+            readonly_default: true,
+            allow_writes: false,
+            env: None,
+            schema_group: None,
+            revision: 1,
+            access_mode: "read".into(),
+            credential_mode: "member_local".into(),
+        }
+    }
+
+    #[test]
+    fn shared_template_parser_fails_closed_for_writes_or_local_wire_values() {
+        let mut write = response();
+        write.allow_writes = true;
+        assert!(remote_connection(write).is_err());
+
+        let mut local = response();
+        local.credential_mode = "local".into();
+        assert!(remote_connection(local).is_err());
+    }
+
+    #[test]
+    fn shared_template_parser_preserves_only_read_only_member_local_values() {
+        let (profile, revision) = remote_connection(response()).expect("safe shared template");
+        assert_eq!(revision, 1);
+        assert_eq!(
+            profile.credential_mode,
+            WorkspaceCredentialMode::MemberLocal
+        );
+        assert!(profile.readonly_default);
+        assert!(!profile.allow_writes);
+    }
+
+    #[test]
+    fn managed_template_is_secretless_and_reaches_the_lease_only_profile() {
+        let mut managed = response();
+        managed.credential_mode = "managed".into();
+        let (profile, revision) = remote_connection(managed).expect("managed lease template");
+        assert_eq!(revision, 1);
+        assert_eq!(profile.credential_mode, WorkspaceCredentialMode::Managed);
+        assert!(profile.secret_ref.is_none());
+        assert!(profile.username.is_empty());
+        assert!(!profile.allow_writes);
+    }
 }

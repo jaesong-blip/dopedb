@@ -208,6 +208,10 @@ describe("durable revocation gate SQL", () => {
       '"workspace_control"."workspace_connection"."revision" =',
     );
     expect(query).toContain(
+      '"workspace_control"."workspace_connection_grant"."capability" IN (\'use\', \'manage\')',
+    );
+    expect(query).toContain('"workspace_control"."workspace_connection_grant"."member_id" =');
+    expect(query).toContain(
       '"workspace_control"."workspace_provider_integration"."status" = \'active\'',
     );
     expect(query).toContain("generate_series(1, 5)");

@@ -8,6 +8,7 @@ import { db } from "./db";
 import {
   member,
   workspaceConnection,
+  workspaceConnectionGrant,
   workspaceCredentialLease,
   workspaceProviderIntegration,
 } from "./schema";
@@ -304,7 +305,18 @@ function capabilityPredicate(input: ManagedLeaseAuthority) {
   return input.accessMode === "write"
     ? sql`${member.role} IN ('editor', 'admin', 'owner')
         AND ${workspaceConnection.allowWrites} = TRUE`
-    : sql`${member.role} IN ('analyst', 'editor', 'admin', 'owner')`;
+    // Target-database access is granted separately from workspace roles. A live
+    // workspace viewer with a `use` grant is therefore eligible for a read lease.
+    : sql`${member.role} IN ('viewer', 'analyst', 'editor', 'admin', 'owner')`;
+}
+
+function connectionGrantPredicate(input: ManagedLeaseAuthority) {
+  return sql`
+    ${workspaceConnectionGrant.organizationId} = ${input.organizationId}
+    AND ${workspaceConnectionGrant.connectionId} = ${input.connectionId}::uuid
+    AND ${workspaceConnectionGrant.memberId} = ${input.memberId}
+    AND ${workspaceConnectionGrant.capability} IN ('use', 'manage')
+  `;
 }
 
 function authorityPredicate(input: ManagedLeaseAuthority) {
@@ -316,6 +328,7 @@ function authorityPredicate(input: ManagedLeaseAuthority) {
     AND ${member.revocationPendingAt} IS NULL
     AND ${member.revocationClaimId} IS NULL
     AND ${capabilityPredicate(input)}
+    AND ${connectionGrantPredicate(input)}
     AND ${workspaceConnection.id} = ${input.connectionId}::uuid
     AND ${workspaceConnection.organizationId} = ${input.organizationId}
     AND ${workspaceConnection.deletedAt} IS NULL
@@ -368,7 +381,7 @@ export async function reserveManagedLeaseIfUnblocked(
     db.execute<{ status: string }>(sql`
     WITH authority AS (
       SELECT 1 AS "allowed"
-      FROM ${member}, ${workspaceConnection}, ${workspaceProviderIntegration}
+      FROM ${member}, ${workspaceConnection}, ${workspaceConnectionGrant}, ${workspaceProviderIntegration}
       WHERE ${authorityPredicate(input)}
     ),
     free_slots AS (
@@ -427,7 +440,7 @@ export async function finalizeManagedLeaseIfUnblocked(
     SET "external_credential_id" = ${lease.externalCredentialId},
         "external_credential_kind" = ${lease.externalCredentialKind},
         "expires_at" = ${expiresAt}
-    FROM ${member}, ${workspaceConnection}, ${workspaceProviderIntegration}
+    FROM ${member}, ${workspaceConnection}, ${workspaceConnectionGrant}, ${workspaceProviderIntegration}
     WHERE ${authorityPredicate(input)}
       AND lease."id" = ${input.leaseId}::uuid
       AND lease."organization_id" = ${input.organizationId}
@@ -456,7 +469,7 @@ export async function managedLeaseStillDeliverable(
     db.execute(sql`WITH ${authorityLockStatement(input)}`),
     db.execute<{ id: string }>(sql`
     SELECT lease."id"::text AS "id"
-    FROM ${member}, ${workspaceConnection}, ${workspaceProviderIntegration},
+    FROM ${member}, ${workspaceConnection}, ${workspaceConnectionGrant}, ${workspaceProviderIntegration},
          ${workspaceCredentialLease} AS lease
     WHERE ${authorityPredicate(input)}
       AND lease."id" = ${input.leaseId}::uuid

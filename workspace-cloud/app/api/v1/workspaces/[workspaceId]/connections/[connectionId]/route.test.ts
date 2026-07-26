@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   authorizationRows,
-  authorizeWorkspaceMock,
+  authorizeWorkspaceConnectionMock,
   batchMock,
   claimMock,
   clearMock,
@@ -19,7 +19,7 @@ const {
   const updateWhereMock = vi.fn(() => ({ returning: updateReturningMock }));
   return {
     authorizationRows: [] as unknown[],
-    authorizeWorkspaceMock: vi.fn(),
+    authorizeWorkspaceConnectionMock: vi.fn(),
     batchMock: vi.fn(),
     claimMock: vi.fn(),
     clearMock: vi.fn(),
@@ -75,7 +75,7 @@ vi.mock("../../../../../../../lib/revocation-gates", () => ({
   releaseRevocationGateClaim: releaseMock,
 }));
 vi.mock("../../../../../../../lib/workspace-authorization", () => ({
-  authorizeWorkspace: authorizeWorkspaceMock,
+  authorizeWorkspaceConnection: authorizeWorkspaceConnectionMock,
 }));
 vi.mock("../../../../../../../lib/workspace-versioning-store", () => ({
   commitConnectionMutation: commitMock,
@@ -152,7 +152,7 @@ const connection = {
   databaseName: "app",
   sslmode: "verify-full",
   readonlyDefault: true,
-  allowWrites: true,
+  allowWrites: false,
   environment: null,
   schemaGroup: null,
   credentialMode: "member_local",
@@ -169,6 +169,7 @@ beforeEach(() => {
     id: connectionId,
     revision: connection.revision,
     contentRevision: connection.contentRevision,
+    readonlyDefault: connection.readonlyDefault,
     allowWrites: connection.allowWrites,
     credentialMode: connection.credentialMode,
     provider: connection.provider,
@@ -180,7 +181,7 @@ beforeEach(() => {
     integrationRevocationPendingAt: null,
     integrationRevocationClaimId: null,
   });
-  authorizeWorkspaceMock.mockResolvedValue({
+  authorizeWorkspaceConnectionMock.mockResolvedValue({
     ok: true,
     role: "admin",
     accessMode: "manage",
@@ -232,18 +233,30 @@ describe("connection authority mutation gate", () => {
     });
   });
 
-  it("rejects write authorization when the shared template disables writes", async () => {
-    authorizationRows[0] = {
-      ...authorizationRows[0] as object,
-      allowWrites: false,
-    };
-
+  it("rejects a write action before authority or target lookup", async () => {
     const response = await POST(authorizationRequest("write"), context);
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
-      error: "Writing is disabled for this connection",
+      error: "Shared connections are read-only",
     });
+    expect(authorizeWorkspaceConnectionMock).not.toHaveBeenCalled();
+  });
+
+  it("requires a fresh per-connection use grant for a known connection UUID", async () => {
+    authorizeWorkspaceConnectionMock.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      error: "Connection grant denied",
+    });
+
+    const response = await POST(authorizationRequest("read"), context);
+
+    expect(response.status).toBe(403);
+    expect(authorizeWorkspaceConnectionMock).toHaveBeenCalledWith(
+      expect.any(Request), workspaceId, connectionId, "use",
+    );
+    expect(connectionFindMock).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -279,7 +292,7 @@ describe("connection authority mutation gate", () => {
       integrationRevocationPendingAt: null,
       integrationRevocationClaimId: null,
     },
-  ])("fails managed authorization closed for a $label integration", async (state) => {
+  ])("fails a managed connection closed for a $label integration", async (state) => {
     authorizationRows[0] = {
       ...authorizationRows[0] as object,
       credentialMode: "managed",
@@ -292,11 +305,11 @@ describe("connection authority mutation gate", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
-      error: "Managed provider access is unavailable or changing",
+      error: "Shared connection template is unsafe",
     });
   });
 
-  it("authorizes a managed connection only with its active matching integration", async () => {
+  it("authorizes an active managed template without returning credential material", async () => {
     authorizationRows[0] = {
       ...authorizationRows[0] as object,
       credentialMode: "managed",
@@ -312,9 +325,11 @@ describe("connection authority mutation gate", () => {
     const response = await POST(authorizationRequest("read"), context);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    await expect(response.json()).resolves.toEqual({
       allowed: true,
       action: "read",
+      role: "admin",
+      accessMode: "manage",
       revision: 1,
     });
   });
