@@ -138,15 +138,15 @@ jobs:
           mkdir -p release-alias
           case "$TARGET" in
             x86_64-pc-windows-msvc)
-              pattern="DopeDB_*_x64-setup.exe"
+              source_name="DopeDB_${GITHUB_REF_NAME#app-v}_x64-setup.exe"
               alias="DopeDB-windows-x64-setup.exe"
               ;;
             aarch64-apple-darwin)
-              pattern="DopeDB_*_aarch64.dmg"
+              source_name="DopeDB_${GITHUB_REF_NAME#app-v}_aarch64.dmg"
               alias="DopeDB-macos-arm64.dmg"
               ;;
             x86_64-apple-darwin)
-              pattern="DopeDB_*_x64.dmg"
+              source_name="DopeDB_${GITHUB_REF_NAME#app-v}_x64.dmg"
               alias="DopeDB-macos-x64.dmg"
               ;;
             *)
@@ -155,20 +155,22 @@ jobs:
               ;;
           esac
 
-          gh release download "$tag" --pattern "$pattern" --dir release-alias
-          src="$(find release-alias -maxdepth 1 -type f -name "$pattern" | head -n 1)"
-          if [[ -z "${src:-}" || ! -f "$src" ]]; then
-            echo "No release asset matching $pattern found for $TARGET" >&2
+          gh release download "$tag" --pattern "$source_name" --dir release-alias
+          matches=(release-alias/"$source_name")
+          if [[ "${#matches[@]}" -ne 1 || ! -f "${matches[0]}" ]]; then
+            echo "Expected exactly one current-version asset $source_name for $TARGET" >&2
             exit 1
           fi
 
-          cp "$src" "release-alias/$alias"
+          cp "${matches[0]}" "release-alias/$alias"
           gh release upload "$tag" "release-alias/$alias" --clobber
 
   finalize-release:
     needs: publish-tauri
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Full signed archives are downloaded twice (draft and anonymous public
+    # paths) before this immutable release is considered complete.
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -178,6 +180,9 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
+
+      - name: Install isolated Rust updater verifier
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Finalize public updater URLs
         env:
@@ -205,41 +210,88 @@ jobs:
             release-finalize/latest.json \
             --clobber
 
-      - name: Publish the completed immutable release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          # Clobbering latest.json changes its asset size and digest. GitHub's
+          # draft asset metadata can lag the upload, so retry only that exact
+          # stale-metadata condition; every closure/schema failure stops now.
+          node scripts/release/wait-for-finalized-latest.mjs \
+            --manifest release-finalize/latest.json \
+            --assets release-finalize/assets.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME"
 
-      - name: Verify public updater downloads
+      - name: Verify complete draft updater closure
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          curl --fail --location --silent --show-error \
-            "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json" \
-            --output release-finalize/public-latest.json
+          version="${GITHUB_REF_NAME#app-v}"
+          mkdir -p release-finalize/draft-assets
+          for asset in \
+            "DopeDB_${version}_aarch64.app.tar.gz" \
+            "DopeDB_${version}_aarch64.app.tar.gz.sig" \
+            "DopeDB_${version}_x64.app.tar.gz" \
+            "DopeDB_${version}_x64.app.tar.gz.sig" \
+            "DopeDB_${version}_x64-setup.exe" \
+            "DopeDB_${version}_x64-setup.exe.sig"; do
+            gh release download "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" \
+              --dir release-finalize/draft-assets
+          done
 
           node scripts/release/finalize-updater-json.mjs \
-            --manifest release-finalize/public-latest.json \
+            --manifest release-finalize/latest.json \
             --assets release-finalize/assets.json \
             --repository "$GITHUB_REPOSITORY" \
             --tag "$GITHUB_REF_NAME" \
             --check
 
-          jq -r '.platforms[].url' release-finalize/public-latest.json |
-            sort -u |
-            while IFS= read -r asset_url; do
-              content_type="$(
-                curl --fail --location --silent --show-error \
-                  --range 0-0 \
-                  --dump-header - \
-                  --output /dev/null \
-                  "$asset_url" |
-                  awk 'BEGIN { IGNORECASE=1 } /^content-type:/ { value=$0 } END { sub(/\r$/, "", value); print value }'
-              )"
-              if [[ "$content_type" == *"application/json"* ]]; then
-                echo "Updater URL returned JSON instead of an installer: $asset_url" >&2
-                exit 1
-              fi
-            done
+          cargo run --locked -p release-updater-verify -- \
+            --manifest release-finalize/latest.json \
+            --assets release-finalize/assets.json \
+            --downloads release-finalize/draft-assets \
+            --repository "$GITHUB_REPOSITORY" \
+            --root "$GITHUB_WORKSPACE" \
+            --tag "$GITHUB_REF_NAME"
+
+      # GitHub immutable published releases can change only title and notes,
+      # so public verification cannot precede the sole publish PATCH. All
+      # draft closure, digest, and independent Minisign gates above run first;
+      # the draft leaves the previous latest intact until this one REST
+      # operation atomically publishes and selects the new latest release.
+      - name: Publish the verified immutable release as latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # `id` is GitHub's GraphQL node ID (for example RE_kw...), whereas
+          # the REST PATCH endpoint requires the numeric `databaseId`.
+          release_id="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json databaseId --jq .databaseId)"
+          if [[ ! "$release_id" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Release databaseId is missing or invalid." >&2
+            exit 1
+          fi
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false \
+            -f make_latest=true \
+            --silent
+
+      - name: Verify anonymous tag-specific public updater downloads
+        run: |
+          set -euo pipefail
+
+          node scripts/release/download-public-updater-assets.mjs \
+            --latest-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/latest.json" \
+            --assets release-finalize/assets.json \
+            --output release-finalize/public-assets \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME"
+
+          cargo run --locked -p release-updater-verify -- \
+            --manifest release-finalize/public-assets/latest.json \
+            --assets release-finalize/assets.json \
+            --downloads release-finalize/public-assets \
+            --repository "$GITHUB_REPOSITORY" \
+            --root "$GITHUB_WORKSPACE" \
+            --tag "$GITHUB_REF_NAME"
