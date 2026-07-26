@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, STILL_ACTIVE};
 use windows_sys::Win32::System::Threading::{
