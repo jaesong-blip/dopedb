@@ -192,6 +192,7 @@ mod tests {
     use ts_rs::{Config, TS};
 
     use super::{Catalog, Column, DatabaseObject, ForeignKey, Index, Table};
+    use crate::model::normalize_generated_contract_newlines;
 
     const HEADER: &str = "// Generated from src-tauri/src/features/catalog/domain.rs by ts-rs 12.0.1.\n// Do not edit; run pnpm generate:contracts.\n\nimport type { Constraint as CatalogConstraint, IndexKey as CatalogIndexKey, ObjectRef as CatalogObjectRef } from \"./protocol-contracts\";\n\n";
 
@@ -241,7 +242,8 @@ mod tests {
         let actual = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
         assert_eq!(
-            actual, expected,
+            normalize_generated_contract_newlines(&actual),
+            normalize_generated_contract_newlines(&expected),
             "Rust catalog serde contract drifted; run pnpm generate:contracts"
         );
     }

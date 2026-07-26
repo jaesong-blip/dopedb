@@ -197,7 +197,10 @@ mod tests {
 
     use super::{DesktopSqlInspectionReceipt, DesktopSqlProposalReceipt};
     use crate::kernel::identity::OperationId;
-    use crate::model::{Classification, PreviewMode, PreviewReport, QueryKind, RiskLevel};
+    use crate::model::{
+        normalize_generated_contract_newlines, Classification, PreviewMode, PreviewReport,
+        QueryKind, RiskLevel,
+    };
     use crate::operations::OperationState;
 
     const HEADER: &str = "// Generated Query receipt contracts from src-tauri/src/features/queries/adapters/desktop_contracts.rs by ts-rs 12.0.1.\n// Do not edit; run pnpm generate:contracts.\n\nimport type { Classification, PreviewReport } from \"../../../ipc/generated/model\";\nimport type { OperationState } from \"../../../ipc/generated/protocol-contracts\";\n\n";
@@ -245,7 +248,8 @@ mod tests {
         let actual = std::fs::read_to_string(&output_path)
             .unwrap_or_else(|error| panic!("read {}: {error}", output_path.display()));
         assert_eq!(
-            actual, expected,
+            normalize_generated_contract_newlines(&actual),
+            normalize_generated_contract_newlines(&expected),
             "Rust Query receipt serde contract drifted; run pnpm generate:contracts"
         );
     }
@@ -261,7 +265,10 @@ mod tests {
             "confirmationPhrase: string | null",
             "expiresAt: string",
         ] {
-            assert!(generated.contains(expected), "missing generated contract: {expected}");
+            assert!(
+                generated.contains(expected),
+                "missing generated contract: {expected}"
+            );
         }
     }
 

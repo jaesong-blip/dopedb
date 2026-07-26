@@ -400,6 +400,18 @@ pub struct HistoryEntry {
     pub origin: String,
 }
 
+/// Normalizes only platform line-ending representation before test-only generated
+/// contract equality checks. Whitespace, declarations, and all other bytes remain
+/// significant so the deterministic generators still catch semantic drift.
+#[cfg(test)]
+pub(crate) fn normalize_generated_contract_newlines(source: &str) -> std::borrow::Cow<'_, str> {
+    if source.contains('\r') {
+        std::borrow::Cow::Owned(source.replace("\r\n", "\n").replace('\r', "\n"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    }
+}
+
 #[cfg(test)]
 mod contracts {
     use std::path::PathBuf;
@@ -486,8 +498,32 @@ mod contracts {
         let actual = std::fs::read_to_string(&output_path)
             .unwrap_or_else(|error| panic!("read {}: {error}", output_path.display()));
         assert_eq!(
-            actual, expected,
+            super::normalize_generated_contract_newlines(&actual),
+            super::normalize_generated_contract_newlines(&expected),
             "Rust model serde contract drifted; run pnpm generate:contracts"
+        );
+    }
+
+    #[test]
+    fn generated_contract_newline_normalization_preserves_all_other_drift() {
+        let expected = "export type Contract = { field: string };\n";
+        assert_eq!(
+            super::normalize_generated_contract_newlines(
+                "export type Contract = { field: string };\r\n"
+            ),
+            super::normalize_generated_contract_newlines(expected),
+        );
+        assert_ne!(
+            super::normalize_generated_contract_newlines(
+                "export type Contract = { field: string }; \r\n"
+            ),
+            super::normalize_generated_contract_newlines(expected),
+        );
+        assert_ne!(
+            super::normalize_generated_contract_newlines(
+                "export type Contract = { field: number };\r\n"
+            ),
+            super::normalize_generated_contract_newlines(expected),
         );
     }
 
@@ -505,7 +541,10 @@ mod contracts {
             "filter?: JsonValue | null",
             "pipeline: Array<JsonValue>",
         ] {
-            assert!(generated.contains(expected), "missing generated contract: {expected}");
+            assert!(
+                generated.contains(expected),
+                "missing generated contract: {expected}"
+            );
         }
     }
 
