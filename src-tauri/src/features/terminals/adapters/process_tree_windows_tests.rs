@@ -4,12 +4,12 @@
 // inherited the production Job Object before it is closed.
 
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, STILL_ACTIVE};
 use windows_sys::Win32::System::Threading::{
@@ -24,6 +24,8 @@ const CHILD_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
 const DESCENDANT_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
 const MAX_PTY_DIAGNOSTIC_BYTES: usize = 1024;
+const CURSOR_POSITION_REQUEST: &[u8] = b"\x1b[6n";
+const CURSOR_POSITION_RESPONSE: &[u8] = b"\x1b[1;1R";
 
 #[derive(Debug)]
 struct DescendantIdentity {
@@ -42,36 +44,89 @@ struct MarkerFiles {
 /// from a missing marker without turning failure output into an unbounded log.
 #[derive(Clone)]
 struct PtyOutputCapture {
-    bytes: Arc<Mutex<Vec<u8>>>,
+    state: Arc<Mutex<PtyOutputState>>,
+}
+
+struct PtyOutputState {
+    bytes: Vec<u8>,
+    cursor_position_responses: usize,
+    cursor_position_response_error: Option<String>,
+}
+
+/// PowerShell can ask the ConPTY client for the cursor position before it
+/// processes `-EncodedCommand`. Keep this byte-stream parser stateful because
+/// the four-byte request can arrive split across PTY reads.
+#[derive(Default)]
+struct CursorPositionResponder {
+    matched: usize,
+}
+
+impl CursorPositionResponder {
+    fn observe(&mut self, bytes: &[u8]) -> usize {
+        let mut responses = 0;
+        for &byte in bytes {
+            if byte == CURSOR_POSITION_REQUEST[self.matched] {
+                self.matched += 1;
+                if self.matched == CURSOR_POSITION_REQUEST.len() {
+                    responses += 1;
+                    self.matched = 0;
+                }
+            } else {
+                self.matched = usize::from(byte == CURSOR_POSITION_REQUEST[0]);
+            }
+        }
+        responses
+    }
 }
 
 impl PtyOutputCapture {
-    fn start(mut reader: Box<dyn Read + Send>) -> Self {
-        let bytes = Arc::new(Mutex::new(Vec::with_capacity(MAX_PTY_DIAGNOSTIC_BYTES)));
-        let captured = Arc::clone(&bytes);
+    fn start(mut reader: Box<dyn Read + Send>, mut writer: Box<dyn Write + Send>) -> Self {
+        let state = Arc::new(Mutex::new(PtyOutputState {
+            bytes: Vec::with_capacity(MAX_PTY_DIAGNOSTIC_BYTES),
+            cursor_position_responses: 0,
+            cursor_position_response_error: None,
+        }));
+        let captured = Arc::clone(&state);
         let _ = std::thread::spawn(move || {
             let mut chunk = [0_u8; 256];
+            let mut responder = CursorPositionResponder::default();
             loop {
                 let count = match reader.read(&mut chunk) {
                     Ok(0) | Err(_) => return,
                     Ok(count) => count,
                 };
+                let responses = responder.observe(&chunk[..count]);
                 let mut output = captured
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
-                let remaining = MAX_PTY_DIAGNOSTIC_BYTES.saturating_sub(output.len());
-                output.extend_from_slice(&chunk[..count.min(remaining)]);
+                let remaining = MAX_PTY_DIAGNOSTIC_BYTES.saturating_sub(output.bytes.len());
+                output
+                    .bytes
+                    .extend_from_slice(&chunk[..count.min(remaining)]);
+                if responses > 0 && output.cursor_position_response_error.is_none() {
+                    for _ in 0..responses {
+                        if let Err(error) = writer
+                            .write_all(CURSOR_POSITION_RESPONSE)
+                            .and_then(|_| writer.flush())
+                        {
+                            output.cursor_position_response_error = Some(error.to_string());
+                            break;
+                        }
+                        output.cursor_position_responses += 1;
+                    }
+                }
             }
         });
-        Self { bytes }
+        Self { state }
     }
 
     fn diagnostic(&self) -> String {
         let output = self
-            .bytes
+            .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let printable = output
+            .bytes
             .iter()
             .map(|byte| match byte {
                 b'\n' | b'\r' | b'\t' | b' '..=b'~' => char::from(*byte),
@@ -79,8 +134,10 @@ impl PtyOutputCapture {
             })
             .collect::<String>();
         format!(
-            "pty_output_bytes={}; pty_output={printable:?}",
-            output.len()
+            "pty_output_bytes={}; cursor_position_responses={}; cursor_position_response_error={:?}; pty_output={printable:?}",
+            output.bytes.len(),
+            output.cursor_position_responses,
+            output.cursor_position_response_error,
         )
     }
 }
@@ -325,6 +382,15 @@ fn marker_diagnostic(markers: &MarkerFiles) -> String {
 }
 
 #[test]
+fn cursor_position_responder_handles_split_conpty_requests() {
+    let mut responder = CursorPositionResponder::default();
+    assert_eq!(responder.observe(b"\x1b["), 0);
+    assert_eq!(responder.observe(b"6n"), 1);
+    assert_eq!(responder.observe(b"ignored\x1b[6n\x1b[6n"), 2);
+    assert_eq!(responder.observe(b"\x1b[5\x1b[6n"), 1);
+}
+
+#[test]
 fn descendant_marker_accepts_only_one_positive_pid() {
     assert_eq!(parse_descendant_process_id("42\n"), Some(42));
     assert_eq!(parse_descendant_process_id("0"), None);
@@ -362,7 +428,10 @@ fn windows_job_cleanup_prevents_a_descendant_from_outliving_the_pty() {
             pixel_height: 0,
         })
         .unwrap();
-    let output = PtyOutputCapture::start(pair.master.try_clone_reader().unwrap());
+    let output = PtyOutputCapture::start(
+        pair.master.try_clone_reader().unwrap(),
+        pair.master.take_writer().unwrap(),
+    );
     let encoded_script = powershell_encoded(&parent_script(&markers));
     let mut command = CommandBuilder::new("powershell.exe");
     command.args([
