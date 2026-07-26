@@ -9,20 +9,21 @@ import { useEffect, useRef, useState } from "react";
 import {
   approveOperation,
   cancelQuery,
-  proposeSql,
   rejectOperation,
-  runSql,
 } from "../ipc/commands";
 import type {
-  Classification,
   Engine,
   ExecOutcome,
-  PreviewReport,
-  RiskLevel,
   SafetySettings,
-  SqlOperationProposal,
 } from "../ipc/types";
 import { errMessage, isQueryCancellationError } from "../ipc/types";
+import { proposeSql, runSql } from "../features/queries/tauriAdapter";
+import type {
+  Classification,
+  PreviewReport,
+  RiskLevel,
+  SqlOperationProposal,
+} from "../features/queries/domain";
 import { Icon, type IconName } from "./Icon";
 import LazySqlViewer from "./LazySqlViewer";
 import { useI18n, type I18nKey } from "../lib/i18n";

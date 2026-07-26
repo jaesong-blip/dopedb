@@ -34,9 +34,10 @@ gh workflow run canary.yml --ref main -f source_ref="$branch"
 - `src/components/`: 여러 화면이 공유하는 UI 조각.
 - `src/lib/`: 렌더 마크업 없는 순수 로직/헤드리스 상태(i18n, agentFeed 등).
 - `src/lib/queries.ts` + `queryClient.tsx`: TanStack Query 기반 앱 전역 읽기 캐시. 백엔드 읽기는 전부 여기 등록된 쿼리로 접근한다.
-- `src/ipc/`: Tauri invoke 래퍼(`commands.ts`)와 Rust 데이터 계약 미러(`types.ts`).
+- `src/ipc/`: 아직 기능 슬라이스로 이동하지 않은 공용 Tauri invoke 래퍼와 여러
+  기능이 실제로 공유하는 Rust 데이터 계약 미러.
 - `src/design-system/`: 토큰(`tokens.css`)과 공통 클래스(`system.css`) — 상세는 `src/design-system/README.md`.
-- `src-tauri/src/`: `driver`(레지스트리/선택), `connection`, `introspect`, `executor`, `migrations`, `safety`, `audit`, `services`, `operations`, `broker`, `terminal`, `store`, `commands` 도메인 모듈 + `model.rs`(데이터 계약).
+- `src-tauri/src/`: `driver`(레지스트리/선택), `connection`, `introspect`, `executor`, `migrations`, `safety`, `audit`, `services`, `operations`, `broker`, `store`, `commands` 도메인 모듈 + `model.rs`(공용 데이터 계약).
 - `src-tauri/src/features/`: 기능별 `domain → application → ports` 코어와 `adapters`, `transport`, composition 경계. 코어는 Tauri·SQLx·Store·ConnectionManager를 직접 참조하지 않는다.
 - `src-tauri/src/kernel/`: 기능 사이에서 공유하는 타입 식별자·권한·오류 같은 작은 순수 프리미티브.
 - `dopedb-protocol/`, `dopedb-cli/`, `site/`: 별개 하위 프로젝트(각자 자체 빌드).

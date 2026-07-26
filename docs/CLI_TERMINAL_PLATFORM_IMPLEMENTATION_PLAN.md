@@ -246,9 +246,15 @@ src-tauri/src/
       ports.rs
       adapters/
       transport.rs
+    queries/
+      domain.rs
+      application.rs
+      ports.rs
+      adapters/
+      transport.rs
+    terminals/
   services/
     mod.rs
-    query_service.rs
     document_service.rs
   operations/
     mod.rs
@@ -266,9 +272,9 @@ src-tauri/src/
     server.rs
     peer.rs
     session.rs
-    dispatch.rs
-  terminal/
+    dispatch/
   skills/
+    inventory/
   jobs/
   ddl/
   plugins/

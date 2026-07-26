@@ -48,7 +48,7 @@ impl AppState {
             Arc::new(crate::features::workspaces::adapters::HostedWorkspaceControlPlane),
         );
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
-        let broker = BrokerRuntime::new(operation.runtime_id());
+        let broker = BrokerRuntime::new(operation.runtime_id().into());
         let terminals = terminals::compose(
             store.clone(),
             broker.clone(),

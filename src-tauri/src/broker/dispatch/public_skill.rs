@@ -14,7 +14,7 @@ pub(super) async fn handle(
                 protocol_min: PROTOCOL_MIN,
                 protocol_max: PROTOCOL_MAX,
                 command_schema_version: COMMAND_SCHEMA_VERSION,
-                runtime_id: dispatcher.runtime_id,
+                runtime_id: dispatcher.runtime_id.into(),
             },
         ),
         CommandName::Status => dispatcher.execute_public::<StatusCommand>(
@@ -23,7 +23,7 @@ pub(super) async fn handle(
                 app_version: dispatcher.app_version.into(),
                 protocol_min: PROTOCOL_MIN,
                 protocol_max: PROTOCOL_MAX,
-                runtime_id: dispatcher.runtime_id,
+                runtime_id: dispatcher.runtime_id.into(),
             },
         ),
         CommandName::AppOpen => {
@@ -161,7 +161,7 @@ impl BrokerDispatcher {
         window.unminimize().map_err(|_| ErrorCode::Internal)?;
         window.set_focus().map_err(|_| ErrorCode::Internal)?;
         Ok(AppOpenResult {
-            runtime_id: Some(self.runtime_id),
+            runtime_id: Some(self.runtime_id.into()),
             launched: false,
             ready: true,
         })

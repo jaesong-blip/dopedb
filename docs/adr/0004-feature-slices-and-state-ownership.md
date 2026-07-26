@@ -16,8 +16,11 @@ layers. A folder move alone would not prevent the same drift.
 - Keep domain, application, and port modules free of Tauri, SQLx, keychain, network, and
   global-state dependencies.
 - Wire concrete adapters only at a feature composition boundary.
-- Use distinct identity types and composite resource identities.
+- Use distinct identity types and composite resource identities; convert raw UUIDs only
+  at versioned transport or persistence boundaries.
 - Give each mutable state one reducer or runtime owner.
+- Keep Rust Tauri commands, renderer command literals, and feature-private wire contracts
+  beside the owning feature; central facades may retain only genuinely shared contracts.
 - Keep process-backed feature state behind one runtime writer; its Tauri transport,
   frontend command literals, and wire contracts stay feature-owned.
 - Keep cross-feature platform dispatchers thin: envelope validation and authentication
@@ -33,7 +36,8 @@ layers. A folder move alone would not prevent the same drift.
 - Preserve retired persisted data through read-only adapters and immutable migrations;
   delete its former runtime, command, service, and compatibility-facade paths.
 - Model resumable or concurrent work with explicit state machines.
-- Delete the previous runtime path in the same completed feature slice.
+- Delete the previous runtime path, central wrappers, and compatibility re-exports in the
+  same completed feature slice.
 - Enforce boundaries, file-size ratchets, state owners, and removed symbols in CI.
 
 ## Consequences

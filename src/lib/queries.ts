@@ -16,7 +16,6 @@ import {
   platformFeatureFlags,
   refreshCatalog,
   runDocumentRead,
-  runSqlRead,
   skillStatus,
 } from "../ipc/commands";
 import type { CatalogTable, Engine, QueryResult } from "../ipc/types";
@@ -34,6 +33,7 @@ import {
 import { listErdLayouts } from "../features/erd/tauriAdapter";
 import { jobConnectionId } from "../features/jobs/domain";
 import { listJobs } from "../features/jobs/tauriAdapter";
+import { runSqlRead } from "../features/queries/tauriAdapter";
 import { buildCountQuery, buildPageQuery, type GridSort } from "./sqlBuild";
 import { tableKey } from "./tableRef";
 

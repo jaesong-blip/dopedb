@@ -15,12 +15,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::sync::Notify;
-use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
-
+use crate::kernel::identity::RuntimeId;
 use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
+use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 #[cfg(windows)]
 pub(crate) use peer::restrict_path_to_current_user;
@@ -35,7 +34,7 @@ pub(crate) struct BrokerRuntimeStatus {
 }
 
 struct BrokerRuntimeInner {
-    runtime_id: Uuid,
+    runtime_id: RuntimeId,
     sessions: BrokerSessionRegistry,
     shutdown: CancellationToken,
     status: Mutex<BrokerRuntimeStatus>,
@@ -50,7 +49,7 @@ pub(crate) struct BrokerRuntime {
 }
 
 impl BrokerRuntime {
-    pub(crate) fn new(runtime_id: Uuid) -> Self {
+    pub(crate) fn new(runtime_id: RuntimeId) -> Self {
         Self {
             inner: Arc::new(BrokerRuntimeInner {
                 runtime_id,
@@ -64,7 +63,7 @@ impl BrokerRuntime {
         }
     }
 
-    pub(crate) fn runtime_id(&self) -> Uuid {
+    pub(crate) fn runtime_id(&self) -> RuntimeId {
         self.inner.runtime_id
     }
 

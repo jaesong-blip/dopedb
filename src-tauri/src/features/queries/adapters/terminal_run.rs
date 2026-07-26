@@ -22,7 +22,8 @@ use super::errors::{
     AgentQueryExecutionFailure, AgentQueryProvenanceFailure, AgentQueryRunError,
     AgentQueryRunPrepareError,
 };
-use super::terminal_plan::{StoredAgentReadPayload, TerminalQueryAdapter};
+use super::platform::QueryPlatformAdapter;
+use super::terminal_plan::StoredAgentReadPayload;
 use super::terminal_support::{
     audit_best_effort, capture_agent_read_policy, persist_history, pool_ref, record_run_failure,
 };
@@ -227,7 +228,7 @@ impl PreparedAgentQueryRun {
     }
 }
 
-impl TerminalQueryAdapter {
+impl QueryPlatformAdapter {
     pub(super) async fn prepare(
         &self,
         plan_id: OperationId,

@@ -22,7 +22,7 @@ use uuid::Uuid;
 use super::adapters::SeedQueryPlanForTest;
 use super::{
     compose_with_adapter, AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError,
-    TerminalQueryAdapter, TerminalQueryPlanRequest,
+    QueryPlatformAdapter, TerminalQueryPlanRequest,
 };
 
 fn profile(id: Uuid, database: String) -> ConnectionProfile {
@@ -50,7 +50,7 @@ fn profile(id: Uuid, database: String) -> ConnectionProfile {
 
 struct SqliteHarness {
     queries: super::QueriesFeature,
-    adapter: TerminalQueryAdapter,
+    adapter: QueryPlatformAdapter,
     operation: OperationRuntime,
     store: Store,
     connections: ConnectionManager,

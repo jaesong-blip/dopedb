@@ -131,9 +131,9 @@ impl BrokerDispatcher {
         let authority = terminal_authority(session, client_protocol_version);
         let receipt = self
             .services()?
-            .query
+            .queries
             .propose_terminal_sql(TerminalSqlProposalRequest {
-                connection_id: connection.id,
+                connection_id: connection.id.into(),
                 sql: arguments.sql,
                 authority: authority.clone(),
             })
@@ -141,7 +141,7 @@ impl BrokerDispatcher {
             .map_err(|error| map_application_error(error.into_error()))?;
         self.services()?
             .operation
-            .show_terminal(&authority, receipt.operation_id)
+            .show_terminal(&authority, receipt.operation_id.into())
             .await
             .map_err(map_operation_error)
     }

@@ -1,17 +1,20 @@
-//! Terminal Agent query use cases, independent of persistence and pool adapters.
+//! SQL query use cases, independent of persistence and pool adapters.
 
 use crate::kernel::identity::OperationId;
 use crate::kernel::TerminalAuthority;
 
-use super::domain::TerminalQueryPlanRequest;
-use super::ports::TerminalQueryPort;
+use super::domain::{
+    DesktopSqlClassificationRequest, DesktopSqlPreviewRequest, DesktopSqlProposalRequest,
+    TerminalQueryPlanRequest, TerminalSqlProposalRequest,
+};
+use super::ports::{DesktopQueryPort, TerminalQueryPort};
 
 #[derive(Clone)]
-pub(crate) struct TerminalQueryUseCases<P> {
+pub(crate) struct QueryUseCases<P> {
     port: P,
 }
 
-impl<P> TerminalQueryUseCases<P>
+impl<P> QueryUseCases<P>
 where
     P: TerminalQueryPort,
 {
@@ -32,5 +35,45 @@ where
         authority: &TerminalAuthority,
     ) -> Result<P::PreparedRun, P::PrepareError> {
         self.port.prepare_terminal_run(plan_id, authority).await
+    }
+}
+
+impl<P> QueryUseCases<P>
+where
+    P: DesktopQueryPort,
+{
+    pub(crate) async fn classify_desktop_sql(
+        &self,
+        request: DesktopSqlClassificationRequest,
+    ) -> Result<P::ClassificationReceipt, P::InspectionError> {
+        self.port.classify_desktop_sql(request).await
+    }
+
+    pub(crate) async fn preview_desktop_sql(
+        &self,
+        request: DesktopSqlPreviewRequest,
+    ) -> Result<P::PreviewReceipt, P::InspectionError> {
+        self.port.preview_desktop_sql(request).await
+    }
+
+    pub(crate) async fn propose_desktop_sql(
+        &self,
+        request: DesktopSqlProposalRequest,
+    ) -> Result<P::ProposalReceipt, P::InspectionError> {
+        self.port.propose_desktop_sql(request).await
+    }
+
+    pub(crate) async fn propose_terminal_sql(
+        &self,
+        request: TerminalSqlProposalRequest,
+    ) -> Result<P::ProposalReceipt, P::InspectionError> {
+        self.port.propose_terminal_sql(request).await
+    }
+
+    pub(crate) async fn run_desktop_sql(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<P::RunReceipt, P::RunError> {
+        self.port.run_desktop_sql(operation_id).await
     }
 }

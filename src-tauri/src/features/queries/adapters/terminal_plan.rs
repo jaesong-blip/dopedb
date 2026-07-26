@@ -6,9 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use uuid::Uuid;
 
-use crate::connection::{
-    ensure_terminal_pin, ConnectionAccess, ConnectionLease, ConnectionManager,
-};
+use crate::connection::{ensure_terminal_pin, ConnectionAccess, ConnectionLease};
 use crate::error::AppError;
 #[cfg(test)]
 use crate::kernel::agent_policy::MAX_AGENT_ROWS;
@@ -17,17 +15,15 @@ use crate::kernel::identity::{ConnectionId, OperationId};
 use crate::monitoring;
 use crate::operations::{
     agent_actor_for_pin, NewOperation, OperationKind, OperationPlanDisposition, OperationRiskLevel,
-    OperationRuntime,
 };
 use crate::safety;
-use crate::store::Store;
 
 use super::super::domain::{
     planning_guidance, AgentQueryInvocationOrigin, AgentQueryPlan, TerminalQueryPlanRequest,
 };
 use super::super::ports::TerminalQueryPort;
 use super::errors::{AgentQueryPlanError, AgentQueryRunPrepareError};
-use super::provenance::TerminalQueryRunRegistry;
+use super::platform::QueryPlatformAdapter;
 use super::terminal_support::{
     audit_best_effort, bounded_max_rows, capture_agent_read_policy, pool_ref,
 };
@@ -51,31 +47,7 @@ pub(crate) struct SeedQueryPlanForTest {
     pub(crate) actor_id: Option<String>,
 }
 
-/// Concrete platform adapter; this is the only Terminal-query code that owns Store,
-/// connection runtime, Operation Runtime, and ephemeral provenance state together.
-#[derive(Clone)]
-pub(crate) struct TerminalQueryAdapter {
-    pub(super) store: Store,
-    pub(super) connections: ConnectionManager,
-    pub(super) operation: OperationRuntime,
-    pub(super) terminal_runs: TerminalQueryRunRegistry,
-}
-
-impl TerminalQueryAdapter {
-    pub(crate) fn new(
-        store: Store,
-        connections: ConnectionManager,
-        operation: OperationRuntime,
-        terminal_runs: TerminalQueryRunRegistry,
-    ) -> Self {
-        Self {
-            store,
-            connections,
-            operation,
-            terminal_runs,
-        }
-    }
-
+impl QueryPlatformAdapter {
     /// Seeds a durable plan only for crate characterization fixtures.
     #[cfg(test)]
     pub(crate) async fn seed_plan_for_test(
@@ -141,7 +113,7 @@ impl AgentQueryPlanReceipt {
     }
 }
 
-impl TerminalQueryAdapter {
+impl QueryPlatformAdapter {
     async fn plan(
         &self,
         request: TerminalQueryPlanRequest,
@@ -292,7 +264,7 @@ fn operation_risk(classification: &crate::model::Classification) -> OperationRis
     }
 }
 
-impl TerminalQueryPort for TerminalQueryAdapter {
+impl TerminalQueryPort for QueryPlatformAdapter {
     type PlanReceipt = AgentQueryPlanReceipt;
     type PreparedRun = super::terminal_run::PreparedAgentQueryRun;
     type PlanError = AgentQueryPlanError;

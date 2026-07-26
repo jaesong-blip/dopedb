@@ -1,7 +1,7 @@
-//! Terminal Agent SQL-read contracts and pure planning guidance.
+//! SQL query contracts and pure planning guidance.
 //!
 //! These values deliberately contain only typed identities and allowlisted display
-//! data; pool, Store, Operation Runtime, and protocol UUID conversion stay in adapters.
+//! data; platform persistence, pool handles, and protocol UUID conversion stay in adapters.
 
 use chrono::{DateTime, Utc};
 
@@ -16,6 +16,36 @@ pub(crate) struct TerminalQueryPlanRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) sql: String,
     pub(crate) max_rows: Option<u64>,
+    pub(crate) authority: TerminalAuthority,
+}
+
+/// Desktop SQL classification input after transport decoding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DesktopSqlClassificationRequest {
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) sql: String,
+}
+
+/// Desktop SQL impact-preview input after transport decoding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DesktopSqlPreviewRequest {
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) sql: String,
+}
+
+/// Immutable desktop SQL proposal input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DesktopSqlProposalRequest {
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) sql: String,
+    pub(crate) origin: Option<String>,
+}
+
+/// Terminal SQL proposal input bound to an authenticated authority.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TerminalSqlProposalRequest {
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) sql: String,
     pub(crate) authority: TerminalAuthority,
 }
 

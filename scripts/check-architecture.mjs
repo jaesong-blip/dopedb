@@ -2,6 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
+import {
+  collectQueryCentralIpcDiagnostics,
+  collectQueryFrontendOwnershipDiagnostics,
+} from "./architecture/query-frontend-ownership.mjs";
+import {
+  collectQueryCentralCommandDiagnostics,
+  collectQueryProductionModuleDiagnostics,
+  collectQueryRuntimeOwnershipDiagnostics,
+  collectQuerySharedCoreDiagnostics,
+  collectQueryTestModuleDiagnostics,
+  collectQueryTauriCommandDiagnostics,
+  collectRemovedQueryRuntimeDiagnostics,
+  collectRuntimeIdDiagnostics,
+} from "./architecture/query-rust-runtime-guards.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -12,6 +26,10 @@ function relative(file) {
 
 function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
+}
+
+function exists(relativePath) {
+  return fs.existsSync(path.join(root, relativePath));
 }
 
 function walk(directory) {
@@ -54,6 +72,25 @@ const sourceFiles = [
 ].filter((file) => /\.(?:rs|ts|tsx)$/.test(file));
 
 const ratchet = JSON.parse(read("scripts/architecture-ratchet.json"));
+const architectureContext = {
+  exists,
+  lineCount,
+  ratchet,
+  read,
+  relative,
+  sourceFiles,
+  walk,
+};
+for (const filePath of [
+  "scripts/architecture/query-frontend-ownership.mjs",
+  "scripts/architecture/query-rust-runtime-guards.mjs",
+]) {
+  requireFile(filePath);
+  const lines = lineCount(read(filePath));
+  if (lines > 500) {
+    fail(`${filePath}: architecture guard module has ${lines} lines; keep it below 500`);
+  }
+}
 const oversized = new Map(Object.entries(ratchet.oversizedFiles));
 for (const file of sourceFiles) {
   const filePath = relative(file);
@@ -127,6 +164,7 @@ const removedPaths = [
   "src-tauri/src/agent_cli.rs",
   "src-tauri/src/legacy_chat.rs",
   "src-tauri/src/services/legacy_chat_service.rs",
+  "src-tauri/src/services/query_service.rs",
   "src-tauri/src/services/terminal_run_registry.rs",
   "src-tauri/src/skills/inventory.rs",
   "src-tauri/src/broker/dispatch.rs",
@@ -160,17 +198,9 @@ const skillInventoryModules = [
   "src-tauri/src/skills/inventory/ports.rs",
   "src-tauri/src/skills/inventory/status.rs",
 ];
-const queryFeatureModules = [
-  "src-tauri/src/features/queries/mod.rs",
-  "src-tauri/src/features/queries/application.rs",
-  "src-tauri/src/features/queries/domain.rs",
-  "src-tauri/src/features/queries/ports.rs",
-  "src-tauri/src/features/queries/adapters/mod.rs",
-  "src-tauri/src/features/queries/adapters/errors.rs",
-  "src-tauri/src/features/queries/adapters/provenance.rs",
-  "src-tauri/src/features/queries/adapters/terminal_plan.rs",
-  "src-tauri/src/features/queries/adapters/terminal_run.rs",
-  "src-tauri/src/features/queries/adapters/terminal_support.rs",
+const queryFrontendModules = [
+  "src/features/queries/domain.ts",
+  "src/features/queries/tauriAdapter.ts",
 ];
 const i18nCatalogModules = [
   "src/lib/i18n/catalogs/activity.ts",
@@ -202,11 +232,11 @@ const i18nCoreModules = [
 ];
 const boundedReplacementModules = [
   ...skillInventoryModules,
-  ...queryFeatureModules,
+  ...queryFrontendModules,
   ...i18nCoreModules,
   ...i18nCatalogModules,
 ];
-for (const filePath of boundedReplacementModules) {
+for (const filePath of skillInventoryModules) {
   requireFile(filePath);
   const lines = lineCount(read(filePath));
   if (lines > ratchet.featureFileLineLimit) {
@@ -215,9 +245,22 @@ for (const filePath of boundedReplacementModules) {
     );
   }
 }
+for (const diagnostic of collectQueryProductionModuleDiagnostics(architectureContext)) {
+  fail(diagnostic);
+}
+for (const filePath of boundedReplacementModules.slice(skillInventoryModules.length)) {
+  requireFile(filePath);
+  const lines = lineCount(read(filePath));
+  if (lines > ratchet.featureFileLineLimit) {
+    fail(
+      `${filePath}: replacement module has ${lines} lines; keep migrated modules below ${ratchet.featureFileLineLimit}`,
+    );
+  }
+}
+for (const diagnostic of collectQueryTestModuleDiagnostics(architectureContext)) fail(diagnostic);
 for (const [directory, expected] of [
   ["src-tauri/src/skills/inventory", skillInventoryModules],
-  ["src-tauri/src/features/queries", queryFeatureModules],
+  ["src/features/queries", queryFrontendModules],
   ["src/lib/i18n", [...i18nCoreModules, ...i18nCatalogModules]],
 ]) {
   const actual = walk(directory)
@@ -240,6 +283,7 @@ for (const [directory, expected] of [
   }
 }
 for (const filePath of [
+  "src/features/queries/tauriAdapter.test.ts",
   "src/lib/i18n/catalog.test.ts",
   "src/lib/i18n/runtime.test.ts",
   "src/lib/i18n/types.test.ts",
@@ -447,6 +491,8 @@ for (const filePath of [
     [/src-tauri\/src\/dashboard\.rs/, "active documentation names the removed global dashboard policy module"],
     [/src-tauri\/src\/services\/job_service/, "active documentation names the removed job service tree"],
     [/src-tauri\/src\/services\/workspace_service\.rs/, "active documentation names the removed workspace service"],
+    [/src-tauri\/src\/services\/query_service\.rs|\bquery_service\.rs\b/, "active documentation names the removed Query service"],
+    [/src-tauri\/src\/broker\/dispatch\.rs|\bbroker\/dispatch\.rs\b/, "active documentation names the removed Broker dispatcher file"],
     [/src-tauri\/src\/workspace_auth\.rs/, "active documentation names the removed global workspace auth module"],
     [/src\/lib\/workspaceAccounts\.ts/, "active documentation names a removed workspace account helper"],
     [/src\/lib\/workspaceAuthLifecycle\.ts/, "active documentation names a removed workspace auth helper"],
@@ -469,6 +515,13 @@ for (const token of [
   "AgentDashboardCommitError",
   "PreparedAgentDashboard",
   "JobService",
+]) {
+  if (rustSource.includes(token)) {
+    fail(`removed runtime token returned: ${token}`);
+  }
+}
+for (const diagnostic of collectRemovedQueryRuntimeDiagnostics(rustSource)) fail(diagnostic);
+for (const token of [
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",
   "\"sql_documents_v1\"",
@@ -589,13 +642,14 @@ for (const filePath of [
   "src-tauri/src/features/agents/domain.rs",
   "src-tauri/src/features/agents/ports.rs",
   "src-tauri/src/features/agents/application.rs",
-  "src-tauri/src/features/queries/domain.rs",
-  "src-tauri/src/features/queries/ports.rs",
-  "src-tauri/src/features/queries/application.rs",
-  ...walk("src-tauri/src/features/workspaces/application")
-    .filter((file) => file.endsWith(".rs"))
-    .map(relative),
 ]) {
+  requireFile(filePath);
+  forbid(filePath, coreRustRules);
+}
+for (const diagnostic of collectQuerySharedCoreDiagnostics(architectureContext)) fail(diagnostic);
+for (const filePath of walk("src-tauri/src/features/workspaces/application")
+  .filter((file) => file.endsWith(".rs"))
+  .map(relative)) {
   requireFile(filePath);
   forbid(filePath, coreRustRules);
 }
@@ -608,17 +662,6 @@ for (const filePath of [
     [/\bstd::process\b/, "Agent core must use the CLI probe port"],
     [/crate::cli_environment/, "Agent core must not inspect the process environment"],
     [/adapters::/, "Agent core must not depend on concrete adapters"],
-  ]);
-}
-for (const filePath of [
-  "src-tauri/src/features/queries/domain.rs",
-  "src-tauri/src/features/queries/ports.rs",
-  "src-tauri/src/features/queries/application.rs",
-]) {
-  forbid(filePath, [
-    [/\bConnectionLease\b/, "Query core must keep lease guards in adapters"],
-    [/\bAppError\b|\bAppResult\b/, "Query core must expose feature errors through ports"],
-    [/\badapters::/, "Query core must not depend on concrete adapters"],
   ]);
 }
 for (const filePath of [
@@ -722,6 +765,7 @@ for (const filePath of [
   requireFile(filePath);
   forbid(filePath, coreRustRules);
 }
+for (const diagnostic of collectRuntimeIdDiagnostics(architectureContext)) fail(diagnostic);
 forbid("src-tauri/src/features/connections/transport.rs", [
   [/\bsqlx\b/, "transport must delegate instead of querying SQLite"],
   [/crate::store/, "transport must not read the store directly"],
@@ -742,6 +786,7 @@ forbid("src-tauri/src/introspect/mod.rs", [
   [/\bpub struct Index\b/, "catalog index model returned to the introspection adapter"],
   [/\bpub struct Table\b/, "catalog table model returned to the introspection adapter"],
 ]);
+for (const diagnostic of collectQueryCentralCommandDiagnostics(architectureContext)) fail(diagnostic);
 forbid("src-tauri/src/commands/mod.rs", [
   [/\bpub async fn get_schema\b/, "catalog command returned to the central command module"],
   [/\bpub async fn refresh_schema\b/, "catalog refresh returned to the central command module"],
@@ -776,6 +821,7 @@ forbid("src-tauri/src/commands/mod.rs", [
     "Agent archive read returned to the central command module",
   ],
 ]);
+for (const diagnostic of collectQueryTauriCommandDiagnostics(architectureContext)) fail(diagnostic);
 forbid("src-tauri/src/features/jobs/transport.rs", [
   [/\bsqlx\b/, "job transport must delegate instead of writing the ledger"],
   [/crate::store/, "job transport must not access the store directly"],
@@ -798,6 +844,7 @@ forbid("src-tauri/src/features/dashboards/transport.rs", [
   [/crate::connection/, "dashboard transport must not authorize connections directly"],
   [/crate::services/, "dashboard transport must not use a legacy service contract"],
 ]);
+for (const diagnostic of collectQueryRuntimeOwnershipDiagnostics(architectureContext)) fail(diagnostic);
 for (const filePath of walk("src-tauri/src/features/jobs/application")
   .filter((file) => file.endsWith(".rs"))
   .map(relative)) {
@@ -846,6 +893,10 @@ forbid("src-tauri/src/services/mod.rs", [
     /\b(?:AgentQueryPlanError|AgentQueryRunError|AgentQueryRunPrepareError|TerminalQueryPlanRequest|TerminalQueryRunRegistry|QueryRunProvenancePort)\b/,
     "central service facade must not restore migrated Terminal query-read contracts",
   ],
+  [
+    /\b(?:QueryService|DesktopSqlClassificationReceipt|DesktopSqlClassificationRequest|DesktopSqlInspectionError|DesktopSqlPreviewReceipt|DesktopSqlPreviewRequest|DesktopSqlProposalReceipt|DesktopSqlProposalRequest|DesktopSqlRunError|DesktopSqlRunReceipt|TerminalSqlProposalRequest)\b/,
+    "central service facade must not restore feature-owned SQL Query contracts",
+  ],
 ]);
 for (const filePath of walk("src-tauri/src/features/dashboards")
   .map(relative)
@@ -865,16 +916,6 @@ for (const filePath of walk("src-tauri/src/features/dashboards")
     ],
   ]);
 }
-forbid("src-tauri/src/services/query_service.rs", [
-  [
-    /\b(?:AgentQueryInvocationOrigin|AgentQueryPlan|AgentQueryPlanError|AgentQueryRun|AgentQueryRunError|AgentQueryRunPrepareError|PreparedAgentQueryRun|StoredAgentReadPayload|TerminalQueryPlanRequest|TerminalQueryRunRegistry)\b/,
-    "legacy QueryService must not restore migrated Terminal query-read contracts",
-  ],
-  [
-    /\b(?:plan_terminal_read|prepare_terminal_run)\b/,
-    "legacy QueryService must not restore the migrated Terminal query-read flow",
-  ],
-]);
 forbid("src-tauri/src/features/sql_documents/transport.rs", [
   [/\bsqlx\b/, "transport must delegate instead of querying SQLite"],
   [/crate::store/, "transport must not read the store directly"],
@@ -946,6 +987,7 @@ for (const filePath of [
   "src/features/erd/domain.ts",
   "src/features/schemaEditor/domain.ts",
   "src/features/dashboards/domain.ts",
+  "src/features/queries/domain.ts",
   "src/features/sqlDocuments/domain.ts",
   "src/features/terminals/domain.ts",
   "src/features/terminals/state.ts",
@@ -979,6 +1021,11 @@ forbid("src/features/query/runSignal.ts", [
 const frontendSource = sourceFiles
   .filter((file) => /\.(?:ts|tsx)$/.test(file))
   .map((file) => [relative(file), fs.readFileSync(file, "utf8")]);
+const frontendProductionSource = frontendSource.filter(
+  ([filePath]) => !/\.(?:test|spec)\.[^.]+$/.test(filePath),
+);
+
+for (const diagnostic of collectQueryFrontendOwnershipDiagnostics({ frontendProductionSource, frontendSource })) fail(diagnostic);
 const sqlDocumentCommands = [
   "list_sql_documents",
   "create_sql_document",
@@ -1295,7 +1342,11 @@ forbid("src/ipc/types.ts", [
     "Agent contract returned to the central IPC type file",
   ],
   [
-    /export\s+\*\s+from\s+["'][^"']*features\/(?:agents|terminals)\/domain["']/,
+    /\b(?:interface|type)\s+(?:RiskLevel|Classification|PreviewMode|PreviewReport|SqlOperationProposal)\b/,
+    "SQL Query contract returned to the central IPC type file",
+  ],
+  [
+    /export\s+\*\s+from\s+["'][^"']*features\/(?:agents|queries|terminals)\/domain["']/,
     "feature contracts must not be re-exported through the central IPC type file",
   ],
 ]);
@@ -1331,7 +1382,11 @@ forbid("src/ipc/commands.ts", [
     "Agent commands returned to the central IPC facade",
   ],
   [
-    /export\s+\*\s+from\s+["'][^"']*features\/(?:agents|terminals)\/tauriAdapter["']/,
+    /\b(?:classifySql|previewSql|proposeSql|runSql|runSqlRead)\b/,
+    "SQL Query commands returned to the central IPC facade",
+  ],
+  [
+    /export\s+\*\s+from\s+["'][^"']*features\/(?:agents|queries|terminals)\/tauriAdapter["']/,
     "feature commands must not be re-exported through the central IPC facade",
   ],
 ]);
@@ -1380,6 +1435,9 @@ for (const [filePath, source] of frontendSource) {
     )
   ) {
     fail(`${filePath}: imports an Agent command from the removed central owner`);
+  }
+  for (const diagnostic of collectQueryCentralIpcDiagnostics([[filePath, source]])) {
+    fail(diagnostic);
   }
 }
 

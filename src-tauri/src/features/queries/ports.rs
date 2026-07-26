@@ -1,11 +1,14 @@
-//! Ports through which Terminal query use cases reach platform adapters.
+//! Ports through which SQL query use cases reach platform adapters.
 
 use std::future::Future;
 
-use crate::kernel::identity::{QueryRunId, TerminalSessionId};
+use crate::kernel::identity::{OperationId, QueryRunId, TerminalSessionId};
 use crate::kernel::TerminalAuthority;
 
-use super::domain::TerminalQueryPlanRequest;
+use super::domain::{
+    DesktopSqlClassificationRequest, DesktopSqlPreviewRequest, DesktopSqlProposalRequest,
+    TerminalQueryPlanRequest, TerminalSqlProposalRequest,
+};
 
 pub(crate) trait TerminalQueryPort: Clone + Send + Sync + 'static {
     type PlanReceipt: Send;
@@ -20,9 +23,47 @@ pub(crate) trait TerminalQueryPort: Clone + Send + Sync + 'static {
 
     fn prepare_terminal_run(
         &self,
-        plan_id: crate::kernel::identity::OperationId,
+        plan_id: OperationId,
         authority: &TerminalAuthority,
     ) -> impl Future<Output = Result<Self::PreparedRun, Self::PrepareError>> + Send;
+}
+
+/// Platform boundary for desktop and Terminal SQL proposal operations.
+///
+/// Requests use pure feature contracts; lease-backed receipts and platform error
+/// representations remain associated adapter outputs.
+pub(crate) trait DesktopQueryPort: Clone + Send + Sync + 'static {
+    type ClassificationReceipt: Send;
+    type PreviewReceipt: Send;
+    type ProposalReceipt: Send;
+    type RunReceipt: Send;
+    type InspectionError: Send;
+    type RunError: Send;
+
+    fn classify_desktop_sql(
+        &self,
+        request: DesktopSqlClassificationRequest,
+    ) -> impl Future<Output = Result<Self::ClassificationReceipt, Self::InspectionError>> + Send;
+
+    fn preview_desktop_sql(
+        &self,
+        request: DesktopSqlPreviewRequest,
+    ) -> impl Future<Output = Result<Self::PreviewReceipt, Self::InspectionError>> + Send;
+
+    fn propose_desktop_sql(
+        &self,
+        request: DesktopSqlProposalRequest,
+    ) -> impl Future<Output = Result<Self::ProposalReceipt, Self::InspectionError>> + Send;
+
+    fn propose_terminal_sql(
+        &self,
+        request: TerminalSqlProposalRequest,
+    ) -> impl Future<Output = Result<Self::ProposalReceipt, Self::InspectionError>> + Send;
+
+    fn run_desktop_sql(
+        &self,
+        operation_id: OperationId,
+    ) -> impl Future<Output = Result<Self::RunReceipt, Self::RunError>> + Send;
 }
 
 /// Minimal capability a dashboard needs to authorize a Terminal query-run source.

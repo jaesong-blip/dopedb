@@ -13,6 +13,7 @@ use tempfile::TempDir;
 use super::*;
 use crate::connection::ConnectionManager;
 use crate::features::queries::AgentQueryRunPrepareError;
+use crate::kernel::identity::RuntimeId;
 use crate::model::{
     ConnectionProfile, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
 };
@@ -31,7 +32,7 @@ fn request(command: CommandName, arguments: serde_json::Value) -> RequestEnvelop
 }
 
 fn dispatcher() -> BrokerDispatcher {
-    let runtime_id = Uuid::new_v4();
+    let runtime_id = RuntimeId::from(Uuid::new_v4());
     BrokerDispatcher::new(
         runtime_id,
         "0.3.3",
@@ -65,6 +66,9 @@ async fn status_uses_the_typed_empty_payload_and_safe_projection() {
         accepted.result().unwrap()["appVersion"],
         serde_json::Value::String("0.3.3".into())
     );
+    let status: dopedb_protocol::StatusResult =
+        serde_json::from_value(accepted.result().cloned().unwrap()).unwrap();
+    assert_eq!(status.runtime_id, Uuid::from(dispatcher.runtime_id));
 
     let rejected = dispatcher
         .dispatch(request(
@@ -81,7 +85,7 @@ async fn status_uses_the_typed_empty_payload_and_safe_projection() {
 #[tokio::test]
 async fn skill_inventory_and_install_use_the_public_typed_broker_path() {
     let home = TempDir::new().unwrap();
-    let runtime_id = Uuid::new_v4();
+    let runtime_id = RuntimeId::from(Uuid::new_v4());
     let dispatcher = BrokerDispatcher::new(
         runtime_id,
         "0.3.3",
@@ -298,7 +302,7 @@ impl ServiceHarness {
         let pin = store.pin_connection_for_read(connection_id).await.unwrap();
         let connections = ConnectionManager::new(store.clone());
         let (operation, _) = OperationRuntime::new(&store);
-        let runtime_id = operation.runtime_id();
+        let runtime_id = RuntimeId::from(operation.runtime_id());
         let services = ApplicationServices::new(store.clone(), connections.clone(), operation);
         let sessions = BrokerSessionRegistry::new(runtime_id);
         let primary = sessions

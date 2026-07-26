@@ -5,7 +5,6 @@ mod activity_service;
 mod document_service;
 mod monitoring_service;
 mod operation_service;
-mod query_service;
 mod safety_service;
 mod script_service;
 
@@ -20,12 +19,6 @@ pub(crate) use monitoring_service::{
 };
 pub(crate) use operation_service::{
     OperationDecisionReceipt, OperationDecisionRequest, OperationService,
-};
-pub(crate) use query_service::{
-    DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest, DesktopSqlInspectionError,
-    DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest, DesktopSqlProposalReceipt,
-    DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt, QueryService,
-    TerminalSqlProposalRequest,
 };
 pub(crate) use safety_service::SafetyService;
 pub(crate) use script_service::{
@@ -63,7 +56,6 @@ pub(crate) struct ApplicationServices {
     pub(crate) job: JobsFeature,
     pub(crate) monitoring: MonitoringService,
     pub(crate) operation: OperationService,
-    pub(crate) query: QueryService,
     pub(crate) queries: QueriesFeature,
     pub(crate) safety: SafetyService,
     pub(crate) schema: SchemaEditorFeature,
@@ -79,7 +71,7 @@ impl ApplicationServices {
         operation: OperationRuntime,
     ) -> Self {
         let connection_credentials = connection_feature::system_connection_credentials();
-        let query = crate::features::queries::compose(
+        let queries = crate::features::queries::compose(
             store.clone(),
             connections.clone(),
             operation.clone(),
@@ -107,7 +99,7 @@ impl ApplicationServices {
             catalog.clone(),
             operation.clone(),
         );
-        let query_provenance: Arc<dyn QueryRunAuthorizationPort> = Arc::new(query.provenance());
+        let query_provenance: Arc<dyn QueryRunAuthorizationPort> = Arc::new(queries.provenance());
         let dashboard =
             dashboards::compose_erased(store.clone(), connections.clone(), query_provenance);
         Self {
@@ -125,8 +117,7 @@ impl ApplicationServices {
                 operation.clone(),
             ),
             operation: operation_service,
-            query: QueryService::new(store.clone(), connections.clone(), operation.clone()),
-            queries: query,
+            queries,
             safety: SafetyService::new(store.clone(), connections.clone()),
             schema,
             script,

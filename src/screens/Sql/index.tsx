@@ -7,25 +7,29 @@ import type { SqlLanguage } from "sql-formatter";
 import { useQuery } from "@tanstack/react-query";
 import {
   approveOperation,
-  classifySql,
-  previewSql,
   proposeScript,
-  proposeSql,
   rejectOperation,
   runScript,
-  runSql,
 } from "../../ipc/commands";
 import type {
   AppErrorDetails,
   ExecOutcome,
-  PreviewReport,
   SafetySettings,
   ScriptOperationProposal,
   ScriptOutcome,
-  SqlOperationProposal,
 } from "../../ipc/types";
 import { errDetails, errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
+import {
+  classifySql,
+  previewSql,
+  proposeSql,
+  runSql,
+} from "../../features/queries/tauriAdapter";
+import type {
+  PreviewReport,
+  SqlOperationProposal,
+} from "../../features/queries/domain";
 import {
   connectionId,
   sqlDocumentId,

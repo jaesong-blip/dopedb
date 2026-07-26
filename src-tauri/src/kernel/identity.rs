@@ -47,6 +47,7 @@ uuid_identity!(DashboardId);
 uuid_identity!(QueryRunId);
 uuid_identity!(QueryExecutionId);
 uuid_identity!(TerminalSessionId);
+uuid_identity!(RuntimeId);
 uuid_identity!(RetiredChatThreadId);
 uuid_identity!(RetiredChatMessageId);
 uuid_identity!(JobId);
@@ -194,6 +195,17 @@ mod tests {
         assert_eq!(encoded, format!("\"{raw}\""));
         assert_eq!(
             Uuid::from(serde_json::from_str::<TerminalSessionId>(&encoded).unwrap()),
+            raw
+        );
+    }
+
+    #[test]
+    fn runtime_identity_keeps_uuid_json() {
+        let raw = Uuid::parse_str("435be271-bdb7-4ae2-b55d-a45b69c69313").unwrap();
+        let encoded = serde_json::to_string(&RuntimeId::from(raw)).unwrap();
+        assert_eq!(encoded, format!("\"{raw}\""));
+        assert_eq!(
+            Uuid::from(serde_json::from_str::<RuntimeId>(&encoded).unwrap()),
             raw
         );
     }

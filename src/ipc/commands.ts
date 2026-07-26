@@ -9,11 +9,9 @@ import type {
   CatalogSnapshot,
   CliInstallReceipt,
   CliInstallationStatus,
-  Classification,
   DocumentPage,
   DocumentOperationProposal,
   DocumentQuery,
-  ExecOutcome,
   HistoryEntry,
   LegacyMcpCleanupExpectation,
   LegacyMcpCleanupReceipt,
@@ -22,11 +20,9 @@ import type {
   MonitoringStatus,
   OperationDecision,
   PlatformFeatureFlags,
-  PreviewReport,
   ScriptOutcome,
   SafetySettings,
   ScriptOperationProposal,
-  SqlOperationProposal,
   SkillMutationReceipt,
   SkillSelfTestReceipt,
   SkillStatus,
@@ -115,26 +111,6 @@ export function getTableDdl(
   return invoke("get_table_ddl", { id, schema: schema ?? null, table });
 }
 
-export function classifySql(id: string, sql: string): Promise<Classification> {
-  return invoke("classify_sql", { id, sql });
-}
-
-export function previewSql(id: string, sql: string): Promise<PreviewReport> {
-  return invoke("preview_sql", { id, sql });
-}
-
-export function proposeSql(
-  id: string,
-  sql: string,
-  origin?: string,
-): Promise<SqlOperationProposal> {
-  return invoke("propose_sql", {
-    id,
-    sql,
-    origin: origin ?? null,
-  });
-}
-
 export function approveOperation(
   operationId: string,
   payloadHash: string,
@@ -157,24 +133,6 @@ export function rejectOperation(
     payloadHash,
     reason: reason ?? null,
   });
-}
-
-export function runSql(operationId: string): Promise<ExecOutcome> {
-  return invoke("run_sql", { operationId });
-}
-
-// Plan and consume a SQL read without exposing an approval shortcut. Callers that
-// may generate mutations must use the explicit proposal/approval/run sequence.
-export async function runSqlRead(
-  id: string,
-  sql: string,
-  origin?: string,
-): Promise<ExecOutcome> {
-  const proposal = await proposeSql(id, sql, origin);
-  if (proposal.approvalRequired || proposal.classification.kind !== "read") {
-    throw new Error("read execution helper rejected a target-mutating proposal");
-  }
-  return runSql(proposal.operationId);
 }
 
 // Run one typed, read-only document query on a MongoDB connection. Aggregate

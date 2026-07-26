@@ -290,30 +290,39 @@ Protocol compatibility and authentication sequencing remain owned by the router,
 handlers cannot authenticate directly against the session registry.
 
 Terminal capability storage is keyed by `TerminalSessionId`; revocation requires
-typed Terminal and connection identities, and raw protocol UUID conversion occurs
-only at authentication boundaries. Capability and Broker runtime status writers are
-recorded in the state-owner inventory. The old monolithic dispatcher is both a
-deletion gate and removed from the oversized-file ratchet.
+typed Terminal and connection identities, and raw session UUID conversion occurs
+only at authentication boundaries. Broker runtime ownership is carried internally by
+`RuntimeId` through the runtime, session registry, dispatcher, discovery cleanup, and
+server composition. Conversion back to UUID is limited to versioned protocol
+discovery, status, and app-open projections. Capability and Broker runtime status
+writers are recorded in the state-owner inventory. The old monolithic dispatcher is
+both a deletion gate and removed from the oversized-file ratchet.
 
-## Terminal query read boundary
+## SQL Query feature boundary
 
 Terminal read planning, single-use claiming, cancellable read-only execution,
-history provenance, and query-run dashboard authorization now form the
-`features/queries` slice. Broker handlers call its composition facade with typed
-Terminal, connection, operation, and query-run identities. Store, pool, Operation
-Runtime, audit, and ephemeral capability storage remain adapter concerns, while the
-capability registry has one writer recorded in the state-owner inventory. Dashboard
-composition receives only an authorization port; successful query producers retain
-the separate registration capability.
+history provenance, query-run dashboard authorization, Desktop SQL
+classification/preview/proposal/execution, and authenticated Terminal SQL proposals
+now form the `features/queries` slice. Tauri and Broker transports call one
+composition facade with typed Terminal, connection, operation, and query-run
+identities. Store, pool, Operation Runtime, audit, history, cache invalidation, and
+ephemeral capability storage remain adapter concerns. The application layer depends
+on feature ports rather than concrete adapters, and each production module remains
+below the feature-size limit.
 
-The former central Terminal run registry and the Terminal read contracts in
-`QueryService` are deletion gates. Characterization tests stay with the feature and
-cover row caps, rejection audit, cancellation registration, atomic single-use
-claims, authority and expiry failures, failure history, provenance fail-closed
-behavior, and scope/lease lifetime. Desktop SQL and the not-yet-migrated Terminal
-proposal flow remain under the shrinking `QueryService` ratchet for a later complete
-slice; this checkpoint does not hide them behind a compatibility facade. Its stale
-Terminal-authority rejection remains characterized until that proposal slice moves.
+Dashboard composition receives only an authorization port; successful query
+producers retain the separate registration capability. Renderer SQL contracts and
+static Tauri command literals live beside the Query feature instead of the central
+IPC facade.
+
+The former central Terminal run registry, `QueryService`, central Rust SQL commands,
+and central renderer SQL wrappers/contracts are deletion gates. Characterization
+tests stay with the feature and cover row caps, rejection audit, cancellation
+registration, atomic single-use claims, authority and expiry failures, failure
+history, approval and payload-hash semantics, outcome-unknown recovery, cache
+invalidation, provenance fail-closed behavior, and scope/lease lifetime. The former
+service is deleted and removed from the oversized-file ratchet; no compatibility
+facade remains.
 
 ## Bounded Skill inventory
 

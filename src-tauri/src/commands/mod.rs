@@ -1,6 +1,6 @@
-//! The `#[tauri::command]` boundary. Commands already migrated to
-//! [`crate::services`] are thin adapters; the remaining legacy commands stay here
-//! only until their service boundary is extracted. Every command returns an
+//! Remaining cross-feature `#[tauri::command]` adapters.
+//! Migrated vertical slices own their transport beside the feature; commands stay
+//! here only until their service boundary is extracted. Every command returns an
 //! [`AppResult`] that serializes to `{ kind, message }` for the frontend.
 //!
 //! Safety invariants live in the service/operation path: writes, DDL, and privilege
@@ -17,12 +17,9 @@ use crate::services::{
     AuditSnapshotReceipt, AuditVerdict, DesktopDocumentProposalReceipt,
     DesktopDocumentProposalRequest, DesktopDocumentReadError, DesktopScriptProposalReceipt,
     DesktopScriptProposalRequest, DesktopScriptRunError, DesktopScriptRunReceipt,
-    DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest, DesktopSqlInspectionError,
-    DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest, DesktopSqlProposalReceipt,
-    DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt, DocumentReadReceipt,
-    MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringServiceError,
-    MonitoringStatusReceipt, OperationDecisionReceipt, OperationDecisionRequest,
-    TableScriptContext,
+    DocumentReadReceipt, MonitoringProposalReceipt, MonitoringProposalRequest,
+    MonitoringServiceError, MonitoringStatusReceipt, OperationDecisionReceipt,
+    OperationDecisionRequest, TableScriptContext,
 };
 use crate::state::AppState;
 
@@ -158,63 +155,6 @@ pub fn platform_feature_flags(state: State<'_, AppState>) -> PlatformFeatureFlag
     }
 }
 
-// ── safety pipeline (L1 / L3) ────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn classify_sql(
-    state: State<'_, AppState>,
-    id: Uuid,
-    sql: String,
-) -> AppResult<DesktopSqlClassificationReceipt> {
-    state
-        .services
-        .query
-        .classify_desktop_sql(DesktopSqlClassificationRequest {
-            connection_id: id,
-            sql,
-        })
-        .await
-        .map_err(DesktopSqlInspectionError::into_error)
-}
-
-#[tauri::command]
-pub async fn preview_sql(
-    state: State<'_, AppState>,
-    id: Uuid,
-    sql: String,
-) -> AppResult<DesktopSqlPreviewReceipt> {
-    state
-        .services
-        .query
-        .preview_desktop_sql(DesktopSqlPreviewRequest {
-            connection_id: id,
-            sql,
-        })
-        .await
-        .map_err(DesktopSqlInspectionError::into_error)
-}
-
-// ── execution (L4 gate → executor → audit) ───────────────────────────────────
-
-#[tauri::command]
-pub async fn propose_sql(
-    state: State<'_, AppState>,
-    id: Uuid,
-    sql: String,
-    origin: Option<String>,
-) -> AppResult<DesktopSqlProposalReceipt> {
-    state
-        .services
-        .query
-        .propose_desktop_sql(DesktopSqlProposalRequest {
-            connection_id: id,
-            sql,
-            origin,
-        })
-        .await
-        .map_err(DesktopSqlInspectionError::into_error)
-}
-
 #[tauri::command]
 pub async fn approve_operation(
     state: State<'_, AppState>,
@@ -255,19 +195,6 @@ pub async fn reject_operation(
             },
         )
         .await
-}
-
-#[tauri::command]
-pub async fn run_sql(
-    state: State<'_, AppState>,
-    operation_id: Uuid,
-) -> AppResult<DesktopSqlRunReceipt> {
-    state
-        .services
-        .query
-        .run_desktop_sql(operation_id)
-        .await
-        .map_err(DesktopSqlRunError::into_error)
 }
 
 // ── typed document queries (MongoDB) ─────────────────────────────────────────

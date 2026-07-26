@@ -1,9 +1,10 @@
-//! Terminal Agent SQL-read vertical slice.
+//! SQL Query vertical slice for desktop and authenticated Terminal workflows.
 
 mod adapters;
 mod application;
 mod domain;
 mod ports;
+pub(crate) mod transport;
 
 use crate::connection::ConnectionManager;
 use crate::kernel::identity::OperationId;
@@ -12,14 +13,21 @@ use crate::operations::OperationRuntime;
 use crate::store::Store;
 
 #[cfg(test)]
-pub(crate) use adapters::TerminalQueryAdapter;
+pub(crate) use adapters::QueryPlatformAdapter;
 #[cfg(not(test))]
-use adapters::TerminalQueryAdapter;
+use adapters::QueryPlatformAdapter;
 pub(crate) use adapters::TerminalQueryRunRegistry;
 pub(crate) use adapters::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};
 use adapters::{AgentQueryPlanReceipt, PreparedAgentQueryRun};
-use application::TerminalQueryUseCases;
-pub(crate) use domain::TerminalQueryPlanRequest;
+pub(crate) use adapters::{
+    DesktopSqlClassificationReceipt, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
+    DesktopSqlProposalReceipt, DesktopSqlRunError, DesktopSqlRunReceipt,
+};
+use application::QueryUseCases;
+pub(crate) use domain::{
+    DesktopSqlClassificationRequest, DesktopSqlPreviewRequest, DesktopSqlProposalRequest,
+    TerminalQueryPlanRequest, TerminalSqlProposalRequest,
+};
 #[cfg(test)]
 pub(crate) use ports::QueryRunProvenancePort;
 pub(crate) use ports::{QueryRunAuthorizationError, QueryRunAuthorizationPort};
@@ -29,16 +37,51 @@ mod domain_tests;
 #[cfg(test)]
 mod tests;
 
-type ComposedTerminalQueryApplication = TerminalQueryUseCases<TerminalQueryAdapter>;
+type ComposedQueryApplication = QueryUseCases<QueryPlatformAdapter>;
 
-/// Composition boundary for Broker-owned read planning and execution.
+/// Composition boundary for desktop SQL and Broker-owned query workflows.
 #[derive(Clone)]
 pub(crate) struct QueriesFeature {
-    application: ComposedTerminalQueryApplication,
+    application: ComposedQueryApplication,
     provenance: TerminalQueryRunRegistry,
 }
 
 impl QueriesFeature {
+    pub(crate) async fn classify_desktop_sql(
+        &self,
+        request: DesktopSqlClassificationRequest,
+    ) -> Result<DesktopSqlClassificationReceipt, DesktopSqlInspectionError> {
+        self.application.classify_desktop_sql(request).await
+    }
+
+    pub(crate) async fn preview_desktop_sql(
+        &self,
+        request: DesktopSqlPreviewRequest,
+    ) -> Result<DesktopSqlPreviewReceipt, DesktopSqlInspectionError> {
+        self.application.preview_desktop_sql(request).await
+    }
+
+    pub(crate) async fn propose_desktop_sql(
+        &self,
+        request: DesktopSqlProposalRequest,
+    ) -> Result<DesktopSqlProposalReceipt, DesktopSqlInspectionError> {
+        self.application.propose_desktop_sql(request).await
+    }
+
+    pub(crate) async fn propose_terminal_sql(
+        &self,
+        request: TerminalSqlProposalRequest,
+    ) -> Result<DesktopSqlProposalReceipt, DesktopSqlInspectionError> {
+        self.application.propose_terminal_sql(request).await
+    }
+
+    pub(crate) async fn run_desktop_sql(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<DesktopSqlRunReceipt, DesktopSqlRunError> {
+        self.application.run_desktop_sql(operation_id).await
+    }
+
     pub(crate) async fn plan_terminal_read(
         &self,
         request: TerminalQueryPlanRequest,
@@ -67,9 +110,9 @@ pub(crate) fn compose(
     operation: OperationRuntime,
 ) -> QueriesFeature {
     let provenance = TerminalQueryRunRegistry::default();
-    let adapter = TerminalQueryAdapter::new(store, connections, operation, provenance.clone());
+    let adapter = QueryPlatformAdapter::new(store, connections, operation, provenance.clone());
     QueriesFeature {
-        application: TerminalQueryUseCases::new(adapter),
+        application: QueryUseCases::new(adapter),
         provenance,
     }
 }
@@ -79,12 +122,12 @@ fn compose_with_adapter(
     store: Store,
     connections: ConnectionManager,
     operation: OperationRuntime,
-) -> (QueriesFeature, TerminalQueryAdapter) {
+) -> (QueriesFeature, QueryPlatformAdapter) {
     let provenance = TerminalQueryRunRegistry::default();
-    let adapter = TerminalQueryAdapter::new(store, connections, operation, provenance.clone());
+    let adapter = QueryPlatformAdapter::new(store, connections, operation, provenance.clone());
     (
         QueriesFeature {
-            application: TerminalQueryUseCases::new(adapter.clone()),
+            application: QueryUseCases::new(adapter.clone()),
             provenance,
         },
         adapter,

@@ -9,11 +9,14 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use dopedb_protocol::SessionAuthentication;
 use subtle::ConstantTimeEq;
+#[cfg(test)]
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
-use crate::kernel::identity::{AccountScopeId, ConnectionId, TerminalSessionId, WorkspaceId};
+use crate::kernel::identity::{
+    AccountScopeId, ConnectionId, RuntimeId, TerminalSessionId, WorkspaceId,
+};
 use crate::store::PinnedConnection;
 
 const SESSION_TOKEN_BYTES: usize = 32;
@@ -50,7 +53,7 @@ impl BrokerCapability {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AuthenticatedSession {
     pub(crate) terminal_session_id: TerminalSessionId,
-    pub(crate) runtime_id: Uuid,
+    pub(crate) runtime_id: RuntimeId,
     pub(crate) workspace_id: WorkspaceId,
     pub(crate) account_scope: AccountScopeId,
     pub(crate) scope_generation: i64,
@@ -112,12 +115,12 @@ impl fmt::Debug for IssuedSessionCapability {
 
 #[derive(Clone)]
 pub(crate) struct BrokerSessionRegistry {
-    runtime_id: Uuid,
+    runtime_id: RuntimeId,
     sessions: std::sync::Arc<DashMap<TerminalSessionId, SessionRecord>>,
 }
 
 impl BrokerSessionRegistry {
-    pub(crate) fn new(runtime_id: Uuid) -> Self {
+    pub(crate) fn new(runtime_id: RuntimeId) -> Self {
         Self {
             runtime_id,
             sessions: std::sync::Arc::new(DashMap::new()),
@@ -281,7 +284,7 @@ mod tests {
 
     #[test]
     fn capability_is_256_bit_redacted_and_memory_only() {
-        let runtime_id = Uuid::new_v4();
+        let runtime_id = RuntimeId::from(Uuid::new_v4());
         let registry = BrokerSessionRegistry::new(runtime_id);
         let session_id = TerminalSessionId::from(Uuid::new_v4());
         let issued = registry
@@ -303,7 +306,8 @@ mod tests {
 
     #[test]
     fn authentication_is_exact_scope_capability_and_revocation_bound() {
-        let runtime_id = Uuid::from_str("018f0000-1111-7222-8333-444455556666").unwrap();
+        let runtime_id =
+            RuntimeId::from(Uuid::from_str("018f0000-1111-7222-8333-444455556666").unwrap());
         let connection_id = ConnectionId::from(Uuid::new_v4());
         let terminal_session_id = TerminalSessionId::from(Uuid::new_v4());
         let registry = BrokerSessionRegistry::new(runtime_id);
@@ -321,6 +325,7 @@ mod tests {
         );
         let authenticated = registry.authenticate(&authentication).unwrap();
         assert_eq!(authenticated.terminal_session_id, terminal_session_id);
+        assert_eq!(authenticated.runtime_id, runtime_id);
         assert_eq!(authenticated.connection_id, connection_id);
         assert_eq!(authenticated.connection_revision, 11);
         assert_eq!(authenticated.scope_generation, 7);
@@ -335,7 +340,7 @@ mod tests {
 
     #[test]
     fn connection_revocation_removes_only_matching_sessions() {
-        let registry = BrokerSessionRegistry::new(Uuid::new_v4());
+        let registry = BrokerSessionRegistry::new(RuntimeId::from(Uuid::new_v4()));
         let first_connection = ConnectionId::from(Uuid::new_v4());
         let second_connection = ConnectionId::from(Uuid::new_v4());
         registry
@@ -360,7 +365,7 @@ mod tests {
 
     #[test]
     fn expired_capability_is_rejected_and_eagerly_removed() {
-        let registry = BrokerSessionRegistry::new(Uuid::new_v4());
+        let registry = BrokerSessionRegistry::new(RuntimeId::from(Uuid::new_v4()));
         let issued = registry
             .issue(
                 TerminalSessionId::from(Uuid::new_v4()),

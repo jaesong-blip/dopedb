@@ -8,6 +8,7 @@ use dopedb_protocol::{RuntimeDiscovery, RUNTIME_DIRECTORY_NAME, RUNTIME_FILE_NAM
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::identity::RuntimeId;
 
 pub(crate) fn default_runtime_file() -> AppResult<PathBuf> {
     let base = dirs::data_dir()
@@ -64,11 +65,11 @@ pub(crate) fn publish(runtime_file: &Path, discovery: &RuntimeDiscovery) -> AppR
     write_result
 }
 
-pub(crate) fn remove_if_owned(runtime_file: &Path, runtime_id: Uuid) {
+pub(crate) fn remove_if_owned(runtime_file: &Path, runtime_id: RuntimeId) {
     let owned = fs::read(runtime_file)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<RuntimeDiscovery>(&bytes).ok())
-        .is_some_and(|discovery| discovery.runtime_id() == runtime_id);
+        .is_some_and(|discovery| RuntimeId::from(discovery.runtime_id()) == runtime_id);
     if owned {
         let _ = fs::remove_file(runtime_file);
     }
@@ -193,9 +194,9 @@ mod tests {
         let runtime_file = temp.path().join(RUNTIME_FILE_NAME);
         let discovery = fixture();
         publish(&runtime_file, &discovery).unwrap();
-        remove_if_owned(&runtime_file, Uuid::new_v4());
+        remove_if_owned(&runtime_file, RuntimeId::from(Uuid::new_v4()));
         assert!(runtime_file.exists());
-        remove_if_owned(&runtime_file, discovery.runtime_id());
+        remove_if_owned(&runtime_file, RuntimeId::from(discovery.runtime_id()));
         assert!(!runtime_file.exists());
     }
 }

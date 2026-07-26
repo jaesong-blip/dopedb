@@ -73,10 +73,8 @@ async fn platform_serve(
     use std::os::unix::fs::PermissionsExt;
 
     let directory = discovery::prepare_runtime_directory(runtime_file)?;
-    let endpoint = directory.join(format!(
-        "broker-{}.sock",
-        &runtime.runtime_id().simple().to_string()[..16]
-    ));
+    let runtime_name = runtime.runtime_id().to_string().replace('-', "");
+    let endpoint = directory.join(format!("broker-{}.sock", &runtime_name[..16]));
     if std::fs::symlink_metadata(&endpoint).is_ok() {
         std::fs::remove_file(&endpoint)?;
     }
@@ -202,7 +200,7 @@ fn publish_discovery(
     endpoint: &str,
 ) -> AppResult<()> {
     let metadata = RuntimeDiscovery::new(
-        runtime.runtime_id(),
+        runtime.runtime_id().into(),
         std::process::id(),
         env!("CARGO_PKG_VERSION"),
         PROTOCOL_MIN,
@@ -260,12 +258,13 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::kernel::identity::RuntimeId;
 
     #[tokio::test]
     async fn unix_server_publishes_status_and_cleans_discovery_on_shutdown() {
         let temp = TempDir::new().unwrap();
         let runtime_file = temp.path().join("runtime").join("runtime.json");
-        let runtime = BrokerRuntime::new(Uuid::new_v4());
+        let runtime = BrokerRuntime::new(RuntimeId::from(Uuid::new_v4()));
         assert!(runtime.prepare_start());
         let task_runtime = runtime.clone();
         let task_file = runtime_file.clone();
@@ -308,7 +307,7 @@ mod tests {
         let response: ResponseEnvelope = decode_frame(&frame, MAX_RESPONSE_BYTES).unwrap();
         let status: StatusResult =
             serde_json::from_value(response.result().cloned().unwrap()).unwrap();
-        assert_eq!(status.runtime_id, runtime.runtime_id());
+        assert_eq!(status.runtime_id, Uuid::from(runtime.runtime_id()));
 
         runtime.shutdown();
         task.await.unwrap().unwrap();

@@ -195,33 +195,11 @@ export interface MonitoringStatus {
   note: string;
 }
 
-type QueryKind = "read" | "write" | "ddl" | "privilege";
+// Audit and query history share this persisted classification label.
+export type QueryKind = "read" | "write" | "ddl" | "privilege";
 
-export type RiskLevel = "low" | "medium" | "high";
-
-export interface Classification {
-  kind: QueryKind;
-  risk: RiskLevel;
-  statementCount: number;
-  noWhere: boolean;
-  tables: string[];
-  notes: string[];
-  /** True only for a single cleanly-parsed write the L3 exec+ROLLBACK preview can undo. */
-  rollbackSafe: boolean;
-}
-
-type PreviewMode = "explain" | "execRollback" | "skipped";
-
-export interface PreviewReport {
-  mode: PreviewMode;
-  estimatedRows: number | null;
-  exactRows: number | null;
-  plan: string | null;
-  note: string | null;
-}
-
-// Mirrors exact Operation projections from src-tauri/src/services/query_service.rs
-// and operation_service.rs. SQL appears only in the proposal request, never run.
+// Shared Operation projections used by feature-owned SQL, document, script, and
+// monitoring adapters. SQL appears only in the proposal request, never run.
 export type OperationState =
   | "planned"
   | "pending_approval"
@@ -234,18 +212,6 @@ export type OperationState =
   | "succeeded"
   | "failed"
   | "outcome_unknown";
-
-export interface SqlOperationProposal {
-  operationId: string;
-  payloadHash: string;
-  state: OperationState;
-  approvalRequired: boolean;
-  autoRun: boolean;
-  confirmationPhrase: string | null;
-  expiresAt: string;
-  classification: Classification;
-  preview: PreviewReport;
-}
 
 export interface OperationDecision {
   operationId: string;
