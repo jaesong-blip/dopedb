@@ -168,11 +168,78 @@ jobs:
   finalize-release:
     needs: publish-tauri
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Finalize public updater URLs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-finalize
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern latest.json \
+            --dir release-finalize
+          gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets > release-finalize/assets.json
+
+          node scripts/release/finalize-updater-json.mjs \
+            --manifest release-finalize/latest.json \
+            --assets release-finalize/assets.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME"
+
+          gh release upload "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            release-finalize/latest.json \
+            --clobber
+
       - name: Publish the completed immutable release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
+      - name: Verify public updater downloads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          curl --fail --location --silent --show-error \
+            "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json" \
+            --output release-finalize/public-latest.json
+
+          node scripts/release/finalize-updater-json.mjs \
+            --manifest release-finalize/public-latest.json \
+            --assets release-finalize/assets.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$GITHUB_REF_NAME" \
+            --check
+
+          jq -r '.platforms[].url' release-finalize/public-latest.json |
+            sort -u |
+            while IFS= read -r asset_url; do
+              content_type="$(
+                curl --fail --location --silent --show-error \
+                  --range 0-0 \
+                  --dump-header - \
+                  --output /dev/null \
+                  "$asset_url" |
+                  awk 'BEGIN { IGNORECASE=1 } /^content-type:/ { value=$0 } END { sub(/\r$/, "", value); print value }'
+              )"
+              if [[ "$content_type" == *"application/json"* ]]; then
+                echo "Updater URL returned JSON instead of an installer: $asset_url" >&2
+                exit 1
+              fi
+            done
