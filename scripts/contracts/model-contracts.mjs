@@ -204,7 +204,16 @@ function runContractTests(generate) {
     ["src-tauri/Cargo.toml", "generated_query_receipt_contracts_are_current"],
     ["src-tauri/Cargo.toml", "generated_catalog_feature_contracts_are_current"],
     ["dopedb-protocol/Cargo.toml", "generated_protocol_contracts_are_current"],
-  ]) run("cargo", ["test", "--manifest-path", manifest, filter, "--lib"], env);
+  ]) {
+    // Contract-only unit tests run before CI stages the platform sidecars. The
+    // production Tauri config still owns those binaries; this test-only override
+    // prevents tauri-build from requiring bundle resources that the contract
+    // generators neither execute nor inspect.
+    const contractEnv = manifest === "src-tauri/Cargo.toml"
+      ? { ...env, TAURI_CONFIG: JSON.stringify({ bundle: { externalBin: [] } }) }
+      : env;
+    run("cargo", ["test", "--manifest-path", manifest, filter, "--lib"], contractEnv);
+  }
 }
 
 if (mode === "--generate") runContractTests(true);
