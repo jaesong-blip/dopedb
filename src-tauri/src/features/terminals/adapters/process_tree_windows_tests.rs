@@ -7,12 +7,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use uuid::Uuid;
 use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, STILL_ACTIVE};
 use windows_sys::Win32::System::Threading::{
-    GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    GetExitCodeProcess, GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_TERMINATE, TerminateProcess,
 };
 
 use super::*;
@@ -31,33 +31,43 @@ struct DescendantIdentity {
 struct MarkerFiles {
     go: PathBuf,
     ready: PathBuf,
+    ready_partial: PathBuf,
 }
 
 impl MarkerFiles {
     fn new() -> Self {
         let id = Uuid::new_v4().simple().to_string();
         let root = std::env::temp_dir();
+        let ready = root.join(format!("dopedb_terminal_{id}_ready"));
         Self {
             go: root.join(format!("dopedb_terminal_{id}_go")),
-            ready: root.join(format!("dopedb_terminal_{id}_ready")),
+            ready_partial: ready.with_extension("partial"),
+            ready,
         }
     }
 }
 
 impl Drop for MarkerFiles {
     fn drop(&mut self) {
-        for path in [&self.go, &self.ready] {
+        for path in [&self.go, &self.ready, &self.ready_partial] {
             let _ = fs::remove_file(path);
         }
     }
 }
 
-fn marker_appeared(path: &Path, timeout: Duration) -> bool {
+fn wait_for_descendant_identity(path: &Path, timeout: Duration) -> Option<DescendantIdentity> {
     let deadline = Instant::now() + timeout;
-    while !path.exists() && Instant::now() < deadline {
+    while Instant::now() < deadline {
+        if let Ok(value) = fs::read_to_string(path) {
+            if let Some(descendant) = parse_descendant_identity(&value) {
+                if descendant_is_running(&descendant) {
+                    return Some(descendant);
+                }
+            }
+        }
         std::thread::sleep(POLL_INTERVAL);
     }
-    path.exists()
+    None
 }
 
 fn wait_for_child_exit(child: &mut Box<dyn Child + Send + Sync>, timeout: Duration) -> String {
@@ -140,14 +150,25 @@ fn base64_encode(bytes: &[u8]) -> String {
 fn parent_script(markers: &MarkerFiles) -> String {
     let go = powershell_path(&markers.go);
     let ready = powershell_path(&markers.ready);
+    let ready_partial = powershell_path(&markers.ready_partial);
+    let descendant_script = format!(
+        r#"$decode = {{ param([string]$s) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($s)) }}
+$ErrorActionPreference = 'Stop'
+$ready = & $decode '{ready}'
+$partial = & $decode '{ready_partial}'
+$self = Get-Process -Id $PID
+[IO.File]::WriteAllText($partial, "$($PID):$($self.StartTime.ToUniversalTime().ToFileTimeUtc())")
+[IO.File]::Move($partial, $ready)
+while ($true) {{ Start-Sleep -Seconds 60 }}"#,
+    );
+    let encoded_descendant = powershell_encoded(&descendant_script);
     format!(
         r#"$decode = {{ param([string]$s) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($s)) }}
 $ErrorActionPreference = 'Stop'
-$go = & $decode '{go}'; $ready = & $decode '{ready}'
+$go = & $decode '{go}'
 while (-not (Test-Path -LiteralPath $go)) {{ Start-Sleep -Milliseconds 25 }}
-$process = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 600') -PassThru
+$process = [Diagnostics.Process]::Start('powershell.exe', '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded_descendant}')
 if ($null -eq $process -or $process.Id -le 0) {{ throw 'could not start descendant PowerShell' }}
-[IO.File]::WriteAllText($ready, "$($process.Id):$($process.StartTime.ToUniversalTime().ToFileTimeUtc())")
 $process.WaitForExit()"#,
     )
 }
@@ -250,33 +271,13 @@ fn windows_job_cleanup_prevents_a_descendant_from_outliving_the_pty() {
         let status = terminate_and_collect(&tree, &mut child, None);
         panic!("could not release the Windows process-tree parent: {error}; cleanup={status}");
     }
-    if !marker_appeared(&markers.ready, HANDSHAKE_TIMEOUT) {
-        let status = terminate_and_collect(&tree, &mut child, None);
-        panic!("READY marker timeout; cleanup={status}");
-    }
-
-    let ready = match fs::read_to_string(&markers.ready) {
-        Ok(ready) => ready,
-        Err(error) => {
-            let status = terminate_and_collect(&tree, &mut child, None);
-            panic!(
-                "could not read the Windows process-tree READY marker: {error}; cleanup={status}"
-            );
-        }
-    };
-    let descendant = match parse_descendant_identity(&ready) {
+    let descendant = match wait_for_descendant_identity(&markers.ready, HANDSHAKE_TIMEOUT) {
         Some(descendant) => descendant,
         None => {
             let status = terminate_and_collect(&tree, &mut child, None);
-            panic!(
-                "could not parse the Windows process-tree descendant identity; cleanup={status}"
-            );
+            panic!("READY marker timeout or invalid descendant identity; cleanup={status}");
         }
     };
-    if !descendant_is_running(&descendant) {
-        let status = terminate_and_collect(&tree, &mut child, Some(&descendant));
-        panic!("the Windows process-tree descendant was not alive before job cleanup; cleanup={status}");
-    }
 
     if let Err(error) = tree.force_terminate() {
         let status = terminate_and_collect(&tree, &mut child, Some(&descendant));
@@ -285,7 +286,9 @@ fn windows_job_cleanup_prevents_a_descendant_from_outliving_the_pty() {
     let child_exit = wait_for_child_exit(&mut child, CHILD_EXIT_TIMEOUT);
     if child_exit == "timed out" || child_exit.starts_with("poll error:") {
         let status = terminate_and_collect(&tree, &mut child, Some(&descendant));
-        panic!("the terminated Windows PTY parent did not exit cleanly: {child_exit}; cleanup={status}");
+        panic!(
+            "the terminated Windows PTY parent did not exit cleanly: {child_exit}; cleanup={status}"
+        );
     }
     if !descendant_exited(&descendant, DESCENDANT_EXIT_TIMEOUT) {
         let status = terminate_and_collect(&tree, &mut child, Some(&descendant));
