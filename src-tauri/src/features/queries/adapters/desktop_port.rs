@@ -1,37 +1,28 @@
 //! Desktop query port implementation backed by the local platform adapter.
 
 use super::super::domain::{
-    DesktopSqlClassificationRequest, DesktopSqlPreviewRequest, DesktopSqlProposalRequest,
-    TerminalSqlProposalRequest,
+    DesktopSqlInspectionRequest, DesktopSqlProposalRequest, TerminalSqlProposalRequest,
 };
 use super::super::ports::DesktopQueryPort;
 use super::desktop_contracts::{
-    DesktopSqlClassificationReceipt, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
-    DesktopSqlProposalReceipt, DesktopSqlRunError, DesktopSqlRunReceipt,
+    DesktopSqlInspectionError, DesktopSqlInspectionReceipt, DesktopSqlProposalReceipt,
+    DesktopSqlRunError, DesktopSqlRunReceipt,
 };
 use super::platform::QueryPlatformAdapter;
 use crate::kernel::identity::OperationId;
 
 impl DesktopQueryPort for QueryPlatformAdapter {
-    type ClassificationReceipt = DesktopSqlClassificationReceipt;
-    type PreviewReceipt = DesktopSqlPreviewReceipt;
+    type InspectionReceipt = DesktopSqlInspectionReceipt;
     type ProposalReceipt = DesktopSqlProposalReceipt;
     type RunReceipt = DesktopSqlRunReceipt;
     type InspectionError = DesktopSqlInspectionError;
     type RunError = DesktopSqlRunError;
 
-    async fn classify_desktop_sql(
+    async fn inspect_desktop_sql(
         &self,
-        request: DesktopSqlClassificationRequest,
-    ) -> Result<Self::ClassificationReceipt, Self::InspectionError> {
-        QueryPlatformAdapter::classify_desktop_sql(self, request).await
-    }
-
-    async fn preview_desktop_sql(
-        &self,
-        request: DesktopSqlPreviewRequest,
-    ) -> Result<Self::PreviewReceipt, Self::InspectionError> {
-        QueryPlatformAdapter::preview_desktop_sql(self, request).await
+        request: DesktopSqlInspectionRequest,
+    ) -> Result<Self::InspectionReceipt, Self::InspectionError> {
+        QueryPlatformAdapter::inspect_desktop_sql(self, request).await
     }
 
     async fn propose_desktop_sql(

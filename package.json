@@ -6,7 +6,10 @@
   "packageManager": "pnpm@10.26.1",
   "scripts": {
     "dev": "vite",
-    "build": "pnpm check:skills && pnpm check:release && pnpm check:architecture && pnpm check:ui && tsc && vite build",
+    "build": "pnpm check:skills && pnpm check:release && pnpm check:architecture && pnpm check:contracts && pnpm check:ui && tsc && vite build",
+    "generate:contracts": "node scripts/contracts/model-contracts.mjs --generate",
+    "check:contracts": "node scripts/contracts/model-contracts.mjs --check",
+    "test:contracts": "node --test scripts/contracts/*.node-test.mjs",
     "generate:skills": "node scripts/generate-skill-bundle.mjs",
     "check:skills": "node scripts/generate-skill-bundle.mjs --check",
     "check:architecture": "node scripts/check-architecture.mjs",

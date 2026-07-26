@@ -7,42 +7,29 @@ use crate::error::AppResult;
 use crate::state::AppState;
 
 use super::{
-    DesktopSqlClassificationReceipt, DesktopSqlClassificationRequest, DesktopSqlInspectionError,
-    DesktopSqlPreviewReceipt, DesktopSqlPreviewRequest, DesktopSqlProposalReceipt,
-    DesktopSqlProposalRequest, DesktopSqlRunError, DesktopSqlRunReceipt,
+    DesktopPreviewIntent, DesktopSqlInspectionError, DesktopSqlInspectionReceipt,
+    DesktopSqlInspectionRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
+    DesktopSqlRunError, DesktopSqlRunReceipt,
 };
 
-/// Classifies SQL using the connection selected by a typed transport identity.
+/// Atomically classifies and read-only explains a single SQL statement.
+///
+/// Tauri performs the sole raw UUID conversion. The feature owns the intent so
+/// clients cannot turn a casual Explain into an impact preview by crafting wire
+/// data.
 #[tauri::command]
-pub(crate) async fn classify_sql(
+pub(crate) async fn inspect_sql(
     state: State<'_, AppState>,
     id: Uuid,
     sql: String,
-) -> AppResult<DesktopSqlClassificationReceipt> {
+) -> AppResult<DesktopSqlInspectionReceipt> {
     state
         .services
         .queries
-        .classify_desktop_sql(DesktopSqlClassificationRequest {
+        .inspect_desktop_sql(DesktopSqlInspectionRequest {
             connection_id: id.into(),
             sql,
-        })
-        .await
-        .map_err(DesktopSqlInspectionError::into_error)
-}
-
-/// Previews the impact of one SQL statement without granting write execution.
-#[tauri::command]
-pub(crate) async fn preview_sql(
-    state: State<'_, AppState>,
-    id: Uuid,
-    sql: String,
-) -> AppResult<DesktopSqlPreviewReceipt> {
-    state
-        .services
-        .queries
-        .preview_desktop_sql(DesktopSqlPreviewRequest {
-            connection_id: id.into(),
-            sql,
+            intent: DesktopPreviewIntent::ReadOnlyExplain,
         })
         .await
         .map_err(DesktopSqlInspectionError::into_error)

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AuthenticationRequirement, CommandName, CommandSpec, EmptyArguments};
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillTarget {
@@ -22,6 +23,7 @@ impl SkillTarget {
     }
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillTargetSelection {
@@ -40,6 +42,7 @@ impl SkillTargetSelection {
     }
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillInstallState {
@@ -52,6 +55,7 @@ pub enum SkillInstallState {
     Invalid,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillStatusReason {
@@ -81,6 +85,7 @@ pub enum SkillStatusReason {
     UnsafePathComponent,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillConflictKind {
@@ -101,6 +106,7 @@ impl SkillConflictKind {
     }
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillConflict {
@@ -108,6 +114,7 @@ pub struct SkillConflict {
     pub kind: SkillConflictKind,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillSummary {
@@ -117,6 +124,7 @@ pub struct SkillSummary {
     pub package_digest: String,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillsListResult {
@@ -133,6 +141,7 @@ impl CommandSpec for SkillsListCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::None;
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillsGetArguments {
@@ -141,6 +150,7 @@ pub struct SkillsGetArguments {
     pub full: bool,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillGuideFile {
@@ -148,6 +158,7 @@ pub struct SkillGuideFile {
     pub content: String,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillsGetResult {
@@ -167,12 +178,14 @@ impl CommandSpec for SkillsGetCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::None;
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillStatusArguments {
     pub target: SkillTargetSelection,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillTargetStatus {
@@ -193,6 +206,7 @@ pub struct SkillTargetStatus {
     pub conflicts: Vec<SkillConflict>,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillStatusResult {
@@ -210,6 +224,7 @@ impl CommandSpec for SkillStatusCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::None;
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillTargetExpectation {
@@ -217,6 +232,7 @@ pub struct SkillTargetExpectation {
     pub inventory_fingerprint: String,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillMutationArguments {
@@ -224,6 +240,7 @@ pub struct SkillMutationArguments {
     pub expected: Vec<SkillTargetExpectation>,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillBackup {
@@ -231,6 +248,7 @@ pub struct SkillBackup {
     pub path: String,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillMutationResult {

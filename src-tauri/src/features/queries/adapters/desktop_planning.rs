@@ -9,13 +9,14 @@ use crate::kernel::identity::OperationId;
 use crate::kernel::TerminalAuthority;
 use crate::model::QueryKind;
 use crate::operations::{
-    actor_for_pin, agent_actor_for_pin, capture_policy, required_confirmation, NewOperation,
+    actor_for_pin, agent_actor_for_pin, required_confirmation, NewOperation,
     OperationPlanDisposition,
 };
 use crate::safety;
 
 use super::super::domain::{
-    DesktopSqlPreviewRequest, DesktopSqlProposalRequest, TerminalSqlProposalRequest,
+    DesktopPreviewIntent, DesktopSqlInspectionRequest, DesktopSqlProposalRequest,
+    TerminalSqlProposalRequest,
 };
 use super::desktop_contracts::{
     DesktopSqlInspectionError, DesktopSqlProposalReceipt, StoredDesktopSqlPayload,
@@ -51,45 +52,53 @@ impl QueryPlatformAdapter {
         request: DesktopSqlProposalRequest,
         terminal: Option<TerminalAuthority>,
     ) -> Result<DesktopSqlProposalReceipt, DesktopSqlInspectionError> {
-        let preview_receipt = self
-            .preview_sql(
-                DesktopSqlPreviewRequest {
+        let inspection = self
+            .inspect_sql(
+                DesktopSqlInspectionRequest {
                     connection_id: request.connection_id,
                     sql: request.sql.clone(),
+                    intent: DesktopPreviewIntent::ImpactPreview,
                 },
                 terminal.as_ref(),
             )
             .await?;
-        let pin = &preview_receipt.pin;
-        let settings = self
-            .store
-            .get_safety(pin.connection_id)
-            .await
-            .map_err(DesktopSqlInspectionError::Application)?;
-        let classification = safety::classify(&request.sql, pin.profile.engine)
-            .map_err(DesktopSqlInspectionError::Application)?;
+        let pin = inspection.pin.clone();
+        let classification = inspection.classification.clone();
         let is_write = !matches!(classification.kind, QueryKind::Read);
 
         if is_write && !pin.profile.workspace_access.can_write() {
-            return Err(DesktopSqlInspectionError::Application(AppError::Blocked {
+            return Err(inspection.into_error(AppError::Blocked {
                 reason: "your workspace role grants read-only database access".into(),
             }));
         }
+        let settings = match inspection
+            .policy_snapshot
+            .get("safety")
+            .cloned()
+            .ok_or_else(|| AppError::Config("inspection policy is missing safety settings".into()))
+            .and_then(|value| serde_json::from_value(value).map_err(AppError::from))
+        {
+            Ok(settings) => settings,
+            Err(error) => return Err(inspection.into_error(error)),
+        };
         if let safety::GateDecision::Block { reason } = safety::decide(&settings, &classification) {
-            return Err(DesktopSqlInspectionError::Application(AppError::Blocked {
-                reason,
-            }));
+            return Err(inspection.into_error(AppError::Blocked { reason }));
         }
 
-        let policy =
-            capture_policy(pin, &settings).map_err(DesktopSqlInspectionError::Application)?;
         let history_origin = request.origin.unwrap_or_else(|| "manual".into());
-        let payload = serde_json::to_value(StoredDesktopSqlPayload {
+        let payload = match serde_json::to_value(StoredDesktopSqlPayload {
             sql: request.sql,
             history_origin: history_origin.clone(),
         })
         .map_err(AppError::from)
-        .map_err(DesktopSqlInspectionError::Application)?;
+        {
+            Ok(payload) => payload,
+            Err(error) => return Err(inspection.into_error(error)),
+        };
+        let preview = match serde_json::to_value(&inspection.report).map_err(AppError::from) {
+            Ok(preview) => preview,
+            Err(error) => return Err(inspection.into_error(error)),
+        };
         let operation_id = OperationId::from(Uuid::new_v4());
         let expires_at = Utc::now()
             + if is_write {
@@ -104,11 +113,11 @@ impl QueryPlatformAdapter {
             OperationPlanDisposition::Ready
         };
         let actor = if let Some(authority) = terminal.as_ref() {
-            let mut actor = agent_actor_for_pin(pin, "cli".into(), "cli".into());
+            let mut actor = agent_actor_for_pin(&pin, "cli".into(), "cli".into());
             actor.provenance.client_protocol_version = Some(authority.client_protocol_version);
             actor
         } else {
-            actor_for_pin(pin, history_origin)
+            actor_for_pin(&pin, history_origin)
         };
         let operation = self
             .operation
@@ -128,19 +137,20 @@ impl QueryPlatformAdapter {
                     payload,
                     schema_fingerprint: None,
                     risk_level: operation_risk(&classification),
-                    preview: serde_json::to_value(&preview_receipt.report)
-                        .map_err(AppError::from)
-                        .map_err(DesktopSqlInspectionError::Application)?,
-                    policy_snapshot: policy.snapshot,
-                    policy_revision: policy.revision,
+                    preview,
+                    policy_snapshot: inspection.policy_snapshot.clone(),
+                    policy_revision: inspection.policy_revision.clone(),
                     single_use: true,
                     idempotency_key: operation_id.to_string(),
                     expires_at: Some(expires_at),
                 },
                 disposition,
             )
-            .await
-            .map_err(DesktopSqlInspectionError::Application)?;
+            .await;
+        let operation = match operation {
+            Ok(operation) => operation,
+            Err(error) => return Err(inspection.into_error(error)),
+        };
         let confirmation_phrase = required_confirmation(&operation).map(str::to_owned);
 
         Ok(DesktopSqlProposalReceipt {
@@ -151,8 +161,8 @@ impl QueryPlatformAdapter {
             auto_run: !is_write && settings.auto_run_reads,
             confirmation_phrase,
             expires_at,
-            classification,
-            preview: preview_receipt.report.clone(),
+            classification: inspection.classification.clone(),
+            preview: inspection.report.clone(),
         })
     }
 }

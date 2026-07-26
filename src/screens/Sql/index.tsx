@@ -21,8 +21,7 @@ import type {
 import { errDetails, errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import {
-  classifySql,
-  previewSql,
+  inspectSql,
   proposeSql,
   runSql,
 } from "../../features/queries/tauriAdapter";
@@ -318,15 +317,10 @@ export default function Sql({
     setPlanErr(null);
     setExplaining(true);
     try {
-      // Keep the casual Explain action read-only. Write previews are also EXPLAIN-only,
-      // but their risk review belongs to the exact proposal flow below.
-      const cls = await classifySql(connection.id, draft);
-      if (cls.kind !== "read") {
-        setPlan(null);
-        setPlanErr(t("sql.explainReadOnly"));
-        return;
-      }
-      setPlan(await previewSql(connection.id, draft));
+      // One backend inspection owns classification, authority pinning, and the
+      // read-only Explain. There is no classify-to-preview IPC race to bridge.
+      const inspection = await inspectSql(connection.id, draft);
+      setPlan(inspection.report);
     } catch (e) {
       setPlanErr(errMessage(e));
       setPlan(null);

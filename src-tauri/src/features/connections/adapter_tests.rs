@@ -8,7 +8,7 @@ use zeroize::Zeroizing;
 
 use super::adapters::{
     RuntimeConnectionAuthority, SqliteConnectionRepository, SystemAdHocConnection,
-    SystemDriverRegistry,
+    SystemDriverRegistry, AD_HOC_CONNECTION_TEST_ACCESS,
 };
 use super::{
     ConnectionCredentialVault, ConnectionProfileTestRequest, ConnectionUpsertRequest,
@@ -125,6 +125,11 @@ fn local_profile(id: Uuid, name: &str, engine: Engine) -> ConnectionProfile {
         workspace_access: WorkspaceConnectionAccess::Local,
         credential_mode: WorkspaceCredentialMode::Local,
     }
+}
+
+#[test]
+fn ad_hoc_profile_test_uses_only_read_capability() {
+    assert_eq!(AD_HOC_CONNECTION_TEST_ACCESS, ConnectionAccess::Read);
 }
 
 #[tokio::test]

@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
+import { collectQueryCentralIpcDiagnostics } from "./architecture/query-central-ipc-ownership.mjs";
 import {
-  collectQueryCentralIpcDiagnostics,
   collectQueryFrontendOwnershipDiagnostics,
 } from "./architecture/query-frontend-ownership.mjs";
 import {
@@ -83,6 +83,7 @@ const architectureContext = {
   walk,
 };
 for (const filePath of [
+  "scripts/architecture/query-central-ipc-ownership.mjs",
   "scripts/architecture/query-frontend-ownership.mjs",
   "scripts/architecture/query-rust-runtime-guards.mjs",
   "scripts/architecture/rust-safety-guards.mjs",
@@ -168,6 +169,10 @@ const removedPaths = [
   "src-tauri/src/services/legacy_chat_service.rs",
   "src-tauri/src/services/query_service.rs",
   "src-tauri/src/services/terminal_run_registry.rs",
+  "src-tauri/src/features/queries/adapters/desktop_classification.rs",
+  "src-tauri/src/features/queries/adapters/desktop_classification_tests.rs",
+  "src-tauri/src/features/queries/adapters/desktop_preview.rs",
+  "src-tauri/src/features/queries/adapters/desktop_preview_tests.rs",
   "src-tauri/src/skills/inventory.rs",
   "src-tauri/src/broker/dispatch.rs",
   "src/lib/i18n.tsx",
@@ -206,6 +211,7 @@ const skillInventoryTestModules = [
 ];
 const queryFrontendModules = [
   "src/features/queries/domain.ts",
+  "src/features/queries/generated/contracts.ts",
   "src/features/queries/tauriAdapter.ts",
 ];
 const i18nCatalogModules = [
@@ -647,7 +653,7 @@ const coreRustRules = [
   [/crate::connection/, "feature core must not depend on the connection adapter"],
   [/crate::store/, "feature core must not depend on the SQLite store"],
   [/\bsqlx\b/, "feature core must not depend on SQLx"],
-  [/\btauri\b/, "feature core must not depend on Tauri"],
+  [/(?:use\s+tauri\b|\btauri::|\btauri\s+as\b)/, "feature core must not depend on Tauri"],
   [/crate::state/, "feature core must not depend on global app state"],
   [/crate::services/, "feature core must not depend on the service facade"],
   [/crate::driver/, "feature core must not depend on the driver adapter"],

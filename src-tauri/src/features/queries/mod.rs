@@ -20,12 +20,12 @@ pub(crate) use adapters::TerminalQueryRunRegistry;
 pub(crate) use adapters::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};
 use adapters::{AgentQueryPlanReceipt, PreparedAgentQueryRun};
 pub(crate) use adapters::{
-    DesktopSqlClassificationReceipt, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
-    DesktopSqlProposalReceipt, DesktopSqlRunError, DesktopSqlRunReceipt,
+    DesktopSqlInspectionError, DesktopSqlInspectionReceipt, DesktopSqlProposalReceipt,
+    DesktopSqlRunError, DesktopSqlRunReceipt,
 };
 use application::QueryUseCases;
 pub(crate) use domain::{
-    DesktopSqlClassificationRequest, DesktopSqlPreviewRequest, DesktopSqlProposalRequest,
+    DesktopPreviewIntent, DesktopSqlInspectionRequest, DesktopSqlProposalRequest,
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
 #[cfg(test)]
@@ -47,18 +47,11 @@ pub(crate) struct QueriesFeature {
 }
 
 impl QueriesFeature {
-    pub(crate) async fn classify_desktop_sql(
+    pub(crate) async fn inspect_desktop_sql(
         &self,
-        request: DesktopSqlClassificationRequest,
-    ) -> Result<DesktopSqlClassificationReceipt, DesktopSqlInspectionError> {
-        self.application.classify_desktop_sql(request).await
-    }
-
-    pub(crate) async fn preview_desktop_sql(
-        &self,
-        request: DesktopSqlPreviewRequest,
-    ) -> Result<DesktopSqlPreviewReceipt, DesktopSqlInspectionError> {
-        self.application.preview_desktop_sql(request).await
+        request: DesktopSqlInspectionRequest,
+    ) -> Result<DesktopSqlInspectionReceipt, DesktopSqlInspectionError> {
+        self.application.inspect_desktop_sql(request).await
     }
 
     pub(crate) async fn propose_desktop_sql(

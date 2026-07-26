@@ -20,6 +20,9 @@ pub mod response;
 pub mod skill_command;
 pub mod version;
 
+#[cfg(test)]
+mod contracts;
+
 pub use catalog::*;
 pub use catalog_command::*;
 pub use command::{

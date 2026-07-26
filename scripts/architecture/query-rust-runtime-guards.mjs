@@ -88,7 +88,20 @@ export function collectQueryTestModuleDiagnostics(context) {
 }
 
 export function collectRemovedQueryRuntimeDiagnostics(rustSource) {
-  return ["QueryService", "TerminalQueryAdapter"]
+  return [
+    "QueryService",
+    "TerminalQueryAdapter",
+    "classify_sql",
+    "preview_sql",
+    "ClassifySqlRequest",
+    "ClassifySqlReceipt",
+    "PreviewSqlRequest",
+    "PreviewSqlReceipt",
+    "DesktopSqlPreviewRequest",
+    "DesktopSqlPreviewReceipt",
+    "ClassifySql",
+    "PreviewSql",
+  ]
     .filter((token) => rustSource.includes(token))
     .map((token) => `removed runtime token returned: ${token}`);
 }
@@ -265,11 +278,11 @@ function tauriCommandDeclaration(command) {
 export function collectQueryTauriCommandDiagnostics({ read, relative, sourceFiles }) {
   const diagnostics = [];
   for (const visibility of ["", "pub ", "pub(crate) "]) {
-    if (!tauriCommandDeclaration("run_sql").test(`#[tauri::command]\n${visibility}async fn run_sql() {}`)) {
+    if (!tauriCommandDeclaration("inspect_sql").test(`#[tauri::command]\n${visibility}async fn inspect_sql() {}`)) {
       diagnostics.push(`Rust Tauri command guard self-test failed for ${visibility || "private"} visibility`);
     }
   }
-  for (const command of ["classify_sql", "preview_sql", "propose_sql", "run_sql"]) {
+  for (const command of ["inspect_sql", "propose_sql", "run_sql"]) {
     const owners = sourceFiles
       .filter((file) => file.endsWith(".rs"))
       .filter((file) => tauriCommandDeclaration(command).test(read(relative(file))))
@@ -278,6 +291,20 @@ export function collectQueryTauriCommandDiagnostics({ read, relative, sourceFile
       diagnostics.push(
         `${command}: expected only src-tauri/src/features/queries/transport.rs, found ${owners.join(", ") || "none"}`,
       );
+    }
+  }
+  for (const command of ["classify_sql", "preview_sql"]) {
+    const owners = sourceFiles
+      .filter((file) => file.endsWith(".rs"))
+      .filter((file) => tauriCommandDeclaration(command).test(read(relative(file))))
+      .map(relative);
+    if (owners.length !== 0) {
+      diagnostics.push(`${command}: removed Tauri command returned in ${owners.join(", ")}`);
+    }
+  }
+  for (const command of ["classify_sql", "preview_sql"]) {
+    if (!tauriCommandDeclaration(command).test(`#[tauri::command]\npub(crate) async fn ${command}() {}`)) {
+      diagnostics.push(`Rust removed Query command guard self-test failed for ${command}`);
     }
   }
   return diagnostics;
@@ -306,6 +333,16 @@ export function collectQueryRuntimeOwnershipDiagnostics(context) {
     [/adapters::/, "Query transport must not depend on concrete adapters"],
     [/\bTerminalQueryAdapter\b/, "Query transport must delegate through the feature use cases"],
   ]);
+  const transportSource = read(transport);
+  for (const [command, useCase] of [
+    ["inspect_sql", "inspect_desktop_sql"],
+    ["propose_sql", "propose_desktop_sql"],
+    ["run_sql", "run_desktop_sql"],
+  ]) {
+    if (!tauriCommandDeclaration(command).test(transportSource) || !transportSource.includes(useCase)) {
+      diagnostics.push(`${transport}: ${command} must delegate only through ${useCase}`);
+    }
+  }
   for (const [name, fixture] of [
     ["crate-root alias", "use crate as root_alias; type Data = root_alias::connection::ConnectionManager;"],
     ["store module alias", "use crate::{store as persistence}; type Data = persistence::Backend;"],

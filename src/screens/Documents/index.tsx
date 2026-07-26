@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { proposeDocumentQuery, runDocumentQuery } from "../../ipc/commands";
-import type { DocumentPage, DocumentQuery, QueryResult } from "../../ipc/types";
+import type { DocumentPage, DocumentQuery, JsonValue, QueryResult } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import DataGrid from "../../components/DataGrid";
@@ -19,7 +19,7 @@ import "./documents.css";
 
 type Op = "find" | "aggregate" | "count";
 
-function parseJsonField(text: string, label: string): unknown {
+function parseJsonField(text: string, label: string): JsonValue | undefined {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
   try {

@@ -13,7 +13,7 @@ use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
 #[cfg(test)]
 use crate::error::AppError;
 #[cfg(test)]
-use crate::model::QueryKind;
+use crate::model::{PreviewMode, QueryKind};
 #[cfg(test)]
 use crate::operations::{OperationRuntime, OperationState};
 #[cfg(test)]
@@ -23,6 +23,8 @@ use crate::store::Store;
 use super::super::domain::DesktopSqlProposalRequest;
 #[cfg(test)]
 use super::desktop_contracts::*;
+#[cfg(test)]
+use super::desktop_support::skipped_preview_report;
 #[cfg(test)]
 #[cfg(test)]
 use super::platform::QueryPlatformAdapter;
@@ -61,6 +63,29 @@ mod tests {
             workspace_access: WorkspaceConnectionAccess::Local,
             credential_mode: WorkspaceCredentialMode::Local,
         }
+    }
+
+    #[test]
+    fn desktop_static_preview_reports_keep_exact_legacy_messages() {
+        let workspace =
+            skipped_preview_report("workspace role is read-only — write preview skipped");
+        assert_eq!(workspace.mode, PreviewMode::Skipped);
+        assert_eq!(workspace.estimated_rows, None);
+        assert_eq!(workspace.exact_rows, None);
+        assert_eq!(workspace.plan, None);
+        assert_eq!(
+            workspace.note.as_deref(),
+            Some("workspace role is read-only — write preview skipped")
+        );
+        let disabled = skipped_preview_report(
+            "writes are disabled for this connection — impact preview skipped (no rows locked)",
+        );
+        assert_eq!(
+            disabled.note.as_deref(),
+            Some(
+                "writes are disabled for this connection — impact preview skipped (no rows locked)"
+            )
+        );
     }
 
     struct SqliteHarness {

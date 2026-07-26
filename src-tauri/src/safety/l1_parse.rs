@@ -16,6 +16,49 @@ use sqlparser::parser::Parser;
 use crate::error::AppResult;
 use crate::model::{Classification, Engine, QueryKind, RiskLevel};
 
+/// Parser confidence that is deliberately kept outside the serialized SQL
+/// classification wire contract. Callers that may acquire a target capability
+/// must use this signal rather than interpreting human-facing `notes` strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClassificationIntegrity {
+    /// Exactly one statement parsed under the selected SQL dialect.
+    ExactSingle,
+    /// Parsing failed or produced no statement.
+    ParseFailed,
+    /// More than one top-level statement was present.
+    MultipleStatements,
+    /// The connection uses a document API rather than a SQL dialect.
+    DocumentFamily,
+    /// A statement parsed but its shape is not allowlisted by the classifier.
+    Ambiguous,
+}
+
+/// Internal classification result that pairs the stable wire payload with its
+/// non-serializable parser-integrity signal.
+#[derive(Debug, Clone)]
+pub struct ClassificationAnalysis {
+    pub classification: Classification,
+    pub integrity: ClassificationIntegrity,
+}
+
+impl ClassificationAnalysis {
+    /// Whether a casual Explain may acquire a read target capability.
+    pub fn is_exact_single_read(&self) -> bool {
+        matches!(self.integrity, ClassificationIntegrity::ExactSingle)
+            && matches!(self.classification.kind, QueryKind::Read)
+    }
+
+    /// Whether an impact preview may acquire a target read capability before a
+    /// durable approval exists. Only a clean read or direct rollback-safe DML is
+    /// eligible; every fail-safe classification remains pre-connection only.
+    pub fn may_touch_target_for_impact_preview(&self) -> bool {
+        matches!(self.integrity, ClassificationIntegrity::ExactSingle)
+            && (matches!(self.classification.kind, QueryKind::Read)
+                || (matches!(self.classification.kind, QueryKind::Write)
+                    && self.classification.rollback_safe))
+    }
+}
+
 fn dialect_for(engine: Engine) -> Option<Box<dyn Dialect>> {
     match engine {
         Engine::Postgres => Some(Box::new(PostgreSqlDialect {})),
@@ -26,39 +69,48 @@ fn dialect_for(engine: Engine) -> Option<Box<dyn Dialect>> {
 }
 
 /// Fail-safe classification: treat as a High-risk write so the gate can stop it.
-fn fail_safe(note: impl Into<String>) -> Classification {
-    Classification {
-        kind: QueryKind::Write,
-        risk: RiskLevel::High,
-        statement_count: 1,
-        no_where: false,
-        tables: Vec::new(),
-        notes: vec![note.into()],
-        rollback_safe: false,
+fn fail_safe(
+    note: impl Into<String>,
+    integrity: ClassificationIntegrity,
+) -> ClassificationAnalysis {
+    ClassificationAnalysis {
+        classification: Classification {
+            kind: QueryKind::Write,
+            risk: RiskLevel::High,
+            statement_count: 1,
+            no_where: false,
+            tables: Vec::new(),
+            notes: vec![note.into()],
+            rollback_safe: false,
+        },
+        integrity,
     }
 }
 
 /// Classify one SQL string. Never returns `Err` for a *statement-level* problem
 /// (those become fail-safe writes); the `AppResult` signature is kept so callers
 /// have a uniform error channel for genuinely impossible states.
-pub fn classify(sql: &str, engine: Engine) -> AppResult<Classification> {
+pub fn classify_with_integrity(sql: &str, engine: Engine) -> AppResult<ClassificationAnalysis> {
     let Some(dialect) = dialect_for(engine) else {
         return Ok(fail_safe(
             "MongoDB document operations must use the typed document-query API",
+            ClassificationIntegrity::DocumentFamily,
         ));
     };
     let statements = match Parser::parse_sql(&*dialect, sql) {
         Ok(s) => s,
         Err(e) => {
-            return Ok(fail_safe(format!(
-                "parse error — treated as a write (fail-safe): {e}"
-            )))
+            return Ok(fail_safe(
+                format!("parse error — treated as a write (fail-safe): {e}"),
+                ClassificationIntegrity::ParseFailed,
+            ))
         }
     };
 
     if statements.is_empty() {
         return Ok(fail_safe(
             "no parseable statement — treated as a write (fail-safe)",
+            ClassificationIntegrity::ParseFailed,
         ));
     }
 
@@ -68,17 +120,20 @@ pub fn classify(sql: &str, engine: Engine) -> AppResult<Classification> {
             collect_tables(s, &mut tables);
         }
         dedup(&mut tables);
-        return Ok(Classification {
-            kind: QueryKind::Write,
-            risk: RiskLevel::High,
-            statement_count: statements.len() as u32,
-            no_where: false,
-            tables,
-            notes: vec![format!(
-                "{} statements found — only single statements are allowed",
-                statements.len()
-            )],
-            rollback_safe: false,
+        return Ok(ClassificationAnalysis {
+            classification: Classification {
+                kind: QueryKind::Write,
+                risk: RiskLevel::High,
+                statement_count: statements.len() as u32,
+                no_where: false,
+                tables,
+                notes: vec![format!(
+                    "{} statements found — only single statements are allowed",
+                    statements.len()
+                )],
+                rollback_safe: false,
+            },
+            integrity: ClassificationIntegrity::MultipleStatements,
         });
     }
 
@@ -86,7 +141,7 @@ pub fn classify(sql: &str, engine: Engine) -> AppResult<Classification> {
     let mut notes = Vec::new();
     let mut no_where = false;
 
-    let kind = classify_stmt(stmt, &mut notes, &mut no_where);
+    let (kind, integrity) = classify_stmt(stmt, &mut notes, &mut no_where);
 
     if no_where {
         notes.push("UPDATE/DELETE without a WHERE clause — affects every row".into());
@@ -103,43 +158,56 @@ pub fn classify(sql: &str, engine: Engine) -> AppResult<Classification> {
     collect_tables(stmt, &mut tables);
     dedup(&mut tables);
 
-    Ok(Classification {
-        kind,
-        risk,
-        statement_count: 1,
-        no_where,
-        tables,
-        notes,
-        // Only direct DML has the transaction semantics required by L3's
-        // execute-and-ROLLBACK preview. Utility statements and write-like query
-        // forms stay gated but are never preview-executed.
-        rollback_safe: matches!(
-            stmt,
-            Statement::Insert(_) | Statement::Update(_) | Statement::Delete(_)
-        ),
+    Ok(ClassificationAnalysis {
+        classification: Classification {
+            kind,
+            risk,
+            statement_count: 1,
+            no_where,
+            tables,
+            notes,
+            // Only direct DML has the transaction semantics required by L3's
+            // execute-and-ROLLBACK preview. Utility statements and write-like query
+            // forms stay gated but are never preview-executed.
+            rollback_safe: matches!(
+                stmt,
+                Statement::Insert(_) | Statement::Update(_) | Statement::Delete(_)
+            ),
+        },
+        integrity,
     })
+}
+
+/// Stable public classification wire payload for callers that do not acquire a
+/// target capability. Capability-owning flows use [`classify_with_integrity`].
+pub fn classify(sql: &str, engine: Engine) -> AppResult<Classification> {
+    Ok(classify_with_integrity(sql, engine)?.classification)
 }
 
 /// Recursive statement classification. Recurses for `EXPLAIN ANALYZE`, which
 /// actually EXECUTES its inner statement, so it must inherit that statement's kind.
-fn classify_stmt(stmt: &Statement, notes: &mut Vec<String>, no_where: &mut bool) -> QueryKind {
+fn classify_stmt(
+    stmt: &Statement,
+    notes: &mut Vec<String>,
+    no_where: &mut bool,
+) -> (QueryKind, ClassificationIntegrity) {
     match stmt {
         Statement::Query(q) => {
             if query_has_dml(q) {
                 notes.push("write DML inside a CTE — reclassified as a write".into());
-                QueryKind::Write
+                (QueryKind::Write, ClassificationIntegrity::ExactSingle)
             } else if query_selects_into(q) {
                 // SELECT ... INTO <table> creates and populates a table — not a read.
                 notes.push("SELECT ... INTO creates a table — reclassified as a write".into());
-                QueryKind::Write
+                (QueryKind::Write, ClassificationIntegrity::ExactSingle)
             } else if !q.locks.is_empty() {
                 // FOR UPDATE / FOR SHARE takes row locks (would fail on a read-only txn).
                 notes.push(
                     "SELECT ... FOR UPDATE/SHARE takes row locks — reclassified as a write".into(),
                 );
-                QueryKind::Write
+                (QueryKind::Write, ClassificationIntegrity::ExactSingle)
             } else {
-                QueryKind::Read
+                (QueryKind::Read, ClassificationIntegrity::ExactSingle)
             }
         }
         // Plain EXPLAIN just plans (Read); EXPLAIN ANALYZE runs the statement, so
@@ -154,18 +222,18 @@ fn classify_stmt(stmt: &Statement, notes: &mut Vec<String>, no_where: &mut bool)
                 );
                 classify_stmt(statement, notes, no_where)
             } else {
-                QueryKind::Read
+                (QueryKind::Read, ClassificationIntegrity::ExactSingle)
             }
         }
 
-        Statement::Insert(_) => QueryKind::Write,
+        Statement::Insert(_) => (QueryKind::Write, ClassificationIntegrity::ExactSingle),
         Statement::Update(update) => {
             *no_where = update.selection.is_none();
-            QueryKind::Write
+            (QueryKind::Write, ClassificationIntegrity::ExactSingle)
         }
         Statement::Delete(del) => {
             *no_where = del.selection.is_none();
-            QueryKind::Write
+            (QueryKind::Write, ClassificationIntegrity::ExactSingle)
         }
 
         Statement::CreateTable(_)
@@ -175,9 +243,11 @@ fn classify_stmt(stmt: &Statement, notes: &mut Vec<String>, no_where: &mut bool)
         | Statement::CreateDatabase { .. }
         | Statement::AlterTable { .. }
         | Statement::Drop { .. }
-        | Statement::Truncate { .. } => QueryKind::Ddl,
+        | Statement::Truncate { .. } => (QueryKind::Ddl, ClassificationIntegrity::ExactSingle),
 
-        Statement::Grant { .. } | Statement::Revoke { .. } => QueryKind::Privilege,
+        Statement::Grant { .. } | Statement::Revoke { .. } => {
+            (QueryKind::Privilege, ClassificationIntegrity::ExactSingle)
+        }
 
         // Unknown / unmodeled statement: fail safe to write so it is gated.
         other => {
@@ -185,7 +255,7 @@ fn classify_stmt(stmt: &Statement, notes: &mut Vec<String>, no_where: &mut bool)
                 "unrecognized statement shape — treated as a write (fail-safe): {}",
                 short_kind(other)
             ));
-            QueryKind::Write
+            (QueryKind::Write, ClassificationIntegrity::Ambiguous)
         }
     }
 }
@@ -309,6 +379,42 @@ mod tests {
 
     fn c(sql: &str) -> Classification {
         classify(sql, Engine::Postgres).unwrap()
+    }
+
+    fn analysis(sql: &str, engine: Engine) -> ClassificationAnalysis {
+        classify_with_integrity(sql, engine).unwrap()
+    }
+
+    #[test]
+    fn integrity_marks_exact_parse_failures_multi_statement_and_document_family() {
+        assert_eq!(
+            analysis("SELECT id FROM users", Engine::Postgres).integrity,
+            ClassificationIntegrity::ExactSingle
+        );
+        assert_eq!(
+            analysis("this is not sql", Engine::Postgres).integrity,
+            ClassificationIntegrity::ParseFailed
+        );
+        assert_eq!(
+            analysis("SELECT 1; SELECT 2", Engine::Postgres).integrity,
+            ClassificationIntegrity::MultipleStatements
+        );
+        assert_eq!(
+            analysis(r#"{ "find": "users" }"#, Engine::Mongodb).integrity,
+            ClassificationIntegrity::DocumentFamily
+        );
+    }
+
+    #[test]
+    fn integrity_does_not_depend_on_human_facing_notes() {
+        let mut parsed = analysis("this is not sql", Engine::Postgres);
+        let integrity = parsed.integrity;
+        let target_touch_allowed = parsed.may_touch_target_for_impact_preview();
+        parsed.classification.notes = vec!["changed copy for a localized UI".into()];
+        assert_eq!(integrity, ClassificationIntegrity::ParseFailed);
+        assert_eq!(parsed.integrity, ClassificationIntegrity::ParseFailed);
+        assert!(!target_touch_allowed);
+        assert!(!parsed.may_touch_target_for_impact_preview());
     }
 
     #[test]

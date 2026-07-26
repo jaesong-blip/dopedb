@@ -6,8 +6,8 @@ use crate::kernel::identity::{OperationId, QueryRunId, TerminalSessionId};
 use crate::kernel::TerminalAuthority;
 
 use super::domain::{
-    DesktopSqlClassificationRequest, DesktopSqlPreviewRequest, DesktopSqlProposalRequest,
-    TerminalQueryPlanRequest, TerminalSqlProposalRequest,
+    DesktopSqlInspectionRequest, DesktopSqlProposalRequest, TerminalQueryPlanRequest,
+    TerminalSqlProposalRequest,
 };
 
 pub(crate) trait TerminalQueryPort: Clone + Send + Sync + 'static {
@@ -33,22 +33,16 @@ pub(crate) trait TerminalQueryPort: Clone + Send + Sync + 'static {
 /// Requests use pure feature contracts; lease-backed receipts and platform error
 /// representations remain associated adapter outputs.
 pub(crate) trait DesktopQueryPort: Clone + Send + Sync + 'static {
-    type ClassificationReceipt: Send;
-    type PreviewReceipt: Send;
+    type InspectionReceipt: Send;
     type ProposalReceipt: Send;
     type RunReceipt: Send;
     type InspectionError: Send;
     type RunError: Send;
 
-    fn classify_desktop_sql(
+    fn inspect_desktop_sql(
         &self,
-        request: DesktopSqlClassificationRequest,
-    ) -> impl Future<Output = Result<Self::ClassificationReceipt, Self::InspectionError>> + Send;
-
-    fn preview_desktop_sql(
-        &self,
-        request: DesktopSqlPreviewRequest,
-    ) -> impl Future<Output = Result<Self::PreviewReceipt, Self::InspectionError>> + Send;
+        request: DesktopSqlInspectionRequest,
+    ) -> impl Future<Output = Result<Self::InspectionReceipt, Self::InspectionError>> + Send;
 
     fn propose_desktop_sql(
         &self,

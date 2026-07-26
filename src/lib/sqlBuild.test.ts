@@ -3,17 +3,22 @@ import type { CatalogTable } from "../ipc/types";
 import { buildDelete, buildUpdate } from "./sqlBuild";
 
 function table(
-  columns: CatalogTable["columns"],
+  columns: Array<{ name: string; dataType: string; nullable: boolean; pk: boolean }>,
 ): CatalogTable {
   return {
     schema: "public",
     name: "users",
     kind: "table",
+    nativeId: null,
+    comment: null,
+    partitionParent: null,
+    partitionChildren: [],
     columns,
     foreignKeys: [],
+    constraints: [],
     indexes: [],
     rowEstimate: null,
-  };
+  } as unknown as CatalogTable;
 }
 
 describe("optimistic row mutation SQL", () => {

@@ -1,38 +1,18 @@
 //! Desktop SQL characterization tests.
-
-#[cfg(test)]
-use std::time::Duration;
-
-#[cfg(test)]
-use uuid::Uuid;
-
-#[cfg(test)]
-use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
-#[cfg(test)]
-use crate::error::AppError;
-#[cfg(test)]
-use crate::kernel::TerminalAuthority;
-#[cfg(test)]
-use crate::model::{Classification, PreviewMode, QueryKind, SafetySettings};
-#[cfg(test)]
-use crate::operations::OperationRuntime;
-#[cfg(test)]
-use crate::store::Store;
-
-#[cfg(test)]
 use super::super::domain::{
-    DesktopSqlClassificationRequest, DesktopSqlPreviewRequest, TerminalSqlProposalRequest,
+    DesktopPreviewIntent, DesktopSqlInspectionRequest, TerminalSqlProposalRequest,
 };
-#[cfg(test)]
-use super::desktop_support::{desktop_preview_connection_access, skipped_preview_report};
-#[cfg(test)]
+use super::desktop_support::desktop_preview_connection_access;
 use super::platform::QueryPlatformAdapter;
-
-#[cfg(test)]
+use crate::connection::{ConnectionAccess, ConnectionManager, DbPool};
+use crate::error::AppError;
+use crate::kernel::TerminalAuthority;
+use crate::model::{Classification, PreviewMode, QueryKind, SafetySettings};
+use crate::operations::OperationRuntime;
+use crate::store::Store;
+use std::time::Duration;
+use uuid::Uuid;
 mod tests {
-    use std::collections::HashMap;
-    use std::str::FromStr;
-
     use super::*;
     use crate::kernel::identity::AccountScopeId;
     use crate::model::{
@@ -41,8 +21,9 @@ mod tests {
     };
     use crate::store::TEST_SCHEMA;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use std::collections::HashMap;
+    use std::str::FromStr;
     use tempfile::TempDir;
-
     fn profile(id: Uuid, database: String) -> ConnectionProfile {
         ConnectionProfile {
             id,
@@ -65,7 +46,6 @@ mod tests {
             credential_mode: WorkspaceCredentialMode::Local,
         }
     }
-
     fn classification(kind: QueryKind, rollback_safe: bool) -> Classification {
         Classification {
             kind,
@@ -77,7 +57,6 @@ mod tests {
             rollback_safe,
         }
     }
-
     #[test]
     fn desktop_preview_access_is_always_read_only_before_exact_approval() {
         let settings = SafetySettings {
@@ -85,7 +64,6 @@ mod tests {
             explain_preview: true,
             ..SafetySettings::default()
         };
-
         for classification in [
             classification(QueryKind::Read, false),
             classification(QueryKind::Write, true),
@@ -99,31 +77,6 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn desktop_static_preview_reports_keep_exact_legacy_messages() {
-        let workspace =
-            skipped_preview_report("workspace role is read-only — write preview skipped");
-        assert_eq!(workspace.mode, PreviewMode::Skipped);
-        assert_eq!(workspace.estimated_rows, None);
-        assert_eq!(workspace.exact_rows, None);
-        assert_eq!(workspace.plan, None);
-        assert_eq!(
-            workspace.note.as_deref(),
-            Some("workspace role is read-only — write preview skipped")
-        );
-
-        let disabled = skipped_preview_report(
-            "writes are disabled for this connection — impact preview skipped (no rows locked)",
-        );
-        assert_eq!(
-            disabled.note.as_deref(),
-            Some(
-                "writes are disabled for this connection — impact preview skipped (no rows locked)"
-            )
-        );
-    }
-
     struct SqliteHarness {
         service: QueryPlatformAdapter,
         store: Store,
@@ -132,7 +85,6 @@ mod tests {
         profile: ConnectionProfile,
         directory: TempDir,
     }
-
     impl SqliteHarness {
         async fn new() -> Self {
             let app_options = SqliteConnectOptions::from_str("sqlite::memory:")
@@ -145,7 +97,6 @@ mod tests {
                 .unwrap();
             sqlx::raw_sql(TEST_SCHEMA).execute(&app_pool).await.unwrap();
             let store = Store::from_pool_for_test(app_pool);
-
             let directory = tempfile::tempdir().unwrap();
             let target_path = directory.path().join("query-service-target.db");
             let target_options = SqliteConnectOptions::new()
@@ -165,7 +116,6 @@ mod tests {
             .await
             .unwrap();
             target_pool.close().await;
-
             let connection_id = Uuid::new_v4();
             let profile = profile(connection_id, target_path.to_string_lossy().into_owned());
             store.upsert_connection(&profile).await.unwrap();
@@ -186,7 +136,6 @@ mod tests {
                 directory,
             }
         }
-
         async fn close(self) {
             let mutation = self
                 .connections
@@ -209,7 +158,6 @@ mod tests {
                 .close()
                 .expect("temporary SQLite directory must be removable after pool shutdown");
         }
-
         async fn terminal_authority(&self) -> TerminalAuthority {
             let context = self
                 .connections
@@ -228,7 +176,6 @@ mod tests {
                 client_protocol_version: dopedb_protocol::PROTOCOL_MAX,
             }
         }
-
         async fn user_name(&self, id: i64) -> String {
             let lease = self
                 .connections
@@ -245,7 +192,6 @@ mod tests {
                 _ => panic!("query-service harness must use SQLite"),
             }
         }
-
         async fn set_connection_access_for_test(&self, access: &str) {
             sqlx::query(
                 "UPDATE connections
@@ -259,13 +205,11 @@ mod tests {
             .unwrap();
         }
     }
-
     #[tokio::test]
     async fn terminal_sql_proposal_rejects_reselected_scope_before_target_access() {
         let harness = SqliteHarness::new().await;
         let mut authority = harness.terminal_authority().await;
         authority.scope_generation += 1;
-
         let error = match harness
             .service
             .propose_terminal_sql(TerminalSqlProposalRequest {
@@ -285,17 +229,15 @@ mod tests {
         ));
         harness.close().await;
     }
-
     #[tokio::test]
-    async fn desktop_classification_is_view_capable_and_holds_scope_through_serialization() {
+    async fn desktop_inspection_is_atomic_and_holds_scope_through_serialization() {
         let harness = SqliteHarness::new().await;
-        harness.set_connection_access_for_test("view").await;
-
         let receipt = harness
             .service
-            .classify_desktop_sql(DesktopSqlClassificationRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "SELECT id FROM users".into(),
+                intent: DesktopPreviewIntent::ReadOnlyExplain,
             })
             .await
             .unwrap();
@@ -304,20 +246,24 @@ mod tests {
         assert_eq!(
             serialized,
             serde_json::json!({
-                "kind": "read",
-                "risk": "low",
-                "statementCount": 1,
-                "noWhere": false,
-                "tables": ["users"],
-                "notes": [],
-                "rollbackSafe": false
+                "classification": {
+                    "kind": "read",
+                    "risk": "low",
+                    "statementCount": 1,
+                    "noWhere": false,
+                    "tables": ["users"],
+                    "notes": [],
+                    "rollbackSafe": false
+                },
+                "report": {
+                    "mode": "explain",
+                    "estimatedRows": null,
+                    "exactRows": null,
+                    "plan": "SCAN users",
+                    "note": null
+                }
             }),
-            "desktop classification must retain the literal legacy wire contract"
-        );
-        assert_eq!(
-            serialized,
-            serde_json::to_value(&receipt.classification).unwrap(),
-            "receipt serialization must preserve the legacy Classification shape"
+            "one inspection response must bind classification and preview together"
         );
         assert!(
             tokio::time::timeout(
@@ -336,21 +282,18 @@ mod tests {
         .await
         .expect("scope writer must proceed after classification receipt drop");
         drop(mutation);
-
-        harness.set_connection_access_for_test("local").await;
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_preview_preserves_viewer_gate_order_and_exact_messages() {
         let harness = SqliteHarness::new().await;
         harness.set_connection_access_for_test("view").await;
-
         let write_receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "UPDATE users SET name = 'Grace' WHERE id = 1".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
@@ -360,7 +303,7 @@ mod tests {
             Some("workspace role is read-only — write preview skipped")
         );
         assert_eq!(
-            serde_json::to_value(&write_receipt).unwrap(),
+            serde_json::to_value(&write_receipt.report).unwrap(),
             serde_json::json!({
                 "mode": "skipped",
                 "estimatedRows": null,
@@ -368,15 +311,15 @@ mod tests {
                 "plan": null,
                 "note": "workspace role is read-only — write preview skipped"
             }),
-            "desktop preview must retain the literal legacy wire contract"
+            "inspection report must retain the literal PreviewReport projection"
         );
         drop(write_receipt);
-
         let read_error = match harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "SELECT id FROM users".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
         {
@@ -396,11 +339,9 @@ mod tests {
             AppError::Blocked { reason }
                 if reason == "workspace role cannot execute this connection"
         ));
-
         harness.set_connection_access_for_test("local").await;
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_preconnection_skips_do_not_open_the_target_database() {
         let harness = SqliteHarness::new().await;
@@ -411,7 +352,6 @@ mod tests {
             .join("target.db")
             .to_string_lossy()
             .into_owned();
-
         let mut writes_disabled = harness.profile.clone();
         writes_disabled.database = invalid_database.clone();
         writes_disabled.allow_writes = true;
@@ -431,12 +371,12 @@ mod tests {
             .set_safety(harness.connection_id, &settings)
             .await
             .unwrap();
-
         let disabled_receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "DELETE FROM users WHERE id = 1".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
@@ -463,7 +403,6 @@ mod tests {
         .await
         .expect("scope writer must proceed after skipped preview receipt drop");
         drop(mutation);
-
         harness.set_connection_access_for_test("view").await;
         settings.allow_writes = true;
         harness
@@ -473,9 +412,10 @@ mod tests {
             .unwrap();
         let readonly_receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "DELETE FROM users WHERE id = 1".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
@@ -484,7 +424,6 @@ mod tests {
             Some("workspace role is read-only — write preview skipped")
         );
         drop(readonly_receipt);
-
         harness.set_connection_access_for_test("local").await;
         harness
             .store
@@ -493,23 +432,26 @@ mod tests {
             .unwrap();
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_read_preview_preserves_wire_shape_and_lease_guard() {
         let harness = SqliteHarness::new().await;
         let receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "SELECT id, name FROM users ORDER BY id".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
         assert_eq!(receipt.report.mode, PreviewMode::Explain);
         assert_eq!(
-            serde_json::to_value(&receipt).unwrap(),
-            serde_json::to_value(&receipt.report).unwrap(),
-            "receipt serialization must preserve the legacy PreviewReport shape"
+            serde_json::to_value(&receipt)
+                .unwrap()
+                .get("report")
+                .cloned(),
+            Some(serde_json::to_value(&receipt.report).unwrap()),
+            "the atomic inspection wire must expose its exact PreviewReport projection"
         );
         assert!(
             tokio::time::timeout(
@@ -530,19 +472,18 @@ mod tests {
         drop(mutation);
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_preview_receipt_serializes_safety_mutation_until_drop() {
         let harness = SqliteHarness::new().await;
         let receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "SELECT id FROM users".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
-
         let mut updated = harness
             .store
             .get_safety(harness.connection_id)
@@ -550,7 +491,6 @@ mod tests {
             .unwrap();
         assert_eq!(updated.max_rows, 1000);
         updated.max_rows = 77;
-
         let store = harness.store.clone();
         let connections = harness.connections.clone();
         let connection_id = harness.connection_id;
@@ -568,7 +508,6 @@ mod tests {
         started_rx
             .await
             .expect("safety mutation task must reach the scope writer");
-
         assert!(
             tokio::time::timeout(Duration::from_millis(100), &mut updater)
                 .await
@@ -585,7 +524,6 @@ mod tests {
             1000,
             "waiting mutation must not publish settings early"
         );
-
         drop(receipt);
         tokio::time::timeout(Duration::from_secs(5), updater)
             .await
@@ -602,7 +540,6 @@ mod tests {
         );
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_write_preview_disabled_is_read_authorized_and_explain_only() {
         let harness = SqliteHarness::new().await;
@@ -618,15 +555,13 @@ mod tests {
             .set_safety(harness.connection_id, &settings)
             .await
             .unwrap();
-
-        // The profile write gate remains false. Success therefore proves that this
-        // branch requested Read access and never entered execute+rollback.
         assert!(!harness.profile.allow_writes);
         let receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "UPDATE users SET name = 'Grace' WHERE id = 1".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
@@ -636,7 +571,6 @@ mod tests {
         assert_eq!(harness.user_name(1).await, "Ada");
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_write_preview_never_executes_before_exact_approval() {
         let harness = SqliteHarness::new().await;
@@ -652,12 +586,12 @@ mod tests {
             .set_safety(harness.connection_id, &settings)
             .await
             .unwrap();
-
         let receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "UPDATE users SET name = 'Grace' WHERE id = 1".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
@@ -672,9 +606,8 @@ mod tests {
         assert_eq!(harness.user_name(1).await, "Ada");
         harness.close().await;
     }
-
     #[tokio::test]
-    async fn desktop_nonrollback_write_preview_uses_read_authority_only() {
+    async fn desktop_ambiguous_preview_skips_before_target_access() {
         let harness = SqliteHarness::new().await;
         let mut settings = harness
             .store
@@ -688,22 +621,26 @@ mod tests {
             .set_safety(harness.connection_id, &settings)
             .await
             .unwrap();
-
         let receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "this is not sql".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
-        assert_eq!(receipt.report.mode, PreviewMode::Explain);
+        assert_eq!(receipt.report.mode, PreviewMode::Skipped);
         assert_eq!(receipt.report.exact_rows, None);
+        assert!(receipt
+            .report
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("before target access")));
         drop(receipt);
         assert_eq!(harness.user_name(1).await, "Ada");
         harness.close().await;
     }
-
     #[tokio::test]
     async fn desktop_ddl_preview_skips_before_opening_the_target() {
         let harness = SqliteHarness::new().await;
@@ -716,7 +653,6 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         harness.store.upsert_connection(&invalid).await.unwrap();
-
         let mut settings = harness
             .store
             .get_safety(harness.connection_id)
@@ -728,12 +664,12 @@ mod tests {
             .set_safety(harness.connection_id, &settings)
             .await
             .unwrap();
-
         let receipt = harness
             .service
-            .preview_desktop_sql(DesktopSqlPreviewRequest {
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
                 connection_id: harness.connection_id.into(),
                 sql: "CREATE TABLE preview_only (id INTEGER PRIMARY KEY)".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
             })
             .await
             .unwrap();
@@ -743,6 +679,113 @@ mod tests {
             Some("DDL / privilege change — no row-count preview; review the statement directly.")
         );
         drop(receipt);
+        harness.close().await;
+    }
+    #[tokio::test]
+    async fn unsafe_preview_shapes_fail_closed_before_credentials_or_target_touch() {
+        let harness = SqliteHarness::new().await;
+        let mut unsafe_profile = harness.profile.clone();
+        unsafe_profile.database = harness
+            .directory
+            .path()
+            .join("missing-parent/target.db")
+            .display()
+            .to_string();
+        unsafe_profile.allow_writes = true;
+        unsafe_profile.engine = Engine::Postgres;
+        unsafe_profile.driver_id = None;
+        harness
+            .store
+            .upsert_connection(&unsafe_profile)
+            .await
+            .unwrap();
+        let mut settings = harness
+            .store
+            .get_safety(harness.connection_id)
+            .await
+            .unwrap();
+        settings.allow_writes = true;
+        harness
+            .store
+            .set_safety(harness.connection_id, &settings)
+            .await
+            .unwrap();
+        let read_only = harness
+            .service
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
+                connection_id: harness.connection_id.into(),
+                sql: "UPDATE users SET name = 'Grace' WHERE id = 1".into(),
+                intent: DesktopPreviewIntent::ReadOnlyExplain,
+            })
+            .await;
+        let Err(read_only_error) = read_only else {
+            panic!("a casual Explain must reject a write before touching an invalid target")
+        };
+        assert_eq!(
+            serde_json::to_value(read_only_error.into_error()).unwrap(),
+            serde_json::json!({
+                "kind": "blocked",
+                "message": "blocked: SQL Explain only supports one unambiguous read statement"
+            }),
+            "authority-backed inspection errors must preserve the established AppError wire"
+        );
+        for sql in [
+            "this is not sql",
+            "SELECT id FROM users; SELECT name FROM users",
+            "CREATE TABLE preview_only (id INTEGER PRIMARY KEY)",
+            "GRANT SELECT ON users TO readonly_role",
+        ] {
+            let receipt = harness
+                .service
+                .inspect_desktop_sql(DesktopSqlInspectionRequest {
+                    connection_id: harness.connection_id.into(),
+                    sql: sql.into(),
+                    intent: DesktopPreviewIntent::ImpactPreview,
+                })
+                .await
+                .unwrap();
+            assert_eq!(receipt.report.mode, PreviewMode::Skipped, "{sql}");
+        }
+        let non_rollback_safe = harness
+            .service
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
+                connection_id: harness.connection_id.into(),
+                sql: "SELECT id FROM users FOR UPDATE".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
+            })
+            .await
+            .unwrap();
+        assert_eq!(non_rollback_safe.report.mode, PreviewMode::Skipped);
+        assert!(non_rollback_safe
+            .report
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("not rollback-safe")));
+        drop(non_rollback_safe);
+        let mut mongo_profile = unsafe_profile;
+        mongo_profile.engine = Engine::Mongodb;
+        mongo_profile.driver_id = None;
+        harness
+            .store
+            .upsert_connection(&mongo_profile)
+            .await
+            .unwrap();
+        let mongo = harness
+            .service
+            .inspect_desktop_sql(DesktopSqlInspectionRequest {
+                connection_id: harness.connection_id.into(),
+                sql: "SELECT id FROM users".into(),
+                intent: DesktopPreviewIntent::ImpactPreview,
+            })
+            .await
+            .unwrap();
+        assert_eq!(mongo.report.mode, PreviewMode::Skipped);
+        assert!(mongo
+            .report
+            .note
+            .as_deref()
+            .is_some_and(|note| note.contains("MongoDB document operations")));
+        drop(mongo);
         harness.close().await;
     }
 }

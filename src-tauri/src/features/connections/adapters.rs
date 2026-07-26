@@ -199,13 +199,20 @@ impl DriverRegistryPort for SystemDriverRegistry {
 #[derive(Clone, Copy)]
 pub(crate) struct SystemAdHocConnection;
 
+/// An unsaved connection-form probe is only a reachability read, never a target
+/// mutation capability.
+pub(super) const AD_HOC_CONNECTION_TEST_ACCESS: ConnectionAccess = ConnectionAccess::Read;
+
 impl AdHocConnectionPort for SystemAdHocConnection {
     async fn test(
         &self,
         profile: &ConnectionProfile,
         password: Zeroizing<String>,
     ) -> AppResult<()> {
-        let live = connection::connect(profile, password.as_str()).await?;
+        // A reachability probe only pings the target; it never needs a write
+        // credential or a write-capable pool (including for MongoDB profiles).
+        let live =
+            connection::connect(profile, password.as_str(), AD_HOC_CONNECTION_TEST_ACCESS).await?;
         let result = live.test().await;
         live.close().await;
         result

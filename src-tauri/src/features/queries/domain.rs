@@ -19,18 +19,29 @@ pub(crate) struct TerminalQueryPlanRequest {
     pub(crate) authority: TerminalAuthority,
 }
 
-/// Desktop SQL classification input after transport decoding.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DesktopSqlClassificationRequest {
-    pub(crate) connection_id: ConnectionId,
-    pub(crate) sql: String,
+/// The server-owned purpose for a desktop SQL inspection.
+///
+/// `ReadOnlyExplain` is deliberately narrower than an operation proposal: it
+/// must reject any uncertain or target-mutating shape before credentials or a
+/// target pool are requested. `ImpactPreview` may return a static skipped report
+/// for a dangerous shape so the proposal workflow can still apply its durable
+/// approval gate without opening the target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DesktopPreviewIntent {
+    ReadOnlyExplain,
+    ImpactPreview,
 }
 
-/// Desktop SQL impact-preview input after transport decoding.
+/// Atomic desktop SQL inspection input after transport decoding.
+///
+/// Classification, authority pinning, safety policy capture, and preview are
+/// one operation so a caller cannot classify one connection revision and preview
+/// another.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DesktopSqlPreviewRequest {
+pub(crate) struct DesktopSqlInspectionRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) sql: String,
+    pub(crate) intent: DesktopPreviewIntent,
 }
 
 /// Immutable desktop SQL proposal input.

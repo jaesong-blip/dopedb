@@ -4,18 +4,10 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { ExecOutcome } from "../../ipc/types";
-import type {
-  Classification,
-  PreviewReport,
-  SqlOperationProposal,
-} from "./domain";
+import type { SqlInspection, SqlOperationProposal } from "./domain";
 
-export function classifySql(id: string, sql: string): Promise<Classification> {
-  return invoke("classify_sql", { id, sql });
-}
-
-export function previewSql(id: string, sql: string): Promise<PreviewReport> {
-  return invoke("preview_sql", { id, sql });
+export function inspectSql(id: string, sql: string): Promise<SqlInspection> {
+  return invoke("inspect_sql", { id, sql });
 }
 
 export function proposeSql(

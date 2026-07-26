@@ -4,8 +4,8 @@ use crate::kernel::identity::OperationId;
 use crate::kernel::TerminalAuthority;
 
 use super::domain::{
-    DesktopSqlClassificationRequest, DesktopSqlPreviewRequest, DesktopSqlProposalRequest,
-    TerminalQueryPlanRequest, TerminalSqlProposalRequest,
+    DesktopSqlInspectionRequest, DesktopSqlProposalRequest, TerminalQueryPlanRequest,
+    TerminalSqlProposalRequest,
 };
 use super::ports::{DesktopQueryPort, TerminalQueryPort};
 
@@ -42,18 +42,11 @@ impl<P> QueryUseCases<P>
 where
     P: DesktopQueryPort,
 {
-    pub(crate) async fn classify_desktop_sql(
+    pub(crate) async fn inspect_desktop_sql(
         &self,
-        request: DesktopSqlClassificationRequest,
-    ) -> Result<P::ClassificationReceipt, P::InspectionError> {
-        self.port.classify_desktop_sql(request).await
-    }
-
-    pub(crate) async fn preview_desktop_sql(
-        &self,
-        request: DesktopSqlPreviewRequest,
-    ) -> Result<P::PreviewReceipt, P::InspectionError> {
-        self.port.preview_desktop_sql(request).await
+        request: DesktopSqlInspectionRequest,
+    ) -> Result<P::InspectionReceipt, P::InspectionError> {
+        self.port.inspect_desktop_sql(request).await
     }
 
     pub(crate) async fn propose_desktop_sql(

@@ -5,7 +5,7 @@
 
 use crate::connection::pool::connect_sqlx;
 use crate::connection::providers;
-use crate::connection::Live;
+use crate::connection::{ConnectionAccess, Live};
 use crate::error::{AppError, AppResult};
 use crate::features::connections::{
     DriverCapability, DriverDescriptor, DriverInstallMode, DriverInstallState,
@@ -212,8 +212,13 @@ pub fn install(id: &str) -> AppResult<DriverDescriptor> {
     }
 }
 
-/// Resolve the optimal compatible adapter, then delegate connection mechanics to it.
-pub async fn connect(profile: &ConnectionProfile, secret: &str) -> AppResult<Live> {
+/// Resolve the optimal compatible adapter, then open only the typed capability requested.
+/// [`ConnectionAccess::Read`] must never construct a SQL write pool.
+pub async fn connect(
+    profile: &ConnectionProfile,
+    secret: &str,
+    access: ConnectionAccess,
+) -> AppResult<Live> {
     let driver = resolve(profile)?;
     let adapter = driver.adapter.ok_or_else(|| {
         AppError::Config(format!(
@@ -222,11 +227,33 @@ pub async fn connect(profile: &ConnectionProfile, secret: &str) -> AppResult<Liv
         ))
     })?;
     Ok(match adapter {
-        RuntimeAdapter::Postgres => {
-            Live::Sql(connect_sqlx(Engine::Postgres, profile, secret).await?)
-        }
-        RuntimeAdapter::Mysql => Live::Sql(connect_sqlx(Engine::Mysql, profile, secret).await?),
-        RuntimeAdapter::Sqlite => Live::Sql(connect_sqlx(Engine::Sqlite, profile, secret).await?),
+        RuntimeAdapter::Postgres => Live::Sql(
+            connect_sqlx(
+                Engine::Postgres,
+                profile,
+                secret,
+                access == ConnectionAccess::Write,
+            )
+            .await?,
+        ),
+        RuntimeAdapter::Mysql => Live::Sql(
+            connect_sqlx(
+                Engine::Mysql,
+                profile,
+                secret,
+                access == ConnectionAccess::Write,
+            )
+            .await?,
+        ),
+        RuntimeAdapter::Sqlite => Live::Sql(
+            connect_sqlx(
+                Engine::Sqlite,
+                profile,
+                secret,
+                access == ConnectionAccess::Write,
+            )
+            .await?,
+        ),
         RuntimeAdapter::Mongodb => Live::Mongo(crate::mongo::connect(profile, secret).await?),
     })
 }

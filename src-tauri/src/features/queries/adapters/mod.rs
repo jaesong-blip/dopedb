@@ -18,8 +18,8 @@ mod terminal_run;
 mod terminal_support;
 
 pub(crate) use desktop_contracts::{
-    DesktopSqlClassificationReceipt, DesktopSqlInspectionError, DesktopSqlPreviewReceipt,
-    DesktopSqlProposalReceipt, DesktopSqlRunError, DesktopSqlRunReceipt,
+    DesktopSqlInspectionError, DesktopSqlInspectionReceipt, DesktopSqlProposalReceipt,
+    DesktopSqlRunError, DesktopSqlRunReceipt,
 };
 pub(crate) use errors::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};
 pub(crate) use platform::QueryPlatformAdapter;

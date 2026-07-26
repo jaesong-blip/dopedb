@@ -12,6 +12,8 @@ use crate::{AuthenticationRequirement, CommandName, CommandSpec, DatabaseEngine,
 
 pub const MAX_CONNECTION_NAME_BYTES: usize = 256;
 
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(type = "string"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionSelector {
     Id(Uuid),
@@ -83,6 +85,7 @@ pub enum ConnectionSelectorError {
     InvalidName,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionSummary {
@@ -106,12 +109,14 @@ impl CommandSpec for ConnectionListCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::TerminalSession;
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionListResult {
     pub connections: Vec<ConnectionSummary>,
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionSelectorArguments {
@@ -138,6 +143,7 @@ impl CommandSpec for ConnectionTestCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::TerminalSession;
 }
 
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionTestResult {

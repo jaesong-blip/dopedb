@@ -3,19 +3,21 @@ import { parse } from "@babel/parser";
 
 const queryAdapterOwner = "src/features/queries/tauriAdapter.ts";
 const queryDomainOwner = "src/features/queries/domain.ts";
-const queryCommands = ["classify_sql", "preview_sql", "propose_sql", "run_sql"];
+const queryCommands = ["inspect_sql", "propose_sql", "run_sql"];
+const removedQueryCommands = ["classify_sql", "preview_sql"];
 const queryCommandFunctions = [
-  "classifySql",
-  "previewSql",
+  "inspectSql",
   "proposeSql",
   "runSql",
   "runSqlRead",
 ];
+const removedQueryCommandFunctions = ["classifySql", "previewSql"];
 const queryContractTypes = [
   "RiskLevel",
   "Classification",
   "PreviewMode",
   "PreviewReport",
+  "SqlInspection",
   "SqlOperationProposal",
 ];
 
@@ -256,11 +258,27 @@ export function inspectFrontendQueryOwnership(filePath, source) {
       }
       const exported = specifier.exported?.name ?? specifier.exported?.value;
       if (queryCommandFunctions.includes(exported)) functionDeclarations.push(exported);
-      if (queryContractTypes.includes(exported)) contractDeclarations.push(exported);
+      if (
+        filePath === queryDomainOwner &&
+        queryContractTypes.includes(exported)
+      ) {
+        contractDeclarations.push(exported);
+      }
+      if (!isTestFile && removedQueryCommandFunctions.includes(exported)) {
+        issues.push(`${filePath}: removed SQL function ${exported} returned`);
+      }
     }
     for (const name of exportedDeclarationNames(declaration.declaration)) {
       if (queryCommandFunctions.includes(name)) functionDeclarations.push(name);
-      if (queryContractTypes.includes(name)) contractDeclarations.push(name);
+      if (
+        filePath === queryDomainOwner &&
+        queryContractTypes.includes(name)
+      ) {
+        contractDeclarations.push(name);
+      }
+      if (!isTestFile && removedQueryCommandFunctions.includes(name)) {
+        issues.push(`${filePath}: removed SQL function ${name} returned`);
+      }
     }
   }
 
@@ -272,6 +290,9 @@ export function inspectFrontendQueryOwnership(filePath, source) {
       return;
     }
     if (queryCommands.includes(command.value)) commands.push(command.value);
+    if (!isTestFile && removedQueryCommands.includes(command.value)) {
+      issues.push(`${filePath}: removed SQL command ${command.value} returned`);
+    }
   });
 
   walkAst(program, (node, parent) => {
@@ -340,22 +361,22 @@ export function collectQueryFrontendOwnershipDiagnostics({
   for (const [name, source, expectedIssue] of [
     [
       "Tauri namespace and destructured invoke alias",
-      'import * as core from "@tauri-apps/api/core"; const api = core; const { invoke: call } = api; const dynamic = ["run", "sql"].join("_"); call(dynamic);',
+      'import * as core from "@tauri-apps/api/core"; const api = core; const { invoke: call } = api; const dynamic = ["inspect", "sql"].join("_"); call(dynamic);',
       "must be imported directly",
     ],
     [
       "Query namespace destructuring re-export",
-      'import * as queries from "./tauriAdapter"; const { runSql: executeSql } = queries; export { executeSql };',
+      'import * as queries from "./tauriAdapter"; const { inspectSql: inspect } = queries; export { inspect };',
       "must not be rebound through variable aliases",
     ],
     [
       "Query value re-export",
-      'import { runSql } from "./tauriAdapter"; export const executeSql = runSql;',
+      'import { inspectSql } from "./tauriAdapter"; export const inspect = inspectSql;',
       "must not be rebound through variable aliases",
     ],
     [
       "direct invoke alias",
-      'import { invoke } from "@tauri-apps/api/core"; const call = invoke; call("run_sql");',
+      'import { invoke } from "@tauri-apps/api/core"; const call = invoke; call("inspect_sql");',
       "must not be rebound through a variable alias",
     ],
     [
@@ -378,6 +399,16 @@ export function collectQueryFrontendOwnershipDiagnostics({
       'import("./domain");',
       "dynamic Query feature imports bypass static command ownership",
     ],
+    [
+      "legacy query invoke",
+      'import { invoke } from "@tauri-apps/api/core"; invoke("preview_sql", { id: "x", sql: "select 1" });',
+      "removed SQL command preview_sql returned",
+    ],
+    [
+      "template invoke command",
+      'import { invoke } from "@tauri-apps/api/core"; invoke(`inspect_sql`);',
+      "command names must be static quoted literals",
+    ],
   ]) {
     const issues = inspectFrontendQueryOwnership(
       "src/features/queries/guardFixture.ts",
@@ -387,26 +418,15 @@ export function collectQueryFrontendOwnershipDiagnostics({
       diagnostics.push(`Query ownership guard self-test failed for ${name}`);
     }
   }
-  return diagnostics;
-}
-
-export function collectQueryCentralIpcDiagnostics(frontendSource) {
-  const diagnostics = [];
-  for (const [filePath, source] of frontendSource) {
-    if (
-      /import\s+(?:type\s+)?\{[^}]*\b(?:RiskLevel|Classification|PreviewMode|PreviewReport|SqlOperationProposal)\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
-        source,
-      )
-    ) {
-      diagnostics.push(`${filePath}: imports a SQL Query contract from the removed central owner`);
-    }
-    if (
-      /import\s*\{[^}]*\b(?:classifySql|previewSql|proposeSql|runSql|runSqlRead)\b[^}]*\}\s*from\s*["'][^"']*ipc\/commands["']/.test(
-        source,
-      )
-    ) {
-      diagnostics.push(`${filePath}: imports a SQL Query command from the removed central owner`);
-    }
+  const normalInspectAdapter = inspectFrontendQueryOwnership(
+    queryAdapterOwner,
+    'import { invoke } from "@tauri-apps/api/core"; export function inspectSql(id: string, sql: string) { return invoke("inspect_sql", { id, sql }); }',
+  );
+  if (
+    normalInspectAdapter.issues.length > 0 ||
+    !normalInspectAdapter.commands.includes("inspect_sql")
+  ) {
+    diagnostics.push("Query ownership guard self-test failed for normal inspect adapter");
   }
   return diagnostics;
 }

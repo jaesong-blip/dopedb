@@ -11,8 +11,13 @@ const table: CatalogTable = {
   schema: "public",
   name: "users",
   kind: "table",
+  nativeId: null,
+  comment: null,
+  partitionParent: null,
+  partitionChildren: [],
   columns: [],
   foreignKeys: [],
+  constraints: [],
   indexes: [],
   rowEstimate: null,
 };

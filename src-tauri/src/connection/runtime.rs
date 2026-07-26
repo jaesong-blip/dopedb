@@ -7,7 +7,7 @@
 //! current adapters cannot switch scope and then write history/cache into a different
 //! account while their scoped-write APIs are being extracted.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
@@ -106,13 +106,6 @@ struct ConnectionCacheKey {
 
 impl ConnectionCacheKey {
     fn new(pin: &PinnedConnection, access: ConnectionAccess) -> Self {
-        let access = if pin.profile.credential_mode == WorkspaceCredentialMode::Managed {
-            access
-        } else {
-            // Local/member-local Live values already contain distinct read-only and
-            // read/write pools; splitting the outer cache would double sessions.
-            ConnectionAccess::Read
-        };
         Self {
             workspace_id: pin.scope.workspace_id,
             account_scope: pin.scope.account_scope.clone(),
@@ -121,6 +114,8 @@ impl ConnectionCacheKey {
             connection_revision: pin.connection_revision,
             binding_revision: pin.binding_revision,
             binding_updated_at: pin.binding_updated_at.clone(),
+            // A read entry is constructed without a write-capable pool. It therefore
+            // can never satisfy a later write request, even for local credentials.
             access,
         }
     }
@@ -131,21 +126,33 @@ struct CacheEntry {
     generation: u64,
     retire_at: Option<Instant>,
     managed_lease: StdMutex<Option<ManagedLeaseHandle>>,
+    closed: AtomicBool,
 }
 
 impl CacheEntry {
     fn take_managed_lease(&self) -> Option<ManagedLeaseHandle> {
         lock_unpoisoned(&self.managed_lease).take()
     }
+
+    async fn close_once(&self) {
+        if !self.closed.swap(true, Ordering::AcqRel) {
+            self.live.close().await;
+        }
+    }
 }
 
 impl Drop for CacheEntry {
     fn drop(&mut self) {
-        let Some(lease) = self.take_managed_lease() else {
-            return;
-        };
+        let should_close = !self.closed.swap(true, Ordering::AcqRel);
+        let live = should_close.then(|| self.live.clone());
+        let managed_lease = self.take_managed_lease();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            runtime.spawn(release_managed_bounded(lease));
+            if let Some(live) = live {
+                runtime.spawn(async move { live.close().await });
+            }
+            if let Some(managed_lease) = managed_lease {
+                runtime.spawn(release_managed_bounded(managed_lease));
+            }
         }
     }
 }
@@ -439,6 +446,7 @@ impl ConnectionContext {
                 generation,
                 retire_at,
                 managed_lease: StdMutex::new(managed_lease),
+                closed: AtomicBool::new(false),
             });
             state.entry = Some(Arc::clone(&entry));
             drop(state);
@@ -712,7 +720,7 @@ fn cache_entry_expired(entry: &CacheEntry) -> bool {
 async fn retire_entries(entries: Vec<Arc<CacheEntry>>) {
     let retirements = entries.into_iter().filter_map(|entry| {
         Arc::try_unwrap(entry).ok().map(|entry| async move {
-            entry.live.close().await;
+            entry.close_once().await;
             if let Some(managed_lease) = entry.take_managed_lease() {
                 release_managed_bounded(managed_lease).await;
             }
@@ -826,7 +834,8 @@ async fn connect_authorized(
             connection_id: profile.id.into(),
             lease_id: lease.lease_id,
         };
-        let live = match crate::driver::connect(&lease.profile, lease.secret.as_str()).await {
+        let live = match crate::driver::connect(&lease.profile, lease.secret.as_str(), access).await
+        {
             Ok(live) => live,
             Err(error) => {
                 release_managed_bounded(managed_lease).await;
@@ -842,7 +851,7 @@ async fn connect_authorized(
 
     let secret = Zeroizing::new(super::fetch_profile_secret(profile)?);
     Ok(OpenedLive {
-        live: crate::driver::connect(profile, secret.as_str()).await?,
+        live: crate::driver::connect(profile, secret.as_str(), access).await?,
         retire_at: None,
         managed_lease: None,
     })

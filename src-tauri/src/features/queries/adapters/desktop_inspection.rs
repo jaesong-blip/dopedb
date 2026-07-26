@@ -1,139 +1,241 @@
-//! Desktop SQL classification and impact-preview adapter operations.
+//! Atomic desktop SQL inspection with one authority and policy snapshot.
 
 use crate::connection::ensure_terminal_pin;
 use crate::error::AppError;
 use crate::kernel::TerminalAuthority;
 use crate::model::QueryKind;
+use crate::operations::capture_policy;
 use crate::safety;
 
-use super::super::domain::{DesktopSqlClassificationRequest, DesktopSqlPreviewRequest};
+use super::super::domain::{DesktopPreviewIntent, DesktopSqlInspectionRequest};
 use super::desktop_contracts::{
-    DesktopSqlClassificationReceipt, DesktopSqlInspectionError, DesktopSqlPreviewAuthority,
-    DesktopSqlPreviewReceipt,
+    DesktopSqlInspectionError, DesktopSqlInspectionReceipt, DesktopSqlPreviewAuthority,
 };
 use super::desktop_support::{desktop_preview_connection_access, pool_ref, skipped_preview_report};
 use super::platform::QueryPlatformAdapter;
 
 impl QueryPlatformAdapter {
-    /// Classify SQL against the engine from one scope-pinned connection. The
-    /// returned receipt keeps that scope stable while the adapter serializes the
-    /// legacy classification payload.
-    pub(crate) async fn classify_desktop_sql(
-        &self,
-        request: DesktopSqlClassificationRequest,
-    ) -> Result<DesktopSqlClassificationReceipt, DesktopSqlInspectionError> {
-        let operation_scope = self.connections.begin_operation_scope().await;
-        let pin = operation_scope
-            .pin_connection_for_view(request.connection_id.into())
-            .await
-            .map_err(DesktopSqlInspectionError::Application)?;
-        let classification = safety::classify(&request.sql, pin.profile.engine)
-            .map_err(DesktopSqlInspectionError::Application)?;
-
-        Ok(DesktopSqlClassificationReceipt {
-            classification,
-            _scope: operation_scope,
-        })
-    }
-
-    /// Produce the desktop L3 impact preview from one authority snapshot.
+    /// Inspect one statement under a single connection scope and safety snapshot.
     ///
-    /// Pre-connection policy skips deliberately avoid opening a target pool.
-    /// Database-backed previews consume the same operation scope that pinned the
-    /// profile, closing the previous connection/profile re-acquisition window.
-    pub(crate) async fn preview_desktop_sql(
+    /// This is intentionally the only desktop inspection entry point: a caller
+    /// cannot classify one profile revision then obtain an EXPLAIN from another.
+    pub(crate) async fn inspect_desktop_sql(
         &self,
-        request: DesktopSqlPreviewRequest,
-    ) -> Result<DesktopSqlPreviewReceipt, DesktopSqlInspectionError> {
-        self.preview_sql(request, None).await
+        request: DesktopSqlInspectionRequest,
+    ) -> Result<DesktopSqlInspectionReceipt, DesktopSqlInspectionError> {
+        self.inspect_sql(request, None).await
     }
 
-    pub(super) async fn preview_sql(
+    pub(super) async fn inspect_sql(
         &self,
-        request: DesktopSqlPreviewRequest,
+        request: DesktopSqlInspectionRequest,
         terminal: Option<&TerminalAuthority>,
-    ) -> Result<DesktopSqlPreviewReceipt, DesktopSqlInspectionError> {
+    ) -> Result<DesktopSqlInspectionReceipt, DesktopSqlInspectionError> {
         let operation_scope = self.connections.begin_operation_scope().await;
-        let pin = operation_scope
+        let pin = match operation_scope
             .pin_connection_for_view(request.connection_id.into())
             .await
-            .map_err(DesktopSqlInspectionError::Application)?;
+        {
+            Ok(pin) => pin,
+            Err(error) => return Err(scoped(error, operation_scope)),
+        };
         if let Some(authority) = terminal {
-            ensure_terminal_pin(authority, &pin).map_err(DesktopSqlInspectionError::Application)?;
+            if let Err(error) = ensure_terminal_pin(authority, &pin) {
+                return Err(scoped(error, operation_scope));
+            }
         }
-        let settings = self
-            .store
-            .get_safety(pin.connection_id)
+        let analysis = match safety::classify_with_integrity(&request.sql, pin.profile.engine) {
+            Ok(analysis) => analysis,
+            Err(error) => return Err(scoped(error, operation_scope)),
+        };
+        let exact_single_read = analysis.is_exact_single_read();
+        let may_touch_target = analysis.may_touch_target_for_impact_preview();
+        let classification = analysis.classification;
+        let settings = match self.store.get_safety(pin.connection_id).await {
+            Ok(settings) => settings,
+            Err(error) => return Err(scoped(error, operation_scope)),
+        };
+        let policy = match capture_policy(&pin, &settings) {
+            Ok(policy) => policy,
+            Err(error) => return Err(scoped(error, operation_scope)),
+        };
+
+        let preconnection = preconnection_report(
+            request.intent,
+            PreconnectionContext {
+                integrity: analysis.integrity,
+                classification: &classification,
+                exact_single_read,
+                may_touch_target,
+                can_read: pin.profile.workspace_access.can_read(),
+                can_write: pin.profile.workspace_access.can_write(),
+                writes_enabled: settings.allow_writes,
+            },
+        );
+        let report = match preconnection {
+            Ok(report) => report,
+            Err(error) => return Err(scoped(error, operation_scope)),
+        };
+        if let Some(report) = report {
+            return Ok(DesktopSqlInspectionReceipt {
+                classification,
+                report,
+                pin,
+                policy_snapshot: policy.snapshot,
+                policy_revision: policy.revision,
+                _authority: DesktopSqlPreviewAuthority::Scope {
+                    _scope: operation_scope,
+                },
+            });
+        }
+
+        // The only remaining path is a clean ReadOnlyExplain or an explicitly
+        // allowed ImpactPreview. It always acquires the read capability; write
+        // credentials and write pools are unreachable before durable approval.
+        let lease = match operation_scope
+            .connect(
+                pin.clone(),
+                desktop_preview_connection_access(&classification, &settings),
+            )
             .await
-            .map_err(DesktopSqlInspectionError::Application)?;
-        let classification = safety::classify(&request.sql, pin.profile.engine)
-            .map_err(DesktopSqlInspectionError::Application)?;
-        let is_non_read = !matches!(classification.kind, QueryKind::Read);
-
-        if !is_non_read && !pin.profile.workspace_access.can_read() {
-            return Err(DesktopSqlInspectionError::Application(AppError::Blocked {
-                reason: "workspace role cannot execute this connection".into(),
-            }));
-        }
-        if is_non_read && !pin.profile.workspace_access.can_write() {
-            return Ok(DesktopSqlPreviewReceipt {
-                report: skipped_preview_report(
-                    "workspace role is read-only — write preview skipped",
-                ),
-                pin,
-                _authority: DesktopSqlPreviewAuthority::Scope {
-                    _scope: operation_scope,
-                },
-            });
-        }
-        if is_non_read && !settings.allow_writes {
-            return Ok(DesktopSqlPreviewReceipt {
-                report: skipped_preview_report(
-                    "writes are disabled for this connection — impact preview skipped (no rows locked)",
-                ),
-                pin,
-                _authority: DesktopSqlPreviewAuthority::Scope {
-                    _scope: operation_scope,
-                },
-            });
-        }
-        if matches!(classification.kind, QueryKind::Ddl | QueryKind::Privilege) {
-            return Ok(DesktopSqlPreviewReceipt {
-                report: skipped_preview_report(
-                    "DDL / privilege change — no row-count preview; review the statement directly.",
-                ),
-                pin,
-                _authority: DesktopSqlPreviewAuthority::Scope {
-                    _scope: operation_scope,
-                },
-            });
-        }
-
-        let access = desktop_preview_connection_access(&classification, &settings);
-        let lease = operation_scope
-            .connect(pin.clone(), access)
-            .await
-            .map_err(DesktopSqlInspectionError::Application)?;
-        let live = lease
-            .live()
-            .sql()
-            .map_err(DesktopSqlInspectionError::Application)?;
-
-        let report = safety::preview(
+        {
+            Ok(lease) => lease,
+            // `ConnectionOperationScope::connect` consumes its guard while it
+            // authorizes and validates the pin. On failure it returns only an
+            // `AppError`: no lease, pin, credential, or authority-bearing data
+            // crosses this projection, and no target result exists to serialize.
+            // Retaining that consumed guard would require a broad runtime API;
+            // scope/lease-backed errors after a receipt exists remain `Scoped`.
+            Err(error) => return Err(DesktopSqlInspectionError::Application(error)),
+        };
+        let live = match lease.live().sql() {
+            Ok(live) => live,
+            Err(error) => {
+                return Err(DesktopSqlInspectionError::Scoped {
+                    error,
+                    _authority: DesktopSqlPreviewAuthority::Lease {
+                        _lease: Box::new(lease),
+                    },
+                })
+            }
+        };
+        let report = match safety::preview(
             pool_ref(live.ro()),
             &request.sql,
             &classification,
             &settings,
         )
         .await
-        .map_err(DesktopSqlInspectionError::Application)?;
+        {
+            Ok(report) => report,
+            Err(error) => {
+                return Err(DesktopSqlInspectionError::Scoped {
+                    error,
+                    _authority: DesktopSqlPreviewAuthority::Lease {
+                        _lease: Box::new(lease),
+                    },
+                })
+            }
+        };
 
-        Ok(DesktopSqlPreviewReceipt {
+        Ok(DesktopSqlInspectionReceipt {
+            classification,
             report,
             pin,
+            policy_snapshot: policy.snapshot,
+            policy_revision: policy.revision,
             _authority: DesktopSqlPreviewAuthority::Lease {
                 _lease: Box::new(lease),
             },
         })
+    }
+}
+
+fn scoped(
+    error: AppError,
+    operation_scope: crate::connection::ConnectionOperationScope,
+) -> DesktopSqlInspectionError {
+    DesktopSqlInspectionError::Scoped {
+        error,
+        _authority: DesktopSqlPreviewAuthority::Scope {
+            _scope: operation_scope,
+        },
+    }
+}
+
+/// Return a report that is safe to produce without opening the target, or reject
+/// a casual read-only EXPLAIN before any credential request.
+struct PreconnectionContext<'a> {
+    integrity: safety::ClassificationIntegrity,
+    classification: &'a crate::model::Classification,
+    exact_single_read: bool,
+    may_touch_target: bool,
+    can_read: bool,
+    can_write: bool,
+    writes_enabled: bool,
+}
+
+fn preconnection_report(
+    intent: DesktopPreviewIntent,
+    context: PreconnectionContext<'_>,
+) -> Result<Option<crate::model::PreviewReport>, AppError> {
+    let no_target_touch_note = if matches!(
+        context.integrity,
+        safety::ClassificationIntegrity::DocumentFamily
+    ) {
+        Some("MongoDB document operations must use the typed document-query API")
+    } else if matches!(
+        context.integrity,
+        safety::ClassificationIntegrity::ParseFailed
+            | safety::ClassificationIntegrity::MultipleStatements
+            | safety::ClassificationIntegrity::Ambiguous
+    ) {
+        Some("ambiguous or multi-statement SQL — impact preview skipped before target access")
+    } else if matches!(
+        context.classification.kind,
+        QueryKind::Ddl | QueryKind::Privilege
+    ) {
+        Some("DDL / privilege change — no row-count preview; review the statement directly.")
+    } else if !context.may_touch_target {
+        Some("write shape is not rollback-safe — impact preview skipped before target access")
+    } else {
+        None
+    };
+
+    match intent {
+        DesktopPreviewIntent::ReadOnlyExplain => {
+            if !context.exact_single_read {
+                return Err(AppError::Blocked {
+                    reason: "SQL Explain only supports one unambiguous read statement".into(),
+                });
+            }
+            if !context.can_read {
+                return Err(AppError::Blocked {
+                    reason: "workspace role cannot execute this connection".into(),
+                });
+            }
+            Ok(None)
+        }
+        DesktopPreviewIntent::ImpactPreview => {
+            if let Some(note) = no_target_touch_note {
+                return Ok(Some(skipped_preview_report(note)));
+            }
+            if !matches!(context.classification.kind, QueryKind::Read) && !context.can_write {
+                return Ok(Some(skipped_preview_report(
+                    "workspace role is read-only — write preview skipped",
+                )));
+            }
+            if !matches!(context.classification.kind, QueryKind::Read) && !context.writes_enabled {
+                return Ok(Some(skipped_preview_report(
+                    "writes are disabled for this connection — impact preview skipped (no rows locked)",
+                )));
+            }
+            if matches!(context.classification.kind, QueryKind::Read) && !context.can_read {
+                return Err(AppError::Blocked {
+                    reason: "workspace role cannot execute this connection".into(),
+                });
+            }
+            Ok(None)
+        }
     }
 }

@@ -43,22 +43,27 @@ function connection(
 
 function table(
   name: string,
-  options: Partial<CatalogTable> = {},
+  options: Record<string, unknown> = {},
 ): CatalogTable {
   return {
     schema: "public",
     name,
     kind: "table",
+    nativeId: null,
+    comment: null,
+    partitionParent: null,
+    partitionChildren: [],
     columns: [],
     foreignKeys: [],
+    constraints: [],
     indexes: [],
     rowEstimate: null,
     ...options,
-  };
+  } as CatalogTable;
 }
 
 function catalog(...tables: CatalogTable[]): Catalog {
-  return { tables };
+  return { tables, objects: [] };
 }
 
 describe("schema connection groups", () => {

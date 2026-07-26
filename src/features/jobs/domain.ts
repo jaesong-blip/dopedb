@@ -72,17 +72,20 @@ const jobRelationKinds = new Set<JobRelationKind>([
 ]);
 
 export function jobRelationRef(value: {
-  catalog: string | null;
-  namespace: string | null;
+  catalog?: string | null;
+  namespace?: string | null;
   name: string;
   kind: string;
-  nativeId: string | null;
+  nativeId?: string | null;
 }): JobRelationRef {
   if (!jobRelationKinds.has(value.kind as JobRelationKind)) {
     throw new Error("the selected catalog object is not a supported job relation");
   }
   return {
-    ...value,
+    catalog: value.catalog ?? null,
+    namespace: value.namespace ?? null,
+    nativeId: value.nativeId ?? null,
+    name: value.name,
     kind: value.kind as JobRelationKind,
   };
 }

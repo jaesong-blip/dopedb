@@ -6,7 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { ExecOutcome } from "../../ipc/types";
 import type { SqlOperationProposal } from "./domain";
-import { proposeSql, runSqlRead } from "./tauriAdapter";
+import { inspectSql, proposeSql, runSqlRead } from "./tauriAdapter";
 
 const invokeMock = vi.mocked(invoke);
 
@@ -39,6 +39,22 @@ const readProposal: SqlOperationProposal = {
 describe("query Tauri adapter", () => {
   beforeEach(() => {
     invokeMock.mockReset();
+  });
+
+  it("uses one backend-owned inspection command instead of a classify-preview race", async () => {
+    invokeMock.mockResolvedValueOnce({
+      classification: readProposal.classification,
+      report: readProposal.preview,
+    });
+
+    await expect(inspectSql("connection-1", "SELECT 1")).resolves.toEqual({
+      classification: readProposal.classification,
+      report: readProposal.preview,
+    });
+    expect(invokeMock).toHaveBeenCalledWith("inspect_sql", {
+      id: "connection-1",
+      sql: "SELECT 1",
+    });
   });
 
   it("preserves the propose SQL command and camelCase wire shape", async () => {
