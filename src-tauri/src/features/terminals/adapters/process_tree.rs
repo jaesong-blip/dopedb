@@ -241,9 +241,6 @@ mod windows_tests {
     const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
     const SURVIVOR_DELAY: Duration = Duration::from_secs(8);
     const POLL_INTERVAL: Duration = Duration::from_millis(25);
-    const GO_MARKER: &str = "DOPEDB_TERMINAL_PROCESS_TREE_GO";
-    const READY_MARKER: &str = "DOPEDB_TERMINAL_PROCESS_TREE_READY";
-    const SURVIVOR_MARKER: &str = "DOPEDB_TERMINAL_PROCESS_TREE_SURVIVOR";
 
     struct MarkerFiles {
         go: PathBuf,
@@ -377,7 +374,7 @@ $process.WaitForExit()"#,
                 pixel_height: 0,
             })
             .unwrap();
-        let mut reader = pair.master.try_clone_reader().unwrap();
+        let reader = pair.master.try_clone_reader().unwrap();
         let encoded_script = powershell_encoded(&parent_script(&markers));
         let mut command = CommandBuilder::new("powershell.exe");
         command.args([
