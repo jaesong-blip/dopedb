@@ -46,6 +46,7 @@ uuid_identity!(ErdVirtualRelationId);
 uuid_identity!(DashboardId);
 uuid_identity!(QueryRunId);
 uuid_identity!(QueryExecutionId);
+uuid_identity!(TerminalSessionId);
 uuid_identity!(JobId);
 uuid_identity!(JobFileCapabilityId);
 uuid_identity!(JobArtifactId);
@@ -181,6 +182,17 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&ErdVirtualRelationId::from(raw)).unwrap(),
             format!("\"{raw}\"")
+        );
+    }
+
+    #[test]
+    fn terminal_session_identity_keeps_uuid_json() {
+        let raw = Uuid::parse_str("17eed66f-ad5c-4690-a780-9c6de8af44f7").unwrap();
+        let encoded = serde_json::to_string(&TerminalSessionId::from(raw)).unwrap();
+        assert_eq!(encoded, format!("\"{raw}\""));
+        assert_eq!(
+            Uuid::from(serde_json::from_str::<TerminalSessionId>(&encoded).unwrap()),
+            raw
         );
     }
 

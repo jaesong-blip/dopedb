@@ -1,12 +1,10 @@
 // Displays immutable session scope and lifecycle controls above the PTY surface.
 // The parent already scopes tabs to the selected connection, so this bar never retargets.
-import type {
-  SkillInstallState,
-  TerminalSessionSummary,
-} from "../../ipc/types";
+import type { SkillInstallState } from "../../ipc/types";
+import type { TerminalSessionSummary } from "../../features/terminals/domain";
+import { terminalSessionIsRunning } from "../../features/terminals/state";
 import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
-import { terminalSessionIsRunning } from "./terminalState";
 
 interface TerminalContextBarProps {
   active: TerminalSessionSummary;

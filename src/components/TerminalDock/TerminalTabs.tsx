@@ -3,21 +3,22 @@
 import type { RefObject } from "react";
 import type {
   TerminalProfile,
+  TerminalSessionId,
   TerminalSessionSummary,
-} from "../../ipc/types";
+} from "../../features/terminals/domain";
 import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
 
 interface TerminalTabsProps {
   sessions: TerminalSessionSummary[];
-  activeId: string | null;
+  activeId: TerminalSessionId | null;
   creatingProfile: TerminalProfile | null;
-  closingId: string | null;
+  closingId: TerminalSessionId | null;
   profileMenuOpen: boolean;
   maximized: boolean;
   archiveButtonRef: RefObject<HTMLButtonElement | null>;
   closeButtonRef: RefObject<HTMLButtonElement | null>;
-  onActivate: (id: string) => void;
+  onActivate: (id: TerminalSessionId) => void;
   onClose: (session: TerminalSessionSummary) => void;
   onToggleProfileMenu: () => void;
   onCreate: (profile: TerminalProfile) => void;

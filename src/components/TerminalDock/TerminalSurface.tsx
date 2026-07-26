@@ -8,15 +8,16 @@ import {
 } from "react";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
+import { errMessage } from "../../ipc/types";
 import {
   terminalResize,
   terminalWrite,
-} from "../../ipc/commands";
+} from "../../features/terminals/tauriAdapter";
 import type {
   TerminalOutputChunk,
+  TerminalSessionId,
   TerminalSessionSummary,
-} from "../../ipc/types";
-import { errMessage } from "../../ipc/types";
+} from "../../features/terminals/domain";
 import { useI18n } from "../../lib/i18n";
 import "@xterm/xterm/css/xterm.css";
 
@@ -29,7 +30,7 @@ type OutputWriter = (chunk: TerminalOutputChunk) => void;
 interface TerminalSurfaceProps {
   session: TerminalSessionSummary;
   active: boolean;
-  registerOutput: (id: string, writer: OutputWriter | null) => void;
+  registerOutput: (id: TerminalSessionId, writer: OutputWriter | null) => void;
   onError: (message: string) => void;
 }
 
@@ -42,7 +43,7 @@ function boundedPixelSize(value: number): number {
 }
 
 function flushInput(
-  id: string,
+  id: TerminalSessionId,
   bytes: number[],
   chain: MutableRefObject<Promise<void>>,
   onError: (message: string) => void,

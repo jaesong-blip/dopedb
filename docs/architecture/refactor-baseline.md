@@ -230,6 +230,31 @@ The former dashboard service, global policy module, generic model contracts, cen
 Rust commands/re-exports, and central renderer commands/types are deletion gates.
 The renderer owns branded dashboard and execution IDs beside its Tauri adapter.
 
+## Ninth migrated slice: Terminal Dock
+
+The start audit found a process-owning Terminal module and a component-local reducer,
+while the shared frontend IPC files also owned Terminal commands and wire contracts.
+That split allowed a second state owner or a legacy adapter to return without a clear
+CI failure.
+
+Terminal Dock now uses:
+
+```text
+Tauri transport
+  -> TerminalUseCases
+     -> TerminalSessionPort
+  -> desktop adapter -> PTY runtime, Broker capability, SQLite connection pin
+```
+
+The immutable Terminal domain, port, and application layers do not import Tauri,
+Store, or Broker code. The transport only maps Tauri inputs to the feature facade;
+the desktop adapter alone composes Store, Broker, CLI resolution, and the PTY runtime.
+`PtyTerminalRuntime` is the single writer for the in-memory session registry, recorded
+in the state-owner inventory. The former `src-tauri/src/terminal/**` tree and
+`src/components/TerminalDock/terminalState*` paths are deletion gates. Terminal command
+literals, public wire types, and adapter functions are owned only by
+`src/features/terminals/`, so the shared IPC facades cannot regain a parallel API.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

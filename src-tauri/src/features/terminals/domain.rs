@@ -2,10 +2,9 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
+use crate::kernel::identity::{ConnectionId, TerminalSessionId, WorkspaceId};
 use crate::model::Engine;
-use crate::store::PinnedConnection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,7 +85,7 @@ impl TerminalSize {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TerminalCreateRequest {
-    pub connection_id: Uuid,
+    pub connection_id: ConnectionId,
     pub profile: TerminalProfile,
     #[serde(default)]
     pub size: TerminalSize,
@@ -97,49 +96,16 @@ pub struct TerminalCreateRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalConnectionPin {
-    pub workspace_id: Uuid,
+    pub workspace_id: WorkspaceId,
     pub account_scope: String,
     pub scope_generation: i64,
-    pub connection_id: Uuid,
+    pub connection_id: ConnectionId,
     pub connection_revision: i64,
     pub connection_name: String,
     pub database: String,
     pub environment: Option<String>,
     pub engine: Engine,
     pub policy: TerminalDatabasePolicy,
-}
-
-impl TerminalConnectionPin {
-    pub(super) fn from_connection(pin: &PinnedConnection) -> Self {
-        let policy = if pin.profile.readonly_default
-            || !pin.profile.allow_writes
-            || !pin.profile.workspace_access.can_write()
-        {
-            TerminalDatabasePolicy::ReadOnly
-        } else {
-            TerminalDatabasePolicy::ApprovalRequired
-        };
-        Self {
-            workspace_id: pin.scope.workspace_id,
-            account_scope: pin.scope.account_scope.storage_key().into(),
-            scope_generation: pin.scope.generation,
-            connection_id: pin.connection_id,
-            connection_revision: pin.connection_revision,
-            connection_name: pin.profile.name.clone(),
-            database: pin.profile.database.clone(),
-            environment: pin.profile.env.clone(),
-            engine: pin.profile.engine,
-            policy,
-        }
-    }
-
-    pub(super) fn matches(&self, pin: &PinnedConnection) -> bool {
-        self.workspace_id == pin.scope.workspace_id
-            && self.account_scope == pin.scope.account_scope.storage_key()
-            && self.scope_generation == pin.scope.generation
-            && self.connection_id == pin.connection_id
-            && self.connection_revision == pin.connection_revision
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -154,7 +120,7 @@ pub struct TerminalExit {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalSessionSummary {
-    pub id: Uuid,
+    pub id: TerminalSessionId,
     pub name: String,
     pub profile: TerminalProfile,
     pub lifecycle: TerminalLifecycle,
@@ -168,7 +134,7 @@ pub struct TerminalSessionSummary {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalOutputChunk {
-    pub session_id: Uuid,
+    pub session_id: TerminalSessionId,
     pub sequence: u64,
     pub bytes: Vec<u8>,
     pub replay: bool,
@@ -192,6 +158,6 @@ pub struct TerminalStateEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalExitEvent {
-    pub session_id: Uuid,
+    pub session_id: TerminalSessionId,
     pub exit: TerminalExit,
 }

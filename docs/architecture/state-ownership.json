@@ -44,6 +44,15 @@
       ]
     },
     {
+      "name": "terminalPtySessions",
+      "owner": "src-tauri/src/features/terminals/adapters/runtime.rs",
+      "writerTokens": [
+        "sessions: Arc<DashMap<TerminalSessionId, Arc<TerminalSession>>>,",
+        "if self.sessions.insert(context.id, session.clone()).is_some() {",
+        "self.sessions.remove(&context.id);"
+      ]
+    },
+    {
       "name": "catalogCache",
       "owner": "src-tauri/src/store/mod.rs",
       "writerTokens": [

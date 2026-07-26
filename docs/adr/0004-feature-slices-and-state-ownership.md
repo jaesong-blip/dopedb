@@ -18,6 +18,8 @@ layers. A folder move alone would not prevent the same drift.
 - Wire concrete adapters only at a feature composition boundary.
 - Use distinct identity types and composite resource identities.
 - Give each mutable state one reducer or runtime owner.
+- Keep process-backed feature state behind one runtime writer; its Tauri transport,
+  frontend command literals, and wire contracts stay feature-owned.
 - Model resumable or concurrent work with explicit state machines.
 - Delete the previous runtime path in the same completed feature slice.
 - Enforce boundaries, file-size ratchets, state owners, and removed symbols in CI.

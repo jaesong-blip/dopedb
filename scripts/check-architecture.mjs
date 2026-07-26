@@ -117,6 +117,12 @@ const removedPaths = [
   "src-tauri/src/features/jobs/adapters/format.rs",
   "src-tauri/src/services/workspace_service.rs",
   "src-tauri/src/workspace_auth.rs",
+  "src-tauri/src/terminal/environment.rs",
+  "src-tauri/src/terminal/manager.rs",
+  "src-tauri/src/terminal/mod.rs",
+  "src-tauri/src/terminal/model.rs",
+  "src-tauri/src/terminal/output.rs",
+  "src-tauri/src/terminal/process_tree.rs",
   "src/lib/workbenchDocuments.ts",
   "src/lib/workbenchDocuments.test.ts",
   "src/lib/workspaceAccounts.ts",
@@ -129,11 +135,27 @@ const removedPaths = [
   "src/components/WorkspaceSwitcher.css",
   "src/components/WorkspaceConnectionDialog.tsx",
   "src/components/WorkspaceConnectionDialog.css",
+  "src/components/TerminalDock/terminalState.ts",
+  "src/components/TerminalDock/terminalState.test.ts",
 ];
 for (const filePath of removedPaths) {
   if (fs.existsSync(path.join(root, filePath))) {
     fail(`removed legacy path returned: ${filePath}`);
   }
+}
+const returnedLegacyTerminalFiles = walk("src-tauri/src/terminal").map(relative);
+if (returnedLegacyTerminalFiles.length > 0) {
+  fail(
+    `removed legacy path returned: ${returnedLegacyTerminalFiles.join(", ")}`,
+  );
+}
+const legacyTerminalStateFiles = walk("src/components/TerminalDock")
+  .map(relative)
+  .filter((filePath) => path.basename(filePath).startsWith("terminalState"));
+if (legacyTerminalStateFiles.length > 0) {
+  fail(
+    `removed legacy Terminal state path returned: ${legacyTerminalStateFiles.join(", ")}`,
+  );
 }
 
 for (const filePath of [
@@ -507,12 +529,35 @@ forbid("src-tauri/src/connection/runtime.rs", [
 ]);
 
 for (const filePath of [
+  "src-tauri/src/features/terminals/domain.rs",
+  "src-tauri/src/features/terminals/ports.rs",
+  "src-tauri/src/features/terminals/application.rs",
+]) {
+  requireFile(filePath);
+  forbid(filePath, [
+    [/\btauri\b/, "Terminal core must not depend on Tauri"],
+    [/crate::store/, "Terminal core must not depend on the SQLite store"],
+    [/crate::broker/, "Terminal core must not depend on the Broker runtime"],
+  ]);
+}
+forbid("src-tauri/src/features/terminals/transport.rs", [
+  [/crate::store/, "Terminal transport must delegate instead of reading the store"],
+  [/crate::broker/, "Terminal transport must delegate instead of using the Broker"],
+  [/crate::cli_install/, "Terminal transport must delegate CLI resolution to its adapter"],
+  [/adapters::/, "Terminal transport must not depend on a concrete adapter"],
+  [/\b(?:DesktopTerminalAdapter|PtyTerminalRuntime)\b/, "Terminal transport must delegate to the feature use cases"],
+  [/\bportable_pty\b/, "Terminal transport must not create or control PTYs"],
+]);
+
+for (const filePath of [
   "src/features/connections/domain.ts",
   "src/features/jobs/domain.ts",
   "src/features/erd/domain.ts",
   "src/features/schemaEditor/domain.ts",
   "src/features/dashboards/domain.ts",
   "src/features/sqlDocuments/domain.ts",
+  "src/features/terminals/domain.ts",
+  "src/features/terminals/state.ts",
   "src/features/workspaces/domain.ts",
   "src/features/workspaces/cache.ts",
   "src/features/workbench/domain.ts",
@@ -693,6 +738,66 @@ for (const command of dashboardCommands) {
     );
   }
 }
+const terminalCommands = [
+  "terminal_create",
+  "terminal_list",
+  "terminal_focus",
+  "terminal_write",
+  "terminal_resize",
+  "terminal_kill",
+  "terminal_close",
+  "terminal_restart",
+  "terminal_rename",
+  "terminal_shutdown_all",
+];
+for (const command of terminalCommands) {
+  const owners = frontendSource
+    .filter(
+      ([, source]) =>
+        source.includes(`"${command}"`) || source.includes(`'${command}'`),
+    )
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/terminals/tauriAdapter.ts"
+  ) {
+    fail(
+      `${command}: expected only src/features/terminals/tauriAdapter.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
+const terminalContractTypes = [
+  "TerminalSessionId",
+  "TerminalProfile",
+  "TerminalLifecycle",
+  "TerminalDatabasePolicy",
+  "TerminalSize",
+  "TerminalCreateRequest",
+  "TerminalConnectionPin",
+  "TerminalExit",
+  "TerminalSessionSummary",
+  "TerminalOutputChunk",
+  "TerminalFocusReceipt",
+  "TerminalStateEvent",
+  "TerminalExitEvent",
+];
+for (const typeName of terminalContractTypes) {
+  const declaration = new RegExp(
+    `^export\\s+(?:interface|type)\\s+${typeName}\\b`,
+    "m",
+  );
+  const owners = frontendSource
+    .filter(([, source]) => declaration.test(source))
+    .map(([filePath]) => filePath);
+  if (
+    owners.length !== 1 ||
+    owners[0] !== "src/features/terminals/domain.ts"
+  ) {
+    fail(
+      `${typeName}: expected only src/features/terminals/domain.ts, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
 forbid("src/ipc/types.ts", [
   [/\binterface ConnectionProfile\b/, "connection profile returned to the central IPC type file"],
   [/\binterface DriverDescriptor\b/, "driver descriptor returned to the central IPC type file"],
@@ -715,6 +820,10 @@ forbid("src/ipc/types.ts", [
   [
     /\b(?:interface|type)\s+Dashboard(?:Kind|Visualization)?\b/,
     "dashboard contract returned to the central IPC type file",
+  ],
+  [
+    /\b(?:interface|type)\s+Terminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)\b/,
+    "Terminal contract returned to the central IPC type file",
   ],
 ]);
 forbid("src/ipc/commands.ts", [
@@ -740,6 +849,10 @@ forbid("src/ipc/commands.ts", [
     /\b(?:listDashboards|deleteDashboard|runDashboard)\b/,
     "dashboard commands returned to the central IPC facade",
   ],
+  [
+    /\b(?:terminalOutputChannel|terminalCreate|terminalList|terminalFocus|terminalWrite|terminalResize|terminalKill|terminalClose|terminalRestart|terminalRename|terminalShutdownAll)\b/,
+    "Terminal commands returned to the central IPC facade",
+  ],
 ]);
 for (const [filePath, source] of frontendSource) {
   if (
@@ -748,6 +861,20 @@ for (const [filePath, source] of frontendSource) {
     )
   ) {
     fail(`${filePath}: imports ConnectionProfile from the removed central owner`);
+  }
+  if (
+    /import\s+type\s*\{[^}]*\bTerminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
+      source,
+    )
+  ) {
+    fail(`${filePath}: imports a Terminal contract from the removed central owner`);
+  }
+  if (
+    /import\s*\{[^}]*\bterminal(?:OutputChannel|Create|List|Focus|Write|Resize|Kill|Close|Restart|Rename|ShutdownAll)\b[^}]*\}\s*from\s*["'][^"']*ipc\/commands["']/.test(
+      source,
+    )
+  ) {
+    fail(`${filePath}: imports a Terminal command from the removed central owner`);
   }
 }
 

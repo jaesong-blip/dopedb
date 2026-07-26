@@ -12,6 +12,7 @@ pub(crate) mod jobs;
 mod platform_flags;
 pub(crate) mod schema_editor;
 pub(crate) mod sql_documents;
+pub(crate) mod terminals;
 pub(crate) mod workspaces;
 
 pub use platform_flags::{FeatureFlag, FeatureFlags};

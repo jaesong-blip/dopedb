@@ -7,11 +7,11 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
-use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 
-use super::model::TerminalProfile;
+use super::super::domain::TerminalProfile;
 
 const COMMON_ENVIRONMENT: &[&str] = &[
     "HOME",
@@ -41,8 +41,8 @@ const WINDOWS_ENVIRONMENT: &[&str] = &[
 ];
 
 pub(super) struct LaunchEnvironment<'a> {
-    pub session_id: Uuid,
-    pub connection_id: Uuid,
+    pub session_id: TerminalSessionId,
+    pub connection_id: ConnectionId,
     pub session_token: &'a str,
     pub runtime_file: Option<&'a Path>,
     pub cli_directory: &'a Path,
@@ -221,8 +221,8 @@ mod tests {
 
     #[test]
     fn terminal_environment_has_only_the_ephemeral_broker_authority() {
-        let session_id = Uuid::new_v4();
-        let connection_id = Uuid::new_v4();
+        let session_id = TerminalSessionId::from(uuid::Uuid::new_v4());
+        let connection_id = ConnectionId::from(uuid::Uuid::new_v4());
         let cli_directory = std::env::temp_dir().join("dopedb-cli-fixture");
         let working_directory = std::env::temp_dir();
         let runtime_file = working_directory.join("runtime.json");
@@ -297,8 +297,8 @@ mod tests {
 
         use portable_pty::{native_pty_system, PtySize};
 
-        let session_id = Uuid::new_v4();
-        let connection_id = Uuid::new_v4();
+        let session_id = TerminalSessionId::from(uuid::Uuid::new_v4());
+        let connection_id = ConnectionId::from(uuid::Uuid::new_v4());
         let working_directory = std::env::temp_dir();
         let mut command = CommandBuilder::new("/bin/sh");
         apply_environment(

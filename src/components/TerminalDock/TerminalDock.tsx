@@ -9,6 +9,15 @@ import {
   useState,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
+import type {
+  SkillInstallState,
+  SkillStatus,
+} from "../../ipc/types";
+import { errMessage } from "../../ipc/types";
+import {
+  connectionId,
+  type ConnectionProfile,
+} from "../../features/connections/domain";
 import {
   terminalClose,
   terminalCreate,
@@ -18,23 +27,15 @@ import {
   terminalOutputChannel,
   terminalRename,
   terminalRestart,
-} from "../../ipc/commands";
-import type {
-  SkillInstallState,
-  SkillStatus,
-  TerminalOutputChunk,
-  TerminalProfile,
-  TerminalSessionSummary,
-  TerminalStateEvent,
-} from "../../ipc/types";
-import { errMessage } from "../../ipc/types";
-import type { ConnectionProfile } from "../../features/connections/domain";
-import { Icon } from "../Icon";
-import { useI18n } from "../../lib/i18n";
-import LegacyChatArchiveDialog from "./LegacyChatArchiveDialog";
-import TerminalContextBar from "./TerminalContextBar";
-import TerminalSurface from "./TerminalSurface";
-import TerminalTabs, { TerminalEmptyActions } from "./TerminalTabs";
+} from "../../features/terminals/tauriAdapter";
+import {
+  terminalSessionId,
+  type TerminalOutputChunk,
+  type TerminalProfile,
+  type TerminalSessionId,
+  type TerminalSessionSummary,
+  type TerminalStateEvent,
+} from "../../features/terminals/domain";
 import {
   initialTerminalDockState,
   terminalActiveIdForConnection,
@@ -42,7 +43,13 @@ import {
   terminalSessionIsRunning,
   terminalSessionsForConnection,
   type TerminalDockState,
-} from "./terminalState";
+} from "../../features/terminals/state";
+import { Icon } from "../Icon";
+import LegacyChatArchiveDialog from "./LegacyChatArchiveDialog";
+import TerminalContextBar from "./TerminalContextBar";
+import TerminalSurface from "./TerminalSurface";
+import TerminalTabs, { TerminalEmptyActions } from "./TerminalTabs";
+import { useI18n } from "../../lib/i18n";
 import "./terminalDock.css";
 
 const DEFAULT_DOCK_WIDTH = 480;
@@ -82,12 +89,13 @@ function restoreTerminalDockState(
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return base;
     }
-    const activeIdByConnection = Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] =>
-          typeof entry[1] === "string",
-      ),
-    );
+    const activeIdByConnection: TerminalDockState["activeIdByConnection"] =
+      {};
+    for (const [id, sessionId] of Object.entries(parsed)) {
+      if (typeof sessionId === "string") {
+        activeIdByConnection[connectionId(id)] = terminalSessionId(sessionId);
+      }
+    }
     return { ...base, activeIdByConnection };
   } catch {
     return base;
@@ -111,19 +119,19 @@ export default function TerminalDock({
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const [closingId, setClosingId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<TerminalSessionId | null>(null);
   const dockRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const archiveButtonRef = useRef<HTMLButtonElement>(null);
   const currentConnectionIdRef = useRef(connection.id);
   const channelsRef = useRef(
-    new Map<string, ReturnType<typeof terminalOutputChannel>>(),
+    new Map<TerminalSessionId, ReturnType<typeof terminalOutputChannel>>(),
   );
-  const writersRef = useRef(new Map<string, OutputWriter>());
-  const replayRef = useRef(new Map<string, TerminalOutputChunk[]>());
-  const replayBytesRef = useRef(new Map<string, number>());
-  const lastSequenceRef = useRef(new Map<string, number>());
-  const retiredRef = useRef(new Set<string>());
+  const writersRef = useRef(new Map<TerminalSessionId, OutputWriter>());
+  const replayRef = useRef(new Map<TerminalSessionId, TerminalOutputChunk[]>());
+  const replayBytesRef = useRef(new Map<TerminalSessionId, number>());
+  const lastSequenceRef = useRef(new Map<TerminalSessionId, number>());
+  const retiredRef = useRef(new Set<TerminalSessionId>());
   currentConnectionIdRef.current = connection.id;
 
   useEffect(() => {
@@ -158,7 +166,7 @@ export default function TerminalDock({
   );
 
   const ensureChannel = useCallback(
-    (id: string) => {
+    (id: TerminalSessionId) => {
       const existing = channelsRef.current.get(id);
       if (existing) return existing;
       const channel = makeChannel();
@@ -169,7 +177,7 @@ export default function TerminalDock({
   );
 
   const attachSession = useCallback(
-    async (id: string) => {
+    async (id: TerminalSessionId) => {
       const receipt = await terminalFocus(
         id,
         lastSequenceRef.current.get(id) ?? null,
@@ -239,7 +247,7 @@ export default function TerminalDock({
   }, [loadSessions]);
 
   const registerOutput = useCallback(
-    (id: string, writer: OutputWriter | null) => {
+    (id: TerminalSessionId, writer: OutputWriter | null) => {
       if (!writer) {
         writersRef.current.delete(id);
         return;
@@ -427,7 +435,7 @@ export default function TerminalDock({
     }
   }
 
-  const retireSessionResources = useCallback((id: string) => {
+  const retireSessionResources = useCallback((id: TerminalSessionId) => {
     retiredRef.current.add(id);
     channelsRef.current.delete(id);
     writersRef.current.delete(id);

@@ -40,7 +40,9 @@ pub async fn upsert_connection(
             password: password.map(Zeroizing::new),
         })
         .await?;
-    state.terminals.stop_connection(saved.id, &app);
+    state
+        .terminals
+        .stop_connection(ConnectionId::from(saved.id), &app);
     Ok(saved)
 }
 
@@ -57,7 +59,7 @@ pub async fn set_connections_schema_group(
         .set_schema_group(ids.clone(), schema_group)
         .await?;
     for id in ids {
-        state.terminals.stop_connection(id.into(), &app);
+        state.terminals.stop_connection(id, &app);
     }
     Ok(profiles)
 }
@@ -69,7 +71,7 @@ pub async fn delete_connection(
     id: ConnectionId,
 ) -> AppResult<()> {
     state.services.connections.delete(id).await?;
-    state.terminals.stop_connection(id.into(), &app);
+    state.terminals.stop_connection(id, &app);
     Ok(())
 }
 

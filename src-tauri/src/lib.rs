@@ -27,7 +27,6 @@ mod skills;
 mod sql_script;
 mod state;
 mod store;
-mod terminal;
 
 pub use error::{AppError, AppResult};
 
@@ -106,16 +105,16 @@ pub fn run() {
             commands::skill_self_test,
             legacy_mcp_cleanup::legacy_mcp_cleanup_status,
             legacy_mcp_cleanup::legacy_mcp_cleanup_apply,
-            terminal::terminal_create,
-            terminal::terminal_list,
-            terminal::terminal_focus,
-            terminal::terminal_write,
-            terminal::terminal_resize,
-            terminal::terminal_kill,
-            terminal::terminal_close,
-            terminal::terminal_restart,
-            terminal::terminal_rename,
-            terminal::terminal_shutdown_all,
+            features::terminals::transport::terminal_create,
+            features::terminals::transport::terminal_list,
+            features::terminals::transport::terminal_focus,
+            features::terminals::transport::terminal_write,
+            features::terminals::transport::terminal_resize,
+            features::terminals::transport::terminal_kill,
+            features::terminals::transport::terminal_close,
+            features::terminals::transport::terminal_restart,
+            features::terminals::transport::terminal_rename,
+            features::terminals::transport::terminal_shutdown_all,
             features::workspaces::transport::workspace_auth_state,
             features::workspaces::transport::refresh_workspace_auth_state,
             features::workspaces::transport::workspace_sign_out,

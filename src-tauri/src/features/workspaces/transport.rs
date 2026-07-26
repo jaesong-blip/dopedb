@@ -174,6 +174,6 @@ pub async fn bind_workspace_connection_credentials(
             password: Zeroizing::new(password),
         })
         .await?;
-    state.terminals.stop_connection(id.into(), &app);
+    state.terminals.stop_connection(id, &app);
     Ok(profile)
 }
