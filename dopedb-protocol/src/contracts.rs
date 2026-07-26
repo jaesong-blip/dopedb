@@ -20,6 +20,17 @@ use crate::{
 
 const HEADER: &str = "// Generated from dopedb-protocol public serde DTOs by ts-rs 12.0.1.\n// Do not edit; run pnpm generate:contracts.\n\n";
 
+/// Canonicalizes only the platform representation of a line ending for the
+/// test-only generated-file comparison. A lone carriage return and every other
+/// byte stay significant, so this cannot hide TypeScript or whitespace drift.
+fn normalize_generated_contract_newlines(source: &str) -> std::borrow::Cow<'_, str> {
+    if source.contains("\r\n") {
+        std::borrow::Cow::Owned(source.replace("\r\n", "\n"))
+    } else {
+        std::borrow::Cow::Borrowed(source)
+    }
+}
+
 fn output_path() -> PathBuf {
     std::env::var_os("DOPEDB_PROTOCOL_CONTRACT_OUTPUT")
         .map(PathBuf::from)
@@ -104,8 +115,30 @@ fn generated_protocol_contracts_are_current() {
     let actual = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     assert_eq!(
-        actual, expected,
+        normalize_generated_contract_newlines(&actual),
+        normalize_generated_contract_newlines(&expected),
         "Rust protocol serde contract drifted; run pnpm generate:contracts"
+    );
+}
+
+#[test]
+fn generated_protocol_contract_newline_normalization_keeps_real_drift_visible() {
+    let expected = "export type Contract = { field: string };\n";
+    assert_eq!(
+        normalize_generated_contract_newlines("export type Contract = { field: string };\r\n"),
+        normalize_generated_contract_newlines(expected),
+    );
+    assert_ne!(
+        normalize_generated_contract_newlines("export type Contract = { field: string }; \r\n"),
+        normalize_generated_contract_newlines(expected),
+    );
+    assert_ne!(
+        normalize_generated_contract_newlines("export type Contract = { field: number };\r\n"),
+        normalize_generated_contract_newlines(expected),
+    );
+    assert_ne!(
+        normalize_generated_contract_newlines("export type Contract = { field: string };\r"),
+        normalize_generated_contract_newlines(expected),
     );
 }
 
