@@ -120,7 +120,9 @@ export function collectQuerySharedCoreDiagnostics(context) {
 }
 
 function productionRust(read, filePath) {
-  return read(filePath).split(/\n#\[cfg\([^\n]*\)\]\nmod tests \{/)[0];
+  return read(filePath)
+    .replace(/\r\n/g, "\n")
+    .split(/\n#\[cfg\([^\n]*\)\]\nmod tests \{/)[0];
 }
 
 const brokerRuntimeFiles = [
@@ -179,6 +181,18 @@ export function collectRuntimeIdDiagnostics({ read }) {
     if (!runtimeIdLocalAliasRules.some((pattern) => pattern.test(fixture))) {
       diagnostics.push(`Broker RuntimeId guard self-test failed for local alias: ${fixture}`);
     }
+  }
+  const crlfProduction = productionRust(
+    () =>
+      "fn production() {}\r\n#[cfg(test)]\r\nmod tests {\r\nlet alias = dispatcher.runtime_id;\r\nlet raw = runtime.runtime_id().into();\r\n}\r\n",
+    "crlf-fixture.rs",
+  );
+  if (
+    crlfProduction !== "fn production() {}" ||
+    runtimeIdLocalAliasRules.some((pattern) => pattern.test(crlfProduction)) ||
+    runtimeUuidConversion.test(crlfProduction)
+  ) {
+    diagnostics.push("Broker RuntimeId CRLF test-module boundary self-test failed");
   }
   for (const filePath of brokerRuntimeFiles) {
     const source = productionRust(read, filePath);
