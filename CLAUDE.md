@@ -52,7 +52,7 @@ gh workflow run canary.yml --ref main -f source_ref="$branch"
 ## 릴리스
 
 - 태그는 **반드시 `app-v0.0.0` 형식**이다. `.github/workflows/release.yml`이 `app-v*`에만 반응하므로 `v0.0.0`으로 달면 릴리스가 조용히 안 나간다(0.1.7·0.1.8이 이렇게 유실됐다).
-- 버전은 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`(+`Cargo.lock`) 네 곳을 함께 올리고, 범프는 기능 커밋에 같이 싣는다.
+- 버전은 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `Cargo.lock`의 `dopedb` 항목, `dopedb-cli/Cargo.toml`, `Cargo.lock`의 `dopedb-cli` 항목 여섯 곳을 함께 올리고, 범프는 기능 커밋에 같이 싣는다.
 - 정식 태그는 `main`에 합쳐진 커밋에 저장소 소유자만 만들고, `stable-release` 환경 승인 뒤 배포한다. macOS/Windows 3종을 draft에 모두 올린 다음 공개하며, 공개 후 태그와 asset은 immutable이다.
 - 협업자 브랜치는 `work/<GitHub아이디>/<작업명>`을 쓰고, 본인 브랜치만 `.github/workflows/canary.yml`로 unsigned canary prerelease를 만들 수 있다. 카나리는 updater signing key와 `latest.json`을 절대 사용하지 않는다.
 - `canary-*`를 제외한 모든 태그는 `owner-only-tags-except-canary` ruleset으로 `json-choi`만 생성·수정·삭제할 수 있다. 우회하지 않는다.

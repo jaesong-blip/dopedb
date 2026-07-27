@@ -56,7 +56,7 @@ Canaries are unsigned internal-test prereleases. They must never receive `TAURI_
 
 Only `json-choi`, after an explicit user request, may publish a stable version.
 
-1. Keep the same version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the `dopedb` package entry in `Cargo.lock`.
+1. Keep the same version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, the `dopedb` package entry in `Cargo.lock`, `dopedb-cli/Cargo.toml`, and the `dopedb-cli` package entry in `Cargo.lock`.
 2. Track the version change in an issue, commit it directly to an up-to-date `main` with the issue footer, and push normally.
 3. Verify the required CI jobs pass on that `main` commit.
 4. Create `app-vX.Y.Z` on that commit and push it as `json-choi`. Never use a plain `vX.Y.Z` tag and never create a stable tag from a contributor work branch.

@@ -64,7 +64,7 @@ Canary installers are deliberately unsigned and do not include Tauri updater art
 Only `@json-choi` publishes stable versions:
 
 1. Create or reuse a release issue.
-2. Update `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `Cargo.lock` to the same version directly on an up-to-date `main`.
+2. Update `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, the `dopedb` entry in `Cargo.lock`, `dopedb-cli/Cargo.toml`, and the `dopedb-cli` entry in `Cargo.lock` to the same version directly on an up-to-date `main`.
 3. Commit with the issue footer, push normally, and verify the required CI jobs pass.
 4. Create and push `app-vX.Y.Z` from that `main` commit.
 5. Approve the pending `stable-release` environment deployment.

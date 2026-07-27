@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const POSITIVE_DATABASE_ID = /^[1-9][0-9]*$/;
 const DISALLOWED_JOB_PROPERTIES = new Set(["continue-on-error", "if"]);
-const EXPECTED_RELEASE_WORKFLOW_SHA256 = "71ab23e6624b0a1632f4838e35be2ba29de209dce0db1ae8d7bafc8d4daa38f9";
+const EXPECTED_RELEASE_WORKFLOW_SHA256 = "ed5708233ed4ed832c9db8864f0371fb8f0b8e39c5bb48e7332037cdcd01d31b";
 const EXPECTED_RELEASE_JOB_IDS = Object.freeze(["verify-release", "publish-tauri", "finalize-release"]);
 const EXPECTED_RELEASE_JOB_PROPERTIES = Object.freeze({
   "verify-release": ["runs-on", "timeout-minutes", "permissions", "steps"],
@@ -24,6 +24,9 @@ const EXPECTED_RELEASE_JOB_NEEDS = Object.freeze({
   "publish-tauri": "verify-release",
   "finalize-release": "publish-tauri",
 });
+const REQUIRED_VERIFY_RELEASE_VERSION_GUARDS = Object.freeze([
+  "node scripts/release/verify-release-version.mjs \"$tag_version\"",
+]);
 // The four readable step bodies below document the finalizer's command-level
 // contract. These audited normalized job hashes additionally lock every setup
 // action, use/with/env mapping, comment, blank line, and unnamed sibling.
@@ -352,6 +355,18 @@ function assertJobGuards(workflow) {
   }
 }
 
+function assertVerifyReleaseVersionGuards(workflow) {
+  const verifyRelease = extractJobs(workflow).get("verify-release");
+  if (!verifyRelease) {
+    fail("missing version-verification release job");
+  }
+  for (const guard of REQUIRED_VERIFY_RELEASE_VERSION_GUARDS) {
+    if (!verifyRelease.body.includes(guard)) {
+      fail(`verify-release is missing required CLI version guard: ${guard}`);
+    }
+  }
+}
+
 function exactCriticalSteps(workflow) {
   const all = extractNamedSteps(workflow);
   return Object.fromEntries(Object.values(STEP_NAMES).map((name) => {
@@ -390,6 +405,7 @@ export function validateReleaseWorkflow(workflow) {
     }
   }
   assertJobGuards(source);
+  assertVerifyReleaseVersionGuards(source);
 
   const apiCalls = countOccurrences(source, /\bgh(?:[ \t\\\r\n]+)api\b/g);
   if (apiCalls.length !== 1 || !belongsTo(publish, apiCalls[0].index)) {
@@ -548,6 +564,8 @@ test("release workflow validator rejects adversarial command and property mutati
   const workflow = normalizeYamlBody(rawWorkflow);
   assert.equal(validateReleaseWorkflow(rawWorkflow), true, "raw checkout workflow");
   const mutations = [
+    ["release version verifier removal", mutateJobBody(workflow, "verify-release", (body) => body.replace(/^          tag_version=.*\n          node scripts\/release\/verify-release-version\.mjs \"\$tag_version\"\n/m, ""))],
+    ["release version verifier bypass", mutateJobBody(workflow, "verify-release", (body) => body.replace("          node scripts/release/verify-release-version.mjs \"$tag_version\"", "          : \"$tag_version\" # version verifier bypassed"))],
     ["exit zero after draft closure", mutateCriticalBody(workflow, STEP_NAMES.draftClosure, (body) => body.replace("\n      # GitHub immutable", "\n          exit 0\n\n      # GitHub immutable"))],
     ["exit zero in public verification", mutateCriticalBody(workflow, STEP_NAMES.publicClosure, (body) => body.replace(/\n$/, "\n          exit 0\n"))],
     ["release id reassignment", mutateCriticalBody(workflow, STEP_NAMES.publish, (body) => body.replace("          gh api", "          release_id=1\n          gh api"))],
