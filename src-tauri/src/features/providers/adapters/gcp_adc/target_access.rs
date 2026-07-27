@@ -3,6 +3,7 @@
 //! This module owns the short-lived bearer token only inside its call frame;
 //! neither the connection runtime nor a provider binding can observe it.
 
+#[cfg(not(windows))]
 use zeroize::Zeroizing;
 
 use crate::connection::GcpCloudSqlNetworkMode;
@@ -10,6 +11,7 @@ use crate::error::AppResult;
 use crate::model::Engine;
 
 use super::super::super::domain::ProviderVerification;
+#[cfg(not(windows))]
 use super::{
     adc_source, command_spec, external_subject_token_guard, find_gcloud, read_token_output,
     spawn_gcloud, validate_adc, AdcSource, GcloudSnapshot,

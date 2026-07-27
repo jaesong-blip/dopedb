@@ -48,7 +48,7 @@ const GCLOUD_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) struct ProductionGcpAdcVerifier;
 
 impl GcpAdcVerifier for ProductionGcpAdcVerifier {
-    async fn verify_adc(&self, binding: &ProviderBindingScope) -> AppResult<ProviderVerification> {
+    async fn verify_adc(&self, _binding: &ProviderBindingScope) -> AppResult<ProviderVerification> {
         #[cfg(windows)]
         {
             // `gcloud.cmd` requires a command interpreter. This adapter never
@@ -58,7 +58,7 @@ impl GcpAdcVerifier for ProductionGcpAdcVerifier {
         }
         #[cfg(not(windows))]
         {
-            target_access::verify_cloud_sql_target(binding).await
+            target_access::verify_cloud_sql_target(_binding).await
         }
     }
 }

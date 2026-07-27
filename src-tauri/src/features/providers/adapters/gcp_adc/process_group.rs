@@ -21,10 +21,10 @@ pub(super) struct ChildTermination {
 }
 
 impl ChildTermination {
-    pub(super) fn capture(child: &Child) -> Self {
+    pub(super) fn capture(_child: &Child) -> Self {
         Self {
             #[cfg(unix)]
-            group: ProcessGroup::for_child(child),
+            group: ProcessGroup::for_child(_child),
         }
     }
 }
@@ -32,11 +32,11 @@ impl ChildTermination {
 /// Stops the exact child/group on every output error or timeout.
 pub(super) async fn terminate_child(
     child: &mut Child,
-    termination: ChildTermination,
+    _termination: ChildTermination,
 ) -> AppResult<()> {
     #[cfg(unix)]
     {
-        if let Some(group) = termination.group {
+        if let Some(group) = _termination.group {
             group.terminate_before_reap(child).await
         } else {
             let _ = child;
@@ -62,11 +62,11 @@ pub(super) async fn terminate_child(
 /// Fences descendants before snapshot cleanup after a complete stdout token.
 pub(super) async fn finish_child_before_snapshot_cleanup(
     child: &mut Child,
-    termination: ChildTermination,
+    _termination: ChildTermination,
 ) -> AppResult<bool> {
     #[cfg(unix)]
     {
-        if let Some(group) = termination.group {
+        if let Some(group) = _termination.group {
             group.terminate_before_reap(child).await?;
             Ok(true)
         } else {
@@ -158,7 +158,7 @@ enum GroupSignal {
     PermissionDenied,
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::GroupSignal;
 
