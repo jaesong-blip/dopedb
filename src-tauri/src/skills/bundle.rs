@@ -424,7 +424,7 @@ mod tests {
         let bundle = SkillBundle::load().unwrap();
         assert_eq!(bundle.current.app_version, env!("CARGO_PKG_VERSION"));
         assert_eq!(bundle.current.install_files[0].path, "SKILL.md");
-        assert_eq!(bundle.snapshots.len(), 5);
+        assert_eq!(bundle.snapshots.len(), 6);
         assert_eq!(
             bundle
                 .snapshots
