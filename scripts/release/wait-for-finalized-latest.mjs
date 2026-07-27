@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   assertFinalizedLatestAsset,
+  canonicalizeReleaseAssets,
   parseJsonWithoutDuplicateKeys,
 } from "./finalize-updater-json.mjs";
 
@@ -42,7 +43,20 @@ export async function waitForFinalizedLatestAsset({
       fail("latest.json asset metadata did not converge before the bounded draft deadline");
     }
     try {
-      return { assets, manifest: assertFinalizedLatestAsset({ source, releaseAssets: assets, repository, tag }) };
+      const manifest = assertFinalizedLatestAsset({
+        source,
+        releaseAssets: assets,
+        repository,
+        tag,
+      });
+      return {
+        assets: canonicalizeReleaseAssets({
+          releaseAssets: assets,
+          repository,
+          tag,
+        }),
+        manifest,
+      };
     } catch (error) {
       if (!isStaleLatestMetadata(error)) throw error;
       const remaining = deadline - now();

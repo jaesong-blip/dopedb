@@ -39,9 +39,9 @@ function fixture() {
     const payload = suffix.includes("setup") ? new Uint8Array([77, 90, 1]) : new Uint8Array([31, 139, 1]);
     const signature = new TextEncoder().encode(`signature-${platform}`);
     const url = canonicalUpdaterUrl(repository, tag, name);
-    assets.push({ apiUrl: `https://api.github.com/assets/${assets.length}`, contentType: "application/octet-stream", digest: `sha256:${createHash("sha256").update(payload).digest("hex")}`, name, size: payload.length, url, payload });
+    assets.push({ apiUrl: `https://api.github.com/repos/${repository}/releases/assets/${assets.length + 1}`, contentType: "application/octet-stream", digest: `sha256:${createHash("sha256").update(payload).digest("hex")}`, name, size: payload.length, url, payload });
     const signatureName = `${name}.sig`;
-    assets.push({ apiUrl: `https://api.github.com/assets/${assets.length}`, contentType: "application/octet-stream", digest: `sha256:${createHash("sha256").update(signature).digest("hex")}`, name: signatureName, size: signature.length, url: canonicalUpdaterUrl(repository, tag, signatureName), payload: signature });
+    assets.push({ apiUrl: `https://api.github.com/repos/${repository}/releases/assets/${assets.length + 1}`, contentType: "application/octet-stream", digest: `sha256:${createHash("sha256").update(signature).digest("hex")}`, name: signatureName, size: signature.length, url: canonicalUpdaterUrl(repository, tag, signatureName), payload: signature });
     platforms[platform] = { signature: Buffer.from(signature).toString("base64"), url };
   }
   const manifest = finalizeUpdaterManifest({
@@ -50,7 +50,7 @@ function fixture() {
   });
   const source = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
   assets.push({
-    apiUrl: `https://api.github.com/assets/${assets.length}`,
+    apiUrl: `https://api.github.com/repos/${repository}/releases/assets/${assets.length + 1}`,
     contentType: "application/octet-stream",
     digest: `sha256:${createHash("sha256").update(source).digest("hex")}`,
     name: "latest.json",
@@ -218,6 +218,31 @@ test("rejects credential-bearing public URLs before any request", async () => {
     ),
     /non-public/,
   );
+});
+
+test("public downloader rejects draft asset metadata before any request", async () => {
+  const source = fixture();
+  const draft = structuredClone(source.assets);
+  for (const asset of draft.assets) {
+    asset.url = asset.url.replace(tag, "untagged-25a73115528edf589988");
+  }
+  const root = await mkdtemp(path.join(tmpdir(), "dopedb-release-draft-test-"));
+  try {
+    await assert.rejects(
+      downloadPublicUpdaterRelease({
+        assets: draft,
+        fetchImpl: async () => assert.fail("draft metadata must not reach public fetch"),
+        latestUrl: canonicalUpdaterUrl(repository, tag, "latest.json"),
+        output: path.join(root, "public-assets"),
+        repository,
+        tag,
+      }),
+      /latest\.json is missing from refreshed release metadata/,
+    );
+    assert.equal((await readdir(root)).length, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("rejects arbitrary HTTPS redirect targets and bounded redirect loops separately from retries", async () => {

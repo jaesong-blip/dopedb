@@ -16,6 +16,11 @@ export const UPDATER_PLATFORMS = Object.freeze({
     suffix: "x64-setup.exe",
   },
 });
+const UPDATER_PLATFORM_ALIASES = Object.freeze({
+  "darwin-aarch64-app": "darwin-aarch64",
+  "darwin-x86_64-app": "darwin-x86_64",
+  "windows-x86_64-nsis": "windows-x86_64",
+});
 export const STABLE_UPDATER_REPOSITORY = "json-choi/dopedb";
 
 const REQUIRED_PLATFORMS = Object.freeze(Object.keys(UPDATER_PLATFORMS));
@@ -37,6 +42,70 @@ function assertNonEmptyString(value, label) {
   }
 }
 
+function parseStrictUrl(value, label) {
+  try {
+    return new URL(value);
+  } catch {
+    throw new Error(`${label} must be a valid URL`);
+  }
+}
+
+function assertReleaseAssetApiUrl(url, repository, assetName) {
+  const parsed = parseStrictUrl(url, `asset ${assetName} apiUrl`);
+  const expectedPrefix = `/repos/${repository}/releases/assets/`;
+  const assetId = parsed.pathname.slice(expectedPrefix.length);
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.hostname !== "api.github.com" ||
+    parsed.port ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    !parsed.pathname.startsWith(expectedPrefix) ||
+    !/^[1-9][0-9]*$/.test(assetId)
+  ) {
+    throw new Error(
+      `asset ${assetName} apiUrl must use the repository-scoped GitHub release asset API`,
+    );
+  }
+}
+
+function releaseAssetNamespace(url, repository, tag, assetName) {
+  const parsed = parseStrictUrl(url, `asset ${assetName} url`);
+  const pathPrefix = `/${repository}/releases/download/`;
+  const pathSuffix = `/${encodeURIComponent(assetName)}`;
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.hostname !== "github.com" ||
+    parsed.port ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    !parsed.pathname.startsWith(pathPrefix) ||
+    !parsed.pathname.endsWith(pathSuffix)
+  ) {
+    throw new Error(
+      `release asset ${assetName} must use a repository-scoped GitHub release URL`,
+    );
+  }
+  const namespace = parsed.pathname.slice(
+    pathPrefix.length,
+    parsed.pathname.length - pathSuffix.length,
+  );
+  if (
+    !namespace ||
+    parsed.pathname !== `${pathPrefix}${namespace}${pathSuffix}` ||
+    (namespace !== tag && !/^untagged-[0-9a-f]{20}$/.test(namespace))
+  ) {
+    throw new Error(
+      `release asset ${assetName} must use the release tag or a strict GitHub draft namespace`,
+    );
+  }
+  return namespace;
+}
+
 function normalizeAssets(value) {
   const assets = Array.isArray(value) ? value : value?.assets;
   if (!Array.isArray(assets) || assets.length === 0) {
@@ -45,10 +114,11 @@ function normalizeAssets(value) {
   return assets;
 }
 
-function indexAssets(assets) {
+function indexAssets(assets, repository, tag) {
   const byApiUrl = new Map();
   const byDownloadUrl = new Map();
   const byName = new Map();
+  let sharedNamespace;
 
   for (const asset of assets) {
     if (!asset || typeof asset !== "object" || Array.isArray(asset)) {
@@ -58,6 +128,13 @@ function indexAssets(assets) {
     assertNonEmptyString(hasOwn(asset, "name") ? asset.name : undefined, "asset.name");
     assertNonEmptyString(hasOwn(asset, "apiUrl") ? asset.apiUrl : undefined, `asset ${asset.name} apiUrl`);
     assertNonEmptyString(hasOwn(asset, "url") ? asset.url : undefined, `asset ${asset.name} url`);
+    assertReleaseAssetApiUrl(asset.apiUrl, repository, asset.name);
+    const namespace = releaseAssetNamespace(asset.url, repository, tag, asset.name);
+    if (sharedNamespace === undefined) {
+      sharedNamespace = namespace;
+    } else if (namespace !== sharedNamespace) {
+      throw new Error("release assets must share one tag or draft namespace");
+    }
 
     if (
       byApiUrl.has(asset.apiUrl) ||
@@ -80,31 +157,6 @@ export function canonicalUpdaterAssetName(version, suffix) {
 
 export function canonicalUpdaterUrl(repository, tag, assetName) {
   return `https://github.com/${repository}/releases/download/${tag}/${assetName}`;
-}
-
-function assertPublicDownloadUrl(url, repository, tag, assetName) {
-  const expectedPrefix = `https://github.com/${repository}/releases/download/${tag}/`;
-  const parsed = new URL(url);
-  if (
-    parsed.protocol !== "https:" ||
-    parsed.hostname !== "github.com" ||
-    parsed.username ||
-    parsed.password ||
-    parsed.search ||
-    parsed.hash ||
-    !url.startsWith(expectedPrefix)
-  ) {
-    throw new Error(
-      `updater asset ${assetName} must use the public ${expectedPrefix} path`,
-    );
-  }
-
-  const actualName = decodeURIComponent(parsed.pathname.split("/").at(-1) ?? "");
-  if (actualName !== assetName) {
-    throw new Error(
-      `updater URL filename ${actualName} does not match release asset ${assetName}`,
-    );
-  }
 }
 
 function assertDownloadableAsset(asset, label) {
@@ -159,7 +211,7 @@ function allowedNonUpdaterAsset(name, version) {
   ]).has(name);
 }
 
-function assertExactReleaseClosure(assets, version, repository, tag) {
+function assertExactReleaseClosure(assets, version) {
   const expected = expectedUpdaterAssetNames(version);
   const names = new Set();
   const urls = new Set();
@@ -176,25 +228,51 @@ function assertExactReleaseClosure(assets, version, repository, tag) {
     if (expected.has(asset.name) || asset.name === "latest.json") {
       assertDownloadableAsset(asset, `release asset ${asset.name}`);
       assertSha256Digest(asset, `release asset ${asset.name}`);
-      if (asset.url !== canonicalUpdaterUrl(repository, tag, asset.name)) {
-        throw new Error(`release asset ${asset.name} must use its canonical public URL`);
-      }
     }
   }
   for (const name of expected) {
     const asset = assets.find((candidate) => candidate.name === name);
-    if (!asset || asset.url !== canonicalUpdaterUrl(repository, tag, name)) {
-      throw new Error(`release is missing canonical updater closure asset ${name}`);
+    if (!asset) {
+      throw new Error(`release is missing updater closure asset ${name}`);
     }
   }
 }
 
 function canonicalPlatforms(platforms) {
   assertNoMagicKeys(platforms, "updater platforms");
-  const allowed = new Set(REQUIRED_PLATFORMS);
+  const allowed = new Set([
+    ...REQUIRED_PLATFORMS,
+    ...Object.keys(UPDATER_PLATFORM_ALIASES),
+  ]);
   for (const platform of Object.keys(platforms)) {
     if (!allowed.has(platform)) {
       throw new Error(`updater manifest has unsupported platform ${platform}`);
+    }
+  }
+  for (const [alias, platform] of Object.entries(UPDATER_PLATFORM_ALIASES)) {
+    if (!hasOwn(platforms, alias)) continue;
+    const aliasEntry = platforms[alias];
+    const platformEntry = hasOwn(platforms, platform)
+      ? platforms[platform]
+      : undefined;
+    if (
+      !aliasEntry ||
+      !platformEntry ||
+      typeof aliasEntry !== "object" ||
+      Array.isArray(aliasEntry) ||
+      typeof platformEntry !== "object" ||
+      Array.isArray(platformEntry)
+    ) {
+      throw new Error(`updater platform alias ${alias} must duplicate ${platform}`);
+    }
+    assertNoMagicKeys(aliasEntry, `platform ${alias}`);
+    const aliasKeys = Object.keys(aliasEntry).sort();
+    const platformKeys = Object.keys(platformEntry).sort();
+    if (
+      JSON.stringify(aliasKeys) !== JSON.stringify(platformKeys) ||
+      aliasKeys.some((key) => aliasEntry[key] !== platformEntry[key])
+    ) {
+      throw new Error(`updater platform alias ${alias} must duplicate ${platform}`);
     }
   }
   const canonical = {};
@@ -240,8 +318,8 @@ export function finalizeUpdaterManifest({
   }
 
   const assets = normalizeAssets(releaseAssets);
-  const { byApiUrl, byDownloadUrl, byName } = indexAssets(assets);
-  assertExactReleaseClosure(assets, manifest.version, repository, tag);
+  const { byName } = indexAssets(assets, repository, tag);
+  assertExactReleaseClosure(assets, manifest.version);
   const entries = canonicalPlatforms(manifest.platforms);
   const platforms = {};
 
@@ -253,27 +331,27 @@ export function finalizeUpdaterManifest({
     assertNonEmptyString(hasOwn(entry, "signature") ? entry.signature : undefined, `platform ${platform} signature`);
     assertNonEmptyString(hasOwn(entry, "url") ? entry.url : undefined, `platform ${platform} url`);
 
-    const asset = byApiUrl.get(entry.url) ?? byDownloadUrl.get(entry.url);
-    if (!asset) {
-      throw new Error(
-        `platform ${platform} references an unknown release asset URL: ${entry.url}`,
-      );
-    }
     const expectedName = canonicalUpdaterAssetName(
       manifest.version,
       UPDATER_PLATFORMS[platform].suffix,
     );
-    if (asset.name !== expectedName) {
+    const asset = byName.get(expectedName);
+    if (
+      !asset ||
+      !new Set([
+        asset.apiUrl,
+        asset.url,
+        canonicalUpdaterUrl(repository, tag, expectedName),
+      ]).has(entry.url)
+    ) {
       throw new Error(`platform ${platform} must reference ${expectedName}`);
     }
-    assertPublicDownloadUrl(asset.url, repository, tag, asset.name);
     assertDownloadableAsset(asset, `platform ${platform} archive`);
     const signatureName = `${expectedName}.sig`;
     const signature = byName.get(signatureName);
     if (!signature) {
       throw new Error(`platform ${platform} is missing archive signature ${signatureName}`);
     }
-    assertPublicDownloadUrl(signature.url, repository, tag, signatureName);
     assertDownloadableAsset(signature, `platform ${platform} signature`);
     platforms[platform] = {
       ...entry,
@@ -282,6 +360,30 @@ export function finalizeUpdaterManifest({
   }
 
   return { ...manifest, platforms };
+}
+
+export function canonicalizeReleaseAssets({
+  releaseAssets,
+  repository,
+  tag,
+}) {
+  assertNonEmptyString(repository, "repository");
+  assertNonEmptyString(tag, "tag");
+  if (repository !== STABLE_UPDATER_REPOSITORY) {
+    throw new Error(`stable updater repository must be ${STABLE_UPDATER_REPOSITORY}`);
+  }
+  if (!tag.startsWith("app-v")) {
+    throw new Error(`stable release tag must start with app-v: ${tag}`);
+  }
+  const assets = normalizeAssets(releaseAssets);
+  indexAssets(assets, repository, tag);
+  assertExactReleaseClosure(assets, tag.slice("app-v".length));
+  return {
+    assets: assets.map((asset) => ({
+      ...asset,
+      url: canonicalUpdaterUrl(repository, tag, asset.name),
+    })),
+  };
 }
 
 export function assertFinalizedLatestAsset({ source, releaseAssets, repository, tag }) {
