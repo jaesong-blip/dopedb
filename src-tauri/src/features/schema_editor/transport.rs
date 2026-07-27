@@ -4,8 +4,8 @@ use dopedb_protocol::{DdlPlan, SchemaChangeRequest};
 use tauri::State;
 
 use crate::error::{AppError, AppResult};
+use crate::features::scripts::DesktopScriptRunReceipt;
 use crate::kernel::identity::{ConnectionId, OperationId};
-use crate::services::DesktopScriptRunReceipt;
 use crate::state::AppState;
 
 use super::{SchemaChangeCommand, SchemaChangeProposal};

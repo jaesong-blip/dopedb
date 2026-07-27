@@ -1,22 +1,22 @@
 //! Adapter from the schema use case to the existing immutable Script operation path.
 
 use crate::error::AppResult;
-use crate::kernel::identity::OperationId;
-use crate::services::{
+use crate::features::scripts::{
     DesktopScriptProposalRequest, DesktopScriptRunError, DesktopScriptRunReceipt,
-    SchemaScriptContext, ScriptService,
+    SchemaScriptContext, ScriptFeature,
 };
+use crate::kernel::identity::OperationId;
 
 use super::super::domain::{SchemaScriptProposal, SchemaScriptProposalCommand};
 use super::super::ports::SchemaScriptPort;
 
 #[derive(Clone)]
 pub(in crate::features::schema_editor) struct ScriptSchemaGateway {
-    script: ScriptService,
+    script: ScriptFeature,
 }
 
 impl ScriptSchemaGateway {
-    pub(in crate::features::schema_editor) fn new(script: ScriptService) -> Self {
+    pub(in crate::features::schema_editor) fn new(script: ScriptFeature) -> Self {
         Self { script }
     }
 }

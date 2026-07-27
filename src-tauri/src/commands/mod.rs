@@ -12,15 +12,20 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::model::{DocumentQuery, HistoryEntry, PlatformFeatureFlags, SafetySettings};
-use crate::services::{
-    AuditSnapshotReceipt, AuditVerdict, DesktopDocumentProposalReceipt,
-    DesktopDocumentProposalRequest, DesktopDocumentReadError, DesktopScriptProposalReceipt,
-    DesktopScriptProposalRequest, DesktopScriptRunError, DesktopScriptRunReceipt,
-    DocumentReadReceipt, MonitoringProposalReceipt, MonitoringProposalRequest,
-    MonitoringServiceError, MonitoringStatusReceipt, OperationDecisionReceipt,
-    OperationDecisionRequest, TableScriptContext,
+use crate::features::activity::{AuditSnapshotReceipt, AuditVerdict};
+use crate::features::documents::{
+    DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest, DesktopDocumentReadError,
+    DocumentReadReceipt,
 };
+use crate::features::monitoring::{
+    MonitoringError, MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringStatusReceipt,
+};
+use crate::features::operation_control::{OperationDecisionReceipt, OperationDecisionRequest};
+use crate::features::scripts::{
+    DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
+    DesktopScriptRunReceipt, TableScriptContext,
+};
+use crate::model::{DocumentQuery, HistoryEntry, PlatformFeatureFlags, SafetySettings};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -336,7 +341,7 @@ pub async fn get_monitoring_status(
         .monitoring
         .status(id)
         .await
-        .map_err(MonitoringServiceError::into_error)
+        .map_err(MonitoringError::into_error)
 }
 
 /// Persist one immutable fixed-role proposal. The desktop must render its literal
@@ -355,7 +360,7 @@ pub async fn propose_postgres_monitoring(
             enabled,
         })
         .await
-        .map_err(MonitoringServiceError::into_error)
+        .map_err(MonitoringError::into_error)
 }
 
 /// Consume one exactly approved fixed-role proposal by operation id only.
@@ -369,7 +374,7 @@ pub async fn set_postgres_monitoring(
         .monitoring
         .run_postgres_role(operation_id)
         .await
-        .map_err(MonitoringServiceError::into_error)
+        .map_err(MonitoringError::into_error)
 }
 
 // ── logs ─────────────────────────────────────────────────────────────────────

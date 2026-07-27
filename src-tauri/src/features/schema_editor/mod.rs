@@ -10,8 +10,8 @@ pub(crate) mod transport;
 
 use crate::error::AppResult;
 use crate::features::catalog::CatalogFeature;
+use crate::features::scripts::{DesktopScriptRunReceipt, ScriptFeature};
 use crate::kernel::identity::OperationId;
-use crate::services::{DesktopScriptRunReceipt, ScriptService};
 
 use adapters::{DdlSchemaPlanner, SchemaCatalogAdapter, ScriptSchemaGateway};
 use application::SchemaEditorUseCases;
@@ -48,7 +48,7 @@ impl SchemaEditorFeature {
     }
 }
 
-pub(crate) fn compose(catalog: CatalogFeature, script: ScriptService) -> SchemaEditorFeature {
+pub(crate) fn compose(catalog: CatalogFeature, script: ScriptFeature) -> SchemaEditorFeature {
     SchemaEditorFeature {
         application: SchemaEditorUseCases::new(
             SchemaCatalogAdapter::new(catalog),

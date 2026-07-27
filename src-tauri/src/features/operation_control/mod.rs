@@ -2,6 +2,9 @@
 //! current policy from the active scope; Tauri callers may provide only an operation
 //! id, the hash rendered to the user, and an optional human reason.
 
+mod application;
+mod ports;
+
 use std::time::Duration;
 
 use dopedb_protocol::{OperationState, OperationSummary};
@@ -17,6 +20,9 @@ use crate::operations::{
     ExactApprovalRequest, LocalApprovalAuthority, OperationRecord, OperationRuntime,
 };
 use crate::store::Store;
+
+use application::OperationUseCases;
+use ports::OperationControlPort;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OperationDecisionRequest {
@@ -35,18 +41,84 @@ pub(crate) struct OperationDecisionReceipt {
 }
 
 #[derive(Clone)]
-pub(crate) struct OperationService {
+struct OperationPlatformAdapter {
     store: Store,
     connections: ConnectionManager,
     runtime: OperationRuntime,
 }
 
-impl OperationService {
-    pub(super) fn new(
-        store: Store,
-        connections: ConnectionManager,
-        runtime: OperationRuntime,
-    ) -> Self {
+type ComposedOperationApplication = OperationUseCases<OperationPlatformAdapter>;
+
+#[derive(Clone)]
+pub(crate) struct OperationControlFeature {
+    application: ComposedOperationApplication,
+}
+
+impl OperationControlFeature {
+    pub(crate) async fn recover_previous_runtimes(&self) -> AppResult<()> {
+        self.application.recover_previous_runtimes().await
+    }
+
+    pub(crate) async fn approve_local(
+        &self,
+        authority: &LocalApprovalAuthority,
+        request: OperationDecisionRequest,
+    ) -> AppResult<OperationDecisionReceipt> {
+        self.application.approve_local(authority, request).await
+    }
+
+    pub(crate) async fn reject_local(
+        &self,
+        authority: &LocalApprovalAuthority,
+        request: OperationDecisionRequest,
+    ) -> AppResult<OperationDecisionReceipt> {
+        self.application.reject_local(authority, request).await
+    }
+
+    pub(crate) async fn show_terminal(
+        &self,
+        scope: &TerminalAuthority,
+        operation_id: Uuid,
+    ) -> AppResult<OperationSummary> {
+        self.application.show_terminal(scope, operation_id).await
+    }
+
+    pub(crate) async fn wait_terminal(
+        &self,
+        scope: &TerminalAuthority,
+        operation_id: Uuid,
+        timeout: Duration,
+    ) -> AppResult<OperationSummary> {
+        self.application
+            .wait_terminal(scope, operation_id, timeout)
+            .await
+    }
+
+    pub(crate) async fn cancel_terminal(
+        &self,
+        scope: &TerminalAuthority,
+        operation_id: Uuid,
+    ) -> AppResult<OperationSummary> {
+        self.application.cancel_terminal(scope, operation_id).await
+    }
+}
+
+pub(crate) fn compose(
+    store: Store,
+    connections: ConnectionManager,
+    runtime: OperationRuntime,
+) -> OperationControlFeature {
+    OperationControlFeature {
+        application: OperationUseCases::new(OperationPlatformAdapter::new(
+            store,
+            connections,
+            runtime,
+        )),
+    }
+}
+
+impl OperationPlatformAdapter {
+    fn new(store: Store, connections: ConnectionManager, runtime: OperationRuntime) -> Self {
         Self {
             store,
             connections,
@@ -175,6 +247,53 @@ impl OperationService {
             current_policy_revision: policy.revision,
             reason: request.reason,
         })
+    }
+}
+
+impl OperationControlPort for OperationPlatformAdapter {
+    fn recover_previous_runtimes(&self) -> impl std::future::Future<Output = AppResult<()>> + Send {
+        OperationPlatformAdapter::recover_previous_runtimes(self)
+    }
+
+    fn approve_local<'a>(
+        &'a self,
+        authority: &'a LocalApprovalAuthority,
+        request: OperationDecisionRequest,
+    ) -> impl std::future::Future<Output = AppResult<OperationDecisionReceipt>> + Send + 'a {
+        OperationPlatformAdapter::approve_local(self, authority, request)
+    }
+
+    fn reject_local<'a>(
+        &'a self,
+        authority: &'a LocalApprovalAuthority,
+        request: OperationDecisionRequest,
+    ) -> impl std::future::Future<Output = AppResult<OperationDecisionReceipt>> + Send + 'a {
+        OperationPlatformAdapter::reject_local(self, authority, request)
+    }
+
+    fn show_terminal<'a>(
+        &'a self,
+        scope: &'a TerminalAuthority,
+        operation_id: Uuid,
+    ) -> impl std::future::Future<Output = AppResult<OperationSummary>> + Send + 'a {
+        OperationPlatformAdapter::show_terminal(self, scope, operation_id)
+    }
+
+    fn wait_terminal<'a>(
+        &'a self,
+        scope: &'a TerminalAuthority,
+        operation_id: Uuid,
+        timeout: Duration,
+    ) -> impl std::future::Future<Output = AppResult<OperationSummary>> + Send + 'a {
+        OperationPlatformAdapter::wait_terminal(self, scope, operation_id, timeout)
+    }
+
+    fn cancel_terminal<'a>(
+        &'a self,
+        scope: &'a TerminalAuthority,
+        operation_id: Uuid,
+    ) -> impl std::future::Future<Output = AppResult<OperationSummary>> + Send + 'a {
+        OperationPlatformAdapter::cancel_terminal(self, scope, operation_id)
     }
 }
 

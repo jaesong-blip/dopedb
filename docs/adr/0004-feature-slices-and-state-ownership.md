@@ -31,6 +31,9 @@ layers. A folder move alone would not prevent the same drift.
 - Split security-sensitive filesystem inspection behind a domain-only port and
   application use case; keep status policy pure and the concrete adapter bounded and
   fail-closed while preserving one public feature facade.
+- Keep execution features behind one public facade and application port; Store,
+  connection authority, Operation runtime, executor, audit, and history access remain
+  private platform-adapter concerns while the central service module only composes them.
 - Compose large static catalogues from bounded namespace owners and enforce exact
   language parity, collision freedom, and a fixed compatibility contract in tests.
 - Preserve retired persisted data through read-only adapters and immutable migrations;

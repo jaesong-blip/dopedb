@@ -17,13 +17,14 @@ use crate::features::connections::{AgentConnectionSummary, CliConnectionResoluti
 use crate::features::dashboards::{
     AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardKind,
 };
+use crate::features::documents::{AgentDocumentReadError, TerminalDocumentReadRequest};
 use crate::features::queries::TerminalSqlProposalRequest;
 use crate::features::queries::{AgentQueryPlanError, TerminalQueryPlanRequest};
 use crate::kernel::identity::{ConnectionId, QueryRunId, RuntimeId, TerminalSessionId};
 use crate::kernel::TerminalAuthority;
 use crate::model::{DocumentPage, DocumentQuery, Engine, QueryResult};
 use crate::monitoring::HealthSnapshot;
-use crate::services::{AgentDocumentReadError, ApplicationServices, TerminalDocumentReadRequest};
+use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
 use dopedb_protocol::{
     decode_arguments, encode_frame, AppOpenCommand, AppOpenResult, CatalogArguments,

@@ -146,6 +146,12 @@ for (const [filePath] of oversized) {
 
 const removedPaths = [
   "src-tauri/src/operations/repository.rs",
+  "src-tauri/src/services/activity_service.rs",
+  "src-tauri/src/services/document_service.rs",
+  "src-tauri/src/services/monitoring_service.rs",
+  "src-tauri/src/services/operation_service.rs",
+  "src-tauri/src/services/safety_service.rs",
+  "src-tauri/src/services/script_service.rs",
   "src-tauri/src/services/sql_document_service.rs",
   "src-tauri/src/services/connection_service.rs",
   "src-tauri/src/services/connection_credentials.rs",
@@ -203,6 +209,77 @@ const removedPaths = [
 for (const filePath of removedPaths) {
   if (fs.existsSync(path.join(root, filePath))) {
     fail(`removed legacy path returned: ${filePath}`);
+  }
+}
+
+const centralServiceFiles = walk("src-tauri/src/services")
+  .filter((file) => file.endsWith(".rs"))
+  .map(relative)
+  .sort();
+if (
+  centralServiceFiles.length !== 1 ||
+  centralServiceFiles[0] !== "src-tauri/src/services/mod.rs"
+) {
+  fail(
+    `central services must remain composition-only; found ${centralServiceFiles.join(", ") || "none"}`,
+  );
+}
+
+const executionFeatureModules = {
+  activity: ["application.rs", "mod.rs", "ports.rs"],
+  documents: [
+    "application.rs",
+    "desktop_plan.rs",
+    "desktop_run.rs",
+    "mod.rs",
+    "ports.rs",
+    "recording.rs",
+    "terminal_read.rs",
+  ],
+  monitoring: ["adapters.rs", "application.rs", "mod.rs", "ports.rs", "recording.rs"],
+  operation_control: ["application.rs", "mod.rs", "ports.rs"],
+  safety_settings: ["application.rs", "mod.rs", "ports.rs"],
+  scripts: [
+    "application.rs",
+    "execution.rs",
+    "helpers.rs",
+    "mod.rs",
+    "ports.rs",
+    "proposal.rs",
+    "read_execution.rs",
+    "write_execution.rs",
+  ],
+};
+for (const [feature, modules] of Object.entries(executionFeatureModules)) {
+  for (const module of modules) {
+    requireFile(`src-tauri/src/features/${feature}/${module}`);
+  }
+  for (const layer of ["application.rs", "ports.rs"]) {
+    forbid(`src-tauri/src/features/${feature}/${layer}`, [
+      [/crate::store/, `${feature} ${layer} must not depend on concrete persistence`],
+      [/crate::connection/, `${feature} ${layer} must not depend on connection runtime adapters`],
+      [/\bOperationRuntime\b/, `${feature} ${layer} must use its Operation port`],
+      [/\bsqlx\b/, `${feature} ${layer} must not contain SQL adapter code`],
+      [/\btauri\b/, `${feature} ${layer} must not contain transport code`],
+    ]);
+  }
+}
+
+const removedExecutionSymbols = [
+  "ActivityService",
+  "DocumentService",
+  "MonitoringService",
+  "OperationService",
+  "SafetyService",
+  "ScriptService",
+];
+for (const symbol of removedExecutionSymbols) {
+  const owners = sourceFiles
+    .filter((file) => file.endsWith(".rs"))
+    .filter((file) => new RegExp(`\\b${symbol}\\b`).test(fs.readFileSync(file, "utf8")))
+    .map(relative);
+  if (owners.length > 0) {
+    fail(`${symbol}: removed execution-service symbol returned in ${owners.join(", ")}`);
   }
 }
 

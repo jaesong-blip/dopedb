@@ -4,16 +4,22 @@
 //! and other platform adapters. This module is also the composition boundary that
 //! wires concrete adapters into those use cases.
 
+pub(crate) mod activity;
 pub(crate) mod agents;
 pub(crate) mod catalog;
 pub(crate) mod connections;
 pub(crate) mod dashboards;
+pub(crate) mod documents;
 pub(crate) mod erd;
 pub(crate) mod jobs;
+pub(crate) mod monitoring;
+pub(crate) mod operation_control;
 mod platform_flags;
 pub(crate) mod providers;
 pub(crate) mod queries;
+pub(crate) mod safety_settings;
 pub(crate) mod schema_editor;
+pub(crate) mod scripts;
 pub(crate) mod sql_documents;
 pub(crate) mod terminals;
 pub(crate) mod workspaces;

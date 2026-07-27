@@ -194,9 +194,9 @@ Tauri transport
 
 The use case refreshes one exact catalog snapshot before rendering and passes that
 same request/plan pair to the immutable Operation path. A planning failure is proven
-not to reach the Script boundary. The existing Script implementation is reachable
-only from the feature adapter, making its later migration independent of the schema
-flow. The former schema service, central Tauri commands/re-exports, and central
+not to reach the Script boundary. The Script feature is injected through the
+schema-owned port, so schema code cannot reach Script storage, pool, or Operation
+adapters. The former schema service, central Tauri commands/re-exports, and central
 frontend commands/types are deletion gates; the renderer owns branded schema
 Operation IDs beside its Tauri adapter.
 
@@ -323,6 +323,27 @@ history, approval and payload-hash semantics, outcome-unknown recovery, cache
 invalidation, provenance fail-closed behavior, and scope/lease lifetime. The former
 service is deleted and removed from the oversized-file ratchet; no compatibility
 facade remains.
+
+## Execution service feature boundaries
+
+Script, typed Document reads, Monitoring, Safety settings, Activity history, and
+Operation control now expose one feature facade each:
+
+```text
+Tauri / Broker / collaborating feature
+  -> feature application use cases
+     -> feature-owned port
+  -> private local platform adapter
+     -> Store, ConnectionManager, OperationRuntime, executor, audit/history
+```
+
+Script and Document execution are split into bounded proposal, execution, recording,
+and read/write modules. Their application layers do not import persistence, pool, SQLx,
+Tauri, or Operation runtime implementations. Monitoring, Safety, Activity, and
+Operation control follow the same application/port boundary while retaining their
+scope leases, exact approval rules, and redacted receipts. The central `services`
+module is composition-only; every former service file and service symbol is a CI
+deletion gate, and both former oversized entries are removed from the ratchet.
 
 ## Bounded Skill inventory
 

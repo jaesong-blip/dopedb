@@ -1,42 +1,25 @@
-//! Transport-neutral application services shared by Tauri and the local CLI broker.
-//! Services expose domain DTOs and errors, never transport types.
-
-mod activity_service;
-mod document_service;
-mod monitoring_service;
-mod operation_service;
-mod safety_service;
-mod script_service;
-
-pub(crate) use activity_service::{ActivityService, AuditSnapshotReceipt, AuditVerdict};
-pub(crate) use document_service::{
-    AgentDocumentReadError, DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest,
-    DesktopDocumentReadError, DocumentReadReceipt, DocumentService, TerminalDocumentReadRequest,
-};
-pub(crate) use monitoring_service::{
-    MonitoringProposalReceipt, MonitoringProposalRequest, MonitoringService,
-    MonitoringServiceError, MonitoringStatusReceipt,
-};
-pub(crate) use operation_service::{
-    OperationDecisionReceipt, OperationDecisionRequest, OperationService,
-};
-pub(crate) use safety_service::SafetyService;
-pub(crate) use script_service::{
-    DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
-    DesktopScriptRunReceipt, SchemaScriptContext, ScriptService, TableScriptContext,
-};
+//! Application feature composition shared by Tauri and the local CLI broker.
+//!
+//! Runtime behavior and DTO ownership live in `features/*`; this module only wires
+//! concrete adapters into the cloneable application facade.
 
 use crate::connection::ConnectionManager;
+use crate::features::activity::{self, ActivityFeature};
 use crate::features::agents::{self, AgentsFeature};
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
 use crate::features::dashboards::{self, ErasedDashboardsFeature};
+use crate::features::documents::{self, DocumentFeature};
 use crate::features::erd::{self, ErdFeature};
 use crate::features::jobs::{self, JobsFeature};
+use crate::features::monitoring::{self, MonitoringFeature};
+use crate::features::operation_control::{self, OperationControlFeature};
 use crate::features::providers::ProvidersFeature;
 use crate::features::queries::QueriesFeature;
 use crate::features::queries::QueryRunAuthorizationPort;
+use crate::features::safety_settings::{self, SafetySettingsFeature};
 use crate::features::schema_editor::{self, SchemaEditorFeature};
+use crate::features::scripts::{self, ScriptFeature};
 use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
 use crate::operations::OperationRuntime;
@@ -47,21 +30,21 @@ use std::sync::Arc;
 /// scope-aware connection runtime, so every service method uses one authority boundary.
 #[derive(Clone)]
 pub(crate) struct ApplicationServices {
-    pub(crate) activity: ActivityService,
+    pub(crate) activity: ActivityFeature,
     pub(crate) agents: AgentsFeature,
     pub(crate) connections: ConnectionsFeature,
     pub(crate) catalog: CatalogFeature,
     pub(crate) dashboard: ErasedDashboardsFeature,
-    pub(crate) document: DocumentService,
+    pub(crate) document: DocumentFeature,
     pub(crate) erd: ErdFeature,
     pub(crate) job: JobsFeature,
-    pub(crate) monitoring: MonitoringService,
-    pub(crate) operation: OperationService,
+    pub(crate) monitoring: MonitoringFeature,
+    pub(crate) operation: OperationControlFeature,
     pub(crate) providers: ProvidersFeature,
     pub(crate) queries: QueriesFeature,
-    pub(crate) safety: SafetyService,
+    pub(crate) safety: SafetySettingsFeature,
     pub(crate) schema: SchemaEditorFeature,
-    pub(crate) script: ScriptService,
+    pub(crate) script: ScriptFeature,
     pub(crate) sql_documents: SqlDocumentsFeature,
     pub(crate) workspace: WorkspacesFeature,
 }
@@ -97,9 +80,9 @@ impl ApplicationServices {
             operation.clone(),
         );
         let operation_service =
-            OperationService::new(store.clone(), connections.clone(), operation.clone());
+            operation_control::compose(store.clone(), connections.clone(), operation.clone());
         let catalog = catalog::compose(store.clone(), connections.clone());
-        let script = ScriptService::new(
+        let script = scripts::compose(
             store.clone(),
             connections.clone(),
             catalog.clone(),
@@ -123,23 +106,19 @@ impl ApplicationServices {
         let dashboard =
             dashboards::compose_erased(store.clone(), connections.clone(), query_provenance);
         Self {
-            activity: ActivityService::new(store.clone()),
+            activity: activity::compose(store.clone()),
             agents: agents::compose(store.clone()),
             connections: connection_feature,
             catalog,
             dashboard,
-            document: DocumentService::new(store.clone(), connections.clone(), operation.clone()),
+            document: documents::compose(store.clone(), connections.clone(), operation.clone()),
             erd,
             job,
-            monitoring: MonitoringService::new(
-                store.clone(),
-                connections.clone(),
-                operation.clone(),
-            ),
+            monitoring: monitoring::compose(store.clone(), connections.clone(), operation.clone()),
             operation: operation_service,
             providers,
             queries,
-            safety: SafetyService::new(store.clone(), connections.clone()),
+            safety: safety_settings::compose(store.clone(), connections.clone()),
             schema,
             script,
             sql_documents,
