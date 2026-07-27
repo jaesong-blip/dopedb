@@ -17,6 +17,8 @@
     "check:ui": "node scripts/check-ui-depth.mjs",
     "check:query-grid": "node --test scripts/perf/*.node-test.mjs && node scripts/perf/query-grid.mjs --check && node scripts/perf/query-runtime-profile.mjs --check",
     "test": "vitest run",
+    "test:visual": "playwright test --config=playwright.visual.config.ts",
+    "test:visual:update": "playwright test --config=playwright.visual.config.ts --update-snapshots",
     "workspace:migrate": "bash scripts/migrate-workspace-service.sh",
     "workspace:cloud:dev": "pnpm --dir workspace-cloud dev",
     "workspace:cloud:build": "pnpm --dir workspace-cloud build",
@@ -53,6 +55,7 @@
   },
   "devDependencies": {
     "@babel/parser": "8.0.4",
+    "@playwright/test": "^1.62.0",
     "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

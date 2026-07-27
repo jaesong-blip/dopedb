@@ -148,6 +148,34 @@ for (const [filePath] of oversized) {
   requireFile(filePath);
 }
 
+const visualRegressionFiles = [
+  "playwright.visual.config.ts",
+  "tests/visual/fixture/index.html",
+  "tests/visual/fixture/main.tsx",
+  "tests/visual/fixture/visual-fixture.css",
+  "tests/visual/workbench.visual.spec.ts",
+  "docs/testing/visual-regression.md",
+];
+for (const filePath of visualRegressionFiles) {
+  requireFile(filePath);
+}
+const packageJson = JSON.parse(read("package.json"));
+if (packageJson.scripts?.["test:visual"] !== "playwright test --config=playwright.visual.config.ts") {
+  fail("package.json: test:visual must use the fixed visual Playwright configuration");
+}
+if (!read(".github/workflows/ci.yml").includes("pnpm test:visual")) {
+  fail(".github/workflows/ci.yml: macOS CI must run visual regression tests");
+}
+for (const filePath of visualRegressionFiles) {
+  if (
+    /(?:postgres(?:ql)?:\/\/|mongodb(?:\+srv)?:\/\/|GOCSPX-|DATABASE_URL\s*=|PASSWORD\s*=)/i.test(
+      read(filePath),
+    )
+  ) {
+    fail(`${filePath}: visual regression assets must not contain credentials`);
+  }
+}
+
 const removedPaths = [
   "src/screens/Connections/databaseExplorerDomain.ts",
   "src/screens/Connections/useSchemaGroupDrag.ts",

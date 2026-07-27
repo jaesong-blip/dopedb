@@ -61,6 +61,23 @@ jobs:
       - name: Test frontend and workspace cloud
         run: pnpm test
 
+      - name: Install visual test browser
+        run: pnpm exec playwright install chromium
+
+      - name: Test visual regression
+        run: pnpm test:visual
+
+      - name: Upload visual regression diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: visual-regression-${{ github.run_id }}
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Test workspace cloud database safety guards
         run: pnpm --dir workspace-cloud test:postgres-harness-guard
 
