@@ -6,7 +6,10 @@ use super::{
     MAX_INVENTORY_BODY_BYTES,
 };
 use reqwest::{redirect::Policy, Client, Response};
-use tokio::{io::AsyncWriteExt, net::TcpListener};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+};
 
 async fn local_response(raw: Vec<u8>) -> Response {
     let listener = TcpListener::bind("127.0.0.1:0")
@@ -15,10 +18,26 @@ async fn local_response(raw: Vec<u8>) -> Response {
     let address = listener.local_addr().expect("fixture address");
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.expect("accept inventory fixture");
+        let mut request = Vec::with_capacity(1024);
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            assert!(
+                request.len() < 16 * 1024,
+                "inventory fixture request exceeds the test cap"
+            );
+            let mut chunk = [0_u8; 1024];
+            let read = stream
+                .read(&mut chunk)
+                .await
+                .expect("read inventory fixture request");
+            assert_ne!(read, 0, "inventory fixture request ended before headers");
+            request.extend_from_slice(&chunk[..read]);
+        }
         stream
             .write_all(&raw)
             .await
             .expect("write inventory fixture");
+        stream.flush().await.expect("flush inventory fixture");
+        stream.shutdown().await.expect("close inventory fixture");
     });
     let response = Client::builder()
         .redirect(Policy::none())

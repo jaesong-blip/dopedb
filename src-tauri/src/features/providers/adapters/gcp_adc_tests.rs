@@ -29,12 +29,13 @@ fn authorized_user() -> serde_json::Value {
 }
 
 fn safe_wif() -> serde_json::Value {
+    let subject_token = std::env::temp_dir().join("subject-token");
     json!({
         "type": "external_account",
         "audience": "//iam.googleapis.com/projects/123456/locations/global/workloadIdentityPools/pool/providers/provider",
         "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
         "token_url": "https://sts.googleapis.com/v1/token",
-        "credential_source": {"file": "/tmp/subject-token"}
+        "credential_source": {"file": subject_token}
     })
 }
 
