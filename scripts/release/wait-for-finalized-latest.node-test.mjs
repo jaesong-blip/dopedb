@@ -40,8 +40,9 @@ function fixture(namespace = tag) {
   return { assets: { assets }, source };
 }
 
-test("retries only the stale draft latest.json metadata until the exact local bytes converge", async () => {
+test("converges after a gh clobber refreshes latest.json as application/json", async () => {
   const fresh = fixture();
+  fresh.assets.assets.at(-1).contentType = "application/json";
   const stale = structuredClone(fresh.assets);
   stale.assets.at(-1).digest = `sha256:${"0".repeat(64)}`;
   const waits = [];

@@ -57,6 +57,22 @@ function fixture(namespace = tag) {
   };
 }
 
+function latestAsset({
+  contentType = "application/json",
+  digest = `sha256:${"b".repeat(64)}`,
+  namespace = tag,
+  size = 17,
+} = {}) {
+  return {
+    apiUrl: `https://api.github.com/repos/${repository}/releases/assets/107`,
+    contentType,
+    digest,
+    name: "latest.json",
+    size,
+    url: canonicalUpdaterUrl(repository, namespace, "latest.json"),
+  };
+}
+
 test("rewrites API asset URLs to canonical public release-download URLs", () => {
   const result = finalizeUpdaterManifest({ ...fixture(), repository, tag });
   assert.deepEqual(Object.keys(result.platforms), [
@@ -141,18 +157,67 @@ test("rejects missing archive signatures and unsupported platform keys", () => {
 });
 
 test("rejects updater assets without a safe downloadable content type and size", () => {
-  const unsafe = fixture();
-  unsafe.releaseAssets.assets[0].contentType = "application/json";
-  assert.throws(
-    () => finalizeUpdaterManifest({ ...unsafe, repository, tag }),
-    /invalid release asset content type/,
-  );
+  for (const contentType of ["application/json", "application/problem+json", "text/html"]) {
+    const unsafe = fixture();
+    unsafe.releaseAssets.assets[0].contentType = contentType;
+    assert.throws(
+      () => finalizeUpdaterManifest({ ...unsafe, repository, tag }),
+      /invalid release asset content type/,
+      contentType,
+    );
+  }
   const noSize = fixture();
   noSize.releaseAssets.assets[0].size = 0;
   assert.throws(
     () => finalizeUpdaterManifest({ ...noSize, repository, tag }),
     /positive safe release asset size/,
   );
+});
+
+test("allows only known GitHub latest.json media-type essences", () => {
+  for (const contentType of [
+    "application/json",
+    "application/json; charset=utf-8",
+    "application/octet-stream",
+    "application/zip",
+  ]) {
+    const source = fixture();
+    source.releaseAssets.assets.push(latestAsset({ contentType }));
+    assert.equal(
+      finalizeUpdaterManifest({ ...source, repository, tag }).version,
+      version,
+      contentType,
+    );
+  }
+
+  const missingContentType = fixture();
+  const missingLatest = latestAsset();
+  delete missingLatest.contentType;
+  missingContentType.releaseAssets.assets.push(missingLatest);
+  assert.throws(
+    () => finalizeUpdaterManifest({ ...missingContentType, repository, tag }),
+    /latest\.json has an invalid release asset content type/,
+    "missing content type",
+  );
+
+  for (const contentType of [
+    "",
+    " text/html",
+    "image/png",
+    "application/json, application/zip",
+    "application//json",
+    "application/json;",
+    "application/json; =x",
+    "application/json; charset=utf-8; charset=utf-16",
+  ]) {
+    const source = fixture();
+    source.releaseAssets.assets.push(latestAsset({ contentType }));
+    assert.throws(
+      () => finalizeUpdaterManifest({ ...source, repository, tag }),
+      /latest\.json has an invalid release asset content type/,
+      String(contentType),
+    );
+  }
 });
 
 test("rejects missing or malformed SHA-256 asset digests", () => {
@@ -174,14 +239,7 @@ test("requires refreshed latest.json size and SHA-256 metadata", () => {
   const source = fixture();
   const finalized = finalizeUpdaterManifest({ ...source, repository, tag });
   const bytes = Buffer.from(`${JSON.stringify(finalized, null, 2)}\n`);
-  source.releaseAssets.assets.push({
-    apiUrl: `https://api.github.com/repos/${repository}/releases/assets/107`,
-    contentType: "application/octet-stream",
-    digest: `sha256:${"b".repeat(64)}`,
-    name: "latest.json",
-    size: bytes.length,
-    url: canonicalUpdaterUrl(repository, tag, "latest.json"),
-  });
+  source.releaseAssets.assets.push(latestAsset({ size: bytes.length }));
   assert.throws(
     () => assertFinalizedLatestAsset({ source: bytes, releaseAssets: source.releaseAssets, repository, tag }),
     /latest.json bytes do not match/,
@@ -192,14 +250,12 @@ test("validates finalized bytes against strict raw draft metadata", () => {
   const source = fixture(draftNamespace);
   const finalized = finalizeUpdaterManifest({ ...source, repository, tag });
   const bytes = Buffer.from(`${JSON.stringify(finalized, null, 2)}\n`);
-  source.releaseAssets.assets.push({
-    apiUrl: `https://api.github.com/repos/${repository}/releases/assets/107`,
-    contentType: "application/octet-stream",
+  source.releaseAssets.assets.push(latestAsset({
+    contentType: "application/json",
     digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-    name: "latest.json",
+    namespace: draftNamespace,
     size: bytes.length,
-    url: canonicalUpdaterUrl(repository, draftNamespace, "latest.json"),
-  });
+  }));
   assert.equal(
     assertFinalizedLatestAsset({
       source: bytes,

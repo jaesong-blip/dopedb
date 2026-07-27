@@ -4,6 +4,7 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
+import { MIMEType } from "node:util";
 
 export const UPDATER_PLATFORMS = Object.freeze({
   "darwin-aarch64": {
@@ -25,6 +26,16 @@ export const STABLE_UPDATER_REPOSITORY = "json-choi/dopedb";
 
 const REQUIRED_PLATFORMS = Object.freeze(Object.keys(UPDATER_PLATFORMS));
 const FORBIDDEN_OBJECT_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const LATEST_MANIFEST_MEDIA_TYPES = new Set([
+  "application/json",
+  "application/octet-stream",
+  "application/zip",
+]);
+const MEDIA_TYPE_TOKEN = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
+const MEDIA_TYPE_ESSENCE = new RegExp(`^${MEDIA_TYPE_TOKEN}/${MEDIA_TYPE_TOKEN}$`);
+const MEDIA_TYPE_PARAMETER = new RegExp(
+  `^[\\t ]*(${MEDIA_TYPE_TOKEN})[\\t ]*=[\\t ]*(${MEDIA_TYPE_TOKEN})[\\t ]*$`,
+);
 
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);
@@ -159,17 +170,61 @@ export function canonicalUpdaterUrl(repository, tag, assetName) {
   return `https://github.com/${repository}/releases/download/${tag}/${assetName}`;
 }
 
-function assertDownloadableAsset(asset, label) {
+function assertReleaseAssetSize(asset, label) {
   if (!hasOwn(asset, "size") || !Number.isSafeInteger(asset.size) || asset.size <= 0) {
     throw new Error(`${label} must have a positive safe release asset size`);
   }
-  const contentType = hasOwn(asset, "contentType") ? asset.contentType?.toLowerCase() : undefined;
+}
+
+function releaseAssetMediaType(asset, label) {
+  const contentType = hasOwn(asset, "contentType") ? asset.contentType : undefined;
   if (
     typeof contentType !== "string" ||
     contentType.length === 0 ||
-    contentType.includes("application/json") ||
-    contentType.includes("text/html")
+    contentType !== contentType.trim()
   ) {
+    throw new Error(`${label} has an invalid release asset content type`);
+  }
+  try {
+    const [rawEssence, ...rawParameters] = contentType.split(";");
+    const essence = rawEssence.toLowerCase();
+    if (rawEssence !== rawEssence.trim() || !MEDIA_TYPE_ESSENCE.test(rawEssence)) {
+      throw new Error("invalid media type essence");
+    }
+    const parameterNames = new Set();
+    for (const rawParameter of rawParameters) {
+      const match = MEDIA_TYPE_PARAMETER.exec(rawParameter);
+      if (!match) throw new Error("invalid media type parameter");
+      const parameterName = match[1].toLowerCase();
+      if (parameterNames.has(parameterName)) {
+        throw new Error("ambiguous media type parameter");
+      }
+      parameterNames.add(parameterName);
+    }
+    if (new MIMEType(contentType).essence.toLowerCase() !== essence) {
+      throw new Error("non-canonical media type essence");
+    }
+    return essence;
+  } catch {
+    throw new Error(`${label} has an invalid release asset content type`);
+  }
+}
+
+function assertBinaryReleaseAsset(asset, label) {
+  assertReleaseAssetSize(asset, label);
+  const mediaType = releaseAssetMediaType(asset, label);
+  if (
+    mediaType === "application/json" ||
+    mediaType.endsWith("+json") ||
+    mediaType === "text/html"
+  ) {
+    throw new Error(`${label} has an invalid release asset content type`);
+  }
+}
+
+function assertLatestManifestAsset(asset, label) {
+  assertReleaseAssetSize(asset, label);
+  if (!LATEST_MANIFEST_MEDIA_TYPES.has(releaseAssetMediaType(asset, label))) {
     throw new Error(`${label} has an invalid release asset content type`);
   }
 }
@@ -225,9 +280,12 @@ function assertExactReleaseClosure(assets, version) {
     if (!expected.has(asset.name) && !allowedNonUpdaterAsset(asset.name, version)) {
       throw new Error(`release asset is outside the stable allowlist: ${asset.name}`);
     }
-    if (expected.has(asset.name) || asset.name === "latest.json") {
-      assertDownloadableAsset(asset, `release asset ${asset.name}`);
+    if (expected.has(asset.name)) {
+      assertBinaryReleaseAsset(asset, `release asset ${asset.name}`);
       assertSha256Digest(asset, `release asset ${asset.name}`);
+    } else if (asset.name === "latest.json") {
+      assertLatestManifestAsset(asset, "release asset latest.json");
+      assertSha256Digest(asset, "release asset latest.json");
     }
   }
   for (const name of expected) {
@@ -346,13 +404,13 @@ export function finalizeUpdaterManifest({
     ) {
       throw new Error(`platform ${platform} must reference ${expectedName}`);
     }
-    assertDownloadableAsset(asset, `platform ${platform} archive`);
+    assertBinaryReleaseAsset(asset, `platform ${platform} archive`);
     const signatureName = `${expectedName}.sig`;
     const signature = byName.get(signatureName);
     if (!signature) {
       throw new Error(`platform ${platform} is missing archive signature ${signatureName}`);
     }
-    assertDownloadableAsset(signature, `platform ${platform} signature`);
+    assertBinaryReleaseAsset(signature, `platform ${platform} signature`);
     platforms[platform] = {
       ...entry,
       url: canonicalUpdaterUrl(repository, tag, expectedName),
@@ -396,7 +454,7 @@ export function assertFinalizedLatestAsset({ source, releaseAssets, repository, 
   const assets = normalizeAssets(releaseAssets);
   const latest = assets.find((asset) => asset?.name === "latest.json");
   if (!latest) throw new Error("release is missing latest.json asset metadata");
-  assertDownloadableAsset(latest, "latest.json");
+  assertLatestManifestAsset(latest, "latest.json");
   const expectedDigest = assertSha256Digest(latest, "latest.json");
   if (source.length !== latest.size || `sha256:${createHash("sha256").update(source).digest("hex")}` !== expectedDigest) {
     throw new Error("latest.json bytes do not match refreshed release metadata");
