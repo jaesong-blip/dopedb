@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -37,12 +37,12 @@ function fixture() {
   })) {
     const name = canonicalUpdaterAssetName(version, suffix);
     const payload = suffix.includes("setup") ? new Uint8Array([77, 90, 1]) : new Uint8Array([31, 139, 1]);
-    const signature = new TextEncoder().encode(`signature-${platform}`);
+    const signature = Buffer.from(Buffer.from(`signature-${platform}`).toString("base64"), "utf8");
     const url = canonicalUpdaterUrl(repository, tag, name);
     assets.push({ apiUrl: `https://api.github.com/repos/${repository}/releases/assets/${assets.length + 1}`, contentType: "application/octet-stream", digest: `sha256:${createHash("sha256").update(payload).digest("hex")}`, name, size: payload.length, url, payload });
     const signatureName = `${name}.sig`;
     assets.push({ apiUrl: `https://api.github.com/repos/${repository}/releases/assets/${assets.length + 1}`, contentType: "application/octet-stream", digest: `sha256:${createHash("sha256").update(signature).digest("hex")}`, name: signatureName, size: signature.length, url: canonicalUpdaterUrl(repository, tag, signatureName), payload: signature });
-    platforms[platform] = { signature: Buffer.from(signature).toString("base64"), url };
+    platforms[platform] = { signature: Buffer.from(signature).toString("utf8"), url };
   }
   const manifest = finalizeUpdaterManifest({
     manifest: { version, notes: "test", platforms },
@@ -238,6 +238,92 @@ test("public downloader rejects draft asset metadata before any request", async 
         tag,
       }),
       /latest\.json is missing from refreshed release metadata/,
+    );
+    assert.equal((await readdir(root)).length, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("downloads Tauri signatures as the exact manifest and .sig text", async () => {
+  const source = fixture();
+  const root = await mkdtemp(path.join(tmpdir(), "dopedb-release-signature-test-"));
+  const output = path.join(root, "public-assets");
+  const latestUrl = "https://github.com/json-choi/dopedb/releases/latest/download/latest.json";
+  const body = `${JSON.stringify(source.manifest, null, 2)}\n`;
+  try {
+    await downloadPublicUpdaterRelease({
+      assets: source.assets,
+      latestUrl,
+      output,
+      repository,
+      tag,
+      fetchImpl: async (url) => {
+        const urlText = String(url);
+        if (urlText.includes("latest/download/latest.json")) {
+          return reply(200, urlText, {
+            "content-length": String(Buffer.byteLength(body)),
+            "content-type": "application/json",
+          }, body);
+        }
+        const asset = source.payloads.find((candidate) => candidate.url === urlText);
+        assert.ok(asset, `missing fixture asset for ${urlText}`);
+        return reply(200, urlText, {
+          "content-length": String(asset.payload.length),
+          "content-type": "application/octet-stream",
+        }, asset.payload);
+      },
+    });
+
+    const signatureName = canonicalUpdaterAssetName(version, "aarch64.app.tar.gz") + ".sig";
+    assert.equal(
+      await readFile(path.join(output, signatureName), "utf8"),
+      source.manifest.platforms["darwin-aarch64"].signature,
+    );
+    assert.equal((await readdir(output)).length, 7);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects raw Minisign bytes even when their release metadata is internally consistent", async () => {
+  const source = fixture();
+  const root = await mkdtemp(path.join(tmpdir(), "dopedb-release-signature-layer-test-"));
+  const output = path.join(root, "public-assets");
+  const latestUrl = "https://github.com/json-choi/dopedb/releases/latest/download/latest.json";
+  const body = `${JSON.stringify(source.manifest, null, 2)}\n`;
+  const signatureName = canonicalUpdaterAssetName(version, "aarch64.app.tar.gz") + ".sig";
+  const rawSignature = Buffer.from(source.manifest.platforms["darwin-aarch64"].signature, "base64");
+  const digest = `sha256:${createHash("sha256").update(rawSignature).digest("hex")}`;
+  const payloadAsset = source.payloads.find((candidate) => candidate.name === signatureName);
+  const metadataAsset = source.assets.assets.find((candidate) => candidate.name === signatureName);
+  Object.assign(payloadAsset, { digest, payload: rawSignature, size: rawSignature.length });
+  Object.assign(metadataAsset, { digest, size: rawSignature.length });
+  try {
+    await assert.rejects(
+      downloadPublicUpdaterRelease({
+        assets: source.assets,
+        latestUrl,
+        output,
+        repository,
+        tag,
+        fetchImpl: async (url) => {
+          const urlText = String(url);
+          if (urlText.includes("latest/download/latest.json")) {
+            return reply(200, urlText, {
+              "content-length": String(Buffer.byteLength(body)),
+              "content-type": "application/json",
+            }, body);
+          }
+          const asset = source.payloads.find((candidate) => candidate.url === urlText);
+          assert.ok(asset, `missing fixture asset for ${urlText}`);
+          return reply(200, urlText, {
+            "content-length": String(asset.payload.length),
+            "content-type": "application/octet-stream",
+          }, asset.payload);
+        },
+      }),
+      /manifest signature does not match the public signature asset/,
     );
     assert.equal((await readdir(root)).length, 0);
   } finally {

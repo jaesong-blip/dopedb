@@ -303,7 +303,7 @@ export async function downloadPublicUpdaterRelease({
       if (!signatureAsset || signatureAsset.name !== signatureName) fail(`${platform} updater signature is missing from release metadata`);
       const signature = await fetchPublic(fetchImpl, signatureUrl, `${platform} updater signature`, options);
       await streamToFile(signature, path.join(stage, signatureName), signatureAsset.size, assertSha256Digest(signatureAsset, `${platform} signature`), options.maxSignatureBytes, `${platform} updater signature`);
-      const expected = Buffer.from(finalized.platforms[platform].signature, "base64");
+      const expected = Buffer.from(finalized.platforms[platform].signature, "utf8");
       const actual = await readSmallFile(path.join(stage, signatureName), options.maxSignatureBytes, `${platform} updater signature`);
       if (!expected.equals(actual)) fail(`${platform} manifest signature does not match the public signature asset`);
     }

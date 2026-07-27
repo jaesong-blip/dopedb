@@ -267,6 +267,21 @@ fn verify_latest(arguments: &Arguments, assets: &HashMap<String, Asset>) -> Resu
     Ok(())
 }
 
+fn tauri_signature(entry: &Value, asset: &[u8]) -> Result<Signature, String> {
+    let encoded = text(entry, "signature")?;
+    if asset != encoded.as_bytes() {
+        return fail("signature asset does not match manifest");
+    }
+    let decoded = STANDARD
+        .decode(encoded)
+        .map_err(|error| error.to_string())?;
+    if STANDARD.encode(&decoded) != encoded {
+        return fail("signature must use canonical Base64");
+    }
+    let signature = String::from_utf8(decoded).map_err(|error| error.to_string())?;
+    Signature::decode(&signature).map_err(|error| error.to_string())
+}
+
 fn verify(
     arguments: &Arguments,
     manifest: &Value,
@@ -320,12 +335,6 @@ fn verify(
                 "{platform} archive header does not match its platform format"
             ));
         }
-        let signature_text = String::from_utf8(
-            STANDARD
-                .decode(text(entry, "signature")?)
-                .map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
         let signature_name = format!("{name}.sig");
         let signature_url = canonical_url(&arguments.tag, &signature_name);
         let signature_asset = assets
@@ -337,18 +346,18 @@ fn verify(
         let signature_digest = digest(&signature);
         if u64::try_from(signature.len()).map_err(|_| "signature length overflow")?
             != signature_asset.size
-            || signature != signature_text.as_bytes()
         {
             return fail(format!(
-                "{platform} signature asset does not match manifest"
+                "{platform} signature size does not match release metadata"
             ));
         }
+        let parsed =
+            tauri_signature(entry, &signature).map_err(|error| format!("{platform}: {error}"))?;
         if signature_asset.digest.as_deref() != Some(signature_digest.as_str()) {
             return fail(format!(
                 "{platform} signature SHA-256 does not match release metadata"
             ));
         }
-        let parsed = Signature::decode(&signature_text).map_err(|error| error.to_string())?;
         key.verify(&bytes, &parsed, true)
             .map_err(|error| format!("{platform}: {error}"))?;
         println!(
@@ -393,6 +402,22 @@ mod tests {
         )
         .unwrap();
         assert!(wrong.verify(b"test", &signature, true).is_err());
+    }
+
+    #[test]
+    fn tauri_manifest_signature_is_the_exact_sig_asset_text() {
+        let encoded = STANDARD.encode(SIGNATURE);
+        let entry = serde_json::json!({ "signature": encoded });
+        tauri_signature(&entry, encoded.as_bytes()).unwrap();
+
+        match tauri_signature(&entry, SIGNATURE.as_bytes()) {
+            Err(error) => assert_eq!(error, "signature asset does not match manifest"),
+            Ok(_) => panic!("raw Minisign text must not match the Tauri .sig asset"),
+        }
+
+        let malformed = format!("{encoded}\n");
+        let malformed_entry = serde_json::json!({ "signature": malformed });
+        assert!(tauri_signature(&malformed_entry, malformed.as_bytes()).is_err());
     }
 
     #[test]
