@@ -2,9 +2,7 @@
   "sourceLineLimit": 900,
   "featureFileLineLimit": 500,
   "oversizedFiles": {
-    "src-tauri/src/store/mod.rs": 5428,
     "src-tauri/src/services/script_service.rs": 1934,
-    "src-tauri/src/operations/repository.rs": 1803,
     "src-tauri/src/services/document_service.rs": 1405,
     "src/screens/Connections/DatabaseExplorer.tsx": 1285,
     "src/App.tsx": 1160,

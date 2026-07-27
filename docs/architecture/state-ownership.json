@@ -125,8 +125,15 @@
       ]
     },
     {
+      "name": "durableOperations",
+      "owner": "src-tauri/src/operations/repository/mod.rs",
+      "writerTokens": [
+        "pub(crate) struct OperationRepository"
+      ]
+    },
+    {
       "name": "catalogCache",
-      "owner": "src-tauri/src/store/mod.rs",
+      "owner": "src-tauri/src/store/repositories/catalog.rs",
       "writerTokens": [
         "pub(crate) async fn put_catalog_if_current("
       ]
@@ -156,7 +163,7 @@
     },
     {
       "name": "dashboardStore",
-      "owner": "src-tauri/src/store/mod.rs",
+      "owner": "src-tauri/src/store/repositories/dashboards.rs",
       "writerTokens": [
         "pub(crate) async fn save_dashboard_if_current(",
         "async fn delete_dashboard_revision_if_current("

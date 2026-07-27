@@ -145,6 +145,7 @@ for (const [filePath] of oversized) {
 }
 
 const removedPaths = [
+  "src-tauri/src/operations/repository.rs",
   "src-tauri/src/services/sql_document_service.rs",
   "src-tauri/src/services/connection_service.rs",
   "src-tauri/src/services/connection_credentials.rs",
@@ -597,6 +598,7 @@ for (const token of jobLedgerSql) {
   const owners = sourceFiles
     .filter((file) => file.endsWith(".rs"))
     .filter((file) => !relative(file).endsWith("_tests.rs"))
+    .filter((file) => !relative(file).includes("/tests/"))
     .filter((file) => fs.readFileSync(file, "utf8").includes(token))
     .map(relative);
   if (
@@ -630,14 +632,104 @@ for (const token of ["INSERT INTO dashboards", "UPDATE dashboards SET deleted_at
   const owners = sourceFiles
     .filter((file) => file.endsWith(".rs"))
     .filter((file) => !relative(file).endsWith("_tests.rs"))
+    .filter((file) => !relative(file).includes("/tests/"))
     .filter((file) => fs.readFileSync(file, "utf8").includes(token))
     .map(relative);
   if (
     owners.length !== 1 ||
-    owners[0] !== "src-tauri/src/store/mod.rs"
+    owners[0] !== "src-tauri/src/store/repositories/dashboards.rs"
   ) {
     fail(
       `dashboard mutation SQL ${token} must belong only to the dashboard store writer, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
+const coreRepositoryFiles = sourceFiles
+  .map(relative)
+  .filter(
+    (filePath) =>
+      filePath.startsWith("src-tauri/src/store/repositories/") ||
+      filePath.startsWith("src-tauri/src/operations/repository/"),
+  )
+  .filter(
+    (filePath) =>
+      !/(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(filePath),
+  );
+for (const filePath of coreRepositoryFiles) {
+  const lines = lineCount(read(filePath));
+  if (lines > ratchet.featureFileLineLimit) {
+    fail(
+      `${filePath}: core repository module has ${lines} lines; keep it below ${ratchet.featureFileLineLimit}`,
+    );
+  }
+}
+for (const [token, expectedOwners] of [
+  ["INSERT INTO operations", ["src-tauri/src/operations/repository/planning.rs"]],
+  [
+    "UPDATE operations",
+    [
+      "src-tauri/src/operations/repository/lifecycle.rs",
+      "src-tauri/src/operations/repository/recovery.rs",
+    ],
+  ],
+  [
+    "INSERT INTO operation_approvals",
+    ["src-tauri/src/operations/repository/approval.rs"],
+  ],
+  [
+    "INSERT INTO operation_events",
+    ["src-tauri/src/operations/repository/ledger.rs"],
+  ],
+]) {
+  const owners = sourceFiles
+    .filter((file) => file.endsWith(".rs"))
+    .filter((file) => !relative(file).endsWith("_tests.rs"))
+    .filter((file) => !relative(file).endsWith("/tests.rs"))
+    .filter((file) => fs.readFileSync(file, "utf8").includes(token))
+    .map(relative)
+    .sort();
+  const expected = [...expectedOwners].sort();
+  if (
+    owners.length !== expected.length ||
+    owners.some((owner, index) => owner !== expected[index])
+  ) {
+    fail(
+      `operation mutation SQL ${token} must belong to ${expected.join(", ")}, found ${owners.join(", ") || "none"}`,
+    );
+  }
+}
+for (const [token, expectedOwner] of [
+  [
+    "INSERT INTO connections",
+    "src-tauri/src/store/repositories/connections/mutations.rs",
+  ],
+  [
+    "INSERT OR IGNORE INTO connection_safety",
+    "src-tauri/src/store/repositories/safety.rs",
+  ],
+  [
+    "UPDATE connection_safety",
+    "src-tauri/src/store/repositories/safety.rs",
+  ],
+  [
+    "INSERT INTO query_history",
+    "src-tauri/src/store/repositories/history.rs",
+  ],
+  [
+    "INSERT INTO schema_cache_v2",
+    "src-tauri/src/store/repositories/catalog.rs",
+  ],
+]) {
+  const owners = sourceFiles
+    .filter((file) => file.endsWith(".rs"))
+    .filter((file) => !relative(file).endsWith("_tests.rs"))
+    .filter((file) => !relative(file).endsWith("/tests.rs"))
+    .filter((file) => !relative(file).includes("/tests/"))
+    .filter((file) => fs.readFileSync(file, "utf8").includes(token))
+    .map(relative);
+  if (owners.length !== 1 || owners[0] !== expectedOwner) {
+    fail(
+      `store mutation SQL ${token} must belong only to ${expectedOwner}, found ${owners.join(", ") || "none"}`,
     );
   }
 }
