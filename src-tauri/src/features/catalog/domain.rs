@@ -12,6 +12,59 @@ pub(crate) enum CatalogReadPolicy {
     Refresh,
 }
 
+/// The intentionally bounded shape returned by the workspace connection tree.
+///
+/// An overview is a complete relation tree, not a partial `Catalog` snapshot.
+/// Detailed metadata remains deferred until a consumer requests the full catalog.
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CatalogOverviewDetailState {
+    /// Columns, constraints, indexes, estimates, and auxiliary objects were not read.
+    #[default]
+    Deferred,
+}
+
+/// Stable reference used to express a relation's parent in the overview tree.
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogOverviewRelationRef {
+    pub schema: Option<String>,
+    pub name: String,
+    pub kind: String,
+    #[serde(default)]
+    pub native_id: Option<String>,
+}
+
+/// One relation in the bounded relation tree.
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogOverviewRelation {
+    pub schema: Option<String>,
+    pub name: String,
+    pub kind: String,
+    #[serde(default)]
+    pub native_id: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(default)]
+    pub row_estimate: Option<i64>,
+    #[serde(default)]
+    pub parent: Option<CatalogOverviewRelationRef>,
+}
+
+/// Complete, basic relation tree for a connection.
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogOverview {
+    pub relations: Vec<CatalogOverviewRelation>,
+    #[serde(default)]
+    pub detail_state: CatalogOverviewDetailState,
+}
+
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -191,7 +244,10 @@ mod tests {
 
     use ts_rs::{Config, TS};
 
-    use super::{Catalog, Column, DatabaseObject, ForeignKey, Index, Table};
+    use super::{
+        Catalog, CatalogOverview, CatalogOverviewDetailState, CatalogOverviewRelation,
+        CatalogOverviewRelationRef, Column, DatabaseObject, ForeignKey, Index, Table,
+    };
     use crate::model::normalize_generated_contract_newlines;
 
     const HEADER: &str = "// Generated from src-tauri/src/features/catalog/domain.rs by ts-rs 12.0.1.\n// Do not edit; run pnpm generate:contracts.\n\nimport type { Constraint as CatalogConstraint, IndexKey as CatalogIndexKey, ObjectRef as CatalogObjectRef } from \"./protocol-contracts\";\n\n";
@@ -209,6 +265,10 @@ mod tests {
         let config = Config::default().with_large_int("number");
         let mut output = String::from(HEADER);
         for declaration in [
+            CatalogOverviewDetailState::decl(&config),
+            CatalogOverviewRelationRef::decl(&config),
+            CatalogOverviewRelation::decl(&config),
+            CatalogOverview::decl(&config),
             Column::decl(&config),
             ForeignKey::decl(&config),
             Index::decl(&config),
@@ -254,5 +314,16 @@ mod tests {
 
         assert!(catalog.tables.is_empty());
         assert!(catalog.objects.is_empty());
+    }
+
+    #[test]
+    fn overview_declares_that_detail_metadata_is_deferred() {
+        let overview = CatalogOverview::default();
+
+        assert_eq!(
+            overview.detail_state,
+            CatalogOverviewDetailState::Deferred,
+            "an overview must never claim to be a partial full catalog"
+        );
     }
 }

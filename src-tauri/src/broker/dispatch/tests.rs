@@ -230,6 +230,18 @@ fn terminal_query_interruptions_keep_stable_cancel_and_timeout_codes() {
         )),
         ErrorCode::Timeout
     );
+    assert_eq!(
+        map_query_execution_error(&AppError::Timeout(
+            "PostgreSQL catalog columns exceeded its deadline".into()
+        )),
+        ErrorCode::Timeout
+    );
+    assert_eq!(
+        map_application_error(AppError::Timeout(
+            "PostgreSQL catalog objects exceeded its deadline".into()
+        )),
+        ErrorCode::Timeout
+    );
 }
 
 struct ServiceHarness {

@@ -32,13 +32,13 @@ import { useToast } from "../../components/Toast";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { documentsToGrid } from "../../lib/documentGrid";
 import {
-  catalogSnapshotQuery,
   documentCountQuery,
   documentRowsQuery,
   tableRowsQuery,
 } from "../../lib/queries";
 import { tableKey, tableLabel } from "../../lib/tableRef";
 import { downloadCsv, downloadJson, stamp } from "../../lib/export";
+import { useCatalogTableMetadata } from "./catalogTable";
 import { useI18n } from "../../lib/i18n";
 import {
   buildDelete,
@@ -174,7 +174,7 @@ export default function TableData({
 
 function SqlTableData({
   connection,
-  table,
+  table: requestedTable,
   safety,
 }: {
   connection: ConnectionProfile;
@@ -184,6 +184,7 @@ function SqlTableData({
   const { t } = useI18n();
   const toast = useToast();
   const engine = connection.engine;
+  const { table, snapshotQuery } = useCatalogTableMetadata(connection.id, requestedTable);
   const [writeErr, setWriteErr] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<GridSort | null>(null);
@@ -246,8 +247,6 @@ function SqlTableData({
     // Paging and filtering repaint the previous page (dimmed) instead of blanking the grid.
     placeholderData: keepPreviousData,
   });
-  const snapshotQuery = useQuery(catalogSnapshotQuery(connection.id));
-
   const result = rowsQuery.data?.result ?? null;
   const total = rowsQuery.data?.total ?? null;
   const busy = rowsQuery.isFetching;

@@ -58,6 +58,10 @@ export const generatedContractArtifacts = [
     artifact: "src/ipc/generated/catalog-feature-contracts.ts",
     facadeAliases: [
       ["./generated/catalog-feature-contracts", "Catalog", "Catalog"],
+      ["./generated/catalog-feature-contracts", "CatalogOverview", "CatalogOverview"],
+      ["./generated/catalog-feature-contracts", "CatalogOverviewDetailState", "CatalogOverviewDetailState"],
+      ["./generated/catalog-feature-contracts", "CatalogOverviewRelation", "CatalogOverviewRelation"],
+      ["./generated/catalog-feature-contracts", "CatalogOverviewRelationRef", "CatalogOverviewRelationRef"],
       ["./generated/catalog-feature-contracts", "CatalogColumn", "Column"],
       ["./generated/catalog-feature-contracts", "CatalogForeignKey", "ForeignKey"],
       ["./generated/catalog-feature-contracts", "CatalogIndex", "Index"],

@@ -9,6 +9,10 @@ use sqlx::{AssertSqlSafe, MySqlPool, Row};
 
 use crate::error::{AppError, AppResult};
 
+use crate::features::catalog::{
+    CatalogOverview, CatalogOverviewDetailState, CatalogOverviewRelation,
+};
+
 use super::{Catalog, Column, DatabaseObject, ForeignKey, Index, Table};
 
 const COLS_SQL: &str = r#"
@@ -58,6 +62,16 @@ const EST_SQL: &str = r#"
 SELECT table_name, table_type, CAST(table_rows AS SIGNED) AS estimate, table_comment
 FROM information_schema.tables
 WHERE table_schema = DATABASE()
+"#;
+
+// Intentionally relation-only: the workspace tree must not read columns,
+// constraints, indexes, routines, or triggers before the user needs them.
+const OVERVIEW_SQL: &str = r#"
+SELECT table_name, table_type, CAST(table_rows AS SIGNED) AS estimate,
+       NULLIF(table_comment, '') AS table_comment
+FROM information_schema.tables
+WHERE table_schema = DATABASE()
+ORDER BY table_name
 "#;
 
 const CONSTRAINTS_SQL: &str = r#"
@@ -327,6 +341,42 @@ pub async fn introspect(pool: &MySqlPool, skip_fk: bool) -> AppResult<Catalog> {
     Ok(Catalog { tables, objects })
 }
 
+/// List MySQL/MariaDB relations without invoking the complete metadata scan.
+/// `information_schema.tables` is sufficient to render the connection tree;
+/// detailed metadata remains explicitly deferred to [`introspect`].
+pub(crate) async fn overview(pool: &MySqlPool) -> AppResult<CatalogOverview> {
+    let relations = sqlx::query(OVERVIEW_SQL)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row| {
+            let table_type: String = row.try_get("table_type")?;
+            Ok(CatalogOverviewRelation {
+                schema: None,
+                name: row.try_get("table_name")?,
+                kind: if table_type.eq_ignore_ascii_case("VIEW") {
+                    "view".into()
+                } else {
+                    "table".into()
+                },
+                native_id: None,
+                comment: row.try_get("table_comment")?,
+                row_estimate: (!table_type.eq_ignore_ascii_case("VIEW"))
+                    .then(|| row.try_get("estimate"))
+                    .transpose()?
+                    .flatten()
+                    .filter(|estimate: &i64| *estimate >= 0),
+                parent: None,
+            })
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+
+    Ok(CatalogOverview {
+        relations,
+        detail_state: CatalogOverviewDetailState::Deferred,
+    })
+}
+
 async fn fetch_index_rows(pool: &MySqlPool) -> Result<(Vec<MySqlRow>, bool), sqlx::Error> {
     match sqlx::query(IDX_EXPR_SQL).fetch_all(pool).await {
         Ok(rows) => Ok((rows, true)),
@@ -439,5 +489,14 @@ mod tests {
 
         assert_eq!(indexes[0].columns, ["<expression>"]);
         assert!(indexes[0].unique);
+    }
+
+    #[test]
+    fn overview_query_is_relation_only_and_deterministically_ordered() {
+        assert!(OVERVIEW_SQL.contains("information_schema.tables"));
+        assert!(OVERVIEW_SQL.contains("ORDER BY table_name"));
+        assert!(!OVERVIEW_SQL.contains("information_schema.columns"));
+        assert!(!OVERVIEW_SQL.contains("statistics"));
+        assert!(!OVERVIEW_SQL.contains("routines"));
     }
 }

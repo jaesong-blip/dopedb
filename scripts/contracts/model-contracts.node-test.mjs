@@ -22,6 +22,24 @@ test("catalog semantic check rejects an optional-field and enum-variant mutation
   assert.match(diagnostics.join("\n"), /ObjectKind must include trigger/);
 });
 
+test("CatalogOverview contract remains a relation-only response with deferred detail state", () => {
+  const catalog = read("src/ipc/generated/catalog-feature-contracts.ts");
+
+  assert.match(catalog, /export type CatalogOverviewDetailState = "deferred";/);
+  assert.match(
+    catalog,
+    /export type CatalogOverviewRelationRef = \{ schema: string \| null, name: string, kind: string, nativeId: string \| null, \};/,
+  );
+  assert.match(
+    catalog,
+    /export type CatalogOverviewRelation = \{ schema: string \| null, name: string, kind: string, nativeId: string \| null, comment: string \| null, rowEstimate: number \| null, parent: CatalogOverviewRelationRef \| null, \};/,
+  );
+  assert.match(
+    catalog,
+    /export type CatalogOverview = \{ relations: Array<CatalogOverviewRelation>, detailState: CatalogOverviewDetailState, \};/,
+  );
+});
+
 test("Query generated receipt check rejects nested, renamed, and added receipt fields", () => {
   const query = read("src/features/queries/generated/contracts.ts")
     .replace("classification: Classification, report: PreviewReport", "classification: PreviewReport, report: PreviewReport")

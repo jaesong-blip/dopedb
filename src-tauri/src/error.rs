@@ -24,6 +24,11 @@ pub enum AppError {
     #[error("network error: {0}")]
     Network(String),
 
+    /// A bounded operation exhausted its deadline. This is distinct from a transient
+    /// network failure so clients do not retry a still-running or expensive operation.
+    #[error("timeout: {0}")]
+    Timeout(String),
+
     /// A safety-layer violation the DB or classifier rejected before execution.
     #[error("safety violation: {0}")]
     Safety(String),
@@ -74,6 +79,7 @@ impl AppError {
             AppError::Mongo(_) => "db",
             AppError::Agent(_) => "agent",
             AppError::Network(_) => "network",
+            AppError::Timeout(_) => "timeout",
             AppError::Safety(_) => "safety",
             AppError::Parse(_) => "parse",
             AppError::Keychain(_) => "keychain",
@@ -120,5 +126,24 @@ impl serde::Serialize for AppError {
             st.serialize_field("position", &p)?;
         }
         st.end()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppError;
+
+    #[test]
+    fn timeout_has_a_non_network_wire_kind() {
+        let value = serde_json::to_value(AppError::Timeout(
+            "PostgreSQL catalog columns exceeded its deadline".into(),
+        ))
+        .unwrap();
+
+        assert_eq!(value["kind"], "timeout");
+        assert_eq!(
+            value["message"],
+            "timeout: PostgreSQL catalog columns exceeded its deadline"
+        );
     }
 }

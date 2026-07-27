@@ -6,7 +6,7 @@ use crate::error::AppResult;
 use crate::kernel::identity::ConnectionId;
 use crate::kernel::TerminalAuthority;
 
-use super::domain::{Catalog, CatalogReadPolicy};
+use super::domain::{Catalog, CatalogOverview, CatalogReadPolicy};
 use super::ports::CatalogGatewayPort;
 
 #[derive(Clone)]
@@ -36,6 +36,13 @@ where
         policy: CatalogReadPolicy,
     ) -> AppResult<CatalogSnapshot> {
         self.gateway.load_snapshot(connection_id, policy).await
+    }
+
+    pub(crate) async fn load_overview(
+        &self,
+        connection_id: ConnectionId,
+    ) -> AppResult<CatalogOverview> {
+        self.gateway.load_overview(connection_id).await
     }
 
     pub(crate) async fn load_terminal_snapshot(

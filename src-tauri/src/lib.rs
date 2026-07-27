@@ -149,6 +149,7 @@ pub fn run() {
             features::catalog::transport::get_schema,
             features::catalog::transport::refresh_schema,
             features::catalog::transport::get_catalog_snapshot,
+            features::catalog::transport::get_catalog_overview,
             features::catalog::transport::get_table_ddl,
             features::queries::transport::inspect_sql,
             features::queries::transport::propose_sql,

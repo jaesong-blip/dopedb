@@ -11,6 +11,8 @@ import { qk } from "./queries";
 
 const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
   "catalog",
+  "catalogOverview",
+  "catalogSnapshot",
   ...AGENT_WORKSPACE_QUERY_ROOTS,
   "history",
   "audit",

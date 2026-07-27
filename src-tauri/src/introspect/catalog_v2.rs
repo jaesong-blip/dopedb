@@ -8,9 +8,10 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use chrono::Utc;
 use dopedb_protocol::catalog as v2;
+#[cfg(test)]
 use uuid::Uuid;
 
-use crate::connection::{ConnectionAccess, ConnectionContext, ConnectionManager};
+use crate::connection::ConnectionContext;
 use crate::error::{AppError, AppResult};
 use crate::model::{ConnectionProfile, Engine};
 use crate::store::{CacheWriteOutcome, Store};
@@ -26,16 +27,15 @@ pub(crate) enum CatalogReadMode {
     Refresh,
 }
 
-pub(crate) async fn load_catalog(
+/// Load a legacy catalog while retaining a caller-owned, already authorized scope.
+///
+/// Terminal callers must use this rather than pinning a second time: a queued scope
+/// mutation can otherwise turn the nested read-pin into a writer-preference deadlock.
+pub(crate) async fn load_catalog_in_context(
     store: &Store,
-    connections: &ConnectionManager,
-    connection_id: Uuid,
+    context: ConnectionContext,
     mode: CatalogReadMode,
 ) -> AppResult<Catalog> {
-    let context = connections
-        .pin(connection_id, ConnectionAccess::Read)
-        .await?;
-
     if mode == CatalogReadMode::CacheFirst {
         if let Some(snapshot) = store.get_catalog_if_current(context.pin()).await? {
             return Ok(from_snapshot(&snapshot));
@@ -43,32 +43,31 @@ pub(crate) async fn load_catalog(
     } else if mode == CatalogReadMode::Refresh {
         // The context's scope guard prevents a workspace/account switch between this
         // delete and the subsequent CAS write.
-        store.clear_schema_cache(connection_id).await?;
+        store
+            .clear_schema_cache(context.pin().connection_id)
+            .await?;
     }
 
     introspect_and_maybe_store(store, context).await
 }
 
-/// Load the canonical Catalog V2 projection for broker/CLI consumers.
+/// Load a canonical snapshot while retaining a caller-owned, already authorized scope.
 ///
-/// Unlike the legacy UI projection, Catalog V2 requires a non-empty database
-/// identity so fingerprints cannot silently move between unnamed targets.
-pub(crate) async fn load_catalog_snapshot(
+/// This helper intentionally consumes `ConnectionContext`, carrying its scope read
+/// guard through the cache check, connection acquisition, and compare-and-swap write.
+pub(crate) async fn load_catalog_snapshot_in_context(
     store: &Store,
-    connections: &ConnectionManager,
-    connection_id: Uuid,
+    context: ConnectionContext,
     mode: CatalogReadMode,
 ) -> AppResult<v2::CatalogSnapshot> {
-    let context = connections
-        .pin(connection_id, ConnectionAccess::Read)
-        .await?;
-
     if mode == CatalogReadMode::CacheFirst {
         if let Some(snapshot) = store.get_catalog_if_current(context.pin()).await? {
             return Ok(snapshot);
         }
     } else if mode == CatalogReadMode::Refresh {
-        store.clear_schema_cache(connection_id).await?;
+        store
+            .clear_schema_cache(context.pin().connection_id)
+            .await?;
     }
 
     let lease = context.connect().await?;

@@ -7,11 +7,15 @@ mod mysql;
 mod pg;
 mod sqlite;
 
-pub(crate) use catalog_v2::{load_catalog, load_catalog_snapshot, CatalogReadMode};
+pub(crate) use catalog_v2::{
+    load_catalog_in_context, load_catalog_snapshot_in_context, CatalogReadMode,
+};
 
 use crate::connection::{DbPool, Live};
 use crate::error::{AppError, AppResult};
-use crate::features::catalog::{Catalog, Column, DatabaseObject, ForeignKey, Index, Table};
+use crate::features::catalog::{
+    Catalog, CatalogOverview, Column, DatabaseObject, ForeignKey, Index, Table,
+};
 
 /// Introspect a live connection's schema. SQL engines read via the read-only
 /// pool; MongoDB lists collections with sampled field structure.
@@ -23,6 +27,21 @@ pub async fn introspect(conn: &Live) -> AppResult<Catalog> {
             DbPool::Sqlite(pool) => sqlite::introspect(pool).await,
         },
         Live::Mongo(conn) => crate::mongo::introspect::introspect(conn).await,
+    }
+}
+
+/// Read only the complete relation tree required to open a workspace connection.
+///
+/// This must remain independent of the full snapshot path: callers intentionally
+/// avoid the detail scan and never persist this response in the CatalogSnapshot cache.
+pub(crate) async fn overview(conn: &Live) -> AppResult<CatalogOverview> {
+    match conn {
+        Live::Sql(live) => match live.ro() {
+            DbPool::Postgres(pool) => pg::overview(pool).await,
+            DbPool::Mysql(pool) => mysql::overview(pool).await,
+            DbPool::Sqlite(pool) => sqlite::overview(pool).await,
+        },
+        Live::Mongo(conn) => crate::mongo::introspect::overview(conn).await,
     }
 }
 

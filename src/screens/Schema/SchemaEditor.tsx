@@ -396,6 +396,9 @@ export default function SchemaEditor({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: qk.catalog(connectionId) }),
         queryClient.invalidateQueries({
+          queryKey: qk.catalogOverview(connectionId),
+        }),
+        queryClient.invalidateQueries({
           queryKey: qk.catalogSnapshot(connectionId),
         }),
         queryClient.invalidateQueries({

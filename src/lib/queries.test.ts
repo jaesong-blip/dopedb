@@ -1,11 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import { describe, expect, it, vi } from "vitest";
 import {
+  catalogQuery,
+  catalogOverviewQuery,
   catalogSnapshotQuery,
   dashboardTileRunQueries,
   isTransientDbError,
   legacyMcpCleanupStatusQuery,
   platformFeatureFlagsQuery,
   qk,
+  readCatalogInScope,
+  replaceFreshCatalog,
   skillStatusQuery,
 } from "./queries";
 
@@ -15,7 +20,7 @@ describe("isTransientDbError", () => {
     expect(isTransientDbError("host unreachable")).toBe(true);
   });
 
-  it("keeps deterministic and uncancellable timeout failures failing fast", () => {
+  it("keeps deterministic failures out of transient retry", () => {
     expect(isTransientDbError("database error: pool timed out while waiting for an open connection")).toBe(false);
     expect(isTransientDbError("Schema loading timed out. Check the database connection or retry.")).toBe(false);
     expect(isTransientDbError("canceling statement due to statement timeout")).toBe(false);
@@ -29,6 +34,68 @@ describe("catalog snapshot query lifecycle", () => {
   it("can wait for the legacy catalog to finish a cold introspection", () => {
     expect(catalogSnapshotQuery("connection-id", false).enabled).toBe(false);
     expect(catalogSnapshotQuery("connection-id", true).enabled).toBe(true);
+  });
+
+  it("refreshes the full catalog while invalidating derived overview and snapshot metadata", async () => {
+    const client = new QueryClient();
+    const scope = "workspace:team:one:account:alice";
+    const catalog = { tables: [], objects: [] };
+    client.setQueryData(qk.catalogOverview("connection-id", scope), { relations: [] });
+    client.setQueryData(qk.catalogSnapshot("connection-id", scope), { relations: [] });
+
+    await replaceFreshCatalog(client, "connection-id", scope, catalog);
+
+    expect(client.getQueryData(qk.catalog("connection-id", scope))).toBe(catalog);
+    expect(client.getQueryState(qk.catalogOverview("connection-id", scope))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(qk.catalogSnapshot("connection-id", scope))?.isInvalidated).toBe(true);
+  });
+
+  it("isolates a settled workspace/account scope and does not fetch while it changes", () => {
+    const oldScope = { key: "workspace:team:one:account:alice", ready: true };
+    const nextScope = { key: "workspace:team:two:account:bob", ready: true };
+    const switchingScope = { key: nextScope.key, ready: false };
+
+    expect(catalogQuery("connection-id", oldScope).queryKey).toEqual(
+      qk.catalog("connection-id", oldScope.key),
+    );
+    expect(catalogQuery("connection-id", nextScope).queryKey).toEqual(
+      qk.catalog("connection-id", nextScope.key),
+    );
+    expect(catalogQuery("connection-id", oldScope).queryKey).not.toEqual(
+      catalogQuery("connection-id", nextScope).queryKey,
+    );
+    expect(catalogQuery("connection-id", switchingScope).enabled).toBe(false);
+    expect(catalogOverviewQuery("connection-id", switchingScope).enabled).toBe(false);
+    expect(catalogSnapshotQuery("connection-id", true, switchingScope).enabled).toBe(false);
+    expect(catalogOverviewQuery("connection-id", oldScope).queryKey).not.toEqual(
+      catalogOverviewQuery("connection-id", nextScope).queryKey,
+    );
+    expect(catalogQuery("connection-id", oldScope).retry).toBe(false);
+    expect(catalogOverviewQuery("connection-id", oldScope).retry).toBe(false);
+  });
+
+  it("surfaces and recovers a cold scope failure instead of disabling catalog reads", async () => {
+    const error = new Error("workspace context unavailable");
+    const recover = vi.fn().mockResolvedValue(undefined);
+    const read = vi.fn().mockResolvedValue({ tables: [], objects: [] });
+    const scope = {
+      key: "workspace:unresolved",
+      ready: true,
+      error,
+      recover,
+    };
+
+    expect(catalogOverviewQuery("connection-id", scope).enabled).toBe(true);
+    await expect(readCatalogInScope(scope, read)).rejects.toBe(error);
+    expect(recover).toHaveBeenCalledOnce();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("leaves a healthy settled scope on the direct backend read path", async () => {
+    const read = vi.fn().mockResolvedValue("catalog");
+
+    await expect(readCatalogInScope({ key: "personal", ready: true }, read)).resolves.toBe("catalog");
+    expect(read).toHaveBeenCalledOnce();
   });
 });
 

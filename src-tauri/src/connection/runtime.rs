@@ -180,8 +180,8 @@ impl ConnectionOperationScope {
     }
 
     /// Upgrade this operation boundary into a live connection without reacquiring
-    /// the writer-preferred scope lock. Re-entering `ConnectionManager::acquire`
-    /// while this scope owns a read guard can deadlock behind a queued mutation.
+    /// the writer-preferred scope lock. Re-entering `ConnectionManager::pin` while
+    /// this scope owns a read guard can deadlock behind a queued mutation.
     pub(crate) async fn connect(
         self,
         pin: PinnedConnection,
@@ -724,6 +724,7 @@ impl ConnectionManager {
         })
     }
 
+    #[cfg(test)]
     pub(crate) async fn acquire(
         &self,
         id: Uuid,

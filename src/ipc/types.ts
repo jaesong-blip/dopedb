@@ -59,6 +59,10 @@ export type {
 } from "./generated/protocol-contracts";
 export type {
   Catalog,
+  CatalogOverview,
+  CatalogOverviewDetailState,
+  CatalogOverviewRelation,
+  CatalogOverviewRelationRef,
   Column as CatalogColumn,
   ForeignKey as CatalogForeignKey,
   Index as CatalogIndex,

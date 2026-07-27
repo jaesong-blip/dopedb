@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AuditSnapshot,
   Catalog,
+  CatalogOverview,
   CatalogSnapshot,
   CliInstallReceipt,
   CliInstallationStatus,
@@ -100,6 +101,11 @@ export async function refreshCatalog(id: string): Promise<Catalog> {
 
 export function getCatalogSnapshot(id: string): Promise<CatalogSnapshot> {
   return invoke("get_catalog_snapshot", { id });
+}
+
+// Complete relation tree only. Detailed catalog metadata remains deferred server-side.
+export function getCatalogOverview(id: string): Promise<CatalogOverview> {
+  return invoke("get_catalog_overview", { id });
 }
 
 // The CREATE-TABLE DDL for one table (MySQL/SQLite native; Postgres synthesized).

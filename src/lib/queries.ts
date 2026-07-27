@@ -2,13 +2,19 @@
 // consume these via useQuery/useQueries so one fetch per (resource, connection) is shared
 // app-wide: re-entering a tab repaints from cache and revalidates in the background.
 // Invalidation lives in queryClient.tsx; nothing here fetches on its own.
-import { queryOptions } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import {
+  queryOptions,
+  type QueryClient,
+  useQuery,
+} from "@tanstack/react-query";
 import {
   auditSnapshot,
   auditVerify,
   cliInstallationStatus,
   cancelQuery,
   getCatalog,
+  getCatalogOverview,
   getCatalogSnapshot,
   getMonitoringStatus,
   legacyMcpCleanupStatus,
@@ -18,7 +24,13 @@ import {
   runDocumentRead,
   skillStatus,
 } from "../ipc/commands";
-import type { CatalogTable, Engine, QueryResult } from "../ipc/types";
+import type {
+  Catalog,
+  CatalogOverview,
+  CatalogTable,
+  Engine,
+  QueryResult,
+} from "../ipc/types";
 import { errMessage } from "../ipc/types";
 import { listDrivers } from "../features/connections/tauriAdapter";
 import { connectionId as asConnectionId } from "../features/connections/domain";
@@ -34,39 +46,80 @@ import { listErdLayouts } from "../features/erd/tauriAdapter";
 import { jobConnectionId } from "../features/jobs/domain";
 import { listJobs } from "../features/jobs/tauriAdapter";
 import { runSqlBoundedPage } from "../features/queries/tauriAdapter";
+import {
+  workspaceAuthStateQuery,
+  workspaceContextQuery,
+} from "../features/workspaces/queries";
 import { buildCountQuery, buildPageQuery, type GridSort } from "./sqlBuild";
 import { tableKey } from "./tableRef";
 
-// Introspection is written to a backend cache that never expires, so the catalog only
-// needs refetching when the user explicitly refreshes it (see invalidateCatalog).
 const CATALOG_STALE_MS = Infinity;
-// Logs and row data are cheap to re-read. Repainting from cache is instant either way;
-// this only suppresses a redundant refetch when a user flips between two tabs quickly.
+// Avoid redundant log and row refetches while users switch tabs quickly.
 const LOG_STALE_MS = 10_000;
-const SCHEMA_LOAD_TIMEOUT_MS = 12_000;
-
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  let timer: number | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error(message)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => window.clearTimeout(timer));
+export type CatalogScope = {
+  key: string;
+  ready: boolean;
+  error?: unknown;
+  recover?: () => Promise<void>;
+};
+/** Surface and recover cold scope failures instead of disabling catalog reads forever. */
+export async function readCatalogInScope<T>(
+  scope: CatalogScope | undefined,
+  read: () => Promise<T>,
+): Promise<T> {
+  if (scope?.error !== undefined) {
+    await scope.recover?.();
+    throw scope.error;
+  }
+  return read();
 }
 
-// Network-shaped failures (dropped Wi-Fi, DB briefly unreachable) heal on their own; a
-// stuck error card that needs a manual "retry" click after the network recovers is pure
-// friction. Client and server query timeouts deliberately fail fast: a timed-out Tauri
-// invoke cannot cancel the Rust task, so retrying it would multiply live DB work.
-const TRANSIENT_ERROR =
-  /connection (refused|reset|closed|aborted)|could not connect|unreachable|broken pipe|network|io error/i;
+/** Gives catalog reads a settled workspace/account generation without auth-refresh flicker. */
+export function useCatalogScope(): CatalogScope {
+  const context = useQuery(workspaceContextQuery());
+  const auth = useQuery(workspaceAuthStateQuery());
+  const workspace = context.data?.active;
+  const teamWorkspace = workspace?.kind === "team";
+  // Local catalogs are account-independent, so auth refreshes cannot re-key them.
+  const accountId = teamWorkspace ? (auth.data?.user?.id ?? "anonymous") : "local";
+  const key = workspace
+    ? `workspace:${workspace.kind}:${workspace.id}:account:${accountId}`
+    : "workspace:unresolved";
+  // Hold one committed render across a scope replacement before enabling new reads.
+  const [settledKey, setSettledKey] = useState(key);
+  useEffect(() => {
+    setSettledKey(key);
+  }, [key]);
+  // Background errors with cached data must not hide a valid catalog.
+  const error = context.data === undefined
+    ? context.error ?? undefined
+    : teamWorkspace && auth.data === undefined
+      ? auth.error ?? undefined
+      : undefined;
+  const prerequisiteReady = !!workspace && (!teamWorkspace || auth.data !== undefined);
+  return {
+    key,
+    ready: settledKey === key && (prerequisiteReady || error !== undefined),
+    error,
+    recover: error === undefined
+      ? undefined
+      : async () => {
+        const refreshed = context.data === undefined ? await context.refetch() : undefined;
+        const active = context.data?.active ?? refreshed?.data?.active;
+        if (active?.kind === "team" && auth.data === undefined) {
+          await auth.refetch();
+        }
+      },
+  };
+}
+
+const TRANSIENT_ERROR = /connection (refused|reset|closed|aborted)|could not connect|unreachable|broken pipe|network|io error/i;
 
 export function isTransientDbError(e: unknown): boolean {
   return TRANSIENT_ERROR.test(errMessage(e));
 }
 
-// Spread into read-only queries that hit a remote database. Deliberately NOT a global
-// default: runSql-backed queries (tableRows, dashboardRun) double-write query history on a
-// retried run — see the `retry: false` rationale in queryClient.tsx.
+// Read-only network queries retry; runSql queries never do because they write history.
 const transientRetry = {
   retry: (failureCount: number, error: unknown) =>
     failureCount < 3 && isTransientDbError(error),
@@ -95,9 +148,20 @@ export type TableRowsArgs = {
 // Every key starts with a resource segment plus the connection id, so a connection-scoped
 // invalidation is a prefix match and never has to enumerate sub-resources.
 export const qk = {
-  catalog: (connectionId: string) => ["catalog", connectionId] as const,
-  catalogSnapshot: (connectionId: string) =>
-    ["catalogSnapshot", connectionId] as const,
+  // Keep connection id before scope so existing per-connection invalidation is a
+  // prefix match, while a scope transition can never consume an old result.
+  catalog: (connectionId: string, scope?: string) =>
+    scope === undefined
+      ? (["catalog", connectionId] as const)
+      : (["catalog", connectionId, scope] as const),
+  catalogOverview: (connectionId: string, scope?: string) =>
+    scope === undefined
+      ? (["catalogOverview", connectionId] as const)
+      : (["catalogOverview", connectionId, scope] as const),
+  catalogSnapshot: (connectionId: string, scope?: string) =>
+    scope === undefined
+      ? (["catalogSnapshot", connectionId] as const)
+      : (["catalogSnapshot", connectionId, scope] as const),
   history: (connectionId: string) => ["history", connectionId] as const,
   audit: (connectionId: string) => ["audit", connectionId] as const,
   auditVerdict: (connectionId: string) => ["audit", connectionId, "verdict"] as const,
@@ -179,32 +243,38 @@ export function legacyMcpCleanupStatusQuery() {
   });
 }
 
-export function catalogQuery(connectionId: string) {
+export function catalogQuery(connectionId: string, scope?: CatalogScope) {
   return queryOptions({
-    queryKey: qk.catalog(connectionId),
+    queryKey: qk.catalog(connectionId, scope?.key),
+    enabled: scope?.ready ?? true,
     staleTime: CATALOG_STALE_MS,
-    ...transientRetry,
-    queryFn: () =>
-      withTimeout(
-        getCatalog(connectionId),
-        SCHEMA_LOAD_TIMEOUT_MS,
-        "Schema loading timed out. Check the database connection or retry.",
-      ),
+    retry: false,
+    queryFn: () => readCatalogInScope(scope, () => getCatalog(connectionId)),
   });
 }
 
-export function catalogSnapshotQuery(connectionId: string, enabled = true) {
+export function catalogOverviewQuery(connectionId: string, scope?: CatalogScope) {
   return queryOptions({
-    queryKey: qk.catalogSnapshot(connectionId),
-    enabled,
+    queryKey: qk.catalogOverview(connectionId, scope?.key),
+    enabled: scope?.ready ?? true,
     staleTime: CATALOG_STALE_MS,
-    ...transientRetry,
-    queryFn: () =>
-      withTimeout(
-        getCatalogSnapshot(connectionId),
-        SCHEMA_LOAD_TIMEOUT_MS,
-        "Catalog snapshot loading timed out. Check the database connection or retry.",
-      ),
+    retry: false,
+    queryFn: (): Promise<CatalogOverview> =>
+      readCatalogInScope(scope, () => getCatalogOverview(connectionId)),
+  });
+}
+
+export function catalogSnapshotQuery(
+  connectionId: string,
+  enabled = true,
+  scope?: CatalogScope,
+) {
+  return queryOptions({
+    queryKey: qk.catalogSnapshot(connectionId, scope?.key),
+    enabled: enabled && (scope?.ready ?? true),
+    staleTime: CATALOG_STALE_MS,
+    retry: false,
+    queryFn: () => readCatalogInScope(scope, () => getCatalogSnapshot(connectionId)),
   });
 }
 
@@ -228,11 +298,27 @@ export function jobsQuery(connectionId: string) {
 // surface reading the catalog updates at once; a CATALOG_STALE_MS of Infinity means this
 // is the only way a stale table list gets corrected.
 export function fetchFreshCatalog(connectionId: string) {
-  return withTimeout(
-    refreshCatalog(connectionId),
-    SCHEMA_LOAD_TIMEOUT_MS,
-    "Schema refresh timed out. Check the database connection or retry.",
-  );
+  return refreshCatalog(connectionId);
+}
+
+/** Promotes a manual refresh and retires derived overview/snapshot metadata together. */
+export async function replaceFreshCatalog(
+  queryClient: QueryClient,
+  connectionId: string,
+  scopeKey: string,
+  catalog: Catalog,
+) {
+  queryClient.setQueryData(qk.catalog(connectionId, scopeKey), catalog);
+  await Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: qk.catalogOverview(connectionId, scopeKey),
+      refetchType: "active",
+    }),
+    queryClient.invalidateQueries({
+      queryKey: qk.catalogSnapshot(connectionId, scopeKey),
+      refetchType: "active",
+    }),
+  ]);
 }
 
 export function historyQuery(connectionId: string) {

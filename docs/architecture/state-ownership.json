@@ -132,6 +132,15 @@
       ]
     },
     {
+      "name": "catalogLoadCoordinator",
+      "owner": "src-tauri/src/features/catalog/adapters/local.rs",
+      "writerTokens": [
+        "locks: Arc<Mutex<HashMap<ConnectionId, Weak<Mutex<()>>>>>",
+        "locks.retain(",
+        "locks.insert(connection_id, Arc::downgrade(&lock));"
+      ]
+    },
+    {
       "name": "jobLedger",
       "owner": "src-tauri/src/features/jobs/adapters/ledger/mod.rs",
       "writerTokens": [

@@ -14,7 +14,14 @@ use sqlx::{AssertSqlSafe, Row, SqlitePool};
 
 use crate::error::{AppError, AppResult};
 
+use crate::features::catalog::{
+    CatalogOverview, CatalogOverviewDetailState, CatalogOverviewRelation,
+};
+
 use super::{Catalog, Column, DatabaseObject, ForeignKey, Index, Table};
+
+const OVERVIEW_SQL: &str = "SELECT name, type, rootpage FROM sqlite_master\n\
+    WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name";
 
 /// Quote an identifier for interpolation into a PRAGMA/COUNT statement.
 fn quote_ident(name: &str) -> String {
@@ -249,6 +256,34 @@ pub async fn introspect(pool: &SqlitePool) -> AppResult<Catalog> {
     Ok(Catalog { tables, objects })
 }
 
+/// List SQLite relations without parsing DDL or issuing per-relation PRAGMAs.
+/// The root page is the only stable native identity SQLite exposes in this path.
+pub(crate) async fn overview(pool: &SqlitePool) -> AppResult<CatalogOverview> {
+    let relations = sqlx::query(OVERVIEW_SQL)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row| {
+            let ty: String = row.try_get("type")?;
+            let rootpage: i64 = row.try_get("rootpage")?;
+            Ok(CatalogOverviewRelation {
+                schema: Some("main".into()),
+                name: row.try_get("name")?,
+                kind: if ty == "view" { "view" } else { "table" }.into(),
+                native_id: (rootpage > 0).then(|| rootpage.to_string()),
+                comment: None,
+                row_estimate: None,
+                parent: None,
+            })
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+
+    Ok(CatalogOverview {
+        relations,
+        detail_state: CatalogOverviewDetailState::Deferred,
+    })
+}
+
 async fn load_row_estimates(pool: &SqlitePool) -> HashMap<String, i64> {
     let rows = match sqlx::query("SELECT tbl, stat FROM sqlite_stat1")
         .fetch_all(pool)
@@ -475,6 +510,33 @@ mod tests {
             .detail
             .as_deref()
             .is_some_and(|ddl| ddl.contains("BEFORE UPDATE")));
+    }
+
+    #[tokio::test]
+    async fn overview_lists_relations_without_loading_detail_metadata() {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE VIEW active_users AS SELECT id, email FROM users")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let overview = overview(&pool).await.unwrap();
+
+        assert_eq!(overview.detail_state, CatalogOverviewDetailState::Deferred);
+        assert_eq!(overview.relations.len(), 2);
+        assert_eq!(overview.relations[0].name, "active_users");
+        assert_eq!(overview.relations[0].kind, "view");
+        assert_eq!(overview.relations[1].name, "users");
+        assert_eq!(overview.relations[1].kind, "table");
+        assert!(overview.relations[1].native_id.is_some());
     }
 
     #[tokio::test]

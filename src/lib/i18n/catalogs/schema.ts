@@ -4,6 +4,9 @@ import { defineCatalog } from "../types";
 export const schemaCatalog = defineCatalog(
   {
     "schema.columnCount": "{count} columns",
+    "schema.detailsDeferredDescription":
+      "Load columns, relationships, and indexes only when you need the schema diagram.",
+    "schema.detailsDeferredTitle": "{count} schema objects are ready",
     "schema.editorAction": "Change",
     "schema.editorAddColumn": "Add column",
     "schema.editorAddConstraint": "Add constraint",
@@ -88,6 +91,7 @@ export const schemaCatalog = defineCatalog(
     "schema.fkCount": "{count} relationships",
     "schema.hideDetails": "Hide schema details",
     "schema.indexes": "Indexes",
+    "schema.loadDetails": "Load schema details",
     "schema.noForeignKeys": "No foreign keys found.",
     "schema.noMatch": "No schema objects match the filter.",
     "schema.openData": "Open data",
@@ -101,6 +105,9 @@ export const schemaCatalog = defineCatalog(
   },
   {
     "schema.columnCount": "{count}개 컬럼",
+    "schema.detailsDeferredDescription":
+      "스키마 다이어그램이 필요할 때만 컬럼, 관계, 인덱스를 불러옵니다.",
+    "schema.detailsDeferredTitle": "스키마 객체 {count}개를 찾았습니다",
     "schema.editorAction": "변경 작업",
     "schema.editorAddColumn": "컬럼 추가",
     "schema.editorAddConstraint": "제약 조건 추가",
@@ -185,6 +192,7 @@ export const schemaCatalog = defineCatalog(
     "schema.fkCount": "관계 {count}개",
     "schema.hideDetails": "스키마 상세 정보 숨기기",
     "schema.indexes": "인덱스",
+    "schema.loadDetails": "상세 스키마 불러오기",
     "schema.noForeignKeys": "외래 키를 찾지 못했습니다.",
     "schema.noMatch": "필터와 일치하는 스키마 객체가 없습니다.",
     "schema.openData": "데이터 열기",

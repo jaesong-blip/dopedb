@@ -14,7 +14,9 @@ use crate::store::Store;
 use adapters::ScopedCatalogGateway;
 pub(crate) use application::CatalogUseCases;
 pub(crate) use domain::{
-    Catalog, CatalogReadPolicy, Column, DatabaseObject, ForeignKey, Index, Table,
+    Catalog, CatalogOverview, CatalogOverviewDetailState, CatalogOverviewRelation,
+    CatalogOverviewRelationRef, CatalogReadPolicy, Column, DatabaseObject, ForeignKey, Index,
+    Table,
 };
 pub(crate) use dopedb_protocol::catalog::CatalogSnapshot;
 

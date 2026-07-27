@@ -9,10 +9,9 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { getTableDdl } from "../../ipc/commands";
 import type {
-  Catalog,
   CatalogObject,
   CatalogObjectKind,
   CatalogTable,
@@ -24,7 +23,12 @@ import {
   setConnectionsSchemaGroup,
 } from "../../features/connections/tauriAdapter";
 import { isDocumentEngine } from "../../lib/capabilities";
-import { catalogQuery, fetchFreshCatalog, qk } from "../../lib/queries";
+import {
+  fetchFreshCatalog,
+  qk,
+  replaceFreshCatalog,
+  useCatalogScope,
+} from "../../lib/queries";
 import {
   buildConnectionSections,
   compareCatalogs,
@@ -34,8 +38,6 @@ import {
   schemaGroupIsCompatible,
   tableDiffTone,
   type SchemaConnectionGroup,
-  type SchemaDiffSummary,
-  type TableSchemaDiff,
 } from "../../lib/schemaDiff";
 import { tableKey, tableLabel } from "../../lib/tableRef";
 import ConfirmButton from "../../components/ConfirmButton";
@@ -45,6 +47,13 @@ import LazySqlViewer from "../../components/LazySqlViewer";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
+import {
+  schemaDiffForConnection,
+  schemaTableDiffTitle,
+  SchemaDiffBadge,
+} from "./schemaDiffPresentation";
+import { catalogFromOverview } from "./catalogOverview";
+import { useCatalogTree } from "./useCatalogTree";
 import "./connections.css";
 
 type DropTarget =
@@ -251,6 +260,8 @@ export function DatabaseExplorer({
   const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const catalogScope = useCatalogScope();
+  const catalogScopeKeyRef = useRef(catalogScope.key);
   // Per-connection: any node can be expanded independently of selection, so
   // catalogs/errors/filters are keyed by connection id (DopeDB-style tree).
   // Catalogs come from the shared query cache, so expanding a node here also warms
@@ -303,21 +314,23 @@ export function DatabaseExplorer({
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [openMenuId]);
 
+  // Query observers survive the shell while a workspace changes. Clear the explorer's
+  // per-connection intent at the same boundary as its scoped keys so no hidden row can
+  // resubscribe an old connection in the newly active account.
+  useEffect(() => {
+    catalogScopeKeyRef.current = catalogScope.key;
+    setWanted(new Set());
+    setOpen(new Set());
+    setObjectSectionsOpen(new Set());
+    setRefreshErrs({});
+    setFilters({});
+    setRefreshing(null);
+  }, [catalogScope.key]);
+
   const wantedIds = useMemo(() => [...wanted].sort(), [wanted]);
-  const { catalogs, loadErrs } = useQueries({
-    queries: wantedIds.map((id) => catalogQuery(id)),
-    combine: (results) => {
-      const catalogs: Record<string, Catalog> = {};
-      const loadErrs: Record<string, string> = {};
-      results.forEach((result, index) => {
-        const id = wantedIds[index];
-        if (result.data) catalogs[id] = result.data;
-        else if (result.error) loadErrs[id] = errMessage(result.error);
-      });
-      return { catalogs, loadErrs };
-    },
-  });
-  const errs = { ...loadErrs, ...refreshErrs };
+  const { overviews, overviewErrs, catalogs, detailErrs, requestDetails, forgetDetails } =
+    useCatalogTree(wantedIds, catalogScope);
+  const errs = { ...overviewErrs, ...refreshErrs };
 
   // Expanding a node subscribes to its catalog; the query cache decides whether that is a
   // fetch or a free read. Retries are not automatic (see the query defaults), so a node
@@ -330,8 +343,10 @@ export function DatabaseExplorer({
       delete n[id];
       return n;
     });
-    if (queryClient.getQueryState(qk.catalog(id))?.status === "error") {
-      void queryClient.refetchQueries({ queryKey: qk.catalog(id) });
+    if (
+      queryClient.getQueryState(qk.catalogOverview(id, catalogScope.key))?.status === "error"
+    ) {
+      void queryClient.refetchQueries({ queryKey: qk.catalogOverview(id, catalogScope.key) });
     }
   }
 
@@ -367,6 +382,7 @@ export function DatabaseExplorer({
   // expires, so a table list can go stale (e.g. tables added after first connect).
   // Writing the result into the shared cache updates every surface reading this catalog.
   async function refreshSchema(id: string) {
+    const scopeKey = catalogScope.key;
     setRefreshing(id);
     setRefreshErrs((m) => {
       const n = { ...m };
@@ -374,12 +390,15 @@ export function DatabaseExplorer({
       return n;
     });
     try {
-      queryClient.setQueryData(qk.catalog(id), await fetchFreshCatalog(id));
+      const catalog = await fetchFreshCatalog(id);
+      if (catalogScopeKeyRef.current !== scopeKey) return;
+      await replaceFreshCatalog(queryClient, id, scopeKey, catalog);
       setWanted((ids) => (ids.has(id) ? ids : new Set(ids).add(id)));
     } catch (e) {
+      if (catalogScopeKeyRef.current !== scopeKey) return;
       setRefreshErrs((m) => ({ ...m, [id]: errMessage(e) }));
     } finally {
-      setRefreshing(null);
+      if (catalogScopeKeyRef.current === scopeKey) setRefreshing(null);
     }
   }
 
@@ -393,7 +412,14 @@ export function DatabaseExplorer({
         next.delete(conn.id);
         return next;
       });
-      queryClient.removeQueries({ queryKey: qk.catalog(conn.id) });
+      forgetDetails(conn.id);
+      queryClient.removeQueries({ queryKey: qk.catalog(conn.id, catalogScope.key) });
+      queryClient.removeQueries({
+        queryKey: qk.catalogOverview(conn.id, catalogScope.key),
+      });
+      queryClient.removeQueries({
+        queryKey: qk.catalogSnapshot(conn.id, catalogScope.key),
+      });
       toast(t("connections.connectionDeleted"));
       onDeleted(conn.id);
     } catch (e) {
@@ -633,72 +659,6 @@ export function DatabaseExplorer({
     clearPointerDrag();
   }
 
-  function groupBaseline(group: SchemaConnectionGroup): ConnectionProfile | null {
-    return defaultSchemaBaseline(group);
-  }
-
-  function schemaDiffForConnection(conn: ConnectionProfile): SchemaDiffSummary | null {
-    const group = groupByConnectionId.get(conn.id);
-    if (!group) return null;
-    const baseline = groupBaseline(group);
-    if (!baseline || baseline.id === conn.id) return null;
-    const current = catalogs[conn.id];
-    const baselineCatalog = catalogs[baseline.id];
-    if (!current || !baselineCatalog) return null;
-    return compareCatalogs(current, baselineCatalog);
-  }
-
-  function schemaDiffTitle(diff: SchemaDiffSummary) {
-    const counts = diffCounts(diff);
-    return t("connections.schemaDiffTitle", {
-      added: counts.added,
-      missing: counts.missing,
-      changed: counts.changed,
-    });
-  }
-
-  function tableDiffTitle(diff: TableSchemaDiff) {
-    if (diff.added) return t("connections.schemaDiffTableAdded");
-    if (diff.missing) return t("connections.schemaDiffTableMissing");
-    return t("connections.schemaDiffTableChanged", {
-      added: diff.addedColumns.length,
-      missing: diff.missingColumns.length,
-      changed: diff.changedColumns.length + (diff.relationChanged ? 1 : 0),
-    });
-  }
-
-  function renderSchemaDiffBadge(conn: ConnectionProfile) {
-    const group = groupByConnectionId.get(conn.id);
-    if (!group) return null;
-    const baseline = groupBaseline(group);
-    if (!baseline || baseline.id === conn.id) return null;
-    const current = catalogs[conn.id];
-    const baselineCatalog = catalogs[baseline.id];
-    if (!current || !baselineCatalog) {
-      return (
-        <span className="schema-diff-chip diff-pending" title={t("connections.schemaDiffPendingTitle")}>
-          {t("connections.schemaDiffPendingChip")}
-        </span>
-      );
-    }
-    const diff = compareCatalogs(current, baselineCatalog);
-    if (diff.total === 0) {
-      return (
-        <span className="schema-diff-chip diff-ok" title={t("connections.schemaDiffInSync")}>
-          <Icon name="check" />
-        </span>
-      );
-    }
-    const counts = diffCounts(diff);
-    return (
-      <span className="schema-diff-chip diff-drift" title={schemaDiffTitle(diff)}>
-        {counts.added > 0 && <span className="diff-add">+{counts.added}</span>}
-        {counts.missing > 0 && <span className="diff-remove">-{counts.missing}</span>}
-        {counts.changed > 0 && <span className="diff-change">~{counts.changed}</span>}
-      </span>
-    );
-  }
-
   function tableMatchesFilter(table: CatalogTable, f: string) {
     return (
       table.name.toLowerCase().includes(f) ||
@@ -722,6 +682,7 @@ export function DatabaseExplorer({
 
   function toggleObjectSection(connectionId: string, kind: string) {
     const key = `${connectionId}:${kind}`;
+    if (!objectSectionsOpen.has(key)) requestDetails(connectionId);
     setObjectSectionsOpen((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key);
@@ -822,7 +783,11 @@ export function DatabaseExplorer({
               <span className="workspace-access-label">{accessLabel}</span>
             </span>
           ) : null}
-          {renderSchemaDiffBadge(c)}
+          <SchemaDiffBadge
+            connection={c}
+            groupsByConnectionId={groupByConnectionId}
+            catalogs={catalogs}
+          />
           <div
             className={`db-menu${openMenuId === c.id ? " open" : ""}`}
             onPointerDown={(e) => e.stopPropagation()}
@@ -920,9 +885,14 @@ export function DatabaseExplorer({
 
         {open.has(c.id) &&
           (() => {
-            const cat = catalogs[c.id];
+            const fullCatalog = catalogs[c.id];
+            const overview = overviews[c.id];
+            const cat = overview
+              ? catalogFromOverview(overview, fullCatalog)
+              : fullCatalog;
             const cerr = errs[c.id];
-            const diff = schemaDiffForConnection(c);
+            const detailErr = detailErrs[c.id];
+            const diff = schemaDiffForConnection(c, groupByConnectionId, catalogs);
             const filter = filters[c.id] ?? "";
             const f = filter.trim().toLowerCase();
             const filteredTables = cat
@@ -977,11 +947,17 @@ export function DatabaseExplorer({
                       onOpenTable(c, table);
                     }
                   }}
-                  title={tableDiff ? tableDiffTitle(tableDiff) : t("connections.columns", { count: table.columns.length })}
+                  title={
+                    tableDiff
+                      ? schemaTableDiffTitle(t, tableDiff)
+                      : fullCatalog
+                        ? t("connections.columns", { count: table.columns.length })
+                        : undefined
+                  }
                 >
                   <span
                     className={`schema-diff-dot${tone ? ` diff-${tone}` : " diff-none"}`}
-                    title={tableDiff ? tableDiffTitle(tableDiff) : undefined}
+                    title={tableDiff ? schemaTableDiffTitle(t, tableDiff) : undefined}
                     aria-hidden="true"
                   />
                   <Icon
@@ -1049,6 +1025,7 @@ export function DatabaseExplorer({
                   />
                 )}
                 {cerr && <div className="error small-pad">{cerr}</div>}
+                {detailErr && <div className="muted small-pad">{detailErr}</div>}
                 {!cat && !cerr && (
                   <div className="muted small-pad loading">
                     {t("connections.loadingSchema")}

@@ -46,7 +46,7 @@ import LazySqlViewer from "../../components/LazySqlViewer";
 import ResultToolbar from "../../components/ResultToolbar";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
-import { catalogQuery } from "../../lib/queries";
+import { catalogQuery, useCatalogScope } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
 import {
@@ -392,7 +392,8 @@ export default function Sql({
 
   // #8: feed schema-aware autocomplete. Same introspected Catalog the sidebar tree and the
   // Schema view read, served from the shared query cache. Failure just leaves completion off.
-  const { data: catalog } = useQuery(catalogQuery(connection.id));
+  const catalogScope = useCatalogScope();
+  const { data: catalog } = useQuery(catalogQuery(connection.id, catalogScope));
   const promptSql = lastAttempt?.sql || draft;
   const aiPrompt = useMemo(
     () => buildSqlHelpPrompt({ connection, sql: promptSql, error: runErr }),

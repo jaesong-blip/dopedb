@@ -33,13 +33,13 @@ describe("i18n catalogues", () => {
     const englishKeys = Object.keys(messages.en).sort();
     const koreanKeys = Object.keys(messages.ko).sort();
 
-    expect(englishKeys).toHaveLength(907);
+    expect(englishKeys).toHaveLength(910);
     expect(koreanKeys).toEqual(englishKeys);
   });
 
   it("preserves the catalogue key and value contract", async () => {
     await expect(catalogFingerprint()).resolves.toBe(
-      "362afab3fba4da4dec881b092b4249da8492ca7b6ad7e60b05a136d800900f8f",
+      "670a451b869776a3b18271342cac9a55d50f816d7000b9f567e5d25925b589ab",
     );
   });
 

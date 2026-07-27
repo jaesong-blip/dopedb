@@ -229,6 +229,7 @@ pub(super) fn map_dashboard_create_error(error: AgentDashboardCreateError) -> Er
 
 pub(super) fn map_query_execution_error(error: &AppError) -> ErrorCode {
     match error {
+        AppError::Timeout(_) => ErrorCode::Timeout,
         AppError::Safety(reason) if reason == "query cancelled" => ErrorCode::Cancelled,
         AppError::Safety(reason) if reason.starts_with("query timed out after ") => {
             ErrorCode::Timeout
@@ -241,6 +242,7 @@ pub(super) fn map_target_error(error: AppError) -> ErrorCode {
     match error {
         AppError::Blocked { .. } => ErrorCode::ScopeDenied,
         AppError::Config(_) | AppError::Parse(_) => ErrorCode::InvalidRequest,
+        AppError::Timeout(_) => ErrorCode::Timeout,
         AppError::Db(_) | AppError::Mongo(_) | AppError::Network(_) => {
             ErrorCode::TargetExecutionFailed
         }
@@ -266,6 +268,7 @@ pub(super) fn map_application_error(error: AppError) -> ErrorCode {
             ErrorCode::InvalidRequest
         }
         AppError::Db(_) | AppError::Mongo(_) => ErrorCode::TargetExecutionFailed,
+        AppError::Timeout(_) => ErrorCode::Timeout,
         AppError::OutcomeUnknown(_) => ErrorCode::OperationConflict,
         AppError::Agent(_)
         | AppError::Network(_)

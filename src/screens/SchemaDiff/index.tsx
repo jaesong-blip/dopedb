@@ -1,7 +1,7 @@
 // Group schema comparison workspace. Loads every member through the shared catalog
 // query cache, summarizes all targets against one baseline, and exposes object-level
 // before/after details without coupling the workflow to sidebar expansion state.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import type { Catalog } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
@@ -12,7 +12,8 @@ import Skeleton from "../../components/Skeleton";
 import {
   catalogQuery,
   fetchFreshCatalog,
-  qk,
+  replaceFreshCatalog,
+  useCatalogScope,
 } from "../../lib/queries";
 import {
   compareCatalogs,
@@ -66,12 +67,14 @@ export default function SchemaDiff({
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const catalogScope = useCatalogScope();
+  const catalogScopeKeyRef = useRef(catalogScope.key);
   const connectionIds = useMemo(
     () => group.connections.map((connection) => connection.id),
     [group.connections],
   );
   const queryResults = useQueries({
-    queries: connectionIds.map((connectionId) => catalogQuery(connectionId)),
+    queries: connectionIds.map((connectionId) => catalogQuery(connectionId, catalogScope)),
   });
   const [baselineId, setBaselineId] = useState("");
   const [targetId, setTargetId] = useState("");
@@ -79,6 +82,12 @@ export default function SchemaDiff({
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshErrors, setRefreshErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    catalogScopeKeyRef.current = catalogScope.key;
+    setRefreshing(false);
+    setRefreshErrors({});
+  }, [catalogScope.key]);
 
   const queryById = useMemo(
     () =>
@@ -162,12 +171,20 @@ export default function SchemaDiff({
   }
 
   async function refreshAll() {
+    const scopeKey = catalogScope.key;
     setRefreshing(true);
     setRefreshErrors({});
     const results = await Promise.allSettled(
       group.connections.map(async (connection) => {
         const catalog = await fetchFreshCatalog(connection.id);
-        queryClient.setQueryData(qk.catalog(connection.id), catalog);
+        if (catalogScopeKeyRef.current === scopeKey) {
+          await replaceFreshCatalog(
+            queryClient,
+            connection.id,
+            scopeKey,
+            catalog,
+          );
+        }
         return connection.id;
       }),
     );
@@ -177,8 +194,10 @@ export default function SchemaDiff({
         errors[group.connections[index].id] = errMessage(result.reason);
       }
     });
-    setRefreshErrors(errors);
-    setRefreshing(false);
+    if (catalogScopeKeyRef.current === scopeKey) {
+      setRefreshErrors(errors);
+      setRefreshing(false);
+    }
   }
 
   if (!schemaGroupIsCompatible(group)) {

@@ -11,7 +11,10 @@ use mongodb::bson::{Bson, Document};
 use mongodb::results::CollectionType;
 
 use crate::error::AppResult;
-use crate::features::catalog::{Catalog, Column, Index, Table};
+use crate::features::catalog::{
+    Catalog, CatalogOverview, CatalogOverviewDetailState, CatalogOverviewRelation, Column, Index,
+    Table,
+};
 
 use super::MongoConnection;
 
@@ -47,6 +50,45 @@ pub async fn introspect(conn: &MongoConnection) -> AppResult<Catalog> {
         tables,
         objects: Vec::new(),
     })
+}
+
+/// List MongoDB collections and views without sampling documents, requesting
+/// indexes, or estimating document counts. Those probes belong exclusively to
+/// the complete catalog path.
+pub(crate) async fn overview(conn: &MongoConnection) -> AppResult<CatalogOverview> {
+    let mut specs: Vec<_> = conn
+        .database()
+        .list_collections()
+        .await?
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .filter(|spec| !spec.name.starts_with("system."))
+        .map(|spec| {
+            overview_relation(
+                spec.name,
+                matches!(spec.collection_type, CollectionType::View),
+            )
+        })
+        .collect();
+    specs.sort_by(|left, right| left.name.cmp(&right.name));
+
+    Ok(CatalogOverview {
+        relations: specs,
+        detail_state: CatalogOverviewDetailState::Deferred,
+    })
+}
+
+fn overview_relation(name: String, is_view: bool) -> CatalogOverviewRelation {
+    CatalogOverviewRelation {
+        schema: None,
+        name,
+        kind: if is_view { "view" } else { "table" }.into(),
+        native_id: None,
+        comment: None,
+        row_estimate: None,
+        parent: None,
+    }
 }
 
 async fn table_for(
@@ -185,5 +227,21 @@ fn bson_type_name(value: &Bson) -> &'static str {
         Bson::MaxKey => "maxKey",
         Bson::MinKey => "minKey",
         Bson::DbPointer(_) => "dbPointer",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overview_relation_defers_collection_detail_probes() {
+        let collection = overview_relation("orders".into(), false);
+        let view = overview_relation("daily_orders".into(), true);
+
+        assert_eq!(collection.kind, "table");
+        assert_eq!(view.kind, "view");
+        assert!(collection.row_estimate.is_none());
+        assert!(view.native_id.is_none());
     }
 }

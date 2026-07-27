@@ -26,6 +26,8 @@ describe("workspace query lifecycle", () => {
     replaceWorkspaceAuth(client, auth);
     const threadId = retiredChatThreadId("thread-1");
     client.setQueryData(qk.catalog("connection-1"), { tables: [] });
+    client.setQueryData(qk.catalogOverview("connection-1"), { relations: [] });
+    client.setQueryData(qk.catalogSnapshot("connection-1"), { relations: [] });
     client.setQueryData(agentQueryKeys.retiredArchiveThreads(), [{ id: threadId }]);
     client.setQueryData(agentQueryKeys.retiredArchiveMessages(threadId), [
       { id: "message-1" },
@@ -37,6 +39,8 @@ describe("workspace query lifecycle", () => {
 
     expect(client.getQueryData(workspaceQueryKeys.auth())).toEqual(auth);
     expect(client.getQueryData(qk.catalog("connection-1"))).toBeUndefined();
+    expect(client.getQueryData(qk.catalogOverview("connection-1"))).toBeUndefined();
+    expect(client.getQueryData(qk.catalogSnapshot("connection-1"))).toBeUndefined();
     expect(
       client.getQueryData(agentQueryKeys.retiredArchiveThreads()),
     ).toBeUndefined();

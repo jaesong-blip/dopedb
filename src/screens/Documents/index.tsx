@@ -10,7 +10,7 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import ResultToolbar from "../../components/ResultToolbar";
-import { catalogQuery } from "../../lib/queries";
+import { catalogQuery, useCatalogScope } from "../../lib/queries";
 import { documentsToGrid } from "../../lib/documentGrid";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
@@ -46,7 +46,8 @@ export default function Documents({
   draft?: string | null;
 }) {
   const { t } = useI18n();
-  const catalog = useQuery(catalogQuery(connection.id));
+  const catalogScope = useCatalogScope();
+  const catalog = useQuery(catalogQuery(connection.id, catalogScope));
   const tables = catalog.data?.tables ?? [];
 
   const [collection, setCollection] = useState("");

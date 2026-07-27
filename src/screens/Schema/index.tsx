@@ -12,13 +12,19 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import Skeleton from "../../components/Skeleton";
-import { catalogQuery, catalogSnapshotQuery } from "../../lib/queries";
+import {
+  catalogOverviewQuery,
+  catalogQuery,
+  catalogSnapshotQuery,
+  useCatalogScope,
+} from "../../lib/queries";
 import {
   erdRelationKey,
   relationDisplayName,
 } from "../../lib/erdGraph";
 import { useI18n } from "../../lib/i18n";
 import SchemaEditor from "./SchemaEditor";
+import { schemaDetailsEnabled } from "./detailLifecycle";
 import "./schema.css";
 
 const ErdCanvas = lazy(() => import("../../components/ErdCanvas"));
@@ -48,13 +54,22 @@ export default function SchemaExplorer({
   onOpenTable: (table: CatalogTable) => void;
 }) {
   const { t } = useI18n();
-  const catalogQueryResult = useQuery(catalogQuery(connection.id));
+  const catalogScope = useCatalogScope();
+  const [detailsRequested, setDetailsRequested] = useState(false);
+  const overviewQuery = useQuery(
+    catalogOverviewQuery(connection.id, catalogScope),
+  );
+  const catalogQueryResult = useQuery({
+    ...catalogQuery(connection.id, catalogScope),
+    enabled: schemaDetailsEnabled(detailsRequested, catalogScope.ready),
+  });
   // A cold legacy catalog load persists the canonical snapshot before it resolves.
   // Waiting for it avoids running the same live introspection twice in parallel.
   const snapshotQuery = useQuery(
     catalogSnapshotQuery(
       connection.id,
-      catalogQueryResult.data !== undefined,
+      detailsRequested && catalogQueryResult.data !== undefined,
+      catalogScope,
     ),
   );
   const snapshot = snapshotQuery.data;
@@ -119,6 +134,59 @@ export default function SchemaExplorer({
       return;
     }
     await snapshotQuery.refetch();
+  }
+
+  if (!detailsRequested) {
+    if (overviewQuery.error) {
+      return (
+        <div className="screen schema-screen">
+          <div className="error">{errMessage(overviewQuery.error)}</div>
+          <button
+            className="btn small schema-load-retry"
+            type="button"
+            disabled={overviewQuery.isFetching}
+            onClick={() => void overviewQuery.refetch()}
+          >
+            <Icon name="refresh" />
+            {t("common.refresh")}
+          </button>
+        </div>
+      );
+    }
+    if (!overviewQuery.data) {
+      return (
+        <div className="screen schema-screen">
+          <Skeleton lines={8} />
+        </div>
+      );
+    }
+    if (overviewQuery.data.relations.length === 0) {
+      return (
+        <div className="screen schema-screen">
+          <div className="muted empty">{t("schema.empty")}</div>
+        </div>
+      );
+    }
+    return (
+      <div className="screen schema-screen">
+        <div className="workbench-empty">
+          <Icon name="database" />
+          <strong>
+            {t("schema.detailsDeferredTitle", {
+              count: overviewQuery.data.relations.length,
+            })}
+          </strong>
+          <span className="muted">{t("schema.detailsDeferredDescription")}</span>
+          <button
+            className="btn primary"
+            type="button"
+            onClick={() => setDetailsRequested(true)}
+          >
+            {t("schema.loadDetails")}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const error = snapshotQuery.error ?? catalogQueryResult.error;
