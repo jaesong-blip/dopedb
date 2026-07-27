@@ -1,8 +1,8 @@
 import { jsonError, privateJson } from "../../../../lib/http";
-import { auth } from "../../../../lib/auth";
+import { authoritativeSession } from "../../../../lib/authoritative-session";
 
 export async function GET(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await authoritativeSession(request);
   if (!session) return jsonError("Unauthorized", 401);
   return privateJson({
     user: { id: session.user.id, email: session.user.email, displayName: session.user.name },

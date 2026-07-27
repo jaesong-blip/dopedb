@@ -2,6 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
+import {
+  collectProviderOwnershipDiagnostics,
+} from "./architecture/provider-ownership.mjs";
 import { collectQueryCentralIpcDiagnostics } from "./architecture/query-central-ipc-ownership.mjs";
 import {
   collectQueryFrontendOwnershipDiagnostics,
@@ -83,6 +86,7 @@ const architectureContext = {
   walk,
 };
 for (const filePath of [
+  "scripts/architecture/provider-ownership.mjs",
   "scripts/architecture/query-central-ipc-ownership.mjs",
   "scripts/architecture/query-frontend-ownership.mjs",
   "scripts/architecture/query-rust-runtime-guards.mjs",
@@ -93,6 +97,9 @@ for (const filePath of [
   if (lines > 500) {
     fail(`${filePath}: architecture guard module has ${lines} lines; keep it below 500`);
   }
+}
+for (const diagnostic of collectProviderOwnershipDiagnostics(architectureContext)) {
+  fail(diagnostic);
 }
 const oversized = new Map(Object.entries(ratchet.oversizedFiles));
 for (const file of sourceFiles) {
@@ -169,6 +176,7 @@ const removedPaths = [
   "src-tauri/src/services/legacy_chat_service.rs",
   "src-tauri/src/services/query_service.rs",
   "src-tauri/src/services/terminal_run_registry.rs",
+  "src-tauri/src/store/provider_bindings.rs",
   "src-tauri/src/features/queries/adapters/desktop_classification.rs",
   "src-tauri/src/features/queries/adapters/desktop_classification_tests.rs",
   "src-tauri/src/features/queries/adapters/desktop_preview.rs",

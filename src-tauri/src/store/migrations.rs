@@ -684,4 +684,51 @@ CREATE TABLE IF NOT EXISTS agent_chat_messages (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_chat_messages_thread ON agent_chat_messages(thread_id, created_at);
+
+-- Provider API credentials are intentionally local-only. `keyring_ref` is an
+-- opaque UUID naming an OS Keychain/Credential Manager entry; no token,
+-- refresh credential, endpoint, or provider response is ever persisted here
+-- or queued for synchronization. A tombstone survives a failed OS-store delete
+-- so retry can be explicit without resurrecting provider access.
+CREATE TABLE IF NOT EXISTS workspace_provider_bindings (
+    binding_id           TEXT PRIMARY KEY,
+    workspace_id         TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    account_user_id      TEXT NOT NULL,
+    provider             TEXT NOT NULL CHECK(provider IN ('neon', 'gcp_cloud_sql', 'planetscale')),
+    integration_id       TEXT NOT NULL,
+    integration_generation TEXT NOT NULL CHECK(integration_generation <> ''),
+    keyring_ref          TEXT,
+    principal_redacted   TEXT NOT NULL DEFAULT '',
+    scope_fingerprint    TEXT NOT NULL,
+    verified_at          TEXT,
+    revision             INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    tombstoned_at        TEXT,
+    delete_pending       INTEGER NOT NULL DEFAULT 0 CHECK(delete_pending IN (0, 1)),
+    created_at           TEXT NOT NULL,
+    updated_at           TEXT NOT NULL,
+    UNIQUE(workspace_id, account_user_id, provider, integration_id)
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_provider_bindings_scope
+    ON workspace_provider_bindings(workspace_id, account_user_id, tombstoned_at);
+
+-- Durable, secret-free work queue for exact OS credential-store deletion.
+-- A row is inserted in the same SQLite transaction that tombstones a binding
+-- or replaces its keyring pointer, so a failed OS-store call cannot restore
+-- access or lose the identity needed to retry after restart.
+CREATE TABLE IF NOT EXISTS workspace_provider_credential_cleanup (
+    workspace_id           TEXT NOT NULL,
+    account_user_id        TEXT NOT NULL,
+    provider               TEXT NOT NULL CHECK(provider IN ('neon', 'gcp_cloud_sql', 'planetscale')),
+    integration_id         TEXT NOT NULL,
+    integration_generation TEXT NOT NULL CHECK(integration_generation <> ''),
+    binding_id             TEXT NOT NULL,
+    keyring_ref            TEXT NOT NULL,
+    created_at             TEXT NOT NULL,
+    PRIMARY KEY (
+        workspace_id, account_user_id, provider, integration_id,
+        integration_generation, keyring_ref
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_provider_credential_cleanup_scope
+    ON workspace_provider_credential_cleanup(workspace_id, account_user_id, created_at);
 "#;

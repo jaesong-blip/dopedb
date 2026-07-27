@@ -1,14 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSessionMock, memberFindFirstMock } = vi.hoisted(() => ({
-  getSessionMock: vi.fn(),
+const { authoritativeSessionMock, memberFindFirstMock } = vi.hoisted(() => ({
+  authoritativeSessionMock: vi.fn(),
   memberFindFirstMock: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("./auth", () => ({
-  auth: { api: { getSession: getSessionMock } },
-}));
+vi.mock("./authoritative-session", () => ({ authoritativeSession: authoritativeSessionMock }));
 vi.mock("./db", () => ({
   db: {
     query: {
@@ -24,7 +22,7 @@ const request = new Request("https://app.example/api/test");
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getSessionMock.mockResolvedValue({ user: { id: "member-user" } });
+  authoritativeSessionMock.mockResolvedValue({ user: { id: "member-user" } });
   memberFindFirstMock.mockResolvedValue({
     id: "22222222-2222-4222-8222-222222222222",
     organizationId,
@@ -73,10 +71,11 @@ describe("workspace authorization revocation gate", () => {
   });
 
   it("blocks a session revoked between client sync attempts", async () => {
-    getSessionMock.mockResolvedValue(null);
+    authoritativeSessionMock.mockResolvedValue(null);
 
     await expect(authorizeWorkspace(request, organizationId, "view"))
       .resolves.toEqual({ ok: false, status: 401, error: "Unauthorized" });
+    expect(authoritativeSessionMock).toHaveBeenCalledWith(request);
     expect(memberFindFirstMock).not.toHaveBeenCalled();
   });
 });

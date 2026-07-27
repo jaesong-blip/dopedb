@@ -1,349 +1,118 @@
-// PlanetScale OAuth callback tests verify that reconnecting an active integration
-// drains leases before atomically rotating credentials and invalidating connections.
-import type { SQL } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
+// OAuth I/O is untrusted until the centralized mutation store revalidates the
+// exact live workspace authority and integration generation.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  authorizeWorkspaceMock,
-  batchMock,
-  claimMock,
-  deleteReturningMock,
-  exchangeCodeMock,
-  executeMock,
-  findIntegrationMock,
-  getSessionMock,
-  insertMock,
-  inspectTokenMock,
-  releaseMock,
-  revokeAuthorizationMock,
-  revokeLeasesMock,
-  revokePlanetScaleMock,
-  sealCredentialMock,
-  updateMock,
-  updateRecords,
-} = vi.hoisted(() => ({
-  authorizeWorkspaceMock: vi.fn(),
-  batchMock: vi.fn(),
-  claimMock: vi.fn(),
-  deleteReturningMock: vi.fn(),
-  exchangeCodeMock: vi.fn(),
-  executeMock: vi.fn((statement: unknown): unknown => ({ statement })),
-  findIntegrationMock: vi.fn(),
-  getSessionMock: vi.fn(),
-  insertMock: vi.fn(),
-  inspectTokenMock: vi.fn(),
-  releaseMock: vi.fn(),
-  revokeAuthorizationMock: vi.fn(),
-  revokeLeasesMock: vi.fn(),
-  revokePlanetScaleMock: vi.fn(),
-  sealCredentialMock: vi.fn(),
-  updateMock: vi.fn(),
-  updateRecords: [] as Array<{ values: Record<string, unknown>; where: SQL }>,
+const mocks = vi.hoisted(() => ({
+  authorize: vi.fn(), claim: vi.fn(), consumed: vi.fn(), exchange: vi.fn(),
+  find: vi.fn(), authoritativeSession: vi.fn(), persist: vi.fn(), release: vi.fn(),
+  revokeLeases: vi.fn(), revokeOld: vi.fn(), revokeNew: vi.fn(), seal: vi.fn(), inspect: vi.fn(),
 }));
-
-function deleteBuilder() {
-  const builder = {
-    where: vi.fn(),
-    returning: vi.fn(),
-  };
-  builder.where.mockReturnValue(builder);
-  builder.returning.mockImplementation(() => deleteReturningMock());
-  return builder;
-}
-
-function updateBuilder(token: unknown) {
-  return {
-    set: vi.fn((values: Record<string, unknown>) => ({
-      where: vi.fn((where: SQL) => ({
-        returning: vi.fn(() => {
-          updateRecords.push({ values, where });
-          return token;
-        }),
-      })),
-    })),
-  };
-}
-
-function insertBuilder(token: unknown) {
-  return {
-    values: vi.fn(() => token),
-  };
-}
-
 vi.mock("server-only", () => ({}));
-vi.mock("../../../../../../lib/auth", () => ({
-  auth: { api: { getSession: getSessionMock } },
-}));
-vi.mock("../../../../../../lib/db", () => ({
-  db: {
-    batch: batchMock,
-    delete: vi.fn(() => deleteBuilder()),
-    execute: executeMock,
-    insert: insertMock,
-    query: {
-      workspaceProviderIntegration: {
-        findFirst: findIntegrationMock,
-      },
-    },
-    update: updateMock,
-  },
-}));
-vi.mock("../../../../../../lib/env", () => ({
-  env: { appOrigin: () => "https://app.example" },
-}));
+vi.mock("../../../../../../lib/authoritative-session", () => ({ authoritativeSession: mocks.authoritativeSession }));
+vi.mock("../../../../../../lib/db", () => ({ db: {
+  delete: vi.fn(() => ({ where: vi.fn(() => ({ returning: mocks.consumed })) })),
+  query: { workspaceProviderIntegration: { findFirst: mocks.find } },
+} }));
+vi.mock("../../../../../../lib/env", () => ({ env: { appOrigin: () => "https://app.example" } }));
 vi.mock("../../../../../../lib/providers/planetscale", () => ({
-  exchangePlanetScaleCode: exchangeCodeMock,
-  inspectPlanetScaleToken: inspectTokenMock,
-  revokePlanetScaleAuthorization: revokePlanetScaleMock,
+  exchangePlanetScaleCode: mocks.exchange, inspectPlanetScaleToken: mocks.inspect,
+  revokePlanetScaleAuthorization: mocks.revokeNew,
 }));
 vi.mock("../../../../../../lib/provider-integrations", () => ({
-  revokeActiveLeases: revokeLeasesMock,
-  revokeProviderAuthorization: revokeAuthorizationMock,
+  revokeActiveLeases: mocks.revokeLeases, revokeProviderAuthorization: mocks.revokeOld,
 }));
-vi.mock("../../../../../../lib/revocation-gates", () => ({
-  claimRevocationGate: claimMock,
-  releaseRevocationGateClaim: releaseMock,
-}));
-vi.mock("../../../../../../lib/secret-envelope", () => ({
-  sealProviderCredential: sealCredentialMock,
-}));
-vi.mock("../../../../../../lib/workspace-authorization", () => ({
-  authorizeWorkspace: authorizeWorkspaceMock,
-}));
-
+vi.mock("../../../../../../lib/provider-integration-mutation-store", () => ({ persistProviderIntegration: mocks.persist }));
+vi.mock("../../../../../../lib/revocation-gates", () => ({ claimRevocationGate: mocks.claim, releaseRevocationGateClaim: mocks.release }));
+vi.mock("../../../../../../lib/secret-envelope", () => ({ sealProviderCredential: mocks.seal }));
+vi.mock("../../../../../../lib/workspace-authorization", () => ({ authorizeWorkspace: mocks.authorize }));
 import { GET } from "./route";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const integrationId = "22222222-2222-4222-8222-222222222222";
-const claim = {
-  kind: "integration",
-  organizationId: workspaceId,
-  integrationId,
-  claimId: "33333333-3333-4333-8333-333333333333",
-  claimedAt: new Date("2026-07-23T00:00:00Z"),
-  pendingAt: new Date("2026-07-23T00:00:00Z"),
-  firstPending: true,
-};
-const existing = {
-  id: integrationId,
-  organizationId: workspaceId,
-  provider: "planetScale",
-  encryptedCredential: "sealed-old",
-  credentialExpiresAt: new Date("2026-07-24T00:00:00Z"),
-  status: "active",
-  revokedAt: null,
-  revocationPendingAt: null,
-  updatedAt: new Date("2026-07-23T00:00:00Z"),
-};
-const managedScope = [
-  "read_organizations",
-  "read_databases",
-  "read_branches",
-  "manage_passwords",
-  "manage_production_branch_passwords",
-].join(" ");
-const token = {
-  accessToken: "new-access-token",
-  refreshToken: "new-refresh-token",
-  expiresAt: "2026-07-24T01:00:00.000Z",
-  scope: managedScope,
-};
-
-function request() {
-  const url = new URL(
-    "/api/v1/providers/planet-scale/callback",
-    "https://app.example",
-  );
-  url.searchParams.set("state", "s".repeat(43));
-  url.searchParams.set("code", "valid-code");
-  return new Request(url);
-}
-
-function redirectStatus(response: Response) {
-  return new URL(response.headers.get("location") ?? "https://invalid").searchParams
-    .get("status");
-}
-
-function renderedSql(statement: SQL) {
-  return new PgDialect().sqlToQuery(statement).sql.replace(/\s+/g, " ");
-}
+const scope = "read_organizations read_databases read_branches manage_passwords manage_production_branch_passwords";
+const existing = { id: integrationId, organizationId: workspaceId, provider: "planetScale", encryptedCredential: "sealed-old", credentialExpiresAt: null, status: "active", revokedAt: null, revocationPendingAt: null, updatedAt: new Date("2026-07-23T00:00:00Z") };
+const claim = { kind: "integration", organizationId: workspaceId, integrationId, claimId: "33333333-3333-4333-8333-333333333333", claimedAt: new Date(), pendingAt: new Date(), firstPending: true };
+const ambiguousDisconnectClaimId = "44444444-4444-4444-8444-444444444444";
+function request() { return new Request(`https://app.example/api/v1/providers/planet-scale/callback?state=${"s".repeat(43)}&code=valid-code`); }
+function status(response: Response) { return new URL(response.headers.get("location") ?? "https://bad").searchParams.get("status"); }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  updateRecords.splice(0);
-  getSessionMock.mockResolvedValue({ user: { id: "admin-user" } });
-  deleteReturningMock.mockResolvedValue([{ organizationId: workspaceId }]);
-  authorizeWorkspaceMock.mockResolvedValue({
-    ok: true,
-    session: { user: { id: "admin-user" } },
-  });
-  exchangeCodeMock.mockResolvedValue(token);
-  inspectTokenMock.mockResolvedValue({
-    subject: "org-account-subject",
-    scope: managedScope,
-    expiresAt: token.expiresAt,
-  });
-  findIntegrationMock.mockResolvedValue(existing);
-  sealCredentialMock.mockReturnValue("sealed-new");
-  claimMock.mockResolvedValue(claim);
-  releaseMock.mockResolvedValue(true);
-  revokeLeasesMock.mockResolvedValue({ revoked: 2, deferred: 0 });
-  revokeAuthorizationMock.mockResolvedValue(undefined);
-  revokePlanetScaleMock.mockResolvedValue(undefined);
-  executeMock.mockReset().mockImplementation(
-    (statement: unknown) => ({ statement }),
-  );
-  updateMock.mockReset()
-    .mockImplementationOnce(() => updateBuilder({ kind: "updated" }) as never)
-    .mockImplementationOnce(() => updateBuilder({ kind: "cleared" }) as never);
-  insertMock.mockReset()
-    .mockImplementation(() => insertBuilder({ kind: "inserted" }) as never);
-  batchMock.mockResolvedValue([
-    [{ id: integrationId }],
-    { rows: [] },
-    { rows: [] },
-    [{ id: integrationId }],
-  ]);
+  mocks.authoritativeSession.mockResolvedValue({ user: { id: "admin-user" } });
+  mocks.consumed.mockResolvedValue([{ organizationId: workspaceId }]);
+  mocks.authorize.mockResolvedValue({ ok: true, session: { user: { id: "admin-user" }, session: { id: "session-id" } }, membership: { id: "member-id" }, role: "admin" });
+  mocks.exchange.mockResolvedValue({ accessToken: "rotated-access", refreshToken: "rotated-refresh", expiresAt: "2026-07-24T01:00:00.000Z", scope });
+  mocks.inspect.mockResolvedValue({ subject: "org-account-subject", scope });
+  mocks.find.mockResolvedValue(existing); mocks.seal.mockReturnValue("sealed-new");
+  mocks.claim.mockResolvedValue(claim); mocks.release.mockResolvedValue(true);
+  mocks.revokeLeases.mockResolvedValue({ revoked: 2, deferred: 0 });
+  mocks.persist.mockResolvedValue({ ok: true, id: integrationId });
+  mocks.revokeOld.mockResolvedValue(undefined);
+  mocks.revokeNew.mockResolvedValue(undefined);
 });
 
-describe("PlanetScale OAuth reconnect gate", () => {
-  it("drains leases before an atomic credential rotation and revision bump", async () => {
-    const response = await GET(request());
-
-    expect(response.status).toBe(302);
-    expect(redirectStatus(response)).toBe("connected");
-    expect(claimMock).toHaveBeenCalledWith({
-      kind: "integration",
-      organizationId: workspaceId,
-      integrationId,
-    });
-    expect(revokeLeasesMock).toHaveBeenCalledWith({
-      organizationId: workspaceId,
-      integrationId,
-    });
-    expect(claimMock.mock.invocationCallOrder[0]).toBeLessThan(
-      revokeLeasesMock.mock.invocationCallOrder[0],
-    );
-    expect(revokeLeasesMock.mock.invocationCallOrder[0]).toBeLessThan(
-      batchMock.mock.invocationCallOrder[0],
-    );
-
-    const statements = executeMock.mock.calls.map(([statement]) => (
-      renderedSql(statement as SQL)
-    ));
-    expect(statements.some((query) => (
-      query.includes("UPDATE \"workspace_control\".\"workspace_connection\"")
-      && query.includes("\"revision\" = connection.\"revision\" + 1")
-      && query.includes("\"provider_integration_id\" = integration.\"id\"")
-      && query.includes("connection.\"deleted_at\" IS NULL")
-      && query.includes("integration.\"revocation_claim_id\" =")
-    ))).toBe(true);
-    expect(statements.some((query) => (
-      query.includes("INSERT INTO \"workspace_control\".\"workspace_audit_event\"")
-      && query.includes("integration.\"revocation_claim_id\" =")
-    ))).toBe(true);
-
-    expect(updateRecords).toHaveLength(2);
-    const updateGuards = updateRecords.map(({ where }) => renderedSql(where));
-    expect(updateGuards[0]).toContain("\"revocation_claim_id\" =");
-    expect(updateGuards[0]).toContain("\"status\" =");
-    expect(updateGuards[0]).toContain("\"revoked_at\" is null");
-    expect(updateRecords[0]?.values).not.toHaveProperty("revocationClaimId");
-    expect(updateGuards[1]).toContain("\"revocation_claim_id\" =");
-    expect(updateGuards[1]).toContain("\"updated_at\" =");
-    expect(updateRecords[1]?.values).toMatchObject({
-      revocationPendingAt: null,
-      revocationClaimedAt: null,
-      revocationClaimId: null,
-    });
-    expect(batchMock.mock.calls[0]?.[0]).toHaveLength(4);
-    expect(releaseMock).not.toHaveBeenCalled();
-    expect(revokeAuthorizationMock).toHaveBeenCalledWith(existing);
-    expect(batchMock.mock.invocationCallOrder[0]).toBeLessThan(
-      revokeAuthorizationMock.mock.invocationCallOrder[0],
-    );
-    expect(revokePlanetScaleMock).not.toHaveBeenCalled();
-    expect(deleteReturningMock.mock.invocationCallOrder[0]).toBeLessThan(
-      exchangeCodeMock.mock.invocationCallOrder[0],
-    );
-  });
-
-  it("keeps the old credential when a lease cleanup is deferred", async () => {
-    revokeLeasesMock.mockResolvedValue({ revoked: 1, deferred: 1 });
+describe("PlanetScale OAuth mutation boundary", () => {
+  it("does not consume OAuth state or call the provider after authoritative session loss", async () => {
+    mocks.authoritativeSession.mockResolvedValue(null);
 
     const response = await GET(request());
 
-    expect(redirectStatus(response)).toBe("failed");
-    expect(releaseMock).toHaveBeenCalledTimes(1);
-    expect(releaseMock).toHaveBeenCalledWith(claim);
-    expect(batchMock).not.toHaveBeenCalled();
-    expect(revokeAuthorizationMock).not.toHaveBeenCalled();
-    expect(revokePlanetScaleMock).toHaveBeenCalledWith(token.refreshToken);
+    expect(new URL(response.headers.get("location") ?? "https://bad").pathname).toBe("/auth/sign-in");
+    expect(mocks.consumed).not.toHaveBeenCalled();
+    expect(mocks.exchange).not.toHaveBeenCalled();
+    expect(mocks.authorize).not.toHaveBeenCalled();
   });
 
-  it("fails closed when another revocation claimant owns the integration", async () => {
-    claimMock.mockResolvedValue(null);
-
+  it("revalidates and persists reconnect only through the single store operation", async () => {
     const response = await GET(request());
-
-    expect(redirectStatus(response)).toBe("failed");
-    expect(revokeLeasesMock).not.toHaveBeenCalled();
-    expect(batchMock).not.toHaveBeenCalled();
-    expect(releaseMock).not.toHaveBeenCalled();
-    expect(revokeAuthorizationMock).not.toHaveBeenCalled();
-    expect(revokePlanetScaleMock).toHaveBeenCalledWith(token.refreshToken);
+    expect(status(response)).toBe("connected");
+    expect(mocks.claim).toHaveBeenCalledWith({ kind: "integration", organizationId: workspaceId, integrationId });
+    expect(mocks.revokeLeases.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.persist.mock.invocationCallOrder[0],
+    );
+    expect(mocks.persist).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "planetScale", existing, reconnectClaimId: claim.claimId,
+      credentialExpiresAt: expect.any(Date), principalClaims: [],
+    }));
+    expect(mocks.revokeOld).toHaveBeenCalledWith(existing);
   });
 
-  it("releases its exact claim and revokes the new token on a stale batch", async () => {
-    batchMock.mockResolvedValue([
-      [],
-      { rows: [] },
-      { rows: [] },
-      [],
-    ]);
-
+  it("releases the gate, writes no durable response and revokes only the new token after authority loss", async () => {
+    mocks.persist.mockResolvedValue({ ok: false });
     const response = await GET(request());
-
-    expect(redirectStatus(response)).toBe("failed");
-    expect(releaseMock).toHaveBeenCalledTimes(1);
-    expect(releaseMock).toHaveBeenCalledWith(claim);
-    expect(revokeAuthorizationMock).not.toHaveBeenCalled();
-    expect(revokePlanetScaleMock).toHaveBeenCalledWith(token.refreshToken);
+    expect(status(response)).toBe("failed");
+    expect(mocks.release).toHaveBeenCalledWith(claim);
+    expect(mocks.revokeOld).not.toHaveBeenCalled();
+    expect(mocks.revokeNew).toHaveBeenCalledWith("rotated-refresh");
   });
 
-  it("reactivates an inactive integration only through its exact CAS snapshot", async () => {
-    const revokedAt = new Date("2026-07-22T23:00:00Z");
-    findIntegrationMock.mockResolvedValue({
+  it("does not persist or expose a rotated credential when lease revocation is deferred", async () => {
+    mocks.revokeLeases.mockResolvedValue({ revoked: 0, deferred: 1 });
+    const response = await GET(request());
+    expect(status(response)).toBe("failed");
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.revokeNew).toHaveBeenCalledWith("rotated-refresh");
+  });
+
+  it("lets fresh OAuth safely supersede an ambiguous disconnect without replaying revocation", async () => {
+    const ambiguous = {
       ...existing,
-      status: "revoked",
-      revokedAt,
-    });
+      status: "reconnect_required",
+      revocationPendingAt: new Date("2026-07-27T00:00:00Z"),
+      revocationClaimId: ambiguousDisconnectClaimId,
+      generation: 8n,
+    };
+    mocks.find.mockResolvedValue(ambiguous);
 
     const response = await GET(request());
 
-    expect(redirectStatus(response)).toBe("connected");
-    expect(claimMock).not.toHaveBeenCalled();
-    expect(revokeLeasesMock).not.toHaveBeenCalled();
-    expect(batchMock.mock.calls[0]?.[0]).toHaveLength(3);
-    expect(updateRecords).toHaveLength(1);
-    const updateGuard = renderedSql(updateRecords[0]!.where);
-    expect(updateGuard).toContain("\"revocation_pending_at\" is null");
-    expect(updateGuard).toContain("\"revocation_claim_id\" is null");
-    expect(updateGuard).toContain("\"status\" =");
-    expect(updateGuard).toContain("\"updated_at\" =");
-    expect(updateGuard).toContain("\"revoked_at\" =");
-    const statements = executeMock.mock.calls.map(([statement]) => (
-      renderedSql(statement as SQL)
-    ));
-    expect(statements.some((query) => (
-      query.includes("UPDATE \"workspace_control\".\"workspace_connection\"")
-      && query.includes("\"revision\" = connection.\"revision\" + 1")
-      && query.includes("integration.\"revocation_pending_at\" IS NULL")
-      && query.includes("integration.\"revocation_claim_id\" IS NULL")
-    ))).toBe(true);
-    expect(releaseMock).not.toHaveBeenCalled();
-    expect(revokeAuthorizationMock).toHaveBeenCalled();
-    expect(revokePlanetScaleMock).not.toHaveBeenCalled();
+    expect(status(response)).toBe("connected");
+    expect(mocks.claim).not.toHaveBeenCalled();
+    expect(mocks.revokeLeases).not.toHaveBeenCalled();
+    expect(mocks.persist).toHaveBeenCalledWith(expect.objectContaining({
+      existing: ambiguous,
+      reconnectClaimId: ambiguousDisconnectClaimId,
+    }));
+    expect(mocks.revokeOld).not.toHaveBeenCalled();
   });
 });

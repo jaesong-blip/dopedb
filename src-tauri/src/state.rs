@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::broker::BrokerRuntime;
 use crate::connection::ConnectionManager;
 use crate::error::AppResult;
+use crate::features::providers;
 use crate::features::terminals::{self, TerminalsFeature};
 use crate::features::{FeatureFlag, FeatureFlags};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
@@ -43,10 +44,13 @@ impl AppState {
             FeatureFlag::JobsV1,
         ]);
         let store = Store::open().await?;
-        let connections = ConnectionManager::with_remote_authority(
+        let providers = providers::compose(store.clone());
+        let connections = ConnectionManager::with_authorities(
             store.clone(),
             Arc::new(crate::features::workspaces::adapters::HostedWorkspaceControlPlane),
+            providers.local_connection_port(),
         );
+        providers.bind_revocation_port(Arc::new(connections.clone()))?;
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let broker = BrokerRuntime::new(operation.runtime_id().into());
         let terminals = terminals::compose(
@@ -54,7 +58,12 @@ impl AppState {
             broker.clone(),
             features.is_enabled(FeatureFlag::TerminalDockV1),
         );
-        let services = ApplicationServices::new(store.clone(), connections.clone(), operation);
+        let services = ApplicationServices::with_providers(
+            store.clone(),
+            connections.clone(),
+            operation,
+            providers,
+        );
         let skills = SkillManager::new()?;
         if features.is_enabled(FeatureFlag::JobsV1) {
             services.job.recover_interrupted().await?;

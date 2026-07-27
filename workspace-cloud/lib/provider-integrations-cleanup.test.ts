@@ -1,5 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { executeMock } = vi.hoisted(() => ({
@@ -18,6 +19,11 @@ import {
   managedLeaseAuthorityMatches,
   managedLeaseCleanupRetryDelayMs,
 } from "./provider-integrations";
+
+const providerIntegrationSource = readFileSync(
+  new URL("./provider-integrations.ts", import.meta.url),
+  "utf8",
+);
 
 afterEach(() => {
   executeMock.mockClear();
@@ -75,6 +81,20 @@ describe("durable managed-lease cleanup", () => {
       expect(statement).toContain("FOR UPDATE OF lease SKIP LOCKED");
       expect(statement).toContain("UPDATE \"workspace_control\".\"workspace_credential_lease\"");
     }
+  });
+
+  it("serializes last-lease legacy demotion on the exact connection key", () => {
+    const markLease = providerIntegrationSource.slice(
+      providerIntegrationSource.indexOf("async function markLeaseRevoked"),
+      providerIntegrationSource.indexOf("async function scheduleLeaseCleanupRetry"),
+    );
+    expect(markLease).toContain("const [, result] = await db.batch([");
+    expect(markLease).toContain("pg_advisory_xact_lock(hashtextextended(");
+    expect(markLease).toContain(
+      "'connection:' || lease.\"organization_id\" || ':' || lease.\"connection_id\"::text",
+    );
+    expect(markLease).toContain("AND NOT EXISTS (");
+    expect(markLease).toContain('live_lease."revoked_at" IS NULL');
   });
 
   it("fails closed when a lease crosses a connection or integration tenant", () => {

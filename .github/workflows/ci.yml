@@ -58,8 +58,14 @@ jobs:
       - name: Build desktop frontend
         run: pnpm build
 
-      - name: Test desktop frontend
+      - name: Test frontend and workspace cloud
         run: pnpm test
+
+      - name: Test workspace cloud database safety guards
+        run: pnpm --dir workspace-cloud test:postgres-harness-guard
+
+      - name: Check workspace cloud schema
+        run: pnpm --dir workspace-cloud db:check
 
       - name: Build landing site
         run: pnpm site:build
@@ -125,8 +131,14 @@ jobs:
       - name: Build desktop frontend
         run: pnpm build
 
-      - name: Test desktop frontend
+      - name: Test frontend and workspace cloud
         run: pnpm test
+
+      - name: Test workspace cloud database safety guards
+        run: pnpm --dir workspace-cloud test:postgres-harness-guard
+
+      - name: Check workspace cloud schema
+        run: pnpm --dir workspace-cloud db:check
 
       - name: Stage Windows sidecars
         run: pnpm build:sidecars

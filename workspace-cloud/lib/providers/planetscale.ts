@@ -3,6 +3,7 @@
 import "server-only";
 
 import { env } from "../env";
+import { MAX_PROVIDER_RESULTS } from "./adapter-contract";
 import { planetScaleEngine } from "./planetscale-core";
 import {
   ProviderRequestError,
@@ -218,15 +219,24 @@ async function paginated(
   path: string,
 ): Promise<JsonObject[]> {
   const rows: JsonObject[] = [];
-  for (let page = 1; page <= 10; page += 1) {
+  const pageSize = 100;
+  const maxPages = Math.ceil(MAX_PROVIDER_RESULTS / pageSize);
+  for (let page = 1; page <= maxPages; page += 1) {
     const separator = path.includes("?") ? "&" : "?";
     const body = object(await apiRequest(
       accessToken,
-      `${path}${separator}per_page=100&page=${page}`,
+      `${path}${separator}per_page=${pageSize}&page=${page}`,
     ));
     const data = Array.isArray(body.data) ? body.data : [];
+    if (data.length > MAX_PROVIDER_RESULTS - rows.length) {
+      throw new PlanetScaleRequestError("PlanetScale discovery scope is too large", 409);
+    }
     rows.push(...data.map(object));
-    if (typeof body.next_page !== "number") break;
+    const hasNextPage = typeof body.next_page === "number";
+    if (hasNextPage && page === maxPages) {
+      throw new PlanetScaleRequestError("PlanetScale discovery scope is too large", 409);
+    }
+    if (!hasNextPage) break;
   }
   return rows;
 }
@@ -243,8 +253,15 @@ function resourceItem(
     value: name,
     ...(kind ? { kind } : {}),
     ...(options.includeBranch ? {
-      production: row.production === true,
-      ready: row.ready !== false,
+      production: row.production === true
+        ? true
+        : row.production === false
+          ? false
+          : "unknown" as const,
+      // Missing state/schema readiness is never evidence that a target is safe
+      // to import. A branch that is merely listed can still be sleeping or mid
+      // migration, and the exact provider object must say all three are ready.
+      ready: row.state === "ready" && row.ready === true && row.schema_ready === true,
     } : {}),
   };
 }
@@ -277,6 +294,22 @@ export async function listPlanetScaleBranches(
   return rows.map((row) => resourceItem(row, { includeBranch: true }));
 }
 
+async function planetScaleBranch(
+  accessToken: string,
+  organization: string,
+  database: string,
+  branch: string,
+) {
+  const body = object(await apiRequest(
+    accessToken,
+    `/v1/organizations/${segment(organization)}/databases/${segment(database)}/branches/${segment(branch)}`,
+  ));
+  const row = body.data && typeof body.data === "object" && !Array.isArray(body.data)
+    ? object(body.data)
+    : body;
+  return resourceItem(row, { includeBranch: true });
+}
+
 export async function validatePlanetScaleResource(
   accessToken: string,
   resource: PlanetScaleResource,
@@ -286,13 +319,18 @@ export async function validatePlanetScaleResource(
   if (!database || database.kind !== resource.engine) {
     throw new PlanetScaleRequestError("PlanetScale database was not found", 404);
   }
-  const branches = await listPlanetScaleBranches(
+  const branch = await planetScaleBranch(
     accessToken,
     resource.organization,
     resource.database,
+    resource.branch,
   );
-  if (!branches.some((item) => item.name === resource.branch && item.ready !== false)) {
-    throw new PlanetScaleRequestError("PlanetScale branch was not found or is not ready", 404);
+  if (
+    branch.name !== resource.branch
+    || branch.ready !== true
+    || branch.production !== false
+  ) {
+    throw new PlanetScaleRequestError("PlanetScale branch is not an explicitly ready non-production target", 409);
   }
 }
 

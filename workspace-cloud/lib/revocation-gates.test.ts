@@ -34,11 +34,14 @@ const authority = {
   organizationId: workspaceId,
   memberId,
   userId: "target-user",
+  sessionId: "session-id",
   role: "editor" as const,
   connectionId,
   connectionRevision: 8,
+  providerResourceId: "66666666-6666-4666-8666-666666666666",
   engine: "postgres" as const,
   integrationId,
+  integrationGeneration: 12n,
   provider: "neon",
   accessMode: "write" as const,
 };
@@ -187,7 +190,9 @@ describe("durable revocation gate SQL", () => {
       `integration:${workspaceId}:${integrationId}`,
     ]);
     expect(actionQuery.sql).not.toContain("advisory_xact_lock");
-    expect(actionQuery.sql).toContain('authority AS ( SELECT 1 AS "allowed"');
+    expect(actionQuery.sql).toContain(
+      'authority AS MATERIALIZED ( SELECT 1 AS "allowed"',
+    );
     expect(batchMock).toHaveBeenCalledOnce();
     expect(batchMock.mock.calls[0]?.[0]).toHaveLength(2);
   });
@@ -201,7 +206,9 @@ describe("durable revocation gate SQL", () => {
     expect(executeMock).toHaveBeenCalledTimes(2);
     expect(compiledCall(0).sql).toContain("pg_advisory_xact_lock_shared");
     expect(query).not.toContain("advisory_xact_lock");
-    expect(query).toContain('authority AS ( SELECT 1 AS "allowed"');
+    expect(query).toContain(
+      'authority AS MATERIALIZED ( SELECT 1 AS "allowed"',
+    );
     expect(query).toContain('"workspace_control"."member"."role" =');
     expect(query).toContain('"workspace_control"."member"."role" IN');
     expect(query).toContain(
@@ -214,6 +221,18 @@ describe("durable revocation gate SQL", () => {
     expect(query).toContain(
       '"workspace_control"."workspace_provider_integration"."status" = \'active\'',
     );
+    expect(query).toContain('"workspace_control"."session"."id" =');
+    expect(query).toContain('"workspace_control"."session"."user_id" =');
+    expect(query).toContain(
+      '"workspace_control"."session"."expires_at" > clock_timestamp()',
+    );
+    expect(query).toContain(
+      '"workspace_control"."workspace_provider_integration"."generation" =',
+    );
+    expect(query).toContain(
+      '"workspace_control"."workspace_provider_integration"."refresh_phase" = \'idle\'',
+    );
+    expect(query).toContain("FOR UPDATE");
     expect(query).toContain("generate_series(1, 5)");
     expect(query).toContain('active_lease."active_slot" = slot."value"');
     expect(query).toContain('active_lease."revoked_at" IS NULL');
@@ -247,13 +266,21 @@ describe("durable revocation gate SQL", () => {
     expect(query).toContain('lease."access_mode" =');
     expect(query).toContain('lease."external_credential_kind" = \'pending\'');
     expect(query).toContain('lease."revoked_at" IS NULL');
-    expect(query).toContain('lease."expires_at" > CURRENT_TIMESTAMP');
+    expect(query).toContain('lease."expires_at" > clock_timestamp()');
     expect(query).toContain('"revocation_pending_at" IS NULL');
     expect(query).toContain('"revocation_claim_id" IS NULL');
     expect(query).toContain('"workspace_control"."member"."role" =');
     expect(query).toContain(
       '"workspace_control"."workspace_connection"."revision" =',
     );
+    expect(query).toContain('"workspace_control"."session"."id" =');
+    expect(query).toContain(
+      '"workspace_control"."session"."expires_at" > clock_timestamp()',
+    );
+    expect(query).toContain(
+      '"workspace_control"."workspace_provider_integration"."generation" =',
+    );
+    expect(query).toContain("FOR UPDATE");
     expect(query).not.toContain("advisory_xact_lock");
     expect(compiledCall(0).sql.match(
       /pg_advisory_xact_lock_shared\(/g,
@@ -272,7 +299,7 @@ describe("durable revocation gate SQL", () => {
     expect(query).toContain('lease."external_credential_kind" =');
     expect(query).toContain('lease."external_credential_kind" <> \'pending\'');
     expect(query).toContain('lease."expires_at" =');
-    expect(query).toContain('lease."expires_at" > CURRENT_TIMESTAMP');
+    expect(query).toContain('lease."expires_at" > clock_timestamp()');
     expect(query).toContain('lease."revoked_at" IS NULL');
     expect(query).toContain('"workspace_control"."member"."role" =');
     expect(query).toContain(
@@ -281,6 +308,14 @@ describe("durable revocation gate SQL", () => {
     expect(query).toContain(
       '"workspace_control"."workspace_provider_integration"."revoked_at" IS NULL',
     );
+    expect(query).toContain('"workspace_control"."session"."id" =');
+    expect(query).toContain(
+      '"workspace_control"."session"."expires_at" > clock_timestamp()',
+    );
+    expect(query).toContain(
+      '"workspace_control"."workspace_provider_integration"."generation" =',
+    );
+    expect(query).toContain("FOR UPDATE");
     expect(query).not.toContain("advisory_xact_lock");
     expect(compiledCall(0).sql.match(
       /pg_advisory_xact_lock_shared\(/g,
@@ -323,5 +358,36 @@ describe("durable revocation gate SQL", () => {
       leaseId,
     ]));
     expect(actionQuery.sql).not.toContain("one-time-gcp-iam-token");
+  });
+
+  it("fails each durable boundary closed after session or generation races", async () => {
+    managedBatch([{ status: "blocked" }]);
+    await expect(reserveManagedLeaseIfUnblocked(authority)).resolves.toBe("blocked");
+    expect(compiledCall(1).sql).toContain(
+      '"workspace_control"."session"."expires_at" > clock_timestamp()',
+    );
+
+    vi.clearAllMocks();
+    managedBatch([]);
+    await expect(
+      finalizeManagedLeaseIfUnblocked(authority, providerLease),
+    ).resolves.toBe(false);
+    expect(compiledCall(1).sql).toContain(
+      '"workspace_control"."workspace_provider_integration"."generation" =',
+    );
+
+    vi.clearAllMocks();
+    managedBatch([]);
+    await expect(
+      managedLeaseStillDeliverable(authority, providerLease),
+    ).resolves.toBe(false);
+    const delivery = compiledCall(1).sql;
+    expect(delivery).toContain('"workspace_control"."session"."id" =');
+    expect(delivery).toContain(
+      '"workspace_control"."session"."expires_at" > clock_timestamp()',
+    );
+    expect(delivery).toContain(
+      '"workspace_control"."workspace_provider_integration"."generation" =',
+    );
   });
 });

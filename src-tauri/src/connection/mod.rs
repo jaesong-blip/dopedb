@@ -5,6 +5,7 @@
 
 pub mod keychain;
 pub mod pool;
+mod provider_local;
 pub mod providers;
 mod remote_authority;
 mod runtime;
@@ -12,6 +13,18 @@ mod runtime;
 pub use crate::driver::connect;
 pub use keychain::{delete_secret, fetch_secret, store_secret};
 pub use pool::{DbPool, LiveConnection};
+#[cfg(test)]
+pub(crate) use provider_local::closed_provider_local_port;
+pub(crate) use provider_local::{
+    GcpCloudSqlNetworkMode, ProviderLocalBindingPin, ProviderLocalConnectionPort,
+    ProviderLocalPinRequest, ProviderLocalResolveRequest, ProviderLocalResource,
+    ProviderLocalSecret, ProviderLocalTarget,
+};
+// These are part of the provider-feature implementation contract. The provider
+// feature consumes them through this narrow adapter boundary while the runtime
+// itself only handles the object-safe port.
+#[allow(unused_imports)]
+pub(crate) use provider_local::{ProviderLocalFuture, ResolvedProviderLocalConnection};
 pub(crate) use remote_authority::{
     ManagedConnectionLease, RemoteAuthorityFuture, RemoteConnectionAuthority,
     RemoteConnectionAuthorityPort,

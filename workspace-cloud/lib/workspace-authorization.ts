@@ -4,7 +4,7 @@ import "server-only";
 
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "./db";
-import { auth } from "./auth";
+import { authoritativeSession } from "./authoritative-session";
 import { member, workspaceConnection, workspaceConnectionGrant } from "./schema";
 import {
   accessModeForRole,
@@ -34,7 +34,7 @@ export async function authorizeWorkspace(
   organizationId: string,
   capability: WorkspaceCapability,
 ) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await authoritativeSession(request);
   if (!session) return { ok: false as const, status: 401, error: "Unauthorized" };
 
   const membership = await db.query.member.findFirst({

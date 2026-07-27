@@ -7,6 +7,7 @@ const {
   auditValuesMock,
   authorizeWorkspaceConnectionMock,
   connectionFindFirstMock,
+  resourceFindFirstMock,
   dbExecuteMock,
   issueManagedLeaseMock,
   managedLeaseStillDeliverableMock,
@@ -17,6 +18,7 @@ const {
   auditValuesMock: vi.fn(async () => undefined),
   authorizeWorkspaceConnectionMock: vi.fn(),
   connectionFindFirstMock: vi.fn(),
+  resourceFindFirstMock: vi.fn(),
   dbExecuteMock: vi.fn(async () => ({ rows: [{ value: 1 }] })),
   issueManagedLeaseMock: vi.fn(),
   managedLeaseStillDeliverableMock: vi.fn(),
@@ -31,6 +33,7 @@ vi.mock("../../../../../../../../lib/db", () => ({
     insert: vi.fn(() => ({ values: auditValuesMock })),
     query: {
       workspaceConnection: { findFirst: connectionFindFirstMock },
+      workspaceProviderResource: { findFirst: resourceFindFirstMock },
     },
     select: vi.fn(() => ({
       from: vi.fn(() => ({
@@ -69,6 +72,7 @@ const integration = {
   provider: "neon",
   encryptedCredential: "sealed",
   credentialExpiresAt: null,
+  generation: 9n,
 };
 const resource = {
   engine: "postgres",
@@ -141,7 +145,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   authorizeWorkspaceConnectionMock.mockResolvedValue({
     ok: true,
-    session: { user: { id: "member-user" } },
+    session: { user: { id: "member-user" }, session: { id: "session-id" } },
     membership: { id: memberId },
     role: "admin",
     accessMode: "manage",
@@ -152,10 +156,11 @@ beforeEach(() => {
     allowWrites: true,
     credentialMode: "managed",
     providerIntegrationId: integrationId,
-    providerResource: resource,
+    providerResourceId: "66666666-6666-4666-8666-666666666666",
     revision: 17,
   });
   activeProviderIntegrationMock.mockResolvedValue(integration);
+  resourceFindFirstMock.mockResolvedValue({ resource });
   parseManagedProviderResourceMock.mockReturnValue(resource);
   issueManagedLeaseMock.mockResolvedValue(lease);
   managedLeaseStillDeliverableMock.mockResolvedValue(true);
@@ -167,13 +172,16 @@ describe("managed credential lease delivery", () => {
     const response = await POST(leaseRequest("read"), context);
 
     expect(response.status).toBe(200);
+    expect(authorizeWorkspaceConnectionMock).toHaveBeenCalledOnce();
     expect(issueManagedLeaseMock).toHaveBeenCalledWith({
       organizationId: workspaceId,
       connectionId,
       userId: "member-user",
       memberId,
+      sessionId: "session-id",
       role: "admin",
       connectionRevision: 17,
+      providerResourceId: "66666666-6666-4666-8666-666666666666",
       engine: "postgres",
       accessMode: "read",
       integration,
@@ -185,11 +193,14 @@ describe("managed credential lease delivery", () => {
       organizationId: workspaceId,
       memberId,
       userId: "member-user",
+      sessionId: "session-id",
       role: "admin",
       connectionId,
       connectionRevision: 17,
+      providerResourceId: "66666666-6666-4666-8666-666666666666",
       engine: "postgres",
       integrationId,
+      integrationGeneration: 9n,
       provider: "neon",
       accessMode: "read",
     }, lease);
@@ -258,11 +269,14 @@ describe("managed credential lease delivery", () => {
       organizationId: workspaceId,
       memberId,
       userId: "member-user",
+      sessionId: "session-id",
       role: "admin",
       connectionId,
       connectionRevision: 17,
+      providerResourceId: "66666666-6666-4666-8666-666666666666",
       engine: "postgres",
       integrationId,
+      integrationGeneration: 9n,
       provider: "gcpCloudSql",
       accessMode: "read",
     }, gcpLease);
@@ -290,6 +304,38 @@ describe("managed credential lease delivery", () => {
     await expect(response.json()).resolves.toMatchObject({
       lease: { accessMode: "read" },
     });
+  });
+
+  it("never issues a legacy JSON-only managed binding", async () => {
+    connectionFindFirstMock.mockResolvedValueOnce({
+      id: connectionId,
+      engine: "postgres",
+      allowWrites: false,
+      credentialMode: "managed",
+      providerIntegrationId: integrationId,
+      providerResourceId: null,
+      revision: 17,
+    });
+
+    const response = await POST(leaseRequest("read"), context);
+
+    expect(response.status).toBe(409);
+    expect(issueManagedLeaseMock).not.toHaveBeenCalled();
+    expect(resourceFindFirstMock).not.toHaveBeenCalled();
+  });
+
+  it("uses only the canonical resource row, never the connection JSON selector", async () => {
+    const canonical = { ...resource, database: "canonical-app" };
+    resourceFindFirstMock.mockResolvedValueOnce({ resource: canonical });
+    parseManagedProviderResourceMock.mockReturnValueOnce(canonical);
+
+    await POST(leaseRequest("read"), context);
+
+    expect(parseManagedProviderResourceMock).toHaveBeenCalledWith("neon", canonical);
+    expect(issueManagedLeaseMock).toHaveBeenCalledWith(expect.objectContaining({
+      resource: canonical,
+      providerResourceId: "66666666-6666-4666-8666-666666666666",
+    }));
   });
 
   it("rejects managed write leases before any authority or provider touch", async () => {

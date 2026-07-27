@@ -213,15 +213,34 @@ export const workspaceProviderIntegration = workspaceControl.table(
     encryptedCredential: text("encrypted_credential").notNull(),
     credentialExpiresAt: timestamp("credential_expires_at", { withTimezone: true }),
     grantedScope: text("granted_scope"),
+    // A redacted, verified GCP project/instance pin for desktop-local WIF.
+    // This is deliberately separate from the encrypted provider envelope so
+    // read-only local-authority inventory never needs to decrypt a credential.
+    localVerificationTarget: jsonb("local_verification_target"),
     createdByUserId: text("created_by_user_id").references(() => user.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Stable bigint CAS token. PostgreSQL timestamps cannot be round-tripped
+    // through JavaScript Date without losing microseconds.
+    generation: bigint("generation", { mode: "bigint" }).notNull().default(sql`1`),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revocationPendingAt: timestamp("revocation_pending_at", { withTimezone: true }),
     revocationClaimedAt: timestamp("revocation_claimed_at", { withTimezone: true }),
     revocationClaimId: uuid("revocation_claim_id"),
+    refreshClaimedAt: timestamp("refresh_claimed_at", { withTimezone: true }),
+    refreshClaimId: uuid("refresh_claim_id"),
+    refreshGeneration: bigint("refresh_generation", { mode: "bigint" }),
+    // PlanetScale refresh has no provider idempotency/fencing primitive.  A
+    // durable remote_started fence therefore intentionally makes the integration
+    // non-issuable until an explicit OAuth reconnect supersedes it.
+    refreshPhase: text("refresh_phase").notNull().default("idle"),
+    refreshRemoteStartedAt: timestamp("refresh_remote_started_at", { withTimezone: true }),
+    // Disconnect owns a separate state machine because revocation of a provider
+    // grant is externally irreversible even when credential cleanup is retried.
+    disconnectPhase: text("disconnect_phase").notNull().default("idle"),
+    disconnectGeneration: bigint("disconnect_generation", { mode: "bigint" }),
   },
   (table) => [
     uniqueIndex("provider_integration_org_provider_account_idx").on(
@@ -244,6 +263,140 @@ export const workspaceProviderIntegration = workspaceControl.table(
           AND ${table.revocationClaimId} IS NOT NULL
           AND ${table.revocationPendingAt} IS NOT NULL)`,
     ),
+    check("provider_integration_generation_positive", sql`${table.generation} >= 1`),
+    // Never permit a credential envelope (or arbitrary provider metadata) to
+    // masquerade as the desktop-local GCP verification projection. Active,
+    // non-revoked GCP rows must have this exact target: otherwise a mixed
+    // version deployment could recreate an issuable pre-projection row after
+    // 0011 demoted the historical ones. Reconnect/revoked legacy rows remain
+    // visible with NULL until an explicit reconnect verifies the target.
+    check(
+      "provider_integration_local_verification_target_shape",
+      sql`(
+        ${table.provider} = 'gcpCloudSql' AND (
+          (
+            ${table.status} = 'active' AND ${table.revokedAt} IS NULL
+            AND ${table.localVerificationTarget} IS NOT NULL
+            AND jsonb_typeof(${table.localVerificationTarget}) = 'object'
+            AND ${table.localVerificationTarget} ?& ARRAY['kind', 'projectId', 'instanceId']
+            AND (${table.localVerificationTarget} - 'kind' - 'projectId' - 'instanceId') = '{}'::jsonb
+            AND ${table.localVerificationTarget}->>'kind' = 'gcpCloudSql'
+            AND ${table.localVerificationTarget}->>'projectId' ~ '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'
+            AND ${table.localVerificationTarget}->>'instanceId' ~ '^[A-Za-z0-9][A-Za-z0-9_-]{0,97}$'
+          )
+          OR (
+            (${table.status} <> 'active' OR ${table.revokedAt} IS NOT NULL)
+            AND (
+              ${table.localVerificationTarget} IS NULL OR (
+                jsonb_typeof(${table.localVerificationTarget}) = 'object'
+                AND ${table.localVerificationTarget} ?& ARRAY['kind', 'projectId', 'instanceId']
+                AND (${table.localVerificationTarget} - 'kind' - 'projectId' - 'instanceId') = '{}'::jsonb
+                AND ${table.localVerificationTarget}->>'kind' = 'gcpCloudSql'
+                AND ${table.localVerificationTarget}->>'projectId' ~ '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'
+                AND ${table.localVerificationTarget}->>'instanceId' ~ '^[A-Za-z0-9][A-Za-z0-9_-]{0,97}$'
+              )
+            )
+          )
+        )
+      ) OR (${table.provider} <> 'gcpCloudSql' AND ${table.localVerificationTarget} IS NULL)`,
+    ),
+    check(
+      "provider_integration_refresh_claim_consistent",
+      sql`(${table.refreshPhase} = 'idle'
+            AND ${table.refreshClaimedAt} IS NULL AND ${table.refreshClaimId} IS NULL
+            AND ${table.refreshGeneration} IS NULL AND ${table.refreshRemoteStartedAt} IS NULL)
+        OR (${table.refreshPhase} = 'claimed'
+            AND ${table.refreshClaimedAt} IS NOT NULL AND ${table.refreshClaimId} IS NOT NULL
+            AND ${table.refreshGeneration} IS NOT NULL AND ${table.refreshRemoteStartedAt} IS NULL)
+        OR (${table.refreshPhase} = 'remote_started'
+            AND ${table.refreshClaimedAt} IS NOT NULL AND ${table.refreshClaimId} IS NOT NULL
+            AND ${table.refreshGeneration} IS NOT NULL AND ${table.refreshRemoteStartedAt} IS NOT NULL)
+        OR (${table.refreshPhase} = 'reconnect_required'
+            AND ${table.refreshClaimedAt} IS NOT NULL AND ${table.refreshClaimId} IS NOT NULL
+            AND ${table.refreshGeneration} IS NOT NULL AND ${table.refreshRemoteStartedAt} IS NOT NULL)`,
+    ),
+    check(
+      "provider_integration_disconnect_phase",
+      sql`${table.disconnectPhase} IN ('idle', 'claimed', 'lease_cleanup_pending', 'leases_revoked',
+          'provider_revoke_started', 'provider_revoke_ambiguous',
+          'provider_revoked', 'finalized')`,
+    ),
+    check(
+      "provider_integration_disconnect_generation_consistent",
+      sql`(${table.disconnectPhase} = 'idle' AND ${table.disconnectGeneration} IS NULL)
+        OR (${table.disconnectPhase} <> 'idle' AND ${table.disconnectGeneration} IS NOT NULL)`,
+    ),
+  ],
+);
+
+// A discovered provider resource is a durable tenant-scoped, non-secret canonical
+// fact. Browser import authority is deliberately kept in the separate, single-use
+// receipt table below; never put session/member lifetime into this resource.
+export const workspaceProviderResource = workspaceControl.table(
+  "workspace_provider_resource",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    provider: text("provider").notNull(),
+    resourceFingerprint: text("resource_fingerprint").notNull(),
+    resource: jsonb("resource").notNull(),
+    redactedMetadata: jsonb("redacted_metadata").notNull(),
+    capabilityManifest: jsonb("capability_manifest").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // PostgreSQL requires this exact non-partial unique target for every tenant
+    // composite FK which names a provider resource.
+    uniqueIndex("provider_resource_org_id_idx").on(table.organizationId, table.id),
+    uniqueIndex("provider_resource_org_provider_fingerprint_idx").on(
+      table.organizationId, table.provider, table.resourceFingerprint,
+    ),
+  ],
+);
+
+// Discovery authority is an opaque UUID, not a provider identifier. It is scoped to
+// the exact live Better Auth session and member which observed the resource, and is
+// consumed by the import CTE in the same statement as the resulting workspace state.
+export const workspaceProviderDiscoveryReceipt = workspaceControl.table(
+  "workspace_provider_discovery_receipt",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    resourceId: uuid("resource_id").notNull(),
+    integrationId: uuid("integration_id").notNull(),
+    // Receipt consumption must observe the exact integration credential/policy
+    // generation that produced the discovery result. This is deliberately not
+    // a timestamp because Date cannot preserve PostgreSQL microseconds.
+    integrationGeneration: bigint("integration_generation", { mode: "bigint" }).notNull(),
+    memberId: text("member_id").notNull(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").notNull().references(() => session.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("provider_discovery_receipt_org_expiry_idx").on(table.organizationId, table.expiresAt),
+    foreignKey({
+      columns: [table.organizationId, table.resourceId],
+      foreignColumns: [workspaceProviderResource.organizationId, workspaceProviderResource.id],
+      name: "provider_discovery_receipt_org_resource_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.integrationId],
+      foreignColumns: [workspaceProviderIntegration.organizationId, workspaceProviderIntegration.id],
+      name: "provider_discovery_receipt_org_integration_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.memberId],
+      foreignColumns: [member.organizationId, member.id],
+      name: "provider_discovery_receipt_org_member_fk",
+    }).onDelete("cascade"),
   ],
 );
 
@@ -344,6 +497,7 @@ export const workspaceConnection = workspaceControl.table(
       { onDelete: "set null" },
     ),
     providerResource: jsonb("provider_resource"),
+    providerResourceId: uuid("provider_resource_id"),
     environment: text("environment"),
     schemaGroup: text("schema_group"),
     // Content optimistic-concurrency is separate from the revocation/lease epoch.
@@ -376,6 +530,14 @@ export const workspaceConnection = workspaceControl.table(
       ],
       name: "workspace_connection_org_provider_integration_fk",
     }),
+    foreignKey({
+      columns: [table.organizationId, table.providerResourceId],
+      foreignColumns: [workspaceProviderResource.organizationId, workspaceProviderResource.id],
+      name: "workspace_connection_org_provider_resource_fk",
+    }),
+    uniqueIndex("workspace_connection_org_provider_resource_idx")
+      .on(table.organizationId, table.providerResourceId)
+      .where(sql`"provider_resource_id" IS NOT NULL AND "deleted_at" IS NULL`),
     check(
       "workspace_connection_revocation_claim_consistent",
       sql`(${table.revocationClaimedAt} IS NULL AND ${table.revocationClaimId} IS NULL)
@@ -430,6 +592,39 @@ export const workspaceConnectionGrant = workspaceControl.table(
       "workspace_connection_grant_capability",
       sql`${table.capability} IN ('view', 'use', 'manage')`,
     ),
+  ],
+);
+
+// Import idempotency is scoped to the tenant and binds the opaque receipt's
+// canonical resource plus the sanitized request representation. The final import
+// command writes this row only after it has created the projection, grant, immutable
+// version, and audit event.
+export const workspaceProviderImportRequest = workspaceControl.table(
+  "workspace_provider_import_request",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("provider_import_org_key_idx").on(table.organizationId, table.idempotencyKey),
+    foreignKey({
+      columns: [table.organizationId, table.resourceId],
+      foreignColumns: [workspaceProviderResource.organizationId, workspaceProviderResource.id],
+      name: "provider_import_org_resource_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.connectionId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "provider_import_org_connection_fk",
+    }).onDelete("restrict"),
+    check("provider_import_request_hash", sql`${table.requestHash} ~ '^[0-9a-f]{64}$'`),
   ],
 );
 

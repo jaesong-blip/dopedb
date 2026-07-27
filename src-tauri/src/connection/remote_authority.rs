@@ -9,6 +9,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+use super::ProviderLocalTarget;
 #[cfg(test)]
 use crate::error::AppError;
 use crate::error::AppResult;
@@ -59,6 +60,15 @@ pub(crate) trait RemoteConnectionAuthorityPort: Send + Sync {
         connection_id: ConnectionId,
         lease_id: Uuid,
     ) -> RemoteAuthorityFuture<'a, ()>;
+
+    /// Fetch the short-lived, secret-free target for a locally held provider
+    /// credential. This is deliberately separate from managed credential leases.
+    fn provider_local_target<'a>(
+        &'a self,
+        account_id: &'a AccountId,
+        workspace_id: WorkspaceId,
+        connection_id: ConnectionId,
+    ) -> RemoteAuthorityFuture<'a, ProviderLocalTarget>;
 }
 
 #[cfg(test)]
@@ -102,6 +112,19 @@ impl RemoteConnectionAuthorityPort for ClosedRemoteConnectionAuthority {
         _lease_id: Uuid,
     ) -> RemoteAuthorityFuture<'a, ()> {
         Box::pin(async { Ok(()) })
+    }
+
+    fn provider_local_target<'a>(
+        &'a self,
+        _account_id: &'a AccountId,
+        _workspace_id: WorkspaceId,
+        _connection_id: ConnectionId,
+    ) -> RemoteAuthorityFuture<'a, ProviderLocalTarget> {
+        Box::pin(async {
+            Err(AppError::Blocked {
+                reason: "provider-local target authority is unavailable".into(),
+            })
+        })
     }
 }
 

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { ProviderCredentialDialog } from "../../providers/ProviderCredentialDialog";
+import { ProviderCredentialsMenuItem } from "../../providers/ProviderCredentialsMenuItem";
 import {
   beginWorkspaceLogin,
   pollWorkspaceLogin,
@@ -42,6 +44,7 @@ export default function WorkspaceAccount({
   const [loggingOut, setLoggingOut] = useState<AccountId | "all" | null>(null);
   const [switchingAccount, setSwitchingAccount] = useState<AccountId | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [providerCredentialsOpen, setProviderCredentialsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const loginAttempt = useRef(0);
@@ -52,6 +55,7 @@ export default function WorkspaceAccount({
   } | null>(null);
   const membershipRefreshInFlight = useRef<Promise<void> | null>(null);
   const browserWasActive = useRef(false);
+  const providerCredentialAuthorityVersion = useRef<number | null>(null);
   const focusReturnHandler = useRef<() => void>(() => undefined);
   const membershipRefreshHandler = useRef<() => void>(() => undefined);
 
@@ -100,6 +104,14 @@ export default function WorkspaceAccount({
     if (!auth.data?.authenticated) return;
     void invalidateWorkspaceContext(queryClient);
   }, [auth.data?.authenticated, queryClient]);
+
+  useEffect(() => {
+    if (providerCredentialAuthorityVersion.current !== null
+      && providerCredentialAuthorityVersion.current !== auth.dataUpdatedAt) {
+      setProviderCredentialsOpen(false);
+    }
+    providerCredentialAuthorityVersion.current = auth.dataUpdatedAt;
+  }, [auth.dataUpdatedAt]);
 
   useEffect(() => {
     let active = true;
@@ -264,6 +276,7 @@ export default function WorkspaceAccount({
   async function logout(userId: AccountId) {
     if (loggingOut) return;
     abortLoginAttempt();
+    setProviderCredentialsOpen(false);
     setLoggingOut(userId);
     try {
       const signedOut = await signOutWorkspace(userId);
@@ -286,6 +299,7 @@ export default function WorkspaceAccount({
   async function logoutAll() {
     if (loggingOut) return;
     abortLoginAttempt();
+    setProviderCredentialsOpen(false);
     setLoggingOut("all");
     try {
       const signedOut = await signOutAllWorkspaces();
@@ -308,6 +322,7 @@ export default function WorkspaceAccount({
       return;
     }
     abortLoginAttempt();
+    setProviderCredentialsOpen(false);
     setSwitchingAccount(userId);
     try {
       await setActiveWorkspaceAccount(userId);
@@ -416,6 +431,12 @@ export default function WorkspaceAccount({
                   </div>
                 );
               })}
+              <ProviderCredentialsMenuItem
+                onOpen={() => {
+                  setMenuOpen(false);
+                  setProviderCredentialsOpen(true);
+                }}
+              />
               <button
                 type="button"
                 role="menuitem"
@@ -443,6 +464,13 @@ export default function WorkspaceAccount({
                 </button>
               ) : null}
             </div>
+          ) : null}
+          {providerCredentialsOpen ? (
+            <ProviderCredentialDialog
+              key={user.id}
+              onClose={() => setProviderCredentialsOpen(false)}
+              returnFocus={() => triggerRef.current?.focus()}
+            />
           ) : null}
         </>
       ) : (

@@ -33,6 +33,7 @@ use crate::features::connections::{self as connection_feature, ConnectionsFeatur
 use crate::features::dashboards::{self, ErasedDashboardsFeature};
 use crate::features::erd::{self, ErdFeature};
 use crate::features::jobs::{self, JobsFeature};
+use crate::features::providers::ProvidersFeature;
 use crate::features::queries::QueriesFeature;
 use crate::features::queries::QueryRunAuthorizationPort;
 use crate::features::schema_editor::{self, SchemaEditorFeature};
@@ -56,6 +57,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) job: JobsFeature,
     pub(crate) monitoring: MonitoringService,
     pub(crate) operation: OperationService,
+    pub(crate) providers: ProvidersFeature,
     pub(crate) queries: QueriesFeature,
     pub(crate) safety: SafetyService,
     pub(crate) schema: SchemaEditorFeature,
@@ -65,10 +67,28 @@ pub(crate) struct ApplicationServices {
 }
 
 impl ApplicationServices {
+    /// Compatibility constructor for isolated tests and non-desktop adapters.
+    /// Production composes the provider feature once in `AppState` and uses
+    /// [`Self::with_providers`] so receipt/vault ownership is not duplicated.
+    #[cfg(test)]
     pub(crate) fn new(
         store: Store,
         connections: ConnectionManager,
         operation: OperationRuntime,
+    ) -> Self {
+        let providers = crate::features::providers::compose(store.clone());
+        providers
+            .bind_revocation_port(Arc::new(connections.clone()))
+            .expect("test service composition binds the provider runtime fence");
+        Self::with_providers(store, connections, operation, providers)
+    }
+
+    /// Constructs application services from the single composed provider feature.
+    pub(crate) fn with_providers(
+        store: Store,
+        connections: ConnectionManager,
+        operation: OperationRuntime,
+        providers: ProvidersFeature,
     ) -> Self {
         let connection_credentials = connection_feature::system_connection_credentials();
         let queries = crate::features::queries::compose(
@@ -117,6 +137,7 @@ impl ApplicationServices {
                 operation.clone(),
             ),
             operation: operation_service,
+            providers,
             queries,
             safety: SafetyService::new(store.clone(), connections.clone()),
             schema,

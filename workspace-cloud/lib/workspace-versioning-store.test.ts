@@ -164,6 +164,23 @@ describe("atomic connection mutation commands", () => {
       claimId: "44444444-4444-4444-8444-444444444444", authority,
       mutation: { kind: "delete", payload: { ...payload, deleted: true } },
     })).resolves.toMatchObject({ port: 5432, contentRevision: 2, updatedAt: new Date("2026-07-23T00:00:00.000Z") });
+    const query = new PgDialect().sqlToQuery(executeMock.mock.calls[0]![0]);
+    expect(query.sql).toContain('"provider_integration_id" = NULL');
+    expect(query.sql).toContain('"provider_resource" = NULL');
+    expect(query.sql).toContain('"provider_resource_id" = NULL');
+  });
+
+  it("does not let restore rebind a deleted connection to a legacy provider selector", async () => {
+    executeMock.mockResolvedValue({ rows: [] });
+    await restoreWorkspaceSnapshot({
+      organizationId, backupId, expectedRevision: 4, sourceRevision: 4,
+      authority: { sessionId: "session-id", userId: "admin-user", membershipId: "member-id", role: "admin" },
+      snapshot,
+    });
+    const query = new PgDialect().sqlToQuery(executeMock.mock.calls[0]![0]);
+    expect(query.sql).not.toContain('"provider_resource_id"');
+    expect(query.sql).not.toContain('"provider_integration_id"');
+    expect(JSON.stringify(snapshot)).not.toContain("providerResource");
   });
 
   it("requires live authority before appending an offline conflict candidate", async () => {

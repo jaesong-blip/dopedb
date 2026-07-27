@@ -18,11 +18,34 @@ async fn revoke_if_authority_changed(
     state: &AppState,
     app: &tauri::AppHandle,
     before: &WorkspaceAuthorityFingerprint,
-) {
+) -> AppResult<()> {
     match state.services.workspace.authority_fingerprint().await {
-        Ok(after) if &after == before => {}
-        Ok(_) | Err(_) => state.terminals.stop_all(app),
+        Ok(after) if &after == before => Ok(()),
+        Ok(_) => {
+            state.terminals.stop_all(app);
+            state.services.providers.invalidate_scope().await
+        }
+        // An authority read failure is not evidence that a durable local
+        // binding vanished. Keep it tombstone-safe until a later successful
+        // authoritative inventory can reconcile it.
+        Err(_) => Ok(()),
     }
+}
+
+/// A successful workspace authority snapshot is the only input allowed to
+/// tombstone durable member-local provider bindings. It deliberately spans all
+/// account/workspace grants, not just the selected UI scope.
+async fn reconcile_provider_grants_after_refresh(state: &AppState) -> AppResult<()> {
+    let Ok(snapshot) = state.services.workspace.authority_fingerprint().await else {
+        // A failed authority read is not proof of revocation.
+        return Ok(());
+    };
+    let grants = snapshot
+        .grants
+        .iter()
+        .map(|(account, workspace, _)| (account.clone(), *workspace))
+        .collect::<Vec<_>>();
+    state.services.providers.reconcile_grants(&grants).await
 }
 
 #[tauri::command]
@@ -42,7 +65,10 @@ pub async fn refresh_workspace_auth_state(
 ) -> AppResult<WorkspaceAuthState> {
     let before = state.services.workspace.authority_fingerprint().await?;
     let result = state.services.workspace.refresh_auth_state().await;
-    revoke_if_authority_changed(&state, &app, &before).await;
+    revoke_if_authority_changed(&state, &app, &before).await?;
+    if result.is_ok() {
+        reconcile_provider_grants_after_refresh(&state).await?;
+    }
     result
 }
 
@@ -52,8 +78,17 @@ pub async fn workspace_sign_out(
     app: tauri::AppHandle,
     user_id: Option<AccountId>,
 ) -> AppResult<WorkspaceAuthState> {
+    // Resolve omission before touching Provider cleanup. `None` means one
+    // active workspace account here, while Provider's durable tombstone API
+    // reserves `None` for the explicit all-account sign-out command below.
+    let account_id = state
+        .services
+        .workspace
+        .resolve_sign_out_account(user_id)
+        .await?;
     state.terminals.stop_all(&app);
-    state.services.workspace.sign_out(user_id).await
+    state.services.providers.sign_out(Some(&account_id)).await?;
+    state.services.workspace.sign_out(Some(account_id)).await
 }
 
 #[tauri::command]
@@ -62,6 +97,7 @@ pub async fn workspace_sign_out_all(
     app: tauri::AppHandle,
 ) -> AppResult<WorkspaceAuthState> {
     state.terminals.stop_all(&app);
+    state.services.providers.sign_out(None).await?;
     state.services.workspace.sign_out_all().await
 }
 
@@ -105,7 +141,10 @@ pub async fn refresh_workspace_memberships(
 ) -> AppResult<Vec<Workspace>> {
     let before = state.services.workspace.authority_fingerprint().await?;
     let result = state.services.workspace.refresh_memberships().await;
-    revoke_if_authority_changed(&state, &app, &before).await;
+    revoke_if_authority_changed(&state, &app, &before).await?;
+    if result.is_ok() {
+        reconcile_provider_grants_after_refresh(&state).await?;
+    }
     result
 }
 
@@ -123,7 +162,7 @@ pub async fn set_active_workspace(
 ) -> AppResult<Workspace> {
     let before = state.services.workspace.authority_fingerprint().await?;
     let result = state.services.workspace.activate(id, account_user_id).await;
-    revoke_if_authority_changed(&state, &app, &before).await;
+    revoke_if_authority_changed(&state, &app, &before).await?;
     result
 }
 
@@ -135,7 +174,7 @@ pub async fn set_active_workspace_account(
 ) -> AppResult<Workspace> {
     let before = state.services.workspace.authority_fingerprint().await?;
     let result = state.services.workspace.activate_account(user_id).await;
-    revoke_if_authority_changed(&state, &app, &before).await;
+    revoke_if_authority_changed(&state, &app, &before).await?;
     result
 }
 

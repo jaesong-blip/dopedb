@@ -1,5 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { auth } from "../../../../lib/auth";
+import { authoritativeSession } from "../../../../lib/authoritative-session";
 import { db } from "../../../../lib/db";
 import { env } from "../../../../lib/env";
 import {
@@ -12,7 +13,7 @@ import { acceptPendingWorkspaceInvitations } from "../../../../lib/pending-invit
 import { member } from "../../../../lib/schema";
 
 export async function GET(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await authoritativeSession(request);
   if (!session) return jsonError("Unauthorized", 401);
   await acceptPendingWorkspaceInvitations({
     api: auth.api,
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
-  const session = await auth.api.getSession({ headers: request.headers });
+  const session = await authoritativeSession(request);
   if (!session) return jsonError("Unauthorized", 401);
   const body = (await request.json().catch(() => null)) as { name?: string } | null;
   const name = body?.name?.trim();

@@ -48,7 +48,13 @@ export function openEnvelope(key: Buffer, envelope: string, context: string): st
   const nonce = Buffer.from(parts[1], "base64url");
   const ciphertext = Buffer.from(parts[2], "base64url");
   const tag = Buffer.from(parts[3], "base64url");
-  if (nonce.length !== NONCE_BYTES || tag.length !== TAG_BYTES) {
+  if (
+    nonce.length !== NONCE_BYTES
+    || tag.length !== TAG_BYTES
+    || nonce.toString("base64url") !== parts[1]
+    || ciphertext.toString("base64url") !== parts[2]
+    || tag.toString("base64url") !== parts[3]
+  ) {
     throw new Error("Invalid credential envelope");
   }
   const decipher = createDecipheriv("aes-256-gcm", key, nonce);

@@ -343,6 +343,32 @@ and value contract, placeholder parity, deterministic ordering, and English fall
 The old file is a deletion gate, and tests pin both the complete catalogue digest and
 the language preference lifecycle.
 
+## Member-local provider credentials
+
+Hosted integration authority and member-local credential material use:
+
+```text
+Tauri transport
+  -> Provider use cases
+     -> hosted authority, verifier, receipt, binding, and credential-vault ports
+  -> redacted control-plane, bounded provider process/HTTP, SQLite, and OS-keyring adapters
+```
+
+The renderer can select only a hosted integration and a tagged credential method. It
+cannot choose workspace, account, provider, generation, device, or the verified
+provider scope. Receipts are process-owned, short-lived, and single-use; the hosted
+authority is checked again before a credential becomes usable. SQLite stores only
+redacted binding metadata and opaque keyring references, while secret-bearing inputs
+are neither serializable nor debug-printable.
+
+The Provider slice owns its Tauri commands, renderer contracts, reducer, receipt
+registry, binding mutations, and cleanup lifecycle. Revocation tombstones local
+authority before deleting an OS-keyring item, and failed deletion remains durable for
+bounded retry. A removed remote integration never prevents local cleanup. The former
+Store-owned provider binding module, central command/type aliases, duplicate Provider
+command literals, platform dependencies in feature core, and mutation SQL outside
+the Provider SQLite adapter are deletion gates.
+
 ## Audit checkpoints
 
 1. Before each slice, add characterization tests and list its writers and old paths.

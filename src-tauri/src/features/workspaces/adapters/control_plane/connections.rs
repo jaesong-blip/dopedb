@@ -1,4 +1,4 @@
-//! Redacted shared-connection and short-lived provider-lease HTTP exchanges.
+//! Redacted shared-connection and managed-lease HTTP exchanges.
 
 use super::*;
 

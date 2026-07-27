@@ -2,6 +2,7 @@
 // Customer service-account keys are never created, uploaded, or persisted.
 import "server-only";
 
+import { MAX_PROVIDER_RESULTS } from "./adapter-contract";
 import {
   GCP_LEASE_SECONDS,
   gcpCloudSqlEngine,
@@ -203,6 +204,24 @@ function pathSegment(value: string) {
   return encodeURIComponent(value);
 }
 
+function gcpInstanceProduction(details: JsonObject): true | false | "unknown" {
+  const settings = details.settings;
+  const labels = settings && typeof settings === "object" && !Array.isArray(settings)
+    ? (settings as JsonObject).userLabels
+    : null;
+  const environmentValue = labels && typeof labels === "object" && !Array.isArray(labels)
+    ? (labels as JsonObject).environment
+    : null;
+  const environment = typeof environmentValue === "string"
+    ? environmentValue.trim().toLowerCase()
+    : null;
+  return environment === "prod" || environment === "production"
+    ? true
+    : environment !== null && /^(dev|development|stage|staging|test|sandbox)$/.test(environment)
+      ? false
+      : "unknown";
+}
+
 export async function validateGcpCloudSqlCredential(
   credential: GcpCloudSqlCredential,
   oidcToken: string,
@@ -250,6 +269,7 @@ export function listGcpProjects(
     value: credential.projectId,
     name: credential.projectId,
     ready: true,
+    production: "unknown",
   }];
 }
 
@@ -280,19 +300,12 @@ async function listGcpCloudSqlInstancesWithToken(
       502,
     );
   }
-  const settings = row.settings;
-  const labels = settings && typeof settings === "object" && !Array.isArray(settings)
-    ? (settings as JsonObject).userLabels
-    : null;
-  const environment = labels && typeof labels === "object" && !Array.isArray(labels)
-    ? String((labels as JsonObject).environment ?? "")
-    : "";
   return [{
     id: name,
     value: name,
     name,
     kind,
-    production: /^(prod|production)$/i.test(environment),
+    production: gcpInstanceProduction(row),
     ready: row.state === "RUNNABLE",
   }];
 }
@@ -323,9 +336,13 @@ async function listGcpCloudSqlDatabasesWithToken(
     accessToken,
     `/projects/${pathSegment(credential.projectId)}/instances/${
       pathSegment(instance)
-    }/databases`,
+    }/databases?maxResults=${MAX_PROVIDER_RESULTS}`,
   );
-  const rows = Array.isArray(body.items) ? body.items.map(object) : [];
+  const databases = Array.isArray(body.items) ? body.items : [];
+  if (databases.length > MAX_PROVIDER_RESULTS || typeof body.nextPageToken === "string") {
+    throw new ProviderRequestError("gcpCloudSql", "GCP database scope is too large to import safely", 409);
+  }
+  const rows = databases.map(object);
   return rows.map((row) => {
     const name = requiredString(row.name, "database name");
     return {
@@ -334,6 +351,7 @@ async function listGcpCloudSqlDatabasesWithToken(
       name,
       ...(engine ? { kind: engine } : {}),
       ready: true,
+      production: "unknown" as const,
     };
   });
 }
@@ -461,6 +479,7 @@ export async function validateGcpCloudSqlResource(
   if (
     gcpCloudSqlEngine(details.databaseVersion) !== resource.engine
     || details.state !== "RUNNABLE"
+    || gcpInstanceProduction(details) !== false
   ) {
     throw new ProviderRequestError(
       "gcpCloudSql",
@@ -557,6 +576,7 @@ export async function issueGcpCloudSqlLease(input: {
     actualEngine !== input.resource.engine
     || gcpCloudSqlEngine(details.databaseVersion) !== input.resource.engine
     || details.state !== "RUNNABLE"
+    || gcpInstanceProduction(details) !== false
     || !databases.some((item) => item.value === input.resource.database)
   ) {
     throw new ProviderRequestError(

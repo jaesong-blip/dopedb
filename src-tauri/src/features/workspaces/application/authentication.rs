@@ -73,18 +73,29 @@ where
         self.auth_state_from_repository().await
     }
 
+    /// Resolves the one account a single-account sign-out may remove.  This is
+    /// intentionally separate from `sign_out_all`: callers that also tombstone
+    /// provider bindings must never pass an omitted account as an all-account
+    /// provider cleanup request.
+    pub(crate) async fn resolve_sign_out_account(
+        &self,
+        requested: Option<AccountId>,
+    ) -> AppResult<AccountId> {
+        match requested {
+            Some(user_id) => Ok(user_id),
+            None => Ok(self
+                .repository
+                .active_account_id()
+                .await?
+                .ok_or_else(|| AppError::Config("no workspace account is signed in".into()))?),
+        }
+    }
+
     pub(crate) async fn sign_out(
         &self,
         user_id: Option<AccountId>,
     ) -> AppResult<WorkspaceAuthState> {
-        let user_id = match user_id {
-            Some(user_id) => user_id,
-            None => self
-                .repository
-                .active_account_id()
-                .await?
-                .ok_or_else(|| AppError::Config("no workspace account is signed in".into()))?,
-        };
+        let user_id = self.resolve_sign_out_account(user_id).await?;
         self.runtime.remove_account(&user_id).await?;
         // Pool retirement releases managed provider credentials while the Better Auth
         // token is still available; session revocation and local token deletion follow.

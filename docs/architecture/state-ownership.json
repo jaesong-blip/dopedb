@@ -30,6 +30,19 @@
         "const [stream, setStream]"
       ],
       "forbiddenWriterTokens": []
+    },
+    {
+      "name": "providerCredentialDialog",
+      "owner": "src/features/providers/state.ts",
+      "dispatcher": "src/features/providers/ProviderCredentialDialog.tsx",
+      "writerTokens": [
+        "case \"setApiKey\":",
+        "case \"receipt\":"
+      ],
+      "forbiddenWriterTokens": [
+        "useState<ProviderCredentialReceipt",
+        "useState<ProviderCredentialDialogState"
+      ]
     }
   ],
   "runtimeStates": [
@@ -138,6 +151,21 @@
       "writerTokens": [
         "pub(crate) async fn save_dashboard_if_current(",
         "async fn delete_dashboard_revision_if_current("
+      ]
+    },
+    {
+      "name": "providerCredentialReceipts",
+      "owner": "src-tauri/src/features/providers/adapters/receipt_registry.rs",
+      "writerTokens": [
+        "entries: Arc<Mutex<HashMap<ProviderCredentialReceiptId, Entry>>>"
+      ]
+    },
+    {
+      "name": "providerCredentialBindings",
+      "owner": "src-tauri/src/features/providers/adapters/sqlite_bindings.rs",
+      "writerTokens": [
+        "pub(crate) async fn commit_provider_binding(",
+        "pub(crate) async fn tombstone_provider_binding("
       ]
     }
   ]

@@ -4,13 +4,14 @@
 export type ManagedEngine = "postgres" | "mysql";
 export type ManagedAccessMode = "read" | "write";
 export type ManagedSslMode = "verify-ca" | "verify-full";
+export type ProviderProductionClassification = true | false | "unknown";
 
 export type ProviderResourceItem = {
   id: string;
   name: string;
   value: string;
   kind?: ManagedEngine;
-  production?: boolean;
+  production?: ProviderProductionClassification;
   ready?: boolean;
 };
 

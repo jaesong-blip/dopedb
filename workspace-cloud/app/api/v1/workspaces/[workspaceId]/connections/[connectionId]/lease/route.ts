@@ -16,6 +16,7 @@ import {
   workspaceAuditEvent,
   workspaceConnection,
   workspaceCredentialLease,
+  workspaceProviderResource,
   rateLimit,
 } from "../../../../../../../../lib/schema";
 import { authorizeWorkspaceConnection } from "../../../../../../../../lib/workspace-authorization";
@@ -107,7 +108,7 @@ export async function POST(request: Request, context: RouteContext) {
       allowWrites: true,
       credentialMode: true,
       providerIntegrationId: true,
-      providerResource: true,
+      providerResourceId: true,
       revision: true,
     },
   });
@@ -115,6 +116,7 @@ export async function POST(request: Request, context: RouteContext) {
     !connection
     || connection.credentialMode !== "managed"
     || !connection.providerIntegrationId
+    || !connection.providerResourceId
   ) {
     return jsonError("Managed database access is not available", 409);
   }
@@ -123,11 +125,24 @@ export async function POST(request: Request, context: RouteContext) {
     connection.providerIntegrationId,
   );
   if (!integration) return jsonError("Provider integration not found", 404);
+  const canonicalResource = await db.query.workspaceProviderResource.findFirst({
+    where: and(
+      eq(workspaceProviderResource.id, connection.providerResourceId),
+      eq(workspaceProviderResource.organizationId, workspaceId),
+      eq(workspaceProviderResource.provider, integration.provider),
+    ),
+    columns: { resource: true },
+  });
+  if (!canonicalResource) {
+    // A legacy JSON-only managed connection remains cleanup-capable, but never
+    // becomes issuance-capable after receipt-bound canonical resources exist.
+    return jsonError("Managed database access requires a canonical provider resource", 409);
+  }
   let resource;
   try {
     resource = parseManagedProviderResource(
       integration.provider,
-      connection.providerResource,
+      canonicalResource.resource,
     );
   } catch {
     return jsonError("Managed database resource is invalid", 409);
@@ -157,8 +172,10 @@ export async function POST(request: Request, context: RouteContext) {
       connectionId,
       userId: authorization.session.user.id,
       memberId: authorization.membership.id,
+      sessionId: authorization.session.session.id,
       role: authorization.role,
       connectionRevision: connection.revision,
+      providerResourceId: connection.providerResourceId,
       engine: resource.engine,
       accessMode,
       integration,
@@ -188,29 +205,26 @@ export async function POST(request: Request, context: RouteContext) {
       });
       return jsonError("Database access could not be audited", 500);
     }
-    const [currentAuthorization, deliverable] = await Promise.all([
-      authorizeWorkspaceConnection(
-        request, workspaceId, connectionId, "use",
-      ),
-      managedLeaseStillDeliverable({
-        leaseId: lease.leaseId,
-        organizationId: workspaceId,
-        memberId: authorization.membership.id,
-        userId: authorization.session.user.id,
-        role: authorization.role,
-        connectionId,
-        connectionRevision: connection.revision,
-        engine: resource.engine,
-        integrationId: integration.id,
-        provider: integration.provider,
-        accessMode,
-      }, lease),
-    ]);
-    if (
-      !currentAuthorization.ok
-      || currentAuthorization.role !== authorization.role
-      || !deliverable
-    ) {
+    // This is the final secret-delivery boundary. The durable predicate itself
+    // revalidates the exact live session, membership/grant, connection revision,
+    // canonical resource and integration generation in one database snapshot.
+    const deliverable = await managedLeaseStillDeliverable({
+      leaseId: lease.leaseId,
+      organizationId: workspaceId,
+      memberId: authorization.membership.id,
+      userId: authorization.session.user.id,
+      sessionId: authorization.session.session.id,
+      role: authorization.role,
+      connectionId,
+      connectionRevision: connection.revision,
+      providerResourceId: connection.providerResourceId,
+      engine: resource.engine,
+      integrationId: integration.id,
+      integrationGeneration: integration.generation,
+      provider: integration.provider,
+      accessMode,
+    }, lease);
+    if (!deliverable) {
       await revokeActiveLeases({
         organizationId: workspaceId,
         leaseId: lease.leaseId,

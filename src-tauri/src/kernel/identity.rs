@@ -54,6 +54,13 @@ uuid_identity!(JobId);
 uuid_identity!(JobFileCapabilityId);
 uuid_identity!(JobArtifactId);
 uuid_identity!(OperationId);
+// Provider credentials are local, capability-bearing resources. Keeping their
+// identities distinct prevents an integration id from ever being used as a
+// keyring-item id or a one-use receipt id by accident.
+uuid_identity!(ProviderIntegrationId);
+uuid_identity!(ProviderBindingId);
+uuid_identity!(ProviderCredentialReceiptId);
+uuid_identity!(DeviceId);
 
 /// Complete job lookup identity. A job UUID is never loaded without the
 /// connection scope that gives it meaning.
@@ -208,6 +215,19 @@ mod tests {
             Uuid::from(serde_json::from_str::<RuntimeId>(&encoded).unwrap()),
             raw
         );
+    }
+
+    #[test]
+    fn provider_identities_keep_uuid_json() {
+        let raw = Uuid::parse_str("3effb008-abea-4c5c-b34b-23088668208e").unwrap();
+        for encoded in [
+            serde_json::to_string(&ProviderIntegrationId::from(raw)).unwrap(),
+            serde_json::to_string(&ProviderBindingId::from(raw)).unwrap(),
+            serde_json::to_string(&ProviderCredentialReceiptId::from(raw)).unwrap(),
+            serde_json::to_string(&DeviceId::from(raw)).unwrap(),
+        ] {
+            assert_eq!(encoded, format!("\"{raw}\""));
+        }
     }
 
     #[test]

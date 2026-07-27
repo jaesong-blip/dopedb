@@ -1,8 +1,8 @@
 "use client";
 
-// Flat managed-access setup flow: connect a provider, select a shared connection and
-// its three provider-specific resource levels, then enable member-scoped leases.
-import { useCallback, useEffect, useMemo, useState } from "react";
+// Managed provider discovery consumes short-lived opaque receipts to create a
+// read-only workspace template; raw provider selectors never become imports.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ResourceLevel = { key: string; kind: string; label: string };
 type Provider = {
@@ -20,9 +20,13 @@ type Provider = {
 type Integration = {
   id: string;
   provider: string;
+  status: "active" | "reconnect_required";
+  generation: string;
+  reconnectRequired?: boolean;
   displayName: string;
   grantedScope: string | null;
   updatedAt: string;
+  credentialMode: "managed";
 };
 
 type SharedConnection = {
@@ -38,8 +42,51 @@ type Resource = {
   name: string;
   value: string;
   kind?: "postgres" | "mysql";
-  production?: boolean;
+  // Server classification is tri-state; unknown must never look non-production.
+  production?: boolean | "unknown";
   ready?: boolean;
+  selectionProof?: string;
+  receipt?: string;
+  receiptExpiresAt?: string;
+};
+
+export function selectableProviderResources(
+  items: Resource[],
+  isFinalLeaf: boolean,
+  supportedEngines: string[],
+) {
+  return items.filter((item) => (
+    (!item.kind || supportedEngines.includes(item.kind))
+    && (!isFinalLeaf || (item.ready === true && item.production === false))
+  ));
+}
+
+export function providerImportDisplayName(providerName: string, resourceName: string) {
+  return `${providerName} · ${resourceName}`
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120)
+    .trim();
+}
+
+/** UI-only eligibility; the route rechecks canonical import authority atomically. */
+export function canUseLocalProviderCredential(
+  connection: Pick<SharedConnection, "credentialMode"> | null,
+  managed: Pick<ManagedConnection, "integrationId" | "resource"> | null,
+) {
+  return Boolean(
+    connection?.credentialMode === "managed"
+      && managed?.integrationId
+      && Object.keys(managed.resource).length > 0,
+  );
+}
+
+type PendingProviderImport = {
+  integrationId: string;
+  receipt: string;
+  name: string;
+  body: string;
 };
 
 type ManagedConnection = {
@@ -96,13 +143,11 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
   const [setupProviderId, setSetupProviderId] = useState("");
   const [neonConfiguration, setNeonConfiguration] = useState<NeonConfiguration>(emptyNeon);
   const [gcpConfiguration, setGcpConfiguration] = useState<GcpConfiguration>(emptyGcp);
-  const [gcpNetworkMode, setGcpNetworkMode] = useState<
-    "PUBLIC" | "PRIVATE_SERVICES_ACCESS" | "PRIVATE_SERVICE_CONNECT"
-  >("PRIVATE_SERVICES_ACCESS");
   const [loading, setLoading] = useState(true);
   const [resourcePending, setResourcePending] = useState(false);
   const [mutation, setMutation] = useState("");
   const [error, setError] = useState("");
+  const pendingImportRef = useRef<PendingProviderImport | null>(null);
 
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
@@ -118,8 +163,29 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
   const currentManagedConnection = managedConnections.find(
     (item) => item.connectionId === selectedConnectionId,
   ) ?? null;
+  const importReceipt = useMemo(() => {
+    const finalLevel = selectedProvider?.resourceLevels.at(-1);
+    if (!finalLevel) return null;
+    return resourceOptions[finalLevel.key]?.find(
+      (item) => item.value === selection[finalLevel.key],
+    )?.receipt ?? null;
+  }, [resourceOptions, selectedProvider?.resourceLevels, selection]);
+
+  useEffect(() => {
+    const pending = pendingImportRef.current;
+    if (
+      pending
+      && (
+        pending.integrationId !== selectedIntegrationId
+        || pending.receipt !== importReceipt
+      )
+    ) {
+      pendingImportRef.current = null;
+    }
+  }, [importReceipt, selectedIntegrationId]);
 
   const resetResources = useCallback(() => {
+    pendingImportRef.current = null;
     setSelection({});
     setResourceOptions({});
   }, []);
@@ -190,7 +256,6 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
     signal?: AbortSignal,
   ) => {
     const query = new URLSearchParams({ kind: level.kind, ...values });
-    if (selectedConnection?.engine) query.set("engine", selectedConnection.engine);
     setResourcePending(true);
     const response = await fetch(
       `/api/v1/workspaces/${workspaceId}/provider-integrations/${
@@ -211,7 +276,7 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
     }
     setError("");
     return body.resources as Resource[];
-  }, [selectedConnection?.engine, workspaceId]);
+  }, [workspaceId]);
 
   useEffect(() => {
     const first = selectedProvider?.resourceLevels[0];
@@ -317,22 +382,16 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
       )),
     ));
     const nextLevel = levels[levelIndex + 1];
-    if (!value || !nextLevel) return;
+    if (!value) return;
+    if (!nextLevel) return;
     const rows = await discover(nextLevel, selectedIntegrationId, nextSelection);
     if (rows) {
       setResourceOptions((current) => ({ ...current, [nextLevel.key]: rows }));
     }
   }
 
-  async function updateMode(mode: "managed" | "member_local") {
+  async function switchToMemberLocal() {
     if (!selectedConnection || mutation) return;
-    const complete = selectedProvider?.resourceLevels.every(
-      (level) => Boolean(selection[level.key]),
-    );
-    if (mode === "managed" && (!selectedIntegration || !selectedProvider || !complete)) {
-      setError("공급자 리소스를 모두 선택해 주세요.");
-      return;
-    }
     setMutation(`mode:${selectedConnection.id}`);
     setError("");
     try {
@@ -343,17 +402,7 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
         {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(mode === "managed" ? {
-            mode,
-            integrationId: selectedIntegration!.id,
-            resource: {
-              ...selection,
-              engine: selectedConnection.engine,
-              ...(selectedProvider?.id === "gcpCloudSql"
-                ? { networkMode: gcpNetworkMode }
-                : {}),
-            },
-          } : { mode }),
+          body: JSON.stringify({ mode: "member_local" }),
         },
       ).catch(() => null);
       if (!response?.ok) {
@@ -366,12 +415,122 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
     }
   }
 
+  async function importDiscoveredResource() {
+    if (!selectedIntegration || !selectedProvider || mutation) return;
+    const finalLevel = selectedProvider.resourceLevels.at(-1)!;
+    const finalResource = resourceOptions[finalLevel.key]?.find(
+      (item) => item.value === selection[finalLevel.key],
+    );
+    if (
+      !finalResource?.selectionProof
+      || finalResource.production !== false
+      || finalResource.ready !== true
+    ) return;
+    const name = providerImportDisplayName(
+      selectedProvider.name,
+      finalResource.name,
+    );
+    if (!name) return;
+    setMutation(`import:${selectedIntegration.id}`);
+    setError("");
+    try {
+      let receipt = importReceipt;
+      if (
+        !receipt
+        || !finalResource.receiptExpiresAt
+        || Date.parse(finalResource.receiptExpiresAt) <= Date.now()
+      ) {
+        const proof = finalResource.selectionProof;
+        const receiptResponse = await fetch(
+          `/api/v1/workspaces/${workspaceId}/provider-integrations/${
+            selectedIntegration.id
+          }/resources`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ selectionProof: proof }),
+          },
+        ).catch(() => null);
+        if (!receiptResponse?.ok) {
+          setError(await responseError(
+            receiptResponse,
+            "선택한 공급자 리소스를 확인하지 못했습니다.",
+          ));
+          return;
+        }
+        const receiptBody = await receiptResponse.json().catch(() => null);
+        if (
+          typeof receiptBody?.receipt !== "string"
+          || typeof receiptBody?.receiptExpiresAt !== "string"
+        ) {
+          setError("공급자 리소스 확인 응답 형식을 확인하지 못했습니다.");
+          return;
+        }
+        receipt = receiptBody.receipt;
+        setResourceOptions((current) => ({
+          ...current,
+          [finalLevel.key]: (current[finalLevel.key] ?? []).map((item) => (
+            item.selectionProof === proof
+              ? {
+                ...item,
+                receipt: receiptBody.receipt,
+                receiptExpiresAt: receiptBody.receiptExpiresAt,
+              }
+              : item
+          )),
+        }));
+      }
+      if (!receipt) return;
+      let pending = pendingImportRef.current;
+      if (
+        !pending
+        || pending.integrationId !== selectedIntegration.id
+        || pending.receipt !== receipt
+        || pending.name !== name
+      ) {
+        const idempotencyKey = crypto.randomUUID();
+        pending = {
+          integrationId: selectedIntegration.id,
+          receipt,
+          name,
+          body: JSON.stringify({
+            receipt,
+            idempotencyKey,
+            name,
+          }),
+        };
+        pendingImportRef.current = pending;
+      }
+      const response = await fetch(
+        `/api/v1/workspaces/${workspaceId}/provider-integrations/${selectedIntegration.id}/imports`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: pending.body,
+        },
+      ).catch(() => null);
+      if (!response?.ok) {
+        setError(await responseError(response, "읽기 전용 연결을 가져오지 못했습니다."));
+        return;
+      }
+      pendingImportRef.current = null;
+      resetResources();
+      await load();
+    } finally {
+      setMutation("");
+    }
+  }
+
+  const finalResourceLevel = selectedProvider?.resourceLevels.at(-1);
   const resourceComplete = Boolean(
-    selectedProvider?.resourceLevels.every((level) => selection[level.key]),
-  );
-  const engineSupported = Boolean(
-    selectedConnection
-    && selectedProvider?.supportedEngines.includes(selectedConnection.engine),
+    selectedProvider?.resourceLevels.every((level) => selection[level.key])
+      && finalResourceLevel
+      && resourceOptions[finalResourceLevel.key]?.some(
+        (item) => (
+          item.value === selection[finalResourceLevel.key]
+          && typeof item.selectionProof === "string"
+        ),
+      ),
   );
   const currentProvider = providers.find(
     (item) => item.id === currentManagedConnection?.provider,
@@ -382,6 +541,13 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
       .filter(Boolean)
       .join(" / ")
     : "";
+  // Only the managed projection returned for a canonical provider import may
+  // offer a member-local handoff. The server repeats this proof atomically;
+  // this predicate merely keeps generic managed templates out of the UI.
+  const mayUseLocalProviderCredential = canUseLocalProviderCredential(
+    selectedConnection,
+    currentManagedConnection,
+  );
 
   return (
     <section className="provider-access-panel">
@@ -560,7 +726,7 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
                 <div className="integration-row" key={integration.id}>
                   <div>
                     <strong>{integration.displayName}</strong>
-                    <small>마지막 확인 {new Date(integration.updatedAt).toLocaleString("ko-KR")}</small>
+                    <small>관리형 서버 접근 · 마지막 확인 {new Date(integration.updatedAt).toLocaleString("ko-KR")}</small>
                   </div>
                   <button
                     type="button"
@@ -607,8 +773,8 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
               >
                 {integrations.length === 0 ? <option value="">먼저 공급자를 연결하세요</option> : null}
                 {integrations.map((integration) => (
-                  <option value={integration.id} key={integration.id}>
-                    {integration.displayName}
+                  <option value={integration.id} key={integration.id} disabled={integration.status !== "active"}>
+                    {integration.displayName}{integration.status === "reconnect_required" ? " · reconnect required" : ""}
                   </option>
                 ))}
               </select>
@@ -617,10 +783,13 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
               selectedProvider?.id === "gcpCloudSql" ? " gcp" : ""
             }`}>
               {selectedProvider?.resourceLevels.map((level, index) => {
-                const options = (resourceOptions[level.key] ?? []).filter(
-                  (item) => item.ready !== false && (
-                    !item.kind || !selectedConnection || item.kind === selectedConnection.engine
-                  ),
+                const isFinalLeaf = index === selectedProvider.resourceLevels.length - 1;
+                // Parent nodes remain selectable with an honest unknown status.
+                // Only the final credential target needs a positive safety proof.
+                const options = selectableProviderResources(
+                  resourceOptions[level.key] ?? [],
+                  isFinalLeaf,
+                  selectedProvider.supportedEngines,
                 );
                 const previous = index === 0
                   || Boolean(selection[selectedProvider.resourceLevels[index - 1].key]);
@@ -635,73 +804,51 @@ export function ProviderAccessPanel({ workspaceId }: { workspaceId: string }) {
                       <option value="">선택</option>
                       {options.map((item) => (
                         <option value={item.value} key={item.id}>
-                          {item.name}{item.production ? " · production" : ""}
+                          {item.name}{item.production === true ? " · production" : item.production === "unknown" ? " · classification pending" : item.ready === false ? " · not ready" : ""}
                         </option>
                       ))}
                     </select>
                   </label>
                 );
               })}
-              {selectedProvider?.id === "gcpCloudSql" ? (
-                <label>
-                  <span>네트워크 경로</span>
-                  <select
-                    value={gcpNetworkMode}
-                    onChange={(event) => setGcpNetworkMode(
-                      event.target.value as typeof gcpNetworkMode,
-                    )}
-                  >
-                    <option value="PRIVATE_SERVICES_ACCESS">
-                      Private services access
-                    </option>
-                    <option value="PRIVATE_SERVICE_CONNECT">
-                      Private Service Connect
-                    </option>
-                    <option value="PUBLIC">Public IP</option>
-                  </select>
-                  <small className="managed-network-note">
-                    사설 경로는 이 데스크톱에서 VPC DNS와 네트워크에 접근할 수
-                    있어야 합니다. Public IP는 현재 네트워크를 Cloud SQL 승인
-                    네트워크에 추가해야 합니다.
-                  </small>
-                </label>
-              ) : null}
             </div>
             <div className="managed-access-actions ds-control-row">
               <p>
-                {!engineSupported && selectedConnection && selectedProvider
-                  ? `${selectedProvider.name}은(는) 이 데이터베이스 엔진을 지원하지 않습니다.`
-                  : currentResourceLabel
+                {currentResourceLabel
                     ? `현재 ${currentResourceLabel}에 자동 연결됩니다.`
                     : selectedConnection?.allowWrites
                       ? "멤버 RBAC에 따라 읽기 또는 읽기·쓰기 권한을 발급합니다."
                       : "이 연결은 모든 구성원에게 읽기 전용 자격증명만 발급합니다."}
               </p>
               <div className="ds-control-row">
-                {selectedConnection?.credentialMode === "managed" ? (
-                  <button
-                    className="muted-button"
-                    type="button"
-                    disabled={mutation !== ""}
-                    onClick={() => void updateMode("member_local")}
-                  >
-                    개별 자격증명으로 전환
-                  </button>
+                {mayUseLocalProviderCredential ? (
+                  <div className="provider-local-handoff">
+                    <small>
+                      이 가져온 공급자 대상만 구성원 로컬 자격증명으로 전환할 수 있습니다.
+                      대상·읽기 전용 정책은 유지되며 자격증명은 이 기기에만 저장됩니다.
+                    </small>
+                    <button
+                      className="muted-button"
+                      type="button"
+                      disabled={mutation !== ""}
+                      onClick={() => void switchToMemberLocal()}
+                    >
+                      로컬 Provider 자격증명 사용
+                    </button>
+                  </div>
                 ) : null}
                 <button
                   className="accent-button"
                   type="button"
                   disabled={
-                    !selectedConnection
-                    || !selectedIntegration
-                    || !engineSupported
+                    !selectedIntegration
                     || !resourceComplete
                     || resourcePending
                     || mutation !== ""
                   }
-                  onClick={() => void updateMode("managed")}
+                  onClick={() => void importDiscoveredResource()}
                 >
-                  {mutation.startsWith("mode:") ? "적용 중" : "자동 접근 적용"}
+                  {mutation.startsWith("import:") ? "가져오는 중" : "읽기 전용 연결 가져오기"}
                 </button>
               </div>
             </div>

@@ -3,6 +3,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "../../../../../lib/env";
 import { privateJson } from "../../../../../lib/http";
+import { cleanupProviderDiscoveryReceipts } from "../../../../../lib/provider-discovery-receipt-store";
 import { cleanupExpiredManagedLeases } from "../../../../../lib/provider-integrations";
 
 export const maxDuration = 60;
@@ -19,9 +20,12 @@ export async function GET(request: Request) {
   if (!authorized(request)) {
     return privateJson({ error: "Unauthorized" }, { status: 401 });
   }
-  const result = await cleanupExpiredManagedLeases({ limit: 10 });
+  const [result, discoveryReceiptsDeleted] = await Promise.all([
+    cleanupExpiredManagedLeases({ limit: 10 }),
+    cleanupProviderDiscoveryReceipts(),
+  ]);
   return privateJson(
-    { ok: result.deferred === 0, ...result },
+    { ok: result.deferred === 0, ...result, discoveryReceiptsDeleted },
     { status: result.deferred === 0 ? 200 : 503 },
   );
 }

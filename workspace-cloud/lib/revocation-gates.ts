@@ -7,10 +7,12 @@ import { sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   member,
+  session,
   workspaceConnection,
   workspaceConnectionGrant,
   workspaceCredentialLease,
   workspaceProviderIntegration,
+  workspaceProviderResource,
 } from "./schema";
 import {
   isWorkspaceRole,
@@ -280,11 +282,14 @@ export type ManagedLeaseAuthority = {
   organizationId: string;
   memberId: string;
   userId: string;
+  sessionId: string;
   role: WorkspaceRoleName;
   connectionId: string;
   connectionRevision: number;
+  providerResourceId: string;
   engine: "postgres" | "mysql";
   integrationId: string;
+  integrationGeneration: bigint;
   provider: string;
   accessMode: ManagedAccessMode;
 };
@@ -321,7 +326,10 @@ function connectionGrantPredicate(input: ManagedLeaseAuthority) {
 
 function authorityPredicate(input: ManagedLeaseAuthority) {
   return sql`
-    ${member.id} = ${input.memberId}
+    ${session.id} = ${input.sessionId}
+    AND ${session.userId} = ${input.userId}
+    AND ${session.expiresAt} > clock_timestamp()
+    AND ${member.id} = ${input.memberId}
     AND ${member.organizationId} = ${input.organizationId}
     AND ${member.userId} = ${input.userId}
     AND ${member.role} = ${input.role}
@@ -336,16 +344,32 @@ function authorityPredicate(input: ManagedLeaseAuthority) {
     AND ${workspaceConnection.revocationClaimId} IS NULL
     AND ${workspaceConnection.credentialMode} = 'managed'
     AND ${workspaceConnection.providerIntegrationId} = ${input.integrationId}::uuid
+    AND ${workspaceConnection.providerResourceId} = ${input.providerResourceId}::uuid
     AND ${workspaceConnection.revision} = ${input.connectionRevision}
     AND ${workspaceConnection.engine} = ${input.engine}
     AND ${workspaceConnection.provider} = ${input.provider}
     AND ${workspaceProviderIntegration.id} = ${input.integrationId}::uuid
     AND ${workspaceProviderIntegration.organizationId} = ${input.organizationId}
     AND ${workspaceProviderIntegration.provider} = ${input.provider}
+    AND ${workspaceProviderIntegration.generation} = ${input.integrationGeneration}
     AND ${workspaceProviderIntegration.status} = 'active'
+    AND ${workspaceProviderIntegration.refreshPhase} = 'idle'
     AND ${workspaceProviderIntegration.revokedAt} IS NULL
     AND ${workspaceProviderIntegration.revocationPendingAt} IS NULL
     AND ${workspaceProviderIntegration.revocationClaimId} IS NULL
+    AND ${workspaceProviderResource.id} = ${input.providerResourceId}::uuid
+    AND ${workspaceProviderResource.organizationId} = ${input.organizationId}
+    AND ${workspaceProviderResource.provider} = ${input.provider}
+  `;
+}
+
+function durableAuthorityStatement(input: ManagedLeaseAuthority) {
+  return sql`
+    SELECT 1 AS "allowed"
+    FROM ${session}, ${member}, ${workspaceConnection}, ${workspaceConnectionGrant},
+         ${workspaceProviderIntegration}, ${workspaceProviderResource}
+    WHERE ${authorityPredicate(input)}
+    FOR UPDATE
   `;
 }
 
@@ -379,11 +403,7 @@ export async function reserveManagedLeaseIfUnblocked(
   const [, result] = await db.batch([
     db.execute(sql`WITH ${authorityLockStatement(input)}`),
     db.execute<{ status: string }>(sql`
-    WITH authority AS (
-      SELECT 1 AS "allowed"
-      FROM ${member}, ${workspaceConnection}, ${workspaceConnectionGrant}, ${workspaceProviderIntegration}
-      WHERE ${authorityPredicate(input)}
-    ),
+    WITH authority AS MATERIALIZED (${durableAuthorityStatement(input)}),
     free_slots AS (
       SELECT slot."value" AS "value"
       FROM authority
@@ -436,13 +456,13 @@ export async function finalizeManagedLeaseIfUnblocked(
   const [, result] = await db.batch([
     db.execute(sql`WITH ${authorityLockStatement(input)}`),
     db.execute<{ id: string }>(sql`
+    WITH authority AS MATERIALIZED (${durableAuthorityStatement(input)})
     UPDATE ${workspaceCredentialLease} AS lease
     SET "external_credential_id" = ${lease.externalCredentialId},
         "external_credential_kind" = ${lease.externalCredentialKind},
         "expires_at" = ${expiresAt}
-    FROM ${member}, ${workspaceConnection}, ${workspaceConnectionGrant}, ${workspaceProviderIntegration}
-    WHERE ${authorityPredicate(input)}
-      AND lease."id" = ${input.leaseId}::uuid
+    FROM authority
+    WHERE lease."id" = ${input.leaseId}::uuid
       AND lease."organization_id" = ${input.organizationId}
       AND lease."connection_id" = ${input.connectionId}::uuid
       AND lease."integration_id" = ${input.integrationId}::uuid
@@ -451,8 +471,8 @@ export async function finalizeManagedLeaseIfUnblocked(
       AND lease."access_mode" = ${input.accessMode}
       AND lease."external_credential_kind" = 'pending'
       AND lease."revoked_at" IS NULL
-      AND lease."expires_at" > CURRENT_TIMESTAMP
-      AND ${expiresAt} > CURRENT_TIMESTAMP
+      AND lease."expires_at" > clock_timestamp()
+      AND ${expiresAt} > clock_timestamp()
     RETURNING lease."id"::text AS "id"
   `),
   ]);
@@ -468,11 +488,10 @@ export async function managedLeaseStillDeliverable(
   const [, result] = await db.batch([
     db.execute(sql`WITH ${authorityLockStatement(input)}`),
     db.execute<{ id: string }>(sql`
+    WITH authority AS MATERIALIZED (${durableAuthorityStatement(input)})
     SELECT lease."id"::text AS "id"
-    FROM ${member}, ${workspaceConnection}, ${workspaceConnectionGrant}, ${workspaceProviderIntegration},
-         ${workspaceCredentialLease} AS lease
-    WHERE ${authorityPredicate(input)}
-      AND lease."id" = ${input.leaseId}::uuid
+    FROM authority, ${workspaceCredentialLease} AS lease
+    WHERE lease."id" = ${input.leaseId}::uuid
       AND lease."organization_id" = ${input.organizationId}
       AND lease."connection_id" = ${input.connectionId}::uuid
       AND lease."integration_id" = ${input.integrationId}::uuid
@@ -483,7 +502,7 @@ export async function managedLeaseStillDeliverable(
       AND lease."external_credential_kind" = ${lease.externalCredentialKind}
       AND lease."external_credential_kind" <> 'pending'
       AND lease."expires_at" = ${expiresAt}
-      AND lease."expires_at" > CURRENT_TIMESTAMP
+      AND lease."expires_at" > clock_timestamp()
       AND lease."revoked_at" IS NULL
     LIMIT 1
   `),

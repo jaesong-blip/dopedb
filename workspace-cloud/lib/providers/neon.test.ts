@@ -2,7 +2,7 @@
 // call account endpoints, so the adapter must use the supported organization path.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { neonIntegrationIdentity } from "./neon-core";
-import { inspectNeonCredential } from "./neon";
+import { inspectNeonCredential, listNeonBranches, validateNeonResource } from "./neon";
 
 vi.mock("server-only", () => ({}));
 
@@ -58,5 +58,41 @@ describe("Neon API identity", () => {
       provider: "neon",
       status: 424,
     });
+  });
+
+  it("fails closed instead of accepting an unbounded provider branch page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      branches: Array.from({ length: 201 }, (_, index) => ({
+        id: `branch-${index}`, name: `branch-${index}`, current_state: "ready",
+      })),
+    })));
+
+    await expect(listNeonBranches({
+      apiKey: "napi_".padEnd(64, "c"), organizationId: null,
+    }, "project-safe")).rejects.toMatchObject({ provider: "neon", status: 409 });
+  });
+
+  it("rechecks an exact branch and denies a default/protected production target before a credential path", async () => {
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      paths.push(url.pathname);
+      if (url.pathname === "/api/v2/projects") {
+        return Response.json({ projects: [{ id: "project-safe", name: "Safe" }] });
+      }
+      if (url.pathname === "/api/v2/projects/project-safe/branches") {
+        return Response.json({ branches: [{
+          id: "branch-prod", name: "main", default: true, protected: true, current_state: "ready",
+        }] });
+      }
+      return Response.json({ error: "unexpected" }, { status: 500 });
+    }));
+
+    await expect(validateNeonResource({
+      apiKey: "napi_".padEnd(64, "d"), organizationId: null,
+    }, {
+      project: "project-safe", branch: "branch-prod", database: "app", engine: "postgres", schemas: ["public"],
+    })).rejects.toMatchObject({ provider: "neon", status: 409 });
+    expect(paths).not.toContain("/api/v2/projects/project-safe/branches/branch-prod/databases");
   });
 });

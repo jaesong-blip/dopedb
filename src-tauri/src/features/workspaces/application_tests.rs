@@ -163,6 +163,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn single_account_sign_out_resolution_keeps_none_scoped_to_the_active_typed_account() {
+        let (service, store, _, _) = harness().await;
+        assert!(matches!(
+            service.resolve_sign_out_account(None).await,
+            Err(AppError::Config(message)) if message == "no workspace account is signed in"
+        ));
+
+        let active = WorkspaceAuthUser {
+            id: AccountId::new("active-account").unwrap(),
+            email: "active@example.com".into(),
+            display_name: "Active".into(),
+        };
+        let non_active = WorkspaceAuthUser {
+            id: AccountId::new("non-active-account").unwrap(),
+            email: "other@example.com".into(),
+            display_name: "Other".into(),
+        };
+        store.remember_workspace_account(&active).await.unwrap();
+        store.remember_workspace_account(&non_active).await.unwrap();
+        store
+            .activate_workspace_account(active.id.as_str())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            service.resolve_sign_out_account(None).await.unwrap(),
+            active.id
+        );
+        // An explicit account remains typed and is never rewritten to the UI's
+        // active account before the provider tombstone-first boundary.
+        assert_eq!(
+            service
+                .resolve_sign_out_account(Some(non_active.id.clone()))
+                .await
+                .unwrap(),
+            non_active.id
+        );
+        store.pool().close().await;
+    }
+
+    #[tokio::test]
     async fn cached_accounts_select_their_own_team_membership_without_exposing_a_session() {
         let (service, store, connections, _) = harness().await;
         let team_id = Uuid::new_v4();

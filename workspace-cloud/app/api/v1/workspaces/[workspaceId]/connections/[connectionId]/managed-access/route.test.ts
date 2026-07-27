@@ -3,72 +3,39 @@ import type { SQL } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
-  activeProviderIntegrationMock,
   authorizeWorkspaceMock,
-  batchMock,
   claimRevocationGateMock,
   clearRevocationGateMock,
   connectionFindFirstMock,
+  executeMock,
   releaseRevocationGateClaimMock,
   revokeActiveLeasesMock,
-  selectWhereMock,
-  updateSetMock,
-  updateWhereMock,
-  validateManagedProviderResourceMock,
 } = vi.hoisted(() => {
-  const updateReturningMock = vi.fn(() => ({ kind: "connection-update" }));
-  const updateWhere = vi.fn((_condition: unknown) => ({
-    returning: updateReturningMock,
-  }));
-  const updateSet = vi.fn(() => ({ where: updateWhere }));
   return {
-    activeProviderIntegrationMock: vi.fn(),
     authorizeWorkspaceMock: vi.fn(),
-    batchMock: vi.fn(),
     claimRevocationGateMock: vi.fn(),
     clearRevocationGateMock: vi.fn(),
     connectionFindFirstMock: vi.fn(),
+    executeMock: vi.fn(),
     releaseRevocationGateClaimMock: vi.fn(),
     revokeActiveLeasesMock: vi.fn(),
-    selectWhereMock: vi.fn((condition: unknown) => ({
-      getSQL: () => condition,
-    })),
-    updateSetMock: updateSet,
-    updateWhereMock: updateWhere,
-    validateManagedProviderResourceMock: vi.fn(),
   };
 });
 
 vi.mock("server-only", () => ({}));
 vi.mock("../../../../../../../../lib/db", () => ({
   db: {
-    batch: batchMock,
-    execute: vi.fn((query: unknown) => query),
+    execute: executeMock,
     query: {
       workspaceConnection: { findFirst: connectionFindFirstMock },
     },
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({ where: selectWhereMock })),
-    })),
-    update: vi.fn(() => ({ set: updateSetMock })),
   },
 }));
 vi.mock("../../../../../../../../lib/env", () => ({
   env: { appOrigin: () => "https://app.example" },
 }));
 vi.mock("../../../../../../../../lib/provider-integrations", () => ({
-  activeProviderIntegration: activeProviderIntegrationMock,
-  parseManagedProviderResource: vi.fn(() => ({
-    engine: "postgres",
-    project: "project-id",
-    branch: "branch-id",
-    database: "app",
-  })),
   revokeActiveLeases: revokeActiveLeasesMock,
-  validateManagedProviderResource: validateManagedProviderResourceMock,
-}));
-vi.mock("../../../../../../../../lib/providers/gcp-cloud-sql", () => ({
-  vercelOidcToken: vi.fn(() => "vercel-oidc"),
 }));
 vi.mock("../../../../../../../../lib/revocation-gates", () => ({
   claimRevocationGate: claimRevocationGateMock,
@@ -78,9 +45,9 @@ vi.mock("../../../../../../../../lib/revocation-gates", () => ({
     kind: string;
     organizationId: string;
     connectionId?: string;
-    integrationId?: string;
+    memberId?: string;
   }) => `${target.kind}:${target.organizationId}:${
-    target.connectionId ?? target.integrationId
+    target.connectionId ?? target.memberId
   }`),
 }));
 vi.mock("../../../../../../../../lib/workspace-authorization", () => ({
@@ -116,10 +83,17 @@ const connection = {
   databaseName: "app",
   sslmode: "verify-full",
   readonlyDefault: true,
-  allowWrites: true,
+  allowWrites: false,
   credentialMode: "managed",
   providerIntegrationId: integrationId,
-  providerResource: null,
+  providerResource: {
+    project: "project-id",
+    branch: "branch-id",
+    database: "app",
+    engine: "postgres",
+    schemas: ["public"],
+  },
+  providerResourceId: "55555555-5555-4555-8555-555555555555",
   environment: "prod",
   schemaGroup: null,
   revision: 7,
@@ -150,28 +124,19 @@ beforeEach(() => {
   vi.clearAllMocks();
   authorizeWorkspaceMock.mockResolvedValue({
     ok: true,
-    session: { user: { id: "admin-user" } },
+    session: { session: { id: "session-id" }, user: { id: "admin-user" } },
+    membership: { id: "member-id" },
     role: "admin",
     accessMode: "manage",
   });
   connectionFindFirstMock.mockResolvedValue(connection);
-  activeProviderIntegrationMock.mockResolvedValue({
-    id: integrationId,
-    organizationId: workspaceId,
-    provider: "neon",
-    encryptedCredential: "sealed",
-    credentialExpiresAt: null,
-  });
-  validateManagedProviderResourceMock.mockResolvedValue(undefined);
   claimRevocationGateMock.mockResolvedValue(claim);
   clearRevocationGateMock.mockResolvedValue(true);
   releaseRevocationGateClaimMock.mockResolvedValue(true);
   revokeActiveLeasesMock.mockResolvedValue({ revoked: 1, deferred: 0 });
-  batchMock.mockResolvedValue([
-    {},
-    [{ ...connection, credentialMode: "managed", revision: 8, updatedAt: new Date() }],
-    {},
-  ]);
+  executeMock.mockResolvedValue({
+    rows: [{ ...connection, credentialMode: "member_local", contentRevision: 1, updatedAt: new Date() }],
+  });
 });
 
 describe("managed access revocation gate", () => {
@@ -188,7 +153,7 @@ describe("managed access revocation gate", () => {
       error: "Another connection access change is already in progress",
     });
     expect(revokeActiveLeasesMock).not.toHaveBeenCalled();
-    expect(batchMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
   });
 
   it("rejects a claim that does not follow the validated connection revision", async () => {
@@ -208,7 +173,7 @@ describe("managed access revocation gate", () => {
     );
     expect(releaseRevocationGateClaimMock).not.toHaveBeenCalled();
     expect(revokeActiveLeasesMock).not.toHaveBeenCalled();
-    expect(batchMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
   });
 
   it("releases only a stale takeover claim on a revision mismatch", async () => {
@@ -232,7 +197,7 @@ describe("managed access revocation gate", () => {
     );
     expect(clearRevocationGateMock).not.toHaveBeenCalled();
     expect(revokeActiveLeasesMock).not.toHaveBeenCalled();
-    expect(batchMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
   });
 
   it("releases the exact claim and returns 409 when revocation is deferred", async () => {
@@ -246,10 +211,10 @@ describe("managed access revocation gate", () => {
     expect(response.status).toBe(409);
     expect(releaseRevocationGateClaimMock).toHaveBeenCalledOnce();
     expect(releaseRevocationGateClaimMock).toHaveBeenCalledWith(claim);
-    expect(batchMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
   });
 
-  it("guards the final update with the claim CAS and an active unblocked integration", async () => {
+  it("retires raw managed selectors before any provider or revocation operation", async () => {
     const response = await PUT(
       mutationRequest({
         mode: "managed",
@@ -264,42 +229,76 @@ describe("managed access revocation gate", () => {
       context,
     );
 
-    expect(response.status).toBe(200);
-    const condition = updateWhereMock.mock.calls.at(0)?.at(0) as SQL | undefined;
-    expect(condition).toBeDefined();
-    const compiled = new PgDialect().sqlToQuery(condition!);
-    const normalized = compiled.sql.replace(/\s+/g, " ");
+    expect(response.status).toBe(400);
+    expect(claimRevocationGateMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
+  });
 
-    expect(normalized).toContain(
-      "\"workspace_connection\".\"revocation_claim_id\" = $",
+  it("preserves the canonical imported provider links while changing only the mode", async () => {
+    const response = await PUT(
+      mutationRequest({ mode: "member_local" }),
+      context,
     );
-    expect(normalized).toContain(
-      "\"workspace_provider_integration\".\"status\" = $",
-    );
-    expect(normalized).toContain(
-      "\"workspace_provider_integration\".\"revoked_at\" is null",
-    );
-    expect(normalized).toContain(
-      "\"workspace_provider_integration\".\"revocation_pending_at\" is null",
-    );
-    expect(compiled.params).toEqual(expect.arrayContaining([
-      claimId,
-      integrationId,
-      "neon",
-      "active",
-    ]));
-    expect(updateSetMock).toHaveBeenCalledWith(expect.objectContaining({
-      revocationPendingAt: null,
-      revocationClaimedAt: null,
-      revocationClaimId: null,
-    }));
-    const values = updateSetMock.mock.calls.at(0)?.at(0) as
-      | { revision?: SQL }
-      | undefined;
-    expect(values?.revision).toBeDefined();
-    const revision = new PgDialect().sqlToQuery(values!.revision!);
-    expect(revision.sql.replace(/\s+/g, " ")).toContain(
-      "\"workspace_connection\".\"revision\" + 1",
-    );
+
+    expect(response.status).toBe(200);
+    const query = new PgDialect().sqlToQuery(executeMock.mock.calls[0]![0] as SQL).sql
+      .replace(/\s+/g, " ");
+    for (const fragment of [
+      'SET "credential_mode" = \'member_local\'',
+      'connection."provider_integration_id"',
+      'connection."provider_resource_id"',
+      'connection."provider_resource" = resource."resource"',
+      'imported."connection_id" = connection."id"',
+      'imported."request_hash" = encode(digest(',
+      "'integrationGeneration', integration.\"generation\"::text",
+      'session."expires_at" > now()',
+      'member."revocation_pending_at" IS NULL',
+      'grant."capability" = \'manage\'',
+      'integration."status" = \'active\'',
+      'integration."refresh_phase" = \'idle\'',
+      'resource."redacted_metadata" -> \'production\' = \'false\'::jsonb',
+      'resource."capability_manifest" -> \'importReadOnly\' = \'true\'::jsonb',
+      'resource."capability_manifest" -> \'write\' = \'false\'::jsonb',
+      "'providerLinkPreserved', TRUE",
+    ]) expect(query).toContain(fragment);
+    expect(query).not.toContain('"provider_integration_id" = NULL');
+    expect(query).not.toContain('"provider_resource_id" = NULL');
+  });
+
+  it("fails closed before the revocation gate for a generic, writable, or linkless connection", async () => {
+    connectionFindFirstMock.mockResolvedValueOnce({
+      ...connection,
+      allowWrites: true,
+    });
+
+    const response = await PUT(mutationRequest({ mode: "member_local" }), context);
+
+    expect(response.status).toBe(409);
+    expect(claimRevocationGateMock).not.toHaveBeenCalled();
+    expect(revokeActiveLeasesMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("requires the same canonical links even for an idempotent member-local request", async () => {
+    connectionFindFirstMock.mockResolvedValueOnce({
+      ...connection,
+      credentialMode: "member_local",
+      providerResource: null,
+    });
+
+    const response = await PUT(mutationRequest({ mode: "member_local" }), context);
+
+    expect(response.status).toBe(409);
+    expect(claimRevocationGateMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed after lease revocation when a session, grant, generation, or provider policy recheck is stale", async () => {
+    executeMock.mockResolvedValueOnce({ rows: [] });
+
+    const response = await PUT(mutationRequest({ mode: "member_local" }), context);
+
+    expect(response.status).toBe(409);
+    expect(revokeActiveLeasesMock).toHaveBeenCalledOnce();
+    expect(releaseRevocationGateClaimMock).toHaveBeenCalledWith(claim);
   });
 });

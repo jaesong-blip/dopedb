@@ -4,6 +4,7 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
+import { MAX_PROVIDER_RESULTS } from "./adapter-contract";
 import {
   NEON_LEASE_SECONDS,
   NEON_PUBLIC_DATABASE_ESCAPE_SQL,
@@ -106,18 +107,15 @@ export async function listNeonProjects(
   credential: NeonCredential,
 ): Promise<ProviderResourceItem[]> {
   const rows: JsonObject[] = [];
-  let cursor: string | null = null;
-  for (let page = 0; page < 10; page += 1) {
-    const query = new URLSearchParams({ limit: "400", timeout: "15000" });
-    if (cursor) query.set("cursor", cursor);
-    if (credential.organizationId) query.set("org_id", credential.organizationId);
-    const body = object(await apiRequest(credential, `/projects?${query}`));
-    const projects = Array.isArray(body.projects) ? body.projects : [];
-    rows.push(...projects.map(object));
-    cursor = nextCursor(body);
-    if (!cursor) break;
+  const query = new URLSearchParams({ limit: String(MAX_PROVIDER_RESULTS), timeout: "15000" });
+  if (credential.organizationId) query.set("org_id", credential.organizationId);
+  const body = object(await apiRequest(credential, `/projects?${query}`));
+  const projects = Array.isArray(body.projects) ? body.projects : [];
+  if (projects.length > MAX_PROVIDER_RESULTS) {
+    throw new ProviderRequestError("neon", "Neon project scope is too large to fingerprint safely", 409);
   }
-  if (cursor) {
+  rows.push(...projects.map(object));
+  if (nextCursor(body)) {
     throw new ProviderRequestError(
       "neon",
       "Neon project scope is too large to fingerprint safely",
@@ -132,6 +130,7 @@ export async function listNeonProjects(
       name: requiredString(row.name, "project name"),
       kind: "postgres",
       ready: true,
+      production: "unknown" as const,
     };
   });
 }
@@ -207,16 +206,24 @@ export async function listNeonBranches(
 ): Promise<ProviderResourceItem[]> {
   const body = object(await apiRequest(
     credential,
-    `/projects/${apiSegment(project)}/branches?limit=10000`,
+    `/projects/${apiSegment(project)}/branches?limit=${MAX_PROVIDER_RESULTS}`,
   ));
-  const rows = Array.isArray(body.branches) ? body.branches.map(object) : [];
+  const branches = Array.isArray(body.branches) ? body.branches : [];
+  if (branches.length > MAX_PROVIDER_RESULTS) {
+    throw new ProviderRequestError("neon", "Neon branch scope is too large to import safely", 409);
+  }
+  const rows = branches.map(object);
   return rows.map((row) => {
     const id = requiredString(row.id, "branch id");
     return {
       id,
       value: id,
       name: requiredString(row.name, "branch name"),
-      production: row.default === true || row.protected === true,
+      production: row.default === true || row.protected === true
+        ? true
+        : row.default === false && row.protected === false
+          ? false
+          : "unknown",
       ready: row.current_state === "ready",
     };
   });
@@ -229,9 +236,13 @@ export async function listNeonDatabases(
 ): Promise<ProviderResourceItem[]> {
   const body = object(await apiRequest(
     credential,
-    `/projects/${apiSegment(project)}/branches/${apiSegment(branch)}/databases`,
+    `/projects/${apiSegment(project)}/branches/${apiSegment(branch)}/databases?limit=${MAX_PROVIDER_RESULTS}`,
   ));
-  const rows = Array.isArray(body.databases) ? body.databases.map(object) : [];
+  const databases = Array.isArray(body.databases) ? body.databases : [];
+  if (databases.length > MAX_PROVIDER_RESULTS) {
+    throw new ProviderRequestError("neon", "Neon database scope is too large to import safely", 409);
+  }
+  const rows = databases.map(object);
   return rows.map((row) => {
     const name = requiredString(row.name, "database name");
     return {
@@ -240,6 +251,7 @@ export async function listNeonDatabases(
       name,
       kind: "postgres",
       ready: true,
+      production: "unknown" as const,
     };
   });
 }
@@ -602,8 +614,18 @@ export async function validateNeonResource(
     throw new ProviderRequestError("neon", "Neon project was not found", 404);
   }
   const branches = await listNeonBranches(credential, resource.project);
-  if (!branches.some((item) => item.value === resource.branch && item.ready !== false)) {
-    throw new ProviderRequestError("neon", "Neon branch was not found or is not ready", 404);
+  if (!branches.some((item) => (
+    item.value === resource.branch
+    && item.ready === true
+    // Neon marks default/protected branches as sensitive. Unknown is not a
+    // development classification and must not create a database credential.
+    && item.production === false
+  ))) {
+    throw new ProviderRequestError(
+      "neon",
+      "Neon branch is not an explicitly ready non-production target",
+      409,
+    );
   }
   const databases = await listNeonDatabases(
     credential,

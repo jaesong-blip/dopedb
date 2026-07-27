@@ -1,7 +1,7 @@
 // Workspace provider integration inventory and OAuth initiation. Secret material is
 // omitted by explicit projection and OAuth state is single-use, hashed server data.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
 import {
@@ -15,6 +15,7 @@ import {
   parseManagedProviderResource,
   revokeActiveLeases,
 } from "../../../../../../lib/provider-integrations";
+import { persistProviderIntegration } from "../../../../../../lib/provider-integration-mutation-store";
 import {
   claimRevocationGate,
   releaseRevocationGateClaim,
@@ -31,7 +32,9 @@ import {
 import {
   gcpCloudSqlIntegrationIdentity,
   gcpCloudSqlPrincipalClaims,
+  gcpLocalVerificationTarget,
   parseGcpCloudSqlCredential,
+  type GcpLocalVerificationTarget,
 } from "../../../../../../lib/providers/gcp-cloud-sql-core";
 import {
   validateGcpCloudSqlCredential,
@@ -47,7 +50,6 @@ import {
 } from "../../../../../../lib/secret-envelope";
 import {
   providerOauthState,
-  workspaceAuditEvent,
   workspaceConnection,
   workspaceProviderIntegration,
   workspaceProviderPrincipalClaim,
@@ -84,6 +86,7 @@ export async function GET(request: Request, context: RouteContext) {
       id: workspaceProviderIntegration.id,
       provider: workspaceProviderIntegration.provider,
       status: workspaceProviderIntegration.status,
+      generation: workspaceProviderIntegration.generation,
       displayName: workspaceProviderIntegration.displayName,
       credentialExpiresAt: workspaceProviderIntegration.credentialExpiresAt,
       grantedScope: workspaceProviderIntegration.grantedScope,
@@ -91,7 +94,7 @@ export async function GET(request: Request, context: RouteContext) {
       updatedAt: workspaceProviderIntegration.updatedAt,
     }).from(workspaceProviderIntegration).where(and(
       eq(workspaceProviderIntegration.organizationId, workspaceId),
-      eq(workspaceProviderIntegration.status, "active"),
+      inArray(workspaceProviderIntegration.status, ["active", "reconnect_required"]),
     )),
     db.select({
       connectionId: workspaceConnection.id,
@@ -129,7 +132,16 @@ export async function GET(request: Request, context: RouteContext) {
             ? Boolean(vercelOidcToken(request))
             : false,
     })),
-    integrations,
+    // Server-held encrypted integration credentials are explicitly managed mode;
+    // member-local/device secrets are intentionally absent from this API.
+    integrations: integrations.map(({ generation, ...integration }) => ({
+      ...integration,
+      // BigInt is not JSON-serializable. Decimal text preserves the exact
+      // provider credential/policy CAS generation for non-secret clients.
+      generation: generation.toString(),
+      credentialMode: "managed" as const,
+      reconnectRequired: integration.status === "reconnect_required",
+    })),
     managedConnections,
   });
 }
@@ -178,6 +190,7 @@ export async function POST(request: Request, context: RouteContext) {
     let gcpIdentity:
       | ReturnType<typeof gcpCloudSqlIntegrationIdentity>
       | null = null;
+    let localVerificationTarget: GcpLocalVerificationTarget | null = null;
     if (body.provider === "neon") {
       const configuration = body.configuration as Record<string, unknown> | null;
       const apiKey = typeof configuration?.apiKey === "string"
@@ -214,6 +227,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
       await validateGcpCloudSqlCredential(credential, oidcToken);
       gcpIdentity = gcpCloudSqlIntegrationIdentity(credential);
+      localVerificationTarget = gcpLocalVerificationTarget(credential);
       externalAccountId = gcpIdentity.externalAccountId;
       displayName = `GCP Cloud SQL · ${credential.projectId} / ${credential.instanceId}`;
       grantedScope = credential.writeServiceAccountEmail
@@ -227,6 +241,7 @@ export async function POST(request: Request, context: RouteContext) {
       status: string;
       revokedAt: Date | null;
       revocationPendingAt: Date | null;
+      generation: bigint;
       updatedAt: Date;
     };
     let existing: ExistingIntegration | undefined;
@@ -242,6 +257,7 @@ export async function POST(request: Request, context: RouteContext) {
         status: workspaceProviderIntegration.status,
         revokedAt: workspaceProviderIntegration.revokedAt,
         revocationPendingAt: workspaceProviderIntegration.revocationPendingAt,
+        generation: workspaceProviderIntegration.generation,
         updatedAt: workspaceProviderIntegration.updatedAt,
       }).from(workspaceProviderPrincipalClaim).innerJoin(
         workspaceProviderIntegration,
@@ -279,6 +295,7 @@ export async function POST(request: Request, context: RouteContext) {
         status: workspaceProviderIntegration.status,
         revokedAt: workspaceProviderIntegration.revokedAt,
         revocationPendingAt: workspaceProviderIntegration.revocationPendingAt,
+        generation: workspaceProviderIntegration.generation,
         updatedAt: workspaceProviderIntegration.updatedAt,
       }).from(workspaceProviderPrincipalClaim).innerJoin(
         workspaceProviderIntegration,
@@ -327,6 +344,7 @@ export async function POST(request: Request, context: RouteContext) {
             revokedAt: principalIntegration.revokedAt,
             revocationPendingAt:
               principalIntegration.revocationPendingAt,
+            generation: principalIntegration.generation,
             updatedAt: principalIntegration.updatedAt,
           };
         }
@@ -346,6 +364,7 @@ export async function POST(request: Request, context: RouteContext) {
             status: true,
             revokedAt: true,
             revocationPendingAt: true,
+            generation: true,
             updatedAt: true,
           },
         });
@@ -362,6 +381,7 @@ export async function POST(request: Request, context: RouteContext) {
           status: true,
           revokedAt: true,
           revocationPendingAt: true,
+          generation: true,
           updatedAt: true,
         },
       });
@@ -376,6 +396,7 @@ export async function POST(request: Request, context: RouteContext) {
           status: workspaceProviderIntegration.status,
           revokedAt: workspaceProviderIntegration.revokedAt,
           revocationPendingAt: workspaceProviderIntegration.revocationPendingAt,
+          generation: workspaceProviderIntegration.generation,
           updatedAt: workspaceProviderIntegration.updatedAt,
         }).from(workspaceProviderIntegration).where(and(
           eq(workspaceProviderIntegration.organizationId, workspaceId),
@@ -433,387 +454,61 @@ export async function POST(request: Request, context: RouteContext) {
     } else if (existing?.revocationPendingAt) {
       return jsonError("Another provider access change is already in progress", 409);
     }
-
-    if (existing && provider === "gcpCloudSql" && gcpIdentity) {
-      const principalClaims = gcpCloudSqlPrincipalClaims(gcpIdentity);
-      const claimValues = sql.join(
-        principalClaims.map((claim) => sql`(
-          ${claim.principalFingerprint},
-          ${claim.targetFingerprint},
-          ${claim.accessKind}
-        )`),
-        sql`, `,
+    // Provider I/O above is intentionally outside the database transaction. This
+    // is the sole durable create/reconnect boundary: a post-I/O revocation,
+    // demotion or generation change yields no integration, claim, audit or
+    // credential-refresh response.
+    const persisted = await persistProviderIntegration({
+      authority: {
+        organizationId: workspaceId,
+        membershipId: authorization.membership.id,
+        userId: authorization.session.user.id,
+        sessionId: authorization.session.session.id,
+        role: authorization.role,
+      },
+      integrationId,
+      provider,
+      externalAccountId,
+      displayName,
+      encryptedCredential,
+      credentialExpiresAt: null,
+      grantedScope,
+      localVerificationTarget,
+      now,
+      requestId: crypto.randomUUID(),
+      revokedLeases: reconnectRevoked,
+      existing,
+      reconnectClaimId: reconnectClaim?.claimId,
+      principalClaims: provider === "gcpCloudSql" && gcpIdentity
+        ? gcpCloudSqlPrincipalClaims(gcpIdentity)
+        : [],
+    }).catch(async (error) => {
+      if (reconnectClaim) {
+        await releaseRevocationGateClaim(reconnectClaim).catch(() => false);
+      }
+      throw error;
+    });
+    if (!persisted.ok) {
+      if (reconnectClaim) {
+        await releaseRevocationGateClaim(reconnectClaim).catch(() => false);
+      }
+      return jsonError(
+        existing
+          ? "Provider access changed concurrently. Retry connecting."
+          : "Workspace access denied",
+        existing ? 409 : 403,
       );
-      if (reconnectClaim) {
-        const [updatedRows, , , , , clearedRows] = await db.batch([
-          db.update(workspaceProviderIntegration).set({
-            status: "active",
-            externalAccountId,
-            displayName,
-            encryptedCredential,
-            credentialExpiresAt: null,
-            grantedScope,
-            revokedAt: null,
-            updatedAt: now,
-          }).where(and(
-            eq(workspaceProviderIntegration.id, integrationId),
-            eq(workspaceProviderIntegration.organizationId, workspaceId),
-            eq(workspaceProviderIntegration.status, "active"),
-            isNull(workspaceProviderIntegration.revokedAt),
-            eq(
-              workspaceProviderIntegration.revocationClaimId,
-              reconnectClaim.claimId,
-            ),
-          )).returning({ id: workspaceProviderIntegration.id }),
-          db.execute(sql`
-            DELETE FROM ${workspaceProviderPrincipalClaim} AS claim
-            USING ${workspaceProviderIntegration} AS integration
-            WHERE claim."integration_id" = integration."id"
-              AND integration."id" = ${integrationId}::uuid
-              AND integration."organization_id" = ${workspaceId}
-              AND integration."updated_at" = ${now}
-              AND integration."revocation_claim_id" =
-                ${reconnectClaim.claimId}::uuid
-          `),
-          db.execute(sql`
-            INSERT INTO ${workspaceProviderPrincipalClaim}
-              ("principal_fingerprint", "organization_id", "integration_id",
-               "target_fingerprint", "access_kind", "created_at", "updated_at")
-            SELECT candidate."principal_fingerprint",
-                   integration."organization_id",
-                   integration."id",
-                   candidate."target_fingerprint",
-                   candidate."access_kind",
-                   ${now},
-                   ${now}
-            FROM (VALUES ${claimValues}) AS candidate(
-              "principal_fingerprint", "target_fingerprint", "access_kind"
-            )
-            INNER JOIN ${workspaceProviderIntegration} AS integration
-              ON integration."id" = ${integrationId}::uuid
-             AND integration."organization_id" = ${workspaceId}
-             AND integration."updated_at" = ${now}
-             AND integration."revocation_claim_id" =
-               ${reconnectClaim.claimId}::uuid
-          `),
-          db.execute(sql`
-            INSERT INTO ${workspaceAuditEvent}
-              ("organization_id", "actor_user_id", "action", "resource_type",
-               "resource_id", "redacted_summary", "request_id")
-            SELECT integration."organization_id",
-                   ${authorization.session.user.id},
-                   'provider.connect',
-                   'provider_integration',
-                   integration."id"::text,
-                   jsonb_build_object(
-                     'provider', ${provider},
-                     'revokedLeases', ${reconnectRevoked}
-                   ),
-                   ${crypto.randomUUID()}::uuid
-            FROM ${workspaceProviderIntegration} AS integration
-            WHERE integration."id" = ${integrationId}::uuid
-              AND integration."organization_id" = ${workspaceId}
-              AND integration."updated_at" = ${now}
-              AND integration."revocation_claim_id" =
-                ${reconnectClaim.claimId}::uuid
-          `),
-          db.execute(sql`
-            UPDATE ${workspaceConnection} AS connection
-            SET "revision" = connection."revision" + 1,
-                "updated_at" = ${now}
-            FROM ${workspaceProviderIntegration} AS integration
-            WHERE connection."organization_id" = ${workspaceId}
-              AND connection."provider_integration_id" = integration."id"
-              AND connection."deleted_at" IS NULL
-              AND integration."id" = ${integrationId}::uuid
-              AND integration."organization_id" = ${workspaceId}
-              AND integration."updated_at" = ${now}
-              AND integration."revocation_pending_at" IS NOT NULL
-              AND integration."revocation_claim_id" =
-                ${reconnectClaim.claimId}::uuid
-          `),
-          db.update(workspaceProviderIntegration).set({
-            revocationPendingAt: null,
-            revocationClaimedAt: null,
-            revocationClaimId: null,
-          }).where(and(
-            eq(workspaceProviderIntegration.id, integrationId),
-            eq(workspaceProviderIntegration.organizationId, workspaceId),
-            eq(workspaceProviderIntegration.updatedAt, now),
-            eq(
-              workspaceProviderIntegration.revocationClaimId,
-              reconnectClaim.claimId,
-            ),
-          )).returning({ id: workspaceProviderIntegration.id }),
-        ]).catch(async (error) => {
-          await releaseRevocationGateClaim(reconnectClaim).catch(() => false);
-          throw error;
-        });
-        if (updatedRows.length !== 1 || clearedRows.length !== 1) {
-          await releaseRevocationGateClaim(reconnectClaim).catch(() => false);
-          return jsonError(
-            "Provider access changed concurrently. Retry connecting.",
-            409,
-          );
-        }
-      } else {
-        const priorRevokedGuard = existing.revokedAt
-          ? sql`integration."revoked_at" = ${existing.revokedAt}`
-          : sql`integration."revoked_at" IS NULL`;
-        const result = await db.execute<{ id: string }>(sql`
-          WITH updated_integration AS (
-            UPDATE ${workspaceProviderIntegration} AS integration
-            SET "status" = 'active',
-                "external_account_id" = ${externalAccountId},
-                "display_name" = ${displayName},
-                "encrypted_credential" = ${encryptedCredential},
-                "credential_expires_at" = NULL,
-                "granted_scope" = ${grantedScope},
-                "revoked_at" = NULL,
-                "revocation_pending_at" = NULL,
-                "revocation_claimed_at" = NULL,
-                "revocation_claim_id" = NULL,
-                "updated_at" = ${now}
-            WHERE integration."id" = ${integrationId}::uuid
-              AND integration."organization_id" = ${workspaceId}
-              AND integration."status" = ${existing.status}
-              AND integration."updated_at" = ${existing.updatedAt}
-              AND integration."revocation_pending_at" IS NULL
-              AND ${priorRevokedGuard}
-            RETURNING integration."id", integration."organization_id"
-          ),
-          bumped_connections AS (
-            UPDATE ${workspaceConnection} AS connection
-            SET "revision" = connection."revision" + 1,
-                "updated_at" = ${now}
-            FROM updated_integration
-            WHERE connection."organization_id" =
-                    updated_integration."organization_id"
-              AND connection."provider_integration_id" =
-                    updated_integration."id"
-              AND connection."deleted_at" IS NULL
-            RETURNING connection."id"
-          ),
-          inserted_claims AS (
-            INSERT INTO ${workspaceProviderPrincipalClaim}
-              ("principal_fingerprint", "organization_id", "integration_id",
-               "target_fingerprint", "access_kind", "created_at", "updated_at")
-            SELECT candidate."principal_fingerprint",
-                   updated_integration."organization_id",
-                   updated_integration."id",
-                   candidate."target_fingerprint",
-                   candidate."access_kind",
-                   ${now},
-                   ${now}
-            FROM (VALUES ${claimValues}) AS candidate(
-              "principal_fingerprint", "target_fingerprint", "access_kind"
-            )
-            CROSS JOIN updated_integration
-            RETURNING "principal_fingerprint"
-          ),
-          audit_event AS (
-            INSERT INTO ${workspaceAuditEvent}
-              ("organization_id", "actor_user_id", "action", "resource_type",
-               "resource_id", "redacted_summary", "request_id")
-            SELECT updated_integration."organization_id",
-                   ${authorization.session.user.id},
-                   'provider.connect',
-                   'provider_integration',
-                   updated_integration."id"::text,
-                   jsonb_build_object(
-                     'provider', ${provider},
-                     'revokedLeases', ${reconnectRevoked}
-                   ),
-                   ${crypto.randomUUID()}::uuid
-            FROM updated_integration
-            RETURNING "resource_id"
-          )
-          SELECT "id"::text AS "id" FROM updated_integration
-        `);
-        if (result.rows.length !== 1) {
-          return jsonError(
-            "Provider access changed concurrently. Retry connecting.",
-            409,
-          );
-        }
-      }
-    } else if (existing) {
-      const updatePredicates = [
-        eq(workspaceProviderIntegration.id, integrationId),
-        eq(workspaceProviderIntegration.organizationId, workspaceId),
-      ];
-      if (reconnectClaim) {
-        updatePredicates.push(
-          eq(workspaceProviderIntegration.status, "active"),
-          isNull(workspaceProviderIntegration.revokedAt),
-          eq(workspaceProviderIntegration.revocationClaimId, reconnectClaim.claimId),
-        );
-      } else {
-        updatePredicates.push(
-          isNull(workspaceProviderIntegration.revocationPendingAt),
-          eq(workspaceProviderIntegration.status, existing.status),
-          eq(workspaceProviderIntegration.updatedAt, existing.updatedAt),
-          existing.revokedAt
-            ? eq(workspaceProviderIntegration.revokedAt, existing.revokedAt)
-            : isNull(workspaceProviderIntegration.revokedAt),
-        );
-      }
-      const integrationUpdate = db.update(workspaceProviderIntegration).set({
-        status: "active",
-        externalAccountId,
-        displayName,
-        encryptedCredential,
-        credentialExpiresAt: null,
-        grantedScope,
-        revokedAt: null,
-        ...(reconnectClaim
-          ? {}
-          : {
-              revocationPendingAt: null,
-              revocationClaimedAt: null,
-              revocationClaimId: null,
-            }),
-        updatedAt: now,
-      }).where(and(...updatePredicates)).returning({
-        id: workspaceProviderIntegration.id,
-      });
-      const bumpConnections = db.execute(sql`
-        UPDATE ${workspaceConnection} AS connection
-        SET "revision" = connection."revision" + 1,
-            "updated_at" = ${now}
-        FROM ${workspaceProviderIntegration} AS integration
-        WHERE connection."organization_id" = ${workspaceId}
-          AND connection."provider_integration_id" = integration."id"
-          AND connection."deleted_at" IS NULL
-          AND integration."id" = ${integrationId}::uuid
-          AND integration."organization_id" = ${workspaceId}
-          AND integration."updated_at" = ${now}
-          ${reconnectClaim
-            ? sql`AND integration."revocation_pending_at" IS NOT NULL
-                  AND integration."revocation_claim_id" =
-                    ${reconnectClaim.claimId}::uuid`
-            : sql`AND integration."status" = 'active'
-                  AND integration."revoked_at" IS NULL
-                  AND integration."revocation_pending_at" IS NULL
-                  AND integration."revocation_claim_id" IS NULL`}
-      `);
-      const auditEvent = db.execute(sql`
-        INSERT INTO ${workspaceAuditEvent}
-          ("organization_id", "actor_user_id", "action", "resource_type",
-           "resource_id", "redacted_summary", "request_id")
-        SELECT integration."organization_id", ${authorization.session.user.id},
-               'provider.connect', 'provider_integration',
-               integration."id"::text,
-               jsonb_build_object(
-                 'provider', ${provider},
-                 'revokedLeases', ${reconnectRevoked}
-               ),
-               ${crypto.randomUUID()}::uuid
-        FROM ${workspaceProviderIntegration} AS integration
-        WHERE integration."id" = ${integrationId}::uuid
-          AND integration."organization_id" = ${workspaceId}
-          AND integration."updated_at" = ${now}
-          ${reconnectClaim
-            ? sql`AND integration."revocation_pending_at" IS NOT NULL
-                  AND integration."revocation_claim_id" =
-                    ${reconnectClaim.claimId}::uuid`
-            : sql`AND integration."revocation_pending_at" IS NULL
-                  AND integration."revocation_claim_id" IS NULL`}
-      `);
-      try {
-        if (reconnectClaim) {
-          const [updatedRows, , , clearedRows] = await db.batch([
-            integrationUpdate,
-            bumpConnections,
-            auditEvent,
-            db.update(workspaceProviderIntegration).set({
-              revocationPendingAt: null,
-              revocationClaimedAt: null,
-              revocationClaimId: null,
-            }).where(and(
-              eq(workspaceProviderIntegration.id, integrationId),
-              eq(workspaceProviderIntegration.organizationId, workspaceId),
-              eq(workspaceProviderIntegration.updatedAt, now),
-              eq(
-                workspaceProviderIntegration.revocationClaimId,
-                reconnectClaim.claimId,
-              ),
-            )).returning({ id: workspaceProviderIntegration.id }),
-          ]);
-          if (updatedRows.length !== 1 || clearedRows.length !== 1) {
-            await releaseRevocationGateClaim(reconnectClaim).catch(() => false);
-            return jsonError(
-              "Provider access changed concurrently. Retry connecting.",
-              409,
-            );
-          }
-        } else {
-          const [updatedRows] = await db.batch([
-            integrationUpdate,
-            bumpConnections,
-            auditEvent,
-          ]);
-          if (updatedRows.length !== 1) {
-            return jsonError(
-              "Provider access changed concurrently. Retry connecting.",
-              409,
-            );
-          }
-        }
-      } catch (error) {
-        if (reconnectClaim) {
-          await releaseRevocationGateClaim(reconnectClaim).catch(() => false);
-        }
-        throw error;
-      }
-    } else {
-      const integrationInsert = db.insert(workspaceProviderIntegration).values({
-        id: integrationId,
-        organizationId: workspaceId,
-        provider,
-        externalAccountId,
-        displayName,
-        encryptedCredential,
-        credentialExpiresAt: null,
-        grantedScope,
-        createdByUserId: authorization.session.user.id,
-      });
-      const auditInsert = db.insert(workspaceAuditEvent).values({
-        organizationId: workspaceId,
-        actorUserId: authorization.session.user.id,
-        action: "provider.connect",
-        resourceType: "provider_integration",
-        resourceId: integrationId,
-        redactedSummary: { provider },
-        requestId: crypto.randomUUID(),
-      });
-      if (provider === "gcpCloudSql" && gcpIdentity) {
-        await db.batch([
-          integrationInsert,
-          db.insert(workspaceProviderPrincipalClaim).values(
-            gcpCloudSqlPrincipalClaims(gcpIdentity).map((claim) => ({
-              ...claim,
-              organizationId: workspaceId,
-              integrationId,
-              createdAt: now,
-              updatedAt: now,
-            })),
-          ),
-          auditInsert,
-        ]);
-      } else {
-        await db.batch([integrationInsert, auditInsert]);
-      }
     }
     return privateJson({
       integration: {
-        id: integrationId,
+        id: persisted.id,
         provider,
         displayName,
         grantedScope,
         updatedAt: now.toISOString(),
       },
     }, { status: existing ? 200 : 201 });
+
   } catch (error) {
     if (body.provider === "gcpCloudSql" && postgresErrorCode(error) === "23505") {
       return jsonError(

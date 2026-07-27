@@ -1,6 +1,6 @@
-// Admin configuration for managed credentials. Resource existence is checked through
-// the provider before the redacted selector is attached to a shared connection.
-import { and, eq, exists, isNull, sql } from "drizzle-orm";
+// Existing managed templates may only be returned to member-local credentials here;
+// new managed templates are created by the receipt-bound import route.
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../../../../../../../../lib/db";
 import { env } from "../../../../../../../../lib/env";
 import {
@@ -9,15 +9,7 @@ import {
   mutationAllowed,
   privateJson,
 } from "../../../../../../../../lib/http";
-import {
-  activeProviderIntegration,
-  parseManagedProviderResource,
-  revokeActiveLeases,
-  validateManagedProviderResource,
-  type ManagedProviderResource,
-} from "../../../../../../../../lib/provider-integrations";
-import { vercelOidcToken } from "../../../../../../../../lib/providers/gcp-cloud-sql";
-import { ProviderRequestError } from "../../../../../../../../lib/providers/provider-types";
+import { revokeActiveLeases } from "../../../../../../../../lib/provider-integrations";
 import {
   claimRevocationGate,
   clearRevocationGate,
@@ -25,9 +17,14 @@ import {
   revocationGateLockKey,
 } from "../../../../../../../../lib/revocation-gates";
 import {
+  member,
+  session,
   workspaceAuditEvent,
   workspaceConnection,
+  workspaceConnectionGrant,
+  workspaceProviderImportRequest,
   workspaceProviderIntegration,
+  workspaceProviderResource,
 } from "../../../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../../../lib/workspace-authorization";
 import { publicConnection } from "../../../../../../../../lib/workspace-connections";
@@ -54,47 +51,33 @@ export async function PUT(request: Request, context: RouteContext) {
     ),
   });
   if (!connection) return jsonError("Connection not found", 404);
-  const body = (await request.json().catch(() => null)) as {
-    mode?: unknown;
-    integrationId?: unknown;
-    resource?: unknown;
-  } | null;
-  if (body?.mode !== "managed" && body?.mode !== "member_local") {
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  if (
+    !body
+    || Object.keys(body).length !== 1
+    || body.mode !== "managed"
+    && body.mode !== "member_local"
+  ) {
     return jsonError("Invalid credential mode", 400);
   }
-
-  let integrationId: string | null = null;
-  let providerResource: ManagedProviderResource | null = null;
-  let managedProvider: string | null = null;
+  // New managed templates are imported only through a single-use discovery
+  // receipt. Accepting raw provider selectors here would recreate an external-id
+  // bypass around the receipt/session/tenant binding.
   if (body.mode === "managed") {
-    if (typeof body.integrationId !== "string" || !isUuid(body.integrationId)) {
-      return jsonError("Provider integration is required", 400);
-    }
-    integrationId = body.integrationId;
-    const integration = await activeProviderIntegration(workspaceId, integrationId);
-    if (!integration) {
-      return jsonError("Provider integration not found", 404);
-    }
-    try {
-      providerResource = parseManagedProviderResource(integration.provider, body.resource);
-      if (providerResource.engine !== connection.engine) {
-        return jsonError("Provider database engine does not match the connection", 409);
-      }
-      await validateManagedProviderResource({
-        integration,
-        resource: providerResource,
-        oidcToken: vercelOidcToken(request),
-      });
-      managedProvider = integration.provider;
-    } catch (error) {
-      if (error instanceof ProviderRequestError) {
-        return jsonError(error.message, error.status);
-      }
-      return jsonError(
-        error instanceof Error ? error.message : "Invalid provider resource",
-        400,
-      );
-    }
+    return jsonError("Managed provider access must be imported from a discovery receipt", 409);
+  }
+  // This is intentionally only a cheap preflight. The same predicates (plus
+  // session/member/grant state) are repeated inside the final locked mutation.
+  // A browser can never supply a provider integration, resource, or metadata.
+  if (
+    !connection.providerIntegrationId
+    || !connection.providerResourceId
+    || !connection.providerResource
+    || connection.readonlyDefault !== true
+    || connection.allowWrites !== false
+    || (connection.credentialMode !== "managed" && connection.credentialMode !== "member_local")
+  ) {
+    return jsonError("Connection is not an imported read-only provider target", 409);
   }
 
   const claim = await claimRevocationGate({
@@ -135,83 +118,150 @@ export async function PUT(request: Request, context: RouteContext) {
     );
   }
   const updatedAt = new Date();
-  const lockTarget = integrationId
-    ? {
-        kind: "integration" as const,
-        organizationId: workspaceId,
-        integrationId,
-      }
-    : {
-        kind: "connection" as const,
-        organizationId: workspaceId,
-        connectionId,
-      };
-  const integrationReady = integrationId && managedProvider
-    ? exists(
-        db.select({ id: workspaceProviderIntegration.id })
-          .from(workspaceProviderIntegration)
-          .where(and(
-            eq(workspaceProviderIntegration.id, integrationId),
-            eq(workspaceProviderIntegration.organizationId, workspaceId),
-            eq(workspaceProviderIntegration.provider, managedProvider),
-            eq(workspaceProviderIntegration.status, "active"),
-            isNull(workspaceProviderIntegration.revokedAt),
-            isNull(workspaceProviderIntegration.revocationPendingAt),
-          )),
-      )
-    : sql`TRUE`;
-  const [, updatedRows] = await db.batch([
-    db.execute(sql`
+  const lockTarget = { kind: "connection" as const, organizationId: workspaceId, connectionId };
+  const memberLockTarget = {
+    kind: "member" as const,
+    organizationId: workspaceId,
+    memberId: authorization.membership.id,
+    userId: authorization.session.user.id,
+  };
+  const result = await db.execute<{
+    id: string;
+    name: string;
+    engine: string;
+    provider: string;
+    driverId: string | null;
+    host: string;
+    port: number;
+    databaseName: string;
+    sslmode: string;
+    readonlyDefault: boolean;
+    allowWrites: boolean;
+    environment: string | null;
+    schemaGroup: string | null;
+    credentialMode: string;
+    contentRevision: number;
+    updatedAt: Date;
+  }>(sql`
+    WITH connection_lock AS MATERIALIZED (
       SELECT pg_advisory_xact_lock(
         hashtextextended(${revocationGateLockKey(lockTarget)}, 0)
       )
-    `),
-    db.update(workspaceConnection).set({
-      credentialMode: body.mode,
-      providerIntegrationId: integrationId,
-      providerResource,
-      ...(body.mode === "managed" && managedProvider
-        ? { provider: managedProvider }
-        : {}),
-      revocationPendingAt: null,
-      revocationClaimedAt: null,
-      revocationClaimId: null,
-      // Invalidate snapshots fetched after the revocation gate opened but before
-      // this credential-mode/provider mutation commits.
-      revision: sql`${workspaceConnection.revision} + 1`,
-      updatedAt,
-    }).where(and(
-      eq(workspaceConnection.id, connectionId),
-      eq(workspaceConnection.organizationId, workspaceId),
-      eq(workspaceConnection.revocationClaimId, claim.claimId),
-      eq(workspaceConnection.revision, expectedClaimRevision),
-      isNull(workspaceConnection.deletedAt),
-      integrationReady,
-    )).returning(),
-    db.execute(sql`
+    ), member_lock AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${revocationGateLockKey(memberLockTarget)}, 0)
+      ) FROM connection_lock
+    ), authority AS MATERIALIZED (
+      SELECT member."id"
+      FROM ${session} AS session
+      JOIN ${member} AS member
+        ON member."id" = ${authorization.membership.id}
+       AND member."organization_id" = ${workspaceId}
+       AND member."user_id" = ${authorization.session.user.id}
+      JOIN member_lock ON TRUE
+      WHERE session."id" = ${authorization.session.session.id}
+        AND session."user_id" = ${authorization.session.user.id}
+        AND session."expires_at" > now()
+        AND member."role" = ${authorization.role}
+        AND member."revocation_pending_at" IS NULL
+        AND member."revocation_claim_id" IS NULL
+      FOR UPDATE OF session, member
+    ), granted_target AS MATERIALIZED (
+      SELECT grant."connection_id"
+      FROM ${workspaceConnectionGrant} AS grant
+      JOIN authority ON authority."id" = grant."member_id"
+      WHERE grant."organization_id" = ${workspaceId}
+        AND grant."connection_id" = ${connectionId}::uuid
+        AND grant."capability" = 'manage'
+      FOR UPDATE OF grant
+    ), canonical_target AS MATERIALIZED (
+      SELECT connection."id"
+      FROM ${workspaceConnection} AS connection
+      JOIN ${workspaceProviderIntegration} AS integration
+        ON integration."organization_id" = connection."organization_id"
+       AND integration."id" = connection."provider_integration_id"
+      JOIN ${workspaceProviderResource} AS resource
+        ON resource."organization_id" = connection."organization_id"
+       AND resource."id" = connection."provider_resource_id"
+      JOIN ${workspaceProviderImportRequest} AS imported
+        ON imported."organization_id" = connection."organization_id"
+       AND imported."connection_id" = connection."id"
+       AND imported."resource_id" = resource."id"
+      JOIN granted_target ON granted_target."connection_id" = connection."id"
+      WHERE connection."id" = ${connectionId}::uuid
+        AND connection."organization_id" = ${workspaceId}
+        AND connection."deleted_at" IS NULL
+        AND connection."credential_mode" IN ('managed', 'member_local')
+        AND connection."readonly_default" = TRUE
+        AND connection."allow_writes" = FALSE
+        AND connection."provider" = integration."provider"
+        AND connection."provider" = resource."provider"
+        AND connection."provider_resource" = resource."resource"
+        -- The import request is a receipt-derived immutable proof. Rebuild its
+        -- hash with the *current* integration generation so a reconnect or
+        -- credential generation change cannot hand off a stale target.
+        AND imported."request_hash" = encode(digest(
+          jsonb_build_object(
+            'integrationGeneration', integration."generation"::text,
+            'integrationId', integration."id"::text,
+            'mode', 'managed',
+            'name', connection."name",
+            'organizationId', connection."organization_id",
+            'resourceId', resource."id"::text
+          )::text,
+          'sha256'
+        ), 'hex')
+        AND integration."status" = 'active'
+        AND integration."refresh_phase" = 'idle'
+        AND integration."revoked_at" IS NULL
+        AND integration."revocation_pending_at" IS NULL
+        AND integration."revocation_claim_id" IS NULL
+        AND resource."redacted_metadata" -> 'production' = 'false'::jsonb
+        AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
+        AND resource."capability_manifest" -> 'write' = 'false'::jsonb
+        AND resource."capability_manifest" -> 'managedLease' = 'true'::jsonb
+      FOR UPDATE OF connection, integration, resource, imported
+    ), updated AS MATERIALIZED (
+      UPDATE ${workspaceConnection} AS connection
+      SET "credential_mode" = 'member_local',
+          "revocation_pending_at" = NULL,
+          "revocation_claimed_at" = NULL,
+          "revocation_claim_id" = NULL,
+          "revision" = connection."revision" + 1,
+          "updated_at" = ${updatedAt}
+      FROM canonical_target
+      WHERE connection."id" = canonical_target."id"
+        AND connection."organization_id" = ${workspaceId}
+        AND connection."revocation_claim_id" = ${claim.claimId}::uuid
+        AND connection."revision" = ${expectedClaimRevision}
+        AND connection."deleted_at" IS NULL
+      RETURNING connection."id"::text AS "id", connection."name" AS "name",
+        connection."engine" AS "engine", connection."provider" AS "provider",
+        connection."driver_id" AS "driverId", connection."host" AS "host",
+        connection."port" AS "port", connection."database_name" AS "databaseName",
+        connection."sslmode" AS "sslmode", connection."readonly_default" AS "readonlyDefault",
+        connection."allow_writes" AS "allowWrites", connection."environment" AS "environment",
+        connection."schema_group" AS "schemaGroup", connection."credential_mode" AS "credentialMode",
+        connection."content_revision" AS "contentRevision", connection."updated_at" AS "updatedAt"
+    ), audit AS MATERIALIZED (
       INSERT INTO ${workspaceAuditEvent}
         ("organization_id", "actor_user_id", "action", "resource_type",
          "resource_id", "redacted_summary", "request_id")
-      SELECT connection."organization_id", ${authorization.session.user.id},
-             'connection.credential_mode.update', 'connection',
-             connection."id"::text,
+      SELECT ${workspaceId}, ${authorization.session.user.id},
+             'connection.credential_mode.update', 'connection', updated."id",
              jsonb_build_object(
-               'mode', ${body.mode},
-               'provider', ${body.mode === "managed" ? managedProvider : null},
+               'mode', 'member_local',
+               'providerLinkPreserved', TRUE,
                'revokedLeases', ${revocation.revoked}
-             ),
-             ${crypto.randomUUID()}::uuid
-      FROM ${workspaceConnection} AS connection
-      WHERE connection."id" = ${connectionId}::uuid
-        AND connection."organization_id" = ${workspaceId}
-        AND connection."updated_at" = ${updatedAt}
-        AND connection."deleted_at" IS NULL
-    `),
-  ]).catch(async (error) => {
+             ), ${crypto.randomUUID()}::uuid
+      FROM updated
+      RETURNING "resource_id"
+    ) SELECT updated.* FROM updated JOIN audit ON TRUE
+  `).catch(async (error) => {
     await releaseRevocationGateClaim(claim).catch(() => false);
     throw error;
   });
-  const updated = updatedRows[0];
+  const updated = result.rows[0];
   if (!updated) {
     await releaseRevocationGateClaim(claim).catch(() => false);
     return jsonError(

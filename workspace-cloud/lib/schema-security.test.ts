@@ -11,6 +11,44 @@ const connectionGrantMigration = readFileSync(
   new URL("../drizzle/0009_nebulous_lady_deathstrike.sql", import.meta.url),
   "utf8",
 );
+const providerImportMigration = readFileSync(
+  new URL("../drizzle/0010_open_micromacro.sql", import.meta.url),
+  "utf8",
+);
+const localAuthorityMigration = readFileSync(
+  new URL("../drizzle/0011_gigantic_chamber.sql", import.meta.url),
+  "utf8",
+);
+const localAuthorityConstraintMigration = readFileSync(
+  new URL("../drizzle/0012_jittery_hitman.sql", import.meta.url),
+  "utf8",
+);
+const providerImportSnapshot = JSON.parse(readFileSync(
+  new URL("../drizzle/meta/0010_snapshot.json", import.meta.url),
+  "utf8",
+)) as {
+  tables: Record<string, {
+    columns: Record<string, { type: string; notNull: boolean }>;
+    foreignKeys: Record<string, { columnsFrom: string[]; columnsTo: string[] }>;
+    indexes: Record<string, { where?: string }>;
+    checkConstraints?: Record<string, { value: string }>;
+  }>;
+};
+const localAuthoritySnapshot = JSON.parse(readFileSync(
+  new URL("../drizzle/meta/0012_snapshot.json", import.meta.url),
+  "utf8",
+)) as {
+  tables: Record<string, {
+    columns: Record<string, { type: string; notNull: boolean }>;
+    checkConstraints?: Record<string, { value: string }>;
+  }>;
+};
+const providerIntegrationSource = readFileSync(
+  new URL("./provider-integrations.ts", import.meta.url), "utf8",
+);
+const providerImportStoreSource = readFileSync(
+  new URL("./provider-import-store.ts", import.meta.url), "utf8",
+);
 const schema = readFileSync(new URL("./schema.ts", import.meta.url), "utf8");
 
 describe("workspace tenant and provider principal migration", () => {
@@ -128,5 +166,165 @@ describe("workspace connection grants", () => {
     for (const forbidden of ["password", "username", "certificate", "secretRef", "connectionUrl"]) {
       expect(connectionSchema).not.toContain(`${forbidden}:`);
     }
+  });
+});
+
+describe("provider discovery/import migration", () => {
+  it("persists refresh and disconnect external-I/O phase fences", () => {
+    const integration = providerImportSnapshot.tables["workspace_control.workspace_provider_integration"]!;
+    for (const column of ["refresh_phase", "refresh_remote_started_at", "disconnect_phase", "disconnect_generation"]) {
+      expect(integration.columns[column]).toBeDefined();
+    }
+    expect(providerImportMigration).toContain("'remote_started'");
+    expect(providerImportMigration).toContain("'reconnect_required'");
+    expect(providerImportMigration).toContain("'provider_revoke_ambiguous'");
+    expect(providerImportMigration).toContain("SET \"refresh_phase\" = 'reconnect_required'");
+    const refreshCheck = integration.checkConstraints
+      ?.provider_integration_refresh_claim_consistent?.value ?? "";
+    expect(refreshCheck).toContain("'claimed'");
+    expect(refreshCheck).toContain("'remote_started'");
+    expect(refreshCheck).toContain("'reconnect_required'");
+    expect(refreshCheck).toContain("refresh_remote_started_at\" IS NULL");
+    expect(refreshCheck).toContain("refresh_remote_started_at\" IS NOT NULL");
+  });
+  it("uses bigint integration generations rather than lossy Date equality", () => {
+    const integration = providerImportSnapshot.tables["workspace_control.workspace_provider_integration"]!;
+    const receipt = providerImportSnapshot.tables["workspace_control.workspace_provider_discovery_receipt"]!;
+    expect(integration.columns.generation).toMatchObject({ type: "bigint", notNull: true });
+    expect(receipt.columns.integration_generation).toMatchObject({ type: "bigint", notNull: true });
+    expect(providerImportMigration).toContain('ADD COLUMN "generation" bigint NOT NULL DEFAULT 1');
+    expect(providerIntegrationSource).toContain('integration."generation" = ${input.integrationGeneration}');
+    expect(providerIntegrationSource).not.toContain('integration."updated_at" = ${input.integrationUpdatedAt}');
+  });
+  it("requires an idle refresh phase at receipt issuance, revalidation, and import", () => {
+    const receiptBoundary = providerIntegrationSource.slice(
+      providerIntegrationSource.indexOf("export async function recordProviderDiscoveryReceipt"),
+      providerIntegrationSource.indexOf("export async function revalidateProviderDiscoveryAuthority"),
+    );
+    const revalidationBoundary = providerIntegrationSource.slice(
+      providerIntegrationSource.indexOf("export async function revalidateProviderDiscoveryAuthority"),
+      providerIntegrationSource.indexOf("function boundedDiscoveryResults"),
+    );
+    expect(receiptBoundary).toContain('integration."refresh_phase" = \'idle\'');
+    expect(revalidationBoundary).toContain('integration."refresh_phase" = \'idle\'');
+    expect(providerImportStoreSource.match(/integration\."refresh_phase" = 'idle'/g))
+      .toHaveLength(2);
+  });
+  it("refreshes every canonical safe projection field without reviving a receipt", () => {
+    const conflict = providerIntegrationSource.slice(
+      providerIntegrationSource.indexOf('ON CONFLICT ("organization_id", "provider", "resource_fingerprint")'),
+      providerIntegrationSource.indexOf('RETURNING "id"', providerIntegrationSource.indexOf('ON CONFLICT ("organization_id", "provider", "resource_fingerprint")')),
+    );
+    expect(conflict).toContain('"resource" = EXCLUDED."resource"');
+    expect(conflict).toContain('"redacted_metadata" = EXCLUDED."redacted_metadata"');
+    expect(conflict).toContain('"capability_manifest" = EXCLUDED."capability_manifest"');
+    expect(conflict).not.toContain("workspace_provider_discovery_receipt");
+  });
+  it("creates the exact durable resource parent key before every tenant composite FK", () => {
+    const resourceKey = providerImportMigration.indexOf(
+      'CREATE UNIQUE INDEX "provider_resource_org_id_idx"',
+    );
+    const receiptResourceFk = providerImportMigration.indexOf(
+      'ADD CONSTRAINT "provider_discovery_receipt_org_resource_fk"',
+    );
+    const importResourceFk = providerImportMigration.indexOf(
+      'ADD CONSTRAINT "provider_import_org_resource_fk"',
+    );
+    const connectionResourceFk = providerImportMigration.indexOf(
+      'ADD CONSTRAINT "workspace_connection_org_provider_resource_fk"',
+    );
+    expect(resourceKey).toBeGreaterThan(-1);
+    expect(receiptResourceFk).toBeGreaterThan(resourceKey);
+    expect(importResourceFk).toBeGreaterThan(resourceKey);
+    expect(connectionResourceFk).toBeGreaterThan(resourceKey);
+    expect(providerImportMigration).toContain(
+      'REFERENCES "workspace_control"."workspace_provider_resource"("organization_id","id")',
+    );
+  });
+
+  it("keeps the 0010 snapshot aligned with the nullable legacy binding and composite FK", () => {
+    const connection = providerImportSnapshot.tables["workspace_control.workspace_connection"]!;
+    expect(connection.columns.provider_resource_id).toMatchObject({ type: "uuid", notNull: false });
+    expect(connection.foreignKeys.workspace_connection_org_provider_resource_fk).toMatchObject({
+      columnsFrom: ["organization_id", "provider_resource_id"],
+      columnsTo: ["organization_id", "id"],
+    });
+    expect(connection.indexes.workspace_connection_org_provider_resource_idx).toMatchObject({
+      where: '"provider_resource_id" IS NOT NULL AND "deleted_at" IS NULL',
+    });
+    expect(providerImportMigration).toContain(
+      'WHERE "provider_resource_id" IS NOT NULL AND "deleted_at" IS NULL',
+    );
+    expect(schema).toContain('.where(sql`"provider_resource_id" IS NOT NULL AND "deleted_at" IS NULL`)');
+  });
+
+  it("keeps receipts session/member-bound and import records hash-bound without credentials", () => {
+    for (const fragment of [
+      '"workspace_provider_discovery_receipt"',
+      '"member_id" text NOT NULL',
+      '"session_id" text NOT NULL',
+      '"consumed_at" timestamp with time zone',
+      '"request_hash" text NOT NULL',
+      '"provider_import_org_connection_fk"',
+    ]) expect(providerImportMigration).toContain(fragment);
+    for (const forbidden of ["password", "access_token", "refresh_token", "encrypted_credential"]) {
+      expect(providerImportMigration).not.toContain(forbidden);
+    }
+  });
+
+  it("demotes every pre-receipt managed selector, including strict-looking dev-labelled rows", () => {
+    const remediation = providerImportMigration.slice(
+      providerImportMigration.indexOf("-- A pre-receipt managed selector"),
+      providerImportMigration.indexOf(
+        'ALTER TABLE "workspace_control"."workspace_provider_discovery_receipt"',
+      ),
+    );
+    expect(remediation).toContain('WHERE connection."credential_mode" = \'managed\'');
+    expect(remediation).not.toContain('connection."environment"');
+    expect(remediation).not.toContain('connection."provider_resource" ->>');
+    expect(remediation).not.toContain('INSERT INTO "workspace_control"."workspace_provider_resource"');
+    expect(remediation).toContain('"credential_mode" = \'member_local\'');
+    expect(remediation).toContain('"provider_integration_id" = NULL');
+    expect(remediation).toContain('"provider_resource" = NULL, "provider_resource_id" = NULL');
+    expect(remediation).toContain('"readonly_default" = TRUE, "allow_writes" = FALSE');
+    // A live lease is a durable external-cleanup obligation. Migration may
+    // demote dormant legacy templates only; it must retain that binding until
+    // the lease sweeper records successful cleanup.
+    expect(remediation).toContain('"workspace_credential_lease" lease');
+    expect(remediation).toContain('lease."revoked_at" IS NULL');
+    expect(remediation).toContain('"revision" = CASE');
+    expect(remediation).not.toContain('connection."deleted_at" IS NULL');
+  });
+});
+
+describe("provider-local authority projection migration", () => {
+  it("rejects mixed-version active GCP NULL-target inserts while retaining reconnect legacy rows", () => {
+    const integration = localAuthoritySnapshot.tables[
+      "workspace_control.workspace_provider_integration"
+    ]!;
+    expect(integration.columns.local_verification_target).toMatchObject({
+      type: "jsonb", notNull: false,
+    });
+    const shape = integration.checkConstraints
+      ?.provider_integration_local_verification_target_shape?.value ?? "";
+    expect(shape).toContain("'kind', 'projectId', 'instanceId'");
+    expect(shape).toContain("- 'kind' - 'projectId' - 'instanceId'");
+    expect(shape).toContain('"provider" <> \'gcpCloudSql\'');
+    expect(shape).toContain('"status" = \'active\'');
+    expect(shape).toContain('"revoked_at" IS NULL');
+    expect(shape).toContain('"local_verification_target" IS NOT NULL');
+    expect(shape).toContain('"status" <> \'active\'');
+    expect(localAuthorityConstraintMigration).toContain(
+      "provider_integration_local_verification_target_shape",
+    );
+    expect(localAuthorityConstraintMigration).toContain(
+      "Reject a mixed-version writer from recreating that",
+    );
+    expect(localAuthorityMigration).toContain(
+      'SET "status" = \'reconnect_required\'',
+    );
+    expect(localAuthorityMigration).toContain('"local_verification_target" IS NULL');
+    expect(localAuthorityMigration).not.toContain("encrypted_credential");
+    expect(localAuthorityMigration).not.toContain("openProviderCredential");
   });
 });

@@ -6,10 +6,26 @@ import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   workspaceConnection,
+  workspaceConnectionGrant,
   workspaceCredentialLease,
+  member,
+  session,
+  workspaceProviderDiscoveryReceipt,
   workspaceProviderIntegration,
+  workspaceProviderResource,
 } from "./schema";
+import {
+  allowDiscoveryImport,
+  providerImportProjection,
+} from "./providers/import-projection";
+import { MAX_PROVIDER_RESULTS } from "./providers/adapter-contract";
 import { openProviderCredential, sealProviderCredential } from "./secret-envelope";
+import {
+  claimPlanetScaleCredentialRefresh,
+  finalizePlanetScaleCredentialRefresh,
+  markPlanetScaleCredentialRefreshRemoteStarted,
+  requirePlanetScaleCredentialReconnect,
+} from "./provider-integration-mutation-store";
 import {
   issuePlanetScaleLease,
   PlanetScaleRequestError,
@@ -47,7 +63,10 @@ import {
 } from "./providers/gcp-cloud-sql";
 import {
   parseGcpCloudSqlResource,
+  parseGcpCloudSqlCredential,
+  gcpLocalVerificationTarget as projectGcpLocalVerificationTarget,
   type GcpCloudSqlCredential,
+  type GcpLocalVerificationTarget,
   type GcpCloudSqlResource,
 } from "./providers/gcp-cloud-sql-core";
 import {
@@ -57,6 +76,7 @@ import {
 } from "./providers/provider-types";
 import {
   finalizeManagedLeaseIfUnblocked,
+  revocationGateLockKey,
   reserveManagedLeaseIfUnblocked,
   type ManagedLeaseAuthority,
 } from "./revocation-gates";
@@ -68,7 +88,110 @@ export type ActiveProviderIntegration = {
   provider: string;
   encryptedCredential: string;
   credentialExpiresAt: Date | null;
+  generation: bigint;
+  updatedAt: Date;
 };
+
+export type ProviderMutationAuthority = {
+  organizationId: string;
+  membershipId: string;
+  userId: string;
+  sessionId: string;
+  role: WorkspaceRoleName;
+  // A current lease may authorize consumption of an already-valid token. It
+  // must never widen a shared credential mutation, which sets requireManager.
+  lease?: {
+    connectionId: string;
+    connectionRevision: number;
+    providerResourceId: string;
+  };
+};
+
+function hasStrictGcpLocalVerificationTarget(value: unknown): value is GcpLocalVerificationTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const target = value as Record<string, unknown>;
+  const keys = Object.keys(target).sort();
+  return keys.join(",") === "instanceId,kind,projectId"
+    && target.kind === "gcpCloudSql"
+    && typeof target.projectId === "string"
+    && /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(target.projectId)
+    && typeof target.instanceId === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9_-]{0,97}$/.test(target.instanceId);
+}
+
+// Every durable provider mutation uses this predicate in its final SQL
+// statement, after provider/lease I/O.  The member advisory lock shares the
+// revocation-gate ordering, and the exact live session, member and optional
+// integration generation are checked in that same database transaction.
+export function providerMutationAuthoritySql(input: ProviderMutationAuthority & {
+  // Refreshing the shared provider credential is a provider-integration
+  // mutation, not a connection-use operation. This explicitly suppresses the
+  // otherwise valid current-lease `use` authorization path.
+  requireManager?: boolean;
+  integration?: {
+    id: string;
+    provider?: string;
+    generation?: bigint;
+    claimId?: string | null;
+  };
+}) {
+  const integration = input.integration;
+  const lease = input.requireManager ? undefined : input.lease;
+  const integrationGuard = integration ? sql`
+    AND EXISTS (
+      SELECT 1 FROM ${workspaceProviderIntegration} AS guarded_integration
+      WHERE guarded_integration."id" = ${integration.id}::uuid
+        AND guarded_integration."organization_id" = ${input.organizationId}
+        ${integration.provider ? sql`AND guarded_integration."provider" = ${integration.provider}` : sql``}
+        ${integration.generation !== undefined ? sql`AND guarded_integration."generation" = ${integration.generation}` : sql``}
+        ${integration.claimId === undefined ? sql`` : integration.claimId === null
+          ? sql`AND guarded_integration."revocation_claim_id" IS NULL`
+          : sql`AND guarded_integration."revocation_claim_id" = ${integration.claimId}::uuid`}
+      FOR UPDATE
+    )` : sql``;
+  const leaseGuard = lease ? sql`
+    AND EXISTS (
+      SELECT 1
+      FROM ${workspaceConnection} AS lease_connection
+      JOIN ${workspaceConnectionGrant} AS lease_grant
+        ON lease_grant."organization_id" = lease_connection."organization_id"
+       AND lease_grant."connection_id" = lease_connection."id"
+       AND lease_grant."member_id" = ${input.membershipId}
+       AND lease_grant."capability" IN ('use', 'manage')
+      WHERE lease_connection."id" = ${lease.connectionId}::uuid
+        AND lease_connection."organization_id" = ${input.organizationId}
+        AND lease_connection."provider_integration_id" = ${integration?.id ?? ""}::uuid
+        AND lease_connection."provider_resource_id" = ${lease.providerResourceId}::uuid
+        AND lease_connection."revision" = ${lease.connectionRevision}
+        AND lease_connection."credential_mode" = 'managed'
+        AND lease_connection."deleted_at" IS NULL
+        AND lease_connection."revocation_pending_at" IS NULL
+        AND lease_connection."revocation_claim_id" IS NULL
+      FOR UPDATE OF lease_connection, lease_grant
+    )` : sql``;
+  return sql`EXISTS (
+    SELECT 1
+    FROM (SELECT pg_advisory_xact_lock(hashtextextended(${revocationGateLockKey({
+      kind: "member", organizationId: input.organizationId,
+      memberId: input.membershipId, userId: input.userId,
+    })}, 0))) AS member_lock
+    JOIN ${session} AS live_session ON TRUE
+    JOIN ${member} AS live_member
+      ON live_member."id" = ${input.membershipId}
+     AND live_member."organization_id" = ${input.organizationId}
+     AND live_member."user_id" = ${input.userId}
+    WHERE live_session."id" = ${input.sessionId}
+      AND live_session."user_id" = ${input.userId}
+      AND live_session."expires_at" > now()
+      AND live_member."role" = ${input.role}
+      AND live_member."role" IN (${lease ? sql`'viewer', 'analyst', 'editor', 'admin', 'owner'` : sql`'admin', 'owner'`})
+      AND live_member."revocation_pending_at" IS NULL
+      AND live_member."revocation_claim_id" IS NULL
+      ${integrationGuard}
+      ${leaseGuard}
+    FOR UPDATE OF live_session, live_member
+  )`;
+}
 
 export type ManagedProviderResource =
   | PlanetScaleResource
@@ -148,6 +271,262 @@ export function parseManagedProviderResource(
   }
 }
 
+// Only a final adapter-discovered item can become an import receipt.  In
+// particular, callers cannot turn a known external id into a resource object.
+export function discoveredProviderResource(input: {
+  provider: string;
+  kind: string;
+  selection: Record<string, string>;
+  item: ProviderResourceItem;
+}) {
+  if (!allowDiscoveryImport(input.item)) return null;
+  const engine = input.item.kind ?? input.selection.engine;
+  let resource: ManagedProviderResource;
+  if (input.provider === "planetScale" && input.kind === "branches") {
+    resource = parsePlanetScaleResource({
+      organization: input.selection.organization,
+      database: input.selection.database,
+      branch: input.item.value,
+      engine,
+    });
+  } else if (input.provider === "neon" && input.kind === "databases") {
+    resource = parseNeonResource({
+      project: input.selection.project,
+      branch: input.selection.branch,
+      database: input.item.value,
+      engine: "postgres",
+    });
+  } else if (input.provider === "gcpCloudSql" && input.kind === "databases") {
+    resource = parseGcpCloudSqlResource({
+      project: input.selection.project,
+      instance: input.selection.instance,
+      database: input.item.value,
+      engine,
+      networkMode: input.selection.networkMode || "PRIVATE_SERVICES_ACCESS",
+    });
+  } else {
+    return null;
+  }
+  return providerImportProjection(input.provider as "planetScale" | "neon" | "gcpCloudSql", resource);
+}
+
+type ProviderDiscoveryReceiptRow = {
+  id: string;
+  expiresAt: Date | string;
+};
+
+// Neon returns timestamptz columns as strings, while some test and driver paths
+// use Date. Normalize this one database boundary before a route serializes it;
+// malformed driver data must not become an externally visible error payload.
+function providerDiscoveryReceiptRow(
+  row: ProviderDiscoveryReceiptRow | undefined,
+): { id: string; expiresAt: Date } | null {
+  if (
+    !row
+    || typeof row.id !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.id)
+  ) {
+    return null;
+  }
+  const expiresAt = row.expiresAt instanceof Date
+    ? new Date(row.expiresAt.valueOf())
+    : typeof row.expiresAt === "string"
+      ? new Date(row.expiresAt)
+      : null;
+  if (!expiresAt || Number.isNaN(expiresAt.valueOf())) return null;
+  return { id: row.id, expiresAt };
+}
+
+export async function recordProviderDiscoveryReceipt(input: {
+  organizationId: string;
+  integrationId: string;
+  memberId: string;
+  userId: string;
+  sessionId: string;
+  role: string;
+  provider: string;
+  integrationGeneration: bigint;
+  receiptId: string;
+  expiresAt: Date;
+  projection: ReturnType<typeof discoveredProviderResource>;
+}) {
+  if (
+    !input.projection
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(input.receiptId)
+    || Number.isNaN(input.expiresAt.valueOf())
+    || input.expiresAt.valueOf() <= Date.now()
+    || input.expiresAt.valueOf() > Date.now() + 5 * 60 * 1_000
+  ) {
+    return null;
+  }
+  const now = new Date();
+  const result = await db.execute<ProviderDiscoveryReceiptRow>(sql`
+    WITH member_lock AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtextextended(${revocationGateLockKey({
+        kind: "member", organizationId: input.organizationId, memberId: input.memberId, userId: input.userId,
+      })}, 0))
+    ), authority AS MATERIALIZED (
+      SELECT member."id" FROM "workspace_control"."session" session
+      JOIN "workspace_control"."member" member ON member."id" = ${input.memberId}
+        AND member."organization_id" = ${input.organizationId} AND member."user_id" = ${input.userId}
+      JOIN member_lock ON TRUE
+      WHERE session."id" = ${input.sessionId} AND session."user_id" = ${input.userId}
+        AND session."expires_at" > now() AND member."role" = ${input.role}
+        AND member."revocation_pending_at" IS NULL AND member."revocation_claim_id" IS NULL
+      FOR UPDATE OF session, member
+    ), active_integration AS MATERIALIZED (
+      SELECT integration."id", integration."generation" AS "generation"
+      FROM ${workspaceProviderIntegration} AS integration
+      JOIN authority ON TRUE
+      WHERE integration."id" = ${input.integrationId}::uuid
+        AND integration."organization_id" = ${input.organizationId}
+        AND integration."provider" = ${input.provider}
+        AND integration."generation" = ${input.integrationGeneration}
+        AND integration."status" = 'active'
+        AND integration."refresh_phase" = 'idle'
+        AND integration."revoked_at" IS NULL
+        AND integration."revocation_pending_at" IS NULL
+        AND integration."revocation_claim_id" IS NULL
+      FOR UPDATE OF integration
+    ), existing_receipt AS MATERIALIZED (
+      SELECT receipt."id", receipt."expires_at" AS "expiresAt"
+      FROM ${workspaceProviderDiscoveryReceipt} AS receipt
+      JOIN ${workspaceProviderResource} AS resource
+        ON resource."organization_id" = receipt."organization_id"
+       AND resource."id" = receipt."resource_id"
+      JOIN active_integration AS integration
+        ON integration."id" = receipt."integration_id"
+       AND integration."generation" = receipt."integration_generation"
+      WHERE receipt."id" = ${input.receiptId}::uuid
+        AND receipt."organization_id" = ${input.organizationId}
+        AND receipt."integration_id" = ${input.integrationId}::uuid
+        AND receipt."integration_generation" = ${input.integrationGeneration}
+        AND receipt."member_id" = ${input.memberId}
+        AND receipt."user_id" = ${input.userId}
+        AND receipt."session_id" = ${input.sessionId}
+        AND receipt."expires_at" = ${input.expiresAt}
+        AND resource."provider" = ${input.provider}
+        AND resource."resource_fingerprint" = ${input.projection.fingerprint}
+        AND resource."resource" = ${JSON.stringify(input.projection.resource)}::jsonb
+        AND resource."redacted_metadata" = ${JSON.stringify(input.projection.metadata)}::jsonb
+        AND resource."capability_manifest" = ${JSON.stringify(input.projection.capabilities)}::jsonb
+      FOR UPDATE OF receipt, resource
+    ), canonical_resource AS MATERIALIZED (
+      INSERT INTO ${workspaceProviderResource}
+        ("organization_id", "provider", "resource_fingerprint", "resource",
+         "redacted_metadata", "capability_manifest", "updated_at")
+      SELECT ${input.organizationId}, ${input.provider}, ${input.projection.fingerprint},
+        ${JSON.stringify(input.projection.resource)}::jsonb,
+        ${JSON.stringify(input.projection.metadata)}::jsonb,
+        ${JSON.stringify(input.projection.capabilities)}::jsonb, ${now}
+      FROM active_integration
+      WHERE NOT EXISTS (SELECT 1 FROM existing_receipt)
+      ON CONFLICT ("organization_id", "provider", "resource_fingerprint")
+      DO UPDATE SET
+        "resource" = EXCLUDED."resource",
+        "redacted_metadata" = EXCLUDED."redacted_metadata",
+        "capability_manifest" = EXCLUDED."capability_manifest",
+        "updated_at" = EXCLUDED."updated_at"
+      RETURNING "id"
+    ), issued AS MATERIALIZED (
+      INSERT INTO ${workspaceProviderDiscoveryReceipt} AS existing
+        ("id", "organization_id", "resource_id", "integration_id", "integration_generation",
+         "member_id", "user_id", "session_id", "expires_at")
+      SELECT ${input.receiptId}::uuid, ${input.organizationId}, resource."id", integration."id",
+        integration."generation", ${input.memberId}, ${input.userId}, ${input.sessionId}, ${input.expiresAt}
+      FROM canonical_resource AS resource
+      JOIN active_integration AS integration ON TRUE
+      ON CONFLICT ("id") DO UPDATE
+      SET "expires_at" = existing."expires_at"
+      WHERE existing."organization_id" = EXCLUDED."organization_id"
+        AND existing."resource_id" = EXCLUDED."resource_id"
+        AND existing."integration_id" = EXCLUDED."integration_id"
+        AND existing."integration_generation" = EXCLUDED."integration_generation"
+        AND existing."member_id" = EXCLUDED."member_id"
+        AND existing."user_id" = EXCLUDED."user_id"
+        AND existing."session_id" = EXCLUDED."session_id"
+        AND existing."expires_at" = EXCLUDED."expires_at"
+      RETURNING "id" AS "id", "expires_at" AS "expiresAt"
+    )
+    SELECT "id", "expiresAt" FROM existing_receipt
+    UNION ALL
+    SELECT "id", "expiresAt" FROM issued
+    LIMIT 1
+  `);
+  return providerDiscoveryReceiptRow(result.rows[0]);
+}
+
+// External discovery may take seconds. Re-check the exact live principal and
+// integration immediately before any names/identifiers leave this process.
+export async function revalidateProviderDiscoveryAuthority(input: {
+  organizationId: string; integrationId: string; provider: string; integrationGeneration: bigint;
+  memberId: string; userId: string; sessionId: string; role: string;
+}) {
+  const result = await db.execute<{ ok: boolean }>(sql`
+    WITH member_lock AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtextextended(${revocationGateLockKey({
+        kind: "member", organizationId: input.organizationId, memberId: input.memberId, userId: input.userId,
+      })}, 0))
+    ), authority AS MATERIALIZED (
+      SELECT member."id" FROM "workspace_control"."session" session
+      JOIN "workspace_control"."member" member ON member."id" = ${input.memberId}
+        AND member."organization_id" = ${input.organizationId} AND member."user_id" = ${input.userId}
+      JOIN member_lock ON TRUE
+      WHERE session."id" = ${input.sessionId} AND session."user_id" = ${input.userId}
+        AND session."expires_at" > now() AND member."role" = ${input.role}
+        AND member."revocation_pending_at" IS NULL AND member."revocation_claim_id" IS NULL
+      FOR UPDATE OF session, member
+    ), integration AS MATERIALIZED (
+      SELECT integration."id" FROM ${workspaceProviderIntegration} integration JOIN authority ON TRUE
+      WHERE integration."id" = ${input.integrationId}::uuid
+        AND integration."organization_id" = ${input.organizationId} AND integration."provider" = ${input.provider}
+        AND integration."generation" = ${input.integrationGeneration}
+        AND integration."status" = 'active' AND integration."refresh_phase" = 'idle'
+        AND integration."revoked_at" IS NULL
+        AND integration."revocation_pending_at" IS NULL AND integration."revocation_claim_id" IS NULL
+      FOR UPDATE OF integration
+    ) SELECT EXISTS (SELECT 1 FROM integration) AS "ok"
+  `);
+  return result.rows[0]?.ok === true;
+}
+
+function boundedDiscoveryResults(items: ProviderResourceItem[]): ProviderResourceItem[] {
+  if (items.length > MAX_PROVIDER_RESULTS) {
+    throw new ProviderRequestError("provider", "Provider discovery result is too large", 409);
+  }
+  return items.map((item) => {
+    if (
+      typeof item.id !== "string" || item.id.length === 0 || item.id.length > 512
+      || typeof item.name !== "string" || item.name.length === 0 || item.name.length > 512
+      || typeof item.value !== "string" || item.value.length === 0 || item.value.length > 512
+      || /[\u0000-\u001f\u007f]/.test(item.id)
+      || /[\u0000-\u001f\u007f]/.test(item.name)
+      || /[\u0000-\u001f\u007f]/.test(item.value)
+      || (item.kind !== undefined && item.kind !== "postgres" && item.kind !== "mysql")
+      // `unknown` is an intentional tri-state adapter value. It is preserved
+      // for the UI and must never be silently lowered to a safe-looking false;
+      // allowDiscoveryImport below still accepts only explicit false.
+      || (item.production !== undefined
+        && typeof item.production !== "boolean"
+        && item.production !== "unknown")
+      || (item.ready !== undefined && typeof item.ready !== "boolean")
+    ) {
+      throw new ProviderRequestError("provider", "Provider returned an invalid resource", 502);
+    }
+    // Rebuild the wire DTO so a provider SDK/runtime response cannot smuggle
+    // unexpected token, password, endpoint or metadata fields into the browser.
+    return {
+      id: item.id,
+      name: item.name,
+      value: item.value,
+      ...(item.kind !== undefined ? { kind: item.kind } : {}),
+      ...(item.production !== undefined ? { production: item.production } : {}),
+      ...(item.ready !== undefined ? { ready: item.ready } : {}),
+    };
+  });
+}
+
 async function providerIntegration(
   organizationId: string,
   integrationId: string,
@@ -156,10 +535,13 @@ async function providerIntegration(
   const predicates = [
     eq(workspaceProviderIntegration.id, integrationId),
     eq(workspaceProviderIntegration.organizationId, organizationId),
-    eq(workspaceProviderIntegration.status, "active"),
     isNull(workspaceProviderIntegration.revokedAt),
   ];
-  if (!allowPendingRevocation) {
+  if (allowPendingRevocation) {
+    predicates.push(inArray(workspaceProviderIntegration.status, ["active", "reconnect_required"]));
+  } else {
+    predicates.push(eq(workspaceProviderIntegration.status, "active"));
+    predicates.push(eq(workspaceProviderIntegration.refreshPhase, "idle"));
     predicates.push(isNull(workspaceProviderIntegration.revocationPendingAt));
   }
   const row = await db.query.workspaceProviderIntegration.findFirst({
@@ -170,9 +552,22 @@ async function providerIntegration(
       provider: true,
       encryptedCredential: true,
       credentialExpiresAt: true,
+      generation: true,
+      updatedAt: true,
+      localVerificationTarget: true,
     },
   });
-  return row ?? null;
+  // The database constraint rejects this state on new deployments. Retain this
+  // explicit gate for a rolling deployment where an older writer could have
+  // inserted an active GCP row before the constraint became visible.
+  if (
+    !row
+    || (row.provider === "gcpCloudSql"
+      && !hasStrictGcpLocalVerificationTarget(row.localVerificationTarget))
+  ) {
+    return null;
+  }
+  return row;
 }
 
 export function activeProviderIntegration(
@@ -191,6 +586,7 @@ export function providerIntegrationForRevocation(
 
 export async function providerAccessToken(
   integration: ActiveProviderIntegration,
+  authority: ProviderMutationAuthority,
 ): Promise<string> {
   if (integration.provider !== "planetScale") {
     throw new Error("PlanetScale access token requested for another provider");
@@ -215,31 +611,88 @@ export async function providerAccessToken(
     return credential.accessToken;
   }
 
-  const refreshed = await refreshPlanetScaleToken(
-    credential.refreshToken,
-    credential.scope,
-  );
+  const claimId = crypto.randomUUID();
+  if (!await claimPlanetScaleCredentialRefresh({
+    authority, integrationId: integration.id, generation: integration.generation,
+    claimId, now: new Date(),
+  })) {
+    throw new PlanetScaleRequestError(
+      "PlanetScale authorization refresh requires a current workspace manager or reconnect",
+      409,
+    );
+  }
+  if (!await markPlanetScaleCredentialRefreshRemoteStarted({
+    integrationId: integration.id,
+    generation: integration.generation,
+    claimId,
+    now: new Date(),
+  })) {
+    throw new PlanetScaleRequestError(
+      "PlanetScale authorization refresh requires reconnect",
+      409,
+    );
+  }
+  let refreshed: PlanetScaleToken;
+  try {
+    refreshed = await refreshPlanetScaleToken(credential.refreshToken, credential.scope);
+  } catch (error) {
+    await requirePlanetScaleCredentialReconnect({
+      integrationId: integration.id, generation: integration.generation, claimId, now: new Date(),
+    }).catch(() => undefined);
+    throw error;
+  }
   if (missingPlanetScaleManagedScopes(refreshed.scope).length > 0) {
+    await requirePlanetScaleCredentialReconnect({
+      integrationId: integration.id, generation: integration.generation, claimId, now: new Date(),
+    }).catch(() => undefined);
     throw new PlanetScaleRequestError(
       "PlanetScale authorization lost required managed-access scopes",
       403,
     );
   }
   const encryptedCredential = sealProviderCredential(integration.id, refreshed);
-  await db.update(workspaceProviderIntegration)
-    .set({
-      encryptedCredential,
-      credentialExpiresAt: new Date(refreshed.expiresAt),
-      grantedScope: refreshed.scope,
-      updatedAt: new Date(),
-    })
-    .where(and(
-      eq(workspaceProviderIntegration.id, integration.id),
-      eq(workspaceProviderIntegration.status, "active"),
-    ));
+  const refreshedAt = new Date();
+  if (!await finalizePlanetScaleCredentialRefresh({
+    authority,
+    integrationId: integration.id,
+    generation: integration.generation,
+    claimId,
+    encryptedCredential,
+    credentialExpiresAt: new Date(refreshed.expiresAt),
+    grantedScope: refreshed.scope,
+    now: refreshedAt,
+  })) {
+    await requirePlanetScaleCredentialReconnect({
+      integrationId: integration.id, generation: integration.generation, claimId, now: new Date(),
+    }).catch(() => undefined);
+    throw new PlanetScaleRequestError(
+      "PlanetScale authorization refresh requires reconnect",
+      409,
+    );
+  }
   integration.encryptedCredential = encryptedCredential;
   integration.credentialExpiresAt = new Date(refreshed.expiresAt);
+  integration.generation += 1n;
+  integration.updatedAt = refreshedAt;
   return refreshed.accessToken;
+}
+
+// Cleanup paths never refresh credentials without a live user authority. They
+// may use an already-valid token that was decrypted server-side for the exact
+// integration, otherwise the durable lease sweeper records a retry.
+function currentPlanetScaleAccessToken(integration: ActiveProviderIntegration): string {
+  const credential = openProviderCredential<PlanetScaleToken>(integration.id, integration.encryptedCredential);
+  if (missingPlanetScaleManagedScopes(credential.scope).length > 0) {
+    throw new PlanetScaleRequestError(
+      "PlanetScale authorization is missing required managed-access scopes",
+      403,
+    );
+  }
+  const expiresAt = new Date(credential.expiresAt);
+  if (!credential.accessToken || Number.isNaN(expiresAt.valueOf()) || expiresAt.valueOf() <= Date.now() + 2 * 60 * 1_000) {
+    throw new PlanetScaleRequestError("PlanetScale credential refresh is required", 409);
+  }
+  return credential.accessToken;
 }
 
 function neonCredential(integration: ActiveProviderIntegration) {
@@ -253,6 +706,21 @@ function gcpCredential(integration: ActiveProviderIntegration) {
   return openProviderCredential<GcpCloudSqlCredential>(
     integration.id,
     integration.encryptedCredential,
+  );
+}
+
+/** Opens the server-only envelope and returns only the exact redacted target. */
+export function localGcpVerificationTarget(
+  integration: Pick<ActiveProviderIntegration, "id" | "provider" | "encryptedCredential">,
+): GcpLocalVerificationTarget {
+  if (integration.provider !== "gcpCloudSql") {
+    throw new Error("GCP verification target requested for another provider");
+  }
+  return projectGcpLocalVerificationTarget(
+    parseGcpCloudSqlCredential(openProviderCredential<GcpCloudSqlCredential>(
+      integration.id,
+      integration.encryptedCredential,
+    )),
   );
 }
 
@@ -275,6 +743,9 @@ export async function revokeProviderAuthorization(
       integration.id,
       integration.encryptedCredential,
     );
+    // PlanetScale documents access- and refresh-token revocation separately;
+    // revoking only the access token leaves a refresh token usable.
+    await revokePlanetScaleAuthorization(credential.accessToken);
     await revokePlanetScaleAuthorization(credential.refreshToken);
     return;
   }
@@ -295,64 +766,82 @@ export async function discoverProviderResources(input: {
   const { integration, kind, selection } = input;
   switch (integration.provider) {
     case "planetScale": {
-      const token = await providerAccessToken(integration);
-      if (kind === "organizations") return listPlanetScaleOrganizations(token);
+      // Discovery is read-only by construction. Credential rotation remains in
+      // guarded lease issuance; an expiring token asks the caller to retry after
+      // that explicit mutation path instead of mutating from a GET.
+      const token = currentPlanetScaleAccessToken(integration);
+      if (kind === "organizations") return boundedDiscoveryResults(await listPlanetScaleOrganizations(token));
       if (kind === "databases" && isSegment(selection.organization)) {
-        return listPlanetScaleDatabases(token, selection.organization);
+        return boundedDiscoveryResults(await listPlanetScaleDatabases(token, selection.organization));
       }
       if (
         kind === "branches"
         && isSegment(selection.organization)
         && isSegment(selection.database)
       ) {
-        return listPlanetScaleBranches(
+        const databases = await listPlanetScaleDatabases(token, selection.organization);
+        const database = databases.find((item) => item.value === selection.database);
+        if (!database?.kind || (selection.engine && selection.engine !== database.kind)) {
+          throw new ProviderRequestError("planetScale", "PlanetScale database is no longer importable", 409);
+        }
+        return boundedDiscoveryResults((await listPlanetScaleBranches(
           token,
           selection.organization,
           selection.database,
-        );
+        )).map((branch) => ({ ...branch, kind: database.kind })));
       }
       break;
     }
     case "neon": {
       const credential = neonCredential(integration);
-      if (kind === "projects") return listNeonProjects(credential);
+      if (kind === "projects") return boundedDiscoveryResults(await listNeonProjects(credential));
       if (kind === "branches" && isSegment(selection.project)) {
-        return listNeonBranches(credential, selection.project);
+        return boundedDiscoveryResults(await listNeonBranches(credential, selection.project));
       }
       if (
         kind === "databases"
         && isSegment(selection.project)
         && isSegment(selection.branch)
       ) {
-        return listNeonDatabases(
+        const branches = await listNeonBranches(credential, selection.project);
+        const branch = branches.find((item) => item.value === selection.branch);
+        if (!branch || branch.production !== false || branch.ready !== true) {
+          throw new ProviderRequestError("neon", "Production provider resources cannot be imported", 409);
+        }
+        return boundedDiscoveryResults(await listNeonDatabases(
           credential,
           selection.project,
           selection.branch,
-        );
+        )).map((item) => ({ ...item, production: false }));
       }
       break;
     }
     case "gcpCloudSql": {
       const credential = gcpCredential(integration);
       const oidcToken = requiredOidcToken(input.oidcToken);
-      if (kind === "projects") return listGcpProjects(credential);
+      if (kind === "projects") return boundedDiscoveryResults(await listGcpProjects(credential));
       if (kind === "instances" && selection.project === credential.projectId) {
-        return listGcpCloudSqlInstances(credential, oidcToken);
+        return boundedDiscoveryResults(await listGcpCloudSqlInstances(credential, oidcToken));
       }
       if (
         kind === "databases"
         && selection.project === credential.projectId
         && isSegment(selection.instance)
       ) {
-        const engine = selection.engine === "postgres" || selection.engine === "mysql"
-          ? selection.engine
-          : null;
-        return listGcpCloudSqlDatabases(
+        const instances = await listGcpCloudSqlInstances(credential, oidcToken);
+        const instance = instances.find((item) => item.value === selection.instance);
+        if (!instance || instance.ready !== true || instance.production !== false || !instance.kind) {
+          throw new ProviderRequestError("gcpCloudSql", "Cloud SQL instance is no longer importable", 409);
+        }
+        if (selection.engine && selection.engine !== instance.kind) {
+          throw new ProviderRequestError("gcpCloudSql", "Cloud SQL engine does not match the selected instance", 409);
+        }
+        return boundedDiscoveryResults(await listGcpCloudSqlDatabases(
           credential,
           oidcToken,
           selection.instance,
-          engine,
-        );
+          instance.kind,
+        )).map((item) => ({ ...item, production: false }));
       }
       break;
     }
@@ -374,7 +863,7 @@ export async function validateManagedProviderResource(input: {
   switch (input.integration.provider) {
     case "planetScale":
       return validatePlanetScaleResource(
-        await providerAccessToken(input.integration),
+        currentPlanetScaleAccessToken(input.integration),
         input.resource as PlanetScaleResource,
       );
     case "neon":
@@ -405,7 +894,7 @@ async function bestEffortRevokeLease(input: {
       || input.lease.externalCredentialKind === "password")
   ) {
     const token = input.planetScaleToken
-      ?? await providerAccessToken(input.integration);
+      ?? currentPlanetScaleAccessToken(input.integration);
     await revokePlanetScaleLease(
       token,
       input.resource as PlanetScaleResource,
@@ -431,8 +920,10 @@ export async function issueManagedLease(input: {
   connectionId: string;
   userId: string;
   memberId: string;
+  sessionId: string;
   role: WorkspaceRoleName;
   connectionRevision: number;
+  providerResourceId: string;
   engine: "postgres" | "mysql";
   accessMode: "read" | "write";
   integration: ActiveProviderIntegration;
@@ -448,11 +939,14 @@ export async function issueManagedLease(input: {
     organizationId: input.organizationId,
     memberId: input.memberId,
     userId: input.userId,
+    sessionId: input.sessionId,
     role: input.role,
     connectionId: input.connectionId,
     integrationId: input.integration.id,
+    integrationGeneration: input.integration.generation,
     provider: input.integration.provider,
     connectionRevision: input.connectionRevision,
+    providerResourceId: input.providerResourceId,
     engine: input.engine,
     accessMode: input.accessMode,
   };
@@ -487,7 +981,25 @@ export async function issueManagedLease(input: {
     }
     switch (input.integration.provider) {
       case "planetScale":
-        planetScaleToken = await providerAccessToken(input.integration);
+        planetScaleToken = await providerAccessToken(input.integration, {
+          organizationId: input.organizationId,
+          membershipId: input.memberId,
+          userId: input.userId,
+          sessionId: input.sessionId,
+          role: input.role,
+          lease: {
+            connectionId: input.connectionId,
+            connectionRevision: input.connectionRevision,
+            providerResourceId: input.providerResourceId,
+          },
+        });
+        // Re-read the exact canonical branch immediately before the provider
+        // creates a database role/password. Discovery-time safety is never a
+        // substitute for this live production/readiness check.
+        await validatePlanetScaleResource(
+          planetScaleToken,
+          input.resource as PlanetScaleResource,
+        );
         lease = await issuePlanetScaleLease(
           planetScaleToken,
           input.resource as PlanetScaleResource,
@@ -496,6 +1008,10 @@ export async function issueManagedLease(input: {
         );
         break;
       case "neon":
+        await validateNeonResource(
+          neonCredential(input.integration),
+          input.resource as NeonResource,
+        );
         lease = await issueNeonLease({
           credential: neonCredential(input.integration),
           resource: input.resource as NeonResource,
@@ -504,6 +1020,11 @@ export async function issueManagedLease(input: {
         });
         break;
       case "gcpCloudSql":
+        await validateGcpCloudSqlResource(
+          gcpCredential(input.integration),
+          requiredOidcToken(input.oidcToken),
+          input.resource as GcpCloudSqlResource,
+        );
         lease = await issueGcpCloudSqlLease({
           credential: gcpCredential(input.integration),
           oidcToken: requiredOidcToken(input.oidcToken),
@@ -515,6 +1036,10 @@ export async function issueManagedLease(input: {
       default:
         throw new Error("Managed credential provider is not available");
     }
+    // PlanetScale refresh rotates the durable integration generation before
+    // credential creation. Finalization must bind to that exact new generation;
+    // any independent reconnect/revoke after this point still fails the CAS.
+    authority.integrationGeneration = input.integration.generation;
   } catch (error) {
     await db.update(workspaceCredentialLease)
       .set(input.integration.provider === "neon"
@@ -589,25 +1114,61 @@ async function markLeaseRevoked(
   id: string,
   cleanupClaim?: LeaseCleanupRow["cleanupClaim"],
 ) {
-  const predicates = [
-    eq(workspaceCredentialLease.id, id),
-    isNull(workspaceCredentialLease.revokedAt),
-  ];
-  if (cleanupClaim) {
-    predicates.push(
-      eq(workspaceCredentialLease.cleanupAttempts, cleanupClaim.attempt),
-      isNotNull(workspaceCredentialLease.cleanupClaimedAt),
-    );
-  }
-  const rows = await db.update(workspaceCredentialLease)
-    .set({
-      revokedAt: new Date(),
-      cleanupClaimedAt: null,
-      cleanupNextAttemptAt: null,
-    })
-    .where(and(...predicates))
-    .returning({ id: workspaceCredentialLease.id });
-  return rows.length === 1;
+  const now = new Date();
+  const cleanupFence = cleanupClaim ? sql`
+      AND lease."cleanup_attempts" = ${cleanupClaim.attempt}
+      AND lease."cleanup_claimed_at" IS NOT NULL` : sql``;
+  // Serializing by the same connection advisory key used by revocation gates
+  // ensures the second statement gets a post-lock READ COMMITTED snapshot. Two
+  // workers cleaning the last two legacy leases can no longer both observe the
+  // other's pre-revoke row and skip the final deterministic demotion.
+  const [, result] = await db.batch([
+    db.execute(sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(
+        'connection:' || lease."organization_id" || ':' || lease."connection_id"::text,
+        0
+      ))
+      FROM ${workspaceCredentialLease} AS lease
+      WHERE lease."id" = ${id}::uuid
+    `),
+    db.execute<{ id: string }>(sql`
+    WITH revoked AS (
+      UPDATE ${workspaceCredentialLease} AS lease
+      SET "revoked_at" = ${now}, "cleanup_claimed_at" = NULL,
+          "cleanup_next_attempt_at" = NULL
+      WHERE lease."id" = ${id}::uuid
+        AND lease."revoked_at" IS NULL
+        ${cleanupFence}
+      RETURNING lease."id", lease."organization_id", lease."connection_id"
+    ), demoted_legacy_connection AS (
+      UPDATE ${workspaceConnection} AS connection
+      SET "credential_mode" = 'member_local',
+          "provider_integration_id" = NULL,
+          "provider_resource" = NULL,
+          "provider_resource_id" = NULL,
+          "readonly_default" = TRUE,
+          "allow_writes" = FALSE,
+          "revision" = connection."revision" + 1,
+          "updated_at" = ${now}
+      FROM revoked
+      WHERE connection."id" = revoked."connection_id"
+        AND connection."organization_id" = revoked."organization_id"
+        AND connection."credential_mode" = 'managed'
+        AND connection."provider_resource_id" IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM ${workspaceCredentialLease} AS live_lease
+          WHERE live_lease."organization_id" = connection."organization_id"
+            AND live_lease."connection_id" = connection."id"
+            -- DML CTE siblings share a snapshot; exclude this returned row.
+            AND live_lease."id" <> revoked."id"
+            AND live_lease."revoked_at" IS NULL
+        )
+      RETURNING connection."id"
+    )
+    SELECT revoked."id"::text AS "id" FROM revoked
+  `),
+  ]);
+  return result.rows.length === 1;
 }
 
 async function scheduleLeaseCleanupRetry(lease: LeaseCleanupRow) {
@@ -641,9 +1202,11 @@ async function revokeLeaseRows(
     provider: workspaceProviderIntegration.provider,
     encryptedCredential: workspaceProviderIntegration.encryptedCredential,
     credentialExpiresAt: workspaceProviderIntegration.credentialExpiresAt,
+    generation: workspaceProviderIntegration.generation,
+    updatedAt: workspaceProviderIntegration.updatedAt,
   }).from(workspaceProviderIntegration).where(and(
     inArray(workspaceProviderIntegration.id, integrationIds),
-    eq(workspaceProviderIntegration.status, "active"),
+    inArray(workspaceProviderIntegration.status, ["active", "reconnect_required"]),
     isNull(workspaceProviderIntegration.revokedAt),
   ));
   const integrationMap = new Map(integrations.map((item) => [item.id, item]));
@@ -703,7 +1266,7 @@ async function revokeLeaseRows(
           && (lease.credentialKind === "role" || lease.credentialKind === "password")
         ) {
           await revokePlanetScaleLease(
-            await providerAccessToken(integration),
+            currentPlanetScaleAccessToken(integration),
             resource as PlanetScaleResource,
             lease.credentialKind,
             lease.credentialId,

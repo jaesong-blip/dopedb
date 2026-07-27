@@ -69,6 +69,8 @@ reqwest = { version = "0.13.4", default-features = false, features = ["json", "r
 tokio-util = "0.7.19"
 dashmap = "6.2.1"
 schemars = "1.2.1"
+tempfile = "3"
+x509-parser = "0.18"
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-opener = "2.5.4"
 
@@ -93,5 +95,4 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 
 [dev-dependencies]
-tempfile = "3"
 ts-rs = { version = "12.0.1", features = ["chrono-impl", "serde-json-impl", "uuid-impl"] }

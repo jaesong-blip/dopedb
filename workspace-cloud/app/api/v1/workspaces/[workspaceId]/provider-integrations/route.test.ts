@@ -1,7 +1,5 @@
-// GCP provider setup tests cover global claim conflicts and the atomic
-// reconnect paths without ever persisting or logging service-account emails.
-import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+// Route-level races: provider I/O may finish, but only the centralized store
+// can turn it into durable state or an integration response.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   gcpCloudSqlIntegrationIdentity,
@@ -10,73 +8,39 @@ import {
 
 const {
   authorizeWorkspaceMock,
-  batchMock,
   claimMock,
-  executeMock,
   findIntegrationMock,
   inspectNeonCredentialMock,
-  insertMock,
+  persistMock,
   releaseMock,
   revokeLeasesMock,
   selectResults,
-  updateMock,
   validateGcpMock,
 } = vi.hoisted(() => ({
   authorizeWorkspaceMock: vi.fn(),
-  batchMock: vi.fn(),
   claimMock: vi.fn(),
-  executeMock: vi.fn((statement: unknown): unknown => ({ statement })),
   findIntegrationMock: vi.fn(),
   inspectNeonCredentialMock: vi.fn(),
-  insertMock: vi.fn(),
+  persistMock: vi.fn(),
   releaseMock: vi.fn(),
   revokeLeasesMock: vi.fn(),
   selectResults: [] as unknown[][],
-  updateMock: vi.fn(),
   validateGcpMock: vi.fn(),
 }));
 
 function selectBuilder() {
-  const builder = {
-    from: vi.fn(),
-    innerJoin: vi.fn(),
-    where: vi.fn(),
-  };
+  const builder = { from: vi.fn(), innerJoin: vi.fn(), where: vi.fn() };
   builder.from.mockReturnValue(builder);
   builder.innerJoin.mockReturnValue(builder);
   builder.where.mockImplementation(async () => selectResults.shift() ?? []);
   return builder;
 }
 
-function updateBuilder(token: unknown) {
-  return {
-    set: vi.fn(() => ({
-      where: vi.fn(() => ({
-        returning: vi.fn(() => token),
-      })),
-    })),
-  };
-}
-
-function insertBuilder(token: unknown) {
-  return {
-    values: vi.fn(() => token),
-  };
-}
-
 vi.mock("server-only", () => ({}));
 vi.mock("../../../../../../lib/db", () => ({
   db: {
     select: vi.fn(() => selectBuilder()),
-    query: {
-      workspaceProviderIntegration: {
-        findFirst: findIntegrationMock,
-      },
-    },
-    batch: batchMock,
-    execute: executeMock,
-    update: updateMock,
-    insert: insertMock,
+    query: { workspaceProviderIntegration: { findFirst: findIntegrationMock } },
   },
 }));
 vi.mock("../../../../../../lib/env", () => ({
@@ -85,6 +49,9 @@ vi.mock("../../../../../../lib/env", () => ({
 vi.mock("../../../../../../lib/provider-integrations", () => ({
   parseManagedProviderResource: vi.fn(),
   revokeActiveLeases: revokeLeasesMock,
+}));
+vi.mock("../../../../../../lib/provider-integration-mutation-store", () => ({
+  persistProviderIntegration: persistMock,
 }));
 vi.mock("../../../../../../lib/revocation-gates", () => ({
   claimRevocationGate: claimMock,
@@ -110,270 +77,181 @@ vi.mock("../../../../../../lib/workspace-authorization", () => ({
   authorizeWorkspace: authorizeWorkspaceMock,
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const integrationId = "22222222-2222-4222-8222-222222222222";
 const context = { params: Promise.resolve({ workspaceId }) };
 const configuration = {
-  projectId: "sample-project-123",
-  projectNumber: "123456789012",
-  workloadIdentityPoolId: "vercel-prod",
-  workloadIdentityProviderId: "dopedb-app",
+  projectId: "sample-project-123", projectNumber: "123456789012",
+  workloadIdentityPoolId: "vercel-prod", workloadIdentityProviderId: "dopedb-app",
   instanceId: "prod-db",
-  readServiceAccountEmail:
-    "dopedb-read@sample-project-123.iam.gserviceaccount.com",
-  writeServiceAccountEmail:
-    "dopedb-write@sample-project-123.iam.gserviceaccount.com",
-  dedicatedServiceAccountsConfirmed: true,
-  instanceScopedIamConfirmed: true,
+  readServiceAccountEmail: "dopedb-read@sample-project-123.iam.gserviceaccount.com",
+  writeServiceAccountEmail: "dopedb-write@sample-project-123.iam.gserviceaccount.com",
+  dedicatedServiceAccountsConfirmed: true, instanceScopedIamConfirmed: true,
 };
 const identity = gcpCloudSqlIntegrationIdentity(
   parseGcpCloudSqlCredential(configuration),
 );
 
-function request() {
-  return new Request(
-    `https://app.example/api/v1/workspaces/${workspaceId}/provider-integrations`,
-    {
-      method: "POST",
-      headers: {
-        origin: "https://app.example",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ provider: "gcpCloudSql", configuration }),
-    },
-  );
-}
-
-function neonRequest() {
-  return new Request(
-    `https://app.example/api/v1/workspaces/${workspaceId}/provider-integrations`,
-    {
-      method: "POST",
-      headers: {
-        origin: "https://app.example",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        provider: "neon",
-        configuration: {
-          apiKey: "neon-api-key-with-sufficient-length",
-        },
-      }),
-    },
-  );
+function request(provider: "gcpCloudSql" | "neon" = "gcpCloudSql") {
+  return new Request(`https://app.example/api/v1/workspaces/${workspaceId}/provider-integrations`, {
+    method: "POST",
+    headers: { origin: "https://app.example", "content-type": "application/json" },
+    body: JSON.stringify(provider === "neon" ? {
+      provider, configuration: { apiKey: "neon-api-key-with-sufficient-length" },
+    } : { provider, configuration }),
+  });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   selectResults.splice(0);
-  executeMock.mockReset().mockImplementation(
-    (statement: unknown) => ({ statement }),
-  );
   authorizeWorkspaceMock.mockResolvedValue({
     ok: true,
-    session: { user: { id: "admin-user" } },
+    session: { user: { id: "admin-user" }, session: { id: "session-id" } },
+    membership: { id: "member-id" }, role: "admin",
   });
   validateGcpMock.mockResolvedValue(undefined);
   revokeLeasesMock.mockResolvedValue({ revoked: 0, deferred: 0 });
   releaseMock.mockResolvedValue(true);
   findIntegrationMock.mockResolvedValue(undefined);
   inspectNeonCredentialMock.mockResolvedValue({
-    displayName: "Neon · Example",
-    externalAccountId: "neon:v2:user:subject:scope",
-    projectCount: 1,
-    scopeFingerprint: "0123456789abcdef0123456789abcdef",
+    displayName: "Neon · Example", externalAccountId: "neon:v2:user:subject:scope",
+    projectCount: 1, scopeFingerprint: "0123456789abcdef0123456789abcdef",
   });
-  updateMock.mockReset()
-    .mockImplementationOnce(() => updateBuilder({ kind: "prepared" }) as never)
-    .mockImplementationOnce(() => updateBuilder({ kind: "cleared" }) as never);
-  insertMock.mockReset()
-    .mockImplementationOnce(() => insertBuilder({ kind: "integration" }) as never)
-    .mockImplementationOnce(() => insertBuilder({ kind: "claims" }) as never)
-    .mockImplementationOnce(() => insertBuilder({ kind: "audit" }) as never);
+  persistMock.mockResolvedValue({ ok: true, id: integrationId });
 });
 
-describe("GCP provider principal claims", () => {
-  it("rejects a service account already claimed by another workspace", async () => {
+describe("provider integration atomic mutation boundary", () => {
+  it("exposes an immediately non-issuable refresh as reconnect-required UX state", async () => {
     selectResults.push([{
-      principalFingerprint: identity.readPrincipal,
-      targetFingerprint: identity.instance,
-      integrationId,
-      organizationId: "99999999-9999-4999-8999-999999999999",
-      provider: "gcpCloudSql",
-      status: "active",
-      revokedAt: null,
-      revocationPendingAt: null,
+      id: integrationId,
+      provider: "planetScale",
+      status: "reconnect_required",
+      generation: 9_007_199_254_740_993n,
+      displayName: "PlanetScale · account",
+      credentialExpiresAt: null,
+      grantedScope: "read",
+      createdAt: new Date(),
       updatedAt: new Date(),
+    }], []);
+
+    const response = await GET(
+      new Request(
+        `https://app.example/api/v1/workspaces/${workspaceId}/provider-integrations`,
+      ),
+      context,
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      integrations: [{
+        id: integrationId,
+        status: "reconnect_required",
+        generation: "9007199254740993",
+        reconnectRequired: true,
+      }],
+    });
+    expect(body.integrations[0]).not.toHaveProperty("encryptedCredential");
+    expect(body.integrations[0]).not.toHaveProperty("credential");
+  });
+
+  it("rejects a service account already claimed by another workspace before persistence", async () => {
+    selectResults.push([{
+      principalFingerprint: identity.readPrincipal, targetFingerprint: identity.instance,
+      integrationId, organizationId: "99999999-9999-4999-8999-999999999999",
+      provider: "gcpCloudSql", status: "active", revokedAt: null,
+      revocationPendingAt: null, updatedAt: new Date(),
     }]);
 
-    const response = await POST(request(), context);
-
-    expect(response.status).toBe(409);
-    expect(batchMock).not.toHaveBeenCalled();
-    expect(findIntegrationMock).not.toHaveBeenCalled();
+    expect((await POST(request(), context)).status).toBe(409);
+    expect(persistMock).not.toHaveBeenCalled();
   });
 
-  it("maps an atomic principal or target collision to a retry-safe conflict", async () => {
+  it("returns no integration or provider credential when create authority disappears after I/O", async () => {
     selectResults.push([], []);
-    batchMock.mockRejectedValue(Object.assign(new Error("duplicate"), {
-      code: "23505",
-      constraint: "provider_principal_claim_org_target_idx",
-    }));
+    persistMock.mockResolvedValue({ ok: false });
 
     const response = await POST(request(), context);
 
-    expect(response.status).toBe(409);
-    await expect(response.json()).resolves.toMatchObject({
-      error: expect.stringMatching(/service accounts or target/),
-    });
+    expect(validateGcpMock).toHaveBeenCalledOnce();
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Workspace access denied" });
+    expect(persistMock).toHaveBeenCalledWith(expect.objectContaining({
+      existing: undefined,
+      localVerificationTarget: {
+        kind: "gcpCloudSql",
+        projectId: configuration.projectId,
+        instanceId: configuration.instanceId,
+      },
+      principalClaims: expect.arrayContaining([
+        expect.objectContaining({ principalFingerprint: identity.readPrincipal }),
+      ]),
+    }));
   });
 
-  it("replaces claims inside the active-integration CAS batch", async () => {
-    const updatedAt = new Date("2026-07-23T00:00:00Z");
+  it("stores a verified GCP local target only through the authority-bound mutation", async () => {
+    selectResults.push([], []);
+
+    const response = await POST(request(), context);
+
+    expect(response.status).toBe(201);
+    expect(validateGcpMock).toHaveBeenCalledBefore(persistMock);
+    expect(persistMock).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "gcpCloudSql",
+      localVerificationTarget: {
+        kind: "gcpCloudSql",
+        projectId: configuration.projectId,
+        instanceId: configuration.instanceId,
+      },
+    }));
+    expect(JSON.stringify(await response.json())).not.toMatch(/projectId|instanceId|credential|token/i);
+  });
+
+  it("releases the claimed gate and writes no audit/secret response after reconnect demotion", async () => {
     const existing = {
-      id: integrationId,
-      status: "active",
-      revokedAt: null,
-      revocationPendingAt: null,
-      updatedAt,
+      id: integrationId, status: "active", revokedAt: null,
+      revocationPendingAt: null, updatedAt: new Date("2026-07-23T00:00:00Z"),
     };
-    selectResults.push(
-      [{
-        principalFingerprint: identity.readPrincipal,
-        targetFingerprint: identity.instance,
-        integrationId,
-        organizationId: workspaceId,
-        provider: "gcpCloudSql",
-        ...existing,
-      }],
-      [existing],
-    );
+    selectResults.push([{
+      principalFingerprint: identity.readPrincipal, targetFingerprint: identity.instance,
+      integrationId, organizationId: workspaceId, provider: "gcpCloudSql", ...existing,
+    }], [existing]);
     const claim = {
-      kind: "integration",
-      organizationId: workspaceId,
-      integrationId,
-      claimId: "33333333-3333-4333-8333-333333333333",
-      claimedAt: new Date(),
-      pendingAt: new Date(),
-      firstPending: true,
+      kind: "integration", organizationId: workspaceId, integrationId,
+      claimId: "33333333-3333-4333-8333-333333333333", claimedAt: new Date(),
+      pendingAt: new Date(), firstPending: true,
     };
     claimMock.mockResolvedValue(claim);
-    batchMock.mockResolvedValue([
-      [{ id: integrationId }],
-      { rows: [] },
-      { rows: [] },
-      { rows: [] },
-      { rows: [] },
-      [{ id: integrationId }],
-    ]);
+    persistMock.mockResolvedValue({ ok: false });
 
     const response = await POST(request(), context);
 
-    expect(response.status).toBe(200);
-    const statements = executeMock.mock.calls.map(([statement]) => (
-      new PgDialect().sqlToQuery(statement as SQL).sql.replace(/\s+/g, " ")
-    ));
-    expect(statements.some((query) => (
-      query.includes("DELETE FROM \"workspace_control\"."
-        + "\"workspace_provider_principal_claim\"")
-      && query.includes("\"revocation_claim_id\" =")
-    ))).toBe(true);
-    expect(statements.some((query) => (
-      query.includes("INSERT INTO \"workspace_control\"."
-        + "\"workspace_provider_principal_claim\"")
-      && query.includes("VALUES")
-    ))).toBe(true);
-    expect(statements.some((query) => (
-      query.includes("UPDATE \"workspace_control\".\"workspace_connection\"")
-      && query.includes("\"revision\" = connection.\"revision\" + 1")
-      && query.includes("\"provider_integration_id\" = integration.\"id\"")
-      && query.includes("\"revocation_claim_id\" =")
-    ))).toBe(true);
-    const batchEntries = batchMock.mock.calls[0]?.[0] as unknown[];
-    expect(batchEntries).toHaveLength(6);
-    expect(batchEntries[4]).toEqual(expect.objectContaining({
-      statement: expect.anything(),
-    }));
-    expect(batchEntries[5]).toEqual({ kind: "cleared" });
-    expect(batchMock).toHaveBeenCalledTimes(1);
-    expect(releaseMock).not.toHaveBeenCalled();
+    expect(revokeLeasesMock).toHaveBeenCalledWith({ organizationId: workspaceId, integrationId });
+    expect(releaseMock).toHaveBeenCalledWith(claim);
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "Provider access changed concurrently. Retry connecting.",
+    });
   });
 
-  it("reactivates an exact revoked row with one CAS CTE", async () => {
-    selectResults.push([], []);
-    findIntegrationMock.mockResolvedValue({
-      id: integrationId,
-      status: "revoked",
-      revokedAt: new Date("2026-07-22T23:00:00Z"),
-      revocationPendingAt: null,
-      updatedAt: new Date("2026-07-22T23:00:00Z"),
-    });
-    executeMock.mockResolvedValue({ rows: [{ id: integrationId }] });
-
-    const response = await POST(request(), context);
-
-    expect(response.status).toBe(200);
-    const statement = executeMock.mock.calls[0]?.[0] as SQL;
-    const query = new PgDialect().sqlToQuery(statement).sql.replace(/\s+/g, " ");
-    expect(query).toContain("WITH updated_integration AS");
-    expect(query).toContain("bumped_connections AS");
-    expect(query).toContain("inserted_claims AS");
-    expect(query).toContain("audit_event AS");
-    expect(query).toContain("\"revision\" = connection.\"revision\" + 1");
-    expect(query).toContain(
-      "\"provider_integration_id\" = updated_integration.\"id\"",
-    );
-    expect(query).toContain("\"status\" = $");
-    expect(query).toContain("\"updated_at\" = $");
-    expect(query).not.toContain("@sample-project-123");
-    expect(batchMock).not.toHaveBeenCalled();
-  });
-
-  it("bumps attached connection revisions before clearing a Neon reconnect gate", async () => {
-    findIntegrationMock.mockResolvedValue({
-      id: integrationId,
-      status: "active",
-      revokedAt: null,
-      revocationPendingAt: null,
-      updatedAt: new Date("2026-07-23T00:00:00Z"),
-    });
-    const claim = {
-      kind: "integration",
-      organizationId: workspaceId,
-      integrationId,
-      claimId: "33333333-3333-4333-8333-333333333333",
-      claimedAt: new Date(),
-      pendingAt: new Date(),
-      firstPending: true,
+  it("keeps idempotent reconnects typed and returns only secretless integration metadata", async () => {
+    const existing = {
+      id: integrationId, status: "active", revokedAt: null,
+      revocationPendingAt: null, updatedAt: new Date("2026-07-23T00:00:00Z"),
     };
-    claimMock.mockResolvedValue(claim);
-    batchMock.mockResolvedValue([
-      [{ id: integrationId }],
-      { rows: [] },
-      { rows: [] },
-      [{ id: integrationId }],
-    ]);
-
-    const response = await POST(neonRequest(), context);
-
+    findIntegrationMock.mockResolvedValue(existing);
+    claimMock.mockResolvedValue({
+      kind: "integration", organizationId: workspaceId, integrationId,
+      claimId: "33333333-3333-4333-8333-333333333333", claimedAt: new Date(),
+      pendingAt: new Date(), firstPending: true,
+    });
+    const response = await POST(request("neon"), context);
     expect(response.status).toBe(200);
-    const statements = executeMock.mock.calls.map(([statement]) => (
-      new PgDialect().sqlToQuery(statement as SQL).sql.replace(/\s+/g, " ")
-    ));
-    const bumpIndex = statements.findIndex((query) => (
-      query.includes("UPDATE \"workspace_control\".\"workspace_connection\"")
-      && query.includes("\"revision\" = connection.\"revision\" + 1")
-    ));
-    expect(bumpIndex).toBeGreaterThanOrEqual(0);
-    expect(statements[bumpIndex]).toContain("\"revocation_claim_id\" =");
-    const batchEntries = batchMock.mock.calls[0]?.[0] as unknown[];
-    expect(batchEntries).toHaveLength(4);
-    expect(batchEntries[1]).toEqual(expect.objectContaining({
-      statement: expect.anything(),
-    }));
-    expect(batchEntries[3]).toEqual({ kind: "cleared" });
-    expect(releaseMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({ integration: {
+      id: integrationId, provider: "neon", displayName: "Neon · Example",
+    } });
   });
 });

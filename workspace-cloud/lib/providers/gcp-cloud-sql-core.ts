@@ -23,6 +23,13 @@ export type GcpCloudSqlCredential = {
   instanceScopedIamConfirmed: true;
 };
 
+/** Secret-free target used only by a desktop local-authority receipt. */
+export type GcpLocalVerificationTarget = Readonly<{
+  kind: "gcpCloudSql";
+  projectId: string;
+  instanceId: string;
+}>;
+
 export type GcpCloudSqlResource = {
   project: string;
   instance: string;
@@ -147,6 +154,16 @@ export function gcpWifAudience(credential: GcpCloudSqlCredential) {
   return `//iam.googleapis.com/projects/${credential.projectNumber}`
     + `/locations/global/workloadIdentityPools/${credential.workloadIdentityPoolId}`
     + `/providers/${credential.workloadIdentityProviderId}`;
+}
+
+export function gcpLocalVerificationTarget(
+  credential: GcpCloudSqlCredential,
+): GcpLocalVerificationTarget {
+  return {
+    kind: "gcpCloudSql",
+    projectId: credential.projectId,
+    instanceId: credential.instanceId,
+  };
 }
 
 function identityDigest(value: unknown) {

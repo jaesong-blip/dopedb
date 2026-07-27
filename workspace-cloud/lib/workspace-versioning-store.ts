@@ -118,7 +118,7 @@ export async function conflictConnectionCandidate({
   return conflictId;
 }
 
-type StoredConnection = Pick<typeof workspaceConnection.$inferSelect,
+export type StoredConnection = Pick<typeof workspaceConnection.$inferSelect,
   "id" | "name" | "engine" | "provider" | "driverId" | "host" | "port" | "databaseName"
   | "sslmode" | "readonlyDefault" | "allowWrites" | "environment" | "schemaGroup"
   | "credentialMode" | "contentRevision" | "updatedAt">;
@@ -130,7 +130,7 @@ function safeNumber(value: unknown): number | null {
   return Number.isSafeInteger(number) ? number : null;
 }
 
-function returnedConnection(row: RawConnectionRow | undefined): StoredConnection | null {
+export function returnedConnection(row: RawConnectionRow | undefined): StoredConnection | null {
   if (!row) return null;
   const port = safeNumber(row.port);
   const contentRevision = safeNumber(row.contentRevision);
@@ -250,7 +250,8 @@ export async function commitConnectionMutation({
       "environment" = ${mutation.environment}, "schema_group" = ${mutation.schemaGroup},
       "revocation_pending_at" = NULL, "revocation_claimed_at" = NULL, "revocation_claim_id" = NULL,
       "content_revision" = "content_revision" + 1, "updated_at" = now()`
-    : sql`"deleted_at" = now(), "revocation_pending_at" = NULL, "revocation_claimed_at" = NULL,
+    : sql`"deleted_at" = now(), "provider_integration_id" = NULL, "provider_resource" = NULL,
+      "provider_resource_id" = NULL, "revocation_pending_at" = NULL, "revocation_claimed_at" = NULL,
       "revocation_claim_id" = NULL, "content_revision" = "content_revision" + 1, "updated_at" = now()`;
   const action = mutation.kind === "update" ? "connection.update" : "connection.delete";
   const operation = mutation.kind;

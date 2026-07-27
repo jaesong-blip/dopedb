@@ -6,13 +6,20 @@ import { env } from "../../../../../../../lib/env";
 import { isUuid, jsonError, mutationAllowed } from "../../../../../../../lib/http";
 import {
   providerIntegrationForRevocation,
+  providerMutationAuthoritySql,
   revokeActiveLeases,
   revokeProviderAuthorization,
 } from "../../../../../../../lib/provider-integrations";
 import {
-  claimRevocationGate,
-  releaseRevocationGateClaim,
-} from "../../../../../../../lib/revocation-gates";
+  claimProviderIntegrationDisconnect,
+  markProviderIntegrationLeaseCleanupPending,
+  markProviderIntegrationDisconnectLeasesRevoked,
+  markProviderIntegrationProviderRevokeAmbiguous,
+  markProviderIntegrationProviderRevokeStarted,
+  markProviderIntegrationProviderRevoked,
+  releaseProviderIntegrationDisconnectClaim,
+  resumeProviderIntegrationDisconnect,
+} from "../../../../../../../lib/provider-integration-mutation-store";
 import { sealProviderCredential } from "../../../../../../../lib/secret-envelope";
 import {
   workspaceAuditEvent,
@@ -36,45 +43,98 @@ export async function DELETE(request: Request, context: RouteContext) {
   }
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const claim = await claimRevocationGate({
-    kind: "integration",
+  const authority = {
     organizationId: workspaceId,
-    integrationId,
+    membershipId: authorization.membership.id,
+    userId: authorization.session.user.id,
+    sessionId: authorization.session.session.id,
+    role: authorization.role,
+  };
+  const claimId = crypto.randomUUID();
+  const claimed = await claimProviderIntegrationDisconnect({
+    authority,
+    integrationId, claimId, now: new Date(),
   });
-  if (!claim) {
+  const resumed = claimed ? null : await resumeProviderIntegrationDisconnect({ authority, integrationId });
+  if (!claimed && !resumed) {
     const existing = await providerIntegrationForRevocation(workspaceId, integrationId);
     return existing
       ? jsonError("Another provider access change is already in progress", 409)
       : jsonError("Provider integration not found", 404);
   }
+  const activeClaimId = claimed ? claimId : resumed!.claimId;
+  const disconnectGeneration = claimed ? claimed.generation : resumed!.generation;
+  let phase = claimed ? "claimed" : resumed!.phase;
   const integration = await providerIntegrationForRevocation(workspaceId, integrationId);
   if (!integration) {
-    await releaseRevocationGateClaim(claim).catch(() => false);
+    if (claimed) await releaseProviderIntegrationDisconnectClaim({
+      organizationId: workspaceId, integrationId, claimId: activeClaimId,
+    }).catch(() => undefined);
     return jsonError("Provider integration not found", 404);
   }
 
-  let revocation;
-  try {
-    revocation = await revokeActiveLeases({
-      organizationId: workspaceId,
-      integrationId,
-    });
-  } catch (error) {
-    await releaseRevocationGateClaim(claim).catch(() => false);
-    throw error;
+  let revocation = { revoked: 0, deferred: 0 };
+  if (phase === "claimed" || phase === "lease_cleanup_pending") {
+    try {
+      // Provider lease cleanup is idempotent: PlanetScale deletion treats 404 as
+      // success and Neon first sets NOLOGIN/missing-role success. It is safe to
+      // resume this exact claim after a worker crash.
+      revocation = await revokeActiveLeases({ organizationId: workspaceId, integrationId });
+    } catch {
+      await markProviderIntegrationLeaseCleanupPending({
+        organizationId: workspaceId, integrationId, generation: disconnectGeneration,
+        claimId: activeClaimId, now: new Date(),
+      }).catch(() => undefined);
+      return jsonError("Provider lease cleanup is pending durable reconciliation.", 409);
+    }
+    if (revocation.deferred > 0) {
+      await markProviderIntegrationLeaseCleanupPending({
+        organizationId: workspaceId, integrationId, generation: disconnectGeneration,
+        claimId: activeClaimId, now: new Date(),
+      }).catch(() => undefined);
+      return jsonError("Provider lease cleanup is pending durable reconciliation.", 409);
+    }
+    if (!await markProviderIntegrationDisconnectLeasesRevoked({
+      organizationId: workspaceId, integrationId, generation: disconnectGeneration,
+      claimId: activeClaimId, now: new Date(),
+    })) return jsonError("Provider disconnect requires reconciliation", 409);
+    phase = "leases_revoked";
   }
-  if (revocation.deferred > 0) {
-    await releaseRevocationGateClaim(claim).catch(() => false);
-    return jsonError(
-      "Active database access could not be revoked yet. Retry before disconnecting.",
-      409,
-    );
+  if (phase === "provider_revoke_ambiguous") {
+    return jsonError("Provider disconnect is ambiguous; explicit reconnect is required.", 409);
   }
-  try {
-    await revokeProviderAuthorization(integration);
-  } catch {
-    await releaseRevocationGateClaim(claim).catch(() => false);
-    return jsonError("Provider authorization could not be revoked. Retry shortly.", 502);
+  if (phase === "provider_revoke_started") {
+    if (integration.provider === "planetScale") {
+      await markProviderIntegrationProviderRevokeAmbiguous({
+        organizationId: workspaceId, integrationId, generation: disconnectGeneration,
+        claimId: activeClaimId, now: new Date(),
+      }).catch(() => undefined);
+      return jsonError("Provider disconnect is ambiguous; explicit reconnect is required.", 409);
+    }
+    if (!await markProviderIntegrationProviderRevoked({
+      organizationId: workspaceId, integrationId, generation: disconnectGeneration,
+      claimId: activeClaimId, now: new Date(),
+    })) return jsonError("Provider disconnect requires reconciliation", 409);
+    phase = "provider_revoked";
+  }
+  if (phase === "leases_revoked") {
+    if (!await markProviderIntegrationProviderRevokeStarted({
+      organizationId: workspaceId, integrationId, generation: disconnectGeneration,
+      claimId: activeClaimId, now: new Date(),
+    })) return jsonError("Provider disconnect requires reconciliation", 409);
+    try {
+      await revokeProviderAuthorization(integration);
+    } catch {
+      await markProviderIntegrationProviderRevokeAmbiguous({
+        organizationId: workspaceId, integrationId, generation: disconnectGeneration,
+        claimId: activeClaimId, now: new Date(),
+      }).catch(() => undefined);
+      return jsonError("Provider authorization outcome is ambiguous; explicit reconnect is required.", 502);
+    }
+    if (!await markProviderIntegrationProviderRevoked({
+      organizationId: workspaceId, integrationId, generation: disconnectGeneration,
+      claimId: activeClaimId, now: new Date(),
+    })) return jsonError("Provider disconnect requires reconciliation", 409);
   }
   const disconnectedAt = new Date();
   const scrubbedCredential = sealProviderCredential(integrationId, {
@@ -88,15 +148,32 @@ export async function DELETE(request: Request, context: RouteContext) {
           "credential_expires_at" = NULL,
           "granted_scope" = NULL,
           "revoked_at" = ${disconnectedAt},
+          "generation" = integration."generation" + 1,
           "updated_at" = ${disconnectedAt},
           "revocation_pending_at" = NULL,
           "revocation_claimed_at" = NULL,
-          "revocation_claim_id" = NULL
+          "revocation_claim_id" = NULL,
+          "disconnect_phase" = 'finalized'
       WHERE integration."id" = ${integrationId}::uuid
         AND integration."organization_id" = ${workspaceId}
-        AND integration."status" = 'active'
+        AND integration."status" IN ('active', 'reconnect_required')
         AND integration."revoked_at" IS NULL
-        AND integration."revocation_claim_id" = ${claim.claimId}::uuid
+        AND integration."revocation_claim_id" = ${activeClaimId}::uuid
+        AND integration."generation" = ${disconnectGeneration}
+        AND integration."disconnect_generation" = ${disconnectGeneration}
+        AND integration."disconnect_phase" = 'provider_revoked'
+        -- The original claim remains the durable fence, but finalizing a
+        -- user-initiated disconnect after lease/provider I/O still requires a
+        -- current exact manager.  A fresh manager can resume this claim.
+        AND ${providerMutationAuthoritySql({
+          ...authority,
+          integration: {
+            id: integrationId,
+            provider: integration.provider,
+            generation: disconnectGeneration,
+            claimId: activeClaimId,
+          },
+        })}
       RETURNING integration."id", integration."organization_id"
     ),
     detached_connections AS (
@@ -104,6 +181,7 @@ export async function DELETE(request: Request, context: RouteContext) {
       SET "credential_mode" = 'member_local',
           "provider_integration_id" = NULL,
           "provider_resource" = NULL,
+          "provider_resource_id" = NULL,
           "revision" = connection."revision" + 1,
           "updated_at" = ${disconnectedAt}
       FROM revoked_integration
@@ -134,13 +212,9 @@ export async function DELETE(request: Request, context: RouteContext) {
       RETURNING "resource_id"
     )
     SELECT "id"::text AS "id" FROM revoked_integration
-  `).catch(async (error) => {
-    await releaseRevocationGateClaim(claim).catch(() => false);
-    throw error;
-  });
+  `);
   if (result.rows.length !== 1) {
-    await releaseRevocationGateClaim(claim).catch(() => false);
-    return jsonError("Provider access changed concurrently. Retry disconnecting.", 409);
+    return jsonError("Provider disconnect requires reconciliation", 409);
   }
   return new Response(null, {
     status: 204,

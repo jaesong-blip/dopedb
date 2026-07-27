@@ -27,6 +27,21 @@ describe("provider credential envelope", () => {
     );
   });
 
+  it("rejects a non-canonical base64url spelling of authenticated bytes", () => {
+    const key = randomBytes(32);
+    const parts = sealEnvelope(key, "oauth-token", "integration:a").split(".");
+    const tag = Buffer.from(parts[3]!, "base64url");
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const replacement = [...alphabet].find((candidate) => {
+      const encoded = `${parts[3]!.slice(0, -1)}${candidate}`;
+      return encoded !== parts[3] && Buffer.from(encoded, "base64url").equals(tag);
+    });
+    expect(replacement).toBeDefined();
+    parts[3] = `${parts[3]!.slice(0, -1)}${replacement}`;
+    expect(() => openEnvelope(key, parts.join("."), "integration:a"))
+      .toThrow("Invalid credential envelope");
+  });
+
   it("accepts only canonical 32-byte base64url deployment keys", () => {
     const encoded = randomBytes(32).toString("base64url");
     expect(decodeEnvelopeKey(encoded)).toHaveLength(32);

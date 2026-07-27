@@ -82,6 +82,7 @@ describe("GCP Cloud SQL API adapter", () => {
           databaseVersion: "POSTGRES_17",
           state: "RUNNABLE",
           settings: {
+            userLabels: { environment: "development" },
             databaseFlags: [{
               name: "cloudsql.iam_authentication",
               value: "on",

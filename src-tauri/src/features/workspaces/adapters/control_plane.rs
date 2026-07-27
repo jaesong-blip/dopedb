@@ -4,6 +4,9 @@
 
 mod authentication;
 mod connections;
+mod provider_local_target;
+#[cfg(test)]
+mod provider_local_target_tests;
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -20,8 +23,10 @@ use crate::connection::keychain::{
     fetch_workspace_session, store_workspace_session,
 };
 use crate::connection::{
-    ManagedConnectionLease as RuntimeManagedConnectionLease, RemoteAuthorityFuture,
-    RemoteConnectionAuthority as RuntimeRemoteConnectionAuthority, RemoteConnectionAuthorityPort,
+    GcpCloudSqlNetworkMode, ManagedConnectionLease as RuntimeManagedConnectionLease,
+    ProviderLocalResource, ProviderLocalTarget as RuntimeProviderLocalTarget,
+    RemoteAuthorityFuture, RemoteConnectionAuthority as RuntimeRemoteConnectionAuthority,
+    RemoteConnectionAuthorityPort,
 };
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{
@@ -29,7 +34,7 @@ use crate::features::workspaces::{
     RemoteWorkspace, WorkspaceAuthUser, WorkspaceDeviceAuthorization, WorkspaceLoginPoll,
     WorkspaceLoginPollStatus,
 };
-use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
+use crate::kernel::identity::{AccountId, ConnectionId, ProviderIntegrationId, WorkspaceId};
 use crate::model::{
     ConnectionProfile, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
 };
@@ -42,6 +47,7 @@ use connections::{
     authorize_connection, delete_connection, issue_managed_connection_lease,
     release_managed_connection_lease, remote_connections, share_connection,
 };
+use provider_local_target::provider_local_target;
 
 const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
 const DESKTOP_CLIENT_ID: &str = "dopedb-desktop";
@@ -195,7 +201,9 @@ fn is_loopback_host(url: &Url) -> bool {
     })
 }
 
-fn origin() -> AppResult<String> {
+/// The one canonical hosted-origin validator. Provider adapters reuse this
+/// rather than accepting a second environment variable or a weaker fallback.
+pub(crate) fn validated_control_plane_origin() -> AppResult<String> {
     let raw = std::env::var("DOPEDB_WORKSPACE_ORIGIN")
         .unwrap_or_else(|_| DEFAULT_CONTROL_PLANE_ORIGIN.to_string())
         .trim_end_matches('/')
@@ -218,11 +226,17 @@ fn origin() -> AppResult<String> {
     Ok(raw)
 }
 
+// Child HTTP adapter modules retain this private spelling; cross-feature users
+// must call the explicit validated export above.
+fn origin() -> AppResult<String> {
+    validated_control_plane_origin()
+}
+
 /// Build the hosted workspace console URL from the same validated origin used by
 /// the auth API. Keeping this in Rust prevents the webview from opening an
 /// arbitrary origin while still honoring the localhost override in debug builds.
 pub(crate) fn console_url(workspace_id: Option<Uuid>) -> AppResult<String> {
-    let mut url = Url::parse(&origin()?)
+    let mut url = Url::parse(&validated_control_plane_origin()?)
         .map_err(|_| AppError::Config("workspace control-plane origin is invalid".into()))?;
     url.set_path("/settings");
     if let Some(workspace_id) = workspace_id {
@@ -332,6 +346,19 @@ impl RemoteConnectionAuthorityPort for HostedWorkspaceControlPlane {
             lease_id,
         ))
     }
+
+    fn provider_local_target<'a>(
+        &'a self,
+        account_id: &'a AccountId,
+        workspace_id: WorkspaceId,
+        connection_id: ConnectionId,
+    ) -> RemoteAuthorityFuture<'a, RuntimeProviderLocalTarget> {
+        Box::pin(provider_local_target(
+            account_id.as_str(),
+            workspace_id.into(),
+            connection_id,
+        ))
+    }
 }
 
 impl WorkspaceControlPlanePort for HostedWorkspaceControlPlane {
@@ -402,7 +429,10 @@ mod tests {
     #[test]
     fn production_origin_is_https() {
         assert!(DEFAULT_CONTROL_PLANE_ORIGIN.starts_with("https://"));
-        assert_eq!(origin().unwrap(), DEFAULT_CONTROL_PLANE_ORIGIN);
+        assert_eq!(
+            validated_control_plane_origin().unwrap(),
+            DEFAULT_CONTROL_PLANE_ORIGIN
+        );
     }
 
     #[test]

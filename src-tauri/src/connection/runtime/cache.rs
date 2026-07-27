@@ -1,0 +1,171 @@
+//! Cache identity and retirement lifecycle for scope-pinned database pools.
+//!
+//! The runtime owns cache admission; this module owns only the immutable key,
+//! generation-aware slot, expiry task, and last-lease retirement mechanics.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
+
+use futures::future::join_all;
+use tokio::sync::Mutex;
+use tokio::time::Instant;
+use uuid::Uuid;
+
+use crate::kernel::sync::lock_unpoisoned;
+use crate::store::{AccountScope, PinnedConnection};
+
+use super::{
+    release_managed_bounded, ConnectionAccess, Live, ManagedLeaseHandle, ProviderLocalBindingPin,
+    ProviderLocalTarget, MANAGED_RELEASE_TIMEOUT,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct ConnectionCacheKey {
+    workspace_id: Uuid,
+    account_scope: AccountScope,
+    scope_generation: i64,
+    pub(super) connection_id: Uuid,
+    connection_revision: i64,
+    binding_revision: i64,
+    binding_updated_at: String,
+    provider_integration_id: Option<Uuid>,
+    provider_integration_generation: Option<i64>,
+    provider_resource_fingerprint: Option<String>,
+    provider_resource_identity: Option<String>,
+    pub(super) provider_binding_id: Option<Uuid>,
+    provider_binding_revision: Option<i64>,
+    access: ConnectionAccess,
+}
+
+impl ConnectionCacheKey {
+    pub(super) fn new(
+        pin: &PinnedConnection,
+        access: ConnectionAccess,
+        provider_target: Option<&ProviderLocalTarget>,
+        provider_binding: Option<&ProviderLocalBindingPin>,
+    ) -> Self {
+        Self {
+            workspace_id: pin.scope.workspace_id,
+            account_scope: pin.scope.account_scope.clone(),
+            scope_generation: pin.scope.generation,
+            connection_id: pin.connection_id,
+            connection_revision: pin.connection_revision,
+            binding_revision: pin.binding_revision,
+            binding_updated_at: pin.binding_updated_at.clone(),
+            provider_integration_id: provider_target.map(|target| target.integration_id.into()),
+            provider_integration_generation: provider_target
+                .map(|target| target.integration_generation),
+            provider_resource_fingerprint: provider_target
+                .map(|target| target.resource_fingerprint.clone()),
+            provider_resource_identity: provider_target.map(ProviderLocalTarget::cache_identity),
+            provider_binding_id: provider_binding.map(|binding| binding.binding_id.into()),
+            provider_binding_revision: provider_binding.map(|binding| binding.binding_revision),
+            // A read entry is constructed without a write-capable pool. It therefore
+            // can never satisfy a later write request, even for local credentials.
+            access,
+        }
+    }
+}
+
+pub(super) struct CacheEntry {
+    pub(super) live: Live,
+    pub(super) generation: u64,
+    pub(super) retire_at: Option<Instant>,
+    pub(super) managed_lease: StdMutex<Option<ManagedLeaseHandle>>,
+    pub(super) closed: AtomicBool,
+}
+
+impl CacheEntry {
+    fn take_managed_lease(&self) -> Option<ManagedLeaseHandle> {
+        lock_unpoisoned(&self.managed_lease).take()
+    }
+
+    async fn close_once(&self) {
+        if !self.closed.swap(true, Ordering::AcqRel) {
+            self.live.close().await;
+        }
+    }
+
+    /// Explicit security revocation is intentionally unlike normal retirement:
+    /// a retained operation lease must not keep its target pool reachable.
+    pub(super) async fn force_close_and_release(&self) {
+        self.close_once().await;
+        if let Some(managed_lease) = self.take_managed_lease() {
+            release_managed_bounded(managed_lease).await;
+        }
+    }
+}
+
+impl Drop for CacheEntry {
+    fn drop(&mut self) {
+        let should_close = !self.closed.swap(true, Ordering::AcqRel);
+        let live = should_close.then(|| self.live.clone());
+        let managed_lease = self.take_managed_lease();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            if let Some(live) = live {
+                runtime.spawn(async move { live.close().await });
+            }
+            if let Some(managed_lease) = managed_lease {
+                runtime.spawn(release_managed_bounded(managed_lease));
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct ConnectionSlot {
+    // Empty slots deliberately remain mapped. Removing a slot after releasing this
+    // mutex can orphan a waiter that has already cloned the Arc and let a second slot
+    // open a duplicate pool for the same authority key.
+    pub(super) entry: Option<Arc<CacheEntry>>,
+}
+
+pub(super) fn schedule_expiry(slot: Arc<Mutex<ConnectionSlot>>, generation: u64, delay: Duration) {
+    tokio::spawn(async move {
+        tokio::time::sleep(delay).await;
+        let expired = {
+            let mut state = slot.lock().await;
+            if state
+                .entry
+                .as_ref()
+                .is_some_and(|entry| entry.generation == generation)
+            {
+                state.entry.take()
+            } else {
+                None
+            }
+        };
+        if expired.is_some() {
+            retire_entries(expired.into_iter().collect()).await;
+        }
+    });
+}
+
+pub(super) fn cache_entry_expired(entry: &CacheEntry) -> bool {
+    entry
+        .retire_at
+        .is_some_and(|retire_at| retire_at <= Instant::now())
+}
+
+pub(super) async fn retire_entries(entries: Vec<Arc<CacheEntry>>) {
+    let retirements = entries.into_iter().filter_map(|entry| {
+        Arc::try_unwrap(entry).ok().map(|entry| async move {
+            entry.close_once().await;
+            if let Some(managed_lease) = entry.take_managed_lease() {
+                release_managed_bounded(managed_lease).await;
+            }
+        })
+    });
+    if tokio::time::timeout(
+        MANAGED_RELEASE_TIMEOUT + Duration::from_secs(1),
+        join_all(retirements),
+    )
+    .await
+    .is_err()
+    {
+        tracing::warn!(
+            "connection retirement timed out; remaining pools and provider leases are dropping"
+        );
+    }
+}
