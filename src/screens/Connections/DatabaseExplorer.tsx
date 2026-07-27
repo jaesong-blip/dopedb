@@ -5,24 +5,15 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
-  type PointerEvent,
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getTableDdl } from "../../ipc/commands";
-import type {
-  CatalogObject,
-  CatalogObjectKind,
-  CatalogTable,
-} from "../../ipc/types";
+import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
-import type { ConnectionId, ConnectionProfile } from "../../features/connections/domain";
-import {
-  deleteConnection,
-  setConnectionsSchemaGroup,
-} from "../../features/connections/tauriAdapter";
-import { isDocumentEngine } from "../../lib/capabilities";
+import type { ConnectionProfile } from "../../features/connections/domain";
+import { deleteConnection } from "../../features/connections/tauriAdapter";
+import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
+import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
 import {
   fetchFreshCatalog,
   qk,
@@ -30,203 +21,21 @@ import {
   useCatalogScope,
 } from "../../lib/queries";
 import {
-  buildConnectionSections,
   compareCatalogs,
   defaultSchemaBaseline,
   diffCounts,
-  orderTablesBySchemaDiff,
   schemaGroupIsCompatible,
-  tableDiffTone,
   type SchemaConnectionGroup,
 } from "../../lib/schemaDiff";
-import { tableKey, tableLabel } from "../../lib/tableRef";
-import ConfirmButton from "../../components/ConfirmButton";
 import EngineMark from "../../components/EngineMark";
-import { Icon, type IconName } from "../../components/Icon";
-import LazySqlViewer from "../../components/LazySqlViewer";
+import { Icon } from "../../components/Icon";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
-import {
-  schemaDiffForConnection,
-  schemaTableDiffTitle,
-  SchemaDiffBadge,
-} from "./schemaDiffPresentation";
-import { catalogFromOverview } from "./catalogOverview";
+import ConnectionNode from "./ConnectionNode";
+import DdlModal from "./DdlModal";
 import { useCatalogTree } from "./useCatalogTree";
 import "./connections.css";
-
-type DropTarget =
-  | { kind: "connection"; id: string }
-  | { kind: "group"; key: string };
-
-type DragStart = {
-  id: string;
-  pointerId: number;
-  x: number;
-  y: number;
-};
-
-const SQL_OBJECT_SECTIONS: Array<{
-  kind: CatalogObjectKind;
-  icon: IconName;
-  label:
-    | "connections.materializedViews"
-    | "connections.functions"
-    | "connections.procedures"
-    | "connections.sequences"
-    | "connections.triggers";
-}> = [
-  {
-    kind: "materialized_view",
-    icon: "materializedView",
-    label: "connections.materializedViews",
-  },
-  { kind: "function", icon: "function", label: "connections.functions" },
-  { kind: "procedure", icon: "procedure", label: "connections.procedures" },
-  { kind: "sequence", icon: "sequence", label: "connections.sequences" },
-  { kind: "trigger", icon: "trigger", label: "connections.triggers" },
-];
-
-function supportedObjectKinds(engine: ConnectionProfile["engine"]) {
-  if (engine === "postgres") {
-    return new Set<CatalogObjectKind>([
-      "materialized_view",
-      "function",
-      "procedure",
-      "sequence",
-      "trigger",
-    ]);
-  }
-  if (engine === "mysql") {
-    return new Set<CatalogObjectKind>(["function", "procedure", "trigger"]);
-  }
-  if (engine === "sqlite") return new Set<CatalogObjectKind>(["trigger"]);
-  return new Set<CatalogObjectKind>();
-}
-
-function catalogObjectLabel(object: CatalogObject) {
-  const qualified = object.schema ? `${object.schema}.${object.name}` : object.name;
-  if (
-    (object.kind === "function" || object.kind === "procedure")
-    && object.detail != null
-  ) {
-    return `${qualified}(${object.detail})`;
-  }
-  return qualified;
-}
-
-function stripEnvTokens(value: string): string {
-  return value
-    .replace(/\b(development|staging|production|local|dev|stage|prod|qa|test)\b/gi, "")
-    .replace(/(^|[-_.\s]+)(development|staging|production|local|dev|stage|prod|qa|test)([-_.\s]+|$)/gi, "$1")
-    .replace(/[-_.\s]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .trim();
-}
-
-function fallbackSchemaGroupName(
-  a: ConnectionProfile,
-  b: ConnectionProfile,
-  connections: ConnectionProfile[],
-): string {
-  const candidates = [
-    stripEnvTokens(a.name),
-    stripEnvTokens(b.name),
-    stripEnvTokens(a.database),
-    stripEnvTokens(b.database),
-    stripEnvTokens(a.host.split(".")[0] ?? ""),
-    stripEnvTokens(b.host.split(".")[0] ?? ""),
-  ].filter(Boolean);
-  const base = candidates.find((candidate) => candidate.length >= 2) ?? "schema-group";
-  const used = new Set(
-    connections
-      .map((conn) => conn.schemaGroup?.trim().toLocaleLowerCase())
-      .filter(Boolean) as string[],
-  );
-  if (!used.has(base.toLocaleLowerCase())) return base;
-  let suffix = 2;
-  while (used.has(`${base}-${suffix}`.toLocaleLowerCase())) suffix += 1;
-  return `${base}-${suffix}`;
-}
-
-// The CREATE-TABLE DDL modal: monospace read-only view, Copy button, Esc/overlay closes.
-function DdlModal({
-  conn,
-  table,
-  onClose,
-}: {
-  conn: ConnectionProfile;
-  table: CatalogTable;
-  onClose: () => void;
-}) {
-  const { t } = useI18n();
-  const [text, setText] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const closeRef = useRef<HTMLButtonElement>(null);
-
-  // Focus the Close button on open and restore focus to the trigger on close so
-  // keyboard/SR users aren't left Tabbing behind the modal.
-  useEffect(() => {
-    const trigger = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    return () => trigger?.focus?.();
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    getTableDdl(conn.id, table.name, table.schema)
-      .then((d) => alive && setText(d))
-      .catch((e) => alive && setErr(errMessage(e)));
-    return () => {
-      alive = false;
-    };
-  }, [conn.id, table.name, table.schema]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  async function copy() {
-    if (!text) return;
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
-  return (
-    <div className="ddl-overlay" onClick={onClose}>
-      <div
-        className="ddl-modal"
-        role="dialog"
-        aria-modal="true"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="ddl-head">
-          <span className="ddl-title">
-            {t("connections.ddlTitle", { table: tableLabel(conn.engine, table) })}
-          </span>
-          <div className="ddl-actions ds-control-row">
-            <button className="btn small" onClick={copy} disabled={!text}>
-              {copied ? t("common.copied") : t("common.copy")}
-            </button>
-            <button className="btn small" ref={closeRef} onClick={onClose}>
-              {t("common.close")}
-            </button>
-          </div>
-        </div>
-        {err && <div className="error">{err}</div>}
-        {!err && text == null && (
-          <div className="muted small-pad loading">{t("common.loading")}</div>
-        )}
-        {text != null && <LazySqlViewer value={text} minHeight="240px" />}
-      </div>
-    </div>
-  );
-}
 
 // DopeDB-style Database Explorer: connections in the sidebar, the selected one
 // expanded to reveal its tables. Clicking a table opens its data in the main area.
@@ -262,53 +71,42 @@ export function DatabaseExplorer({
   const queryClient = useQueryClient();
   const catalogScope = useCatalogScope();
   const catalogScopeKeyRef = useRef(catalogScope.key);
-  // Per-connection: any node can be expanded independently of selection, so
-  // catalogs/errors/filters are keyed by connection id (DopeDB-style tree).
-  // Catalogs come from the shared query cache, so expanding a node here also warms
-  // the Schema view and the SQL editor's autocomplete for that connection.
-  const [wanted, setWanted] = useState<Set<string>>(new Set());
-  const [refreshErrs, setRefreshErrs] = useState<Record<string, string>>({});
-  const [filters, setFilters] = useState<Record<string, string>>({});
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const [refreshing, setRefreshing] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  // Tables/views are open by default, but each connection owns its own collapse state.
-  // Expanding a second connection must not unexpectedly collapse the first one.
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-  const [objectSectionsOpen, setObjectSectionsOpen] = useState<Set<string>>(new Set());
-  const [showRowCounts, setShowRowCounts] = useState(true);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [workspaceDialog, setWorkspaceDialog] = useState<{
-    connection: ConnectionProfile;
-    mode: "copy" | "credentials";
-  } | null>(null);
-  const [ddl, setDdl] = useState<{ conn: ConnectionProfile; table: CatalogTable } | null>(
-    null,
-  );
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
-  const [dragPreview, setDragPreview] = useState<{ id: string; x: number; y: number } | null>(
-    null,
-  );
-  const dragStartRef = useRef<DragStart | null>(null);
-  const activeDragIdRef = useRef<string | null>(null);
-  const suppressClickRef = useRef(false);
-  const sections = useMemo(() => buildConnectionSections(connections), [connections]);
-  const groupByConnectionId = useMemo(() => {
-    const map = new Map<string, SchemaConnectionGroup>();
-    for (const section of sections) {
-      if (section.kind !== "group") continue;
-      for (const conn of section.group.connections) map.set(conn.id, section.group);
-    }
-    return map;
-  }, [sections]);
+  const {
+    state: {
+      wanted,
+      refreshErrors: refreshErrs,
+      filters,
+      openConnections: open,
+      refreshingId: refreshing,
+      deletingId: deleting,
+      collapsedSections,
+      objectSectionsOpen,
+      showRowCounts,
+      openMenuId,
+      workspaceDialog,
+      ddlDialog,
+    },
+    commands,
+  } = useCatalogExplorerState(catalogScope.key);
+  const {
+    sections,
+    groupByConnectionId,
+    draggingId,
+    dropTarget,
+    dragPreview,
+    suppressClickRef,
+    pointerDown: pointerDownConnection,
+    pointerMove: pointerMoveConnection,
+    pointerUp: pointerUpConnection,
+    pointerCancel: pointerCancelConnection,
+  } = useSchemaGroupDrag(connections, onConnectionUpdated);
 
   useEffect(() => {
     if (!openMenuId) return;
     const closeOnOutsidePointer = (event: globalThis.PointerEvent) => {
       const target = event.target;
       if (target instanceof Element && target.closest(".db-menu")) return;
-      setOpenMenuId(null);
+      commands.patch({ openMenuId: null });
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
@@ -319,12 +117,6 @@ export function DatabaseExplorer({
   // resubscribe an old connection in the newly active account.
   useEffect(() => {
     catalogScopeKeyRef.current = catalogScope.key;
-    setWanted(new Set());
-    setOpen(new Set());
-    setObjectSectionsOpen(new Set());
-    setRefreshErrs({});
-    setFilters({});
-    setRefreshing(null);
   }, [catalogScope.key]);
 
   const wantedIds = useMemo(() => [...wanted].sort(), [wanted]);
@@ -336,13 +128,8 @@ export function DatabaseExplorer({
   // fetch or a free read. Retries are not automatic (see the query defaults), so a node
   // that failed refetches when the user expands it again.
   function ensureLoaded(id: string) {
-    setWanted((ids) => (ids.has(id) ? ids : new Set(ids).add(id)));
-    setRefreshErrs((m) => {
-      if (!(id in m)) return m;
-      const n = { ...m };
-      delete n[id];
-      return n;
-    });
+    commands.want(id);
+    commands.clearRefreshError(id);
     if (
       queryClient.getQueryState(qk.catalogOverview(id, catalogScope.key))?.status === "error"
     ) {
@@ -361,19 +148,14 @@ export function DatabaseExplorer({
 
   function toggleOpen(id: string) {
     const willOpen = !open.has(id);
-    setOpen((o) => {
-      const n = new Set(o);
-      if (willOpen) n.add(id);
-      else n.delete(id);
-      return n;
-    });
+    commands.toggleConnection(id);
     if (willOpen) ensureGroupLoaded(id);
   }
 
   // Selecting a connection auto-expands it (collapse stays a free action after).
   useEffect(() => {
     if (!selectedId) return;
-    setOpen((o) => (o.has(selectedId) ? o : new Set(o).add(selectedId)));
+    commands.openConnection(selectedId);
     ensureGroupLoaded(selectedId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -383,35 +165,28 @@ export function DatabaseExplorer({
   // Writing the result into the shared cache updates every surface reading this catalog.
   async function refreshSchema(id: string) {
     const scopeKey = catalogScope.key;
-    setRefreshing(id);
-    setRefreshErrs((m) => {
-      const n = { ...m };
-      delete n[id];
-      return n;
-    });
+    commands.patch({ refreshingId: id });
+    commands.clearRefreshError(id);
     try {
       const catalog = await fetchFreshCatalog(id);
       if (catalogScopeKeyRef.current !== scopeKey) return;
       await replaceFreshCatalog(queryClient, id, scopeKey, catalog);
-      setWanted((ids) => (ids.has(id) ? ids : new Set(ids).add(id)));
+      commands.want(id);
     } catch (e) {
       if (catalogScopeKeyRef.current !== scopeKey) return;
-      setRefreshErrs((m) => ({ ...m, [id]: errMessage(e) }));
+      commands.setRefreshError(id, errMessage(e));
     } finally {
-      if (catalogScopeKeyRef.current === scopeKey) setRefreshing(null);
+      if (catalogScopeKeyRef.current === scopeKey) {
+        commands.patch({ refreshingId: null });
+      }
     }
   }
 
   async function removeConnection(conn: ConnectionProfile) {
-    setDeleting(conn.id);
+    commands.patch({ deletingId: conn.id });
     try {
       await deleteConnection(conn.id);
-      setWanted((ids) => {
-        if (!ids.has(conn.id)) return ids;
-        const next = new Set(ids);
-        next.delete(conn.id);
-        return next;
-      });
+      commands.forget(conn.id);
       forgetDetails(conn.id);
       queryClient.removeQueries({ queryKey: qk.catalog(conn.id, catalogScope.key) });
       queryClient.removeQueries({
@@ -425,744 +200,72 @@ export function DatabaseExplorer({
     } catch (e) {
       toast(errMessage(e), "error");
     } finally {
-      setDeleting(null);
+      commands.patch({ deletingId: null });
     }
-  }
-
-  function connectionById(id: string) {
-    return connections.find((conn) => conn.id === id) ?? null;
-  }
-
-  function schemaGroupByKey(key: string) {
-    for (const section of sections) {
-      if (section.kind === "group" && section.group.key === key) {
-        return section.group;
-      }
-    }
-    return null;
-  }
-
-  // Schema group comparison is SQL-only, so MongoDB connections can neither be dragged
-  // into a group nor accept one dropped on them — same-engine already implies "both or
-  // neither" once one side is excluded.
-  function canDropOnConnection(dragId: string | null, target: ConnectionProfile) {
-    const dragged = dragId ? connectionById(dragId) : null;
-    return (
-      !!dragged &&
-      dragged.id !== target.id &&
-      dragged.engine === target.engine &&
-      !isDocumentEngine(dragged.engine)
-    );
-  }
-
-  function canDropOnGroup(dragId: string | null, group: SchemaConnectionGroup) {
-    const dragged = dragId ? connectionById(dragId) : null;
-    const engine = group.connections[0]?.engine;
-    return (
-      !!dragged &&
-      !!engine &&
-      dragged.engine === engine &&
-      !isDocumentEngine(dragged.engine) &&
-      !group.connections.some((conn) => conn.id === dragged.id)
-    );
-  }
-
-  async function saveSchemaGroupUpdates(ids: ConnectionId[], schemaGroup: string) {
-    const originals = ids
-      .map((id) => connectionById(id))
-      .filter((conn): conn is ConnectionProfile => !!conn);
-    for (const id of ids) {
-      const original = connectionById(id);
-      if (original) onConnectionUpdated({ ...original, schemaGroup });
-    }
-    try {
-      const saved = await setConnectionsSchemaGroup(ids, schemaGroup);
-      saved.forEach(onConnectionUpdated);
-    } catch (err) {
-      originals.forEach(onConnectionUpdated);
-      throw err;
-    }
-  }
-
-  async function groupDraggedWithConnection(
-    dragged: ConnectionProfile,
-    target: ConnectionProfile,
-  ) {
-    if (!canDropOnConnection(dragged.id, target)) return;
-    const targetGroup = target.schemaGroup?.trim();
-    const draggedGroup = dragged.schemaGroup?.trim();
-    const group =
-      targetGroup ||
-      draggedGroup ||
-      fallbackSchemaGroupName(dragged, target, connections);
-    const ids = [
-      ...(draggedGroup === group ? [] : [dragged.id]),
-      ...(targetGroup === group ? [] : [target.id]),
-    ];
-    if (ids.length === 0) return;
-    const confirmed = window.confirm(
-      t("connections.schemaGroupConfirmPair", {
-        source: dragged.name || dragged.database || t("app.unnamed"),
-        target: target.name || target.database || t("app.unnamed"),
-        group,
-      }),
-    );
-    if (!confirmed) return;
-    try {
-      await saveSchemaGroupUpdates(ids, group);
-      toast(t("connections.schemaGroupUpdated"));
-    } catch (err) {
-      toast(errMessage(err), "error");
-    }
-  }
-
-  async function groupDraggedIntoGroup(
-    dragged: ConnectionProfile,
-    group: SchemaConnectionGroup,
-  ) {
-    if (!canDropOnGroup(dragged.id, group)) return;
-    if (dragged.schemaGroup?.trim() === group.label) return;
-    const confirmed = window.confirm(
-      t("connections.schemaGroupConfirmGroup", {
-        connection: dragged.name || dragged.database || t("app.unnamed"),
-        group: group.label,
-      }),
-    );
-    if (!confirmed) return;
-    try {
-      await saveSchemaGroupUpdates([dragged.id], group.label);
-      toast(t("connections.schemaGroupUpdated"));
-    } catch (err) {
-      toast(errMessage(err), "error");
-    }
-  }
-
-  async function confirmAndApplyDrop(dragId: string, target: DropTarget) {
-    const dragged = connectionById(dragId);
-    if (!dragged) return;
-    if (target.kind === "connection") {
-      const targetConn = connectionById(target.id);
-      if (!targetConn) return;
-      await groupDraggedWithConnection(dragged, targetConn);
-      return;
-    }
-    const group = schemaGroupByKey(target.key);
-    if (group) await groupDraggedIntoGroup(dragged, group);
-  }
-
-  function isInteractiveDragTarget(target: EventTarget | null) {
-    return (
-      target instanceof HTMLElement &&
-      !!target.closest(
-        "button,input,select,textarea,a,summary,details,.db-menu,.tw,.ddl-btn",
-      )
-    );
-  }
-
-  function sameDropTarget(a: DropTarget | null, b: DropTarget | null) {
-    if (!a || !b) return a === b;
-    if (a.kind !== b.kind) return false;
-    if (a.kind === "connection" && b.kind === "connection") return a.id === b.id;
-    if (a.kind === "group" && b.kind === "group") return a.key === b.key;
-    return false;
-  }
-
-  function dropTargetFromPoint(dragId: string, x: number, y: number): DropTarget | null {
-    const element = document.elementFromPoint(x, y);
-    if (!(element instanceof HTMLElement)) return null;
-
-    const connectionEl = element.closest<HTMLElement>("[data-connection-id]");
-    const targetConnId = connectionEl?.dataset.connectionId;
-    if (targetConnId) {
-      const targetConn = connectionById(targetConnId);
-      if (targetConn && canDropOnConnection(dragId, targetConn)) {
-        return { kind: "connection", id: targetConn.id };
-      }
-    }
-
-    const groupEl = element.closest<HTMLElement>("[data-schema-group-key]");
-    const targetGroupKey = groupEl?.dataset.schemaGroupKey;
-    if (targetGroupKey) {
-      const group = schemaGroupByKey(targetGroupKey);
-      if (group && canDropOnGroup(dragId, group)) {
-        return { kind: "group", key: group.key };
-      }
-    }
-
-    return null;
-  }
-
-  function updateDropTargetFromPoint(dragId: string, x: number, y: number) {
-    const next = dropTargetFromPoint(dragId, x, y);
-    setDropTarget((current) => (sameDropTarget(current, next) ? current : next));
-  }
-
-  function clearPointerDrag() {
-    dragStartRef.current = null;
-    activeDragIdRef.current = null;
-    setDraggingId(null);
-    setDropTarget(null);
-    setDragPreview(null);
-  }
-
-  function pointerDownConnection(e: PointerEvent<HTMLDivElement>, conn: ConnectionProfile) {
-    if (e.button !== 0 || isInteractiveDragTarget(e.target)) return;
-    dragStartRef.current = {
-      id: conn.id,
-      pointerId: e.pointerId,
-      x: e.clientX,
-      y: e.clientY,
-    };
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-  }
-
-  function pointerMoveConnection(e: PointerEvent<HTMLDivElement>) {
-    const start = dragStartRef.current;
-    if (!start || start.pointerId !== e.pointerId) return;
-    const distance = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-    if (!activeDragIdRef.current && distance < 6) return;
-    if (!activeDragIdRef.current) {
-      activeDragIdRef.current = start.id;
-      suppressClickRef.current = true;
-      setDraggingId(start.id);
-    }
-    e.preventDefault();
-    setDragPreview({ id: start.id, x: e.clientX, y: e.clientY });
-    updateDropTargetFromPoint(start.id, e.clientX, e.clientY);
-  }
-
-  function pointerUpConnection(e: PointerEvent<HTMLDivElement>) {
-    const activeId = activeDragIdRef.current;
-    const target = activeId ? dropTargetFromPoint(activeId, e.clientX, e.clientY) : null;
-    if (dragStartRef.current?.pointerId === e.pointerId) {
-      try {
-        e.currentTarget.releasePointerCapture?.(e.pointerId);
-      } catch {
-        // Pointer capture may already be released by the browser.
-      }
-    }
-    clearPointerDrag();
-    if (activeId) window.setTimeout(() => {
-      suppressClickRef.current = false;
-    }, 0);
-    if (activeId && target) void confirmAndApplyDrop(activeId, target);
-  }
-
-  function pointerCancelConnection(e: PointerEvent<HTMLDivElement>) {
-    if (dragStartRef.current?.pointerId === e.pointerId) {
-      try {
-        e.currentTarget.releasePointerCapture?.(e.pointerId);
-      } catch {
-        // Pointer capture may already be released by the browser.
-      }
-    }
-    clearPointerDrag();
-  }
-
-  function tableMatchesFilter(table: CatalogTable, f: string) {
-    return (
-      table.name.toLowerCase().includes(f) ||
-      (table.schema ?? "").toLowerCase().includes(f)
-    );
-  }
-
-  function objectMatchesFilter(object: CatalogObject, f: string) {
-    return [
-      object.schema,
-      object.name,
-      object.kind,
-      object.detail,
-      object.parent,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase()
-      .includes(f);
   }
 
   function toggleObjectSection(connectionId: string, kind: string) {
     const key = `${connectionId}:${kind}`;
     if (!objectSectionsOpen.has(key)) requestDetails(connectionId);
-    setObjectSectionsOpen((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    commands.toggleObjectSection(key);
   }
 
   function toggleDefaultOpenSection(connectionId: string, kind: "table" | "view") {
     const key = `${connectionId}:${kind}`;
-    setCollapsedSections((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    commands.toggleCollapsedSection(key);
   }
 
-  function renderConnection(c: ConnectionProfile, nested = false) {
-    const isSel = c.id === selectedId;
-    const accessLabelBase =
-      c.workspaceAccess === "view"
-        ? t("workspace.accessView")
-        : c.workspaceAccess === "read"
-          ? t("workspace.accessRead")
-          : c.workspaceAccess === "write"
-            ? t("workspace.accessWrite")
-            : c.workspaceAccess === "manage"
-              ? t("workspace.accessManage")
-              : null;
-    const accessLabel = accessLabelBase && c.credentialMode === "managed"
-      ? `${accessLabelBase} · ${t("workspace.managedCredentials")}`
-      : accessLabelBase;
-    const connectionDescription = `${c.engine} · ${c.host}${
-      c.engine !== "sqlite" ? `:${c.port}` : ""
-    } · ${c.database}`;
-    const isDropTarget =
-      dropTarget?.kind === "connection" && dropTarget.id === c.id;
-    const rowClass = [
-      "db-conn",
-      "ds-object-row",
-      isSel ? "selected" : "",
-      nested ? "nested" : "",
-      draggingId === c.id ? "dragging" : "",
-      isDropTarget ? "drop-target" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
+  function renderConnection(connection: ConnectionProfile, nested = false) {
     return (
-      <div key={c.id} className="db-node">
-        <div
-          data-connection-id={c.id}
-          className={rowClass}
-          role="button"
-          aria-label={`${c.name || t("app.unnamed")} · ${connectionDescription}`}
-          tabIndex={0}
-          onPointerDown={(e) => pointerDownConnection(e, c)}
-          onPointerMove={pointerMoveConnection}
-          onPointerUp={pointerUpConnection}
-          onPointerCancel={pointerCancelConnection}
-          onClick={() => {
-            if (suppressClickRef.current) {
-              suppressClickRef.current = false;
-              return;
-            }
-            if (isSel) toggleOpen(c.id);
-            else onSelectConn(c.id);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              if (isSel) toggleOpen(c.id);
-              else onSelectConn(c.id);
-            }
-          }}
-        >
-          <span
-            className="tw"
-            title={open.has(c.id) ? t("connections.collapse") : t("connections.expand")}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleOpen(c.id);
-            }}
-          >
-            <Icon name={open.has(c.id) ? "chevronDown" : "chevronRight"} />
-          </span>
-          {!nested && <EngineMark engine={c.engine} />}
-          <span className="db-conn-name">{c.name || t("app.unnamed")}</span>
-          {c.env && <span className={`env-chip env-${c.env}`}>{c.env}</span>}
-          {accessLabel ? (
-            <span
-              className={`workspace-access-chip access-${c.workspaceAccess}`}
-              aria-label={accessLabel}
-              title={accessLabel}
-            >
-              <span className="workspace-access-dot" aria-hidden="true" />
-              <span className="workspace-access-label">{accessLabel}</span>
-            </span>
-          ) : null}
-          <SchemaDiffBadge
-            connection={c}
-            groupsByConnectionId={groupByConnectionId}
-            catalogs={catalogs}
-          />
-          <div
-            className={`db-menu${openMenuId === c.id ? " open" : ""}`}
-            onPointerDown={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              e.stopPropagation();
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setOpenMenuId(null);
-                e.currentTarget.querySelector<HTMLButtonElement>(".db-menu-trigger")?.focus();
-              }
-            }}
-          >
-            <button
-              type="button"
-              className="btn small icon-only icon-xs db-menu-trigger"
-              title={t("connections.connectionMenu")}
-              aria-label={t("connections.connectionMenu")}
-              aria-expanded={openMenuId === c.id}
-              aria-controls={`connection-menu-${c.id}`}
-              onClick={() => setOpenMenuId((current) => (current === c.id ? null : c.id))}
-            >
-              <Icon name="moreVertical" />
-            </button>
-            {openMenuId === c.id && (
-              <div className="db-menu-panel" id={`connection-menu-${c.id}`}>
-                {c.workspaceAccess === "local" ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenuId(null);
-                      onEdit(c);
-                    }}
-                  >
-                    {t("connections.edit")}
-                  </button>
-                ) : c.workspaceAccess !== "view"
-                  && c.credentialMode === "memberLocal" ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenuId(null);
-                      setWorkspaceDialog({ connection: c, mode: "credentials" });
-                    }}
-                  >
-                    {t("workspace.bindCredentialsShort")}
-                  </button>
-                ) : null}
-                {c.workspaceAccess === "local" ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenMenuId(null);
-                      setWorkspaceDialog({ connection: c, mode: "copy" });
-                    }}
-                  >
-                    {t("workspace.copyToWorkspace")}
-                  </button>
-                ) : null}
-                {c.workspaceAccess !== "view" ? (
-                  <button
-                    type="button"
-                    disabled={refreshing === c.id}
-                    onClick={() => {
-                      setOpenMenuId(null);
-                      void refreshSchema(c.id);
-                    }}
-                  >
-                    {refreshing === c.id ? t("common.working") : t("connections.refreshSchema")}
-                  </button>
-                ) : null}
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={showRowCounts}
-                    onChange={(e) => setShowRowCounts(e.target.checked)}
-                  />
-                  {t("connections.showRowCounts")}
-                </label>
-                {c.workspaceAccess === "local" ? (
-                  <ConfirmButton
-                    className="db-menu-item danger"
-                    confirmLabel={t("common.reallyDelete")}
-                    disabled={deleting === c.id}
-                    onConfirm={() => void removeConnection(c)}
-                  >
-                    {t("common.delete")}
-                  </ConfirmButton>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {open.has(c.id) &&
-          (() => {
-            const fullCatalog = catalogs[c.id];
-            const overview = overviews[c.id];
-            const cat = overview
-              ? catalogFromOverview(overview, fullCatalog)
-              : fullCatalog;
-            const cerr = errs[c.id];
-            const detailErr = detailErrs[c.id];
-            const diff = schemaDiffForConnection(c, groupByConnectionId, catalogs);
-            const filter = filters[c.id] ?? "";
-            const f = filter.trim().toLowerCase();
-            const filteredTables = cat
-              ? f
-                ? cat.tables.filter((t) => tableMatchesFilter(t, f))
-                : cat.tables
-              : [];
-            const filteredObjects = cat
-              ? f
-                ? (cat.objects ?? []).filter((object) => objectMatchesFilter(object, f))
-                : (cat.objects ?? [])
-              : [];
-            const all = orderTablesBySchemaDiff(filteredTables, diff);
-            const missingTables = diff
-              ? f
-                ? diff.missingTables.filter((t) => tableMatchesFilter(t, f))
-                : diff.missingTables
-              : [];
-            const tbls = all.filter((t) => t.kind !== "view");
-            const views = all.filter((t) => t.kind === "view");
-            const supportedKinds = supportedObjectKinds(c.engine);
-            const tablesOpen = !collapsedSections.has(`${c.id}:table`);
-            const viewsOpen = !collapsedSections.has(`${c.id}:view`);
-            const objectSections = SQL_OBJECT_SECTIONS.filter(
-              (section) =>
-                supportedKinds.has(section.kind)
-                || filteredObjects.some((object) => object.kind === section.kind),
-            );
-            const renderRow = (table: CatalogTable) => {
-              const key = tableKey(table);
-              const tableDiff = diff?.tableDiffs[key];
-              const tone = tableDiffTone(tableDiff);
-              const rowClasses = [
-                "db-table",
-                "ds-object-row",
-                isSel && selectedTableKey === key ? "selected" : "",
-                tone ? `schema-diff-${tone}` : "",
-              ]
-                .filter(Boolean)
-                .join(" ");
-              return (
-                <div
-                  key={key}
-                  className={rowClasses}
-                  aria-selected={isSel && selectedTableKey === key}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onOpenTable(c, table)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onOpenTable(c, table);
-                    }
-                  }}
-                  title={
-                    tableDiff
-                      ? schemaTableDiffTitle(t, tableDiff)
-                      : fullCatalog
-                        ? t("connections.columns", { count: table.columns.length })
-                        : undefined
-                  }
-                >
-                  <span
-                    className={`schema-diff-dot${tone ? ` diff-${tone}` : " diff-none"}`}
-                    title={tableDiff ? schemaTableDiffTitle(t, tableDiff) : undefined}
-                    aria-hidden="true"
-                  />
-                  <Icon
-                    className="db-object-icon"
-                    name={
-                      isDocumentEngine(c.engine)
-                        ? "collection"
-                        : table.kind === "view"
-                          ? "view"
-                          : "table"
-                    }
-                  />
-                  <span className="tbl-name">
-                    {tableLabel(c.engine, table)}
-                  </span>
-                  {showRowCounts && table.rowEstimate != null && table.rowEstimate >= 0 && (
-                    <span className="tbl-count muted">
-                      ~{table.rowEstimate.toLocaleString()}
-                    </span>
-                  )}
-                  {/* CREATE-TABLE DDL is a SQL-only concept; MongoDB collections have none. */}
-                  {!isDocumentEngine(c.engine) && (
-                    <button
-                      className="ddl-btn"
-                      title={t("connections.showDdl")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDdl({ conn: c, table });
-                      }}
-                    >
-                      DDL
-                    </button>
-                  )}
-                </div>
-              );
-            };
-            const renderMissingRow = (table: CatalogTable) => (
-              <div
-                key={`missing-${tableKey(table)}`}
-                className="db-table schema-diff-missing-row ds-object-row"
-                title={t("connections.schemaDiffTableMissing")}
-              >
-                <span className="schema-diff-dot diff-missing" aria-hidden="true" />
-                <Icon
-                  className="db-object-icon"
-                  name={table.kind === "view" ? "view" : "table"}
-                />
-                <span className="tbl-name">{tableLabel(c.engine, table)}</span>
-                <span className="schema-diff-kind">
-                  {t(table.kind === "view" ? "schemaDiff.objectView" : "schemaDiff.objectTable")}
-                </span>
-                <span className="schema-diff-inline diff-missing">base</span>
-              </div>
-            );
-            return (
-              <div className="db-tables">
-                {cat && cat.tables.length + (cat.objects?.length ?? 0) > 5 && (
-                  <input
-                    className="table-filter"
-                    placeholder={t("connections.filterTables")}
-                    value={filter}
-                    onChange={(e) =>
-                      setFilters((m) => ({ ...m, [c.id]: e.target.value }))
-                    }
-                  />
-                )}
-                {cerr && <div className="error small-pad">{cerr}</div>}
-                {detailErr && <div className="muted small-pad">{detailErr}</div>}
-                {!cat && !cerr && (
-                  <div className="muted small-pad loading">
-                    {t("connections.loadingSchema")}
-                  </div>
-                )}
-                {cat
-                  && all.length === 0
-                  && filteredObjects.length === 0
-                  && missingTables.length === 0 && (
-                  <div className="muted small-pad">
-                    {f
-                      ? t("connections.noTablesMatch", { filter: f })
-                      : t("connections.noObjects")}
-                  </div>
-                )}
-                {(tbls.length > 0 || (!f && cat && !isDocumentEngine(c.engine))) && (
-                  <>
-                    <div
-                      className="db-section"
-                      role="button"
-                      tabIndex={0}
-                      aria-expanded={tablesOpen}
-                      onClick={() => toggleDefaultOpenSection(c.id, "table")}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          toggleDefaultOpenSection(c.id, "table");
-                        }
-                      }}
-                    >
-                      <span className="tw">
-                        <Icon name={tablesOpen ? "chevronDown" : "chevronRight"} />
-                      </span>
-                      <Icon
-                        className="db-section-icon"
-                        name={isDocumentEngine(c.engine) ? "collection" : "table"}
-                      />
-                      {t(
-                        isDocumentEngine(c.engine)
-                          ? "connections.collections"
-                          : "connections.tables",
-                        { count: tbls.length },
-                      )}
-                    </div>
-                    {tablesOpen && tbls.map(renderRow)}
-                  </>
-                )}
-                {(views.length > 0 || (!f && cat && !isDocumentEngine(c.engine))) && (
-                  <>
-                    <div
-                      className="db-section"
-                      role="button"
-                      tabIndex={0}
-                      aria-expanded={viewsOpen}
-                      onClick={() => toggleDefaultOpenSection(c.id, "view")}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          toggleDefaultOpenSection(c.id, "view");
-                        }
-                      }}
-                    >
-                      <span className="tw">
-                        <Icon name={viewsOpen ? "chevronDown" : "chevronRight"} />
-                      </span>
-                      <Icon className="db-section-icon" name="view" />
-                      {t("connections.views", { count: views.length })}
-                    </div>
-                    {viewsOpen && views.map(renderRow)}
-                  </>
-                )}
-                {objectSections.map((section) => {
-                  const objects = filteredObjects.filter(
-                    (object) => object.kind === section.kind,
-                  );
-                  if (f && objects.length === 0) return null;
-                  const sectionKey = `${c.id}:${section.kind}`;
-                  // Search results should never be hidden behind a collapsed category.
-                  const expanded = Boolean(f) || objectSectionsOpen.has(sectionKey);
-                  return (
-                    <div className="db-object-section" key={section.kind}>
-                      <div
-                        className="db-section"
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={expanded}
-                        onClick={() => toggleObjectSection(c.id, section.kind)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            toggleObjectSection(c.id, section.kind);
-                          }
-                        }}
-                      >
-                        <span className="tw">
-                          <Icon name={expanded ? "chevronDown" : "chevronRight"} />
-                        </span>
-                        <Icon className="db-section-icon" name={section.icon} />
-                        {t(section.label, { count: objects.length })}
-                      </div>
-                      {expanded
-                        && objects.map((object, index) => (
-                          <div
-                            className="db-catalog-object ds-object-row"
-                            key={`${object.schema ?? ""}:${object.kind}:${object.name}:${
-                              object.detail ?? index
-                            }`}
-                            title={[
-                              catalogObjectLabel(object),
-                              object.parent ? `${t("connections.objectOn")} ${object.parent}` : null,
-                              object.detail && object.kind === "trigger" ? object.detail : null,
-                            ].filter(Boolean).join(" · ")}
-                          >
-                            <Icon className="db-object-icon" name={section.icon} />
-                            <span className="tbl-name">{catalogObjectLabel(object)}</span>
-                            {object.parent ? (
-                              <span className="db-object-parent muted">
-                                {t("connections.objectOn")} {object.parent}
-                              </span>
-                            ) : null}
-                          </div>
-                        ))}
-                    </div>
-                  );
-                })}
-                {missingTables.length > 0 && (
-                  <>
-                    <div className="db-section schema-diff-section">
-                      {t("connections.schemaDiffMissingSection", { count: missingTables.length })}
-                    </div>
-                    {missingTables.map(renderMissingRow)}
-                  </>
-                )}
-              </div>
-            );
-          })()}
-      </div>
+      <ConnectionNode
+        key={connection.id}
+        connection={connection}
+        nested={nested}
+        selected={connection.id === selectedId}
+        selectedTableKey={selectedTableKey}
+        expanded={open.has(connection.id)}
+        draggingId={draggingId}
+        dropTarget={dropTarget}
+        suppressClickRef={suppressClickRef}
+        openMenuId={openMenuId}
+        onOpenMenu={(id) => commands.patch({ openMenuId: id })}
+        refreshingId={refreshing}
+        deletingId={deleting}
+        showRowCounts={showRowCounts}
+        onShowRowCounts={(show) => commands.patch({ showRowCounts: show })}
+        overview={overviews[connection.id]}
+        fullCatalog={catalogs[connection.id]}
+        error={errs[connection.id]}
+        detailError={detailErrs[connection.id]}
+        filter={filters[connection.id] ?? ""}
+        groupByConnectionId={groupByConnectionId}
+        catalogs={catalogs}
+        collapsedSections={collapsedSections}
+        objectSectionsOpen={objectSectionsOpen}
+        onPointerDown={pointerDownConnection}
+        onPointerMove={pointerMoveConnection}
+        onPointerUp={pointerUpConnection}
+        onPointerCancel={pointerCancelConnection}
+        onToggleOpen={() => toggleOpen(connection.id)}
+        onSelect={() => onSelectConn(connection.id)}
+        onEdit={() => onEdit(connection)}
+        onWorkspaceDialog={(mode) =>
+          commands.openWorkspaceDialog({ connection, mode })
+        }
+        onRefresh={() => void refreshSchema(connection.id)}
+        onDelete={() => void removeConnection(connection)}
+        onFilter={(value) => commands.filter(connection.id, value)}
+        onOpenTable={(table) => onOpenTable(connection, table)}
+        onShowDdl={(table) =>
+          commands.openDdlDialog({ connection, table })
+        }
+        onToggleDefaultSection={(kind) =>
+          toggleDefaultOpenSection(connection.id, kind)
+        }
+        onToggleObjectSection={(kind) =>
+          toggleObjectSection(connection.id, kind)
+        }
+      />
     );
   }
 
@@ -1254,7 +357,9 @@ export function DatabaseExplorer({
 
       {dragPreview &&
         (() => {
-          const conn = connectionById(dragPreview.id);
+          const conn =
+            connections.find((connection) => connection.id === dragPreview.id) ??
+            null;
           if (!conn) return null;
           return (
             <div
@@ -1269,15 +374,19 @@ export function DatabaseExplorer({
           );
         })()}
 
-      {ddl && (
-        <DdlModal conn={ddl.conn} table={ddl.table} onClose={() => setDdl(null)} />
+      {ddlDialog && (
+        <DdlModal
+          connection={ddlDialog.connection}
+          table={ddlDialog.table}
+          onClose={() => commands.patch({ ddlDialog: null })}
+        />
       )}
       {workspaceDialog ? (
         <WorkspaceConnectionDialog
           connection={workspaceDialog.connection}
           mode={workspaceDialog.mode}
           onBound={onConnectionUpdated}
-          onClose={() => setWorkspaceDialog(null)}
+          onClose={() => commands.patch({ workspaceDialog: null })}
         />
       ) : null}
     </aside>

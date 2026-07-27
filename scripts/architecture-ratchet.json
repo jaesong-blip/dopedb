@@ -1,9 +1,5 @@
 {
   "sourceLineLimit": 900,
   "featureFileLineLimit": 500,
-  "oversizedFiles": {
-    "src/screens/Connections/DatabaseExplorer.tsx": 1285,
-    "src/App.tsx": 1160,
-    "src/screens/Tables/index.tsx": 1142
-  }
+  "oversizedFiles": {}
 }

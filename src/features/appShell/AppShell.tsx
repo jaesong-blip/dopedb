@@ -1,0 +1,496 @@
+// Desktop workbench shell: coordinates the selected connection, document surface,
+// workspace navigation, and the persistent connection-pinned Terminal Dock.
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { CatalogTable } from "../../ipc/types";
+import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
+import type { Dashboard } from "../../features/dashboards/domain";
+import type { SqlDocument } from "../../features/sqlDocuments/domain";
+import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
+import {
+  queryDocument,
+  stableDocument,
+  tableDocument,
+  type WorkbenchDocument,
+} from "../../features/workbench/domain";
+import { useWorkbenchDocuments } from "../../features/workbench/useWorkbenchDocuments";
+import { ToastProvider, useToast } from "../../components/Toast";
+import { hasCapability, isDocumentEngine } from "../../lib/capabilities";
+import { useI18n } from "../../lib/i18n";
+import {
+  OperationActivityProvider,
+  useOperationActivity,
+} from "../../lib/operationActivity";
+import {
+  driversQuery,
+  skillStatusQuery,
+} from "../../lib/queries";
+import { buildConnectionSections } from "../../lib/schemaDiff";
+import type { SettingsSection } from "../../screens/Settings";
+import ShellLayout from "./ShellLayout";
+import WorkbenchContent, {
+  type EditingConnection,
+} from "./WorkbenchContent";
+import type { AppArea } from "./WorkbenchRail";
+import { useAvailableUpdate } from "./useAvailableUpdate";
+import { useConnectionProfiles } from "./useConnectionProfiles";
+import { useOperationNudge } from "./useOperationNudge";
+import { useResponsiveShell } from "./useResponsiveShell";
+import { useSafetySettings } from "./useSafetySettings";
+import { useSidebarWidth } from "./useSidebarWidth";
+import { useTerminalDock } from "./useTerminalDock";
+import {
+  preloadSqlEditor,
+  useActivitySeen,
+  useDashboardCreation,
+  usePersistentAppArea,
+  usePersistentSelectedConnection,
+  useRestoredWorkbenchState,
+  useSqlEditorPreload,
+} from "./navigationHooks";
+
+// Chat2DB-style information architecture:
+// - the global rail switches products (database workspace / dashboard);
+// - database tools are real documents inside the selected connection's workbench;
+// - interactive Shell/Agent sessions live in a persistent, connection-pinned Terminal Dock.
+// `null` = not editing; "new" = blank form; a profile = edit that profile.
+export default function App() {
+  return (
+    <ToastProvider>
+      <OperationActivityProvider>
+        <Shell />
+      </OperationActivityProvider>
+    </ToastProvider>
+  );
+}
+
+
+function Shell() {
+  const { t } = useI18n();
+  const { unseen, latest, markSeen } = useOperationActivity();
+  const toast = useToast();
+  // Keep one bounded Skill inventory observer alive for the app lifecycle. This performs
+  // the required startup scan and rechecks after focus without creating install roots.
+  const skillStatusQ = useQuery(skillStatusQuery());
+  const {
+    connections: conns,
+    setConnections: setConns,
+    loadError,
+    refresh,
+    clear: clearConnections,
+  } = useConnectionProfiles();
+  const {
+    width: sidebarW,
+    startDrag: startSidebarDrag,
+    reset: resetSidebarWidth,
+  } = useSidebarWidth();
+  const [selectedId, setSelectedId] = usePersistentSelectedConnection();
+  const {
+    safety,
+    error: safetyError,
+    refresh: refreshSafety,
+    clear: clearSafety,
+  } = useSafetySettings(selectedId);
+  const [editing, setEditing] = useState<EditingConnection>(null);
+  const { legacyAuditOpen, restoredDocumentKind } = useRestoredWorkbenchState();
+  const [area, setArea] = usePersistentAppArea();
+  const {
+    open: terminalDockOpen,
+    width: terminalDockWidth,
+    buttonRef: terminalButtonRef,
+    show: openTerminalDock,
+    close: closeTerminalDock,
+    resize: updateTerminalDockWidth,
+  } = useTerminalDock();
+  const {
+    terminalOverlay,
+    compact: compactShell,
+    mobileExplorerOpen,
+    setMobileExplorerOpen,
+    mainRef,
+    dismissMobileExplorer,
+    focusMainAfterMobileSelection,
+  } = useResponsiveShell();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<
+    SettingsSection | undefined
+  >(undefined);
+  const [schemaDiffGroupKey, setSchemaDiffGroupKey] = useState<string | null>(null);
+  const { availableUpdate, sync: syncAvailableUpdate } = useAvailableUpdate();
+  const openDashboard = useCallback((dashboard: Dashboard) => {
+    setSelectedId(dashboard.connectionId);
+    setEditing(null);
+    setSettingsOpen(false);
+    setSchemaDiffGroupKey(null);
+    setArea("dashboard");
+  }, []);
+  const {
+    focusId: dashboardFocusId,
+    setFocusId: setDashboardFocusId,
+    consumeFocus: consumeDashboardFocus,
+  } = useDashboardCreation(openDashboard);
+
+  const selected = conns.find((c) => c.id === selectedId) ?? null;
+  const showTerminalDock =
+    terminalDockOpen && !!selected && !settingsOpen && editing === null;
+  // Schema diff is a SQL-only comparison feature — a group whose connections are MongoDB
+  // is never a valid diff candidate, even if one somehow carries a schemaGroup value.
+  const schemaGroups = useMemo(
+    () =>
+      buildConnectionSections(conns).flatMap((section) =>
+        section.kind === "group" && !isDocumentEngine(section.group.connections[0]?.engine)
+          ? [section.group]
+          : [],
+      ),
+    [conns],
+  );
+  const activeSchemaGroup =
+    schemaGroups.find((group) => group.key === schemaDiffGroupKey) ?? null;
+
+  // SQL and Documents are mutually exclusive per connection, gated by the resolved
+  // driver capability. Engine fallback avoids a SQL/Documents flash while drivers load.
+  const driversQ = useQuery(driversQuery());
+  const supportsSql =
+    !selected ||
+    (driversQ.data
+      ? hasCapability(driversQ.data, selected, "sql")
+      : !isDocumentEngine(selected.engine));
+  const workbench = useWorkbenchDocuments({
+    selectedConnectionId: selected?.id ?? null,
+    supportsSql,
+    restoredDocumentKind,
+    sqlDocuments: tauriSqlDocumentGateway,
+    onRestoreError: (error) => {
+      console.error("could not restore SQL documents:", error);
+    },
+  });
+  const {
+    selectedDocuments,
+    activeDocument,
+    activeDocumentId,
+  } = workbench;
+  const selectedTable = activeDocument?.kind === "data" ? activeDocument.table : null;
+
+  useSqlEditorPreload(selected?.id ?? null, supportsSql);
+
+  useEffect(() => {
+    if (schemaDiffGroupKey && !activeSchemaGroup) setSchemaDiffGroupKey(null);
+  }, [activeSchemaGroup, schemaDiffGroupKey]);
+
+  async function reloadWorkspaceScope() {
+    setSelectedId(null);
+    workbench.reset();
+    setEditing(null);
+    setSettingsOpen(false);
+    setSchemaDiffGroupKey(null);
+    setDashboardFocusId(null);
+    clearSafety();
+    clearConnections();
+    await refresh();
+  }
+
+  const notifyOperation = useCallback(
+    () => toast(t("app.toastAgentQuery")),
+    [t, toast],
+  );
+  useOperationNudge(latest?.id ?? null, showTerminalDock, notifyOperation);
+
+  useActivitySeen(activeDocument?.kind ?? null, unseen, markSeen);
+
+  async function loadSql(sql: string) {
+    if (!selected) return;
+    let document: WorkbenchDocument;
+    try {
+      document = await workbench.openQuery({
+        connectionId: selected.id,
+        supportsSql,
+        title: "History query",
+        content: sql,
+      });
+    } catch (error) {
+      toast(errMessage(error), "error");
+      return;
+    }
+    workbench.activate(document);
+    setArea("workspace");
+  }
+
+  function openAgentToolsSettings() {
+    setSettingsSection("agent-tools");
+    setSettingsOpen(true);
+    setSchemaDiffGroupKey(null);
+    setEditing(null);
+  }
+
+  function openUpdateSettings() {
+    setSettingsSection("updates");
+    setSettingsOpen(true);
+    setSchemaDiffGroupKey(null);
+    setEditing(null);
+  }
+
+  function openOrFocusTerminalDock() {
+    if (!selected) return;
+    if (showTerminalDock) {
+      window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLButtonElement>(
+            '[data-terminal-focus-target="active-session"], [data-terminal-focus-target="launcher"]',
+          )
+          ?.focus();
+      });
+      return;
+    }
+    setSettingsOpen(false);
+    setEditing(null);
+    setSchemaDiffGroupKey(null);
+    setMobileExplorerOpen(false);
+    openTerminalDock();
+  }
+
+  function selectConnection(id: string, nextArea: AppArea = area) {
+    const connection = conns.find((candidate) => candidate.id === id);
+    const initial = connection && isDocumentEngine(connection.engine)
+      ? queryDocument(id, "documents")
+      : stableDocument(id, "schema");
+    workbench.prime(initial);
+    setSelectedId(id);
+    setEditing(null);
+    setSettingsOpen(false);
+    setSchemaDiffGroupKey(null);
+    setDashboardFocusId(null);
+    setMobileExplorerOpen(false);
+    setArea(nextArea);
+    focusMainAfterMobileSelection();
+  }
+
+  function activateDocument(
+    document: WorkbenchDocument,
+    closeMobileExplorer = true,
+  ) {
+    workbench.activate(document);
+    setEditing(null);
+    setSettingsOpen(false);
+    setSchemaDiffGroupKey(null);
+    if (closeMobileExplorer) {
+      setMobileExplorerOpen(false);
+      if (mobileExplorerOpen) focusMainAfterMobileSelection();
+    }
+    setArea("workspace");
+  }
+
+  function openTableDocument(connection: ConnectionProfile, table: CatalogTable) {
+    const document = tableDocument(connection.id, table);
+    if (selectedId !== connection.id) {
+      workbench.prime(document);
+      setSelectedId(connection.id);
+    }
+    activateDocument(document);
+  }
+
+  function openStableDocument(
+    kind: "schema" | "activity",
+    closeMobileExplorer = true,
+  ) {
+    if (!selected) return;
+    activateDocument(stableDocument(selected.id, kind), closeMobileExplorer);
+  }
+
+  async function openQueryDocument() {
+    if (!selected) return;
+    preloadSqlEditor();
+    try {
+      const document = await workbench.openQuery({
+        connectionId: selected.id,
+        supportsSql,
+      });
+      activateDocument(document);
+    } catch (error) {
+      toast(errMessage(error), "error");
+    }
+  }
+
+  function closeDocument(id: string) {
+    if (!selected) return;
+    workbench.close(id, selected.id, supportsSql);
+  }
+
+  function setActiveQueryDraft(value: string) {
+    if (!activeDocument || (activeDocument.kind !== "sql" && activeDocument.kind !== "documents")) {
+      return;
+    }
+    workbench.updateDraft(activeDocument.id, value);
+  }
+
+  function setActiveQueryTitle(value: string) {
+    if (!activeDocument || activeDocument.kind !== "sql") return;
+    workbench.updateTitle(activeDocument.id, value);
+  }
+
+  function applySavedQuery(saved: SqlDocument) {
+    if (!activeDocument || activeDocument.kind !== "sql") return;
+    workbench.applyPersisted(activeDocument.id, saved);
+  }
+
+  function startNewConnection() {
+    setEditing("new");
+    setSettingsOpen(false);
+    setSchemaDiffGroupKey(null);
+    setMobileExplorerOpen(false);
+    focusMainAfterMobileSelection();
+  }
+
+  const mainContent = (
+    <WorkbenchContent
+      settingsOpen={settingsOpen}
+      settingsSection={settingsSection}
+      selected={selected}
+      activeSchemaGroup={activeSchemaGroup}
+      editing={editing}
+      loadError={loadError}
+      connections={conns}
+      safety={safety}
+      safetyError={safetyError}
+      area={area}
+      selectedDocuments={selectedDocuments}
+      activeDocument={activeDocument}
+      activeDocumentId={activeDocumentId}
+      selectedTable={selectedTable}
+      supportsSql={supportsSql}
+      dashboardFocusId={dashboardFocusId}
+      initialAuditOpen={legacyAuditOpen.current}
+      availableUpdate={availableUpdate}
+      showTerminalDock={showTerminalDock}
+      terminalButtonRef={terminalButtonRef}
+      onCloseSettings={() => setSettingsOpen(false)}
+      onUpdateChecked={syncAvailableUpdate}
+      onRefreshSafety={refreshSafety}
+      onCloseSchemaDiff={() => setSchemaDiffGroupKey(null)}
+      onConnectionSaved={async (profile) => {
+        await refresh();
+        setSelectedId(profile.id);
+        setEditing(null);
+      }}
+      onCancelEditing={() => setEditing(null)}
+      onRetryConnections={() => void refresh()}
+      onNewConnection={startNewConnection}
+      onOpenAgentTools={openAgentToolsSettings}
+      onSelectConnection={(id) => selectConnection(id, area)}
+      onActivateDocument={workbench.activateId}
+      onCloseDocument={closeDocument}
+      onNewQuery={() => void openQueryDocument()}
+      onOpenActivity={() => openStableDocument("activity")}
+      onDashboardFocusConsumed={consumeDashboardFocus}
+      onOpenTerminal={openOrFocusTerminalDock}
+      onSetQueryDraft={setActiveQueryDraft}
+      onSetQueryTitle={setActiveQueryTitle}
+      onPersistedQuery={applySavedQuery}
+      onOpenTable={(table) => selected && openTableDocument(selected, table)}
+      onLoadSql={loadSql}
+      onInitialAuditOpenConsumed={() => {
+        legacyAuditOpen.current = false;
+      }}
+      onRetrySafety={refreshSafety}
+    />
+  );
+
+  return (
+    <ShellLayout
+      area={area}
+      settingsOpen={settingsOpen}
+      editing={editing}
+      activeSchemaGroup={activeSchemaGroup}
+      activeSchemaGroupKey={schemaDiffGroupKey}
+      connections={conns}
+      selected={selected}
+      selectedId={selectedId}
+      selectedTable={selectedTable}
+      supportsSql={supportsSql}
+      dashboardFocusId={dashboardFocusId}
+      compact={compactShell}
+      mobileExplorerOpen={mobileExplorerOpen}
+      sidebarWidth={sidebarW}
+      mainRef={mainRef}
+      mainContent={mainContent}
+      availableUpdate={availableUpdate}
+      showTerminalDock={showTerminalDock}
+      terminalOverlay={terminalOverlay}
+      terminalWidth={terminalDockWidth}
+      skillStatus={skillStatusQ.data ?? null}
+      onWorkspaceScopeChanged={reloadWorkspaceScope}
+      onNewConnection={startNewConnection}
+      onArea={(next) => {
+        const sameArea = next === area && !settingsOpen;
+        setSettingsOpen(false);
+        setEditing(null);
+        setSchemaDiffGroupKey(null);
+        setArea(next);
+        if (next === "workspace" && selected) {
+          openStableDocument("schema", false);
+        }
+        if (compactShell) {
+          if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
+          else setMobileExplorerOpen(true);
+        }
+      }}
+      onSettings={() => {
+        setSettingsSection(undefined);
+        setSettingsOpen(true);
+        setSchemaDiffGroupKey(null);
+        setMobileExplorerOpen(false);
+      }}
+      onSelectDashboardConnection={(id) => selectConnection(id, "dashboard")}
+      onDashboardFocus={setDashboardFocusId}
+      onSelectWorkspaceConnection={(id) => selectConnection(id, "workspace")}
+      onOpenTable={openTableDocument}
+      onOpenSchemaDiff={(group) => {
+        setArea("workspace");
+        setEditing(null);
+        setSettingsOpen(false);
+        setSchemaDiffGroupKey(group.key);
+      }}
+      onEditConnection={(connection) => {
+        setEditing(connection);
+        setSettingsOpen(false);
+        setSchemaDiffGroupKey(null);
+      }}
+      onDeletedConnection={async (id) => {
+        await refresh();
+        if (selectedId === id) {
+          setSelectedId(null);
+          workbench.reset();
+        }
+        if (schemaDiffGroupKey) setSchemaDiffGroupKey(null);
+        setEditing((current) => {
+          if (current && current !== "new" && current.id === id) return null;
+          return current;
+        });
+      }}
+      onConnectionUpdated={(updated) => {
+        setConns((current) =>
+          current.map((connection) =>
+            connection.id === updated.id ? updated : connection,
+          ),
+        );
+        setEditing((current) => {
+          if (current && current !== "new" && current.id === updated.id) {
+            return updated;
+          }
+          return current;
+        });
+      }}
+      onDismissMobileExplorer={() => dismissMobileExplorer(true)}
+      onStartSidebarDrag={startSidebarDrag}
+      onResetSidebar={resetSidebarWidth}
+      onOpenUpdateSettings={openUpdateSettings}
+      onTerminalWidthChange={updateTerminalDockWidth}
+      onCloseTerminal={closeTerminalDock}
+    />
+  );
+}

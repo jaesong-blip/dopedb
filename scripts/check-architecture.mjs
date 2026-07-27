@@ -145,6 +145,11 @@ for (const [filePath] of oversized) {
 }
 
 const removedPaths = [
+  "src/screens/Connections/databaseExplorerDomain.ts",
+  "src/screens/Connections/useSchemaGroupDrag.ts",
+  "src/screens/Tables/catalogTable.ts",
+  "src/screens/Tables/tableState.ts",
+  "src/screens/Tables/types.ts",
   "src-tauri/src/operations/repository.rs",
   "src-tauri/src/services/activity_service.rs",
   "src-tauri/src/services/document_service.rs",
@@ -211,6 +216,57 @@ for (const filePath of removedPaths) {
     fail(`removed legacy path returned: ${filePath}`);
   }
 }
+
+const frontendCompositionModules = [
+  "src/features/appShell/AppShell.tsx",
+  "src/features/appShell/ShellLayout.tsx",
+  "src/features/appShell/WorkbenchContent.tsx",
+  "src/features/catalogExplorer/catalogDomain.ts",
+  "src/features/catalogExplorer/state.ts",
+  "src/features/catalogExplorer/useSchemaGroupDrag.ts",
+  "src/features/tableData/catalogTable.ts",
+  "src/features/tableData/domain.ts",
+  "src/features/tableData/state.ts",
+  "src/features/tableData/tauriAdapter.ts",
+  "src/screens/Connections/CatalogTree.tsx",
+  "src/screens/Connections/ConnectionNode.tsx",
+  "src/screens/Connections/DdlModal.tsx",
+  "src/screens/Tables/MongoTableData.tsx",
+  "src/screens/Tables/SqlTableData.tsx",
+  "src/screens/Tables/TableSidePanel.tsx",
+  "src/screens/Tables/TableToolbar.tsx",
+];
+for (const filePath of frontendCompositionModules) {
+  requireFile(filePath);
+  const lines = lineCount(read(filePath));
+  if (lines > ratchet.featureFileLineLimit) {
+    fail(
+      `${filePath}: frontend composition has ${lines} lines; keep it below ${ratchet.featureFileLineLimit}`,
+    );
+  }
+}
+for (const filePath of [
+  "src/App.tsx",
+  "src/screens/Connections/DatabaseExplorer.tsx",
+  "src/screens/Tables/index.tsx",
+  "src/screens/Tables/SqlTableData.tsx",
+]) {
+  forbid(filePath, [
+    [
+      /from\s+["'][^"']*ipc\/commands["']/,
+      "frontend composition must send commands through a feature adapter",
+    ],
+  ]);
+}
+forbid("src/screens/Connections/DatabaseExplorer.tsx", [
+  [/\buseState\b/, "catalog explorer state must stay in its feature reducer"],
+]);
+forbid("src/screens/Tables/SqlTableData.tsx", [
+  [/\buseState\b/, "table data state must stay in its feature reducer"],
+]);
+forbid("src/screens/Tables/MongoTableData.tsx", [
+  [/\buseState\b/, "document table paging must stay in its feature reducer"],
+]);
 
 const centralServiceFiles = walk("src-tauri/src/services")
   .filter((file) => file.endsWith(".rs"))

@@ -2,7 +2,7 @@
 // must retain stable focus targets for the external Terminal action.
 import { describe, expect, it } from "vitest";
 
-import appSource from "../../App.tsx?raw";
+import appShellSource from "../../features/appShell/AppShell.tsx?raw";
 import dockSource from "./TerminalDock.tsx?raw";
 import tabsSource from "./TerminalTabs.tsx?raw";
 import dockCss from "./terminalDock.css?raw";
@@ -15,9 +15,9 @@ const terminalDockFiles = import.meta.glob("./*", {
 
 describe("Terminal Dock regression guards", () => {
   it("focuses an active tab or the empty-session launcher without toggling an open dock", () => {
-    const openOrFocus = appSource.slice(
-      appSource.indexOf("function openOrFocusTerminalDock()"),
-      appSource.indexOf("function syncAvailableUpdate"),
+    const openOrFocus = appShellSource.slice(
+      appShellSource.indexOf("function openOrFocusTerminalDock()"),
+      appShellSource.indexOf("function selectConnection("),
     );
 
     expect(tabsSource).toMatch(

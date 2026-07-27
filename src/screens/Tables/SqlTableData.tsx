@@ -1,0 +1,475 @@
+// SQL table query, paging, filtering, and staged row-edit controller.
+import { useEffect } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import type {
+  CatalogTable,
+  SafetySettings,
+  ScriptOutcome,
+} from "../../ipc/types";
+import { errMessage } from "../../ipc/types";
+import type { ConnectionProfile } from "../../features/connections/domain";
+import {
+  approveTableChanges,
+  proposeTableChanges,
+  rejectTableChanges,
+  runTableChanges,
+} from "../../features/tableData/tauriAdapter";
+import { useCatalogTableMetadata } from "../../features/tableData/catalogTable";
+import type { RowEditorState } from "../../features/tableData/domain";
+import { useTableDataState } from "../../features/tableData/state";
+import {
+  FILTER_DEBOUNCE_MS,
+  sameFilters,
+  TABLE_PAGE_SIZE,
+} from "../../features/tableData/tableState";
+import DataGrid from "../../components/DataGrid";
+import type { RowEditorSubmission } from "../../components/RowEditor";
+import JobPanel from "../../components/JobPanel";
+import Skeleton from "../../components/Skeleton";
+import { useToast } from "../../components/Toast";
+import { tableRowsQuery } from "../../lib/queries";
+import { tableKey } from "../../lib/tableRef";
+import { useI18n } from "../../lib/i18n";
+import {
+  buildDelete,
+  cellToInput,
+  hasNonScalarPk,
+  pkColumns,
+} from "../../lib/sqlBuild";
+import TableSidePanel from "./TableSidePanel";
+import TableContextHeader from "./TableContextHeader";
+import TableStructure from "./TableStructure";
+import TableToolbar from "./TableToolbar";
+
+export default function SqlTableData({
+  connection,
+  table: requestedTable,
+  safety,
+}: {
+  connection: ConnectionProfile;
+  table: CatalogTable;
+  safety: SafetySettings;
+}) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const engine = connection.engine;
+  const { table, snapshotQuery } = useCatalogTableMetadata(connection.id, requestedTable);
+
+  const pageSize = Math.min(
+    TABLE_PAGE_SIZE,
+    safety.maxRows || TABLE_PAGE_SIZE,
+  );
+  const key = tableKey(table);
+  const {
+    state: {
+      writeError: writeErr,
+      page,
+      sort,
+      filters,
+      appliedFilters,
+      selectedRow: selected,
+      selectedCell: cellSel,
+      editor,
+      staged,
+      reviewing,
+      proposal: stagedProposal,
+      confirmation: stagedConfirmation,
+      running: stagedRunning,
+      pendingDelete,
+      structureOpen: structure,
+      jobsOpen,
+    },
+    commands,
+  } = useTableDataState(key);
+
+  const rowsQuery = useQuery({
+    ...tableRowsQuery({
+      connectionId: connection.id,
+      engine,
+      table,
+      filters: appliedFilters,
+      sort,
+      pageSize,
+      page,
+    }),
+    // Paging and filtering repaint the previous page (dimmed) instead of blanking the grid.
+    placeholderData: keepPreviousData,
+  });
+  const result = rowsQuery.data?.result ?? null;
+  const total = rowsQuery.data?.total ?? null;
+  const busy = rowsQuery.isFetching;
+  const err = writeErr ?? (rowsQuery.error ? errMessage(rowsQuery.error) : null);
+  const catalogRelation = snapshotQuery.data?.relations.find(
+    (candidate) =>
+      candidate.object.name === table.name &&
+      candidate.object.namespace === table.schema,
+  );
+
+  // Settling a filter always returns to the first page; both land in one render so only the
+  // final query key is ever fetched. The equality guard keeps this inert on mount and on a
+  // table switch, where a stray timer would otherwise yank the user back to page 0.
+  useEffect(() => {
+    if (sameFilters(filters, appliedFilters)) return;
+    const timer = window.setTimeout(() => {
+      commands.settleFilters();
+    }, FILTER_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [filters, appliedFilters]);
+  // Row editing needs a PK we can match on. No PK, or a PK whose rendered cell value can't
+  // round-trip to a literal (binary/json/array/composite), both disable it — same as noPk.
+  const nonScalarPk = hasNonScalarPk(table);
+  const canEdit = pkColumns(table).length > 0 && !nonScalarPk;
+  const activeFilters = Object.values(filters).filter((v) => v.trim()).length;
+
+  // Fresh rows landed, so any row/cell the user had selected now points at data that may
+  // no longer be there, and a stale write error no longer describes what is on screen.
+  useEffect(() => {
+    commands.patch({
+      selectedRow: null,
+      selectedCell: null,
+      writeError: null,
+    });
+  }, [rowsQuery.dataUpdatedAt]);
+
+  const rows = result?.rowCount ?? 0;
+  const from = rows === 0 ? 0 : page * pageSize + 1;
+  const to = page * pageSize + rows;
+
+  function cycleSort(col: string) {
+    commands.cycleSort(col);
+  }
+
+  const selRow = selected != null && result ? result.rows[selected] : null;
+
+  function rowMap(row: unknown[]): Record<string, string | null> {
+    const m: Record<string, string | null> = {};
+    result!.columns.forEach((c, i) => (m[c] = cellToInput(row[i])));
+    return m;
+  }
+
+  function openEdit(mode: RowEditorState["mode"]) {
+    const nextEditor =
+      mode === "insert"
+        ? { mode, initial: {} }
+        : selRow
+          ? { mode, initial: rowMap(selRow) }
+          : editor;
+    commands.patch({
+      jobsOpen: false,
+      editor: nextEditor,
+      selectedCell: null,
+    });
+  }
+
+  // Open a readable confirm (PK pairs) instead of staging a DELETE immediately —
+  // Delete sits next to Duplicate, so a mis-click shouldn't be one approval from a wipe.
+  function doDelete() {
+    if (!selRow || !result) return;
+    const pkVals: Record<string, string | null> = {};
+    for (const c of pkColumns(table)) {
+      const i = result.columns.indexOf(c.name);
+      pkVals[c.name] = i >= 0 ? cellToInput(selRow[i]) : null;
+    }
+    commands.patch({
+      pendingDelete: { key: pkVals, original: rowMap(selRow) },
+      editor: null,
+      selectedCell: null,
+      jobsOpen: false,
+    });
+  }
+
+  function stageWrite(write: RowEditorSubmission) {
+    commands.stage({
+      id: crypto.randomUUID(),
+      sql: write.sql,
+      rationale: write.rationale,
+    });
+  }
+
+  // Confirmed: build the DELETE and add it to the staged transaction.
+  function armDelete() {
+    if (!pendingDelete) return;
+    try {
+      stageWrite({
+        sql: buildDelete(
+          engine,
+          table,
+          pendingDelete.key,
+          pendingDelete.original,
+        ),
+        rationale: t("rowEditor.rationaleDelete", { table: table.name }),
+        collapseSql: true,
+      });
+      commands.patch({ pendingDelete: null });
+    } catch (e) {
+      commands.patch({ writeError: errMessage(e) });
+    }
+  }
+
+  function copyRow(asJson: boolean) {
+    if (!selRow || !result) return;
+    const text = asJson
+      ? JSON.stringify(
+          Object.fromEntries(result.columns.map((c, i) => [c, selRow[i] ?? null])),
+          null,
+          2,
+        )
+      : selRow
+          .map((v) => (v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v)))
+          .join("\t");
+    void navigator.clipboard.writeText(text);
+    toast(t("tables.copyRow"));
+  }
+
+  async function prepareStagedChanges() {
+    if (!staged.length || stagedRunning) return;
+    const fingerprint = snapshotQuery.data?.fingerprint;
+    if (!fingerprint) {
+      commands.patch({
+        writeError: snapshotQuery.error
+          ? errMessage(snapshotQuery.error)
+          : t("tables.catalogRequired"),
+      });
+      return;
+    }
+    commands.patch({ running: true, writeError: null });
+    try {
+      const proposal = await proposeTableChanges(
+        connection.id,
+        staged.map((change) => change.sql),
+        fingerprint,
+      );
+      commands.patch({ proposal, reviewing: true });
+      if (!proposal.approvalRequired) {
+        const outcome = await runTableChanges(proposal.operationId);
+        finishStagedChanges(outcome);
+      }
+    } catch (error) {
+      commands.patch({ writeError: errMessage(error) });
+    } finally {
+      commands.patch({ running: false });
+    }
+  }
+
+  async function approveStagedChanges() {
+    if (!stagedProposal || stagedRunning) return;
+    commands.patch({ running: true, writeError: null });
+    try {
+      await approveTableChanges(
+        stagedProposal.operationId,
+        stagedProposal.payloadHash,
+        stagedProposal.confirmationPhrase ? stagedConfirmation : undefined,
+      );
+      finishStagedChanges(await runTableChanges(stagedProposal.operationId));
+    } catch (error) {
+      commands.patch({ writeError: errMessage(error) });
+    } finally {
+      commands.patch({ running: false });
+    }
+  }
+
+  async function rejectStagedChanges() {
+    if (!stagedProposal || stagedRunning) return;
+    try {
+      await rejectTableChanges(
+        stagedProposal.operationId,
+        stagedProposal.payloadHash,
+      );
+    } catch (error) {
+      commands.patch({ writeError: errMessage(error) });
+    } finally {
+      commands.patch({
+        proposal: null,
+        confirmation: "",
+        reviewing: false,
+      });
+    }
+  }
+
+  function finishStagedChanges(outcome: ScriptOutcome) {
+    const conflict = outcome.statements.find((statement) =>
+      statement.error?.includes("optimistic concurrency conflict"),
+    );
+    if (!outcome.committed || conflict) {
+      commands.patch({
+        writeError:
+          conflict?.error ??
+          outcome.statements.find((statement) => statement.error)?.error ??
+          t("tables.changeSetRolledBack"),
+      });
+      return;
+    }
+    toast(t("tables.rowsWritten", { count: outcome.statements.length }));
+    commands.patch({
+      staged: [],
+      reviewing: false,
+      proposal: null,
+      confirmation: "",
+      editor: null,
+      pendingDelete: null,
+      writeError: null,
+    });
+    void rowsQuery.refetch();
+  }
+
+  const noEditTitle = nonScalarPk
+    ? t("tables.nonScalarPk")
+    : t("tables.noTablePk");
+  const panelOpen = reviewing || !!editor || !!cellSel || !!pendingDelete;
+
+  return (
+    <div className="table-data">
+      <TableContextHeader
+        connection={connection}
+        table={table}
+        pageSize={pageSize}
+        result={result}
+        total={total}
+        from={from}
+        to={to}
+      />
+
+      <TableToolbar
+        table={table}
+        safety={safety}
+        result={result}
+        canEdit={canEdit}
+        noEditTitle={noEditTitle}
+        selected={selected}
+        stagedCount={staged.length}
+        activeFilters={activeFilters}
+        sort={sort}
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        rows={rows}
+        busy={busy}
+        jobsOpen={jobsOpen}
+        catalogAvailable={!!catalogRelation}
+        structureOpen={structure}
+        onOpenEdit={openEdit}
+        onDelete={doDelete}
+        onReviewStaged={() =>
+          commands.patch({
+            reviewing: true,
+            editor: null,
+            pendingDelete: null,
+            selectedCell: null,
+          })
+        }
+        onDiscardStaged={() =>
+          commands.patch({
+            staged: [],
+            reviewing: false,
+            proposal: null,
+          })
+        }
+        onClearFilters={() => commands.patch({ filters: {} })}
+        onPage={(nextPage) => commands.patch({ page: nextPage })}
+        onRefresh={() => void rowsQuery.refetch()}
+        onToggleJobs={() =>
+          commands.patch({
+            jobsOpen: !jobsOpen,
+            reviewing: false,
+            editor: null,
+            pendingDelete: null,
+            selectedCell: null,
+          })
+        }
+        onToggleStructure={() =>
+          commands.patch({ structureOpen: !structure })
+        }
+        onCopyRow={copyRow}
+      />
+
+      {structure && <TableStructure table={table} />}
+
+      {err && <div className="error">{err}</div>}
+
+      {/* Dim (not blank) the stale grid while paging/sorting/filtering re-queries. */}
+      <div className={busy && result ? "table-data-body busy" : "table-data-body"}>
+        {result ? (
+          result.rows.length ? (
+            <DataGrid
+              result={result}
+              startIndex={page * pageSize}
+              sort={sort}
+              onSort={cycleSort}
+              filters={filters}
+              onFilter={commands.filter}
+              selectedRow={selected}
+              onSelectRow={(selectedRow) => commands.patch({ selectedRow })}
+              onCellClick={(value, i, column) => {
+                commands.patch({
+                  selectedRow: i,
+                  selectedCell: { value, column },
+                  jobsOpen: false,
+                });
+              }}
+              columnMeta={Object.fromEntries(
+                table.columns.map((column) => [
+                  column.name,
+                  { dataType: column.dataType, pk: column.pk },
+                ]),
+              )}
+            />
+          ) : busy ? (
+            // Reloading (filter cleared / table switched) — the stale zero-row result would
+            // otherwise flash a wrong "Table is empty." against the now-live filter state.
+            <div className="muted loading">{t("tables.loadingRows")}</div>
+          ) : (
+            // Loaded but zero rows: distinguish an empty table from a filter that matched nothing.
+            <div className="muted">
+              {activeFilters > 0 ? t("tables.noRowsFilter") : t("tables.tableEmpty")}
+            </div>
+          )
+        ) : (
+          // No cached page for this table yet — the only place a cold load is visible.
+          !err && (busy ? <Skeleton lines={8} /> : <div className="muted">{t("tables.noRows")}</div>)
+        )}
+
+        {jobsOpen && catalogRelation ? (
+          <JobPanel
+            connectionId={connection.id}
+            relation={catalogRelation}
+            onClose={() => commands.patch({ jobsOpen: false })}
+          />
+        ) : panelOpen ? (
+          <TableSidePanel
+            engine={engine}
+            table={table}
+            selected={selected}
+            editor={editor}
+            pendingDelete={pendingDelete}
+            reviewing={reviewing}
+            staged={staged}
+            proposal={stagedProposal}
+            confirmation={stagedConfirmation}
+            running={stagedRunning}
+            catalogPending={snapshotQuery.isPending}
+            selectedCell={cellSel}
+            onSubmit={stageWrite}
+            onCloseEditor={() => commands.patch({ editor: null })}
+            onCloseDelete={() => commands.patch({ pendingDelete: null })}
+            onArmDelete={armDelete}
+            onCloseReview={() =>
+              commands.patch({
+                reviewing: false,
+                proposal: null,
+                confirmation: "",
+              })
+            }
+            onRemoveStaged={commands.removeStaged}
+            onConfirmation={(confirmation) =>
+              commands.patch({ confirmation })
+            }
+            onPrepare={() => void prepareStagedChanges()}
+            onApprove={() => void approveStagedChanges()}
+            onReject={() => void rejectStagedChanges()}
+            onCloseCell={() => commands.patch({ selectedCell: null })}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}

@@ -43,6 +43,30 @@
         "useState<ProviderCredentialReceipt",
         "useState<ProviderCredentialDialogState"
       ]
+    },
+    {
+      "name": "catalogExplorer",
+      "owner": "src/features/catalogExplorer/state.ts",
+      "dispatcher": "src/features/catalogExplorer/state.ts",
+      "writerTokens": [
+        "export function catalogExplorerReducer("
+      ],
+      "forbiddenWriterTokens": [
+        "setObjectSectionsOpen(",
+        "setCollapsedSections("
+      ]
+    },
+    {
+      "name": "tableDataView",
+      "owner": "src/features/tableData/state.ts",
+      "dispatcher": "src/features/tableData/state.ts",
+      "writerTokens": [
+        "export function tableDataReducer("
+      ],
+      "forbiddenWriterTokens": [
+        "useState<TableDataState",
+        "setStaged("
+      ]
     }
   ],
   "runtimeStates": [

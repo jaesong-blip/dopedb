@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogTable } from "../../ipc/types";
-import { resolveCatalogTable } from "./catalogTable";
+import { resolveCatalogTable } from "../../features/tableData/catalogTable";
 
 describe("resolveCatalogTable", () => {
   it("upgrades an overview relation to the full catalog metadata", () => {
