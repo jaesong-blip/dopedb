@@ -206,7 +206,8 @@ const skillInventoryModules = [
   "src-tauri/src/skills/inventory/status.rs",
 ];
 const skillInventoryTestModules = [
-  "src-tauri/src/skills/inventory/tests.rs",
+  "src-tauri/src/skills/inventory/application_tests.rs",
+  "src-tauri/src/skills/inventory/filesystem_tests.rs",
   "src-tauri/src/skills/inventory/status_tests.rs",
 ];
 const queryFrontendModules = [

@@ -7,9 +7,11 @@ mod ports;
 mod status;
 
 #[cfg(test)]
-mod status_tests;
+mod application_tests;
 #[cfg(test)]
-mod tests;
+mod filesystem_tests;
+#[cfg(test)]
+mod status_tests;
 
 pub(super) use domain::MARKER_FILE;
 pub(super) use filesystem::{is_link_or_reparse, prepare_root};

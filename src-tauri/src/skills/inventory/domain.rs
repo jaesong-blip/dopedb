@@ -327,3 +327,22 @@ pub(super) fn reason_fingerprint(path: &Path, reason: SkillStatusReason) -> Stri
     let reason = serde_json::to_string(&reason).unwrap_or_else(|_| "\"unknown\"".into());
     failure_fingerprint(path, &reason)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::TargetPaths;
+
+    #[test]
+    fn target_paths_remain_pure_domain_values() {
+        let paths = TargetPaths {
+            display_name: "Codex",
+            root_path: PathBuf::from("/home/test/.agents/skills"),
+            target_path: PathBuf::from("/home/test/.agents/skills/dopedb-cli"),
+        };
+
+        assert_eq!(paths.display_name, "Codex");
+        assert!(paths.target_path.starts_with(&paths.root_path));
+    }
+}
