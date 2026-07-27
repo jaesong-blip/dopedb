@@ -135,7 +135,7 @@ impl GcloudSnapshot {
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             let _ = (adc_path, expected_document, subject);
-            return Err(blocked("GCP ADC snapshot is unavailable"));
+            Err(blocked("GCP ADC snapshot is unavailable"))
         }
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {

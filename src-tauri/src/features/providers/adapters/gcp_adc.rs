@@ -35,7 +35,10 @@ mod subject_token;
 mod target_access;
 
 use process_group::{finish_child_before_snapshot_cleanup, terminate_child, ChildTermination};
-pub(crate) use subject_token::{external_subject_token_guard, read_adc_document, GcloudSnapshot};
+#[cfg(not(windows))]
+pub(crate) use subject_token::GcloudSnapshot;
+#[cfg(any(not(windows), test))]
+pub(crate) use subject_token::{external_subject_token_guard, read_adc_document};
 pub(crate) use target_access::resolve_cloud_sql_connect_settings;
 
 pub(super) const MAX_ADC_BYTES: u64 = 64 * 1024;
@@ -54,7 +57,7 @@ impl GcpAdcVerifier for ProductionGcpAdcVerifier {
             // `gcloud.cmd` requires a command interpreter. This adapter never
             // invokes a shell, so Windows is unavailable until a native,
             // fixed-argv executable path is deliberately supported.
-            return Err(blocked("GCP ADC verification is unavailable"));
+            Err(blocked("GCP ADC verification is unavailable"))
         }
         #[cfg(not(windows))]
         {
