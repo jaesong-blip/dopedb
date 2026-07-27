@@ -3,6 +3,11 @@
   "skillName": "dopedb-cli",
   "releases": [
     {
+      "appVersion": "0.3.10",
+      "releaseRevision": 9,
+      "packageDigest": "3d29cb246ce51611194d98d85adfe76ef88bedb61f70df89ed0f616ddf61c3df"
+    },
+    {
       "appVersion": "0.3.3",
       "releaseRevision": 2,
       "packageDigest": "675f4f8ce34e31e2d934bc53d5d6e2e1cba81856b35fb67b3ff49e22eb8a5352"
