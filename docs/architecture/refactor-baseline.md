@@ -398,3 +398,12 @@ the Provider SQLite adapter are deletion gates.
 4. At the midpoint, regenerate the large-file and state-owner inventory.
 5. At the end, the oversized-file map and compatibility exceptions must be empty except
    for immutable migrations and tested versioned data decoders.
+
+## Final checkpoint
+
+The migration completed with an empty oversized-file ratchet and no active runtime
+compatibility exceptions. The former always-on platform rollout flags and every
+conditional transport gate were removed, so production has one execution path.
+`compatibility-assets.json` is now the machine-checked inventory for immutable
+migrations, tested persisted-data readers, read-only archives, and explicit cleanup
+tools. Current counts and closure evidence live in `refactor-final-audit.md`.

@@ -1,4 +1,4 @@
-// Compatibility-free public composition boundary for provider routes.
+// Public composition boundary for provider routes.
 // Database I/O and decrypted credentials remain in server-only feature modules.
 export * from "./provider-integrations/authority";
 export * from "./provider-integrations/discovery-receipts";

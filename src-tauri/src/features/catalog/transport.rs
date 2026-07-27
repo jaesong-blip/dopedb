@@ -2,7 +2,7 @@
 
 use tauri::State;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::kernel::identity::ConnectionId;
 use crate::state::AppState;
 
@@ -33,14 +33,6 @@ pub async fn get_catalog_snapshot(
     state: State<'_, AppState>,
     id: ConnectionId,
 ) -> AppResult<CatalogSnapshot> {
-    if !state
-        .features
-        .is_enabled(crate::features::FeatureFlag::CatalogV2)
-    {
-        return Err(AppError::Blocked {
-            reason: "Catalog V2 is disabled for this app runtime".into(),
-        });
-    }
     state
         .services
         .catalog

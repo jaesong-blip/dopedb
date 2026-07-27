@@ -1,8 +1,8 @@
 //! Catalog wire values and read policy.
 //!
 //! These values stay independent from Tauri, SQLx, connection pools, and the
-//! introspection implementation. Serde defaults preserve all existing cache and IPC
-//! compatibility.
+//! introspection implementation. Serde defaults preserve the versioned cache and IPC
+//! contract.
 
 use serde::{Deserialize, Serialize};
 

@@ -20,7 +20,6 @@ import type {
   MonitoringOperationProposal,
   MonitoringStatus,
   OperationDecision,
-  PlatformFeatureFlags,
   ScriptOutcome,
   SafetySettings,
   ScriptOperationProposal,
@@ -30,10 +29,6 @@ import type {
   SkillTargetExpectation,
   SkillTargetSelection,
 } from "./types";
-
-export function platformFeatureFlags(): Promise<PlatformFeatureFlags> {
-  return invoke("platform_feature_flags");
-}
 
 export function cliInstallationStatus(): Promise<CliInstallationStatus> {
   return invoke("cli_installation_status");

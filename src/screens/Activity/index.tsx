@@ -60,7 +60,7 @@ export default function Activity({
 
   useEffect(() => {
     if (initialAuditOpen) onInitialAuditOpenConsumed?.();
-    // This compatibility callback is intentionally consumed once on mount.
+    // Initial navigation intent is consumed once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

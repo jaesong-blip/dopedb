@@ -14,7 +14,6 @@ pub(crate) mod erd;
 pub(crate) mod jobs;
 pub(crate) mod monitoring;
 pub(crate) mod operation_control;
-mod platform_flags;
 pub(crate) mod providers;
 pub(crate) mod queries;
 pub(crate) mod safety_settings;
@@ -23,5 +22,3 @@ pub(crate) mod scripts;
 pub(crate) mod sql_documents;
 pub(crate) mod terminals;
 pub(crate) mod workspaces;
-
-pub use platform_flags::{FeatureFlag, FeatureFlags};

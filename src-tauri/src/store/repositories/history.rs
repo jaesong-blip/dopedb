@@ -111,7 +111,8 @@ impl Store {
         rows.iter().map(row_to_history).collect()
     }
 
-    #[allow(dead_code)] // Compatibility surface retained while adapters move to services.
+    #[cfg(test)]
+    /// Test-only lookup used to verify history persistence without adding a runtime API.
     pub async fn get_history(&self, id: Uuid) -> AppResult<HistoryEntry> {
         let workspace_id = self.active_workspace_id().await?;
         let account_scope = self.active_local_scope().await?;

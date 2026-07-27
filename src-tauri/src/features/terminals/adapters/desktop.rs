@@ -29,30 +29,14 @@ pub(in crate::features::terminals) struct DesktopTerminalAdapter {
     store: Store,
     broker: BrokerRuntime,
     runtime: PtyTerminalRuntime,
-    enabled: bool,
 }
 
 impl DesktopTerminalAdapter {
-    pub(in crate::features::terminals) fn new(
-        store: Store,
-        broker: BrokerRuntime,
-        enabled: bool,
-    ) -> Self {
+    pub(in crate::features::terminals) fn new(store: Store, broker: BrokerRuntime) -> Self {
         Self {
             store,
             runtime: PtyTerminalRuntime::new(broker.sessions().clone()),
             broker,
-            enabled,
-        }
-    }
-
-    fn require_enabled(&self) -> AppResult<()> {
-        if self.enabled {
-            Ok(())
-        } else {
-            Err(AppError::Blocked {
-                reason: "the Terminal Dock feature is disabled for this app runtime".into(),
-            })
         }
     }
 
@@ -73,7 +57,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
         output: Self::OutputSink,
         events: Self::EventSink,
     ) -> AppResult<TerminalSessionSummary> {
-        self.require_enabled()?;
         let cli_directory = Self::cli_directory().await?;
         let connection = self
             .store
@@ -116,7 +99,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
     }
 
     fn list(&self) -> AppResult<Vec<TerminalSessionSummary>> {
-        self.require_enabled()?;
         Ok(self.runtime.list())
     }
 
@@ -126,7 +108,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
         after_sequence: Option<u64>,
         output: Self::OutputSink,
     ) -> AppResult<TerminalFocusReceipt> {
-        self.require_enabled()?;
         let runtime = self.runtime.clone();
         tokio::task::spawn_blocking(move || runtime.focus(id, after_sequence, output))
             .await
@@ -136,7 +117,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
     }
 
     async fn write(&self, id: TerminalSessionId, bytes: Vec<u8>) -> AppResult<()> {
-        self.require_enabled()?;
         let runtime = self.runtime.clone();
         tokio::task::spawn_blocking(move || runtime.write(id, bytes))
             .await
@@ -146,7 +126,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
     }
 
     async fn resize(&self, id: TerminalSessionId, size: TerminalSize) -> AppResult<()> {
-        self.require_enabled()?;
         let runtime = self.runtime.clone();
         tokio::task::spawn_blocking(move || runtime.resize(id, size))
             .await
@@ -160,7 +139,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
         id: TerminalSessionId,
         events: Self::EventSink,
     ) -> AppResult<TerminalSessionSummary> {
-        self.require_enabled()?;
         let runtime = self.runtime.clone();
         tokio::task::spawn_blocking(move || runtime.kill(id, &events))
             .await
@@ -168,7 +146,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
     }
 
     async fn close(&self, id: TerminalSessionId, events: Self::EventSink) -> AppResult<()> {
-        self.require_enabled()?;
         let runtime = self.runtime.clone();
         tokio::task::spawn_blocking(move || runtime.close(id, &events))
             .await
@@ -183,7 +160,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
         output: Self::OutputSink,
         events: Self::EventSink,
     ) -> AppResult<TerminalSessionSummary> {
-        self.require_enabled()?;
         let seed = self.runtime.restart_seed(id)?;
         let current = self
             .store
@@ -247,7 +223,6 @@ impl TerminalSessionPort for DesktopTerminalAdapter {
         name: String,
         events: Self::EventSink,
     ) -> AppResult<TerminalSessionSummary> {
-        self.require_enabled()?;
         let runtime = self.runtime.clone();
         tokio::task::spawn_blocking(move || runtime.rename(id, &name, &events))
             .await

@@ -32,7 +32,7 @@ pub(crate) struct ScopedCatalogGateway {
     loads: CatalogLoadCoordinator,
 }
 
-/// Serializes cache misses and refreshes per connection. The legacy and canonical
+/// Serializes cache misses and refreshes per connection. The bounded and full
 /// catalog projections share one persisted snapshot, so concurrent live scans only
 /// duplicate target-database work and can exhaust a small read pool.
 #[derive(Clone, Default)]

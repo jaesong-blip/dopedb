@@ -25,21 +25,13 @@ use crate::features::scripts::{
     DesktopScriptProposalReceipt, DesktopScriptProposalRequest, DesktopScriptRunError,
     DesktopScriptRunReceipt, TableScriptContext,
 };
-use crate::model::{DocumentQuery, HistoryEntry, PlatformFeatureFlags, SafetySettings};
+use crate::model::{DocumentQuery, HistoryEntry, SafetySettings};
 use crate::state::AppState;
 
 #[tauri::command]
 pub async fn cli_installation_status(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> AppResult<crate::cli_install::CliInstallationStatus> {
-    if !state
-        .features
-        .is_enabled(crate::features::FeatureFlag::CliV1)
-    {
-        return Err(AppError::Blocked {
-            reason: "the CLI feature is disabled for this app runtime".into(),
-        });
-    }
     tokio::task::spawn_blocking(crate::cli_install::installation_status)
         .await
         .map_err(|_| AppError::Config("the CLI status worker stopped unexpectedly".into()))?
@@ -47,18 +39,10 @@ pub async fn cli_installation_status(
 
 #[tauri::command]
 pub async fn install_cli(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     update_path: bool,
     replace_existing: bool,
 ) -> AppResult<crate::cli_install::CliInstallReceipt> {
-    if !state
-        .features
-        .is_enabled(crate::features::FeatureFlag::CliV1)
-    {
-        return Err(AppError::Blocked {
-            reason: "the CLI feature is disabled for this app runtime".into(),
-        });
-    }
     tokio::task::spawn_blocking(move || crate::cli_install::install(update_path, replace_existing))
         .await
         .map_err(|_| AppError::Config("the CLI installer worker stopped unexpectedly".into()))?
@@ -69,7 +53,6 @@ pub async fn skill_status(
     state: State<'_, AppState>,
     target: dopedb_protocol::SkillTargetSelection,
 ) -> AppResult<dopedb_protocol::SkillStatusResult> {
-    require_skill_manager(&state)?;
     let skills = state.skills.clone();
     tokio::task::spawn_blocking(move || skills.status(target))
         .await
@@ -82,7 +65,6 @@ pub async fn install_skill(
     target: dopedb_protocol::SkillTargetSelection,
     expected: Vec<dopedb_protocol::SkillTargetExpectation>,
 ) -> AppResult<dopedb_protocol::SkillMutationResult> {
-    require_skill_manager(&state)?;
     let skills = state.skills.clone();
     tokio::task::spawn_blocking(move || {
         skills.install(dopedb_protocol::SkillMutationArguments { target, expected })
@@ -97,7 +79,6 @@ pub async fn repair_skill(
     target: dopedb_protocol::SkillTargetSelection,
     expected: Vec<dopedb_protocol::SkillTargetExpectation>,
 ) -> AppResult<dopedb_protocol::SkillMutationResult> {
-    require_skill_manager(&state)?;
     let skills = state.skills.clone();
     tokio::task::spawn_blocking(move || {
         skills.repair(dopedb_protocol::SkillMutationArguments { target, expected })
@@ -112,7 +93,6 @@ pub async fn remove_skill(
     target: dopedb_protocol::SkillTargetSelection,
     expected: Vec<dopedb_protocol::SkillTargetExpectation>,
 ) -> AppResult<dopedb_protocol::SkillMutationResult> {
-    require_skill_manager(&state)?;
     let skills = state.skills.clone();
     tokio::task::spawn_blocking(move || {
         skills.remove(dopedb_protocol::SkillMutationArguments { target, expected })
@@ -125,7 +105,6 @@ pub async fn remove_skill(
 pub async fn skill_self_test(
     state: State<'_, AppState>,
 ) -> AppResult<crate::skills::SkillSelfTestReceipt> {
-    require_skill_manager(&state)?;
     let skills = state.skills.clone();
     tokio::task::spawn_blocking(move || {
         let binary = crate::cli_install::bundled_cli_binary()?;
@@ -133,31 +112,6 @@ pub async fn skill_self_test(
     })
     .await
     .map_err(|_| AppError::Config("the Skill self-test worker stopped unexpectedly".into()))?
-}
-
-fn require_skill_manager(state: &AppState) -> AppResult<()> {
-    if state
-        .features
-        .is_enabled(crate::features::FeatureFlag::SkillManagerV1)
-    {
-        Ok(())
-    } else {
-        Err(AppError::Blocked {
-            reason: "the Skill Manager feature is disabled for this app runtime".into(),
-        })
-    }
-}
-
-#[tauri::command]
-pub fn platform_feature_flags(state: State<'_, AppState>) -> PlatformFeatureFlags {
-    PlatformFeatureFlags {
-        enabled: state
-            .features
-            .enabled_names()
-            .into_iter()
-            .map(str::to_string)
-            .collect(),
-    }
 }
 
 #[tauri::command]
@@ -268,14 +222,6 @@ pub async fn propose_table_changes(
     statements: Vec<String>,
     catalog_fingerprint: String,
 ) -> AppResult<DesktopScriptProposalReceipt> {
-    if !state
-        .features
-        .is_enabled(crate::features::FeatureFlag::TableChangesV1)
-    {
-        return Err(AppError::Blocked {
-            reason: "staged table changes are disabled for this app runtime".into(),
-        });
-    }
     if statements.is_empty() {
         return Err(AppError::Config(
             "at least one staged table change is required".into(),

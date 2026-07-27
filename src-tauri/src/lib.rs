@@ -49,46 +49,26 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
         .setup(|app| {
-            let enabled_features = app.state::<state::AppState>().features.enabled_names();
-            if !enabled_features.is_empty() {
-                tracing::info!(?enabled_features, "experimental platform features enabled");
-            }
-            if app
-                .state::<state::AppState>()
-                .features
-                .is_enabled(features::FeatureFlag::LocalBrokerV1)
-            {
-                let state = app.state::<state::AppState>();
-                let skills = state
-                    .features
-                    .is_enabled(features::FeatureFlag::SkillManagerV1)
-                    .then(|| state.skills.clone());
-                broker::start(
-                    state.broker.clone(),
-                    state.services.clone(),
-                    skills,
-                    app.handle().clone(),
-                );
-            }
-            if app
-                .state::<state::AppState>()
-                .features
-                .is_enabled(features::FeatureFlag::JobsV1)
-            {
-                let mut events = app.state::<state::AppState>().services.job.subscribe();
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    loop {
-                        match events.recv().await {
-                            Ok(event) => {
-                                let _ = handle.emit("job:changed", event);
-                            }
-                            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            let state = app.state::<state::AppState>();
+            broker::start(
+                state.broker.clone(),
+                state.services.clone(),
+                Some(state.skills.clone()),
+                app.handle().clone(),
+            );
+            let mut events = state.services.job.subscribe();
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match events.recv().await {
+                        Ok(event) => {
+                            let _ = handle.emit("job:changed", event);
                         }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
-                });
-            }
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -96,7 +76,6 @@ pub fn run() {
             features::agents::transport::list_retired_chat_archive_threads,
             features::agents::transport::get_retired_chat_archive_messages,
             features::workspaces::transport::workspace_feature_state,
-            commands::platform_feature_flags,
             commands::cli_installation_status,
             commands::install_cli,
             commands::skill_status,

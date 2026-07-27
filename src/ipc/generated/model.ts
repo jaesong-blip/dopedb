@@ -11,7 +11,6 @@ export type JsonValue =
 
 export type Engine = "postgres" | "mysql" | "sqlite" | "mongodb";
 export type Provider = "auto" | "generic" | "neon" | "planetScale" | "gcpCloudSql";
-export type PlatformFeatureFlags = { enabled: Array<string>, };
 export type WorkspaceConnectionAccess = "view" | "read" | "write" | "manage" | "local";
 export type WorkspaceCredentialMode = "local" | "memberLocal" | "managed";
 export type ConnectionProfile = { id: string, name: string, engine: Engine,

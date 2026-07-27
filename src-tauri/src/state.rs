@@ -7,7 +7,6 @@ use crate::connection::ConnectionManager;
 use crate::error::AppResult;
 use crate::features::providers;
 use crate::features::terminals::{self, TerminalsFeature};
-use crate::features::{FeatureFlag, FeatureFlags};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
 use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
@@ -18,8 +17,6 @@ pub struct AppState {
     pub services: ApplicationServices,
     /// Owner-local CLI broker. Session capabilities live only inside this runtime.
     pub(crate) broker: BrokerRuntime,
-    /// Safety-sensitive rollout gates captured once for this app runtime.
-    pub features: crate::features::FeatureFlags,
     /// Offline Skill bundle inventory and atomic per-user installer.
     pub(crate) skills: SkillManager,
     /// PTY sessions, bounded output replay, and process-tree lifecycle.
@@ -31,18 +28,6 @@ pub struct AppState {
 
 impl AppState {
     pub async fn new() -> AppResult<Self> {
-        let features = FeatureFlags::new([
-            FeatureFlag::OperationRuntimeV1,
-            FeatureFlag::LocalBrokerV1,
-            FeatureFlag::CliV1,
-            FeatureFlag::SkillManagerV1,
-            FeatureFlag::TerminalDockV1,
-            FeatureFlag::CatalogV2,
-            FeatureFlag::DdlIrV1,
-            FeatureFlag::TableChangesV1,
-            FeatureFlag::ErdV1,
-            FeatureFlag::JobsV1,
-        ]);
         let store = Store::open().await?;
         let providers = providers::compose(store.clone());
         let connections = ConnectionManager::with_authorities(
@@ -53,11 +38,7 @@ impl AppState {
         providers.bind_revocation_port(Arc::new(connections.clone()))?;
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let broker = BrokerRuntime::new(operation.runtime_id().into());
-        let terminals = terminals::compose(
-            store.clone(),
-            broker.clone(),
-            features.is_enabled(FeatureFlag::TerminalDockV1),
-        );
+        let terminals = terminals::compose(store.clone(), broker.clone());
         let services = ApplicationServices::with_providers(
             store.clone(),
             connections.clone(),
@@ -65,16 +46,11 @@ impl AppState {
             providers,
         );
         let skills = SkillManager::new()?;
-        if features.is_enabled(FeatureFlag::JobsV1) {
-            services.job.recover_interrupted().await?;
-        }
-        if features.is_enabled(FeatureFlag::OperationRuntimeV1) {
-            services.operation.recover_previous_runtimes().await?;
-        }
+        services.job.recover_interrupted().await?;
+        services.operation.recover_previous_runtimes().await?;
         Ok(Self {
             services,
             broker,
-            features,
             skills,
             terminals,
             local_operation_approval,

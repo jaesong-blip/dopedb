@@ -19,7 +19,6 @@ import {
   getMonitoringStatus,
   legacyMcpCleanupStatus,
   listHistory,
-  platformFeatureFlags,
   refreshCatalog,
   runDocumentRead,
   skillStatus,
@@ -173,7 +172,6 @@ export const qk = {
   cliInstallation: () => ["cliInstallation"] as const,
   skillStatus: () => ["skillStatus"] as const,
   legacyMcpCleanup: () => ["legacyMcpCleanup"] as const,
-  platformFeatureFlags: () => ["platformFeatureFlags"] as const,
   tableRows: (args: TableRowsArgs) =>
     [
       "tableRows",
@@ -194,15 +192,6 @@ export const qk = {
     ["erdLayouts", connectionId] as const,
   jobs: (connectionId: string) => ["jobs", connectionId] as const,
 };
-
-export function platformFeatureFlagsQuery() {
-  return queryOptions({
-    queryKey: qk.platformFeatureFlags(),
-    staleTime: Infinity,
-    retry: false,
-    queryFn: platformFeatureFlags,
-  });
-}
 
 export function driversQuery() {
   return queryOptions({

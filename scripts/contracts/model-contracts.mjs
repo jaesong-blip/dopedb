@@ -174,7 +174,6 @@ function validateFacade() {
     if (diagnostics.length) throw new Error(diagnostics.join("\n"));
   }
   const allowedDirect = new Set([
-    "PlatformFeatureFlag",
     "CatalogObjectKind",
     "AppErrorDetails",
     ...unverifiedCompatibilityFacadeExports,

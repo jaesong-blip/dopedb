@@ -104,8 +104,8 @@ impl TerminalsFeature {
     }
 }
 
-pub(crate) fn compose(store: Store, broker: BrokerRuntime, enabled: bool) -> TerminalsFeature {
+pub(crate) fn compose(store: Store, broker: BrokerRuntime) -> TerminalsFeature {
     TerminalsFeature {
-        application: TerminalUseCases::new(DesktopTerminalAdapter::new(store, broker, enabled)),
+        application: TerminalUseCases::new(DesktopTerminalAdapter::new(store, broker)),
     }
 }

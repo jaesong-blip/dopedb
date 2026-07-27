@@ -50,7 +50,7 @@ pub(crate) struct ApplicationServices {
 }
 
 impl ApplicationServices {
-    /// Compatibility constructor for isolated tests and non-desktop adapters.
+    /// Test-only composition helper for isolated adapters.
     /// Production composes the provider feature once in `AppState` and uses
     /// [`Self::with_providers`] so receipt/vault ownership is not duplicated.
     #[cfg(test)]

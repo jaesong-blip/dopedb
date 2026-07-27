@@ -79,6 +79,39 @@ const sourceFiles = [
 ].filter((file) => /\.(?:rs|ts|tsx)$/.test(file));
 
 const ratchet = JSON.parse(read("scripts/architecture-ratchet.json"));
+requireFile("docs/architecture/compatibility-assets.json");
+requireFile("docs/architecture/refactor-final-audit.md");
+const compatibilityAssets = JSON.parse(
+  read("docs/architecture/compatibility-assets.json"),
+);
+if (
+  !Array.isArray(compatibilityAssets.activeRuntimeExceptions) ||
+  compatibilityAssets.activeRuntimeExceptions.length !== 0
+) {
+  fail("active runtime compatibility exceptions must remain empty");
+}
+if (!Array.isArray(compatibilityAssets.preservedDataCompatibility)) {
+  fail("preserved data compatibility assets must be an explicit array");
+} else {
+  for (const asset of compatibilityAssets.preservedDataCompatibility) {
+    if (
+      typeof asset.id !== "string" ||
+      !Array.isArray(asset.paths) ||
+      asset.paths.length === 0 ||
+      typeof asset.reason !== "string" ||
+      asset.reason.length === 0 ||
+      typeof asset.removalCondition !== "string" ||
+      asset.removalCondition.length === 0
+    ) {
+      fail("every preserved compatibility asset needs an id, paths, reason, and removal condition");
+      continue;
+    }
+    for (const filePath of asset.paths) requireFile(filePath);
+  }
+}
+if (Object.keys(ratchet.oversizedFiles).length !== 0) {
+  fail("the completed refactor must not retain oversized source exceptions");
+}
 const architectureContext = {
   exists,
   lineCount,
@@ -177,6 +210,8 @@ for (const filePath of visualRegressionFiles) {
 }
 
 const removedPaths = [
+  "src-tauri/src/features/platform_flags.rs",
+  "src-tauri/tests/fixtures/platform-feature-flags-v2.json",
   "src/screens/Connections/databaseExplorerDomain.ts",
   "src/screens/Connections/useSchemaGroupDrag.ts",
   "src/screens/Tables/catalogTable.ts",
@@ -247,6 +282,14 @@ for (const filePath of removedPaths) {
   if (fs.existsSync(path.join(root, filePath))) {
     fail(`removed legacy path returned: ${filePath}`);
   }
+}
+for (const filePath of ["src/ipc/commands.ts", "src/ipc/types.ts", "src/lib/queries.ts"]) {
+  forbid(filePath, [
+    [
+      /\b(?:platformFeatureFlags|PlatformFeatureFlags|PlatformFeatureFlag)\b/,
+      "graduated rollout flag contracts returned to the frontend",
+    ],
+  ]);
 }
 
 const frontendCompositionModules = [
@@ -798,6 +841,9 @@ for (const token of [
 for (const diagnostic of collectRemovedQueryRuntimeDiagnostics(rustSource)) fail(diagnostic);
 for (const diagnostic of collectPoisonMutexDiagnostics(architectureContext)) fail(diagnostic);
 for (const token of [
+  "FeatureFlag",
+  "FeatureFlags",
+  "platform_feature_flags",
   "require_sql_documents",
   "FeatureFlag::SqlDocumentsV1",
   "\"sql_documents_v1\"",

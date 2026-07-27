@@ -3,28 +3,12 @@
 use dopedb_protocol::{DdlPlan, SchemaChangeRequest};
 use tauri::State;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::features::scripts::DesktopScriptRunReceipt;
 use crate::kernel::identity::{ConnectionId, OperationId};
 use crate::state::AppState;
 
 use super::{SchemaChangeCommand, SchemaChangeProposal};
-
-fn require_schema_editor(state: &AppState) -> AppResult<()> {
-    if state
-        .features
-        .is_enabled(crate::features::FeatureFlag::CatalogV2)
-        && state
-            .features
-            .is_enabled(crate::features::FeatureFlag::DdlIrV1)
-    {
-        Ok(())
-    } else {
-        Err(AppError::Blocked {
-            reason: "the structured schema editor is disabled for this app runtime".into(),
-        })
-    }
-}
 
 #[tauri::command]
 pub async fn preview_schema_change(
@@ -32,7 +16,6 @@ pub async fn preview_schema_change(
     id: ConnectionId,
     request: SchemaChangeRequest,
 ) -> AppResult<DdlPlan> {
-    require_schema_editor(&state)?;
     state
         .services
         .schema
@@ -49,7 +32,6 @@ pub async fn propose_schema_change(
     id: ConnectionId,
     request: SchemaChangeRequest,
 ) -> AppResult<SchemaChangeProposal> {
-    require_schema_editor(&state)?;
     state
         .services
         .schema
@@ -65,6 +47,5 @@ pub async fn run_schema_change(
     state: State<'_, AppState>,
     operation_id: OperationId,
 ) -> AppResult<DesktopScriptRunReceipt> {
-    require_schema_editor(&state)?;
     state.services.schema.run(operation_id).await
 }

@@ -61,8 +61,8 @@ pub(crate) struct StreamedRead {
 }
 
 /// Desktop streaming read with an application-owned bounded batch size. This is
-/// deliberately separate from [`run_read_registered`], whose compatibility users
-/// still require a materialized `QueryResult`.
+/// deliberately separate from [`run_read_registered`], whose bounded execution
+/// contract returns a materialized `QueryResult`.
 pub(crate) async fn run_read_streamed_registered<F, Fut>(
     live: &LiveConnection,
     _engine: Engine,
@@ -78,7 +78,7 @@ where
 {
     let started = Instant::now();
     // The adapter contract is an absolute producer guarantee, not a caller
-    // preference: a legacy or future caller cannot request an oversized page.
+    // preference: no caller can request an oversized page.
     let batch_rows = batch_rows.clamp(1, 256);
     let max = max_rows as usize;
     let inner = async {

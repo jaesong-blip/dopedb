@@ -15,7 +15,6 @@ export const generatedContractArtifacts = [
       ["./generated/model", "HistoryEntry", "HistoryEntry"],
       ["./generated/model", "JsonValue", "JsonValue"],
       ["./generated/model", "MonitoringStatus", "MonitoringStatus"],
-      ["./generated/model", "PlatformFeatureFlags", "PlatformFeatureFlags"],
       ["./generated/model", "Provider", "Provider"],
       ["./generated/model", "QueryKind", "QueryKind"],
       ["./generated/model", "QueryResult", "QueryResult"],
@@ -76,8 +75,8 @@ export const generatedContractArtifacts = [
   },
 ];
 
-// These legacy/CLI/service compatibility shapes are outside issue #10's Rust
-// serde-generation boundary. This is an explicit facade allowlist only, not a
+// These retired-cleanup/CLI/monitoring transport shapes are outside issue #10's
+// Rust serde-generation boundary. This is an explicit facade allowlist only, not a
 // claim of source/schema parity; new authoritative wire DTOs must instead be
 // added to generatedContractArtifacts above.
 export const unverifiedCompatibilityFacadeExports = new Set([

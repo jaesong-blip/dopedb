@@ -293,7 +293,7 @@ export default function Sql({
             }
           } else {
             // Manual/read-only settings still stream after the durable proposal;
-            // only approved write/DDL stays on the legacy materialized outcome.
+            // approved write/DDL returns its bounded materialized outcome.
             await runPlannedSql();
           }
         }

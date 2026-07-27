@@ -43,14 +43,6 @@ pub enum Provider {
     GcpCloudSql,
 }
 
-/// Process-stable experimental platform gates. An empty list is fail-closed.
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlatformFeatureFlags {
-    pub enabled: Vec<String>,
-}
-
 /// Cached server authority for a shared connection. Personal connections are Local;
 /// team modes are narrowing permissions and never elevate the target DB credential.
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -423,9 +415,9 @@ mod contracts {
 
     use super::{
         AuditEntry, Classification, ConnectionProfile, DocumentPage, DocumentQuery, Engine,
-        ExecOutcome, HistoryEntry, MonitoringStatus, PlatformFeatureFlags, PreviewMode,
-        PreviewReport, Provider, QueryKind, QueryResult, RiskLevel, SafetySettings, ScriptOutcome,
-        ScriptStatement, WorkspaceConnectionAccess, WorkspaceCredentialMode,
+        ExecOutcome, HistoryEntry, MonitoringStatus, PreviewMode, PreviewReport, Provider,
+        QueryKind, QueryResult, RiskLevel, SafetySettings, ScriptOutcome, ScriptStatement,
+        WorkspaceConnectionAccess, WorkspaceCredentialMode,
     };
 
     const HEADER: &str = "// Generated from src-tauri/src/model.rs by ts-rs 12.0.1.\n// Do not edit; run pnpm generate:contracts.\n\nexport type JsonValue =\n  | string\n  | number\n  | boolean\n  | null\n  | { [key: string]: JsonValue }\n  | JsonValue[];\n\n";
@@ -461,7 +453,6 @@ mod contracts {
         append_contracts!(
             Engine,
             Provider,
-            PlatformFeatureFlags,
             WorkspaceConnectionAccess,
             WorkspaceCredentialMode,
             ConnectionProfile,

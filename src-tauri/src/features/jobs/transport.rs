@@ -12,19 +12,6 @@ use super::{
     CreateJobRequest, Job, JobDetail, JobFileCapability, JobFormat, JobInputInspection, JobProposal,
 };
 
-fn ensure_enabled(state: &AppState) -> AppResult<()> {
-    if state
-        .features
-        .is_enabled(crate::features::FeatureFlag::JobsV1)
-    {
-        Ok(())
-    } else {
-        Err(AppError::Blocked {
-            reason: "the durable import/export job engine is disabled for this app runtime".into(),
-        })
-    }
-}
-
 /// Select an input file in the trusted native shell and expose only an opaque,
 /// connection-scoped capability to the renderer.
 #[tauri::command]
@@ -35,7 +22,6 @@ pub async fn pick_job_input(
 ) -> AppResult<Option<JobFileCapability>> {
     use tauri_plugin_dialog::DialogExt;
 
-    ensure_enabled(&state)?;
     let path = app
         .dialog()
         .file()
@@ -67,7 +53,6 @@ pub async fn pick_job_output(
 ) -> AppResult<Option<JobFileCapability>> {
     use tauri_plugin_dialog::DialogExt;
 
-    ensure_enabled(&state)?;
     let path = app
         .dialog()
         .file()
@@ -96,7 +81,6 @@ pub async fn inspect_job_input(
     capability_id: JobFileCapabilityId,
     format: JobFormat,
 ) -> AppResult<JobInputInspection> {
-    ensure_enabled(&state)?;
     state
         .services
         .job
@@ -109,7 +93,6 @@ pub async fn create_job(
     state: State<'_, AppState>,
     request: CreateJobRequest,
 ) -> AppResult<JobProposal> {
-    ensure_enabled(&state)?;
     state.services.job.create(request).await
 }
 
@@ -118,7 +101,6 @@ pub async fn list_jobs(
     state: State<'_, AppState>,
     connection_id: ConnectionId,
 ) -> AppResult<Vec<Job>> {
-    ensure_enabled(&state)?;
     state.services.job.list(connection_id).await
 }
 
@@ -128,7 +110,6 @@ pub async fn get_job(
     connection_id: ConnectionId,
     job_id: JobId,
 ) -> AppResult<JobDetail> {
-    ensure_enabled(&state)?;
     state
         .services
         .job
@@ -145,7 +126,6 @@ pub async fn start_job(
     connection_id: ConnectionId,
     job_id: JobId,
 ) -> AppResult<Job> {
-    ensure_enabled(&state)?;
     state
         .services
         .job
@@ -162,7 +142,6 @@ pub async fn pause_job(
     connection_id: ConnectionId,
     job_id: JobId,
 ) -> AppResult<Job> {
-    ensure_enabled(&state)?;
     state
         .services
         .job
@@ -179,7 +158,6 @@ pub async fn cancel_job(
     connection_id: ConnectionId,
     job_id: JobId,
 ) -> AppResult<Job> {
-    ensure_enabled(&state)?;
     state
         .services
         .job
@@ -199,7 +177,6 @@ pub async fn reveal_job_artifact(
 ) -> AppResult<()> {
     use tauri_plugin_opener::OpenerExt;
 
-    ensure_enabled(&state)?;
     let path = state
         .services
         .job

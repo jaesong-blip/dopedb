@@ -1,7 +1,7 @@
 // Public shared-contract facade. The issue #10 Rust model/protocol/introspection
 // DTOs below are generated from their serde producers via ts-rs; Query receipts
-// remain feature-owned. The explicitly marked compatibility facades later in this
-// file are outside that generation boundary and are not schema-parity claims.
+// remain feature-owned. The explicitly marked manual transports later in this file
+// are outside that generation boundary and are not schema-parity claims.
 import type { AuditEntry } from "./generated/model";
 import type { OperationState as GeneratedOperationState } from "./generated/protocol-contracts";
 
@@ -14,7 +14,6 @@ export type {
   HistoryEntry,
   JsonValue,
   MonitoringStatus,
-  PlatformFeatureFlags,
   Provider,
   QueryKind,
   QueryResult,
@@ -24,10 +23,6 @@ export type {
   WorkspaceConnectionAccess,
   WorkspaceCredentialMode,
 } from "./generated/model";
-
-// The Rust model intentionally accepts future string gates. Retain this historical public alias
-// without pretending the renderer owns a closed enum that Rust does not enforce.
-export type PlatformFeatureFlag = string;
 
 export type {
   SkillBackup,
@@ -71,7 +66,7 @@ export type {
 } from "./generated/catalog-feature-contracts";
 export type CatalogObjectKind = import("./generated/catalog-feature-contracts").DatabaseObject["kind"];
 
-// Compatibility facade outside issue #10's generated boundary (CLI transport).
+// Manual contract outside issue #10's generated boundary (CLI transport).
 export interface CliInstallationStatus {
   version: string;
   bundledAvailable: boolean;
@@ -99,7 +94,7 @@ export interface SkillSelfTestReceipt {
   guideBytes: number;
 }
 
-// Compatibility facade outside issue #10's generated boundary (legacy cleanup).
+// Manual contract outside issue #10's generated boundary (retired MCP cleanup).
 export type LegacyMcpCleanupState = "absent" | "ready" | "manual_review";
 
 export interface LegacyMcpCleanupTarget {
@@ -159,7 +154,7 @@ export interface ScriptOperationProposal {
   expiresAt: string;
 }
 
-// Compatibility facade outside issue #10's generated boundary (monitoring service).
+// Manual contract outside issue #10's generated boundary (monitoring transport).
 export interface MonitoringOperationProposal {
   operationId: string;
   payloadHash: string;
