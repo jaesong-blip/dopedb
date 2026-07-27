@@ -73,6 +73,9 @@ function forbid(relativePath, rules) {
 const sourceFiles = [
   ...walk("src"),
   ...walk("src-tauri/src"),
+  ...walk("workspace-cloud/app"),
+  ...walk("workspace-cloud/features"),
+  ...walk("workspace-cloud/lib"),
 ].filter((file) => /\.(?:rs|ts|tsx)$/.test(file));
 
 const ratchet = JSON.parse(read("scripts/architecture-ratchet.json"));
@@ -124,7 +127,8 @@ for (const file of sourceFiles) {
 
   const isFeatureFile =
     filePath.startsWith("src/features/") ||
-    filePath.startsWith("src-tauri/src/features/");
+    filePath.startsWith("src-tauri/src/features/") ||
+    filePath.startsWith("workspace-cloud/features/");
   const isTest =
     /\.(?:test|spec)\.[^.]+$/.test(filePath) ||
     /(?:^|\/)(?:tests|[^/]+_tests)\.rs$/.test(filePath);
@@ -267,6 +271,76 @@ forbid("src/screens/Tables/SqlTableData.tsx", [
 forbid("src/screens/Tables/MongoTableData.tsx", [
   [/\buseState\b/, "document table paging must stay in its feature reducer"],
 ]);
+
+const cloudProviderModules = [
+  "workspace-cloud/app/settings/ProviderAccessPanel.tsx",
+  "workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx",
+  "workspace-cloud/features/providerAccess/ProviderResourcePicker.tsx",
+  "workspace-cloud/features/providerAccess/domain.ts",
+  "workspace-cloud/features/providerAccess/state.ts",
+  "workspace-cloud/features/providerAccess/useProviderAccess.ts",
+  "workspace-cloud/lib/provider-integrations.ts",
+  "workspace-cloud/lib/provider-integrations/authority.ts",
+  "workspace-cloud/lib/provider-integrations/discovery-receipts.ts",
+  "workspace-cloud/lib/provider-integrations/domain.ts",
+  "workspace-cloud/lib/provider-integrations/integration.ts",
+  "workspace-cloud/lib/provider-integrations/integration-repository.ts",
+  "workspace-cloud/lib/provider-integrations/lease-cleanup.ts",
+  "workspace-cloud/lib/provider-integrations/lease-issuance.ts",
+];
+for (const filePath of cloudProviderModules) {
+  requireFile(filePath);
+  const lines = lineCount(read(filePath));
+  if (lines > ratchet.featureFileLineLimit) {
+    fail(
+      `${filePath}: cloud Provider module has ${lines} lines; keep it below ${ratchet.featureFileLineLimit}`,
+    );
+  }
+}
+forbid("workspace-cloud/app/settings/ProviderAccessPanel.tsx", [
+  [/\buseState\b/, "Provider settings state must stay in its feature reducer"],
+  [/\bfetch\s*\(/, "Provider settings transport must stay in its application hook"],
+]);
+forbid("workspace-cloud/lib/provider-integrations.ts", [
+  [/\b(?:db|sql)\b/, "Provider composition facade must not perform persistence"],
+  [
+    /\b(?:openProviderCredential|sealProviderCredential)\b/,
+    "Provider composition facade must not handle secrets",
+  ],
+]);
+for (const filePath of [
+  "workspace-cloud/features/providerAccess/domain.ts",
+  "workspace-cloud/lib/provider-integrations/domain.ts",
+]) {
+  forbid(filePath, [
+    [/\bdrizzle-orm\b/, "cloud Provider domain must not depend on persistence"],
+    [/\b(?:db|schema)\b/, "cloud Provider domain must remain persistence-free"],
+    [
+      /\b(?:openProviderCredential|sealProviderCredential)\b/,
+      "cloud Provider domain must not handle secret envelopes",
+    ],
+    [/\bfetch\s*\(/, "cloud Provider domain must not perform network I/O"],
+  ]);
+}
+forbid("workspace-cloud/features/providerAccess/state.ts", [
+  [/\bfetch\s*\(/, "Provider UI state owner must not perform transport I/O"],
+]);
+forbid("workspace-cloud/features/providerAccess/useProviderAccess.ts", [
+  [/\buseState\b/, "Provider flow writes must enter through its reducer"],
+]);
+forbid(
+  "workspace-cloud/lib/provider-integrations/integration-repository.ts",
+  [
+    [
+      /\b(?:openProviderCredential|sealProviderCredential)\b/,
+      "Provider integration repository must not decrypt credentials",
+    ],
+    [
+      /\b(?:list|issue|revoke|validate)(?:PlanetScale|Neon|GcpCloudSql)\b/,
+      "Provider integration repository must not call provider adapters",
+    ],
+  ],
+);
 
 const centralServiceFiles = walk("src-tauri/src/services")
   .filter((file) => file.endsWith(".rs"))

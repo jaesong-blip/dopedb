@@ -273,7 +273,8 @@ describe("provider integration mutation store", () => {
       "utf8",
     ));
     const providerHelpers = await import("node:fs/promises").then((fs) => fs.readFile(
-      new URL("./provider-integrations.ts", import.meta.url), "utf8",
+      new URL("./provider-integrations/integration.ts", import.meta.url),
+      "utf8",
     ));
     expect(PROVIDER_INTEGRATION_DURABLE_MUTATION_ENTRYPOINTS).toEqual([
       "persistProviderIntegration", "claimPlanetScaleCredentialRefresh",

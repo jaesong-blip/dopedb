@@ -43,9 +43,10 @@ const localAuthoritySnapshot = JSON.parse(readFileSync(
     checkConstraints?: Record<string, { value: string }>;
   }>;
 };
-const providerIntegrationSource = readFileSync(
-  new URL("./provider-integrations.ts", import.meta.url), "utf8",
-);
+const providerIntegrationSource = [
+  "./provider-integrations/discovery-receipts.ts",
+  "./provider-integrations/integration.ts",
+].map((file) => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
 const providerImportStoreSource = readFileSync(
   new URL("./provider-import-store.ts", import.meta.url), "utf8",
 );

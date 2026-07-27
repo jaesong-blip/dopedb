@@ -21,7 +21,7 @@ import {
 } from "./provider-integrations";
 
 const providerIntegrationSource = readFileSync(
-  new URL("./provider-integrations.ts", import.meta.url),
+  new URL("./provider-integrations/lease-cleanup.ts", import.meta.url),
   "utf8",
 );
 

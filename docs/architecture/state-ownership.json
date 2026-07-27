@@ -67,6 +67,45 @@
         "useState<TableDataState",
         "setStaged("
       ]
+    },
+    {
+      "name": "cloudProviderAccessFlow",
+      "owner": "workspace-cloud/features/providerAccess/state.ts",
+      "dispatcher": "workspace-cloud/features/providerAccess/state.ts",
+      "writerTokens": [
+        "export function providerAccessReducer("
+      ],
+      "forbiddenWriterTokens": [
+        "useState<ProviderAccessState",
+        "setResourceOptions] = useState"
+      ]
+    },
+    {
+      "name": "cloudProviderCredentialMutations",
+      "owner": "workspace-cloud/lib/provider-integration-mutation-store.ts",
+      "dispatcher": "workspace-cloud/lib/provider-integration-mutation-store.ts",
+      "writerTokens": [
+        "export async function persistProviderIntegration("
+      ],
+      "forbiddenWriterTokens": []
+    },
+    {
+      "name": "cloudProviderDiscoveryReceiptIssuance",
+      "owner": "workspace-cloud/lib/provider-integrations/discovery-receipts.ts",
+      "dispatcher": "workspace-cloud/lib/provider-integrations/discovery-receipts.ts",
+      "writerTokens": [
+        "export async function recordProviderDiscoveryReceipt("
+      ],
+      "forbiddenWriterTokens": []
+    },
+    {
+      "name": "cloudProviderImportBinding",
+      "owner": "workspace-cloud/lib/provider-import-store.ts",
+      "dispatcher": "workspace-cloud/lib/provider-import-store.ts",
+      "writerTokens": [
+        "export async function importProviderReceipt("
+      ],
+      "forbiddenWriterTokens": []
     }
   ],
   "runtimeStates": [
