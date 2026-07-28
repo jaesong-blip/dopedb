@@ -153,6 +153,8 @@ Elevation은 세 단계만 허용한다.
   surface와 keyboard-focus 가능한 command/check row.
 - `CommandMenu`, `CommandMenuGroup`, `CommandMenuItem`: 검색 입력, 분류,
   설명이 필요한 생성·선택 command popup.
+- `ModalBackdrop`, `ModalSurface`: background interaction을 차단하는 공용
+  viewport backdrop과 responsive dialog frame.
 - `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchContextHeader`,
   `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터 편집기·SQL·문서 화면의
   평평한 IDE pane, command row, object context, empty state 계약.

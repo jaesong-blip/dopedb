@@ -21,6 +21,10 @@ import {
   TextInput,
 } from "../../design-system/components/FormControls";
 import {
+  ModalBackdrop,
+  ModalSurface,
+} from "../../design-system/components/Modal";
+import {
   PanelTabs,
   type PanelTab,
 } from "../../design-system/components/PanelTabs";
@@ -764,33 +768,43 @@ export function ConnectionForm({
   }
 
   return (
-    <div
-      className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:overflow-hidden tw:bg-background"
-      onKeyDown={(event) => {
-        if (
-          event.key === "Enter" &&
-          (event.target as HTMLElement).tagName === "INPUT" &&
-          (event.target as HTMLInputElement).type !== "search" &&
-          !busy
-        ) {
-          event.preventDefault();
-          void save(true);
-        } else if (event.key === "Escape") {
-          if (addMenuOpen) {
-            event.stopPropagation();
-            setAddMenuOpen(false);
-            setAddSearch("");
-            addButtonRef.current?.focus();
-          } else {
-            onCancel();
-          }
-        }
-      }}
-    >
+    <ModalBackdrop>
+      <ModalSurface
+        size="wide"
+        fill
+        aria-labelledby="connection-editor-title"
+        aria-busy={busy}
+      >
+        <div
+          className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:overflow-hidden tw:bg-background"
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              (event.target as HTMLElement).tagName === "INPUT" &&
+              (event.target as HTMLInputElement).type !== "search" &&
+              !busy
+            ) {
+              event.preventDefault();
+              void save(true);
+            } else if (event.key === "Escape") {
+              if (addMenuOpen) {
+                event.stopPropagation();
+                setAddMenuOpen(false);
+                setAddSearch("");
+                addButtonRef.current?.focus();
+              } else {
+                onCancel();
+              }
+            }
+          }}
+        >
       <header className="tw:flex tw:min-h-12 tw:shrink-0 tw:items-center tw:justify-between tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4">
         <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
           <Icon name="database" className="tw:text-info" />
-          <h2 className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+          <h2
+            id="connection-editor-title"
+            className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap"
+          >
             {t("connections.dataSourcesAndDrivers")}
           </h2>
           <span className="tw:text-sm tw:text-muted-foreground">
@@ -1789,6 +1803,8 @@ export function ConnectionForm({
           returnFocus={() => providerReturnFocusRef.current?.focus()}
         />
       ) : null}
-    </div>
+        </div>
+      </ModalSurface>
+    </ModalBackdrop>
   );
 }
