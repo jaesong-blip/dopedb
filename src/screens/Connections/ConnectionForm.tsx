@@ -4,6 +4,7 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import ConfirmButton from "../../components/ConfirmButton";
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
@@ -27,6 +28,7 @@ import type {
   ConnectionProfile,
   DriverDescriptor,
 } from "../../features/connections/domain";
+import { connectionId } from "../../features/connections/domain";
 import {
   blankConnection,
   CONNECTION_DEFAULT_PORTS,
@@ -43,6 +45,7 @@ import {
   selectedSchemaScope,
 } from "../../features/catalogExplorer/scopeFilter";
 import {
+  deleteConnection,
   installDriver,
   testConnectionProfile,
   upsertConnection,
@@ -171,6 +174,7 @@ export function ConnectionForm({
   onCreateDemoDatabase,
   onNewConnection,
   onEditConnection,
+  onDeletedConnection,
   onSaved,
   onCancel,
 }: {
@@ -181,6 +185,7 @@ export function ConnectionForm({
   onCreateDemoDatabase: () => void;
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
   onEditConnection: (connection: ConnectionProfile) => void;
+  onDeletedConnection: (id: string) => Promise<void>;
   onSaved: (
     profile: ConnectionProfile,
     closeEditor: boolean,
@@ -198,6 +203,7 @@ export function ConnectionForm({
       sslmode: sslModeForEngine(profile.engine, profile.sslmode),
     };
   });
+  const [isNew, setIsNew] = useState(initial === null);
   const [persisted, setPersisted] = useState(initial !== null);
   const [password, setPassword] = useState("");
   const [activeTab, setActiveTab] =
@@ -214,7 +220,6 @@ export function ConnectionForm({
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
   const providerReturnFocusRef = useRef<HTMLElement | null>(null);
-  const isNew = initial === null;
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
   const srv = form.extraParams.srv === "true";
@@ -512,6 +517,7 @@ export function ConnectionForm({
         password || undefined,
       );
       setForm(saved);
+      setIsNew(false);
       setPersisted(true);
       setPassword("");
       await onSaved(saved, closeEditor);
@@ -524,6 +530,43 @@ export function ConnectionForm({
     } finally {
       setBusy(false);
       setRunning(null);
+    }
+  }
+
+  function duplicateCurrentConnection() {
+    if (isNew || form.workspaceAccess !== "local") return;
+    setForm((current) => ({
+      ...current,
+      id: connectionId(crypto.randomUUID()),
+      name: t("connections.copyName", {
+        name: current.name || t("app.unnamed"),
+      }),
+      secretRef: null,
+      workspaceAccess: "local",
+      credentialMode: "local",
+    }));
+    setIsNew(true);
+    setPersisted(false);
+    setPassword("");
+    setActiveTab("general");
+    setMessage(null);
+    setMessageIsError(false);
+    toast(t("connections.connectionDuplicated"));
+  }
+
+  async function removeCurrentConnection() {
+    if (isNew || form.workspaceAccess !== "local") return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await deleteConnection(form.id);
+      toast(t("connections.connectionDeleted"));
+      await onDeletedConnection(form.id);
+      onCancel();
+    } catch (error) {
+      setMessage(errMessage(error));
+      setMessageIsError(true);
+      setBusy(false);
     }
   }
 
@@ -642,6 +685,31 @@ export function ConnectionForm({
               >
                 <Icon name="plus" />
               </button>
+              {!isNew && form.workspaceAccess === "local" ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn small icon-only icon-xs"
+                    disabled={busy}
+                    onClick={duplicateCurrentConnection}
+                    title={t("connections.duplicate")}
+                    aria-label={t("connections.duplicate")}
+                  >
+                    <Icon name="copy" />
+                  </button>
+                  <ConfirmButton
+                    className="btn small icon-only icon-xs"
+                    disabled={busy}
+                    label={t("common.delete")}
+                    confirmLabel={t("common.reallyDelete")}
+                    onConfirm={() =>
+                      void removeCurrentConnection()
+                    }
+                  >
+                    <Icon name="trash" />
+                  </ConfirmButton>
+                </>
+              ) : null}
               {isNew ? (
                 <button
                   type="button"

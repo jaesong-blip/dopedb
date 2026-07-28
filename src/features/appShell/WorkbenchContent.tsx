@@ -78,6 +78,7 @@ type Props = {
   onRetryConnections: () => void;
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
   onEditConnection: (connection: ConnectionProfile) => void;
+  onDeletedConnection: (id: string) => Promise<void>;
   onSelectConnection: (id: string) => void;
   onActivateDocument: (id: string) => void;
   onCloseDocument: (id: string) => void;
@@ -161,6 +162,7 @@ export default function WorkbenchContent(props: Props) {
           onCreateDemoDatabase={props.onCreateDemoDatabase}
           onNewConnection={props.onNewConnection}
           onEditConnection={props.onEditConnection}
+          onDeletedConnection={props.onDeletedConnection}
           onSaved={props.onConnectionSaved}
           onCancel={props.onCancelEditing}
         />

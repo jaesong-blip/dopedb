@@ -661,6 +661,21 @@ function Shell() {
       (query) => query.isPending || query.isFetching,
     );
 
+  async function handleDeletedConnection(id: string) {
+    await refresh();
+    if (selectedId === id) {
+      setSelectedId(null);
+      workbench.reset();
+    }
+    if (schemaDiffGroupKey) setSchemaDiffGroupKey(null);
+    setEditing((current) => {
+      if (current && current !== "new" && current.id === id) {
+        return null;
+      }
+      return current;
+    });
+  }
+
   const mainContent = (
     <WorkbenchContent
       settingsOpen={settingsOpen}
@@ -721,6 +736,7 @@ function Shell() {
         setSettingsOpen(false);
         setSchemaDiffGroupKey(null);
       }}
+      onDeletedConnection={handleDeletedConnection}
       onSelectConnection={(id) => selectConnection(id, area)}
       onActivateDocument={workbench.activateId}
       onCloseDocument={closeDocument}
@@ -826,18 +842,7 @@ function Shell() {
         setSettingsOpen(false);
         setSchemaDiffGroupKey(null);
       }}
-      onDeletedConnection={async (id) => {
-        await refresh();
-        if (selectedId === id) {
-          setSelectedId(null);
-          workbench.reset();
-        }
-        if (schemaDiffGroupKey) setSchemaDiffGroupKey(null);
-        setEditing((current) => {
-          if (current && current !== "new" && current.id === id) return null;
-          return current;
-        });
-      }}
+      onDeletedConnection={handleDeletedConnection}
       onConnectionUpdated={(updated) => {
         setConns((current) =>
           current.map((connection) =>
