@@ -9,6 +9,7 @@ const desktopScenes = [
   "schema-erd",
   "dashboard",
   "settings-auth",
+  "skill-setup",
   "loading-error",
 ] as const;
 
@@ -91,4 +92,31 @@ test("compact viewport keeps long names and panels bounded", async ({ page }) =>
   await expect(page.locator(".visual-app")).toHaveScreenshot(
     "compact-long-names.png",
   );
+});
+
+test("skill setup stays bounded at 360px and exposes keyboard controls", async ({
+  page,
+}) => {
+  await openScene(page, "skill-setup");
+  await expectLayoutContract(page);
+
+  const frame = page.locator(".vf-skill-setup-frame");
+  const layout = await frame.evaluate((node) => ({
+    clientWidth: node.clientWidth,
+    scrollWidth: node.scrollWidth,
+  }));
+  expect(layout.clientWidth).toBe(360);
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+
+  const close = page.getByRole("button", { name: "설정 터미널 닫기" });
+  const copy = page.getByRole("button", { name: "명령 복사" });
+  await expect(close).toHaveCSS("height", "24px");
+  await expect(copy).toHaveCSS("height", "32px");
+  await close.focus();
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(copy).toBeFocused();
+  await expect(
+    page.getByLabel("DopeDB 스킬 설정 터미널"),
+  ).toContainText("dopedb skill install --target all");
 });

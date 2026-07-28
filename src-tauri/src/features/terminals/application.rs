@@ -2,12 +2,12 @@
 
 use std::time::Duration;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 
 use super::domain::{
-    SkillSetupTerminalCreateRequest, SkillSetupTerminalSessionSummary, TerminalCreateRequest,
-    TerminalFocusReceipt, TerminalSessionSummary, TerminalSize,
+    SkillSetupTerminalCreateRequest, SkillSetupTerminalDraft, SkillSetupTerminalSessionSummary,
+    TerminalCreateRequest, TerminalFocusReceipt, TerminalSessionSummary, TerminalSize,
 };
 use super::ports::{SkillSetupTerminalSessionPort, TerminalSessionPort};
 
@@ -39,6 +39,17 @@ where
     }
 
     pub(crate) async fn write(&self, id: TerminalSessionId, bytes: Vec<u8>) -> AppResult<()> {
+        self.sessions.write(id, bytes).await
+    }
+
+    pub(crate) async fn draft(
+        &self,
+        id: TerminalSessionId,
+        draft: SkillSetupTerminalDraft,
+    ) -> AppResult<()> {
+        let bytes = draft.into_bytes().map_err(|reason| AppError::Blocked {
+            reason: reason.into(),
+        })?;
         self.sessions.write(id, bytes).await
     }
 

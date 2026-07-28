@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::kernel::identity::{ConnectionId, TerminalSessionId, WorkspaceId};
 use crate::model::Engine;
 
+const MAX_SKILL_SETUP_DRAFT_BYTES: usize = 4 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TerminalProfile {
@@ -100,6 +102,27 @@ pub struct SkillSetupTerminalCreateRequest {
     pub size: TerminalSize,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SkillSetupTerminalDraft {
+    pub text: String,
+}
+
+impl SkillSetupTerminalDraft {
+    pub(super) fn into_bytes(self) -> Result<Vec<u8>, &'static str> {
+        if self.text.is_empty() {
+            return Err("the Skill setup command draft is empty");
+        }
+        if self.text.len() > MAX_SKILL_SETUP_DRAFT_BYTES {
+            return Err("the Skill setup command draft is too large");
+        }
+        if self.text.chars().any(char::is_control) {
+            return Err("the Skill setup command draft contains an execution control character");
+        }
+        Ok(self.text.into_bytes())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalConnectionPin {
@@ -191,4 +214,46 @@ pub struct SkillSetupTerminalStateEvent {
 pub struct SkillSetupTerminalExitEvent {
     pub session_id: TerminalSessionId,
     pub exit: TerminalExit,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skill_setup_draft_accepts_one_visible_command_line() {
+        let draft = SkillSetupTerminalDraft {
+            text: "dopedb skill install --target all".into(),
+        };
+
+        assert_eq!(
+            draft.into_bytes().unwrap(),
+            b"dopedb skill install --target all"
+        );
+    }
+
+    #[test]
+    fn skill_setup_draft_rejects_every_execution_control_character() {
+        for suffix in ["\r", "\n", "\r\n", "\0", "\u{1b}", "\t"] {
+            let draft = SkillSetupTerminalDraft {
+                text: format!("dopedb skill install --target codex{suffix}"),
+            };
+
+            assert!(draft.into_bytes().is_err(), "accepted {suffix:?}");
+        }
+    }
+
+    #[test]
+    fn skill_setup_draft_rejects_empty_and_unbounded_input() {
+        assert!(SkillSetupTerminalDraft {
+            text: String::new(),
+        }
+        .into_bytes()
+        .is_err());
+        assert!(SkillSetupTerminalDraft {
+            text: "x".repeat(MAX_SKILL_SETUP_DRAFT_BYTES + 1),
+        }
+        .into_bytes()
+        .is_err());
+    }
 }

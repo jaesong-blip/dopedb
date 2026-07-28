@@ -7,6 +7,7 @@ import type {
 import type { WorkspaceId } from "../workspaces/domain";
 
 declare const terminalSessionIdBrand: unique symbol;
+declare const skillSetupCommandDraftBrand: unique symbol;
 
 export type TerminalSessionId = string & {
   readonly [terminalSessionIdBrand]: "TerminalSessionId";
@@ -14,6 +15,26 @@ export type TerminalSessionId = string & {
 
 export function terminalSessionId(value: string): TerminalSessionId {
   return value as TerminalSessionId;
+}
+
+export type SkillSetupCommandDraft = string & {
+  readonly [skillSetupCommandDraftBrand]: "SkillSetupCommandDraft";
+};
+
+export function skillSetupCommandDraft(value: string): SkillSetupCommandDraft {
+  if (value.length === 0 || value.length > 4 * 1024) {
+    throw new Error("Skill setup command draft length is invalid");
+  }
+  for (const character of value) {
+    if (
+      character === "\u007f" ||
+      character.charCodeAt(0) < 0x20 ||
+      (character.charCodeAt(0) >= 0x80 && character.charCodeAt(0) <= 0x9f)
+    ) {
+      throw new Error("Skill setup command draft contains a control character");
+    }
+  }
+  return value as SkillSetupCommandDraft;
 }
 
 export type TerminalProfile = "shell" | "codex" | "claude";

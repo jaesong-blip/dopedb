@@ -60,20 +60,6 @@ pub async fn skill_status(
 }
 
 #[tauri::command]
-pub async fn install_skill(
-    state: State<'_, AppState>,
-    target: dopedb_protocol::SkillTargetSelection,
-    expected: Vec<dopedb_protocol::SkillTargetExpectation>,
-) -> AppResult<dopedb_protocol::SkillMutationResult> {
-    let skills = state.skills.clone();
-    tokio::task::spawn_blocking(move || {
-        skills.install(dopedb_protocol::SkillMutationArguments { target, expected })
-    })
-    .await
-    .map_err(|_| AppError::Config("the Skill install worker stopped unexpectedly".into()))?
-}
-
-#[tauri::command]
 pub async fn repair_skill(
     state: State<'_, AppState>,
     target: dopedb_protocol::SkillTargetSelection,

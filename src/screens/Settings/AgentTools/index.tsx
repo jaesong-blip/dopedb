@@ -1,10 +1,9 @@
 // Manages the bounded Codex/Claude Skill inventory through explicit install,
 // backup-and-repair, remove, and version-matched CLI self-test actions.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentCliDetectionQuery } from "../../../features/agents/queryOptions";
 import {
-  installSkill,
   legacyMcpCleanupApply,
   removeSkill,
   repairSkill,
@@ -29,9 +28,14 @@ import {
   skillStatusQuery,
 } from "../../../lib/queries";
 import { useI18n, type I18nKey } from "../../../lib/i18n";
+import SkillSetupPanel from "../../../features/skills/SkillSetupPanel";
+import {
+  buildSkillSetupPlan,
+  type SkillSetupPlan,
+} from "../../../features/skills/setupPolicy";
 import "./agentTools.css";
 
-type Mutation = "install" | "repair" | "remove";
+type Mutation = "repair" | "remove";
 
 const stateLabel: Record<SkillInstallState, I18nKey> = {
   missing: "agentTools.stateMissing",
@@ -106,6 +110,8 @@ export default function AgentTools() {
     SkillTargetSelection | "self-test" | "legacy-cleanup" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
+  const [setupPlan, setSetupPlan] = useState<SkillSetupPlan | null>(null);
+  const setupTriggerRef = useRef<HTMLElement | null>(null);
   const status = statusQ.data ?? null;
 
   function expectations(target: SkillTargetSelection): SkillTargetExpectation[] {
@@ -126,9 +132,7 @@ export default function AgentTools() {
     try {
       const expected = expectations(target);
       let receipt: SkillMutationReceipt;
-      if (mutation === "install") {
-        receipt = await installSkill(target, expected);
-      } else if (mutation === "repair") {
+      if (mutation === "repair") {
         receipt = await repairSkill(target, expected);
       } else {
         receipt = await removeSkill(target, expected);
@@ -210,14 +214,22 @@ export default function AgentTools() {
     }
   }
 
-  const installAll =
-    !!status &&
-    status.targets.some((target) =>
-      ["missing", "managed_older"].includes(target.state),
-    ) &&
-    status.targets.every((target) =>
-      ["missing", "managed_current", "managed_older"].includes(target.state),
-    );
+  function openSetup(plan: SkillSetupPlan, trigger: HTMLElement) {
+    if (!plan.command) return;
+    setupTriggerRef.current = trigger;
+    setSetupPlan(plan);
+  }
+
+  function closeSetup() {
+    setSetupPlan(null);
+    const trigger = setupTriggerRef.current;
+    setupTriggerRef.current = null;
+    window.requestAnimationFrame(() => trigger?.focus());
+  }
+
+  const combinedSetupPlan = status
+    ? buildSkillSetupPlan(status.targets)
+    : null;
   const anyCurrent = status?.targets.some(
     (target) => target.state === "managed_current",
   );
@@ -315,6 +327,10 @@ export default function AgentTools() {
                         </dd>
                       </div>
                     )}
+                    <div>
+                      <dt>{t("agentTools.currentRevision")}</dt>
+                      <dd>{target.currentRevision}</dd>
+                    </div>
                   </dl>
                   {target.reason && (
                     <p className="muted">{t(reasonLabel[target.reason])}</p>
@@ -343,10 +359,19 @@ export default function AgentTools() {
                       {canInstall && (
                         <button
                           className="btn primary"
-                          disabled={busy !== null}
-                          onClick={() => void runMutation("install", target.target)}
+                          disabled={busy !== null || setupPlan !== null}
+                          onClick={(event) =>
+                            openSetup(
+                              buildSkillSetupPlan([target]),
+                              event.currentTarget,
+                            )
+                          }
                         >
-                          {t("agentTools.install")}
+                          {t(
+                            target.state === "managed_older"
+                              ? "agentTools.update"
+                              : "agentTools.install",
+                          )}
                         </button>
                       )}
                       {canRepair && (
@@ -378,6 +403,10 @@ export default function AgentTools() {
             })}
           </div>
         )
+      )}
+
+      {setupPlan && (
+        <SkillSetupPanel plan={setupPlan} onClose={closeSetup} />
       )}
 
       <section className="agent-tools-legacy">
@@ -447,13 +476,21 @@ export default function AgentTools() {
       </section>
 
       <div className="agent-tools-footer ds-control-row">
-        {installAll && (
+        {combinedSetupPlan?.command && !setupPlan && (
           <button
             className="btn primary"
             disabled={busy !== null}
-            onClick={() => void runMutation("install", "all")}
+            onClick={(event) =>
+              openSetup(combinedSetupPlan, event.currentTarget)
+            }
           >
-            {t("agentTools.installAll")}
+            {t(
+              combinedSetupPlan.action === "update"
+                ? "agentTools.updateAll"
+                : combinedSetupPlan.action === "install-and-update"
+                  ? "agentTools.installAndUpdate"
+                  : "agentTools.installAll",
+            )}
           </button>
         )}
         {anyCurrent && (

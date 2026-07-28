@@ -164,6 +164,43 @@ button, input, select { font: inherit; }
 .vf-workspace-card { margin-top: 16px; padding: 14px; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--ds-bg-raised); }.vf-workspace-card div { display: grid; flex: 1; gap: 4px; }.vf-workspace-card small { color: var(--ds-text-muted); }
 .vf-member { height: 48px; }.vf-member > span { flex: 1; }.vf-member button { min-width: 110px; }
 
+.vf-skill-setup-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 22px;
+  height: 100%;
+  padding: 24px;
+  overflow: auto;
+}
+.vf-skill-setup-layout > nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vf-skill-setup-layout > nav button {
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+}
+.vf-skill-setup-layout > nav button.active { background: var(--ds-selection); }
+.vf-skill-setup-frame {
+  width: 360px;
+  min-width: 0;
+  container-name: settings-body;
+  container-type: inline-size;
+}
+.vf-skill-setup-frame .settings-title-row h2 { margin: 0; }
+.vf-skill-setup-frame > .muted { margin: 5px 0 0; }
+.vf-skill-pty {
+  margin: 0;
+  color: #d7dae0;
+  font: 12px/1.5 "Courier New", monospace;
+  white-space: pre-wrap;
+}
+.vf-skill-pty > span:first-child { color: #86a7cc; }
+.vf-skill-pty .cursor { color: #d3d7dc; }
+
 .vf-state-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 24px; }
 .vf-state-matrix section { display: grid; min-height: 190px; place-items: center; align-content: center; gap: 9px; padding: 20px; border: 1px solid var(--ds-border); border-radius: 7px; background: var(--ds-bg-raised); text-align: center; }
 .vf-state-matrix small { color: var(--ds-text-muted); }.vf-state-matrix section.error { border-color: #6d4642; }
@@ -177,6 +214,7 @@ button, input, select { font: inherit; }
   .visual-app { --vf-sidebar: 210px; }
   .vf-table-scene { grid-template-columns: minmax(0, 1fr) 230px; }
   .vf-settings { grid-template-columns: 150px minmax(0, 1fr); padding: 16px; }
+  .vf-skill-setup-layout { grid-template-columns: 150px minmax(0, 1fr); padding: 16px; }
   .vf-state-matrix { grid-template-columns: 1fr; overflow: auto; }
   .vf-terminal { left: calc(var(--vf-rail) + var(--vf-sidebar)); }
 }

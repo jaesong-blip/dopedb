@@ -5,6 +5,8 @@ import "../../../src/design-system/index.css";
 import "../../../src/styles.css";
 import "../../../src/components/grid.css";
 import "../../../src/components/TerminalDock/terminalDock.css";
+import "../../../src/features/skills/skillSetup.css";
+import "../../../src/features/terminals/ptySurface.css";
 import "../../../src/screens/Connections/connections.css";
 import "../../../src/screens/Dashboards/dashboards.css";
 import "../../../src/screens/Schema/schema.css";
@@ -20,6 +22,7 @@ type Scene =
   | "schema-erd"
   | "dashboard"
   | "settings-auth"
+  | "skill-setup"
   | "loading-error";
 
 const scene = (new URLSearchParams(location.search).get("scene") ??
@@ -335,6 +338,87 @@ function SettingsScene() {
   );
 }
 
+function SkillSetupScene() {
+  return (
+    <div className="vf-skill-setup-layout" data-depth="1">
+      <nav aria-label="설정 메뉴">
+        {["계정", "워크스페이스", "에이전트 도구", "MCP 서버", "업데이트"].map(
+          (item) => (
+            <button
+              className={item === "에이전트 도구" ? "active" : ""}
+              data-control
+              key={item}
+            >
+              {item}
+            </button>
+          ),
+        )}
+      </nav>
+      <div className="vf-skill-setup-frame">
+        <div className="settings-title-row">
+          <h2>에이전트 도구</h2>
+        </div>
+        <p className="muted">DopeDB 0.3.8 · 스킬 리비전 7</p>
+        <section
+          className="skill-setup-panel"
+          aria-labelledby="vf-skill-setup-title"
+        >
+          <header className="skill-setup-panel-head">
+            <div>
+              <span className="skill-setup-kicker">설정 터미널</span>
+              <h3 id="vf-skill-setup-title">
+                DopeDB 스킬 설치 및 업데이트
+              </h3>
+            </div>
+            <button
+              type="button"
+              className="btn small icon-only icon-xs"
+              aria-label="설정 터미널 닫기"
+            >
+              ×
+            </button>
+          </header>
+          <p className="muted skill-setup-summary">
+            대상: Codex, Claude Code
+          </p>
+          <div className="skill-setup-command">
+            <code>dopedb skill install --target all</code>
+            <button
+              type="button"
+              className="btn small icon-only"
+              aria-label="명령 복사"
+            >
+              ⧉
+            </button>
+          </div>
+          <p className="skill-setup-safety">
+            <Glyph>i</Glyph>
+            <span>
+              연결 없는 터미널에 명령만 입력합니다. Enter를 자동으로
+              누르거나 데이터베이스 접근을 제공하지 않습니다.
+            </span>
+          </p>
+          <section
+            className="skill-setup-terminal"
+            aria-label="DopeDB 스킬 설정 터미널"
+          >
+            <header className="skill-setup-terminal-head">
+              <p>명령 준비됨 · Enter를 눌러 실행</p>
+            </header>
+            <div className="terminal-surface skill-setup-terminal-surface">
+              <pre className="vf-skill-pty">
+                <span>jaesong@local % </span>
+                dopedb skill install --target all
+                <span className="cursor">▋</span>
+              </pre>
+            </div>
+          </section>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function LoadingErrorScene() {
   return (
     <div className="vf-state-matrix" data-depth="1">
@@ -374,6 +458,7 @@ function Scene() {
     case "schema-erd": return <ErdScene />;
     case "dashboard": return <DashboardScene />;
     case "settings-auth": return <SettingsScene />;
+    case "skill-setup": return <SkillSetupScene />;
     case "loading-error": return <LoadingErrorScene />;
     default: return <ConnectionsScene />;
   }

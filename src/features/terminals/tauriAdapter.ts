@@ -1,8 +1,12 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type {
   SkillSetupTerminalCreateRequest,
+  SkillSetupCommandDraft,
+  SkillSetupTerminalExitEvent,
   SkillSetupTerminalSessionSummary,
+  SkillSetupTerminalStateEvent,
   TerminalCreateRequest,
   TerminalFocusReceipt,
   TerminalOutputChunk,
@@ -90,6 +94,13 @@ export function skillSetupTerminalWrite(
   return invoke("skill_setup_terminal_write", { id, bytes });
 }
 
+export function skillSetupTerminalDraft(
+  id: TerminalSessionId,
+  text: SkillSetupCommandDraft,
+): Promise<void> {
+  return invoke("skill_setup_terminal_draft", { id, draft: { text } });
+}
+
 export function skillSetupTerminalResize(
   id: TerminalSessionId,
   size: TerminalSize,
@@ -101,6 +112,24 @@ export function skillSetupTerminalClose(
   id: TerminalSessionId,
 ): Promise<void> {
   return invoke("skill_setup_terminal_close", { id });
+}
+
+export function onSkillSetupTerminalState(
+  handler: (event: SkillSetupTerminalStateEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<SkillSetupTerminalStateEvent>(
+    "skill-setup-terminal:state",
+    ({ payload }) => handler(payload),
+  );
+}
+
+export function onSkillSetupTerminalExit(
+  handler: (event: SkillSetupTerminalExitEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<SkillSetupTerminalExitEvent>(
+    "skill-setup-terminal:exit",
+    ({ payload }) => handler(payload),
+  );
 }
 
 export function terminalShutdownAll(): Promise<void> {

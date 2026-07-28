@@ -1366,6 +1366,24 @@ forbid("src-tauri/src/features/terminals/transport.rs", [
   [/\b(?:DesktopTerminalAdapter|PtyTerminalRuntime)\b/, "Terminal transport must delegate to the feature use cases"],
   [/\bportable_pty\b/, "Terminal transport must not create or control PTYs"],
 ]);
+forbid("src-tauri/src/commands/mod.rs", [
+  [
+    /\bpub async fn install_skill\b/,
+    "direct desktop Skill installation bypassed the user-confirmed setup Terminal",
+  ],
+]);
+forbid("src-tauri/src/lib.rs", [
+  [
+    /\bcommands::install_skill\b/,
+    "removed direct Skill installation command was registered again",
+  ],
+]);
+forbid("src/ipc/commands.ts", [
+  [
+    /\bfunction installSkill\b|\binvoke\([\"']install_skill[\"']/,
+    "direct Skill installation bypassed the user-confirmed setup Terminal",
+  ],
+]);
 for (const filePath of [
   "src-tauri/src/features/terminals/adapters/setup_desktop.rs",
   "src-tauri/src/features/terminals/adapters/setup_runtime.rs",
@@ -1434,6 +1452,23 @@ const terminalListBody = terminalFeatureSource.match(
 )?.[0];
 if (!terminalListBody || terminalListBody.includes("skill_setup")) {
   fail("connectionless Skill setup sessions must not enter terminal_list");
+}
+const skillSetupUiSource = read(
+  "src/features/skills/SkillSetupTerminal.tsx",
+).replaceAll("\r\n", "\n");
+if (
+  !skillSetupUiSource.includes(
+    "await skillSetupTerminalDraft(id, initialCommand);",
+  )
+) {
+  fail("Skill setup command must use the control-free draft boundary");
+}
+if (
+  /\bskillSetupTerminalWrite\s*\([^)]*\b(?:command|initialCommand)\b/.test(
+    skillSetupUiSource,
+  )
+) {
+  fail("Skill setup command must not use the interactive input boundary");
 }
 forbid("src-tauri/src/features/agents/transport.rs", [
   [/crate::store/, "Agent transport must delegate archive reads"],
@@ -1672,6 +1707,7 @@ const terminalCommands = [
   "terminal_rename",
   "skill_setup_terminal_create",
   "skill_setup_terminal_write",
+  "skill_setup_terminal_draft",
   "skill_setup_terminal_resize",
   "skill_setup_terminal_close",
   "terminal_shutdown_all",
@@ -1766,6 +1802,7 @@ for (const typeName of agentContractTypes) {
 }
 const terminalContractTypes = [
   "TerminalSessionId",
+  "SkillSetupCommandDraft",
   "TerminalProfile",
   "TerminalLifecycle",
   "TerminalDatabasePolicy",
@@ -1778,6 +1815,10 @@ const terminalContractTypes = [
   "TerminalFocusReceipt",
   "TerminalStateEvent",
   "TerminalExitEvent",
+  "SkillSetupTerminalCreateRequest",
+  "SkillSetupTerminalSessionSummary",
+  "SkillSetupTerminalStateEvent",
+  "SkillSetupTerminalExitEvent",
 ];
 for (const typeName of terminalContractTypes) {
   const declaration = new RegExp(
@@ -1820,7 +1861,7 @@ forbid("src/ipc/types.ts", [
     "dashboard contract returned to the central IPC type file",
   ],
   [
-    /\b(?:Terminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)|SkillSetupTerminal(?:CreateRequest|SessionSummary|StateEvent|ExitEvent))\b/,
+    /\b(?:Terminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)|SkillSetupCommandDraft|SkillSetupTerminal(?:CreateRequest|SessionSummary|StateEvent|ExitEvent))\b/,
     "Terminal contract returned to the central IPC type file",
   ],
   [
@@ -1860,7 +1901,7 @@ forbid("src/ipc/commands.ts", [
     "dashboard commands returned to the central IPC facade",
   ],
   [
-    /\b(?:terminalOutputChannel|terminalCreate|terminalList|terminalFocus|terminalWrite|terminalResize|terminalKill|terminalClose|terminalRestart|terminalRename|skillSetupTerminalCreate|skillSetupTerminalWrite|skillSetupTerminalResize|skillSetupTerminalClose|terminalShutdownAll)\b/,
+    /\b(?:terminalOutputChannel|terminalCreate|terminalList|terminalFocus|terminalWrite|terminalResize|terminalKill|terminalClose|terminalRestart|terminalRename|skillSetupTerminalCreate|skillSetupTerminalWrite|skillSetupTerminalDraft|skillSetupTerminalResize|skillSetupTerminalClose|terminalShutdownAll)\b/,
     "Terminal commands returned to the central IPC facade",
   ],
   [
@@ -1895,14 +1936,14 @@ for (const [filePath, source] of frontendSource) {
     fail(`${filePath}: imports ConnectionProfile from the removed central owner`);
   }
   if (
-    /import\s+(?:type\s+)?\{[^}]*\b(?:Terminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)|SkillSetupTerminal(?:CreateRequest|SessionSummary|StateEvent|ExitEvent))\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
+    /import\s+(?:type\s+)?\{[^}]*\b(?:Terminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)|SkillSetupCommandDraft|SkillSetupTerminal(?:CreateRequest|SessionSummary|StateEvent|ExitEvent))\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
       source,
     )
   ) {
     fail(`${filePath}: imports a Terminal contract from the removed central owner`);
   }
   if (
-    /import\s*\{[^}]*\b(?:terminal(?:OutputChannel|Create|List|Focus|Write|Resize|Kill|Close|Restart|Rename|ShutdownAll)|skillSetupTerminal(?:Create|Write|Resize|Close))\b[^}]*\}\s*from\s*["'][^"']*ipc\/commands["']/.test(
+    /import\s*\{[^}]*\b(?:terminal(?:OutputChannel|Create|List|Focus|Write|Resize|Kill|Close|Restart|Rename|ShutdownAll)|skillSetupTerminal(?:Create|Write|Draft|Resize|Close))\b[^}]*\}\s*from\s*["'][^"']*ipc\/commands["']/.test(
       source,
     )
   ) {

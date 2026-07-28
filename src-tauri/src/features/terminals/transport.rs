@@ -8,8 +8,9 @@ use crate::kernel::identity::TerminalSessionId;
 use crate::state::AppState;
 
 use super::{
-    SkillSetupTerminalCreateRequest, SkillSetupTerminalSessionSummary, TerminalCreateRequest,
-    TerminalFocusReceipt, TerminalOutputChunk, TerminalSessionSummary, TerminalSize,
+    SkillSetupTerminalCreateRequest, SkillSetupTerminalDraft, SkillSetupTerminalSessionSummary,
+    TerminalCreateRequest, TerminalFocusReceipt, TerminalOutputChunk, TerminalSessionSummary,
+    TerminalSize,
 };
 
 #[tauri::command]
@@ -113,6 +114,15 @@ pub async fn skill_setup_terminal_write(
     state: State<'_, AppState>,
 ) -> AppResult<()> {
     state.terminals.write_skill_setup(id, bytes).await
+}
+
+#[tauri::command]
+pub async fn skill_setup_terminal_draft(
+    id: TerminalSessionId,
+    draft: SkillSetupTerminalDraft,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    state.terminals.draft_skill_setup(id, draft).await
 }
 
 #[tauri::command]

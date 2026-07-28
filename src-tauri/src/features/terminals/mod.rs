@@ -19,8 +19,9 @@ use crate::store::Store;
 use adapters::{DesktopSkillSetupTerminalAdapter, DesktopTerminalAdapter};
 use application::{SkillSetupTerminalUseCases, TerminalUseCases};
 pub(crate) use domain::{
-    SkillSetupTerminalCreateRequest, SkillSetupTerminalSessionSummary, TerminalCreateRequest,
-    TerminalFocusReceipt, TerminalOutputChunk, TerminalSessionSummary, TerminalSize,
+    SkillSetupTerminalCreateRequest, SkillSetupTerminalDraft, SkillSetupTerminalSessionSummary,
+    TerminalCreateRequest, TerminalFocusReceipt, TerminalOutputChunk, TerminalSessionSummary,
+    TerminalSize,
 };
 
 type ComposedTerminalApplication = TerminalUseCases<DesktopTerminalAdapter>;
@@ -109,6 +110,14 @@ impl TerminalsFeature {
         bytes: Vec<u8>,
     ) -> AppResult<()> {
         self.skill_setup.write(id, bytes).await
+    }
+
+    pub(crate) async fn draft_skill_setup(
+        &self,
+        id: TerminalSessionId,
+        draft: SkillSetupTerminalDraft,
+    ) -> AppResult<()> {
+        self.skill_setup.draft(id, draft).await
     }
 
     pub(crate) async fn resize_skill_setup(
