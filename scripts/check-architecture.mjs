@@ -1389,7 +1389,7 @@ for (const filePath of [
 }
 const setupEnvironmentSource = read(
   "src-tauri/src/features/terminals/adapters/environment.rs",
-);
+).replaceAll("\r\n", "\n");
 const setupEnvironmentBody = setupEnvironmentSource.match(
   /pub\(super\) fn command_for_skill_setup\([\s\S]*?\n}\n\nfn agent_executable/,
 )?.[0];
@@ -1420,13 +1420,15 @@ for (const forbidden of [
   "DOPEDB_RUNTIME_FILE",
 ]) {
   if (
-    setupEnvironmentBody.includes(forbidden) ||
-    baseEnvironmentBody.includes(forbidden)
+    setupEnvironmentBody?.includes(forbidden) ||
+    baseEnvironmentBody?.includes(forbidden)
   ) {
     fail(`Skill setup Terminal environment received forbidden authority: ${forbidden}`);
   }
 }
-const terminalFeatureSource = read("src-tauri/src/features/terminals/mod.rs");
+const terminalFeatureSource = read(
+  "src-tauri/src/features/terminals/mod.rs",
+).replaceAll("\r\n", "\n");
 const terminalListBody = terminalFeatureSource.match(
   /pub\(crate\) fn list\(&self\)[\s\S]*?\n    }\n\n    pub\(crate\) async fn focus/,
 )?.[0];
