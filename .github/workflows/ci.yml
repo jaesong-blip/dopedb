@@ -138,6 +138,7 @@ jobs:
           workspaces: |
             . -> target
             src-tauri -> src-tauri/target
+          save-if: false
 
       - name: Install app dependencies
         run: pnpm install --frozen-lockfile
