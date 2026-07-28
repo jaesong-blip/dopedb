@@ -65,6 +65,28 @@ export const connectionsCatalog = defineCatalog(
     "connections.driverInstalled": "{name} is installed.",
     "connections.driverInstalledStatus": "Installed",
     "connections.driverCapabilities": "Driver capabilities",
+    "connections.problemDriverCatalogUnavailable":
+      "The driver catalog could not be loaded.",
+    "connections.problemDriverInstallRequired":
+      "Install the selected driver before testing or saving this data source.",
+    "connections.problemDriverUnavailable":
+      "No installed driver matches this database and connection method.",
+    "connections.problemDuplicateName":
+      "Another data source already uses this name.",
+    "connections.problemHostInvalid":
+      "Enter a host name without a URL scheme or whitespace.",
+    "connections.problemHostRequired": "Enter the database host.",
+    "connections.problemMongoDatabaseRequired":
+      "Enter the MongoDB database name.",
+    "connections.problemNameRequired": "Enter a data source name.",
+    "connections.problemPortInvalid":
+      "Enter a port from 1 through 65535.",
+    "connections.problemRuntime": "Connection check failed",
+    "connections.problems": "Problems",
+    "connections.problemsEmpty":
+      "No configuration problems were found.",
+    "connections.problemSqliteFileRequired":
+      "Choose a SQLite database file.",
     "connections.driverPlanned": "Planned — not available in this build",
     "connections.duplicate": "Duplicate connection",
     "connections.demoCreating": "Creating Demo SQLite...",
@@ -242,6 +264,27 @@ export const connectionsCatalog = defineCatalog(
     "connections.driverInstalled": "{name} 드라이버가 설치되었습니다.",
     "connections.driverInstalledStatus": "설치됨",
     "connections.driverCapabilities": "드라이버 기능",
+    "connections.problemDriverCatalogUnavailable":
+      "드라이버 목록을 불러오지 못했습니다.",
+    "connections.problemDriverInstallRequired":
+      "이 데이터 소스를 테스트하거나 저장하기 전에 선택한 드라이버를 설치하세요.",
+    "connections.problemDriverUnavailable":
+      "이 데이터베이스와 연결 방식에 맞는 설치된 드라이버가 없습니다.",
+    "connections.problemDuplicateName":
+      "다른 데이터 소스가 이미 이 이름을 사용합니다.",
+    "connections.problemHostInvalid":
+      "URL scheme과 공백 없이 호스트 이름을 입력하세요.",
+    "connections.problemHostRequired": "데이터베이스 호스트를 입력하세요.",
+    "connections.problemMongoDatabaseRequired":
+      "MongoDB 데이터베이스 이름을 입력하세요.",
+    "connections.problemNameRequired": "데이터 소스 이름을 입력하세요.",
+    "connections.problemPortInvalid":
+      "1부터 65535 사이의 포트를 입력하세요.",
+    "connections.problemRuntime": "연결 검사 실패",
+    "connections.problems": "문제",
+    "connections.problemsEmpty": "구성 문제를 찾지 못했습니다.",
+    "connections.problemSqliteFileRequired":
+      "SQLite 데이터베이스 파일을 선택하세요.",
     "connections.driverPlanned": "준비 중 — 이 빌드에서는 사용할 수 없음",
     "connections.duplicate": "연결 복제",
     "connections.demoCreating": "Demo SQLite 생성 중...",

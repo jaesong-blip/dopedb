@@ -15,10 +15,17 @@ import {
   CommandMenuItem,
 } from "../../design-system/components/CommandMenu";
 import {
+  DiagnosticCount,
+  DiagnosticSummary,
+  type DiagnosticItem,
+} from "../../design-system/components/Diagnostics";
+import {
   CheckboxField,
   Field,
+  FieldValidationMessage,
   SelectInput,
   TextInput,
+  type FieldValidation,
 } from "../../design-system/components/FormControls";
 import {
   ModalBackdrop,
@@ -33,6 +40,10 @@ import {
   ToolWindowSection,
 } from "../../design-system/components/ToolWindow";
 import { parseConnectionUrl } from "../../features/connections/connectionUrl";
+import {
+  diagnoseConnection,
+  type ConnectionDiagnosticCode,
+} from "../../features/connections/diagnostics";
 import type {
   ConnectionProfile,
   DriverDescriptor,
@@ -231,6 +242,7 @@ export function ConnectionForm({
     useState<ProviderKind | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addSearch, setAddSearch] = useState("");
+  const [problemsOpen, setProblemsOpen] = useState(false);
   const addMenuAnchorRef = useRef<HTMLDivElement | null>(null);
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const providerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -275,11 +287,41 @@ export function ConnectionForm({
     form.engine,
     form.provider,
   );
-  const activeDriver =
-    drivers.find((driver) => driver.id === form.driverId) ??
-    drivers.find((driver) => driver.recommended) ??
-    drivers[0] ??
-    null;
+  const activeDriver = form.driverId
+    ? drivers.find((driver) => driver.id === form.driverId) ?? null
+    : drivers.find((driver) => driver.recommended) ??
+      drivers[0] ??
+      null;
+  const connectionDiagnostics = diagnoseConnection(
+    form,
+    connections,
+    driverCatalog.data ?? [],
+    driverCatalog.isError,
+    driverCatalog.isPending,
+  );
+  const hasBlockingProblems = connectionDiagnostics.some(
+    (diagnostic) => diagnostic.tone === "danger",
+  );
+  const problemItems: DiagnosticItem[] = connectionDiagnostics.map(
+    (diagnostic) => ({
+      id: diagnostic.id,
+      tone: diagnostic.tone,
+      title: diagnosticMessage(diagnostic.code),
+    }),
+  );
+  if (messageIsError && message) {
+    problemItems.push({
+      id: "connection-runtime",
+      tone: "danger",
+      title: t("connections.problemRuntime"),
+      description: message,
+    });
+  }
+  const nameValidation = fieldValidation("connection-name");
+  const driverValidation = fieldValidation("connection-driver");
+  const hostValidation = fieldValidation("connection-host");
+  const portValidation = fieldValidation("connection-port");
+  const databaseValidation = fieldValidation("connection-database");
   const providers = PROVIDER_ORDER.filter(
     (provider) =>
       provider === "auto" ||
@@ -420,6 +462,64 @@ export function ConnectionForm({
     value: ConnectionProfile[K],
   ) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function diagnosticMessage(
+    code: ConnectionDiagnosticCode,
+  ): string {
+    switch (code) {
+      case "nameRequired":
+        return t("connections.problemNameRequired");
+      case "duplicateName":
+        return t("connections.problemDuplicateName");
+      case "hostRequired":
+        return t("connections.problemHostRequired");
+      case "hostInvalid":
+        return t("connections.problemHostInvalid");
+      case "portInvalid":
+        return t("connections.problemPortInvalid");
+      case "sqliteFileRequired":
+        return t("connections.problemSqliteFileRequired");
+      case "mongoDatabaseRequired":
+        return t("connections.problemMongoDatabaseRequired");
+      case "driverCatalogUnavailable":
+        return t(
+          "connections.problemDriverCatalogUnavailable",
+        );
+      case "driverUnavailable":
+        return t("connections.problemDriverUnavailable");
+      case "driverInstallRequired":
+        return t("connections.problemDriverInstallRequired");
+    }
+  }
+
+  function fieldValidation(
+    fieldId: string,
+  ): FieldValidation | undefined {
+    const diagnostic = connectionDiagnostics.find(
+      (candidate) => candidate.fieldId === fieldId,
+    );
+    return diagnostic
+      ? {
+          tone: diagnostic.tone,
+          message: diagnosticMessage(diagnostic.code),
+        }
+      : undefined;
+  }
+
+  function openDiagnostic(diagnosticId: string) {
+    const diagnostic = connectionDiagnostics.find(
+      (candidate) => candidate.id === diagnosticId,
+    );
+    if (!diagnostic) return;
+    setProblemsOpen(false);
+    setActiveTab(diagnostic.tab);
+    if (diagnostic.fieldId) {
+      const fieldId = diagnostic.fieldId;
+      requestAnimationFrame(() =>
+        document.getElementById(fieldId)?.focus(),
+      );
+    }
   }
 
   function selectSource(
@@ -644,6 +744,10 @@ export function ConnectionForm({
   }
 
   async function save(closeEditor: boolean) {
+    if (hasBlockingProblems) {
+      setProblemsOpen(true);
+      return;
+    }
     setBusy(true);
     setRunning(closeEditor ? "save" : "apply");
     setMessage(null);
@@ -707,6 +811,10 @@ export function ConnectionForm({
   }
 
   async function test() {
+    if (hasBlockingProblems) {
+      setProblemsOpen(true);
+      return;
+    }
     setBusy(true);
     setRunning("test");
     setMessage(null);
@@ -1024,6 +1132,34 @@ export function ConnectionForm({
                 ))}
               </ToolWindowSection>
             ) : null}
+            <div className="tw:mt-3 tw:border-t tw:border-border-subtle tw:pt-2">
+              <ToolWindowAction
+                leading={
+                  <Icon
+                    name="alert"
+                    className={
+                      problemItems.some(
+                        (item) => item.tone === "danger",
+                      )
+                        ? "tw:text-danger"
+                        : "tw:text-muted-foreground"
+                    }
+                  />
+                }
+                trailing={
+                  <DiagnosticCount
+                    count={problemItems.length}
+                    hasErrors={problemItems.some(
+                      (item) => item.tone === "danger",
+                    )}
+                  />
+                }
+                selected={problemsOpen}
+                onClick={() => setProblemsOpen(true)}
+              >
+                {t("connections.problems")}
+              </ToolWindowAction>
+            </div>
           </nav>
         </aside>
 
@@ -1032,23 +1168,44 @@ export function ConnectionForm({
             <span className="tw:text-sm tw:text-muted-foreground">
               {t("connections.name")}
             </span>
-            <TextInput
-              value={form.name}
-              onChange={(event) => set("name", event.target.value)}
-              placeholder="prod-readonly"
-              autoFocus
-            />
+            <span className="tw:grid tw:min-w-0 tw:gap-1">
+              <TextInput
+                id="connection-name"
+                value={form.name}
+                aria-invalid={
+                  nameValidation?.tone === "danger" || undefined
+                }
+                onChange={(event) => set("name", event.target.value)}
+                placeholder="prod-readonly"
+                autoFocus
+              />
+              {nameValidation ? (
+                <FieldValidationMessage
+                  validation={nameValidation}
+                />
+              ) : null}
+            </span>
           </div>
 
-          <PanelTabs
-            tabs={tabs}
-            active={activeTab}
-            onChange={setActiveTab}
-            label={t("connections.tabList")}
-          />
+          {!problemsOpen ? (
+            <PanelTabs
+              tabs={tabs}
+              active={activeTab}
+              onChange={setActiveTab}
+              label={t("connections.tabList")}
+            />
+          ) : null}
 
           <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-5">
-            {activeTab === "general" ? (
+            {problemsOpen ? (
+              <DiagnosticSummary
+                title={t("connections.problems")}
+                items={problemItems}
+                emptyMessage={t("connections.problemsEmpty")}
+                onSelect={openDiagnostic}
+              />
+            ) : null}
+            {!problemsOpen && activeTab === "general" ? (
               <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-5">
                 <section className="tw:grid tw:gap-3">
                   <h3>{t("connections.connection")}</h3>
@@ -1102,6 +1259,7 @@ export function ConnectionForm({
                   <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-3">
                     <Field
                       label={t("connections.driver")}
+                      validation={driverValidation}
                       hint={
                         <InfoTip
                           label={t("connections.driverHint")}
@@ -1109,7 +1267,12 @@ export function ConnectionForm({
                       }
                     >
                       <SelectInput
+                        id="connection-driver"
                         value={form.driverId ?? ""}
+                        aria-invalid={
+                          driverValidation?.tone === "danger" ||
+                          undefined
+                        }
                         onChange={(event) =>
                           set(
                             "driverId",
@@ -1181,9 +1344,15 @@ export function ConnectionForm({
                     <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-2">
                       <Field
                         label={t("connections.databaseFile")}
+                        validation={databaseValidation}
                       >
                         <TextInput
+                          id="connection-database"
                           value={form.database}
+                          aria-invalid={
+                            databaseValidation?.tone === "danger" ||
+                            undefined
+                          }
                           onChange={(event) =>
                             set("database", event.target.value)
                           }
@@ -1209,18 +1378,36 @@ export function ConnectionForm({
                     <section className="tw:grid tw:gap-3">
                       <h3>{t("connections.connection")}</h3>
                       <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_112px] tw:gap-3 tw:@max-[560px]:grid-cols-1">
-                        <Field label={t("connections.host")}>
+                        <Field
+                          label={t("connections.host")}
+                          validation={hostValidation}
+                        >
                           <TextInput
+                            id="connection-host"
                             value={form.host}
+                            aria-invalid={
+                              hostValidation?.tone === "danger" ||
+                              undefined
+                            }
                             onChange={(event) =>
                               set("host", event.target.value)
                             }
                           />
                         </Field>
-                        <Field label={t("connections.port")}>
+                        <Field
+                          label={t("connections.port")}
+                          validation={portValidation}
+                        >
                           <TextInput
+                            id="connection-port"
                             type="number"
                             value={form.port}
+                            min={1}
+                            max={65_535}
+                            aria-invalid={
+                              portValidation?.tone === "danger" ||
+                              undefined
+                            }
                             disabled={isMongo && srv}
                             onChange={(event) => {
                               if (event.target.value !== "") {
@@ -1235,6 +1422,7 @@ export function ConnectionForm({
                       </div>
                       <Field
                         label={t("connections.database")}
+                        validation={databaseValidation}
                         hint={
                           isMongo ? (
                             <InfoTip
@@ -1246,8 +1434,13 @@ export function ConnectionForm({
                         }
                       >
                         <TextInput
+                          id="connection-database"
                           value={form.database}
                           required={isMongo}
+                          aria-invalid={
+                            databaseValidation?.tone === "danger" ||
+                            undefined
+                          }
                           onChange={(event) =>
                             set("database", event.target.value)
                           }
@@ -1316,7 +1509,7 @@ export function ConnectionForm({
               </div>
             ) : null}
 
-            {activeTab === "options" ? (
+            {!problemsOpen && activeTab === "options" ? (
               <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-5">
                 <Field
                   label={t("connections.environment")}
@@ -1374,7 +1567,7 @@ export function ConnectionForm({
               </div>
             ) : null}
 
-            {activeTab === "sshSsl" ? (
+            {!problemsOpen && activeTab === "sshSsl" ? (
               <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-5">
                 <section className="tw:grid tw:gap-3">
                   <h3>{t("connections.sslConfiguration")}</h3>
@@ -1542,7 +1735,7 @@ export function ConnectionForm({
               </div>
             ) : null}
 
-            {activeTab === "schemas" && !isMongo ? (
+            {!problemsOpen && activeTab === "schemas" && !isMongo ? (
               <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-5">
                 <section className="tw:grid tw:gap-3">
                   <h3>{t("connections.introspectionScope")}</h3>
@@ -1650,7 +1843,7 @@ export function ConnectionForm({
               </div>
             ) : null}
 
-            {activeTab === "advanced" ? (
+            {!problemsOpen && activeTab === "advanced" ? (
               <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-5">
                 <section className="tw:grid tw:gap-3">
                   <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
@@ -1752,8 +1945,27 @@ export function ConnectionForm({
         data-primary-flow
       >
         <button
+          type="button"
           className="btn"
-          disabled={busy}
+          aria-pressed={problemsOpen}
+          onClick={() => setProblemsOpen((open) => !open)}
+        >
+          <Icon
+            name={
+              problemItems.length === 0 ? "check" : "alert"
+            }
+          />
+          {t("connections.problems")}
+          <DiagnosticCount
+            count={problemItems.length}
+            hasErrors={problemItems.some(
+              (item) => item.tone === "danger",
+            )}
+          />
+        </button>
+        <button
+          className="btn"
+          disabled={busy || hasBlockingProblems}
           onClick={() => void test()}
         >
           {running === "test"
@@ -1784,7 +1996,7 @@ export function ConnectionForm({
         </button>
         <button
           className="btn"
-          disabled={busy}
+          disabled={busy || hasBlockingProblems}
           onClick={() => void save(false)}
         >
           {running === "apply"
@@ -1793,7 +2005,7 @@ export function ConnectionForm({
         </button>
         <button
           className="btn primary"
-          disabled={busy}
+          disabled={busy || hasBlockingProblems}
           onClick={() => void save(true)}
         >
           {running === "save"

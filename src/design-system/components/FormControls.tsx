@@ -7,13 +7,36 @@ import type {
 } from "react";
 import { forwardRef } from "react";
 
+export type FieldValidation = {
+  tone: "warning" | "danger";
+  message: ReactNode;
+};
+
+export function FieldValidationMessage({
+  validation,
+}: {
+  validation: FieldValidation;
+}) {
+  return (
+    <span
+      data-tone={validation.tone}
+      className="tw:text-xs tw:font-normal tw:text-warning tw:data-[tone=danger]:text-danger"
+      role={validation.tone === "danger" ? "alert" : "status"}
+    >
+      {validation.message}
+    </span>
+  );
+}
+
 export function Field({
   label,
   hint,
+  validation,
   children,
 }: {
   label: ReactNode;
   hint?: ReactNode;
+  validation?: FieldValidation;
   children: ReactNode;
 }) {
   return (
@@ -23,6 +46,9 @@ export function Field({
         {hint}
       </span>
       {children}
+      {validation ? (
+        <FieldValidationMessage validation={validation} />
+      ) : null}
     </label>
   );
 }
