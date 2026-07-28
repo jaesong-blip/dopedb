@@ -1,7 +1,7 @@
 // DopeDB-style Data Sources and Drivers editor. Connection parsing and
 // persistence stay in the feature layer; this screen composes Tailwind v4
 // layout with canonical design-system form, tab, and tool-window primitives.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import ConfirmButton from "../../components/ConfirmButton";
@@ -9,6 +9,11 @@ import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { useToast } from "../../components/Toast";
+import {
+  CommandMenu,
+  CommandMenuGroup,
+  CommandMenuItem,
+} from "../../design-system/components/CommandMenu";
 import {
   CheckboxField,
   Field,
@@ -219,6 +224,10 @@ export function ConnectionForm({
   const [messageIsError, setMessageIsError] = useState(false);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [addSearch, setAddSearch] = useState("");
+  const addMenuAnchorRef = useRef<HTMLDivElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const providerReturnFocusRef = useRef<HTMLElement | null>(null);
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
@@ -291,11 +300,32 @@ export function ConnectionForm({
     engine: Engine;
     provider: Provider;
     label: string;
+    category: "database" | "file";
   }> = [
-    { engine: "postgres", provider: "auto", label: "PostgreSQL" },
-    { engine: "mysql", provider: "auto", label: "MySQL / MariaDB" },
-    { engine: "sqlite", provider: "generic", label: "SQLite" },
-    { engine: "mongodb", provider: "generic", label: "MongoDB" },
+    {
+      engine: "postgres",
+      provider: "auto",
+      label: "PostgreSQL",
+      category: "database",
+    },
+    {
+      engine: "mysql",
+      provider: "auto",
+      label: "MySQL / MariaDB",
+      category: "database",
+    },
+    {
+      engine: "mongodb",
+      provider: "generic",
+      label: "MongoDB",
+      category: "database",
+    },
+    {
+      engine: "sqlite",
+      provider: "generic",
+      label: "SQLite",
+      category: "file",
+    },
   ];
   const cloudProviders: Array<{
     provider: ProviderKind;
@@ -314,6 +344,71 @@ export function ConnectionForm({
       label: t("connections.providerPlanetScale"),
     },
   ];
+  const normalizedAddSearch = addSearch.trim().toLocaleLowerCase();
+  const matchesAddSearch = (...values: string[]) =>
+    normalizedAddSearch.length === 0 ||
+    values.some((value) =>
+      value.toLocaleLowerCase().includes(normalizedAddSearch),
+    );
+  const filteredDatabaseSources = standardSources.filter(
+    (source) =>
+      source.category === "database" &&
+      matchesAddSearch(
+        source.label,
+        source.engine,
+        t("connections.database"),
+        "sql",
+        sourceDriverDescription(source),
+      ),
+  );
+  const filteredFileSources = standardSources.filter(
+    (source) =>
+      source.category === "file" &&
+      matchesAddSearch(
+        source.label,
+        source.engine,
+        t("connections.fileAndSample"),
+        "file",
+        sourceDriverDescription(source),
+      ),
+  );
+  const filteredCloudProviders = cloudProviders.filter((provider) =>
+    matchesAddSearch(
+      provider.label,
+      provider.provider,
+      t("connections.connectCloudProvider"),
+      "cloud",
+    ),
+  );
+  const demoMatches = matchesAddSearch(
+    t("connections.demoSqlite"),
+    t("connections.sampleDatabase"),
+    "demo sqlite",
+    "sample",
+  );
+  const hasAddResults =
+    filteredDatabaseSources.length > 0 ||
+    filteredFileSources.length > 0 ||
+    filteredCloudProviders.length > 0 ||
+    demoMatches;
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !addMenuAnchorRef.current?.contains(event.target)
+      ) {
+        setAddMenuOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () =>
+      document.removeEventListener(
+        "pointerdown",
+        closeOnOutsidePointer,
+      );
+  }, [addMenuOpen]);
 
   function set<K extends keyof ConnectionProfile>(
     key: K,
@@ -359,11 +454,47 @@ export function ConnectionForm({
     }
   }
 
-  function openProviderCredentials(provider: ProviderKind) {
+  function selectAddSource(
+    source: (typeof standardSources)[number],
+  ) {
+    setAddMenuOpen(false);
+    setAddSearch("");
+    if (isNew) {
+      selectSource(source.engine, source.provider);
+      return;
+    }
+    onNewConnection({
+      engine: source.engine,
+      provider: source.provider,
+      source: "standard",
+    });
+  }
+
+  function sourceDriverDescription(
+    source: (typeof standardSources)[number],
+  ): string {
+    const compatible = compatibleDrivers(
+      driverCatalog.data ?? [],
+      source.engine,
+      source.provider,
+    );
+    const driver =
+      compatible.find((candidate) => candidate.recommended) ??
+      compatible[0];
+    return driver
+      ? `${driver.name} ${driver.version}`
+      : t("connections.driverCatalogLoading");
+  }
+
+  function openProviderCredentials(
+    provider: ProviderKind,
+    returnFocus?: HTMLElement | null,
+  ) {
     providerReturnFocusRef.current =
-      document.activeElement instanceof HTMLElement
+      returnFocus ??
+      (document.activeElement instanceof HTMLElement
         ? document.activeElement
-        : null;
+        : null);
     setProviderCredentialsOpen(provider);
   }
 
@@ -639,12 +770,20 @@ export function ConnectionForm({
         if (
           event.key === "Enter" &&
           (event.target as HTMLElement).tagName === "INPUT" &&
+          (event.target as HTMLInputElement).type !== "search" &&
           !busy
         ) {
           event.preventDefault();
           void save(true);
         } else if (event.key === "Escape") {
-          onCancel();
+          if (addMenuOpen) {
+            event.stopPropagation();
+            setAddMenuOpen(false);
+            setAddSearch("");
+            addButtonRef.current?.focus();
+          } else {
+            onCancel();
+          }
         }
       }}
     >
@@ -670,21 +809,143 @@ export function ConnectionForm({
       </header>
 
       <div className="tw:flex tw:min-h-0 tw:flex-1">
-        <aside className="tw:flex tw:w-[244px] tw:shrink-0 tw:flex-col tw:overflow-hidden tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
+        <aside className="tw:flex tw:w-[244px] tw:shrink-0 tw:flex-col tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
           <div className="tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:border-b tw:border-border-subtle tw:px-3">
             <strong className="tw:text-sm">
               {t("connections.dataSources")}
             </strong>
             <div className="tw:flex tw:items-center tw:gap-1">
-              <button
-                type="button"
-                className="btn small icon-only icon-xs"
-                onClick={() => onNewConnection()}
-                title={t("common.add")}
-                aria-label={t("common.add")}
+              <div
+                ref={addMenuAnchorRef}
+                className="tw:relative tw:flex"
               >
-                <Icon name="plus" />
-              </button>
+                <button
+                  ref={addButtonRef}
+                  type="button"
+                  className="btn small icon-only icon-xs"
+                  onClick={() => {
+                    setAddSearch("");
+                    setAddMenuOpen((open) => !open);
+                  }}
+                  title={t("common.add")}
+                  aria-label={t("common.add")}
+                  aria-haspopup="dialog"
+                  aria-expanded={addMenuOpen}
+                  aria-controls="connection-add-menu"
+                >
+                  <Icon name="plus" />
+                </button>
+                {addMenuOpen ? (
+                  <CommandMenu
+                    id="connection-add-menu"
+                    label={t("connections.addDataSourceMenu")}
+                    searchLabel={t(
+                      "connections.addDataSourceSearchLabel",
+                    )}
+                    searchPlaceholder={t(
+                      "connections.addDataSourceSearchPlaceholder",
+                    )}
+                    searchValue={addSearch}
+                    onSearchChange={setAddSearch}
+                  >
+                    {filteredDatabaseSources.length > 0 ? (
+                      <CommandMenuGroup
+                        title={t("connections.database")}
+                      >
+                        {filteredDatabaseSources.map((source) => (
+                          <CommandMenuItem
+                            key={`${source.engine}-${source.provider}`}
+                            leading={
+                              <EngineMark engine={source.engine} />
+                            }
+                            trailing={<Icon name="chevronRight" />}
+                            description={sourceDriverDescription(
+                              source,
+                            )}
+                            onClick={() => selectAddSource(source)}
+                          >
+                            {source.label}
+                          </CommandMenuItem>
+                        ))}
+                      </CommandMenuGroup>
+                    ) : null}
+                    {filteredCloudProviders.length > 0 ? (
+                      <CommandMenuGroup
+                        title={t(
+                          "connections.connectCloudProvider",
+                        )}
+                      >
+                        {filteredCloudProviders.map((provider) => (
+                          <CommandMenuItem
+                            key={provider.provider}
+                            leading={<Icon name="key" />}
+                            trailing={<Icon name="chevronRight" />}
+                            description={t(
+                              "connections.cloudCredentialDescription",
+                            )}
+                            onClick={() => {
+                              setAddMenuOpen(false);
+                              setAddSearch("");
+                              openProviderCredentials(
+                                provider.provider,
+                                addButtonRef.current,
+                              );
+                            }}
+                          >
+                            {provider.label}
+                          </CommandMenuItem>
+                        ))}
+                      </CommandMenuGroup>
+                    ) : null}
+                    {filteredFileSources.length > 0 ||
+                    demoMatches ? (
+                      <CommandMenuGroup
+                        title={t("connections.fileAndSample")}
+                      >
+                        {filteredFileSources.map((source) => (
+                          <CommandMenuItem
+                            key={`${source.engine}-${source.provider}`}
+                            leading={
+                              <EngineMark engine={source.engine} />
+                            }
+                            trailing={<Icon name="chevronRight" />}
+                            description={sourceDriverDescription(
+                              source,
+                            )}
+                            onClick={() => selectAddSource(source)}
+                          >
+                            {source.label}
+                          </CommandMenuItem>
+                        ))}
+                        {demoMatches ? (
+                          <CommandMenuItem
+                            leading={<EngineMark engine="sqlite" />}
+                            trailing={<Icon name="download" />}
+                            description={t(
+                              "connections.demoDescription",
+                            )}
+                            disabled={creatingDemo}
+                            onClick={() => {
+                              setAddMenuOpen(false);
+                              setAddSearch("");
+                              onCreateDemoDatabase();
+                            }}
+                          >
+                            {creatingDemo
+                              ? t("connections.demoCreating")
+                              : t("connections.demoSqlite")}
+                          </CommandMenuItem>
+                        ) : null}
+                      </CommandMenuGroup>
+                    ) : null}
+                    {!hasAddResults ? (
+                      <p className="tw:px-2 tw:py-5 tw:text-center tw:text-sm tw:text-muted-foreground">
+                        {t("connections.noDataSourceResults")}
+                      </p>
+                    ) : null}
+                  </CommandMenu>
+                ) : null}
+              </div>
               {!isNew && form.workspaceAccess === "local" ? (
                 <>
                   <button
@@ -728,86 +989,22 @@ export function ConnectionForm({
           </div>
           <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-2">
             {connections.length > 0 ? (
-              <>
-                <ToolWindowSection
-                  title={t("connections.dataSources")}
-                >
-                  {connections.map((connection) => (
-                    <ToolWindowAction
-                      key={connection.id}
-                      leading={<EngineMark engine={connection.engine} />}
-                      trailing={<Icon name="chevronRight" />}
-                      selected={
-                        !isNew && connection.id === form.id
-                      }
-                      onClick={() => onEditConnection(connection)}
-                    >
-                      {connection.name || t("app.unnamed")}
-                    </ToolWindowAction>
-                  ))}
-                </ToolWindowSection>
-                <div className="tw:h-5" />
-              </>
-            ) : null}
-            <ToolWindowSection
-              title={t("connections.createDataSource")}
-            >
-              {standardSources.map((source) => (
-                <ToolWindowAction
-                  key={`${source.engine}-${source.provider}`}
-                  leading={<EngineMark engine={source.engine} />}
-                  trailing={<Icon name="chevronRight" />}
-                  selected={
-                    form.engine === source.engine
-                  }
-                  onClick={() => {
-                    if (isNew) {
-                      selectSource(source.engine, source.provider);
-                    } else {
-                      onNewConnection({
-                        engine: source.engine,
-                        provider: source.provider,
-                        source: "standard",
-                      });
-                    }
-                  }}
-                >
-                  {source.label}
-                </ToolWindowAction>
-              ))}
-            </ToolWindowSection>
-            <div className="tw:h-5" />
-            <ToolWindowSection
-              title={t("connections.connectCloudProvider")}
-            >
-              {cloudProviders.map((provider) => (
-                <ToolWindowAction
-                  key={provider.provider}
-                  leading={<Icon name="key" />}
-                  trailing={<Icon name="chevronRight" />}
-                  onClick={() =>
-                    openProviderCredentials(provider.provider)
-                  }
-                >
-                  {provider.label}
-                </ToolWindowAction>
-              ))}
-            </ToolWindowSection>
-            <div className="tw:h-5" />
-            <ToolWindowSection
-              title={t("connections.sampleDatabase")}
-            >
-              <ToolWindowAction
-                leading={<EngineMark engine="sqlite" />}
-                trailing={<Icon name="download" />}
-                disabled={creatingDemo}
-                onClick={onCreateDemoDatabase}
+              <ToolWindowSection
+                title={t("connections.dataSources")}
               >
-                {creatingDemo
-                  ? t("connections.demoCreating")
-                  : t("connections.demoSqlite")}
-              </ToolWindowAction>
-            </ToolWindowSection>
+                {connections.map((connection) => (
+                  <ToolWindowAction
+                    key={connection.id}
+                    leading={<EngineMark engine={connection.engine} />}
+                    trailing={<Icon name="chevronRight" />}
+                    selected={!isNew && connection.id === form.id}
+                    onClick={() => onEditConnection(connection)}
+                  >
+                    {connection.name || t("app.unnamed")}
+                  </ToolWindowAction>
+                ))}
+              </ToolWindowSection>
+            ) : null}
           </nav>
         </aside>
 

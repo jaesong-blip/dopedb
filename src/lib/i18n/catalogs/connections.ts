@@ -8,6 +8,10 @@ export const connectionsCatalog = defineCatalog(
     "connections.allSchemas": "All schemas",
     "connections.advanced": "Advanced",
     "connections.advancedParameters": "Advanced parameters",
+    "connections.addDataSourceMenu": "Add data source",
+    "connections.addDataSourceSearchLabel": "Search data sources",
+    "connections.addDataSourceSearchPlaceholder":
+      "Search databases, cloud, or files",
     "connections.addParameter": "Add parameter",
     "connections.allowWrites": "Allow write operations",
     "connections.allowWritesBody":
@@ -32,6 +36,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionOk": "Connection OK",
     "connections.connectionSaved": "Connection saved",
     "connections.connectCloudProvider": "Cloud accounts",
+    "connections.cloudCredentialDescription":
+      "Manage account credentials and resources",
     "connections.connectionMethod": "Connection method",
     "connections.connectionMethodHint":
       "Controls provider-specific connection behavior. Cloud account credentials are managed separately.",
@@ -50,6 +56,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.driver": "Driver",
     "connections.driverAutomatic": "Automatic (recommended)",
     "connections.driverBundled": "Bundled with this app",
+    "connections.driverCatalogLoading": "Loading driver catalog...",
     "connections.driverDownload": "Download",
     "connections.driverDownloadRequired": "Download required",
     "connections.driverDownloading": "Downloading...",
@@ -62,12 +69,15 @@ export const connectionsCatalog = defineCatalog(
     "connections.duplicate": "Duplicate connection",
     "connections.demoCreating": "Creating Demo SQLite...",
     "connections.demoCreated": "Demo SQLite is ready.",
+    "connections.demoDescription":
+      "Create a local database with seeded sample data",
     "connections.demoSqlite": "Create Demo SQLite",
     "connections.edit": "Edit connection",
     "connections.engine": "Engine",
     "connections.enableTls": "Use TLS",
     "connections.environment": "Environment",
     "connections.environmentHint": "(optional - labels the sidebar)",
+    "connections.fileAndSample": "Files and samples",
     "connections.sampleDatabase": "Sample database",
     "connections.expand": "Expand",
     "connections.expandMetadata": "Expand metadata for {table}",
@@ -88,6 +98,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.name": "Name",
     "connections.new": "New connection",
     "connections.noConnections": "No connections yet.",
+    "connections.noDataSourceResults":
+      "No data sources match this search.",
     "connections.noObjects": "No database objects.",
     "connections.noMetadata": "No column, key, or index metadata.",
     "connections.noSchemasDiscovered": "No schemas were discovered for this data source.",
@@ -171,6 +183,10 @@ export const connectionsCatalog = defineCatalog(
     "connections.allSchemas": "모든 스키마",
     "connections.advanced": "고급",
     "connections.advancedParameters": "고급 매개변수",
+    "connections.addDataSourceMenu": "데이터 소스 추가",
+    "connections.addDataSourceSearchLabel": "데이터 소스 검색",
+    "connections.addDataSourceSearchPlaceholder":
+      "데이터베이스, 클라우드 또는 파일 검색",
     "connections.addParameter": "매개변수 추가",
     "connections.allowWrites": "쓰기 작업 허용",
     "connections.allowWritesBody":
@@ -195,6 +211,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionOk": "연결 정상",
     "connections.connectionSaved": "연결이 저장되었습니다",
     "connections.connectCloudProvider": "클라우드 계정",
+    "connections.cloudCredentialDescription":
+      "계정 자격 증명과 리소스 관리",
     "connections.connectionMethod": "연결 방식",
     "connections.connectionMethodHint":
       "공급자별 연결 동작을 선택합니다. 클라우드 계정 자격 증명은 별도로 관리됩니다.",
@@ -213,6 +231,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.driver": "드라이버",
     "connections.driverAutomatic": "자동 선택 (권장)",
     "connections.driverBundled": "앱에 내장됨",
+    "connections.driverCatalogLoading": "드라이버 목록 불러오는 중...",
     "connections.driverDownload": "다운로드",
     "connections.driverDownloadRequired": "다운로드 필요",
     "connections.driverDownloading": "다운로드 중...",
@@ -225,12 +244,15 @@ export const connectionsCatalog = defineCatalog(
     "connections.duplicate": "연결 복제",
     "connections.demoCreating": "Demo SQLite 생성 중...",
     "connections.demoCreated": "Demo SQLite가 준비되었습니다.",
+    "connections.demoDescription":
+      "샘플 데이터가 포함된 로컬 데이터베이스 생성",
     "connections.demoSqlite": "Demo SQLite 생성",
     "connections.edit": "연결 편집",
     "connections.engine": "엔진",
     "connections.enableTls": "TLS 사용",
     "connections.environment": "환경",
     "connections.environmentHint": "(선택 - 사이드바에 표시)",
+    "connections.fileAndSample": "파일 및 샘플",
     "connections.sampleDatabase": "샘플 데이터베이스",
     "connections.expand": "펼치기",
     "connections.expandMetadata": "{table} 메타데이터 펼치기",
@@ -251,6 +273,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.name": "이름",
     "connections.new": "새 연결",
     "connections.noConnections": "아직 연결이 없습니다.",
+    "connections.noDataSourceResults":
+      "검색과 일치하는 데이터 소스가 없습니다.",
     "connections.noObjects": "데이터베이스 객체가 없습니다.",
     "connections.noMetadata": "컬럼, 키 또는 인덱스 메타데이터가 없습니다.",
     "connections.noSchemasDiscovered": "이 데이터 소스에서 스키마를 찾지 못했습니다.",
