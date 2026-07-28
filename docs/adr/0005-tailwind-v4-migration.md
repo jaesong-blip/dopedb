@@ -35,7 +35,9 @@ semantic color 계약이 깨지는 회귀도 반복됐다. 워크스페이스 �
 
 ## 회귀 방지
 
-`pnpm check:ui`는 다음을 자동으로 검사한다.
+초기 migration에서는 `pnpm check:ui`가 다음 항목을 자동 검사했다. 이 전용
+게이트는 lean smoke suite 전환과 함께 제거됐으며 현재 변경은 design system
+검토, `pnpm build`, 실제 화면 확인으로 검증한다.
 
 - visual boundary 깊이 최대 3
 - `data-primary-flow` 안의 primary action 최대 1
@@ -45,7 +47,7 @@ semantic color 계약이 깨지는 회귀도 반복됐다. 워크스페이스 �
 
 legacy token ratchet은 기존 부채의 증가를 막는 장치다. 수가 줄어들면 같은
 변경에서 기준선을 낮춰야 하므로 개선분이 다시 돌아오지 않는다. 실제 화면은
-Playwright visual regression으로 별도 검증한다.
+실제 앱 화면에서 별도 검증한다.
 
 ## 완료 조건
 

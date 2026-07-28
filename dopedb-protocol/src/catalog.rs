@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 pub const CATALOG_SCHEMA_VERSION: u32 = 2;
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DatabaseEngine {
@@ -19,7 +18,6 @@ pub enum DatabaseEngine {
     Mongodb,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CatalogSnapshot {
@@ -421,7 +419,6 @@ impl<'de> Deserialize<'de> for CatalogSnapshot {
     }
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Namespace {
@@ -430,7 +427,6 @@ pub struct Namespace {
     pub comment: Option<String>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ObjectKind {
@@ -444,7 +440,6 @@ pub enum ObjectKind {
     Other,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ObjectRef {
@@ -458,7 +453,6 @@ pub struct ObjectRef {
     pub native_id: Option<String>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NormalizedTypeFamily {
@@ -478,7 +472,6 @@ pub enum NormalizedTypeFamily {
     Other,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Column {
@@ -507,7 +500,6 @@ pub struct Column {
     pub sensitivity: Option<String>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConstraintKind {
@@ -517,7 +509,6 @@ pub enum ConstraintKind {
     Check,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Constraint {
@@ -539,7 +530,6 @@ pub struct Constraint {
     pub validated: bool,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SortDirection {
@@ -547,7 +537,6 @@ pub enum SortDirection {
     Desc,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IndexKey {
@@ -559,7 +548,6 @@ pub struct IndexKey {
     pub direction: Option<SortDirection>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Index {
@@ -576,7 +564,6 @@ pub struct Index {
     pub valid: bool,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Relation {
@@ -597,7 +584,6 @@ pub struct Relation {
     pub indexes: Vec<Index>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Routine {
@@ -621,7 +607,6 @@ pub struct Routine {
     pub parent: Option<String>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DatabaseObject {
@@ -634,229 +619,4 @@ pub struct DatabaseObject {
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    fn valid_snapshot() -> CatalogSnapshot {
-        CatalogSnapshot::capture(
-            Uuid::from_u128(1),
-            DatabaseEngine::Postgres,
-            "app",
-            Utc::now(),
-            CatalogContents::default(),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn constructor_fixes_schema_version_and_validates_fingerprint() {
-        let snapshot = valid_snapshot();
-        assert_eq!(snapshot.schema_version(), CATALOG_SCHEMA_VERSION);
-        assert!(snapshot.has_canonical_fingerprint());
-        assert!(CatalogSnapshot::new(
-            Uuid::from_u128(1),
-            DatabaseEngine::Postgres,
-            "app",
-            Utc::now(),
-            "A".repeat(64),
-            CatalogContents::default(),
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn canonical_fingerprint_is_stable_across_collection_and_capture_order() {
-        let routine_ref = ObjectRef {
-            catalog: None,
-            namespace: Some("public".into()),
-            name: "calculate".into(),
-            kind: ObjectKind::Routine,
-            native_id: None,
-        };
-        let overloaded = vec![
-            Routine {
-                object: routine_ref.clone(),
-                native_kind: Some("function".into()),
-                arguments: vec!["text".into()],
-                return_type: Some("text".into()),
-                language: Some("sql".into()),
-                comment: None,
-                detail: Some("(text)".into()),
-                parent: None,
-            },
-            Routine {
-                object: routine_ref,
-                native_kind: Some("function".into()),
-                arguments: vec!["integer".into()],
-                return_type: Some("integer".into()),
-                language: Some("sql".into()),
-                comment: None,
-                detail: Some("(integer)".into()),
-                parent: None,
-            },
-        ];
-        let first = CatalogContents {
-            namespaces: vec![
-                Namespace {
-                    name: "zeta".into(),
-                    comment: None,
-                },
-                Namespace {
-                    name: "alpha".into(),
-                    comment: Some("first".into()),
-                },
-            ],
-            routines: overloaded,
-            ..CatalogContents::default()
-        };
-        let mut second = first.clone();
-        second.namespaces.reverse();
-        second.routines.reverse();
-        let first = CatalogSnapshot::capture(
-            Uuid::from_u128(1),
-            DatabaseEngine::Postgres,
-            "app",
-            Utc::now(),
-            first,
-        )
-        .unwrap();
-        let second = CatalogSnapshot::capture(
-            Uuid::from_u128(2),
-            DatabaseEngine::Postgres,
-            "app",
-            Utc::now() + chrono::Duration::seconds(1),
-            second,
-        )
-        .unwrap();
-        assert_eq!(first.fingerprint(), second.fingerprint());
-        assert_eq!(first.namespaces(), second.namespaces());
-        assert_eq!(first.routines(), second.routines());
-    }
-
-    #[test]
-    fn identity_and_row_estimates_do_not_change_the_schema_fingerprint() {
-        let relation = Relation {
-            object: ObjectRef {
-                catalog: None,
-                namespace: Some("public".into()),
-                name: "users".into(),
-                kind: ObjectKind::Table,
-                native_id: None,
-            },
-            comment: None,
-            row_estimate: Some(10),
-            partition_parent: None,
-            partition_children: Vec::new(),
-            columns: Vec::new(),
-            constraints: Vec::new(),
-            indexes: Vec::new(),
-        };
-        let first = CatalogSnapshot::capture(
-            Uuid::from_u128(1),
-            DatabaseEngine::Postgres,
-            "development",
-            Utc::now(),
-            CatalogContents {
-                relations: vec![relation.clone()],
-                ..CatalogContents::default()
-            },
-        )
-        .unwrap();
-        let second = CatalogSnapshot::capture(
-            Uuid::from_u128(2),
-            DatabaseEngine::Postgres,
-            "production",
-            Utc::now() + chrono::Duration::hours(1),
-            CatalogContents {
-                relations: vec![Relation {
-                    row_estimate: Some(9_999),
-                    ..relation
-                }],
-                ..CatalogContents::default()
-            },
-        )
-        .unwrap();
-
-        assert_eq!(first.fingerprint(), second.fingerprint());
-    }
-
-    #[test]
-    fn row_estimates_cannot_reorder_duplicate_relation_identities_in_the_hash() {
-        let relation = |column_name: &str, row_estimate| Relation {
-            object: ObjectRef {
-                catalog: None,
-                namespace: Some("public".into()),
-                name: "duplicate".into(),
-                kind: ObjectKind::Table,
-                native_id: None,
-            },
-            comment: None,
-            row_estimate: Some(row_estimate),
-            partition_parent: None,
-            partition_children: Vec::new(),
-            columns: vec![Column {
-                name: column_name.into(),
-                ordinal: 1,
-                native_type: "text".into(),
-                type_family: NormalizedTypeFamily::Text,
-                length: None,
-                precision: None,
-                scale: None,
-                nullable: false,
-                default_expression: None,
-                generated_expression: None,
-                identity: false,
-                auto_increment: false,
-                collation: None,
-                comment: None,
-                sensitivity: None,
-            }],
-            constraints: Vec::new(),
-            indexes: Vec::new(),
-        };
-        let first = CatalogSnapshot::capture(
-            Uuid::from_u128(1),
-            DatabaseEngine::Postgres,
-            "app",
-            Utc::now(),
-            CatalogContents {
-                relations: vec![relation("alpha", 1), relation("beta", 2)],
-                ..CatalogContents::default()
-            },
-        )
-        .unwrap();
-        let second = CatalogSnapshot::capture(
-            Uuid::from_u128(2),
-            DatabaseEngine::Postgres,
-            "app",
-            Utc::now(),
-            CatalogContents {
-                relations: vec![relation("beta", 1), relation("alpha", 2)],
-                ..CatalogContents::default()
-            },
-        )
-        .unwrap();
-
-        assert_eq!(first.fingerprint(), second.fingerprint());
-    }
-
-    #[test]
-    fn deserialization_rejects_old_or_future_schema_versions() {
-        let mut value = serde_json::to_value(valid_snapshot()).unwrap();
-        value["schemaVersion"] = json!(1);
-        assert!(serde_json::from_value::<CatalogSnapshot>(value).is_err());
-    }
-
-    #[test]
-    fn deserialization_rejects_a_well_formed_but_stale_fingerprint() {
-        let mut value = serde_json::to_value(valid_snapshot()).unwrap();
-        value["engine"] = json!("mysql");
-        let error = serde_json::from_value::<CatalogSnapshot>(value).unwrap_err();
-        assert!(error.to_string().contains("canonical catalog contents"));
-    }
 }

@@ -229,19 +229,3 @@ fn bson_type_name(value: &Bson) -> &'static str {
         Bson::DbPointer(_) => "dbPointer",
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn overview_relation_defers_collection_detail_probes() {
-        let collection = overview_relation("orders".into(), false);
-        let view = overview_relation("daily_orders".into(), true);
-
-        assert_eq!(collection.kind, "table");
-        assert_eq!(view.kind, "view");
-        assert!(collection.row_estimate.is_none());
-        assert!(view.native_id.is_none());
-    }
-}

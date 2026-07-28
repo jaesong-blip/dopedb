@@ -148,8 +148,8 @@ Cancel, Close, Dismiss는 destructive가 아니다. 기본 `.btn` 또는 `.btn.g
 hover tooltip으로 병행할 수 있지만 접근 가능한 이름을 대신하지 않는다. 보통
 icon action은 투명한 surface로 시작하고 hover/active에서만 중립 배경을 드러낸다.
 삭제 icon도 idle 상태에서는 빨간 채움 상자로 만들지 않고 의미색 glyph를 사용하며,
-최종 확인 action만 `.btn.danger`의 채움 surface를 사용한다. `pnpm check:ui`가 단일
-아이콘 `.btn`의 정사각형 규격과 접근 가능한 이름을 검사한다.
+최종 확인 action만 `.btn.danger`의 채움 surface를 사용한다. 변경한 화면에서는
+단일 아이콘 `.btn`의 정사각형 규격과 접근 가능한 이름을 직접 확인한다.
 
 ### Surface
 
@@ -252,8 +252,7 @@ toolbar의 command overflow menu는 반드시 portal 기반 `ToolbarMenu`를 사
 - 각 항목은 박스형 `.btn`을 중첩하지 않고 평평한
   `role="menuitem"` `.ds-menu-item`을 사용한다.
 
-과거의 `.toolbar-menu`와 `.toolbar-menu-panel`은 금지한다. `pnpm check:ui`가 이
-회귀를 차단한다.
+과거의 `.toolbar-menu`와 `.toolbar-menu-panel`은 금지한다.
 
 ## 좁은 창 shell 계약
 
@@ -281,7 +280,7 @@ Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하�
 않는다. 새 박스보다 여백, 제목, divider를 먼저 사용한다.
 
 새 horizontal control cluster는 `.ds-control-row`를 포함하고, grid track은 `1fr`
-대신 `minmax(0, 1fr)`를 사용한다. `pnpm check:ui`가 이 계약을 검사한다.
+대신 `minmax(0, 1fr)`를 사용한다.
 화면별 높이는 해당 행에 `--ds-row-control-size`를 지정한다. 공통 규칙은 이 값을
 재정의하지 않고 `--ds-control-field` fallback만 사용하므로 CSS import 순서에 따라
 32px/36px control이 뒤섞이지 않는다. `.btn.small`과 `.icon-only`처럼 크기를
@@ -295,7 +294,7 @@ Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하�
 3. 색상은 theme role로만 선택하고 raw arbitrary color를 쓰지 않는다.
 4. 새 token은 세 화면 이상에서 같은 의미로 반복될 때만 추가한다.
 5. 한 사용자 흐름은 `data-primary-flow` 경계 안에 primary action 하나만 둔다.
-6. `pnpm check:ui`, 관련 build, focused visual regression을 실행한다.
+6. `pnpm build`를 실행하고 실제 앱에서 변경한 화면과 좁은 창을 확인한다.
 
 참고 구현:
 

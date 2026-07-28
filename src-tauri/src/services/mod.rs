@@ -50,22 +50,6 @@ pub(crate) struct ApplicationServices {
 }
 
 impl ApplicationServices {
-    /// Test-only composition helper for isolated adapters.
-    /// Production composes the provider feature once in `AppState` and uses
-    /// [`Self::with_providers`] so receipt/vault ownership is not duplicated.
-    #[cfg(test)]
-    pub(crate) fn new(
-        store: Store,
-        connections: ConnectionManager,
-        operation: OperationRuntime,
-    ) -> Self {
-        let providers = crate::features::providers::compose(store.clone());
-        providers
-            .bind_revocation_port(Arc::new(connections.clone()))
-            .expect("test service composition binds the provider runtime fence");
-        Self::with_providers(store, connections, operation, providers)
-    }
-
     /// Constructs application services from the single composed provider feature.
     pub(crate) fn with_providers(
         store: Store,

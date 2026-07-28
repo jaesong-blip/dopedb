@@ -5,16 +5,6 @@ use super::super::*;
 impl Store {
     // ── saved dashboards ────────────────────────────────────────────────────
 
-    /// Test-only convenience for seeding dashboards. Production creation must hold
-    /// a scope-pinned capability and call `save_dashboard_if_current`.
-    #[cfg(test)]
-    pub(crate) async fn save_dashboard(&self, draft: &DashboardDraft) -> AppResult<Dashboard> {
-        let pin = self
-            .pin_connection_for_dashboard(draft.connection_id.into())
-            .await?;
-        self.save_dashboard_if_current(&pin, draft).await
-    }
-
     /// Persist a dashboard only while the supplied connection authority is still
     /// current. Taking SQLite's writer lock before rechecking the pin prevents a
     /// second process from switching scope or changing connection material between
@@ -106,17 +96,6 @@ impl Store {
             .collect::<AppResult<_>>()?;
         tx.commit().await?;
         Ok(dashboards)
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn list_dashboards(
-        &self,
-        connection_id: ConnectionId,
-    ) -> AppResult<Vec<Dashboard>> {
-        let pin = self
-            .pin_connection_for_dashboard(connection_id.into())
-            .await?;
-        self.list_dashboards_if_current(&pin).await
     }
 
     pub(crate) async fn get_dashboard(&self, id: DashboardId) -> AppResult<Dashboard> {
@@ -231,12 +210,6 @@ impl Store {
             dashboard_revision,
             connection,
         })
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn delete_dashboard(&self, id: DashboardId) -> AppResult<()> {
-        let pin = self.pin_dashboard_for_view(id).await?;
-        self.delete_dashboard_if_current(&pin).await
     }
 
     /// Tombstone exactly the dashboard revision that was pinned for this operation.

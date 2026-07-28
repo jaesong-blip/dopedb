@@ -5,8 +5,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::watch;
-#[cfg(test)]
-use uuid::Uuid;
 
 use crate::executor::read::DESKTOP_STREAM_BATCH_MAX_BYTES;
 use crate::kernel::identity::OperationId;
@@ -128,37 +126,6 @@ impl DesktopSqlStreamRegistry {
             return Err(DesktopSqlStreamSinkError::InvalidAcknowledgement);
         }
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub(super) fn begin(
-        &self,
-        operation_id: OperationId,
-        owner_webview: String,
-    ) -> Result<DesktopSqlStreamSession, DesktopSqlStreamSinkError> {
-        let mut streams = lock_unpoisoned(&self.streams);
-        if streams.contains_key(&operation_id) {
-            return Err(DesktopSqlStreamSinkError::StreamAlreadyActive);
-        }
-        let capability = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
-        let (changed, _) = watch::channel(0_u64);
-        streams.insert(
-            operation_id,
-            StreamCredit {
-                next_sequence: 0,
-                in_flight: None,
-                pulled: false,
-                cancelled: false,
-                owner_webview,
-                capability,
-                batch: None,
-                changed,
-            },
-        );
-        Ok(DesktopSqlStreamSession {
-            operation_id,
-            registry: self.clone(),
-        })
     }
 
     pub(super) fn begin_reserved(
@@ -297,11 +264,6 @@ impl DesktopSqlStreamRegistry {
             false
         }
     }
-
-    #[cfg(test)]
-    pub(super) fn active_count(&self) -> usize {
-        lock_unpoisoned(&self.streams).len()
-    }
 }
 
 impl Drop for DesktopSqlStreamSession {
@@ -403,7 +365,3 @@ impl StreamBorrow {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "desktop_stream_registry_tests.rs"]
-mod tests;

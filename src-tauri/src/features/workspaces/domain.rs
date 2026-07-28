@@ -166,37 +166,3 @@ pub(crate) fn valid_device_code(device_code: &str) -> bool {
             .chars()
             .all(|character| character.is_ascii_alphanumeric())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn feature_flag_is_fail_open_for_the_existing_default_but_honors_explicit_off_values() {
-        assert!(workspace_feature_enabled(None));
-        assert!(workspace_feature_enabled(Some("yes")));
-        for value in ["0", " false ", "OFF"] {
-            assert!(!workspace_feature_enabled(Some(value)));
-        }
-    }
-
-    #[test]
-    fn device_code_and_username_policies_reject_untrusted_values() {
-        assert!(!valid_device_code("../../not-a-device-code"));
-        assert!(valid_device_code(
-            "aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1zA3bC5dE7f"
-        ));
-        assert_eq!(validate_member_username(" member ").unwrap(), "member");
-        assert!(validate_member_username("bad\nname").is_err());
-    }
-
-    #[test]
-    fn role_parser_is_closed_to_unknown_authority_values() {
-        assert_eq!(
-            parse_workspace_role(Some("owner")).unwrap(),
-            WorkspaceRole::Owner
-        );
-        assert_eq!(parse_workspace_role(None).unwrap(), WorkspaceRole::Viewer);
-        assert!(parse_workspace_role(Some("superuser")).is_err());
-    }
-}

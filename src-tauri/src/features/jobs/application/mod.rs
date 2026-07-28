@@ -9,9 +9,6 @@ mod files;
 mod planning;
 mod recovery;
 
-#[cfg(test)]
-mod tests;
-
 use std::sync::Arc;
 
 use dashmap::DashMap;

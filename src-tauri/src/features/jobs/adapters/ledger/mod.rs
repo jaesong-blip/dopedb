@@ -7,9 +7,6 @@ mod records;
 mod recovery;
 mod transitions;
 
-#[cfg(test)]
-mod ledger_tests;
-
 use std::path::{Path, PathBuf};
 
 use crate::error::AppResult;

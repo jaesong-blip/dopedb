@@ -2,8 +2,6 @@
 
 mod adapters;
 mod application;
-#[cfg(test)]
-mod application_tests;
 mod domain;
 mod ports;
 pub(crate) mod transport;

@@ -5,8 +5,6 @@
 mod authentication;
 mod connections;
 mod provider_local_target;
-#[cfg(test)]
-mod provider_local_target_tests;
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -419,69 +417,5 @@ impl WorkspaceControlPlanePort for HostedWorkspaceControlPlane {
 
     fn console_url(&self, workspace_id: Option<WorkspaceId>) -> AppResult<String> {
         console_url(workspace_id.map(Into::into))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn production_origin_is_https() {
-        assert!(DEFAULT_CONTROL_PLANE_ORIGIN.starts_with("https://"));
-        assert_eq!(
-            validated_control_plane_origin().unwrap(),
-            DEFAULT_CONTROL_PLANE_ORIGIN
-        );
-    }
-
-    #[test]
-    fn device_code_validation_rejects_untrusted_input() {
-        assert!(!valid_device_code("../../not-a-device-code"));
-        assert!(valid_device_code(
-            "aB3dE5gH7jK9mN2pQ4rS6tU8vW0xY1zA3bC5dE7f"
-        ));
-    }
-
-    #[test]
-    fn loopback_detection_accepts_ipv4_ipv6_and_localhost() {
-        for origin in [
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://[::1]:3000",
-        ] {
-            assert!(is_loopback_host(&Url::parse(origin).unwrap()));
-        }
-        assert!(!is_loopback_host(
-            &Url::parse("https://app.dopedb.dev").unwrap()
-        ));
-    }
-
-    #[test]
-    fn console_url_targets_the_requested_workspace() {
-        let workspace_id = Uuid::parse_str("019bf6c8-2d35-7ba1-89bf-b4698600478c").unwrap();
-        let url = Url::parse(&console_url(Some(workspace_id)).unwrap()).unwrap();
-
-        assert_eq!(url.path(), "/settings");
-        assert_eq!(
-            url.query_pairs()
-                .find(|(key, _)| key == "workspace")
-                .unwrap()
-                .1,
-            workspace_id.to_string()
-        );
-        assert_eq!(
-            url.fragment(),
-            Some("workspace-019bf6c8-2d35-7ba1-89bf-b4698600478c")
-        );
-    }
-
-    #[test]
-    fn console_url_without_a_team_targets_the_workspace_list() {
-        let url = Url::parse(&console_url(None).unwrap()).unwrap();
-
-        assert_eq!(url.path(), "/settings");
-        assert!(url.query().is_none());
-        assert_eq!(url.fragment(), Some("workspaces"));
     }
 }

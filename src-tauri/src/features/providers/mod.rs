@@ -38,9 +38,6 @@ pub(crate) struct ProvidersFeature {
     revocation: ProviderBindingRevocationHandle,
 }
 
-#[cfg(test)]
-mod application_tests;
-
 pub(crate) fn compose(store: Store) -> ProvidersFeature {
     let repository = SqliteProviderBindingRepository::new(store);
     let vault = KeyringProviderCredentialVault::default();

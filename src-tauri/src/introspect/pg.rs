@@ -1,8 +1,6 @@
 //! Postgres introspection through bounded `pg_catalog` scans.
 
 mod queries;
-#[cfg(test)]
-mod tests;
 
 use queries::objects_sql_for_version;
 

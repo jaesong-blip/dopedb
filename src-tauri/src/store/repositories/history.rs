@@ -111,26 +111,6 @@ impl Store {
         rows.iter().map(row_to_history).collect()
     }
 
-    #[cfg(test)]
-    /// Test-only lookup used to verify history persistence without adding a runtime API.
-    pub async fn get_history(&self, id: Uuid) -> AppResult<HistoryEntry> {
-        let workspace_id = self.active_workspace_id().await?;
-        let account_scope = self.active_local_scope().await?;
-        let row = sqlx::query(
-            "SELECT h.* FROM query_history h
-             JOIN connections c ON c.id = h.connection_id
-             WHERE h.id = ?1 AND c.workspace_id = ?2 AND c.deleted_at IS NULL
-               AND h.account_scope = ?3",
-        )
-        .bind(id.to_string())
-        .bind(workspace_id.to_string())
-        .bind(account_scope)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("query history {id}")))?;
-        row_to_history(&row)
-    }
-
     /// Resolve the initial query provenance and active generation in one SQLite
     /// snapshot. Callers inspect eligibility before doing any connection pin work.
     pub(crate) async fn resolve_history_for_dashboard_prepare(

@@ -55,22 +55,6 @@ pub(in crate::features::jobs) enum ImportSource {
 }
 
 impl ImportSource {
-    #[cfg(test)]
-    pub(in crate::features::jobs) fn open(
-        path: &Path,
-        format: JobFormat,
-        resume_rows: u64,
-        engine: crate::model::Engine,
-    ) -> AppResult<Self> {
-        if resume_rows > 0 && !format.resumable() {
-            return Err(AppError::Blocked {
-                reason: "this import format cannot resume; start a new job".into(),
-            });
-        }
-        let file = open_regular_input(path)?;
-        Self::open_file(file, format, resume_rows, engine)
-    }
-
     fn open_file(
         file: File,
         format: JobFormat,

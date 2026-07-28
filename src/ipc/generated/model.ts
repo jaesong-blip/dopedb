@@ -1,5 +1,5 @@
 // Generated from src-tauri/src/model.rs by ts-rs 12.0.1.
-// Do not edit; run pnpm generate:contracts.
+// Keep this checked-in wire contract synchronized with the Rust DTOs.
 
 export type JsonValue =
   | string

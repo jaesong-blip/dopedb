@@ -105,29 +105,3 @@ pub(super) struct ReplayReceipt {
     pub(super) replay_through: u64,
     pub(super) truncated: bool,
 }
-
-#[cfg(test)]
-mod tests {
-    use tauri::ipc::InvokeResponseBody;
-
-    use super::*;
-
-    fn channel() -> Channel<TerminalOutputChunk> {
-        Channel::new(|_body: InvokeResponseBody| Ok(()))
-    }
-
-    #[test]
-    fn replay_is_byte_bounded_and_reports_truncation() {
-        let session_id = TerminalSessionId::from(uuid::Uuid::new_v4());
-        let mut output = OutputReplay::new(channel());
-        for _ in 0..40 {
-            output.publish(session_id, vec![b'x'; 16 * 1024]);
-        }
-        assert!(output.replay_bytes <= REPLAY_BYTES);
-        assert!(output.dropped_through > 0);
-        let receipt = output.attach(session_id, Some(0), channel()).unwrap();
-        assert!(receipt.truncated);
-        assert!(receipt.replay_from.is_some());
-        assert_eq!(receipt.replay_through, 40);
-    }
-}

@@ -249,33 +249,3 @@ mod windows {
 pub(crate) use windows::{
     create_named_pipe, restrict_path_to_current_user, verify_named_pipe_peer,
 };
-
-#[cfg(all(test, unix))]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn unix_socket_pair_accepts_the_current_user() {
-        let (first, second) = tokio::net::UnixStream::pair().unwrap();
-        verify_unix_peer(&first).unwrap();
-        verify_unix_peer(&second).unwrap();
-    }
-}
-
-#[cfg(all(test, windows))]
-mod windows_tests {
-    use tokio::net::windows::named_pipe::ClientOptions;
-    use uuid::Uuid;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn owner_local_named_pipe_accepts_the_current_process() {
-        let endpoint = format!(r"\\.\pipe\dopedb-peer-test-{}", Uuid::new_v4());
-        let server = create_named_pipe(&endpoint, true).unwrap();
-        let client = ClientOptions::new().open(&endpoint).unwrap();
-        server.connect().await.unwrap();
-        verify_named_pipe_peer(&server).unwrap();
-        drop(client);
-    }
-}

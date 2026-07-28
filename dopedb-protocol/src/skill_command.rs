@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AuthenticationRequirement, CommandName, CommandSpec, EmptyArguments};
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillTarget {
@@ -23,7 +22,6 @@ impl SkillTarget {
     }
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillTargetSelection {
@@ -42,7 +40,6 @@ impl SkillTargetSelection {
     }
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillInstallState {
@@ -55,7 +52,6 @@ pub enum SkillInstallState {
     Invalid,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillStatusReason {
@@ -85,7 +81,6 @@ pub enum SkillStatusReason {
     UnsafePathComponent,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillConflictKind {
@@ -106,7 +101,6 @@ impl SkillConflictKind {
     }
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillConflict {
@@ -114,7 +108,6 @@ pub struct SkillConflict {
     pub kind: SkillConflictKind,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillSummary {
@@ -124,7 +117,6 @@ pub struct SkillSummary {
     pub package_digest: String,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillsListResult {
@@ -141,7 +133,6 @@ impl CommandSpec for SkillsListCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::None;
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillsGetArguments {
@@ -150,7 +141,6 @@ pub struct SkillsGetArguments {
     pub full: bool,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillGuideFile {
@@ -158,7 +148,6 @@ pub struct SkillGuideFile {
     pub content: String,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillsGetResult {
@@ -178,14 +167,12 @@ impl CommandSpec for SkillsGetCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::None;
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillStatusArguments {
     pub target: SkillTargetSelection,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillTargetStatus {
@@ -206,7 +193,6 @@ pub struct SkillTargetStatus {
     pub conflicts: Vec<SkillConflict>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillStatusResult {
@@ -224,7 +210,6 @@ impl CommandSpec for SkillStatusCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::None;
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillTargetExpectation {
@@ -232,7 +217,6 @@ pub struct SkillTargetExpectation {
     pub inventory_fingerprint: String,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillMutationArguments {
@@ -240,7 +224,6 @@ pub struct SkillMutationArguments {
     pub expected: Vec<SkillTargetExpectation>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillBackup {
@@ -248,7 +231,6 @@ pub struct SkillBackup {
     pub path: String,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SkillMutationResult {
@@ -275,61 +257,3 @@ macro_rules! mutation_command {
 mutation_command!(SkillInstallCommand, SkillInstall);
 mutation_command!(SkillRepairCommand, SkillRepair);
 mutation_command!(SkillRemoveCommand, SkillRemove);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn all_target_selection_has_one_stable_order() {
-        assert_eq!(
-            SkillTargetSelection::All.targets(),
-            vec![SkillTarget::Codex, SkillTarget::ClaudeCode]
-        );
-    }
-
-    #[test]
-    fn install_states_use_the_versioned_wire_names() {
-        let states = [
-            (SkillInstallState::Missing, "\"missing\""),
-            (SkillInstallState::ManagedCurrent, "\"managed_current\""),
-            (SkillInstallState::ManagedOlder, "\"managed_older\""),
-            (SkillInstallState::UserModified, "\"user_modified\""),
-            (SkillInstallState::NewerKnown, "\"newer_known\""),
-            (SkillInstallState::UnknownConflict, "\"unknown_conflict\""),
-            (SkillInstallState::Invalid, "\"invalid\""),
-        ];
-        for (state, expected) in states {
-            assert_eq!(serde_json::to_string(&state).unwrap(), expected);
-        }
-    }
-
-    #[test]
-    fn conflict_kinds_use_stable_wire_names() {
-        let kinds = [
-            (SkillConflictKind::Missing, "\"missing\""),
-            (SkillConflictKind::Modified, "\"modified\""),
-            (SkillConflictKind::Unexpected, "\"unexpected\""),
-            (
-                SkillConflictKind::InvalidProvenance,
-                "\"invalid_provenance\"",
-            ),
-        ];
-        for (kind, expected) in kinds {
-            assert_eq!(serde_json::to_string(&kind).unwrap(), expected);
-            assert_eq!(kind.as_str(), expected.trim_matches('"'));
-        }
-    }
-
-    #[test]
-    fn status_reasons_use_stable_wire_names() {
-        assert_eq!(
-            serde_json::to_string(&SkillStatusReason::FilesDifferFromManagedSnapshot).unwrap(),
-            "\"files_differ_from_managed_snapshot\""
-        );
-        assert_eq!(
-            serde_json::to_string(&SkillStatusReason::UnsafePathComponent).unwrap(),
-            "\"unsafe_path_component\""
-        );
-    }
-}

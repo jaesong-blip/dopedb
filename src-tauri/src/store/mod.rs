@@ -17,8 +17,6 @@ mod workspace_codec;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-pub(crate) use migrations::SCHEMA as TEST_SCHEMA;
 pub(crate) use workspace_codec::{
     credential_mode_str, parse_credential_mode, parse_workspace_access, workspace_access_str,
 };

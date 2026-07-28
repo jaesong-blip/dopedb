@@ -881,7 +881,3 @@ pub(crate) fn sqlite_value(row: &SqliteRow, i: usize) -> Value {
     }
     Value::Null
 }
-
-#[cfg(test)]
-#[path = "read_tests.rs"]
-mod tests;

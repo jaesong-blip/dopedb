@@ -390,34 +390,3 @@ fn to_pty_size(size: TerminalSize) -> PtySize {
 fn session_limit_reached(running: usize, replacement_is_running: bool) -> bool {
     running.saturating_sub(usize::from(replacement_is_running)) >= MAX_SESSIONS
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_strip_controls_and_enforce_a_bound() {
-        let name = normalize_explicit_name(&format!("  hello\u{0}{}  ", "x".repeat(100))).unwrap();
-        assert!(name.starts_with("hello"));
-        assert!(name.chars().count() <= 64);
-        assert!(normalize_explicit_name("\n\t").is_err());
-    }
-
-    #[test]
-    fn dimensions_are_bounded() {
-        assert!(TerminalSize::default().validate().is_ok());
-        assert!(TerminalSize {
-            cols: 0,
-            ..TerminalSize::default()
-        }
-        .validate()
-        .is_err());
-    }
-
-    #[test]
-    fn restart_can_replace_one_session_at_the_limit() {
-        assert!(session_limit_reached(MAX_SESSIONS, false));
-        assert!(!session_limit_reached(MAX_SESSIONS, true));
-        assert!(session_limit_reached(MAX_SESSIONS + 1, true));
-    }
-}

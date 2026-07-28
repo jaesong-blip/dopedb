@@ -1,5 +1,5 @@
 // Generated from dopedb-protocol public serde DTOs by ts-rs 12.0.1.
-// Do not edit; run pnpm generate:contracts.
+// Keep this checked-in wire contract synchronized with the Rust DTOs.
 
 export type DatabaseEngine = "postgres" | "mysql" | "sqlite" | "mongodb";
 export type OperationState = "planned" | "pending_approval" | "ready" | "approved" | "rejected" | "expired" | "cancelled" | "executing" | "succeeded" | "failed" | "outcome_unknown";

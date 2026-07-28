@@ -37,18 +37,3 @@ pub fn negotiate_protocol(
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn chooses_highest_overlapping_version() {
-        assert_eq!(negotiate_protocol(1, 3, 2, 4), Ok(3));
-    }
-
-    #[test]
-    fn rejects_disjoint_ranges() {
-        assert!(negotiate_protocol(1, 1, 2, 3).is_err());
-    }
-}

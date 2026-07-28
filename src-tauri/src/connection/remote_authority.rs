@@ -2,16 +2,12 @@
 
 use std::future::Future;
 use std::pin::Pin;
-#[cfg(test)]
-use std::sync::Arc;
 use std::time::Duration;
 
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::ProviderLocalTarget;
-#[cfg(test)]
-use crate::error::AppError;
 use crate::error::AppResult;
 use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
 use crate::model::ConnectionProfile;
@@ -69,66 +65,4 @@ pub(crate) trait RemoteConnectionAuthorityPort: Send + Sync {
         workspace_id: WorkspaceId,
         connection_id: ConnectionId,
     ) -> RemoteAuthorityFuture<'a, ProviderLocalTarget>;
-}
-
-#[cfg(test)]
-struct ClosedRemoteConnectionAuthority;
-
-#[cfg(test)]
-impl RemoteConnectionAuthorityPort for ClosedRemoteConnectionAuthority {
-    fn authorize<'a>(
-        &'a self,
-        _account_id: &'a AccountId,
-        _workspace_id: WorkspaceId,
-        _connection_id: ConnectionId,
-        _write: bool,
-    ) -> RemoteAuthorityFuture<'a, RemoteConnectionAuthority> {
-        Box::pin(async {
-            Err(AppError::Blocked {
-                reason: "remote workspace authority is unavailable in this test".into(),
-            })
-        })
-    }
-
-    fn issue_managed_lease<'a>(
-        &'a self,
-        _account_id: &'a AccountId,
-        _workspace_id: WorkspaceId,
-        _profile: &'a ConnectionProfile,
-        _write: bool,
-    ) -> RemoteAuthorityFuture<'a, ManagedConnectionLease> {
-        Box::pin(async {
-            Err(AppError::Blocked {
-                reason: "managed workspace credentials are unavailable in this test".into(),
-            })
-        })
-    }
-
-    fn release_managed_lease<'a>(
-        &'a self,
-        _account_id: &'a AccountId,
-        _workspace_id: WorkspaceId,
-        _connection_id: ConnectionId,
-        _lease_id: Uuid,
-    ) -> RemoteAuthorityFuture<'a, ()> {
-        Box::pin(async { Ok(()) })
-    }
-
-    fn provider_local_target<'a>(
-        &'a self,
-        _account_id: &'a AccountId,
-        _workspace_id: WorkspaceId,
-        _connection_id: ConnectionId,
-    ) -> RemoteAuthorityFuture<'a, ProviderLocalTarget> {
-        Box::pin(async {
-            Err(AppError::Blocked {
-                reason: "provider-local target authority is unavailable".into(),
-            })
-        })
-    }
-}
-
-#[cfg(test)]
-pub(super) fn closed_authority() -> Arc<dyn RemoteConnectionAuthorityPort> {
-    Arc::new(ClosedRemoteConnectionAuthority)
 }

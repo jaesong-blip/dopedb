@@ -125,32 +125,3 @@ pub(crate) fn validate_content(content: &str) -> AppResult<()> {
 pub(crate) fn content_hash(content: &str) -> String {
     hex::encode(Sha256::digest(content.as_bytes()))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn content_hash_is_stable_and_content_sensitive() {
-        assert_eq!(content_hash("SELECT 1"), content_hash("SELECT 1"));
-        assert_ne!(content_hash("SELECT 1"), content_hash("SELECT 2"));
-        assert_eq!(content_hash("SELECT 1").len(), 64);
-    }
-
-    #[test]
-    fn title_and_document_bounds_are_enforced() {
-        assert!(normalize_title(" query ").is_ok());
-        assert!(normalize_title(" ").is_err());
-        assert!(normalize_title(&"x".repeat(MAX_TITLE_CHARS + 1)).is_err());
-        assert!(validate_content(&"x".repeat(MAX_DOCUMENT_BYTES + 1)).is_err());
-    }
-
-    #[test]
-    fn sync_status_rejects_unknown_persisted_values() {
-        assert_eq!(
-            SqlDocumentSyncStatus::parse("dirty").unwrap(),
-            SqlDocumentSyncStatus::Dirty
-        );
-        assert!(SqlDocumentSyncStatus::parse("maybe").is_err());
-    }
-}

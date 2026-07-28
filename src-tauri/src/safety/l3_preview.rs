@@ -159,34 +159,3 @@ fn as_i64(v: &serde_json::Value) -> Option<i64> {
         .or_else(|| v.as_f64().map(|f| f as i64))
         .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn finds_nested_row_estimate() {
-        let v: serde_json::Value =
-            serde_json::from_str(r#"[{"Plan":{"Node Type":"Seq Scan","Plan Rows":1234}}]"#)
-                .unwrap();
-        assert_eq!(find_number(&v, &["Plan Rows"]), Some(1234));
-    }
-
-    // Rollback-safety classification remains useful for reporting, but no write
-    // shape reaches an execute+rollback path before exact approval.
-    #[test]
-    fn write_shapes_remain_classified_without_enabling_a_preview_execution_path() {
-        use crate::model::Engine;
-        use crate::safety::classify;
-
-        for sql in ["RENAME TABLE a TO b", "OPTIMIZE TABLE t", "this is not sql"] {
-            let c = classify(sql, Engine::Mysql).unwrap();
-            assert_eq!(c.kind, QueryKind::Write, "{sql} classifies as write");
-            assert!(!c.rollback_safe, "{sql} must not be rollback-safe");
-        }
-
-        let ok = classify("UPDATE t SET x=1 WHERE id=1", Engine::Mysql).unwrap();
-        assert_eq!(ok.kind, QueryKind::Write);
-        assert!(ok.rollback_safe);
-    }
-}

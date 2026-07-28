@@ -24,10 +24,6 @@ use crate::kernel::identity::{
 use crate::model::ConnectionProfile;
 use crate::store::{PinnedConnection, PinnedDashboard, Store};
 
-#[cfg(test)]
-use super::closed_provider_local_port;
-#[cfg(test)]
-use super::remote_authority::closed_authority;
 use super::remote_authority::RemoteConnectionAuthorityPort;
 use super::Live;
 use super::{ProviderLocalBindingPin, ProviderLocalConnectionPort, ProviderLocalTarget};
@@ -103,8 +99,6 @@ struct ConnectionManagerInner {
     slots: DashMap<ConnectionCacheKey, Arc<Mutex<ConnectionSlot>>>,
     next_generation: AtomicU64,
     provider_binding_fence_epoch: AtomicU64,
-    #[cfg(test)]
-    trust_pins_for_test: AtomicBool,
 }
 
 /// Process-local owner of every database pool. Clones share the same slots and scope
@@ -613,20 +607,6 @@ impl ConnectionContext {
 }
 
 impl ConnectionManager {
-    #[cfg(test)]
-    pub(crate) fn new(store: Store) -> Self {
-        Self::with_authorities(store, closed_authority(), closed_provider_local_port())
-    }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn with_remote_authority(
-        store: Store,
-        remote_authority: Arc<dyn RemoteConnectionAuthorityPort>,
-    ) -> Self {
-        Self::with_authorities(store, remote_authority, closed_provider_local_port())
-    }
-
     pub(crate) fn with_authorities(
         store: Store,
         remote_authority: Arc<dyn RemoteConnectionAuthorityPort>,
@@ -641,17 +621,11 @@ impl ConnectionManager {
                 slots: DashMap::new(),
                 next_generation: AtomicU64::new(1),
                 provider_binding_fence_epoch: AtomicU64::new(1),
-                #[cfg(test)]
-                trust_pins_for_test: AtomicBool::new(false),
             }),
         }
     }
 
     async fn pin_is_current(&self, pin: &PinnedConnection) -> AppResult<bool> {
-        #[cfg(test)]
-        if self.inner.trust_pins_for_test.load(Ordering::Relaxed) {
-            return Ok(true);
-        }
         self.inner.store.is_pin_current(pin).await
     }
 
@@ -687,16 +661,6 @@ impl ConnectionManager {
         }
     }
 
-    /// Allows cache-lifecycle tests to exercise the hand-off boundary without
-    /// coupling them to unrelated SQLite catalog fixtures. Production always
-    /// revalidates the durable Store pin above.
-    #[cfg(test)]
-    pub(crate) fn trust_pins_for_test(&self) {
-        self.inner
-            .trust_pins_for_test
-            .store(true, Ordering::Relaxed);
-    }
-
     pub(crate) async fn pin(
         &self,
         id: Uuid,
@@ -722,15 +686,6 @@ impl ConnectionManager {
             provider_binding_fence_epoch: self.provider_binding_fence_epoch(),
             scope_guard: Some(scope_guard),
         })
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn acquire(
-        &self,
-        id: Uuid,
-        access: ConnectionAccess,
-    ) -> AppResult<ConnectionLease> {
-        self.pin(id, access).await?.connect().await
     }
 
     pub(crate) async fn begin_operation_scope(&self) -> ConnectionOperationScope {
@@ -878,6 +833,3 @@ impl crate::features::providers::ports::ProviderBindingRevocationPort for Connec
         })
     }
 }
-
-#[cfg(test)]
-mod tests;

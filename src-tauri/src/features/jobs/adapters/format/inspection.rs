@@ -11,16 +11,6 @@ use super::super::super::ports::{InputReview, SqlImportAudit};
 use super::import::{ImportItem, ImportSource};
 use super::{MAX_DOCUMENT_INPUT_BYTES, MAX_XLSX_ENTRIES};
 
-#[cfg(test)]
-pub(in crate::features::jobs) fn inspect_input(
-    path: &Path,
-    format: JobFormat,
-    engine: crate::model::Engine,
-) -> AppResult<JobInputInspection> {
-    let mut source = ImportSource::open(path, format, 0, engine)?;
-    inspect_source(&mut source, format)
-}
-
 pub(in crate::features::jobs) fn inspect_input_verified(
     path: &Path,
     format: JobFormat,
@@ -120,16 +110,6 @@ pub(in crate::features::jobs) fn review_input_verified(
         inspection,
         sql_audit,
     })
-}
-
-#[cfg(test)]
-pub(in crate::features::jobs) fn audit_sql_import(
-    path: &Path,
-    format: JobFormat,
-    engine: crate::model::Engine,
-) -> AppResult<SqlImportAudit> {
-    let source = ImportSource::open(path, format, 0, engine)?;
-    audit_sql_source(source, engine)
 }
 
 fn audit_sql_source(

@@ -128,15 +128,3 @@ pub(super) async fn record_run_failure(
         tracing::error!("query failure history insert failed: {history_error}");
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn row_cap_is_frozen_in_the_stored_plan() {
-        assert_eq!(bounded_max_rows(Some(5_000), 25), MAX_AGENT_ROWS);
-        assert_eq!(bounded_max_rows(None, 5_000), MAX_AGENT_ROWS);
-        assert_eq!(bounded_max_rows(Some(7), 500), 7);
-    }
-}

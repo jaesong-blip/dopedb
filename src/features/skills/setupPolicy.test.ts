@@ -33,52 +33,55 @@ function target(
 }
 
 describe("buildSkillSetupPlan", () => {
-  it.each(states.flatMap((codex) => states.map((claude) => [codex, claude])))(
-    "maps codex=%s and claude=%s without targeting protected copies",
-    (codex, claude) => {
-      const plan = buildSkillSetupPlan([
-        target("codex", codex),
-        target("claude-code", claude),
-      ]);
-      const actionable = [
-        ["codex", codex],
-        ["claude-code", claude],
-      ].filter(([, state]) => state === "missing" || state === "managed_older");
-
-      if (actionable.length === 0) {
-        expect(plan.command).toBeNull();
-        expect(plan.selection).toBeNull();
-        expect(plan.action).toBe(
-          codex === "managed_current" && claude === "managed_current"
-            ? "none"
-            : "attention",
+  it("maps every install-state pair without targeting protected copies", () => {
+    for (const codex of states) {
+      for (const claude of states) {
+        const plan = buildSkillSetupPlan([
+          target("codex", codex),
+          target("claude-code", claude),
+        ]);
+        const actionable = [
+          ["codex", codex],
+          ["claude-code", claude],
+        ].filter(
+          ([, state]) => state === "missing" || state === "managed_older",
         );
-        return;
-      }
 
-      const expectedSelection =
-        actionable.length === 2 ? "all" : actionable[0][0];
-      expect(plan.selection).toBe(expectedSelection);
-      expect(plan.command).toBe(
-        `dopedb skill install --target ${expectedSelection}`,
-      );
-      expect(plan.command).not.toMatch(/[\r\n]/);
-      expect(
-        plan.targets.every(
-          (item) =>
-            item.state === "missing" || item.state === "managed_older",
-        ),
-      ).toBe(true);
-      expect(
-        plan.attentionTargets.every(
-          (item) =>
-            item.state !== "missing" &&
-            item.state !== "managed_current" &&
-            item.state !== "managed_older",
-        ),
-      ).toBe(true);
-    },
-  );
+        if (actionable.length === 0) {
+          expect(plan.command).toBeNull();
+          expect(plan.selection).toBeNull();
+          expect(plan.action).toBe(
+            codex === "managed_current" && claude === "managed_current"
+              ? "none"
+              : "attention",
+          );
+          continue;
+        }
+
+        const expectedSelection =
+          actionable.length === 2 ? "all" : actionable[0][0];
+        expect(plan.selection).toBe(expectedSelection);
+        expect(plan.command).toBe(
+          `dopedb skill install --target ${expectedSelection}`,
+        );
+        expect(plan.command).not.toMatch(/[\r\n]/);
+        expect(
+          plan.targets.every(
+            (item) =>
+              item.state === "missing" || item.state === "managed_older",
+          ),
+        ).toBe(true);
+        expect(
+          plan.attentionTargets.every(
+            (item) =>
+              item.state !== "missing" &&
+              item.state !== "managed_current" &&
+              item.state !== "managed_older",
+          ),
+        ).toBe(true);
+      }
+    }
+  });
 
   it("distinguishes install, update, and mixed work", () => {
     expect(

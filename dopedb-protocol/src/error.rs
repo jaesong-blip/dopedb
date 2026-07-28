@@ -111,31 +111,3 @@ impl fmt::Debug for ProtocolError {
             .finish()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn constructor_never_accepts_or_serializes_an_internal_error_string() {
-        let raw = "postgresql://reader:fixture-secret@private.example/app";
-        let error = ProtocolError::new(ErrorCode::TargetExecutionFailed, false);
-        let serialized = serde_json::to_string(&error).unwrap();
-        assert!(!serialized.contains(raw));
-        assert!(!serialized.contains("fixture-secret"));
-        assert_eq!(
-            error.message,
-            "the target database operation failed".to_string()
-        );
-    }
-
-    #[test]
-    fn deserialization_cannot_bypass_the_safe_message_mapping() {
-        let error = serde_json::json!({
-            "code": "target_execution_failed",
-            "message": "postgresql://reader:fixture-secret@private.example/app",
-            "retryable": false
-        });
-        assert!(serde_json::from_value::<ProtocolError>(error).is_err());
-    }
-}

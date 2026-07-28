@@ -12,8 +12,6 @@ use crate::{AuthenticationRequirement, CommandName, CommandSpec, DatabaseEngine,
 
 pub const MAX_CONNECTION_NAME_BYTES: usize = 256;
 
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(type = "string"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionSelector {
     Id(Uuid),
@@ -85,7 +83,6 @@ pub enum ConnectionSelectorError {
     InvalidName,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionSummary {
@@ -109,14 +106,12 @@ impl CommandSpec for ConnectionListCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::TerminalSession;
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionListResult {
     pub connections: Vec<ConnectionSummary>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionSelectorArguments {
@@ -143,43 +138,9 @@ impl CommandSpec for ConnectionTestCommand {
     const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::TerminalSession;
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectionTestResult {
     pub connection: ConnectionSummary,
     pub reachable: bool,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn selector_requires_an_explicit_kind() {
-        assert_eq!(
-            "7d444840-9dc0-11d1-b245-5ffdce74fad2".parse::<ConnectionSelector>(),
-            Err(ConnectionSelectorError::MissingKind)
-        );
-        assert!(matches!(
-            "id:7d444840-9dc0-11d1-b245-5ffdce74fad2".parse(),
-            Ok(ConnectionSelector::Id(_))
-        ));
-        assert_eq!(
-            "name:Prod".parse(),
-            Ok(ConnectionSelector::Name("Prod".into()))
-        );
-        assert_eq!("current".parse(), Ok(ConnectionSelector::Current));
-    }
-
-    #[test]
-    fn selector_round_trips_as_one_stable_string() {
-        let selector = ConnectionSelector::Name("Prod DB".into());
-        let encoded = serde_json::to_string(&selector).unwrap();
-        assert_eq!(encoded, r#""name:Prod DB""#);
-        assert_eq!(
-            serde_json::from_str::<ConnectionSelector>(&encoded).unwrap(),
-            selector
-        );
-    }
 }

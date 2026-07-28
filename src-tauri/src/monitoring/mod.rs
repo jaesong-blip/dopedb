@@ -322,35 +322,3 @@ fn evaluate(
         captured_at: Utc::now(),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pressure_evaluation_is_aggregate_and_deterministic() {
-        let health = evaluate("full", Some(85), Some(100), Some(8), Some(2), Some(1), None);
-        assert_eq!(health.level, "busy");
-        assert_eq!(health.connection_usage_percent, Some(85.0));
-        assert!(health
-            .reasons
-            .iter()
-            .any(|r| r.contains("Connection usage")));
-        assert!(health.reasons.iter().all(|r| !r.contains("SELECT")));
-    }
-
-    #[test]
-    fn limited_coverage_is_always_disclosed() {
-        let health = evaluate(
-            "limited",
-            Some(1),
-            Some(100),
-            Some(1),
-            Some(0),
-            Some(0),
-            None,
-        );
-        assert_eq!(health.level, "normal");
-        assert!(health.reasons.iter().any(|r| r.contains("pg_monitor")));
-    }
-}

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "totalCap": 104,
+    "frontendCap": 40,
+    "frontendFileCap": 8,
+    "rustCap": 64,
+    "rustFileCap": 13,
+    "rule": "A new test must replace a lower-value test. Raise a cap only after an explicit user request."
+  },
+  "frontend": {
+    "src/components/DataGridVirtual.test.ts": {
+      "tests": 2,
+      "protects": "Large-grid bounds and keyboard reachability"
+    },
+    "src/features/providers/tauriAdapter.test.ts": {
+      "tests": 4,
+      "protects": "Provider authority receipts and legacy identity rejection"
+    },
+    "src/features/queries/tauriAdapter.test.ts": {
+      "tests": 13,
+      "protects": "Safe query proposal, streaming, cancellation, and capability binding"
+    },
+    "src/features/query/runSignal.test.ts": {
+      "tests": 3,
+      "protects": "User-visible write warnings and enforced read limits"
+    },
+    "src/features/skills/setupPolicy.test.ts": {
+      "tests": 3,
+      "protects": "Skill install and update decisions without unsafe downgrades"
+    },
+    "src/features/terminals/state.test.ts": {
+      "tests": 8,
+      "protects": "Connection-scoped terminal sessions and layout ownership"
+    },
+    "src/features/workbench/state.test.ts": {
+      "tests": 4,
+      "protects": "Workbench document identity, fallback, and save ownership"
+    },
+    "src/features/workspaces/authPolicy.test.ts": {
+      "tests": 3,
+      "protects": "Workspace authentication cooldown and request deduplication"
+    }
+  },
+  "rust": {
+    "dopedb-cli/tests/terminal_session_e2e.rs": {
+      "tests": 1,
+      "protects": "One complete authenticated terminal read journey"
+    },
+    "dopedb-protocol/tests/golden.rs": {
+      "tests": 8,
+      "protects": "Versioned public wire contracts and fail-closed decoding"
+    },
+    "src-tauri/src/broker/session.rs": {
+      "tests": 4,
+      "protects": "Capability scope, expiry, redaction, and revocation"
+    },
+    "src-tauri/src/features/dashboards/validation.rs": {
+      "tests": 3,
+      "protects": "Dashboard SQL safety and bounded input validation"
+    },
+    "src-tauri/src/features/providers/adapters/authority_tests.rs": {
+      "tests": 6,
+      "protects": "Provider inventory authority, bounds, and exact receipts"
+    },
+    "src-tauri/src/features/queries/domain_tests.rs": {
+      "tests": 1,
+      "protects": "Production monitoring guidance does not become an execution block"
+    },
+    "src-tauri/src/operations/canonicalize.rs": {
+      "tests": 3,
+      "protects": "Stable operation payload hashing and drift detection"
+    },
+    "src-tauri/src/operations/state_machine.rs": {
+      "tests": 5,
+      "protects": "Operation transition safety and restart recovery"
+    },
+    "src-tauri/src/safety/l1_parse.rs": {
+      "tests": 14,
+      "protects": "Fail-safe SQL classification for high-risk statement shapes"
+    },
+    "src-tauri/src/safety/l2_enforce.rs": {
+      "tests": 4,
+      "protects": "Result caps, truncation, column presence, and numeric precision"
+    },
+    "src-tauri/src/safety/l4_gate.rs": {
+      "tests": 7,
+      "protects": "Write blocking, approval requirements, and privilege denial"
+    },
+    "src-tauri/src/store/tests/connections_scope.rs": {
+      "tests": 4,
+      "protects": "Account isolation, credential binding, and scope ABA rejection"
+    },
+    "tools/release-updater-verify/src/main.rs": {
+      "tests": 4,
+      "protects": "Updater digest, signature, and asset closure integrity"
+    }
+  }
+}

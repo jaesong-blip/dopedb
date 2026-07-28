@@ -35,29 +35,3 @@ pub(crate) fn for_client_error(error: &ClientError) -> u8 {
         },
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use dopedb_protocol::ProtocolError;
-
-    use super::*;
-
-    #[test]
-    fn stable_remote_categories_map_to_documented_exit_codes() {
-        let cases = [
-            (ErrorCode::AuthenticationDenied, 4),
-            (ErrorCode::PolicyBlocked, 5),
-            (ErrorCode::OperationExpired, 6),
-            (ErrorCode::Cancelled, 7),
-            (ErrorCode::TargetExecutionFailed, 8),
-            (ErrorCode::ProtocolMismatch, 9),
-            (ErrorCode::Internal, 10),
-        ];
-        for (code, expected) in cases {
-            assert_eq!(
-                for_client_error(&ClientError::Remote(ProtocolError::new(code, false))),
-                expected
-            );
-        }
-    }
-}

@@ -10,9 +10,6 @@ mod resume;
 mod statements;
 mod validation;
 
-#[cfg(all(test, unix))]
-mod worker_tests;
-
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 

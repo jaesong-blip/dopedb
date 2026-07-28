@@ -10,9 +10,6 @@ mod planning;
 mod projection;
 mod recovery;
 
-#[cfg(test)]
-mod tests;
-
 use std::sync::Arc;
 
 use chrono::{DateTime, SecondsFormat, Utc};

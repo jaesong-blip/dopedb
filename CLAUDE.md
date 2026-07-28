@@ -1,110 +1,72 @@
 # DopeDB 클라이언트
 
-Tauri v2 기반 데이터베이스 클라이언트. React/TS 프론트 + Rust 코어, 연결에 고정된 Terminal과 로컬 CLI Broker로 에이전트에 안전하게 DB를 노출한다.
+Tauri v2 기반 데이터베이스 클라이언트다. React/TypeScript 프론트엔드와
+Rust 코어, 연결 고정 Terminal, 로컬 CLI Broker로 구성된다.
 
-## AI 작업자 필수 협업 규칙
+## 작업 규칙
 
-이 규칙은 Claude Code에 필수다. 저장소 전체 AI 정책은 `AGENTS.md`, 사람용 절차는 `CONTRIBUTING.md`에 있으며, 협업·배포 정책을 바꿀 때는 세 파일을 같은 변경에서 함께 갱신한다. TSX·CSS·Tailwind·레이아웃을 수정하기 전에는 `src/design-system/README.md`와 `docs/testing/visual-regression.md`도 반드시 읽는다.
+저장소 정책은 `AGENTS.md`, 사람용 흐름은 `CONTRIBUTING.md`를 따른다.
+협업·배포 정책을 바꿀 때는 세 파일을 함께 갱신한다. 커밋 메시지는
+`docs/commit.md`를 따른다. 작업 전에는 `git status`를 확인하고 다른 변경을
+보존한다.
 
-커밋 메시지는 `docs/commit.md` 규칙을 따른다.
+UI를 수정하기 전에는 `src/design-system/README.md`를 읽는다. 새 레이아웃은
+`tw:` Tailwind utility와 semantic token을 사용하고 raw color, 동적 class
+조립, 중복 primitive를 만들지 않는다. 변경한 화면은 직접 실행해 확인한다.
 
-1. 작업 전에 `gh api user --jq .login`과 `gh repo view --json owner --jq .owner.login`으로 현재 계정과 원격 저장소 소유자를 확인하고, `git status`로 다른 작업자의 변경이 없는지 확인한다.
-2. 원격 소유자가 `json-choi`이고 현재 계정이 `jaesong-blip` 또는
-   `json-choi`이면 동일한 저장소 운영자로 취급한다. `pnpm repo:identity`로
-   커미터를 `json-choi <77596321+json-choi@users.noreply.github.com>`으로
-   고정하고 깨끗하고 최신인 `main`에서 직접 작업한다. 사용자가 명시적으로
-   요청하지 않으면 작업 브랜치, PR, 추가 worktree를 만들지 않는다.
-3. 저장소 운영자는 사용자 요청 작업을 커밋하기 전에 기존 GitHub Issue를
-   확인하거나 새 이슈를 만들고, 커밋 마지막에 `Refs: #번호` 또는
-   `Closes: #번호`를 반드시 넣는다. 검증 뒤 `jaesong-blip`이 활성 계정이면
-   `pnpm gh:owner -- git push origin main`으로 push하고 `build`와
-   `windows-check` 결과를 확인한다. 관리자 bypass는 PR 생략에만 사용한다.
-4. 그 외 계정만 `work/<정확한-GitHub-login>/<짧은-작업명>` 브랜치를 사용한다. login은 대소문자까지 실제 계정과 같아야 한다.
-5. 기여자는 본인의 `work/` 브랜치만 push하고 PR 대상은 `main`으로 한다. `main`이나 다른 작업자의 브랜치에 직접 push하지 않고, 보호 규칙·실패한 CI·필수 리뷰를 우회하지 않는다.
-6. Actions, 버전 파일, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`는 `@json-choi` CODEOWNERS 대상이다. 보호 범위를 약화하지 않는다.
+## 아키텍처
 
-공유 개발 환경의 기본 GitHub CLI 계정은 `jaesong-blip`이다. GitHub가
-소유자 작업으로 기록해야 하는 단일 명령만 `pnpm gh:owner -- gh ...` 또는
-`pnpm gh:owner -- git push ...`로 실행한다. 저장소 wrapper는 `json-choi`
-전환을 검증하고 성공·실패 후 `jaesong-blip`으로 복귀한다. 원시
-`gh auth switch`를 사용하거나 토큰을 출력·복사하지 않는다. 비정상 종료 뒤에는
-실행 중인 wrapper가 없는지 확인하고 `pnpm gh:restore`를 사용한다. 상세 계약은
-[`docs/github-account-switching.md`](docs/github-account-switching.md)를 따른다.
+- `src/screens/`: 화면 단위 진입점.
+- `src/features/`: frontend 기능별 domain/state/application/adapter.
+- `src/components/`: 여러 화면이 공유하는 UI.
+- `src/lib/`: DOM 없는 공용 로직과 전역 query cache.
+- `src/design-system/`: semantic token과 공통 primitive.
+- `src-tauri/src/features/`: Rust 기능별 domain/application/ports/adapters.
+- `src-tauri/src/kernel/`: 기능 사이의 작은 공용 타입과 권한 primitive.
+- `dopedb-protocol/`, `dopedb-cli/`, `site/`, `workspace-cloud/`: 독립 하위
+  프로젝트.
 
-기여자 카나리는 작업 브랜치를 push한 뒤 보호된 `main`의 workflow를 실행한다.
+기능 코어는 Tauri, SQLx, Store, keychain, network, 전역 `AppState`를 직접
+참조하지 않는다. 변경 가능한 상태에는 writer를 하나만 두고, 화면과 adapter는
+상태를 직접 수정하지 않고 command를 전달한다.
 
-```sh
-branch="$(git branch --show-current)"
-git push -u origin "$branch"
-gh workflow run canary.yml --ref main -f source_ref="$branch"
-```
+## 핵심 명령
 
-카나리는 `work/${GITHUB_ACTOR}/`로 시작하는 본인 브랜치만 허용한다. unsigned 내부 테스트 prerelease이며 updater signing key, updater artifact/signature, 고정 다운로드 alias, `latest.json`을 절대 넣지 않는다. 카나리 태그나 Release를 수동으로 만들지 않는다.
+- `pnpm build`: skill bundle 검증, TypeScript, Vite build.
+- `pnpm test`: 가장 중요한 frontend smoke suite.
+- `pnpm test:rust`: Rust workspace 핵심 테스트.
+- `pnpm dev:app`: 데스크톱 앱 개발 실행.
 
-정식 버전은 `json-choi`가 명시적으로 요청받은 경우에만 발행한다. 버전 변경도 이슈를 먼저 만들거나 기존 이슈를 사용해 최신 `main`에 직접 커밋하고, push 뒤 필수 CI를 확인한 다음 태그를 만든다. 비소유자는 정식 태그 생성, Release 발행, `stable-release` 승인, release workflow/환경/ruleset/secret 변경을 시도하지 않는다. GitHub 개인 저장소 collaborator에게 Release UI/API 권한 자체가 남는다는 제약이 있으므로, 그 권한까지 제거됐다고 안내하지 않는다. 공식 정식 경로만 owner-only 태그·환경 승인·workflow·immutable release로 통제된다.
+변경 범위에 맞는 명령만 실행한다. UI 변경은 build 뒤 해당 화면을 수동으로
+확인하고, Windows 또는 전체 릴리스 검증은 플랫폼·릴리스 변경일 때만 수행한다.
 
-## 아키텍처 지도
+테스트는 104개 고정 예산을 사용한다. 보안·안전 불변식, 공개 wire contract,
+핵심 end-to-end 흐름만 테스트하고 구현 세부, 중복 DOM, snapshot, 성능 수치
+테스트는 추가하지 않는다. 새 테스트가 필요하면 기존의 가치가 낮은 테스트를
+대체하고 `tests/critical-test-budget.json`에 보호 이유를 기록한다. 사용자의
+명시적 요청 없이 예산을 늘리지 않는다.
 
-- `src/screens/`: 화면 단위 폴더 — 탭 하나 = 폴더 하나. Settings처럼 하위 섹션이 있으면 부모 폴더 아래 같은 패턴으로 중첩(`Settings/AgentTools` 등).
-- `src/features/`: 기능별 수직 슬라이스. 순수 domain/state, application hook, port, Tauri adapter를 기능 폴더 안에 둔다. 이동이 끝난 기능은 `screens`나 `ipc/commands.ts`에 별도 런타임 경로를 남기지 않는다.
-- `src/components/`: 여러 화면이 공유하는 UI 조각.
-- `src/lib/`: 렌더 마크업 없는 순수 로직/헤드리스 상태(i18n, agentFeed 등).
-- `src/lib/queries.ts` + `queryClient.tsx`: TanStack Query 기반 앱 전역 읽기 캐시. 백엔드 읽기는 전부 여기 등록된 쿼리로 접근한다.
-- `src/ipc/`: 아직 기능 슬라이스로 이동하지 않은 공용 Tauri invoke 래퍼와 여러
-  기능이 실제로 공유하는 Rust 데이터 계약 미러.
-- `src/design-system/`: 토큰(`tokens.css`)과 공통 클래스(`system.css`) — 상세는 `src/design-system/README.md`.
-- `src-tauri/src/`: `driver`(레지스트리/선택), `connection`, `introspect`, `executor`, `migrations`, `safety`, `audit`, `services`, `operations`, `broker`, `store`, `commands` 도메인 모듈 + `model.rs`(공용 데이터 계약).
-- `src-tauri/src/features/`: 기능별 `domain → application → ports` 코어와 `adapters`, `transport`, composition 경계. 코어는 Tauri·SQLx·Store·ConnectionManager를 직접 참조하지 않는다.
-- `src-tauri/src/kernel/`: 기능 사이에서 공유하는 타입 식별자·권한·오류 같은 작은 순수 프리미티브.
-- `dopedb-protocol/`, `dopedb-cli/`, `site/`: 별개 하위 프로젝트(각자 자체 빌드).
+## 코드 규칙
 
-## 빌드 · 검증
+- 화면은 `screens/X/index.tsx`, 컴포넌트는 PascalCase, TypeScript 유틸은
+  camelCase, Rust 파일은 snake_case를 사용한다.
+- `src/lib/*`는 named export만 사용한다. 그 밖의 파일은 주 산출물이 하나면
+  default export, 여러 개면 named export를 사용한다.
+- backend 읽기는 TanStack Query 옵션을 통해 수행한다. 화면에서
+  `useEffect`와 `invoke`로 직접 fetch하지 않는다.
+- 기능 IPC는 frontend `features/<feature>/tauriAdapter.ts`, Rust
+  `features/<feature>/transport.rs`에 둔다. 직렬화 형태와 필드 순서를 맞춘다.
+- 번역은 `en`과 `ko`를 함께 추가하고 `namespace.camelCaseKey`를 사용한다.
+- Rust 모듈은 파일 상단에 `//!` 설명을 둔다.
+- 45줄이 넘는 TS/TSX 화면·컴포넌트·lib 파일은 import 앞에 역할을 설명하는
+  짧은 주석을 둔다.
+- 이전이 끝난 기능은 같은 변경에서 옛 경로, re-export, fallback, flag를
+  제거한다.
 
-- `pnpm build` — Skill·아키텍처·UI 깊이·컨트롤 행·그리드 계약 검사 + tsc + vite build.
-- `pnpm check:architecture` — 기능 경계, 단일 상태 writer, 삭제된 레거시 경로, 대형 파일 증가를 검사.
-- `pnpm dev:app` / `pnpm tauri dev` — macOS에서는 안정된 개발 코드 서명 후 앱 실행.
-- `cargo test --manifest-path src-tauri/Cargo.toml` — Rust 테스트.
+## 주의사항
 
-## 릴리스
-
-- 태그는 **반드시 `app-v0.0.0` 형식**이다. `.github/workflows/release.yml`이 `app-v*`에만 반응하므로 `v0.0.0`으로 달면 릴리스가 조용히 안 나간다(0.1.7·0.1.8이 이렇게 유실됐다).
-- 버전은 `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `Cargo.lock`의 `dopedb` 항목, `dopedb-cli/Cargo.toml`, `Cargo.lock`의 `dopedb-cli` 항목 여섯 곳을 함께 올리고, 범프는 기능 커밋에 같이 싣는다.
-- 정식 태그는 `main`에 합쳐진 커밋에 저장소 소유자만 만들고, `stable-release` 환경 승인 뒤 배포한다. macOS/Windows 3종을 draft에 모두 올린 다음 공개하며, 공개 후 태그와 asset은 immutable이다.
-- 협업자 브랜치는 `work/<GitHub아이디>/<작업명>`을 쓰고, 본인 브랜치만 `.github/workflows/canary.yml`로 unsigned canary prerelease를 만들 수 있다. 카나리는 updater signing key와 `latest.json`을 절대 사용하지 않는다.
-- `canary-*`를 제외한 모든 태그는 `owner-only-tags-except-canary` ruleset으로 `json-choi`만 생성·수정·삭제할 수 있다. 우회하지 않는다.
-- release immutability는 2026-07-13 이후 발행된 release에 적용되며 이전 release에는 소급되지 않는다.
-
-## 컨벤션
-
-**네이밍**: `components/*.tsx`는 PascalCase, 컴포넌트당 1파일. 새 화면 배치는 `tw:` Tailwind utility를 우선하고, 동일한 utility 묶음을 런타임과 fixture가 공유할 때만 동명 `styles.ts`를 둔다. 기존 전용 CSS를 migration할 때는 같은 변경에서 CSS import와 파일을 삭제한다. `screens/Folder/index.tsx`, 중첩 screen도 같은 폴더 패턴을 쓴다. `lib/*.ts(x)`는 camelCase, 유틸/헤드리스 상태. `src-tauri/src/**/*.rs`는 snake_case, 도메인폴더/`mod.rs` + 형제 서브모듈.
-
-**export**: 메인 산출물이 하나면 default export. 서로 다른 산출물이 둘 이상(훅+프로바이더, barrel 등)이면 전부 named로 통일하고 default 없음. 단일 default 파일도 보조 타입은 named로 함께 export 가능. `lib/*.ts(x)`는 export 개수와 무관하게 항상 named(default 금지).
-
-**기능 슬라이스**: 새 기능과 이전 중인 기능은 `src/features/<feature>/`, Rust는 `src-tauri/src/features/<feature>/`에 둔다. UI/transport는 application use case나 port만 호출하며 domain/application/ports에서 Tauri, SQLx, Store, keychain, network, 전역 AppState를 참조하지 않는다. 이전이 끝난 커밋에서는 기존 service, IPC wrapper, re-export, fallback, rollout flag를 함께 삭제한다.
-
-**상태 소유권**: 변경 가능한 상태마다 writer를 하나만 둔다. React 상태는 feature reducer/hook, Rust 장기 작업은 명시적 runtime/state machine이 소유한다. adapter와 화면은 상태를 직접 고치지 않고 command를 전달한다. 소유자는 `docs/architecture/state-ownership.json`에 등록한다.
-
-**import 순서**: `react` → 기타 외부 패키지(`@tauri-apps/*`) → `../../ipc/commands` → `../../ipc/types`(타입 먼저) → `../../features/*` → `../../components/*` → `../../lib/*` → 자기 폴더 `./*.css`(항상 마지막, 예외 없음).
-
-**화면 추가**: `screens/X/index.tsx`를 만들고 `tw:` utility로 화면 배치를 구성한 뒤 `App.tsx`에 탭을 등록한다. 하위 화면(Settings 등)은 부모 폴더 아래 같은 패턴으로 중첩한다.
-
-**컴포넌트 추가**: `components/PascalCase.tsx`를 만들고 `tw:` utility와 디자인 시스템 primitive를 조합한다. 공통 reset, vendor widget, 앱 shell, 복잡한 data-grid처럼 CSS가 구조적으로 더 적합한 경계만 `.css`를 유지한다.
-
-**IPC 추가**: 아직 이동하지 않은 공유 커맨드는 `src-tauri/src/commands/mod.rs` → `src/ipc/commands.ts`, 공유 타입은 `src-tauri/src/model.rs` → `src/ipc/types.ts`에 1:1 미러한다. 기능 슬라이스는 Rust `features/<feature>/transport.rs`, frontend `features/<feature>/tauriAdapter.ts`에 transport를 두고 feature domain 타입을 미러한다. `snake_case` → `camelCase`만 바꾸며 필드 순서와 직렬화 형태는 동일하게 유지한다.
-
-**i18n**: `en`+`ko` 둘 다 필수. 키는 항상 `namespace.camelCaseKey`(2세그먼트). namespace는 화면/컴포넌트 이름과 1:1(`connections`, `sql`, `agentTools`, `safety`, `rowEditor` 등). `common`, `app`만 전역 공유 네임스페이스 예외. 사전 내 알파벳 정렬 유지.
-
-**UI/Tailwind**: Tailwind CSS v4의 `tw:` 접두어 utility를 화면 배치의 기본으로 사용하고, 색·간격·크기·radius는 `src/design-system/index.css`의 `@theme inline`에 연결된 semantic token만 사용한다. `tw:bg-[#...]` 같은 raw color와 동적 문자열 조립은 금지한다. Preflight는 전체 legacy reset migration이 끝날 때까지 활성화하지 않는다. 카드/패널/버튼/배지 등 상호작용 primitive는 정본 클래스(`.card`, `.ds-panel`, `.btn`, `.badge`, `.ds-toolbar` 등)를 재사용한다. 상세 계약과 migration 경계는 `src/design-system/README.md`와 `docs/adr/0005-tailwind-v4-migration.md`를 따른다.
-
-**Rust 주석**: `src-tauri/src/**/*.rs`는 파일 최상단에 `//!` 모듈 doc comment 필수(`main.rs`만 템플릿 보일러플레이트라 `//` 예외). `pub` 아이템에는 `///` doc comment를 붙이는 경우가 많다.
-
-**TS/TSX 헤더**: 45줄 넘는 화면/컴포넌트/lib 파일은 첫 import 이전에 1~3줄 `//` 주석으로 파일의 역할과 설계 의도를 설명한다. 20줄 이하 자명한 소형 파일은 생략 가능.
-
-**lib/ vs components/**: 자체 DOM/CSS를 렌더하면 `components/`, `{children}`만 감싸고 상태/이벤트/컨텍스트 계산만 하면 `lib/`(예: `agentFeed`, `i18n`은 lib; `Toast`는 자체 DOM+CSS를 렌더하므로 components).
-
-**데이터 로딩**: 화면에서 `useEffect` + `invoke`로 직접 fetch하지 않는다. `lib/queries.ts`에 쿼리 옵션(키 + queryFn + staleTime)을 추가하고 화면은 `useQuery`/`useQueries`로 읽는다. 백엔드 이벤트로 인한 캐시 무효화는 `lib/queryClient.tsx` 한 곳에 모은다. 캐시가 비어 있는 최초 로딩에만 `<Skeleton />`(200ms 지연 노출)을 쓰고, 재검증 중에는 이전 데이터를 유지한다.
-
-## 함정
-
-- Tauri v2 이벤트 이름에 `.`을 쓰면 emit이 조용히 실패한다(`:` 등으로 구분자 대체).
-- `NUMERIC`/`MONEY` 컬럼 값은 정밀도 보존을 위해 문자열로 직렬화된다. 숫자로 바로 캐스팅하지 말 것.
+- Tauri v2 이벤트 이름에는 `.` 대신 `:` 같은 구분자를 사용한다.
+- `NUMERIC`과 `MONEY` 값은 정밀도 보존을 위해 문자열로 직렬화한다.
+- 정식 릴리스는 명시적 요청이 있을 때만 `json-choi`가 `main`에서
+  `app-vX.Y.Z` 태그로 발행한다. 버전 파일과 signing secret을 임의로 다루지
+  않는다.

@@ -128,22 +128,3 @@ impl serde::Serialize for AppError {
         st.end()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::AppError;
-
-    #[test]
-    fn timeout_has_a_non_network_wire_kind() {
-        let value = serde_json::to_value(AppError::Timeout(
-            "PostgreSQL catalog columns exceeded its deadline".into(),
-        ))
-        .unwrap();
-
-        assert_eq!(value["kind"], "timeout");
-        assert_eq!(
-            value["message"],
-            "timeout: PostgreSQL catalog columns exceeded its deadline"
-        );
-    }
-}

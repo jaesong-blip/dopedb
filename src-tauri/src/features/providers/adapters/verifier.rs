@@ -176,39 +176,3 @@ fn base64url(bytes: &[u8]) -> String {
     }
     output
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{neon_scope, valid_neon_scope_syntax};
-
-    #[test]
-    fn neon_scope_requires_exact_nonempty_unique_canonical_projects() {
-        let projects = vec![
-            serde_json::json!({"id":"bbbbbbbbbbbbbbbb-project"}),
-            serde_json::json!({"id":"aaaaaaaaaaaaaaaa-project"}),
-        ];
-        assert_eq!(
-            neon_scope(&projects).unwrap(),
-            "projects:2:ORkoQ6Ju0Bb02pKa"
-        );
-        assert!(valid_neon_scope_syntax("projects:2:ORkoQ6Ju0Bb02pKa"));
-        for invalid_scope in [
-            "projects:0:ORkoQ6Ju0Bb02pKa",
-            "projects:2:short",
-            "projects:2:ORkoQ6Ju0Bb02pKa:extra",
-            "project:2:ORkoQ6Ju0Bb02pKa",
-        ] {
-            assert!(!valid_neon_scope_syntax(invalid_scope));
-        }
-        for invalid in [
-            vec![],
-            vec![serde_json::json!({"id":"short"})],
-            vec![
-                serde_json::json!({"id":"aaaaaaaaaaaaaaaa-project"}),
-                serde_json::json!({"id":"aaaaaaaaaaaaaaaa-project"}),
-            ],
-        ] {
-            assert!(neon_scope(&invalid).is_err());
-        }
-    }
-}

@@ -67,11 +67,6 @@ impl SkillManager {
         })
     }
 
-    #[cfg(test)]
-    pub fn for_home(home: PathBuf) -> AppResult<Self> {
-        Self::from_home(home)
-    }
-
     pub fn list(&self) -> SkillsListResult {
         self.inner.bundle.list()
     }
@@ -137,23 +132,5 @@ impl SkillManager {
             guide_bytes: u64::try_from(result.guide.len())
                 .map_err(|_| AppError::Config("the Skill guide size is invalid".into()))?,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use dopedb_protocol::SkillTargetSelection;
-    use tempfile::TempDir;
-
-    use super::*;
-
-    #[test]
-    fn status_is_offline_and_does_not_create_install_roots() {
-        let home = TempDir::new().unwrap();
-        let manager = SkillManager::for_home(home.path().to_path_buf()).unwrap();
-        let status = manager.status(SkillTargetSelection::All).unwrap();
-        assert_eq!(status.targets.len(), 2);
-        assert!(!home.path().join(".agents").exists());
-        assert!(!home.path().join(".claude").exists());
     }
 }

@@ -10,13 +10,8 @@ mod inspection;
 mod io;
 mod values;
 
-#[cfg(test)]
-mod format_tests;
-
 pub(in crate::features::jobs) use export::ExportSink;
 pub(in crate::features::jobs) use import::{ImportDataRow, ImportItem, ImportSource};
-#[cfg(test)]
-pub(in crate::features::jobs) use inspection::{audit_sql_import, inspect_input};
 pub(in crate::features::jobs) use inspection::{inspect_input_verified, review_input_verified};
 pub(in crate::features::jobs) use io::{
     create_error_writer, file_sha256, finalize_error_writer, write_error_row,

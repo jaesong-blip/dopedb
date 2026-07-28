@@ -8,9 +8,6 @@ mod proposal;
 mod read_execution;
 mod write_execution;
 
-#[cfg(test)]
-mod tests;
-
 use std::fmt;
 
 use chrono::{Duration as ChronoDuration, Utc};

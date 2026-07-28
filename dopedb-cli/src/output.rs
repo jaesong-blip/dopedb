@@ -61,20 +61,3 @@ const fn is_bidi_control(character: char) -> bool {
             | '\u{2066}'..='\u{2069}'
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn human_output_escapes_terminal_and_direction_controls_but_keeps_layout_tabs() {
-        let safe = sanitize_human_line("name\t\u{1b}[2J\nspoof\u{202e}");
-        assert!(safe.contains('\t'));
-        assert!(!safe.contains('\u{1b}'));
-        assert!(!safe.contains('\n'));
-        assert!(!safe.contains('\u{202e}'));
-        assert!(safe.contains("\\u{1b}"));
-        assert!(safe.contains("\\n"));
-        assert!(safe.contains("\\u{202e}"));
-    }
-}

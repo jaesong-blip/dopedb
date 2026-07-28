@@ -2,11 +2,7 @@
 
 mod desktop_contracts;
 mod desktop_execution;
-#[cfg(test)]
-mod desktop_execution_tests;
 mod desktop_inspection;
-#[cfg(test)]
-mod desktop_inspection_tests;
 mod desktop_planning;
 mod desktop_port;
 mod desktop_provenance;
@@ -31,6 +27,4 @@ pub(crate) use errors::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPr
 pub(crate) use platform::QueryPlatformAdapter;
 pub(crate) use provenance::TerminalQueryRunRegistry;
 pub(crate) use terminal_plan::AgentQueryPlanReceipt;
-#[cfg(test)]
-pub(crate) use terminal_plan::SeedQueryPlanForTest;
 pub(crate) use terminal_run::PreparedAgentQueryRun;

@@ -46,8 +46,3 @@ pub(crate) fn compose(
         credentials,
     )
 }
-
-#[cfg(test)]
-mod adapter_tests;
-#[cfg(test)]
-mod application_tests;

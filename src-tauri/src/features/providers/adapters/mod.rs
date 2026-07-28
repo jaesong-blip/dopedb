@@ -17,8 +17,3 @@ pub(crate) use local_connection::ProviderLocalResolver;
 pub(crate) use receipt_registry::InMemoryProviderReceiptRegistry;
 pub(crate) use sqlite_repository::SqliteProviderBindingRepository;
 pub(crate) use verifier::HostedProviderVerifier;
-
-#[cfg(test)]
-mod gcp_adc_tests;
-#[cfg(test)]
-mod tests;

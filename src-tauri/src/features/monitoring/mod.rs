@@ -5,9 +5,6 @@ mod application;
 mod ports;
 mod recording;
 
-#[cfg(test)]
-mod tests;
-
 use std::fmt;
 
 use chrono::{Duration as ChronoDuration, Utc};

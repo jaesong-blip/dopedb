@@ -1,102 +1,43 @@
 # Collaboration workflow
 
-AI assistants must read and follow both `AGENTS.md` and `CLAUDE.md` before changing this repository. `CONTRIBUTING.md` is the human-facing workflow; when collaboration or release rules change, keep all three files synchronized in the same change.
+AI 작업자는 변경 전에 `AGENTS.md`와 `CLAUDE.md`를 읽는다. 협업 또는 릴리스
+정책을 바꾸면 세 파일을 같은 변경에서 갱신한다.
 
-## Commit messages
+## 기본 흐름
 
-Write commit messages according to [`docs/commit.md`](docs/commit.md).
+1. `git status --short --branch`로 다른 작업을 확인하고 보존한다.
+2. 현재 `main`에서 요청 범위만 변경한다. Issue, 별도 branch, PR은 필요할
+   때나 사용자가 요청할 때만 만든다.
+3. 변경 범위에 맞춰 `pnpm build`, `pnpm test`, `pnpm test:rust` 중 필요한
+   검증을 실행한다.
+4. 커밋할 때는 `pnpm repo:identity`와
+   [`docs/commit.md`](docs/commit.md)를 사용한다.
+5. push를 요청받았고 `jaesong-blip`이 활성 계정이면
+   `pnpm gh:owner -- git push origin main`을 사용한다.
 
-## Choose the workflow
+원시 `gh auth switch`, force push, `main` 삭제, 실패한 검증 은폐, secret
+출력은 금지한다. 계정 wrapper가 중단됐다면 실행 중인 프로세스가 없는지
+확인하고 `pnpm gh:restore`로 복구한다.
 
-Before changing files, confirm both identities and inspect the worktree:
+## 테스트 변경
 
-```sh
-login="$(gh api user --jq .login)"
-owner="$(gh repo view --json owner --jq .owner.login)"
-git status --short --branch
-```
+테스트는 `tests/critical-test-budget.json`의 104개 예산 안에서 유지한다. 새
+테스트는 보안·안전, 공개 계약, 핵심 사용자 여정 중 하나를 보호해야 하며 보호
+이유를 manifest에 기록한다. 기존 테스트를 확장하거나 가치가 낮은 테스트를
+교체하고, 사용자의 명시적 결정 없이 총량이나 파일 수를 늘리지 않는다.
+`pnpm check:test-budget`와 해당 smoke 명령을 실행한다.
 
-Never discard another person's uncommitted work.
+## UI 변경
 
-The shared workstation keeps `jaesong-blip` as the default GitHub CLI account.
-For this repository, `jaesong-blip` and `json-choi` are the same human
-operator. Configure every checkout's commit identity with
-`pnpm repo:identity`. For one owner-attributed operation, use
-`pnpm gh:owner -- gh ...` or `pnpm gh:owner -- git push ...`. The wrapper
-verifies `json-choi` and always restores `jaesong-blip`; do not use raw
-`gh auth switch` during repository work. If a killed process leaves stale
-state, confirm no wrapper is active and run `pnpm gh:restore`. See
-[`docs/github-account-switching.md`](docs/github-account-switching.md).
+TSX, CSS, Tailwind, layout을 수정하기 전에
+[`src/design-system/README.md`](src/design-system/README.md)를 읽는다.
+semantic token과 공통 primitive를 재사용하고, 이전한 화면의 낡은 CSS와
+import는 같은 변경에서 제거한다. `pnpm build` 후 변경한 화면을 앱에서 직접
+확인한다.
 
-### Repository operator
+## 정식 릴리스
 
-When the remote owner is `json-choi` and `login` is either `jaesong-blip` or
-`json-choi`, work directly on a clean, up-to-date `main`. Do not create a work
-branch, pull request, or additional worktree unless the user explicitly
-requests it.
-
-1. Run `pnpm repo:identity`.
-2. Reuse an existing GitHub Issue for the user request or create one before committing.
-3. Implement and run the relevant validation on `main`.
-4. Write a Korean Conventional Commit with `Refs: #<number>` or `Closes: #<number>` in the footer.
-5. If `jaesong-blip` is active, push with `pnpm gh:owner -- git push origin main`.
-6. Verify the required `build` and `windows-check` jobs after the push. If either fails, fix it under the same issue.
-
-The owner administrator bypass is used only to omit the pull-request requirement. It does not permit force-pushing, deleting `main`, concealing failed validation, or bypassing release restrictions.
-
-### Contributors
-
-Each non-owner contributor works in a branch under their GitHub login:
-
-```text
-work/<github-login>/<short-topic>
-```
-
-For example, `PENEKhun` uses `work/PENEKhun/query-history`. Open a pull request into `main` when the change is ready. `main` requires the macOS and Windows CI jobs, one approval, resolved conversations, and an up-to-date branch. Force pushes and deletion are blocked.
-
-Files that control GitHub Actions or the application version are owned by `@json-choi` through `CODEOWNERS`, so changing them also requires the owner's review.
-
-The branch login segment is case-sensitive and must match the authenticated login exactly. Contributors must not push directly to `main`, use another contributor's namespace, or bypass required checks and reviews.
-
-## UI changes
-
-Before editing TSX, CSS, Tailwind utilities, or layout, read
-[`src/design-system/README.md`](src/design-system/README.md) and
-[`docs/testing/visual-regression.md`](docs/testing/visual-regression.md).
-New and migrated screen layout uses Tailwind CSS v4 utilities with the `tw:`
-prefix. Use only theme roles backed by DopeDB's semantic tokens; do not add
-raw color utilities or assemble class names dynamically. Preflight remains
-disabled during the incremental migration, while shared controls continue to
-use the canonical `.btn`, `.badge`, `.ds-*` primitives.
-
-When migrating a screen, remove its obsolete CSS import and file in the same
-change. Run `pnpm check:ui`, the relevant app build, and the focused visual
-regression test. Inspect changed screenshots rather than accepting a new
-baseline merely to make CI pass.
-
-## Personal canary builds
-
-Push your work branch, then dispatch the trusted workflow from `main`:
-
-```sh
-git push -u origin work/<github-login>/<short-topic>
-gh workflow run canary.yml \
-  --ref main \
-  -f source_ref='work/<github-login>/<short-topic>'
-```
-
-The login in `source_ref` must exactly match the account that starts the workflow. A successful run publishes an immutable prerelease named `canary-<github-login>-<run>-<attempt>` through the contributor's own `canary-<github-login>` environment.
-
-Canary installers are deliberately unsigned and do not include Tauri updater artifacts or `latest.json`. They are isolated from the stable updater and are for internal testing only.
-
-## Stable releases
-
-Only `@json-choi` publishes stable versions:
-
-1. Create or reuse a release issue.
-2. Update `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, the `dopedb` entry in `Cargo.lock`, `dopedb-cli/Cargo.toml`, and the `dopedb-cli` entry in `Cargo.lock` to the same version directly on an up-to-date `main`.
-3. Commit with the issue footer, push normally, and verify the required CI jobs pass.
-4. Create and push `app-vX.Y.Z` from that `main` commit.
-5. Approve the pending `stable-release` environment deployment.
-
-All tags other than `canary-*` are owner-only. The release workflow rejects tags whose version sources do not match or whose commit is not in `main`. It uploads all installers to a draft, then publishes the completed release so release immutability can protect its tag and assets.
+정식 릴리스는 사용자가 명시적으로 요청한 경우에만 `json-choi`가 수행한다.
+모든 버전 소스를 같은 값으로 맞추고 `main`의 검증된 커밋에
+`app-vX.Y.Z` 태그를 만든다. 보호된 환경, tag 규칙, signing key를 우회하거나
+노출하지 않는다.

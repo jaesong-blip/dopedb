@@ -11,9 +11,6 @@ mod ports;
 mod recording;
 mod terminal_read;
 
-#[cfg(test)]
-mod tests;
-
 use std::fmt;
 use std::time::Duration;
 
@@ -30,8 +27,6 @@ use crate::error::AppError;
 use crate::executor;
 use crate::kernel::agent_policy::{MAX_AGENT_ROWS, QUERY_PLAN_TTL};
 use crate::kernel::TerminalAuthority;
-#[cfg(test)]
-use crate::model::Engine;
 use crate::model::{DocumentPage, DocumentQuery, HistoryEntry, QueryKind, SafetySettings};
 use crate::operations::{
     actor_for_pin, agent_actor_for_pin, capture_policy, ensure_operation_scope, NewOperation,

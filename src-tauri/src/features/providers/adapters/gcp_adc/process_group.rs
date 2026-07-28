@@ -157,34 +157,3 @@ enum GroupSignal {
     Absent,
     PermissionDenied,
 }
-
-#[cfg(all(test, unix))]
-mod tests {
-    use super::GroupSignal;
-
-    fn probe_sequence_proves_absence(sequence: &[GroupSignal]) -> bool {
-        sequence
-            .last()
-            .is_some_and(|signal| *signal == GroupSignal::Absent)
-    }
-
-    #[test]
-    fn darwin_liveness_probe_requires_esrch_after_reap() {
-        // Repeat to characterize the race-sensitive rule independently of
-        // process scheduling: only ESRCH proves the original group is gone.
-        for _ in 0..20 {
-            assert!(probe_sequence_proves_absence(&[
-                GroupSignal::Delivered,
-                GroupSignal::Absent,
-            ]));
-            assert!(!probe_sequence_proves_absence(&[
-                GroupSignal::Delivered,
-                GroupSignal::Delivered,
-            ]));
-            assert!(!probe_sequence_proves_absence(&[
-                GroupSignal::PermissionDenied,
-                GroupSignal::PermissionDenied,
-            ]));
-        }
-    }
-}

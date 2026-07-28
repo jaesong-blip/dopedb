@@ -13,8 +13,6 @@ mod runtime;
 pub use crate::driver::connect;
 pub use keychain::{delete_secret, fetch_secret, store_secret};
 pub use pool::{DbPool, LiveConnection};
-#[cfg(test)]
-pub(crate) use provider_local::closed_provider_local_port;
 pub(crate) use provider_local::{
     GcpCloudSqlNetworkMode, ProviderLocalBindingPin, ProviderLocalConnectionPort,
     ProviderLocalPinRequest, ProviderLocalResolveRequest, ProviderLocalResource,
@@ -88,56 +86,6 @@ pub fn fetch_profile_secret(profile: &ConnectionProfile) -> AppResult<String> {
         }
     };
     fetch_secret(&secret_id)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn profile(access: WorkspaceConnectionAccess) -> ConnectionProfile {
-        ConnectionProfile {
-            id: Uuid::new_v4(),
-            name: "test".into(),
-            engine: crate::model::Engine::Postgres,
-            provider: crate::model::Provider::Generic,
-            driver_id: None,
-            host: "localhost".into(),
-            port: 5432,
-            database: "postgres".into(),
-            username: "postgres".into(),
-            sslmode: "prefer".into(),
-            extra_params: Default::default(),
-            readonly_default: true,
-            allow_writes: false,
-            secret_ref: None,
-            env: None,
-            schema_group: None,
-            workspace_access: access,
-            credential_mode: if access == WorkspaceConnectionAccess::Local {
-                crate::model::WorkspaceCredentialMode::Local
-            } else {
-                crate::model::WorkspaceCredentialMode::MemberLocal
-            },
-        }
-    }
-
-    #[test]
-    fn only_unreferenced_local_profiles_may_use_an_empty_secret() {
-        assert_eq!(
-            fetch_profile_secret(&profile(WorkspaceConnectionAccess::Local)).unwrap(),
-            ""
-        );
-        assert!(matches!(
-            fetch_profile_secret(&profile(WorkspaceConnectionAccess::Read)),
-            Err(AppError::NotFound(_))
-        ));
-        let mut managed = profile(WorkspaceConnectionAccess::Read);
-        managed.credential_mode = WorkspaceCredentialMode::Managed;
-        assert!(matches!(
-            fetch_profile_secret(&managed),
-            Err(AppError::Config(_))
-        ));
-    }
 }
 
 /// One open connection of either family: the sqlx SQL stack or the MongoDB

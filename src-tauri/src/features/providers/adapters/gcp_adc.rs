@@ -28,8 +28,6 @@ use super::super::domain::{ProviderBindingScope, ProviderVerification};
 use super::super::ports::GcpAdcVerifier;
 
 pub(super) mod gcp_target;
-#[cfg(test)]
-mod gcp_target_tests;
 mod process_group;
 mod subject_token;
 mod target_access;
@@ -461,11 +459,6 @@ pub(super) fn validate_access_token(token: &[u8]) -> AppResult<()> {
         return Err(blocked("GCP ADC credential was rejected"));
     }
     Ok(())
-}
-
-#[cfg(test)]
-pub(super) fn command_timeout() -> Duration {
-    GCLOUD_TIMEOUT
 }
 
 fn safe_path() -> &'static str {

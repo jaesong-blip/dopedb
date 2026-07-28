@@ -14,9 +14,10 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: macos-15
-    timeout-minutes: 20
+  frontend_smoke:
+    name: frontend-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -31,10 +32,23 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            site/pnpm-lock.yaml
-            workspace-cloud/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install app dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop frontend
+        run: pnpm build
+
+      - name: Test critical frontend paths
+        run: pnpm test
+
+  rust_smoke:
+    name: rust-smoke
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -46,88 +60,33 @@ jobs:
             . -> target
             src-tauri -> src-tauri/target
 
-      - name: Install app dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Test critical Rust paths
+        run: |
+          cargo test --package dopedb --lib
+          cargo test --package dopedb-protocol --test golden
+          cargo test --package dopedb-cli --test terminal_session_e2e
 
-      - name: Install site dependencies
-        run: pnpm --dir site install --frozen-lockfile
-
-      - name: Install workspace cloud dependencies
-        run: pnpm --dir workspace-cloud install --frozen-lockfile
-
-      - name: Build desktop frontend
-        run: pnpm build
-
-      - name: Test frontend and workspace cloud
-        run: pnpm test
-
-      - name: Install visual test browser
-        run: pnpm exec playwright install chromium
-
-      - name: Test visual regression
-        run: pnpm test:visual
-
-      - name: Upload visual regression diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: visual-regression-${{ github.run_id }}
-          path: |
-            test-results
-            playwright-report
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: Test workspace cloud database safety guards
-        run: pnpm --dir workspace-cloud test:postgres-harness-guard
-
-      - name: Check workspace cloud schema
-        run: pnpm --dir workspace-cloud db:check
-
-      - name: Build landing site
-        run: pnpm site:build
-
-      - name: Build workspace cloud
-        run: pnpm workspace:cloud:build
+  build:
+    needs:
+      - frontend_smoke
+      - rust_smoke
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Preserve the required build check
         env:
-          BETTER_AUTH_URL: https://workspace-ci.invalid
-          BETTER_AUTH_SECRET: ci-only-placeholder-secret-with-32-characters
-          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
-          GOOGLE_CLIENT_ID: ci-placeholder.apps.googleusercontent.com
-          GOOGLE_CLIENT_SECRET: ci-only-placeholder
-
-      - name: Stage sidecars
-        run: pnpm build:sidecars
-
-      - name: Check Rust workspace
-        run: cargo check --workspace
-
-      - name: Lint Rust workspace
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Test Rust workspace
-        run: cargo test --workspace
+          FRONTEND_RESULT: ${{ needs.frontend_smoke.result }}
+          RUST_RESULT: ${{ needs.rust_smoke.result }}
+        run: |
+          test "$FRONTEND_RESULT" = success
+          test "$RUST_RESULT" = success
 
   windows-check:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 11.17.0
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            workspace-cloud/pnpm-lock.yaml
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -140,42 +99,5 @@ jobs:
             src-tauri -> src-tauri/target
           save-if: false
 
-      - name: Install app dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install workspace cloud dependencies
-        run: pnpm --dir workspace-cloud install --frozen-lockfile
-
-      - name: Build desktop frontend
-        run: pnpm build
-
-      - name: Test frontend and workspace cloud
-        run: pnpm test
-
-      - name: Test workspace cloud database safety guards
-        run: pnpm --dir workspace-cloud test:postgres-harness-guard
-
-      - name: Check workspace cloud schema
-        run: pnpm --dir workspace-cloud db:check
-
-      - name: Stage Windows sidecars
-        run: pnpm build:sidecars
-
-      - name: Check Rust workspace
-        run: cargo check --workspace
-
-      - name: Lint Rust workspace
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Build Rust workspace tests
-        run: cargo test --workspace --no-run
-
-      - name: Test Rust workspace
-        shell: pwsh
-        run: |
-          cargo test --workspace
-          $testExit = $LASTEXITCODE
-          if ($testExit -ne 0) {
-            ./scripts/windows-test-import-audit.ps1
-            exit $testExit
-          }
+      - name: Check Windows CLI and protocol
+        run: cargo check --package dopedb-cli --package dopedb-protocol

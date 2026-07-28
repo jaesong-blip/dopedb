@@ -32,14 +32,10 @@ pub(crate) use domain::{
     DesktopSqlStreamBatch, DesktopSqlStreamReady, DesktopSqlStreamSinkError,
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
-#[cfg(test)]
-pub(crate) use ports::QueryRunProvenancePort;
 pub(crate) use ports::{QueryRunAuthorizationError, QueryRunAuthorizationPort};
 
 #[cfg(test)]
 mod domain_tests;
-#[cfg(test)]
-mod tests;
 
 type ComposedQueryApplication = QueryUseCases<QueryPlatformAdapter>;
 
@@ -357,35 +353,4 @@ pub(crate) fn compose(
         desktop_stream_cleanup,
         _desktop_stream_cleanup_owner: desktop_stream_cleanup_owner,
     }
-}
-
-#[cfg(test)]
-fn compose_with_adapter(
-    store: Store,
-    connections: ConnectionManager,
-    operation: OperationRuntime,
-) -> (QueriesFeature, QueryPlatformAdapter) {
-    let provenance = TerminalQueryRunRegistry::default();
-    let desktop_streams = DesktopSqlStreamRegistry::default();
-    let desktop_stream_cleanup = DesktopStreamCleanupRuntime::default();
-    let desktop_stream_cleanup_owner = desktop_stream_cleanup.composition_owner();
-    let adapter = QueryPlatformAdapter::new(
-        store,
-        connections,
-        operation.clone(),
-        provenance.clone(),
-        desktop_streams.clone(),
-        desktop_stream_cleanup.clone(),
-    );
-    (
-        QueriesFeature {
-            application: QueryUseCases::new(adapter.clone()),
-            operation,
-            provenance,
-            desktop_streams,
-            desktop_stream_cleanup,
-            _desktop_stream_cleanup_owner: desktop_stream_cleanup_owner,
-        },
-        adapter,
-    )
 }

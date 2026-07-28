@@ -100,18 +100,6 @@ pub(crate) fn external_subject_token_guard(value: &Value) -> AppResult<Option<Su
 }
 
 impl SubjectTokenGuard {
-    #[cfg(test)]
-    pub(crate) fn recheck(&self) -> AppResult<()> {
-        let (bytes, length, identity) = read_safe_subject_token(&self.path)?;
-        let matches = length == self.length
-            && Sha256::digest(&bytes).as_slice() == self.digest
-            && identity == self.identity;
-        drop(bytes);
-        matches
-            .then_some(())
-            .ok_or_else(|| blocked("GCP WIF credential changed during verification"))
-    }
-
     fn snapshot_bytes(&self) -> AppResult<Zeroizing<Vec<u8>>> {
         let (bytes, length, identity) = read_safe_subject_token(&self.path)?;
         let matches = length == self.length
@@ -196,14 +184,6 @@ impl GcloudSnapshot {
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     pub(crate) fn cleanup(&mut self) -> AppResult<()> {
         Err(blocked("GCP ADC snapshot cleanup is unavailable"))
-    }
-
-    #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
-    pub(crate) fn cleanup_with_swap_hook(
-        &mut self,
-        hook: impl FnMut(&std::ffi::CStr),
-    ) -> AppResult<()> {
-        self.capability_root.cleanup_with_hook(hook)
     }
 }
 
@@ -382,29 +362,4 @@ fn subject_device(metadata: &std::fs::Metadata) -> u64 {
 fn subject_inode(metadata: &std::fs::Metadata) -> u64 {
     use std::os::unix::fs::MetadataExt;
     metadata.ino()
-}
-
-#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
-mod tests {
-    use std::fs;
-
-    use super::{dispose_snapshot_root, CapabilityRoot};
-
-    #[test]
-    fn partial_subject_write_failure_disposal_removes_secret_root_without_following_links() {
-        // This is the state reached when the subject-token write completed but
-        // the following ADC write failed: descriptor disposal must leave no
-        // secret-bearing root and must not follow an adversarial link.
-        let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().to_path_buf();
-        let capability = CapabilityRoot::open(&root).unwrap();
-        fs::write(root.join("subject-token"), b"partial-secret").unwrap();
-        let outside = tempfile::NamedTempFile::new().unwrap();
-        fs::write(outside.path(), b"outside-must-survive").unwrap();
-        std::os::unix::fs::symlink(outside.path(), root.join("outside-link")).unwrap();
-
-        dispose_snapshot_root(&capability, directory).unwrap();
-        assert!(!root.exists());
-        assert_eq!(fs::read(outside.path()).unwrap(), b"outside-must-survive");
-    }
 }

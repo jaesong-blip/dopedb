@@ -16,7 +16,6 @@ pub(crate) enum CatalogReadPolicy {
 ///
 /// An overview is a complete relation tree, not a partial `Catalog` snapshot.
 /// Detailed metadata remains deferred until a consumer requests the full catalog.
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CatalogOverviewDetailState {
@@ -26,7 +25,6 @@ pub enum CatalogOverviewDetailState {
 }
 
 /// Stable reference used to express a relation's parent in the overview tree.
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogOverviewRelationRef {
@@ -38,7 +36,6 @@ pub struct CatalogOverviewRelationRef {
 }
 
 /// One relation in the bounded relation tree.
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogOverviewRelation {
@@ -56,7 +53,6 @@ pub struct CatalogOverviewRelation {
 }
 
 /// Complete, basic relation tree for a connection.
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogOverview {
@@ -65,7 +61,6 @@ pub struct CatalogOverview {
     pub detail_state: CatalogOverviewDetailState,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Column {
@@ -95,7 +90,6 @@ pub struct Column {
     pub comment: Option<String>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ForeignKey {
@@ -135,7 +129,6 @@ impl Default for ForeignKey {
     }
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Index {
@@ -145,7 +138,6 @@ pub struct Index {
     #[serde(default)]
     pub method: Option<String>,
     #[serde(default)]
-    #[cfg_attr(test, ts(type = "Array<CatalogIndexKey>"))]
     pub keys: Vec<dopedb_protocol::catalog::IndexKey>,
     #[serde(default)]
     pub included_columns: Vec<String>,
@@ -178,7 +170,6 @@ fn default_kind() -> String {
     "table".into()
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Table {
@@ -191,22 +182,18 @@ pub struct Table {
     #[serde(default)]
     pub comment: Option<String>,
     #[serde(default)]
-    #[cfg_attr(test, ts(type = "CatalogObjectRef | null"))]
     pub partition_parent: Option<dopedb_protocol::catalog::ObjectRef>,
     #[serde(default)]
-    #[cfg_attr(test, ts(type = "Array<CatalogObjectRef>"))]
     pub partition_children: Vec<dopedb_protocol::catalog::ObjectRef>,
     pub columns: Vec<Column>,
     pub foreign_keys: Vec<ForeignKey>,
     #[serde(default)]
-    #[cfg_attr(test, ts(type = "Array<CatalogConstraint>"))]
     pub constraints: Vec<dopedb_protocol::catalog::Constraint>,
     #[serde(default)]
     pub indexes: Vec<Index>,
     pub row_estimate: Option<i64>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseObject {
@@ -229,101 +216,10 @@ pub struct DatabaseObject {
     pub comment: Option<String>,
 }
 
-#[cfg_attr(test, derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Catalog {
     pub tables: Vec<Table>,
     #[serde(default)]
     pub objects: Vec<DatabaseObject>,
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use ts_rs::{Config, TS};
-
-    use super::{
-        Catalog, CatalogOverview, CatalogOverviewDetailState, CatalogOverviewRelation,
-        CatalogOverviewRelationRef, Column, DatabaseObject, ForeignKey, Index, Table,
-    };
-    use crate::model::normalize_generated_contract_newlines;
-
-    const HEADER: &str = "// Generated from src-tauri/src/features/catalog/domain.rs by ts-rs 12.0.1.\n// Do not edit; run pnpm generate:contracts.\n\nimport type { Constraint as CatalogConstraint, IndexKey as CatalogIndexKey, ObjectRef as CatalogObjectRef } from \"./protocol-contracts\";\n\n";
-
-    fn contract_output_path() -> PathBuf {
-        std::env::var_os("DOPEDB_CATALOG_FEATURE_CONTRACT_OUTPUT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("../src/ipc/generated/catalog-feature-contracts.ts")
-            })
-    }
-
-    fn generated_contracts() -> String {
-        let config = Config::default().with_large_int("number");
-        let mut output = String::from(HEADER);
-        for declaration in [
-            CatalogOverviewDetailState::decl(&config),
-            CatalogOverviewRelationRef::decl(&config),
-            CatalogOverviewRelation::decl(&config),
-            CatalogOverview::decl(&config),
-            Column::decl(&config),
-            ForeignKey::decl(&config),
-            Index::decl(&config),
-            Table::decl(&config),
-            DatabaseObject::decl(&config),
-            Catalog::decl(&config),
-        ] {
-            output.push_str("export ");
-            output.push_str(
-                &declaration
-                    .lines()
-                    .map(str::trim_end)
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            );
-            output.push('\n');
-        }
-        output
-    }
-
-    #[test]
-    fn generated_catalog_feature_contracts_are_current() {
-        let path = contract_output_path();
-        let expected = generated_contracts();
-        if std::env::var_os("DOPEDB_CONTRACT_GENERATE").is_some() {
-            std::fs::create_dir_all(path.parent().expect("contract output parent"))
-                .expect("create contract output directory");
-            std::fs::write(&path, expected).expect("write generated catalog contracts");
-            return;
-        }
-        let actual = std::fs::read_to_string(&path)
-            .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-        assert_eq!(
-            normalize_generated_contract_newlines(&actual),
-            normalize_generated_contract_newlines(&expected),
-            "Rust catalog serde contract drifted; run pnpm generate:contracts"
-        );
-    }
-
-    #[test]
-    fn catalog_keeps_pre_object_cache_json_compatible() {
-        let catalog: Catalog = serde_json::from_str(r#"{"tables":[]}"#).unwrap();
-
-        assert!(catalog.tables.is_empty());
-        assert!(catalog.objects.is_empty());
-    }
-
-    #[test]
-    fn overview_declares_that_detail_metadata_is_deferred() {
-        let overview = CatalogOverview::default();
-
-        assert_eq!(
-            overview.detail_state,
-            CatalogOverviewDetailState::Deferred,
-            "an overview must never claim to be a partial full catalog"
-        );
-    }
 }

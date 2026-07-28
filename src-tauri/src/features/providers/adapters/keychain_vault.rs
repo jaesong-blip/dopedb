@@ -142,10 +142,3 @@ impl ProviderCredentialVault for KeyringProviderCredentialVault {
         lock_unpoisoned(&self.cache).forget_scope(scope);
     }
 }
-
-#[cfg(test)]
-impl KeyringProviderCredentialVault {
-    pub(super) fn account_for_test(scope: &ProviderBindingScope, id: ProviderBindingId) -> String {
-        Self::account(scope, id)
-    }
-}

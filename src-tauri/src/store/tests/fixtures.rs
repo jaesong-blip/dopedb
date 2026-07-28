@@ -1,19 +1,9 @@
 //! Store repository integration and migration characterization tests.
 
-pub(super) use super::super::{
-    add_connection_binding_scope_columns, add_local_scope_columns, add_workspace_columns,
-    engine_str, ensure_local_scope_indexes, ensure_schema_cache_v2, migrate_audit_no_cascade,
-    migrate_schema_cache_scopes, migrate_workspace_foundation, migrations, parse_engine,
-    repair_active_scope_on_open, CacheWriteOutcome, CatalogCachePolicy, Store,
-};
+pub(super) use super::super::{migrations, CacheWriteOutcome, CatalogCachePolicy, Store};
 pub(super) use crate::error::AppError;
-pub(super) use crate::features::dashboards::{
-    DashboardDraft, DashboardKind, DashboardVisualization,
-};
 pub(super) use crate::features::workspaces::{WorkspaceAuthUser, WorkspaceRole};
-pub(super) use crate::kernel::identity::{
-    AccountId, ConnectionId, RetiredChatThreadId, WorkspaceId,
-};
+pub(super) use crate::kernel::identity::AccountId;
 pub(super) use crate::model::{ConnectionProfile, Engine, HistoryEntry, Provider, QueryKind};
 pub(super) use chrono::{TimeZone, Utc};
 pub(super) use dopedb_protocol::catalog::{CatalogContents, CatalogSnapshot, DatabaseEngine};
@@ -21,7 +11,6 @@ pub(super) use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 pub(super) use sqlx::SqlitePool;
 pub(super) use std::collections::HashMap;
 pub(super) use std::str::FromStr;
-pub(super) use std::time::Duration;
 pub(super) use uuid::Uuid;
 
 pub(super) async fn memory_pool() -> SqlitePool {
@@ -87,21 +76,6 @@ pub(super) fn catalog_snapshot(
     .unwrap()
 }
 
-pub(super) fn dashboard_draft(connection_id: Uuid, title: &str) -> DashboardDraft {
-    DashboardDraft {
-        connection_id: ConnectionId::from(connection_id),
-        title: title.into(),
-        description: String::new(),
-        sql: "SELECT 1".into(),
-        visualization: DashboardVisualization {
-            version: 1,
-            kind: DashboardKind::Table,
-            x_column: None,
-            y_columns: Vec::new(),
-        },
-    }
-}
-
 pub(super) async fn seed_legacy_chat_thread(
     store: &Store,
     connection_id: Uuid,
@@ -123,28 +97,6 @@ pub(super) async fn seed_legacy_chat_thread(
     .bind(account_scope)
     .bind(title)
     .bind(now)
-    .execute(store.pool())
-    .await
-    .unwrap();
-    id
-}
-
-pub(super) async fn seed_legacy_chat_message(
-    store: &Store,
-    thread_id: Uuid,
-    role: &str,
-    text: &str,
-) -> Uuid {
-    let id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO agent_chat_messages (id, thread_id, role, text, error, created_at)
-               VALUES (?1,?2,?3,?4,NULL,?5)"#,
-    )
-    .bind(id.to_string())
-    .bind(thread_id.to_string())
-    .bind(role)
-    .bind(text)
-    .bind(Utc::now())
     .execute(store.pool())
     .await
     .unwrap();

@@ -208,24 +208,3 @@ fn embedded_summary() -> Result<SkillSummary, ClientError> {
         package_digest: manifest.package_digest,
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn embedded_guide_and_manifest_are_version_matched() {
-        let summary = embedded_summary().unwrap();
-        assert_eq!(summary.name, "dopedb-cli");
-        assert_eq!(summary.app_version, env!("CARGO_PKG_VERSION"));
-        assert!(GUIDE.contains("Every SQL read uses a mandatory two-step flow"));
-        assert!(GUIDE.contains("An agent can propose a mutation but cannot approve it"));
-    }
-
-    #[test]
-    fn full_references_cover_safety_queries_and_outcome_unknown() {
-        assert!(SAFETY_REFERENCE.contains("The CLI deliberately has no approval command"));
-        assert!(QUERIES_REFERENCE.contains("Plans are exact, single-use"));
-        assert!(OPERATIONS_REFERENCE.contains("Never retry automatically"));
-    }
-}

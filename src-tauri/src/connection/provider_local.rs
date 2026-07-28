@@ -7,8 +7,6 @@
 
 use std::future::Future;
 use std::pin::Pin;
-#[cfg(test)]
-use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -218,37 +216,4 @@ pub(crate) trait ProviderLocalConnectionPort: Send + Sync {
         &'a self,
         request: ProviderLocalResolveRequest<'a>,
     ) -> ProviderLocalFuture<'a, ResolvedProviderLocalConnection>;
-}
-
-#[cfg(test)]
-struct ClosedProviderLocalConnectionPort;
-
-#[cfg(test)]
-impl ProviderLocalConnectionPort for ClosedProviderLocalConnectionPort {
-    fn authorize_binding<'a>(
-        &'a self,
-        _request: ProviderLocalPinRequest<'a>,
-    ) -> ProviderLocalFuture<'a, ProviderLocalBindingPin> {
-        Box::pin(async {
-            Err(AppError::Blocked {
-                reason: "provider-local credentials are unavailable".into(),
-            })
-        })
-    }
-
-    fn resolve<'a>(
-        &'a self,
-        _request: ProviderLocalResolveRequest<'a>,
-    ) -> ProviderLocalFuture<'a, ResolvedProviderLocalConnection> {
-        Box::pin(async {
-            Err(AppError::Blocked {
-                reason: "provider-local credentials are unavailable".into(),
-            })
-        })
-    }
-}
-
-#[cfg(test)]
-pub(crate) fn closed_provider_local_port() -> Arc<dyn ProviderLocalConnectionPort> {
-    Arc::new(ClosedProviderLocalConnectionPort)
 }

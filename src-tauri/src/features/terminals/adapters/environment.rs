@@ -1,7 +1,7 @@
 //! Secret-minimized environment and profile command construction.
 
 use std::collections::BTreeSet;
-#[cfg(any(windows, test))]
+#[cfg(windows)]
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -255,7 +255,3 @@ pub(super) fn neutral_working_directory() -> AppResult<PathBuf> {
     }
     Ok(directory)
 }
-
-#[cfg(test)]
-#[path = "environment_tests.rs"]
-mod tests;

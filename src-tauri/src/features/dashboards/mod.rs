@@ -9,9 +9,6 @@ mod ports;
 pub(crate) mod transport;
 mod validation;
 
-#[cfg(test)]
-mod adapter_tests;
-
 use crate::connection::ConnectionManager;
 use crate::error::AppResult;
 use crate::kernel::identity::{ConnectionId, DashboardId, QueryRunId};

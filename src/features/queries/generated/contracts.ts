@@ -1,5 +1,5 @@
 // Generated Query receipt contracts from src-tauri/src/features/queries/adapters/desktop_contracts.rs by ts-rs 12.0.1.
-// Do not edit; run pnpm generate:contracts.
+// Keep this checked-in wire contract synchronized with the Rust DTOs.
 
 import type { Classification, PreviewReport } from "../../../ipc/generated/model";
 import type { OperationState } from "../../../ipc/generated/protocol-contracts";

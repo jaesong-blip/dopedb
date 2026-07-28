@@ -2,14 +2,10 @@
 
 use chrono::{Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
-#[cfg(test)]
-use std::time::Instant;
 use uuid::Uuid;
 
 use crate::connection::{ensure_terminal_pin, ConnectionAccess, ConnectionLease};
 use crate::error::AppError;
-#[cfg(test)]
-use crate::kernel::agent_policy::MAX_AGENT_ROWS;
 use crate::kernel::agent_policy::QUERY_PLAN_TTL;
 use crate::kernel::identity::{ConnectionId, OperationId};
 use crate::monitoring;
@@ -35,70 +31,6 @@ pub(super) struct StoredAgentReadPayload {
     pub(super) max_rows: u64,
     pub(super) decision: String,
     pub(super) origin: AgentQueryInvocationOrigin,
-}
-
-#[cfg(test)]
-pub(crate) struct SeedQueryPlanForTest {
-    pub(crate) plan_id: OperationId,
-    pub(crate) sql: String,
-    pub(crate) max_rows: u64,
-    pub(crate) decision: String,
-    pub(crate) created_at: Instant,
-    pub(crate) actor_id: Option<String>,
-}
-
-impl QueryPlatformAdapter {
-    /// Seeds a durable plan only for crate characterization fixtures.
-    #[cfg(test)]
-    pub(crate) async fn seed_plan_for_test(
-        &self,
-        pin: &crate::store::PinnedConnection,
-        authority: &crate::kernel::TerminalAuthority,
-        seed: SeedQueryPlanForTest,
-    ) {
-        let policy = capture_agent_read_policy(pin).unwrap();
-        let elapsed = Instant::now().saturating_duration_since(seed.created_at);
-        let remaining = QUERY_PLAN_TTL.saturating_sub(elapsed);
-        let expires_at = Utc::now()
-            + ChronoDuration::from_std(remaining)
-                .expect("seeded query plan TTL is representable by chrono");
-        let origin = AgentQueryInvocationOrigin::Cli;
-        let actor_id = seed.actor_id.unwrap_or_else(|| origin.as_str().into());
-        let mut actor = agent_actor_for_pin(pin, actor_id, origin.as_str().into());
-        actor.provenance.client_protocol_version = Some(authority.client_protocol_version);
-        self.operation
-            .plan(
-                NewOperation {
-                    id: seed.plan_id.into(),
-                    workspace_id: pin.scope.workspace_id,
-                    account_scope: pin.scope.account_scope.storage_key().into(),
-                    connection_id: pin.connection_id,
-                    connection_revision: pin.connection_revision,
-                    terminal_session_id: Some(authority.terminal_session_id.into()),
-                    actor,
-                    kind: OperationKind::ReadQuery,
-                    payload_schema_version: 1,
-                    payload: serde_json::to_value(StoredAgentReadPayload {
-                        sql: seed.sql,
-                        max_rows: seed.max_rows.min(MAX_AGENT_ROWS),
-                        decision: seed.decision,
-                        origin,
-                    })
-                    .unwrap(),
-                    schema_fingerprint: None,
-                    risk_level: OperationRiskLevel::Low,
-                    preview: serde_json::json!({"seededForTest": true}),
-                    policy_snapshot: policy.0,
-                    policy_revision: policy.1,
-                    single_use: true,
-                    idempotency_key: seed.plan_id.to_string(),
-                    expires_at: Some(expires_at),
-                },
-                OperationPlanDisposition::Ready,
-            )
-            .await
-            .unwrap();
-    }
 }
 
 /// Keeps the read lease alive until Broker projection is complete.

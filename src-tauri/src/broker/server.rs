@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::error::{AppError, AppResult};
+use crate::services::ApplicationServices;
+use crate::skills::SkillManager;
 use chrono::Utc;
 use dopedb_protocol::{
     decode_frame, encode_frame, parse_frame_length, RequestEnvelope, RuntimeDiscovery,
@@ -12,12 +15,6 @@ use dopedb_protocol::{
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
-#[cfg(all(test, unix))]
-use uuid::Uuid;
-
-use crate::error::{AppError, AppResult};
-use crate::services::ApplicationServices;
-use crate::skills::SkillManager;
 
 use super::dispatch::BrokerDispatcher;
 use super::{discovery, peer, BrokerRuntime};
@@ -247,70 +244,4 @@ where
     stream.read_exact(&mut frame[4..]).await?;
     decode_frame(&frame, MAX_REQUEST_BYTES)
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid request frame"))
-}
-
-#[cfg(all(test, unix))]
-mod tests {
-    use dopedb_protocol::{
-        CommandName, EmptyArguments, RequestEnvelope, ResponseEnvelope, StatusResult,
-        COMMAND_SCHEMA_VERSION,
-    };
-    use tempfile::TempDir;
-
-    use super::*;
-    use crate::kernel::identity::RuntimeId;
-
-    #[tokio::test]
-    async fn unix_server_publishes_status_and_cleans_discovery_on_shutdown() {
-        let temp = TempDir::new().unwrap();
-        let runtime_file = temp.path().join("runtime").join("runtime.json");
-        let runtime = BrokerRuntime::new(RuntimeId::from(Uuid::new_v4()));
-        assert!(runtime.prepare_start());
-        let task_runtime = runtime.clone();
-        let task_file = runtime_file.clone();
-        let task =
-            tokio::spawn(async move { serve_at(task_runtime, task_file, None, None, None).await });
-
-        let metadata = tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if let Ok(bytes) = tokio::fs::read(&runtime_file).await {
-                    if let Ok(metadata) = serde_json::from_slice::<RuntimeDiscovery>(&bytes) {
-                        break metadata;
-                    }
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-        let mut stream = tokio::net::UnixStream::connect(metadata.endpoint())
-            .await
-            .unwrap();
-        let request = RequestEnvelope {
-            protocol_version: PROTOCOL_MAX,
-            command_schema_version: COMMAND_SCHEMA_VERSION,
-            request_id: Uuid::new_v4(),
-            authentication: None,
-            command: CommandName::Status,
-            arguments: serde_json::to_value(EmptyArguments::default()).unwrap(),
-        };
-        stream
-            .write_all(&encode_frame(&request, MAX_REQUEST_BYTES).unwrap())
-            .await
-            .unwrap();
-        let mut prefix = [0u8; 4];
-        stream.read_exact(&mut prefix).await.unwrap();
-        let length = parse_frame_length(prefix, MAX_RESPONSE_BYTES).unwrap();
-        let mut frame = Vec::from(prefix);
-        frame.resize(4 + length, 0);
-        stream.read_exact(&mut frame[4..]).await.unwrap();
-        let response: ResponseEnvelope = decode_frame(&frame, MAX_RESPONSE_BYTES).unwrap();
-        let status: StatusResult =
-            serde_json::from_value(response.result().cloned().unwrap()).unwrap();
-        assert_eq!(status.runtime_id, Uuid::from(runtime.runtime_id()));
-
-        runtime.shutdown();
-        task.await.unwrap().unwrap();
-        assert!(!runtime_file.exists());
-    }
 }

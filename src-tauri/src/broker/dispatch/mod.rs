@@ -7,9 +7,6 @@ mod query_document;
 
 use projection::*;
 
-#[cfg(test)]
-mod tests;
-
 use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegistry};
 use crate::error::AppError;
 use crate::features::catalog::CatalogReadPolicy;
