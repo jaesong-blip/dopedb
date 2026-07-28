@@ -39,6 +39,16 @@ const cssBoundaryClasses = new Set();
 const surfaceClassPattern = /(?:^|[-_])(?:card|panel|surface|modal|dialog|popover|inspector|canvas-wrap)$/;
 const controlRowClassPattern = /(?:^|[-_])(?:actions|pager|tabs|toolbar)$/;
 
+// Ratchet keys, allowlists, and error messages are POSIX paths, so Windows runs must
+// normalise separators before any lookup or prefix test.
+function relative(file) {
+  return path.relative(root, file).split(path.sep).join("/");
+}
+
+if (relative(path.join(root, "src", "styles.css")) !== "src/styles.css") {
+  throw new Error("repository paths must normalise to POSIX separators");
+}
+
 function filesBelow(directory, extension) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const resolved = path.join(directory, entry.name);
@@ -173,7 +183,7 @@ function checkControlRow(opening, file, errors) {
   for (const name of names) {
     if (legacyFloatingMenuClasses.has(name)) {
       errors.push(
-        `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+        `${relative(file)}:${opening.loc?.start.line ?? 1} ` +
           `legacy clipped menu class "${name}" is forbidden; use ToolbarMenu`,
       );
     }
@@ -183,7 +193,7 @@ function checkControlRow(opening, file, errors) {
     !names.includes("ds-control-row")
   ) {
     errors.push(
-      `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+      `${relative(file)}:${opening.loc?.start.line ?? 1} ` +
         `control row must include ds-control-row: ${names.join(" ")}`,
     );
   }
@@ -194,7 +204,7 @@ function checkControlRow(opening, file, errors) {
     !attribute(opening, "aria-labelledby")
   ) {
     errors.push(
-      `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+      `${relative(file)}:${opening.loc?.start.line ?? 1} ` +
         "icon-only button must have an aria-label or aria-labelledby",
     );
   }
@@ -204,7 +214,7 @@ function checkControlRow(opening, file, errors) {
     attribute(opening, "role")?.value?.value !== "menuitem"
   ) {
     errors.push(
-      `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+      `${relative(file)}:${opening.loc?.start.line ?? 1} ` +
         'ToolbarMenu button must declare role="menuitem"',
     );
   }
@@ -229,7 +239,7 @@ function checkSimpleIconButton(element, file, errors) {
   }
   if (classNames(opening).includes("icon-only")) return;
   errors.push(
-    `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+    `${relative(file)}:${opening.loc?.start.line ?? 1} ` +
       'single-icon .btn must include "icon-only" to reserve a square hit target',
   );
 }
@@ -267,7 +277,7 @@ function checkPrimaryFlow(element, file, errors) {
   const count = countPrimaryActions(element, element);
   if (count <= 1) return;
   errors.push(
-    `${path.relative(root, file)}:${element.loc?.start.line ?? 1} ` +
+    `${relative(file)}:${element.loc?.start.line ?? 1} ` +
       `primary flow contains ${count} affirmative actions; keep exactly one primary`,
   );
 }
@@ -282,7 +292,7 @@ function checkRawColorLiterals(node, file, errors) {
         : null;
   if (value && rawColorLiteralPattern.test(value)) {
     errors.push(
-      `${path.relative(root, file)}:${node.loc?.start.line ?? 1} ` +
+      `${relative(file)}:${node.loc?.start.line ?? 1} ` +
         "raw color literal is forbidden in production TypeScript; use a --ds-* token",
     );
   }
@@ -312,7 +322,7 @@ function walk(node, file, depth, ancestry, errors) {
 
   if (opening && nextDepth > maxVisualDepth) {
     errors.push(
-      `${path.relative(root, file)}:${opening.loc?.start.line ?? 1} ` +
+      `${relative(file)}:${opening.loc?.start.line ?? 1} ` +
         `visual depth ${nextDepth}: ${nextAncestry.join(" > ")}`,
     );
     return;
@@ -477,7 +487,7 @@ for (const file of tsxFiles) {
 }
 
 for (const file of productionCodeFiles) {
-  const relativeFile = path.relative(root, file);
+  const relativeFile = relative(file);
   if (rawColorLiteralAllowedFiles.has(relativeFile)) continue;
   const source = fs.readFileSync(file, "utf8");
   const ast = parse(source, {
@@ -509,7 +519,7 @@ function containsUnsafeFractionalTrack(value) {
 
 const seenLegacyTokenRatchetFiles = new Set();
 for (const file of cssFiles) {
-    const relativeFile = path.relative(root, file);
+    const relativeFile = relative(file);
     const source = fs.readFileSync(file, "utf8");
     if (!relativeFile.startsWith("src/design-system/")) {
       const legacyAliasCount = [...source.matchAll(legacyColorAliasPattern)].length;
@@ -538,7 +548,7 @@ for (const file of cssFiles) {
       if (!containsUnsafeFractionalTrack(match[1])) continue;
       const line = source.slice(0, match.index).split("\n").length;
       errors.push(
-        `${path.relative(root, file)}:${line} unsafe fractional grid track: ${match[1].trim()}`,
+        `${relative(file)}:${line} unsafe fractional grid track: ${match[1].trim()}`,
       );
     }
 
@@ -548,7 +558,7 @@ for (const file of cssFiles) {
       if (/\.toolbar-menu(?:-panel)?(?![\w-])/.test(selector)) {
         const line = source.slice(0, match.index).split("\n").length;
         errors.push(
-          `${path.relative(root, file)}:${line} legacy clipped menu selector is forbidden; ` +
+          `${relative(file)}:${line} legacy clipped menu selector is forbidden; ` +
             "use the portalled ToolbarMenu contract",
         );
       }
@@ -562,7 +572,7 @@ for (const file of cssFiles) {
       if (!hardCodedHeight) continue;
       const line = source.slice(0, match.index).split("\n").length;
       errors.push(
-        `${path.relative(root, file)}:${line} control height must use a --ds-control-* token: ` +
+        `${relative(file)}:${line} control height must use a --ds-control-* token: ` +
           `${selector.trim()} (${hardCodedHeight[1]})`,
       );
     }
