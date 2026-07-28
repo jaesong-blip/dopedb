@@ -112,4 +112,20 @@ describe("SkillSetupPanel", () => {
       document.querySelector('button[aria-label="설정 터미널 닫기"]'),
     ).not.toBeNull();
   });
+
+  it("uses Escape as the same quiet close path", async () => {
+    const onClose = await renderPanel("en");
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });

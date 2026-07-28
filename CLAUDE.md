@@ -4,7 +4,7 @@ Tauri v2 기반 데이터베이스 클라이언트. React/TS 프론트 + Rust �
 
 ## AI 작업자 필수 협업 규칙
 
-이 규칙은 Claude Code에 필수다. 저장소 전체 AI 정책은 `AGENTS.md`, 사람용 절차는 `CONTRIBUTING.md`에 있으며, 협업·배포 정책을 바꿀 때는 세 파일을 같은 변경에서 함께 갱신한다.
+이 규칙은 Claude Code에 필수다. 저장소 전체 AI 정책은 `AGENTS.md`, 사람용 절차는 `CONTRIBUTING.md`에 있으며, 협업·배포 정책을 바꿀 때는 세 파일을 같은 변경에서 함께 갱신한다. TSX·CSS·Tailwind·레이아웃을 수정하기 전에는 `src/design-system/README.md`와 `docs/testing/visual-regression.md`도 반드시 읽는다.
 
 커밋 메시지는 `docs/commit.md` 규칙을 따른다.
 
@@ -76,7 +76,7 @@ gh workflow run canary.yml --ref main -f source_ref="$branch"
 
 ## 컨벤션
 
-**네이밍**: `components/*.tsx`는 PascalCase, 컴포넌트당 1파일(CSS 필요시 동명 `ComponentName.css` 동일 폴더). `screens/Folder/index.tsx` + `folder.css`(소문자, 폴더명과 동일), 중첩 screens(`Settings/AgentTools` 등)도 동일 패턴. `lib/*.ts(x)`는 camelCase, 유틸/헤드리스 상태. `src-tauri/src/**/*.rs`는 snake_case, 도메인폴더/`mod.rs` + 형제 서브모듈.
+**네이밍**: `components/*.tsx`는 PascalCase, 컴포넌트당 1파일. 새 화면 배치는 `tw:` Tailwind utility를 우선하고, 동일한 utility 묶음을 런타임과 fixture가 공유할 때만 동명 `styles.ts`를 둔다. 기존 전용 CSS를 migration할 때는 같은 변경에서 CSS import와 파일을 삭제한다. `screens/Folder/index.tsx`, 중첩 screen도 같은 폴더 패턴을 쓴다. `lib/*.ts(x)`는 camelCase, 유틸/헤드리스 상태. `src-tauri/src/**/*.rs`는 snake_case, 도메인폴더/`mod.rs` + 형제 서브모듈.
 
 **export**: 메인 산출물이 하나면 default export. 서로 다른 산출물이 둘 이상(훅+프로바이더, barrel 등)이면 전부 named로 통일하고 default 없음. 단일 default 파일도 보조 타입은 named로 함께 export 가능. `lib/*.ts(x)`는 export 개수와 무관하게 항상 named(default 금지).
 
@@ -86,15 +86,15 @@ gh workflow run canary.yml --ref main -f source_ref="$branch"
 
 **import 순서**: `react` → 기타 외부 패키지(`@tauri-apps/*`) → `../../ipc/commands` → `../../ipc/types`(타입 먼저) → `../../features/*` → `../../components/*` → `../../lib/*` → 자기 폴더 `./*.css`(항상 마지막, 예외 없음).
 
-**화면 추가**: `screens/X/index.tsx` + `x.css` 생성 → `App.tsx`에 탭 등록. 하위 화면(Settings 등)은 부모 폴더 아래 같은 패턴 중첩.
+**화면 추가**: `screens/X/index.tsx`를 만들고 `tw:` utility로 화면 배치를 구성한 뒤 `App.tsx`에 탭을 등록한다. 하위 화면(Settings 등)은 부모 폴더 아래 같은 패턴으로 중첩한다.
 
-**컴포넌트 추가**: `components/PascalCase.tsx`, 자체 렌더 마크업이 있으면 동명 `.css` 동반. 여러 컴포넌트가 공유하는 스타일만 예외적으로 `grid.css`처럼 공용 파일에 둔다.
+**컴포넌트 추가**: `components/PascalCase.tsx`를 만들고 `tw:` utility와 디자인 시스템 primitive를 조합한다. 공통 reset, vendor widget, 앱 shell, 복잡한 data-grid처럼 CSS가 구조적으로 더 적합한 경계만 `.css`를 유지한다.
 
 **IPC 추가**: 아직 이동하지 않은 공유 커맨드는 `src-tauri/src/commands/mod.rs` → `src/ipc/commands.ts`, 공유 타입은 `src-tauri/src/model.rs` → `src/ipc/types.ts`에 1:1 미러한다. 기능 슬라이스는 Rust `features/<feature>/transport.rs`, frontend `features/<feature>/tauriAdapter.ts`에 transport를 두고 feature domain 타입을 미러한다. `snake_case` → `camelCase`만 바꾸며 필드 순서와 직렬화 형태는 동일하게 유지한다.
 
 **i18n**: `en`+`ko` 둘 다 필수. 키는 항상 `namespace.camelCaseKey`(2세그먼트). namespace는 화면/컴포넌트 이름과 1:1(`connections`, `sql`, `agentTools`, `safety`, `rowEditor` 등). `common`, `app`만 전역 공유 네임스페이스 예외. 사전 내 알파벳 정렬 유지.
 
-**CSS**: 토큰(`--ds-*`)만 사용, hex 직접 사용 금지. 카드/패널/버튼/배지 등은 정본 클래스(`.card`, `.ds-panel`, `.btn`, `.badge`, `.ds-toolbar` 등, `src/design-system/README.md` 참고) 재사용.
+**UI/Tailwind**: Tailwind CSS v4의 `tw:` 접두어 utility를 화면 배치의 기본으로 사용하고, 색·간격·크기·radius는 `src/design-system/index.css`의 `@theme inline`에 연결된 semantic token만 사용한다. `tw:bg-[#...]` 같은 raw color와 동적 문자열 조립은 금지한다. Preflight는 전체 legacy reset migration이 끝날 때까지 활성화하지 않는다. 카드/패널/버튼/배지 등 상호작용 primitive는 정본 클래스(`.card`, `.ds-panel`, `.btn`, `.badge`, `.ds-toolbar` 등)를 재사용한다. 상세 계약과 migration 경계는 `src/design-system/README.md`와 `docs/adr/0005-tailwind-v4-migration.md`를 따른다.
 
 **Rust 주석**: `src-tauri/src/**/*.rs`는 파일 최상단에 `//!` 모듈 doc comment 필수(`main.rs`만 템플릿 보일러플레이트라 `//` 예외). `pub` 아이템에는 `///` doc comment를 붙이는 경우가 많다.
 

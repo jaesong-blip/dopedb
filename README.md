@@ -80,8 +80,12 @@ cargo check --workspace
 출력할 수 있으며, 이 명령은 Desktop Runtime이나 세션 자격 증명을 요구하지 않습니다.
 
 `pnpm check:ui`는 데스크톱과 워크스페이스 웹 전체의 시각적 깊이(최대 3),
-같은 행의 컨트롤 높이, 오버플로우에 안전한 grid track을 검사합니다. 이 검사는
-일반 `pnpm build`에도 포함됩니다.
+한 흐름의 primary action, 같은 행의 컨트롤 높이, 토큰 이탈, 오버플로우에 안전한
+grid track을 검사합니다. 이 검사는 일반 `pnpm build`에도 포함됩니다. UI를
+수정하기 전에는 [디자인 시스템](./src/design-system/README.md)과
+[시각 회귀 계약](./docs/testing/visual-regression.md)을 먼저 확인합니다. 새 화면
+배치는 Tailwind CSS v4의 `tw:` utility를 사용하고 기존 화면은 기능 단위로
+이전합니다.
 
 ## 릴리스
 

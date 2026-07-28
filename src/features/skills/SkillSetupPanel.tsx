@@ -8,7 +8,7 @@ import type {
   SkillSetupAction,
   SkillSetupPlan,
 } from "./setupPolicy";
-import "./skillSetup.css";
+import { skillSetupStyles } from "./styles";
 
 const actionTitle: Record<Exclude<SkillSetupAction, "none" | "attention">, I18nKey> = {
   install: "agentTools.setupInstallTitle",
@@ -39,6 +39,18 @@ export default function SkillSetupPanel({
     [],
   );
 
+  useEffect(() => {
+    function closeWithEscape(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    }
+
+    window.addEventListener("keydown", closeWithEscape, true);
+    return () => window.removeEventListener("keydown", closeWithEscape, true);
+  }, [onClose]);
+
   if (
     !plan.command ||
     plan.action === "none" ||
@@ -61,41 +73,47 @@ export default function SkillSetupPanel({
   }
 
   return (
-    <section className="skill-setup-panel" aria-labelledby="skill-setup-title">
-      <header className="skill-setup-panel-head">
-        <div>
-          <span className="skill-setup-kicker">
+    <section
+      className={skillSetupStyles.panel}
+      aria-labelledby="skill-setup-title"
+      data-ui-boundary
+    >
+      <header className={skillSetupStyles.panelHead}>
+        <div className={skillSetupStyles.panelHeadContent}>
+          <span className={skillSetupStyles.kicker}>
             {t("agentTools.setupKicker")}
           </span>
-          <h3 id="skill-setup-title">{t(actionTitle[plan.action])}</h3>
+          <h3 className={skillSetupStyles.title} id="skill-setup-title">
+            {t(actionTitle[plan.action])}
+          </h3>
         </div>
         <button
           type="button"
-          className="btn small icon-only icon-xs"
+          className={`btn small icon-only icon-xs ${skillSetupStyles.fixedControl}`}
           aria-label={t("agentTools.setupClose")}
           onClick={onClose}
         >
           <Icon name="close" />
         </button>
       </header>
-      <p className="muted skill-setup-summary">
+      <p className={`muted ${skillSetupStyles.summary}`}>
         {t("agentTools.setupSummary", {
           targets: plan.targets.map((target) => target.displayName).join(", "),
         })}
       </p>
-      <div className="skill-setup-command">
-        <code>{plan.command}</code>
+      <div className={skillSetupStyles.command}>
+        <code className={skillSetupStyles.commandCode}>{plan.command}</code>
         <button
           type="button"
-          className="btn small icon-only"
+          className={`btn small icon-only ${skillSetupStyles.fixedControl}`}
           aria-label={t("agentTools.setupCopyCommand")}
           onClick={() => void copyCommand()}
         >
           <Icon name={copied ? "check" : "copy"} />
         </button>
       </div>
-      <p className="skill-setup-safety">
-        <Icon name="info" />
+      <p className={skillSetupStyles.safety}>
+        <Icon name="info" className={skillSetupStyles.safetyIcon} />
         <span>{t("agentTools.setupSafety")}</span>
       </p>
       <SkillSetupTerminal command={plan.command} />

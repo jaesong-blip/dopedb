@@ -87,7 +87,7 @@ export default async function RootLayout({
 
   return (
     <html lang={lang}>
-      <body>
+      <body className="tw:min-h-[100dvh] tw:bg-paper tw:text-ink tw:antialiased">
         {children}
         <Analytics />
       </body>

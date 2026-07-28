@@ -19,6 +19,7 @@ import type {
   TerminalSessionId,
   TerminalSize,
 } from "./domain";
+import { resolvePtyTheme } from "./ptyTheme";
 import "@xterm/xterm/css/xterm.css";
 import "./ptySurface.css";
 
@@ -55,10 +56,6 @@ interface PtySurfaceProps {
   className?: string;
   id?: string;
   role?: "region" | "tabpanel";
-}
-
-function cssColor(style: CSSStyleDeclaration, property: string, fallback: string) {
-  return style.getPropertyValue(property).trim() || fallback;
 }
 
 function boundedPixelSize(value: number): number {
@@ -200,33 +197,7 @@ const PtySurface = forwardRef<PtySurfaceHandle, PtySurfaceProps>(
             scrollback: 5_000,
             scrollOnUserInput: true,
             smoothScrollDuration: 0,
-            theme: {
-              background: cssColor(style, "--ds-background", "#0a0a0a"),
-              foreground: cssColor(style, "--ds-foreground", "#fafafa"),
-              cursor: cssColor(style, "--ds-foreground", "#fafafa"),
-              cursorAccent: cssColor(style, "--ds-background", "#0a0a0a"),
-              selectionBackground: cssColor(
-                style,
-                "--ds-selection",
-                "#404040",
-              ),
-              black: "#171717",
-              brightBlack: "#737373",
-              red: cssColor(style, "--ds-critical", "#ff6568"),
-              brightRed: "#ff8789",
-              green: cssColor(style, "--ds-positive", "#86efac"),
-              brightGreen: "#bbf7d0",
-              yellow: cssColor(style, "--ds-caution", "#fbbf24"),
-              brightYellow: "#fde68a",
-              blue: cssColor(style, "--ds-info", "#60a5fa"),
-              brightBlue: "#93c5fd",
-              magenta: "#c4b5fd",
-              brightMagenta: "#ddd6fe",
-              cyan: "#5eead4",
-              brightCyan: "#99f6e4",
-              white: "#d4d4d4",
-              brightWhite: "#fafafa",
-            },
+            theme: resolvePtyTheme(style),
             windowOptions: {},
           });
           const fit = new XtermFitAddon();

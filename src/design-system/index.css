@@ -1,2 +1,68 @@
+/*
+ * Tailwind v4 runs without Preflight while the existing workbench reset is
+ * migrated. Utilities use the same --ds-* source of truth as legacy classes.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(tw);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(tw) source("../") important;
 @import "./tokens.css";
 @import "./system.css";
+
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-background: var(--ds-background);
+  --color-foreground: var(--ds-foreground);
+  --color-card: var(--ds-card);
+  --color-card-foreground: var(--ds-card-foreground);
+  --color-popover: var(--ds-popover);
+  --color-popover-foreground: var(--ds-popover-foreground);
+  --color-primary: var(--ds-primary);
+  --color-primary-foreground: var(--ds-primary-foreground);
+  --color-secondary: var(--ds-secondary);
+  --color-secondary-foreground: var(--ds-secondary-foreground);
+  --color-muted: var(--ds-muted);
+  --color-muted-foreground: var(--ds-muted-foreground);
+  --color-selection: var(--ds-selection);
+  --color-selection-foreground: var(--ds-selection-foreground);
+  --color-destructive: var(--ds-destructive);
+  --color-destructive-foreground: var(--ds-destructive-foreground);
+  --color-input: var(--ds-input);
+  --color-ring: var(--ds-ring);
+  --color-editor: var(--ds-editor-surface);
+  --color-border-subtle: var(--ds-border-subtle);
+  --color-border-strong: var(--ds-border-strong);
+  --color-info: var(--ds-info);
+  --color-success: var(--ds-success);
+  --color-warning: var(--ds-warning);
+  --color-danger: var(--ds-danger);
+
+  --spacing: var(--ds-space-1);
+  --spacing-control-xs: var(--ds-control-xs);
+  --spacing-control-sm: var(--ds-control-sm);
+  --spacing-control-md: var(--ds-control-md);
+  --spacing-control-lg: var(--ds-control-lg);
+  --spacing-control-xl: var(--ds-control-xl);
+
+  --font-sans: var(--ds-font-sans);
+  --font-mono: var(--ds-font-mono);
+  --text-2xs: var(--ds-font-size-2xs);
+  --text-xs: var(--ds-font-size-xs);
+  --text-sm: var(--ds-font-size-sm);
+  --text-ui: var(--ds-font-size-ui);
+  --text-body: var(--ds-font-size-body);
+  --text-title: var(--ds-font-size-title);
+  --text-heading: var(--ds-font-size-heading);
+  --leading-tight: var(--ds-line-tight);
+  --leading-ui: var(--ds-line-ui);
+  --leading-body: var(--ds-line-body);
+
+  --radius-xs: var(--ds-radius-xs);
+  --radius-sm: var(--ds-radius-sm);
+  --radius-md: var(--ds-radius-md);
+  --radius-lg: var(--ds-radius-lg);
+  --radius-full: var(--ds-radius-pill);
+  --shadow-control: var(--ds-shadow-control);
+  --shadow-popover: var(--ds-shadow-popover);
+}

@@ -1,3 +1,40 @@
+/*
+ * Tailwind v4 utilities share the workspace design tokens. Preflight stays
+ * disabled until the existing auth and console resets are fully migrated.
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme) prefix(tw);
+@import "tailwindcss/utilities.css" layer(utilities) prefix(tw) source("../") important;
+
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-background: var(--ds-background);
+  --color-foreground: var(--ds-text);
+  --color-surface: var(--ds-surface);
+  --color-surface-inset: var(--ds-surface-inset);
+  --color-surface-raised: var(--ds-surface-raised);
+  --color-muted-foreground: var(--ds-text-muted);
+  --color-primary: var(--ds-accent);
+  --color-primary-emphasis: var(--ds-accent-emphasis);
+  --color-success: var(--ds-success);
+  --color-danger: var(--ds-danger);
+  --color-border: var(--ds-border);
+  --spacing: var(--ds-space-1);
+  --spacing-control-sm: var(--ds-control-sm);
+  --spacing-control-md: var(--ds-control-md);
+  --spacing-control-field: var(--ds-control-field);
+  --spacing-control-lg: var(--ds-control-lg);
+  --text-2xs: var(--ds-font-size-2xs);
+  --text-xs: var(--ds-font-size-xs);
+  --text-sm: var(--ds-font-size-sm);
+  --text-ui: var(--ds-font-size-ui);
+  --leading-body: var(--ds-line-body);
+  --radius-full: var(--ds-radius-pill);
+  --shadow-popover: var(--ds-shadow-popover);
+}
+
 :root {
   color-scheme: dark;
   /* This file is the workspace web app's design-token source. Components below

@@ -197,6 +197,28 @@
   --ds-source-amber: var(--ds-caution);
   --ds-source-red: var(--ds-critical);
 
+  /*
+   * ANSI colors are a platform palette for xterm, not decorative app accents.
+   * Keeping them here lets every Terminal surface share the same theme without
+   * embedding color literals in React components.
+   */
+  --ds-terminal-ansi-black: var(--ds-card);
+  --ds-terminal-ansi-bright-black: var(--ds-ring);
+  --ds-terminal-ansi-red: var(--ds-critical);
+  --ds-terminal-ansi-bright-red: #ff8789;
+  --ds-terminal-ansi-green: var(--ds-positive);
+  --ds-terminal-ansi-bright-green: #bbf7d0;
+  --ds-terminal-ansi-yellow: var(--ds-caution);
+  --ds-terminal-ansi-bright-yellow: #fde68a;
+  --ds-terminal-ansi-blue: var(--ds-info);
+  --ds-terminal-ansi-bright-blue: #93c5fd;
+  --ds-terminal-ansi-magenta: #c4b5fd;
+  --ds-terminal-ansi-bright-magenta: #ddd6fe;
+  --ds-terminal-ansi-cyan: var(--ds-source-teal);
+  --ds-terminal-ansi-bright-cyan: #99f6e4;
+  --ds-terminal-ansi-white: var(--ds-primary-hover);
+  --ds-terminal-ansi-bright-white: var(--ds-foreground);
+
   /* Interaction */
   --ds-focus: var(--ds-ring);
   --ds-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ds-ring) 50%, transparent);

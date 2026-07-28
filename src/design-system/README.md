@@ -4,22 +4,46 @@ DopeDB의 UI는 Orca의 디자인 시스템을 기준으로 한다. 시각 언�
 **monochrome and quiet**이며, 중립색이 앱 chrome과 작업 표면을 담당하고 색은
 선택·위험·성공처럼 의미가 있는 상태에만 사용한다.
 
-DopeDB는 기존 React + vanilla CSS 구조를 유지한다. Orca의 Tailwind 클래스나
-shadcn 구현을 그대로 의존성으로 가져오는 대신, 같은 토큰 역할과 컴포넌트 규칙을
-`--ds-*` 토큰과 앱 정본 클래스에 연결한다. 덕분에 데이터 그리드와 Tauri 전용
-레이아웃을 유지하면서 모든 화면이 같은 디자인 계약을 공유한다.
+DopeDB는 Tailwind CSS v4를 화면 배치의 기본 도구로 사용한다. Tailwind는 별도
+디자인 언어가 아니라 `--ds-*` 역할 토큰과 앱 정본 primitive를 사용하는 얇은
+utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그리드·vendor widget·
+앱 shell처럼 CSS가 구조적으로 더 알맞은 경계는 유지한다.
 
 ## 정본
 
 | 관심사 | 정본 |
 | --- | --- |
 | 색상·타이포그래피·간격·radius·elevation | `src/design-system/tokens.css` |
+| Tailwind theme bridge와 진입점 | `src/design-system/index.css` |
 | 버튼·배지·카드·폼·toolbar·상태 | `src/design-system/system.css` |
 | 앱 shell과 workbench 레이아웃 | `src/styles.css` |
-| 화면 고유 배치 | 각 screen/component 옆의 CSS |
+| 새 화면 고유 배치 | TSX의 `tw:` utility, 필요할 때 인접 `styles.ts` |
 
 컴포넌트 코드에 토큰이 이미 있는데 hex/rgb 값을 직접 추가하지 않는다. 새 역할이
 필요하면 `tokens.css`에 surface/foreground 쌍으로 정의하고 사용한다.
+
+## Tailwind v4 계약
+
+- `tailwindcss`와 공식 Vite/PostCSS 통합은 `4.3.3`으로 고정한다.
+- 모든 utility는 `tw:` 접두어를 사용한다. 기존 의미 클래스와 이름이 충돌하지
+  않게 하는 migration 경계다.
+- Preflight는 import하지 않는다. 기존 reset을 화면별로 옮기고 세 앱의 시각
+  회귀를 확인한 뒤 별도 변경에서만 활성화를 검토한다.
+- `@theme inline`은 semantic token만 노출한다. `tw:bg-[#111]`,
+  `tw:text-[rgb(...)]` 같은 raw color utility는 금지한다.
+- utility class는 정적인 완전한 문자열이어야 한다. 런타임 조각 조합 대신 상태별
+  완성 문자열이나 명시적인 style map을 사용한다.
+- `.btn`, `.badge`, `.ds-panel`, `.ds-toolbar` 같은 상호작용 primitive는
+  `system.css`가 계속 소유한다. utility로 같은 primitive를 화면마다 재구현하지
+  않는다.
+- 전용 CSS를 이전하면 import와 파일을 같은 변경에서 삭제한다. 호환용 wrapper나
+  중복 selector를 남기지 않는다.
+- 데스크톱은 `@tailwindcss/vite`, 두 Next 앱은 `@tailwindcss/postcss`를
+  사용한다. 세 실행면 모두 같은 migration 원칙을 따른다.
+
+결정 배경과 완료 조건은
+[`docs/adr/0005-tailwind-v4-migration.md`](../../docs/adr/0005-tailwind-v4-migration.md)에
+기록한다.
 
 ## 시각 방향
 
@@ -267,10 +291,11 @@ Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하�
 ## 새 UI를 추가할 때
 
 1. 가장 가까운 sibling screen을 먼저 확인한다.
-2. `system.css`에 이미 있는 primitive를 조합한다.
-3. 새 token은 세 화면 이상에서 같은 의미로 반복될 때만 추가한다.
-4. 화면 고유 미세 조정은 해당 화면 CSS에 둔다.
-5. `pnpm check:ui`와 `pnpm build`를 실행한다.
+2. `system.css`의 primitive와 `tw:` utility를 조합한다.
+3. 색상은 theme role로만 선택하고 raw arbitrary color를 쓰지 않는다.
+4. 새 token은 세 화면 이상에서 같은 의미로 반복될 때만 추가한다.
+5. 한 사용자 흐름은 `data-primary-flow` 경계 안에 primary action 하나만 둔다.
+6. `pnpm check:ui`, 관련 build, focused visual regression을 실행한다.
 
 참고 구현:
 

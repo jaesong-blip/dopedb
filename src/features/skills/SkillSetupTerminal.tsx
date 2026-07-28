@@ -27,6 +27,7 @@ import {
   skillSetupTerminalWrite,
   terminalOutputChannel,
 } from "../terminals/tauriAdapter";
+import { skillSetupStyles } from "./styles";
 
 const DEFAULT_SIZE = {
   cols: 88,
@@ -36,6 +37,7 @@ const DEFAULT_SIZE = {
 };
 const PROMPT_SETTLE_MS = 120;
 const RENDERER_FALLBACK_MS = 900;
+const SLOW_FEEDBACK_MS = 1_000;
 const MAX_PENDING_OUTPUT_BYTES = 256 * 1024;
 
 interface SkillSetupTerminalProps {
@@ -64,6 +66,15 @@ export default function SkillSetupTerminal({
     useState<SkillSetupTerminalSessionSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drafted, setDrafted] = useState(false);
+  const [slowFeedbackVisible, setSlowFeedbackVisible] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setSlowFeedbackVisible(true),
+      SLOW_FEEDBACK_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const closeSession = useCallback(async (
     id: TerminalSessionId,
@@ -231,18 +242,24 @@ export default function SkillSetupTerminal({
 
   return (
     <section
-      className="skill-setup-terminal"
+      className={skillSetupStyles.terminal}
       aria-label={t("agentTools.setupTerminalAria")}
+      data-ui-boundary
     >
-      <header className="skill-setup-terminal-head">
-        <p>
+      <header className={skillSetupStyles.terminalHead}>
+        <p className={skillSetupStyles.terminalHeadText} aria-live="polite">
           {drafted
             ? t("agentTools.setupPressEnter")
-            : t("agentTools.setupPreparingDraft")}
+            : slowFeedbackVisible
+              ? t("agentTools.setupPreparingDraft")
+              : "\u00a0"}
         </p>
       </header>
       {error && (
-        <div className="error skill-setup-terminal-error" role="alert">
+        <div
+          className={`error ${skillSetupStyles.terminalError}`}
+          role="alert"
+        >
           {t("agentTools.setupTerminalError", { error })}
         </div>
       )}
@@ -258,13 +275,18 @@ export default function SkillSetupTerminal({
           onReady={handleSurfaceReady}
           onPromptVisible={handlePromptVisible}
           ariaLabel={t("agentTools.setupTerminalAria")}
-          className="skill-setup-terminal-surface"
+          className={skillSetupStyles.terminalSurface}
         />
       ) : (
-        <div className="skill-setup-terminal-loading muted" aria-live="polite">
+        <div
+          className={`muted ${skillSetupStyles.terminalLoading}`}
+          aria-live="polite"
+        >
           {error
             ? t("agentTools.setupUnavailable")
-            : t("agentTools.setupStarting")}
+            : slowFeedbackVisible
+              ? t("agentTools.setupStarting")
+              : null}
         </div>
       )}
     </section>

@@ -58,6 +58,22 @@ Files that control GitHub Actions or the application version are owned by `@json
 
 The branch login segment is case-sensitive and must match the authenticated login exactly. Contributors must not push directly to `main`, use another contributor's namespace, or bypass required checks and reviews.
 
+## UI changes
+
+Before editing TSX, CSS, Tailwind utilities, or layout, read
+[`src/design-system/README.md`](src/design-system/README.md) and
+[`docs/testing/visual-regression.md`](docs/testing/visual-regression.md).
+New and migrated screen layout uses Tailwind CSS v4 utilities with the `tw:`
+prefix. Use only theme roles backed by DopeDB's semantic tokens; do not add
+raw color utilities or assemble class names dynamically. Preflight remains
+disabled during the incremental migration, while shared controls continue to
+use the canonical `.btn`, `.badge`, `.ds-*` primitives.
+
+When migrating a screen, remove its obsolete CSS import and file in the same
+change. Run `pnpm check:ui`, the relevant app build, and the focused visual
+regression test. Inspect changed screenshots rather than accepting a new
+baseline merely to make CI pass.
+
 ## Personal canary builds
 
 Push your work branch, then dispatch the trusted workflow from `main`:

@@ -1,7 +1,7 @@
-// Static guard for DopeDB's UI layout contract. It walks JSX rather than raw DOM
-// depth: only surfaces and interactive controls consume one of the three levels.
-// It also checks that control rows opt in to shared sizing and that fractional grid
-// tracks cannot grow past their container.
+// Static guard for DopeDB's UI contract. It walks JSX rather than raw DOM depth:
+// only surfaces and interactive controls consume one of the three levels. It also
+// checks control sizing, primary-action flows, color-token ownership, and grid
+// tracks that could otherwise grow past their container.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -10,9 +10,16 @@ import { parse } from "@babel/parser";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoots = [path.join(root, "src"), path.join(root, "workspace-cloud", "app")];
+const legacyTokenRatchet = JSON.parse(
+  fs.readFileSync(path.join(root, "scripts", "ui-legacy-token-ratchet.json"), "utf8"),
+);
 const maxVisualDepth = 3;
 const controlTags = new Set(["button", "input", "select", "textarea", "summary"]);
 const legacyFloatingMenuClasses = new Set(["toolbar-menu", "toolbar-menu-panel"]);
+const rawColorLiteralAllowedFiles = new Set([
+  // Standalone SVG exports cannot resolve the live document's CSS variables.
+  "src/lib/erdExport.ts",
+]);
 const explicitSurfaceClasses = new Set([
   "btn",
   "badge",
@@ -42,6 +49,74 @@ function filesBelow(directory, extension) {
 
 const tsxFiles = sourceRoots.flatMap((sourceRoot) => filesBelow(sourceRoot, ".tsx"));
 const cssFiles = sourceRoots.flatMap((sourceRoot) => filesBelow(sourceRoot, ".css"));
+const productionCodeFiles = sourceRoots
+  .flatMap((sourceRoot) => [
+    ...filesBelow(sourceRoot, ".ts"),
+    ...filesBelow(sourceRoot, ".tsx"),
+  ])
+  .filter(
+    (file) =>
+      !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file) &&
+      !file.endsWith(".d.ts"),
+  );
+const rawColorLiteralPattern = /#[\da-f]{3,8}\b|(?:rgb|hsl)a?\(/i;
+const legacyColorAliasPattern =
+  /var\(\s*--ds-(?:surface|text|accent)(?:-[A-Za-z0-9_-]+)?\b/g;
+
+function readJson(relativeFile) {
+  return JSON.parse(fs.readFileSync(path.join(root, relativeFile), "utf8"));
+}
+
+function checkTailwindContract(errors) {
+  const packages = [
+    ["package.json", readJson("package.json")],
+    ["workspace-cloud/package.json", readJson("workspace-cloud/package.json")],
+    ["site/package.json", readJson("site/package.json")],
+  ];
+  const expectedVersion = packages[0][1].devDependencies?.tailwindcss;
+  if (!expectedVersion) {
+    errors.push("package.json: Tailwind CSS must remain an explicit development dependency");
+    return;
+  }
+  for (const [relativeFile, manifest] of packages) {
+    if (manifest.devDependencies?.tailwindcss !== expectedVersion) {
+      errors.push(
+        `${relativeFile}: tailwindcss must match the root ${expectedVersion} version`,
+      );
+    }
+  }
+  if (packages[0][1].devDependencies?.["@tailwindcss/vite"] !== expectedVersion) {
+    errors.push("package.json: @tailwindcss/vite must match tailwindcss");
+  }
+  for (const [relativeFile, manifest] of packages.slice(1)) {
+    if (manifest.devDependencies?.["@tailwindcss/postcss"] !== expectedVersion) {
+      errors.push(`${relativeFile}: @tailwindcss/postcss must match tailwindcss`);
+    }
+  }
+
+  for (const relativeFile of [
+    "src/design-system/index.css",
+    "workspace-cloud/app/globals.css",
+    "site/app/globals.css",
+  ]) {
+    const source = fs.readFileSync(path.join(root, relativeFile), "utf8");
+    if (
+      !source.includes(
+        '@import "tailwindcss/utilities.css" layer(utilities) prefix(tw)',
+      )
+    ) {
+      errors.push(`${relativeFile}: Tailwind utilities must keep the tw: prefix`);
+    }
+    if (
+      source.includes('@import "tailwindcss";') ||
+      source.includes("tailwindcss/preflight.css")
+    ) {
+      errors.push(
+        `${relativeFile}: Preflight requires a dedicated, visually reviewed migration`,
+      );
+    }
+  }
+}
 
 function attribute(opening, name) {
   return opening.attributes.find(
@@ -159,12 +234,75 @@ function checkSimpleIconButton(element, file, errors) {
   );
 }
 
+function countPrimaryActions(node, rootNode) {
+  if (!node || typeof node !== "object") return 0;
+  if (
+    node !== rootNode &&
+    node.type === "JSXElement" &&
+    attribute(node.openingElement, "data-primary-flow")
+  ) {
+    return 0;
+  }
+
+  let count = 0;
+  if (
+    node.type === "JSXElement" &&
+    classNames(node.openingElement).includes("primary")
+  ) {
+    count += 1;
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (["loc", "start", "end", "extra", "comments", "errors"].includes(key)) continue;
+    if (Array.isArray(child)) {
+      for (const item of child) count += countPrimaryActions(item, rootNode);
+    } else {
+      count += countPrimaryActions(child, rootNode);
+    }
+  }
+  return count;
+}
+
+function checkPrimaryFlow(element, file, errors) {
+  if (!attribute(element.openingElement, "data-primary-flow")) return;
+  const count = countPrimaryActions(element, element);
+  if (count <= 1) return;
+  errors.push(
+    `${path.relative(root, file)}:${element.loc?.start.line ?? 1} ` +
+      `primary flow contains ${count} affirmative actions; keep exactly one primary`,
+  );
+}
+
+function checkRawColorLiterals(node, file, errors) {
+  if (!node || typeof node !== "object") return;
+  const value =
+    node.type === "StringLiteral"
+      ? node.value
+      : node.type === "TemplateElement"
+        ? node.value.raw
+        : null;
+  if (value && rawColorLiteralPattern.test(value)) {
+    errors.push(
+      `${path.relative(root, file)}:${node.loc?.start.line ?? 1} ` +
+        "raw color literal is forbidden in production TypeScript; use a --ds-* token",
+    );
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (["loc", "start", "end", "extra", "comments", "errors"].includes(key)) continue;
+    if (Array.isArray(child)) {
+      for (const item of child) checkRawColorLiterals(item, file, errors);
+    } else {
+      checkRawColorLiterals(child, file, errors);
+    }
+  }
+}
+
 function walk(node, file, depth, ancestry, errors) {
   if (!node || typeof node !== "object") return;
   const opening = node.type === "JSXElement" ? node.openingElement : null;
   if (opening) {
     checkControlRow(opening, file, errors);
     checkSimpleIconButton(node, file, errors);
+    checkPrimaryFlow(node, file, errors);
   }
   const boundary = opening ? isVisualBoundary(opening) : false;
   const nextDepth = depth + Number(boundary);
@@ -261,6 +399,36 @@ if (!unnamedMenuItemFixtureErrors.some((error) => error.includes('role="menuitem
   throw new Error("UI menu-item guard self-test failed to detect a missing menu role");
 }
 
+const duplicatePrimaryFixture = parse(
+  '<main data-primary-flow><button className="btn primary">Save</button><button className="btn primary">Run</button></main>',
+  { sourceType: "module", plugins: ["jsx"] },
+);
+const duplicatePrimaryFixtureErrors = [];
+walk(
+  duplicatePrimaryFixture,
+  "<ui-primary-flow-self-test>",
+  0,
+  [],
+  duplicatePrimaryFixtureErrors,
+);
+if (!duplicatePrimaryFixtureErrors.some((error) => error.includes("affirmative actions"))) {
+  throw new Error("UI primary-flow guard self-test failed to detect duplicate primary actions");
+}
+
+const rawColorFixture = parse('const color = "#123456";', {
+  sourceType: "module",
+  plugins: ["typescript"],
+});
+const rawColorFixtureErrors = [];
+checkRawColorLiterals(
+  rawColorFixture,
+  "<ui-raw-color-self-test>",
+  rawColorFixtureErrors,
+);
+if (!rawColorFixtureErrors.some((error) => error.includes("raw color literal"))) {
+  throw new Error("UI color guard self-test failed to detect a raw TypeScript color");
+}
+
 function targetClassNames(selectorList) {
   const names = [];
   for (const selector of selectorList.split(",")) {
@@ -298,6 +466,7 @@ for (const file of cssFiles) {
 }
 
 const errors = [];
+checkTailwindContract(errors);
 for (const file of tsxFiles) {
   const source = fs.readFileSync(file, "utf8");
   const ast = parse(source, {
@@ -305,6 +474,17 @@ for (const file of tsxFiles) {
     plugins: ["jsx", "typescript"],
   });
   walk(ast, file, 0, [], errors);
+}
+
+for (const file of productionCodeFiles) {
+  const relativeFile = path.relative(root, file);
+  if (rawColorLiteralAllowedFiles.has(relativeFile)) continue;
+  const source = fs.readFileSync(file, "utf8");
+  const ast = parse(source, {
+    sourceType: "module",
+    plugins: ["jsx", "typescript"],
+  });
+  checkRawColorLiterals(ast, file, errors);
 }
 
 function containsUnsafeFractionalTrack(value) {
@@ -327,8 +507,29 @@ function containsUnsafeFractionalTrack(value) {
   return false;
 }
 
+const seenLegacyTokenRatchetFiles = new Set();
 for (const file of cssFiles) {
+    const relativeFile = path.relative(root, file);
     const source = fs.readFileSync(file, "utf8");
+    if (!relativeFile.startsWith("src/design-system/")) {
+      const legacyAliasCount = [...source.matchAll(legacyColorAliasPattern)].length;
+      const baseline = legacyTokenRatchet.files[relativeFile] ?? 0;
+      if (legacyAliasCount > baseline) {
+        errors.push(
+          `${relativeFile}: legacy --ds-surface/text/accent aliases grew from ` +
+            `${baseline} to ${legacyAliasCount}; use canonical role tokens or Tailwind theme utilities`,
+        );
+      }
+      if (baseline > 0) {
+        seenLegacyTokenRatchetFiles.add(relativeFile);
+        if (legacyAliasCount < baseline) {
+          errors.push(
+            `${relativeFile}: legacy token count shrank from ${baseline} to ` +
+              `${legacyAliasCount}; update scripts/ui-legacy-token-ratchet.json in the same change`,
+          );
+        }
+      }
+    }
     const sourceWithoutComments = source.replace(/\/\*[\s\S]*?\*\//g, (comment) =>
       comment.replace(/[^\n]/g, " "),
     );
@@ -367,11 +568,19 @@ for (const file of cssFiles) {
     }
 }
 
+for (const relativeFile of Object.keys(legacyTokenRatchet.files)) {
+  if (seenLegacyTokenRatchetFiles.has(relativeFile)) continue;
+  errors.push(
+    `${relativeFile}: stale legacy-token ratchet entry; remove it after the file is migrated or deleted`,
+  );
+}
+
 if (errors.length > 0) {
   console.error(`UI layout contract failed (visual depth maximum ${maxVisualDepth}):`);
   for (const error of errors) console.error(`- ${error}`);
   console.error(
-    "Use whitespace/dividers, ds-control-row, --ds-control-* tokens, and minmax(0, 1fr).",
+    "Use one primary action, canonical --ds-* roles/Tailwind theme utilities, " +
+      "whitespace/dividers, ds-control-row, --ds-control-* tokens, and minmax(0, 1fr).",
   );
   process.exit(1);
 }

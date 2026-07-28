@@ -2,10 +2,11 @@
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // Tauri v2 dev server config. Fixed port so the Rust side can point WKWebView at it.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   clearScreen: false,
   envPrefix: ["VITE_", "TAURI_"],
   test: {

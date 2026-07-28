@@ -6,6 +6,13 @@ These instructions apply to Codex, Claude Code, and every other AI agent working
 
 Before changing files, read `CLAUDE.md` for the project conventions and `CONTRIBUTING.md` for the human-facing collaboration workflow. Treat this file as the mandatory AI operating policy. If the collaboration or release policy changes, update all three files in the same change so they cannot drift.
 
+Before changing TSX, CSS, Tailwind utilities, or visual layout, also read
+[`src/design-system/README.md`](src/design-system/README.md) and
+[`docs/testing/visual-regression.md`](docs/testing/visual-regression.md).
+DopeDB's semantic tokens and primitives remain authoritative even when a
+Tailwind utility is used. Run `pnpm check:ui` for every UI change and the
+relevant build and visual regression checks before handoff.
+
 ## Commit messages
 
 All commit messages must follow [`docs/commit.md`](docs/commit.md).

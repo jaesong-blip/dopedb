@@ -135,6 +135,31 @@ afterEach(async () => {
 });
 
 describe("SkillSetupTerminal", () => {
+  it("keeps fast startup quiet and reveals progress only after one second", async () => {
+    fakes.create.mockImplementation(() => new Promise(() => undefined));
+    await renderTerminal();
+
+    expect(document.body.textContent).not.toContain(
+      "Starting the setup Terminal",
+    );
+    expect(document.body.textContent).not.toContain(
+      "Preparing the command draft",
+    );
+
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(document.body.textContent).not.toContain(
+      "Starting the setup Terminal",
+    );
+
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(document.body.textContent).toContain(
+      "Starting the setup Terminal",
+    );
+    expect(document.body.textContent).toContain(
+      "Preparing the command draft",
+    );
+  });
+
   it("inserts once after a visible prompt despite repeated readiness signals", async () => {
     await renderTerminal();
 

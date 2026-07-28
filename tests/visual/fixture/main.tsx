@@ -5,7 +5,6 @@ import "../../../src/design-system/index.css";
 import "../../../src/styles.css";
 import "../../../src/components/grid.css";
 import "../../../src/components/TerminalDock/terminalDock.css";
-import "../../../src/features/skills/skillSetup.css";
 import "../../../src/features/terminals/ptySurface.css";
 import "../../../src/screens/Connections/connections.css";
 import "../../../src/screens/Dashboards/dashboards.css";
@@ -13,6 +12,7 @@ import "../../../src/screens/Schema/schema.css";
 import "../../../src/screens/Settings/settings.css";
 import "../../../src/screens/Sql/sql.css";
 import "../../../src/screens/Tables/tables.css";
+import { skillSetupStyles } from "../../../src/features/skills/styles";
 import "./visual-fixture.css";
 
 type Scene =
@@ -360,52 +360,60 @@ function SkillSetupScene() {
         </div>
         <p className="muted">DopeDB 0.3.8 · 스킬 리비전 7</p>
         <section
-          className="skill-setup-panel"
+          className={skillSetupStyles.panel}
           aria-labelledby="vf-skill-setup-title"
         >
-          <header className="skill-setup-panel-head">
-            <div>
-              <span className="skill-setup-kicker">설정 터미널</span>
-              <h3 id="vf-skill-setup-title">
+          <header className={skillSetupStyles.panelHead}>
+            <div className={skillSetupStyles.panelHeadContent}>
+              <span className={skillSetupStyles.kicker}>설정 터미널</span>
+              <h3 className={skillSetupStyles.title} id="vf-skill-setup-title">
                 DopeDB 스킬 설치 및 업데이트
               </h3>
             </div>
             <button
               type="button"
-              className="btn small icon-only icon-xs"
+              className={`btn small icon-only icon-xs ${skillSetupStyles.fixedControl}`}
               aria-label="설정 터미널 닫기"
             >
               ×
             </button>
           </header>
-          <p className="muted skill-setup-summary">
+          <p className={`muted ${skillSetupStyles.summary}`}>
             대상: Codex, Claude Code
           </p>
-          <div className="skill-setup-command">
-            <code>dopedb skill install --target all</code>
+          <div className={skillSetupStyles.command}>
+            <code className={skillSetupStyles.commandCode}>
+              dopedb skill install --target all
+            </code>
             <button
               type="button"
-              className="btn small icon-only"
+              className={`btn small icon-only ${skillSetupStyles.fixedControl}`}
               aria-label="명령 복사"
             >
               ⧉
             </button>
           </div>
-          <p className="skill-setup-safety">
-            <Glyph>i</Glyph>
+          <p className={skillSetupStyles.safety}>
+            <span className={skillSetupStyles.safetyIcon}>
+              <Glyph>i</Glyph>
+            </span>
             <span>
               연결 없는 터미널에 명령만 입력합니다. Enter를 자동으로
               누르거나 데이터베이스 접근을 제공하지 않습니다.
             </span>
           </p>
           <section
-            className="skill-setup-terminal"
+            className={skillSetupStyles.terminal}
             aria-label="DopeDB 스킬 설정 터미널"
           >
-            <header className="skill-setup-terminal-head">
-              <p>명령 준비됨 · Enter를 눌러 실행</p>
+            <header className={skillSetupStyles.terminalHead}>
+              <p className={skillSetupStyles.terminalHeadText}>
+                명령 준비됨 · Enter를 눌러 실행
+              </p>
             </header>
-            <div className="terminal-surface skill-setup-terminal-surface">
+            <div
+              className={`terminal-surface ${skillSetupStyles.terminalSurface}`}
+            >
               <pre className="vf-skill-pty">
                 <span>jaesong@local % </span>
                 dopedb skill install --target all

@@ -33,7 +33,7 @@ import {
   buildSkillSetupPlan,
   type SkillSetupPlan,
 } from "../../../features/skills/setupPolicy";
-import "./agentTools.css";
+import { agentToolsStyles } from "./styles";
 
 type Mutation = "repair" | "remove";
 
@@ -239,14 +239,17 @@ export default function AgentTools() {
     cleanupQ.data?.targets.filter((target) => target.state === "manual_review") ?? [];
 
   return (
-    <div className="screen agent-tools-settings">
+    <div
+      className={`screen ${agentToolsStyles.root}`}
+      data-primary-flow
+    >
       <div className="settings-title-row">
         <h2>{t("agentTools.title")}</h2>
         <InfoTip label={t("agentTools.description")} />
       </div>
 
       {status && (
-        <p className="muted agent-tools-version">
+        <p className={`muted ${agentToolsStyles.version}`}>
           {t("agentTools.version", {
             version: status.skill.appVersion,
             revision: status.skill.releaseRevision,
@@ -271,7 +274,7 @@ export default function AgentTools() {
         <Skeleton lines={6} />
       ) : (
         status && (
-          <div className="agent-tools-list">
+          <div className={agentToolsStyles.list}>
             {status.targets.map((target) => {
               const providerId = target.target === "codex" ? "codex" : "claude";
               const cli = agentsQ.data?.find((item) => item.id === providerId);
@@ -288,19 +291,27 @@ export default function AgentTools() {
                 "newer_known",
               ].includes(target.state);
               return (
-                <section className="agent-tools-target" key={target.target}>
-                  <div className="agent-tools-target-head">
-                    <div>
-                      <h3>{target.displayName}</h3>
+                <section className={agentToolsStyles.target} key={target.target}>
+                  <div className={agentToolsStyles.targetHead}>
+                    <div className={agentToolsStyles.targetIdentity}>
+                      <h3 className={agentToolsStyles.targetTitle}>
+                        {target.displayName}
+                      </h3>
                       <span className={badgeClass(target.state)}>
                         {t(stateLabel[target.state])}
                       </span>
                     </div>
-                    <div className="agent-tools-cli-state muted">
+                    <div className={agentToolsStyles.cliState}>
                       <span>
                         {cli?.installed
                           ? t("agentTools.detected")
                           : t("agentTools.cliMissing")}
+                      </span>
+                      <span
+                        className={agentToolsStyles.metaDot}
+                        aria-hidden="true"
+                      >
+                        ·
                       </span>
                       <span>
                         {cli?.authenticated
@@ -310,55 +321,71 @@ export default function AgentTools() {
                     </div>
                   </div>
 
-                  <dl className="agent-tools-details">
-                    <div>
-                      <dt>{t("agentTools.path")}</dt>
-                      <dd>
-                        <code>{target.installPath}</code>
+                  <dl className={agentToolsStyles.details}>
+                    <div className={agentToolsStyles.detailsRow}>
+                      <dt className={agentToolsStyles.detailsTerm}>
+                        {t("agentTools.path")}
+                      </dt>
+                      <dd className={agentToolsStyles.detailsValue}>
+                        <code className={agentToolsStyles.breakAnywhere}>
+                          {target.installPath}
+                        </code>
                       </dd>
                     </div>
                     {target.installedRevision !== null && (
-                      <div>
-                        <dt>{t("cli.binaryStatus")}</dt>
-                        <dd>
+                      <div className={agentToolsStyles.detailsRow}>
+                        <dt className={agentToolsStyles.detailsTerm}>
+                          {t("cli.binaryStatus")}
+                        </dt>
+                        <dd className={agentToolsStyles.detailsValue}>
                           {t("agentTools.installedRevision", {
                             revision: target.installedRevision,
                           })}
                         </dd>
                       </div>
                     )}
-                    <div>
-                      <dt>{t("agentTools.currentRevision")}</dt>
-                      <dd>{target.currentRevision}</dd>
+                    <div className={agentToolsStyles.detailsRow}>
+                      <dt className={agentToolsStyles.detailsTerm}>
+                        {t("agentTools.currentRevision")}
+                      </dt>
+                      <dd className={agentToolsStyles.detailsValue}>
+                        {target.currentRevision}
+                      </dd>
                     </div>
                   </dl>
                   {target.reason && (
-                    <p className="muted">{t(reasonLabel[target.reason])}</p>
+                    <p className={`muted ${agentToolsStyles.targetMessage}`}>
+                      {t(reasonLabel[target.reason])}
+                    </p>
                   )}
                   {target.conflicts.length > 0 && (
                     <>
-                      <p className="agent-tools-conflict-title">
+                      <p className={agentToolsStyles.conflictTitle}>
                         {t("agentTools.conflicts", {
                           count: target.conflicts.length,
                         })}
                       </p>
                       {target.conflicts.map((conflict) => (
                         <p
-                          className="agent-tools-conflict muted"
+                          className={`muted ${agentToolsStyles.conflict}`}
                           key={`${conflict.kind}:${conflict.path}`}
                         >
                           <span>{t(conflictLabel[conflict.kind])}</span>
-                          <code>{conflict.path}</code>
+                          <code className={agentToolsStyles.breakAnywhere}>
+                            {conflict.path}
+                          </code>
                         </p>
                       ))}
                     </>
                   )}
 
                   {(canInstall || canRepair || canRemove) && (
-                    <div className="agent-tools-actions ds-control-row">
+                    <div
+                      className={`ds-control-row ${agentToolsStyles.actions}`}
+                    >
                       {canInstall && (
                         <button
-                          className="btn primary"
+                          className="btn"
                           disabled={busy !== null || setupPlan !== null}
                           onClick={(event) =>
                             openSetup(
@@ -409,11 +436,15 @@ export default function AgentTools() {
         <SkillSetupPanel plan={setupPlan} onClose={closeSetup} />
       )}
 
-      <section className="agent-tools-legacy">
-        <div className="agent-tools-section-head">
-          <div>
-            <h3>{t("agentTools.legacyCleanupTitle")}</h3>
-            <p className="muted">{t("agentTools.legacyCleanupDescription")}</p>
+      <section className={agentToolsStyles.legacy}>
+        <div className={agentToolsStyles.sectionHead}>
+          <div className={agentToolsStyles.sectionHeadContent}>
+            <h3 className={agentToolsStyles.sectionHeading}>
+              {t("agentTools.legacyCleanupTitle")}
+            </h3>
+            <p className={`muted ${agentToolsStyles.sectionHeading}`}>
+              {t("agentTools.legacyCleanupDescription")}
+            </p>
           </div>
           {cleanupReady.length > 0 && (
             <ConfirmButton
@@ -438,10 +469,10 @@ export default function AgentTools() {
             })}
           </div>
         ) : (
-          <div className="agent-tools-cleanup-list">
+          <div className={agentToolsStyles.cleanupList}>
             {cleanupQ.data?.targets.map((target) => (
-              <div className="agent-tools-cleanup-target" key={target.id}>
-                <div>
+              <div className={agentToolsStyles.cleanupTarget} key={target.id}>
+                <div className={agentToolsStyles.cleanupIdentity}>
                   <span>{target.displayName}</span>
                   <span
                     className={
@@ -461,7 +492,9 @@ export default function AgentTools() {
                     )}
                   </span>
                 </div>
-                <code>{target.path}</code>
+                <code className={agentToolsStyles.breakAnywhere}>
+                  {target.path}
+                </code>
                 {target.redactedDiff && (
                   <span className="muted">{target.redactedDiff}</span>
                 )}
@@ -475,7 +508,7 @@ export default function AgentTools() {
         )}
       </section>
 
-      <div className="agent-tools-footer ds-control-row">
+      <div className={`ds-control-row ${agentToolsStyles.footer}`}>
         {combinedSetupPlan?.command && !setupPlan && (
           <button
             className="btn primary"

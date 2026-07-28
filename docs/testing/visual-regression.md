@@ -15,6 +15,12 @@ Playwright 시각 테스트는 실제 앱 데이터나 외부 서비스 없이 �
 
 Fixture는 `tests/visual/fixture/`의 가상 이름과 통계만 사용한다. 실제 이메일, 연결 문자열, 토큰, 비밀번호, 계정 ID를 복사하지 않는다.
 
+Tailwind로 이전한 화면은 fixture 전용 CSS를 복제하지 않고 production의 정적
+style map 또는 실제 컴포넌트를 import한다. CSS를 utility로 바꿨다는 이유만으로
+기준 이미지를 갱신하지 않는다. 기존 모습이 의도라면 계산된 line-height·spacing을
+맞춰 동일한 screenshot을 통과시키고, 의도적인 디자인 변경일 때만 아래 갱신
+절차를 따른다.
+
 ## 실행과 기준 이미지 갱신
 
 ```sh
