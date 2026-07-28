@@ -7,6 +7,11 @@ export const terminalCatalog = defineCatalog(
     "terminal.agentEmptyBody":
       "Start a signed-in Codex or Claude session. The local Agent stays pinned to this database and uses the version-matched DopeDB CLI.",
     "terminal.agentEmptyTitle": "Start an Agent conversation",
+    "terminal.agentComposer": "Agent message composer",
+    "terminal.agentModel": "Agent model",
+    "terminal.agentPrompt":
+      "Type your task. Press Enter to send, Shift+Enter for a new line.",
+    "terminal.agentSend": "Send to Agent",
     "terminal.agentSessions": "AI Chat sessions",
     "terminal.agentTitle": "AI Chat",
     "terminal.archive": "Legacy conversations",
@@ -67,6 +72,11 @@ export const terminalCatalog = defineCatalog(
     "terminal.agentEmptyBody":
       "로그인된 Codex 또는 Claude 세션을 시작하세요. 로컬 Agent는 이 데이터베이스에 고정되며 앱 버전과 일치하는 DopeDB CLI를 사용합니다.",
     "terminal.agentEmptyTitle": "Agent 대화 시작",
+    "terminal.agentComposer": "Agent 메시지 입력",
+    "terminal.agentModel": "Agent 모델",
+    "terminal.agentPrompt":
+      "요청을 입력하세요. Enter로 보내고 Shift+Enter로 줄을 바꿉니다.",
+    "terminal.agentSend": "Agent에게 보내기",
     "terminal.agentSessions": "AI Chat 세션",
     "terminal.agentTitle": "AI Chat",
     "terminal.archive": "이전 대화",

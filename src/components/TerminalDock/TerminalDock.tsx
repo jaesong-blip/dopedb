@@ -7,6 +7,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type FormEvent,
   type ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -38,6 +39,7 @@ import {
   terminalOutputChannel,
   terminalRename,
   terminalRestart,
+  terminalWrite,
 } from "../../features/terminals/tauriAdapter";
 import {
   terminalSessionId,
@@ -75,6 +77,11 @@ import { useI18n } from "../../lib/i18n";
 
 const OUTPUT_REPLAY_BYTES = 512 * 1024;
 const ACTIVE_SESSION_STORAGE = "terminalActiveSessionByScope";
+// A JavaScript character can encode to four UTF-8 bytes. Keep the composer
+// below the Terminal backend's 64 KiB input boundary including paste markers.
+const AGENT_PROMPT_MAX_CHARS = 12 * 1024;
+
+type AgentProfile = Exclude<TerminalProfile, "shell">;
 
 type OutputWriter = (chunk: TerminalOutputChunk) => void;
 
@@ -163,6 +170,10 @@ export default function TerminalDock({
     restoreTerminalDockState,
   );
   const [popup, setPopup] = useState<TerminalPopup | null>(null);
+  const [agentPrompt, setAgentPrompt] = useState("");
+  const [agentProfile, setAgentProfile] =
+    useState<AgentProfile>("codex");
+  const [sendingAgentPrompt, setSendingAgentPrompt] = useState(false);
   const [closingId, setClosingId] = useState<TerminalSessionId | null>(null);
   const dockRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -428,6 +439,11 @@ export default function TerminalDock({
       visibleSessions.find((session) => session.id === activeId) ?? null,
     [activeId, visibleSessions],
   );
+  useEffect(() => {
+    if (active?.profile === "codex" || active?.profile === "claude") {
+      setAgentProfile(active.profile);
+    }
+  }, [active?.id, active?.profile]);
   visibleSessionsRef.current = visibleSessions;
   useEffect(() => {
     if (!popup) return;
@@ -451,7 +467,9 @@ export default function TerminalDock({
     dispatch({ type: "error", error: message });
   }, []);
 
-  async function createSession(profile: TerminalProfile) {
+  async function createSession(
+    profile: TerminalProfile,
+  ): Promise<TerminalSessionSummary | null> {
     setPopup(null);
     dispatch({ type: "error", error: null });
     dispatch({ type: "creating", profile });
@@ -473,13 +491,47 @@ export default function TerminalDock({
       channelsRef.current.set(session.id, channel);
       dispatch({ type: "upsert", session });
       dispatch({ type: "activate", id: session.id });
+      return session;
     } catch (error) {
       dispatch({
         type: "error",
         error: t("terminal.createFailed", { error: errMessage(error) }),
       });
+      return null;
     } finally {
       dispatch({ type: "creating", profile: null });
+    }
+  }
+
+  async function submitAgentPrompt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const prompt = agentPrompt.trim();
+    if (!prompt || sendingAgentPrompt) return;
+    setSendingAgentPrompt(true);
+    dispatch({ type: "error", error: null });
+    try {
+      const session =
+        active &&
+          active.profile === agentProfile &&
+          terminalSessionIsRunning(active)
+          ? active
+          : await createSession(agentProfile);
+      if (!session) return;
+      const normalized = prompt.replace(/\r\n?/g, "\n");
+      const input = normalized.includes("\n")
+        ? `\u001b[200~${normalized}\u001b[201~\r`
+        : `${normalized}\r`;
+      await terminalWrite(session.id, [
+        ...new TextEncoder().encode(input),
+      ]);
+      setAgentPrompt("");
+    } catch (error) {
+      dispatch({
+        type: "error",
+        error: t("terminal.inputFailed", { error: errMessage(error) }),
+      });
+    } finally {
+      setSendingAgentPrompt(false);
     }
   }
 
@@ -727,11 +779,13 @@ export default function TerminalDock({
                     : "terminal.emptyBody",
                 )}
               </p>
-              <TerminalEmptyActions
-                creatingProfile={state.creatingProfile}
-                presentation={presentation}
-                onCreate={(profile) => void createSession(profile)}
-              />
+              {presentation !== "agent" ? (
+                <TerminalEmptyActions
+                  creatingProfile={state.creatingProfile}
+                  presentation={presentation}
+                  onCreate={(profile) => void createSession(profile)}
+                />
+              ) : null}
             </TerminalEmpty>
           ) : active ? (
             <TerminalSurface
@@ -745,6 +799,63 @@ export default function TerminalDock({
             <TerminalEmpty>{t("terminal.noSelection")}</TerminalEmpty>
           )}
         </div>
+        {presentation === "agent" ? (
+          <form
+            className="tw:m-3 tw:mt-0 tw:flex tw:shrink-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-input tw:bg-card tw:focus-within:border-ring"
+            aria-label={t("terminal.agentComposer")}
+            onSubmit={submitAgentPrompt}
+          >
+            <textarea
+              className="tw:min-h-20 tw:w-full tw:resize-none tw:border-0 tw:bg-transparent tw:px-3 tw:py-2 tw:font-sans tw:text-sm tw:leading-body tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground"
+              value={agentPrompt}
+              maxLength={AGENT_PROMPT_MAX_CHARS}
+              placeholder={t("terminal.agentPrompt")}
+              aria-label={t("terminal.agentPrompt")}
+              onChange={(event) => setAgentPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+            />
+            <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:border-t tw:border-border-subtle tw:px-2">
+              <Icon
+                name="user"
+                className="tw:text-sm tw:text-muted-foreground"
+              />
+              <select
+                className="tw:h-control-md tw:min-w-0 tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-sm tw:text-foreground tw:outline-none tw:hover:bg-muted"
+                value={agentProfile}
+                aria-label={t("terminal.agentModel")}
+                onChange={(event) =>
+                  setAgentProfile(event.target.value as AgentProfile)
+                }
+              >
+                <option value="codex">{t("terminal.codex")}</option>
+                <option value="claude">{t("terminal.claude")}</option>
+              </select>
+              <span className="tw:flex-1" />
+              <button
+                type="submit"
+                className="btn small icon-only"
+                disabled={
+                  !agentPrompt.trim() ||
+                  sendingAgentPrompt ||
+                  state.creatingProfile !== null
+                }
+                title={t("terminal.agentSend")}
+                aria-label={t("terminal.agentSend")}
+              >
+                <Icon name="send" />
+              </button>
+            </div>
+          </form>
+        ) : null}
       </aside>
 
     </>

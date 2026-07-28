@@ -131,6 +131,12 @@ const glyphs = {
   chevronsRight: <path d="m13 17 5-5-5-5M6 17l5-5-5-5" />,
   arrowLeft: <path d="m15 18-6-6 6-6" />,
   arrowRight: <path d="m9 18 6-6-6-6" />,
+  send: (
+    <>
+      <path d="m22 2-7 20-4-9-9-4 20-7z" />
+      <path d="M22 2 11 13" />
+    </>
+  ),
   panelRight: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="2" />
