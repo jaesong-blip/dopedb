@@ -9,10 +9,11 @@
 .app {
   display: grid;
   /* Middle track is the drag divider; the live widths are supplied inline. */
-  grid-template-columns: 40px 304px 3px minmax(0, 1fr) 0;
+  grid-template-columns: 304px 3px minmax(0, 1fr) 0;
   grid-template-rows: 40px minmax(0, 1fr) 24px;
   height: 100dvh;
   overflow: hidden;
+  background: var(--ds-color-muted);
 }
 
 .app[data-platform="macos"] {
@@ -29,24 +30,33 @@
   grid-row: 2;
 }
 
-.sidebar {
+.tool-window-sidebar {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.tool-window-sidebar > .sidebar {
+  width: calc(100% - var(--ds-space-1));
+  height: calc(100% - (var(--ds-space-1) * 2));
+  margin: var(--ds-space-1) 0 var(--ds-space-1) var(--ds-space-1);
+  border: var(--ds-border-width) solid var(--ds-color-border-subtle);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-color-background);
+}
+
+.sidebar-resizer {
   grid-column: 2;
   grid-row: 2;
 }
 
-.sidebar-resizer {
-  grid-column: 3;
-  grid-row: 2;
-}
-
 .main {
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 2;
 }
 
 .terminal-dock,
 .ide-assistant-welcome {
-  grid-column: 5;
+  grid-column: 4;
   grid-row: 2;
 }
 
@@ -61,13 +71,6 @@
   padding: 0;
 }
 
-@media (min-width: 561px) and (max-width: 900px) {
-  .app {
-    grid-template-columns:
-      44px minmax(190px, 34vw) 3px minmax(0, 1fr) 0 !important;
-  }
-}
-
 @media (max-width: 560px) {
   .app {
     grid-template-columns: minmax(0, 1fr) !important;
@@ -75,12 +78,20 @@
     height: calc(100dvh - 48px);
   }
 
-  .sidebar {
+  .tool-window-sidebar {
+    display: contents;
+  }
+
+  .tool-window-sidebar > .sidebar {
     position: fixed;
     inset: 0 auto 48px 0;
     z-index: calc(var(--ds-z-modal) - 1);
     width: min(360px, calc(100vw - var(--ds-space-6)));
+    height: auto;
+    margin: 0;
+    border: 0;
     border-right: var(--ds-border-width) solid var(--ds-border-strong);
+    border-radius: 0;
     box-shadow: var(--ds-shadow-popover);
     pointer-events: none;
     transform: translateX(-100%);
@@ -90,7 +101,7 @@
     visibility: hidden;
   }
 
-  .app[data-mobile-explorer-open="true"] .sidebar {
+  .app[data-mobile-explorer-open="true"] .tool-window-sidebar > .sidebar {
     pointer-events: auto;
     transform: translateX(0);
     transition-delay: 0s;

@@ -53,6 +53,7 @@ import { useResponsiveShell } from "./useResponsiveShell";
 import { useSafetySettings } from "./useSafetySettings";
 import { useSidebarWidth } from "./useSidebarWidth";
 import { useTerminalDock } from "./useTerminalDock";
+import { useToolWindowLayout } from "./useToolWindowLayout";
 import {
   preloadSqlEditor,
   useActivitySeen,
@@ -63,10 +64,10 @@ import {
   useSqlEditorPreload,
 } from "./navigationHooks";
 
-// Chat2DB-style information architecture:
-// - the global rail switches products (database workspace / dashboard);
-// - database tools are real documents inside the selected connection's workbench;
-// - interactive Shell/Agent sessions live in a persistent, connection-pinned Terminal Dock.
+// DopeDB-style information architecture:
+// - the title toolbar opens real workbench areas and tool windows;
+// - database tools are documents inside the selected connection's workbench;
+// - interactive Shell/Agent sessions live in a connection-pinned tool window.
 // `null` = not editing; "new" = blank form; a profile = edit that profile.
 export default function App() {
   return (
@@ -98,6 +99,11 @@ function Shell() {
     startDrag: startSidebarDrag,
     reset: resetSidebarWidth,
   } = useSidebarWidth();
+  const {
+    databaseExplorerOpen,
+    showDatabaseExplorer,
+    toggleDatabaseExplorer,
+  } = useToolWindowLayout();
   const [selectedId, setSelectedId] = usePersistentSelectedConnection();
   const {
     safety,
@@ -464,6 +470,7 @@ function Shell() {
       dashboardFocusId={dashboardFocusId}
       compact={compactShell}
       mobileExplorerOpen={mobileExplorerOpen}
+      databaseExplorerOpen={databaseExplorerOpen}
       sidebarWidth={sidebarW}
       mainRef={mainRef}
       mainContent={mainContent}
@@ -482,6 +489,7 @@ function Shell() {
         setEditing(null);
         setSchemaDiffGroupKey(null);
         setArea(next);
+        if (!compactShell) showDatabaseExplorer();
         if (next === "workspace" && selected) {
           openStableDocument("schema", false);
         }
@@ -490,6 +498,7 @@ function Shell() {
           else setMobileExplorerOpen(true);
         }
       }}
+      onToggleDatabaseExplorer={toggleDatabaseExplorer}
       onSettings={() => {
         setSettingsSection(undefined);
         setSettingsOpen(true);

@@ -34,7 +34,7 @@ export default function WorkbenchRail({
 
   return (
     <nav
-      className="workbench-rail tw:z-[var(--ds-z-raised)] tw:flex tw:min-w-0 tw:flex-col tw:items-center tw:border-r tw:border-sidebar-border tw:bg-card tw:px-0.5 tw:pt-1 tw:pb-2 tw:text-muted-foreground tw:max-[560px]:fixed tw:max-[560px]:right-0 tw:max-[560px]:bottom-0 tw:max-[560px]:left-0 tw:max-[560px]:z-[var(--ds-z-modal)] tw:max-[560px]:h-12 tw:max-[560px]:w-full tw:max-[560px]:flex-row tw:max-[560px]:justify-between tw:max-[560px]:border-t tw:max-[560px]:border-r-0 tw:max-[560px]:px-2 tw:max-[560px]:py-1"
+      className="workbench-rail tw:hidden tw:min-w-0 tw:items-center tw:text-muted-foreground tw:max-[560px]:fixed tw:max-[560px]:right-0 tw:max-[560px]:bottom-0 tw:max-[560px]:left-0 tw:max-[560px]:z-[var(--ds-z-modal)] tw:max-[560px]:flex tw:max-[560px]:h-12 tw:max-[560px]:w-full tw:max-[560px]:flex-row tw:max-[560px]:justify-between tw:max-[560px]:border-t tw:max-[560px]:border-sidebar-border tw:max-[560px]:bg-card tw:max-[560px]:px-2 tw:max-[560px]:py-1"
       aria-label={t("app.workbenchNavigation")}
       onKeyDown={(event) => {
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {

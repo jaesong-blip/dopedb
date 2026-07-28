@@ -32,9 +32,11 @@ import { PopupMenuItem } from "../../../design-system/components/PopupMenu";
 export default function WorkspaceAccount({
   onScopeChanged,
   compact = false,
+  menuPlacement = "rail",
 }: {
   onScopeChanged: () => void | Promise<void>;
   compact?: boolean;
+  menuPlacement?: "rail" | "topbar";
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -353,6 +355,7 @@ export default function WorkspaceAccount({
   return (
     <div
       data-compact={compact}
+      data-menu-placement={menuPlacement}
       className="tw:relative tw:flex tw:min-h-control-md tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2 tw:p-0 tw:data-[compact=true]:min-h-control-lg tw:data-[compact=true]:w-control-lg tw:data-[compact=true]:min-w-control-lg tw:data-[compact=true]:flex-none tw:data-[compact=true]:justify-center"
       aria-live="polite"
       ref={rootRef}
@@ -410,7 +413,8 @@ export default function WorkspaceAccount({
           {menuOpen ? (
             <div
               data-compact={compact}
-              className="tw:absolute tw:bottom-[calc(100%+var(--ds-space-2))] tw:left-0 tw:z-[var(--ds-z-popover)] tw:max-h-[min(420px,calc(100vh_-_var(--ds-space-8)))] tw:w-[calc(100%+var(--ds-control-md)+var(--ds-space-2))] tw:max-w-[calc(100vw_-_var(--ds-space-6))] tw:overflow-auto tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:p-1 tw:shadow-popover tw:data-[compact=true]:bottom-0 tw:data-[compact=true]:left-[calc(100%+var(--ds-space-2))] tw:data-[compact=true]:w-[min(284px,calc(100vw_-_64px))] tw:max-[561px]:data-[compact=true]:right-0 tw:max-[561px]:data-[compact=true]:bottom-[calc(100%+var(--ds-space-2))] tw:max-[561px]:data-[compact=true]:left-auto"
+              data-menu-placement={menuPlacement}
+              className="tw:absolute tw:bottom-[calc(100%+var(--ds-space-2))] tw:left-0 tw:z-[var(--ds-z-popover)] tw:max-h-[min(420px,calc(100vh_-_var(--ds-space-8)))] tw:w-[calc(100%+var(--ds-control-md)+var(--ds-space-2))] tw:max-w-[calc(100vw_-_var(--ds-space-6))] tw:overflow-auto tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:p-1 tw:shadow-popover tw:data-[compact=true]:bottom-0 tw:data-[compact=true]:left-[calc(100%+var(--ds-space-2))] tw:data-[compact=true]:w-[min(284px,calc(100vw_-_64px))] tw:data-[menu-placement=topbar]:top-[calc(100%+var(--ds-space-2))] tw:data-[menu-placement=topbar]:right-0 tw:data-[menu-placement=topbar]:bottom-auto tw:data-[menu-placement=topbar]:left-auto tw:max-[561px]:data-[compact=true]:right-0 tw:max-[561px]:data-[compact=true]:bottom-[calc(100%+var(--ds-space-2))] tw:max-[561px]:data-[compact=true]:left-auto"
               role="menu"
               aria-label={t("workspace.accountMenu")}
             >

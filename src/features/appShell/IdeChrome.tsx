@@ -1,6 +1,7 @@
-// DopeDB 2026.1 desktop chrome: project context and tool-window launchers share
+// DopeDB 2026.1 desktop chrome: project context and real tool-window launchers share
 // one quiet title toolbar. macOS owns its native File/Edit/View menus, so the
 // WebView must not draw a second application menu inside the window.
+import type { ReactNode } from "react";
 import type { CatalogTable } from "../../ipc/types";
 import type { ConnectionProfile } from "../connections/domain";
 import { Icon } from "../../components/Icon";
@@ -17,18 +18,24 @@ export function IdeTopBar({
   area,
   selected,
   supportsSql,
+  databaseExplorerOpen,
   showTerminalDock,
+  account,
   onNewQuery,
   onArea,
+  onToggleDatabaseExplorer,
   onOpenTerminal,
   onSettings,
 }: {
   area: AppArea;
   selected: ConnectionProfile | null;
   supportsSql: boolean;
+  databaseExplorerOpen: boolean;
   showTerminalDock: boolean;
+  account: ReactNode;
   onNewQuery: () => void;
   onArea: (area: AppArea) => void;
+  onToggleDatabaseExplorer: () => void;
   onOpenTerminal: () => void;
   onSettings: () => void;
 }) {
@@ -78,12 +85,25 @@ export function IdeTopBar({
         <button
           type="button"
           className="btn small icon-only"
-          onClick={() => onArea("workspace")}
+          onClick={() => {
+            if (area === "workspace") onToggleDatabaseExplorer();
+            else onArea("workspace");
+          }}
           title={t("ide.action.databaseExplorer")}
           aria-label={t("ide.action.databaseExplorer")}
-          aria-pressed={area === "workspace"}
+          aria-pressed={area === "workspace" && databaseExplorerOpen}
         >
           <Icon name="database" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only"
+          onClick={() => onArea("dashboard")}
+          title={t("tabs.dashboard")}
+          aria-label={t("tabs.dashboard")}
+          aria-pressed={area === "dashboard" && databaseExplorerOpen}
+        >
+          <Icon name="dashboard" />
         </button>
         <button
           type="button"
@@ -109,6 +129,7 @@ export function IdeTopBar({
       </div>
 
       <div className="tw:ml-auto tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:[&_.btn]:[--ds-icon-button-size:28px]">
+        <div className="tw:size-7 tw:shrink-0">{account}</div>
         <button
           type="button"
           className="btn small icon-only"

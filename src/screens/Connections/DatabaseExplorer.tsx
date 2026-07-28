@@ -393,7 +393,7 @@ export function DatabaseExplorer({
 
   return (
     <aside
-      className="sidebar tw:flex tw:flex-col tw:overflow-hidden tw:border-r tw:border-border-subtle tw:bg-background"
+      className="sidebar tw:flex tw:flex-col tw:overflow-hidden tw:bg-background"
       id="workbench-sidebar"
     >
       <ToolWindowHeader

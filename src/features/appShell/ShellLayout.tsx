@@ -36,6 +36,7 @@ type Props = {
   dashboardFocusId: string | null;
   compact: boolean;
   mobileExplorerOpen: boolean;
+  databaseExplorerOpen: boolean;
   sidebarWidth: number;
   mainRef: RefObject<HTMLElement | null>;
   mainContent: ReactNode;
@@ -49,6 +50,7 @@ type Props = {
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
   onCreateDemoDatabase: () => void;
   onArea: (area: AppArea) => void;
+  onToggleDatabaseExplorer: () => void;
   onSettings: () => void;
   onNewQuery: () => void;
   onOpenAgentTools: () => void;
@@ -88,6 +90,7 @@ export default function ShellLayout(props: Props) {
     dashboardFocusId,
     compact,
     mobileExplorerOpen,
+    databaseExplorerOpen,
     sidebarWidth,
     mainRef,
     mainContent,
@@ -114,17 +117,29 @@ export default function ShellLayout(props: Props) {
       data-terminal-open={showTerminalDock}
       data-welcome-assistant-open={showWelcomeAssistant}
       data-mobile-explorer-open={mobileExplorerOpen}
+      data-database-explorer-open={databaseExplorerOpen}
       style={{
-        gridTemplateColumns: `40px ${sidebarWidth}px 3px minmax(0, 1fr) ${rightDockWidth}px`,
+        gridTemplateColumns: databaseExplorerOpen
+          ? `${sidebarWidth}px 3px minmax(0, 1fr) ${rightDockWidth}px`
+          : `0 0 minmax(0, 1fr) ${rightDockWidth}px`,
       }}
     >
       <IdeTopBar
         area={area}
         selected={selected}
         supportsSql={supportsSql}
+        databaseExplorerOpen={databaseExplorerOpen}
         showTerminalDock={showTerminalDock}
+        account={
+          <WorkspaceAccount
+            compact
+            menuPlacement="topbar"
+            onScopeChanged={props.onWorkspaceScopeChanged}
+          />
+        }
         onNewQuery={props.onNewQuery}
         onArea={props.onArea}
+        onToggleDatabaseExplorer={props.onToggleDatabaseExplorer}
         onOpenTerminal={props.onOpenTerminal}
         onSettings={props.onSettings}
       />
@@ -144,46 +159,52 @@ export default function ShellLayout(props: Props) {
         onSettings={props.onSettings}
       />
 
-      {area === "dashboard" &&
-      !settingsOpen &&
-      editing === null &&
-      !activeSchemaGroup ? (
-        <DashboardSidebar
-          workspaceHeader={
-            <WorkspaceSwitcher
-              onNew={props.onNewConnection}
-              onChanged={props.onWorkspaceScopeChanged}
-            />
-          }
-          connections={connections}
-          selectedId={selectedId}
-          focusId={dashboardFocusId}
-          onSelectConnection={props.onSelectDashboardConnection}
-          onFocus={props.onDashboardFocus}
-        />
-      ) : (
-        <DatabaseExplorer
-          workspaceHeader={
-            <WorkspaceSwitcher
-              onNew={props.onNewConnection}
-              onChanged={props.onWorkspaceScopeChanged}
-            />
-          }
-          connections={connections}
-          selectedId={selectedId}
-          selectedTableKey={selectedTable ? tableKey(selectedTable) : null}
-          activeSchemaGroupKey={activeSchemaGroupKey}
-          onSelectConn={props.onSelectWorkspaceConnection}
-          onOpenTable={props.onOpenTable}
-          onOpenSchemaDiff={props.onOpenSchemaDiff}
-          onEdit={props.onEditConnection}
-          onDeleted={props.onDeletedConnection}
-          onConnectionUpdated={props.onConnectionUpdated}
-          onNewConnection={props.onNewConnection}
-          onCreateDemoDatabase={props.onCreateDemoDatabase}
-          creatingDemo={creatingDemo}
-        />
-      )}
+      <div
+        className="tool-window-sidebar tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:max-[560px]:contents"
+        aria-hidden={!databaseExplorerOpen && !compact}
+        inert={!databaseExplorerOpen && !compact ? true : undefined}
+      >
+        {area === "dashboard" &&
+        !settingsOpen &&
+        editing === null &&
+        !activeSchemaGroup ? (
+          <DashboardSidebar
+            workspaceHeader={
+              <WorkspaceSwitcher
+                onNew={props.onNewConnection}
+                onChanged={props.onWorkspaceScopeChanged}
+              />
+            }
+            connections={connections}
+            selectedId={selectedId}
+            focusId={dashboardFocusId}
+            onSelectConnection={props.onSelectDashboardConnection}
+            onFocus={props.onDashboardFocus}
+          />
+        ) : (
+          <DatabaseExplorer
+            workspaceHeader={
+              <WorkspaceSwitcher
+                onNew={props.onNewConnection}
+                onChanged={props.onWorkspaceScopeChanged}
+              />
+            }
+            connections={connections}
+            selectedId={selectedId}
+            selectedTableKey={selectedTable ? tableKey(selectedTable) : null}
+            activeSchemaGroupKey={activeSchemaGroupKey}
+            onSelectConn={props.onSelectWorkspaceConnection}
+            onOpenTable={props.onOpenTable}
+            onOpenSchemaDiff={props.onOpenSchemaDiff}
+            onEdit={props.onEditConnection}
+            onDeleted={props.onDeletedConnection}
+            onConnectionUpdated={props.onConnectionUpdated}
+            onNewConnection={props.onNewConnection}
+            onCreateDemoDatabase={props.onCreateDemoDatabase}
+            creatingDemo={creatingDemo}
+          />
+        )}
+      </div>
 
       <button
         type="button"
@@ -196,13 +217,14 @@ export default function ShellLayout(props: Props) {
       />
       <div
         className="sidebar-resizer tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[560px]:hidden"
+        hidden={!databaseExplorerOpen}
         title={t("app.dragResize")}
         onMouseDown={props.onStartSidebarDrag}
         onDoubleClick={props.onResetSidebar}
       />
       <main
         ref={mainRef}
-        className="main tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:bg-transparent tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:max-[560px]:min-h-0 tw:max-[560px]:pt-[var(--ds-window-controls-safe-height)]"
+        className="main tw:m-1 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:max-[560px]:m-0 tw:max-[560px]:min-h-0 tw:max-[560px]:rounded-none tw:max-[560px]:border-0 tw:max-[560px]:pt-[var(--ds-window-controls-safe-height)]"
         tabIndex={-1}
         inert={mobileExplorerOpen ? true : undefined}
       >

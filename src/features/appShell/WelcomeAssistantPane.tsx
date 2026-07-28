@@ -14,7 +14,7 @@ export default function WelcomeAssistantPane({
 
   return (
     <aside
-      className="ide-assistant-welcome tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:border-l tw:border-border-subtle tw:bg-background"
+      className="ide-assistant-welcome tw:m-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background"
       aria-label={t("tabs.agent")}
     >
       <ToolWindowHeader
