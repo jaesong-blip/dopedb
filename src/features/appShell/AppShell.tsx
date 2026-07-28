@@ -285,13 +285,6 @@ function Shell() {
     setArea("workspace");
   }
 
-  function openAgentToolsSettings() {
-    setSettingsSection("agent-tools");
-    setSettingsOpen(true);
-    setSchemaDiffGroupKey(null);
-    setEditing(null);
-  }
-
   function openAgentArchiveSettings() {
     setSettingsSection("archive");
     setSettingsOpen(true);
@@ -705,9 +698,6 @@ function Shell() {
       }}
       onRetryConnections={() => void refresh()}
       onNewConnection={startNewConnection}
-      onOpenAgentTools={openAgentToolsSettings}
-      onCreateDemoDatabase={() => void createDemoDatabase()}
-      creatingDemo={creatingDemo}
       onSelectConnection={(id) => selectConnection(id, area)}
       onActivateDocument={workbench.activateId}
       onCloseDocument={closeDocument}
@@ -794,7 +784,6 @@ function Shell() {
         setMobileExplorerOpen(false);
       }}
       onNewQuery={() => void openQueryDocument()}
-      onOpenAgentTools={openAgentToolsSettings}
       onOpenAgentArchive={openAgentArchiveSettings}
       onOpenTerminal={openOrFocusTerminalDock}
       onSearchEverywhere={() => setSearchEverywhereOpen(true)}

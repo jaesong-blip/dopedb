@@ -3,49 +3,35 @@ import { defineCatalog } from "../types";
 
 export const onboardingCatalog = defineCatalog(
   {
-    "onboarding.addConnection": "Add connection",
-    "onboarding.agentBody":
-      "Install the version-matched DopeDB Skill for Codex or Claude Code. The agent uses the local DopeDB CLI, while this app keeps database access visible and controlled.",
-    "onboarding.agentTitle": "Connect your AI agent",
-    "onboarding.databaseBody":
-      "Add a PostgreSQL, MySQL, or SQLite connection. Credentials are stored in your OS credential store - never in plain text.",
-    "onboarding.databaseTitle": "Connect a database",
-    "onboarding.demoAction": "Create Demo SQLite",
-    "onboarding.demoBody":
-      "Create a local sample database with customers, products, orders, and query-ready relationships.",
-    "onboarding.demoCreating": "Creating demo...",
+    "onboarding.explorerBody":
+      "Create a data source, connect a cloud account, or build the local Demo SQLite from Database Explorer.",
+    "onboarding.explorerTitle": "Start in Database Explorer",
     "onboarding.foot":
-      "You can do both, or start with just a database and add the agent later.",
+      "Data-source actions stay in Explorer. Agent sessions appear in AI Chat after a connection is selected.",
     "onboarding.lead":
-      "A safe database client for the AI era. Your agent queries and edits databases through DopeDB, which keeps everything read-only by default, requires a human click for writes, and audits every statement.",
-    "onboarding.quickTour": "Take a quick tour",
-    "onboarding.quickTourBody":
-      "Connect a data source, browse objects, open a data editor, and run a safe query.",
-    "onboarding.startWithConnection": "Data Sources",
-    "onboarding.setupAgentTools": "Set up agent tools",
+      "Connect a data source from the tool window on the left, then browse objects or open a query console.",
+    "onboarding.safetyBody":
+      "Connections start read-only. Write operations still require review and are recorded in the activity ledger.",
+    "onboarding.safetyTitle": "Safety remains visible",
+    "onboarding.searchBody":
+      "Use the search button or press Shift twice to find commands, data sources, documents, objects, and settings.",
+    "onboarding.searchTitle": "Search Everywhere",
     "onboarding.title": "Welcome to DopeDB",
   },
   {
-    "onboarding.addConnection": "연결 추가",
-    "onboarding.agentBody":
-      "Codex 또는 Claude Code에 현재 앱 버전과 맞는 DopeDB 스킬을 설치하세요. 에이전트는 로컬 DopeDB CLI를 사용하고, 이 앱은 데이터베이스 접근을 표시하고 제어합니다.",
-    "onboarding.agentTitle": "AI 에이전트 연결",
-    "onboarding.databaseBody":
-      "PostgreSQL, MySQL, SQLite 연결을 추가하세요. 인증 정보는 OS 보안 저장소에 저장되며 평문으로 남지 않습니다.",
-    "onboarding.databaseTitle": "데이터베이스 연결",
-    "onboarding.demoAction": "Demo SQLite 생성",
-    "onboarding.demoBody":
-      "고객, 상품, 주문 및 쿼리 가능한 관계가 포함된 로컬 샘플 데이터베이스를 생성합니다.",
-    "onboarding.demoCreating": "데모 생성 중...",
+    "onboarding.explorerBody":
+      "데이터베이스 탐색기에서 데이터 소스를 만들고 클라우드 계정을 연결하거나 로컬 Demo SQLite를 생성하세요.",
+    "onboarding.explorerTitle": "데이터베이스 탐색기에서 시작",
     "onboarding.foot":
-      "둘 다 설정해도 좋고, 데이터베이스부터 연결한 뒤 에이전트를 나중에 추가해도 됩니다.",
+      "데이터 소스 작업은 탐색기에만 둡니다. 연결을 선택하면 Agent 세션은 AI Chat에 표시됩니다.",
     "onboarding.lead":
-      "AI 시대를 위한 안전한 데이터베이스 클라이언트입니다. 에이전트는 DopeDB를 통해 데이터베이스를 조회하고 수정하며, 기본은 읽기 전용이고 쓰기는 사람이 클릭으로 승인하며 모든 문장을 감사 로그로 남깁니다.",
-    "onboarding.quickTour": "빠른 둘러보기",
-    "onboarding.quickTourBody":
-      "데이터 소스를 연결하고 객체를 탐색한 뒤 데이터 편집기와 안전한 쿼리를 사용해 보세요.",
-    "onboarding.startWithConnection": "데이터 소스",
-    "onboarding.setupAgentTools": "에이전트 도구 설정",
+      "왼쪽 도구 창에서 데이터 소스를 연결한 뒤 객체를 탐색하거나 쿼리 콘솔을 여세요.",
+    "onboarding.safetyBody":
+      "연결은 읽기 전용으로 시작합니다. 쓰기는 계속 검토가 필요하며 활동 원장에 기록됩니다.",
+    "onboarding.safetyTitle": "안전 상태를 계속 표시",
+    "onboarding.searchBody":
+      "검색 버튼 또는 Shift 두 번으로 명령, 데이터 소스, 문서, 객체와 설정을 찾으세요.",
+    "onboarding.searchTitle": "전체 검색",
     "onboarding.title": "DopeDB에 오신 것을 환영합니다",
   },
 );

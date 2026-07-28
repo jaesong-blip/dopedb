@@ -17,7 +17,6 @@ import { DashboardSidebar } from "../../screens/Dashboards";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { EditingConnection } from "./WorkbenchContent";
 import { IdeStatusBar, IdeTopBar } from "./IdeChrome";
-import WelcomeAssistantPane from "./WelcomeAssistantPane";
 import WorkbenchRail, { type AppArea } from "./WorkbenchRail";
 
 const IS_MACOS =
@@ -68,7 +67,6 @@ type Props = {
   onResetServicesHeight: () => void;
   onSettings: () => void;
   onNewQuery: () => void;
-  onOpenAgentTools: () => void;
   onOpenAgentArchive: () => void;
   onOpenTerminal: () => void;
   onSearchEverywhere: () => void;
@@ -123,20 +121,15 @@ export default function ShellLayout(props: Props) {
     creatingDemo,
   } = props;
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
-  const showWelcomeAssistant =
-    connections.length === 0 && editing === null && !settingsOpen;
   const rightDockWidth = showTerminalDock && !terminalOverlay
     ? terminalWidth
-    : showWelcomeAssistant
-      ? 328
-      : 0;
+    : 0;
 
   return (
     <div
       className="app"
       data-platform={IS_MACOS ? "macos" : "other"}
       data-terminal-open={showTerminalDock}
-      data-welcome-assistant-open={showWelcomeAssistant}
       data-mobile-explorer-open={mobileExplorerOpen}
       data-database-explorer-open={databaseExplorerOpen}
       data-services-open={servicesOpen}
@@ -286,10 +279,6 @@ export default function ShellLayout(props: Props) {
           onOpenArchive={props.onOpenAgentArchive}
           onClose={props.onCloseTerminal}
         />
-      )}
-
-      {showWelcomeAssistant && (
-        <WelcomeAssistantPane onOpenAgentTools={props.onOpenAgentTools} />
       )}
 
       {servicesOpen && (

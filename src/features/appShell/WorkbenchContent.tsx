@@ -63,9 +63,6 @@ type Props = {
   onCancelEditing: () => void;
   onRetryConnections: () => void;
   onNewConnection: () => void;
-  onOpenAgentTools: () => void;
-  onCreateDemoDatabase: () => void;
-  creatingDemo: boolean;
   onSelectConnection: (id: string) => void;
   onActivateDocument: (id: string) => void;
   onCloseDocument: (id: string) => void;
@@ -161,14 +158,7 @@ export default function WorkbenchContent(props: Props) {
   }
 
   if (connections.length === 0) {
-    return (
-      <Onboarding
-        onNewConnection={props.onNewConnection}
-        onOpenAgentTools={props.onOpenAgentTools}
-        onCreateDemoDatabase={props.onCreateDemoDatabase}
-        creatingDemo={props.creatingDemo}
-      />
-    );
+    return <Onboarding />;
   }
 
   const safetyFallback = safetyError ? (
