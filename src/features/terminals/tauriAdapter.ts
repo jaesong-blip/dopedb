@@ -1,6 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type {
+  SkillSetupTerminalCreateRequest,
+  SkillSetupTerminalSessionSummary,
   TerminalCreateRequest,
   TerminalFocusReceipt,
   TerminalOutputChunk,
@@ -72,6 +74,33 @@ export function terminalRename(
   name: string,
 ): Promise<TerminalSessionSummary> {
   return invoke("terminal_rename", { id, name });
+}
+
+export function skillSetupTerminalCreate(
+  request: SkillSetupTerminalCreateRequest,
+  onOutput: Channel<TerminalOutputChunk>,
+): Promise<SkillSetupTerminalSessionSummary> {
+  return invoke("skill_setup_terminal_create", { request, onOutput });
+}
+
+export function skillSetupTerminalWrite(
+  id: TerminalSessionId,
+  bytes: number[],
+): Promise<void> {
+  return invoke("skill_setup_terminal_write", { id, bytes });
+}
+
+export function skillSetupTerminalResize(
+  id: TerminalSessionId,
+  size: TerminalSize,
+): Promise<void> {
+  return invoke("skill_setup_terminal_resize", { id, size });
+}
+
+export function skillSetupTerminalClose(
+  id: TerminalSessionId,
+): Promise<void> {
+  return invoke("skill_setup_terminal_close", { id });
 }
 
 export function terminalShutdownAll(): Promise<void> {

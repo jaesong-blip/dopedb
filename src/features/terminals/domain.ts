@@ -39,6 +39,10 @@ export interface TerminalCreateRequest {
   name?: string | null;
 }
 
+export interface SkillSetupTerminalCreateRequest {
+  size: TerminalSize;
+}
+
 export interface TerminalConnectionPin {
   workspaceId: WorkspaceId;
   accountScope: string;
@@ -71,6 +75,15 @@ export interface TerminalSessionSummary {
   exit: TerminalExit | null;
 }
 
+export interface SkillSetupTerminalSessionSummary {
+  id: TerminalSessionId;
+  lifecycle: TerminalLifecycle;
+  size: TerminalSize;
+  createdAt: string;
+  lastActivityAt: string;
+  exit: TerminalExit | null;
+}
+
 export interface TerminalOutputChunk {
   sessionId: TerminalSessionId;
   sequence: number;
@@ -90,6 +103,15 @@ export interface TerminalStateEvent {
 }
 
 export interface TerminalExitEvent {
+  sessionId: TerminalSessionId;
+  exit: TerminalExit;
+}
+
+export interface SkillSetupTerminalStateEvent {
+  session: SkillSetupTerminalSessionSummary;
+}
+
+export interface SkillSetupTerminalExitEvent {
   sessionId: TerminalSessionId;
   exit: TerminalExit;
 }

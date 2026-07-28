@@ -6,13 +6,53 @@ use crate::error::AppResult;
 use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 
 use super::domain::{
-    TerminalCreateRequest, TerminalFocusReceipt, TerminalSessionSummary, TerminalSize,
+    SkillSetupTerminalCreateRequest, SkillSetupTerminalSessionSummary, TerminalCreateRequest,
+    TerminalFocusReceipt, TerminalSessionSummary, TerminalSize,
 };
-use super::ports::TerminalSessionPort;
+use super::ports::{SkillSetupTerminalSessionPort, TerminalSessionPort};
 
 #[derive(Clone)]
 pub(crate) struct TerminalUseCases<P> {
     sessions: P,
+}
+
+#[derive(Clone)]
+pub(crate) struct SkillSetupTerminalUseCases<P> {
+    sessions: P,
+}
+
+impl<P> SkillSetupTerminalUseCases<P>
+where
+    P: SkillSetupTerminalSessionPort,
+{
+    pub(crate) fn new(sessions: P) -> Self {
+        Self { sessions }
+    }
+
+    pub(crate) async fn create(
+        &self,
+        request: SkillSetupTerminalCreateRequest,
+        output: P::OutputSink,
+        events: P::EventSink,
+    ) -> AppResult<SkillSetupTerminalSessionSummary> {
+        self.sessions.create(request, output, events).await
+    }
+
+    pub(crate) async fn write(&self, id: TerminalSessionId, bytes: Vec<u8>) -> AppResult<()> {
+        self.sessions.write(id, bytes).await
+    }
+
+    pub(crate) async fn resize(&self, id: TerminalSessionId, size: TerminalSize) -> AppResult<()> {
+        self.sessions.resize(id, size).await
+    }
+
+    pub(crate) async fn close(&self, id: TerminalSessionId, events: P::EventSink) -> AppResult<()> {
+        self.sessions.close(id, events).await
+    }
+
+    pub(crate) fn shutdown_all(&self, events: &P::EventSink, timeout: Duration) {
+        self.sessions.shutdown_all(events, timeout);
+    }
 }
 
 impl<P> TerminalUseCases<P>

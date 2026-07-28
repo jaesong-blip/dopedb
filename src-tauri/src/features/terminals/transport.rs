@@ -8,8 +8,8 @@ use crate::kernel::identity::TerminalSessionId;
 use crate::state::AppState;
 
 use super::{
-    TerminalCreateRequest, TerminalFocusReceipt, TerminalOutputChunk, TerminalSessionSummary,
-    TerminalSize,
+    SkillSetupTerminalCreateRequest, SkillSetupTerminalSessionSummary, TerminalCreateRequest,
+    TerminalFocusReceipt, TerminalOutputChunk, TerminalSessionSummary, TerminalSize,
 };
 
 #[tauri::command]
@@ -91,6 +91,46 @@ pub async fn terminal_rename(
     app: AppHandle,
 ) -> AppResult<TerminalSessionSummary> {
     state.terminals.rename(id, name, app).await
+}
+
+#[tauri::command]
+pub async fn skill_setup_terminal_create(
+    request: SkillSetupTerminalCreateRequest,
+    on_output: Channel<TerminalOutputChunk>,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> AppResult<SkillSetupTerminalSessionSummary> {
+    state
+        .terminals
+        .create_skill_setup(request, on_output, app)
+        .await
+}
+
+#[tauri::command]
+pub async fn skill_setup_terminal_write(
+    id: TerminalSessionId,
+    bytes: Vec<u8>,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    state.terminals.write_skill_setup(id, bytes).await
+}
+
+#[tauri::command]
+pub async fn skill_setup_terminal_resize(
+    id: TerminalSessionId,
+    size: TerminalSize,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    state.terminals.resize_skill_setup(id, size).await
+}
+
+#[tauri::command]
+pub async fn skill_setup_terminal_close(
+    id: TerminalSessionId,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> AppResult<()> {
+    state.terminals.close_skill_setup(id, app).await
 }
 
 #[tauri::command]

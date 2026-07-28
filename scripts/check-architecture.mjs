@@ -1366,6 +1366,73 @@ forbid("src-tauri/src/features/terminals/transport.rs", [
   [/\b(?:DesktopTerminalAdapter|PtyTerminalRuntime)\b/, "Terminal transport must delegate to the feature use cases"],
   [/\bportable_pty\b/, "Terminal transport must not create or control PTYs"],
 ]);
+for (const filePath of [
+  "src-tauri/src/features/terminals/adapters/setup_desktop.rs",
+  "src-tauri/src/features/terminals/adapters/setup_runtime.rs",
+  "src-tauri/src/features/terminals/adapters/setup_session.rs",
+]) {
+  requireFile(filePath);
+  forbid(filePath, [
+    [
+      /crate::broker|\b(?:BrokerRuntime|BrokerSessionRegistry|BrokerCapability)\b/,
+      "Skill setup Terminal must not receive Broker authority",
+    ],
+    [
+      /\b(?:ConnectionId|WorkspaceId|AccountId|PinnedConnection|TerminalConnectionPin|connection_pin)\b/,
+      "Skill setup Terminal must not receive a connection pin",
+    ],
+    [
+      /crate::store/,
+      "Skill setup Terminal must not read workspace or connection state",
+    ],
+  ]);
+}
+const setupEnvironmentSource = read(
+  "src-tauri/src/features/terminals/adapters/environment.rs",
+);
+const setupEnvironmentBody = setupEnvironmentSource.match(
+  /pub\(super\) fn command_for_skill_setup\([\s\S]*?\n}\n\nfn agent_executable/,
+)?.[0];
+const setupShellBody = setupEnvironmentSource.match(
+  /fn skill_setup_shell_command\(\)[\s\S]*?\n}\n\nfn apply_environment/,
+)?.[0];
+const baseEnvironmentBody = setupEnvironmentSource.match(
+  /fn apply_base_environment\([\s\S]*?\n}\n\nfn terminal_path/,
+)?.[0];
+if (!setupEnvironmentBody) {
+  fail("Skill setup Terminal environment constructor is missing");
+}
+if (
+  !setupShellBody ||
+  !setupShellBody.includes('CommandBuilder::new("/bin/sh")') ||
+  !setupShellBody.includes('"-NoProfile"') ||
+  setupShellBody.includes('var_os("SHELL")')
+) {
+  fail("Skill setup Terminal must use profile-free platform shells");
+}
+if (!baseEnvironmentBody) {
+  fail("Skill setup Terminal minimal environment constructor is missing");
+}
+for (const forbidden of [
+  "DOPEDB_TERMINAL_SESSION_ID",
+  "DOPEDB_CONNECTION_SCOPE",
+  "DOPEDB_SESSION_TOKEN",
+  "DOPEDB_RUNTIME_FILE",
+]) {
+  if (
+    setupEnvironmentBody.includes(forbidden) ||
+    baseEnvironmentBody.includes(forbidden)
+  ) {
+    fail(`Skill setup Terminal environment received forbidden authority: ${forbidden}`);
+  }
+}
+const terminalFeatureSource = read("src-tauri/src/features/terminals/mod.rs");
+const terminalListBody = terminalFeatureSource.match(
+  /pub\(crate\) fn list\(&self\)[\s\S]*?\n    }\n\n    pub\(crate\) async fn focus/,
+)?.[0];
+if (!terminalListBody || terminalListBody.includes("skill_setup")) {
+  fail("connectionless Skill setup sessions must not enter terminal_list");
+}
 forbid("src-tauri/src/features/agents/transport.rs", [
   [/crate::store/, "Agent transport must delegate archive reads"],
   [/\bstd::process\b/, "Agent transport must delegate CLI probing"],
@@ -1601,6 +1668,10 @@ const terminalCommands = [
   "terminal_close",
   "terminal_restart",
   "terminal_rename",
+  "skill_setup_terminal_create",
+  "skill_setup_terminal_write",
+  "skill_setup_terminal_resize",
+  "skill_setup_terminal_close",
   "terminal_shutdown_all",
 ];
 for (const command of terminalCommands) {
@@ -1747,7 +1818,7 @@ forbid("src/ipc/types.ts", [
     "dashboard contract returned to the central IPC type file",
   ],
   [
-    /\bTerminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)\b/,
+    /\b(?:Terminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)|SkillSetupTerminal(?:CreateRequest|SessionSummary|StateEvent|ExitEvent))\b/,
     "Terminal contract returned to the central IPC type file",
   ],
   [
@@ -1787,7 +1858,7 @@ forbid("src/ipc/commands.ts", [
     "dashboard commands returned to the central IPC facade",
   ],
   [
-    /\b(?:terminalOutputChannel|terminalCreate|terminalList|terminalFocus|terminalWrite|terminalResize|terminalKill|terminalClose|terminalRestart|terminalRename|terminalShutdownAll)\b/,
+    /\b(?:terminalOutputChannel|terminalCreate|terminalList|terminalFocus|terminalWrite|terminalResize|terminalKill|terminalClose|terminalRestart|terminalRename|skillSetupTerminalCreate|skillSetupTerminalWrite|skillSetupTerminalResize|skillSetupTerminalClose|terminalShutdownAll)\b/,
     "Terminal commands returned to the central IPC facade",
   ],
   [
@@ -1822,14 +1893,14 @@ for (const [filePath, source] of frontendSource) {
     fail(`${filePath}: imports ConnectionProfile from the removed central owner`);
   }
   if (
-    /import\s+(?:type\s+)?\{[^}]*\bTerminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
+    /import\s+(?:type\s+)?\{[^}]*\b(?:Terminal(?:SessionId|CreateRequest|FocusReceipt|OutputChunk|SessionSummary|Size|ConnectionPin|Exit|StateEvent|ExitEvent|Profile|Lifecycle|DatabasePolicy)|SkillSetupTerminal(?:CreateRequest|SessionSummary|StateEvent|ExitEvent))\b[^}]*\}\s*from\s*["'][^"']*ipc\/types["']/.test(
       source,
     )
   ) {
     fail(`${filePath}: imports a Terminal contract from the removed central owner`);
   }
   if (
-    /import\s*\{[^}]*\bterminal(?:OutputChannel|Create|List|Focus|Write|Resize|Kill|Close|Restart|Rename|ShutdownAll)\b[^}]*\}\s*from\s*["'][^"']*ipc\/commands["']/.test(
+    /import\s*\{[^}]*\b(?:terminal(?:OutputChannel|Create|List|Focus|Write|Resize|Kill|Close|Restart|Rename|ShutdownAll)|skillSetupTerminal(?:Create|Write|Resize|Close))\b[^}]*\}\s*from\s*["'][^"']*ipc\/commands["']/.test(
       source,
     )
   ) {

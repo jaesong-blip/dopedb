@@ -49,6 +49,11 @@ pub(super) struct LaunchEnvironment<'a> {
     pub working_directory: &'a Path,
 }
 
+pub(super) struct SkillSetupLaunchEnvironment<'a> {
+    pub cli_directory: &'a Path,
+    pub working_directory: &'a Path,
+}
+
 pub(super) fn command_for_profile(
     profile: TerminalProfile,
     environment: LaunchEnvironment<'_>,
@@ -59,6 +64,18 @@ pub(super) fn command_for_profile(
         TerminalProfile::Claude => agent_command("claude", "Claude Code")?,
     };
     apply_environment(&mut command, environment)?;
+    Ok(command)
+}
+
+pub(super) fn command_for_skill_setup(
+    environment: SkillSetupLaunchEnvironment<'_>,
+) -> AppResult<CommandBuilder> {
+    let mut command = skill_setup_shell_command()?;
+    apply_base_environment(
+        &mut command,
+        environment.cli_directory,
+        environment.working_directory,
+    )?;
     Ok(command)
 }
 
@@ -138,9 +155,63 @@ fn shell_command() -> AppResult<CommandBuilder> {
     }
 }
 
+fn skill_setup_shell_command() -> AppResult<CommandBuilder> {
+    #[cfg(windows)]
+    {
+        let system_root = std::env::var_os("SystemRoot")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .ok_or_else(|| {
+                AppError::Config(
+                    "the Windows system directory is unavailable for Skill setup".into(),
+                )
+            })?;
+        let program = system_root
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        let mut command = CommandBuilder::new(program);
+        command.args(["-NoLogo", "-NoProfile", "-NoExit"]);
+        Ok(command)
+    }
+    #[cfg(not(windows))]
+    {
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.arg("-i");
+        Ok(command)
+    }
+}
+
 fn apply_environment(
     command: &mut CommandBuilder,
     environment: LaunchEnvironment<'_>,
+) -> AppResult<()> {
+    apply_base_environment(
+        command,
+        environment.cli_directory,
+        environment.working_directory,
+    )?;
+    command.env(
+        "DOPEDB_TERMINAL_SESSION_ID",
+        environment.session_id.to_string(),
+    );
+    command.env(
+        "DOPEDB_CONNECTION_SCOPE",
+        environment.connection_id.to_string(),
+    );
+    command.env("DOPEDB_SESSION_TOKEN", environment.session_token);
+    if let Some(runtime_file) = environment.runtime_file {
+        command.env("DOPEDB_RUNTIME_FILE", runtime_file.as_os_str());
+    }
+    Ok(())
+}
+
+fn apply_base_environment(
+    command: &mut CommandBuilder,
+    cli_directory: &Path,
+    working_directory: &Path,
 ) -> AppResult<()> {
     command.env_clear();
     let mut allowed = COMMON_ENVIRONMENT.iter().copied().collect::<BTreeSet<_>>();
@@ -154,25 +225,13 @@ fn apply_environment(
         }
     }
 
-    let path = terminal_path(environment.cli_directory)?;
+    let path = terminal_path(cli_directory)?;
     command.env("PATH", path);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
     command.env("TERM_PROGRAM", "DopeDB");
     command.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
-    command.env(
-        "DOPEDB_TERMINAL_SESSION_ID",
-        environment.session_id.to_string(),
-    );
-    command.env(
-        "DOPEDB_CONNECTION_SCOPE",
-        environment.connection_id.to_string(),
-    );
-    command.env("DOPEDB_SESSION_TOKEN", environment.session_token);
-    if let Some(runtime_file) = environment.runtime_file {
-        command.env("DOPEDB_RUNTIME_FILE", runtime_file.as_os_str());
-    }
-    command.cwd(environment.working_directory.as_os_str());
+    command.cwd(working_directory.as_os_str());
     Ok(())
 }
 
@@ -198,189 +257,5 @@ pub(super) fn neutral_working_directory() -> AppResult<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn terminal_path_puts_the_bundled_cli_first_without_duplicates() {
-        let directory = std::env::temp_dir().join("dopedb-cli-fixture");
-        let path = terminal_path(&directory).unwrap();
-        let paths = std::env::split_paths(&path).collect::<Vec<_>>();
-        assert_eq!(
-            paths.first().map(PathBuf::as_path),
-            Some(directory.as_path())
-        );
-        assert_eq!(
-            paths
-                .iter()
-                .filter(|path| path.as_path() == directory.as_path())
-                .count(),
-            1
-        );
-    }
-
-    #[test]
-    fn terminal_environment_has_only_the_ephemeral_broker_authority() {
-        let session_id = TerminalSessionId::from(uuid::Uuid::new_v4());
-        let connection_id = ConnectionId::from(uuid::Uuid::new_v4());
-        let cli_directory = std::env::temp_dir().join("dopedb-cli-fixture");
-        let working_directory = std::env::temp_dir();
-        let runtime_file = working_directory.join("runtime.json");
-        let command = command_for_profile(
-            TerminalProfile::Shell,
-            LaunchEnvironment {
-                session_id,
-                connection_id,
-                session_token: "ephemeral-session-token",
-                runtime_file: Some(&runtime_file),
-                cli_directory: &cli_directory,
-                working_directory: &working_directory,
-            },
-        )
-        .unwrap();
-        let session_id_text = session_id.to_string();
-        let connection_id_text = connection_id.to_string();
-
-        assert_eq!(
-            command
-                .get_env("DOPEDB_TERMINAL_SESSION_ID")
-                .and_then(OsStr::to_str),
-            Some(session_id_text.as_str())
-        );
-        assert_eq!(
-            command
-                .get_env("DOPEDB_CONNECTION_SCOPE")
-                .and_then(OsStr::to_str),
-            Some(connection_id_text.as_str())
-        );
-        assert_eq!(
-            command.get_env("DOPEDB_SESSION_TOKEN"),
-            Some(OsStr::new("ephemeral-session-token"))
-        );
-        assert_eq!(
-            command.get_env("DOPEDB_RUNTIME_FILE"),
-            Some(runtime_file.as_os_str())
-        );
-        for forbidden in [
-            "DATABASE_URL",
-            "DATABASE_URL_UNPOOLED",
-            "PGPASSWORD",
-            "POSTGRES_PASSWORD",
-            "MYSQL_PWD",
-            "MONGODB_URI",
-            "AWS_SECRET_ACCESS_KEY",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "SSH_AUTH_SOCK",
-            "OPENAI_API_KEY",
-            "ANTHROPIC_API_KEY",
-            "BETTER_AUTH_SECRET",
-            "DOPEDB_MCP_TOKEN",
-        ] {
-            assert!(
-                command.get_env(forbidden).is_none(),
-                "{forbidden} must not enter a Terminal child"
-            );
-        }
-        assert!(
-            command
-                .get_argv()
-                .iter()
-                .all(|argument| argument != "ephemeral-session-token"),
-            "the session capability must not enter argv"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn secret_free_environment_runs_through_an_interactive_pty() {
-        use std::io::{Read, Write};
-
-        use portable_pty::{native_pty_system, PtySize};
-
-        let session_id = TerminalSessionId::from(uuid::Uuid::new_v4());
-        let connection_id = ConnectionId::from(uuid::Uuid::new_v4());
-        let working_directory = std::env::temp_dir();
-        let mut command = CommandBuilder::new("/bin/sh");
-        apply_environment(
-            &mut command,
-            LaunchEnvironment {
-                session_id,
-                connection_id,
-                session_token: "ephemeral-session-token",
-                runtime_file: None,
-                cli_directory: &working_directory,
-                working_directory: &working_directory,
-            },
-        )
-        .unwrap();
-        let pair = native_pty_system()
-            .openpty(PtySize {
-                rows: 20,
-                cols: 80,
-                pixel_width: 640,
-                pixel_height: 400,
-            })
-            .unwrap();
-        let mut child = pair.slave.spawn_command(command).unwrap();
-        drop(pair.slave);
-        let mut reader = pair.master.try_clone_reader().unwrap();
-        let (output_tx, output_rx) = std::sync::mpsc::channel();
-        let reader_thread = std::thread::spawn(move || {
-            let mut output = Vec::new();
-            reader.read_to_end(&mut output).unwrap();
-            output_tx.send(output).unwrap();
-        });
-        let mut writer = pair.master.take_writer().unwrap();
-        pair.master
-            .resize(PtySize {
-                rows: 30,
-                cols: 100,
-                pixel_width: 800,
-                pixel_height: 600,
-            })
-            .unwrap();
-        #[cfg(target_os = "macos")]
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        write!(
-            writer,
-            "printf 'pty-ok:%s:%s\\n' \"$DOPEDB_CONNECTION_SCOPE\" \"${{DATABASE_URL:+leaked}}\"; exit\r\n"
-        )
-        .unwrap();
-        writer.flush().unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        let status = loop {
-            if let Some(status) = child.try_wait().unwrap() {
-                break status;
-            }
-            if std::time::Instant::now() >= deadline {
-                child.kill().unwrap();
-                let _ = child.wait();
-                drop(writer);
-                drop(pair.master);
-                let output = output_rx
-                    .recv_timeout(std::time::Duration::from_secs(1))
-                    .unwrap_or_default();
-                panic!(
-                    "the interactive PTY shell did not exit: {:?}",
-                    String::from_utf8_lossy(&output)
-                );
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        };
-        assert!(status.success());
-        drop(writer);
-        drop(pair.master);
-        let output = output_rx
-            .recv_timeout(std::time::Duration::from_secs(1))
-            .unwrap();
-        reader_thread.join().unwrap();
-        let output = String::from_utf8_lossy(&output);
-        let expected = format!("pty-ok:{connection_id}:");
-        assert!(
-            output
-                .lines()
-                .any(|line| line.trim_end_matches('\r') == expected),
-            "unexpected PTY output: {output:?}"
-        );
-    }
-}
+#[path = "environment_tests.rs"]
+mod tests;
