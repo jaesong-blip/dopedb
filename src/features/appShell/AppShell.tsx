@@ -782,6 +782,8 @@ function Shell() {
       servicesHeight={servicesHeight}
       queryServiceSessions={queryServices.sessions}
       activeQueryServiceSessionId={queryServices.activeSessionId}
+      workbenchDocuments={selectedDocuments}
+      activeWorkbenchDocumentId={activeDocumentId}
       sidebarWidth={sidebarW}
       mainRef={mainRef}
       mainContent={mainContent}
@@ -814,6 +816,7 @@ function Shell() {
       onToggleServices={toggleServices}
       onCloseServices={closeServices}
       onActivateQueryServiceSession={queryServices.activateSession}
+      onActivateWorkbenchDocument={workbench.activateId}
       onStartServicesResize={startServicesResize}
       onResetServicesHeight={resetServicesHeight}
       onSettings={() => {

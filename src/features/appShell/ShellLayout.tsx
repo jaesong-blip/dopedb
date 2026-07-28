@@ -5,6 +5,7 @@ import { Icon } from "../../components/Icon";
 import TerminalDock from "../../components/TerminalDock/TerminalDock";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
+import type { WorkbenchDocument } from "../workbench/domain";
 import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
 import WorkspaceAccount from "../workspaces/components/WorkspaceAccount";
 import WorkspaceSwitcher from "../workspaces/components/WorkspaceSwitcher";
@@ -42,6 +43,8 @@ type Props = {
   servicesHeight: number;
   queryServiceSessions: QueryServiceSession[];
   activeQueryServiceSessionId: string | null;
+  workbenchDocuments: WorkbenchDocument[];
+  activeWorkbenchDocumentId: string | null;
   sidebarWidth: number;
   mainRef: RefObject<HTMLElement | null>;
   mainContent: ReactNode;
@@ -60,6 +63,7 @@ type Props = {
   onToggleServices: () => void;
   onCloseServices: () => void;
   onActivateQueryServiceSession: (id: string) => void;
+  onActivateWorkbenchDocument: (id: string) => void;
   onStartServicesResize: (event: {
     preventDefault(): void;
     clientY: number;
@@ -110,6 +114,8 @@ export default function ShellLayout(props: Props) {
     servicesHeight,
     queryServiceSessions,
     activeQueryServiceSessionId,
+    workbenchDocuments,
+    activeWorkbenchDocumentId,
     sidebarWidth,
     mainRef,
     mainContent,
@@ -298,7 +304,11 @@ export default function ShellLayout(props: Props) {
         <QueryServicesToolWindow
           sessions={queryServiceSessions}
           activeSessionId={activeQueryServiceSessionId}
+          connections={connections}
+          documents={workbenchDocuments}
+          activeDocumentId={activeWorkbenchDocumentId}
           onActivate={props.onActivateQueryServiceSession}
+          onActivateDocument={props.onActivateWorkbenchDocument}
           onClose={props.onCloseServices}
           onStartResize={props.onStartServicesResize}
           onResetHeight={props.onResetServicesHeight}

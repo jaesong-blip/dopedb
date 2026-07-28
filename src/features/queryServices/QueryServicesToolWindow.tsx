@@ -3,6 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { StatusDot } from "../../design-system/components/Status";
 import { ToolWindowHeader } from "../../design-system/components/ToolWindow";
+import { TreeSectionButton } from "../../design-system/components/TreeControls";
+import type { ConnectionProfile } from "../connections/domain";
+import type { WorkbenchDocument } from "../workbench/domain";
 import { useI18n } from "../../lib/i18n";
 import type {
   QueryServiceSession,
@@ -15,14 +18,22 @@ type ServicesTab = "output" | "result";
 export default function QueryServicesToolWindow({
   sessions,
   activeSessionId,
+  connections,
+  documents,
+  activeDocumentId,
   onActivate,
+  onActivateDocument,
   onClose,
   onStartResize,
   onResetHeight,
 }: {
   sessions: QueryServiceSession[];
   activeSessionId: string | null;
+  connections: ConnectionProfile[];
+  documents: WorkbenchDocument[];
+  activeDocumentId: string | null;
   onActivate: (id: string) => void;
+  onActivateDocument: (id: string) => void;
   onClose: () => void;
   onStartResize: (event: {
     preventDefault(): void;
@@ -32,6 +43,10 @@ export default function QueryServicesToolWindow({
 }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<ServicesTab>("result");
+  const [databaseOpen, setDatabaseOpen] = useState(true);
+  const [collapsedConnections, setCollapsedConnections] = useState<Set<string>>(
+    () => new Set(),
+  );
   const active =
     sessions.find((session) => session.id === activeSessionId) ??
     sessions[0] ??
@@ -40,6 +55,29 @@ export default function QueryServicesToolWindow({
   useEffect(() => {
     if (!activeSessionId && sessions[0]) onActivate(sessions[0].id);
   }, [activeSessionId, onActivate, sessions]);
+
+  const serviceConnections = useMemo(() => {
+    const byId = new Map<string, ConnectionProfile>(
+      connections.map((connection) => [connection.id, connection]),
+    );
+    const visibleIds = new Set([
+      ...documents.map((document) => document.connectionId),
+      ...sessions.map((session) => session.connectionId),
+    ]);
+    return [...visibleIds].flatMap((id) => {
+      const connection = byId.get(id);
+      return connection ? [connection] : [];
+    });
+  }, [connections, documents, sessions]);
+
+  function toggleConnection(id: string) {
+    setCollapsedConnections((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <section
@@ -59,34 +97,88 @@ export default function QueryServicesToolWindow({
           role="tree"
           aria-label={t("services.sessions")}
         >
-          {sessions.length === 0 ? (
+          {serviceConnections.length === 0 ? (
             <p className="tw:m-0 tw:p-3 tw:text-sm tw:text-muted-foreground">
               {t("services.empty")}
             </p>
           ) : (
-            sessions.map((session) => (
-              <button
-                key={session.id}
-                type="button"
-                role="treeitem"
-                data-active={session.id === active?.id}
-                className="tw:grid tw:w-full tw:min-w-0 tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)] tw:items-start tw:gap-1 tw:rounded-sm tw:border-0 tw:bg-transparent tw:px-1 tw:py-1.5 tw:font-sans tw:text-left tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
-                onClick={() => onActivate(session.id)}
-                aria-selected={session.id === active?.id}
+            <>
+              <TreeSectionButton
+                expanded={databaseOpen}
+                icon="folder"
+                onToggle={() => setDatabaseOpen((open) => !open)}
               >
-                <span className="tw:grid tw:h-control-sm tw:place-items-center">
-                  <StatusDot tone={statusTone(session.status)} />
-                </span>
-                <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
-                  <strong className="tw:overflow-hidden tw:text-sm tw:font-medium tw:text-ellipsis tw:whitespace-nowrap">
-                    {session.consoleTitle}
-                  </strong>
-                  <small className="tw:overflow-hidden tw:text-2xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
-                    {session.connectionName} · {session.startedLabel}
-                  </small>
-                </span>
-              </button>
-            ))
+                {t("connections.database")}
+              </TreeSectionButton>
+              {databaseOpen && (
+                <div
+                  className="tw:flex tw:flex-col tw:gap-px tw:pl-3"
+                  role="group"
+                >
+                  {serviceConnections.map((connection) => {
+                    const connectionOpen =
+                      !collapsedConnections.has(connection.id);
+                    const connectionDocuments = documents.filter(
+                      (document) =>
+                        document.connectionId === connection.id,
+                    );
+                    const documentIds = new Set(
+                      connectionDocuments.map((document) => document.id),
+                    );
+                    const detachedSessions = sessions.filter(
+                      (session) =>
+                        session.connectionId === connection.id &&
+                        !documentIds.has(session.documentId),
+                    );
+                    return (
+                      <div
+                        className="tw:flex tw:flex-col tw:gap-px"
+                        key={connection.id}
+                        role="treeitem"
+                        aria-expanded={connectionOpen}
+                      >
+                        <TreeSectionButton
+                          expanded={connectionOpen}
+                          icon="database"
+                          onToggle={() => toggleConnection(connection.id)}
+                        >
+                          {connection.name}
+                        </TreeSectionButton>
+                        {connectionOpen && (
+                          <div
+                            className="tw:flex tw:flex-col tw:gap-px tw:pl-3"
+                            role="group"
+                          >
+                            {connectionDocuments.map((document) => (
+                              <ServiceDocumentNode
+                                key={document.id}
+                                document={document}
+                                active={document.id === activeDocumentId}
+                                sessions={sessions.filter(
+                                  (session) =>
+                                    session.documentId === document.id,
+                                )}
+                                activeSessionId={active?.id ?? null}
+                                onActivateDocument={onActivateDocument}
+                                onActivateSession={onActivate}
+                              />
+                            ))}
+                            {detachedSessions.map((session) => (
+                              <ServiceSessionRow
+                                key={session.id}
+                                session={session}
+                                active={session.id === active?.id}
+                                onActivate={onActivate}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       </aside>
@@ -147,6 +239,108 @@ export default function QueryServicesToolWindow({
         </div>
       </div>
     </section>
+  );
+}
+
+function ServiceDocumentNode({
+  document,
+  active,
+  sessions,
+  activeSessionId,
+  onActivateDocument,
+  onActivateSession,
+}: {
+  document: WorkbenchDocument;
+  active: boolean;
+  sessions: QueryServiceSession[];
+  activeSessionId: string | null;
+  onActivateDocument: (id: string) => void;
+  onActivateSession: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const latest = sessions[0] ?? null;
+  const icon =
+    document.kind === "data"
+      ? "table"
+      : document.kind === "sql" || document.kind === "documents"
+        ? "terminal"
+        : document.kind === "activity"
+          ? "history"
+          : "database";
+  const title =
+    document.kind === "data"
+      ? document.table.name
+      : document.kind === "sql"
+        ? document.title
+        : t(
+            document.kind === "activity"
+              ? "tabs.activity"
+              : document.kind === "documents"
+                ? "tabs.documents"
+                : "tabs.schema",
+          );
+  return (
+    <div className="tw:flex tw:flex-col tw:gap-px">
+      <button
+        type="button"
+        role="treeitem"
+        data-active={active}
+        aria-selected={active}
+        className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+        onClick={() => onActivateDocument(document.id)}
+      >
+        <Icon
+          name={icon}
+          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
+        />
+        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+          {title}
+        </span>
+        {latest ? <StatusDot tone={statusTone(latest.status)} /> : null}
+      </button>
+      {sessions.length > 0 && (
+        <div
+          className="tw:flex tw:flex-col tw:gap-px tw:pl-3"
+          role="group"
+        >
+          {sessions.map((session) => (
+            <ServiceSessionRow
+              key={session.id}
+              session={session}
+              active={session.id === activeSessionId}
+              onActivate={onActivateSession}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ServiceSessionRow({
+  session,
+  active,
+  onActivate,
+}: {
+  session: QueryServiceSession;
+  active: boolean;
+  onActivate: (id: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="treeitem"
+      data-active={active}
+      className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+      onClick={() => onActivate(session.id)}
+      aria-selected={active}
+      title={`${session.consoleTitle} · ${session.startedLabel}`}
+    >
+      <StatusDot tone={statusTone(session.status)} />
+      <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+        {session.startedLabel}
+      </span>
+    </button>
   );
 }
 
