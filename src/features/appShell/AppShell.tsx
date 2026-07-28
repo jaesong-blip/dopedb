@@ -680,6 +680,8 @@ function Shell() {
       availableUpdate={availableUpdate}
       showTerminalDock={showTerminalDock}
       terminalButtonRef={terminalButtonRef}
+      creatingDemo={creatingDemo}
+      onCreateDemoDatabase={() => void createDemoDatabase()}
       onCloseSettings={() => setSettingsOpen(false)}
       onUpdateChecked={syncAvailableUpdate}
       onRefreshSafety={refreshSafety}

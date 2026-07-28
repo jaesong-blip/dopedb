@@ -64,6 +64,8 @@ type Props = {
   onFilter: (value: string) => void;
   onOpenTable: (table: CatalogTable) => void;
   onShowDdl: (table: CatalogTable) => void;
+  onRequestDetails: () => void;
+  onRetryOverview: () => void;
   onToggleDefaultSection: (kind: "table" | "view") => void;
   onToggleObjectSection: (kind: string) => void;
 };
@@ -286,6 +288,8 @@ export default function ConnectionNode(props: Props) {
           onFilter={props.onFilter}
           onOpenTable={props.onOpenTable}
           onShowDdl={props.onShowDdl}
+          onRequestDetails={props.onRequestDetails}
+          onRetryOverview={props.onRetryOverview}
           onToggleDefaultSection={props.onToggleDefaultSection}
           onToggleObjectSection={props.onToggleObjectSection}
         />

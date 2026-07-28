@@ -296,6 +296,14 @@ export function DatabaseExplorer({
         onShowDdl={(table) =>
           commands.openDdlDialog({ connection, table })
         }
+        onRequestDetails={() => requestDetails(connection.id)}
+        onRetryOverview={() => {
+          commands.clearRefreshError(connection.id);
+          void queryClient.refetchQueries({
+            queryKey: qk.catalogOverview(connection.id, catalogScope.key),
+            exact: true,
+          });
+        }}
         onToggleDefaultSection={(kind) =>
           toggleDefaultOpenSection(connection.id, kind)
         }

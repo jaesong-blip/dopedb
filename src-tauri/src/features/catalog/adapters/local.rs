@@ -1,13 +1,15 @@
 //! Scope-pinned catalog and DDL adapter.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use dopedb_protocol::catalog::CatalogSnapshot;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::connection::{ensure_terminal_pin, ConnectionAccess, ConnectionManager};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::introspect::{self, CatalogReadMode};
 use crate::kernel::identity::ConnectionId;
 use crate::kernel::TerminalAuthority;
@@ -15,6 +17,23 @@ use crate::store::Store;
 
 use super::super::domain::{Catalog, CatalogOverview, CatalogReadPolicy};
 use super::super::ports::CatalogGatewayPort;
+
+const CATALOG_OVERVIEW_TIMEOUT: Duration = Duration::from_secs(20);
+const CATALOG_DETAIL_TIMEOUT: Duration = Duration::from_secs(60);
+const CATALOG_DDL_TIMEOUT: Duration = Duration::from_secs(30);
+
+async fn bounded_catalog_read<T>(
+    label: &'static str,
+    limit: Duration,
+    operation: impl Future<Output = AppResult<T>>,
+) -> AppResult<T> {
+    tokio::time::timeout(limit, operation).await.map_err(|_| {
+        AppError::Timeout(format!(
+            "{label} exceeded its {} second foreground limit; retry schema loading",
+            limit.as_secs()
+        ))
+    })?
+}
 
 impl From<CatalogReadPolicy> for CatalogReadMode {
     fn from(policy: CatalogReadPolicy) -> Self {
@@ -73,12 +92,15 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
         connection_id: ConnectionId,
         policy: CatalogReadPolicy,
     ) -> AppResult<Catalog> {
-        let context = self
-            .connections
-            .pin(connection_id.into(), ConnectionAccess::Read)
-            .await?;
-        let _load = self.loads.acquire(connection_id).await;
-        introspect::load_catalog_in_context(&self.store, context, policy.into()).await
+        bounded_catalog_read("catalog metadata", CATALOG_DETAIL_TIMEOUT, async {
+            let context = self
+                .connections
+                .pin(connection_id.into(), ConnectionAccess::Read)
+                .await?;
+            let _load = self.loads.acquire(connection_id).await;
+            introspect::load_catalog_in_context(&self.store, context, policy.into()).await
+        })
+        .await
     }
 
     async fn load_snapshot(
@@ -86,24 +108,30 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
         connection_id: ConnectionId,
         policy: CatalogReadPolicy,
     ) -> AppResult<CatalogSnapshot> {
-        let context = self
-            .connections
-            .pin(connection_id.into(), ConnectionAccess::Read)
-            .await?;
-        let _load = self.loads.acquire(connection_id).await;
-        introspect::load_catalog_snapshot_in_context(&self.store, context, policy.into()).await
+        bounded_catalog_read("catalog snapshot", CATALOG_DETAIL_TIMEOUT, async {
+            let context = self
+                .connections
+                .pin(connection_id.into(), ConnectionAccess::Read)
+                .await?;
+            let _load = self.loads.acquire(connection_id).await;
+            introspect::load_catalog_snapshot_in_context(&self.store, context, policy.into()).await
+        })
+        .await
     }
 
     async fn load_overview(&self, connection_id: ConnectionId) -> AppResult<CatalogOverview> {
         // An overview deliberately has no Store path. It may be displayed while the
         // detailed catalog is still deferred, so persisting it as a CatalogSnapshot
         // would let a partial shape poison full-catalog consumers.
-        let context = self
-            .connections
-            .pin(connection_id.into(), ConnectionAccess::Read)
-            .await?;
-        let lease = context.connect().await?;
-        introspect::overview(lease.live()).await
+        bounded_catalog_read("catalog overview", CATALOG_OVERVIEW_TIMEOUT, async move {
+            let context = self
+                .connections
+                .pin(connection_id.into(), ConnectionAccess::Read)
+                .await?;
+            let lease = context.connect().await?;
+            introspect::overview(lease.live()).await
+        })
+        .await
     }
 
     async fn load_terminal_snapshot(
@@ -111,14 +139,21 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
         authority: &TerminalAuthority,
         policy: CatalogReadPolicy,
     ) -> AppResult<CatalogSnapshot> {
-        let authority_context = self
-            .connections
-            .pin(authority.connection_id.into(), ConnectionAccess::Read)
-            .await?;
-        ensure_terminal_pin(authority, authority_context.pin())?;
-        let _load = self.loads.acquire(authority.connection_id).await;
-        introspect::load_catalog_snapshot_in_context(&self.store, authority_context, policy.into())
+        bounded_catalog_read("terminal catalog snapshot", CATALOG_DETAIL_TIMEOUT, async {
+            let authority_context = self
+                .connections
+                .pin(authority.connection_id.into(), ConnectionAccess::Read)
+                .await?;
+            ensure_terminal_pin(authority, authority_context.pin())?;
+            let _load = self.loads.acquire(authority.connection_id).await;
+            introspect::load_catalog_snapshot_in_context(
+                &self.store,
+                authority_context,
+                policy.into(),
+            )
             .await
+        })
+        .await
     }
 
     async fn table_ddl(
@@ -127,12 +162,15 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
         schema: Option<&str>,
         table: &str,
     ) -> AppResult<String> {
-        let context = self
-            .connections
-            .pin(connection_id.into(), ConnectionAccess::Read)
-            .await?;
-        let _load = self.loads.acquire(connection_id).await;
-        let lease = context.connect().await?;
-        introspect::table_ddl(lease.live(), schema, table).await
+        bounded_catalog_read("table DDL", CATALOG_DDL_TIMEOUT, async move {
+            let context = self
+                .connections
+                .pin(connection_id.into(), ConnectionAccess::Read)
+                .await?;
+            let _load = self.loads.acquire(connection_id).await;
+            let lease = context.connect().await?;
+            introspect::table_ddl(lease.live(), schema, table).await
+        })
+        .await
     }
 }

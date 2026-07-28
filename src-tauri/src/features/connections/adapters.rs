@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 
 use crate::connection::{
     self, ensure_terminal_pin, ConnectionAccess, ConnectionContext, ConnectionManager,
-    ConnectionMutation,
+    ConnectionMutation, ConnectionOperationScope,
 };
 use crate::driver;
 use crate::error::AppResult;
@@ -75,6 +75,10 @@ pub(crate) struct RuntimeScopeMutation {
     inner: ConnectionMutation,
 }
 
+pub(crate) struct RuntimeScopeRead {
+    _inner: ConnectionOperationScope,
+}
+
 impl ScopeMutationPort for RuntimeScopeMutation {
     async fn retire_connection(self, id: ConnectionId) {
         self.inner.retire_connection(id.into()).await;
@@ -126,9 +130,16 @@ impl RuntimeConnectionAuthority {
 }
 
 impl ConnectionRuntimePort for RuntimeConnectionAuthority {
+    type ScopeRead = RuntimeScopeRead;
     type ScopeMutation = RuntimeScopeMutation;
     type ConnectionMutation = RuntimeConnectionMutation;
     type AuthorizedConnection = RuntimeAuthorizedConnection;
+
+    async fn begin_scope_read(&self) -> Self::ScopeRead {
+        RuntimeScopeRead {
+            _inner: self.connections.begin_operation_scope().await,
+        }
+    }
 
     async fn begin_scope_mutation(&self) -> Self::ScopeMutation {
         RuntimeScopeMutation {

@@ -1,5 +1,9 @@
+import { useState } from "react";
 import type {
   Catalog,
+  CatalogConstraint,
+  CatalogForeignKey,
+  CatalogIndex,
   CatalogObject,
   CatalogOverview,
   CatalogTable,
@@ -49,12 +53,22 @@ type Props = {
   onFilter: (value: string) => void;
   onOpenTable: (table: CatalogTable) => void;
   onShowDdl: (table: CatalogTable) => void;
+  onRequestDetails: () => void;
+  onRetryOverview: () => void;
   onToggleDefaultSection: (kind: "table" | "view") => void;
   onToggleObjectSection: (kind: string) => void;
 };
 
 export default function CatalogTree(props: Props) {
   const { t } = useI18n();
+  const [expandedTables, setExpandedTables] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [collapsedSchemas, setCollapsedSchemas] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [collapsedMetadataSections, setCollapsedMetadataSections] =
+    useState<Set<string>>(() => new Set());
   const {
     connection,
     selected,
@@ -112,74 +126,297 @@ export default function CatalogTree(props: Props) {
       filteredObjects.some((object) => object.kind === section.kind),
   );
 
+  function toggleTableDetails(table: CatalogTable) {
+    const key = tableKey(table);
+    setExpandedTables((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else {
+        next.add(key);
+        props.onRequestDetails();
+      }
+      return next;
+    });
+  }
+
+  function toggleSchema(schema: string) {
+    setCollapsedSchemas((current) => {
+      const next = new Set(current);
+      if (next.has(schema)) next.delete(schema);
+      else next.add(schema);
+      return next;
+    });
+  }
+
+  function toggleMetadataSection(table: CatalogTable, section: string) {
+    const key = `${tableKey(table)}:${section}`;
+    setCollapsedMetadataSections((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function metadataSectionIsOpen(table: CatalogTable, section: string) {
+    return !collapsedMetadataSections.has(`${tableKey(table)}:${section}`);
+  }
+
+  function renderColumnRows(table: CatalogTable) {
+    return table.columns.map((column) => (
+      <div
+        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:pl-4 tw:text-ui"
+        key={`${tableKey(table)}:column:${column.ordinal}:${column.name}`}
+        title={[
+          column.dataType,
+          column.nullable ? t("connections.nullable") : t("connections.notNull"),
+          column.defaultExpression
+            ? `${t("connections.defaultValue")}: ${column.defaultExpression}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      >
+        <Icon
+          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
+          name={column.pk ? "key" : "columns"}
+        />
+        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+          {column.name}
+        </span>
+        <span className="tw:max-w-[48%] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-mono tw:text-2xs tw:text-muted-foreground">
+          {column.dataType}
+        </span>
+      </div>
+    ));
+  }
+
+  function keyLabel(
+    constraint: CatalogConstraint | CatalogForeignKey,
+    index: number,
+  ) {
+    if ("kind" in constraint) {
+      return constraint.name ||
+        `${constraint.kind} (${constraint.columns.join(", ")})`;
+    }
+    const target = [
+      constraint.referencesSchema,
+      constraint.referencesTable,
+      constraint.referencesColumn,
+    ]
+      .filter(Boolean)
+      .join(".");
+    return constraint.name ||
+      `${constraint.column} → ${target || `#${index + 1}`}`;
+  }
+
+  function renderKeyRows(table: CatalogTable) {
+    const keys: Array<CatalogConstraint | CatalogForeignKey> =
+      table.constraints.length > 0
+        ? table.constraints
+        : table.foreignKeys;
+    return keys.map((constraint, index) => (
+      <div
+        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:pl-4 tw:text-ui"
+        key={`${tableKey(table)}:key:${keyLabel(constraint, index)}:${index}`}
+        title={keyLabel(constraint, index)}
+      >
+        <Icon
+          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
+          name="key"
+        />
+        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+          {keyLabel(constraint, index)}
+        </span>
+        {"kind" in constraint && (
+          <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground">
+            {constraint.kind}
+          </span>
+        )}
+      </div>
+    ));
+  }
+
+  function indexLabel(index: CatalogIndex) {
+    const columns = index.keys.length > 0
+      ? index.keys.map((key) => key.column ?? key.expression).filter(Boolean)
+      : index.columns;
+    return `${index.name} (${columns.join(", ")})`;
+  }
+
+  function renderIndexRows(table: CatalogTable) {
+    return table.indexes.map((index) => (
+      <div
+        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:pl-4 tw:text-ui"
+        key={`${tableKey(table)}:index:${index.name}`}
+        title={indexLabel(index)}
+      >
+        <Icon
+          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
+          name="list"
+        />
+        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+          {indexLabel(index)}
+        </span>
+        {index.unique && (
+          <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground">
+            {t("connections.unique")}
+          </span>
+        )}
+      </div>
+    ));
+  }
+
+  function renderMetadataSection(
+    table: CatalogTable,
+    section: "columns" | "keys" | "indexes",
+    count: number,
+    children: ReturnType<typeof renderColumnRows>,
+  ) {
+    if (count === 0) return null;
+    const expanded = metadataSectionIsOpen(table, section);
+    return (
+      <div
+        className="tw:flex tw:flex-col tw:gap-px"
+        key={`${tableKey(table)}:${section}`}
+      >
+        <TreeSectionButton
+          expanded={expanded}
+          icon={section === "keys" ? "key" : section === "indexes" ? "list" : "columns"}
+          onToggle={() => toggleMetadataSection(table, section)}
+        >
+          {t(
+            section === "keys"
+              ? "connections.keys"
+              : section === "indexes"
+                ? "connections.indexes"
+                : "connections.columns",
+            { count },
+          )}
+        </TreeSectionButton>
+        {expanded && children}
+      </div>
+    );
+  }
+
+  function renderTableDetails(table: CatalogTable) {
+    if (!fullCatalog) {
+      return (
+        <div className="tw:pl-5 tw:text-xs tw:text-muted-foreground">
+          <LoadingLabel>{t("connections.loadingMetadata")}</LoadingLabel>
+        </div>
+      );
+    }
+    const keyCount = table.constraints.length > 0
+      ? table.constraints.length
+      : table.foreignKeys.length;
+    return (
+      <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">
+        {renderMetadataSection(
+          table,
+          "columns",
+          table.columns.length,
+          renderColumnRows(table),
+        )}
+        {renderMetadataSection(
+          table,
+          "keys",
+          keyCount,
+          renderKeyRows(table),
+        )}
+        {renderMetadataSection(
+          table,
+          "indexes",
+          table.indexes.length,
+          renderIndexRows(table),
+        )}
+        {table.columns.length + keyCount + table.indexes.length === 0 && (
+          <div className="tw:pl-5 tw:text-xs tw:text-muted-foreground">
+            {t("connections.noMetadata")}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderTable(table: CatalogTable) {
     const key = tableKey(table);
     const tableDiff = diff?.tableDiffs[key];
     const tone = tableDiffTone(tableDiff);
+    const detailsOpen = expandedTables.has(key);
     return (
-      <div
-        key={key}
-        className="db-table ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui"
-        data-diff={tone ?? "none"}
-        aria-selected={selected && selectedTableKey === key}
-        role="button"
-        tabIndex={0}
-        onClick={() => props.onOpenTable(table)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            props.onOpenTable(table);
-          }
-        }}
-        title={
-          tableDiff
-            ? schemaTableDiffTitle(t, tableDiff)
-            : fullCatalog
-              ? t("connections.columns", { count: table.columns.length })
-              : undefined
-        }
-      >
-        <span
+      <div className="tw:flex tw:flex-col tw:gap-px" key={key}>
+        <div
+          className="db-table ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui"
           data-diff={tone ?? "none"}
-          className="tw:size-[7px] tw:shrink-0 tw:rounded-full tw:bg-transparent tw:data-[diff=added]:bg-success tw:data-[diff=missing]:bg-danger tw:data-[diff=changed]:bg-warning tw:data-[diff=mixed]:border tw:data-[diff=mixed]:border-danger tw:data-[diff=mixed]:bg-warning"
+          aria-selected={selected && selectedTableKey === key}
           title={
-            tableDiff ? schemaTableDiffTitle(t, tableDiff) : undefined
+            tableDiff
+              ? schemaTableDiffTitle(t, tableDiff)
+              : fullCatalog
+                ? t("connections.columns", { count: table.columns.length })
+                : undefined
           }
-          aria-hidden="true"
-        />
-        <Icon
-          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground tw:group-hover:text-current"
-          name={
-            isDocumentEngine(connection.engine)
-              ? "collection"
-              : table.kind === "view"
-                ? "view"
-                : "table"
-          }
-        />
-        <span className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {tableLabel(connection.engine, table)}
-        </span>
-        {showRowCounts &&
-          table.rowEstimate != null &&
-          table.rowEstimate >= 0 && (
-            <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground tw:opacity-60 tw:[font-variant-numeric:tabular-nums] tw:group-hover:opacity-100">
-              ~{table.rowEstimate.toLocaleString()}
-            </span>
+        >
+          {!isDocumentEngine(connection.engine) && (
+            <button
+              type="button"
+              className="tw:grid tw:size-3 tw:shrink-0 tw:cursor-pointer tw:place-items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:p-0 tw:text-2xs tw:text-muted-foreground tw:hover:text-foreground"
+              aria-expanded={detailsOpen}
+              aria-label={
+                detailsOpen
+                  ? t("connections.collapseMetadata", { table: table.name })
+                  : t("connections.expandMetadata", { table: table.name })
+              }
+              onClick={() => toggleTableDetails(table)}
+            >
+              <Icon name={detailsOpen ? "chevronDown" : "chevronRight"} />
+            </button>
           )}
-        {!isDocumentEngine(connection.engine) && (
+          <span
+            data-diff={tone ?? "none"}
+            className="tw:size-[7px] tw:shrink-0 tw:rounded-full tw:bg-transparent tw:data-[diff=added]:bg-success tw:data-[diff=missing]:bg-danger tw:data-[diff=changed]:bg-warning tw:data-[diff=mixed]:border tw:data-[diff=mixed]:border-danger tw:data-[diff=mixed]:bg-warning"
+            title={
+              tableDiff ? schemaTableDiffTitle(t, tableDiff) : undefined
+            }
+            aria-hidden="true"
+          />
+          <Icon
+            className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground tw:group-hover:text-current"
+            name={
+              isDocumentEngine(connection.engine)
+                ? "collection"
+                : table.kind === "view"
+                  ? "view"
+                  : "table"
+            }
+          />
           <button
-            className="ddl-btn tw:absolute tw:top-1/2 tw:right-2 tw:-translate-y-1/2 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:text-2xs tw:font-semibold tw:text-muted-foreground tw:opacity-0 tw:transition-opacity tw:group-hover:opacity-100 tw:group-focus-within:opacity-100 tw:hover:border-ring tw:hover:text-foreground"
             type="button"
-            title={t("connections.showDdl")}
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onShowDdl(table);
-            }}
+            className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:cursor-pointer tw:overflow-hidden tw:border-0 tw:bg-transparent tw:p-0 tw:text-left tw:font-sans tw:text-inherit tw:text-ellipsis tw:whitespace-nowrap"
+            onClick={() => props.onOpenTable(table)}
           >
-            DDL
+            {table.schema ? table.name : tableLabel(connection.engine, table)}
           </button>
-        )}
+          {showRowCounts &&
+            table.rowEstimate != null &&
+            table.rowEstimate >= 0 && (
+              <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground tw:opacity-60 tw:[font-variant-numeric:tabular-nums] tw:group-hover:opacity-100">
+                ~{table.rowEstimate.toLocaleString()}
+              </span>
+            )}
+          {!isDocumentEngine(connection.engine) && (
+            <button
+              className="ddl-btn tw:absolute tw:top-1/2 tw:right-2 tw:-translate-y-1/2 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:text-2xs tw:font-semibold tw:text-muted-foreground tw:opacity-0 tw:transition-opacity tw:group-hover:opacity-100 tw:group-focus-within:opacity-100 tw:hover:border-ring tw:hover:text-foreground"
+              type="button"
+              title={t("connections.showDdl")}
+              onClick={() => props.onShowDdl(table)}
+            >
+              DDL
+            </button>
+          )}
+        </div>
+        {detailsOpen && renderTableDetails(table)}
       </div>
     );
   }
@@ -249,6 +486,61 @@ export default function CatalogTree(props: Props) {
     );
   }
 
+  const schemaGroups = Array.from(
+    [...tables, ...views].reduce((groups, table) => {
+      const schema = table.schema ?? "";
+      const current = groups.get(schema) ?? [];
+      current.push(table);
+      groups.set(schema, current);
+      return groups;
+    }, new Map<string, CatalogTable[]>()),
+  ).sort(([left], [right]) => left.localeCompare(right));
+
+  function renderSchema(schema: string, relations: CatalogTable[]) {
+    const schemaOpen = !collapsedSchemas.has(schema);
+    const schemaTables = relations.filter((table) => table.kind !== "view");
+    const schemaViews = relations.filter((table) => table.kind === "view");
+    return (
+      <div className="tw:flex tw:flex-col tw:gap-px" key={`schema:${schema}`}>
+        <TreeSectionButton
+          expanded={schemaOpen}
+          icon="database"
+          onToggle={() => toggleSchema(schema)}
+        >
+          {schema || t("connections.defaultSchema")}
+        </TreeSectionButton>
+        {schemaOpen && (
+          <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">
+            {schemaTables.length > 0 && (
+              <>
+                <TreeSectionButton
+                  expanded={tablesOpen}
+                  icon="table"
+                  onToggle={() => props.onToggleDefaultSection("table")}
+                >
+                  {t("connections.tables", { count: schemaTables.length })}
+                </TreeSectionButton>
+                {tablesOpen && schemaTables.map(renderTable)}
+              </>
+            )}
+            {schemaViews.length > 0 && (
+              <>
+                <TreeSectionButton
+                  expanded={viewsOpen}
+                  icon="view"
+                  onToggle={() => props.onToggleDefaultSection("view")}
+                >
+                  {t("connections.views", { count: schemaViews.length })}
+                </TreeSectionButton>
+                {viewsOpen && schemaViews.map(renderTable)}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="tw:flex tw:flex-col tw:gap-px tw:pt-1 tw:pr-0 tw:pb-2 tw:pl-3">
       {catalog &&
@@ -263,13 +555,31 @@ export default function CatalogTree(props: Props) {
           </div>
         )}
       {error ? (
-        <div className="tw:px-2 tw:py-1 tw:text-sm tw:text-danger">
-          {error}
+        <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-danger">
+          <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
+            {error}
+          </span>
+          <button
+            type="button"
+            className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
+            onClick={props.onRetryOverview}
+          >
+            {t("common.refresh")}
+          </button>
         </div>
       ) : null}
       {detailError ? (
-        <div className="tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
-          {detailError}
+        <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
+          <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
+            {detailError}
+          </span>
+          <button
+            type="button"
+            className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
+            onClick={props.onRequestDetails}
+          >
+            {t("common.refresh")}
+          </button>
         </div>
       ) : null}
       {!catalog && !error && (
@@ -289,43 +599,23 @@ export default function CatalogTree(props: Props) {
               : t("connections.noObjects")}
           </div>
         )}
-      {(tables.length > 0 ||
-        (!normalizedFilter &&
-          catalog &&
-          !isDocumentEngine(connection.engine))) && (
+      {isDocumentEngine(connection.engine) &&
+        (tables.length > 0 || (!normalizedFilter && catalog)) && (
         <>
           <TreeSectionButton
             expanded={tablesOpen}
-            icon={
-              isDocumentEngine(connection.engine) ? "collection" : "table"
-            }
+            icon="collection"
             onToggle={() => props.onToggleDefaultSection("table")}
           >
-            {t(
-              isDocumentEngine(connection.engine)
-                ? "connections.collections"
-                : "connections.tables",
-              { count: tables.length },
-            )}
+            {t("connections.collections", { count: tables.length })}
           </TreeSectionButton>
           {tablesOpen && tables.map(renderTable)}
         </>
       )}
-      {(views.length > 0 ||
-        (!normalizedFilter &&
-          catalog &&
-          !isDocumentEngine(connection.engine))) && (
-        <>
-          <TreeSectionButton
-            expanded={viewsOpen}
-            icon="view"
-            onToggle={() => props.onToggleDefaultSection("view")}
-          >
-            {t("connections.views", { count: views.length })}
-          </TreeSectionButton>
-          {viewsOpen && views.map(renderTable)}
-        </>
-      )}
+      {!isDocumentEngine(connection.engine) &&
+        schemaGroups.map(([schema, relations]) =>
+          renderSchema(schema, relations),
+        )}
       {objectSections.map((section) => {
         const objects = filteredObjects.filter(
           (object) => object.kind === section.kind,

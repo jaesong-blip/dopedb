@@ -64,6 +64,7 @@ type Props = {
   availableUpdate: Update | null;
   showTerminalDock: boolean;
   terminalButtonRef: RefObject<HTMLButtonElement | null>;
+  creatingDemo: boolean;
   onCloseSettings: () => void;
   onUpdateChecked: (update: Update | null) => void;
   onRefreshSafety: () => void;
@@ -72,6 +73,7 @@ type Props = {
     profile: ConnectionProfile,
     closeEditor: boolean,
   ) => Promise<void>;
+  onCreateDemoDatabase: () => void;
   onCancelEditing: () => void;
   onRetryConnections: () => void;
   onNewConnection: () => void;
@@ -149,6 +151,8 @@ export default function WorkbenchContent(props: Props) {
           key={`connection-${connectionPreset?.engine ?? "default"}-${connectionPreset?.provider ?? "auto"}-${connectionPreset?.source ?? "standard"}`}
           initial={editing === "new" ? null : editing}
           preset={editing === "new" ? connectionPreset : null}
+          creatingDemo={props.creatingDemo}
+          onCreateDemoDatabase={props.onCreateDemoDatabase}
           onSaved={props.onConnectionSaved}
           onCancel={props.onCancelEditing}
         />

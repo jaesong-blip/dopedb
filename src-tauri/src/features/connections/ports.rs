@@ -64,9 +64,12 @@ pub(crate) trait AuthorizedConnectionPort: Send {
 }
 
 pub(crate) trait ConnectionRuntimePort: Clone + Send + Sync + 'static {
+    type ScopeRead: Send;
     type ScopeMutation: ScopeMutationPort;
     type ConnectionMutation: ConnectionMutationPort;
     type AuthorizedConnection: AuthorizedConnectionPort;
+
+    fn begin_scope_read(&self) -> impl Future<Output = Self::ScopeRead> + Send;
 
     fn begin_scope_mutation(&self) -> impl Future<Output = Self::ScopeMutation> + Send;
 

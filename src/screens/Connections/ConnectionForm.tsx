@@ -77,11 +77,15 @@ function compatibleDrivers(
 export function ConnectionForm({
   initial,
   preset,
+  creatingDemo,
+  onCreateDemoDatabase,
   onSaved,
   onCancel,
 }: {
   initial: ConnectionProfile | null;
   preset: ConnectionLaunchPreset | null;
+  creatingDemo: boolean;
+  onCreateDemoDatabase: () => void;
   onSaved: (
     profile: ConnectionProfile,
     closeEditor: boolean,
@@ -499,6 +503,21 @@ export function ConnectionForm({
                   {provider.label}
                 </ToolWindowAction>
               ))}
+            </ToolWindowSection>
+            <div className="tw:h-5" />
+            <ToolWindowSection
+              title={t("connections.sampleDatabase")}
+            >
+              <ToolWindowAction
+                leading={<EngineMark engine="sqlite" />}
+                trailing={<Icon name="download" />}
+                disabled={creatingDemo}
+                onClick={onCreateDemoDatabase}
+              >
+                {creatingDemo
+                  ? t("connections.demoCreating")
+                  : t("connections.demoSqlite")}
+              </ToolWindowAction>
             </ToolWindowSection>
           </nav>
         </aside>
