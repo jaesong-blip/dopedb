@@ -11,6 +11,7 @@
 /test-results
 /playwright-report
 /blob-report
+/.playwright-cli/
 src-tauri/target
 .DS_Store
 *.db
