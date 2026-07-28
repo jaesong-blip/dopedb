@@ -147,8 +147,9 @@ Elevation은 세 단계만 허용한다.
   상태를 함께 소유하는 dense form control.
 - `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.
 - `EnvironmentBadge`: dev/staging/prod 의미색과 대문자 표기를 한곳에서 소유.
-- `TreeSectionButton`, `TreeSearch`: explorer section keyboard toggle과 dense
-  object search.
+- `TreeSectionButton`, `TreeSearch`: DopeDB 객체 트리의 일반 문장형
+  hierarchy row, keyboard toggle과 dense object search. 데이터베이스·스키마·
+  객체 폴더 이름을 uppercase category heading처럼 바꾸지 않는다.
 - `PopupMenu`, `PopupMenuItem`, `PopupMenuCheckbox`: 평평한 popover menu
   surface와 keyboard-focus 가능한 command/check row.
 - `CommandMenu`, `CommandMenuGroup`, `CommandMenuItem`: 검색 입력, 분류,

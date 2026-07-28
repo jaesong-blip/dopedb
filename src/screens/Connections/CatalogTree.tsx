@@ -56,7 +56,7 @@ type Props = {
   onShowDdl: (table: CatalogTable) => void;
   onRequestDetails: () => void;
   onRetryOverview: () => void;
-  onToggleDefaultSection: (kind: "table" | "view") => void;
+  onToggleRelationSection: (key: string) => void;
   onToggleObjectSection: (kind: string) => void;
 };
 
@@ -68,6 +68,7 @@ export default function CatalogTree(props: Props) {
   const [collapsedSchemas, setCollapsedSchemas] = useState<Set<string>>(
     () => new Set(),
   );
+  const [databaseOpen, setDatabaseOpen] = useState(true);
   const [collapsedMetadataSections, setCollapsedMetadataSections] =
     useState<Set<string>>(() => new Set());
   const {
@@ -122,8 +123,6 @@ export default function CatalogTree(props: Props) {
   const tables = ordered.filter((table) => table.kind !== "view");
   const views = ordered.filter((table) => table.kind === "view");
   const supportedKinds = supportedObjectKinds(connection.engine);
-  const tablesOpen = !collapsedSections.has(`${connection.id}:table`);
-  const viewsOpen = !collapsedSections.has(`${connection.id}:view`);
   const objectSections = SQL_OBJECT_SECTIONS.filter(
     (section) =>
       supportedKinds.has(section.kind) ||
@@ -457,7 +456,20 @@ export default function CatalogTree(props: Props) {
     );
   }
 
-  function renderObject(object: CatalogObject, icon: Parameters<typeof Icon>[0]["name"], index: number) {
+  function renderObject(
+    object: CatalogObject,
+    icon: Parameters<typeof Icon>[0]["name"],
+    index: number,
+    insideSchema = false,
+  ) {
+    const label =
+      insideSchema &&
+        (object.kind === "function" || object.kind === "procedure") &&
+        object.detail != null
+        ? `${object.name}(${object.detail})`
+        : insideSchema
+          ? object.name
+          : catalogObjectLabel(object);
     return (
       <div
         className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-ui"
@@ -479,7 +491,7 @@ export default function CatalogTree(props: Props) {
           name={icon}
         />
         <span className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {catalogObjectLabel(object)}
+          {label}
         </span>
         {object.parent && (
           <span className="tw:max-w-[42%] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground">
@@ -493,23 +505,67 @@ export default function CatalogTree(props: Props) {
   const schemaGroups = Array.from(
     [...tables, ...views].reduce((groups, table) => {
       const schema = table.schema ?? "";
-      const current = groups.get(schema) ?? [];
-      current.push(table);
+      const current = groups.get(schema) ?? {
+        relations: [],
+        objects: [],
+      };
+      current.relations.push(table);
       groups.set(schema, current);
       return groups;
-    }, new Map<string, CatalogTable[]>()),
+    }, new Map<string, {
+      relations: CatalogTable[];
+      objects: CatalogObject[];
+    }>()),
   ).sort(([left], [right]) => left.localeCompare(right));
 
-  function renderSchema(schema: string, relations: CatalogTable[]) {
-    const schemaOpen = !collapsedSchemas.has(schema);
-    const schemaTables = relations.filter((table) => table.kind !== "view");
-    const schemaViews = relations.filter((table) => table.kind === "view");
+  for (const object of filteredObjects) {
+    const schema = object.schema ?? "";
+    const existing = schemaGroups.find(([name]) => name === schema);
+    if (existing) {
+      existing[1].objects.push(object);
+    } else {
+      schemaGroups.push([
+        schema,
+        { relations: [], objects: [object] },
+      ]);
+    }
+  }
+  schemaGroups.sort(([left], [right]) => left.localeCompare(right));
+
+  function schemaStateKey(schema: string) {
+    return schema || "__default__";
+  }
+
+  function renderSchema(
+    schema: string,
+    contents: {
+      relations: CatalogTable[];
+      objects: CatalogObject[];
+    },
+  ) {
+    const schemaKey = schemaStateKey(schema);
+    const schemaOpen =
+      Boolean(normalizedFilter) || !collapsedSchemas.has(schemaKey);
+    const schemaTables = contents.relations.filter(
+      (table) => table.kind !== "view",
+    );
+    const schemaViews = contents.relations.filter(
+      (table) => table.kind === "view",
+    );
+    const tableSectionKey = `${schemaKey}:table`;
+    const viewSectionKey = `${schemaKey}:view`;
+    const tablesOpen =
+      Boolean(normalizedFilter) ||
+      !collapsedSections.has(`${connection.id}:${tableSectionKey}`);
+    const viewsOpen =
+      Boolean(normalizedFilter) ||
+      !collapsedSections.has(`${connection.id}:${viewSectionKey}`);
     return (
       <div className="tw:flex tw:flex-col tw:gap-px" key={`schema:${schema}`}>
         <TreeSectionButton
           expanded={schemaOpen}
-          icon="database"
-          onToggle={() => toggleSchema(schema)}
+          icon="folder"
+          onToggle={() => toggleSchema(schemaKey)}
         >
           {schema || t("connections.defaultSchema")}
         </TreeSectionButton>
@@ -520,7 +576,9 @@ export default function CatalogTree(props: Props) {
                 <TreeSectionButton
                   expanded={tablesOpen}
                   icon="table"
-                  onToggle={() => props.onToggleDefaultSection("table")}
+                  onToggle={() =>
+                    props.onToggleRelationSection(tableSectionKey)
+                  }
                 >
                   {t("connections.tables", { count: schemaTables.length })}
                 </TreeSectionButton>
@@ -532,16 +590,87 @@ export default function CatalogTree(props: Props) {
                 <TreeSectionButton
                   expanded={viewsOpen}
                   icon="view"
-                  onToggle={() => props.onToggleDefaultSection("view")}
+                  onToggle={() =>
+                    props.onToggleRelationSection(viewSectionKey)
+                  }
                 >
                   {t("connections.views", { count: schemaViews.length })}
                 </TreeSectionButton>
                 {viewsOpen && schemaViews.map(renderTable)}
               </>
             )}
+            {objectSections.map((section) => {
+              const objects = contents.objects.filter(
+                (object) => object.kind === section.kind,
+              );
+              if (normalizedFilter && objects.length === 0) return null;
+              const objectSectionKey = `${schemaKey}:${section.kind}`;
+              const expanded =
+                Boolean(normalizedFilter) ||
+                objectSectionsOpen.has(
+                  `${connection.id}:${objectSectionKey}`,
+                );
+              return (
+                <div
+                  className="tw:flex tw:flex-col tw:gap-px"
+                  key={section.kind}
+                >
+                  <TreeSectionButton
+                    expanded={expanded}
+                    icon={section.icon}
+                    onToggle={() =>
+                      props.onToggleObjectSection(objectSectionKey)
+                    }
+                  >
+                    {t(section.label, { count: objects.length })}
+                  </TreeSectionButton>
+                  {expanded &&
+                    objects.map((object, index) =>
+                      renderObject(object, section.icon, index, true),
+                    )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
+    );
+  }
+
+  function databaseDisplayName() {
+    const value = connection.database.trim();
+    if (!value) return connection.name || t("connections.database");
+    if (connection.engine !== "sqlite") return value;
+    const segments = value.split(/[\\/]/).filter(Boolean);
+    return segments[segments.length - 1] ?? value;
+  }
+
+  function renderDatabaseContents() {
+    if (isDocumentEngine(connection.engine)) {
+      const tablesOpen =
+        Boolean(normalizedFilter) ||
+        !collapsedSections.has(`${connection.id}:collections`);
+      return (
+        <>
+          {(tables.length > 0 || (!normalizedFilter && catalog)) && (
+            <>
+              <TreeSectionButton
+                expanded={tablesOpen}
+                icon="collection"
+                onToggle={() =>
+                  props.onToggleRelationSection("collections")
+                }
+              >
+                {t("connections.collections", { count: tables.length })}
+              </TreeSectionButton>
+              {tablesOpen && tables.map(renderTable)}
+            </>
+          )}
+        </>
+      );
+    }
+    return schemaGroups.map(([schema, contents]) =>
+      renderSchema(schema, contents),
     );
   }
 
@@ -603,52 +732,25 @@ export default function CatalogTree(props: Props) {
               : t("connections.noObjects")}
           </div>
         )}
-      {isDocumentEngine(connection.engine) &&
-        (tables.length > 0 || (!normalizedFilter && catalog)) && (
-        <>
-          <TreeSectionButton
-            expanded={tablesOpen}
-            icon="collection"
-            onToggle={() => props.onToggleDefaultSection("table")}
-          >
-            {t("connections.collections", { count: tables.length })}
-          </TreeSectionButton>
-          {tablesOpen && tables.map(renderTable)}
-        </>
-      )}
-      {!isDocumentEngine(connection.engine) &&
-        schemaGroups.map(([schema, relations]) =>
-          renderSchema(schema, relations),
-        )}
-      {objectSections.map((section) => {
-        const objects = filteredObjects.filter(
-          (object) => object.kind === section.kind,
-        );
-        if (normalizedFilter && objects.length === 0) return null;
-        const sectionKey = `${connection.id}:${section.kind}`;
-        const expanded =
-          Boolean(normalizedFilter) || objectSectionsOpen.has(sectionKey);
-        return (
-          <div
-            className="tw:flex tw:flex-col tw:gap-px"
-            key={section.kind}
-          >
+      {catalog &&
+        (ordered.length > 0 ||
+          filteredObjects.length > 0 ||
+          (!normalizedFilter && catalog)) && (
+          <div className="tw:flex tw:flex-col tw:gap-px">
             <TreeSectionButton
-              expanded={expanded}
-              icon={section.icon}
-              onToggle={() =>
-                props.onToggleObjectSection(section.kind)
-              }
+              expanded={Boolean(normalizedFilter) || databaseOpen}
+              icon="database"
+              onToggle={() => setDatabaseOpen((open) => !open)}
             >
-              {t(section.label, { count: objects.length })}
+              {databaseDisplayName()}
             </TreeSectionButton>
-            {expanded &&
-              objects.map((object, index) =>
-                renderObject(object, section.icon, index),
-              )}
+            {(Boolean(normalizedFilter) || databaseOpen) && (
+              <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">
+                {renderDatabaseContents()}
+              </div>
+            )}
           </div>
-        );
-      })}
+        )}
       {missingTables.length > 0 && (
         <>
           <div className="tw:mt-1 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:tracking-[0.04em] tw:text-danger tw:uppercase">

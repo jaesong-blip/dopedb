@@ -22,8 +22,8 @@ export function TreeSectionButton({
     <div
       className={
         danger
-          ? "tw:mt-1 tw:flex tw:min-h-control-sm tw:cursor-pointer tw:select-none tw:items-center tw:gap-1 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:tracking-[0.04em] tw:text-danger tw:uppercase"
-          : "tw:mt-1 tw:flex tw:min-h-control-sm tw:cursor-pointer tw:select-none tw:items-center tw:gap-1 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:tracking-[0.04em] tw:text-muted-foreground tw:uppercase tw:hover:text-foreground"
+          ? "tw:flex tw:min-h-control-sm tw:cursor-pointer tw:select-none tw:items-center tw:gap-1 tw:px-1 tw:py-px tw:text-sm tw:font-medium tw:text-danger"
+          : "tw:flex tw:min-h-control-sm tw:cursor-pointer tw:select-none tw:items-center tw:gap-1 tw:px-1 tw:py-px tw:text-sm tw:font-normal tw:text-foreground tw:hover:bg-muted"
       }
       role="button"
       tabIndex={0}

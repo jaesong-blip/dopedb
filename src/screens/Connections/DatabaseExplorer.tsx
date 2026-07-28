@@ -247,8 +247,8 @@ export function DatabaseExplorer({
     commands.toggleObjectSection(key);
   }
 
-  function toggleDefaultOpenSection(connectionId: string, kind: "table" | "view") {
-    const key = `${connectionId}:${kind}`;
+  function toggleRelationSection(connectionId: string, sectionKey: string) {
+    const key = `${connectionId}:${sectionKey}`;
     commands.toggleCollapsedSection(key);
   }
 
@@ -304,8 +304,8 @@ export function DatabaseExplorer({
             exact: true,
           });
         }}
-        onToggleDefaultSection={(kind) =>
-          toggleDefaultOpenSection(connection.id, kind)
+        onToggleRelationSection={(sectionKey) =>
+          toggleRelationSection(connection.id, sectionKey)
         }
         onToggleObjectSection={(kind) =>
           toggleObjectSection(connection.id, kind)
