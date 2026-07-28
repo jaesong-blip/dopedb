@@ -133,6 +133,8 @@ export default function Sql({
   connection,
   documentId,
   safety,
+  safetyReady,
+  safetyLoadError,
   draft,
   setDraft,
   title,
@@ -143,11 +145,15 @@ export default function Sql({
   onPersisted,
   onQueryServiceSessionChange,
   onShowQueryServices,
+  onOpenHistory,
   onOpenAgent,
+  onRetrySafety,
 }: {
   connection: ConnectionProfile;
   documentId: string;
   safety: SafetySettings;
+  safetyReady: boolean;
+  safetyLoadError: string | null;
   draft: string;
   setDraft: (s: string) => void;
   title: string;
@@ -158,7 +164,9 @@ export default function Sql({
   onPersisted: (document: SqlDocument) => void;
   onQueryServiceSessionChange: (session: QueryServiceSession) => void;
   onShowQueryServices: (sessionId: string) => void;
+  onOpenHistory: () => void;
   onOpenAgent: () => void;
+  onRetrySafety: () => void;
 }) {
   const { t } = useI18n();
   const draftStatements = useMemo(() => splitStatements(draft), [draft]);
@@ -247,7 +255,7 @@ export default function Sql({
 
   async function executeSql(selectedSql?: string) {
     const sql = selectedSql?.trim() || draft.trim();
-    if (!sql || running) return;
+    if (!sql || running || !safetyReady) return;
     globalThis.performance?.clearMarks?.(
       "desktop_query_interaction_start",
     );
@@ -528,35 +536,46 @@ export default function Sql({
         <WorkbenchDivider />
         <div className="ds-control-row scrollbar-sleek tw:flex tw:min-h-0 tw:min-w-0 tw:flex-[0_1_auto] tw:flex-nowrap tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:max-[760px]:shrink-0">
           <button
-            className="btn primary small"
-            disabled={!draft.trim() || running}
+            className="btn primary small icon-only"
+            disabled={!draft.trim() || running || !safetyReady}
             onClick={() => void executeSql()}
             title={t("sql.runHint")}
+            aria-label={running ? t("sql.running") : t("sql.run")}
           >
-            <Icon name="play" />
-            {running ? t("sql.running") : t("sql.run")}
+            <Icon name={running ? "refresh" : "play"} />
           </button>
           <button
-            className="btn small ghost"
-            disabled={!draft.trim() || draftIsScript || explaining || running}
+            className="btn small ghost icon-only"
+            onClick={onOpenHistory}
+            title={t("sql.history")}
+            aria-label={t("sql.history")}
+          >
+            <Icon name="history" />
+          </button>
+          <button
+            className="btn small ghost icon-only"
+            disabled={
+              !draft.trim() ||
+              draftIsScript ||
+              explaining ||
+              running ||
+              !safetyReady
+            }
             title={draftIsScript ? t("sql.explainSingle") : t("sql.explainTitle")}
+            aria-label={t("sql.explain")}
             onClick={explain}
           >
-            {explaining ? t("sql.planning") : t("sql.explain")}
+            <Icon name={explaining ? "refresh" : "target"} />
           </button>
           <button
-            className="btn small ghost"
+            className="btn small ghost icon-only"
             disabled={!draft.trim() || formatting || running}
             onClick={() => void formatDraft()}
             title={t("sql.formatTitle")}
+            aria-label={t("sql.format")}
           >
-            {formatting ? t("sql.formatting") : t("sql.format")}
+            <Icon name={formatting ? "refresh" : "list"} />
           </button>
-          {draftIsScript && (
-            <span className="badge tw:text-muted-foreground">
-              {t("sql.statementCount", { count: draftStatements.length })}
-            </span>
-          )}
           {running ? (
             <>
               <span
@@ -568,39 +587,93 @@ export default function Sql({
                 <Icon name="refresh" />
               </span>
               <button
-                className="btn small"
+                className="btn small icon-only"
                 onClick={() => {
                   cancel();
                   void cancelDesktopStream();
                 }}
+                title={t("sql.cancel")}
+                aria-label={t("sql.cancel")}
               >
-                {t("sql.cancel")}
+                <Icon name="close" />
               </button>
             </>
+          ) : null}
+          <WorkbenchDivider />
+          {!safetyReady ? (
+            <button
+              type="button"
+              className="badge tw:cursor-pointer tw:border-warning tw:bg-transparent tw:text-warning"
+              onClick={onRetrySafety}
+              title={
+                safetyLoadError ??
+                t("sql.safetyLoading")
+              }
+            >
+              <Icon name={safetyLoadError ? "alert" : "refresh"} />
+              {safetyLoadError
+                ? t("sql.retrySafety")
+                : t("sql.safetyLoading")}
+            </button>
           ) : (
-            draftSignal && (
+            <>
               <span
-                data-tone={draftSignal.tone}
-                className="badge icon-only-badge tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
-                title={draftSignal.title ?? draftSignal.text}
-                aria-label={draftSignal.text}
-                role="img"
+                className="badge tw:max-w-[180px] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground"
+                title={`${connection.name || t("app.unnamed")} · ${connection.database}`}
               >
-                <Icon name={draftSignal.icon ?? "info"} />
+                {connection.database ||
+                  connection.name ||
+                  t("app.unnamed")}
               </span>
-            )
+              <span
+                className="badge tw:text-muted-foreground"
+                title={
+                  safety.autoRunReads
+                    ? t("sql.readAutoHint")
+                    : t("sql.readReviewHint")
+                }
+              >
+                {safety.autoRunReads
+                  ? t("sql.readAuto")
+                  : t("sql.readReview")}
+              </span>
+              <span
+                className="badge tw:text-muted-foreground"
+                title={t("sql.rowLimitHint", {
+                  count: safety.maxRows,
+                })}
+              >
+                {t("sql.rowLimit", { count: safety.maxRows })}
+              </span>
+            </>
           )}
+          {draftIsScript ? (
+            <span className="badge tw:text-muted-foreground">
+              {t("sql.statementCount", {
+                count: draftStatements.length,
+              })}
+            </span>
+          ) : null}
+          {!running && draftSignal ? (
+            <span
+              data-tone={draftSignal.tone}
+              className="badge icon-only-badge tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
+              title={draftSignal.title ?? draftSignal.text}
+              aria-label={draftSignal.text}
+              role="img"
+            >
+              <Icon name={draftSignal.icon ?? "info"} />
+            </span>
+          ) : null}
         </div>
         <span className="tw:min-w-2 tw:flex-1 tw:max-[760px]:hidden" />
         <button
-          className="btn small ghost tw:min-w-[56px] tw:shrink-0 tw:px-2 tw:text-xs tw:@max-[760px]:size-control-sm tw:@max-[760px]:min-w-control-sm tw:@max-[760px]:px-0"
+          className="btn small ghost icon-only tw:shrink-0"
           onClick={onOpenAgent}
           title={t("sql.openAgentTerminal")}
+          aria-label={t("sql.openAgentTerminal")}
         >
-          <Icon name="terminal" />
-          <span className="tw:@max-[760px]:hidden">
-            {t("sql.openAgentTerminal")}
-          </span>
+          <Icon name="user" />
         </button>
       </WorkbenchToolbar>
       <div className="tw:min-h-[180px] tw:flex-1 tw:overflow-hidden tw:bg-background tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0">

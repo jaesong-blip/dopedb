@@ -3,6 +3,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getSafetySettings } from "../safetySettings/tauriAdapter";
 import { errMessage, type SafetySettings } from "../../ipc/types";
 
+const SAFETY_LOAD_TIMEOUT_MS = 5_000;
+
+async function loadSafetyBounded(id: string) {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error("Safety settings request timed out")),
+      SAFETY_LOAD_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([getSafetySettings(id), timeout]);
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+  }
+}
+
 export function useSafetySettings(connectionId: string | null) {
   const [safety, setSafety] = useState<SafetySettings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -12,7 +29,7 @@ export function useSafetySettings(connectionId: string | null) {
     requestId.current = id;
     setSafety(null);
     setError(null);
-    getSafetySettings(id)
+    loadSafetyBounded(id)
       .then((settings) => {
         if (requestId.current === id) setSafety(settings);
       })

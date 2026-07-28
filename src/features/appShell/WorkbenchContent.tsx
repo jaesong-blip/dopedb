@@ -30,6 +30,18 @@ import type { AppArea } from "./WorkbenchRail";
 
 export type EditingConnection = ConnectionProfile | "new" | null;
 
+// The editor may render while policy storage is unavailable, but all execution
+// remains disabled until the authoritative connection policy arrives.
+const BLOCKED_SAFETY_SETTINGS: SafetySettings = {
+  requireApproval: true,
+  allowWrites: false,
+  wrapWritesInTx: true,
+  explainPreview: true,
+  autoRunReads: false,
+  maxRows: 1_000,
+  execPreviewRowLimit: 0,
+};
+
 type Props = {
   settingsOpen: boolean;
   settingsSection?: SettingsSection;
@@ -282,27 +294,27 @@ export default function WorkbenchContent(props: Props) {
             safetyFallback
           )
         ) : activeDocument.kind === "sql" ? (
-          safety ? (
-            <Sql
-              key={activeDocument.id}
-              connection={selected}
-              documentId={activeDocument.id}
-              safety={safety}
-              draft={activeDocument.draft}
-              setDraft={props.onSetQueryDraft}
-              title={activeDocument.title}
-              setTitle={props.onSetQueryTitle}
-              persistedId={activeDocument.persistedId}
-              revision={activeDocument.revision}
-              recovered={activeDocument.recovered}
-              onPersisted={props.onPersistedQuery}
-              onQueryServiceSessionChange={props.onQueryServiceSessionChange}
-              onShowQueryServices={props.onShowQueryServices}
-              onOpenAgent={props.onOpenTerminal}
-            />
-          ) : (
-            safetyFallback
-          )
+          <Sql
+            key={activeDocument.id}
+            connection={selected}
+            documentId={activeDocument.id}
+            safety={safety ?? BLOCKED_SAFETY_SETTINGS}
+            safetyReady={safety !== null}
+            safetyLoadError={safetyError}
+            draft={activeDocument.draft}
+            setDraft={props.onSetQueryDraft}
+            title={activeDocument.title}
+            setTitle={props.onSetQueryTitle}
+            persistedId={activeDocument.persistedId}
+            revision={activeDocument.revision}
+            recovered={activeDocument.recovered}
+            onPersisted={props.onPersistedQuery}
+            onQueryServiceSessionChange={props.onQueryServiceSessionChange}
+            onShowQueryServices={props.onShowQueryServices}
+            onOpenHistory={props.onOpenActivity}
+            onOpenAgent={props.onOpenTerminal}
+            onRetrySafety={props.onRetrySafety}
+          />
         ) : activeDocument.kind === "documents" ? (
           <Documents
             key={activeDocument.id}

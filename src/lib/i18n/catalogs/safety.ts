@@ -55,9 +55,6 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringWorking": "Applying...",
     "safety.saved": "Safety settings saved",
     "safety.title": "Safety settings",
-    "safety.wrapWritesInTx": "Wrap writes in a transaction",
-    "safety.wrapWritesInTxHint":
-      "BEGIN ... writes ... so they can be rolled back.",
   },
   {
     "safety.allowWrites": "쓰기 허용",
@@ -111,8 +108,5 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringWorking": "적용 중...",
     "safety.saved": "안전 설정이 저장되었습니다",
     "safety.title": "안전 설정",
-    "safety.wrapWritesInTx": "쓰기를 트랜잭션으로 감싸기",
-    "safety.wrapWritesInTxHint":
-      "BEGIN ... writes ... 형태로 실행해 롤백할 수 있게 합니다.",
   },
 );
