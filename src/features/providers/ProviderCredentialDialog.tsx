@@ -5,6 +5,11 @@ import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Icon } from "../../components/Icon";
+import Skeleton from "../../components/Skeleton";
+import {
+  Field,
+  TextInput,
+} from "../../design-system/components/FormControls";
 import { useI18n } from "../../lib/i18n";
 import {
   providerCredentialBindingsQuery,
@@ -24,7 +29,6 @@ import type {
   ProviderCredentialDialogStatus,
   ProviderIntegrationSummary,
 } from "./domain";
-import "./ProviderCredentialDialog.css";
 
 const statusKey: Record<ProviderCredentialDialogStatus, "providerCredentials.accessDenied" | "providerCredentials.credentialsRequired" | "providerCredentials.deletionPending" | "providerCredentials.ready" | "providerCredentials.revoked" | "providerCredentials.scopeInsufficient" | "providerCredentials.unavailable" | "providerCredentials.unsupported"> = {
   accessDenied: "providerCredentials.accessDenied",
@@ -37,11 +41,34 @@ const statusKey: Record<ProviderCredentialDialogStatus, "providerCredentials.acc
   unsupported: "providerCredentials.unsupported",
 };
 
-function statusClass(status: ProviderCredentialDialogStatus) {
-  if (status === "ready") return "status-ok";
-  if (status === "scopeInsufficient" || status === "unavailable" || status === "deletionPending") return "risk-medium";
-  if (status === "credentialsRequired") return "badge";
-  return "status-blocked";
+function statusTone(status: ProviderCredentialDialogStatus) {
+  if (status === "ready") return "success";
+  if (
+    status === "scopeInsufficient" ||
+    status === "unavailable" ||
+    status === "deletionPending"
+  ) {
+    return "warning";
+  }
+  if (status === "credentialsRequired") return "neutral";
+  return "danger";
+}
+
+function ProviderStatusBadge({
+  status,
+  children,
+}: {
+  status: ProviderCredentialDialogStatus;
+  children: string;
+}) {
+  return (
+    <span
+      data-tone={statusTone(status)}
+      className="badge tw:shrink-0 tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
+    >
+      {children}
+    </span>
+  );
 }
 
 function supportsMemberLocal(integration: ProviderIntegrationSummary) {
@@ -198,10 +225,14 @@ export function ProviderCredentialDialog({
   const visibleStatus = state.status ?? selectedIntegration?.state ?? null;
 
   return createPortal(
-    <div className="provider-credential-overlay" role="presentation" onMouseDown={close}>
+    <div
+      className="tw:fixed tw:inset-0 tw:z-[var(--ds-z-modal)] tw:grid tw:place-items-center tw:bg-overlay tw:p-4 tw:max-[560px]:items-end tw:max-[560px]:p-2"
+      role="presentation"
+      onMouseDown={close}
+    >
       <section
         ref={dialogRef}
-        className="provider-credential-dialog ds-panel"
+        className="ds-panel tw:max-h-[min(680px,calc(100dvh_-_var(--ds-space-8)))] tw:w-[min(560px,100%)] tw:overflow-auto tw:p-4 tw:shadow-popover tw:max-[560px]:max-h-[min(720px,calc(100dvh_-_var(--ds-space-4)))] tw:max-[560px]:p-3"
         role="dialog"
         aria-modal="true"
         aria-labelledby="provider-credential-title"
@@ -209,81 +240,149 @@ export function ProviderCredentialDialog({
         aria-busy={loading || pending !== null || revoking !== null}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="provider-credential-head">
+        <header className="tw:flex tw:items-center tw:justify-between tw:gap-3">
           <div>
-            <p className="provider-credential-kicker">{t("providerCredentials.memberLocal")}</p>
-            <h2 id="provider-credential-title">{t("providerCredentials.title")}</h2>
+            <p className="tw:m-0 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
+              {t("providerCredentials.memberLocal")}
+            </p>
+            <h2
+              id="provider-credential-title"
+              className="tw:m-0 tw:text-heading tw:tracking-[-0.01em]"
+            >
+              {t("providerCredentials.title")}
+            </h2>
           </div>
           <button className="btn ghost small icon-only icon-xs" type="button" onClick={close} aria-label={t("common.close")}>
             <Icon name="close" />
           </button>
         </header>
-        <p id="provider-credential-boundary" className="provider-credential-boundary">
+        <p
+          id="provider-credential-boundary"
+          className="tw:mt-3 tw:mb-0 tw:text-sm tw:leading-[1.5] tw:text-muted-foreground"
+        >
           {t("providerCredentials.localBoundary")}
         </p>
 
-        {loading ? <div className="provider-credential-skeleton" aria-label={t("common.loading")}><span /><span /><span /></div> : null}
-        {loadFailed ? <p className="provider-credential-error" role="alert">{t("providerCredentials.error")}</p> : null}
-        {actionFailed ? <p className="provider-credential-error" role="alert">{t("providerCredentials.actionError")}</p> : null}
+        {loading ? (
+          <div className="tw:mt-4" aria-label={t("common.loading")}>
+            <Skeleton lines={3} />
+          </div>
+        ) : null}
+        {loadFailed ? (
+          <p
+            className="tw:mt-4 tw:mb-0 tw:rounded-sm tw:bg-danger-muted tw:p-2 tw:text-sm tw:text-danger"
+            role="alert"
+          >
+            {t("providerCredentials.error")}
+          </p>
+        ) : null}
+        {actionFailed ? (
+          <p
+            className="tw:mt-4 tw:mb-0 tw:rounded-sm tw:bg-danger-muted tw:p-2 tw:text-sm tw:text-danger"
+            role="alert"
+          >
+            {t("providerCredentials.actionError")}
+          </p>
+        ) : null}
         {!loading && !loadFailed && integrations.data?.length === 0 ? (
-          <p className="provider-credential-empty">{t("providerCredentials.empty")}</p>
+          <p className="tw:mt-4 tw:mb-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-muted-foreground">
+            {t("providerCredentials.empty")}
+          </p>
         ) : null}
         {!loading && !loadFailed && integrations.data && integrations.data.length > 0 ? (
           <>
-            <div className="provider-credential-selection" aria-label={t("providerCredentials.select")}>
-              <p>{t("providerCredentials.select")}</p>
+            <div
+              className="tw:mt-4 tw:border-t tw:border-border-subtle"
+              aria-label={t("providerCredentials.select")}
+            >
+              <p className="tw:m-0 tw:px-0 tw:py-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
+                {t("providerCredentials.select")}
+              </p>
               {integrations.data.map((integration) => {
                 const selected = integration.id === state.selectedIntegrationId;
                 return (
                   <button
                     type="button"
                     key={integration.id}
-                    className={`provider-credential-integration${selected ? " selected" : ""}`}
+                    className="tw:flex tw:min-h-control-xl tw:w-full tw:cursor-pointer tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-t tw:border-border-subtle tw:bg-transparent tw:p-2 tw:font-sans tw:text-left tw:text-foreground tw:aria-pressed:bg-selection tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
                     onClick={() => {
                       setActionFailed(false);
                       dispatch({ type: "select", integrationId: integration.id });
                     }}
                     aria-pressed={selected}
                   >
-                    <span><strong>{integration.displayName}</strong><small>{integration.provider}</small></span>
-                    <span className={`badge ${statusClass(integration.state)}`}>{t(statusKey[integration.state])}</span>
+                    <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
+                      <strong className="tw:text-sm">
+                        {integration.displayName}
+                      </strong>
+                      <small className="tw:text-2xs tw:text-muted-foreground">
+                        {integration.provider}
+                      </small>
+                    </span>
+                    <ProviderStatusBadge status={integration.state}>
+                      {t(statusKey[integration.state])}
+                    </ProviderStatusBadge>
                   </button>
                 );
               })}
             </div>
 
             {selectedIntegration ? (
-              <div className="provider-credential-form">
-                <div className="provider-credential-mode">
-                  <Icon name="info" />
-                  <span><strong>{t("providerCredentials.memberLocal")}</strong><small>{t("providerCredentials.managed")}</small></span>
+              <div className="tw:mt-4 tw:grid tw:gap-3">
+                <div className="tw:flex tw:items-center tw:gap-2 tw:border-l-2 tw:border-border-strong tw:bg-background tw:p-2">
+                  <Icon name="info" className="tw:text-muted-foreground" />
+                  <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
+                    <strong className="tw:text-sm">
+                      {t("providerCredentials.memberLocal")}
+                    </strong>
+                    <small className="tw:text-2xs tw:text-muted-foreground">
+                      {t("providerCredentials.managed")}
+                    </small>
+                  </span>
                 </div>
                 {selectedIntegration.provider === "neon" ? (
-                  <label>
-                    <span>{t("providerCredentials.apiKey")}</span>
-                    <input
+                  <Field
+                    label={t("providerCredentials.apiKey")}
+                    hint={
+                      <small className="tw:font-normal">
+                        {t("providerCredentials.apiKeyHint")}
+                      </small>
+                    }
+                  >
+                    <TextInput
                       autoComplete="off"
                       type="password"
                       value={state.apiKey}
                       onChange={(event) => dispatch({ type: "setApiKey", value: event.target.value })}
                       disabled={pending !== null}
                     />
-                    <small>{t("providerCredentials.apiKeyHint")}</small>
-                  </label>
+                  </Field>
                 ) : null}
                 {selectedIntegration.provider === "gcpCloudSql" ? (
-                  <p className="provider-credential-hint">{t("providerCredentials.gcpHint")}</p>
+                  <p className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-muted-foreground">
+                    {t("providerCredentials.gcpHint")}
+                  </p>
                 ) : null}
                 {selectedIntegration.provider === "planetScale" ? (
-                  <p className="provider-credential-hint">{t("providerCredentials.planetscaleHint")}</p>
+                  <p className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-muted-foreground">
+                    {t("providerCredentials.planetscaleHint")}
+                  </p>
                 ) : null}
                 {visibleStatus ? (
-                  <p className={`provider-credential-status ${statusClass(visibleStatus)}`} role={visibleStatus === "ready" ? "status" : "alert"}>
+                  <p
+                    data-tone={statusTone(visibleStatus)}
+                    className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:data-[tone=danger]:bg-danger-muted tw:data-[tone=danger]:text-danger tw:data-[tone=success]:text-success tw:data-[tone=warning]:text-warning"
+                    role={visibleStatus === "ready" ? "status" : "alert"}
+                  >
                     {t("providerCredentials.status", { status: t(statusKey[visibleStatus]) })}
                   </p>
                 ) : null}
-                {state.phase === "complete" && state.status === "ready" ? <p className="provider-credential-success">{t("providerCredentials.success")}</p> : null}
-                <div className="provider-credential-actions ds-control-row">
+                {state.phase === "complete" && state.status === "ready" ? (
+                  <p className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-success">
+                    {t("providerCredentials.success")}
+                  </p>
+                ) : null}
+                <div className="ds-control-row tw:flex tw:justify-end tw:gap-2 tw:[&_.primary]:min-w-[10ch] tw:max-[560px]:[&_.btn]:flex-1">
                   <button className="btn" type="button" onClick={close}>{t("common.close")}</button>
                   <button
                     className="btn primary"
@@ -297,16 +396,30 @@ export function ProviderCredentialDialog({
               </div>
             ) : null}
 
-            <div className="provider-credential-bindings">
-              <p>{t("providerCredentials.memberLocal")}</p>
+            <div className="tw:mt-4 tw:border-t tw:border-border-subtle">
+              <p className="tw:m-0 tw:px-0 tw:py-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
+                {t("providerCredentials.memberLocal")}
+              </p>
               {bindings.data?.length ? bindings.data.map((binding) => (
-                <div className="provider-credential-binding" key={binding.id}>
-                  <span><strong>{binding.provider}</strong><small>{t(statusKey[binding.state])}</small></span>
+                <div
+                  className="tw:flex tw:min-h-control-xl tw:w-full tw:items-center tw:justify-between tw:gap-3 tw:border-t tw:border-border-subtle tw:bg-transparent tw:p-2"
+                  key={binding.id}
+                >
+                  <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
+                    <strong className="tw:text-sm">{binding.provider}</strong>
+                    <small className="tw:text-2xs tw:text-muted-foreground">
+                      {t(statusKey[binding.state])}
+                    </small>
+                  </span>
                   <button className="btn ghost small" type="button" disabled={revoking !== null} onClick={() => void revoke(binding.id)}>
                     {revoking === binding.id ? t("providerCredentials.revokePending") : t("providerCredentials.revoke")}
                   </button>
                 </div>
-              )) : <p className="provider-credential-empty">{t("providerCredentials.noBindings")}</p>}
+              )) : (
+                <p className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-muted-foreground">
+                  {t("providerCredentials.noBindings")}
+                </p>
+              )}
             </div>
           </>
         ) : null}

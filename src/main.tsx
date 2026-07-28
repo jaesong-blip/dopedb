@@ -1,17 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { I18nProvider } from "./lib/i18n";
-import { QueryProvider } from "./lib/queryClient";
-import "./design-system/index.css";
-import "./styles.css";
+import { AppProviders } from "./lib/appProviders";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <QueryProvider>
-      <I18nProvider>
-        <App />
-      </I18nProvider>
-    </QueryProvider>
+    <AppProviders>
+      <App />
+    </AppProviders>
   </React.StrictMode>,
 );

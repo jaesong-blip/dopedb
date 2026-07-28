@@ -1,6 +1,13 @@
 // Catalog V2 schema explorer. React Flow/ELK owns the relationship canvas while the
 // inspector and structured editor consume the same fingerprint-pinned metadata.
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   CatalogRelationV2,
@@ -12,6 +19,10 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import Skeleton from "../../components/Skeleton";
+import {
+  WorkbenchEmptyState,
+  WorkbenchPane,
+} from "../../design-system/components/Workbench";
 import {
   catalogOverviewQuery,
   catalogQuery,
@@ -25,9 +36,18 @@ import {
 import { useI18n } from "../../lib/i18n";
 import SchemaEditor from "./SchemaEditor";
 import { schemaDetailsEnabled } from "./detailLifecycle";
-import "./schema.css";
 
 const ErdCanvas = lazy(() => import("../../components/ErdCanvas"));
+
+function SchemaFrame({ children }: { children: ReactNode }) {
+  return (
+    <WorkbenchPane>
+      <div className="tw:flex tw:min-h-full tw:flex-1 tw:flex-col tw:gap-3 tw:p-3 tw:[container-name:schema-pane] tw:[container-type:inline-size]">
+        {children}
+      </div>
+    </WorkbenchPane>
+  );
+}
 
 function legacyTableFor(
   tables: CatalogTable[],
@@ -139,10 +159,12 @@ export default function SchemaExplorer({
   if (!detailsRequested) {
     if (overviewQuery.error) {
       return (
-        <div className="screen schema-screen">
-          <div className="error">{errMessage(overviewQuery.error)}</div>
+        <SchemaFrame>
+          <div className="tw:text-ui tw:text-danger">
+            {errMessage(overviewQuery.error)}
+          </div>
           <button
-            className="btn small schema-load-retry"
+            className="btn small tw:self-start"
             type="button"
             disabled={overviewQuery.isFetching}
             onClick={() => void overviewQuery.refetch()}
@@ -150,33 +172,34 @@ export default function SchemaExplorer({
             <Icon name="refresh" />
             {t("common.refresh")}
           </button>
-        </div>
+        </SchemaFrame>
       );
     }
     if (!overviewQuery.data) {
       return (
-        <div className="screen schema-screen">
+        <SchemaFrame>
           <Skeleton lines={8} />
-        </div>
+        </SchemaFrame>
       );
     }
     if (overviewQuery.data.relations.length === 0) {
       return (
-        <div className="screen schema-screen">
-          <div className="muted empty">{t("schema.empty")}</div>
-        </div>
+        <SchemaFrame>
+          <WorkbenchEmptyState icon="database">
+            {t("schema.empty")}
+          </WorkbenchEmptyState>
+        </SchemaFrame>
       );
     }
     return (
-      <div className="screen schema-screen">
-        <div className="workbench-empty">
-          <Icon name="database" />
+      <SchemaFrame>
+        <WorkbenchEmptyState icon="database">
           <strong>
             {t("schema.detailsDeferredTitle", {
               count: overviewQuery.data.relations.length,
             })}
           </strong>
-          <span className="muted">{t("schema.detailsDeferredDescription")}</span>
+          <span>{t("schema.detailsDeferredDescription")}</span>
           <button
             className="btn primary"
             type="button"
@@ -184,18 +207,18 @@ export default function SchemaExplorer({
           >
             {t("schema.loadDetails")}
           </button>
-        </div>
-      </div>
+        </WorkbenchEmptyState>
+      </SchemaFrame>
     );
   }
 
   const error = snapshotQuery.error ?? catalogQueryResult.error;
   if (error) {
     return (
-      <div className="screen schema-screen">
-        <div className="error">{errMessage(error)}</div>
+      <SchemaFrame>
+        <div className="tw:text-ui tw:text-danger">{errMessage(error)}</div>
         <button
-          className="btn small schema-load-retry"
+          className="btn small tw:self-start"
           type="button"
           disabled={catalogQueryResult.isFetching || snapshotQuery.isFetching}
           aria-busy={catalogQueryResult.isFetching || snapshotQuery.isFetching}
@@ -204,35 +227,35 @@ export default function SchemaExplorer({
           <Icon name="refresh" />
           {t("common.refresh")}
         </button>
-      </div>
+      </SchemaFrame>
     );
   }
   if (!snapshot || !catalogQueryResult.data) {
     return (
-      <div className="screen schema-screen">
+      <SchemaFrame>
         <Skeleton lines={8} />
-      </div>
+      </SchemaFrame>
     );
   }
 
   return (
-    <div className="screen schema-screen">
-      <div className="schema-head">
-        <span className="muted schema-stats">
+    <SchemaFrame>
+      <div className="tw:flex tw:items-center tw:justify-between tw:gap-2 tw:@max-[760px]:flex-col tw:@max-[760px]:items-start">
+        <span className="tw:text-sm tw:text-muted-foreground">
           {t("schema.tableCount", { count: snapshot.relations.length })}
           {" · "}
           {t("schema.fkCount", { count: physicalRelationshipCount })}
         </span>
-        <div className="schema-head-actions ds-control-row">
+        <div className="ds-control-row tw:ml-auto tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:@max-[760px]:ml-0 tw:@max-[760px]:w-full">
           <input
-            className="schema-filter"
+            className="tw:min-h-control-md tw:w-[min(320px,42vw)] tw:@max-[760px]:min-w-0 tw:@max-[760px]:flex-1"
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             placeholder={t("schema.filterPlaceholder")}
             type="search"
           />
           <button
-            className={`btn small icon-only${editorOpen ? " active" : ""}`}
+            className="btn small icon-only"
             type="button"
             aria-expanded={editorOpen}
             title={t("schema.editorTitle")}
@@ -242,7 +265,7 @@ export default function SchemaExplorer({
             <Icon name="pencil" />
           </button>
           <button
-            className={`btn small icon-only${inspectorOpen ? " active" : ""}`}
+            className="btn small icon-only"
             type="button"
             aria-expanded={inspectorOpen}
             aria-controls="schema-inspector"
@@ -271,10 +294,13 @@ export default function SchemaExplorer({
       )}
 
       {snapshot.relations.length === 0 ? (
-        <div className="muted empty">{t("schema.empty")}</div>
+        <WorkbenchEmptyState icon="database">
+          {t("schema.empty")}
+        </WorkbenchEmptyState>
       ) : (
         <div
-          className={`schema-layout${inspectorOpen ? " inspector-open" : ""}`}
+          data-inspector={inspectorOpen}
+          className="tw:grid tw:min-h-[520px] tw:min-w-0 tw:flex-1 tw:grid-cols-[minmax(0,1fr)] tw:data-[inspector=true]:grid-cols-[minmax(0,1fr)_320px] tw:@max-[1100px]:data-[inspector=true]:grid-cols-[minmax(0,1fr)] tw:@max-[760px]:min-h-[min(480px,60dvh)]"
         >
           <Suspense fallback={<Skeleton lines={8} />}>
             <ErdCanvas
@@ -288,14 +314,19 @@ export default function SchemaExplorer({
             />
           </Suspense>
           {inspectorOpen && (
-            <aside className="schema-inspector" id="schema-inspector">
+            <aside
+              className="tw:min-w-0 tw:overflow-auto tw:border-l tw:border-border-subtle tw:py-3 tw:pr-0 tw:pl-4 tw:[&_h3]:mt-4 tw:@max-[1100px]:max-h-[320px] tw:@max-[1100px]:border-t tw:@max-[1100px]:border-l-0 tw:@max-[1100px]:px-0 tw:@max-[1100px]:pt-3"
+              id="schema-inspector"
+            >
               {selected ? (
                 <>
-                  <div className="schema-inspector-head">
-                    <div className="schema-inspector-title">
-                      <h3>{relationDisplayName(selected.object)}</h3>
+                  <div className="tw:flex tw:items-start tw:justify-between tw:gap-3">
+                    <div className="tw:grid tw:min-w-0 tw:gap-1">
+                      <h3 className="tw:mt-0 tw:text-foreground tw:normal-case tw:tracking-normal">
+                        {relationDisplayName(selected.object)}
+                      </h3>
                       <span
-                        className="badge schema-stat"
+                        className="badge"
                         title={t("schema.columnCount", {
                           count: selected.columns.length,
                         })}
@@ -316,18 +347,29 @@ export default function SchemaExplorer({
                       </button>
                     )}
                   </div>
-                  <div className="schema-detail-list">
+                  <div className="tw:mt-3 tw:grid tw:gap-0 tw:border-t tw:border-border-subtle">
                     {selected.columns.map((column) => (
-                      <div className="schema-detail-row" key={column.name}>
-                        <span>
-                          <code>{column.name}</code>
+                      <div
+                        className="tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(90px,auto)] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:py-2 tw:text-sm tw:@max-[760px]:grid-cols-1 tw:@max-[760px]:gap-1"
+                        key={column.name}
+                      >
+                        <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
+                          <code className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                            {column.name}
+                          </code>
                           {selected.constraints.some(
                             (constraint) =>
                               constraint.kind === "primary" &&
                               constraint.columns.includes(column.name),
-                          ) && <b>{t("schema.pk")}</b>}
+                          ) && (
+                            <b className="tw:rounded-xs tw:bg-primary/10 tw:px-1 tw:text-2xs tw:leading-4 tw:text-primary">
+                              {t("schema.pk")}
+                            </b>
+                          )}
                         </span>
-                        <em>{column.nativeType}</em>
+                        <em className="tw:text-right tw:text-muted-foreground tw:not-italic tw:@max-[760px]:text-left">
+                          {column.nativeType}
+                        </em>
                       </div>
                     ))}
                   </div>
@@ -335,7 +377,7 @@ export default function SchemaExplorer({
                   {selected.constraints.some(
                     (constraint) => constraint.kind === "foreign",
                   ) ? (
-                    <ul className="schema-rel-list">
+                    <ul className="tw:mt-2 tw:grid tw:list-none tw:gap-2 tw:p-0 tw:text-sm tw:leading-[1.45] tw:text-muted-foreground">
                       {selected.constraints
                         .filter(
                           (constraint) => constraint.kind === "foreign",
@@ -355,11 +397,13 @@ export default function SchemaExplorer({
                         ))}
                     </ul>
                   ) : (
-                    <p className="muted">{t("schema.noForeignKeys")}</p>
+                    <p className="tw:text-muted-foreground">
+                      {t("schema.noForeignKeys")}
+                    </p>
                   )}
                   <h3>{t("schema.indexes")}</h3>
                   {selected.indexes.length ? (
-                    <ul className="schema-rel-list">
+                    <ul className="tw:mt-2 tw:grid tw:list-none tw:gap-2 tw:p-0 tw:text-sm tw:leading-[1.45] tw:text-muted-foreground">
                       {selected.indexes.map((index) => (
                         <li key={index.name}>
                           {index.name}:{" "}
@@ -373,7 +417,9 @@ export default function SchemaExplorer({
                       ))}
                     </ul>
                   ) : (
-                    <p className="muted">{t("common.none")}</p>
+                    <p className="tw:text-muted-foreground">
+                      {t("common.none")}
+                    </p>
                   )}
                 </>
               ) : (
@@ -383,6 +429,6 @@ export default function SchemaExplorer({
           )}
         </div>
       )}
-    </div>
+    </SchemaFrame>
   );
 }

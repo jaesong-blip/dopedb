@@ -5,12 +5,14 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
+import type { ConnectionLaunchPreset } from "../../features/connections/presets";
 import { deleteConnection } from "../../features/connections/tauriAdapter";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
 import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
@@ -29,13 +31,18 @@ import {
 } from "../../lib/schemaDiff";
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
+import {
+  ToolWindowAction,
+  ToolWindowHeader,
+  ToolWindowSection,
+} from "../../design-system/components/ToolWindow";
+import { TreeSearch } from "../../design-system/components/TreeControls";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
 import ConnectionNode from "./ConnectionNode";
 import DdlModal from "./DdlModal";
 import { useCatalogTree } from "./useCatalogTree";
-import "./connections.css";
 
 // DopeDB-style Database Explorer: connections in the sidebar, the selected one
 // expanded to reveal its tables. Clicking a table opens its data in the main area.
@@ -52,6 +59,9 @@ export function DatabaseExplorer({
   onConnectionUpdated,
   workspaceAccount,
   workspaceHeader,
+  onNewConnection,
+  onCreateDemoDatabase,
+  creatingDemo = false,
 }: {
   connections: ConnectionProfile[];
   selectedId: string | null;
@@ -65,12 +75,16 @@ export function DatabaseExplorer({
   onConnectionUpdated: (conn: ConnectionProfile) => void;
   workspaceAccount?: ReactNode;
   workspaceHeader?: ReactNode;
+  onNewConnection: (preset?: ConnectionLaunchPreset) => void;
+  onCreateDemoDatabase: () => void;
+  creatingDemo?: boolean;
 }) {
   const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
   const catalogScope = useCatalogScope();
   const catalogScopeKeyRef = useRef(catalogScope.key);
+  const [globalFilter, setGlobalFilter] = useState("");
   const {
     state: {
       wanted,
@@ -150,6 +164,16 @@ export function DatabaseExplorer({
     const willOpen = !open.has(id);
     commands.toggleConnection(id);
     if (willOpen) ensureGroupLoaded(id);
+  }
+
+  function updateGlobalFilter(value: string) {
+    if (!globalFilter.trim() && value.trim()) {
+      for (const connection of connections) {
+        commands.openConnection(connection.id);
+        ensureGroupLoaded(connection.id);
+      }
+    }
+    setGlobalFilter(value);
   }
 
   // Selecting a connection auto-expands it (collapse stays a free action after).
@@ -237,7 +261,7 @@ export function DatabaseExplorer({
         fullCatalog={catalogs[connection.id]}
         error={errs[connection.id]}
         detailError={detailErrs[connection.id]}
-        filter={filters[connection.id] ?? ""}
+        filter={globalFilter || filters[connection.id] || ""}
         groupByConnectionId={groupByConnectionId}
         catalogs={catalogs}
         collapsedSections={collapsedSections}
@@ -298,17 +322,21 @@ export function DatabaseExplorer({
       <div
         key={`group-${group.key}`}
         data-schema-group-key={group.key}
-        className={isDropTarget ? "db-group drop-target" : "db-group"}
+        data-drop-target={isDropTarget}
+        className="tw:relative tw:my-1 tw:border-l tw:border-border-strong tw:pt-0 tw:pr-0 tw:pb-1 tw:pl-1 tw:transition-colors tw:data-[drop-target=true]:border-ring tw:data-[drop-target=true]:bg-muted"
       >
         <div
-          className={`db-group-head${activeSchemaGroupKey === group.key ? " active" : ""}`}
+          data-active={activeSchemaGroupKey === group.key}
+          className="tw:flex tw:min-h-control-sm tw:items-center tw:gap-1 tw:px-1 tw:text-xs tw:text-muted-foreground tw:data-[active=true]:text-primary"
           title={t("connections.schemaGroupTitle", { group: group.label })}
         >
           {engine && <EngineMark engine={engine} />}
-          <span className="db-group-name">{group.label}</span>
+          <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-bold tw:text-foreground">
+            {group.label}
+          </span>
           <button
             type="button"
-            className="db-group-compare"
+            className="tw:inline-flex tw:min-h-control-xs tw:min-w-0 tw:cursor-pointer tw:items-center tw:justify-center tw:gap-[2px] tw:rounded-full tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:font-sans tw:text-2xs tw:font-bold tw:whitespace-nowrap tw:text-muted-foreground tw:hover:border-ring tw:hover:text-primary"
             title={t("schemaDiff.openTitle")}
             aria-label={t("schemaDiff.openTitle")}
             onClick={() => {
@@ -321,10 +349,22 @@ export function DatabaseExplorer({
             ) : complete && groupTotal === 0 ? (
               <Icon name="check" />
             ) : complete ? (
-              <span className="db-group-diff-counts">
-                {groupCounts.added > 0 && <span className="diff-add">+{groupCounts.added}</span>}
-                {groupCounts.missing > 0 && <span className="diff-remove">−{groupCounts.missing}</span>}
-                {groupCounts.changed > 0 && <span className="diff-change">~{groupCounts.changed}</span>}
+              <span className="tw:inline-flex tw:gap-[2px] tw:font-mono tw:[font-variant-numeric:tabular-nums]">
+                {groupCounts.added > 0 ? (
+                  <span className="tw:text-success">
+                    +{groupCounts.added}
+                  </span>
+                ) : null}
+                {groupCounts.missing > 0 ? (
+                  <span className="tw:text-danger">
+                    −{groupCounts.missing}
+                  </span>
+                ) : null}
+                {groupCounts.changed > 0 ? (
+                  <span className="tw:text-warning">
+                    ~{groupCounts.changed}
+                  </span>
+                ) : null}
               </span>
             ) : (
               <span>{t("schemaDiff.open")}</span>
@@ -336,14 +376,144 @@ export function DatabaseExplorer({
     );
   }
 
-  return (
-    <aside className="sidebar" id="workbench-sidebar">
-      {workspaceHeader}
+  function renderLaunchButton(
+    label: string,
+    preset: ConnectionLaunchPreset,
+  ) {
+    return (
+      <ToolWindowAction
+        leading={<EngineMark engine={preset.engine ?? "postgres"} />}
+        trailing={<Icon name="chevronRight" />}
+        onClick={() => onNewConnection(preset)}
+      >
+        {label}
+      </ToolWindowAction>
+    );
+  }
 
-      <div className="explorer">
-        {connections.length === 0 && (
-          <div className="muted empty">{t("connections.noConnections")}</div>
-        )}
+  return (
+    <aside
+      className="sidebar tw:flex tw:flex-col tw:overflow-hidden tw:border-r tw:border-border-subtle tw:bg-background"
+      id="workbench-sidebar"
+    >
+      <ToolWindowHeader
+        title={t("connections.databaseExplorer")}
+        actions={
+          <>
+          <button
+            type="button"
+            className="btn small icon-only icon-xs"
+            onClick={() => onNewConnection()}
+            title={t("connections.new")}
+            aria-label={t("connections.new")}
+          >
+            <Icon name="plus" />
+          </button>
+          <button
+            type="button"
+            className="btn small icon-only icon-xs"
+            disabled={!selectedId}
+            onClick={() => selectedId && void refreshSchema(selectedId)}
+            title={t("connections.refreshSchema")}
+            aria-label={t("connections.refreshSchema")}
+          >
+            <Icon name="refresh" />
+          </button>
+          <button
+            type="button"
+            className="btn small icon-only icon-xs"
+            disabled={!selectedId || !open.has(selectedId)}
+            onClick={() => selectedId && commands.toggleConnection(selectedId)}
+            title={t("connections.collapse")}
+            aria-label={t("connections.collapse")}
+          >
+            <Icon name="chevronsLeft" />
+          </button>
+          </>
+        }
+      />
+      {workspaceHeader}
+      {connections.length > 0 ? (
+        <div className="tw:border-b tw:border-border-subtle tw:p-2">
+          <TreeSearch
+            value={globalFilter}
+            placeholder={t("connections.filterTables")}
+            clearLabel={t("common.close")}
+            onChange={updateGlobalFilter}
+          />
+        </div>
+      ) : null}
+
+      <div className="explorer tw:min-h-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:p-1 tw:[container-name:db-sidebar] tw:[container-type:inline-size]">
+        {connections.length === 0 ? (
+          <div className="tw:grid tw:gap-5 tw:p-3">
+            <ToolWindowSection title={t("connections.createDataSource")}>
+              {renderLaunchButton("PostgreSQL", {
+                engine: "postgres",
+                source: "standard",
+              })}
+              {renderLaunchButton("MySQL / MariaDB", {
+                engine: "mysql",
+                source: "standard",
+              })}
+              {renderLaunchButton("SQLite", {
+                engine: "sqlite",
+                provider: "generic",
+                source: "standard",
+              })}
+              {renderLaunchButton("MongoDB", {
+                engine: "mongodb",
+                source: "standard",
+              })}
+              <ToolWindowAction
+                leading={<Icon name="moreVertical" />}
+                trailing={<Icon name="chevronRight" />}
+                onClick={() => onNewConnection()}
+              >
+                {t("connections.allDataSources")}
+              </ToolWindowAction>
+            </ToolWindowSection>
+
+            <ToolWindowSection title={t("connections.connectCloudProvider")}>
+              {renderLaunchButton("Neon", {
+                engine: "postgres",
+                provider: "neon",
+                source: "cloud",
+              })}
+              {renderLaunchButton("Google Cloud SQL", {
+                engine: "postgres",
+                provider: "gcpCloudSql",
+                source: "cloud",
+              })}
+              {renderLaunchButton("PlanetScale", {
+                engine: "mysql",
+                provider: "planetScale",
+                source: "cloud",
+              })}
+            </ToolWindowSection>
+
+            <ToolWindowSection title={t("connections.exploreDemoDatabases")}>
+              {renderLaunchButton(t("connections.demoPostgres"), {
+                engine: "postgres",
+                source: "demo",
+              })}
+              {renderLaunchButton(t("connections.demoMysql"), {
+                engine: "mysql",
+                source: "demo",
+              })}
+              <ToolWindowAction
+                leading={<EngineMark engine="sqlite" />}
+                trailing={<Icon name="download" />}
+                disabled={creatingDemo}
+                onClick={onCreateDemoDatabase}
+              >
+                {creatingDemo
+                  ? t("connections.demoCreating")
+                  : t("connections.demoSqlite")}
+              </ToolWindowAction>
+            </ToolWindowSection>
+          </div>
+        ) : null}
         {sections.map((section) =>
           section.kind === "group"
             ? renderGroup(section.group)
@@ -352,7 +522,9 @@ export function DatabaseExplorer({
       </div>
 
       {workspaceAccount ? (
-        <div className="sidebar-foot ds-control-row">{workspaceAccount}</div>
+        <div className="sidebar-foot ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
+          {workspaceAccount}
+        </div>
       ) : null}
 
       {dragPreview &&
@@ -363,13 +535,15 @@ export function DatabaseExplorer({
           if (!conn) return null;
           return (
             <div
-              className="db-drag-preview"
+              className="tw:pointer-events-none tw:fixed tw:top-0 tw:left-0 tw:z-[var(--ds-z-popover)] tw:inline-flex tw:max-w-[min(280px,70vw)] tw:items-center tw:gap-2 tw:rounded-sm tw:border tw:border-border-strong tw:bg-popover tw:p-2 tw:text-ui tw:font-semibold tw:text-popover-foreground tw:shadow-popover"
               style={{
                 transform: `translate3d(${Math.round(dragPreview.x + 12)}px, ${Math.round(dragPreview.y + 12)}px, 0)`,
               }}
             >
               <EngineMark engine={conn.engine} />
-              <span>{conn.name || t("app.unnamed")}</span>
+              <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                {conn.name || t("app.unnamed")}
+              </span>
             </div>
           );
         })()}

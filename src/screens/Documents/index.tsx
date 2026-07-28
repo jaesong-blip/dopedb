@@ -10,12 +10,17 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import ResultToolbar from "../../components/ResultToolbar";
+import {
+  ResultMeta,
+  WorkbenchEmptyState,
+  WorkbenchPane,
+  WorkbenchToolbar,
+} from "../../design-system/components/Workbench";
 import { catalogQuery, useCatalogScope } from "../../lib/queries";
 import { documentsToGrid } from "../../lib/documentGrid";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
 import { useQueryRun } from "../../lib/useQueryRun";
-import "./documents.css";
 
 type Op = "find" | "aggregate" | "count";
 
@@ -157,12 +162,18 @@ export default function Documents({
   };
 
   return (
-    <div className="screen documents">
-      <div className="ds-toolbar documents-toolbar ds-control-row">
-        <h2>{t("documents.title")}</h2>
-        <label className="documents-field">
+    <WorkbenchPane>
+      <WorkbenchToolbar label={t("documents.title")}>
+        <h2 className="tw:mr-3 tw:text-ui tw:font-semibold">
+          {t("documents.title")}
+        </h2>
+        <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
           {t("documents.collection")}
-          <select value={collection} onChange={(e) => setCollection(e.target.value)}>
+          <select
+            className="tw:min-w-[160px]"
+            value={collection}
+            onChange={(e) => setCollection(e.target.value)}
+          >
             {tables.length === 0 && <option value="">{t("documents.noCollections")}</option>}
             {tables.map((table) => (
               <option key={table.name} value={table.name}>
@@ -171,9 +182,13 @@ export default function Documents({
             ))}
           </select>
         </label>
-        <label className="documents-field">
+        <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
           {t("documents.operation")}
-          <select value={op} onChange={(e) => setOp(e.target.value as Op)}>
+          <select
+            className="tw:min-w-[160px]"
+            value={op}
+            onChange={(e) => setOp(e.target.value as Op)}
+          >
             <option value="find">find</option>
             <option value="aggregate">aggregate</option>
             <option value="count">count</option>
@@ -193,37 +208,41 @@ export default function Documents({
             {t("documents.cancel")}
           </button>
         )}
-      </div>
+      </WorkbenchToolbar>
 
       {op === "find" && (
-        <div className="documents-params">
-          <label>
+        <div className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] tw:gap-3 tw:border-b tw:border-border-subtle tw:p-3 tw:@max-[760px]:grid-cols-1">
+          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
             {t("documents.filter")}
             <textarea
+              className="tw:w-full tw:resize-y tw:font-mono tw:text-sm"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               placeholder="{}"
             />
           </label>
-          <label>
+          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
             {t("documents.projection")}
             <textarea
+              className="tw:w-full tw:resize-y tw:font-mono tw:text-sm"
               value={projectionText}
               onChange={(e) => setProjectionText(e.target.value)}
               placeholder="{}"
             />
           </label>
-          <label>
+          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
             {t("documents.sort")}
             <textarea
+              className="tw:w-full tw:resize-y tw:font-mono tw:text-sm"
               value={sortText}
               onChange={(e) => setSortText(e.target.value)}
               placeholder="{}"
             />
           </label>
-          <label className="documents-limit">
+          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
             {t("documents.limit")}
             <input
+              className="tw:w-[120px]"
               type="number"
               min={1}
               value={limit}
@@ -233,10 +252,11 @@ export default function Documents({
         </div>
       )}
       {op === "aggregate" && (
-        <div className="documents-params">
-          <label className="documents-pipeline">
+        <div className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] tw:gap-3 tw:border-b tw:border-border-subtle tw:p-3 tw:@max-[760px]:grid-cols-1">
+          <label className="tw:col-span-full tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
             {t("documents.pipeline")}
             <textarea
+              className="tw:min-h-[160px] tw:w-full tw:resize-y tw:font-mono tw:text-sm"
               value={pipelineText}
               onChange={(e) => setPipelineText(e.target.value)}
               placeholder="[]"
@@ -245,10 +265,11 @@ export default function Documents({
         </div>
       )}
       {op === "count" && (
-        <div className="documents-params">
-          <label>
+        <div className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] tw:gap-3 tw:border-b tw:border-border-subtle tw:p-3 tw:@max-[760px]:grid-cols-1">
+          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
             {t("documents.filter")}
             <textarea
+              className="tw:w-full tw:resize-y tw:font-mono tw:text-sm"
               value={countFilterText}
               onChange={(e) => setCountFilterText(e.target.value)}
               placeholder="{}"
@@ -257,13 +278,17 @@ export default function Documents({
         </div>
       )}
 
-      {parseErr && <div className="error">{parseErr}</div>}
-      {runErr && <div className="error">{runErr}</div>}
-      {cancelled && <div className="muted">{t("documents.cancelled")}</div>}
+      {parseErr && <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">{parseErr}</div>}
+      {runErr && <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">{runErr}</div>}
+      {cancelled && (
+        <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-muted-foreground">
+          {t("documents.cancelled")}
+        </div>
+      )}
 
       {result && (
-        <div className="results">
-          <div className="result-meta muted">
+        <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
+          <ResultMeta>
             {t("documents.docCount", { count: result.page.docCount })}
             {result.page.truncated && ` - ${t("documents.truncated")}`} · {result.page.durationMs} ms ·{" "}
             {result.at}
@@ -273,14 +298,16 @@ export default function Documents({
               rows={gridResult.rows}
               filenameBase={`documents-${collection}-${stamp()}`}
             />
-          </div>
+          </ResultMeta>
           {gridResult.columns.length > 0 ? (
-            <DataGrid result={gridResult} />
+            <DataGrid result={gridResult} surface="workbench" />
           ) : (
-            <div className="muted">{t("documents.noDocuments")}</div>
+            <WorkbenchEmptyState icon="table">
+              {t("documents.noDocuments")}
+            </WorkbenchEmptyState>
           )}
         </div>
       )}
-    </div>
+    </WorkbenchPane>
   );
 }

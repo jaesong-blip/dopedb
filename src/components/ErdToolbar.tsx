@@ -6,9 +6,9 @@ import {
   type ErdLayoutMode,
 } from "../features/erd/domain";
 import { Icon } from "./Icon";
-import ToolbarMenu from "./ToolbarMenu";
+import ToolbarMenu, { ToolbarMenuItem } from "./ToolbarMenu";
+import { WorkbenchToolbar } from "../design-system/components/Workbench";
 import { useI18n } from "../lib/i18n";
-import "./ErdToolbar.css";
 
 export default function ErdToolbar({
   layouts,
@@ -49,9 +49,10 @@ export default function ErdToolbar({
 }) {
   const { t } = useI18n();
   return (
-    <div className="erd-toolbar ds-toolbar ds-control-row">
-      <div className="erd-toolbar-scroll scrollbar-sleek">
+    <WorkbenchToolbar label={t("schema.erdMode")}>
+      <div className="scrollbar-sleek tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2 tw:overflow-x-auto tw:overflow-y-hidden tw:overscroll-x-contain tw:[&>*]:shrink-0">
         <select
+          className="tw:w-auto tw:max-w-[180px] tw:min-w-0 tw:@max-[760px]:w-[min(100%,180px)]"
           value={activeLayoutId ?? ""}
           onChange={(event) =>
             onSelectLayout(
@@ -68,12 +69,14 @@ export default function ErdToolbar({
           ))}
         </select>
         <input
+          className="tw:w-[min(180px,24vw)] tw:min-w-0 tw:@max-[760px]:w-[min(100%,180px)]"
           value={name}
           onChange={(event) => onName(event.target.value)}
           aria-label={t("schema.erdLayoutName")}
           placeholder={t("schema.erdLayoutName")}
         />
         <select
+          className="tw:w-auto tw:min-w-0"
           value={mode}
           onChange={(event) => onMode(event.target.value as ErdLayoutMode)}
           aria-label={t("schema.erdMode")}
@@ -93,7 +96,7 @@ export default function ErdToolbar({
           <Icon name="refresh" />
         </button>
         <button
-          className={`btn small icon-only${compact ? " active" : ""}`}
+          className="btn small icon-only"
           type="button"
           onClick={onToggleCompact}
           title={t("schema.erdCompact")}
@@ -103,7 +106,7 @@ export default function ErdToolbar({
           <Icon name="columns" />
         </button>
         <button
-          className={`btn small icon-only${neighborhood ? " active" : ""}`}
+          className="btn small icon-only"
           type="button"
           onClick={onToggleNeighborhood}
           title={t(
@@ -126,8 +129,12 @@ export default function ErdToolbar({
           <Icon name="plus" />
         </button>
       </div>
-      <div className="erd-toolbar-end">
-        {dirty && <span className="badge erd-unsaved-badge">{t("schema.erdUnsaved")}</span>}
+      <div className="tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2">
+        {dirty && (
+          <span className="badge tw:@max-[760px]:hidden">
+            {t("schema.erdUnsaved")}
+          </span>
+        )}
         <button
           className="btn primary small"
           type="button"
@@ -138,26 +145,22 @@ export default function ErdToolbar({
         </button>
         <ToolbarMenu label={t("schema.erdExport")} icon="download">
           {(["svg", "png", "pdf", "json"] as const).map((format) => (
-            <button
-              className="ds-menu-item"
-              type="button"
-              role="menuitem"
+            <ToolbarMenuItem
+              icon="download"
               key={format}
               onClick={() => onExport(format)}
             >
               {format.toUpperCase()}
-            </button>
+            </ToolbarMenuItem>
           ))}
-          <button
-            className="ds-menu-item"
-            type="button"
-            role="menuitem"
+          <ToolbarMenuItem
+            icon="copy"
             onClick={() => onExport("copy")}
           >
             {t("schema.erdCopyShare")}
-          </button>
+          </ToolbarMenuItem>
         </ToolbarMenu>
       </div>
-    </div>
+    </WorkbenchToolbar>
   );
 }

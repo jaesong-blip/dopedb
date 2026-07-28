@@ -21,6 +21,11 @@ pub fn install_driver(state: State<'_, AppState>, id: String) -> AppResult<Drive
 }
 
 #[tauri::command]
+pub async fn create_demo_sqlite(app: tauri::AppHandle) -> AppResult<String> {
+    super::demo::create(&app).await
+}
+
+#[tauri::command]
 pub async fn list_connections(state: State<'_, AppState>) -> AppResult<Vec<ConnectionProfile>> {
     state.services.connections.list_profiles().await
 }

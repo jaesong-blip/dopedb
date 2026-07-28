@@ -37,6 +37,9 @@
   --color-success: var(--ds-success);
   --color-warning: var(--ds-warning);
   --color-danger: var(--ds-danger);
+  --color-danger-muted: var(--ds-danger-bg);
+  --color-danger-border: var(--ds-danger-border);
+  --color-overlay: var(--ds-overlay);
 
   --spacing: var(--ds-space-1);
   --spacing-control-xs: var(--ds-control-xs);

@@ -5,9 +5,9 @@ import type { SafetySettings } from "../../../ipc/types";
 import { errMessage } from "../../../ipc/types";
 import InfoTip from "../../../components/InfoTip";
 import { useToast } from "../../../components/Toast";
+import { SettingsGroup } from "../../../design-system/components/Settings";
 import { useI18n, type I18nKey } from "../../../lib/i18n";
 import MonitoringAccess from "./MonitoringAccess";
-import "./safety.css";
 
 const TOGGLES: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = [
   { key: "allowWrites", label: "safety.allowWrites", hint: "safety.allowWritesHint" },
@@ -45,7 +45,14 @@ export default function Safety({ connectionId }: { connectionId: string }) {
   }, [connectionId]);
 
   if (!settings) {
-    return <div className={msg ? "screen muted" : "screen muted loading"}>{msg ?? t("safety.loading")}</div>;
+    return (
+      <div
+        role={msg ? "alert" : "status"}
+        className="tw:p-4 tw:text-muted-foreground"
+      >
+        {msg ?? t("safety.loading")}
+      </div>
+    );
   }
 
   function set<K extends keyof SafetySettings>(key: K, value: SafetySettings[K]) {
@@ -66,29 +73,29 @@ export default function Safety({ connectionId }: { connectionId: string }) {
   }
 
   return (
-    <div className="screen safety safety-screen">
-      <div className="safety-hero">
-        <div className="safety-title-row">
+    <div className="tw:flex tw:w-full tw:max-w-[880px] tw:flex-col tw:gap-3 tw:p-4 tw:max-[640px]:max-w-none">
+      <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[860px]:flex-col tw:max-[860px]:items-start">
+        <div className="tw:inline-flex tw:items-center tw:gap-2 tw:max-[640px]:flex-col tw:max-[640px]:items-start">
           <h2>{t("safety.title")}</h2>
           <InfoTip label={t("safety.body")} />
         </div>
         <span
-          className={
-            settings.allowWrites
-              ? "badge risk-medium"
-              : "badge status-ok"
-          }
+          data-mode={settings.allowWrites ? "write" : "readOnly"}
+          className="badge tw:data-[mode=readOnly]:border-success tw:data-[mode=readOnly]:text-success tw:data-[mode=write]:border-warning tw:data-[mode=write]:text-warning"
         >
           {settings.allowWrites ? t("safety.modeWrites") : t("safety.modeReadOnly")}
         </span>
       </div>
 
-      <div className="safety-controls">
-        <section className="safety-control-panel">
-          <h3>{t("safety.guardrails")}</h3>
+      <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(264px,0.8fr)] tw:gap-2 tw:max-[1180px]:grid-cols-2 tw:max-[860px]:grid-cols-1">
+        <SettingsGroup title={t("safety.guardrails")}>
           {TOGGLES.map((item) => (
-            <label key={item.key} className="safety-check">
+            <label
+              key={item.key}
+              className="tw:grid tw:min-h-control-lg tw:grid-cols-[16px_minmax(0,1fr)_20px] tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:py-2 tw:first-of-type:border-t-0"
+            >
               <input
+                className="tw:m-0"
                 type="checkbox"
                 checked={settings[item.key] as boolean}
                 onChange={(e) => set(item.key, e.target.checked as never)}
@@ -99,14 +106,19 @@ export default function Safety({ connectionId }: { connectionId: string }) {
               <InfoTip label={t(item.hint)} />
             </label>
           ))}
-        </section>
+        </SettingsGroup>
 
-        <section className="safety-control-panel compact">
-          <h3>{t("safety.limits")}</h3>
+        <SettingsGroup title={t("safety.limits")}>
           {NUMBERS.map((n) => (
-            <label key={n.key} className="safety-number">
-              <span>{t(n.label)}</span>
+            <label
+              key={n.key}
+              className="tw:grid tw:min-h-control-lg tw:grid-cols-[minmax(0,1fr)_120px_20px] tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:py-2 tw:first-of-type:border-t-0 tw:max-[640px]:grid-cols-1"
+            >
+              <span className="tw:text-sm tw:text-muted-foreground">
+                {t(n.label)}
+              </span>
               <input
+                className="tw:w-full tw:bg-muted"
                 type="number"
                 min={n.key === "maxRows" ? 1 : 0}
                 step={1}
@@ -124,11 +136,15 @@ export default function Safety({ connectionId }: { connectionId: string }) {
               <InfoTip label={t(n.hint)} />
             </label>
           ))}
-        </section>
+        </SettingsGroup>
       </div>
 
-      <div className="safety-save-row">
-        <button className="btn primary" disabled={busy} onClick={save}>
+      <div className="tw:flex tw:justify-start">
+        <button
+          className="btn primary tw:max-[640px]:w-full"
+          disabled={busy}
+          onClick={save}
+        >
           {busy ? t("common.saving") : t("common.save")}
         </button>
       </div>

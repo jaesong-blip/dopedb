@@ -27,6 +27,10 @@ import type { RowEditorSubmission } from "../../components/RowEditor";
 import JobPanel from "../../components/JobPanel";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import {
+  WorkbenchEmptyState,
+  WorkbenchPane,
+} from "../../design-system/components/Workbench";
 import { tableRowsQuery } from "../../lib/queries";
 import { tableKey } from "../../lib/tableRef";
 import { useI18n } from "../../lib/i18n";
@@ -318,7 +322,7 @@ export default function SqlTableData({
   const panelOpen = reviewing || !!editor || !!cellSel || !!pendingDelete;
 
   return (
-    <div className="table-data">
+    <WorkbenchPane>
       <TableContextHeader
         connection={connection}
         table={table}
@@ -384,14 +388,22 @@ export default function SqlTableData({
 
       {structure && <TableStructure table={table} />}
 
-      {err && <div className="error">{err}</div>}
+      {err && (
+        <div className="tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+          {err}
+        </div>
+      )}
 
       {/* Dim (not blank) the stale grid while paging/sorting/filtering re-queries. */}
-      <div className={busy && result ? "table-data-body busy" : "table-data-body"}>
+      <div
+        data-busy={busy && Boolean(result)}
+        className="tw:flex tw:min-h-0 tw:flex-1 tw:data-[busy=true]:[&_.grid-scroll]:pointer-events-none tw:data-[busy=true]:[&_.grid-scroll]:opacity-50 tw:@max-[920px]:flex-col"
+      >
         {result ? (
           result.rows.length ? (
             <DataGrid
               result={result}
+              surface="workbench"
               startIndex={page * pageSize}
               sort={sort}
               onSort={cycleSort}
@@ -416,16 +428,25 @@ export default function SqlTableData({
           ) : busy ? (
             // Reloading (filter cleared / table switched) — the stale zero-row result would
             // otherwise flash a wrong "Table is empty." against the now-live filter state.
-            <div className="muted loading">{t("tables.loadingRows")}</div>
+            <WorkbenchEmptyState>{t("tables.loadingRows")}</WorkbenchEmptyState>
           ) : (
             // Loaded but zero rows: distinguish an empty table from a filter that matched nothing.
-            <div className="muted">
+            <WorkbenchEmptyState icon="table">
               {activeFilters > 0 ? t("tables.noRowsFilter") : t("tables.tableEmpty")}
-            </div>
+            </WorkbenchEmptyState>
           )
         ) : (
           // No cached page for this table yet — the only place a cold load is visible.
-          !err && (busy ? <Skeleton lines={8} /> : <div className="muted">{t("tables.noRows")}</div>)
+          !err &&
+          (busy ? (
+            <div className="tw:flex-1 tw:p-3">
+              <Skeleton lines={8} />
+            </div>
+          ) : (
+            <WorkbenchEmptyState icon="table">
+              {t("tables.noRows")}
+            </WorkbenchEmptyState>
+          ))
         )}
 
         {jobsOpen && catalogRelation ? (
@@ -470,6 +491,6 @@ export default function SqlTableData({
           />
         ) : null}
       </div>
-    </div>
+    </WorkbenchPane>
   );
 }

@@ -3,9 +3,9 @@
 // displayed text to the clipboard.
 import { useEffect } from "react";
 import { useI18n } from "../lib/i18n";
+import { InspectorHeader } from "../design-system/components/Workbench";
 import { Icon } from "./Icon";
 import { useToast } from "./Toast";
-import "./grid.css";
 
 function render(value: unknown): { text: string; json: boolean } {
   if (value === null || value === undefined) return { text: "NULL", json: false };
@@ -44,10 +44,11 @@ export default function CellViewer({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="cell-viewer">
-      <div className="panel-head">
-        <strong>{column}</strong>
-        <div className="panel-head-actions ds-control-row">
+    <div>
+      <InspectorHeader
+        title={column}
+        actions={
+          <>
           <button
             className="btn small"
             onClick={() =>
@@ -62,9 +63,15 @@ export default function CellViewer({
           <button className="btn small icon-only icon-xs" onClick={onClose} aria-label={t("common.close")}>
             <Icon name="close" />
           </button>
-        </div>
-      </div>
-      <pre className={json ? "cell-body json" : "cell-body"}>{text}</pre>
+          </>
+        }
+      />
+      <pre
+        data-json={json}
+        className="tw:m-0 tw:max-h-[60vh] tw:overflow-auto tw:text-sm tw:whitespace-pre-wrap tw:break-words tw:data-[json=true]:font-mono"
+      >
+        {text}
+      </pre>
     </div>
   );
 }

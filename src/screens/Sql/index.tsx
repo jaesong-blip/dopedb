@@ -44,6 +44,14 @@ import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
 import ResultToolbar from "../../components/ResultToolbar";
+import {
+  ResultMeta,
+  SqlSnippet,
+  WorkbenchDivider,
+  WorkbenchEmptyState,
+  WorkbenchPane,
+  WorkbenchToolbar,
+} from "../../design-system/components/Workbench";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
 import { catalogQuery, useCatalogScope } from "../../lib/queries";
@@ -55,7 +63,6 @@ import {
   proposalSqlRunPath,
 } from "./runPath";
 import StreamOutcome from "./StreamOutcome";
-import "./sql.css";
 
 const STEP = 200;
 
@@ -401,18 +408,19 @@ export default function Sql({
   );
 
   return (
-    <div className="screen sqlconsole">
-      <div className="sql-agent-launchers">
-        <div className="sql-document-identity">
+    <WorkbenchPane>
+      <WorkbenchToolbar label={t("sql.documentTitle")} compact>
+        <div className="tw:flex tw:min-w-0 tw:flex-[0_1_auto] tw:items-center tw:gap-1 tw:max-[760px]:shrink-0">
           <input
-            className="sql-document-title"
+            className="tw:h-control-sm tw:w-[clamp(120px,18vw,240px)] tw:border-transparent tw:bg-transparent tw:font-semibold tw:focus:border-border-strong tw:focus:bg-background tw:max-[760px]:w-[140px]"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             aria-label={t("sql.documentTitle")}
             spellCheck={false}
           />
           <span
-            className={`sql-save-state state-${documentSaveState}`}
+            data-state={documentSaveState}
+            className="tw:shrink-0 tw:text-xs tw:text-muted-foreground tw:data-[state=conflict]:text-danger tw:data-[state=error]:text-danger tw:data-[state=saving]:text-primary"
             title={documentSaveError ?? undefined}
           >
             {documentSaveState === "saving"
@@ -428,228 +436,264 @@ export default function Sql({
                       : t("sql.unsaved")}
           </span>
         </div>
+        <WorkbenchDivider />
+        <div className="ds-control-row scrollbar-sleek tw:flex tw:min-h-0 tw:min-w-0 tw:flex-[0_1_auto] tw:flex-nowrap tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:max-[760px]:shrink-0">
+          <button
+            className="btn primary small"
+            disabled={!draft.trim() || running}
+            onClick={() => void executeSql()}
+            title={t("sql.runHint")}
+          >
+            <Icon name="play" />
+            {running ? t("sql.running") : t("sql.run")}
+          </button>
+          <button
+            className="btn small ghost"
+            disabled={!draft.trim() || draftIsScript || explaining || running}
+            title={draftIsScript ? t("sql.explainSingle") : t("sql.explainTitle")}
+            onClick={explain}
+          >
+            {explaining ? t("sql.planning") : t("sql.explain")}
+          </button>
+          <button
+            className="btn small ghost"
+            disabled={!draft.trim() || formatting || running}
+            onClick={() => void formatDraft()}
+            title={t("sql.formatTitle")}
+          >
+            {formatting ? t("sql.formatting") : t("sql.format")}
+          </button>
+          {draftIsScript && (
+            <span className="badge tw:text-muted-foreground">
+              {t("sql.statementCount", { count: draftStatements.length })}
+            </span>
+          )}
+          {running ? (
+            <>
+              <span
+                className="badge icon-only-badge"
+                title={t("sql.runningFor", { seconds: elapsed })}
+                aria-label={t("sql.runningFor", { seconds: elapsed })}
+                role="img"
+              >
+                <Icon name="refresh" />
+              </span>
+              <button
+                className="btn small"
+                onClick={() => {
+                  cancel();
+                  void cancelDesktopStream();
+                }}
+              >
+                {t("sql.cancel")}
+              </button>
+            </>
+          ) : (
+            draftSignal && (
+              <span
+                data-tone={draftSignal.tone}
+                className="badge icon-only-badge tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
+                title={draftSignal.title ?? draftSignal.text}
+                aria-label={draftSignal.text}
+                role="img"
+              >
+                <Icon name={draftSignal.icon ?? "info"} />
+              </span>
+            )
+          )}
+        </div>
+        <span className="tw:min-w-2 tw:flex-1 tw:max-[760px]:hidden" />
         <button
-          className="btn small ghost sql-agent-btn"
+          className="btn small ghost tw:min-w-[56px] tw:shrink-0 tw:px-2 tw:text-xs tw:@max-[760px]:size-control-sm tw:@max-[760px]:min-w-control-sm tw:@max-[760px]:px-0"
           onClick={onOpenAgent}
           title={t("sql.openAgentTerminal")}
         >
           <Icon name="terminal" />
-          {t("sql.openAgentTerminal")}
+          <span className="tw:@max-[760px]:hidden">
+            {t("sql.openAgentTerminal")}
+          </span>
         </button>
-      </div>
-      <div className="editor-box">
+      </WorkbenchToolbar>
+      <div className="tw:h-[clamp(180px,34vh,340px)] tw:min-h-[180px] tw:flex-[0_1_auto] tw:overflow-hidden tw:border-b tw:border-border-subtle tw:bg-background tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0">
         <LazySqlViewer
           value={draft}
           editable
           onChange={setDraft}
           onRun={executeSql}
           catalog={catalog}
-          minHeight="clamp(96px, 18vh, 140px)"
+          minHeight="180px"
         />
       </div>
-      <div className="form-actions sql-actions ds-control-row">
-        <button
-          className="btn primary small"
-          disabled={!draft.trim() || running}
-          onClick={() => void executeSql()}
-          title={t("sql.runHint")}
-        >
-          <Icon name="play" />
-          {running ? t("sql.running") : t("sql.run")}
-        </button>
-        <button
-          className="btn small ghost"
-          disabled={!draft.trim() || draftIsScript || explaining || running}
-          title={draftIsScript ? t("sql.explainSingle") : t("sql.explainTitle")}
-          onClick={explain}
-        >
-          {explaining ? t("sql.planning") : t("sql.explain")}
-        </button>
-        <button
-          className="btn small ghost"
-          disabled={!draft.trim() || formatting || running}
-          onClick={() => void formatDraft()}
-          title={t("sql.formatTitle")}
-        >
-          {formatting ? t("sql.formatting") : t("sql.format")}
-        </button>
-        {draftIsScript && (
-          <span className="badge script-count">
-            {t("sql.statementCount", { count: draftStatements.length })}
-          </span>
-        )}
-        {running ? (
-          <>
-            <span
-              className="badge icon-only-badge"
-              title={t("sql.runningFor", { seconds: elapsed })}
-              aria-label={t("sql.runningFor", { seconds: elapsed })}
-              role="img"
-            >
-              <Icon name="refresh" />
-            </span>
-            <button
-              className="btn small"
-              onClick={() => {
-                cancel();
-                void cancelDesktopStream();
-              }}
-            >
-              {t("sql.cancel")}
-            </button>
-          </>
-        ) : (
-          draftSignal && (
-            <span
-              className={
-                "badge icon-only-badge" +
-                (draftSignal.tone === "danger"
-                  ? " status-error"
-                  : draftSignal.tone === "warning"
-                    ? " risk-medium"
-                    : "")
-              }
-              title={draftSignal.title ?? draftSignal.text}
-              aria-label={draftSignal.text}
-              role="img"
-            >
-              <Icon name={draftSignal.icon ?? "info"} />
-            </span>
-          )
-        )}
-      </div>
 
-      {documentConflict && (
-        <div className="sql-document-conflict" role="alert">
-          <span>{t("sql.saveConflictBody")}</span>
-          <div className="ds-control-row">
-            <button className="btn small" onClick={loadSavedConflictVersion}>
-              {t("sql.loadSaved")}
-            </button>
-            <button className="btn small" onClick={keepLocalConflictVersion}>
-              {t("sql.keepMine")}
-            </button>
-          </div>
+      <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-auto tw:bg-background">
+        <div
+          className="tw:flex tw:h-control-sm tw:shrink-0 tw:items-end tw:border-b tw:border-border-subtle tw:bg-card tw:px-2"
+          role="tablist"
+          aria-label={t("sql.resultsTab")}
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected="true"
+            className="tw:relative tw:h-control-sm tw:border-0 tw:bg-transparent tw:px-3 tw:font-sans tw:text-sm tw:text-foreground tw:after:absolute tw:after:right-2 tw:after:bottom-0 tw:after:left-2 tw:after:h-0.5 tw:after:bg-primary"
+          >
+            {t("sql.resultsTab")}
+          </button>
         </div>
-      )}
-      {documentSaveError && documentSaveState === "error" && (
-        <div className="error sql-save-error">
-          {t("sql.saveFailed")}: {documentSaveError}
-        </div>
-      )}
-      {planErr && <div className="error">{planErr}</div>}
-      {plan && (
-        <details open className="card explain-plan">
-          <summary>
-            {t("sql.queryPlan")}
-            <button
-              className="btn small icon-only icon-xs plan-close"
-              onClick={() => setPlan(null)}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-            >
-              <Icon name="close" />
-            </button>
-          </summary>
-          {plan.plan ? (
-            <pre>{plan.plan}</pre>
-          ) : (
-            <div className="muted">{t("sql.noPlan", { mode: plan.mode })}</div>
-          )}
-        </details>
-      )}
-
-      {pendingApproval && (
-        <ApprovalCard
-          key={pendingApproval.proposal.operationId}
-          connectionId={connection.id}
-          engine={connection.engine}
-          sql={pendingApproval.sql}
-          safety={safety}
-          initialProposal={pendingApproval.proposal}
-          onExecuted={(outcome) => {
-            setResultKind("single");
-            setRun({
-              sql: pendingApproval.sql,
-              outcome,
-              at: new Date().toLocaleTimeString(),
-            });
-            setPendingApproval(null);
-          }}
-          onReject={() => setPendingApproval(null)}
-        />
-      )}
-
-      {pendingScriptApproval && (
-        <section className="card script-approval">
-          <div className="ds-title-line">
-            <strong>{t("approval.review")}</strong>
-            <span className="badge risk-medium">
-              {t("sql.statementCount", {
-                count: pendingScriptApproval.proposal.statementCount,
-              })}
-            </span>
+        {documentConflict && (
+          <div
+            className="tw:mx-3 tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:gap-3 tw:border-y tw:border-warning tw:py-2 tw:text-sm tw:text-warning tw:max-[760px]:flex-col tw:max-[760px]:items-start"
+            role="alert"
+          >
+            <span>{t("sql.saveConflictBody")}</span>
+            <div className="ds-control-row">
+              <button className="btn small" onClick={loadSavedConflictVersion}>
+                {t("sql.loadSaved")}
+              </button>
+              <button className="btn small" onClick={keepLocalConflictVersion}>
+                {t("sql.keepMine")}
+              </button>
+            </div>
           </div>
-          <LazySqlViewer value={pendingScriptApproval.sql} minHeight="96px" />
-          <div className="muted script-approval-hash">
-            {t("approval.payloadHash")}{" "}
-            <code>{pendingScriptApproval.proposal.payloadHash}</code>
+        )}
+        {documentSaveError && documentSaveState === "error" && (
+          <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
+            {t("sql.saveFailed")}: {documentSaveError}
           </div>
-          {pendingScriptApproval.proposal.confirmationPhrase && (
-            <label className="script-approval-confirmation">
-              <span>
-                {t("approval.confirmationPrompt")}{" "}
-                <code>{pendingScriptApproval.proposal.confirmationPhrase}</code>
+        )}
+        {planErr && (
+          <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
+            {planErr}
+          </div>
+        )}
+        {plan && (
+          <details
+            open
+            className="tw:mx-3 tw:my-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3"
+          >
+            <summary className="tw:flex tw:cursor-pointer tw:items-center tw:gap-2 tw:font-semibold">
+              {t("sql.queryPlan")}
+              <button
+                className="btn small icon-only icon-xs tw:ml-auto"
+                onClick={() => setPlan(null)}
+                title={t("common.close")}
+                aria-label={t("common.close")}
+              >
+                <Icon name="close" />
+              </button>
+            </summary>
+            {plan.plan ? (
+              <pre className="tw:mt-2 tw:mb-0 tw:overflow-x-auto tw:rounded-sm tw:border tw:border-border-subtle tw:bg-background tw:p-2 tw:text-sm tw:whitespace-pre">
+                {plan.plan}
+              </pre>
+            ) : (
+              <div className="tw:text-muted-foreground">
+                {t("sql.noPlan", { mode: plan.mode })}
+              </div>
+            )}
+          </details>
+        )}
+
+        {pendingApproval && (
+          <ApprovalCard
+            key={pendingApproval.proposal.operationId}
+            connectionId={connection.id}
+            engine={connection.engine}
+            sql={pendingApproval.sql}
+            safety={safety}
+            initialProposal={pendingApproval.proposal}
+            onExecuted={(outcome) => {
+              setResultKind("single");
+              setRun({
+                sql: pendingApproval.sql,
+                outcome,
+                at: new Date().toLocaleTimeString(),
+              });
+              setPendingApproval(null);
+            }}
+            onReject={() => setPendingApproval(null)}
+          />
+        )}
+
+        {pendingScriptApproval && (
+          <section className="tw:mx-3 tw:my-3 tw:grid tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
+            <div className="ds-title-line">
+              <strong>{t("approval.review")}</strong>
+              <span className="badge risk-medium">
+                {t("sql.statementCount", {
+                  count: pendingScriptApproval.proposal.statementCount,
+                })}
               </span>
-              <input
-                value={scriptConfirmation}
-                onChange={(event) => setScriptConfirmation(event.target.value)}
-                placeholder={pendingScriptApproval.proposal.confirmationPhrase}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-          )}
-          <div className="ds-action-row ds-control-row">
-            <button
-              className="btn primary"
-              disabled={
-                running ||
-                (!!pendingScriptApproval.proposal.confirmationPhrase &&
-                  scriptConfirmation !==
-                    pendingScriptApproval.proposal.confirmationPhrase)
-              }
-              onClick={() => void approvePendingScript()}
-            >
-              {t("approval.approveAndRunWrite")}
-            </button>
-            <button
-              className="btn"
-              disabled={running}
-              onClick={() => void rejectPendingScript()}
-            >
-              {t("approval.reject")}
-            </button>
+            </div>
+            <LazySqlViewer value={pendingScriptApproval.sql} minHeight="96px" />
+            <div className="tw:text-sm tw:text-muted-foreground tw:[&_code]:font-mono tw:[&_code]:text-xs tw:[&_code]:[overflow-wrap:anywhere]">
+              {t("approval.payloadHash")}{" "}
+              <code>{pendingScriptApproval.proposal.payloadHash}</code>
+            </div>
+            {pendingScriptApproval.proposal.confirmationPhrase && (
+              <label className="tw:grid tw:gap-2 tw:text-sm tw:[&_input]:w-[min(100%,320px)] tw:[&_input]:font-mono">
+                <span>
+                  {t("approval.confirmationPrompt")}{" "}
+                  <code>
+                    {pendingScriptApproval.proposal.confirmationPhrase}
+                  </code>
+                </span>
+                <input
+                  value={scriptConfirmation}
+                  onChange={(event) =>
+                    setScriptConfirmation(event.target.value)
+                  }
+                  placeholder={
+                    pendingScriptApproval.proposal.confirmationPhrase
+                  }
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+            )}
+            <div className="ds-action-row ds-control-row">
+              <button
+                className="btn primary"
+                disabled={
+                  running ||
+                  (!!pendingScriptApproval.proposal.confirmationPhrase &&
+                    scriptConfirmation !==
+                      pendingScriptApproval.proposal.confirmationPhrase)
+                }
+                onClick={() => void approvePendingScript()}
+              >
+                {t("approval.approveAndRunWrite")}
+              </button>
+              <button
+                className="btn"
+                disabled={running}
+                onClick={() => void rejectPendingScript()}
+              >
+                {t("approval.reject")}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {runErr && <SqlErrorCard error={runErr} prompt={aiPrompt} />}
+        {cancelled && (
+          <div className="tw:mx-3 tw:mt-2 tw:text-sm tw:text-muted-foreground">
+            {t("sql.cancelled")}
           </div>
-        </section>
-      )}
+        )}
 
-      {runErr && <SqlErrorCard error={runErr} prompt={aiPrompt} />}
-      {cancelled && (
-        <div className="muted sql-run-message">{t("sql.cancelled")}</div>
-      )}
-
-      <div
-        className={
-          running &&
-          (run ||
-            scriptOut ||
-            stream.phase === "connecting" ||
-            stream.phase === "streaming")
-            ? "sql-results busy"
-            : "sql-results"
-        }
-      >
+        <div
+          data-busy={
+            running &&
+            Boolean(
+              run ||
+                scriptOut ||
+                stream.phase === "connecting" ||
+                stream.phase === "streaming",
+            )
+          }
+          className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:data-[busy=true]:pointer-events-none tw:data-[busy=true]:opacity-50"
+        >
         {!running &&
           !run &&
           !scriptOut &&
@@ -657,10 +701,9 @@ export default function Sql({
           !plan &&
           !planErr &&
           !runErr && (
-            <div className="sql-empty">
-              <Icon name="table" />
-              <span>{t("sql.resultsEmpty")}</span>
-            </div>
+            <WorkbenchEmptyState icon="table">
+              {t("sql.resultsEmpty")}
+            </WorkbenchEmptyState>
           )}
         {resultKind === "single" && run && (
           <Outcome
@@ -680,8 +723,9 @@ export default function Sql({
         {resultKind === "script" && scriptOut && (
           <ScriptResults outcome={scriptOut.outcome} at={scriptOut.at} />
         )}
+        </div>
       </div>
-    </div>
+    </WorkbenchPane>
   );
 }
 
@@ -717,21 +761,28 @@ function SqlErrorCard({
   const pos =
     error.position !== null ? errorPosition(error.sql, error.position) : null;
   return (
-    <div className="sql-error-card" role="alert">
-      <div className="sql-error-head">
+    <div
+      className="tw:mx-3 tw:my-3 tw:grid tw:gap-3 tw:rounded-md tw:border tw:border-danger-border tw:bg-danger-muted tw:p-3 tw:text-foreground"
+      role="alert"
+    >
+      <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[760px]:flex-col tw:max-[760px]:items-start">
         <div>
-          <strong>{t("sql.errorTitle")}</strong>
-          <span className="muted"> · {error.at}</span>
+          <strong className="tw:text-danger">{t("sql.errorTitle")}</strong>
+          <span className="tw:text-muted-foreground"> · {error.at}</span>
         </div>
       </div>
-      <div className="sql-error-grid">
-        <span className="muted">{t("sql.errorKind")}</span>
+      <div className="tw:grid tw:grid-cols-[max-content_minmax(0,1fr)] tw:items-start tw:gap-x-3 tw:gap-y-2 tw:[&_code]:rounded-sm tw:[&_code]:border tw:[&_code]:border-border-subtle tw:[&_code]:bg-card tw:[&_code]:p-2 tw:[&_pre]:m-0 tw:[&_pre]:overflow-auto tw:[&_pre]:rounded-sm tw:[&_pre]:border tw:[&_pre]:border-border-subtle tw:[&_pre]:bg-card tw:[&_pre]:p-2 tw:[&_pre]:text-sm tw:[&_pre]:whitespace-pre-wrap tw:[&_pre]:[overflow-wrap:anywhere] tw:max-[760px]:grid-cols-1">
+        <span className="tw:text-muted-foreground">{t("sql.errorKind")}</span>
         <code>{error.kind ?? t("common.unknown")}</code>
-        <span className="muted">{t("sql.errorMessage")}</span>
+        <span className="tw:text-muted-foreground">
+          {t("sql.errorMessage")}
+        </span>
         <pre>{error.message}</pre>
         {pos && (
           <>
-            <span className="muted">{t("sql.errorPosition")}</span>
+            <span className="tw:text-muted-foreground">
+              {t("sql.errorPosition")}
+            </span>
             <pre>
               {t("sql.errorPositionAt", { line: pos.line, column: pos.column })}
               {"\n"}
@@ -740,9 +791,13 @@ function SqlErrorCard({
           </>
         )}
       </div>
-      <details className="sql-error-context">
-        <summary>{t("sql.errorContext")}</summary>
-        <pre>{prompt}</pre>
+      <details>
+        <summary className="tw:cursor-pointer tw:text-ui tw:text-muted-foreground">
+          {t("sql.errorContext")}
+        </summary>
+        <pre className="tw:mt-2 tw:max-h-[280px] tw:overflow-auto tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-2 tw:text-sm tw:whitespace-pre-wrap tw:[overflow-wrap:anywhere]">
+          {prompt}
+        </pre>
       </details>
     </div>
   );
@@ -762,22 +817,29 @@ function ScriptResults({
       ? t("sql.committed")
       : t("sql.failedRolledBack");
   return (
-    <div className="results script-results">
-      <div className="result-meta muted">
+    <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
+      <ResultMeta>
         {summary} ·{" "}
         {t("sql.statementCount", { count: outcome.statements.length })} · {at}
-      </div>
+      </ResultMeta>
       {outcome.statements.map((s, i) => (
-        <div key={i} className="stmt-result">
-          <div className="result-meta muted">
-            <span className="stmt-num">{i + 1}</span>
-            <code className="result-sql">{s.sql}</code>
-          </div>
+        <section
+          key={i}
+          className="tw:border-t tw:border-border-subtle tw:pt-2"
+        >
+          <ResultMeta>
+            <span className="tw:inline-block tw:min-w-4 tw:font-semibold">
+              {i + 1}
+            </span>
+            <SqlSnippet>{s.sql}</SqlSnippet>
+          </ResultMeta>
           {s.error ? (
-            <div className="error">{s.error}</div>
+            <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+              {s.error}
+            </div>
           ) : s.result ? (
             <>
-              <div className="muted stmt-rowmeta">
+              <div className="tw:mx-3 tw:my-1 tw:text-sm tw:text-muted-foreground">
                 {t(s.result.truncated ? "agent.rowsTruncated" : "agent.rows", {
                   count: s.result.rowCount,
                 })}{" "}
@@ -789,14 +851,14 @@ function ScriptResults({
                   filenameBase={`script-stmt${i + 1}-${stamp()}`}
                 />
               </div>
-              <DataGrid result={s.result} />
+              <DataGrid result={s.result} surface="workbench" />
             </>
           ) : (
-            <div className="muted">
+            <div className="tw:px-3 tw:py-2 tw:text-sm tw:text-muted-foreground">
               {t("sql.affected", { count: s.affected ?? 0 })}
             </div>
           )}
-        </div>
+        </section>
       ))}
     </div>
   );
@@ -818,9 +880,9 @@ function Outcome({
   const r = outcome.result;
 
   return (
-    <div className="results">
-      <div className="result-meta muted">
-        <code className="result-sql">{sql}</code>
+    <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
+      <ResultMeta>
+        <SqlSnippet>{sql}</SqlSnippet>
         {r ? (
           <>
             {" · "}
@@ -848,16 +910,17 @@ function Outcome({
             · {at}
           </>
         )}
-      </div>
+      </ResultMeta>
       {r && (
         <>
           <DataGrid
             result={
               limit < r.rows.length ? { ...r, rows: r.rows.slice(0, limit) } : r
             }
+            surface="workbench"
           />
           {r.rows.length > limit && (
-            <button className="btn" onClick={onMore}>
+            <button className="btn tw:m-3 tw:self-start" onClick={onMore}>
               {t("sql.showMore", {
                 count: Math.min(STEP, r.rows.length - limit),
                 total: r.rows.length,

@@ -11,7 +11,6 @@ import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
 import { useI18n } from "../../../lib/i18n";
 import { cliInstallationStatusQuery, qk } from "../../../lib/queries";
-import "./cli.css";
 
 export default function CliSettings() {
   const { t } = useI18n();
@@ -58,14 +57,14 @@ export default function CliSettings() {
       : t("cli.install");
 
   return (
-    <div className="screen cli-settings">
-      <div className="settings-title-row">
+    <div className="tw:w-full tw:max-w-[760px] tw:p-4">
+      <div className="tw:flex tw:items-center tw:gap-2">
         <h2>{t("cli.title")}</h2>
         <InfoTip label={t("cli.description")} />
       </div>
 
       {(error || statusQ.error) && (
-        <div className="error">
+        <div className="tw:mt-3 tw:text-ui tw:text-danger">
           {t("cli.error", { error: error ?? errMessage(statusQ.error) })}
         </div>
       )}
@@ -74,21 +73,21 @@ export default function CliSettings() {
       ) : (
         status && (
           <>
-            <div className="cli-status-list">
+            <div className="tw:mt-4 tw:grid tw:gap-2 tw:border-y tw:border-border-subtle tw:py-3 tw:[&>div]:grid tw:[&>div]:grid-cols-[minmax(120px,0.35fr)_minmax(0,1fr)] tw:[&>div]:items-baseline tw:[&>div]:gap-3 tw:[&_code]:break-all tw:max-[620px]:[&>div]:grid-cols-1 tw:max-[620px]:[&>div]:gap-1">
               <div>
-                <span className="muted">{t("cli.version")}</span>
+                <span className="tw:text-muted-foreground">{t("cli.version")}</span>
                 <strong>{status.version}</strong>
               </div>
               <div>
-                <span className="muted">{t("cli.inAppPath")}</span>
+                <span className="tw:text-muted-foreground">{t("cli.inAppPath")}</span>
                 <code>{status.inAppDirectory ?? t("common.unknown")}</code>
               </div>
               <div>
-                <span className="muted">{t("cli.installPath")}</span>
+                <span className="tw:text-muted-foreground">{t("cli.installPath")}</span>
                 <code>{status.installPath}</code>
               </div>
               <div>
-                <span className="muted">{t("cli.binaryStatus")}</span>
+                <span className="tw:text-muted-foreground">{t("cli.binaryStatus")}</span>
                 <strong>
                   {status.current
                     ? t("cli.current")
@@ -98,7 +97,7 @@ export default function CliSettings() {
                 </strong>
               </div>
               <div>
-                <span className="muted">{t("cli.pathStatus")}</span>
+                <span className="tw:text-muted-foreground">{t("cli.pathStatus")}</span>
                 <strong>
                   {status.pathConfigured ? t("cli.pathReady") : t("cli.pathMissing")}
                 </strong>
@@ -106,17 +105,23 @@ export default function CliSettings() {
             </div>
 
             {status.conflict && (
-              <div className="error">{t("cli.conflict", { path: status.installPath })}</div>
+              <div className="tw:mt-3 tw:text-ui tw:text-danger">
+                {t("cli.conflict", { path: status.installPath })}
+              </div>
             )}
             {status.pathChangePreview && (
-              <div className="cli-path-change">
+              <div className="tw:mt-4">
                 <strong>{t("cli.pathChange")}</strong>
-                <p className="muted">{t("cli.pathConsent")}</p>
-                <pre>{status.pathChangePreview}</pre>
+                <p className="tw:mt-1 tw:mb-2 tw:text-muted-foreground">
+                  {t("cli.pathConsent")}
+                </p>
+                <pre className="tw:m-0 tw:max-h-[220px] tw:overflow-auto tw:rounded-sm tw:border tw:border-border-subtle tw:bg-muted tw:p-3 tw:font-mono tw:whitespace-pre-wrap tw:break-all">
+                  {status.pathChangePreview}
+                </pre>
               </div>
             )}
 
-            <div className="form-actions ds-control-row">
+            <div className="ds-action-row ds-control-row tw:mt-4">
               {status.conflict ? (
                 <ConfirmButton
                   className="btn primary"

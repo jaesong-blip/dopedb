@@ -13,7 +13,9 @@ export default defineConfig({
     exclude: [
       "**/node_modules/**",
       "**/.git/**",
-      "tests/visual/**",
+      // UI 하네스는 Playwright가 실행한다. vitest가 수집하면 안 된다.
+      "tests/ui-harness/**",
+      "tests/ui-benchmark/**",
     ],
   },
   server: {

@@ -1,22 +1,4 @@
-/* Data grid visuals and result table shell. */
-
-.result-meta {
-  margin-bottom: var(--ds-space-2);
-}
-
-.result-sql {
-  display: inline-block;
-  max-width: 60ch;
-  overflow: hidden;
-  padding: var(--ds-chip-pad-y) var(--ds-chip-pad-x);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-hover-strong);
-  font-family: var(--ds-font-mono);
-  font-size: var(--ds-font-size-sm);
-  text-overflow: ellipsis;
-  vertical-align: bottom;
-  white-space: nowrap;
-}
+/* Canonical data-grid geometry and interaction visuals. */
 
 .grid-scroll {
   max-height: 60vh;
@@ -275,146 +257,13 @@ table.grid th.sortable:hover {
 table.grid td.clickable {
   cursor: pointer;
 }
+table.grid td[data-grid-value] {
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .filter-input {
   min-width: 72px;
   font-size: var(--ds-font-size-sm);
   font-weight: 400;
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-2);
-  margin-bottom: var(--ds-space-2);
-}
-.panel-head-actions {
-  display: flex;
-  gap: var(--ds-space-2);
-}
-.cell-body {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: var(--ds-font-size-sm);
-  max-height: 60vh;
-  overflow: auto;
-}
-.cell-body.json {
-  font-family: var(--ds-font-mono);
-}
-
-/* Row editor */
-.row-editor-title {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: var(--ds-space-2);
-}
-.row-editor-title strong,
-.row-field > label {
-  min-width: 0;
-}
-.row-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ds-space-2);
-  margin-bottom: var(--ds-space-3);
-}
-.row-field > label {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  font-size: var(--ds-font-size-sm);
-  margin-bottom: var(--ds-optical-offset-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.row-field.changed {
-  border-left: var(--ds-border-width-strong) solid var(--ds-accent);
-  padding-left: var(--ds-space-2);
-}
-.changed-badge {
-  font-size: var(--ds-font-size-2xs);
-  font-weight: 700;
-  color: var(--ds-accent-text);
-  background: var(--ds-accent-soft);
-  border-radius: var(--ds-radius-xs);
-  padding: var(--ds-chip-pad-y) var(--ds-chip-pad-x-xs);
-  text-transform: uppercase;
-}
-.pk-badge {
-  font-size: var(--ds-font-size-2xs);
-  font-weight: 700;
-  color: var(--ds-accent-text);
-  border: var(--ds-border-width) solid var(--ds-accent);
-  border-radius: var(--ds-optical-offset-sm);
-  padding: 0 var(--ds-chip-pad-x-2xs);
-}
-.row-field-input {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-}
-.row-field-input input[type="text"],
-.row-field-input input[type="number"] {
-  flex: 1;
-  min-width: 0;
-}
-.null-toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--ds-control-md);
-  height: var(--ds-control-md);
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-sm);
-  color: var(--ds-text-muted);
-  background: var(--ds-surface-1);
-  cursor: pointer;
-}
-.null-toggle input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: inherit;
-}
-.null-toggle.active {
-  color: var(--ds-accent-text);
-  border-color: var(--ds-accent-text);
-  background: var(--ds-accent-soft);
-}
-.null-toggle.disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-.null-toggle:focus-within {
-  outline: var(--ds-focus-width) solid var(--ds-accent);
-  outline-offset: var(--ds-focus-offset);
-}
-.row-editor-actions {
-  position: sticky;
-  bottom: calc(var(--ds-space-3) * -1);
-  background: var(--ds-surface-0);
-  border-top: var(--ds-border-width) solid var(--ds-border-subtle);
-  margin: var(--ds-space-2) calc(var(--ds-space-3) * -1) calc(var(--ds-space-3) * -1);
-  padding: var(--ds-space-3);
-}
-
-@media (max-width: 760px) {
-  .panel-head,
-  .panel-head-actions {
-    align-items: flex-start;
-  }
-
-  .panel-head {
-    flex-direction: column;
-  }
-
-  .panel-head-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
 }

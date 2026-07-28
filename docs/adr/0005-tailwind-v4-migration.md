@@ -27,11 +27,17 @@ semantic color 계약이 깨지는 회귀도 반복됐다. 워크스페이스 �
 6. migration이 끝난 화면의 전용 CSS와 import는 같은 변경에서 삭제한다.
 7. `.btn`, `.badge`, `.ds-*` 상호작용 primitive와 복잡한 grid/vendor 경계는
    정본 CSS가 소유한다.
+8. 정적 utility는 TSX에 직접 두며 utility 문자열만 보관하는 `styles.ts`/style
+   map은 만들지 않는다.
+9. 반복되는 시각·상호작용 계약은 class 문자열을 복제하지 않고 실제 공용 React
+   컴포넌트 또는 정본 primitive로 디자인 시스템에 승격한다.
+10. 새 screen/component CSS는 금지하며 CSS는 token, reset, 정본 primitive,
+    문서화된 shell grid/data-grid/vendor integration 경계에만 추가한다.
 
 첫 migration slice는 Agent Tools와 Skill Setup이다. 런타임과 visual fixture가
-같은 정적 style map을 사용해 테스트 전용 복제 CSS도 제거한다. 워크스페이스와
-소개 사이트의 root layout도 theme utility를 실제로 사용해 설치만 된 상태가
-되지 않게 한다.
+같은 공용 React primitive를 사용해 테스트 전용 복제 스타일도 제거한다.
+워크스페이스와 소개 사이트의 root layout도 theme utility를 실제로 사용해
+설치만 된 상태가 되지 않게 한다.
 
 ## 회귀 방지
 

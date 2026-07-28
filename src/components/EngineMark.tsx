@@ -21,7 +21,7 @@ const ENGINE_LABEL: Record<Engine, string> = {
 export default function EngineMark({ engine }: { engine: Engine }) {
   const label = ENGINE_LABEL[engine];
   return (
-    <span className={`ds-engine-mark engine-${engine}`} title={label} aria-label={label}>
+    <span className="ds-engine-mark" data-engine={engine} title={label} aria-label={label}>
       <img src={ENGINE_ICON[engine]} alt="" aria-hidden="true" draggable={false} />
     </span>
   );

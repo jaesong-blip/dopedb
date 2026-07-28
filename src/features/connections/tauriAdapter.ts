@@ -20,6 +20,10 @@ export function installDriver(id: string): Promise<DriverDescriptor> {
   return invoke("install_driver", { id });
 }
 
+export function createDemoSqlite(): Promise<string> {
+  return invoke("create_demo_sqlite");
+}
+
 export function upsertConnection(
   profile: ConnectionProfile,
   password?: string,

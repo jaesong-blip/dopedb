@@ -27,7 +27,7 @@ import { errMessage } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
 import { Icon } from "../../../components/Icon";
 import { useToast } from "../../../components/Toast";
-import "./WorkspaceAccount.css";
+import { PopupMenuItem } from "../../../design-system/components/PopupMenu";
 
 export default function WorkspaceAccount({
   onScopeChanged,
@@ -352,19 +352,25 @@ export default function WorkspaceAccount({
 
   return (
     <div
-      className={`workspace-account${compact ? " compact" : ""}`}
+      data-compact={compact}
+      className="tw:relative tw:flex tw:min-h-control-md tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2 tw:p-0 tw:data-[compact=true]:min-h-control-lg tw:data-[compact=true]:w-control-lg tw:data-[compact=true]:min-w-control-lg tw:data-[compact=true]:flex-none tw:data-[compact=true]:justify-center"
       aria-live="polite"
       ref={rootRef}
     >
       {!authKnown ? (
-        <div className="workspace-account-skeleton" aria-label={loginLabel} />
+        <div
+          data-compact={compact}
+          className="tw:h-control-md tw:w-[min(128px,78%)] tw:rounded-sm tw:bg-background tw:opacity-55 tw:data-[compact=true]:size-control-md tw:data-[compact=true]:rounded-full"
+          aria-label={loginLabel}
+        />
       ) : user ? (
         <>
           <button
             ref={triggerRef}
             type="button"
             data-rail-control={compact ? "" : undefined}
-            className="workspace-account-identity"
+            data-compact={compact}
+            className="tw:flex tw:min-h-control-md tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-0 tw:font-sans tw:text-left tw:text-foreground tw:aria-expanded:bg-muted tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:data-[compact=true]:grid tw:data-[compact=true]:size-control-lg tw:data-[compact=true]:min-h-control-lg tw:data-[compact=true]:min-w-control-lg tw:data-[compact=true]:flex-none tw:data-[compact=true]:place-items-center tw:data-[compact=true]:p-0 tw:data-[compact=true]:text-center tw:data-[compact=true]:[&>.icon]:hidden"
             onClick={() => setMenuOpen((open) => !open)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
@@ -373,10 +379,17 @@ export default function WorkspaceAccount({
             }
             title={`${user.displayName} · ${user.email}`}
           >
-            <span className="workspace-account-avatar" aria-hidden="true">
+            <span
+              data-compact={compact}
+              className="tw:inline-grid tw:size-control-md tw:shrink-0 tw:place-items-center tw:rounded-full tw:bg-selection tw:text-xs tw:font-bold tw:text-primary tw:data-[compact=true]:size-control-md"
+              aria-hidden="true"
+            >
               {(user.displayName || user.email).slice(0, 1).toUpperCase()}
             </span>
-            <span className="workspace-account-copy">
+            <span
+              data-compact={compact}
+              className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-[var(--ds-segment-gap)] tw:data-[compact=true]:hidden tw:[&_small]:overflow-hidden tw:[&_small]:text-2xs tw:[&_small]:text-muted-foreground tw:[&_small]:text-ellipsis tw:[&_small]:whitespace-nowrap tw:[&_strong]:overflow-hidden tw:[&_strong]:text-sm tw:[&_strong]:text-ellipsis tw:[&_strong]:whitespace-nowrap"
+            >
               <strong>{user.displayName}</strong>
               <small>{user.email}</small>
             </span>
@@ -384,7 +397,8 @@ export default function WorkspaceAccount({
           </button>
           <button
             type="button"
-            className="workspace-account-action"
+            data-compact={compact}
+            className="tw:grid tw:size-control-md tw:shrink-0 tw:cursor-pointer tw:place-items-center tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-0 tw:text-muted-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:hover:text-danger tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:data-[compact=true]:hidden"
             onClick={() => void logout(user.id)}
             disabled={loggingOut !== null}
             title={t(loggingOut === user.id ? "workspace.logoutPending" : "workspace.logout")}
@@ -394,21 +408,34 @@ export default function WorkspaceAccount({
             <Icon name="logOut" />
           </button>
           {menuOpen ? (
-            <div className="workspace-account-menu" role="menu" aria-label={t("workspace.accountMenu")}>
-              <p>{t("workspace.accounts")}</p>
+            <div
+              data-compact={compact}
+              className="tw:absolute tw:bottom-[calc(100%+var(--ds-space-2))] tw:left-0 tw:z-[var(--ds-z-popover)] tw:max-h-[min(420px,calc(100vh_-_var(--ds-space-8)))] tw:w-[calc(100%+var(--ds-control-md)+var(--ds-space-2))] tw:max-w-[calc(100vw_-_var(--ds-space-6))] tw:overflow-auto tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:p-1 tw:shadow-popover tw:data-[compact=true]:bottom-0 tw:data-[compact=true]:left-[calc(100%+var(--ds-space-2))] tw:data-[compact=true]:w-[min(284px,calc(100vw_-_64px))] tw:max-[561px]:data-[compact=true]:right-0 tw:max-[561px]:data-[compact=true]:bottom-[calc(100%+var(--ds-space-2))] tw:max-[561px]:data-[compact=true]:left-auto"
+              role="menu"
+              aria-label={t("workspace.accountMenu")}
+            >
+              <p className="tw:m-0 tw:p-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
+                {t("workspace.accounts")}
+              </p>
               {auth.data?.accounts.map((account) => {
                 const active = account.user.id === user.id;
                 return (
-                  <div className="workspace-account-menu-row" key={account.user.id}>
+                  <div
+                    className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)_var(--ds-control-md)] tw:items-stretch"
+                    key={account.user.id}
+                  >
                     <button
                       type="button"
                       role="menuitemradio"
                       aria-checked={active}
-                      className="workspace-account-menu-switch"
+                      className="tw:grid tw:min-h-control-lg tw:min-w-0 tw:cursor-pointer tw:grid-cols-[var(--ds-control-md)_minmax(0,1fr)_var(--ds-control-sm)] tw:items-center tw:gap-2 tw:rounded-sm tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:font-sans tw:text-left tw:text-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:[&>.icon]:text-xs tw:[&>.icon]:text-primary tw:[&>span:nth-child(2)]:grid tw:[&>span:nth-child(2)]:min-w-0 tw:[&>span:nth-child(2)]:gap-[var(--ds-segment-gap)] tw:[&_small]:overflow-hidden tw:[&_small]:text-2xs tw:[&_small]:text-muted-foreground tw:[&_small]:text-ellipsis tw:[&_small]:whitespace-nowrap tw:[&_strong]:overflow-hidden tw:[&_strong]:text-sm tw:[&_strong]:text-ellipsis tw:[&_strong]:whitespace-nowrap"
                       onClick={() => void switchAccount(account.user.id)}
                       disabled={switchingAccount !== null || loggingOut !== null}
                     >
-                      <span className="workspace-account-menu-avatar" aria-hidden="true">
+                      <span
+                        className="tw:inline-grid tw:size-control-md tw:place-items-center tw:rounded-full tw:bg-selection tw:text-xs tw:font-bold tw:text-primary"
+                        aria-hidden="true"
+                      >
                         {(account.user.displayName || account.user.email).slice(0, 1).toUpperCase()}
                       </span>
                       <span>
@@ -420,7 +447,7 @@ export default function WorkspaceAccount({
                     <button
                       type="button"
                       role="menuitem"
-                      className="workspace-account-menu-logout"
+                      className="tw:inline-grid tw:min-h-control-lg tw:w-control-md tw:cursor-pointer tw:place-items-center tw:rounded-sm tw:border-0 tw:bg-transparent tw:text-muted-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:hover:text-danger tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
                       onClick={() => void logout(account.user.id)}
                       disabled={loggingOut !== null}
                       aria-label={t("workspace.logoutAccount", { email: account.user.email })}
@@ -437,10 +464,7 @@ export default function WorkspaceAccount({
                   setProviderCredentialsOpen(true);
                 }}
               />
-              <button
-                type="button"
-                role="menuitem"
-                className="workspace-account-menu-command"
+              <PopupMenuItem
                 onClick={() => {
                   setMenuOpen(false);
                   if (loginPhase === "waiting") cancelLogin();
@@ -450,18 +474,16 @@ export default function WorkspaceAccount({
               >
                 <Icon name="plus" />
                 {loginPhase === "waiting" ? t("workspace.loginCancel") : t("workspace.addAccount")}
-              </button>
+              </PopupMenuItem>
               {auth.data && auth.data.accounts.length > 1 ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="workspace-account-menu-command danger"
+                <PopupMenuItem
+                  data-tone="danger"
                   onClick={() => void logoutAll()}
                   disabled={loggingOut !== null}
                 >
                   <Icon name="logOut" />
                   {t("workspace.logoutAll")}
-                </button>
+                </PopupMenuItem>
               ) : null}
             </div>
           ) : null}
@@ -478,7 +500,8 @@ export default function WorkspaceAccount({
           ref={triggerRef}
           type="button"
           data-rail-control={compact ? "" : undefined}
-          className="workspace-account-login"
+          data-compact={compact}
+          className="tw:min-h-control-md tw:w-full tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-0 tw:font-sans tw:text-left tw:text-sm tw:font-semibold tw:text-muted-foreground tw:disabled:cursor-progress tw:disabled:opacity-65 tw:hover:text-foreground tw:data-[compact=true]:grid tw:data-[compact=true]:size-control-lg tw:data-[compact=true]:min-h-control-lg tw:data-[compact=true]:min-w-control-lg tw:data-[compact=true]:flex-none tw:data-[compact=true]:place-items-center tw:data-[compact=true]:rounded-sm tw:data-[compact=true]:text-center tw:data-[compact=true]:text-[var(--ds-icon-md)]"
           onClick={() => (loginPhase === "waiting" ? cancelLogin() : void login())}
           disabled={loginPhase === "starting"}
           title={loginPhase === "waiting" ? t("workspace.loginPending") : loginLabel}

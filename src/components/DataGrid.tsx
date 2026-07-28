@@ -59,6 +59,8 @@ type DataGridProps = {
   columnMeta?: Record<string, { dataType: string; pk: boolean }>;
   /** A chunked streaming source; rows are never flattened for the grid. */
   rowSource?: SqlStreamRowSource;
+  /** Flush workbench grids fill their pane without a card border or radius. */
+  surface?: "panel" | "workbench";
 };
 
 export default function DataGrid(props: DataGridProps) {
@@ -80,6 +82,7 @@ export default function DataGrid(props: DataGridProps) {
         onCellClick={props.onCellClick}
         columnMeta={props.columnMeta}
         rowSource={props.rowSource}
+        surface={props.surface}
       />
     );
   }
@@ -98,6 +101,7 @@ function DataGridTable({
   onCellClick,
   columnMeta,
   rowSource: _rowSource,
+  surface,
 }: DataGridProps) {
   const { t } = useI18n();
   const interactive = !!onSelectRow || !!onCellClick;
@@ -239,7 +243,12 @@ function DataGridTable({
   }
 
   return (
-    <div className="grid-scroll" tabIndex={0} onKeyDown={onKeyDown}>
+    <div
+      className="grid-scroll tw:data-[surface=workbench]:min-h-0 tw:data-[surface=workbench]:flex-1 tw:data-[surface=workbench]:rounded-none tw:data-[surface=workbench]:border-0 tw:data-[surface=workbench]:shadow-none"
+      data-surface={surface ?? "panel"}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+    >
       <table
         ref={tableRef}
         className={fixed ? "grid fixed" : "grid"}
@@ -370,6 +379,7 @@ function DataGridTable({
                     // Roving tabindex: only the selected cell is a tab stop; arrows move it (onKeyDown above).
                     tabIndex={isSel ? 0 : -1}
                     aria-selected={isSel}
+                    data-grid-value
                     onClick={() => selectCell(i, j)}
                   >
                     {text}

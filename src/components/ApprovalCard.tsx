@@ -27,7 +27,6 @@ import type {
 import { Icon, type IconName } from "./Icon";
 import LazySqlViewer from "./LazySqlViewer";
 import { useI18n, type I18nKey } from "../lib/i18n";
-import "./ApprovalCard.css";
 
 const ENGINE_LABEL: Record<Engine, string> = {
   postgres: "PostgreSQL",
@@ -57,10 +56,8 @@ function StatusGlyph({
 }) {
   return (
     <span
-      className={
-        "badge icon-only-badge" +
-        (tone === "ok" ? " status-ok" : tone === "danger" ? " status-error" : "")
-      }
+      data-tone={tone ?? "neutral"}
+      className="badge icon-only-badge tw:data-[tone=ok]:border-success tw:data-[tone=ok]:text-success tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger"
       title={label}
       aria-label={label}
       role="img"
@@ -226,7 +223,7 @@ export default function ApprovalCard({
   const compact = collapseSql;
   const sqlBlock = <LazySqlViewer value={sql} minHeight={collapseSql ? "56px" : "80px"} />;
   const approvalHead = (
-    <div className="approval-head">
+    <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
       {cls ? (
         <>
           <span className="badge kind">{cls.kind.toUpperCase()}</span>
@@ -247,26 +244,37 @@ export default function ApprovalCard({
     </div>
   );
   const tablesBlock = cls && cls.tables.length > 0 && (
-    <div className="tables">
-      <span className="label">{t("approval.targetTables")}</span>{" "}
+    <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm">
+      <span className="tw:text-xs tw:tracking-[0.04em] tw:text-muted-foreground tw:uppercase">
+        {t("approval.targetTables")}
+      </span>
       {cls.tables.map((tbl) => (
-        <code key={tbl}>{tbl}</code>
+        <code
+          key={tbl}
+          className="tw:rounded-sm tw:bg-muted tw:px-2 tw:py-0.5 tw:font-mono tw:text-sm"
+        >
+          {tbl}
+        </code>
       ))}
     </div>
   );
   const previewBlock = (
-    <div className="preview">
-      <span className="label">{t("approval.impactPreview")}</span>
+    <div className="tw:text-sm tw:leading-relaxed">
+      <span className="tw:text-xs tw:tracking-[0.04em] tw:text-muted-foreground tw:uppercase">
+        {t("approval.impactPreview")}
+      </span>
       {!preview ? (
         <StatusGlyph label={t("approval.estimatingImpact")} icon="refresh" />
       ) : isWrite && !writesBlocked && previewN === null ? (
         // A runnable write with NO row estimate (skipped over threshold, or an EXPLAIN
         // that yielded no count) means approving a destructive statement blind — surface
         // it. Not for writes-disabled (can't run) or reads (a null estimate is benign).
-        <span className="impact-warn">
+        <span className="tw:font-medium tw:text-warning">
           {" "}
           <Icon name="alert" /> {t("approval.impactUnknown")}
-          {preview.note && <em className="muted"> — {preview.note}</em>}
+          {preview.note && (
+            <em className="tw:text-muted-foreground"> — {preview.note}</em>
+          )}
         </span>
       ) : (
         <span>
@@ -280,33 +288,44 @@ export default function ApprovalCard({
               <strong>{previewN.toLocaleString()}</strong> {t("approval.rows")}
             </>
           )}
-          {preview.note && <em className="muted"> — {preview.note}</em>}
+          {preview.note && (
+            <em className="tw:text-muted-foreground"> — {preview.note}</em>
+          )}
         </span>
       )}
     </div>
   );
   const planBlock = preview?.plan && (
-    <details className="plan">
-      <summary>{t("sql.queryPlan")}</summary>
-      <pre>{preview.plan}</pre>
+    <details>
+      <summary className="tw:cursor-pointer tw:py-1 tw:text-ui tw:text-muted-foreground">
+        {t("sql.queryPlan")}
+      </summary>
+      <pre className="tw:max-h-[216px] tw:overflow-auto tw:rounded-sm tw:border tw:border-border-subtle tw:bg-muted tw:p-2 tw:font-mono tw:text-sm">
+        {preview.plan}
+      </pre>
     </details>
   );
   const notesBlock = cls?.notes.map((n, i) => (
-    <div key={i} className="note muted">
+    <div key={i} className="tw:text-sm tw:text-muted-foreground">
       - {n}
     </div>
   ));
   const payloadHashBlock = proposal && (
-    <div className="note muted">
-      {t("approval.payloadHash")} <code>{proposal.payloadHash}</code>
+    <div className="tw:text-sm tw:text-muted-foreground">
+      {t("approval.payloadHash")}{" "}
+      <code className="tw:font-mono tw:text-xs tw:break-all">
+        {proposal.payloadHash}
+      </code>
     </div>
   );
   const confirmationBlock = confirmationPhrase && (
-    <label className="approval-confirmation">
+    <label className="tw:grid tw:gap-2 tw:text-sm">
       <span>
-        {t("approval.confirmationPrompt")} <code>{confirmationPhrase}</code>
+        {t("approval.confirmationPrompt")}{" "}
+        <code className="tw:font-mono">{confirmationPhrase}</code>
       </span>
       <input
+        className="tw:w-full tw:max-w-[320px] tw:font-mono"
         value={confirmation}
         onChange={(event) => setConfirmation(event.target.value)}
         placeholder={confirmationPhrase}
@@ -329,24 +348,24 @@ export default function ApprovalCard({
           : t("approval.readyToReview");
 
   return (
-    <div className="card approval">
+    <div data-approval-review className="card tw:grid tw:gap-3">
       {!compact && approvalHead}
 
       {rationale && (
-        <div className="restatement">
-          <div className="label">
+        <div>
+          <div className="tw:text-xs tw:tracking-[0.04em] tw:text-muted-foreground tw:uppercase">
             {compact ? t("approval.change") : t("approval.review")}
           </div>
-          <p>{rationale}</p>
+          <p className="tw:mt-1 tw:mb-0 tw:leading-relaxed">{rationale}</p>
         </div>
       )}
 
       {compact && (
         <div
-          className={
-            "badge icon-only-badge" +
-            (writesBlocked ? " status-error" : previewN !== null ? " status-ok" : "")
+          data-tone={
+            writesBlocked ? "danger" : previewN !== null ? "ok" : "neutral"
           }
+          className="badge icon-only-badge tw:data-[tone=ok]:border-success tw:data-[tone=ok]:text-success tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger"
           title={compactStatus}
           aria-label={compactStatus}
           role="img"
@@ -373,7 +392,7 @@ export default function ApprovalCard({
       {!compact && payloadHashBlock}
       {confirmationBlock}
 
-      {error && <div className="error">{error}</div>}
+      {error && <div className="tw:text-ui tw:text-danger">{error}</div>}
       {/* Additive, not a terminal branch — the action buttons below stay reachable so a
           cancelled query can simply be run again. */}
       {cancelled && <StatusGlyph label={t("sql.cancelled")} icon="circleSlash" />}
@@ -383,7 +402,7 @@ export default function ApprovalCard({
       ) : decided === "rejected" ? (
         // Not a dead-end: keep the statement visible above and let the user undo the
         // rejection to approve it, rather than forcing a re-issue.
-        <div className="approval-actions ds-action-row ds-control-row">
+        <div className="ds-action-row ds-control-row">
           <StatusGlyph label={t("approval.rejected")} icon="circleSlash" tone="danger" />
           <button
             className="btn"
@@ -396,7 +415,7 @@ export default function ApprovalCard({
           </button>
         </div>
       ) : busy ? (
-        <div className="approval-actions ds-action-row ds-control-row">
+        <div className="ds-action-row ds-control-row">
           <StatusGlyph
             label={`${canAutoRun ? t("approval.readOnlyRunning") : t("approval.running")} ${elapsed}s`}
             icon="refresh"
@@ -408,9 +427,11 @@ export default function ApprovalCard({
       ) : canAutoRun && !cancelled ? (
         <StatusGlyph label={t("approval.readOnlyAutoRunning")} icon="play" />
       ) : (
-        <div className="approval-actions ds-action-row ds-control-row">
+        <div className="ds-action-row ds-control-row">
           {writesBlocked && !compact && (
-            <div className="error">{t("approval.writesDisabledBody")}</div>
+            <div className="tw:text-ui tw:text-danger">
+              {t("approval.writesDisabledBody")}
+            </div>
           )}
           <button
             className="btn primary"
@@ -433,17 +454,19 @@ export default function ApprovalCard({
         </div>
       )}
       {compact && (
-        <div className="review-disclosures">
-          <details className="safety-details">
+        <div className="tw:grid tw:gap-2 tw:[&_details]:overflow-hidden tw:[&_details]:rounded-sm tw:[&_details]:border tw:[&_details]:border-border-subtle tw:[&_details]:bg-muted tw:[&_summary]:cursor-pointer tw:[&_summary]:px-3 tw:[&_summary]:py-2 tw:[&_summary]:text-ui tw:[&_summary]:text-muted-foreground">
+          <details>
             <summary>{t("approval.safetyDetails")}</summary>
-            {approvalHead}
-            {tablesBlock}
-            {previewBlock}
-            {planBlock}
-            {notesBlock}
-            {payloadHashBlock}
+            <div className="tw:grid tw:gap-2 tw:px-3 tw:pb-3">
+              {approvalHead}
+              {tablesBlock}
+              {previewBlock}
+              {planBlock}
+              {notesBlock}
+              {payloadHashBlock}
+            </div>
           </details>
-          <details className="generated-sql">
+          <details className="tw:[&_.cm-editor]:border-t tw:[&_.cm-editor]:border-border-subtle">
             <summary>{t("approval.generatedSql")}</summary>
             {sqlBlock}
           </details>

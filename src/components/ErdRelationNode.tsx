@@ -10,7 +10,6 @@ import {
 import type { CatalogRelationV2 } from "../ipc/types";
 import { Icon } from "./Icon";
 import { relationDisplayName } from "../lib/erdGraph";
-import "./ErdRelationNode.css";
 
 export type ErdRelationNodeData = {
   relation: CatalogRelationV2;
@@ -33,7 +32,9 @@ function ErdRelationNode({ data, selected }: NodeProps<ErdFlowNode>) {
   );
   return (
     <article
-      className={`erd-relation-node${selected ? " selected" : ""}${compact ? " compact" : ""}`}
+      data-selected={selected}
+      data-compact={compact}
+      className="tw:w-[272px] tw:overflow-hidden tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:text-foreground tw:shadow-panel tw:data-[selected=true]:border-primary tw:data-[selected=true]:ring-2 tw:data-[selected=true]:ring-primary/20"
       title={relationDisplayName(relation.object)}
     >
       <Handle
@@ -41,8 +42,12 @@ function ErdRelationNode({ data, selected }: NodeProps<ErdFlowNode>) {
         type="target"
         position={Position.Left}
       />
-      <header>
+      <header
+        data-compact={compact}
+        className="tw:flex tw:min-h-[56px] tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-3 tw:data-[compact=true]:border-b-0"
+      >
         <Icon
+          className="tw:shrink-0 tw:text-muted-foreground"
           name={
             relation.object.kind === "view" ||
             relation.object.kind === "materialized_view"
@@ -50,25 +55,42 @@ function ErdRelationNode({ data, selected }: NodeProps<ErdFlowNode>) {
               : "table"
           }
         />
-        <strong>{relationDisplayName(relation.object)}</strong>
+        <strong className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ui tw:text-ellipsis tw:whitespace-nowrap">
+          {relationDisplayName(relation.object)}
+        </strong>
         {!compact && (
-          <span className="muted">{relation.columns.length}</span>
+          <span className="tw:text-muted-foreground">
+            {relation.columns.length}
+          </span>
         )}
       </header>
       {!compact && (
-        <div className="erd-node-columns">
+        <div className="tw:grid tw:px-3 tw:py-2">
           {relation.columns.slice(0, 11).map((column) => (
-            <div key={column.name}>
-              <span>
-                {primaryColumns.has(column.name) && <b>PK</b>}
-                {foreignColumns.has(column.name) && <b>FK</b>}
-                <code>{column.name}</code>
+            <div
+              key={column.name}
+              className="tw:flex tw:h-6 tw:min-w-0 tw:items-center tw:justify-between tw:gap-2 tw:text-xs"
+            >
+              <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1">
+                {primaryColumns.has(column.name) && (
+                  <b className="tw:text-2xs tw:text-primary">PK</b>
+                )}
+                {foreignColumns.has(column.name) && (
+                  <b className="tw:text-2xs tw:text-primary">FK</b>
+                )}
+                <code className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                  {column.name}
+                </code>
               </span>
-              <em>{column.nativeType}</em>
+              <em className="tw:max-w-[44%] tw:min-w-0 tw:shrink tw:overflow-hidden tw:text-muted-foreground tw:not-italic tw:text-ellipsis tw:whitespace-nowrap">
+                {column.nativeType}
+              </em>
             </div>
           ))}
           {relation.columns.length > 11 && (
-            <small className="muted">+{relation.columns.length - 11}</small>
+            <small className="tw:h-6 tw:leading-6 tw:text-muted-foreground">
+              +{relation.columns.length - 11}
+            </small>
           )}
         </div>
       )}

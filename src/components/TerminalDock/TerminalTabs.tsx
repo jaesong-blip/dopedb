@@ -15,6 +15,7 @@ import type {
   TerminalSessionSummary,
 } from "../../features/terminals/domain";
 import { terminalPopupPosition } from "../../features/terminals/layout";
+import { StatusDot, type StatusTone } from "../../design-system/components/Status";
 import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
 
@@ -59,6 +60,15 @@ interface TerminalPopupFocusRequest {
 
 export function terminalProfileIcon(profile: TerminalProfile) {
   return profile === "shell" ? "terminal" : "user";
+}
+
+export function terminalLifecycleTone(
+  lifecycle: TerminalSessionSummary["lifecycle"],
+): StatusTone {
+  if (lifecycle === "running") return "success";
+  if (lifecycle === "starting" || lifecycle === "stopping") return "warning";
+  if (lifecycle === "failed") return "danger";
+  return "neutral";
 }
 
 /** The popup owns arrow navigation and traps Tab while its portal is open. */
@@ -162,7 +172,7 @@ function TerminalActionPopup({
   return createPortal(
     <div
       ref={popupRef}
-      className="terminal-action-popup"
+      className="tw:fixed tw:z-[var(--ds-z-popover)] tw:grid tw:min-w-[168px] tw:overflow-hidden tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:shadow-popover tw:[&_button]:flex tw:[&_button]:min-h-control-lg tw:[&_button]:cursor-pointer tw:[&_button]:items-center tw:[&_button]:gap-3 tw:[&_button]:border-0 tw:[&_button]:bg-transparent tw:[&_button]:px-3 tw:[&_button]:font-sans tw:[&_button]:text-left tw:[&_button]:text-foreground tw:[&_button]:disabled:cursor-default tw:[&_button]:disabled:opacity-50 tw:[&_button]:hover:bg-muted tw:[&_button]:focus-visible:bg-muted tw:[&_button]:focus-visible:outline-none"
       data-terminal-popup
       role="menu"
       style={{ left: style.left, top: style.top, width: style.width }}
@@ -178,9 +188,11 @@ function TerminalActionPopup({
             onClick={() => onCreate(profile.id)}
           >
             <Icon name={terminalProfileIcon(profile.id)} />
-            <span>
+            <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
               <strong>{profile.label}</strong>
-              <small>{profile.hint}</small>
+              <small className="tw:overflow-hidden tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                {profile.hint}
+              </small>
             </span>
           </button>
         ))
@@ -261,14 +273,14 @@ export default function TerminalTabs({
   }
 
   return (
-    <header className="terminal-tabs-row">
+    <header className="terminal-tabs-row tw:relative tw:flex tw:min-h-[calc(var(--ds-control-lg)+var(--ds-space-2))] tw:shrink-0 tw:items-stretch tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:p-1">
       <div
-        className="terminal-session-tabs ds-control-row"
+        className="terminal-session-tabs ds-control-row tw:relative tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:thin]"
         role="tablist"
         aria-label={t("terminal.sessions")}
       >
         {sessions.length === 0 && (
-          <div className="terminal-tabs-empty-label">
+          <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:px-2 tw:text-muted-foreground tw:[&_strong]:text-foreground">
             <Icon name="terminal" />
             <strong>{t("terminal.title")}</strong>
           </div>
@@ -276,15 +288,14 @@ export default function TerminalTabs({
         {sessions.map((session, index) => (
           <div
             key={session.id}
-            className={`terminal-session-tab${
-              session.id === activeId ? " active" : ""
-            }`}
+            data-active={session.id === activeId}
+            className="tw:group tw:flex tw:min-h-control-lg tw:min-w-[112px] tw:max-w-[196px] tw:flex-[0_1_164px] tw:items-center tw:border-r tw:border-border-subtle tw:bg-transparent tw:text-muted-foreground tw:aria-busy:opacity-60 tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:data-[active=true]:shadow-[inset_0_-2px_0_var(--ds-selection-foreground)] tw:hover:bg-muted tw:hover:text-foreground"
             aria-busy={closingId === session.id}
           >
             <button
               id={`terminal-tab-${session.id}`}
               type="button"
-              className="terminal-session-select"
+              className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:py-0 tw:pr-1 tw:pl-3 tw:font-sans tw:text-inherit tw:focus-visible:relative tw:focus-visible:z-[var(--ds-z-base)] tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-inset tw:focus-visible:ring-ring tw:[&>span:last-child]:overflow-hidden tw:[&>span:last-child]:text-ellipsis tw:[&>span:last-child]:whitespace-nowrap"
               role="tab"
               aria-selected={session.id === activeId}
               aria-controls={
@@ -326,15 +337,12 @@ export default function TerminalTabs({
               }}
               title={`${session.name} · ${session.connection.connectionName}`}
             >
-              <span
-                className={`terminal-status-dot ${session.lifecycle}`}
-                aria-hidden="true"
-              />
+              <StatusDot tone={terminalLifecycleTone(session.lifecycle)} />
               <span>{session.name}</span>
             </button>
             <button
               type="button"
-              className="terminal-session-close"
+              className="tw:mr-1 tw:grid tw:size-control-sm tw:shrink-0 tw:cursor-pointer tw:place-items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:p-0 tw:text-transparent tw:transition-colors tw:disabled:cursor-wait tw:group-data-[active=true]:text-muted-foreground tw:group-hover:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:relative tw:focus-visible:z-[var(--ds-z-base)] tw:focus-visible:text-muted-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-inset tw:focus-visible:ring-ring tw:[&_.icon]:size-[var(--ds-icon-sm)]"
               disabled={closingId === session.id}
               onClick={() => onCloseAction(session.id, "one")}
               title={t("terminal.closeSession")}
@@ -345,7 +353,7 @@ export default function TerminalTabs({
           </div>
         ))}
       </div>
-      <div className="terminal-window-actions ds-control-row">
+      <div className="ds-control-row tw:flex tw:shrink-0 tw:self-center tw:[&_.btn]:shrink-0">
         <button
           type="button"
           className="btn small icon-only"
@@ -436,7 +444,7 @@ export function TerminalEmptyActions({
   ];
 
   return (
-    <div className="terminal-empty-actions ds-control-row">
+    <div className="ds-control-row tw:flex tw:flex-wrap tw:justify-center">
       {profiles.map((profile) => (
         <button
           key={profile.id}

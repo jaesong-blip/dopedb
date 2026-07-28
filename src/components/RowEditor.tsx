@@ -4,10 +4,13 @@
 // safety pipeline (classify/preview/approve/audit) applies. Never executes directly.
 import { useMemo, useState } from "react";
 import { useI18n } from "../lib/i18n";
+import {
+  InspectorFooter,
+  InspectorHeader,
+} from "../design-system/components/Workbench";
 import { Icon } from "./Icon";
 import type { CatalogTable, Engine } from "../ipc/types";
 import { buildInsert, buildUpdate, isNumericType, pkColumns } from "../lib/sqlBuild";
-import "./grid.css";
 
 type Mode = "insert" | "edit" | "duplicate";
 
@@ -122,7 +125,6 @@ export default function RowEditor({
     : t("rowEditor.reviewRow");
   return (
     <div
-      className="row-editor"
       onKeyDown={(e) => {
         if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") {
           e.preventDefault();
@@ -132,34 +134,55 @@ export default function RowEditor({
         }
       }}
     >
-      <div className="panel-head">
-        <div className="row-editor-title">
-          <strong>{title}</strong>
-          {isEdit && (
-            <span className="muted">
+      <InspectorHeader
+        title={title}
+        metadata={
+          isEdit ? (
+            <span className="tw:text-muted-foreground">
               {t(changedCount === 1 ? "rowEditor.changeCount" : "rowEditor.changeCountPlural", {
                 count: changedCount,
               })}
             </span>
-          )}
-        </div>
-        <button className="btn small icon-only icon-xs" onClick={onCancel} aria-label={t("common.close")}>
+          ) : null
+        }
+        actions={
+          <button
+            className="btn small icon-only icon-xs"
+            onClick={onCancel}
+            aria-label={t("common.close")}
+          >
           <Icon name="close" />
-        </button>
-      </div>
-      <div className="row-fields">
+          </button>
+        }
+      />
+      <div className="tw:mb-3 tw:flex tw:flex-col tw:gap-2">
         {table.columns.filter((c) => !(isEdit && c.pk)).map((c) => {
           const isNull = vals[c.name] === null;
           const readonly = isEdit && c.pk;
           const changed = isEdit && !c.pk && vals[c.name] !== initial[c.name];
           return (
-            <div className={changed ? "row-field changed" : "row-field"} key={c.name}>
-              <label title={c.dataType}>
+            <div
+              data-changed={changed}
+              className="tw:data-[changed=true]:border-l-2 tw:data-[changed=true]:border-primary tw:data-[changed=true]:pl-2"
+              key={c.name}
+            >
+              <label
+                className="tw:mb-px tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:overflow-hidden tw:text-sm tw:text-ellipsis tw:whitespace-nowrap"
+                title={c.dataType}
+              >
                 {c.name}
-                {c.pk && <span className="pk-badge">{t("schema.pk")}</span>}
-                {changed && <span className="changed-badge">{t("rowEditor.changedBadge")}</span>}
+                {c.pk && (
+                  <span className="tw:rounded-xs tw:border tw:border-primary tw:px-0.5 tw:text-2xs tw:font-bold tw:text-primary">
+                    {t("schema.pk")}
+                  </span>
+                )}
+                {changed && (
+                  <span className="tw:rounded-xs tw:bg-primary/10 tw:px-1 tw:py-px tw:text-2xs tw:font-bold tw:text-primary tw:uppercase">
+                    {t("rowEditor.changedBadge")}
+                  </span>
+                )}
               </label>
-              <div className="row-field-input">
+              <div className="tw:flex tw:items-center tw:gap-2 tw:[&>input]:min-w-0 tw:[&>input]:flex-1">
                 <input
                   type={isNumericType(c.dataType) ? "number" : "text"}
                   value={isNull ? "" : vals[c.name] ?? ""}
@@ -167,14 +190,13 @@ export default function RowEditor({
                   onChange={(e) => set(c.name, e.target.value)}
                 />
                 <label
-                  className={
-                    "null-toggle" +
-                    (isNull ? " active" : "") +
-                    (readonly || !c.nullable ? " disabled" : "")
-                  }
+                  data-active={isNull}
+                  data-disabled={readonly || !c.nullable}
+                  className="tw:relative tw:inline-flex tw:size-control-md tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-sm tw:border tw:border-border-subtle tw:bg-muted tw:text-muted-foreground tw:data-[active=true]:border-primary tw:data-[active=true]:bg-primary/10 tw:data-[active=true]:text-primary tw:data-[disabled=true]:cursor-not-allowed tw:data-[disabled=true]:opacity-35 tw:focus-within:outline-2 tw:focus-within:outline-offset-2 tw:focus-within:outline-ring"
                   title={c.nullable ? "SQL NULL" : t("rowEditor.notNullTitle")}
                 >
                   <input
+                    className="tw:absolute tw:inset-0 tw:cursor-inherit tw:opacity-0"
                     type="checkbox"
                     aria-label={t("rowEditor.setNullAria", { col: c.name })}
                     checked={isNull}
@@ -188,15 +210,15 @@ export default function RowEditor({
           );
         })}
       </div>
-      {error && <div className="error">{error}</div>}
-      <div className="row-editor-actions ds-action-row ds-control-row">
+      {error && <div className="tw:text-ui tw:text-danger">{error}</div>}
+      <InspectorFooter>
         <button className="btn primary" disabled={isEdit && changedCount === 0} onClick={submit}>
           {actionText}
         </button>
         <button className="btn" onClick={onCancel}>
           {t("common.cancel")}
         </button>
-      </div>
+      </InspectorFooter>
     </div>
   );
 }

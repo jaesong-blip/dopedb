@@ -31,8 +31,13 @@ AI 작업자는 변경 전에 `AGENTS.md`와 `CLAUDE.md`를 읽는다. 협업 �
 
 TSX, CSS, Tailwind, layout을 수정하기 전에
 [`src/design-system/README.md`](src/design-system/README.md)를 읽는다.
-semantic token과 공통 primitive를 재사용하고, 이전한 화면의 낡은 CSS와
-import는 같은 변경에서 제거한다. `pnpm build` 후 변경한 화면을 앱에서 직접
+semantic token과 공통 primitive를 재사용한다. 새 UI는 정적 `tw:` utility를
+TSX에 직접 작성하고, utility 문자열만 보관하는 `styles.ts`, 화면별 CSS, CSS
+module은 추가하지 않는다. 반복되는 시각·상호작용 패턴은 복사하지 않고 실제 공용
+컴포넌트나 정본 primitive로 디자인 시스템에 올린 뒤 문서화한다. 이전한 화면의
+낡은 selector, import, CSS 파일은 같은 변경에서 제거하고 같은 책임을 Tailwind와
+legacy CSS 양쪽에 두지 않는다. 새 CSS는 문서화된 shell/data-grid/vendor/reset/
+token/primitive 경계에서만 허용한다. `pnpm build` 후 변경한 화면을 앱에서 직접
 확인한다.
 
 ## 정식 릴리스

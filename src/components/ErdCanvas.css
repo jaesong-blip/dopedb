@@ -1,18 +1,5 @@
-.erd-surface {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  background: var(--ds-surface-1);
-}
-
-.erd-flow {
-  min-width: 0;
-  min-height: 480px;
-  flex: 1;
-}
-
+/* React Flow's generated subtree and inline-positioned handles are documented
+   vendor boundaries. DopeDB-owned surface and control layout stays in Tailwind. */
 .erd-flow .react-flow__background {
   background: var(--ds-surface-1);
   opacity: 0.42;
@@ -50,73 +37,10 @@
   fill: var(--ds-text-muted);
 }
 
-.erd-virtual-editor {
-  --ds-row-control-size: var(--ds-control-md);
-  flex-wrap: wrap;
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
-  background: var(--ds-surface-0);
-}
-
-.erd-virtual-editor input,
-.erd-virtual-editor select {
-  min-width: 120px;
-  min-height: var(--ds-control-md);
-  flex: 1 1 140px;
-  padding: 0 var(--ds-space-2);
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-surface-1);
-  color: var(--ds-text);
-  font: inherit;
-}
-
-.erd-virtual-list {
-  display: flex;
-  gap: var(--ds-space-2);
-  overflow-x: auto;
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
-}
-
-.erd-virtual-list .badge {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--ds-space-1);
-}
-
-.erd-virtual-list button {
-  padding: 0;
+.erd-node-handle {
+  width: 7px;
+  height: 18px;
   border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.erd-error {
-  margin: var(--ds-space-2) var(--ds-space-3) 0;
-}
-
-.erd-layout-warning {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: var(--ds-icon-md) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--ds-space-2);
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border-bottom: var(--ds-border-width) solid var(--ds-risk-border);
-  background: var(--ds-risk-bg);
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-xs);
-}
-
-.erd-layout-warning > .icon {
-  color: var(--ds-warning);
-}
-
-.erd-status {
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border-top: var(--ds-border-width) solid var(--ds-border-subtle);
-  font-size: var(--ds-font-size-xs);
+  border-radius: var(--ds-radius-xs);
+  background: var(--ds-text-muted);
 }

@@ -6,6 +6,11 @@ import type {
 } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
+import {
+  TreeSearch,
+  TreeSectionButton,
+} from "../../design-system/components/TreeControls";
+import { LoadingLabel } from "../../design-system/components/Status";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -114,14 +119,8 @@ export default function CatalogTree(props: Props) {
     return (
       <div
         key={key}
-        className={[
-          "db-table",
-          "ds-object-row",
-          selected && selectedTableKey === key ? "selected" : "",
-          tone ? `schema-diff-${tone}` : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        className="db-table ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui"
+        data-diff={tone ?? "none"}
         aria-selected={selected && selectedTableKey === key}
         role="button"
         tabIndex={0}
@@ -141,14 +140,15 @@ export default function CatalogTree(props: Props) {
         }
       >
         <span
-          className={`schema-diff-dot${tone ? ` diff-${tone}` : " diff-none"}`}
+          data-diff={tone ?? "none"}
+          className="tw:size-[7px] tw:shrink-0 tw:rounded-full tw:bg-transparent tw:data-[diff=added]:bg-success tw:data-[diff=missing]:bg-danger tw:data-[diff=changed]:bg-warning tw:data-[diff=mixed]:border tw:data-[diff=mixed]:border-danger tw:data-[diff=mixed]:bg-warning"
           title={
             tableDiff ? schemaTableDiffTitle(t, tableDiff) : undefined
           }
           aria-hidden="true"
         />
         <Icon
-          className="db-object-icon"
+          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground tw:group-hover:text-current"
           name={
             isDocumentEngine(connection.engine)
               ? "collection"
@@ -157,19 +157,20 @@ export default function CatalogTree(props: Props) {
                 : "table"
           }
         />
-        <span className="tbl-name">
+        <span className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
           {tableLabel(connection.engine, table)}
         </span>
         {showRowCounts &&
           table.rowEstimate != null &&
           table.rowEstimate >= 0 && (
-            <span className="tbl-count muted">
+            <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground tw:opacity-60 tw:[font-variant-numeric:tabular-nums] tw:group-hover:opacity-100">
               ~{table.rowEstimate.toLocaleString()}
             </span>
           )}
         {!isDocumentEngine(connection.engine) && (
           <button
-            className="ddl-btn"
+            className="ddl-btn tw:absolute tw:top-1/2 tw:right-2 tw:-translate-y-1/2 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:text-2xs tw:font-semibold tw:text-muted-foreground tw:opacity-0 tw:transition-opacity tw:group-hover:opacity-100 tw:group-focus-within:opacity-100 tw:hover:border-ring tw:hover:text-foreground"
+            type="button"
             title={t("connections.showDdl")}
             onClick={(event) => {
               event.stopPropagation();
@@ -187,25 +188,30 @@ export default function CatalogTree(props: Props) {
     return (
       <div
         key={`missing-${tableKey(table)}`}
-        className="db-table schema-diff-missing-row ds-object-row"
+        className="db-table ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-muted-foreground"
         title={t("connections.schemaDiffTableMissing")}
       >
-        <span className="schema-diff-dot diff-missing" aria-hidden="true" />
+        <span
+          className="tw:size-[7px] tw:shrink-0 tw:rounded-full tw:bg-danger"
+          aria-hidden="true"
+        />
         <Icon
-          className="db-object-icon"
+          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
           name={table.kind === "view" ? "view" : "table"}
         />
-        <span className="tbl-name">
+        <span className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
           {tableLabel(connection.engine, table)}
         </span>
-        <span className="schema-diff-kind">
+        <span className="tw:shrink-0 tw:text-2xs tw:font-bold tw:tracking-[0.04em] tw:text-muted-foreground tw:uppercase">
           {t(
             table.kind === "view"
               ? "schemaDiff.objectView"
               : "schemaDiff.objectTable",
           )}
         </span>
-        <span className="schema-diff-inline diff-missing">base</span>
+        <span className="tw:shrink-0 tw:text-2xs tw:font-bold tw:text-danger">
+          base
+        </span>
       </div>
     );
   }
@@ -213,7 +219,7 @@ export default function CatalogTree(props: Props) {
   function renderObject(object: CatalogObject, icon: Parameters<typeof Icon>[0]["name"], index: number) {
     return (
       <div
-        className="db-catalog-object ds-object-row"
+        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-ui"
         key={`${object.schema ?? ""}:${object.kind}:${object.name}:${
           object.detail ?? index
         }`}
@@ -227,10 +233,15 @@ export default function CatalogTree(props: Props) {
           .filter(Boolean)
           .join(" · ")}
       >
-        <Icon className="db-object-icon" name={icon} />
-        <span className="tbl-name">{catalogObjectLabel(object)}</span>
+        <Icon
+          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
+          name={icon}
+        />
+        <span className="tbl-name tw:min-w-[10ch] tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+          {catalogObjectLabel(object)}
+        </span>
         {object.parent && (
-          <span className="db-object-parent muted">
+          <span className="tw:max-w-[42%] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground">
             {t("connections.objectOn")} {object.parent}
           </span>
         )}
@@ -239,28 +250,38 @@ export default function CatalogTree(props: Props) {
   }
 
   return (
-    <div className="db-tables">
+    <div className="tw:flex tw:flex-col tw:gap-px tw:pt-1 tw:pr-0 tw:pb-2 tw:pl-3">
       {catalog &&
         catalog.tables.length + (catalog.objects?.length ?? 0) > 5 && (
-          <input
-            className="table-filter"
-            placeholder={t("connections.filterTables")}
-            value={filter}
-            onChange={(event) => props.onFilter(event.target.value)}
-          />
+          <div className="tw:mb-1">
+            <TreeSearch
+              clearLabel={t("common.close")}
+              placeholder={t("connections.filterTables")}
+              value={filter}
+              onChange={props.onFilter}
+            />
+          </div>
         )}
-      {error && <div className="error small-pad">{error}</div>}
-      {detailError && <div className="muted small-pad">{detailError}</div>}
+      {error ? (
+        <div className="tw:px-2 tw:py-1 tw:text-sm tw:text-danger">
+          {error}
+        </div>
+      ) : null}
+      {detailError ? (
+        <div className="tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
+          {detailError}
+        </div>
+      ) : null}
       {!catalog && !error && (
-        <div className="muted small-pad loading">
-          {t("connections.loadingSchema")}
+        <div className="tw:px-2 tw:py-1 tw:text-sm">
+          <LoadingLabel>{t("connections.loadingSchema")}</LoadingLabel>
         </div>
       )}
       {catalog &&
         ordered.length === 0 &&
         filteredObjects.length === 0 &&
         missingTables.length === 0 && (
-          <div className="muted small-pad">
+          <div className="tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
             {normalizedFilter
               ? t("connections.noTablesMatch", {
                   filter: normalizedFilter,
@@ -273,37 +294,20 @@ export default function CatalogTree(props: Props) {
           catalog &&
           !isDocumentEngine(connection.engine))) && (
         <>
-          <div
-            className="db-section"
-            role="button"
-            tabIndex={0}
-            aria-expanded={tablesOpen}
-            onClick={() => props.onToggleDefaultSection("table")}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                props.onToggleDefaultSection("table");
-              }
-            }}
+          <TreeSectionButton
+            expanded={tablesOpen}
+            icon={
+              isDocumentEngine(connection.engine) ? "collection" : "table"
+            }
+            onToggle={() => props.onToggleDefaultSection("table")}
           >
-            <span className="tw">
-              <Icon
-                name={tablesOpen ? "chevronDown" : "chevronRight"}
-              />
-            </span>
-            <Icon
-              className="db-section-icon"
-              name={
-                isDocumentEngine(connection.engine) ? "collection" : "table"
-              }
-            />
             {t(
               isDocumentEngine(connection.engine)
                 ? "connections.collections"
                 : "connections.tables",
               { count: tables.length },
             )}
-          </div>
+          </TreeSectionButton>
           {tablesOpen && tables.map(renderTable)}
         </>
       )}
@@ -312,25 +316,13 @@ export default function CatalogTree(props: Props) {
           catalog &&
           !isDocumentEngine(connection.engine))) && (
         <>
-          <div
-            className="db-section"
-            role="button"
-            tabIndex={0}
-            aria-expanded={viewsOpen}
-            onClick={() => props.onToggleDefaultSection("view")}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                props.onToggleDefaultSection("view");
-              }
-            }}
+          <TreeSectionButton
+            expanded={viewsOpen}
+            icon="view"
+            onToggle={() => props.onToggleDefaultSection("view")}
           >
-            <span className="tw">
-              <Icon name={viewsOpen ? "chevronDown" : "chevronRight"} />
-            </span>
-            <Icon className="db-section-icon" name="view" />
             {t("connections.views", { count: views.length })}
-          </div>
+          </TreeSectionButton>
           {viewsOpen && views.map(renderTable)}
         </>
       )}
@@ -343,28 +335,19 @@ export default function CatalogTree(props: Props) {
         const expanded =
           Boolean(normalizedFilter) || objectSectionsOpen.has(sectionKey);
         return (
-          <div className="db-object-section" key={section.kind}>
-            <div
-              className="db-section"
-              role="button"
-              tabIndex={0}
-              aria-expanded={expanded}
-              onClick={() => props.onToggleObjectSection(section.kind)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  props.onToggleObjectSection(section.kind);
-                }
-              }}
+          <div
+            className="tw:flex tw:flex-col tw:gap-px"
+            key={section.kind}
+          >
+            <TreeSectionButton
+              expanded={expanded}
+              icon={section.icon}
+              onToggle={() =>
+                props.onToggleObjectSection(section.kind)
+              }
             >
-              <span className="tw">
-                <Icon
-                  name={expanded ? "chevronDown" : "chevronRight"}
-                />
-              </span>
-              <Icon className="db-section-icon" name={section.icon} />
               {t(section.label, { count: objects.length })}
-            </div>
+            </TreeSectionButton>
             {expanded &&
               objects.map((object, index) =>
                 renderObject(object, section.icon, index),
@@ -374,7 +357,7 @@ export default function CatalogTree(props: Props) {
       })}
       {missingTables.length > 0 && (
         <>
-          <div className="db-section schema-diff-section">
+          <div className="tw:mt-1 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:tracking-[0.04em] tw:text-danger tw:uppercase">
             {t("connections.schemaDiffMissingSection", {
               count: missingTables.length,
             })}

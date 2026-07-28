@@ -27,7 +27,6 @@ import {
   skillSetupTerminalWrite,
   terminalOutputChannel,
 } from "../terminals/tauriAdapter";
-import { skillSetupStyles } from "./styles";
 
 const DEFAULT_SIZE = {
   cols: 88,
@@ -242,12 +241,12 @@ export default function SkillSetupTerminal({
 
   return (
     <section
-      className={skillSetupStyles.terminal}
+      className="tw:relative tw:mt-3 tw:grid tw:h-[264px] tw:min-w-0 tw:grid-rows-[var(--ds-control-lg)_minmax(0,1fr)] tw:overflow-hidden tw:rounded-md tw:border tw:border-border-strong tw:bg-background tw:@max-[520px]:h-[236px]"
       aria-label={t("agentTools.setupTerminalAria")}
       data-ui-boundary
     >
-      <header className={skillSetupStyles.terminalHead}>
-        <p className={skillSetupStyles.terminalHeadText} aria-live="polite">
+      <header className="tw:flex tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:border-border-subtle tw:pr-1 tw:pl-3 tw:text-xs tw:text-muted-foreground">
+        <p className="tw:m-0" aria-live="polite">
           {drafted
             ? t("agentTools.setupPressEnter")
             : slowFeedbackVisible
@@ -257,7 +256,7 @@ export default function SkillSetupTerminal({
       </header>
       {error && (
         <div
-          className={`error ${skillSetupStyles.terminalError}`}
+          className="tw:absolute tw:z-[var(--ds-z-base)] tw:mx-2 tw:mt-[calc(var(--ds-control-lg)+var(--ds-space-2))] tw:text-ui tw:text-danger"
           role="alert"
         >
           {t("agentTools.setupTerminalError", { error })}
@@ -275,11 +274,11 @@ export default function SkillSetupTerminal({
           onReady={handleSurfaceReady}
           onPromptVisible={handlePromptVisible}
           ariaLabel={t("agentTools.setupTerminalAria")}
-          className={skillSetupStyles.terminalSurface}
+          className="tw:h-full tw:p-2"
         />
       ) : (
         <div
-          className={`muted ${skillSetupStyles.terminalLoading}`}
+          className="tw:grid tw:place-items-center tw:p-4 tw:text-muted-foreground"
           aria-live="polite"
         >
           {error

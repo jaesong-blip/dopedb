@@ -33,7 +33,6 @@ import {
   buildSkillSetupPlan,
   type SkillSetupPlan,
 } from "../../../features/skills/setupPolicy";
-import { agentToolsStyles } from "./styles";
 
 type Mutation = "repair" | "remove";
 
@@ -240,7 +239,7 @@ export default function AgentTools() {
 
   return (
     <div
-      className={`screen ${agentToolsStyles.root}`}
+      className="screen tw:max-w-[800px]"
       data-primary-flow
     >
       <div className="settings-title-row">
@@ -249,7 +248,7 @@ export default function AgentTools() {
       </div>
 
       {status && (
-        <p className={`muted ${agentToolsStyles.version}`}>
+        <p className="tw:mt-1 tw:mb-4 tw:text-muted-foreground">
           {t("agentTools.version", {
             version: status.skill.appVersion,
             revision: status.skill.releaseRevision,
@@ -258,14 +257,14 @@ export default function AgentTools() {
       )}
 
       {(error || statusQ.error) && (
-        <div className="error">
+        <div className="tw:text-ui tw:text-danger" role="alert">
           {t("agentTools.error", {
             error: error ?? errMessage(statusQ.error),
           })}
         </div>
       )}
       {agentsQ.error && (
-        <div className="error">
+        <div className="tw:text-ui tw:text-danger" role="alert">
           {t("agentTools.detectError", { error: errMessage(agentsQ.error) })}
         </div>
       )}
@@ -274,7 +273,7 @@ export default function AgentTools() {
         <Skeleton lines={6} />
       ) : (
         status && (
-          <div className={agentToolsStyles.list}>
+          <div className="tw:mt-3 tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
             {status.targets.map((target) => {
               const providerId = target.target === "codex" ? "codex" : "claude";
               const cli = agentsQ.data?.find((item) => item.id === providerId);
@@ -291,24 +290,24 @@ export default function AgentTools() {
                 "newer_known",
               ].includes(target.state);
               return (
-                <section className={agentToolsStyles.target} key={target.target}>
-                  <div className={agentToolsStyles.targetHead}>
-                    <div className={agentToolsStyles.targetIdentity}>
-                      <h3 className={agentToolsStyles.targetTitle}>
+                <section className="tw:py-4" key={target.target}>
+                  <div className="tw:flex tw:items-center tw:justify-between tw:gap-4 tw:@max-[520px]:flex-col tw:@max-[520px]:items-start tw:@max-[520px]:gap-2">
+                    <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
+                      <h3 className="tw:m-0 tw:text-title tw:leading-ui tw:font-bold tw:tracking-normal tw:text-foreground tw:normal-case">
                         {target.displayName}
                       </h3>
                       <span className={badgeClass(target.state)}>
                         {t(stateLabel[target.state])}
                       </span>
                     </div>
-                    <div className={agentToolsStyles.cliState}>
+                    <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:text-ui tw:text-muted-foreground tw:@max-[520px]:justify-start">
                       <span>
                         {cli?.installed
                           ? t("agentTools.detected")
                           : t("agentTools.cliMissing")}
                       </span>
                       <span
-                        className={agentToolsStyles.metaDot}
+                        className="tw:text-muted-foreground"
                         aria-hidden="true"
                       >
                         ·
@@ -321,57 +320,57 @@ export default function AgentTools() {
                     </div>
                   </div>
 
-                  <dl className={agentToolsStyles.details}>
-                    <div className={agentToolsStyles.detailsRow}>
-                      <dt className={agentToolsStyles.detailsTerm}>
+                  <dl className="tw:mt-3 tw:mb-0 tw:grid tw:gap-2">
+                    <div className="tw:grid tw:grid-cols-[minmax(120px,0.3fr)_minmax(0,1fr)] tw:gap-3 tw:@max-[520px]:grid-cols-[minmax(0,1fr)] tw:@max-[520px]:gap-1">
+                      <dt className="tw:text-muted-foreground">
                         {t("agentTools.path")}
                       </dt>
-                      <dd className={agentToolsStyles.detailsValue}>
-                        <code className={agentToolsStyles.breakAnywhere}>
+                      <dd className="tw:m-0 tw:min-w-0">
+                        <code className="tw:[overflow-wrap:anywhere]">
                           {target.installPath}
                         </code>
                       </dd>
                     </div>
                     {target.installedRevision !== null && (
-                      <div className={agentToolsStyles.detailsRow}>
-                        <dt className={agentToolsStyles.detailsTerm}>
+                      <div className="tw:grid tw:grid-cols-[minmax(120px,0.3fr)_minmax(0,1fr)] tw:gap-3 tw:@max-[520px]:grid-cols-[minmax(0,1fr)] tw:@max-[520px]:gap-1">
+                        <dt className="tw:text-muted-foreground">
                           {t("cli.binaryStatus")}
                         </dt>
-                        <dd className={agentToolsStyles.detailsValue}>
+                        <dd className="tw:m-0 tw:min-w-0">
                           {t("agentTools.installedRevision", {
                             revision: target.installedRevision,
                           })}
                         </dd>
                       </div>
                     )}
-                    <div className={agentToolsStyles.detailsRow}>
-                      <dt className={agentToolsStyles.detailsTerm}>
+                    <div className="tw:grid tw:grid-cols-[minmax(120px,0.3fr)_minmax(0,1fr)] tw:gap-3 tw:@max-[520px]:grid-cols-[minmax(0,1fr)] tw:@max-[520px]:gap-1">
+                      <dt className="tw:text-muted-foreground">
                         {t("agentTools.currentRevision")}
                       </dt>
-                      <dd className={agentToolsStyles.detailsValue}>
+                      <dd className="tw:m-0 tw:min-w-0">
                         {target.currentRevision}
                       </dd>
                     </div>
                   </dl>
                   {target.reason && (
-                    <p className={`muted ${agentToolsStyles.targetMessage}`}>
+                    <p className="tw:mt-2 tw:text-muted-foreground">
                       {t(reasonLabel[target.reason])}
                     </p>
                   )}
                   {target.conflicts.length > 0 && (
                     <>
-                      <p className={agentToolsStyles.conflictTitle}>
+                      <p className="tw:mt-2 tw:font-semibold tw:text-foreground">
                         {t("agentTools.conflicts", {
                           count: target.conflicts.length,
                         })}
                       </p>
                       {target.conflicts.map((conflict) => (
                         <p
-                          className={`muted ${agentToolsStyles.conflict}`}
+                          className="tw:mt-2 tw:flex tw:items-baseline tw:gap-2 tw:text-muted-foreground tw:@max-[520px]:flex-col tw:@max-[520px]:items-start tw:@max-[520px]:gap-1"
                           key={`${conflict.kind}:${conflict.path}`}
                         >
                           <span>{t(conflictLabel[conflict.kind])}</span>
-                          <code className={agentToolsStyles.breakAnywhere}>
+                          <code className="tw:[overflow-wrap:anywhere]">
                             {conflict.path}
                           </code>
                         </p>
@@ -380,9 +379,7 @@ export default function AgentTools() {
                   )}
 
                   {(canInstall || canRepair || canRemove) && (
-                    <div
-                      className={`ds-control-row ${agentToolsStyles.actions}`}
-                    >
+                    <div className="ds-control-row tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-[var(--ds-control-gap)]">
                       {canInstall && (
                         <button
                           className="btn"
@@ -436,13 +433,13 @@ export default function AgentTools() {
         <SkillSetupPanel plan={setupPlan} onClose={closeSetup} />
       )}
 
-      <section className={agentToolsStyles.legacy}>
-        <div className={agentToolsStyles.sectionHead}>
-          <div className={agentToolsStyles.sectionHeadContent}>
-            <h3 className={agentToolsStyles.sectionHeading}>
+      <section className="tw:border-t tw:border-border-subtle tw:pt-5 tw:pb-2">
+        <div className="tw:flex tw:items-center tw:justify-between tw:gap-4 tw:@max-[520px]:flex-col tw:@max-[520px]:items-start">
+          <div className="tw:flex tw:min-w-0 tw:flex-col tw:items-start tw:gap-1">
+            <h3 className="tw:m-0">
               {t("agentTools.legacyCleanupTitle")}
             </h3>
-            <p className={`muted ${agentToolsStyles.sectionHeading}`}>
+            <p className="tw:m-0 tw:text-muted-foreground">
               {t("agentTools.legacyCleanupDescription")}
             </p>
           </div>
@@ -463,16 +460,16 @@ export default function AgentTools() {
         {cleanupQ.isPending ? (
           <Skeleton lines={3} />
         ) : cleanupQ.error ? (
-          <div className="error">
+          <div className="tw:text-ui tw:text-danger" role="alert">
             {t("agentTools.legacyCleanupError", {
               error: errMessage(cleanupQ.error),
             })}
           </div>
         ) : (
-          <div className={agentToolsStyles.cleanupList}>
+          <div className="tw:mt-3 tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
             {cleanupQ.data?.targets.map((target) => (
-              <div className={agentToolsStyles.cleanupTarget} key={target.id}>
-                <div className={agentToolsStyles.cleanupIdentity}>
+              <div className="tw:grid tw:gap-1 tw:py-3" key={target.id}>
+                <div className="tw:flex tw:items-center tw:gap-2">
                   <span>{target.displayName}</span>
                   <span
                     className={
@@ -492,23 +489,31 @@ export default function AgentTools() {
                     )}
                   </span>
                 </div>
-                <code className={agentToolsStyles.breakAnywhere}>
+                <code className="tw:[overflow-wrap:anywhere]">
                   {target.path}
                 </code>
                 {target.redactedDiff && (
-                  <span className="muted">{target.redactedDiff}</span>
+                  <span className="tw:text-muted-foreground">
+                    {target.redactedDiff}
+                  </span>
                 )}
-                {target.reason && <span className="error">{target.reason}</span>}
+                {target.reason && (
+                  <span className="tw:text-ui tw:text-danger">
+                    {target.reason}
+                  </span>
+                )}
               </div>
             ))}
           </div>
         )}
         {cleanupManual.length > 0 && (
-          <p className="muted">{t("agentTools.legacyCleanupManualHint")}</p>
+          <p className="tw:text-muted-foreground">
+            {t("agentTools.legacyCleanupManualHint")}
+          </p>
         )}
       </section>
 
-      <div className={`ds-control-row ${agentToolsStyles.footer}`}>
+      <div className="ds-control-row tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-[var(--ds-control-gap)]">
         {combinedSetupPlan?.command && !setupPlan && (
           <button
             className="btn primary"

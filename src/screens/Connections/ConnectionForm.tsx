@@ -1,35 +1,48 @@
-// Connection create/edit form: fields, connection-URL paste import, save/test actions.
-// Split out of the old Connections/index.tsx (see DatabaseExplorer.tsx for the sidebar
-// tree that used to live alongside it).
+// DopeDB-style Data Sources and Drivers editor. Connection parsing and
+// persistence stay in the feature layer; this screen composes Tailwind v4
+// layout with canonical design-system form, tab, and tool-window primitives.
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { pickFile } from "../../ipc/commands";
-import type { Engine, Provider } from "../../ipc/types";
-import { errMessage } from "../../ipc/types";
+
+import EngineMark from "../../components/EngineMark";
+import { Icon } from "../../components/Icon";
+import InfoTip from "../../components/InfoTip";
+import { useToast } from "../../components/Toast";
 import {
-  connectionId,
-  type ConnectionProfile,
-  type DriverDescriptor,
+  CheckboxField,
+  Field,
+  SelectInput,
+  TextInput,
+} from "../../design-system/components/FormControls";
+import {
+  PanelTabs,
+  type PanelTab,
+} from "../../design-system/components/PanelTabs";
+import {
+  ToolWindowAction,
+  ToolWindowSection,
+} from "../../design-system/components/ToolWindow";
+import { parseConnectionUrl } from "../../features/connections/connectionUrl";
+import type {
+  ConnectionProfile,
+  DriverDescriptor,
 } from "../../features/connections/domain";
+import {
+  blankConnection,
+  CONNECTION_DEFAULT_PORTS,
+  type ConnectionLaunchPreset,
+} from "../../features/connections/presets";
 import {
   installDriver,
   testConnectionProfile,
   upsertConnection,
 } from "../../features/connections/tauriAdapter";
-import { Icon } from "../../components/Icon";
-import InfoTip from "../../components/InfoTip";
-import { useToast } from "../../components/Toast";
+import { pickFile } from "../../ipc/commands";
+import type { Engine, Provider } from "../../ipc/types";
+import { errMessage } from "../../ipc/types";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
 import { driversQuery } from "../../lib/queries";
-import "./connections.css";
-
-const DEFAULT_PORT: Record<Engine, number> = {
-  postgres: 5432,
-  mysql: 3306,
-  sqlite: 0,
-  mongodb: 27017,
-};
 
 const PROVIDER_ORDER: Provider[] = [
   "auto",
@@ -39,6 +52,13 @@ const PROVIDER_ORDER: Provider[] = [
   "gcpCloudSql",
 ];
 
+type ConnectionTab =
+  | "general"
+  | "options"
+  | "sshSsl"
+  | "schemas"
+  | "advanced";
+
 function compatibleDrivers(
   drivers: DriverDescriptor[],
   engine: Engine,
@@ -47,275 +67,196 @@ function compatibleDrivers(
   return drivers.filter(
     (driver) =>
       driver.engine === engine &&
-      (provider === "auto" || driver.supportedProviders.includes(provider)),
+      (provider === "auto" ||
+        driver.supportedProviders.includes(provider)),
   );
-}
-
-type ParsedConnectionUrl = {
-  update: Partial<ConnectionProfile>;
-  password: string | null;
-};
-
-function decodeUrlPart(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function firstSearchParam(params: URLSearchParams, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = params.get(key);
-    if (value != null && value !== "") return value;
-  }
-  return null;
-}
-
-type UrlMetaParams = {
-  name: string;
-  env: string | null;
-  readonlyDefault: boolean | null;
-  allowWrites: boolean | null;
-};
-
-// name/env/readonlyDefault/allowWrites read the same DopeDB meta keys regardless of
-// engine — shared by parseMongoConnectionUrl and parseConnectionUrl. `nameFallback` is
-// the engine-specific fallback (database, then host) when no name param is present.
-function parseUrlMetaParams(params: URLSearchParams, nameFallback: string): UrlMetaParams {
-  return {
-    name: firstSearchParam(params, ["name", "connectionName", "connection_name"]) || nameFallback,
-    env: firstSearchParam(params, ["env", "environment"]),
-    readonlyDefault: parseOptionalBoolean(
-      firstSearchParam(params, ["readonly", "readOnly", "read_only"]),
-    ),
-    allowWrites: parseOptionalBoolean(
-      firstSearchParam(params, ["allowWrites", "allow_writes", "writes"]),
-    ),
-  };
-}
-
-function parseOptionalBoolean(value: string | null): boolean | null {
-  if (value == null) return null;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return null;
-}
-
-function normalizeSslMode(engine: Engine, value: string | null): string | null {
-  if (!value) return null;
-  const normalized = value.trim().toLowerCase().replace(/_/g, "-");
-  if (["1", "true", "yes", "on"].includes(normalized)) return "require";
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return engine === "mysql" ? "disabled" : "disable";
-  }
-  if (engine === "mysql") {
-    if (normalized === "disable") return "disabled";
-    if (normalized === "prefer") return "preferred";
-    if (normalized === "require") return "required";
-    if (normalized === "verify-full") return "verify-identity";
-  }
-  return normalized;
-}
-
-function sqliteDatabaseFromUrl(url: URL): string {
-  if (url.protocol === "file:") return decodeUrlPart(url.pathname);
-  if (url.hostname && !url.pathname) return decodeUrlPart(url.hostname);
-  if (url.hostname) return decodeUrlPart(`${url.hostname}${url.pathname}`);
-  return decodeUrlPart(url.pathname);
-}
-
-// mongodb:// and mongodb+srv:// support a comma-separated host list (replica set
-// members), which the WHATWG URL parser can't represent — parse by hand instead. The
-// schema group is deliberately not read from the URL: MongoDB has no schema-diff path,
-// and the form hides that field for this engine (see the isMongo branch below).
-function parseMongoConnectionUrl(text: string): ParsedConnectionUrl | null {
-  const match =
-    /^mongodb(\+srv)?:\/\/(?:([^:@/]+)(?::([^@/]*))?@)?([^/?]+)(?:\/([^?]*))?(?:\?(.*))?$/i.exec(
-      text,
-    );
-  if (!match) return null;
-  const [, srvFlag, rawUser, rawPass, hostPart, rawDatabase, rawQuery] = match;
-  const srv = !!srvFlag;
-  const database = rawDatabase ? decodeUrlPart(rawDatabase) : "";
-  const params = new URLSearchParams(rawQuery ?? "");
-
-  // Unlike the SQL engines (whose extraParams are only read selectively), every
-  // mongo extraParams entry is re-serialized into the driver URI — DopeDB's own
-  // meta parameters must not leak into it as unknown MongoDB options.
-  const dopedbMetaKeys = new Set([
-    "allow_writes", "allowwrites", "connection_name", "connectionname", "env",
-    "environment", "name", "pass", "password", "read_only", "readonly", "writes",
-  ]);
-  const extraParams: Record<string, string> = {};
-  params.forEach((value, key) => {
-    if (dopedbMetaKeys.has(key.toLowerCase())) return;
-    extraParams[key] = value;
-  });
-  if (srv) extraParams.srv = "true";
-
-  const hosts = hostPart.split(",").map((h) => h.trim()).filter(Boolean);
-  let host: string;
-  let port: number;
-  if (hosts.length > 1) {
-    // Replica-set host list: each member resolves its own port, so keep the raw
-    // comma-separated string and fall back to the driver default port.
-    host = hostPart;
-    port = DEFAULT_PORT.mongodb;
-  } else {
-    const single = hosts[0] ?? "";
-    const m = /^(.+?)(?::(\d+))?$/.exec(single);
-    host = decodeUrlPart(m?.[1] ?? single);
-    port = m?.[2] ? Number(m[2]) : DEFAULT_PORT.mongodb;
-  }
-
-  const meta = parseUrlMetaParams(params, database || hosts[0] || "");
-  const update: Partial<ConnectionProfile> = {
-    name: meta.name,
-    engine: "mongodb",
-    provider: "auto",
-    driverId: null,
-    host,
-    port,
-    database,
-    username: rawUser ? decodeUrlPart(rawUser) : "",
-    sslmode: "prefer",
-    extraParams,
-  };
-  if (meta.env) update.env = meta.env;
-  if (meta.readonlyDefault != null) update.readonlyDefault = meta.readonlyDefault;
-  if (meta.allowWrites != null) update.allowWrites = meta.allowWrites;
-
-  return {
-    update,
-    password:
-      (rawPass != null ? decodeUrlPart(rawPass) : "") ||
-      firstSearchParam(params, ["password", "pass"]) ||
-      null,
-  };
-}
-
-function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
-  const text = raw.trim().replace(/^['"`]+|['"`]+$/g, "");
-  if (!text) return null;
-  if (/^mongodb(\+srv)?:\/\//i.test(text)) return parseMongoConnectionUrl(text);
-
-  let url: URL;
-  try {
-    url = new URL(text);
-  } catch {
-    return null;
-  }
-
-  const protocol = url.protocol.replace(/:$/, "").toLowerCase();
-  const engine: Engine | null =
-    protocol === "postgres" || protocol === "postgresql"
-      ? "postgres"
-      : protocol === "mysql" || protocol === "mariadb"
-        ? "mysql"
-        : protocol === "sqlite" || protocol === "sqlite3" || protocol === "file"
-          ? "sqlite"
-          : null;
-  if (!engine) return null;
-
-  const extraParams: Record<string, string> = {};
-  url.searchParams.forEach((value, key) => {
-    if (key.toLowerCase() === "password" || key.toLowerCase() === "pass") return;
-    extraParams[key] = value;
-  });
-
-  const sslmode = normalizeSslMode(
-    engine,
-    firstSearchParam(url.searchParams, ["sslmode", "ssl-mode", "sslMode", "ssl"]),
-  );
-  const database =
-    engine === "sqlite"
-      ? sqliteDatabaseFromUrl(url)
-      : decodeUrlPart(url.pathname.replace(/^\/+/, ""));
-  const meta = parseUrlMetaParams(url.searchParams, database || url.hostname || "");
-  const update: Partial<ConnectionProfile> = {
-    name: meta.name,
-    engine,
-    provider: "auto",
-    driverId: null,
-    host: engine === "sqlite" ? "localhost" : decodeUrlPart(url.hostname),
-    port: url.port ? Number(url.port) : DEFAULT_PORT[engine],
-    database,
-    username: decodeUrlPart(url.username),
-    sslmode: sslmode ?? "prefer",
-    extraParams,
-  };
-  if (meta.env) update.env = meta.env;
-  const schemaGroup = firstSearchParam(url.searchParams, [
-    "schemaGroup",
-    "schema_group",
-    "schema-group",
-    "group",
-  ]);
-  if (schemaGroup) update.schemaGroup = schemaGroup;
-  if (meta.readonlyDefault != null) update.readonlyDefault = meta.readonlyDefault;
-  if (meta.allowWrites != null) update.allowWrites = meta.allowWrites;
-
-  return {
-    update,
-    password:
-      decodeUrlPart(url.password) ||
-      firstSearchParam(url.searchParams, ["password", "pass"]) ||
-      null,
-  };
-}
-
-function blank(): ConnectionProfile {
-  return {
-    id: connectionId(crypto.randomUUID()),
-    name: "",
-    engine: "postgres",
-    provider: "auto",
-    driverId: null,
-    host: "localhost",
-    port: 5432,
-    database: "",
-    username: "",
-    sslmode: "prefer",
-    extraParams: {},
-    readonlyDefault: true,
-    allowWrites: false,
-    secretRef: null,
-    env: null,
-    schemaGroup: null,
-    workspaceAccess: "local",
-    credentialMode: "local",
-  };
 }
 
 export function ConnectionForm({
   initial,
+  preset,
   onSaved,
   onCancel,
 }: {
   initial: ConnectionProfile | null;
-  onSaved: (p: ConnectionProfile) => void;
+  preset: ConnectionLaunchPreset | null;
+  onSaved: (
+    profile: ConnectionProfile,
+    closeEditor: boolean,
+  ) => Promise<void>;
   onCancel: () => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
   const driverCatalog = useQuery(driversQuery());
-  const [form, setForm] = useState<ConnectionProfile>(initial ?? blank());
+  const [form, setForm] = useState<ConnectionProfile>(
+    initial ?? blankConnection(preset),
+  );
   const [password, setPassword] = useState("");
+  const [activeTab, setActiveTab] =
+    useState<ConnectionTab>("general");
   const [busy, setBusy] = useState(false);
-  // Which action is in flight, so only the clicked button shows progress (busy
-  // disables all three).
-  const [running, setRunning] = useState<"save" | "test" | null>(null);
-  const [installingDriverId, setInstallingDriverId] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [msgErr, setMsgErr] = useState(false);
+  const [running, setRunning] = useState<
+    "save" | "apply" | "test" | null
+  >(null);
+  const [installingDriverId, setInstallingDriverId] = useState<
+    string | null
+  >(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageIsError, setMessageIsError] = useState(false);
   const isNew = initial === null;
+  const isSqlite = form.engine === "sqlite";
+  const isMongo = form.engine === "mongodb";
+  const srv = form.extraParams.srv === "true";
+
+  const drivers = compatibleDrivers(
+    driverCatalog.data ?? [],
+    form.engine,
+    form.provider,
+  );
+  const activeDriver =
+    drivers.find((driver) => driver.id === form.driverId) ??
+    drivers.find((driver) => driver.recommended) ??
+    drivers[0] ??
+    null;
+  const providers = PROVIDER_ORDER.filter(
+    (provider) =>
+      provider === "auto" ||
+      provider === form.provider ||
+      (driverCatalog.data ?? []).some(
+        (driver) =>
+          driver.engine === form.engine &&
+          driver.supportedProviders.includes(provider),
+      ),
+  );
+  const tabs: readonly PanelTab<ConnectionTab>[] = [
+    { id: "general", label: t("connections.general") },
+    { id: "options", label: t("connections.options") },
+    { id: "sshSsl", label: t("connections.sshSsl") },
+    {
+      id: "schemas",
+      label: t("connections.schemas"),
+      disabled: isMongo,
+    },
+    { id: "advanced", label: t("connections.advanced") },
+  ];
+  const standardSources: Array<{
+    engine: Engine;
+    provider: Provider;
+    label: string;
+  }> = [
+    { engine: "postgres", provider: "auto", label: "PostgreSQL" },
+    { engine: "mysql", provider: "auto", label: "MySQL / MariaDB" },
+    { engine: "sqlite", provider: "generic", label: "SQLite" },
+    { engine: "mongodb", provider: "generic", label: "MongoDB" },
+  ];
+  const cloudSources: Array<{
+    engine: Engine;
+    provider: Provider;
+    label: string;
+  }> = [
+    {
+      engine: "postgres",
+      provider: "neon",
+      label: t("connections.providerNeon"),
+    },
+    {
+      engine: "postgres",
+      provider: "gcpCloudSql",
+      label: t("connections.providerGcpCloudSql"),
+    },
+    {
+      engine: "mysql",
+      provider: "planetScale",
+      label: t("connections.providerPlanetScale"),
+    },
+  ];
+
   function set<K extends keyof ConnectionProfile>(
     key: K,
     value: ConnectionProfile[K],
   ) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectSource(
+    engine: Engine,
+    provider: Provider = "auto",
+  ) {
+    setForm((current) => ({
+      ...current,
+      engine,
+      provider,
+      driverId: null,
+      port:
+        current.port === CONNECTION_DEFAULT_PORTS[current.engine]
+          ? CONNECTION_DEFAULT_PORTS[engine]
+          : current.port,
+      schemaGroup: isDocumentEngine(engine)
+        ? null
+        : current.schemaGroup,
+    }));
+    if (activeTab === "schemas" && isDocumentEngine(engine)) {
+      setActiveTab("general");
+    }
+  }
+
+  function setSrv(checked: boolean) {
+    setForm((current) => {
+      const extraParams = { ...current.extraParams };
+      if (checked) extraParams.srv = "true";
+      else delete extraParams.srv;
+      return { ...current, extraParams };
+    });
+  }
+
+  function setExtraParameter(key: string, value: string) {
+    setForm((current) => {
+      const extraParams = { ...current.extraParams };
+      if (value) extraParams[key] = value;
+      else delete extraParams[key];
+      return { ...current, extraParams };
+    });
+  }
+
+  function updateAdvancedParameter(
+    index: number,
+    nextKey: string,
+    nextValue: string,
+  ) {
+    setForm((current) => {
+      const entries = Object.entries(current.extraParams);
+      entries[index] = [nextKey, nextValue];
+      return {
+        ...current,
+        extraParams: Object.fromEntries(
+          entries.filter(([key]) => key.trim().length > 0),
+        ),
+      };
+    });
+  }
+
+  function addAdvancedParameter() {
+    setForm((current) => {
+      let suffix = 1;
+      let key = "parameter";
+      while (key in current.extraParams) {
+        suffix += 1;
+        key = `parameter${suffix}`;
+      }
+      return {
+        ...current,
+        extraParams: { ...current.extraParams, [key]: "" },
+      };
+    });
+  }
+
+  function removeAdvancedParameter(key: string) {
+    setForm((current) => {
+      const extraParams = { ...current.extraParams };
+      delete extraParams[key];
+      return { ...current, extraParams };
+    });
   }
 
   function applyConnectionUrl(raw: string, showFeedback: boolean) {
@@ -328,15 +269,21 @@ export function ConnectionForm({
       secretRef: current.secretRef,
     }));
     if (parsed.password != null) setPassword(parsed.password);
-    setMsg(null);
-    setMsgErr(false);
-    if (showFeedback) toast(t("connections.clipboardImported"));
+    setMessage(null);
+    setMessageIsError(false);
+    if (showFeedback) {
+      toast(t("connections.clipboardImported"));
+    }
     return true;
   }
 
-  async function importConnectionUrlFromClipboard(showFeedback = true) {
+  async function importConnectionUrlFromClipboard(
+    showFeedback = true,
+  ) {
     if (!navigator.clipboard?.readText) {
-      if (showFeedback) toast(t("connections.clipboardUnavailable"), "error");
+      if (showFeedback) {
+        toast(t("connections.clipboardUnavailable"), "error");
+      }
       return;
     }
     try {
@@ -346,24 +293,30 @@ export function ConnectionForm({
         toast(t("connections.clipboardNoConnectionUrl"), "error");
       }
     } catch {
-      if (showFeedback) toast(t("connections.clipboardUnavailable"), "error");
+      if (showFeedback) {
+        toast(t("connections.clipboardUnavailable"), "error");
+      }
     }
   }
 
-  async function save() {
+  async function save(closeEditor: boolean) {
     setBusy(true);
-    setRunning("save");
-    setMsg(null);
+    setRunning(closeEditor ? "save" : "apply");
+    setMessage(null);
     try {
-      const saved = await upsertConnection(form, password || undefined);
+      const saved = await upsertConnection(
+        form,
+        password || undefined,
+      );
+      setForm(saved);
       setPassword("");
+      await onSaved(saved, closeEditor);
       toast(t("connections.connectionSaved"));
-      onSaved(saved);
-      setMsg(t("connections.saved"));
-      setMsgErr(false);
-    } catch (e) {
-      setMsg(errMessage(e));
-      setMsgErr(true);
+      setMessage(t("connections.saved"));
+      setMessageIsError(false);
+    } catch (error) {
+      setMessage(errMessage(error));
+      setMessageIsError(true);
     } finally {
       setBusy(false);
       setRunning(null);
@@ -373,92 +326,91 @@ export function ConnectionForm({
   async function test() {
     setBusy(true);
     setRunning("test");
-    setMsg(null);
+    setMessage(null);
     try {
-      // A literal reachability check — dials the current form values WITHOUT
-      // saving the connection or storing the secret. Just OK / not OK.
       await testConnectionProfile(form, password || undefined);
-      setMsg(`✓ ${t("connections.connectionOk")}`);
-      setMsgErr(false);
-    } catch (e) {
-      setMsg(errMessage(e));
-      setMsgErr(true);
+      setMessage(`✓ ${t("connections.connectionOk")}`);
+      setMessageIsError(false);
+    } catch (error) {
+      setMessage(errMessage(error));
+      setMessageIsError(true);
     } finally {
       setBusy(false);
       setRunning(null);
     }
   }
 
-  const isSqlite = form.engine === "sqlite";
-  const isMongo = form.engine === "mongodb"; // SRV 등 MongoDB URI 고유 폼 필드용 — 문서엔진 일반 분기는 isDocumentEngine
-  const srv = form.extraParams.srv === "true";
-  function setSrv(checked: boolean) {
-    setForm((f) => {
-      const extraParams = { ...f.extraParams };
-      if (checked) extraParams.srv = "true";
-      else delete extraParams.srv;
-      return { ...f, extraParams };
-    });
-  }
-  const drivers = compatibleDrivers(driverCatalog.data ?? [], form.engine, form.provider);
-  const activeDriver =
-    drivers.find((driver) => driver.id === form.driverId) ??
-    drivers.find((driver) => driver.recommended) ??
-    drivers[0] ??
-    null;
-  const providers = PROVIDER_ORDER.filter(
-    (provider) =>
-      provider === "auto" ||
-      provider === form.provider ||
-      (driverCatalog.data ?? []).some(
-        (driver) =>
-          driver.engine === form.engine && driver.supportedProviders.includes(provider),
-      ),
-  );
-
   async function downloadDriver(driver: DriverDescriptor) {
     setInstallingDriverId(driver.id);
-    setMsg(null);
+    setMessage(null);
     try {
       await installDriver(driver.id);
       await driverCatalog.refetch();
-      setMsg(t("connections.driverInstalled", { name: driver.name }));
-      setMsgErr(false);
-    } catch (e) {
-      setMsg(errMessage(e));
-      setMsgErr(true);
+      setMessage(
+        t("connections.driverInstalled", { name: driver.name }),
+      );
+      setMessageIsError(false);
+    } catch (error) {
+      setMessage(errMessage(error));
+      setMessageIsError(true);
     } finally {
       setInstallingDriverId(null);
     }
   }
 
   function driverStatus(driver: DriverDescriptor): string {
-    if (driver.installState === "planned") return t("connections.driverPlanned");
-    if (driver.installMode === "bundled") return t("connections.driverBundled");
+    if (driver.installState === "planned") {
+      return t("connections.driverPlanned");
+    }
+    if (driver.installMode === "bundled") {
+      return t("connections.driverBundled");
+    }
     if (driver.installState === "installed") {
       return t("connections.driverInstalledStatus");
     }
     return t("connections.driverDownloadRequired");
   }
 
+  function providerLabel(provider: Provider): string {
+    if (provider === "auto") return t("connections.providerAuto");
+    if (provider === "generic") {
+      return t("connections.providerGeneric");
+    }
+    if (provider === "neon") {
+      return t("connections.providerNeon");
+    }
+    if (provider === "planetScale") {
+      return t("connections.providerPlanetScale");
+    }
+    return t("connections.providerGcpCloudSql");
+  }
+
   return (
     <div
-      className="form"
-      onKeyDown={(e) => {
+      className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:overflow-hidden tw:bg-background"
+      onKeyDown={(event) => {
         if (
-          e.key === "Enter" &&
-          (e.target as HTMLElement).tagName === "INPUT" &&
+          event.key === "Enter" &&
+          (event.target as HTMLElement).tagName === "INPUT" &&
           !busy
         ) {
-          e.preventDefault();
-          void save();
-        } else if (e.key === "Escape") {
+          event.preventDefault();
+          void save(true);
+        } else if (event.key === "Escape") {
           onCancel();
         }
       }}
     >
-      <div className="form-head">
-        <h2>{isNew ? t("connections.new") : t("connections.edit")}</h2>
+      <header className="tw:flex tw:min-h-12 tw:shrink-0 tw:items-center tw:justify-between tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4">
+        <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
+          <Icon name="database" className="tw:text-info" />
+          <h2 className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+            {t("connections.dataSourcesAndDrivers")}
+          </h2>
+          <span className="tw:text-sm tw:text-muted-foreground">
+            — {isNew ? t("connections.new") : t("connections.edit")}
+          </span>
+        </div>
         <button
           type="button"
           className="btn small icon-only icon-xs"
@@ -468,274 +420,665 @@ export function ConnectionForm({
         >
           <Icon name="close" />
         </button>
-      </div>
+      </header>
 
-      {isNew && (
-        <div className="form-import-row">
-          <button
-            type="button"
-            className="btn small"
-            disabled={busy}
-            onClick={() => void importConnectionUrlFromClipboard(true)}
-          >
-            <Icon name="copy" />
-            {t("connections.importClipboard")}
-          </button>
-        </div>
-      )}
-
-      <label>
-        {t("connections.name")}
-        <input
-          value={form.name}
-          onChange={(e) => set("name", e.target.value)}
-          placeholder="prod-readonly"
-        />
-      </label>
-
-      <label>
-        {t("connections.engine")}
-        <select
-          value={form.engine}
-          onChange={(e) => {
-            const engine = e.target.value as Engine;
-            setForm((f) => ({
-              ...f,
-              engine,
-              provider: "auto",
-              driverId: null,
-              // Keep a user-customized port; only swap when it still matches the
-              // outgoing engine's default.
-              port: f.port === DEFAULT_PORT[f.engine] ? DEFAULT_PORT[engine] : f.port,
-              // MongoDB hides the schema-group field (SQL-only diff feature) — a
-              // carried-over value would be invisible yet still block saving.
-              schemaGroup: isDocumentEngine(engine) ? null : f.schemaGroup,
-            }));
-          }}
-        >
-          <option value="postgres">PostgreSQL</option>
-          <option value="mysql">MySQL / MariaDB</option>
-          <option value="sqlite">SQLite</option>
-          <option value="mongodb">MongoDB</option>
-        </select>
-      </label>
-
-      <div className="connection-driver-grid">
-        <label>
-          {t("connections.provider")}
-          <select
-            value={form.provider}
-            onChange={(e) => {
-              const provider = e.target.value as Provider;
-              setForm((current) => ({ ...current, provider, driverId: null }));
-            }}
-          >
-            {providers.map((provider) => (
-              <option key={provider} value={provider}>
-                {provider === "auto"
-                  ? t("connections.providerAuto")
-                  : provider === "generic"
-                    ? t("connections.providerGeneric")
-                    : provider === "neon"
-                      ? t("connections.providerNeon")
-                      : provider === "planetScale"
-                        ? t("connections.providerPlanetScale")
-                        : t("connections.providerGcpCloudSql")}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span className="label-with-help">
-            {t("connections.driver")}
-            <InfoTip label={t("connections.driverHint")} />
-          </span>
-          <select
-            value={form.driverId ?? ""}
-            onChange={(e) => set("driverId", e.target.value || null)}
-            disabled={driverCatalog.isPending || drivers.length === 0}
-          >
-            <option value="">{t("connections.driverAutomatic")}</option>
-            {drivers.map((driver) => (
-              <option key={driver.id} value={driver.id}>
-                {driver.name} {driver.version}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {activeDriver && (
-        <div className="connection-driver-summary">
-          <div>
-            <strong>{activeDriver.name}</strong>
-            <span className="muted">{driverStatus(activeDriver)}</span>
-          </div>
-          {activeDriver.installMode === "managed" &&
-            activeDriver.installState === "available" && (
+      <div className="tw:flex tw:min-h-0 tw:flex-1">
+        <aside className="tw:flex tw:w-[244px] tw:shrink-0 tw:flex-col tw:overflow-hidden tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
+          <div className="tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:border-b tw:border-border-subtle tw:px-3">
+            <strong className="tw:text-sm">
+              {t("connections.dataSources")}
+            </strong>
+            <div className="tw:flex tw:items-center tw:gap-1">
               <button
                 type="button"
-                className="btn small"
-                disabled={installingDriverId !== null}
-                onClick={() => void downloadDriver(activeDriver)}
+                className="btn small icon-only icon-xs"
+                onClick={() => selectSource("postgres")}
+                title={t("common.add")}
+                aria-label={t("common.add")}
               >
-                {installingDriverId === activeDriver.id
-                  ? t("connections.driverDownloading")
-                  : t("connections.driverDownload")}
+                <Icon name="plus" />
               </button>
-            )}
-        </div>
-      )}
-
-      {isSqlite ? (
-        <label>
-          {t("connections.databaseFile")}
-          <div className="row">
-            <input
-              className="grow"
-              value={form.database}
-              onChange={(e) => set("database", e.target.value)}
-              placeholder="/path/to/app.db"
-            />
-            <button
-              type="button"
-              className="btn small"
-              onClick={() => void pickFile().then((f) => f && set("database", f))}
+              {isNew ? (
+                <button
+                  type="button"
+                  className="btn small icon-only icon-xs"
+                  disabled={busy}
+                  onClick={() =>
+                    void importConnectionUrlFromClipboard(true)
+                  }
+                  title={t("connections.importClipboard")}
+                  aria-label={t("connections.importClipboard")}
+                >
+                  <Icon name="copy" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-2">
+            <ToolWindowSection
+              title={t("connections.createDataSource")}
             >
-              {t("connections.browse")}
-            </button>
-          </div>
-        </label>
-      ) : (
-        <>
-          <div className="row">
-            <label className="grow">
-              {t("connections.host")}
-              <input
-                value={form.host}
-                onChange={(e) => set("host", e.target.value)}
-              />
-            </label>
-            <label className="port">
-              {t("connections.port")}
-              <input
-                type="number"
-                value={form.port}
-                disabled={isMongo && srv}
-                onChange={(e) => {
-                  // Empty input keeps the previous port instead of silently becoming 0.
-                  const v = e.target.value;
-                  if (v !== "") set("port", Number(v));
-                }}
-              />
-            </label>
-          </div>
+              {standardSources.map((source) => (
+                <ToolWindowAction
+                  key={`${source.engine}-${source.provider}`}
+                  leading={<EngineMark engine={source.engine} />}
+                  trailing={<Icon name="chevronRight" />}
+                  selected={
+                    form.engine === source.engine &&
+                    (form.provider === source.provider ||
+                      (source.provider === "auto" &&
+                        form.provider === "generic"))
+                  }
+                  onClick={() =>
+                    selectSource(source.engine, source.provider)
+                  }
+                >
+                  {source.label}
+                </ToolWindowAction>
+              ))}
+            </ToolWindowSection>
+            <div className="tw:h-5" />
+            <ToolWindowSection
+              title={t("connections.connectCloudProvider")}
+            >
+              {cloudSources.map((source) => (
+                <ToolWindowAction
+                  key={source.provider}
+                  leading={<EngineMark engine={source.engine} />}
+                  trailing={<Icon name="chevronRight" />}
+                  selected={
+                    form.engine === source.engine &&
+                    form.provider === source.provider
+                  }
+                  onClick={() =>
+                    selectSource(source.engine, source.provider)
+                  }
+                >
+                  {source.label}
+                </ToolWindowAction>
+              ))}
+            </ToolWindowSection>
+          </nav>
+        </aside>
 
-          {isMongo && (
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={srv}
-                onChange={(e) => setSrv(e.target.checked)}
-              />
-              {t("connections.srv")}
-            </label>
-          )}
-
-          <label>
-            <span className="label-with-help">
-              {t("connections.database")}
-              {isMongo && <InfoTip label={t("connections.databaseRequiredHint")} />}
+        <section className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
+          <div className="tw:grid tw:shrink-0 tw:grid-cols-[92px_minmax(0,1fr)] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:py-3">
+            <span className="tw:text-sm tw:text-muted-foreground">
+              {t("connections.name")}
             </span>
-            <input
-              value={form.database}
-              required={isMongo}
-              onChange={(e) => set("database", e.target.value)}
+            <TextInput
+              value={form.name}
+              onChange={(event) => set("name", event.target.value)}
+              placeholder="prod-readonly"
+              autoFocus
             />
-          </label>
-
-          <div className="row">
-            <label className="grow">
-              {t("connections.user")}
-              <input
-                value={form.username}
-                onChange={(e) => set("username", e.target.value)}
-              />
-            </label>
-            <label className="grow">
-              {t("connections.password")}
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={
-                  form.secretRef
-                    ? `•••••• (${t("connections.passwordStoredExisting")})`
-                    : t("connections.passwordStored")
-                }
-              />
-            </label>
           </div>
 
-          {!isMongo && (
-            <label>
-              {t("connections.sslMode")}
-              <select
-                value={form.sslmode}
-                onChange={(e) => set("sslmode", e.target.value)}
-              >
-                <option value="disable">disable</option>
-                <option value="prefer">prefer</option>
-                <option value="require">require</option>
-                <option value="verify-full">verify-full</option>
-              </select>
-            </label>
-          )}
-        </>
-      )}
-
-      <label>
-        <span className="label-with-help">
-          {t("connections.environment")}
-          <InfoTip label={t("connections.environmentHint")} />
-        </span>
-        <select
-          value={form.env ?? ""}
-          onChange={(e) => set("env", e.target.value || null)}
-        >
-          <option value="">{t("common.none")}</option>
-          <option value="dev">dev</option>
-          <option value="staging">staging</option>
-          <option value="prod">prod</option>
-        </select>
-      </label>
-
-      {!isMongo && (
-        <label>
-          {t("connections.schemaGroup")}
-          <input
-            value={form.schemaGroup ?? ""}
-            onChange={(e) => set("schemaGroup", e.target.value.trim() || null)}
-            placeholder={t("connections.schemaGroupPlaceholder")}
+          <PanelTabs
+            tabs={tabs}
+            active={activeTab}
+            onChange={setActiveTab}
+            label={t("connections.tabList")}
           />
-        </label>
-      )}
 
-      <InfoTip label={t("connections.writeAccessHint")} className="connection-write-help" />
+          <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-5">
+            {activeTab === "general" ? (
+              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-5">
+                <section className="tw:grid tw:gap-3">
+                  <h3>{t("connections.connection")}</h3>
+                  <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[760px]:grid-cols-1">
+                    <Field label={t("connections.engine")}>
+                      <SelectInput
+                        value={form.engine}
+                        onChange={(event) =>
+                          selectSource(event.target.value as Engine)
+                        }
+                      >
+                        <option value="postgres">PostgreSQL</option>
+                        <option value="mysql">
+                          MySQL / MariaDB
+                        </option>
+                        <option value="sqlite">SQLite</option>
+                        <option value="mongodb">MongoDB</option>
+                      </SelectInput>
+                    </Field>
+                    <Field label={t("connections.provider")}>
+                      <SelectInput
+                        value={form.provider}
+                        onChange={(event) => {
+                          const provider =
+                            event.target.value as Provider;
+                          setForm((current) => ({
+                            ...current,
+                            provider,
+                            driverId: null,
+                          }));
+                        }}
+                      >
+                        {providers.map((provider) => (
+                          <option key={provider} value={provider}>
+                            {providerLabel(provider)}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    </Field>
+                  </div>
 
-      <div className="form-actions ds-control-row">
-        <button className="btn primary" disabled={busy} onClick={save}>
-          {running === "save" ? t("common.saving") : t("common.save")}
-        </button>
-        <button className="btn" disabled={busy} onClick={test}>
-          {running === "test" ? t("connections.testing") : t("connections.test")}
-        </button>
+                  <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-3">
+                    <Field
+                      label={t("connections.driver")}
+                      hint={
+                        <InfoTip
+                          label={t("connections.driverHint")}
+                        />
+                      }
+                    >
+                      <SelectInput
+                        value={form.driverId ?? ""}
+                        onChange={(event) =>
+                          set(
+                            "driverId",
+                            event.target.value || null,
+                          )
+                        }
+                        disabled={
+                          driverCatalog.isPending ||
+                          drivers.length === 0
+                        }
+                      >
+                        <option value="">
+                          {t("connections.driverAutomatic")}
+                        </option>
+                        {drivers.map((driver) => (
+                          <option key={driver.id} value={driver.id}>
+                            {driver.name} {driver.version}
+                          </option>
+                        ))}
+                      </SelectInput>
+                    </Field>
+                    {activeDriver?.installMode === "managed" &&
+                    activeDriver.installState === "available" ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={installingDriverId !== null}
+                        onClick={() =>
+                          void downloadDriver(activeDriver)
+                        }
+                      >
+                        <Icon name="download" />
+                        {installingDriverId === activeDriver.id
+                          ? t("connections.driverDownloading")
+                          : t("connections.driverDownload")}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {activeDriver ? (
+                    <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2">
+                      <div className="tw:grid tw:gap-0.5">
+                        <strong className="tw:text-ui">
+                          {activeDriver.name}
+                        </strong>
+                        <span className="tw:text-xs tw:text-muted-foreground">
+                          {activeDriver.version} ·{" "}
+                          {driverStatus(activeDriver)}
+                        </span>
+                      </div>
+                      <span
+                        className={
+                          activeDriver.installState === "installed"
+                            ? "badge status-ok"
+                            : "badge"
+                        }
+                      >
+                        {driverStatus(activeDriver)}
+                      </span>
+                    </div>
+                  ) : null}
+                </section>
+
+                <div className="tw:h-px tw:bg-border-subtle" />
+
+                {isSqlite ? (
+                  <section className="tw:grid tw:gap-3">
+                    <h3>{t("connections.database")}</h3>
+                    <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-2">
+                      <Field
+                        label={t("connections.databaseFile")}
+                      >
+                        <TextInput
+                          value={form.database}
+                          onChange={(event) =>
+                            set("database", event.target.value)
+                          }
+                          placeholder="/path/to/app.db"
+                        />
+                      </Field>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() =>
+                          void pickFile().then(
+                            (file) =>
+                              file && set("database", file),
+                          )
+                        }
+                      >
+                        {t("connections.browse")}
+                      </button>
+                    </div>
+                  </section>
+                ) : (
+                  <>
+                    <section className="tw:grid tw:gap-3">
+                      <h3>{t("connections.connection")}</h3>
+                      <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_112px] tw:gap-3 tw:@max-[560px]:grid-cols-1">
+                        <Field label={t("connections.host")}>
+                          <TextInput
+                            value={form.host}
+                            onChange={(event) =>
+                              set("host", event.target.value)
+                            }
+                          />
+                        </Field>
+                        <Field label={t("connections.port")}>
+                          <TextInput
+                            type="number"
+                            value={form.port}
+                            disabled={isMongo && srv}
+                            onChange={(event) => {
+                              if (event.target.value !== "") {
+                                set(
+                                  "port",
+                                  Number(event.target.value),
+                                );
+                              }
+                            }}
+                          />
+                        </Field>
+                      </div>
+                      <Field
+                        label={t("connections.database")}
+                        hint={
+                          isMongo ? (
+                            <InfoTip
+                              label={t(
+                                "connections.databaseRequiredHint",
+                              )}
+                            />
+                          ) : null
+                        }
+                      >
+                        <TextInput
+                          value={form.database}
+                          required={isMongo}
+                          onChange={(event) =>
+                            set("database", event.target.value)
+                          }
+                        />
+                      </Field>
+                      {isMongo ? (
+                        <CheckboxField
+                          label={t("connections.srv")}
+                          checked={srv}
+                          onChange={(event) =>
+                            setSrv(event.target.checked)
+                          }
+                        />
+                      ) : null}
+                    </section>
+
+                    <div className="tw:h-px tw:bg-border-subtle" />
+
+                    <section className="tw:grid tw:gap-3">
+                      <h3>{t("connections.authentication")}</h3>
+                      <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[560px]:grid-cols-1">
+                        <Field label={t("connections.user")}>
+                          <TextInput
+                            value={form.username}
+                            onChange={(event) =>
+                              set("username", event.target.value)
+                            }
+                          />
+                        </Field>
+                        <Field label={t("connections.password")}>
+                          <TextInput
+                            type="password"
+                            value={password}
+                            onChange={(event) =>
+                              setPassword(event.target.value)
+                            }
+                            placeholder={
+                              form.secretRef
+                                ? `•••••• (${t(
+                                    "connections.passwordStoredExisting",
+                                  )})`
+                                : t("connections.passwordStored")
+                            }
+                          />
+                        </Field>
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                {isNew ? (
+                  <div className="tw:flex tw:justify-end">
+                    <button
+                      type="button"
+                      className="btn small"
+                      disabled={busy}
+                      onClick={() =>
+                        void importConnectionUrlFromClipboard(true)
+                      }
+                    >
+                      <Icon name="copy" />
+                      {t("connections.importClipboard")}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeTab === "options" ? (
+              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-5">
+                <Field
+                  label={t("connections.environment")}
+                  hint={
+                    <InfoTip
+                      label={t("connections.environmentHint")}
+                    />
+                  }
+                >
+                  <SelectInput
+                    value={form.env ?? ""}
+                    onChange={(event) =>
+                      set("env", event.target.value || null)
+                    }
+                  >
+                    <option value="">{t("common.none")}</option>
+                    <option value="dev">dev</option>
+                    <option value="staging">staging</option>
+                    <option value="prod">prod</option>
+                  </SelectInput>
+                </Field>
+                <div className="tw:grid tw:gap-4 tw:border-y tw:border-border-subtle tw:py-4">
+                  <div className="tw:grid tw:gap-1">
+                    <CheckboxField
+                      label={t("connections.readOnlyDefault")}
+                      checked={form.readonlyDefault}
+                      onChange={(event) =>
+                        set(
+                          "readonlyDefault",
+                          event.target.checked,
+                        )
+                      }
+                    />
+                    <p className="tw:m-0 tw:pl-6 tw:text-sm tw:text-muted-foreground">
+                      {t("connections.readOnlyDefaultBody")}
+                    </p>
+                  </div>
+                  <div className="tw:grid tw:gap-1">
+                    <CheckboxField
+                      label={t("connections.allowWrites")}
+                      checked={form.allowWrites}
+                      onChange={(event) =>
+                        set("allowWrites", event.target.checked)
+                      }
+                    />
+                    <p className="tw:m-0 tw:pl-6 tw:text-sm tw:text-muted-foreground">
+                      {t("connections.allowWritesBody")}
+                    </p>
+                  </div>
+                </div>
+                <div className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:text-muted-foreground">
+                  <Icon name="info" />
+                  <span>{t("connections.writeAccessHint")}</span>
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === "sshSsl" ? (
+              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-5">
+                <section className="tw:grid tw:gap-3">
+                  <h3>{t("connections.sslConfiguration")}</h3>
+                  {isSqlite ? (
+                    <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
+                      {t("connections.sqliteNoTls")}
+                    </p>
+                  ) : isMongo ? (
+                    <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
+                      {t("connections.mongoTlsAdvanced")}
+                    </p>
+                  ) : (
+                    <>
+                      <Field label={t("connections.sslMode")}>
+                        <SelectInput
+                          value={form.sslmode}
+                          onChange={(event) =>
+                            set("sslmode", event.target.value)
+                          }
+                        >
+                          <option value="disable">disable</option>
+                          <option value="prefer">prefer</option>
+                          <option value="require">require</option>
+                          <option value="verify-full">
+                            verify-full
+                          </option>
+                        </SelectInput>
+                      </Field>
+                      <Field
+                        label={t("connections.caCertificate")}
+                      >
+                        <TextInput
+                          value={
+                            form.extraParams.sslrootcert ?? ""
+                          }
+                          onChange={(event) =>
+                            setExtraParameter(
+                              "sslrootcert",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="/path/to/ca.pem"
+                        />
+                      </Field>
+                    </>
+                  )}
+                </section>
+                <div className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-3">
+                  <Icon
+                    name="info"
+                    className="tw:mt-0.5 tw:text-info"
+                  />
+                  <div className="tw:grid tw:gap-1">
+                    <strong>
+                      {t("connections.sshUnsupportedTitle")}
+                    </strong>
+                    <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                      {t("connections.sshUnsupportedBody")}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === "schemas" && !isMongo ? (
+              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-3">
+                <h3>{t("connections.schemas")}</h3>
+                <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                  {t("connections.schemasBody")}
+                </p>
+                <Field label={t("connections.schemaGroup")}>
+                  <TextInput
+                    value={form.schemaGroup ?? ""}
+                    onChange={(event) =>
+                      set(
+                        "schemaGroup",
+                        event.target.value.trim() || null,
+                      )
+                    }
+                    placeholder={t(
+                      "connections.schemaGroupPlaceholder",
+                    )}
+                  />
+                </Field>
+              </div>
+            ) : null}
+
+            {activeTab === "advanced" ? (
+              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-5">
+                <section className="tw:grid tw:gap-3">
+                  <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
+                    <h3>
+                      {t("connections.advancedParameters")}
+                    </h3>
+                    <button
+                      type="button"
+                      className="btn small"
+                      onClick={addAdvancedParameter}
+                    >
+                      <Icon name="plus" />
+                      {t("connections.addParameter")}
+                    </button>
+                  </div>
+                  {Object.entries(form.extraParams).length ===
+                  0 ? (
+                    <p className="tw:m-0 tw:border-y tw:border-border-subtle tw:py-4 tw:text-sm tw:text-muted-foreground">
+                      {t("connections.noParameters")}
+                    </p>
+                  ) : (
+                    <div className="tw:grid tw:gap-2">
+                      {Object.entries(form.extraParams).map(
+                        ([key, value], index) => (
+                          <div
+                            key={`${index}-${key}`}
+                            className="tw:grid tw:grid-cols-[minmax(140px,0.42fr)_minmax(0,1fr)_32px] tw:items-center tw:gap-2"
+                          >
+                            <TextInput
+                              value={key}
+                              aria-label={t(
+                                "connections.parameterKey",
+                              )}
+                              onChange={(event) =>
+                                updateAdvancedParameter(
+                                  index,
+                                  event.target.value,
+                                  value,
+                                )
+                              }
+                            />
+                            <TextInput
+                              value={value}
+                              aria-label={t(
+                                "connections.parameterValue",
+                              )}
+                              onChange={(event) =>
+                                updateAdvancedParameter(
+                                  index,
+                                  key,
+                                  event.target.value,
+                                )
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="btn small icon-only icon-xs"
+                              onClick={() =>
+                                removeAdvancedParameter(key)
+                              }
+                              title={t("common.remove")}
+                              aria-label={t("common.remove")}
+                            >
+                              <Icon name="close" />
+                            </button>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </section>
+
+                {activeDriver ? (
+                  <section className="tw:grid tw:gap-3">
+                    <h3>
+                      {t("connections.driverCapabilities")}
+                    </h3>
+                    <div className="tw:flex tw:flex-wrap tw:gap-2">
+                      {activeDriver.capabilities.map(
+                        (capability) => (
+                          <span
+                            key={capability}
+                            className="badge"
+                          >
+                            {capability}
+                          </span>
+                        ),
+                      )}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </section>
       </div>
 
-      {msg && (
-        <div className={msgErr ? "form-msg error" : "form-msg ok"}>{msg}</div>
-      )}
+      <footer
+        className="tw:flex tw:min-h-[52px] tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-card tw:px-4"
+        data-primary-flow
+      >
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={() => void test()}
+        >
+          {running === "test"
+            ? t("connections.testing")
+            : t("connections.test")}
+        </button>
+        {message ? (
+          <span
+            className={
+              messageIsError
+                ? "tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-danger"
+                : "tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-success"
+            }
+            role={messageIsError ? "alert" : "status"}
+            title={message}
+          >
+            {message}
+          </span>
+        ) : (
+          <span className="tw:flex-1" />
+        )}
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          {t("common.cancel")}
+        </button>
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={() => void save(false)}
+        >
+          {running === "apply"
+            ? t("common.saving")
+            : t("common.apply")}
+        </button>
+        <button
+          className="btn primary"
+          disabled={busy}
+          onClick={() => void save(true)}
+        >
+          {running === "save"
+            ? t("common.saving")
+            : t("common.ok")}
+        </button>
+      </footer>
     </div>
   );
 }

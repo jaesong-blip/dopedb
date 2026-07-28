@@ -33,6 +33,7 @@ type Props = {
   onSelectRow?: (i: number) => void;
   onCellClick?: (value: unknown, rowIndex: number, col: string) => void;
   columnMeta?: Record<string, { dataType: string; pk: boolean }>;
+  surface?: "panel" | "workbench";
 };
 
 export function virtualGridWindow(
@@ -216,7 +217,8 @@ export default function DataGridVirtual(props: Props) {
   return (
     <div
       ref={scrollRef}
-      className="grid-scroll virtual-grid"
+      className="grid-scroll virtual-grid tw:data-[surface=workbench]:min-h-0 tw:data-[surface=workbench]:flex-1 tw:data-[surface=workbench]:rounded-none tw:data-[surface=workbench]:border-0 tw:data-[surface=workbench]:shadow-none"
+      data-surface={props.surface ?? "panel"}
       role="grid"
       aria-rowcount={rowCount + 1}
       aria-colcount={props.result.columns.length + 1}

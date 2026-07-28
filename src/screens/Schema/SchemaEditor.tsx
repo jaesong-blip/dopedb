@@ -1,7 +1,7 @@
 // Structured schema mutations are assembled as a dialect-neutral DDL IR, previewed
 // against one exact catalog fingerprint, and only then sent through the immutable
 // Operation approval path. This component never concatenates executable SQL.
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   approveOperation,
@@ -33,9 +33,9 @@ import {
 import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
 import { useToast } from "../../components/Toast";
+import { Field } from "../../design-system/components/FormControls";
 import { qk } from "../../lib/queries";
 import { useI18n } from "../../lib/i18n";
-import "./SchemaEditor.css";
 
 type ChangeKind =
   | "create_table"
@@ -97,21 +97,6 @@ function emptyConstraint(
     deferrable: false,
     validated: true,
   };
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <label className="schema-edit-field">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
 }
 
 export default function SchemaEditor({
@@ -436,11 +421,14 @@ export default function SchemaEditor({
     confirmation === proposal.confirmationPhrase;
 
   return (
-    <section className="schema-editor" aria-label={t("schema.editorTitle")}>
-      <header className="schema-editor-head">
-        <div>
+    <section
+      className="tw:flex tw:min-w-0 tw:flex-col tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-4"
+      aria-label={t("schema.editorTitle")}
+    >
+      <header className="tw:flex tw:items-center tw:justify-between tw:gap-2">
+        <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
           <strong>{t("schema.editorTitle")}</strong>
-          <span className="muted">
+          <span className="tw:overflow-hidden tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
             {editableRelation
               ? `${editableRelation.object.namespace ?? ""}.${editableRelation.object.name}`
               : t("schema.editorNewTable")}
@@ -457,7 +445,7 @@ export default function SchemaEditor({
         </button>
       </header>
 
-      <div className="schema-editor-form">
+      <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[760px]:grid-cols-1">
         <Field label={t("schema.editorAction")}>
           <select
             value={kind}
@@ -590,7 +578,7 @@ export default function SchemaEditor({
         )}
 
         {(kind === "create_table" || kind === "add_column") && (
-          <label className="schema-edit-check">
+          <label className="tw:inline-flex tw:min-h-control-md tw:items-center tw:gap-2 tw:self-end tw:text-sm tw:text-muted-foreground">
             <input
               type="checkbox"
               checked={nullable}
@@ -686,7 +674,7 @@ export default function SchemaEditor({
         )}
 
         {kind === "create_index" && (
-          <label className="schema-edit-check">
+          <label className="tw:inline-flex tw:min-h-control-md tw:items-center tw:gap-2 tw:self-end tw:text-sm tw:text-muted-foreground">
             <input
               type="checkbox"
               checked={unique}
@@ -805,7 +793,7 @@ export default function SchemaEditor({
         )}
       </div>
 
-      <div className="schema-editor-actions ds-control-row">
+      <div className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:gap-2">
         <button
           className="btn small"
           type="button"
@@ -829,12 +817,12 @@ export default function SchemaEditor({
         </button>
       </div>
 
-      {error && <div className="error">{error}</div>}
+      {error && <div className="tw:text-ui tw:text-danger">{error}</div>}
       {plan && (
-        <div className="schema-editor-preview">
-          <div className="schema-editor-plan-meta">
+        <div className="tw:grid tw:min-w-0 tw:gap-2">
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
             <span className="badge">{plan.engine}</span>
-            <span className="muted">
+            <span className="tw:text-muted-foreground">
               {t("schema.editorStatementCount", {
                 count: plan.statements.length,
               })}
@@ -846,7 +834,7 @@ export default function SchemaEditor({
             )}
           </div>
           {plan.warnings.map((warning) => (
-            <p className="warning" key={warning}>
+            <p className="tw:m-0 tw:text-sm tw:text-warning" key={warning}>
               {warning}
             </p>
           ))}
@@ -855,20 +843,22 @@ export default function SchemaEditor({
       )}
 
       {proposal && (
-        <div className="schema-editor-approval">
+        <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-t tw:border-border-subtle tw:pt-3">
           <code title={proposal.payloadHash}>
             {proposal.payloadHash.slice(0, 12)}
           </code>
           {proposal.confirmationPhrase && (
-            <Field label={t("approval.confirmationPrompt")}>
-              <input
-                value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
-                placeholder={proposal.confirmationPhrase}
-              />
-            </Field>
+            <div className="tw:w-full tw:max-w-[280px]">
+              <Field label={t("approval.confirmationPrompt")}>
+                <input
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                  placeholder={proposal.confirmationPhrase}
+                />
+              </Field>
+            </div>
           )}
-          <div className="ds-control-row">
+          <div className="ds-control-row tw:flex tw:items-center tw:gap-2">
             <button
               className="btn small"
               type="button"

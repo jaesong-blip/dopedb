@@ -1,7 +1,6 @@
 // Tiny toast system: context + hook + a fixed corner stack. 3s auto-dismiss,
 // success/error variants. useToast() returns a `toast(msg, variant?)` fn.
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
-import "./Toast.css";
 
 type Variant = "success" | "error";
 interface ToastItem {
@@ -35,11 +34,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={toast}>
       {children}
       {/* live region so screen readers announce toasts */}
-      <div className="toast-wrap" role="region" aria-label="Notifications">
+      <div
+        className="tw:pointer-events-none tw:fixed tw:right-4 tw:bottom-4 tw:z-[var(--ds-z-toast)] tw:flex tw:flex-col tw:gap-2 tw:max-[640px]:right-3 tw:max-[640px]:bottom-3 tw:max-[640px]:left-3"
+        role="region"
+        aria-label="Notifications"
+      >
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`toast ${t.variant}`}
+            data-variant={t.variant}
+            className="tw:pointer-events-auto tw:min-w-[180px] tw:max-w-[360px] tw:cursor-pointer tw:rounded-md tw:border tw:border-border-subtle tw:border-l-[3px] tw:border-l-success tw:bg-card tw:px-4 tw:py-3 tw:text-ui tw:text-foreground tw:shadow-popover tw:animate-[toast-in_150ms_ease-out] tw:data-[variant=error]:border-l-danger tw:max-[640px]:w-full tw:max-[640px]:min-w-0 tw:max-[640px]:max-w-none"
             role={t.variant === "error" ? "alert" : "status"}
             onClick={() => dismiss(t.id)}
           >

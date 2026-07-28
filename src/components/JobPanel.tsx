@@ -1,6 +1,6 @@
 // Connection-scoped import/export control surface for immutable job plans, native
 // file capabilities, exact import approval, durable progress, and retained artifacts.
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cancelJob,
@@ -33,9 +33,11 @@ import {
   type CatalogRelationV2,
 } from "../ipc/types";
 import { Icon } from "./Icon";
+import { Field } from "../design-system/components/FormControls";
+import { StatusDot, type StatusTone } from "../design-system/components/Status";
+import { InspectorHeader } from "../design-system/components/Workbench";
 import { jobsQuery, qk } from "../lib/queries";
 import { useI18n, type I18nKey } from "../lib/i18n";
-import "./JobPanel.css";
 
 const FORMATS: JobFormat[] = [
   "csv",
@@ -100,11 +102,33 @@ function previewCell(row: unknown, field: string): string {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
+function jobStateTone(state: Job["state"]): StatusTone {
+  if (state === "running") return "neutral";
+  if (state === "succeeded") return "success";
+  if (state === "failed" || state === "cancelled") return "danger";
+  if (
+    state === "paused" ||
+    state === "pause_requested" ||
+    state === "cancel_requested"
+  ) {
+    return "warning";
+  }
+  return "neutral";
+}
+
 type Approval = {
   job: Job;
   payloadHash: string;
   confirmationPhrase: string | null;
 };
+
+function JobFacts({ children }: { children: ReactNode }) {
+  return (
+    <dl className="tw:m-0 tw:grid tw:gap-0 tw:[&>div]:grid tw:[&>div]:grid-cols-[minmax(72px,0.4fr)_minmax(0,1fr)] tw:[&>div]:gap-2 tw:[&>div]:border-b tw:[&>div]:border-border-subtle tw:[&>div]:py-1 tw:[&_dd]:m-0 tw:[&_dd]:min-w-0 tw:[&_dd]:break-words tw:[&_dd]:text-right tw:[&_dt]:text-xs tw:[&_dt]:text-muted-foreground">
+      {children}
+    </dl>
+  );
+}
 
 export default function JobPanel({
   connectionId,
@@ -348,31 +372,40 @@ export default function JobPanel({
       inspection !== null);
 
   return (
-    <aside className="grid-panel job-panel" aria-label={t("jobs.title")}>
-      <header className="job-panel-head">
-        <div>
-          <strong>{t("jobs.title")}</strong>
-          <span>{relationName}</span>
-        </div>
-        <button
+    <aside
+      className="grid-panel tw:flex tw:w-[clamp(320px,32vw,480px)] tw:max-w-[44%] tw:shrink-0 tw:flex-col tw:gap-3 tw:overflow-auto tw:rounded-none tw:border-0 tw:border-l tw:border-border-subtle tw:bg-card tw:p-3 tw:shadow-none tw:@max-[920px]:max-h-[42vh] tw:@max-[920px]:w-auto tw:@max-[920px]:max-w-none tw:@max-[760px]:max-h-[min(360px,44dvh)]"
+      aria-label={t("jobs.title")}
+    >
+      <InspectorHeader
+        title={t("jobs.title")}
+        metadata={
+          <span className="tw:overflow-hidden tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+            {relationName}
+          </span>
+        }
+        actions={
+          <button
           className="btn small icon-only icon-xs"
           onClick={onClose}
           aria-label={t("common.close")}
         >
           <Icon name="close" />
-        </button>
-      </header>
+          </button>
+        }
+      />
 
-      <div className="job-kind-switch" role="group" aria-label={t("jobs.kind")}>
+      <div className="tw:grid tw:grid-cols-2 tw:gap-1" role="group" aria-label={t("jobs.kind")}>
         <button
-          className={`btn small${kind === "export" ? " active" : ""}`}
+          className="btn small tw:justify-center"
+          aria-pressed={kind === "export"}
           onClick={() => resetPlan("export", format)}
         >
           <Icon name="download" />
           {t("jobs.export")}
         </button>
         <button
-          className={`btn small${kind === "import" ? " active" : ""}`}
+          className="btn small tw:justify-center"
+          aria-pressed={kind === "import"}
           onClick={() => resetPlan("import", format)}
         >
           <Icon name="upload" />
@@ -380,9 +413,8 @@ export default function JobPanel({
         </button>
       </div>
 
-      <div className="job-plan-form">
-        <label className="job-field">
-          <span>{t("jobs.format")}</span>
+      <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(112px,0.45fr)] tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-3 tw:@max-[760px]:grid-cols-1">
+        <Field label={t("jobs.format")}>
           <select
             value={format}
             onChange={(event) =>
@@ -395,10 +427,9 @@ export default function JobPanel({
               </option>
             ))}
           </select>
-        </label>
+        </Field>
 
-        <label className="job-field">
-          <span>{t("jobs.batchSize")}</span>
+        <Field label={t("jobs.batchSize")}>
           <input
             type="number"
             min={100}
@@ -411,14 +442,20 @@ export default function JobPanel({
               )
             }
           />
-        </label>
+        </Field>
 
-        <div className="job-file-row">
-          <div>
-            <span>{kind === "export" ? t("jobs.destination") : t("jobs.source")}</span>
-            <strong>{capability?.displayName ?? t("jobs.noFile")}</strong>
+        <div className="tw:col-span-full tw:flex tw:items-center tw:justify-between tw:gap-2 tw:@max-[760px]:col-span-1">
+          <div className="tw:grid tw:min-w-0 tw:gap-1">
+            <span className="tw:overflow-hidden tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+              {kind === "export" ? t("jobs.destination") : t("jobs.source")}
+            </span>
+            <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+              {capability?.displayName ?? t("jobs.noFile")}
+            </strong>
             {capability?.sizeBytes != null && (
-              <small>{bytes(capability.sizeBytes)}</small>
+              <small className="tw:overflow-hidden tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                {bytes(capability.sizeBytes)}
+              </small>
             )}
           </div>
           <button className="btn small" disabled={busy} onClick={() => void chooseFile()}>
@@ -433,14 +470,14 @@ export default function JobPanel({
           format !== "sql_gzip" && (
             <>
               {inspection.sampleRows.length > 0 && (
-                <div className="job-preview">
-                  <strong>
+                <div className="tw:col-span-full tw:grid tw:min-w-0 tw:gap-2 tw:@max-[760px]:col-span-1">
+                  <strong className="tw:text-sm">
                     {t("jobs.preview", {
                       count: inspection.sampleRows.length,
                     })}
                   </strong>
-                  <div>
-                    <table>
+                  <div className="tw:overflow-auto tw:border-y tw:border-border-subtle">
+                    <table className="tw:w-full tw:border-collapse tw:text-xs tw:[&_td]:max-w-[140px] tw:[&_td]:overflow-hidden tw:[&_td]:border-r tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:text-left tw:[&_td]:text-ellipsis tw:[&_td]:whitespace-nowrap tw:[&_th]:max-w-[140px] tw:[&_th]:overflow-hidden tw:[&_th]:border-r tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-1 tw:[&_th]:text-left tw:[&_th]:font-semibold tw:[&_th]:text-ellipsis tw:[&_th]:whitespace-nowrap tw:[&_th]:text-muted-foreground">
                       <thead>
                         <tr>
                           {inspection.fields.slice(0, 8).map((field) => (
@@ -463,16 +500,17 @@ export default function JobPanel({
                   </div>
                 </div>
               )}
-              <div className="job-mapping">
-                <label className="job-check">
+              <div className="tw:col-span-full tw:grid tw:gap-2 tw:@max-[760px]:col-span-1">
+                <label className="tw:inline-flex tw:items-center tw:gap-1">
                   <input
+                    className="tw:w-auto"
                     type="checkbox"
                     checked={customMapping}
                     onChange={(event) => setCustomMapping(event.target.checked)}
                   />
                   <span>{t("jobs.customMapping")}</span>
                 </label>
-                <p className="muted">
+                <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">
                   {customMapping
                     ? t("jobs.customMappingHelp")
                     : t("jobs.autoMappingHelp", {
@@ -480,10 +518,18 @@ export default function JobPanel({
                       })}
                 </p>
                 {customMapping && (
-                  <div className="job-mapping-rows">
+                  <div className="tw:max-h-[240px] tw:overflow-auto tw:border-y tw:border-border-subtle">
                     {inspection.fields.map((source) => (
-                      <div className="job-mapping-row" key={source}>
-                        <code title={source}>{source}</code>
+                      <div
+                        className="tw:grid tw:grid-cols-[minmax(72px,0.8fr)_auto_minmax(100px,1fr)_auto] tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:py-1 tw:last:border-b-0 tw:@max-[760px]:grid-cols-[minmax(72px,0.8fr)_auto_minmax(96px,1fr)]"
+                        key={source}
+                      >
+                        <code
+                          className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap"
+                          title={source}
+                        >
+                          {source}
+                        </code>
                         <Icon name="arrowRight" />
                         <select
                           value={targets[source] ?? ""}
@@ -502,8 +548,9 @@ export default function JobPanel({
                             </option>
                           ))}
                         </select>
-                        <label className="job-required">
+                        <label className="tw:inline-flex tw:items-center tw:gap-1 tw:text-xs tw:text-muted-foreground tw:@max-[760px]:col-start-3">
                           <input
+                            className="tw:w-auto"
                             type="checkbox"
                             checked={required[source] ?? false}
                             disabled={!targets[source]}
@@ -525,9 +572,8 @@ export default function JobPanel({
           )}
 
         {kind === "import" && format !== "sql" && format !== "sql_gzip" && (
-          <div className="job-validation">
-            <label className="job-field">
-              <span>{t("jobs.onError")}</span>
+          <div className="tw:col-span-full tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(112px,0.55fr)] tw:gap-2 tw:@max-[760px]:col-span-1 tw:@max-[760px]:grid-cols-1">
+            <Field label={t("jobs.onError")}>
               <select
                 value={errorPolicy}
                 onChange={(event) =>
@@ -537,9 +583,8 @@ export default function JobPanel({
                 <option value="stop">{t("jobs.stop")}</option>
                 <option value="continue">{t("jobs.continue")}</option>
               </select>
-            </label>
-            <label className="job-field">
-              <span>{t("jobs.maxErrors")}</span>
+            </Field>
+            <Field label={t("jobs.maxErrors")}>
               <input
                 type="number"
                 min={1}
@@ -551,34 +596,35 @@ export default function JobPanel({
                   )
                 }
               />
-            </label>
-            <label className="job-field job-field-wide">
-              <span>{t("jobs.nullValues")}</span>
-              <input
-                value={nullValues}
-                onChange={(event) => setNullValues(event.target.value)}
-                spellCheck={false}
-              />
-            </label>
+            </Field>
+            <div className="tw:col-span-full tw:@max-[760px]:col-span-1">
+              <Field label={t("jobs.nullValues")}>
+                <input
+                  value={nullValues}
+                  onChange={(event) => setNullValues(event.target.value)}
+                  spellCheck={false}
+                />
+              </Field>
+            </div>
           </div>
         )}
 
         {inspection && !inspection.resumable && (
-          <p className="job-warning">
+          <p className="tw:col-span-full tw:m-0 tw:flex tw:items-start tw:gap-2 tw:text-xs tw:leading-[1.45] tw:text-warning tw:[&_.icon]:mt-0.5 tw:[&_.icon]:shrink-0 tw:@max-[760px]:col-span-1">
             <Icon name="alert" />
             {t("jobs.warningNotResumable")}
           </p>
         )}
         {inspection &&
           (format === "sql" || format === "sql_gzip") && (
-            <p className="job-warning">
+            <p className="tw:col-span-full tw:m-0 tw:flex tw:items-start tw:gap-2 tw:text-xs tw:leading-[1.45] tw:text-warning tw:[&_.icon]:mt-0.5 tw:[&_.icon]:shrink-0 tw:@max-[760px]:col-span-1">
               <Icon name="alert" />
               {t("jobs.warningSqlCritical")}
             </p>
           )}
 
         <button
-          className="btn primary job-create"
+          className="btn primary tw:col-span-full tw:justify-center tw:@max-[760px]:col-span-1"
           disabled={!canSubmit}
           onClick={() => void submit()}
         >
@@ -587,12 +633,19 @@ export default function JobPanel({
       </div>
 
       {approval && (
-        <section className="job-approval" aria-label={t("jobs.approval")}>
-          <div className="job-section-head">
-            <strong>{t("jobs.reviewImport")}</strong>
-            <span>{approval.job.format.toUpperCase()}</span>
-          </div>
-          <dl>
+        <section
+          className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-3"
+          aria-label={t("jobs.approval")}
+        >
+          <InspectorHeader
+            title={t("jobs.reviewImport")}
+            metadata={
+              <span className="tw:font-mono tw:text-xs tw:text-muted-foreground">
+                {approval.job.format.toUpperCase()}
+              </span>
+            }
+          />
+          <JobFacts>
             <div>
               <dt>{t("jobs.source")}</dt>
               <dd>{approval.job.sourceSummary}</dd>
@@ -607,20 +660,23 @@ export default function JobPanel({
                 <code>{approval.payloadHash.slice(0, 16)}…</code>
               </dd>
             </div>
-          </dl>
+          </JobFacts>
           {approval.confirmationPhrase && (
-            <label className="job-field">
-              <span>
+            <Field
+              label={
+                <span>
                 {t("approval.confirmationPrompt")}{" "}
                 <code>{approval.confirmationPhrase}</code>
-              </span>
+                </span>
+              }
+            >
               <input
                 value={confirmation}
                 onChange={(event) => setConfirmation(event.target.value)}
                 autoComplete="off"
                 spellCheck={false}
               />
-            </label>
+            </Field>
           )}
           <div className="ds-action-row ds-control-row">
             <button
@@ -645,11 +701,15 @@ export default function JobPanel({
         </section>
       )}
 
-      {error && <div className="error job-error">{error}</div>}
+      {error && <div className="tw:text-ui tw:text-danger">{error}</div>}
 
-      <section className="job-history" aria-label={t("jobs.history")}>
-        <div className="job-section-head">
-          <strong>{t("jobs.history")}</strong>
+      <section
+        className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-3"
+        aria-label={t("jobs.history")}
+      >
+        <InspectorHeader
+          title={t("jobs.history")}
+          actions={
           <button
             className="btn small icon-only"
             disabled={jobs.isFetching}
@@ -658,47 +718,58 @@ export default function JobPanel({
           >
             <Icon name="refresh" />
           </button>
-        </div>
+          }
+        />
         {jobs.isPending ? (
-          <div className="job-empty">{t("common.loading")}</div>
+          <div className="tw:py-4 tw:text-center tw:text-sm tw:text-muted-foreground">
+            {t("common.loading")}
+          </div>
         ) : jobs.error ? (
-          <div className="error">{errMessage(jobs.error)}</div>
+          <div className="tw:text-ui tw:text-danger">
+            {errMessage(jobs.error)}
+          </div>
         ) : jobs.data?.length ? (
-          <div className="job-list">
+          <div className="tw:grid">
             {jobs.data.map((job) => {
               const percent = progress(job);
               const jobBusy = busyJobId === job.id;
               return (
-                <div className="job-row" key={job.id}>
+                <div className="tw:grid tw:min-w-0 tw:gap-1 tw:border-t tw:border-border-subtle tw:py-2" key={job.id}>
                   <button
-                    className="job-row-main"
+                    className="tw:flex tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:p-0 tw:text-left tw:text-inherit tw:active:translate-y-px tw:disabled:cursor-default tw:disabled:opacity-50"
                     disabled={jobBusy}
                     onClick={() => void openJob(job)}
                   >
-                    <span className={`job-state job-state-${job.state}`} />
-                    <span>
-                      <strong>
+                    <StatusDot tone={jobStateTone(job.state)} />
+                    <span className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-0.5">
+                      <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
                         {job.kind === "export"
                           ? job.targetSummary
                           : job.sourceSummary}
                       </strong>
-                      <small>
+                      <small className="tw:overflow-hidden tw:font-mono tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
                         {job.kind === "export"
                           ? t("jobs.export")
                           : t("jobs.import")}{" "}
                         · {job.format.toUpperCase()} · {t(JOB_STATE_KEYS[job.state])}
                       </small>
                     </span>
-                    <span className="job-count">
+                    <span className="tw:font-mono tw:text-xs tw:text-muted-foreground">
                       {job.rowsProcessed.toLocaleString()}
                     </span>
                   </button>
                   {percent != null && (
-                    <div className="job-progress" aria-label={`${percent.toFixed(0)}%`}>
-                      <span style={{ transform: `scaleX(${percent / 100})` }} />
+                    <div
+                      className="tw:h-0.5 tw:overflow-hidden tw:bg-border-subtle"
+                      aria-label={`${percent.toFixed(0)}%`}
+                    >
+                      <span
+                        className="tw:block tw:h-full tw:w-full tw:origin-left tw:bg-primary tw:transition-transform tw:duration-150 tw:motion-reduce:transition-none"
+                        style={{ transform: `scaleX(${percent / 100})` }}
+                      />
                     </div>
                   )}
-                  <div className="job-row-actions ds-control-row">
+                  <div className="ds-control-row tw:flex tw:justify-end tw:gap-1">
                     {(job.state === "queued" || job.state === "paused") && (
                       <button
                         className="btn small"
@@ -748,14 +819,17 @@ export default function JobPanel({
             })}
           </div>
         ) : (
-          <div className="job-empty">{t("jobs.empty")}</div>
+          <div className="tw:py-4 tw:text-center tw:text-sm tw:text-muted-foreground">
+            {t("jobs.empty")}
+          </div>
         )}
       </section>
 
       {detail && (
-        <section className="job-detail">
-          <div className="job-section-head">
-            <strong>{t("jobs.details")}</strong>
+        <section className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-3">
+          <InspectorHeader
+            title={t("jobs.details")}
+            actions={
             <button
               className="btn small icon-only icon-xs"
               onClick={() => setDetail(null)}
@@ -763,8 +837,9 @@ export default function JobPanel({
             >
               <Icon name="close" />
             </button>
-          </div>
-          <dl>
+            }
+          />
+          <JobFacts>
             <div>
               <dt>{t("jobs.status")}</dt>
               <dd>{t(JOB_STATE_KEYS[detail.job.state])}</dd>
@@ -777,16 +852,16 @@ export default function JobPanel({
               <dt>{t("jobs.bytes")}</dt>
               <dd>{bytes(detail.job.bytesProcessed)}</dd>
             </div>
-          </dl>
+          </JobFacts>
           {detail.job.redactedError && (
-            <p className="job-warning">
+            <p className="tw:m-0 tw:flex tw:items-start tw:gap-2 tw:text-xs tw:leading-[1.45] tw:text-warning tw:[&_.icon]:mt-0.5 tw:[&_.icon]:shrink-0">
               <Icon name="alert" />
               {detail.job.redactedError}
             </p>
           )}
           {detail.artifacts.map((artifact) => (
             <button
-              className="btn small job-artifact"
+              className="btn small tw:w-full tw:justify-start tw:[&>small]:text-muted-foreground tw:[&>span]:min-w-0 tw:[&>span]:flex-1 tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis tw:[&>span]:whitespace-nowrap"
               key={artifact.id}
               onClick={() =>
                 void revealJobArtifact(scopedConnectionId, artifact.id).catch((cause) =>

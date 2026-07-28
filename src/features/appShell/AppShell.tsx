@@ -10,6 +10,14 @@ import { useQuery } from "@tanstack/react-query";
 import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
+import {
+  createDemoSqlite,
+  upsertConnection,
+} from "../../features/connections/tauriAdapter";
+import {
+  demoSqliteConnection,
+  type ConnectionLaunchPreset,
+} from "../../features/connections/presets";
 import type { Dashboard } from "../../features/dashboards/domain";
 import type { SqlDocument } from "../../features/sqlDocuments/domain";
 import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
@@ -98,6 +106,9 @@ function Shell() {
     clear: clearSafety,
   } = useSafetySettings(selectedId);
   const [editing, setEditing] = useState<EditingConnection>(null);
+  const [connectionPreset, setConnectionPreset] =
+    useState<ConnectionLaunchPreset | null>(null);
+  const [creatingDemo, setCreatingDemo] = useState(false);
   const { legacyAuditOpen, restoredDocumentKind } = useRestoredWorkbenchState();
   const [area, setArea] = usePersistentAppArea();
   const {
@@ -338,12 +349,41 @@ function Shell() {
     workbench.applyPersisted(activeDocument.id, saved);
   }
 
-  function startNewConnection() {
+  function startNewConnection(preset?: ConnectionLaunchPreset) {
+    setConnectionPreset(preset ?? null);
     setEditing("new");
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
     setMobileExplorerOpen(false);
     focusMainAfterMobileSelection();
+  }
+
+  async function createDemoDatabase() {
+    if (creatingDemo) return;
+    setCreatingDemo(true);
+    try {
+      const path = await createDemoSqlite();
+      const existing = conns.find(
+        (connection) =>
+          connection.engine === "sqlite" &&
+          connection.database === path,
+      );
+      const saved =
+        existing ??
+        (await upsertConnection(demoSqliteConnection(path)));
+      if (!existing) await refresh();
+      setSelectedId(saved.id);
+      setConnectionPreset(null);
+      setEditing(null);
+      setSettingsOpen(false);
+      setSchemaDiffGroupKey(null);
+      setArea("workspace");
+      toast(t("connections.demoCreated"));
+    } catch (error) {
+      toast(errMessage(error), "error");
+    } finally {
+      setCreatingDemo(false);
+    }
   }
 
   const mainContent = (
@@ -353,6 +393,7 @@ function Shell() {
       selected={selected}
       activeSchemaGroup={activeSchemaGroup}
       editing={editing}
+      connectionPreset={connectionPreset}
       loadError={loadError}
       connections={conns}
       safety={safety}
@@ -372,15 +413,23 @@ function Shell() {
       onUpdateChecked={syncAvailableUpdate}
       onRefreshSafety={refreshSafety}
       onCloseSchemaDiff={() => setSchemaDiffGroupKey(null)}
-      onConnectionSaved={async (profile) => {
+      onConnectionSaved={async (profile, closeEditor) => {
         await refresh();
         setSelectedId(profile.id);
+        if (closeEditor) {
+          setConnectionPreset(null);
+          setEditing(null);
+        }
+      }}
+      onCancelEditing={() => {
+        setConnectionPreset(null);
         setEditing(null);
       }}
-      onCancelEditing={() => setEditing(null)}
       onRetryConnections={() => void refresh()}
       onNewConnection={startNewConnection}
       onOpenAgentTools={openAgentToolsSettings}
+      onCreateDemoDatabase={() => void createDemoDatabase()}
+      creatingDemo={creatingDemo}
       onSelectConnection={(id) => selectConnection(id, area)}
       onActivateDocument={workbench.activateId}
       onCloseDocument={closeDocument}
@@ -423,8 +472,10 @@ function Shell() {
       terminalOverlay={terminalOverlay}
       terminalWidth={terminalDockWidth}
       skillStatus={skillStatusQ.data ?? null}
+      creatingDemo={creatingDemo}
       onWorkspaceScopeChanged={reloadWorkspaceScope}
       onNewConnection={startNewConnection}
+      onCreateDemoDatabase={() => void createDemoDatabase()}
       onArea={(next) => {
         const sameArea = next === area && !settingsOpen;
         setSettingsOpen(false);
@@ -445,6 +496,10 @@ function Shell() {
         setSchemaDiffGroupKey(null);
         setMobileExplorerOpen(false);
       }}
+      onNewQuery={() => void openQueryDocument()}
+      onOpenActivity={() => openStableDocument("activity")}
+      onOpenAgentTools={openAgentToolsSettings}
+      onOpenTerminal={openOrFocusTerminalDock}
       onSelectDashboardConnection={(id) => selectConnection(id, "dashboard")}
       onDashboardFocus={setDashboardFocusId}
       onSelectWorkspaceConnection={(id) => selectConnection(id, "workspace")}
@@ -456,6 +511,7 @@ function Shell() {
         setSchemaDiffGroupKey(group.key);
       }}
       onEditConnection={(connection) => {
+        setConnectionPreset(null);
         setEditing(connection);
         setSettingsOpen(false);
         setSchemaDiffGroupKey(null);

@@ -60,11 +60,11 @@
   --ds-motion-distance-sm: 6px;
   --ds-active-offset: -1px;
 
-  /* Orca radius scale: 10px base, tighter controls, softer containers. */
-  --ds-radius-xs: 6px;
-  --ds-radius-sm: 8px;
-  --ds-radius-md: 10px;
-  --ds-radius-lg: 14px;
+  /* Compact IDE radius scale. Tool windows stay square; only controls soften. */
+  --ds-radius-xs: 4px;
+  --ds-radius-sm: 6px;
+  --ds-radius-md: 8px;
+  --ds-radius-lg: 10px;
   --ds-radius-pill: 999px;
   --ds-border-width: 1px;
   --ds-border-width-strong: 2px;
@@ -99,7 +99,7 @@
   --ds-icon-sm: 14px;
   --ds-icon-md: 16px;
   --ds-sidebar-min: 180px;
-  --ds-sidebar-default: 240px;
+  --ds-sidebar-default: 304px;
   --ds-sidebar-max: 520px;
   --ds-window-controls-safe-height: 0px;
   --ds-pane-pad: 16px;
@@ -109,31 +109,31 @@
    * Canonical Orca dark roles. The aliases below keep DopeDB's existing
    * semantic API while preserving the surface/foreground pair contract.
    */
-  --ds-background: #0a0a0a;
-  --ds-foreground: #fafafa;
-  --ds-card: #171717;
-  --ds-card-foreground: #fafafa;
-  --ds-popover: #171717;
-  --ds-popover-foreground: #fafafa;
-  --ds-primary: #e5e5e5;
-  --ds-primary-foreground: #171717;
-  --ds-primary-hover: #d4d4d4;
-  --ds-primary-active: #a3a3a3;
-  --ds-secondary: #262626;
-  --ds-secondary-foreground: #fafafa;
-  --ds-muted: #262626;
-  --ds-muted-foreground: #a1a1a1;
-  --ds-selection: #404040;
-  --ds-selection-foreground: #fafafa;
-  --ds-destructive: #ff6568;
+  --ds-background: #1e1f22;
+  --ds-foreground: #dfe1e5;
+  --ds-card: #2b2d30;
+  --ds-card-foreground: #dfe1e5;
+  --ds-popover: #2b2d30;
+  --ds-popover-foreground: #dfe1e5;
+  --ds-primary: #3574f0;
+  --ds-primary-foreground: #ffffff;
+  --ds-primary-hover: #467ff2;
+  --ds-primary-active: #2f65ca;
+  --ds-secondary: #393b40;
+  --ds-secondary-foreground: #dfe1e5;
+  --ds-muted: #2b2d30;
+  --ds-muted-foreground: #9da0a8;
+  --ds-selection: #2f65ca;
+  --ds-selection-foreground: #ffffff;
+  --ds-destructive: #db5c5c;
   --ds-destructive-foreground: #ffffff;
-  --ds-input: rgb(255 255 255 / 0.15);
-  --ds-ring: #737373;
-  --ds-editor-surface: #1e1e1e;
-  --ds-worktree-sidebar: #2a2a2a;
-  --ds-worktree-sidebar-foreground: #fafafa;
-  --ds-worktree-sidebar-accent: #353535;
-  --ds-worktree-sidebar-border: rgb(255 255 255 / 0.07);
+  --ds-input: #43454a;
+  --ds-ring: #548af7;
+  --ds-editor-surface: #1e1f22;
+  --ds-worktree-sidebar: #1e1f22;
+  --ds-worktree-sidebar-foreground: #dfe1e5;
+  --ds-worktree-sidebar-accent: #2b2d30;
+  --ds-worktree-sidebar-border: rgb(255 255 255 / 0.08);
 
   /* DopeDB surface aliases */
   --ds-bg-app: var(--ds-background);
@@ -143,11 +143,11 @@
   --ds-surface-1: var(--ds-background);
   --ds-surface-2: var(--ds-secondary);
   --ds-surface-elevated: var(--ds-popover);
-  --ds-border-subtle: rgb(255 255 255 / 0.07);
-  --ds-border-strong: #525252;
+  --ds-border-subtle: rgb(255 255 255 / 0.08);
+  --ds-border-strong: #4e5157;
   --ds-text: var(--ds-foreground);
   --ds-text-muted: var(--ds-muted-foreground);
-  --ds-text-subtle: #737373;
+  --ds-text-subtle: #6f737a;
   --ds-text-inverse: var(--ds-primary-foreground);
   --ds-text-on-accent-muted: rgb(255 255 255 / 0.78);
   --ds-border-on-accent: rgb(255 255 255 / 0.22);
@@ -160,10 +160,10 @@
   --ds-primary-text: var(--ds-foreground);
   --ds-primary-soft: var(--ds-muted);
   --ds-accent: var(--ds-primary);
-  --ds-accent-text: var(--ds-foreground);
+  --ds-accent-text: #6b9bfa;
   --ds-accent-hover: var(--ds-primary-hover);
   --ds-accent-active: var(--ds-primary-active);
-  --ds-accent-soft: var(--ds-muted);
+  --ds-accent-soft: #25324d;
   --ds-hover: var(--ds-muted);
   --ds-hover-strong: var(--ds-selection);
 
@@ -231,7 +231,7 @@
 /* The explorer is Orca's dedicated worktree-sidebar role. */
 .sidebar {
   --ds-surface-0: var(--ds-worktree-sidebar);
-  --ds-surface-1: #171717;
+  --ds-surface-1: #252629;
   --ds-surface-2: var(--ds-worktree-sidebar-accent);
   --ds-surface-elevated: var(--ds-popover);
 }

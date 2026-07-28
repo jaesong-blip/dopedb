@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "purpose": "DopeDB은 픽셀 복제 대상이 아니라 orientation, workbenchHierarchy, densityAndAlignment, actionLocality, contextContinuity, accessibility 여섯 항목의 비차단 UX benchmark다.",
+    "blocking": false,
+    "pixelComparison": "DopeDB baseline과 DopeDB reference를 직접 픽셀 비교하지 않는다.",
+    "distributions": {
+      "repository-audit": "이미 저장소에 커밋된 공개 문서 캡처. sha256을 파일과 대조해 검증한다.",
+      "private-reference": "저장소 밖 로컬/private 경로에 보관한다. git에는 hash와 논리 키만 남기고 파일 경로는 저장하지 않는다."
+    },
+    "withoutOriginals": "private reference 원본이 없어도 하네스는 DopeDB baseline과 reference clone으로 실행된다."
+  },
+  "references": [
+    {
+      "id": "DopeDB-2026.1-first-run-macos",
+      "product": "DopeDB",
+      "version": "2026.1",
+      "platform": "macOS",
+      "scenario": "first-run",
+      "resolution": { "width": 1400, "height": 863 },
+      "scale": 2,
+      "sha256": "ec18d79437ee51bcf4358ef70ce13237db47b678cd874d912ab007338c3e761a",
+      "distribution": "private-reference",
+      "logicalKey": "DopeDB/2026.1/macos/first-run-welcome-window",
+      "redistributable": false,
+      "observations": "observations/DopeDB-2026.1-first-run.md"
+    },
+    {
+      "id": "DopeDB-2026.1-explorer-macos",
+      "product": "DopeDB",
+      "version": "2026.1",
+      "platform": "macOS",
+      "scenario": "explorer-connected",
+      "resolution": { "width": 1280, "height": 720 },
+      "scale": 1,
+      "sha256": "d4f63375ae3fccb665d8504f2f00c2c034630d165b51eca74e10560960d018c3",
+      "distribution": "repository-audit",
+      "file": "audits/DopeDB-design-analysis-2026-07-08/06-database-explorer-screenshot-section.png",
+      "redistributable": false,
+      "observations": "observations/DopeDB-2026.1-explorer.md"
+    },
+    {
+      "id": "DopeDB-2026.1-data-editor-macos",
+      "product": "DopeDB",
+      "version": "2026.1",
+      "platform": "macOS",
+      "scenario": "table-data",
+      "resolution": { "width": 1280, "height": 720 },
+      "scale": 1,
+      "sha256": "7ce863709a623c4e2c8ab72bf1a22e8c03bd3636b8072e5e6983d4f7d7e19027",
+      "distribution": "repository-audit",
+      "file": "audits/DopeDB-design-analysis-2026-07-08/07-data-editor-screenshot-section.png",
+      "redistributable": false,
+      "observations": "observations/DopeDB-2026.1-data-editor.md"
+    },
+    {
+      "id": "DopeDB-2026.1-query-console-macos",
+      "product": "DopeDB",
+      "version": "2026.1",
+      "platform": "macOS",
+      "scenario": "sql-terminal",
+      "resolution": { "width": 1280, "height": 720 },
+      "scale": 1,
+      "sha256": "b9dcac7bdcbd8f26dd512d057075a720c2fc06c8b00097a36d16135ae23ce254",
+      "distribution": "repository-audit",
+      "file": "audits/DopeDB-design-analysis-2026-07-08/08-query-console-screenshot-section.png",
+      "redistributable": false,
+      "observations": "observations/DopeDB-2026.1-query-console.md"
+    },
+    {
+      "id": "DopeDB-2026.1-assistant-macos",
+      "product": "DopeDB",
+      "version": "2026.1",
+      "platform": "macOS",
+      "scenario": "assistant-open",
+      "resolution": { "width": 1280, "height": 720 },
+      "scale": 1,
+      "sha256": "e3357356b09eb584bfc52bf5d433ec7cbacf210d3622df0c46189574a94cd66e",
+      "distribution": "repository-audit",
+      "file": "audits/DopeDB-design-analysis-2026-07-08/10-whatsnew-mcp-consent-section.png",
+      "redistributable": false,
+      "observations": "observations/DopeDB-2026.1-assistant.md"
+    }
+  ]
+}

@@ -2,8 +2,14 @@ import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import DataGrid from "../../components/DataGrid";
-import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
+import {
+  MetadataDot,
+  WorkbenchContextHeader,
+  WorkbenchEmptyState,
+  WorkbenchPane,
+  WorkbenchToolbar,
+} from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import { useTablePageState } from "../../features/tableData/state";
 import type { CatalogTable, QueryResult } from "../../ipc/types";
@@ -65,22 +71,21 @@ export default function MongoTableData({
   const to = page * pageSize + rows;
 
   return (
-    <div className="table-data">
-      <div className="table-data-context">
-        <div className="table-data-identity">
-          <Icon name={table.kind === "view" ? "view" : "collection"} />
-          <strong>{tableLabel(connection.engine, table)}</strong>
-          <span className="ds-context-badge">
-            {table.kind === "view"
-              ? t("schema.view")
-              : t("tables.sourceCollection")}
-          </span>
-        </div>
-        <div className="ds-meta-row">
+    <WorkbenchPane>
+      <WorkbenchContextHeader
+        icon={table.kind === "view" ? "view" : "collection"}
+        title={tableLabel(connection.engine, table)}
+        badge={
+          table.kind === "view"
+            ? t("schema.view")
+            : t("tables.sourceCollection")
+        }
+        metadata={
+          <>
           <span>LIMIT {pageSize.toLocaleString()}</span>
           {documentPage && (
             <>
-              <span className="ds-meta-dot" />
+              <MetadataDot />
               <span>
                 {total != null
                   ? t("tables.rowRangeTotal", {
@@ -91,14 +96,15 @@ export default function MongoTableData({
                   : t("tables.rowRange", { from, to })}
                 {documentPage.truncated ? " (truncated)" : ""}
               </span>
-              <span className="ds-meta-dot" />
+              <MetadataDot />
               <span>{documentPage.durationMs} ms</span>
             </>
           )}
-        </div>
-      </div>
-      <div className="grid-toolbar ds-data-toolbar ds-control-row">
-        <span className="ds-toolbar-spacer" />
+          </>
+        }
+      />
+      <WorkbenchToolbar label={t("tables.pagination")}>
+        <span className="tw:flex-1" />
         <Pager
           page={page}
           pageSize={pageSize}
@@ -111,18 +117,22 @@ export default function MongoTableData({
             void countQuery.refetch();
           }}
         />
-      </div>
+      </WorkbenchToolbar>
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+          {error}
+        </div>
+      )}
       <div
-        className={
-          busy && documentPage ? "table-data-body busy" : "table-data-body"
-        }
+        data-busy={busy && Boolean(documentPage)}
+        className="tw:relative tw:flex tw:min-h-0 tw:flex-1 tw:data-[busy=true]:pointer-events-none tw:data-[busy=true]:opacity-50"
       >
         {documentPage ? (
           <>
             <DataGrid
               result={result}
+              surface="workbench"
               startIndex={page * pageSize}
               columnMeta={Object.fromEntries(
                 table.columns.map((column) => [
@@ -132,18 +142,24 @@ export default function MongoTableData({
               )}
             />
             {rows === 0 && !busy && (
-              <div className="muted">{t("tables.tableEmpty")}</div>
+              <div className="tw:pointer-events-none tw:absolute tw:inset-x-0 tw:top-control-md tw:bottom-0 tw:flex tw:items-center tw:justify-center tw:bg-background/90 tw:text-ui tw:text-muted-foreground">
+                {t("tables.tableEmpty")}
+              </div>
             )}
           </>
         ) : (
           !error &&
           (busy ? (
-            <Skeleton lines={8} />
+            <div className="tw:flex-1 tw:p-3">
+              <Skeleton lines={8} />
+            </div>
           ) : (
-            <div className="muted">{t("tables.noRows")}</div>
+            <WorkbenchEmptyState icon="table">
+              {t("tables.noRows")}
+            </WorkbenchEmptyState>
           ))
         )}
       </div>
-    </div>
+    </WorkbenchPane>
   );
 }

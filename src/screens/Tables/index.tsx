@@ -3,7 +3,6 @@ import type { CatalogTable, SafetySettings } from "../../ipc/types";
 import { isDocumentEngine } from "../../lib/capabilities";
 import MongoTableData from "./MongoTableData";
 import SqlTableData from "./SqlTableData";
-import "./tables.css";
 
 export default function TableData({
   connection,

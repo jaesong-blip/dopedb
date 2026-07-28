@@ -18,7 +18,11 @@ import type { ConnectionProfile } from "../../connections/domain";
 import { errDetails } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
 import { useToast } from "../../../components/Toast";
-import "./WorkspaceConnectionDialog.css";
+import {
+  Field,
+  SelectInput,
+  TextInput,
+} from "../../../design-system/components/FormControls";
 
 export default function WorkspaceConnectionDialog({
   connection,
@@ -146,7 +150,7 @@ export default function WorkspaceConnectionDialog({
 
   return createPortal(
     <div
-      className="workspace-connection-overlay"
+      className="tw:fixed tw:inset-0 tw:z-[var(--ds-z-modal)] tw:grid tw:place-items-center tw:overflow-auto tw:bg-overlay tw:p-4 tw:max-[520px]:p-3"
       role="presentation"
       onClick={() => {
         if (!pending) onClose();
@@ -154,7 +158,7 @@ export default function WorkspaceConnectionDialog({
     >
       <form
         ref={dialogRef}
-        className="workspace-connection-dialog ds-panel form"
+        className="ds-panel tw:flex tw:max-h-[calc(100dvh_-_(var(--ds-space-4)_*_2))] tw:w-[min(440px,100%)] tw:flex-col tw:gap-3 tw:overflow-auto tw:shadow-popover tw:max-[520px]:max-h-[calc(100dvh_-_(var(--ds-space-3)_*_2))] tw:max-[520px]:w-full"
         role="dialog"
         aria-modal="true"
         aria-labelledby="workspace-connection-title"
@@ -163,7 +167,7 @@ export default function WorkspaceConnectionDialog({
         onSubmit={submit}
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="form-head">
+        <header className="tw:flex tw:items-center tw:justify-between tw:gap-3">
           <h2 id="workspace-connection-title">
             {mode === "copy"
               ? t("workspace.copyConnection", { name: connection.name })
@@ -172,12 +176,14 @@ export default function WorkspaceConnectionDialog({
         </header>
         {mode === "copy" ? (
           <>
-            <p id="workspace-connection-description" className="workspace-connection-description">
+            <p
+              id="workspace-connection-description"
+              className="tw:m-0 tw:text-ui tw:leading-body tw:text-muted-foreground tw:[overflow-wrap:anywhere]"
+            >
               {t("workspace.copySecurityNote")}
             </p>
-            <label>
-              {t("workspace.targetWorkspace")}
-              <select
+            <Field label={t("workspace.targetWorkspace")}>
+              <SelectInput
                 ref={(node) => {
                   initialFocusRef.current = node;
                 }}
@@ -194,18 +200,24 @@ export default function WorkspaceConnectionDialog({
                     ))}
                   </optgroup>
                 ))}
-              </select>
-            </label>
-            {targets.length === 0 ? <div className="error">{t("workspace.noManageableWorkspace")}</div> : null}
+              </SelectInput>
+            </Field>
+            {targets.length === 0 ? (
+              <div className="tw:text-ui tw:text-danger" role="alert">
+                {t("workspace.noManageableWorkspace")}
+              </div>
+            ) : null}
           </>
         ) : (
           <>
-            <p id="workspace-connection-description" className="workspace-connection-description">
+            <p
+              id="workspace-connection-description"
+              className="tw:m-0 tw:text-ui tw:leading-body tw:text-muted-foreground tw:[overflow-wrap:anywhere]"
+            >
               {t("workspace.credentialsSecurityNote")}
             </p>
-            <label>
-              {t("workspace.username")}
-              <input
+            <Field label={t("workspace.username")}>
+              <TextInput
                 ref={(node) => {
                   initialFocusRef.current = node;
                 }}
@@ -213,15 +225,27 @@ export default function WorkspaceConnectionDialog({
                 onChange={(event) => setUsername(event.target.value)}
                 autoComplete="username"
               />
-            </label>
-            <label>
-              {t("connections.password")}
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
-            </label>
+            </Field>
+            <Field label={t("connections.password")}>
+              <TextInput
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </Field>
           </>
         )}
-        {error ? <div className="form-msg error workspace-connection-error" role="alert">{error}</div> : null}
-        <footer className="form-actions ds-control-row">
+        {error ? (
+          <div
+            className="tw:border-l-2 tw:border-danger tw:bg-danger-muted tw:p-2 tw:text-ui tw:leading-body tw:text-danger tw:[overflow-wrap:anywhere]"
+            role="alert"
+          >
+            {error}
+          </div>
+        ) : null}
+        <footer className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:max-[520px]:[&_.btn:not(.icon-only)]:w-full">
           <button ref={cancelRef} className="btn" type="button" onClick={onClose} disabled={pending}>{t("common.cancel")}</button>
           <button className="btn primary" type="submit" disabled={pending || (mode === "copy" && !selectedTargetValue)}>
             {pending ? t("common.working") : mode === "copy" ? t("workspace.copy") : t("workspace.bind")}

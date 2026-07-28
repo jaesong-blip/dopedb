@@ -3,6 +3,10 @@ import { Icon } from "../../components/Icon";
 import RowEditor, {
   type RowEditorSubmission,
 } from "../../components/RowEditor";
+import {
+  InspectorFooter,
+  InspectorHeader,
+} from "../../design-system/components/Workbench";
 import type {
   CatalogTable,
   ScriptOperationProposal,
@@ -60,7 +64,7 @@ export default function TableSidePanel(props: Props) {
   } = props;
 
   return (
-    <aside className="grid-panel">
+    <aside className="tw:w-[clamp(320px,32vw,480px)] tw:max-w-[44%] tw:shrink-0 tw:overflow-auto tw:border-l tw:border-border-subtle tw:bg-card tw:p-3 tw:@max-[920px]:max-h-[42vh] tw:@max-[920px]:w-auto tw:@max-[920px]:max-w-none tw:@max-[760px]:max-h-[min(360px,44dvh)]">
       {editor && !reviewing && (
         <RowEditor
           key={`${editor.mode}-${selected}`}
@@ -73,9 +77,10 @@ export default function TableSidePanel(props: Props) {
         />
       )}
       {pendingDelete && (
-        <div className="row-editor">
-          <div className="panel-head">
-            <strong>{t("tables.deleteRow")}</strong>
+        <div>
+          <InspectorHeader
+            title={t("tables.deleteRow")}
+            actions={
             <button
               className="btn small icon-only icon-xs"
               aria-label={t("common.cancel")}
@@ -83,35 +88,41 @@ export default function TableSidePanel(props: Props) {
             >
               <Icon name="close" />
             </button>
-          </div>
-          <div className="row-fields">
+            }
+          />
+          <div className="tw:mb-3 tw:flex tw:flex-col tw:gap-2">
             {Object.entries(pendingDelete.key).map(([key, value]) => (
-              <div className="row-field" key={key}>
-                <label>
+              <div key={key}>
+                <label className="tw:mb-px tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:overflow-hidden tw:text-sm tw:text-ellipsis tw:whitespace-nowrap">
                   {key}
-                  <span className="pk-badge">PK</span>
+                  <span className="tw:rounded-xs tw:border tw:border-primary tw:px-0.5 tw:text-2xs tw:font-bold tw:text-primary">
+                    PK
+                  </span>
                 </label>
                 <code>{value == null ? "NULL" : value}</code>
               </div>
             ))}
           </div>
-          <div className="row-editor-actions ds-action-row ds-control-row">
+          <InspectorFooter>
             <button className="btn primary" onClick={props.onArmDelete}>
               {t("tables.reviewDelete")}
             </button>
             <button className="btn" onClick={props.onCloseDelete}>
               {t("common.cancel")}
             </button>
-          </div>
+          </InspectorFooter>
         </div>
       )}
       {reviewing && (
-        <div className="row-editor staged-change-review">
-          <div className="panel-head">
-            <div>
-              <strong>{t("tables.stagedCount", { count: staged.length })}</strong>
-              <div className="muted">{t("tables.stagedAtomicHelp")}</div>
-            </div>
+        <div>
+          <InspectorHeader
+            title={t("tables.stagedCount", { count: staged.length })}
+            metadata={
+              <span className="tw:text-muted-foreground">
+                {t("tables.stagedAtomicHelp")}
+              </span>
+            }
+            actions={
             <button
               className="btn small icon-only icon-xs"
               aria-label={t("common.close")}
@@ -119,8 +130,9 @@ export default function TableSidePanel(props: Props) {
             >
               <Icon name="close" />
             </button>
-          </div>
-          <ol className="staged-change-list">
+            }
+          />
+          <ol className="tw:m-0 tw:grid tw:list-none tw:gap-0 tw:p-0 tw:[&_li]:flex tw:[&_li]:items-start tw:[&_li]:justify-between tw:[&_li]:gap-2 tw:[&_li]:border-t tw:[&_li]:border-border-subtle tw:[&_li]:py-2 tw:[&_li>div]:min-w-0 tw:[&_strong]:block tw:[&_code]:mt-1 tw:[&_code]:block tw:[&_code]:[overflow-wrap:anywhere] tw:[&_code]:text-xs tw:[&_code]:text-muted-foreground">
             {staged.map((change, index) => (
               <li key={change.id}>
                 <div>
@@ -143,7 +155,7 @@ export default function TableSidePanel(props: Props) {
             ))}
           </ol>
           {proposal?.confirmationPhrase && (
-            <label className="staged-confirmation">
+            <label className="tw:mt-3 tw:grid tw:gap-2 tw:text-sm tw:[&_input]:w-full tw:[&_input]:font-mono">
               <span>
                 {t("approval.confirmationPrompt")}{" "}
                 <code>{proposal.confirmationPhrase}</code>
@@ -156,7 +168,7 @@ export default function TableSidePanel(props: Props) {
               />
             </label>
           )}
-          <div className="row-editor-actions ds-action-row ds-control-row">
+          <InspectorFooter>
             {!proposal ? (
               <button
                 className="btn primary"
@@ -189,7 +201,7 @@ export default function TableSidePanel(props: Props) {
                 </button>
               </>
             )}
-          </div>
+          </InspectorFooter>
         </div>
       )}
       {selectedCell && !editor && !reviewing && (

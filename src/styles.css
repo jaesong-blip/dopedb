@@ -1,552 +1,70 @@
+/*
+ * Canonical application-shell geometry.
+ *
+ * Component visuals live beside their JSX as Tailwind v4 utilities. This file
+ * only owns the desktop grid, its named placement hooks, the draggable divider,
+ * and the compact overlay relationship that cannot be expressed from a child
+ * without duplicating shell state.
+ */
 .app {
   display: grid;
-  /* Middle track is the drag divider; the real width is set inline from App state. */
-  grid-template-columns: 48px 240px 5px minmax(0, 1fr) 0;
+  /* Middle track is the drag divider; the live widths are supplied inline. */
+  grid-template-columns: 40px 304px 3px minmax(0, 1fr) 0;
+  grid-template-rows: 40px minmax(0, 1fr) 24px;
   height: 100dvh;
   overflow: hidden;
 }
 
-.app.platform-macos {
-  /* Both left shell columns inherit the same OS-owned traffic-light band. */
-  --ds-window-controls-safe-height: 44px;
+.app[data-platform="macos"] {
+  --ds-window-controls-safe-height: 0px;
 }
 
-/* The rail is the stable navigation spine of the workbench. It intentionally
-   stays narrower than the database tree so the selected connection remains the
-   visual anchor, like the reference Chat2DB layout. */
+.ide-topbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
 .workbench-rail {
-  z-index: var(--ds-z-raised);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 0;
-  padding: 0 var(--ds-space-1) var(--ds-space-2);
-  border-right: var(--ds-border-width) solid var(--ds-sidebar-border);
-  background: var(--ds-bg-sidebar);
-  color: var(--ds-text-muted);
-}
-.workbench-window-controls-safe {
-  width: 100%;
-  flex: 0 0 var(--ds-window-controls-safe-height);
-}
-.workbench-rail-brand {
-  width: var(--ds-control-lg);
-  height: var(--ds-control-lg);
-  display: grid;
-  place-items: center;
-  margin-bottom: var(--ds-space-4);
-  border: var(--ds-border-width) solid var(--ds-border-strong);
-  border-radius: var(--ds-radius-sm);
-  color: var(--ds-text);
-  font-family: var(--ds-font-mono);
-  font-size: var(--ds-font-size-title);
-  font-weight: 700;
-}
-.workbench-rail-items,
-.workbench-rail-bottom {
-  display: grid;
-  justify-items: center;
-  gap: var(--ds-space-2);
-}
-.workbench-rail-bottom {
-  margin-top: auto;
-}
-.workbench-rail-button {
-  position: relative;
-  width: var(--ds-control-lg);
-  height: var(--ds-control-lg);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--ds-radius-sm);
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font-size: var(--ds-icon-md);
-}
-.workbench-rail-separator {
-  width: var(--ds-control-sm);
-  height: var(--ds-border-width);
-  margin: var(--ds-space-1) 0;
-  background: var(--ds-border-strong);
-}
-.workbench-rail-count {
-  position: absolute;
-  top: calc(var(--ds-optical-offset-sm) * -1);
-  right: calc(var(--ds-optical-offset-sm) * -1);
-  min-width: 14px;
-  height: 14px;
-  display: grid;
-  place-items: center;
-  padding: 0 var(--ds-chip-pad-x-2xs);
-  border-radius: var(--ds-radius-pill);
-  background: var(--ds-accent);
-  color: var(--ds-text-inverse);
-  font-size: var(--ds-font-size-2xs);
-  font-weight: 700;
-}
-.workbench-rail-button:hover {
-  background: var(--ds-accent-soft);
-  color: var(--ds-accent-text);
+  grid-column: 1;
+  grid-row: 2;
 }
 
-.workbench-rail-button.active {
-  background: var(--ds-selection);
-  color: var(--ds-selection-foreground);
-}
-.workbench-rail-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
-}
-.workbench-rail-button:focus-visible {
-  outline: none;
-  box-shadow: var(--ds-focus-ring);
-}
-.workbench-rail-button.active {
-  box-shadow: inset var(--ds-border-width-strong) 0 0 var(--ds-selection-foreground);
+.sidebar {
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .sidebar-resizer {
-  cursor: col-resize;
-  background: transparent;
-  margin-left: var(--ds-active-offset); /* sit on the sidebar's border line */
-}
-.sidebar-resizer:hover,
-.sidebar-resizer:active {
-  background: var(--ds-hover-strong);
+  grid-column: 3;
+  grid-row: 2;
 }
 
-.mobile-sidebar-scrim {
-  display: none;
-}
-
-/* Sidebar — solid deep-gray chrome (tokens re-scoped in tokens.css). */
-.sidebar {
-  background: var(--ds-bg-sidebar);
-  border-right: var(--ds-border-width) solid var(--ds-sidebar-border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.empty {
-  padding: var(--ds-space-3);
-}
-
-/* Main */
 .main {
-  container-name: main-pane;
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
+  grid-column: 4;
+  grid-row: 2;
+}
+
+.terminal-dock,
+.ide-assistant-welcome {
+  grid-column: 5;
+  grid-row: 2;
+}
+
+.ide-statusbar {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+/* A WorkbenchPane owns its own scrolling and reaches the editor edges. */
+.workbench-canvas:has(> [data-workbench-pane]) {
   overflow: hidden;
-  /* Grid items default to min-width:auto, which lets a wide results table push the
-     1fr column past the viewport. This keeps wide content scrolling inside instead. */
-  min-width: 0;
-  background: transparent;
-}
-.main:focus {
-  outline: none;
-}
-.main-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: calc(var(--ds-control-lg) + var(--ds-space-2));
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
-  background: var(--ds-surface-elevated);
-}
-.main-head-actions {
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-.main-terminal-toggle {
-  position: relative;
-}
-.main-terminal-toggle.active {
-  border-color: transparent;
-  background: var(--ds-selection);
-  color: var(--ds-selection-foreground);
-}
-.app-title-line {
-  flex-wrap: nowrap;
-}
-/* Environment chip — rendered by the workbench header and connection cards here,
-   and by the sidebar rows in DatabaseExplorer (prod = danger fill). */
-.env-chip {
-  font-size: var(--ds-font-size-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: var(--ds-chip-pad-y) var(--ds-chip-pad-x);
-  border-radius: var(--ds-radius-pill);
-  border: var(--ds-border-width) solid color-mix(in srgb, var(--ds-warning) var(--ds-status-border-mix), var(--ds-border-subtle));
-  color: var(--ds-warning);
-}
-.env-chip.env-prod {
-  border-color: var(--ds-danger-emphasis);
-  color: var(--ds-text-inverse);
-  background: var(--ds-danger-emphasis);
-}
-.env-chip.env-dev {
-  border-color: color-mix(in srgb, var(--ds-success) var(--ds-status-border-mix), var(--ds-border-subtle));
-  color: var(--ds-success);
-}
-.env-chip.env-staging {
-  border-color: color-mix(in srgb, var(--ds-warning) var(--ds-status-border-mix), var(--ds-border-subtle));
-  color: var(--ds-warning);
-}
-.app-title-line .env-chip {
-  flex-shrink: 0;
-}
-.app-title-meta {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--ds-space-2);
-  height: 100%;
-  min-width: 0;
-  padding: var(--ds-pane-pad);
-  text-align: center;
-  line-height: var(--ds-line-body);
-  background: var(--ds-surface-1);
-}
-
-.placeholder > * {
-  max-width: min(520px, 100%);
-}
-
-.placeholder .error,
-.placeholder .muted {
-  overflow-wrap: anywhere;
-}
-
-.connection-picker {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ds-space-5);
-  max-width: 1120px;
-  margin-inline: auto;
-}
-.connection-picker-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-3);
-}
-.connection-picker-head h2 {
-  margin: 0;
-  font-size: var(--ds-font-size-heading);
-  line-height: var(--ds-line-tight);
-}
-.connection-picker-head .btn {
-  flex-shrink: 0;
-}
-.connection-picker-section {
-  display: grid;
-  gap: var(--ds-space-3);
-}
-.connection-picker-label {
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-.connection-group-section {
-  display: grid;
-  gap: var(--ds-space-2);
-  padding-left: var(--ds-space-3);
-  border-left: var(--ds-border-width-strong) solid var(--ds-accent-text);
-}
-.connection-group-head {
-  min-height: var(--ds-control-sm);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-3);
-}
-.connection-group-title {
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  color: var(--ds-text);
-  font-size: var(--ds-font-size-title);
-  font-weight: 700;
-}
-.connection-group-title > span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.connection-group-mark {
-  width: 9px;
-  height: 9px;
-  flex-shrink: 0;
-  border-radius: var(--ds-radius-pill);
-  border: var(--ds-border-width-strong) solid var(--ds-accent-text);
-}
-.connection-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--ds-space-3);
-}
-.connection-card {
-  min-width: 0;
-  min-height: 92px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: var(--ds-space-3);
-  padding: var(--ds-space-3);
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-lg);
-  background: var(--ds-card);
-  color: var(--ds-text);
-  box-shadow: var(--ds-shadow-panel);
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  transition:
-    border-color 0.12s ease,
-    background 0.12s ease,
-    box-shadow 0.12s ease;
-}
-.connection-card:hover {
-  border-color: var(--ds-border-strong);
-  background: color-mix(in srgb, var(--ds-card) 84%, var(--ds-selection));
-}
-.connection-card:focus-visible {
-  outline: none;
-  box-shadow: var(--ds-focus-ring);
-}
-.connection-card-title {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-}
-.connection-card-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ds-font-size-body);
-  font-weight: 700;
-}
-.connection-card .env-chip {
-  margin-left: auto;
-}
-.connection-card-meta {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-sm);
-}
-.connection-card-meta > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.connection-card-meta .ds-meta-dot {
-  flex-shrink: 0;
-}
-
-/* Unseen-count pill used by the Agent dock log button. */
-.tab-dot {
-  min-width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--ds-font-size-2xs);
-  font-weight: 600;
-  background: var(--ds-accent);
-  color: var(--ds-text-inverse);
-  border-radius: var(--ds-radius-pill);
-  padding: 0 var(--ds-chip-pad-x-sm);
-}
-
-/* Workbench documents occupy the center column, matching the reference editor model:
-   resources open from the explorer, queries open with +, and global navigation stays global. */
-.workbench-document-strip {
-  min-width: 0;
-  min-height: calc(var(--ds-control-lg) + var(--ds-space-1));
-  display: flex;
-  align-items: stretch;
-  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
-  background: var(--ds-surface-0);
-}
-
-.workbench-document-tabs {
-  min-width: 0;
-  flex: 1 1 auto;
-  display: flex;
-  align-items: stretch;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.workbench-document-tab {
-  min-width: 0;
-  max-width: 220px;
-  flex: 0 1 180px;
-  display: flex;
-  align-items: center;
-  border-right: var(--ds-border-width) solid var(--ds-border-subtle);
-  color: var(--ds-text-muted);
-}
-
-.workbench-document-tab.active {
-  background: var(--ds-selection);
-  color: var(--ds-selection-foreground);
-  box-shadow: inset 0 calc(var(--ds-border-width-strong) * -1) 0
-    var(--ds-selection-foreground);
-}
-
-.workbench-document-select {
-  min-width: 0;
-  min-height: var(--ds-control-lg);
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  padding: 0 var(--ds-space-2);
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-}
-
-.workbench-document-select span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workbench-document-select .icon {
-  flex: 0 0 auto;
-}
-
-.workbench-document-close {
-  margin-right: var(--ds-space-1);
-}
-
-.workbench-document-select:focus-visible {
-  outline: none;
-  box-shadow: var(--ds-focus-ring);
-}
-
-.workbench-document-actions {
-  flex: 0 0 auto;
-  align-items: center;
-  padding: 0 var(--ds-space-2);
-  border-left: var(--ds-border-width) solid var(--ds-border-subtle);
-}
-
-.workbench-empty {
-  min-height: 100%;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: var(--ds-space-3);
-  text-align: center;
-}
-
-.workbench-empty > .icon {
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-heading);
-}
-
-.tab-body {
-  flex: 1;
-  min-height: 0; /* allow inner panes to scroll within the flex column */
-  overflow: auto;
-  padding: var(--ds-pane-pad);
-  background: var(--ds-background);
-  box-shadow: inset 0 var(--ds-border-width) 0 var(--ds-border-subtle);
-}
-/* Screens are full-width by default so results/tables grids use the whole pane.
-   Reading-oriented screens cap their own width below. */
-.screen {
-  min-width: 0;
-}
-
-/* Connection editor pane — center the form while preserving scroll. */
-.editor-pane {
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  overflow: auto;
-  padding: var(--ds-pane-pad);
-}
-.editor-pane > .form {
-  width: min(760px, 100%);
-  max-width: 760px;
-}
-
-/* Full-area main view for sidebar-launched workspaces. */
-.main-view { flex: 1; min-height: 0; overflow: auto; padding: var(--ds-pane-pad); }
-
-@media (max-width: 860px) {
-  .main-head {
-    gap: var(--ds-space-2);
-  }
-}
-
-@media (max-width: 760px) {
-  .tab-body,
-  .settings-body,
-  .main-view,
-  .editor-pane {
-    padding: var(--ds-space-3);
-  }
-
-  .connection-picker-head {
-    align-items: flex-start;
-  }
-
-  .connection-card-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .connection-group-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--ds-space-1);
-  }
-
-  .workbench-document-tab {
-    flex-basis: 148px;
-  }
-
-  .workbench-document-actions {
-    padding-inline: var(--ds-space-1);
-  }
+  padding: 0;
 }
 
 @media (min-width: 561px) and (max-width: 900px) {
   .app {
-    grid-template-columns: 44px minmax(190px, 34vw) 5px minmax(0, 1fr) 0 !important;
+    grid-template-columns:
+      44px minmax(190px, 34vw) 3px minmax(0, 1fr) 0 !important;
   }
 }
 
@@ -572,85 +90,16 @@
     visibility: hidden;
   }
 
-  .app.mobile-explorer-open .sidebar {
+  .app[data-mobile-explorer-open="true"] .sidebar {
     pointer-events: auto;
     transform: translateX(0);
     transition-delay: 0s;
     visibility: visible;
   }
 
-  .mobile-sidebar-scrim {
-    position: fixed;
-    inset: 0 0 48px;
-    z-index: var(--ds-z-sticky);
-    display: block;
-    padding: 0;
-    border: 0;
-    background: var(--ds-overlay);
-    cursor: default;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.16s ease;
-  }
-
-  .app.mobile-explorer-open .mobile-sidebar-scrim {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .sidebar-resizer {
-    display: none;
-  }
-
-  .workbench-rail {
-    position: fixed;
-    inset: auto 0 0;
-    z-index: var(--ds-z-modal);
-    width: 100%;
-    height: 48px;
-    flex-direction: row;
-    justify-content: space-between;
-    padding: var(--ds-space-1) var(--ds-space-2);
-    border-top: var(--ds-border-width) solid var(--ds-sidebar-border);
-    border-right: 0;
-  }
-
-  .workbench-window-controls-safe {
-    display: none;
-  }
-
-  .workbench-rail-brand {
-    display: none;
-  }
-
-  .workbench-rail-items,
-  .workbench-rail-bottom {
-    display: flex;
-    align-items: center;
-    gap: var(--ds-space-1);
-  }
-
-  .workbench-rail-items {
-    min-width: 0;
-    overflow-x: auto;
-  }
-
-  .workbench-rail-bottom {
-    flex: 0 0 auto;
-    margin-top: 0;
-    margin-left: var(--ds-space-1);
-  }
-
-  .workbench-rail-separator {
-    width: var(--ds-border-width);
-    height: var(--ds-control-sm);
-    margin: 0 var(--ds-space-1);
-  }
-
   .main {
     min-height: 0;
     grid-column: 1;
     grid-row: 1;
-    padding-top: var(--ds-window-controls-safe-height);
   }
 }

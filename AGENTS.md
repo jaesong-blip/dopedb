@@ -11,6 +11,23 @@ Before changing TSX, CSS, Tailwind utilities, or layout, also read
 [`src/design-system/README.md`](src/design-system/README.md). DopeDB semantic
 tokens and shared primitives are authoritative.
 
+## UI migration discipline
+
+- New or changed UI uses static `tw:` Tailwind v4 utilities directly in TSX
+  with roles exposed by `src/design-system/index.css`.
+- Do not add screen-level CSS, component CSS, CSS modules, or `styles.ts`
+  objects that merely store utility strings.
+- Search the design system before creating a control. If a visual/interaction
+  pattern repeats, promote it to a real shared component or canonical primitive
+  and document it in `src/design-system/README.md`; do not copy its class list.
+- When a feature is migrated, delete its legacy selectors, stylesheet import,
+  and obsolete file in the same change. Never style the same responsibility
+  through Tailwind and legacy CSS at once.
+- CSS is reserved for the documented shell grid, data-grid/vendor integration,
+  global reset, tokens, and canonical primitives. A new exception requires an
+  explicit rationale in the design-system README.
+- Raw colors and dynamically assembled utility fragments are forbidden.
+
 ## Work safely
 
 - Inspect `git status` before editing. Preserve unrelated and untracked work.

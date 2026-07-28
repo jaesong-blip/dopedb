@@ -12,7 +12,14 @@ Rust 코어, 연결 고정 Terminal, 로컬 CLI Broker로 구성된다.
 
 UI를 수정하기 전에는 `src/design-system/README.md`를 읽는다. 새 레이아웃은
 `tw:` Tailwind utility와 semantic token을 사용하고 raw color, 동적 class
-조립, 중복 primitive를 만들지 않는다. 변경한 화면은 직접 실행해 확인한다.
+조립, 중복 primitive를 만들지 않는다. utility 문자열을 숨기는 화면별
+`styles.ts`, 새 component/screen CSS, CSS module은 만들지 않는다. 정적 utility는
+TSX에 직접 두고, 반복되는 시각·상호작용 패턴은 실제 공용 컴포넌트 또는 정본
+primitive로 `src/design-system/`에 적립한 뒤 README에 기록한다. 기능을 이관하면
+기존 selector, import, 파일을 같은 변경에서 삭제하며 Tailwind와 legacy CSS가
+같은 책임을 동시에 소유하지 않게 한다. CSS 예외는 문서화된 shell grid,
+data-grid/vendor integration, reset, token, 정본 primitive뿐이다. 변경한 화면은
+직접 실행해 확인한다.
 
 ## 아키텍처
 

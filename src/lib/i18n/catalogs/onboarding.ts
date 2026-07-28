@@ -10,10 +10,18 @@ export const onboardingCatalog = defineCatalog(
     "onboarding.databaseBody":
       "Add a PostgreSQL, MySQL, or SQLite connection. Credentials are stored in your OS credential store - never in plain text.",
     "onboarding.databaseTitle": "Connect a database",
+    "onboarding.demoAction": "Create Demo SQLite",
+    "onboarding.demoBody":
+      "Create a local sample database with customers, products, orders, and query-ready relationships.",
+    "onboarding.demoCreating": "Creating demo...",
     "onboarding.foot":
       "You can do both, or start with just a database and add the agent later.",
     "onboarding.lead":
       "A safe database client for the AI era. Your agent queries and edits databases through DopeDB, which keeps everything read-only by default, requires a human click for writes, and audits every statement.",
+    "onboarding.quickTour": "Take a quick tour",
+    "onboarding.quickTourBody":
+      "Connect a data source, browse objects, open a data editor, and run a safe query.",
+    "onboarding.startWithConnection": "Data Sources",
     "onboarding.setupAgentTools": "Set up agent tools",
     "onboarding.title": "Welcome to DopeDB",
   },
@@ -25,10 +33,18 @@ export const onboardingCatalog = defineCatalog(
     "onboarding.databaseBody":
       "PostgreSQL, MySQL, SQLite 연결을 추가하세요. 인증 정보는 OS 보안 저장소에 저장되며 평문으로 남지 않습니다.",
     "onboarding.databaseTitle": "데이터베이스 연결",
+    "onboarding.demoAction": "Demo SQLite 생성",
+    "onboarding.demoBody":
+      "고객, 상품, 주문 및 쿼리 가능한 관계가 포함된 로컬 샘플 데이터베이스를 생성합니다.",
+    "onboarding.demoCreating": "데모 생성 중...",
     "onboarding.foot":
       "둘 다 설정해도 좋고, 데이터베이스부터 연결한 뒤 에이전트를 나중에 추가해도 됩니다.",
     "onboarding.lead":
       "AI 시대를 위한 안전한 데이터베이스 클라이언트입니다. 에이전트는 DopeDB를 통해 데이터베이스를 조회하고 수정하며, 기본은 읽기 전용이고 쓰기는 사람이 클릭으로 승인하며 모든 문장을 감사 로그로 남깁니다.",
+    "onboarding.quickTour": "빠른 둘러보기",
+    "onboarding.quickTourBody":
+      "데이터 소스를 연결하고 객체를 탐색한 뒤 데이터 편집기와 안전한 쿼리를 사용해 보세요.",
+    "onboarding.startWithConnection": "데이터 소스",
     "onboarding.setupAgentTools": "에이전트 도구 설정",
     "onboarding.title": "DopeDB에 오신 것을 환영합니다",
   },

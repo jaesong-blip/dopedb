@@ -1,4 +1,7 @@
-import { Icon } from "../../components/Icon";
+import {
+  MetadataDot,
+  WorkbenchContextHeader,
+} from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import type { CatalogTable, QueryResult } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
@@ -23,21 +26,20 @@ export default function TableContextHeader({
 }) {
   const { t } = useI18n();
   return (
-    <div className="table-data-context">
-      <div className="table-data-identity">
-        <Icon name={table.kind === "view" ? "view" : "table"} />
-        <strong>{tableLabel(connection.engine, table)}</strong>
-        <span className="ds-context-badge">
-          {table.kind === "view" ? t("schema.view") : t("tables.sourceTable")}
-        </span>
-      </div>
-      <div className="ds-meta-row">
+    <WorkbenchContextHeader
+      icon={table.kind === "view" ? "view" : "table"}
+      title={tableLabel(connection.engine, table)}
+      badge={
+        table.kind === "view" ? t("schema.view") : t("tables.sourceTable")
+      }
+      metadata={
+        <>
         <span>{t("tables.cols", { count: table.columns.length })}</span>
-        <span className="ds-meta-dot" />
+        <MetadataDot />
         <span>LIMIT {pageSize.toLocaleString()}</span>
         {result && (
           <>
-            <span className="ds-meta-dot" />
+            <MetadataDot />
             <span>
               {total != null
                 ? t("tables.rowRangeTotal", {
@@ -48,11 +50,12 @@ export default function TableContextHeader({
                 : t("tables.rowRange", { from, to })}
               {result.truncated ? " (truncated)" : ""}
             </span>
-            <span className="ds-meta-dot" />
+            <MetadataDot />
             <span>{result.durationMs} ms</span>
           </>
         )}
-      </div>
-    </div>
+        </>
+      }
+    />
   );
 }

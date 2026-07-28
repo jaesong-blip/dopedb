@@ -1,5 +1,6 @@
 // Dependency-free dashboard renderer. It consumes a declarative chart spec,
 // draws bounded SVG for visual scanning, and always exposes the raw data grid.
+import type { ReactNode } from "react";
 import type { DashboardVisualization } from "../features/dashboards/domain";
 import type { QueryResult } from "../ipc/types";
 import {
@@ -9,7 +10,6 @@ import {
 } from "../lib/dashboardSpec";
 import { useI18n } from "../lib/i18n";
 import DataGrid from "./DataGrid";
-import "./DashboardVisualization.css";
 
 const VIEW_W = 800;
 const VIEW_H = 280;
@@ -97,15 +97,26 @@ function yAt(value: number, min: number, max: number) {
 
 function Axis({ min, max }: { min: number; max: number }) {
   return (
-    <g className="dashboard-axis">
+    <g>
       {[0, 1, 2, 3, 4].map((step) => {
         const ratio = step / 4;
         const y = PAD_T + PLOT_H * ratio;
         const value = max - (max - min) * ratio;
         return (
           <g key={step}>
-            <line x1={PAD_L} x2={VIEW_W - PAD_R} y1={y} y2={y} />
-            <text x={PAD_L - 8} y={y + 4} textAnchor="end">
+            <line
+              className="tw:stroke-border-subtle tw:[stroke-width:var(--ds-border-width)] tw:[vector-effect:non-scaling-stroke]"
+              x1={PAD_L}
+              x2={VIEW_W - PAD_R}
+              y1={y}
+              y2={y}
+            />
+            <text
+              className="tw:fill-muted-foreground tw:font-mono tw:text-2xs tw:tabular-nums"
+              x={PAD_L - 8}
+              y={y + 4}
+              textAnchor="end"
+            >
               {Number(value.toFixed(2)).toLocaleString()}
             </text>
           </g>
@@ -124,13 +135,19 @@ function XLabels({ result, xColumn }: { result: QueryResult; xColumn: string | n
     Math.round((i * (rows.length - 1)) / Math.max(1, count - 1)),
   );
   return (
-    <g className="dashboard-axis dashboard-x-axis">
+    <g>
       {[...new Set(indexes)].map((index) => {
         const x = PAD_L + (index / Math.max(1, rows.length - 1)) * PLOT_W;
         const textAnchor =
           index === 0 ? "start" : index === rows.length - 1 ? "end" : "middle";
         return (
-          <text key={index} x={x} y={VIEW_H - 18} textAnchor={textAnchor}>
+          <text
+            className="tw:fill-muted-foreground tw:font-mono tw:text-2xs tw:tabular-nums"
+            key={index}
+            x={x}
+            y={VIEW_H - 18}
+            textAnchor={textAnchor}
+          >
             {compact(rows[index]?.[xIndex])}
           </text>
         );
@@ -139,12 +156,28 @@ function XLabels({ result, xColumn }: { result: QueryResult; xColumn: string | n
   );
 }
 
-function Legend({ columns }: { columns: string[] }) {
+function Legend({
+  columns,
+  compactView,
+}: {
+  columns: string[];
+  compactView: boolean;
+}) {
   return (
-    <div className="dashboard-legend" aria-hidden="true">
+    <div
+      data-compact={compactView}
+      className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-3 tw:text-sm tw:text-muted-foreground tw:data-[compact=true]:gap-2 tw:data-[compact=true]:text-xs"
+      aria-hidden="true"
+    >
       {columns.map((column, index) => (
-        <span key={column}>
-          <i className={`dashboard-series-${Math.min(index, 3)}`} />
+        <span
+          className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1"
+          key={column}
+        >
+          <i
+            className="tw:h-px tw:w-3 tw:shrink-0 tw:rounded-full"
+            style={{ background: seriesColor(index) }}
+          />
           {column}
         </span>
       ))}
@@ -155,9 +188,11 @@ function Legend({ columns }: { columns: string[] }) {
 function LineChart({
   result,
   visualization,
+  compactView,
 }: {
   result: QueryResult;
   visualization: DashboardVisualization;
+  compactView: boolean;
 }) {
   const { t } = useI18n();
   const rows = chartRows(result);
@@ -166,9 +201,18 @@ function LineChart({
   const yColumns = chartableColumns(result, mapping.yColumns);
   const { min, max } = lineBounds(result, yColumns);
   return (
-    <figure className="dashboard-chart" aria-label={t("dashboard.lineChartLabel")}>
-      <Legend columns={yColumns} />
-      <svg role="img" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}>
+    <figure
+      data-compact={compactView}
+      className="tw:group tw:m-0 tw:grid tw:gap-3 tw:data-[compact=true]:gap-2"
+      aria-label={t("dashboard.lineChartLabel")}
+    >
+      <Legend columns={yColumns} compactView={compactView} />
+      <svg
+        data-compact={compactView}
+        className="tw:max-h-[360px] tw:min-h-[240px] tw:w-full tw:overflow-visible tw:rounded-md tw:border tw:border-border-subtle tw:bg-muted tw:data-[compact=true]:max-h-[220px] tw:data-[compact=true]:min-h-[176px] tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-0 tw:data-[compact=true]:bg-transparent"
+        role="img"
+        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+      >
         <title>{t("dashboard.lineChartLabel")}</title>
         <Axis min={min} max={max} />
         {yColumns.map((column, seriesIndex) => {
@@ -191,6 +235,7 @@ function LineChart({
               strokeWidth={seriesIndex === 0 ? 3 : 2}
               strokeDasharray={seriesIndex > 1 ? "6 4" : undefined}
               vectorEffect="non-scaling-stroke"
+              className="tw:transition-opacity tw:duration-150 tw:group-hover:opacity-90 tw:motion-reduce:transition-none"
             />
           );
         })}
@@ -203,9 +248,11 @@ function LineChart({
 function BarChart({
   result,
   visualization,
+  compactView,
 }: {
   result: QueryResult;
   visualization: DashboardVisualization;
+  compactView: boolean;
 }) {
   const { t } = useI18n();
   const rows = chartRows(result).slice(0, 32);
@@ -220,9 +267,18 @@ function BarChart({
   const groupWidth = PLOT_W / Math.max(1, rows.length);
   const barWidth = Math.max(2, (groupWidth * 0.72) / Math.max(1, yColumns.length));
   return (
-    <figure className="dashboard-chart" aria-label={t("dashboard.barChartLabel")}>
-      <Legend columns={yColumns} />
-      <svg role="img" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}>
+    <figure
+      data-compact={compactView}
+      className="tw:group tw:m-0 tw:grid tw:gap-3 tw:data-[compact=true]:gap-2"
+      aria-label={t("dashboard.barChartLabel")}
+    >
+      <Legend columns={yColumns} compactView={compactView} />
+      <svg
+        data-compact={compactView}
+        className="tw:max-h-[360px] tw:min-h-[240px] tw:w-full tw:overflow-visible tw:rounded-md tw:border tw:border-border-subtle tw:bg-muted tw:data-[compact=true]:max-h-[220px] tw:data-[compact=true]:min-h-[176px] tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-0 tw:data-[compact=true]:bg-transparent"
+        role="img"
+        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+      >
         <title>{t("dashboard.barChartLabel")}</title>
         <Axis min={min} max={max} />
         {rows.flatMap((row, rowIndex) =>
@@ -244,6 +300,7 @@ function BarChart({
                 height={Math.max(1, Math.abs(zeroY - valueY))}
                 fill={seriesColor(seriesIndex)}
                 rx={1}
+                className="tw:transition-opacity tw:duration-150 tw:group-hover:opacity-90 tw:motion-reduce:transition-none"
               />
             );
           }),
@@ -257,19 +314,35 @@ function BarChart({
 function MetricView({
   result,
   visualization,
+  compactView,
 }: {
   result: QueryResult;
   visualization: DashboardVisualization;
+  compactView: boolean;
 }) {
   const mapping = dashboardMapping(result, visualization);
   const columns = mapping.yColumns.length > 0 ? mapping.yColumns : result.columns.slice(0, 4);
   const row = result.rows[0] ?? [];
   return (
-    <div className="dashboard-metrics ds-card-grid">
+    <div
+      data-compact={compactView}
+      className="tw:grid tw:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] tw:gap-2 tw:data-[compact=true]:grid-cols-[repeat(auto-fit,minmax(120px,1fr))]"
+    >
       {columns.map((column) => (
-        <article className="dashboard-metric card" key={column}>
-          <span>{column}</span>
-          <strong>{metric(row[result.columns.indexOf(column)])}</strong>
+        <article
+          data-compact={compactView}
+          className="card tw:grid tw:min-w-0 tw:gap-2 tw:border-l-3 tw:border-l-primary tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-y-0 tw:data-[compact=true]:border-r-0 tw:data-[compact=true]:bg-transparent tw:data-[compact=true]:p-2 tw:data-[compact=true]:shadow-none"
+          key={column}
+        >
+          <span className="tw:overflow-hidden tw:text-sm tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+            {column}
+          </span>
+          <strong
+            data-compact={compactView}
+            className="tw:overflow-hidden tw:font-mono tw:text-heading tw:tracking-[-0.02em] tw:tabular-nums tw:text-ellipsis tw:data-[compact=true]:text-title"
+          >
+            {metric(row[result.columns.indexOf(column)])}
+          </strong>
         </article>
       ))}
     </div>
@@ -279,9 +352,29 @@ function MetricView({
 function TableFallback({ result }: { result: QueryResult }) {
   const { t } = useI18n();
   return (
-    <div className="dashboard-table-fallback">
-      <p className="muted">{t("dashboard.chartFallback")}</p>
+    <div className="tw:grid tw:min-w-0 tw:gap-2">
+      <p className="tw:m-0 tw:text-muted-foreground">
+        {t("dashboard.chartFallback")}
+      </p>
       <DataGrid result={result} />
+    </div>
+  );
+}
+
+function VisualizationFrame({
+  compactView,
+  children,
+}: {
+  compactView: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-dashboard-visualization
+      data-compact={compactView}
+      className="tw:min-w-0 tw:data-[compact=true]:min-h-0 tw:data-[compact=true]:flex-1 tw:data-[compact=true]:overflow-hidden tw:data-[compact=true]:[&_.grid-scroll]:max-h-[230px]"
+    >
+      {children}
     </div>
   );
 }
@@ -298,18 +391,18 @@ export default function DashboardVisualizationView({
   const { t } = useI18n();
   if (result.rows.length === 0) {
     return (
-      <div className={`dashboard-visualization${compact ? " compact" : ""}`}>
-        <div className="muted">{t("dashboard.noRows")}</div>
-      </div>
+      <VisualizationFrame compactView={compact}>
+        <div className="tw:text-muted-foreground">{t("dashboard.noRows")}</div>
+      </VisualizationFrame>
     );
   }
   const kind = resolvedDashboardKind(result, visualization);
   const mapping = dashboardMapping(result, visualization);
   if (kind !== "table" && mapping.yColumns.length === 0) {
     return (
-      <div className={`dashboard-visualization${compact ? " compact" : ""}`}>
+      <VisualizationFrame compactView={compact}>
         <TableFallback result={result} />
-      </div>
+      </VisualizationFrame>
     );
   }
   if (
@@ -317,33 +410,47 @@ export default function DashboardVisualizationView({
     chartableColumns(result, mapping.yColumns).length === 0
   ) {
     return (
-      <div className={`dashboard-visualization${compact ? " compact" : ""}`}>
+      <VisualizationFrame compactView={compact}>
         <TableFallback result={result} />
-      </div>
+      </VisualizationFrame>
     );
   }
   if (kind === "table") {
     return (
-      <div className={`dashboard-visualization${compact ? " compact" : ""}`}>
+      <VisualizationFrame compactView={compact}>
         <DataGrid result={result} />
-      </div>
+      </VisualizationFrame>
     );
   }
   return (
-    <div className={`dashboard-visualization${compact ? " compact" : ""}`}>
+    <VisualizationFrame compactView={compact}>
       {kind === "metric" ? (
-        <MetricView result={result} visualization={visualization} />
+        <MetricView
+          result={result}
+          visualization={visualization}
+          compactView={compact}
+        />
       ) : kind === "line" ? (
-        <LineChart result={result} visualization={visualization} />
+        <LineChart
+          result={result}
+          visualization={visualization}
+          compactView={compact}
+        />
       ) : (
-        <BarChart result={result} visualization={visualization} />
+        <BarChart
+          result={result}
+          visualization={visualization}
+          compactView={compact}
+        />
       )}
       {!compact && (
-        <details className="dashboard-raw-data">
-          <summary>{t("dashboard.rawData")}</summary>
+        <details className="tw:mt-4 tw:[&_.grid-scroll]:max-h-[360px]">
+          <summary className="tw:mb-2 tw:w-fit tw:cursor-pointer tw:rounded-xs tw:text-sm tw:text-muted-foreground tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring">
+            {t("dashboard.rawData")}
+          </summary>
           <DataGrid result={result} />
         </details>
       )}
-    </div>
+    </VisualizationFrame>
   );
 }

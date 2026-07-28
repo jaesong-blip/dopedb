@@ -7,10 +7,10 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon, type IconName } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { WorkbenchPane } from "../../design-system/components/Workbench";
 import { auditSnapshotQuery, auditVerdictQuery, historyQuery, qk } from "../../lib/queries";
 import { fullTime, relTime } from "../../lib/relTime";
 import { useI18n } from "../../lib/i18n";
-import "./activity.css";
 
 const CAP = 200;
 
@@ -33,6 +33,30 @@ function statusIcon(status: string): IconName {
 function short(hash: string | null): string {
   if (!hash) return "∅";
   return hash.length > 12 ? `${hash.slice(0, 12)}…` : hash;
+}
+
+function actionTone(action: string) {
+  const value = action.toLowerCase();
+  if (value.includes("approve")) return "success";
+  if (value.includes("execute")) return "primary";
+  if (value.includes("reject") || value.includes("blocked")) return "danger";
+  return "neutral";
+}
+
+function originTone(origin: string) {
+  if (origin === "agent") return "primary";
+  if (origin === "migration") return "warning";
+  return "neutral";
+}
+
+function statusTone(status: string) {
+  if (status === "ok" || status === "success" || status === "done") {
+    return "success";
+  }
+  if (status === "error" || status === "blocked" || status === "failed") {
+    return "danger";
+  }
+  return "neutral";
 }
 
 export default function Activity({
@@ -139,100 +163,125 @@ export default function Activity({
           ? t("activity.auditChainBrokenAt", { time: relTime(tamperedTs) })
           : t("activity.auditChainBroken")
         : t("activity.auditVerified");
-  const integrityTone = integrityError || chainBroken ? "ds-tone-danger" : "ds-tone-trust";
+  const integrityDanger = !!integrityError || chainBroken;
   const integrityIcon: IconName = integrityError || chainBroken ? "alert" : verdict ? "check" : "info";
   const busy = history.isFetching || verdictResult.isFetching || snapshot.isFetching;
 
   return (
-    <div className="screen activity">
+    <WorkbenchPane>
+      <div className="tw:mx-auto tw:flex tw:min-h-0 tw:w-full tw:max-w-[1120px] tw:flex-1 tw:flex-col tw:gap-4 tw:overflow-auto tw:p-3">
       <details
-        className={`activity-integrity ds-card ${integrityTone}`}
+        data-danger={integrityDanger}
+        className="tw:group tw:overflow-hidden tw:rounded-lg tw:border tw:border-border-subtle tw:bg-card tw:data-[danger=true]:border-danger tw:data-[danger=true]:bg-danger-muted"
         open={auditOpen}
         onToggle={handleAuditToggle}
       >
-        <summary id="activity-audit-summary">
-          <Icon name={integrityIcon} />
-          <span className="activity-integrity-copy">
+        <summary
+          id="activity-audit-summary"
+          className="tw:grid tw:min-h-control-xl tw:cursor-pointer tw:list-none tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:p-3 tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring tw:[&::-webkit-details-marker]:hidden tw:max-[760px]:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)]"
+        >
+          <Icon
+            name={integrityIcon}
+            data-danger={integrityDanger}
+            className="tw:text-title tw:text-primary tw:data-[danger=true]:text-danger"
+          />
+          <span className="tw:grid tw:min-w-0 tw:gap-1">
             <strong
+              className="tw:text-ui tw:leading-ui tw:text-foreground"
               role={integrityError || chainBroken ? "alert" : "status"}
               aria-live="polite"
             >
               {integrityTitle}
             </strong>
             {integrityError && (
-              <span className="muted">
+              <span className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
                 {t("activity.auditVerifyError", { error: integrityError })}
               </span>
             )}
           </span>
-          <span className="activity-integrity-action">
+          <span className="tw:inline-flex tw:items-center tw:gap-1 tw:text-sm tw:whitespace-nowrap tw:text-muted-foreground tw:max-[760px]:col-start-2">
             {auditEntries
               ? t("activity.auditDetailsCount", { count: auditEntries.length })
               : t("activity.auditDetails")}
-            <Icon name="chevronRight" className="activity-integrity-chevron" />
+            <Icon
+              name="chevronRight"
+              className="tw:transition-transform tw:group-open:rotate-90"
+            />
           </span>
         </summary>
 
         <section
-          className="activity-audit-panel"
+          className="tw:grid tw:max-h-[min(48vh,480px)] tw:gap-3 tw:overflow-y-auto tw:border-t tw:border-border-subtle tw:bg-card tw:p-3 tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
           role="region"
           aria-labelledby="activity-audit-summary"
           tabIndex={0}
         >
-          <div className="activity-section-heading">
+          <div className="tw:grid tw:min-w-0 tw:gap-1 tw:[&>*]:m-0">
             <h3>{t("activity.auditTitle")}</h3>
-            <p className="muted">{t("activity.auditRecordsDescription")}</p>
+            <p className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+              {t("activity.auditRecordsDescription")}
+            </p>
           </div>
 
           {auditDetailsError && (
-            <div className="error">
+            <div className="tw:text-ui tw:text-danger">
               {t("activity.auditLoadError", { error: auditDetailsError })}
             </div>
           )}
           {auditDetailsLoading && auditEntries === null && <Skeleton lines={4} />}
           {!auditDetailsLoading && auditEntries?.length === 0 && !auditDetailsError && (
-            <div className="muted empty">{t("activity.auditEmpty")}</div>
+            <div className="tw:text-ui tw:leading-relaxed tw:text-muted-foreground">
+              {t("activity.auditEmpty")}
+            </div>
           )}
 
           {auditEntries && auditEntries.length > 0 && (
-            <ul className="activity-audit-list">
+            <ul className="tw:m-0 tw:flex tw:list-none tw:flex-col tw:gap-2 tw:p-0">
               {auditEntries.map((entry) => (
                 <li
                   key={entry.id}
-                  className={`activity-audit-row${entry.id === tamperedId ? " tampered" : ""}`}
+                  data-tampered={entry.id === tamperedId}
+                  className="tw:border-b tw:border-border-subtle tw:pb-3 tw:data-[tampered=true]:border-danger"
                 >
                   {entry.id === tamperedId && (
-                    <div className="activity-tampered-label error">
+                    <div className="tw:mb-2 tw:flex tw:items-center tw:gap-1 tw:font-semibold tw:text-danger">
                       <Icon name="alert" />
                       {t("activity.auditTampered")}
                     </div>
                   )}
-                  <div className="activity-audit-top">
-                    <span className={`badge action action-${entry.action}`}>
+                  <div className="tw:mb-2 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                    <span
+                      data-tone={actionTone(entry.action)}
+                      className="badge tw:normal-case tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=primary]:border-primary tw:data-[tone=primary]:text-primary tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success"
+                    >
                       {entry.action}
                     </span>
                     {entry.kind.toLowerCase() !== entry.action.toLowerCase() && (
                       <span className="badge kind">{entry.kind}</span>
                     )}
-                    <span className="muted" title={fullTime(entry.ts)}>
+                    <span className="tw:text-muted-foreground" title={fullTime(entry.ts)}>
                       {relTime(entry.ts)}
                     </span>
                     {entry.approvedBy && (
-                      <span className="muted">
+                      <span className="tw:text-muted-foreground">
                         {t("activity.auditBy", { name: entry.approvedBy })}
                       </span>
                     )}
                   </div>
                   {entry.agentPrompt && (
-                    <div className="activity-audit-prompt muted" title={entry.agentPrompt}>
+                    <div className="tw:break-words tw:text-muted-foreground" title={entry.agentPrompt}>
                       “{entry.agentPrompt.length > 120
                         ? `${entry.agentPrompt.slice(0, 120)}…`
-                        : entry.agentPrompt}”
+                      : entry.agentPrompt}”
                     </div>
                   )}
-                  <code className="activity-audit-sql">{entry.sql}</code>
-                  {entry.error && <div className="error">{entry.error}</div>}
-                  <div className="activity-audit-chain muted">
+                  <code className="tw:my-1 tw:block tw:rounded-sm tw:bg-muted tw:px-2 tw:py-0.5 tw:font-mono tw:text-sm tw:whitespace-pre-wrap tw:break-words">
+                    {entry.sql}
+                  </code>
+                  {entry.error && (
+                    <div className="tw:text-ui tw:text-danger">{entry.error}</div>
+                  )}
+                  <div className="tw:break-words tw:font-mono tw:text-xs tw:text-muted-foreground">
                     <span title={entry.prevHash ?? ""}>
                       {t("activity.auditPrev", { hash: short(entry.prevHash) })}
                     </span>
@@ -254,11 +303,16 @@ export default function Activity({
         </section>
       </details>
 
-      <section className="activity-queries" aria-labelledby="activity-query-title">
-        <div className="activity-section-row">
-          <div className="activity-section-heading">
+      <section
+        className="tw:grid tw:min-w-0 tw:gap-3"
+        aria-labelledby="activity-query-title"
+      >
+        <div className="tw:flex tw:items-start tw:justify-between tw:gap-3">
+          <div className="tw:grid tw:min-w-0 tw:gap-1 tw:[&>*]:m-0">
             <h3 id="activity-query-title">{t("activity.queries")}</h3>
-            <p className="muted">{t("activity.queriesDescription")}</p>
+            <p className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+              {t("activity.queriesDescription")}
+            </p>
           </div>
           <button className="btn small" onClick={refresh} disabled={busy}>
             {busy ? "..." : t("common.refresh")}
@@ -266,9 +320,9 @@ export default function Activity({
         </div>
 
         {rows.length > 0 && (
-          <div className="activity-filters">
+          <div className="tw:flex tw:items-center tw:gap-2 tw:max-[760px]:flex-col tw:max-[760px]:items-stretch">
             <input
-              className="activity-filter-text"
+              className="tw:min-w-0 tw:flex-1"
               type="search"
               placeholder={t("activity.filterSql")}
               value={text}
@@ -300,13 +354,13 @@ export default function Activity({
         )}
 
         {historyError && (
-          <div className="error">
+          <div className="tw:text-ui tw:text-danger">
             {t("activity.historyLoadError", { error: historyError })}
           </div>
         )}
         {historyLoading && !historyError && <Skeleton lines={5} />}
         {!historyLoading && !historyError && rows.length === 0 && (
-          <div className="muted empty">
+          <div className="tw:text-ui tw:leading-relaxed tw:text-muted-foreground">
             {t("activity.empty", {
               name: connection.name || t("app.thisConnection"),
             })}
@@ -314,8 +368,8 @@ export default function Activity({
         )}
 
         {shown.length > 0 && (
-          <div className="activity-table-scroll">
-            <table className="activity-query-table">
+          <div className="tw:min-w-0 tw:overflow-x-auto">
+            <table className="tw:w-full tw:border-collapse tw:text-ui tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-3 tw:[&_th]:py-2 tw:[&_th]:text-left tw:[&_th]:text-xs tw:[&_th]:font-semibold tw:[&_th]:tracking-[0.04em] tw:[&_th]:whitespace-nowrap tw:[&_th]:text-muted-foreground tw:[&_th]:uppercase tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-3 tw:[&_td]:py-2 tw:[&_td]:align-middle tw:[&_.num]:text-right tw:max-[760px]:min-w-[720px]">
               <thead>
                 <tr>
                   <th>{t("activity.executed")}</th>
@@ -331,7 +385,7 @@ export default function Activity({
                 {shown.map((row) => (
                   <tr
                     key={row.id}
-                    className="activity-query-row"
+                    className="tw:cursor-pointer tw:hover:bg-muted tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
                     role="button"
                     tabIndex={0}
                     onClick={() => load(row.sql)}
@@ -343,11 +397,14 @@ export default function Activity({
                     }}
                     title={t("activity.loadTitle")}
                   >
-                    <td className="nowrap muted" title={fullTime(row.executedAt)}>
+                    <td className="tw:whitespace-nowrap tw:text-muted-foreground" title={fullTime(row.executedAt)}>
                       {relTime(row.executedAt)}
                     </td>
                     <td>
-                      <span className={`badge origin origin-${row.origin}`}>
+                      <span
+                        data-tone={originTone(row.origin)}
+                        className="badge tw:data-[tone=primary]:border-primary tw:data-[tone=primary]:text-primary tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
+                      >
                         {row.origin}
                       </span>
                     </td>
@@ -356,7 +413,8 @@ export default function Activity({
                     </td>
                     <td>
                       <span
-                        className={`badge status icon-only-badge status-${row.status}`}
+                        data-tone={statusTone(row.status)}
+                        className="badge icon-only-badge tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success"
                         title={row.error ? `${row.status}: ${row.error}` : row.status}
                         aria-label={row.error ? `${row.status}: ${row.error}` : row.status}
                         role="img"
@@ -366,8 +424,10 @@ export default function Activity({
                     </td>
                     <td className="num">{row.rowCount ?? "—"}</td>
                     <td className="num">{duration(row.durationMs)}</td>
-                    <td className="activity-query-sql" title={row.sql}>
-                      <code>{firstLine(row.sql)}</code>
+                    <td className="tw:w-full tw:max-w-0" title={row.sql}>
+                      <code className="tw:block tw:overflow-hidden tw:font-mono tw:text-sm tw:text-ellipsis tw:whitespace-nowrap">
+                        {firstLine(row.sql)}
+                      </code>
                     </td>
                   </tr>
                 ))}
@@ -377,15 +437,18 @@ export default function Activity({
         )}
 
         {rows.length > 0 && filtered.length === 0 && (
-          <div className="muted empty">{t("activity.noMatches")}</div>
+          <div className="tw:text-ui tw:leading-relaxed tw:text-muted-foreground">
+            {t("activity.noMatches")}
+          </div>
         )}
 
         {filtered.length > CAP && (
-          <div className="muted activity-query-note">
+          <div className="tw:text-sm tw:text-muted-foreground">
             {t("activity.matching", { cap: CAP, count: filtered.length })}
           </div>
         )}
       </section>
-    </div>
+      </div>
+    </WorkbenchPane>
   );
 }

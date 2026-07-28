@@ -80,7 +80,7 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
 
   if (statusQuery.isPending) {
     return (
-      <section className="monitoring-access ds-panel">
+      <section className="ds-panel tw:mt-2 tw:grid tw:gap-3">
         <Skeleton lines={2} />
       </section>
     );
@@ -88,14 +88,17 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
 
   if (statusQuery.error || !statusQuery.data) {
     return (
-      <section className="monitoring-access ds-panel ds-tone-danger" role="alert">
-        <div className="monitoring-access-head">
+      <section
+        className="ds-panel tw:mt-2 tw:grid tw:gap-3 tw:border-danger"
+        role="alert"
+      >
+        <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[640px]:flex-col">
           <div className="ds-title-line">
             <Icon name="alert" />
             <h3>{t("safety.monitoringTitle")}</h3>
           </div>
         </div>
-        <p className="error">
+        <p className="tw:text-ui tw:text-danger">
           {t("safety.monitoringError", { error: errMessage(statusQuery.error) })}
         </p>
       </section>
@@ -104,7 +107,6 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
 
   const status = statusQuery.data;
   const postgres = status.engine === "postgres";
-  const tone = status.roleGranted ? "ds-tone-trust" : "ds-tone-risk";
   const coverageLabel = status.roleGranted
     ? t("safety.monitoringCoverageFull")
     : status.coverage === "basic"
@@ -118,34 +120,45 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
   const busy = propose.isPending || apply.isPending || reject.isPending;
 
   return (
-    <section className={`monitoring-access ds-panel ${tone}`}>
-      <div className="monitoring-access-head">
-        <div>
+    <section
+      data-tone={status.roleGranted ? "trust" : "risk"}
+      className="ds-panel tw:mt-2 tw:grid tw:gap-3 tw:data-[tone=risk]:border-warning tw:data-[tone=trust]:border-success"
+    >
+      <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[640px]:flex-col">
+        <div className="tw:min-w-0">
           <div className="ds-title-line">
             <Icon name="database" />
             <h3>{t("safety.monitoringTitle")}</h3>
           </div>
-          <p className="muted">{t("safety.monitoringBody")}</p>
+          <p className="tw:mt-1 tw:mb-0 tw:max-w-[680px] tw:text-ui tw:leading-relaxed tw:text-muted-foreground">
+            {t("safety.monitoringBody")}
+          </p>
         </div>
-        <span className={`badge ${status.roleGranted ? "status-ok" : "risk-medium"}`}>
+        <span
+          data-granted={status.roleGranted}
+          className="badge tw:data-[granted=false]:border-warning tw:data-[granted=false]:text-warning tw:data-[granted=true]:border-success tw:data-[granted=true]:text-success"
+        >
           {coverageLabel}
         </span>
       </div>
 
-      <div className="monitoring-access-state">
+      <div className="tw:grid tw:gap-1 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-relaxed">
         {status.currentUser && (
           <span>
-            {t("safety.monitoringUser")} <code>{status.currentUser}</code>
+            {t("safety.monitoringUser")}{" "}
+            <code className="tw:ml-1 tw:text-foreground">{status.currentUser}</code>
           </span>
         )}
-        <span className="muted">{coverageNote}</span>
+        <span className="tw:text-muted-foreground">{coverageNote}</span>
         {postgres && !status.canManage && !status.roleGranted && (
-          <span className="muted">{t("safety.monitoringAdminHint")}</span>
+          <span className="tw:text-muted-foreground">
+            {t("safety.monitoringAdminHint")}
+          </span>
         )}
       </div>
 
       {postgres && status.roleAvailable && !proposal && (
-        <div className="monitoring-access-actions ds-action-row ds-control-row">
+        <div className="ds-action-row ds-control-row tw:items-center">
           {status.roleGranted ? (
             <ConfirmButton
               className="btn danger small"
@@ -177,7 +190,7 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
       )}
 
       {proposal && (
-        <div className="monitoring-operation-review">
+        <div className="tw:grid tw:gap-2 tw:border-t tw:border-border-subtle tw:pt-3">
           <div className="ds-title-line">
             <Icon name="key" />
             <strong>
@@ -187,16 +200,23 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
             </strong>
             <span className="badge risk-high">{t("approval.riskHigh")}</span>
           </div>
-          <code className="monitoring-operation-sql">{proposal.sql};</code>
-          <div className="monitoring-operation-hash muted">
-            {t("approval.payloadHash")} <code>{proposal.payloadHash}</code>
+          <code className="tw:block tw:overflow-x-auto tw:bg-muted tw:p-2 tw:text-sm tw:whitespace-nowrap tw:text-foreground">
+            {proposal.sql};
+          </code>
+          <div className="tw:min-w-0 tw:text-xs tw:text-muted-foreground">
+            {t("approval.payloadHash")}{" "}
+            <code className="tw:break-all tw:text-foreground">
+              {proposal.payloadHash}
+            </code>
           </div>
           {proposal.confirmationPhrase && (
-            <label className="monitoring-operation-confirmation">
+            <label className="tw:grid tw:gap-2 tw:text-sm">
               <span>
-                {t("approval.confirmationPrompt")} <code>{proposal.confirmationPhrase}</code>
+                {t("approval.confirmationPrompt")}{" "}
+                <code>{proposal.confirmationPhrase}</code>
               </span>
               <input
+                className="tw:w-full tw:max-w-[320px] tw:font-mono"
                 value={confirmation}
                 onChange={(event) => setConfirmation(event.target.value)}
                 placeholder={proposal.confirmationPhrase}
@@ -233,7 +253,9 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
       )}
 
       {postgres && !status.roleAvailable && (
-        <p className="muted">{t("safety.monitoringRoleUnavailable")}</p>
+        <p className="tw:text-muted-foreground">
+          {t("safety.monitoringRoleUnavailable")}
+        </p>
       )}
     </section>
   );

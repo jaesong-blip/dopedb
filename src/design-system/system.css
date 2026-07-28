@@ -42,8 +42,7 @@ h1 {
   letter-spacing: -0.02em;
 }
 
-h2,
-.ds-title {
+h2 {
   font-size: var(--ds-font-size-title);
   line-height: var(--ds-line-tight);
   font-weight: 650;
@@ -90,59 +89,6 @@ h3 {
 
 .sidebar {
   background: var(--ds-bg-sidebar);
-}
-
-.tab-body,
-.settings-body,
-.main-view,
-.editor-pane {
-  padding: var(--ds-pane-pad);
-}
-
-.table-data-head,
-.activity-head,
-.updates-head,
-.schema-head,
-.agent-head,
-.safety-hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--ds-space-3);
-}
-
-.muted {
-  color: var(--ds-text-muted);
-}
-
-.error {
-  color: var(--ds-danger);
-  font-size: var(--ds-font-size-ui);
-}
-
-.empty {
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-ui);
-  line-height: var(--ds-line-body);
-}
-
-.label {
-  font-size: var(--ds-font-size-sm);
-}
-
-.result-sql,
-.tables code,
-.activity-audit-sql,
-.mig-script,
-.mig-down pre,
-.mig-ver,
-.chg,
-.activity-query-table code,
-.context-sql,
-.act-ts,
-.act-detail {
-  font-family: var(--ds-font-mono);
-  font-size: var(--ds-font-size-sm);
 }
 
 .app :where(
@@ -232,17 +178,6 @@ h3 {
 .btn.primary:hover:not(:disabled) {
   background: var(--ds-primary-hover);
   border-color: transparent;
-}
-
-.btn.secondary {
-  border-color: transparent;
-  background: var(--ds-secondary);
-  color: var(--ds-secondary-foreground);
-  box-shadow: none;
-}
-
-.btn.secondary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ds-secondary) 80%, var(--ds-foreground));
 }
 
 .btn.ghost {
@@ -422,7 +357,6 @@ h3 {
 }
 
 .badge.status-error,
-.badge.status-blocked,
 .badge.risk-high {
   color: var(--ds-danger);
   border-color: color-mix(in srgb, var(--ds-danger) var(--ds-status-border-mix), var(--ds-border-subtle));
@@ -528,15 +462,6 @@ h3 {
   color: var(--ds-text-subtle);
 }
 
-.ds-command-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--ds-space-2);
-  min-width: 0;
-}
-
 /* Every horizontal control cluster shares one explicit row height. Screen CSS can
    choose --ds-row-control-size without depending on stylesheet import order; rows
    that do not choose one fall back to the default field size at the use site. */
@@ -544,8 +469,7 @@ h3 {
   button,
   input:not([type="checkbox"]):not([type="radio"]),
   select,
-  summary,
-  .ds-filter-token
+  summary
 ) {
   height: var(
     --ds-control-local-size,
@@ -557,33 +481,9 @@ h3 {
   );
 }
 
-.ds-data-toolbar {
-  --ds-row-control-size: var(--ds-control-field-sm);
-  min-height: var(--ds-control-lg);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--ds-space-2);
-  padding: var(--ds-space-1) 0;
-  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
-}
-
-.ds-toolbar-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--ds-action-gap);
-}
-
 .ds-toolbar-spacer {
   flex: 1;
   min-width: var(--ds-space-3);
-}
-
-.ds-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: var(--ds-space-2);
 }
 
 .ds-card-stack {
@@ -629,29 +529,6 @@ h3 {
   background: var(--ds-trust-bg);
 }
 
-.ds-tone-risk {
-  border-color: var(--ds-risk-border);
-  background: var(--ds-risk-bg);
-}
-
-.ds-tone-danger {
-  border-color: var(--ds-danger-border);
-  background: var(--ds-danger-bg);
-}
-
-.ds-card-row.ds-tone-risk > .icon,
-.ds-card-stack.ds-tone-risk .ds-card-title-row > .icon {
-  color: var(--ds-warning);
-}
-
-.ds-card-row.ds-tone-danger > .icon,
-.ds-card-stack.ds-tone-danger .ds-card-title-row > .icon {
-  color: var(--ds-danger);
-}
-
-.ds-toolbar,
-.grid-toolbar,
-.form-actions,
 .ds-action-row {
   display: flex;
   align-items: center;
@@ -659,58 +536,21 @@ h3 {
   gap: var(--ds-space-2);
 }
 
-.form-actions:not(.sql-actions),
 .ds-action-row {
   justify-content: flex-end;
 }
 
-:where(.form-actions:not(.sql-actions), .ds-action-row)
-  .btn:not(.danger):not(.danger-ghost):not(.primary) {
+.ds-action-row .btn:not(.danger):not(.danger-ghost):not(.primary) {
   order: 10;
 }
 
-:where(.form-actions:not(.sql-actions), .ds-action-row)
-  .btn.primary {
+.ds-action-row .btn.primary {
   order: 20;
 }
 
-:where(.form-actions:not(.sql-actions), .ds-action-row)
-  .btn:is(.danger, .danger-ghost) {
+.ds-action-row .btn:is(.danger, .danger-ghost) {
   order: -10;
   margin-right: auto;
-}
-
-.ds-filter-strip {
-  --ds-row-control-size: var(--ds-control-field-sm);
-  min-height: var(--ds-control-lg);
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  padding: var(--ds-space-1) 0;
-  border-bottom: var(--ds-border-width) solid var(--ds-border-subtle);
-}
-
-.ds-filter-token {
-  max-width: 100%;
-  min-width: 0;
-  min-height: var(--ds-control-sm);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-space-2);
-  padding: 0 var(--ds-space-2);
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-surface-0);
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ds-filter-token strong {
-  color: var(--ds-text);
-  font-weight: 650;
 }
 
 .app :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
@@ -733,13 +573,8 @@ h3 {
   line-height: var(--ds-line-ui);
 }
 
-.form input:not([type="checkbox"]):not([type="radio"]),
-.form select,
-.form textarea,
 .table-filter,
-.filter-input,
-.row-field-input input,
-.safety-number input {
+.filter-input {
   width: 100%;
 }
 
@@ -766,37 +601,6 @@ h3 {
   border-color: var(--ds-focus);
   box-shadow: var(--ds-focus-ring);
   outline: none;
-}
-
-.tabs {
-  --ds-row-control-size: var(--ds-control-md);
-  background: var(--ds-background);
-}
-
-.tab {
-  min-height: var(--ds-control-md);
-  color: var(--ds-text-muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tab:hover {
-  color: var(--ds-text);
-}
-
-.tab.active {
-  color: var(--ds-text);
-  border-bottom-color: var(--ds-accent-text);
-}
-
-.ds-surface {
-  min-width: 0;
-  padding: var(--ds-space-4);
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-lg);
-  background: var(--ds-surface-0);
-  box-shadow: var(--ds-shadow-panel);
 }
 
 .ds-object-row {
@@ -829,10 +633,6 @@ h3 {
 
 /* Orca's thin neutral scrollbar recipe for dense application surfaces. */
 .scrollbar-sleek,
-.tab-body,
-.settings-body,
-.main-view,
-.editor-pane,
 .workbench-document-tabs {
   scrollbar-color: var(--ds-border-strong) transparent;
   scrollbar-width: thin;
@@ -840,10 +640,6 @@ h3 {
 
 :where(
   .scrollbar-sleek,
-  .tab-body,
-  .settings-body,
-  .main-view,
-  .editor-pane,
   .workbench-document-tabs
 )::-webkit-scrollbar {
   width: var(--ds-space-2);
@@ -852,10 +648,6 @@ h3 {
 
 :where(
   .scrollbar-sleek,
-  .tab-body,
-  .settings-body,
-  .main-view,
-  .editor-pane,
   .workbench-document-tabs
 )::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
@@ -866,32 +658,9 @@ h3 {
 
 :where(
   .scrollbar-sleek,
-  .tab-body,
-  .settings-body,
-  .main-view,
-  .editor-pane,
   .workbench-document-tabs
 )::-webkit-scrollbar-track {
   background: transparent;
-}
-
-.loading::before {
-  content: "";
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: var(--ds-icon-text-gap-tight);
-  vertical-align: -2px;
-  border: var(--ds-border-width-strong) solid var(--ds-text-muted);
-  border-top-color: transparent;
-  border-radius: var(--ds-radius-pill);
-  animation: ds-spin 0.7s linear infinite;
-}
-
-@keyframes ds-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .icon {
@@ -934,24 +703,6 @@ h3 {
   gap: 0;
 }
 
-.label-with-help {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-space-1);
-}
-
-/* Inside a form label the default 20px help dot is taller than the sm text line,
-   inflating that label's row and knocking two-column fields (e.g. provider/driver)
-   out of vertical alignment — shrink it to fit within the text line box. */
-.label-with-help > .ui-help {
-  width: 16px;
-  height: 16px;
-}
-
-.label-with-help > .ui-help .icon {
-  font-size: 11px;
-}
-
 .ds-attention-stack {
   display: flex;
   flex: 0 0 auto;
@@ -989,14 +740,6 @@ h3 {
   color: var(--ds-success);
 }
 
-.ds-attention-badge.ds-tone-risk {
-  color: var(--ds-warning);
-}
-
-.ds-attention-badge.ds-tone-danger {
-  color: var(--ds-danger);
-}
-
 .ds-attention-badge:hover {
   border-color: var(--ds-border-strong);
   background: var(--ds-surface-elevated);
@@ -1013,111 +756,9 @@ h3 {
   white-space: nowrap;
 }
 
-/* Floating surfaces use Orca's solid popover role and single elevation level. */
-.ddl-modal,
-.toast {
-  background: var(--ds-popover);
-  color: var(--ds-popover-foreground);
-  background-clip: padding-box;
-}
-
-.ddl-overlay {
-  background: var(--ds-overlay);
-}
-
 .ui-help:hover {
   background: var(--ds-surface-1);
   color: var(--ds-text);
-}
-
-.form {
-  max-width: 520px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ds-space-3);
-}
-
-.form-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-3);
-}
-
-.form-head h2 {
-  margin: 0;
-}
-
-.form-import-row {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.form label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ds-space-1);
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-sm);
-}
-
-.form .row .btn.small:not(.icon-only) {
-  --ds-control-local-size: var(--ds-control-field);
-  height: var(--ds-control-field);
-  min-height: var(--ds-control-field);
-}
-
-.form label.check {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--ds-space-2);
-  color: var(--ds-text);
-  font-size: var(--ds-font-size-ui);
-}
-
-.form .row {
-  display: flex;
-  gap: var(--ds-space-3);
-}
-
-.form .grow {
-  flex: 1;
-}
-
-.form .port {
-  width: 88px;
-}
-
-.form-msg {
-  color: var(--ds-text-muted);
-  font-size: var(--ds-font-size-ui);
-}
-
-.form-msg.ok {
-  color: var(--ds-success);
-  font-weight: 500;
-}
-
-.editor-box {
-  overflow: hidden;
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-surface-0);
-}
-
-.editor-box .cm-editor {
-  background: var(--ds-surface-0);
-}
-
-.approval-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--ds-space-2);
-}
-
-.note {
-  font-size: var(--ds-font-size-sm);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1131,38 +772,43 @@ h3 {
   }
 }
 
-@media (max-width: 760px) {
-  .table-data-head,
-  .activity-head,
-  .updates-head,
-  .schema-head,
-  .agent-head,
-  .safety-hero {
-    align-items: stretch;
-    flex-direction: column;
+@keyframes skeleton-reveal {
+  to {
+    opacity: 1;
   }
+}
 
-  .form-actions:not(.sql-actions),
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: 0 50%;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--ds-motion-distance-sm));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 760px) {
   .ds-action-row {
     align-items: stretch;
   }
 
-  :where(.form-actions:not(.sql-actions), .ds-action-row)
-    .btn:not(.icon-only) {
+  .ds-action-row .btn:not(.icon-only) {
     width: 100%;
   }
 
-  :where(.form-actions:not(.sql-actions), .ds-action-row)
-    .btn:is(.danger, .danger-ghost) {
+  .ds-action-row .btn:is(.danger, .danger-ghost) {
     margin-right: 0;
-  }
-
-  .form .row {
-    flex-direction: column;
-  }
-
-  .form .port {
-    width: 100%;
   }
 }
 

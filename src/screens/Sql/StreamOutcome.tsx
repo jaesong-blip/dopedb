@@ -3,6 +3,10 @@
 import type { SqlStreamViewState } from "../../features/queries/domain";
 import DataGrid from "../../components/DataGrid";
 import ResultToolbar from "../../components/ResultToolbar";
+import {
+  ResultMeta,
+  SqlSnippet,
+} from "../../design-system/components/Workbench";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
 
@@ -20,9 +24,12 @@ export default function StreamOutcome({
     stream.phase === "connecting" || stream.phase === "streaming";
   const partial = stream.phase !== "complete";
   return (
-    <div className="results" aria-live="polite">
-      <div className="result-meta muted">
-        <code className="result-sql">{sql}</code>
+    <div
+      className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col"
+      aria-live="polite"
+    >
+      <ResultMeta>
+        <SqlSnippet>{sql}</SqlSnippet>
         {" · "}
         {running
           ? t("sql.running")
@@ -48,7 +55,7 @@ export default function StreamOutcome({
             />
           </>
         )}
-      </div>
+      </ResultMeta>
       {stream.columns.length > 0 && (
         <DataGrid
           result={{
@@ -59,6 +66,7 @@ export default function StreamOutcome({
             durationMs: stream.durationMs ?? 0,
           }}
           rowSource={stream.rowSource}
+          surface="workbench"
         />
       )}
     </div>

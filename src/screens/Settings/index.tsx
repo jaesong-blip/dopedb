@@ -4,13 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import InfoTip from "../../components/InfoTip";
+import {
+  Field,
+  SelectInput,
+} from "../../design-system/components/FormControls";
 import { useI18n } from "../../lib/i18n";
 import AgentTools from "./AgentTools";
 import CliSettings from "./Cli";
 import RetiredChatArchive from "./RetiredChatArchive";
 import Safety from "./Safety";
 import Updates from "./Updates";
-import "./settings.css";
 
 export type SettingsSection =
   | "agent-tools"
@@ -64,56 +67,54 @@ export default function Settings({
   }, []);
 
   return (
-    <div className="settings">
-      <aside className="settings-nav">
-        <div className="settings-head">
+    <div
+      data-settings
+      className="tw:grid tw:h-full tw:min-h-0 tw:grid-cols-[192px_minmax(0,1fr)] tw:@max-[700px]:grid-cols-1 tw:@max-[700px]:grid-rows-[auto_minmax(0,1fr)]"
+    >
+      <aside className="tw:flex tw:flex-col tw:gap-0.5 tw:border-r tw:border-border-subtle tw:p-2 tw:@max-[700px]:flex-row tw:@max-[700px]:items-center tw:@max-[700px]:overflow-x-auto tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">
+        <div className="tw:flex tw:items-center tw:justify-between tw:px-2 tw:pt-2 tw:pb-3 tw:@max-[700px]:shrink-0 tw:@max-[700px]:gap-2 tw:@max-[700px]:py-1">
           <strong>{t("common.settings")}</strong>
           <button className="btn small" onClick={close}>
             {t("common.done")}
           </button>
         </div>
-        <button
-          className={section === "agent-tools" ? "snav active" : "snav"}
-          onClick={() => setSection("agent-tools")}
-        >
-          {t("settings.agentTools")}
-        </button>
-        <button
-          className={section === "cli" ? "snav active" : "snav"}
-          onClick={() => setSection("cli")}
-        >
-          {t("settings.cli")}
-        </button>
-        <button
-          className={section === "archive" ? "snav active" : "snav"}
-          onClick={() => setSection("archive")}
-        >
-          {t("settings.retiredArchive")}
-        </button>
-        <button
-          className={section === "safety" ? "snav active" : "snav"}
-          onClick={() => setSection("safety")}
-          disabled={!connection}
-          title={connection ? undefined : t("settings.selectConnectionTitle")}
-        >
-          {t("settings.safety")}
-          {connection ? ` · ${connection.name || t("app.unnamed")}` : ""}
-        </button>
-        <button
-          className={section === "language" ? "snav active" : "snav"}
-          onClick={() => setSection("language")}
-        >
-          {t("settings.languageTitle")}
-        </button>
-        <button
-          className={section === "updates" ? "snav active" : "snav"}
-          onClick={() => setSection("updates")}
-        >
-          {t("settings.updates")}
-        </button>
+        {(
+          [
+            ["agent-tools", t("settings.agentTools"), false],
+            ["cli", t("settings.cli"), false],
+            ["archive", t("settings.retiredArchive"), false],
+            [
+              "safety",
+              `${t("settings.safety")}${
+                connection ? ` · ${connection.name || t("app.unnamed")}` : ""
+              }`,
+              !connection,
+            ],
+            ["language", t("settings.languageTitle"), false],
+            ["updates", t("settings.updates"), false],
+          ] satisfies ReadonlyArray<
+            readonly [SettingsSection, string, boolean]
+          >
+        ).map(([id, label, disabled]) => (
+          <button
+            key={id}
+            type="button"
+            data-active={section === id}
+            className="tw:shrink-0 tw:cursor-pointer tw:rounded-sm tw:border-0 tw:bg-transparent tw:px-3 tw:py-2 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:whitespace-nowrap tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
+            onClick={() => setSection(id)}
+            disabled={disabled}
+            title={
+              id === "safety" && !connection
+                ? t("settings.selectConnectionTitle")
+                : undefined
+            }
+          >
+            {label}
+          </button>
+        ))}
       </aside>
 
-      <div className="settings-body">
+      <div className="tw:min-w-0 tw:overflow-auto tw:p-[var(--ds-pane-pad)] tw:[container-name:settings-body] tw:[container-type:inline-size] tw:@max-[700px]:p-3">
         {section === "agent-tools" && <AgentTools />}
         {section === "cli" && <CliSettings />}
         {section === "archive" && <RetiredChatArchive connection={connection} />}
@@ -121,25 +122,29 @@ export default function Settings({
           <Updates initialUpdate={availableUpdate} onChecked={onUpdateChecked} />
         )}
         {section === "language" && (
-          <div className="screen form">
-            <div className="settings-title-row">
+          <div className="tw:grid tw:max-w-[560px] tw:gap-4 tw:p-4">
+            <div className="tw:inline-flex tw:items-center tw:gap-2">
               <h2>{t("settings.languageTitle")}</h2>
               <InfoTip label={t("settings.languageBody")} />
             </div>
-            <label>
-              {t("language.label")}
-              <select value={lang} onChange={(e) => setLang(e.target.value as typeof lang)}>
+            <Field label={t("language.label")}>
+              <SelectInput
+                value={lang}
+                onChange={(e) => setLang(e.target.value as typeof lang)}
+              >
                 <option value="ko">{t("language.korean")}</option>
                 <option value="en">{t("language.english")}</option>
-              </select>
-            </label>
+              </SelectInput>
+            </Field>
           </div>
         )}
         {section === "safety" &&
           (connection ? (
             <Safety connectionId={connection.id} />
           ) : (
-            <div className="muted">{t("settings.selectConnection")}</div>
+            <div className="tw:text-muted-foreground">
+              {t("settings.selectConnection")}
+            </div>
           ))}
       </div>
     </div>

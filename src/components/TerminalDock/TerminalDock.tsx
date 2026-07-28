@@ -7,6 +7,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
@@ -58,6 +59,10 @@ import {
   type TerminalSessionScope,
   type TerminalDockState,
 } from "../../features/terminals/state";
+import {
+  InlineNotice,
+  LoadingLabel,
+} from "../../design-system/components/Status";
 import { Icon } from "../Icon";
 import TerminalContextBar from "./TerminalContextBar";
 import TerminalSurface from "./TerminalSurface";
@@ -66,7 +71,6 @@ import TerminalTabs, {
   type TerminalPopup,
 } from "./TerminalTabs";
 import { useI18n } from "../../lib/i18n";
-import "./terminalDock.css";
 
 const OUTPUT_REPLAY_BYTES = 512 * 1024;
 const ACTIVE_SESSION_STORAGE = "terminalActiveSessionByScope";
@@ -80,6 +84,14 @@ interface TerminalDockProps {
   width: number;
   onWidthChange: (width: number) => void;
   onClose: () => void;
+}
+
+function TerminalEmpty({ children }: { children: ReactNode }) {
+  return (
+    <div className="tw:m-auto tw:flex tw:w-[min(440px,calc(100%_-_var(--ds-space-6)))] tw:flex-col tw:items-center tw:gap-3 tw:self-center tw:text-center tw:text-muted-foreground tw:[&>.icon]:size-7 tw:[&>.icon]:text-foreground tw:[&>strong]:text-title tw:[&>strong]:text-foreground tw:[&>p]:m-0 tw:[&>p]:max-w-[420px] tw:[&>p]:leading-body">
+      {children}
+    </div>
+  );
 }
 
 function restoreTerminalDockState(
@@ -608,13 +620,15 @@ export default function TerminalDock({
     <>
       <aside
         ref={dockRef}
-        className={`terminal-dock${maximized ? " maximized" : ""}`}
+        className="terminal-dock tw:relative tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:border-l tw:border-border-subtle tw:bg-background tw:data-[maximized=true]:fixed tw:data-[maximized=true]:inset-0 tw:data-[maximized=true]:z-[var(--ds-z-modal)] tw:data-[maximized=true]:h-dvh tw:data-[maximized=true]:w-screen tw:data-[maximized=true]:border-0 tw:max-[901px]:data-[maximized=false]:fixed tw:max-[901px]:data-[maximized=false]:inset-y-0 tw:max-[901px]:data-[maximized=false]:right-0 tw:max-[901px]:data-[maximized=false]:z-[var(--ds-z-modal)] tw:max-[901px]:data-[maximized=false]:w-[min(520px,calc(100vw_-_44px))] tw:max-[901px]:data-[maximized=false]:shadow-popover tw:max-[561px]:data-[maximized=false]:bottom-12 tw:max-[561px]:data-[maximized=false]:w-screen"
+        data-maximized={maximized}
         aria-label={t("terminal.title")}
         role={overlay || maximized ? "dialog" : undefined}
         aria-modal={overlay || maximized || undefined}
       >
         <div
-          className="terminal-dock-resizer"
+          className="terminal-dock-resizer tw:absolute tw:inset-y-0 tw:-left-[3px] tw:z-[var(--ds-z-raised)] tw:w-[7px] tw:cursor-col-resize tw:hover:bg-ring/30 tw:active:bg-ring/30 tw:data-[maximized=true]:hidden tw:max-[901px]:hidden"
+          data-maximized={maximized}
           role="separator"
           aria-orientation="vertical"
           aria-label={t("app.dragResize")}
@@ -649,19 +663,24 @@ export default function TerminalDock({
         />
 
         {state.error && (
-          <div className="terminal-notice danger" role="alert">
-            <Icon name="alert" />
-            <span>{state.error}</span>
-            <button
-              type="button"
-              className="btn small icon-only icon-xs"
-              onClick={() => dispatch({ type: "error", error: null })}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-            >
-              <Icon name="close" />
-            </button>
-          </div>
+          <InlineNotice
+            tone="danger"
+            icon="alert"
+            role="alert"
+            action={
+              <button
+                type="button"
+                className="btn small icon-only icon-xs"
+                onClick={() => dispatch({ type: "error", error: null })}
+                title={t("common.close")}
+                aria-label={t("common.close")}
+              >
+                <Icon name="close" />
+              </button>
+            }
+          >
+            {state.error}
+          </InlineNotice>
         )}
 
         {active && (
@@ -675,13 +694,13 @@ export default function TerminalDock({
           />
         )}
 
-        <div className="terminal-dock-body">
+        <div className="tw:relative tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:bg-background">
           {state.loading ? (
-            <div className="terminal-empty">
-              <span className="loading">{t("common.loading")}</span>
-            </div>
+            <TerminalEmpty>
+              <LoadingLabel>{t("common.loading")}</LoadingLabel>
+            </TerminalEmpty>
           ) : visibleSessions.length === 0 ? (
-            <div className="terminal-empty">
+            <TerminalEmpty>
               <Icon name="terminal" />
               <strong>{t("terminal.emptyTitle")}</strong>
               <p>{t("terminal.emptyBody")}</p>
@@ -689,7 +708,7 @@ export default function TerminalDock({
                 creatingProfile={state.creatingProfile}
                 onCreate={(profile) => void createSession(profile)}
               />
-            </div>
+            </TerminalEmpty>
           ) : active ? (
             <TerminalSurface
               key={active.id}
@@ -699,9 +718,7 @@ export default function TerminalDock({
               onError={reportError}
             />
           ) : (
-            <div className="terminal-empty">
-              <span className="muted">{t("terminal.noSelection")}</span>
-            </div>
+            <TerminalEmpty>{t("terminal.noSelection")}</TerminalEmpty>
           )}
         </div>
       </aside>

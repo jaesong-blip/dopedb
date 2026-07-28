@@ -6,7 +6,6 @@ import { Icon, type IconName } from "../../../components/Icon";
 import InfoTip from "../../../components/InfoTip";
 import { errMessage } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
-import "./updates.css";
 
 type UpdateState =
   | "idle"
@@ -140,9 +139,9 @@ export default function Updates({
                 : t("updates.idle");
 
   return (
-    <div className="screen updates">
-      <div className="updates-head">
-        <div className="updates-title-row">
+    <div className="tw:w-full tw:max-w-[720px] tw:p-4 tw:max-[760px]:max-w-none">
+      <div className="tw:mb-3 tw:flex tw:items-start tw:justify-between tw:gap-4 tw:max-[760px]:flex-col tw:max-[760px]:items-stretch">
+        <div className="tw:inline-flex tw:items-center tw:gap-2">
           <h2>{t("updates.title")}</h2>
           <InfoTip label={t("updates.description")} />
         </div>
@@ -151,13 +150,13 @@ export default function Updates({
         </button>
       </div>
 
-      <div className="card update-card">
-        <div className="update-row">
-          <span className="muted">{t("updates.installedVersion")}</span>
+      <div className="card tw:flex tw:flex-col tw:gap-3">
+        <div className="tw:flex tw:min-h-control-md tw:items-center tw:justify-between tw:gap-4 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
+          <span className="tw:text-muted-foreground">{t("updates.installedVersion")}</span>
           <strong>{currentVersion}</strong>
         </div>
-        <div className="update-row">
-          <span className="muted">{t("updates.latestRelease")}</span>
+        <div className="tw:flex tw:min-h-control-md tw:items-center tw:justify-between tw:gap-4 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
+          <span className="tw:text-muted-foreground">{t("updates.latestRelease")}</span>
           <strong>
             {update
               ? update.version
@@ -166,10 +165,11 @@ export default function Updates({
                 : t("updates.none")}
           </strong>
         </div>
-        <div className="update-row">
-          <span className="muted">{t("updates.status")}</span>
+        <div className="tw:flex tw:min-h-control-md tw:items-center tw:justify-between tw:gap-4 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
+          <span className="tw:text-muted-foreground">{t("updates.status")}</span>
           <span
-            className={`badge update-state icon-only-badge update-${state}`}
+            data-state={state}
+            className="badge icon-only-badge tw:text-muted-foreground tw:data-[state=available]:border-success tw:data-[state=available]:text-success tw:data-[state=ready]:border-success tw:data-[state=ready]:text-success tw:data-[state=error]:border-danger tw:data-[state=error]:text-danger"
             title={stateLabel}
             aria-label={stateLabel}
             role="img"
@@ -179,11 +179,14 @@ export default function Updates({
         </div>
 
         {state === "downloading" && (
-          <div className="update-progress">
-            <div className="bar">
-              <span style={{ width: `${progress ?? 12}%` }} />
+          <div className="tw:my-1 tw:grid tw:gap-2">
+            <div className="tw:h-2 tw:w-full tw:overflow-hidden tw:rounded-full tw:border tw:border-border-subtle tw:bg-muted">
+              <span
+                className="tw:block tw:h-full tw:min-w-3 tw:rounded-full tw:bg-primary tw:transition-[width] tw:duration-200"
+                style={{ width: `${progress ?? 12}%` }}
+              />
             </div>
-            <div className="muted">
+            <div className="tw:text-muted-foreground">
               {progress == null
                 ? t("updates.received", {
                     amount: bytes(downloaded) ?? t("updates.downloadingFallback"),
@@ -194,15 +197,23 @@ export default function Updates({
         )}
 
         {releaseNotes && (
-          <details className="release-notes">
-            <summary>{t("updates.releaseNotes")}</summary>
-            <pre>{releaseNotes}</pre>
+          <details className="tw:border-t tw:border-border-subtle tw:pt-3">
+            <summary className="tw:cursor-pointer tw:text-muted-foreground">
+              {t("updates.releaseNotes")}
+            </summary>
+            <pre className="tw:mt-2 tw:mb-0 tw:font-mono tw:text-sm tw:whitespace-pre-wrap tw:text-foreground">
+              {releaseNotes}
+            </pre>
           </details>
         )}
 
-        {error && <div className="error">{t("updates.checkFailed", { error })}</div>}
+        {error && (
+          <div className="tw:text-ui tw:text-danger">
+            {t("updates.checkFailed", { error })}
+          </div>
+        )}
 
-        <div className="form-actions ds-control-row">
+        <div className="ds-action-row ds-control-row">
           <button
             className="btn primary"
             disabled={!update || state === "checking" || state === "downloading"}

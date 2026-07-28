@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 
 const MIN = 180;
 const MAX = 520;
-export const DEFAULT_SIDEBAR_WIDTH = 240;
+export const DEFAULT_SIDEBAR_WIDTH = 304;
 
 function clamp(width: number) {
   return Math.min(MAX, Math.max(MIN, width));

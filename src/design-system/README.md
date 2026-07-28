@@ -16,8 +16,9 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
 | 색상·타이포그래피·간격·radius·elevation | `src/design-system/tokens.css` |
 | Tailwind theme bridge와 진입점 | `src/design-system/index.css` |
 | 버튼·배지·카드·폼·toolbar·상태 | `src/design-system/system.css` |
+| 반복되는 React UI primitive | `src/design-system/components/` |
 | 앱 shell과 workbench 레이아웃 | `src/styles.css` |
-| 새 화면 고유 배치 | TSX의 `tw:` utility, 필요할 때 인접 `styles.ts` |
+| 새 화면 고유 배치 | TSX에 직접 작성한 정적 `tw:` utility |
 
 컴포넌트 코드에 토큰이 이미 있는데 hex/rgb 값을 직접 추가하지 않는다. 새 역할이
 필요하면 `tokens.css`에 surface/foreground 쌍으로 정의하고 사용한다.
@@ -31,11 +32,17 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   회귀를 확인한 뒤 별도 변경에서만 활성화를 검토한다.
 - `@theme inline`은 semantic token만 노출한다. `tw:bg-[#111]`,
   `tw:text-[rgb(...)]` 같은 raw color utility는 금지한다.
-- utility class는 정적인 완전한 문자열이어야 한다. 런타임 조각 조합 대신 상태별
-  완성 문자열이나 명시적인 style map을 사용한다.
+- utility class는 TSX에 보이는 정적인 완전한 문자열이어야 한다. 런타임 조각
+  조합과 utility 문자열만 감추는 `styles.ts`/style map은 사용하지 않는다.
+- 같은 시각·상호작용 계약이 반복되면 class 문자열을 복사하지 않고
+  `src/design-system/components/`의 실제 공용 컴포넌트나 `system.css`의 정본
+  primitive로 승격하고 이 문서에 등록한다.
 - `.btn`, `.badge`, `.ds-panel`, `.ds-toolbar` 같은 상호작용 primitive는
   `system.css`가 계속 소유한다. utility로 같은 primitive를 화면마다 재구현하지
   않는다.
+- 새 screen/component CSS와 CSS module은 만들지 않는다. CSS 추가는 token,
+  reset, 정본 primitive, 문서화된 shell grid/data-grid/vendor integration
+  경계에만 허용한다.
 - 전용 CSS를 이전하면 import와 파일을 같은 변경에서 삭제한다. 호환용 wrapper나
   중복 selector를 남기지 않는다.
 - 데스크톱은 `@tailwindcss/vite`, 두 Next 앱은 `@tailwindcss/postcss`를
@@ -118,6 +125,38 @@ Elevation은 세 단계만 허용한다.
 
 ## 컴포넌트
 
+### React primitive
+
+- `ToolWindowHeader`: Database Explorer, Agent, provider 패널의 고정 헤더와
+  우측 action 슬롯.
+- `ToolWindowSection`: dense tool window 안의 제목 있는 명령 그룹.
+- `ToolWindowAction`: provider/demo/object launcher의 icon-label-trailing 행.
+- `Field`, `TextInput`, `SelectInput`, `CheckboxField`: label, focus, disabled
+  상태를 함께 소유하는 dense form control.
+- `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.
+- `EnvironmentBadge`: dev/staging/prod 의미색과 대문자 표기를 한곳에서 소유.
+- `TreeSectionButton`, `TreeSearch`: explorer section keyboard toggle과 dense
+  object search.
+- `PopupMenu`, `PopupMenuItem`, `PopupMenuCheckbox`: 평평한 popover menu
+  surface와 keyboard-focus 가능한 command/check row.
+- `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchContextHeader`,
+  `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터 편집기·SQL·문서 화면의
+  평평한 IDE pane, command row, object context, empty state 계약.
+- `ResultMeta`, `SqlSnippet`: 결과 pane의 고정 metadata bar와 축약 SQL 표기.
+- `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
+  action cluster, sticky footer 계약.
+- `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.
+- `StatusDot`, `LoadingLabel`, `InlineNotice`: lifecycle 상태 점, 비동기 진행
+  label, warning/danger inline 상태 행.
+- `SettingsGroup`: 설정·정책 화면의 제목, 중립 border, dense spacing을 공유하는
+  control group surface.
+
+툴윈도우 primitive는
+[`src/design-system/components/ToolWindow.tsx`](components/ToolWindow.tsx)에
+있고 form과 tab primitive는 같은 디렉터리의 `FormControls.tsx`,
+`PanelTabs.tsx`에 있다. 같은 형태는 화면에서 utility 문자열로 다시 만들지
+않는다.
+
 ### 버튼
 
 기본 클래스는 `.btn`이며 Orca의 outline 버튼 역할이다.
@@ -125,7 +164,6 @@ Elevation은 세 단계만 허용한다.
 | 조합 | 용도 |
 | --- | --- |
 | `.btn.primary` | 저장·확인·실행 등 한 흐름의 단일 affirmative action |
-| `.btn.secondary` | primary 옆의 낮은 강조 action |
 | `.btn` | toolbar 또는 독립 outline action |
 | `.btn.ghost` | icon button과 list-row action |
 | `.btn.link` | 문장 안의 inline action |
@@ -155,7 +193,6 @@ icon action은 투명한 surface로 시작하고 hover/active에서만 중립 �
 
 - `.card` / `.ds-card`: 반복 항목과 작은 정보 그룹
 - `.ds-panel`: 넓은 작업 surface
-- `.ds-surface`: 자유 형태의 공통 surface
 - `.grid-panel`, `.grid-scroll`: 데이터 결과 surface
 
 Surface는 기본적으로 `card + border + rounded-lg + no shadow`다. floating surface만
@@ -167,16 +204,16 @@ Surface는 기본적으로 `card + border + rounded-lg + no shadow`다. floating
 - `.badge.kind`: 선택보다 약한 category 표기
 - `.badge.status-ok`, `.badge.risk-low`: 성공/trust
 - `.badge.risk-medium`: warning/review
-- `.badge.status-error`, `.badge.status-blocked`, `.badge.risk-high`: 오류/차단
+- `.badge.status-error`, `.badge.risk-high`: 오류/차단
 - `.badge.nowhere`: 실행 위치가 없어 실제로 차단된 상태
 
 ### Form
 
 - label과 control은 `space-2` 수준의 간격을 유지한다.
 - input/select/textarea는 `--ds-input` surface를 사용한다.
-- 오류는 `aria-invalid`와 inline `.error`로 표시한다.
+- 오류는 `aria-invalid`, `role="alert"`, semantic danger utility로 표시한다.
 - 사용자가 읽거나 재시도해야 하는 오류는 toast로만 숨기지 않는다.
-- form action은 destructive → secondary → primary 순으로 배치한다.
+- form action은 destructive → neutral → primary 순으로 배치한다.
 
 ### 리스트 행
 
@@ -193,27 +230,28 @@ Surface는 기본적으로 `card + border + rounded-lg + no shadow`다. floating
 
 - `.ds-workbench-head`, `.ds-workbench-title`, `.ds-title-line`
 - `.ds-meta-row`, `.ds-meta-dot`
-- `.ds-command-group`
 
 Toolbar:
 
-- `.ds-toolbar`, `.ds-data-toolbar`
-- `.ds-toolbar-group`, `.ds-toolbar-spacer`
-- `.ds-filter-strip`, `.ds-filter-token`
+- `.ds-toolbar-spacer`
 - `.ds-control-row`
 - `ToolbarMenu`, `.ds-menu-popover`, `.ds-menu-item`
 
 Agent/safety:
 
-- `.ds-card-grid`, `.ds-card-stack`, `.ds-card-title-row`, `.ds-card-row`
-- `.ds-tone-trust`, `.ds-tone-risk`, `.ds-tone-danger`
+- `.ds-card-stack`, `.ds-card-title-row`, `.ds-card-row`
+- `.ds-tone-trust`
 - `.ds-attention-stack`, `.ds-attention-badge`
 
 Utility:
 
-- `.muted`, `.error`, `.empty`, `.label`, `.note`
-- `.loading`, `.icon`, `.ui-help`, `.icon-only-badge`
+- `.icon`, `.ui-help`, `.icon-only-badge`
 - `.scrollbar-sleek`
+
+텍스트 색·크기·간격 같은 단일 속성을 `.muted`, `.error`, `.loading`, `.form`
+같은 범용 클래스에 다시 모으지 않는다. 화면에서는 semantic `tw:` utility를
+사용하고, 비동기 진행처럼 구조와 접근성 계약이 있는 경우 `LoadingLabel` 같은
+React primitive로 승격한다.
 
 ## UX 규칙
 
@@ -290,11 +328,16 @@ Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하�
 ## 새 UI를 추가할 때
 
 1. 가장 가까운 sibling screen을 먼저 확인한다.
-2. `system.css`의 primitive와 `tw:` utility를 조합한다.
-3. 색상은 theme role로만 선택하고 raw arbitrary color를 쓰지 않는다.
-4. 새 token은 세 화면 이상에서 같은 의미로 반복될 때만 추가한다.
-5. 한 사용자 흐름은 `data-primary-flow` 경계 안에 primary action 하나만 둔다.
-6. `pnpm build`를 실행하고 실제 앱에서 변경한 화면과 좁은 창을 확인한다.
+2. `system.css`와 `src/design-system/components/`의 기존 primitive를 먼저
+   검색한다.
+3. 화면 고유 배치는 TSX의 정적 `tw:` utility로 구현한다.
+4. 같은 class/interaction 묶음이 반복되면 실제 공용 컴포넌트로 승격하고 이
+   문서의 컴포넌트 목록에 추가한다.
+5. 이관한 기능의 legacy selector, import, CSS 파일을 같은 변경에서 삭제한다.
+6. 색상은 theme role로만 선택하고 raw arbitrary color를 쓰지 않는다.
+7. 새 token은 세 화면 이상에서 같은 의미로 반복될 때만 추가한다.
+8. 한 사용자 흐름은 `data-primary-flow` 경계 안에 primary action 하나만 둔다.
+9. `pnpm build`를 실행하고 실제 앱에서 변경한 화면과 좁은 창을 확인한다.
 
 참고 구현:
 

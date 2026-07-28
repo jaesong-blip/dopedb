@@ -34,7 +34,7 @@ export default function WorkbenchRail({
 
   return (
     <nav
-      className="workbench-rail"
+      className="workbench-rail tw:z-[var(--ds-z-raised)] tw:flex tw:min-w-0 tw:flex-col tw:items-center tw:border-r tw:border-sidebar-border tw:bg-card tw:px-0.5 tw:pt-1 tw:pb-2 tw:text-muted-foreground tw:max-[560px]:fixed tw:max-[560px]:right-0 tw:max-[560px]:bottom-0 tw:max-[560px]:left-0 tw:max-[560px]:z-[var(--ds-z-modal)] tw:max-[560px]:h-12 tw:max-[560px]:w-full tw:max-[560px]:flex-row tw:max-[560px]:justify-between tw:max-[560px]:border-t tw:max-[560px]:border-r-0 tw:max-[560px]:px-2 tw:max-[560px]:py-1"
       aria-label={t("app.workbenchNavigation")}
       onKeyDown={(event) => {
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
@@ -54,18 +54,19 @@ export default function WorkbenchRail({
       }}
     >
       <div
-        className="workbench-window-controls-safe"
+        className="tw:hidden"
         data-window-controls-safe-zone
         data-tauri-drag-region="deep"
         aria-hidden="true"
       />
-      <div className="workbench-rail-brand">d</div>
-      <div className="workbench-rail-items">
+      <div className="tw:hidden">d</div>
+      <div className="tw:grid tw:justify-items-center tw:gap-2 tw:max-[560px]:min-w-0 tw:max-[560px]:flex tw:max-[560px]:items-center tw:max-[560px]:gap-1 tw:max-[560px]:overflow-x-auto">
         {items.map((item) => (
           <button
             key={item.id}
             type="button"
-            className={`workbench-rail-button${area === item.id ? " active" : ""}`}
+            data-active={area === item.id}
+            className="workbench-rail-button tw:relative tw:grid tw:size-control-lg tw:cursor-pointer tw:place-items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:p-0 tw:text-[length:var(--ds-icon-md)] tw:text-inherit tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-40 tw:hover:bg-primary/10 tw:hover:text-primary tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
             onClick={() => onArea(item.id)}
             title={t(item.label)}
             aria-label={t(item.label)}
@@ -78,11 +79,12 @@ export default function WorkbenchRail({
           </button>
         ))}
       </div>
-      <div className="workbench-rail-bottom">
+      <div className="tw:mt-auto tw:grid tw:justify-items-center tw:gap-2 tw:max-[560px]:ml-1 tw:max-[560px]:mt-0 tw:max-[560px]:flex tw:max-[560px]:shrink-0 tw:max-[560px]:items-center tw:max-[560px]:gap-1">
         {account}
         <button
           type="button"
-          className={`workbench-rail-button${settingsOpen ? " active" : ""}`}
+          data-active={settingsOpen}
+          className="workbench-rail-button tw:relative tw:grid tw:size-control-lg tw:cursor-pointer tw:place-items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:p-0 tw:text-[length:var(--ds-icon-md)] tw:text-inherit tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-40 tw:hover:bg-primary/10 tw:hover:text-primary tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
           onClick={onSettings}
           title={t("common.settings")}
           aria-label={t("common.settings")}

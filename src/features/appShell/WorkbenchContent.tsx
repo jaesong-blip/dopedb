@@ -4,7 +4,10 @@ import type { RefObject } from "react";
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
 import WorkbenchDocumentStrip from "../../components/WorkbenchDocumentStrip";
+import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
+import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
+import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { SqlDocument } from "../sqlDocuments/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import type { CatalogTable, SafetySettings } from "../../ipc/types";
@@ -32,6 +35,7 @@ type Props = {
   selected: ConnectionProfile | null;
   activeSchemaGroup: SchemaConnectionGroup | null;
   editing: EditingConnection;
+  connectionPreset: ConnectionLaunchPreset | null;
   loadError: string | null;
   connections: ConnectionProfile[];
   safety: SafetySettings | null;
@@ -51,11 +55,16 @@ type Props = {
   onUpdateChecked: (update: Update | null) => void;
   onRefreshSafety: () => void;
   onCloseSchemaDiff: () => void;
-  onConnectionSaved: (profile: ConnectionProfile) => Promise<void>;
+  onConnectionSaved: (
+    profile: ConnectionProfile,
+    closeEditor: boolean,
+  ) => Promise<void>;
   onCancelEditing: () => void;
   onRetryConnections: () => void;
   onNewConnection: () => void;
   onOpenAgentTools: () => void;
+  onCreateDemoDatabase: () => void;
+  creatingDemo: boolean;
   onSelectConnection: (id: string) => void;
   onActivateDocument: (id: string) => void;
   onCloseDocument: (id: string) => void;
@@ -80,6 +89,7 @@ export default function WorkbenchContent(props: Props) {
     selected,
     activeSchemaGroup,
     editing,
+    connectionPreset,
     loadError,
     connections,
     safety,
@@ -122,9 +132,11 @@ export default function WorkbenchContent(props: Props) {
 
   if (editing !== null) {
     return (
-      <div className="editor-pane">
+      <div className="tw:h-full tw:min-h-0">
         <ConnectionForm
+          key={`connection-${connectionPreset?.engine ?? "default"}-${connectionPreset?.provider ?? "auto"}-${connectionPreset?.source ?? "standard"}`}
           initial={editing === "new" ? null : editing}
+          preset={editing === "new" ? connectionPreset : null}
           onSaved={props.onConnectionSaved}
           onCancel={props.onCancelEditing}
         />
@@ -134,8 +146,8 @@ export default function WorkbenchContent(props: Props) {
 
   if (loadError) {
     return (
-      <div className="placeholder">
-        <div className="error">
+      <div className="tw:flex tw:h-full tw:min-w-0 tw:flex-col tw:items-center tw:justify-center tw:gap-2 tw:bg-muted tw:p-[var(--ds-pane-pad)] tw:text-center tw:leading-relaxed tw:[&>*]:max-w-[min(520px,100%)]">
+        <div className="tw:break-words tw:text-ui tw:text-danger" role="alert">
           {t("app.couldNotLoadConnections", { error: loadError })}
         </div>
         <button className="btn" onClick={props.onRetryConnections}>
@@ -150,49 +162,57 @@ export default function WorkbenchContent(props: Props) {
       <Onboarding
         onNewConnection={props.onNewConnection}
         onOpenAgentTools={props.onOpenAgentTools}
+        onCreateDemoDatabase={props.onCreateDemoDatabase}
+        creatingDemo={props.creatingDemo}
       />
     );
   }
 
   const safetyFallback = safetyError ? (
-    <div className="error">
+    <div className="tw:text-ui tw:text-danger" role="alert">
       {t("app.loadSafetyFailed", { error: safetyError })}{" "}
       <button className="btn small" onClick={props.onRetrySafety}>
         {t("app.retry")}
       </button>
     </div>
   ) : (
-    <div className="muted">{t("app.loading")}</div>
+    <div className="tw:text-muted-foreground">{t("app.loading")}</div>
   );
 
   return (
     <>
       {selected && (
-        <header className="main-head ds-workbench-head" data-tauri-drag-region="deep">
+        <header
+          className="main-head ds-workbench-head tw:min-h-[calc(var(--ds-control-lg)+var(--ds-space-2))] tw:shrink-0 tw:items-center tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2"
+          data-tauri-drag-region="deep"
+        >
           <div className="ds-workbench-title">
-            <div className="ds-title-line app-title-line">
+            <div className="ds-title-line tw:flex-nowrap">
               <EngineMark engine={selected.engine} />
               <strong>{selected.name || t("app.unnamed")}</strong>
-              {selected.env && (
-                <span className={`env-chip env-${selected.env}`}>{selected.env}</span>
-              )}
+              {selected.env ? (
+                <EnvironmentBadge environment={selected.env} />
+              ) : null}
               <span className="ds-meta-dot" />
-              <span className="app-title-meta">{selected.database}</span>
+              <span className="tw:min-w-0 tw:overflow-hidden tw:text-sm tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                {selected.database}
+              </span>
               {area === "workspace" && selectedTable && (
                 <>
                   <span className="ds-meta-dot" />
-                  <span className="app-title-meta">
+                  <span className="tw:min-w-0 tw:overflow-hidden tw:text-sm tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
                     {tableLabel(selected.engine, selectedTable)}
                   </span>
                 </>
               )}
             </div>
           </div>
-          <div className="main-head-actions ds-control-row">
+          <div className="ds-control-row tw:ml-auto tw:shrink-0">
             <button
               ref={terminalButtonRef}
               type="button"
-              className={`btn small icon-only main-terminal-toggle${showTerminalDock ? " active" : ""}`}
+              data-main-terminal-toggle
+              className="btn small icon-only"
               onClick={props.onOpenTerminal}
               title={t(showTerminalDock ? "terminal.focusPanel" : "terminal.title")}
               aria-label={t(showTerminalDock ? "terminal.focusPanel" : "terminal.title")}
@@ -217,7 +237,11 @@ export default function WorkbenchContent(props: Props) {
         />
       )}
 
-      <section className={`tab-body workbench-canvas area-${area}`}>
+      <section
+        data-area={area}
+        data-workbench-pane
+        className="scrollbar-sleek workbench-canvas tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background tw:p-[var(--ds-pane-pad)] tw:shadow-[inset_0_var(--ds-border-width)_0_var(--ds-border-subtle)] tw:max-[760px]:p-3"
+      >
         {!selected ? (
           <ConnectionPicker
             connections={connections}
@@ -232,16 +256,15 @@ export default function WorkbenchContent(props: Props) {
             onOpenAgent={props.onOpenTerminal}
           />
         ) : !activeDocument ? (
-          <div className="workbench-empty">
-            <Icon name={supportsSql ? "play" : "list"} />
-            <span className="muted">
+          <WorkbenchEmptyState icon={supportsSql ? "play" : "list"}>
+            <span>
               {supportsSql ? t("tabs.sql") : t("tabs.documents")}
             </span>
             <button className="btn primary" onClick={props.onNewQuery}>
               <Icon name="plus" />
               {supportsSql ? t("tabs.sql") : t("tabs.documents")}
             </button>
-          </div>
+          </WorkbenchEmptyState>
         ) : activeDocument.kind === "data" ? (
           safety ? (
             <TableData

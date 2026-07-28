@@ -14,7 +14,6 @@ import {
 } from "../lib/export";
 import { useI18n } from "../lib/i18n";
 import { useToast } from "./Toast";
-import "./ResultToolbar.css";
 
 export default function ResultToolbar({
   columns,
@@ -41,7 +40,7 @@ export default function ResultToolbar({
   const source = () =>
     rowSource ? iterateSqlStreamRows(rowSource) : (rows ?? []);
   return (
-    <span className="result-tools">
+    <span className="tw:ml-2 tw:inline-flex tw:items-center tw:gap-2 tw:align-middle">
       <button
         className="btn small ghost"
         title={t("results.copyTitle")}
@@ -85,7 +84,11 @@ export default function ResultToolbar({
       >
         {scopeLabel ? t("results.exportJson", { scope: scopeLabel }) : "JSON"}
       </button>
-      {disabled && <span className="muted">{t("results.partialExportUnavailable")}</span>}
+      {disabled && (
+        <span className="tw:text-muted-foreground">
+          {t("results.partialExportUnavailable")}
+        </span>
+      )}
     </span>
   );
 }

@@ -2,13 +2,13 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Icon } from "./Icon";
 import InfoTip from "./InfoTip";
+import { PanelTabs } from "../design-system/components/PanelTabs";
 import { fullTime } from "../lib/relTime";
 import {
   useOperationActivity,
   type OperationActivity,
 } from "../lib/operationActivity";
 import { useI18n, type I18nKey } from "../lib/i18n";
-import "./AgentActivityView.css";
 
 type AgentView = "activity" | "context" | "audit";
 
@@ -47,13 +47,13 @@ function Timeline({
   onSelect: (item: OperationActivity) => void;
 }) {
   return (
-    <ul className="agent-feed agent-timeline">
+    <ul className="tw:m-0 tw:flex tw:max-h-full tw:list-none tw:flex-col tw:gap-0.5 tw:overflow-auto tw:p-0">
       {feed.map((item) => (
         <li
           key={item.id}
-          className={`act ${item.error ? "error" : "result"}${
-            selected?.id === item.id ? " sel" : ""
-          }`}
+          data-error={!!item.error}
+          data-selected={selected?.id === item.id}
+          className="tw:grid tw:cursor-pointer tw:grid-cols-[80px_150px_28px_minmax(0,1fr)] tw:items-baseline tw:gap-2 tw:rounded-sm tw:px-2 tw:py-1 tw:text-ui tw:data-[selected=true]:bg-selection tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:@max-[760px]:grid-cols-[68px_112px_24px_minmax(0,1fr)]"
           role="button"
           tabIndex={0}
           onClick={() => onSelect(item)}
@@ -64,12 +64,21 @@ function Timeline({
             }
           }}
         >
-          <span className="act-ts" title={fullTime(item.iso)}>
+          <span className="tw:font-mono tw:text-xs tw:text-muted-foreground" title={fullTime(item.iso)}>
             {item.ts}
           </span>
-          <span className="act-tool">{item.tool}</span>
-          <span className="act-kind">{item.error ? "!" : "ok"}</span>
-          <span className="act-detail" title={item.detail}>
+          <span className="tw:font-medium">{item.tool}</span>
+          <span
+            data-error={!!item.error}
+            className="tw:text-success tw:data-[error=true]:text-danger"
+          >
+            {item.error ? "!" : "ok"}
+          </span>
+          <span
+            data-error={!!item.error}
+            className="tw:overflow-hidden tw:font-mono tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap tw:data-[error=true]:text-danger"
+            title={item.detail}
+          >
             {item.detail}
           </span>
         </li>
@@ -113,20 +122,21 @@ function AgentEmptyState() {
   ];
 
   return (
-    <div className="agent-empty-panel">
-      <div className="agent-empty-copy">
-        <div className="agent-empty-title">
+    <div className="tw:grid tw:grid-cols-[minmax(220px,280px)_minmax(0,1fr)] tw:items-start tw:gap-3 tw:@max-[1100px]:grid-cols-1">
+      <div>
+        <div className="tw:inline-flex tw:items-center tw:gap-2">
           <h3>{t("agent.ledgerTitle")}</h3>
           <InfoTip label={t("agent.emptyBody")} />
         </div>
       </div>
       <div
-        className="agent-empty-rows ds-card-grid"
+        className="tw:grid tw:grid-cols-2 tw:gap-2 tw:@max-[1100px]:grid-cols-1"
         aria-label={t("agent.emptyCards")}
       >
         {items.map((item) => (
           <div
-            className={`agent-empty-row ds-card ds-card-stack ds-tone-${item.tone}`}
+            data-tone={item.tone}
+            className="ds-card ds-card-stack tw:min-h-[80px] tw:data-[tone=danger]:border-danger tw:data-[tone=risk]:border-warning tw:data-[tone=trust]:border-success"
             key={item.title}
             title={t(item.body)}
           >
@@ -188,18 +198,22 @@ export default function AgentActivityView({
   const errorItems = feed.filter((item) => item.error);
 
   return (
-    <div className="agent-workspace">
-      <header className="agent-head">
+    <div className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:gap-3">
+      <header className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:@max-[1100px]:flex-col tw:@max-[1100px]:items-start">
         {!compact && (
           <div>
-            <div className="agent-title-row">
+            <div className="tw:inline-flex tw:items-center tw:gap-2">
               <h2>{t("agent.workspace")}</h2>
               <InfoTip label={t("agent.contextHelp")} />
             </div>
           </div>
         )}
-        <div className="agent-stats" aria-label={t("agent.session")}>
+        <div
+          className="tw:ml-auto tw:flex tw:flex-wrap tw:justify-end tw:gap-2 tw:@max-[1100px]:ml-0 tw:@max-[1100px]:justify-start"
+          aria-label={t("agent.session")}
+        >
           <span
+            className="tw:inline-flex tw:min-h-6 tw:items-center tw:gap-1 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:text-xs tw:text-muted-foreground tw:[&_.icon]:text-sm"
             title={t("agent.operations", { count: stats.operations })}
             aria-label={t("agent.operations", { count: stats.operations })}
           >
@@ -207,6 +221,7 @@ export default function AgentActivityView({
             {stats.operations}
           </span>
           <span
+            className="tw:inline-flex tw:min-h-6 tw:items-center tw:gap-1 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:text-xs tw:text-muted-foreground tw:[&_.icon]:text-sm"
             title={t("agent.succeeded", { count: stats.succeeded })}
             aria-label={t("agent.succeeded", { count: stats.succeeded })}
           >
@@ -214,6 +229,7 @@ export default function AgentActivityView({
             {stats.succeeded}
           </span>
           <span
+            className="tw:inline-flex tw:min-h-6 tw:items-center tw:gap-1 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:text-xs tw:text-muted-foreground tw:[&_.icon]:text-sm"
             title={t("agent.errorCount", { count: stats.errors })}
             aria-label={t("agent.errorCount", { count: stats.errors })}
           >
@@ -223,30 +239,23 @@ export default function AgentActivityView({
         </div>
       </header>
 
-      <div className="agent-view-tabs ds-control-row" role="tablist">
-        {(["activity", "context", "audit"] as AgentView[]).map((id) => (
-          <button
-            key={id}
-            className={view === id ? "seg active" : "seg"}
-            role="tab"
-            aria-selected={view === id}
-            onClick={() => setView(id)}
-          >
-            {id === "activity"
-              ? t("agent.activity")
-              : id === "context"
-                ? t("agent.context")
-                : t("agent.audit")}
-          </button>
-        ))}
-      </div>
+      <PanelTabs
+        tabs={[
+          { id: "activity", label: t("agent.activity") },
+          { id: "context", label: t("agent.context") },
+          { id: "audit", label: t("agent.audit") },
+        ]}
+        active={view}
+        onChange={setView}
+        label={t("agent.workspace")}
+      />
 
       {feed.length === 0 ? (
         <AgentEmptyState />
       ) : view === "activity" ? (
-        <section className="agent-primary">
-          <div className="agent-section-head">
-            <h3>{t("agent.activity")}</h3>
+        <section className="tw:min-w-0 tw:overflow-auto tw:py-2">
+          <div className="tw:mb-2 tw:flex tw:items-center tw:justify-between tw:gap-3">
+            <h3 className="tw:mt-0">{t("agent.activity")}</h3>
             {!following && latest && (
               <button
                 className="btn small"
@@ -262,34 +271,43 @@ export default function AgentActivityView({
           <Timeline feed={feed} selected={selected} onSelect={selectItem} />
         </section>
       ) : view === "context" ? (
-        <div className="agent-split">
-          <section className="agent-primary">
-            <div className="agent-section-head">
-              <h3>{t("agent.contextExposed")}</h3>
+        <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-[minmax(0,1fr)_minmax(264px,336px)] tw:gap-3 tw:@max-[1100px]:grid-cols-1">
+          <section className="tw:min-w-0 tw:overflow-auto tw:py-2">
+            <div className="tw:mb-2 tw:flex tw:items-center tw:justify-between tw:gap-3">
+              <h3 className="tw:mt-0">{t("agent.contextExposed")}</h3>
               {selected && (
-                <span className="muted">
+                <span className="tw:text-muted-foreground">
                   {selected.tool} · {selected.ts}
                 </span>
               )}
             </div>
             {selected ? (
-              <div className="context-card">
-                <p>{t(contextSummaryKey(selected))}</p>
-                <div className="context-grid">
+              <div className="tw:grid tw:gap-3">
+                <p className="tw:m-0 tw:leading-[1.45] tw:text-foreground">
+                  {t(contextSummaryKey(selected))}
+                </p>
+                <div className="tw:grid tw:overflow-hidden tw:rounded-sm tw:border tw:border-border-subtle">
                   {payloadRows(selected.payload).map(([key, value]) => (
-                    <div className="context-row" key={key}>
-                      <span>{key}</span>
-                      <code>{displayValue(value)}</code>
+                    <div
+                      className="tw:grid tw:grid-cols-[160px_minmax(0,1fr)] tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:text-sm tw:last:border-b-0 tw:@max-[760px]:grid-cols-1 tw:@max-[760px]:gap-1"
+                      key={key}
+                    >
+                      <span className="tw:text-muted-foreground">{key}</span>
+                      <code className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                        {displayValue(value)}
+                      </code>
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              <p className="muted">{t("agent.noSelection")}</p>
+              <p className="tw:text-muted-foreground">
+                {t("agent.noSelection")}
+              </p>
             )}
           </section>
-          <aside className="agent-secondary">
-            <h3>{t("agent.timeline")}</h3>
+          <aside className="tw:min-w-0 tw:overflow-auto tw:border-l tw:border-border-subtle tw:py-2 tw:pl-3 tw:@max-[1100px]:border-t tw:@max-[1100px]:border-l-0 tw:@max-[1100px]:pt-3 tw:@max-[1100px]:pl-0">
+            <h3 className="tw:mt-0">{t("agent.timeline")}</h3>
             <Timeline
               feed={feed}
               selected={selected}
@@ -298,9 +316,9 @@ export default function AgentActivityView({
           </aside>
         </div>
       ) : (
-        <div className="agent-audit-grid ds-card-grid">
+        <div className="tw:grid tw:grid-cols-[repeat(auto-fit,minmax(190px,1fr))] tw:gap-3 tw:@max-[1100px]:grid-cols-1">
           <section
-            className="agent-policy-card ds-card ds-card-row ds-tone-trust"
+            className="ds-card ds-card-row tw:min-h-[64px] tw:border-success tw:[&>div]:inline-flex tw:[&>div]:min-w-0 tw:[&>div]:items-center tw:[&>div]:gap-1"
             title={t("agent.auditReadOnlyBody")}
           >
             <Icon name="database" />
@@ -310,7 +328,7 @@ export default function AgentActivityView({
             </div>
           </section>
           <section
-            className="agent-policy-card ds-card ds-card-row ds-tone-danger"
+            className="ds-card ds-card-row tw:min-h-[64px] tw:border-danger tw:[&>div]:inline-flex tw:[&>div]:min-w-0 tw:[&>div]:items-center tw:[&>div]:gap-1"
             title={t("agent.auditBlockedWritesBody")}
           >
             <Icon name="circleSlash" />
@@ -320,7 +338,7 @@ export default function AgentActivityView({
             </div>
           </section>
           <section
-            className="agent-policy-card ds-card ds-card-row"
+            className="ds-card ds-card-row tw:min-h-[64px] tw:[&>div]:inline-flex tw:[&>div]:min-w-0 tw:[&>div]:items-center tw:[&>div]:gap-1"
             title={t("agent.auditHashChainBody")}
           >
             <Icon name="check" />
@@ -329,13 +347,12 @@ export default function AgentActivityView({
               <InfoTip label={t("agent.auditHashChainBody")} />
             </div>
           </section>
-          <section className="agent-policy-card wide ds-panel">
-            <div className="agent-section-head">
-              <h3>{t("agent.policy")}</h3>
+          <section className="ds-panel tw:col-span-full tw:min-h-[96px] tw:min-w-0">
+            <div className="tw:mb-2 tw:flex tw:items-center tw:justify-between tw:gap-3">
+              <h3 className="tw:mt-0">{t("agent.policy")}</h3>
               <span
-                className={`badge status ${
-                  errorItems.length ? "status-error" : "status-ok"
-                } icon-only-badge`}
+                data-error={errorItems.length > 0}
+                className="badge icon-only-badge tw:data-[error=false]:border-success tw:data-[error=false]:text-success tw:data-[error=true]:border-danger tw:data-[error=true]:text-danger"
                 title={
                   errorItems.length
                     ? t("agent.auditErrors", { count: errorItems.length })

@@ -3,8 +3,14 @@
 import type { SkillInstallState } from "../../ipc/types";
 import type { TerminalSessionSummary } from "../../features/terminals/domain";
 import { terminalSessionIsRunning } from "../../features/terminals/state";
+import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
+import {
+  InlineNotice,
+  StatusDot,
+} from "../../design-system/components/Status";
 import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
+import { terminalLifecycleTone } from "./TerminalTabs";
 
 interface TerminalContextBarProps {
   active: TerminalSessionSummary;
@@ -43,27 +49,27 @@ export default function TerminalContextBar({
   const skillBadge = (() => {
     if (skillState === "managed_current") {
       return {
-        className: "status-ok",
+        tone: "success",
         icon: "check" as const,
         label: t("terminal.skillReady"),
       };
     }
     if (skillState === null) {
       return {
-        className: "status-warning",
+        tone: "warning",
         icon: "alert" as const,
         label: t("terminal.skillChecking"),
       };
     }
     if (skillState === "missing") {
       return {
-        className: "status-warning",
+        tone: "warning",
         icon: "alert" as const,
         label: t("terminal.skillMissing"),
       };
     }
     return {
-      className: "status-warning",
+      tone: "warning",
       icon: "alert" as const,
       label: t("terminal.skillAttention"),
     };
@@ -71,44 +77,44 @@ export default function TerminalContextBar({
 
   return (
     <>
-      <div className="terminal-context-strip">
+      <div
+        data-terminal-context-bar
+        className="terminal-context-strip tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:overflow-x-auto tw:border-b tw:border-border-subtle tw:bg-background tw:p-2 tw:[scrollbar-width:thin] tw:max-[560px]:px-1"
+      >
         <span
-          className={`terminal-lifecycle ${active.lifecycle}`}
+          className="tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:text-xs tw:text-muted-foreground tw:whitespace-nowrap"
           title={lifecycleLabel}
         >
-          <span
-            className={`terminal-status-dot ${active.lifecycle}`}
-            aria-hidden="true"
-          />
+          <StatusDot tone={terminalLifecycleTone(active.lifecycle)} />
           {lifecycleLabel}
         </span>
-        <span className="badge">
+        <span className="badge tw:shrink-0 tw:max-w-[240px]">
           <Icon name="database" />
           {t("terminal.pinned", {
             name: active.connection.connectionName,
           })}
         </span>
         {active.connection.environment && (
-          <span className="badge">{active.connection.environment}</span>
+          <EnvironmentBadge environment={active.connection.environment} />
         )}
         <span
-          className={`badge ${
-            active.connection.policy === "readOnly"
-              ? "status-ok"
-              : "status-warning"
-          }`}
+          data-policy={active.connection.policy}
+          className="badge tw:shrink-0 tw:max-w-[240px] tw:data-[policy=readOnly]:border-success tw:data-[policy=readOnly]:text-success tw:data-[policy=approvalRequired]:border-warning tw:data-[policy=approvalRequired]:text-warning"
         >
           {active.connection.policy === "readOnly"
             ? t("terminal.readOnly")
             : t("terminal.approvalRequired")}
         </span>
         {active.profile !== "shell" && (
-          <span className={`badge ${skillBadge.className}`}>
+          <span
+            data-tone={skillBadge.tone}
+            className="badge tw:shrink-0 tw:max-w-[240px] tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
+          >
             <Icon name={skillBadge.icon} />
             {skillBadge.label}
           </span>
         )}
-        <span className="terminal-context-spacer" />
+        <span className="tw:min-w-1 tw:flex-1" />
         <button
           type="button"
           className="btn small icon-only"
@@ -131,10 +137,9 @@ export default function TerminalContextBar({
       </div>
 
       {replayTruncated && (
-        <div className="terminal-notice warning">
-          <Icon name="info" />
-          <span>{t("terminal.outputReplayTruncated")}</span>
-        </div>
+        <InlineNotice tone="warning" icon="info">
+          {t("terminal.outputReplayTruncated")}
+        </InlineNotice>
       )}
     </>
   );

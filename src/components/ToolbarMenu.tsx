@@ -1,4 +1,5 @@
 import {
+  type ButtonHTMLAttributes,
   useEffect,
   useId,
   useLayoutEffect,
@@ -10,7 +11,6 @@ import {
 import { createPortal } from "react-dom";
 import { placeFloatingMenu, type FloatingMenuPosition } from "../lib/floatingMenu";
 import { Icon, type IconName } from "./Icon";
-import "./ToolbarMenu.css";
 
 function menuItems(root: HTMLElement | null) {
   if (!root) return [];
@@ -27,16 +27,12 @@ export default function ToolbarMenu({
   children,
   align = "end",
   disabled = false,
-  triggerClassName = "",
-  menuClassName = "",
 }: {
   label: string;
   icon: IconName;
   children: ReactNode;
   align?: "start" | "end";
   disabled?: boolean;
-  triggerClassName?: string;
-  menuClassName?: string;
 }) {
   const generatedId = useId();
   const menuId = `toolbar-menu-${generatedId.replace(/:/g, "")}`;
@@ -146,7 +142,7 @@ export default function ToolbarMenu({
           role="menu"
           aria-label={label}
           data-placement={position?.placement}
-          className={`ds-menu-popover${menuClassName ? ` ${menuClassName}` : ""}`}
+          className="tw:fixed tw:z-[var(--ds-z-popover)] tw:grid tw:max-h-[calc(100dvh-(var(--ds-viewport-gutter)*2))] tw:min-w-[var(--ds-menu-min-width)] tw:max-w-[min(var(--ds-menu-max-width),calc(100vw-(var(--ds-viewport-gutter)*2)))] tw:gap-[var(--ds-segment-gap)] tw:overflow-auto tw:overscroll-contain tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:p-1 tw:text-popover-foreground tw:shadow-popover"
           style={{
             left: position?.left ?? 0,
             top: position?.top ?? 0,
@@ -168,13 +164,11 @@ export default function ToolbarMenu({
     : null;
 
   return (
-    <span className="ds-toolbar-menu">
+    <span className="tw:inline-flex tw:shrink-0">
       <button
         ref={triggerRef}
         type="button"
-        className={`btn small icon-only${open ? " active" : ""}${
-          triggerClassName ? ` ${triggerClassName}` : ""
-        }`}
+        className="btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
         disabled={disabled}
         title={label}
         aria-label={label}
@@ -200,5 +194,26 @@ export default function ToolbarMenu({
       </button>
       {menu}
     </span>
+  );
+}
+
+export function ToolbarMenuItem({
+  icon,
+  children,
+  ...props
+}: {
+  icon: IconName;
+  children: ReactNode;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children" | "className">) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      className="tw:flex tw:min-h-control-md tw:w-full tw:min-w-[var(--ds-menu-min-width)] tw:cursor-pointer tw:items-center tw:justify-start tw:gap-2 tw:rounded-sm tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-left tw:text-ui tw:leading-ui tw:text-inherit tw:whitespace-nowrap tw:disabled:cursor-default tw:disabled:opacity-45 tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:bg-muted tw:focus-visible:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-inset tw:focus-visible:ring-ring"
+      {...props}
+    >
+      <Icon name={icon} className="tw:shrink-0 tw:text-sm" />
+      {children}
+    </button>
   );
 }

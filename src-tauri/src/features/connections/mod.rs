@@ -2,6 +2,7 @@
 
 mod adapters;
 mod application;
+mod demo;
 mod domain;
 mod ports;
 pub(crate) mod transport;

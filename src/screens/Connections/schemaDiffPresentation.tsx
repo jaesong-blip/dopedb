@@ -53,7 +53,10 @@ export function SchemaDiffBadge({
   const baselineCatalog = catalogs[baseline.id];
   if (!current || !baselineCatalog) {
     return (
-      <span className="schema-diff-chip diff-pending" title={t("connections.schemaDiffPendingTitle")}>
+      <span
+        className="badge tw:min-h-[18px] tw:shrink-0 tw:px-1.5 tw:font-mono tw:text-2xs tw:text-muted-foreground"
+        title={t("connections.schemaDiffPendingTitle")}
+      >
         {t("connections.schemaDiffPendingChip")}
       </span>
     );
@@ -61,7 +64,10 @@ export function SchemaDiffBadge({
   const diff = compareCatalogs(current, baselineCatalog);
   if (diff.total === 0) {
     return (
-      <span className="schema-diff-chip diff-ok" title={t("connections.schemaDiffInSync")}>
+      <span
+        className="badge status-ok tw:min-h-[18px] tw:shrink-0 tw:px-1.5"
+        title={t("connections.schemaDiffInSync")}
+      >
         <Icon name="check" />
       </span>
     );
@@ -73,10 +79,19 @@ export function SchemaDiffBadge({
     changed: counts.changed,
   });
   return (
-    <span className="schema-diff-chip diff-drift" title={title}>
-      {counts.added > 0 && <span className="diff-add">+{counts.added}</span>}
-      {counts.missing > 0 && <span className="diff-remove">-{counts.missing}</span>}
-      {counts.changed > 0 && <span className="diff-change">~{counts.changed}</span>}
+    <span
+      className="badge tw:min-h-[18px] tw:shrink-0 tw:gap-[2px] tw:px-1.5 tw:font-mono tw:text-2xs tw:[font-variant-numeric:tabular-nums]"
+      title={title}
+    >
+      {counts.added > 0 ? (
+        <span className="tw:text-success">+{counts.added}</span>
+      ) : null}
+      {counts.missing > 0 ? (
+        <span className="tw:text-danger">-{counts.missing}</span>
+      ) : null}
+      {counts.changed > 0 ? (
+        <span className="tw:text-warning">~{counts.changed}</span>
+      ) : null}
     </span>
   );
 }

@@ -43,14 +43,10 @@ export default function ConfirmButton({
   }
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "var(--ds-control-gap)",
-      }}
-    >
-      <span className="muted">{confirmLabel ?? t("common.reallyDelete")}</span>
+    <span className="tw:inline-flex tw:items-center tw:gap-[var(--ds-control-gap)]">
+      <span className="tw:text-muted-foreground">
+        {confirmLabel ?? t("common.reallyDelete")}
+      </span>
       <button
         type="button"
         className="btn danger small"

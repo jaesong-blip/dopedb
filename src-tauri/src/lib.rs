@@ -121,6 +121,7 @@ pub fn run() {
             features::connections::transport::list_connections,
             features::connections::transport::list_drivers,
             features::connections::transport::install_driver,
+            features::connections::transport::create_demo_sqlite,
             features::connections::transport::upsert_connection,
             features::connections::transport::set_connections_schema_group,
             features::connections::transport::delete_connection,

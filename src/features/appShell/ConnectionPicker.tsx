@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import EngineMark from "../../components/EngineMark";
+import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import { Icon } from "../../components/Icon";
 import type { ConnectionProfile } from "../connections/domain";
 import { useI18n } from "../../lib/i18n";
@@ -36,21 +37,25 @@ export default function ConnectionPicker({
       <button
         key={connection.id}
         type="button"
-        className="connection-card"
+        className="tw:flex tw:min-h-[92px] tw:min-w-0 tw:cursor-pointer tw:flex-col tw:items-stretch tw:justify-between tw:gap-3 tw:rounded-lg tw:border tw:border-border-subtle tw:bg-card tw:p-3 tw:font-sans tw:text-left tw:text-foreground tw:shadow-panel tw:transition-[border-color,background,box-shadow] tw:duration-150 tw:hover:border-border-strong tw:hover:bg-selection/40 tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
         onClick={() => onSelect(connection.id)}
         title={`${connection.engine} · ${connectionEndpoint(connection)} · ${connection.database}`}
         aria-label={t("app.openConnection", { name })}
       >
-        <span className="connection-card-title">
+        <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
           {!grouped && <EngineMark engine={connection.engine} />}
-          <span className="connection-card-name">{name}</span>
-          {connection.env && (
-            <span className={`env-chip env-${connection.env}`}>{connection.env}</span>
-          )}
+          <span className="tw:min-w-0 tw:overflow-hidden tw:text-body tw:font-bold tw:text-ellipsis tw:whitespace-nowrap">
+            {name}
+          </span>
+          {connection.env ? (
+            <span className="tw:ml-auto">
+              <EnvironmentBadge environment={connection.env} />
+            </span>
+          ) : null}
         </span>
-        <span className="connection-card-meta">
+        <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:text-sm tw:text-muted-foreground tw:[&>span:not(.ds-meta-dot)]:min-w-0 tw:[&>span:not(.ds-meta-dot)]:overflow-hidden tw:[&>span:not(.ds-meta-dot)]:text-ellipsis tw:[&>span:not(.ds-meta-dot)]:whitespace-nowrap">
           <span>{connection.database || t("common.unknown")}</span>
-          <span className="ds-meta-dot" />
+          <span className="ds-meta-dot tw:shrink-0" />
           <span>{connectionEndpoint(connection)}</span>
         </span>
       </button>
@@ -60,18 +65,20 @@ export default function ConnectionPicker({
   function renderGroup(group: SchemaConnectionGroup) {
     const engine = group.connections[0]?.engine;
     return (
-      <section className="connection-group-section" key={group.key}>
-        <div className="connection-group-head">
-          <div className="connection-group-title">
+      <section className="tw:grid tw:gap-2 tw:border-l-2 tw:border-primary tw:pl-3" key={group.key}>
+        <div className="tw:flex tw:min-h-control-sm tw:items-center tw:justify-between tw:gap-3 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
+          <div className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-2 tw:text-title tw:font-bold tw:text-foreground">
             {engine ? (
               <EngineMark engine={engine} />
             ) : (
-              <span className="connection-group-mark" />
+              <span className="tw:size-[9px] tw:shrink-0 tw:rounded-full tw:border-2 tw:border-primary" />
             )}
-            <span>{group.label}</span>
+            <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+              {group.label}
+            </span>
           </div>
         </div>
-        <div className="connection-card-grid">
+        <div className="tw:grid tw:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] tw:gap-3 tw:max-[760px]:grid-cols-1">
           {group.connections.map((connection) => renderConnectionCard(connection, true))}
         </div>
       </section>
@@ -79,9 +86,11 @@ export default function ConnectionPicker({
   }
 
   return (
-    <div className="connection-picker">
-      <div className="connection-picker-head">
-        <h2>{t("app.connectionPickerTitle")}</h2>
+    <div className="tw:mx-auto tw:flex tw:min-h-full tw:w-full tw:max-w-[1120px] tw:flex-col tw:gap-5">
+      <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[760px]:items-start">
+        <h2 className="tw:m-0 tw:text-heading tw:leading-tight">
+          {t("app.connectionPickerTitle")}
+        </h2>
         <button className="btn small" onClick={onNew}>
           <Icon name="plus" />
           {t("connections.new")}
@@ -89,8 +98,10 @@ export default function ConnectionPicker({
       </div>
 
       {grouped.length > 0 && (
-        <section className="connection-picker-section">
-          <div className="connection-picker-label">{t("app.connectionPickerGroups")}</div>
+        <section className="tw:grid tw:gap-3">
+          <div className="tw:text-xs tw:font-bold tw:tracking-[0.04em] tw:text-muted-foreground tw:uppercase">
+            {t("app.connectionPickerGroups")}
+          </div>
           {grouped.map((section) =>
             section.kind === "group" ? renderGroup(section.group) : null,
           )}
@@ -98,9 +109,11 @@ export default function ConnectionPicker({
       )}
 
       {singles.length > 0 && (
-        <section className="connection-picker-section">
-          <div className="connection-picker-label">{t("app.connectionPickerSingles")}</div>
-          <div className="connection-card-grid">
+        <section className="tw:grid tw:gap-3">
+          <div className="tw:text-xs tw:font-bold tw:tracking-[0.04em] tw:text-muted-foreground tw:uppercase">
+            {t("app.connectionPickerSingles")}
+          </div>
+          <div className="tw:grid tw:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] tw:gap-3 tw:max-[760px]:grid-cols-1">
             {singles.map((section) =>
               section.kind === "single"
                 ? renderConnectionCard(section.connection)

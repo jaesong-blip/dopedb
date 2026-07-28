@@ -16,9 +16,13 @@ import DashboardVisualizationView from "../../components/DashboardVisualization"
 import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import {
+  MetadataDot,
+  WorkbenchEmptyState,
+  WorkbenchPane,
+} from "../../design-system/components/Workbench";
 import { dashboardTileRunQueries, dashboardsQuery, qk } from "../../lib/queries";
 import { useI18n, type I18nKey } from "../../lib/i18n";
-import "./dashboards.css";
 
 const KIND_LABELS: Record<DashboardKind, I18nKey> = {
   auto: "dashboard.kindAuto",
@@ -59,12 +63,13 @@ export function DashboardSidebar({
   const dashboards = list.data ?? [];
 
   return (
-    <aside className="sidebar dashboard-sidebar" id="workbench-sidebar">
+    <aside className="sidebar tw:flex tw:min-h-0 tw:flex-col" id="workbench-sidebar">
       {workspaceHeader}
-      <div className="dashboard-sidebar-body">
-        <label className="dashboard-connection-picker">
+      <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-3 tw:overflow-hidden tw:px-2 tw:py-3">
+        <label className="tw:grid tw:gap-1 tw:text-xs tw:text-muted-foreground">
           <span>{t("app.thisConnection")}</span>
           <select
+            className="tw:min-h-control-md tw:w-full tw:min-w-0"
             value={selectedId ?? ""}
             onChange={(event) => onSelectConnection(event.target.value)}
           >
@@ -79,33 +84,42 @@ export function DashboardSidebar({
           </select>
         </label>
 
-        <div className="dashboard-sidebar-heading">
+        <div className="tw:flex tw:items-baseline tw:justify-between tw:gap-2 tw:px-1">
           <strong>{t("dashboard.library")}</strong>
-          <span className="muted">{dashboards.length}</span>
+          <span className="tw:text-muted-foreground">{dashboards.length}</span>
         </div>
 
-        <div className="dashboard-sidebar-list">
+        <div className="tw:grid tw:min-h-0 tw:content-start tw:gap-1 tw:overflow-y-auto tw:[&>p]:m-2 tw:[&>p]:text-sm tw:[&>p]:leading-relaxed">
           {!selected ? (
-            <p className="muted">{t("settings.selectConnectionTitle")}</p>
+            <p className="tw:text-muted-foreground">
+              {t("settings.selectConnectionTitle")}
+            </p>
           ) : list.isPending ? (
             <Skeleton lines={4} />
           ) : list.error ? (
-            <p className="error">{errMessage(list.error)}</p>
+            <p className="tw:text-danger">{errMessage(list.error)}</p>
           ) : dashboards.length === 0 ? (
-            <p className="muted">{t("dashboard.emptyTitle")}</p>
+            <p className="tw:text-muted-foreground">
+              {t("dashboard.emptyTitle")}
+            </p>
           ) : (
             dashboards.map((dashboard) => (
               <button
                 type="button"
                 key={dashboard.id}
-                className={`dashboard-sidebar-item${focusId === dashboard.id ? " active" : ""}`}
+                data-active={focusId === dashboard.id}
+                className="tw:grid tw:min-h-control-xl tw:min-w-0 tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)] tw:items-center tw:gap-2 tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-2 tw:text-left tw:text-muted-foreground tw:data-[active=true]:bg-muted tw:data-[active=true]:text-foreground tw:data-[active=true]:shadow-[inset_var(--ds-border-width-bold)_0_0_var(--ds-accent-text)] tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
                 onClick={() => onFocus(dashboard.id)}
                 title={dashboard.title}
               >
                 <Icon name="chart" />
-                <span>
-                  <strong>{dashboard.title}</strong>
-                  <small>{t(KIND_LABELS[dashboard.visualization.kind])}</small>
+                <span className="tw:grid tw:min-w-0 tw:gap-1">
+                  <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                    {dashboard.title}
+                  </strong>
+                  <small className="tw:overflow-hidden tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                    {t(KIND_LABELS[dashboard.visualization.kind])}
+                  </small>
                 </span>
               </button>
             ))
@@ -113,7 +127,9 @@ export function DashboardSidebar({
         </div>
       </div>
       {workspaceAccount ? (
-        <div className="sidebar-foot ds-control-row">{workspaceAccount}</div>
+        <div className="sidebar-foot ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
+          {workspaceAccount}
+        </div>
       ) : null}
     </aside>
   );
@@ -142,21 +158,31 @@ function DashboardTile({
   return (
     <article
       id={`dashboard-${dashboard.id}`}
-      className={`dashboard-tile kind-${dashboard.visualization.kind}${selected ? " active" : ""}`}
+      data-dashboard-tile
+      data-kind={dashboard.visualization.kind}
+      data-selected={selected}
+      aria-label={dashboard.title}
+      className="tw:flex tw:min-h-[300px] tw:min-w-0 tw:flex-col tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3 tw:shadow-panel tw:data-[kind=metric]:min-h-[220px] tw:data-[kind=table]:col-span-full tw:data-[selected=true]:border-border-strong tw:focus:outline-none tw:focus-visible:border-ring tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:motion-reduce:scroll-auto tw:@max-[1180px]:data-[kind=table]:col-auto"
       tabIndex={-1}
     >
-      <header className="dashboard-tile-head">
-        <div className="dashboard-tile-copy">
-          <div className="ds-title-line">
-            <Icon name="chart" />
-            <strong>{dashboard.title}</strong>
+      <header className="tw:flex tw:min-w-0 tw:items-start tw:justify-between tw:gap-3 tw:@max-[760px]:gap-2">
+        <div className="tw:grid tw:min-w-0 tw:gap-1">
+          <div className="ds-title-line tw:flex-nowrap">
+            <Icon name="chart" className="tw:shrink-0 tw:text-primary" />
+            <strong className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+              {dashboard.title}
+            </strong>
             <span className="badge kind">
               {t(KIND_LABELS[dashboard.visualization.kind])}
             </span>
           </div>
-          {dashboard.description && <p className="muted">{dashboard.description}</p>}
+          {dashboard.description && (
+            <p className="tw:m-0 tw:line-clamp-2 tw:text-sm tw:leading-ui tw:text-muted-foreground">
+              {dashboard.description}
+            </p>
+          )}
         </div>
-        <div className="ds-control-row">
+        <div className="ds-control-row tw:flex tw:shrink-0 tw:gap-1">
           <button
             type="button"
             className="btn small icon-only"
@@ -179,11 +205,11 @@ function DashboardTile({
         </div>
       </header>
 
-      <div className="dashboard-tile-meta muted">
+      <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:overflow-hidden tw:text-xs tw:whitespace-nowrap tw:text-muted-foreground tw:tabular-nums tw:[&>span:last-child]:overflow-hidden tw:[&>span:last-child]:text-ellipsis tw:[&_time]:overflow-hidden tw:[&_time]:text-ellipsis">
         <time dateTime={dashboard.updatedAt}>{displayTime(dashboard.updatedAt)}</time>
         {result && (
           <>
-            <span className="ds-meta-dot" />
+            <MetadataDot />
             <span>
               {t("dashboard.resultMeta", {
                 count: result.rowCount,
@@ -195,10 +221,10 @@ function DashboardTile({
       </div>
 
       {error ? (
-        <div className="error" role="alert">{error}</div>
+        <div className="tw:text-ui tw:text-danger" role="alert">{error}</div>
       ) : running && !result ? (
-        <div className="dashboard-tile-state" aria-busy="true">
-          <span className="loading">{t("dashboard.running")}</span>
+        <div className="tw:grid tw:min-h-[160px] tw:flex-1 tw:place-items-center tw:text-center" aria-busy="true">
+          <span>{t("dashboard.running")}</span>
         </div>
       ) : result ? (
         <DashboardVisualizationView
@@ -207,12 +233,18 @@ function DashboardTile({
           visualization={dashboard.visualization}
         />
       ) : (
-        <div className="dashboard-tile-state muted">{t("dashboard.clickToRun")}</div>
+        <div className="tw:grid tw:min-h-[160px] tw:flex-1 tw:place-items-center tw:text-center tw:text-muted-foreground">
+          {t("dashboard.clickToRun")}
+        </div>
       )}
 
-      <details className="dashboard-query">
-        <summary>{t("dashboard.sql")}</summary>
-        <code>{dashboard.sql}</code>
+      <details className="tw:mt-auto tw:border-t tw:border-border-subtle tw:pt-2">
+        <summary className="tw:w-fit tw:cursor-pointer tw:rounded-xs tw:text-xs tw:text-muted-foreground tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring">
+          {t("dashboard.sql")}
+        </summary>
+        <code className="tw:mt-2 tw:block tw:max-h-[120px] tw:overflow-auto tw:rounded-sm tw:bg-muted tw:p-2 tw:font-mono tw:text-xs tw:leading-relaxed tw:whitespace-pre-wrap tw:break-all tw:text-foreground">
+          {dashboard.sql}
+        </code>
       </details>
     </article>
   );
@@ -292,45 +324,55 @@ export default function Dashboards({
   const deleteError = remove.error ? errMessage(remove.error) : null;
 
   return (
-    <div className="dashboards-screen screen">
+    <WorkbenchPane>
+      <div className="tw:mx-auto tw:grid tw:min-h-0 tw:w-full tw:max-w-[1440px] tw:flex-1 tw:content-start tw:gap-3 tw:overflow-auto tw:p-3">
       {loadError && (
-        <div className="dashboard-error error" role="alert">
+        <div className="tw:break-all tw:text-ui tw:text-danger" role="alert">
           {t("dashboard.loadFailed", { error: loadError })}
         </div>
       )}
       {deleteError && (
-        <div className="dashboard-error error" role="alert">
+        <div className="tw:break-all tw:text-ui tw:text-danger" role="alert">
           {deleteError}
         </div>
       )}
 
       {loading ? (
-        <section className="dashboard-state ds-panel">
+        <section className="ds-panel tw:min-h-[240px]">
           <Skeleton lines={3} />
         </section>
       ) : loadError ? null : dashboards.length === 0 ? (
-        <section className="dashboard-state dashboard-empty ds-panel">
-          <span className="dashboard-state-icon"><Icon name="chart" /></span>
+        <section className="ds-panel">
+          <WorkbenchEmptyState icon="chart">
           <h3>{t("dashboard.emptyTitle")}</h3>
-          <p className="muted">{t("dashboard.emptyBody")}</p>
+          <p className="tw:m-0 tw:max-w-[56ch] tw:leading-relaxed tw:text-pretty tw:text-muted-foreground">
+            {t("dashboard.emptyBody")}
+          </p>
           <button className="btn primary" onClick={onOpenAgent}>
             <Icon name="terminal" />
             {t("dashboard.openAgent")}
           </button>
+          </WorkbenchEmptyState>
         </section>
       ) : (
         <>
-          <header className="dashboard-overview-head">
-            <div>
+          <header className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:items-center tw:justify-between tw:gap-3 tw:@max-[760px]:items-start">
+            <div className="tw:flex tw:min-w-0 tw:items-baseline tw:gap-2">
               <strong>{t("dashboard.library")}</strong>
-              <span className="muted">{dashboards.length}</span>
+              <span className="tw:text-sm tw:text-muted-foreground tw:tabular-nums">
+                {dashboards.length}
+              </span>
             </div>
             <button className="btn small" onClick={onOpenAgent}>
               <Icon name="terminal" />
               {t("dashboard.openAgent")}
             </button>
           </header>
-          <section className="dashboard-grid" aria-label={t("dashboard.library")}>
+          <section
+            data-dashboard-grid
+            className="tw:grid tw:min-w-0 tw:grid-cols-2 tw:auto-rows-auto tw:grid-flow-dense tw:gap-3 tw:@max-[1180px]:grid-cols-1"
+            aria-label={t("dashboard.library")}
+          >
             {dashboards.map((dashboard, index) => {
               const run = runs[index];
               return (
@@ -350,6 +392,7 @@ export default function Dashboards({
           </section>
         </>
       )}
-    </div>
+      </div>
+    </WorkbenchPane>
   );
 }

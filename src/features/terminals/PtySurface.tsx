@@ -349,12 +349,15 @@ const PtySurface = forwardRef<PtySurfaceHandle, PtySurfaceProps>(
         hidden={!active}
       >
         {loading && (
-          <div className="terminal-surface-status muted">
+          <div className="terminal-surface-status tw:text-muted-foreground">
             {t("common.loading")}
           </div>
         )}
         {loadError && (
-          <div className="terminal-surface-status error" role="alert">
+          <div
+            className="terminal-surface-status tw:text-ui tw:text-danger"
+            role="alert"
+          >
             {loadError}
           </div>
         )}

@@ -42,6 +42,7 @@ import ErdRelationNode, {
 } from "./ErdRelationNode";
 import ErdToolbar from "./ErdToolbar";
 import { Icon } from "./Icon";
+import { InlineNotice } from "../design-system/components/Status";
 import {
   buildErdGraph,
   createErdGraphIndex,
@@ -492,7 +493,10 @@ export default function ErdCanvas({
   }
 
   return (
-    <div className="erd-surface">
+    <div
+      data-erd-canvas
+      className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:bg-muted"
+    >
       <ErdToolbar
         layouts={layoutsQuery.data ?? []}
         activeLayoutId={activeLayoutId}
@@ -523,7 +527,7 @@ export default function ErdCanvas({
       />
 
       {virtualEditorOpen && (
-        <div className="erd-virtual-editor ds-control-row">
+        <div className="ds-control-row tw:flex tw:flex-wrap tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2 tw:[&>input]:min-w-[120px] tw:[&>input]:flex-[1_1_140px] tw:[&>select]:min-w-[120px] tw:[&>select]:flex-[1_1_140px]">
           <select
             value={virtualFrom}
             onChange={(event) => setVirtualFrom(event.target.value)}
@@ -580,13 +584,17 @@ export default function ErdCanvas({
       )}
 
       {virtualRelations.length > 0 && (
-        <div className="erd-virtual-list" aria-label={t("schema.erdVirtualRelations")}>
+        <div
+          className="tw:flex tw:gap-2 tw:overflow-x-auto tw:border-b tw:border-border-subtle tw:px-3 tw:py-2"
+          aria-label={t("schema.erdVirtualRelations")}
+        >
           {virtualRelations.map((relation) => (
-            <span className="badge" key={relation.id}>
+            <span className="badge tw:shrink-0" key={relation.id}>
               {relationDisplayName(relation.fromRelation)}
               {" → "}
               {relationDisplayName(relation.toRelation)}
               <button
+                className="tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-0 tw:text-inherit"
                 type="button"
                 onClick={() => {
                   setVirtualRelations((current) =>
@@ -603,28 +611,37 @@ export default function ErdCanvas({
         </div>
       )}
 
-      {error && <div className="error erd-error">{error}</div>}
-      {layoutWarning && (
-        <div className="erd-layout-warning" role="status">
-          <Icon name="info" />
-          <span>{layoutWarning}</span>
-          <button
-            type="button"
-            className="btn small"
-            disabled={busy}
-            onClick={() => void autoLayout()}
-          >
-            <Icon name="refresh" />
-            {t("common.refresh")}
-          </button>
+      {error && (
+        <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
+          {error}
         </div>
       )}
+      {layoutWarning && (
+        <InlineNotice
+          tone="warning"
+          icon="info"
+          role="status"
+          action={
+            <button
+              type="button"
+              className="btn small"
+              disabled={busy}
+              onClick={() => void autoLayout()}
+            >
+              <Icon name="refresh" />
+              {t("common.refresh")}
+            </button>
+          }
+        >
+          {layoutWarning}
+        </InlineNotice>
+      )}
       {layoutsQuery.error && (
-        <div className="error erd-error">
+        <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
           {errMessage(layoutsQuery.error)}
         </div>
       )}
-      <div className="erd-flow">
+      <div className="erd-flow tw:min-h-[480px] tw:min-w-0 tw:flex-1">
         <ReactFlow<ErdFlowNode, Edge>
           nodes={flowNodes}
           edges={flowEdges}
@@ -659,7 +676,7 @@ export default function ErdCanvas({
           )}
         </ReactFlow>
       </div>
-      <footer className="erd-status muted">
+      <footer className="tw:border-t tw:border-border-subtle tw:px-3 tw:py-2 tw:text-xs tw:text-muted-foreground">
         {t("schema.erdVisibleStats", {
           nodes: graph.nodes.length,
           edges: graph.edges.length,

@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "baselines": [
+    {
+      "scene": "compact-shell",
+      "viewport": "compact",
+      "sha256": "de617fdec78ff1e910ed0e93cadeb8c49a04e68d33574935726fcd05ffd6f03b",
+      "benchmarkReference": "DopeDB-2026.1-explorer-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/compact-shell.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "dashboard",
+      "viewport": "desktop",
+      "sha256": "146a92716038d787a60949704305af39a9fee891c53257659dc023cdde19b2ce",
+      "benchmarkReference": "DopeDB-2026.1-data-editor-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/dashboard.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "empty-results",
+      "viewport": "desktop",
+      "sha256": "ec71b2757bcfdc0be1ee26d6c535bc9d06681762e92ecefd20c65376bc230029",
+      "benchmarkReference": "DopeDB-2026.1-data-editor-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/empty-results.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "explorer-connected",
+      "viewport": "desktop",
+      "sha256": "952434ff41e9b35baa1597ee147e4835eefac721e493e798bb439b439b1cc2bd",
+      "benchmarkReference": "DopeDB-2026.1-explorer-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/explorer-connected.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "first-run",
+      "viewport": "desktop",
+      "sha256": "8c30da5543ea3a77a5567af8258c60193c35f69f7f45ad5a42560960a97eab6c",
+      "benchmarkReference": "DopeDB-2026.1-first-run-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/first-run.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "keyboard-only",
+      "viewport": "desktop",
+      "sha256": "034c2cd1ef47d03952d8f66c9581f7825ca4842d2cfa93ad98ac5596209277dd",
+      "benchmarkReference": "DopeDB-2026.1-assistant-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/keyboard-only.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "loading-error",
+      "viewport": "desktop",
+      "sha256": "c43f1a1e559b2b106b8143b86f191c668e506081471d597287ba1a3d14df2519",
+      "benchmarkReference": "DopeDB-2026.1-first-run-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/loading-error.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "long-content",
+      "viewport": "compact",
+      "sha256": "5ecc80b69159b2c4621e906a4918dbfefa2e1ecc6087f29c896b02dacba76382",
+      "benchmarkReference": "DopeDB-2026.1-data-editor-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/long-content.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "permission-review",
+      "viewport": "desktop",
+      "sha256": "09a20edd58c8374198f78c50ac1f5bbd41e110c5e8429719a78db5526e2d2d89",
+      "benchmarkReference": "DopeDB-2026.1-assistant-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/permission-review.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "provider-setup",
+      "viewport": "desktop",
+      "sha256": "553453af5b1cf9cec08897df17abec43c1f68febfed228a5b87cb88955871986",
+      "benchmarkReference": "DopeDB-2026.1-assistant-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/provider-setup.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "schema-erd",
+      "viewport": "desktop",
+      "sha256": "63380e51f113ba96da3b83a173a4dfbe9252438bf3a3036d5732846fc2ae32c4",
+      "benchmarkReference": "DopeDB-2026.1-explorer-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/schema-erd.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "settings",
+      "viewport": "desktop",
+      "sha256": "f2509754bd798fe083d98334e65467a9ce0f926b78c7a3e4275371b9da50d8bc",
+      "benchmarkReference": "DopeDB-2026.1-first-run-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/settings.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "sql-terminal",
+      "viewport": "desktop",
+      "sha256": "e7d8c500008c8cdc38ba6be624ce04435971e5aa1a2b4c97c516493526722a9d",
+      "benchmarkReference": "DopeDB-2026.1-query-console-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/sql-terminal.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "table-data",
+      "viewport": "desktop",
+      "sha256": "a56bd90465308f8e016ea96192546d78346972fa36a3b493353fe399dae7b67c",
+      "benchmarkReference": "DopeDB-2026.1-data-editor-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/table-data.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    },
+    {
+      "scene": "terminal-open",
+      "viewport": "desktop",
+      "sha256": "cf1cfce83bd8ef930b2f32e04d2295fd4b2260a62414e22f7a20b8c4b74eaed8",
+      "benchmarkReference": "DopeDB-2026.1-assistant-macos",
+      "file": "tests/ui-harness/__screenshots__/chromium-macos/shell.harness.ts/terminal-open.png",
+      "reason": "DopeDB workbench and Tailwind v4 design-system migration",
+      "approvedAt": "2026-07-28"
+    }
+  ]
+}

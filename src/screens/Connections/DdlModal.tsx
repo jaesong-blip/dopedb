@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import LazySqlViewer from "../../components/LazySqlViewer";
+import { LoadingLabel } from "../../design-system/components/Status";
 import { useTableDdl } from "../../features/catalog/useTableDdl";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import type { CatalogTable } from "../../ipc/types";
@@ -38,20 +39,23 @@ export default function DdlModal({
   }, [onClose]);
 
   return (
-    <div className="ddl-overlay" onClick={onClose}>
+    <div
+      className="tw:fixed tw:inset-0 tw:z-[var(--ds-z-modal)] tw:flex tw:items-center tw:justify-center tw:bg-overlay tw:p-3 tw:max-[760px]:items-stretch"
+      onClick={onClose}
+    >
       <div
-        className="ddl-modal"
+        className="tw:max-h-[76vh] tw:w-[min(640px,88vw)] tw:overflow-auto tw:rounded-lg tw:border tw:border-border-subtle tw:bg-popover tw:p-4 tw:text-popover-foreground tw:shadow-popover tw:max-[760px]:max-h-none tw:max-[760px]:w-full"
         role="dialog"
         aria-modal="true"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="ddl-head">
-          <span className="ddl-title">
+        <div className="tw:mb-3 tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[760px]:flex-col tw:max-[760px]:items-start">
+          <span className="tw:font-mono tw:text-ui tw:font-semibold">
             {t("connections.ddlTitle", {
               table: tableLabel(connection.engine, table),
             })}
           </span>
-          <div className="ddl-actions ds-control-row">
+          <div className="ds-control-row tw:flex tw:gap-2 tw:max-[760px]:w-full tw:max-[760px]:flex-wrap">
             <button
               className="btn small"
               onClick={() => void copy()}
@@ -68,9 +72,13 @@ export default function DdlModal({
             </button>
           </div>
         </div>
-        {error && <div className="error">{error}</div>}
+        {error ? (
+          <div className="tw:text-ui tw:text-danger">{error}</div>
+        ) : null}
         {!error && text == null && (
-          <div className="muted small-pad loading">{t("common.loading")}</div>
+          <div className="tw:px-2 tw:py-1">
+            <LoadingLabel>{t("common.loading")}</LoadingLabel>
+          </div>
         )}
         {text != null && <LazySqlViewer value={text} minHeight="240px" />}
       </div>

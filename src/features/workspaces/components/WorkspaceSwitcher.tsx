@@ -23,7 +23,6 @@ import { errMessage } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
 import { Icon } from "../../../components/Icon";
 import { useToast } from "../../../components/Toast";
-import "./WorkspaceSwitcher.css";
 
 export default function WorkspaceSwitcher({
   onChanged,
@@ -101,13 +100,18 @@ export default function WorkspaceSwitcher({
       : t("workspace.openDashboard");
 
   return (
-    <div className="workspace-switcher" data-tauri-drag-region="deep">
-      <div className="workspace-switcher-head">
-        <span className="workspace-switcher-label">{t("workspace.label")}</span>
-        <div className="workspace-switcher-actions ds-control-row">
+    <div
+      className="tw:grid tw:shrink-0 tw:gap-0 tw:border-b tw:border-border-subtle tw:bg-card tw:pt-[var(--ds-window-controls-safe-height)]"
+      data-tauri-drag-region="deep"
+    >
+      <div className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:items-center tw:justify-between tw:gap-2 tw:px-2">
+        <span className="tw:min-w-0 tw:overflow-hidden tw:text-ui tw:font-semibold tw:text-foreground tw:text-ellipsis tw:whitespace-nowrap">
+          {t("workspace.label")}
+        </span>
+        <div className="ds-control-row tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:[--ds-row-control-size:var(--ds-control-xs)]">
           <button
             type="button"
-            className="btn small icon-only workspace-add-button"
+            className="btn small icon-only tw:size-control-xs tw:min-h-control-xs tw:min-w-control-xs tw:border-transparent tw:bg-transparent tw:p-0 tw:text-muted-foreground tw:shadow-none tw:hover:border-transparent tw:hover:bg-muted tw:hover:text-foreground"
             onClick={onNew}
             title={t("connections.new")}
             aria-label={t("connections.new")}
@@ -116,7 +120,7 @@ export default function WorkspaceSwitcher({
           </button>
           <button
             type="button"
-            className="btn small icon-only workspace-dashboard-button"
+            className="btn small icon-only tw:size-control-xs tw:min-h-control-xs tw:min-w-control-xs tw:border-transparent tw:bg-transparent tw:p-0 tw:text-muted-foreground tw:shadow-none tw:hover:border-transparent tw:hover:bg-muted tw:hover:text-primary tw:disabled:cursor-progress"
             onClick={() => void openDashboard()}
             disabled={!context.data?.feature.enabled || dashboardOpening}
             title={dashboardLabel}
@@ -128,13 +132,17 @@ export default function WorkspaceSwitcher({
         </div>
       </div>
       {context.isLoading ? (
-        <div className="workspace-select-row ds-control-row">
-          <div className="workspace-select-skeleton" aria-hidden="true" />
+        <div className="ds-control-row tw:grid tw:min-h-control-lg tw:min-w-0 tw:auto-rows-[var(--ds-control-sm)] tw:grid-cols-[minmax(0,1fr)] tw:items-stretch tw:gap-1 tw:px-2 tw:pb-2 tw:[--ds-row-control-size:var(--ds-control-sm)]">
+          <div
+            className="tw:h-control-sm tw:rounded-sm tw:border tw:border-border-subtle tw:bg-background tw:opacity-55"
+            aria-hidden="true"
+          />
         </div>
       ) : context.data?.feature.enabled ? (
-        <div className="workspace-select-row ds-control-row">
-          <div className="workspace-select-wrap">
+        <div className="ds-control-row tw:grid tw:min-h-control-lg tw:min-w-0 tw:auto-rows-[var(--ds-control-sm)] tw:grid-cols-[minmax(0,1fr)] tw:items-stretch tw:gap-1 tw:px-2 tw:pb-2 tw:[--ds-row-control-size:var(--ds-control-sm)]">
+          <div className="tw:relative tw:flex tw:h-control-sm tw:items-center">
             <select
+              className="tw:h-control-sm tw:min-h-control-sm tw:w-full tw:min-w-0 tw:appearance-none tw:rounded-sm tw:border tw:border-border-subtle tw:bg-secondary tw:py-0 tw:pr-6 tw:pl-2 tw:font-sans tw:text-sm tw:font-semibold tw:text-foreground tw:text-ellipsis tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:disabled:cursor-default tw:disabled:opacity-100"
               value={activeChoice}
               onChange={(event) => void changeWorkspace(event.target.value)}
               disabled={switching || auth.data === undefined}
@@ -152,7 +160,10 @@ export default function WorkspaceSwitcher({
                 </optgroup>
               ))}
             </select>
-            <Icon name="chevronDown" />
+            <Icon
+              name="chevronDown"
+              className="tw:pointer-events-none tw:absolute tw:right-2 tw:text-muted-foreground"
+            />
           </div>
         </div>
       ) : null}

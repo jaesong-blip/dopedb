@@ -30,12 +30,12 @@ export default function Pager({
 
   return (
     <div
-      className="table-pager ds-command-group ds-control-row"
+      className="ds-control-row tw:flex tw:shrink-0 tw:flex-nowrap tw:items-center tw:gap-1"
       role="group"
       aria-label={t("tables.pagination")}
     >
       <button
-        className="btn small icon-only table-edge-page-action"
+        className="btn small icon-only tw:@max-[760px]:hidden"
         disabled={busy || !hasPrev}
         onClick={() => onPage(0)}
         title={t("common.first")}
@@ -52,7 +52,7 @@ export default function Pager({
       >
         <Icon name="arrowLeft" />
       </button>
-      <span className="muted page-ind">
+      <span className="tw:min-w-[58px] tw:text-center tw:text-sm tw:text-muted-foreground tw:whitespace-nowrap">
         {t("tables.page", { page: page + 1 })}
         {lastPage != null && ` / ${lastPage + 1}`}
       </span>
@@ -66,7 +66,7 @@ export default function Pager({
         <Icon name="arrowRight" />
       </button>
       <button
-        className="btn small icon-only table-edge-page-action"
+        className="btn small icon-only tw:@max-[760px]:hidden"
         disabled={busy || lastPage == null || !hasNext}
         onClick={() => lastPage != null && onPage(lastPage)}
         title={t("tables.last")}
@@ -75,7 +75,7 @@ export default function Pager({
         <Icon name="chevronsRight" />
       </button>
       <button
-        className="btn small icon-only refresh table-refresh-action"
+        className="btn small icon-only refresh tw:@max-[480px]:hidden"
         disabled={busy}
         aria-label={t("common.refresh")}
         title={t("common.refresh")}
