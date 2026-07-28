@@ -30,6 +30,7 @@ import type {
 import {
   blankConnection,
   CONNECTION_DEFAULT_PORTS,
+  connectionDefaultSslMode,
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
 import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
@@ -65,6 +66,44 @@ const PROVIDER_ORDER: Provider[] = [
   "gcpCloudSql",
 ];
 
+const POSTGRES_SSL_MODES = [
+  "disable",
+  "allow",
+  "prefer",
+  "require",
+  "verify-ca",
+  "verify-full",
+] as const;
+
+const MYSQL_SSL_MODES = [
+  "disabled",
+  "preferred",
+  "required",
+  "verify-ca",
+  "verify-identity",
+] as const;
+
+const SQL_TLS_PARAMETERS = [
+  "sslrootcert",
+  "sslrootcert_pem",
+  "sslcert",
+  "sslcert_pem",
+  "sslkey",
+  "sslkey_pem",
+] as const;
+
+const MONGO_TLS_PARAMETERS = [
+  "tls",
+  "tlsCAFile",
+  "tlsCertificateKeyFile",
+] as const;
+
+const CONTROLLED_CONNECTION_PARAMETERS = new Set<string>([
+  ...SQL_TLS_PARAMETERS,
+  ...MONGO_TLS_PARAMETERS,
+  "srv",
+]);
+
 type ConnectionTab =
   | "general"
   | "options"
@@ -83,6 +122,45 @@ function compatibleDrivers(
       (provider === "auto" ||
         driver.supportedProviders.includes(provider)),
   );
+}
+
+function sslModeForEngine(engine: Engine, current: string): string {
+  const normalized = current.trim().toLowerCase().replace(/_/g, "-");
+  if (engine === "postgres") {
+    const mapped =
+      normalized === "disabled"
+        ? "disable"
+        : normalized === "preferred"
+          ? "prefer"
+          : normalized === "required"
+            ? "require"
+            : normalized === "verify-identity"
+              ? "verify-full"
+              : normalized;
+    return POSTGRES_SSL_MODES.includes(
+      mapped as (typeof POSTGRES_SSL_MODES)[number],
+    )
+      ? mapped
+      : connectionDefaultSslMode(engine);
+  }
+  if (engine === "mysql") {
+    const mapped =
+      normalized === "disable"
+        ? "disabled"
+        : normalized === "prefer"
+          ? "preferred"
+          : normalized === "require"
+            ? "required"
+            : normalized === "verify-full"
+              ? "verify-identity"
+              : normalized;
+    return MYSQL_SSL_MODES.includes(
+      mapped as (typeof MYSQL_SSL_MODES)[number],
+    )
+      ? mapped
+      : connectionDefaultSslMode(engine);
+  }
+  return connectionDefaultSslMode(engine);
 }
 
 export function ConnectionForm({
@@ -113,9 +191,13 @@ export function ConnectionForm({
   const toast = useToast();
   const driverCatalog = useQuery(driversQuery());
   const catalogScope = useCatalogScope();
-  const [form, setForm] = useState<ConnectionProfile>(
-    initial ?? blankConnection(preset),
-  );
+  const [form, setForm] = useState<ConnectionProfile>(() => {
+    const profile = initial ?? blankConnection(preset);
+    return {
+      ...profile,
+      sslmode: sslModeForEngine(profile.engine, profile.sslmode),
+    };
+  });
   const [persisted, setPersisted] = useState(initial !== null);
   const [password, setPassword] = useState("");
   const [activeTab, setActiveTab] =
@@ -136,6 +218,15 @@ export function ConnectionForm({
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
   const srv = form.extraParams.srv === "true";
+  const mongoTlsEnabled =
+    form.extraParams.tls?.toLowerCase() === "true";
+  const sqlSslModes =
+    form.engine === "mysql"
+      ? MYSQL_SSL_MODES
+      : POSTGRES_SSL_MODES;
+  const sqlTlsEnabled = !["disable", "disabled"].includes(
+    form.sslmode,
+  );
   const schemaDiscovery = useQuery({
     ...catalogOverviewQuery(form.id, catalogScope),
     enabled:
@@ -155,7 +246,9 @@ export function ConnectionForm({
   ).sort((left, right) => left.localeCompare(right));
   const scopedSchemas = selectedSchemaScope(form);
   const advancedParameters = Object.entries(form.extraParams).filter(
-    ([key]) => !isIntrospectionParameter(key),
+    ([key]) =>
+      !isIntrospectionParameter(key) &&
+      !CONTROLLED_CONNECTION_PARAMETERS.has(key),
   );
 
   const drivers = compatibleDrivers(
@@ -234,11 +327,18 @@ export function ConnectionForm({
         delete extraParams[SCHEMA_SCOPE_PARAMETER];
         delete extraParams[OBJECT_PATTERN_PARAMETER];
       }
+      if (engine === "mongodb" || engine === "sqlite") {
+        for (const key of SQL_TLS_PARAMETERS) delete extraParams[key];
+      }
+      if (engine !== "mongodb") {
+        for (const key of MONGO_TLS_PARAMETERS) delete extraParams[key];
+      }
       return {
         ...current,
         engine,
         provider,
         extraParams,
+        sslmode: sslModeForEngine(engine, current.sslmode),
         driverId: null,
         port:
           current.port === CONNECTION_DEFAULT_PORTS[current.engine]
@@ -271,6 +371,18 @@ export function ConnectionForm({
     });
   }
 
+  function setMongoTls(checked: boolean) {
+    setForm((current) => {
+      const extraParams = { ...current.extraParams };
+      if (checked) {
+        extraParams.tls = "true";
+      } else {
+        for (const key of MONGO_TLS_PARAMETERS) delete extraParams[key];
+      }
+      return { ...current, extraParams };
+    });
+  }
+
   function setExtraParameter(key: string, value: string) {
     setForm((current) => {
       const extraParams = { ...current.extraParams };
@@ -278,6 +390,11 @@ export function ConnectionForm({
       else delete extraParams[key];
       return { ...current, extraParams };
     });
+  }
+
+  async function pickExtraParameterFile(key: string) {
+    const file = await pickFile();
+    if (file) setExtraParameter(key, file);
   }
 
   function updateAdvancedParameter(
@@ -982,9 +1099,82 @@ export function ConnectionForm({
                       {t("connections.sqliteNoTls")}
                     </p>
                   ) : isMongo ? (
-                    <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
-                      {t("connections.mongoTlsAdvanced")}
-                    </p>
+                    <>
+                      <CheckboxField
+                        label={t("connections.enableTls")}
+                        checked={mongoTlsEnabled}
+                        onChange={(event) =>
+                          setMongoTls(event.target.checked)
+                        }
+                      />
+                      <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[620px]:grid-cols-1">
+                        <Field
+                          label={t("connections.caCertificate")}
+                        >
+                          <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-2">
+                            <TextInput
+                              value={
+                                form.extraParams.tlsCAFile ?? ""
+                              }
+                              disabled={!mongoTlsEnabled}
+                              onChange={(event) =>
+                                setExtraParameter(
+                                  "tlsCAFile",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="/path/to/ca.pem"
+                            />
+                            <button
+                              type="button"
+                              className="btn"
+                              disabled={!mongoTlsEnabled}
+                              onClick={() =>
+                                void pickExtraParameterFile(
+                                  "tlsCAFile",
+                                )
+                              }
+                            >
+                              {t("connections.browse")}
+                            </button>
+                          </div>
+                        </Field>
+                        <Field
+                          label={t(
+                            "connections.clientCertificateKey",
+                          )}
+                        >
+                          <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-2">
+                            <TextInput
+                              value={
+                                form.extraParams
+                                  .tlsCertificateKeyFile ?? ""
+                              }
+                              disabled={!mongoTlsEnabled}
+                              onChange={(event) =>
+                                setExtraParameter(
+                                  "tlsCertificateKeyFile",
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="/path/to/client.pem"
+                            />
+                            <button
+                              type="button"
+                              className="btn"
+                              disabled={!mongoTlsEnabled}
+                              onClick={() =>
+                                void pickExtraParameterFile(
+                                  "tlsCertificateKeyFile",
+                                )
+                              }
+                            >
+                              {t("connections.browse")}
+                            </button>
+                          </div>
+                        </Field>
+                      </div>
+                    </>
                   ) : (
                     <>
                       <Field label={t("connections.sslMode")}>
@@ -994,30 +1184,60 @@ export function ConnectionForm({
                             set("sslmode", event.target.value)
                           }
                         >
-                          <option value="disable">disable</option>
-                          <option value="prefer">prefer</option>
-                          <option value="require">require</option>
-                          <option value="verify-full">
-                            verify-full
-                          </option>
+                          {sqlSslModes.map((mode) => (
+                            <option key={mode} value={mode}>
+                              {mode}
+                            </option>
+                          ))}
                         </SelectInput>
                       </Field>
-                      <Field
-                        label={t("connections.caCertificate")}
-                      >
-                        <TextInput
-                          value={
-                            form.extraParams.sslrootcert ?? ""
-                          }
-                          onChange={(event) =>
-                            setExtraParameter(
+                      <div className="tw:grid tw:gap-3">
+                        {(
+                          [
+                            [
                               "sslrootcert",
-                              event.target.value,
-                            )
-                          }
-                          placeholder="/path/to/ca.pem"
-                        />
-                      </Field>
+                              "connections.caCertificate",
+                              "/path/to/ca.pem",
+                            ],
+                            [
+                              "sslcert",
+                              "connections.clientCertificate",
+                              "/path/to/client.crt",
+                            ],
+                            [
+                              "sslkey",
+                              "connections.clientKey",
+                              "/path/to/client.key",
+                            ],
+                          ] as const
+                        ).map(([key, label, placeholder]) => (
+                          <Field key={key} label={t(label)}>
+                            <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-2">
+                              <TextInput
+                                value={form.extraParams[key] ?? ""}
+                                disabled={!sqlTlsEnabled}
+                                onChange={(event) =>
+                                  setExtraParameter(
+                                    key,
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={placeholder}
+                              />
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={!sqlTlsEnabled}
+                                onClick={() =>
+                                  void pickExtraParameterFile(key)
+                                }
+                              >
+                                {t("connections.browse")}
+                              </button>
+                            </div>
+                          </Field>
+                        ))}
+                      </div>
                     </>
                   )}
                 </section>

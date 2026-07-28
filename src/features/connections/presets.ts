@@ -22,6 +22,14 @@ export const CONNECTION_DEFAULT_PORTS: Record<ConnectionEngine, number> = {
   mongodb: 27017,
 };
 
+export function connectionDefaultSslMode(
+  engine: ConnectionEngine,
+): string {
+  if (engine === "mysql") return "preferred";
+  if (engine === "sqlite") return "disable";
+  return "prefer";
+}
+
 export function blankConnection(
   preset: ConnectionLaunchPreset | null = null,
 ): ConnectionProfile {
@@ -38,7 +46,7 @@ export function blankConnection(
     port: CONNECTION_DEFAULT_PORTS[engine],
     database: "",
     username: "",
-    sslmode: "prefer",
+    sslmode: connectionDefaultSslMode(engine),
     extraParams: {},
     readonlyDefault: true,
     allowWrites: false,

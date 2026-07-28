@@ -3,7 +3,10 @@
 // preserving support for SQL, SQLite, and multi-host MongoDB URLs.
 import type { Engine } from "../../ipc/types";
 import type { ConnectionProfile } from "./domain";
-import { CONNECTION_DEFAULT_PORTS } from "./presets";
+import {
+  CONNECTION_DEFAULT_PORTS,
+  connectionDefaultSslMode,
+} from "./presets";
 
 export type ParsedConnectionUrl = {
   update: Partial<ConnectionProfile>;
@@ -105,7 +108,14 @@ function parseMongoConnectionUrl(text: string): ParsedConnectionUrl | null {
   ]);
   const extraParams: Record<string, string> = {};
   params.forEach((value, key) => {
-    if (dopedbMetaKeys.has(key.toLowerCase())) return;
+    const normalizedKey = key.toLowerCase();
+    if (dopedbMetaKeys.has(normalizedKey)) return;
+    if (normalizedKey === "ssl" || normalizedKey === "tls") {
+      const enabled = parseOptionalBoolean(value);
+      if (enabled === true) extraParams.tls = "true";
+      if (enabled === false) delete extraParams.tls;
+      if (enabled !== null) return;
+    }
     extraParams[key] = value;
   });
   if (srv) extraParams.srv = "true";
@@ -219,7 +229,7 @@ export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
       : CONNECTION_DEFAULT_PORTS[engine],
     database,
     username: decodeUrlPart(url.username),
-    sslmode: sslmode ?? "prefer",
+    sslmode: sslmode ?? connectionDefaultSslMode(engine),
     extraParams,
   };
   if (meta.env) update.env = meta.env;

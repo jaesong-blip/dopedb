@@ -64,6 +64,18 @@ pub fn apply_pg_tuning(p: &ConnectionProfile, mut opts: PgConnectOptions) -> PgC
     if let Some(ca) = p.extra_params.get("sslrootcert_pem") {
         opts = opts.ssl_root_cert_from_pem(ca.as_bytes().to_vec());
     }
+    if let Some(cert) = p.extra_params.get("sslcert") {
+        opts = opts.ssl_client_cert(cert);
+    }
+    if let Some(cert) = p.extra_params.get("sslcert_pem") {
+        opts = opts.ssl_client_cert_from_pem(cert.as_bytes());
+    }
+    if let Some(key) = p.extra_params.get("sslkey") {
+        opts = opts.ssl_client_key(key);
+    }
+    if let Some(key) = p.extra_params.get("sslkey_pem") {
+        opts = opts.ssl_client_key_from_pem(key.as_bytes());
+    }
     opts
 }
 
@@ -82,8 +94,23 @@ pub fn apply_mysql_tuning(
     if let Some(ca) = p.extra_params.get("sslrootcert_pem") {
         opts = opts.ssl_ca_from_pem(ca.as_bytes().to_vec());
     }
+    if let Some(cert) = p.extra_params.get("sslcert") {
+        opts = opts.ssl_client_cert(cert);
+    }
+    if let Some(cert) = p.extra_params.get("sslcert_pem") {
+        opts = opts.ssl_client_cert_from_pem(cert.as_bytes());
+    }
+    if let Some(key) = p.extra_params.get("sslkey") {
+        opts = opts.ssl_client_key(key);
+    }
+    if let Some(key) = p.extra_params.get("sslkey_pem") {
+        opts = opts.ssl_client_key_from_pem(key.as_bytes());
+    }
     if resolve(p) == Provider::GcpCloudSql
-        && matches!(p.sslmode.as_str(), "verify-ca" | "verify-full")
+        && matches!(
+            p.sslmode.as_str(),
+            "verify-ca" | "verify-full" | "verify-identity"
+        )
         && p.extra_params.contains_key("sslrootcert_pem")
     {
         // Cloud SQL IAM authentication uses mysql_clear_password only inside the
