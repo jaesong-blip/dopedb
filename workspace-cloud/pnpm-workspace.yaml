@@ -2,7 +2,7 @@ allowBuilds:
   esbuild: true
 overrides:
   '@esbuild-kit/core-utils>esbuild': ^0.28.1
-  postcss: ^8.5.22
+  postcss: 8.5.23
   sharp: ^0.35.3
 minimumReleaseAge: 1440
 minimumReleaseAgeStrict: true
