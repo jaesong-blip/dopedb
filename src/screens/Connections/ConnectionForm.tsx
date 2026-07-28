@@ -58,6 +58,7 @@ import {
 } from "../../features/connections/presets";
 import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
 import type { ProviderKind } from "../../features/providers/domain";
+import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import {
   isIntrospectionParameter,
   OBJECT_PATTERN_PARAMETER,
@@ -240,11 +241,14 @@ export function ConnectionForm({
   const [messageIsError, setMessageIsError] = useState(false);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] =
+    useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addSearch, setAddSearch] = useState("");
   const [problemsOpen, setProblemsOpen] = useState(false);
   const addMenuAnchorRef = useRef<HTMLDivElement | null>(null);
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const workspaceButtonRef = useRef<HTMLButtonElement | null>(null);
   const providerReturnFocusRef = useRef<HTMLElement | null>(null);
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
@@ -1071,6 +1075,17 @@ export function ConnectionForm({
               </div>
               {!isNew && form.workspaceAccess === "local" ? (
                 <>
+                  <button
+                    ref={workspaceButtonRef}
+                    type="button"
+                    className="btn small icon-only icon-xs"
+                    disabled={busy}
+                    onClick={() => setWorkspaceDialogOpen(true)}
+                    title={t("workspace.copyToWorkspace")}
+                    aria-label={t("workspace.copyToWorkspace")}
+                  >
+                    <Icon name="upload" />
+                  </button>
                   <button
                     type="button"
                     className="btn small icon-only icon-xs"
@@ -2018,6 +2033,17 @@ export function ConnectionForm({
           initialProvider={providerCredentialsOpen}
           onClose={() => setProviderCredentialsOpen(null)}
           returnFocus={() => providerReturnFocusRef.current?.focus()}
+        />
+      ) : null}
+      {workspaceDialogOpen &&
+      !isNew &&
+      form.workspaceAccess === "local" ? (
+        <WorkspaceConnectionDialog
+          connection={form}
+          mode="copy"
+          onBound={() => undefined}
+          onClose={() => setWorkspaceDialogOpen(false)}
+          returnFocusRef={workspaceButtonRef}
         />
       ) : null}
         </div>

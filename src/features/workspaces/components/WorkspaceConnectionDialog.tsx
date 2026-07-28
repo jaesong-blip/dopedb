@@ -1,7 +1,12 @@
 // Secure workspace connection flow: publishes only a redacted local template or
 // binds a member-local credential to a synchronized template.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   bindWorkspaceConnectionCredentials,
@@ -23,17 +28,23 @@ import {
   SelectInput,
   TextInput,
 } from "../../../design-system/components/FormControls";
+import {
+  ModalBackdrop,
+  ModalSurface,
+} from "../../../design-system/components/Modal";
 
 export default function WorkspaceConnectionDialog({
   connection,
   mode,
   onBound,
   onClose,
+  returnFocusRef,
 }: {
   connection: ConnectionProfile;
   mode: "copy" | "credentials";
   onBound: (connection: ConnectionProfile) => void;
   onClose: () => void;
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -79,8 +90,9 @@ export default function WorkspaceConnectionDialog({
     } else {
       focusTarget?.focus();
     }
-    return () => trigger?.focus?.();
-  }, []);
+    return () =>
+      (returnFocusRef?.current ?? trigger)?.focus?.();
+  }, [returnFocusRef]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -148,111 +160,143 @@ export default function WorkspaceConnectionDialog({
     }
   }
 
-  return createPortal(
-    <div
-      className="tw:fixed tw:inset-0 tw:z-[var(--ds-z-modal)] tw:grid tw:place-items-center tw:overflow-auto tw:bg-overlay tw:p-4 tw:max-[520px]:p-3"
-      role="presentation"
-      onClick={() => {
+  return (
+    <ModalBackdrop
+      onMouseDown={() => {
         if (!pending) onClose();
       }}
     >
-      <form
-        ref={dialogRef}
-        className="ds-panel tw:flex tw:max-h-[calc(100dvh_-_(var(--ds-space-4)_*_2))] tw:w-[min(440px,100%)] tw:flex-col tw:gap-3 tw:overflow-auto tw:shadow-popover tw:max-[520px]:max-h-[calc(100dvh_-_(var(--ds-space-3)_*_2))] tw:max-[520px]:w-full"
-        role="dialog"
-        aria-modal="true"
+      <ModalSurface
         aria-labelledby="workspace-connection-title"
         aria-describedby="workspace-connection-description"
         aria-busy={pending}
-        onSubmit={submit}
-        onClick={(event) => event.stopPropagation()}
       >
-        <header className="tw:flex tw:items-center tw:justify-between tw:gap-3">
-          <h2 id="workspace-connection-title">
-            {mode === "copy"
-              ? t("workspace.copyConnection", { name: connection.name })
-              : t("workspace.bindCredentials", { name: connection.name })}
-          </h2>
-        </header>
-        {mode === "copy" ? (
-          <>
-            <p
-              id="workspace-connection-description"
-              className="tw:m-0 tw:text-ui tw:leading-body tw:text-muted-foreground tw:[overflow-wrap:anywhere]"
-            >
-              {t("workspace.copySecurityNote")}
-            </p>
-            <Field label={t("workspace.targetWorkspace")}>
-              <SelectInput
-                ref={(node) => {
-                  initialFocusRef.current = node;
-                }}
-                value={selectedTargetValue}
-                onChange={(event) => setTargetValue(event.target.value)}
-                disabled={pending || targets.length === 0}
+        <form
+          ref={dialogRef}
+          className="tw:flex tw:min-h-0 tw:flex-col tw:gap-3 tw:overflow-auto tw:p-4"
+          onSubmit={submit}
+        >
+          <header className="tw:flex tw:items-center tw:justify-between tw:gap-3">
+            <h2 id="workspace-connection-title">
+              {mode === "copy"
+                ? t("workspace.copyConnection", {
+                    name: connection.name,
+                  })
+                : t("workspace.bindCredentials", {
+                    name: connection.name,
+                  })}
+            </h2>
+          </header>
+          {mode === "copy" ? (
+            <>
+              <p
+                id="workspace-connection-description"
+                className="tw:m-0 tw:text-ui tw:leading-body tw:text-muted-foreground tw:[overflow-wrap:anywhere]"
               >
-                {targetGroups.map((group) => (
-                  <optgroup key={group.key} label={group.label}>
-                    {group.choices.map((choice) => (
-                      <option value={choice.value} key={choice.value}>
-                        {choice.workspace.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </SelectInput>
-            </Field>
-            {targets.length === 0 ? (
-              <div className="tw:text-ui tw:text-danger" role="alert">
-                {t("workspace.noManageableWorkspace")}
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <p
-              id="workspace-connection-description"
-              className="tw:m-0 tw:text-ui tw:leading-body tw:text-muted-foreground tw:[overflow-wrap:anywhere]"
+                {t("workspace.copySecurityNote")}
+              </p>
+              <Field label={t("workspace.targetWorkspace")}>
+                <SelectInput
+                  ref={(node) => {
+                    initialFocusRef.current = node;
+                  }}
+                  value={selectedTargetValue}
+                  onChange={(event) =>
+                    setTargetValue(event.target.value)
+                  }
+                  disabled={pending || targets.length === 0}
+                >
+                  {targetGroups.map((group) => (
+                    <optgroup key={group.key} label={group.label}>
+                      {group.choices.map((choice) => (
+                        <option
+                          value={choice.value}
+                          key={choice.value}
+                        >
+                          {choice.workspace.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </SelectInput>
+              </Field>
+              {targets.length === 0 ? (
+                <div
+                  className="tw:text-ui tw:text-danger"
+                  role="alert"
+                >
+                  {t("workspace.noManageableWorkspace")}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p
+                id="workspace-connection-description"
+                className="tw:m-0 tw:text-ui tw:leading-body tw:text-muted-foreground tw:[overflow-wrap:anywhere]"
+              >
+                {t("workspace.credentialsSecurityNote")}
+              </p>
+              <Field label={t("workspace.username")}>
+                <TextInput
+                  ref={(node) => {
+                    initialFocusRef.current = node;
+                  }}
+                  value={username}
+                  onChange={(event) =>
+                    setUsername(event.target.value)
+                  }
+                  autoComplete="username"
+                />
+              </Field>
+              <Field label={t("connections.password")}>
+                <TextInput
+                  type="password"
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  autoComplete="current-password"
+                  required
+                />
+              </Field>
+            </>
+          )}
+          {error ? (
+            <div
+              className="tw:border-l-2 tw:border-danger tw:bg-danger-muted tw:p-2 tw:text-ui tw:leading-body tw:text-danger tw:[overflow-wrap:anywhere]"
+              role="alert"
             >
-              {t("workspace.credentialsSecurityNote")}
-            </p>
-            <Field label={t("workspace.username")}>
-              <TextInput
-                ref={(node) => {
-                  initialFocusRef.current = node;
-                }}
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="username"
-              />
-            </Field>
-            <Field label={t("connections.password")}>
-              <TextInput
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                required
-              />
-            </Field>
-          </>
-        )}
-        {error ? (
-          <div
-            className="tw:border-l-2 tw:border-danger tw:bg-danger-muted tw:p-2 tw:text-ui tw:leading-body tw:text-danger tw:[overflow-wrap:anywhere]"
-            role="alert"
-          >
-            {error}
-          </div>
-        ) : null}
-        <footer className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:max-[520px]:[&_.btn:not(.icon-only)]:w-full">
-          <button ref={cancelRef} className="btn" type="button" onClick={onClose} disabled={pending}>{t("common.cancel")}</button>
-          <button className="btn primary" type="submit" disabled={pending || (mode === "copy" && !selectedTargetValue)}>
-            {pending ? t("common.working") : mode === "copy" ? t("workspace.copy") : t("workspace.bind")}
-          </button>
-        </footer>
-      </form>
-    </div>,
-    document.body,
+              {error}
+            </div>
+          ) : null}
+          <footer className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:max-[520px]:[&_.btn:not(.icon-only)]:w-full">
+            <button
+              ref={cancelRef}
+              className="btn"
+              type="button"
+              onClick={onClose}
+              disabled={pending}
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              className="btn primary"
+              type="submit"
+              disabled={
+                pending ||
+                (mode === "copy" && !selectedTargetValue)
+              }
+            >
+              {pending
+                ? t("common.working")
+                : mode === "copy"
+                  ? t("workspace.copy")
+                  : t("workspace.bind")}
+            </button>
+          </footer>
+        </form>
+      </ModalSurface>
+    </ModalBackdrop>
   );
 }

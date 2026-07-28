@@ -10,13 +10,15 @@ import { createPortal } from "react-dom";
 
 export function ModalBackdrop({
   children,
+  ...props
 }: {
   children: ReactNode;
-}) {
+} & Omit<HTMLAttributes<HTMLDivElement>, "className" | "children">) {
   return createPortal(
     <div
       className="tw:fixed tw:inset-0 tw:z-[var(--ds-z-modal)] tw:grid tw:place-items-center tw:overflow-auto tw:bg-overlay tw:p-4 tw:max-[640px]:p-2"
       role="presentation"
+      {...props}
     >
       {children}
     </div>,
