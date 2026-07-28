@@ -11,6 +11,22 @@ Before changing TSX, CSS, Tailwind utilities, or layout, also read
 [`src/design-system/README.md`](src/design-system/README.md). DopeDB semantic
 tokens and shared primitives are authoritative.
 
+## UI/UX source of truth
+
+- DopeDB 2026.1 is the primary clean-room UI/UX target. Use
+  [`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)
+  to track visible parity and functional parity separately.
+- Tailwind v4 and DopeDB semantic primitives are the implementation system, not
+  a competing visual direction. Do not reintroduce Orca/Chat2DB styling when it
+  conflicts with an observed DopeDB reference.
+- A DopeDB screenshot baseline proves only self-consistency and must never be
+  used to declare DopeDB parity. Compare the same scenario against a
+  versioned DopeDB reference and keep `wrong`, `partial`, and `missing` gaps
+  explicit.
+- Do not add enabled controls that merely look like DopeDB. Every enabled
+  control needs a real command and state owner; list missing functionality in
+  the tracker instead of hiding it behind visual imitation.
+
 ## UI migration discipline
 
 - New or changed UI uses static `tw:` Tailwind v4 utilities directly in TSX

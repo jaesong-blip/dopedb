@@ -1,8 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "types": ["node"]
-  },
-  "include": ["src", "tests/ui-harness", "tests/ui-benchmark/clone"],
-  "references": []
-}

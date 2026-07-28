@@ -9,15 +9,6 @@ export default defineConfig({
   plugins: [tailwindcss(), react()],
   clearScreen: false,
   envPrefix: ["VITE_", "TAURI_"],
-  test: {
-    exclude: [
-      "**/node_modules/**",
-      "**/.git/**",
-      // UI 하네스는 Playwright가 실행한다. vitest가 수집하면 안 된다.
-      "tests/ui-harness/**",
-      "tests/ui-benchmark/**",
-    ],
-  },
   server: {
     port: 1420,
     strictPort: true,

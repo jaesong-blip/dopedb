@@ -1,13 +1,19 @@
 # DopeDB UI 디자인 시스템
 
-DopeDB의 UI는 Orca의 디자인 시스템을 기준으로 한다. 시각 언어는
-**monochrome and quiet**이며, 중립색이 앱 chrome과 작업 표면을 담당하고 색은
-선택·위험·성공처럼 의미가 있는 상태에만 사용한다.
+DopeDB의 UI/UX는 사용자가 제공한 DopeDB 2026.1 macOS reference를
+clean-room 정본으로 한다. app chrome, tool window, document tab, toolbar,
+data editor, query console, Services와 status bar의 구조·밀도·상호작용을
+DopeDB 기준에 맞춘다. DopeDB의 안전 승인·감사 기능은 같은 UI 문법 안에서
+확장한다.
 
 DopeDB는 Tailwind CSS v4를 화면 배치의 기본 도구로 사용한다. Tailwind는 별도
 디자인 언어가 아니라 `--ds-*` 역할 토큰과 앱 정본 primitive를 사용하는 얇은
 utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그리드·vendor widget·
 앱 shell처럼 CSS가 구조적으로 더 알맞은 경계는 유지한다.
+
+영역별 UI/UX 패리티와 기능 패리티는
+[`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](../../docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)에
+분리해 기록한다. 기존 DopeDB screenshot baseline은 디자인 정본이 아니다.
 
 ## 정본
 
@@ -55,6 +61,11 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
 ## 시각 방향
 
 - 앱 chrome은 눈에 띄지 않고 사용자의 데이터와 도구를 감싼다.
+- macOS native menu와 별도로 WebView 안에 File/Edit/View 계열 텍스트 메뉴를
+  만들지 않는다. 앱 내부 title toolbar는 project context, tool-window launcher,
+  search와 settings를 소유한다.
+- tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
+  하나의 layout 문법으로 구현한다.
 - 색상보다 `muted`, `selection`, `border`를 먼저 사용한다.
 - 일반 surface는 평평하게 유지한다. 그림자는 popover, dialog, toast처럼 떠 있는
   surface에만 사용한다.
@@ -107,7 +118,8 @@ DopeDB 기존 화면은 `--ds-surface-*`, `--ds-text*`, `--ds-accent*` 별칭을
 
 ## Radius와 elevation
 
-Orca의 10px base scale을 사용한다.
+DopeDB 2026.1의 compact control과 둥근 outer tool-window geometry를 역할별
+scale로 표현한다.
 
 - 작은 내부 요소: `--ds-radius-xs` (6px)
 - button/input: `--ds-radius-sm` (8px)
@@ -159,7 +171,7 @@ Elevation은 세 단계만 허용한다.
 
 ### 버튼
 
-기본 클래스는 `.btn`이며 Orca의 outline 버튼 역할이다.
+기본 클래스는 `.btn`이며 DopeDB toolbar의 낮은 chrome 무게를 표현한다.
 
 | 조합 | 용도 |
 | --- | --- |
@@ -277,8 +289,8 @@ React primitive로 승격한다.
 
 좁은 창에서 툴바 전체를 여러 줄로 쌓지 않는다. 덜 자주 쓰는 명령은
 `ToolbarMenu`로 이동하고, icon-only shortcut은 접근 가능한 이름과 tooltip을
-유지한다. 이 구조는 Chat2DB result toolbar의 수평 overflow와 Orca tab/command
-bar의 고정된 끝단 action을 현재 workbench에 맞게 결합한 것이다.
+  유지한다. 이 구조는 DopeDB data editor와 query console에서 확인한 action
+  locality와 고정된 끝단 control을 현재 workbench에 맞게 표현한 것이다.
 
 toolbar의 command overflow menu는 반드시 portal 기반 `ToolbarMenu`를 사용한다.
 
@@ -339,7 +351,9 @@ Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하�
 8. 한 사용자 흐름은 `data-primary-flow` 경계 안에 primary action 하나만 둔다.
 9. `pnpm build`를 실행하고 실제 앱에서 변경한 화면과 좁은 창을 확인한다.
 
-참고 구현:
+참고 기준:
 
-- [stablyai/orca UI style guide](https://github.com/stablyai/orca/blob/main/docs/STYLEGUIDE.md)
-- [Chat2DB community client](https://github.com/CodePhiliaX/Chat2DB/tree/main/chat2db-community-client)
+- [`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](../../docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)
+- [DopeDB tool windows](https://www.DopeDB.com/help/DopeDB/tool-windows.html)
+- [DopeDB query consoles](https://www.DopeDB.com/help/DopeDB/query-consoles.html)
+- [DopeDB Services tool window](https://www.DopeDB.com/help/DopeDB/services-tool-window.html)

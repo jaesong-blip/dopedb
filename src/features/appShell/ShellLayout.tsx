@@ -51,7 +51,6 @@ type Props = {
   onArea: (area: AppArea) => void;
   onSettings: () => void;
   onNewQuery: () => void;
-  onOpenActivity: () => void;
   onOpenAgentTools: () => void;
   onOpenTerminal: () => void;
   onSelectDashboardConnection: (id: string) => void;
@@ -124,9 +123,7 @@ export default function ShellLayout(props: Props) {
         selected={selected}
         supportsSql={supportsSql}
         showTerminalDock={showTerminalDock}
-        onNewConnection={() => props.onNewConnection()}
         onNewQuery={props.onNewQuery}
-        onOpenActivity={props.onOpenActivity}
         onArea={props.onArea}
         onOpenTerminal={props.onOpenTerminal}
         onSettings={props.onSettings}

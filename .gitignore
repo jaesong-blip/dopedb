@@ -8,11 +8,6 @@
 /workspace-cloud/tsconfig.tsbuildinfo
 /site/tsconfig.tsbuildinfo
 /site/.vercel
-/test-results
-/playwright-report
-/blob-report
-/output/playwright/
-/.playwright-cli/
 src-tauri/target
 .DS_Store
 *.db

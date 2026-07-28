@@ -497,7 +497,6 @@ function Shell() {
         setMobileExplorerOpen(false);
       }}
       onNewQuery={() => void openQueryDocument()}
-      onOpenActivity={() => openStableDocument("activity")}
       onOpenAgentTools={openAgentToolsSettings}
       onOpenTerminal={openOrFocusTerminalDock}
       onSelectDashboardConnection={(id) => selectConnection(id, "dashboard")}

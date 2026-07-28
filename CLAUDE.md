@@ -21,6 +21,13 @@ primitive로 `src/design-system/`에 적립한 뒤 README에 기록한다. 기�
 data-grid/vendor integration, reset, token, 정본 primitive뿐이다. 변경한 화면은
 직접 실행해 확인한다.
 
+DopeDB 2026.1을 앱 UI/UX의 clean-room 정본으로 사용한다. Tailwind v4와
+DopeDB semantic token은 그 화면을 구현하는 수단이며 별도 시각 방향이 아니다.
+UI/UX 차이와 기능 부재는
+`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`에서 별도 상태로 관리한다.
+DopeDB 자체 screenshot baseline 통과를 DopeDB 패리티 완료로 해석하지 않고,
+enabled control에는 실제 command와 state owner가 있어야 한다.
+
 ## 아키텍처
 
 - `src/screens/`: 화면 단위 진입점.

@@ -40,6 +40,11 @@ legacy CSS 양쪽에 두지 않는다. 새 CSS는 문서화된 shell/data-grid/v
 token/primitive 경계에서만 허용한다. `pnpm build` 후 변경한 화면을 앱에서 직접
 확인한다.
 
+DopeDB 2026.1 reference가 UI/UX 정본이다. 변경한 scenario는
+[`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)의
+UI 상태와 기능 상태를 각각 갱신한다. DopeDB 자체 baseline을 승인해 패리티를
+증명하지 않으며, 아직 없는 기능은 동작하는 control처럼 만들지 않는다.
+
 ## 정식 릴리스
 
 정식 릴리스는 사용자가 명시적으로 요청한 경우에만 `json-choi`가 수행한다.
