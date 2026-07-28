@@ -68,6 +68,7 @@ type Props = {
   onSettings: () => void;
   onNewQuery: () => void;
   onOpenAgentTools: () => void;
+  onOpenAgentArchive: () => void;
   onOpenTerminal: () => void;
   onSelectDashboardConnection: (id: string) => void;
   onDashboardFocus: (id: string | null) => void;
@@ -276,7 +277,9 @@ export default function ShellLayout(props: Props) {
           skillStatus={skillStatus}
           overlay={terminalOverlay}
           width={terminalWidth}
+          presentation="agent"
           onWidthChange={props.onTerminalWidthChange}
+          onOpenArchive={props.onOpenAgentArchive}
           onClose={props.onCloseTerminal}
         />
       )}

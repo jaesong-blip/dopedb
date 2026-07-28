@@ -4,6 +4,11 @@ import { defineCatalog } from "../types";
 export const terminalCatalog = defineCatalog(
   {
     "terminal.approvalRequired": "Approval required for writes",
+    "terminal.agentEmptyBody":
+      "Start a signed-in Codex or Claude session. The local Agent stays pinned to this database and uses the version-matched DopeDB CLI.",
+    "terminal.agentEmptyTitle": "Start an Agent conversation",
+    "terminal.agentSessions": "AI Chat sessions",
+    "terminal.agentTitle": "AI Chat",
     "terminal.archive": "Legacy conversations",
     "terminal.archiveEmpty": "No saved conversations for this database.",
     "terminal.archiveLoadFailed": "Could not load saved conversations: {error}",
@@ -14,6 +19,7 @@ export const terminalCatalog = defineCatalog(
     "terminal.closeConfirm": "Close this session and stop all of its child processes?",
     "terminal.closeFailed": "Could not close the Terminal session: {error}",
     "terminal.closePanel": "Close Terminal panel",
+    "terminal.closeAgentPanel": "Close AI Chat panel",
     "terminal.closeOthers": "Close others",
     "terminal.closeRight": "Close tabs to the right",
     "terminal.closeSession": "Close session",
@@ -58,6 +64,11 @@ export const terminalCatalog = defineCatalog(
   },
   {
     "terminal.approvalRequired": "쓰기 작업은 승인 필요",
+    "terminal.agentEmptyBody":
+      "로그인된 Codex 또는 Claude 세션을 시작하세요. 로컬 Agent는 이 데이터베이스에 고정되며 앱 버전과 일치하는 DopeDB CLI를 사용합니다.",
+    "terminal.agentEmptyTitle": "Agent 대화 시작",
+    "terminal.agentSessions": "AI Chat 세션",
+    "terminal.agentTitle": "AI Chat",
     "terminal.archive": "이전 대화",
     "terminal.archiveEmpty": "이 데이터베이스에 저장된 대화가 없습니다.",
     "terminal.archiveLoadFailed": "저장된 대화를 불러오지 못했습니다: {error}",
@@ -68,6 +79,7 @@ export const terminalCatalog = defineCatalog(
     "terminal.closeConfirm": "이 세션을 닫고 모든 하위 프로세스를 중지할까요?",
     "terminal.closeFailed": "Terminal 세션을 닫지 못했습니다: {error}",
     "terminal.closePanel": "Terminal 패널 닫기",
+    "terminal.closeAgentPanel": "AI Chat 패널 닫기",
     "terminal.closeOthers": "다른 탭 닫기",
     "terminal.closeRight": "오른쪽 탭 닫기",
     "terminal.closeSession": "세션 닫기",

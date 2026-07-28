@@ -28,6 +28,8 @@ export type TerminalPopup =
       rect: DOMRect;
     };
 
+export type TerminalPresentation = "terminal" | "agent";
+
 interface TerminalTabsProps {
   sessions: TerminalSessionSummary[];
   activeId: TerminalSessionId | null;
@@ -35,6 +37,7 @@ interface TerminalTabsProps {
   closingId: TerminalSessionId | null;
   maximized: boolean;
   popup: TerminalPopup | null;
+  presentation: TerminalPresentation;
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   onActivate: (id: TerminalSessionId) => void;
   onCloseAction: (id: TerminalSessionId, action: TerminalCloseAction) => void;
@@ -42,6 +45,7 @@ interface TerminalTabsProps {
   onDismissPopup: () => void;
   onCreate: (profile: TerminalProfile) => void;
   onToggleMaximize: () => void;
+  onOpenArchive: () => void;
   onPanelClose: () => void;
 }
 
@@ -235,6 +239,7 @@ export default function TerminalTabs({
   closingId,
   maximized,
   popup,
+  presentation,
   closeButtonRef,
   onActivate,
   onCloseAction,
@@ -242,14 +247,19 @@ export default function TerminalTabs({
   onDismissPopup,
   onCreate,
   onToggleMaximize,
+  onOpenArchive,
   onPanelClose,
 }: TerminalTabsProps) {
   const { t } = useI18n();
-  const profiles: TerminalProfileOption[] = [
+  const allProfiles: TerminalProfileOption[] = [
     { id: "shell", label: t("terminal.shell"), hint: t("terminal.shellHint") },
     { id: "codex", label: t("terminal.codex"), hint: t("terminal.codexHint") },
     { id: "claude", label: t("terminal.claude"), hint: t("terminal.claudeHint") },
   ];
+  const profiles =
+    presentation === "agent"
+      ? allProfiles.filter((profile) => profile.id !== "shell")
+      : allProfiles;
 
   function activateTab(index: number) {
     const session = sessions[index];
@@ -277,12 +287,22 @@ export default function TerminalTabs({
       <div
         className="terminal-session-tabs ds-control-row tw:relative tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:thin]"
         role="tablist"
-        aria-label={t("terminal.sessions")}
+        aria-label={t(
+          presentation === "agent"
+            ? "terminal.agentSessions"
+            : "terminal.sessions",
+        )}
       >
         {sessions.length === 0 && (
           <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:px-2 tw:text-muted-foreground tw:[&_strong]:text-foreground">
-            <Icon name="terminal" />
-            <strong>{t("terminal.title")}</strong>
+            <Icon name={presentation === "agent" ? "user" : "terminal"} />
+            <strong>
+              {t(
+                presentation === "agent"
+                  ? "terminal.agentTitle"
+                  : "terminal.title",
+              )}
+            </strong>
           </div>
         )}
         {sessions.map((session, index) => (
@@ -387,6 +407,17 @@ export default function TerminalTabs({
         >
           <Icon name="moreVertical" />
         </button>
+        {presentation === "agent" && (
+          <button
+            type="button"
+            className="btn small icon-only"
+            onClick={onOpenArchive}
+            title={t("terminal.openArchive")}
+            aria-label={t("terminal.openArchive")}
+          >
+            <Icon name="history" />
+          </button>
+        )}
         <button
           type="button"
           className="btn small icon-only"
@@ -402,8 +433,16 @@ export default function TerminalTabs({
           type="button"
           className="btn small icon-only"
           onClick={onPanelClose}
-          title={t("terminal.closePanel")}
-          aria-label={t("terminal.closePanel")}
+          title={t(
+            presentation === "agent"
+              ? "terminal.closeAgentPanel"
+              : "terminal.closePanel",
+          )}
+          aria-label={t(
+            presentation === "agent"
+              ? "terminal.closeAgentPanel"
+              : "terminal.closePanel",
+          )}
         >
           <Icon name="close" />
         </button>
@@ -431,17 +470,23 @@ export default function TerminalTabs({
 
 export function TerminalEmptyActions({
   creatingProfile,
+  presentation = "terminal",
   onCreate,
 }: {
   creatingProfile: TerminalProfile | null;
+  presentation?: TerminalPresentation;
   onCreate: (profile: TerminalProfile) => void;
 }) {
   const { t } = useI18n();
-  const profiles: Array<{ id: TerminalProfile; label: string }> = [
+  const allProfiles: Array<{ id: TerminalProfile; label: string }> = [
     { id: "shell", label: t("terminal.shell") },
     { id: "codex", label: t("terminal.codex") },
     { id: "claude", label: t("terminal.claude") },
   ];
+  const profiles =
+    presentation === "agent"
+      ? allProfiles.filter((profile) => profile.id !== "shell")
+      : allProfiles;
 
   return (
     <div className="ds-control-row tw:flex tw:flex-wrap tw:justify-center">

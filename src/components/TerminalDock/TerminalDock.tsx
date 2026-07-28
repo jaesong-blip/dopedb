@@ -68,6 +68,7 @@ import TerminalContextBar from "./TerminalContextBar";
 import TerminalSurface from "./TerminalSurface";
 import TerminalTabs, {
   TerminalEmptyActions,
+  type TerminalPresentation,
   type TerminalPopup,
 } from "./TerminalTabs";
 import { useI18n } from "../../lib/i18n";
@@ -82,7 +83,9 @@ interface TerminalDockProps {
   skillStatus: SkillStatus | null;
   overlay: boolean;
   width: number;
+  presentation?: TerminalPresentation;
   onWidthChange: (width: number) => void;
+  onOpenArchive: () => void;
   onClose: () => void;
 }
 
@@ -147,7 +150,9 @@ export default function TerminalDock({
   skillStatus,
   overlay,
   width,
+  presentation = "terminal",
   onWidthChange,
+  onOpenArchive,
   onClose,
 }: TerminalDockProps) {
   const { t } = useI18n();
@@ -622,7 +627,11 @@ export default function TerminalDock({
         ref={dockRef}
         className="terminal-dock tw:relative tw:m-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[maximized=true]:fixed tw:data-[maximized=true]:inset-0 tw:data-[maximized=true]:z-[var(--ds-z-modal)] tw:data-[maximized=true]:m-0 tw:data-[maximized=true]:h-dvh tw:data-[maximized=true]:w-screen tw:data-[maximized=true]:rounded-none tw:data-[maximized=true]:border-0 tw:max-[901px]:data-[maximized=false]:fixed tw:max-[901px]:data-[maximized=false]:inset-y-0 tw:max-[901px]:data-[maximized=false]:right-0 tw:max-[901px]:data-[maximized=false]:z-[var(--ds-z-modal)] tw:max-[901px]:data-[maximized=false]:m-0 tw:max-[901px]:data-[maximized=false]:w-[min(520px,calc(100vw_-_44px))] tw:max-[901px]:data-[maximized=false]:rounded-none tw:max-[901px]:data-[maximized=false]:shadow-popover tw:max-[561px]:data-[maximized=false]:bottom-12 tw:max-[561px]:data-[maximized=false]:w-screen"
         data-maximized={maximized}
-        aria-label={t("terminal.title")}
+        aria-label={t(
+          presentation === "agent"
+            ? "terminal.agentTitle"
+            : "terminal.title",
+        )}
         role={overlay || maximized ? "dialog" : undefined}
         aria-modal={overlay || maximized || undefined}
       >
@@ -642,6 +651,7 @@ export default function TerminalDock({
           closingId={closingId}
           maximized={maximized}
           popup={popup}
+          presentation={presentation}
           closeButtonRef={closeRef}
           onActivate={(id) => dispatch({ type: "activate", id })}
           onCloseAction={(id, action) => void closeAction(id, action)}
@@ -659,6 +669,7 @@ export default function TerminalDock({
               layout: { maximized: !maximized },
             });
           }}
+          onOpenArchive={onOpenArchive}
           onPanelClose={onClose}
         />
 
@@ -701,11 +712,24 @@ export default function TerminalDock({
             </TerminalEmpty>
           ) : visibleSessions.length === 0 ? (
             <TerminalEmpty>
-              <Icon name="terminal" />
-              <strong>{t("terminal.emptyTitle")}</strong>
-              <p>{t("terminal.emptyBody")}</p>
+              <Icon name={presentation === "agent" ? "user" : "terminal"} />
+              <strong>
+                {t(
+                  presentation === "agent"
+                    ? "terminal.agentEmptyTitle"
+                    : "terminal.emptyTitle",
+                )}
+              </strong>
+              <p>
+                {t(
+                  presentation === "agent"
+                    ? "terminal.agentEmptyBody"
+                    : "terminal.emptyBody",
+                )}
+              </p>
               <TerminalEmptyActions
                 creatingProfile={state.creatingProfile}
+                presentation={presentation}
                 onCreate={(profile) => void createSession(profile)}
               />
             </TerminalEmpty>

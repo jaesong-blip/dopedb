@@ -254,6 +254,13 @@ function Shell() {
     setEditing(null);
   }
 
+  function openAgentArchiveSettings() {
+    setSettingsSection("archive");
+    setSettingsOpen(true);
+    setSchemaDiffGroupKey(null);
+    setEditing(null);
+  }
+
   function openUpdateSettings() {
     setSettingsSection("updates");
     setSettingsOpen(true);
@@ -530,6 +537,7 @@ function Shell() {
       }}
       onNewQuery={() => void openQueryDocument()}
       onOpenAgentTools={openAgentToolsSettings}
+      onOpenAgentArchive={openAgentArchiveSettings}
       onOpenTerminal={openOrFocusTerminalDock}
       onSelectDashboardConnection={(id) => selectConnection(id, "dashboard")}
       onDashboardFocus={setDashboardFocusId}

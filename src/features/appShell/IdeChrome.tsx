@@ -134,11 +134,11 @@ export function IdeTopBar({
           className="btn small icon-only"
           disabled={!selected}
           onClick={onOpenTerminal}
-          title={t("terminal.title")}
-          aria-label={t("terminal.title")}
+          title={t("terminal.agentTitle")}
+          aria-label={t("terminal.agentTitle")}
           aria-pressed={showTerminalDock}
         >
-          <Icon name="terminal" />
+          <Icon name="user" />
         </button>
       </div>
 
