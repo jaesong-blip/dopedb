@@ -19,6 +19,7 @@ import {
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
 import type { Dashboard } from "../../features/dashboards/domain";
+import { useQueryServices } from "../../features/queryServices/useQueryServices";
 import type { SqlDocument } from "../../features/sqlDocuments/domain";
 import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
 import {
@@ -101,9 +102,17 @@ function Shell() {
   } = useSidebarWidth();
   const {
     databaseExplorerOpen,
+    servicesOpen,
+    servicesHeight,
     showDatabaseExplorer,
     toggleDatabaseExplorer,
+    showServices,
+    closeServices,
+    toggleServices,
+    startServicesResize,
+    resetServicesHeight,
   } = useToolWindowLayout();
+  const queryServices = useQueryServices();
   const [selectedId, setSelectedId] = usePersistentSelectedConnection();
   const {
     safety,
@@ -446,6 +455,11 @@ function Shell() {
       onSetQueryDraft={setActiveQueryDraft}
       onSetQueryTitle={setActiveQueryTitle}
       onPersistedQuery={applySavedQuery}
+      onQueryServiceSessionChange={queryServices.updateSession}
+      onShowQueryServices={(sessionId) => {
+        queryServices.activateNewestSession(sessionId);
+        showServices();
+      }}
       onOpenTable={(table) => selected && openTableDocument(selected, table)}
       onLoadSql={loadSql}
       onInitialAuditOpenConsumed={() => {
@@ -471,6 +485,10 @@ function Shell() {
       compact={compactShell}
       mobileExplorerOpen={mobileExplorerOpen}
       databaseExplorerOpen={databaseExplorerOpen}
+      servicesOpen={servicesOpen}
+      servicesHeight={servicesHeight}
+      queryServiceSessions={queryServices.sessions}
+      activeQueryServiceSessionId={queryServices.activeSessionId}
       sidebarWidth={sidebarW}
       mainRef={mainRef}
       mainContent={mainContent}
@@ -499,6 +517,11 @@ function Shell() {
         }
       }}
       onToggleDatabaseExplorer={toggleDatabaseExplorer}
+      onToggleServices={toggleServices}
+      onCloseServices={closeServices}
+      onActivateQueryServiceSession={queryServices.activateSession}
+      onStartServicesResize={startServicesResize}
+      onResetServicesHeight={resetServicesHeight}
       onSettings={() => {
         setSettingsSection(undefined);
         setSettingsOpen(true);

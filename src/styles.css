@@ -10,7 +10,7 @@
   display: grid;
   /* Middle track is the drag divider; the live widths are supplied inline. */
   grid-template-columns: 304px 3px minmax(0, 1fr) 0;
-  grid-template-rows: 40px minmax(0, 1fr) 24px;
+  grid-template-rows: 40px minmax(0, 1fr) 0 24px;
   height: 100dvh;
   overflow: hidden;
   background: var(--ds-color-muted);
@@ -32,7 +32,7 @@
 
 .tool-window-sidebar {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 2 / 4;
 }
 
 .tool-window-sidebar > .sidebar {
@@ -46,7 +46,7 @@
 
 .sidebar-resizer {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 2 / 4;
 }
 
 .main {
@@ -60,9 +60,14 @@
   grid-row: 2;
 }
 
+.services-tool-window {
+  grid-column: 3 / 5;
+  grid-row: 3;
+}
+
 .ide-statusbar {
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 4;
 }
 
 /* A WorkbenchPane owns its own scrolling and reaches the editor edges. */
@@ -74,7 +79,7 @@
 @media (max-width: 560px) {
   .app {
     grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) !important;
     height: calc(100dvh - 48px);
   }
 
@@ -112,5 +117,20 @@
     min-height: 0;
     grid-column: 1;
     grid-row: 1;
+  }
+
+  .services-tool-window {
+    position: fixed;
+    right: 0;
+    bottom: 48px;
+    left: 0;
+    z-index: var(--ds-z-modal);
+    height: min(50dvh, 360px);
+    margin: 0;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: var(--ds-radius-md) var(--ds-radius-md) 0 0;
+    box-shadow: var(--ds-shadow-popover);
   }
 }

@@ -4,11 +4,31 @@ const STORAGE_KEY = "dopedb:tool-window-layout:v1";
 
 type StoredToolWindowLayout = {
   databaseExplorerOpen: boolean;
+  servicesOpen: boolean;
+  servicesHeight: number;
 };
+
+const DEFAULT_SERVICES_HEIGHT = 280;
+const MIN_SERVICES_HEIGHT = 160;
+const MAX_SERVICES_HEIGHT = 560;
 
 const DEFAULT_LAYOUT: StoredToolWindowLayout = {
   databaseExplorerOpen: true,
+  servicesOpen: false,
+  servicesHeight: DEFAULT_SERVICES_HEIGHT,
 };
+
+function clampServicesHeight(height: number) {
+  const viewportMaximum =
+    typeof window === "undefined"
+      ? MAX_SERVICES_HEIGHT
+      : Math.max(MIN_SERVICES_HEIGHT, window.innerHeight - 220);
+  return Math.min(
+    MAX_SERVICES_HEIGHT,
+    viewportMaximum,
+    Math.max(MIN_SERVICES_HEIGHT, height),
+  );
+}
 
 function readLayout(): StoredToolWindowLayout {
   try {
@@ -23,6 +43,14 @@ function readLayout(): StoredToolWindowLayout {
     ) {
       return {
         databaseExplorerOpen: parsed.databaseExplorerOpen,
+        servicesOpen:
+          "servicesOpen" in parsed && typeof parsed.servicesOpen === "boolean"
+            ? parsed.servicesOpen
+            : DEFAULT_LAYOUT.servicesOpen,
+        servicesHeight:
+          "servicesHeight" in parsed && typeof parsed.servicesHeight === "number"
+            ? clampServicesHeight(parsed.servicesHeight)
+            : DEFAULT_LAYOUT.servicesHeight,
       };
     }
   } catch {
@@ -62,9 +90,79 @@ export function useToolWindowLayout() {
     });
   }, []);
 
+  const setServicesOpen = useCallback((open: boolean) => {
+    setLayout((current) => {
+      if (current.servicesOpen === open) return current;
+      const next = { ...current, servicesOpen: open };
+      storeLayout(next);
+      return next;
+    });
+  }, []);
+  const showServices = useCallback(
+    () => setServicesOpen(true),
+    [setServicesOpen],
+  );
+  const closeServices = useCallback(
+    () => setServicesOpen(false),
+    [setServicesOpen],
+  );
+  const toggleServices = useCallback(() => {
+    setLayout((current) => {
+      const next = { ...current, servicesOpen: !current.servicesOpen };
+      storeLayout(next);
+      return next;
+    });
+  }, []);
+
+  const startServicesResize = useCallback(
+    (event: { preventDefault(): void; clientY: number }) => {
+      event.preventDefault();
+      const startY = event.clientY;
+      const startHeight = layout.servicesHeight;
+      const move = (next: MouseEvent) => {
+        const height = clampServicesHeight(
+          startHeight + startY - next.clientY,
+        );
+        setLayout((current) => ({ ...current, servicesHeight: height }));
+      };
+      const up = (next: MouseEvent) => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        const height = clampServicesHeight(
+          startHeight + startY - next.clientY,
+        );
+        setLayout((current) => {
+          const updated = { ...current, servicesHeight: height };
+          storeLayout(updated);
+          return updated;
+        });
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    },
+    [layout.servicesHeight],
+  );
+  const resetServicesHeight = useCallback(() => {
+    setLayout((current) => {
+      const next = {
+        ...current,
+        servicesHeight: DEFAULT_SERVICES_HEIGHT,
+      };
+      storeLayout(next);
+      return next;
+    });
+  }, []);
+
   return {
     databaseExplorerOpen: layout.databaseExplorerOpen,
+    servicesOpen: layout.servicesOpen,
+    servicesHeight: layout.servicesHeight,
     showDatabaseExplorer,
     toggleDatabaseExplorer,
+    showServices,
+    closeServices,
+    toggleServices,
+    startServicesResize,
+    resetServicesHeight,
   };
 }

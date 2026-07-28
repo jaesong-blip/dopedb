@@ -8,6 +8,7 @@ import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadg
 import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
+import type { QueryServiceSession } from "../queryServices/domain";
 import type { SqlDocument } from "../sqlDocuments/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import type { CatalogTable, SafetySettings } from "../../ipc/types";
@@ -75,6 +76,8 @@ type Props = {
   onSetQueryDraft: (value: string) => void;
   onSetQueryTitle: (value: string) => void;
   onPersistedQuery: (document: SqlDocument) => void;
+  onQueryServiceSessionChange: (session: QueryServiceSession) => void;
+  onShowQueryServices: (sessionId: string) => void;
   onOpenTable: (table: CatalogTable) => void;
   onLoadSql: (sql: string) => Promise<void>;
   onInitialAuditOpenConsumed: () => void;
@@ -293,6 +296,7 @@ export default function WorkbenchContent(props: Props) {
             <Sql
               key={activeDocument.id}
               connection={selected}
+              documentId={activeDocument.id}
               safety={safety}
               draft={activeDocument.draft}
               setDraft={props.onSetQueryDraft}
@@ -302,6 +306,8 @@ export default function WorkbenchContent(props: Props) {
               revision={activeDocument.revision}
               recovered={activeDocument.recovered}
               onPersisted={props.onPersistedQuery}
+              onQueryServiceSessionChange={props.onQueryServiceSessionChange}
+              onShowQueryServices={props.onShowQueryServices}
               onOpenAgent={props.onOpenTerminal}
             />
           ) : (

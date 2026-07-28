@@ -4,6 +4,8 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import { Icon } from "../../components/Icon";
 import TerminalDock from "../../components/TerminalDock/TerminalDock";
 import type { ConnectionProfile } from "../connections/domain";
+import type { QueryServiceSession } from "../queryServices/domain";
+import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
 import WorkspaceAccount from "../workspaces/components/WorkspaceAccount";
 import WorkspaceSwitcher from "../workspaces/components/WorkspaceSwitcher";
 import type { CatalogTable, SkillStatus } from "../../ipc/types";
@@ -37,6 +39,10 @@ type Props = {
   compact: boolean;
   mobileExplorerOpen: boolean;
   databaseExplorerOpen: boolean;
+  servicesOpen: boolean;
+  servicesHeight: number;
+  queryServiceSessions: QueryServiceSession[];
+  activeQueryServiceSessionId: string | null;
   sidebarWidth: number;
   mainRef: RefObject<HTMLElement | null>;
   mainContent: ReactNode;
@@ -51,6 +57,14 @@ type Props = {
   onCreateDemoDatabase: () => void;
   onArea: (area: AppArea) => void;
   onToggleDatabaseExplorer: () => void;
+  onToggleServices: () => void;
+  onCloseServices: () => void;
+  onActivateQueryServiceSession: (id: string) => void;
+  onStartServicesResize: (event: {
+    preventDefault(): void;
+    clientY: number;
+  }) => void;
+  onResetServicesHeight: () => void;
   onSettings: () => void;
   onNewQuery: () => void;
   onOpenAgentTools: () => void;
@@ -91,6 +105,10 @@ export default function ShellLayout(props: Props) {
     compact,
     mobileExplorerOpen,
     databaseExplorerOpen,
+    servicesOpen,
+    servicesHeight,
+    queryServiceSessions,
+    activeQueryServiceSessionId,
     sidebarWidth,
     mainRef,
     mainContent,
@@ -118,10 +136,14 @@ export default function ShellLayout(props: Props) {
       data-welcome-assistant-open={showWelcomeAssistant}
       data-mobile-explorer-open={mobileExplorerOpen}
       data-database-explorer-open={databaseExplorerOpen}
+      data-services-open={servicesOpen}
       style={{
         gridTemplateColumns: databaseExplorerOpen
           ? `${sidebarWidth}px 3px minmax(0, 1fr) ${rightDockWidth}px`
           : `0 0 minmax(0, 1fr) ${rightDockWidth}px`,
+        gridTemplateRows: `40px minmax(0, 1fr) ${
+          servicesOpen ? servicesHeight : 0
+        }px 24px`,
       }}
     >
       <IdeTopBar
@@ -129,6 +151,7 @@ export default function ShellLayout(props: Props) {
         selected={selected}
         supportsSql={supportsSql}
         databaseExplorerOpen={databaseExplorerOpen}
+        servicesOpen={servicesOpen}
         showTerminalDock={showTerminalDock}
         account={
           <WorkspaceAccount
@@ -140,6 +163,7 @@ export default function ShellLayout(props: Props) {
         onNewQuery={props.onNewQuery}
         onArea={props.onArea}
         onToggleDatabaseExplorer={props.onToggleDatabaseExplorer}
+        onToggleServices={props.onToggleServices}
         onOpenTerminal={props.onOpenTerminal}
         onSettings={props.onSettings}
       />
@@ -259,6 +283,17 @@ export default function ShellLayout(props: Props) {
 
       {showWelcomeAssistant && (
         <WelcomeAssistantPane onOpenAgentTools={props.onOpenAgentTools} />
+      )}
+
+      {servicesOpen && (
+        <QueryServicesToolWindow
+          sessions={queryServiceSessions}
+          activeSessionId={activeQueryServiceSessionId}
+          onActivate={props.onActivateQueryServiceSession}
+          onClose={props.onCloseServices}
+          onStartResize={props.onStartServicesResize}
+          onResetHeight={props.onResetServicesHeight}
+        />
       )}
 
       <IdeStatusBar

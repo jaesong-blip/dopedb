@@ -19,11 +19,13 @@ export function IdeTopBar({
   selected,
   supportsSql,
   databaseExplorerOpen,
+  servicesOpen,
   showTerminalDock,
   account,
   onNewQuery,
   onArea,
   onToggleDatabaseExplorer,
+  onToggleServices,
   onOpenTerminal,
   onSettings,
 }: {
@@ -31,11 +33,13 @@ export function IdeTopBar({
   selected: ConnectionProfile | null;
   supportsSql: boolean;
   databaseExplorerOpen: boolean;
+  servicesOpen: boolean;
   showTerminalDock: boolean;
   account: ReactNode;
   onNewQuery: () => void;
   onArea: (area: AppArea) => void;
   onToggleDatabaseExplorer: () => void;
+  onToggleServices: () => void;
   onOpenTerminal: () => void;
   onSettings: () => void;
 }) {
@@ -94,6 +98,16 @@ export function IdeTopBar({
           aria-pressed={area === "workspace" && databaseExplorerOpen}
         >
           <Icon name="database" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only"
+          onClick={onToggleServices}
+          title={t("services.title")}
+          aria-label={t("services.title")}
+          aria-pressed={servicesOpen}
+        >
+          <Icon name="list" />
         </button>
         <button
           type="button"

@@ -1,8 +1,8 @@
-// Manual SQL console. Editable CodeMirror. Run is the human approval action for
-// manual SQL, so execution stays in-place: action bar status first, results below.
-// Multi-statement scripts execute through the backend script runner and return
+// Manual SQL console. Editable CodeMirror. Run is the human approval action;
+// execution sessions and Output/Result live in the shell-owned Services window.
+// Multi-statement scripts execute through the backend script runner and preserve
 // per-statement results. ⌘↩ runs the current draft or selected SQL.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SqlLanguage } from "sql-formatter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -32,6 +32,11 @@ import type {
   SqlOperationProposal,
 } from "../../features/queries/domain";
 import {
+  nextQueryServiceSessionId,
+  type QueryServiceResult,
+  type QueryServiceSession,
+} from "../../features/queryServices/domain";
+import {
   connectionId,
   sqlDocumentId,
   type SqlDocument,
@@ -40,19 +45,13 @@ import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapte
 import { useSqlDocumentAutosave } from "../../features/sqlDocuments/useSqlDocumentAutosave";
 import { buildRunSignal } from "../../features/query/runSignal";
 import ApprovalCard from "../../components/ApprovalCard";
-import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
-import ResultToolbar from "../../components/ResultToolbar";
 import {
-  ResultMeta,
-  SqlSnippet,
   WorkbenchDivider,
-  WorkbenchEmptyState,
   WorkbenchPane,
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
-import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
 import { catalogQuery, useCatalogScope } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
@@ -62,9 +61,6 @@ import {
   initialSqlRunPath,
   proposalSqlRunPath,
 } from "./runPath";
-import StreamOutcome from "./StreamOutcome";
-
-const STEP = 200;
 
 interface Run {
   sql: string;
@@ -135,6 +131,7 @@ function buildSqlHelpPrompt({
 
 export default function Sql({
   connection,
+  documentId,
   safety,
   draft,
   setDraft,
@@ -144,9 +141,12 @@ export default function Sql({
   revision,
   recovered,
   onPersisted,
+  onQueryServiceSessionChange,
+  onShowQueryServices,
   onOpenAgent,
 }: {
   connection: ConnectionProfile;
+  documentId: string;
   safety: SafetySettings;
   draft: string;
   setDraft: (s: string) => void;
@@ -156,6 +156,8 @@ export default function Sql({
   revision: number;
   recovered: boolean;
   onPersisted: (document: SqlDocument) => void;
+  onQueryServiceSessionChange: (session: QueryServiceSession) => void;
+  onShowQueryServices: (sessionId: string) => void;
   onOpenAgent: () => void;
 }) {
   const { t } = useI18n();
@@ -174,7 +176,6 @@ export default function Sql({
     cancel: cancelDesktopStream,
     reset: resetDesktopStream,
   } = useSqlResultStream(connection.id);
-  const [limit, setLimit] = useState(STEP);
   const [scriptOut, setScriptOut] = useState<{
     outcome: ScriptOutcome;
     at: string;
@@ -188,6 +189,9 @@ export default function Sql({
     useState<PendingScriptApproval | null>(null);
   const [scriptConfirmation, setScriptConfirmation] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const serviceSessionRef = useRef<
+    Omit<QueryServiceSession, "status" | "result" | "updatedAt"> | undefined
+  >(undefined);
 
   // EXPLAIN plan (read-only preview) shown above the results, independent of execution.
   const [plan, setPlan] = useState<PreviewReport | null>(null);
@@ -252,10 +256,29 @@ export default function Sql({
     const statements = splitStatements(sql);
     const script = statements.length > 1;
     const at = new Date().toLocaleTimeString();
+    const sessionId = nextQueryServiceSessionId(documentId);
+    serviceSessionRef.current = {
+      id: sessionId,
+      documentId,
+      connectionId: connection.id,
+      connectionName: connection.name,
+      consoleTitle: title,
+      sql,
+      startedAt: new Date().toISOString(),
+      startedLabel: at,
+    };
+    onQueryServiceSessionChange({
+      ...serviceSessionRef.current,
+      updatedAt: Date.now(),
+      status: "running",
+      result: { kind: "none" },
+    });
+    onShowQueryServices(sessionId);
     setRunErr(null);
     setPendingApproval(null);
     setPendingScriptApproval(null);
-    setLimit(STEP);
+    setRun(null);
+    setScriptOut(null);
     setResultKind(script ? "script" : "single");
     setLastAttempt({ sql, at });
 
@@ -407,6 +430,72 @@ export default function Sql({
     [connection, promptSql, runErr],
   );
 
+  useEffect(() => {
+    const session = serviceSessionRef.current;
+    if (!session) return;
+
+    let result: QueryServiceResult = { kind: "none" };
+    if (runErr) {
+      result = { kind: "error", error: runErr, prompt: aiPrompt };
+    } else if (resultKind === "script" && scriptOut) {
+      result = {
+        kind: "script",
+        outcome: scriptOut.outcome,
+        at: scriptOut.at,
+      };
+    } else if (resultKind === "single" && run) {
+      result = {
+        kind: "materialized",
+        sql: run.sql,
+        outcome: run.outcome,
+        at: run.at,
+        maxRows: safety.maxRows,
+      };
+    } else if (resultKind === "single" && stream.phase !== "idle") {
+      result = {
+        kind: "stream",
+        sql: lastAttempt?.sql ?? session.sql,
+        stream,
+        maxRows: safety.maxRows,
+      };
+    }
+
+    const status = runErr
+      ? "failed"
+      : pendingApproval || pendingScriptApproval
+        ? "waiting"
+        : cancelled || stream.phase === "cancelled"
+          ? "cancelled"
+          : running ||
+              stream.phase === "connecting" ||
+              stream.phase === "streaming"
+            ? "running"
+            : result.kind === "none"
+              ? "running"
+              : "completed";
+
+    onQueryServiceSessionChange({
+      ...session,
+      updatedAt: Date.now(),
+      status,
+      result,
+    });
+  }, [
+    aiPrompt,
+    cancelled,
+    lastAttempt?.sql,
+    onQueryServiceSessionChange,
+    pendingApproval,
+    pendingScriptApproval,
+    resultKind,
+    run,
+    runErr,
+    running,
+    safety.maxRows,
+    scriptOut,
+    stream,
+  ]);
+
   return (
     <WorkbenchPane>
       <WorkbenchToolbar label={t("sql.documentTitle")} compact>
@@ -514,7 +603,7 @@ export default function Sql({
           </span>
         </button>
       </WorkbenchToolbar>
-      <div className="tw:h-[clamp(180px,34vh,340px)] tw:min-h-[180px] tw:flex-[0_1_auto] tw:overflow-hidden tw:border-b tw:border-border-subtle tw:bg-background tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0">
+      <div className="tw:min-h-[180px] tw:flex-1 tw:overflow-hidden tw:bg-background tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0">
         <LazySqlViewer
           value={draft}
           editable
@@ -525,21 +614,7 @@ export default function Sql({
         />
       </div>
 
-      <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-auto tw:bg-background">
-        <div
-          className="tw:flex tw:h-control-sm tw:shrink-0 tw:items-end tw:border-b tw:border-border-subtle tw:bg-card tw:px-2"
-          role="tablist"
-          aria-label={t("sql.resultsTab")}
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected="true"
-            className="tw:relative tw:h-control-sm tw:border-0 tw:bg-transparent tw:px-3 tw:font-sans tw:text-sm tw:text-foreground tw:after:absolute tw:after:right-2 tw:after:bottom-0 tw:after:left-2 tw:after:h-0.5 tw:after:bg-primary"
-          >
-            {t("sql.resultsTab")}
-          </button>
-        </div>
+      <div className="tw:max-h-[50%] tw:shrink-0 tw:overflow-auto tw:bg-background">
         {documentConflict && (
           <div
             className="tw:mx-3 tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:gap-3 tw:border-y tw:border-warning tw:py-2 tw:text-sm tw:text-warning tw:max-[760px]:flex-col tw:max-[760px]:items-start"
@@ -675,260 +750,7 @@ export default function Sql({
           </section>
         )}
 
-        {runErr && <SqlErrorCard error={runErr} prompt={aiPrompt} />}
-        {cancelled && (
-          <div className="tw:mx-3 tw:mt-2 tw:text-sm tw:text-muted-foreground">
-            {t("sql.cancelled")}
-          </div>
-        )}
-
-        <div
-          data-busy={
-            running &&
-            Boolean(
-              run ||
-                scriptOut ||
-                stream.phase === "connecting" ||
-                stream.phase === "streaming",
-            )
-          }
-          className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:data-[busy=true]:pointer-events-none tw:data-[busy=true]:opacity-50"
-        >
-        {!running &&
-          !run &&
-          !scriptOut &&
-          stream.phase === "idle" &&
-          !plan &&
-          !planErr &&
-          !runErr && (
-            <WorkbenchEmptyState icon="table">
-              {t("sql.resultsEmpty")}
-            </WorkbenchEmptyState>
-          )}
-        {resultKind === "single" && run && (
-          <Outcome
-            run={run}
-            limit={limit}
-            maxRows={safety.maxRows}
-            onMore={() => setLimit((l) => l + STEP)}
-          />
-        )}
-        {resultKind === "single" && stream.phase !== "idle" && (
-          <StreamOutcome
-            stream={stream}
-            sql={lastAttempt?.sql ?? draft}
-            maxRows={safety.maxRows}
-          />
-        )}
-        {resultKind === "script" && scriptOut && (
-          <ScriptResults outcome={scriptOut.outcome} at={scriptOut.at} />
-        )}
-        </div>
       </div>
     </WorkbenchPane>
-  );
-}
-
-// Postgres reports a 1-based character offset into the executed SQL. Map it to the
-// offending line and render that line with a caret under the exact column. PG counts
-// code points while JS strings index UTF-16 code units, so work on a code-point array
-// (keeps the caret honest when astral chars, e.g. emoji in literals, precede the error).
-function errorPosition(sql: string, position: number) {
-  const cps = Array.from(sql);
-  const i = Math.min(Math.max(position - 1, 0), cps.length);
-  const lineStart = i === 0 ? 0 : cps.lastIndexOf("\n", i - 1) + 1;
-  const lineEnd = cps.indexOf("\n", i);
-  const column = i - lineStart;
-  return {
-    line: cps.slice(0, i).filter((c) => c === "\n").length + 1,
-    column: column + 1,
-    snippet:
-      cps.slice(lineStart, lineEnd === -1 ? cps.length : lineEnd).join("") +
-      "\n" +
-      " ".repeat(column) +
-      "^",
-  };
-}
-
-function SqlErrorCard({
-  error,
-  prompt,
-}: {
-  error: QueryErrorInfo;
-  prompt: string;
-}) {
-  const { t } = useI18n();
-  const pos =
-    error.position !== null ? errorPosition(error.sql, error.position) : null;
-  return (
-    <div
-      className="tw:mx-3 tw:my-3 tw:grid tw:gap-3 tw:rounded-md tw:border tw:border-danger-border tw:bg-danger-muted tw:p-3 tw:text-foreground"
-      role="alert"
-    >
-      <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[760px]:flex-col tw:max-[760px]:items-start">
-        <div>
-          <strong className="tw:text-danger">{t("sql.errorTitle")}</strong>
-          <span className="tw:text-muted-foreground"> · {error.at}</span>
-        </div>
-      </div>
-      <div className="tw:grid tw:grid-cols-[max-content_minmax(0,1fr)] tw:items-start tw:gap-x-3 tw:gap-y-2 tw:[&_code]:rounded-sm tw:[&_code]:border tw:[&_code]:border-border-subtle tw:[&_code]:bg-card tw:[&_code]:p-2 tw:[&_pre]:m-0 tw:[&_pre]:overflow-auto tw:[&_pre]:rounded-sm tw:[&_pre]:border tw:[&_pre]:border-border-subtle tw:[&_pre]:bg-card tw:[&_pre]:p-2 tw:[&_pre]:text-sm tw:[&_pre]:whitespace-pre-wrap tw:[&_pre]:[overflow-wrap:anywhere] tw:max-[760px]:grid-cols-1">
-        <span className="tw:text-muted-foreground">{t("sql.errorKind")}</span>
-        <code>{error.kind ?? t("common.unknown")}</code>
-        <span className="tw:text-muted-foreground">
-          {t("sql.errorMessage")}
-        </span>
-        <pre>{error.message}</pre>
-        {pos && (
-          <>
-            <span className="tw:text-muted-foreground">
-              {t("sql.errorPosition")}
-            </span>
-            <pre>
-              {t("sql.errorPositionAt", { line: pos.line, column: pos.column })}
-              {"\n"}
-              {pos.snippet}
-            </pre>
-          </>
-        )}
-      </div>
-      <details>
-        <summary className="tw:cursor-pointer tw:text-ui tw:text-muted-foreground">
-          {t("sql.errorContext")}
-        </summary>
-        <pre className="tw:mt-2 tw:max-h-[280px] tw:overflow-auto tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-2 tw:text-sm tw:whitespace-pre-wrap tw:[overflow-wrap:anywhere]">
-          {prompt}
-        </pre>
-      </details>
-    </div>
-  );
-}
-
-function ScriptResults({
-  outcome,
-  at,
-}: {
-  outcome: ScriptOutcome;
-  at: string;
-}) {
-  const { t } = useI18n();
-  const summary = outcome.allReads
-    ? t("sql.readOnlyScript")
-    : outcome.committed
-      ? t("sql.committed")
-      : t("sql.failedRolledBack");
-  return (
-    <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
-      <ResultMeta>
-        {summary} ·{" "}
-        {t("sql.statementCount", { count: outcome.statements.length })} · {at}
-      </ResultMeta>
-      {outcome.statements.map((s, i) => (
-        <section
-          key={i}
-          className="tw:border-t tw:border-border-subtle tw:pt-2"
-        >
-          <ResultMeta>
-            <span className="tw:inline-block tw:min-w-4 tw:font-semibold">
-              {i + 1}
-            </span>
-            <SqlSnippet>{s.sql}</SqlSnippet>
-          </ResultMeta>
-          {s.error ? (
-            <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
-              {s.error}
-            </div>
-          ) : s.result ? (
-            <>
-              <div className="tw:mx-3 tw:my-1 tw:text-sm tw:text-muted-foreground">
-                {t(s.result.truncated ? "agent.rowsTruncated" : "agent.rows", {
-                  count: s.result.rowCount,
-                })}{" "}
-                · {s.result.durationMs} ms
-                {" · "}
-                <ResultToolbar
-                  columns={s.result.columns}
-                  rows={s.result.rows}
-                  filenameBase={`script-stmt${i + 1}-${stamp()}`}
-                />
-              </div>
-              <DataGrid result={s.result} surface="workbench" />
-            </>
-          ) : (
-            <div className="tw:px-3 tw:py-2 tw:text-sm tw:text-muted-foreground">
-              {t("sql.affected", { count: s.affected ?? 0 })}
-            </div>
-          )}
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function Outcome({
-  run,
-  limit,
-  maxRows,
-  onMore,
-}: {
-  run: Run;
-  limit: number;
-  maxRows: number;
-  onMore: () => void;
-}) {
-  const { t } = useI18n();
-  const { outcome, sql, at } = run;
-  const r = outcome.result;
-
-  return (
-    <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
-      <ResultMeta>
-        <SqlSnippet>{sql}</SqlSnippet>
-        {r ? (
-          <>
-            {" · "}
-            {t(r.truncated ? "agent.rowsTruncated" : "agent.rows", {
-              count: r.rowCount,
-            })}
-            {r.truncated && ` - ${t("sql.capped", { count: maxRows })}`} ·{" "}
-            {r.durationMs} ms · {at}
-            {" · "}
-            <ResultToolbar
-              columns={r.columns}
-              rows={r.rows}
-              filenameBase={`query-${stamp()}`}
-            />
-          </>
-        ) : (
-          <>
-            {" · "}
-            {outcome.committed
-              ? t("sql.writeCommitted")
-              : t("sql.noRowsReturned")}
-            {outcome.affected !== null && (
-              <> · {t("sql.affected", { count: outcome.affected })}</>
-            )}{" "}
-            · {at}
-          </>
-        )}
-      </ResultMeta>
-      {r && (
-        <>
-          <DataGrid
-            result={
-              limit < r.rows.length ? { ...r, rows: r.rows.slice(0, limit) } : r
-            }
-            surface="workbench"
-          />
-          {r.rows.length > limit && (
-            <button className="btn tw:m-3 tw:self-start" onClick={onMore}>
-              {t("sql.showMore", {
-                count: Math.min(STEP, r.rows.length - limit),
-                total: r.rows.length,
-              })}
-            </button>
-          )}
-        </>
-      )}
-    </div>
   );
 }
