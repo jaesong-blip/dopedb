@@ -8,6 +8,7 @@ use crate::state::AppState;
 
 use super::{
     CreateSqlDocumentRequest, SaveSqlDocumentOutcome, SaveSqlDocumentRequest, SqlDocument,
+    SqlDocumentRevision,
 };
 
 #[tauri::command]
@@ -16,6 +17,19 @@ pub async fn list_sql_documents(
     id: ConnectionId,
 ) -> AppResult<Vec<SqlDocument>> {
     state.services.sql_documents.list(id).await
+}
+
+#[tauri::command]
+pub async fn list_sql_document_revisions(
+    state: State<'_, AppState>,
+    connection_id: ConnectionId,
+    id: SqlDocumentId,
+) -> AppResult<Vec<SqlDocumentRevision>> {
+    state
+        .services
+        .sql_documents
+        .list_revisions(connection_id, id)
+        .await
 }
 
 #[tauri::command]

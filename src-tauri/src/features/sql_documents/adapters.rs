@@ -12,7 +12,9 @@ use crate::kernel::identity::{
 use crate::model::Engine;
 use crate::store::Store;
 
-use super::domain::{content_hash, SqlDialect, SqlDocument, SqlDocumentSyncStatus};
+use super::domain::{
+    content_hash, SqlDialect, SqlDocument, SqlDocumentRevision, SqlDocumentSyncStatus,
+};
 use super::ports::{
     SaveDocumentCommand, SaveRepositoryOutcome, SqlDocumentAuthority, SqlDocumentAuthorityGuard,
     SqlDocumentAuthorityPort, SqlDocumentGeneratorPort, SqlDocumentRepositoryPort,
@@ -108,6 +110,33 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
         .fetch_all(self.store.pool())
         .await?;
         rows.iter().map(row_to_document).collect()
+    }
+
+    async fn list_revisions(
+        &self,
+        authority: &SqlDocumentAuthority,
+        id: SqlDocumentId,
+    ) -> AppResult<Vec<SqlDocumentRevision>> {
+        let rows = sqlx::query(
+            "SELECT revisions.document_id, revisions.local_revision,
+                    revisions.content, revisions.created_at
+             FROM sql_document_revisions revisions
+             INNER JOIN sql_documents documents
+                ON documents.id = revisions.document_id
+             WHERE revisions.document_id = ?1
+               AND documents.workspace_id = ?2
+               AND documents.account_scope = ?3
+               AND documents.connection_id = ?4
+               AND documents.deleted_at IS NULL
+             ORDER BY revisions.local_revision DESC",
+        )
+        .bind(id.to_string())
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
+        .bind(authority.resource.connection_id.to_string())
+        .fetch_all(self.store.pool())
+        .await?;
+        rows.iter().map(row_to_revision).collect()
     }
 
     async fn create(
@@ -279,6 +308,21 @@ fn row_to_document(row: &sqlx::sqlite::SqliteRow) -> AppResult<SqlDocument> {
         sync_status: SqlDocumentSyncStatus::parse(&row.try_get::<String, _>("sync_status")?)?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
+    })
+}
+
+fn row_to_revision(row: &sqlx::sqlite::SqliteRow) -> AppResult<SqlDocumentRevision> {
+    let local_revision = row.try_get("local_revision")?;
+    if local_revision < 1 {
+        return Err(AppError::Config(
+            "stored SQL document revision is invalid".into(),
+        ));
+    }
+    Ok(SqlDocumentRevision {
+        document_id: SqlDocumentId::from(parse_uuid(row.try_get("document_id")?)?),
+        local_revision,
+        content: row.try_get("content")?,
+        created_at: row.try_get("created_at")?,
     })
 }
 

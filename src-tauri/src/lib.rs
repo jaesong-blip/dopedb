@@ -154,6 +154,7 @@ pub fn run() {
             features::schema_editor::transport::propose_schema_change,
             features::schema_editor::transport::run_schema_change,
             features::sql_documents::transport::list_sql_documents,
+            features::sql_documents::transport::list_sql_document_revisions,
             features::sql_documents::transport::create_sql_document,
             features::sql_documents::transport::save_sql_document,
             features::sql_documents::transport::delete_sql_document,

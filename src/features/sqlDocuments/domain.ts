@@ -30,6 +30,13 @@ export interface SqlDocument {
   updatedAt: string;
 }
 
+export interface SqlDocumentRevision {
+  documentId: SqlDocumentId;
+  localRevision: number;
+  content: string;
+  createdAt: string;
+}
+
 export interface CreateSqlDocumentRequest {
   connectionId: ConnectionId;
   title?: string | null;

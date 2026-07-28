@@ -2,8 +2,11 @@ import { useCallback, useState } from "react";
 
 const STORAGE_KEY = "dopedb:tool-window-layout:v1";
 
+type LeftToolWindow = "databaseExplorer" | "localHistory";
+
 type StoredToolWindowLayout = {
   databaseExplorerOpen: boolean;
+  leftToolWindow: LeftToolWindow;
   servicesOpen: boolean;
   servicesHeight: number;
 };
@@ -14,6 +17,7 @@ const MAX_SERVICES_HEIGHT = 560;
 
 const DEFAULT_LAYOUT: StoredToolWindowLayout = {
   databaseExplorerOpen: true,
+  leftToolWindow: "databaseExplorer",
   servicesOpen: false,
   servicesHeight: DEFAULT_SERVICES_HEIGHT,
 };
@@ -43,6 +47,11 @@ function readLayout(): StoredToolWindowLayout {
     ) {
       return {
         databaseExplorerOpen: parsed.databaseExplorerOpen,
+        leftToolWindow:
+          "leftToolWindow" in parsed &&
+            parsed.leftToolWindow === "localHistory"
+            ? "localHistory"
+            : DEFAULT_LAYOUT.leftToolWindow,
         servicesOpen:
           "servicesOpen" in parsed && typeof parsed.servicesOpen === "boolean"
             ? parsed.servicesOpen
@@ -68,8 +77,19 @@ export function useToolWindowLayout() {
 
   const setDatabaseExplorerOpen = useCallback((open: boolean) => {
     setLayout((current) => {
-      if (current.databaseExplorerOpen === open) return current;
-      const next = { ...current, databaseExplorerOpen: open };
+      if (
+        current.databaseExplorerOpen === open &&
+        (!open || current.leftToolWindow === "databaseExplorer")
+      ) {
+        return current;
+      }
+      const next = {
+        ...current,
+        databaseExplorerOpen: open,
+        leftToolWindow: open
+          ? "databaseExplorer" as const
+          : current.leftToolWindow,
+      };
       storeLayout(next);
       return next;
     });
@@ -83,7 +103,50 @@ export function useToolWindowLayout() {
     setLayout((current) => {
       const next = {
         ...current,
-        databaseExplorerOpen: !current.databaseExplorerOpen,
+        databaseExplorerOpen:
+          current.leftToolWindow === "databaseExplorer"
+            ? !current.databaseExplorerOpen
+            : true,
+        leftToolWindow: "databaseExplorer" as const,
+      };
+      storeLayout(next);
+      return next;
+    });
+  }, []);
+
+  const showLocalHistory = useCallback(() => {
+    setLayout((current) => {
+      const next = {
+        ...current,
+        databaseExplorerOpen: true,
+        leftToolWindow: "localHistory" as const,
+      };
+      storeLayout(next);
+      return next;
+    });
+  }, []);
+  const closeLocalHistory = useCallback(() => {
+    setLayout((current) => {
+      if (
+        !current.databaseExplorerOpen ||
+        current.leftToolWindow !== "localHistory"
+      ) {
+        return current;
+      }
+      const next = { ...current, databaseExplorerOpen: false };
+      storeLayout(next);
+      return next;
+    });
+  }, []);
+  const toggleLocalHistory = useCallback(() => {
+    setLayout((current) => {
+      const next = {
+        ...current,
+        databaseExplorerOpen:
+          current.leftToolWindow === "localHistory"
+            ? !current.databaseExplorerOpen
+            : true,
+        leftToolWindow: "localHistory" as const,
       };
       storeLayout(next);
       return next;
@@ -154,11 +217,19 @@ export function useToolWindowLayout() {
   }, []);
 
   return {
-    databaseExplorerOpen: layout.databaseExplorerOpen,
+    databaseExplorerOpen:
+      layout.databaseExplorerOpen &&
+      layout.leftToolWindow === "databaseExplorer",
+    localHistoryOpen:
+      layout.databaseExplorerOpen &&
+      layout.leftToolWindow === "localHistory",
     servicesOpen: layout.servicesOpen,
     servicesHeight: layout.servicesHeight,
     showDatabaseExplorer,
     toggleDatabaseExplorer,
+    showLocalHistory,
+    closeLocalHistory,
+    toggleLocalHistory,
     showServices,
     closeServices,
     toggleServices,

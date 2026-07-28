@@ -15,7 +15,7 @@ use adapters::{
 pub(crate) use application::{
     CreateSqlDocumentRequest, SaveSqlDocumentOutcome, SaveSqlDocumentRequest, SqlDocumentUseCases,
 };
-pub(crate) use domain::SqlDocument;
+pub(crate) use domain::{SqlDocument, SqlDocumentRevision};
 
 pub(crate) type SqlDocumentsFeature = SqlDocumentUseCases<
     SqliteSqlDocumentRepository,

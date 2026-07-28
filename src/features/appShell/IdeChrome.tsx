@@ -24,6 +24,7 @@ export function IdeTopBar({
   selected,
   supportsSql,
   databaseExplorerOpen,
+  localHistoryOpen,
   servicesOpen,
   showTerminalDock,
   searchEverywhereOpen,
@@ -31,6 +32,7 @@ export function IdeTopBar({
   onNewQuery,
   onArea,
   onToggleDatabaseExplorer,
+  onToggleLocalHistory,
   onToggleServices,
   onOpenTerminal,
   onSearchEverywhere,
@@ -40,6 +42,7 @@ export function IdeTopBar({
   selected: ConnectionProfile | null;
   supportsSql: boolean;
   databaseExplorerOpen: boolean;
+  localHistoryOpen: boolean;
   servicesOpen: boolean;
   showTerminalDock: boolean;
   searchEverywhereOpen: boolean;
@@ -47,6 +50,7 @@ export function IdeTopBar({
   onNewQuery: () => void;
   onArea: (area: AppArea) => void;
   onToggleDatabaseExplorer: () => void;
+  onToggleLocalHistory: () => void;
   onToggleServices: () => void;
   onOpenTerminal: () => void;
   onSearchEverywhere: () => void;
@@ -103,6 +107,17 @@ export function IdeTopBar({
           aria-pressed={area === "workspace" && databaseExplorerOpen}
         >
           <Icon name="database" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only"
+          disabled={!selected || !supportsSql}
+          onClick={onToggleLocalHistory}
+          title={t("localHistory.title")}
+          aria-label={t("localHistory.title")}
+          aria-pressed={localHistoryOpen}
+        >
+          <Icon name="history" />
         </button>
         <button
           type="button"

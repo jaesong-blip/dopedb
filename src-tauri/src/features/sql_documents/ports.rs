@@ -8,7 +8,7 @@ use std::future::Future;
 use crate::error::AppResult;
 use crate::kernel::identity::{AccountScopeId, ConnectionId, SqlDocumentId, WorkspaceConnectionId};
 
-use super::domain::{SqlDialect, SqlDocument};
+use super::domain::{SqlDialect, SqlDocument, SqlDocumentRevision};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SqlDocumentAuthority {
@@ -50,6 +50,12 @@ pub(crate) trait SqlDocumentRepositoryPort: Clone + Send + Sync + 'static {
         &self,
         authority: &SqlDocumentAuthority,
     ) -> impl Future<Output = AppResult<Vec<SqlDocument>>> + Send;
+
+    fn list_revisions(
+        &self,
+        authority: &SqlDocumentAuthority,
+        id: SqlDocumentId,
+    ) -> impl Future<Output = AppResult<Vec<SqlDocumentRevision>>> + Send;
 
     fn create(
         &self,

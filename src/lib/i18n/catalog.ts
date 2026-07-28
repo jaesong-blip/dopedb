@@ -9,6 +9,7 @@ import { connectionsCatalog } from "./catalogs/connections";
 import { dashboardCatalog } from "./catalogs/dashboard";
 import { documentsCatalog } from "./catalogs/documents";
 import { jobsCatalog } from "./catalogs/jobs";
+import { localHistoryCatalog } from "./catalogs/localHistory";
 import { onboardingCatalog } from "./catalogs/onboarding";
 import { resultsCatalog } from "./catalogs/results";
 import { rowEditorCatalog } from "./catalogs/rowEditor";
@@ -32,6 +33,7 @@ export const catalogParts = [
   dashboardCatalog,
   documentsCatalog,
   jobsCatalog,
+  localHistoryCatalog,
   onboardingCatalog,
   resultsCatalog,
   rowEditorCatalog,

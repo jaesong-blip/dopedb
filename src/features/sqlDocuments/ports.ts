@@ -8,10 +8,15 @@ import type {
   SaveSqlDocumentRequest,
   SqlDocument,
   SqlDocumentId,
+  SqlDocumentRevision,
 } from "./domain";
 
 export interface SqlDocumentGateway {
   list(connectionId: ConnectionId): Promise<SqlDocument[]>;
+  listRevisions(
+    connectionId: ConnectionId,
+    id: SqlDocumentId,
+  ): Promise<SqlDocumentRevision[]>;
   create(request: CreateSqlDocumentRequest): Promise<SqlDocument>;
   save(request: SaveSqlDocumentRequest): Promise<SaveSqlDocumentOutcome>;
   delete(

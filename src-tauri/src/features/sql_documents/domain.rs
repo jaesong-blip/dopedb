@@ -71,6 +71,15 @@ pub(crate) struct SqlDocument {
     pub(crate) updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SqlDocumentRevision {
+    pub(crate) document_id: SqlDocumentId,
+    pub(crate) local_revision: i64,
+    pub(crate) content: String,
+    pub(crate) created_at: String,
+}
+
 impl SqlDocument {
     pub(crate) fn create(
         id: SqlDocumentId,

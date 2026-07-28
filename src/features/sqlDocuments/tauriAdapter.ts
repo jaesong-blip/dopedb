@@ -7,12 +7,20 @@ import type {
   SaveSqlDocumentOutcome,
   SaveSqlDocumentRequest,
   SqlDocument,
+  SqlDocumentRevision,
 } from "./domain";
 import type { SqlDocumentGateway } from "./ports";
 
 export const tauriSqlDocumentGateway: SqlDocumentGateway = {
   list(connectionId) {
     return invoke<SqlDocument[]>("list_sql_documents", { id: connectionId });
+  },
+
+  listRevisions(connectionId, id) {
+    return invoke<SqlDocumentRevision[]>("list_sql_document_revisions", {
+      connectionId,
+      id,
+    });
   },
 
   create(request: CreateSqlDocumentRequest) {

@@ -7,6 +7,7 @@ import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
+import LocalHistoryToolWindow from "../localHistory/LocalHistoryToolWindow";
 import WorkspaceAccount from "../workspaces/components/WorkspaceAccount";
 import WorkspaceSwitcher from "../workspaces/components/WorkspaceSwitcher";
 import type { CatalogTable, SkillStatus } from "../../ipc/types";
@@ -39,6 +40,7 @@ type Props = {
   compact: boolean;
   mobileExplorerOpen: boolean;
   databaseExplorerOpen: boolean;
+  localHistoryOpen: boolean;
   servicesOpen: boolean;
   servicesHeight: number;
   queryServiceSessions: QueryServiceSession[];
@@ -60,10 +62,13 @@ type Props = {
   onCreateDemoDatabase: () => void;
   onArea: (area: AppArea) => void;
   onToggleDatabaseExplorer: () => void;
+  onToggleLocalHistory: () => void;
+  onCloseLocalHistory: () => void;
   onToggleServices: () => void;
   onCloseServices: () => void;
   onActivateQueryServiceSession: (id: string) => void;
   onActivateWorkbenchDocument: (id: string) => void;
+  onRestoreWorkbenchDocument: (id: string, content: string) => void;
   onStartServicesResize: (event: {
     preventDefault(): void;
     clientY: number;
@@ -110,6 +115,7 @@ export default function ShellLayout(props: Props) {
     compact,
     mobileExplorerOpen,
     databaseExplorerOpen,
+    localHistoryOpen,
     servicesOpen,
     servicesHeight,
     queryServiceSessions,
@@ -129,6 +135,9 @@ export default function ShellLayout(props: Props) {
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
   const databaseExplorerVisible =
     databaseExplorerOpen && !settingsOpen;
+  const localHistoryVisible = localHistoryOpen && !settingsOpen;
+  const leftToolWindowVisible =
+    databaseExplorerVisible || localHistoryVisible;
   const servicesVisible = servicesOpen && !settingsOpen;
   const rightDockWidth = showTerminalDock && !terminalOverlay
     ? terminalWidth
@@ -151,9 +160,10 @@ export default function ShellLayout(props: Props) {
       data-terminal-open={showTerminalDock}
       data-mobile-explorer-open={mobileExplorerOpen}
       data-database-explorer-open={databaseExplorerVisible}
+      data-local-history-open={localHistoryVisible}
       data-services-open={servicesVisible}
       style={{
-        gridTemplateColumns: databaseExplorerVisible
+        gridTemplateColumns: leftToolWindowVisible
           ? `${sidebarWidth}px 3px minmax(0, 1fr) ${rightDockWidth}px`
           : `0 0 minmax(0, 1fr) ${rightDockWidth}px`,
         gridTemplateRows: `40px minmax(0, 1fr) ${
@@ -166,6 +176,7 @@ export default function ShellLayout(props: Props) {
         selected={selected}
         supportsSql={supportsSql}
         databaseExplorerOpen={databaseExplorerVisible}
+        localHistoryOpen={localHistoryVisible}
         servicesOpen={servicesVisible}
         showTerminalDock={showTerminalDock}
         searchEverywhereOpen={props.searchEverywhereOpen}
@@ -179,6 +190,7 @@ export default function ShellLayout(props: Props) {
         onNewQuery={props.onNewQuery}
         onArea={props.onArea}
         onToggleDatabaseExplorer={props.onToggleDatabaseExplorer}
+        onToggleLocalHistory={props.onToggleLocalHistory}
         onToggleServices={props.onToggleServices}
         onOpenTerminal={props.onOpenTerminal}
         onSearchEverywhere={props.onSearchEverywhere}
@@ -202,10 +214,19 @@ export default function ShellLayout(props: Props) {
 
       <div
         className="tool-window-sidebar tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:max-[560px]:contents"
-        aria-hidden={!databaseExplorerVisible}
-        inert={!databaseExplorerVisible ? true : undefined}
+        aria-hidden={!leftToolWindowVisible}
+        inert={!leftToolWindowVisible ? true : undefined}
       >
-        {area === "dashboard" &&
+        {localHistoryVisible ? (
+          <LocalHistoryToolWindow
+            connection={selected}
+            documents={workbenchDocuments}
+            activeDocumentId={activeWorkbenchDocumentId}
+            onActivateDocument={props.onActivateWorkbenchDocument}
+            onRestoreRevision={props.onRestoreWorkbenchDocument}
+            onClose={props.onCloseLocalHistory}
+          />
+        ) : area === "dashboard" &&
         !settingsOpen &&
         editing === null &&
         !activeSchemaGroup ? (
@@ -258,7 +279,7 @@ export default function ShellLayout(props: Props) {
       />
       <div
         className="sidebar-resizer tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[560px]:hidden"
-        hidden={!databaseExplorerVisible}
+        hidden={!leftToolWindowVisible}
         title={t("app.dragResize")}
         onMouseDown={props.onStartSidebarDrag}
         onDoubleClick={props.onResetSidebar}

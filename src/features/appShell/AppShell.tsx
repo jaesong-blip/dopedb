@@ -116,10 +116,14 @@ function Shell() {
   } = useSidebarWidth();
   const {
     databaseExplorerOpen,
+    localHistoryOpen,
     servicesOpen,
     servicesHeight,
     showDatabaseExplorer,
     toggleDatabaseExplorer,
+    showLocalHistory,
+    closeLocalHistory,
+    toggleLocalHistory,
     showServices,
     closeServices,
     toggleServices,
@@ -471,6 +475,14 @@ function Shell() {
         run: toggleDatabaseExplorer,
       },
       {
+        id: "action:local-history",
+        kind: "action",
+        label: t("localHistory.title"),
+        keywords: ["tool window", "revision", "restore", "history", "기록"],
+        disabled: !selected || !supportsSql,
+        run: showLocalHistory,
+      },
+      {
         id: "action:services",
         kind: "action",
         label: t("services.title"),
@@ -649,6 +661,7 @@ function Shell() {
     selected,
     selectedDocuments,
     showDatabaseExplorer,
+    showLocalHistory,
     supportsSql,
     t,
     toast,
@@ -778,6 +791,7 @@ function Shell() {
       compact={compactShell}
       mobileExplorerOpen={mobileExplorerOpen}
       databaseExplorerOpen={databaseExplorerOpen}
+      localHistoryOpen={localHistoryOpen}
       servicesOpen={servicesOpen}
       servicesHeight={servicesHeight}
       queryServiceSessions={queryServices.sessions}
@@ -813,10 +827,13 @@ function Shell() {
         }
       }}
       onToggleDatabaseExplorer={toggleDatabaseExplorer}
+      onToggleLocalHistory={toggleLocalHistory}
+      onCloseLocalHistory={closeLocalHistory}
       onToggleServices={toggleServices}
       onCloseServices={closeServices}
       onActivateQueryServiceSession={queryServices.activateSession}
       onActivateWorkbenchDocument={workbench.activateId}
+      onRestoreWorkbenchDocument={workbench.updateDraft}
       onStartServicesResize={startServicesResize}
       onResetServicesHeight={resetServicesHeight}
       onSettings={() => {

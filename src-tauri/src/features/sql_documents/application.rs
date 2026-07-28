@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{ConnectionId, SqlDocumentId};
 
-use super::domain::{content_hash, normalize_title, validate_content, SqlDocument};
+use super::domain::{
+    content_hash, normalize_title, validate_content, SqlDocument, SqlDocumentRevision,
+};
 use super::ports::{
     SaveDocumentCommand, SaveRepositoryOutcome, SqlDocumentAuthorityGuard,
     SqlDocumentAuthorityPort, SqlDocumentGeneratorPort, SqlDocumentRepositoryPort,
@@ -65,6 +67,15 @@ where
     pub(crate) async fn list(&self, connection_id: ConnectionId) -> AppResult<Vec<SqlDocument>> {
         let guard = self.authority.authorize(connection_id).await?;
         self.repository.list(guard.authority()).await
+    }
+
+    pub(crate) async fn list_revisions(
+        &self,
+        connection_id: ConnectionId,
+        id: SqlDocumentId,
+    ) -> AppResult<Vec<SqlDocumentRevision>> {
+        let guard = self.authority.authorize(connection_id).await?;
+        self.repository.list_revisions(guard.authority(), id).await
     }
 
     pub(crate) async fn create(&self, request: CreateSqlDocumentRequest) -> AppResult<SqlDocument> {
