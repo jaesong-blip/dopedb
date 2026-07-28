@@ -42,6 +42,7 @@ import {
   blankConnection,
   CONNECTION_DEFAULT_PORTS,
   connectionDefaultSslMode,
+  isDemoSqliteConnection,
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
 import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
@@ -976,7 +977,11 @@ export function ConnectionForm({
                     className="btn small icon-only icon-xs"
                     disabled={busy}
                     label={t("common.delete")}
-                    confirmLabel={t("common.reallyDelete")}
+                    confirmLabel={t(
+                      isDemoSqliteConnection(form)
+                        ? "connections.reallyDeleteDemo"
+                        : "common.reallyDelete",
+                    )}
                     onConfirm={() =>
                       void removeCurrentConnection()
                     }

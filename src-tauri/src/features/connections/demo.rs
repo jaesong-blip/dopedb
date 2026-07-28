@@ -2,13 +2,16 @@
 //! Data Source launcher. The file lives under the app-local data directory and
 //! is seeded idempotently so opening the demo never overwrites user edits.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Connection, SqliteConnection};
 use tauri::Manager;
 
 use crate::error::{AppError, AppResult};
+use crate::model::{ConnectionProfile, Engine};
+
+const DEMO_FILE_NAME: &str = "dopedb-demo-v1.sqlite";
 
 const DEMO_SQL: &[&str] = &[
     "PRAGMA foreign_keys = ON",
@@ -93,18 +96,62 @@ const DEMO_SQL: &[&str] = &[
 ];
 
 pub(crate) async fn create(app: &tauri::AppHandle) -> AppResult<String> {
-    let directory = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| AppError::Config(format!("demo database path unavailable: {error}")))?
-        .join("demos");
+    let path = demo_path(app)?;
+    let directory = path
+        .parent()
+        .ok_or_else(|| AppError::Config("demo database directory is unavailable".into()))?;
     tokio::fs::create_dir_all(&directory).await?;
-    let path = directory.join("dopedb-demo-v1.sqlite");
     create_at(&path).await?;
 
     path.into_os_string()
         .into_string()
         .map_err(|_| AppError::Config("demo database path is not valid UTF-8".into()))
+}
+
+pub(crate) async fn remove_if_unreferenced(
+    app: &tauri::AppHandle,
+    deleted: &ConnectionProfile,
+    remaining: &[ConnectionProfile],
+) -> AppResult<bool> {
+    let path = demo_path(app)?;
+    if deleted.engine != Engine::Sqlite || Path::new(&deleted.database) != path {
+        return Ok(false);
+    }
+    if remaining
+        .iter()
+        .any(|profile| profile.engine == Engine::Sqlite && Path::new(&profile.database) == path)
+    {
+        return Ok(false);
+    }
+
+    let mut removed = remove_file_if_present(&path).await?;
+    for suffix in ["-wal", "-shm", "-journal"] {
+        removed |= remove_file_if_present(&sqlite_sidecar_path(&path, suffix)).await?;
+    }
+    Ok(removed)
+}
+
+fn demo_path(app: &tauri::AppHandle) -> AppResult<PathBuf> {
+    Ok(app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| AppError::Config(format!("demo database path unavailable: {error}")))?
+        .join("demos")
+        .join(DEMO_FILE_NAME))
+}
+
+fn sqlite_sidecar_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut sidecar = path.as_os_str().to_os_string();
+    sidecar.push(suffix);
+    PathBuf::from(sidecar)
+}
+
+async fn remove_file_if_present(path: &Path) -> AppResult<bool> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
 }
 
 async fn create_at(path: &Path) -> AppResult<()> {
@@ -115,9 +162,7 @@ async fn create_at(path: &Path) -> AppResult<()> {
     let mut connection = SqliteConnection::connect_with(&options).await?;
     let mut transaction = connection.begin().await?;
     for &statement in DEMO_SQL {
-        sqlx::query(statement)
-            .execute(&mut *transaction)
-            .await?;
+        sqlx::query(statement).execute(&mut *transaction).await?;
     }
     transaction.commit().await?;
     Ok(())

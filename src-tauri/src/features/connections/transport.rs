@@ -75,8 +75,28 @@ pub async fn delete_connection(
     app: tauri::AppHandle,
     id: ConnectionId,
 ) -> AppResult<()> {
-    state.services.connections.delete(id).await?;
+    let deleted = state.services.connections.delete(id).await?;
     state.terminals.stop_connection(id, &app);
+    match state.services.connections.list_profiles().await {
+        Ok(remaining) => {
+            if let Err(error) =
+                super::demo::remove_if_unreferenced(&app, &deleted, &remaining).await
+            {
+                tracing::warn!(
+                    connection_id = %id,
+                    %error,
+                    "could not remove the unreferenced Demo SQLite file"
+                );
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                connection_id = %id,
+                %error,
+                "skipped Demo SQLite cleanup because remaining connections were unavailable"
+            );
+        }
+    }
     Ok(())
 }
 

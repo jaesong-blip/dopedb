@@ -22,6 +22,8 @@ export const CONNECTION_DEFAULT_PORTS: Record<ConnectionEngine, number> = {
   mongodb: 27017,
 };
 
+const DEMO_SQLITE_PATH_SUFFIX = "/demos/dopedb-demo-v1.sqlite";
+
 export function connectionDefaultSslMode(
   engine: ConnectionEngine,
 ): string {
@@ -69,4 +71,15 @@ export function demoSqliteConnection(path: string): ConnectionProfile {
     driverId: "sqlx-sqlite",
     env: "dev",
   };
+}
+
+export function isDemoSqliteConnection(
+  profile: ConnectionProfile,
+): boolean {
+  return (
+    profile.engine === "sqlite" &&
+    profile.database
+      .replace(/\\/g, "/")
+      .endsWith(DEMO_SQLITE_PATH_SUFFIX)
+  );
 }

@@ -125,6 +125,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.providerGeneric": "Generic / self-hosted",
     "connections.providerNeon": "Neon",
     "connections.providerPlanetScale": "PlanetScale",
+    "connections.reallyDeleteDemo":
+      "Delete this connection and its Demo SQLite file?",
     "connections.readOnlyDefault": "Open read-only by default",
     "connections.readOnlyDefaultBody":
       "New consoles and table editors start in read-only mode.",
@@ -300,6 +302,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.providerGeneric": "일반 / 자체 호스팅",
     "connections.providerNeon": "Neon",
     "connections.providerPlanetScale": "PlanetScale",
+    "connections.reallyDeleteDemo":
+      "이 연결과 Demo SQLite 파일을 삭제할까요?",
     "connections.readOnlyDefault": "기본 읽기 전용으로 열기",
     "connections.readOnlyDefaultBody":
       "새 콘솔과 테이블 편집기를 읽기 전용으로 시작합니다.",

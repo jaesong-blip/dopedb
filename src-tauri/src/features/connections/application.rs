@@ -241,7 +241,7 @@ where
         Ok(updated)
     }
 
-    pub(crate) async fn delete(&self, id: ConnectionId) -> AppResult<()> {
+    pub(crate) async fn delete(&self, id: ConnectionId) -> AppResult<ConnectionProfile> {
         let mutation = self
             .authority
             .begin_connection_mutation(id, ConnectionPermission::Read)
@@ -269,7 +269,7 @@ where
             }
         }
         mutation.retire_connection(id).await;
-        Ok(())
+        Ok(profile)
     }
 
     pub(crate) async fn test(&self, id: ConnectionId) -> AppResult<()> {
