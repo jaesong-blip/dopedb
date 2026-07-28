@@ -111,7 +111,7 @@ fn build_uri(profile: &ConnectionProfile, secret: &str) -> AppResult<String> {
     let mut params: Vec<(&String, &String)> = profile
         .extra_params
         .iter()
-        .filter(|(k, _)| k.as_str() != "srv")
+        .filter(|(k, _)| k.as_str() != "srv" && !k.starts_with("dopedb."))
         .collect();
     params.sort();
     for (i, (k, v)) in params.iter().enumerate() {

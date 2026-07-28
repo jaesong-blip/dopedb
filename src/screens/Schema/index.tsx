@@ -36,6 +36,11 @@ import {
 import { useI18n } from "../../lib/i18n";
 import SchemaEditor from "./SchemaEditor";
 import { schemaDetailsEnabled } from "./detailLifecycle";
+import {
+  filterCatalog,
+  filterCatalogOverview,
+  filterCatalogSnapshot,
+} from "../../features/catalogExplorer/scopeFilter";
 
 const ErdCanvas = lazy(() => import("../../components/ErdCanvas"));
 
@@ -76,22 +81,25 @@ export default function SchemaExplorer({
   const { t } = useI18n();
   const catalogScope = useCatalogScope();
   const [detailsRequested, setDetailsRequested] = useState(false);
-  const overviewQuery = useQuery(
-    catalogOverviewQuery(connection.id, catalogScope),
-  );
+  const overviewQuery = useQuery({
+    ...catalogOverviewQuery(connection.id, catalogScope),
+    select: (overview) => filterCatalogOverview(connection, overview),
+  });
   const catalogQueryResult = useQuery({
     ...catalogQuery(connection.id, catalogScope),
     enabled: schemaDetailsEnabled(detailsRequested, catalogScope.ready),
+    select: (catalog) => filterCatalog(connection, catalog),
   });
   // A cold legacy catalog load persists the canonical snapshot before it resolves.
   // Waiting for it avoids running the same live introspection twice in parallel.
-  const snapshotQuery = useQuery(
-    catalogSnapshotQuery(
+  const snapshotQuery = useQuery({
+    ...catalogSnapshotQuery(
       connection.id,
       detailsRequested && catalogQueryResult.data !== undefined,
       catalogScope,
     ),
-  );
+    select: (snapshot) => filterCatalogSnapshot(connection, snapshot),
+  });
   const snapshot = snapshotQuery.data;
   const [filter, setFilter] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);

@@ -20,7 +20,7 @@ use super::domain::DriverDescriptor;
 use super::ports::{
     AdHocConnectionPort, AuthorizedConnectionPort, ConnectionCredentialVault,
     ConnectionMutationPort, ConnectionPermission, ConnectionRepositoryPort, ConnectionRuntimePort,
-    DriverRegistryPort, ScopeMutationPort,
+    DriverRegistryPort, ProfileMutationPort, ScopeMutationPort,
 };
 
 #[derive(Clone)]
@@ -75,15 +75,17 @@ pub(crate) struct RuntimeScopeMutation {
     inner: ConnectionMutation,
 }
 
-pub(crate) struct RuntimeScopeRead {
-    _inner: ConnectionOperationScope,
+pub(crate) struct RuntimeProfileMutation {
+    inner: ConnectionOperationScope,
 }
 
-impl ScopeMutationPort for RuntimeScopeMutation {
+impl ProfileMutationPort for RuntimeProfileMutation {
     async fn retire_connection(self, id: ConnectionId) {
         self.inner.retire_connection(id.into()).await;
     }
+}
 
+impl ScopeMutationPort for RuntimeScopeMutation {
     async fn retire_connections(self, ids: &[ConnectionId]) {
         let ids = ids.iter().copied().map(Uuid::from).collect::<Vec<_>>();
         self.inner.retire_connections(&ids).await;
@@ -130,14 +132,14 @@ impl RuntimeConnectionAuthority {
 }
 
 impl ConnectionRuntimePort for RuntimeConnectionAuthority {
-    type ScopeRead = RuntimeScopeRead;
+    type ProfileMutation = RuntimeProfileMutation;
     type ScopeMutation = RuntimeScopeMutation;
     type ConnectionMutation = RuntimeConnectionMutation;
     type AuthorizedConnection = RuntimeAuthorizedConnection;
 
-    async fn begin_scope_read(&self) -> Self::ScopeRead {
-        RuntimeScopeRead {
-            _inner: self.connections.begin_operation_scope().await,
+    async fn begin_profile_mutation(&self, id: ConnectionId) -> Self::ProfileMutation {
+        RuntimeProfileMutation {
+            inner: self.connections.begin_profile_mutation(id.into()).await,
         }
     }
 

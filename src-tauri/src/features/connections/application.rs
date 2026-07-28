@@ -20,7 +20,7 @@ use super::domain::{
 use super::ports::{
     AdHocConnectionPort, AuthorizedConnectionPort, ConnectionCredentialVault,
     ConnectionMutationPort, ConnectionPermission, ConnectionRepositoryPort, ConnectionRuntimePort,
-    DriverRegistryPort, ScopeMutationPort,
+    DriverRegistryPort, ProfileMutationPort, ScopeMutationPort,
 };
 
 pub(crate) struct ConnectionUpsertRequest {
@@ -119,25 +119,16 @@ where
         self.drivers.validate(&profile)?;
 
         let id = ConnectionId::from(profile.id);
-        // A new profile cannot have a live runtime entry to retire. Hold a shared
-        // scope guard while validating and inserting it so unrelated catalog reads
-        // continue, but workspace/account switches remain fenced. Existing profiles
-        // still upgrade to the exclusive mutation path and re-read under that guard.
-        let mut scope_read = Some(self.authority.begin_scope_read().await);
+        // Hold a shared scope guard while validating and persisting so unrelated
+        // catalog reads continue but workspace/account switches remain fenced.
+        // Existing profiles publish their new generation by detaching only that
+        // connection's pools; generation checks reject a racing old pin.
+        let mut profile_mutation = Some(self.authority.begin_profile_mutation(id).await);
         self.repository.ensure_write_scope(id).await?;
-        let mut connections = self.repository.list().await?;
+        let connections = self.repository.list().await?;
         let existing = connections
             .iter()
             .any(|connection| connection.id == profile.id);
-        let mutation = if existing {
-            drop(scope_read.take());
-            let mutation = self.authority.begin_scope_mutation().await;
-            self.repository.ensure_write_scope(id).await?;
-            connections = self.repository.list().await?;
-            Some(mutation)
-        } else {
-            None
-        };
         validate_schema_group_engine(&profile, &connections)?;
         let existing_secret_id = connections
             .iter()
@@ -169,8 +160,12 @@ where
         match self.repository.upsert(&profile).await {
             Ok(profile) => {
                 let _ = self.repository.clear_schema_cache(id).await;
-                if let Some(mutation) = mutation {
-                    mutation.retire_connection(id).await;
+                if existing {
+                    profile_mutation
+                        .take()
+                        .expect("connection upsert holds a profile mutation guard")
+                        .retire_connection(id)
+                        .await;
                 }
                 if replacement_secret_id.is_some() {
                     if let Some(previous_id) = existing_secret_id {

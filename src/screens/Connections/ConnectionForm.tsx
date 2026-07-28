@@ -35,6 +35,13 @@ import {
 import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
 import type { ProviderKind } from "../../features/providers/domain";
 import {
+  isIntrospectionParameter,
+  OBJECT_PATTERN_PARAMETER,
+  relationNamespace,
+  SCHEMA_SCOPE_PARAMETER,
+  selectedSchemaScope,
+} from "../../features/catalogExplorer/scopeFilter";
+import {
   installDriver,
   testConnectionProfile,
   upsertConnection,
@@ -44,7 +51,11 @@ import type { Engine, Provider } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
-import { driversQuery } from "../../lib/queries";
+import {
+  catalogOverviewQuery,
+  driversQuery,
+  useCatalogScope,
+} from "../../lib/queries";
 
 const PROVIDER_ORDER: Provider[] = [
   "auto",
@@ -77,15 +88,21 @@ function compatibleDrivers(
 export function ConnectionForm({
   initial,
   preset,
+  connections,
   creatingDemo,
   onCreateDemoDatabase,
+  onNewConnection,
+  onEditConnection,
   onSaved,
   onCancel,
 }: {
   initial: ConnectionProfile | null;
   preset: ConnectionLaunchPreset | null;
+  connections: ConnectionProfile[];
   creatingDemo: boolean;
   onCreateDemoDatabase: () => void;
+  onNewConnection: (preset?: ConnectionLaunchPreset) => void;
+  onEditConnection: (connection: ConnectionProfile) => void;
   onSaved: (
     profile: ConnectionProfile,
     closeEditor: boolean,
@@ -95,9 +112,11 @@ export function ConnectionForm({
   const { t } = useI18n();
   const toast = useToast();
   const driverCatalog = useQuery(driversQuery());
+  const catalogScope = useCatalogScope();
   const [form, setForm] = useState<ConnectionProfile>(
     initial ?? blankConnection(preset),
   );
+  const [persisted, setPersisted] = useState(initial !== null);
   const [password, setPassword] = useState("");
   const [activeTab, setActiveTab] =
     useState<ConnectionTab>("general");
@@ -117,6 +136,27 @@ export function ConnectionForm({
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
   const srv = form.extraParams.srv === "true";
+  const schemaDiscovery = useQuery({
+    ...catalogOverviewQuery(form.id, catalogScope),
+    enabled:
+      persisted &&
+      activeTab === "schemas" &&
+      !isMongo &&
+      catalogScope.ready,
+  });
+  const discoveredSchemas = Array.from(
+    new Set(
+      schemaDiscovery.data?.relations
+        .map((relation) =>
+          relationNamespace(form, relation.schema),
+        )
+        .filter(Boolean) ?? [],
+    ),
+  ).sort((left, right) => left.localeCompare(right));
+  const scopedSchemas = selectedSchemaScope(form);
+  const advancedParameters = Object.entries(form.extraParams).filter(
+    ([key]) => !isIntrospectionParameter(key),
+  );
 
   const drivers = compatibleDrivers(
     driverCatalog.data ?? [],
@@ -188,19 +228,27 @@ export function ConnectionForm({
     engine: Engine,
     provider: Provider = "auto",
   ) {
-    setForm((current) => ({
-      ...current,
-      engine,
-      provider,
-      driverId: null,
-      port:
-        current.port === CONNECTION_DEFAULT_PORTS[current.engine]
-          ? CONNECTION_DEFAULT_PORTS[engine]
-          : current.port,
-      schemaGroup: isDocumentEngine(engine)
-        ? null
-        : current.schemaGroup,
-    }));
+    setForm((current) => {
+      const extraParams = { ...current.extraParams };
+      if (isDocumentEngine(engine)) {
+        delete extraParams[SCHEMA_SCOPE_PARAMETER];
+        delete extraParams[OBJECT_PATTERN_PARAMETER];
+      }
+      return {
+        ...current,
+        engine,
+        provider,
+        extraParams,
+        driverId: null,
+        port:
+          current.port === CONNECTION_DEFAULT_PORTS[current.engine]
+            ? CONNECTION_DEFAULT_PORTS[engine]
+            : current.port,
+        schemaGroup: isDocumentEngine(engine)
+          ? null
+          : current.schemaGroup,
+      };
+    });
     if (activeTab === "schemas" && isDocumentEngine(engine)) {
       setActiveTab("general");
     }
@@ -233,18 +281,17 @@ export function ConnectionForm({
   }
 
   function updateAdvancedParameter(
-    index: number,
+    currentKey: string,
     nextKey: string,
     nextValue: string,
   ) {
     setForm((current) => {
-      const entries = Object.entries(current.extraParams);
-      entries[index] = [nextKey, nextValue];
+      const extraParams = { ...current.extraParams };
+      delete extraParams[currentKey];
+      if (nextKey.trim()) extraParams[nextKey] = nextValue;
       return {
         ...current,
-        extraParams: Object.fromEntries(
-          entries.filter(([key]) => key.trim().length > 0),
-        ),
+        extraParams,
       };
     });
   }
@@ -270,6 +317,32 @@ export function ConnectionForm({
       delete extraParams[key];
       return { ...current, extraParams };
     });
+  }
+
+  function setSchemaScope(schemas: string[]) {
+    setExtraParameter(
+      SCHEMA_SCOPE_PARAMETER,
+      schemas.length > 0 ? JSON.stringify(schemas) : "",
+    );
+  }
+
+  function toggleSchemaScope(schema: string, checked: boolean) {
+    if (!checked && discoveredSchemas.length === 1) return;
+    if (scopedSchemas.length === 0) {
+      if (!checked) {
+        setSchemaScope(
+          discoveredSchemas.filter((candidate) => candidate !== schema),
+        );
+      }
+      return;
+    }
+    const next = checked
+      ? [...new Set([...scopedSchemas, schema])]
+      : scopedSchemas.filter((candidate) => candidate !== schema);
+    if (next.length === 0) return;
+    setSchemaScope(
+      next.length === discoveredSchemas.length ? [] : next,
+    );
   }
 
   function applyConnectionUrl(raw: string, showFeedback: boolean) {
@@ -322,6 +395,7 @@ export function ConnectionForm({
         password || undefined,
       );
       setForm(saved);
+      setPersisted(true);
       setPassword("");
       await onSaved(saved, closeEditor);
       toast(t("connections.connectionSaved"));
@@ -445,7 +519,7 @@ export function ConnectionForm({
               <button
                 type="button"
                 className="btn small icon-only icon-xs"
-                onClick={() => selectSource("postgres")}
+                onClick={() => onNewConnection()}
                 title={t("common.add")}
                 aria-label={t("common.add")}
               >
@@ -468,6 +542,28 @@ export function ConnectionForm({
             </div>
           </div>
           <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-2">
+            {connections.length > 0 ? (
+              <>
+                <ToolWindowSection
+                  title={t("connections.dataSources")}
+                >
+                  {connections.map((connection) => (
+                    <ToolWindowAction
+                      key={connection.id}
+                      leading={<EngineMark engine={connection.engine} />}
+                      trailing={<Icon name="chevronRight" />}
+                      selected={
+                        !isNew && connection.id === form.id
+                      }
+                      onClick={() => onEditConnection(connection)}
+                    >
+                      {connection.name || t("app.unnamed")}
+                    </ToolWindowAction>
+                  ))}
+                </ToolWindowSection>
+                <div className="tw:h-5" />
+              </>
+            ) : null}
             <ToolWindowSection
               title={t("connections.createDataSource")}
             >
@@ -479,9 +575,17 @@ export function ConnectionForm({
                   selected={
                     form.engine === source.engine
                   }
-                  onClick={() =>
-                    selectSource(source.engine, source.provider)
-                  }
+                  onClick={() => {
+                    if (isNew) {
+                      selectSource(source.engine, source.provider);
+                    } else {
+                      onNewConnection({
+                        engine: source.engine,
+                        provider: source.provider,
+                        source: "standard",
+                      });
+                    }
+                  }}
                 >
                   {source.label}
                 </ToolWindowAction>
@@ -935,25 +1039,110 @@ export function ConnectionForm({
             ) : null}
 
             {activeTab === "schemas" && !isMongo ? (
-              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-3">
-                <h3>{t("connections.schemas")}</h3>
-                <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                  {t("connections.schemasBody")}
-                </p>
-                <Field label={t("connections.schemaGroup")}>
-                  <TextInput
-                    value={form.schemaGroup ?? ""}
-                    onChange={(event) =>
-                      set(
-                        "schemaGroup",
-                        event.target.value.trim() || null,
-                      )
-                    }
-                    placeholder={t(
-                      "connections.schemaGroupPlaceholder",
-                    )}
-                  />
-                </Field>
+              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-5">
+                <section className="tw:grid tw:gap-3">
+                  <h3>{t("connections.introspectionScope")}</h3>
+                  <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                    {t("connections.introspectionScopeBody")}
+                  </p>
+                  {!persisted ? (
+                    <div className="tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-3 tw:text-sm tw:text-muted-foreground">
+                      {t("connections.schemaScopeSaveFirst")}
+                    </div>
+                  ) : schemaDiscovery.error ? (
+                    <div className="tw:flex tw:items-start tw:gap-2 tw:rounded-sm tw:border tw:border-danger tw:bg-card tw:p-3 tw:text-sm tw:text-danger">
+                      <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
+                        {errMessage(schemaDiscovery.error)}
+                      </span>
+                      <button
+                        className="btn small"
+                        type="button"
+                        disabled={schemaDiscovery.isFetching}
+                        onClick={() => void schemaDiscovery.refetch()}
+                      >
+                        <Icon name="refresh" />
+                        {t("common.refresh")}
+                      </button>
+                    </div>
+                  ) : !schemaDiscovery.data ? (
+                    <div className="tw:text-sm tw:text-muted-foreground">
+                      {t("connections.loadingSchemaScope")}
+                    </div>
+                  ) : discoveredSchemas.length === 0 ? (
+                    <div className="tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-3 tw:text-sm tw:text-muted-foreground">
+                      {t("connections.noSchemasDiscovered")}
+                    </div>
+                  ) : (
+                    <div className="tw:grid tw:gap-1 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-2">
+                      <CheckboxField
+                        label={t("connections.allSchemas")}
+                        checked={scopedSchemas.length === 0}
+                        onChange={(event) => {
+                          if (event.target.checked) setSchemaScope([]);
+                        }}
+                      />
+                      <div className="tw:my-1 tw:h-px tw:bg-border-subtle" />
+                      {discoveredSchemas.map((schema) => (
+                        <CheckboxField
+                          key={schema}
+                          label={schema}
+                          checked={
+                            scopedSchemas.length === 0 ||
+                            scopedSchemas.includes(schema)
+                          }
+                          onChange={(event) =>
+                            toggleSchemaScope(
+                              schema,
+                              event.target.checked,
+                            )
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                  <Field
+                    label={t("connections.objectNamePattern")}
+                    hint={t("connections.objectNamePatternHint")}
+                  >
+                    <TextInput
+                      value={
+                        form.extraParams[
+                          OBJECT_PATTERN_PARAMETER
+                        ] ?? ""
+                      }
+                      onChange={(event) =>
+                        setExtraParameter(
+                          OBJECT_PATTERN_PARAMETER,
+                          event.target.value,
+                        )
+                      }
+                      placeholder="audit_*"
+                    />
+                  </Field>
+                </section>
+
+                <div className="tw:h-px tw:bg-border-subtle" />
+
+                <section className="tw:grid tw:gap-3">
+                  <h3>{t("connections.schemaComparison")}</h3>
+                  <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                    {t("connections.schemasBody")}
+                  </p>
+                  <Field label={t("connections.schemaGroup")}>
+                    <TextInput
+                      value={form.schemaGroup ?? ""}
+                      onChange={(event) =>
+                        set(
+                          "schemaGroup",
+                          event.target.value.trim() || null,
+                        )
+                      }
+                      placeholder={t(
+                        "connections.schemaGroupPlaceholder",
+                      )}
+                    />
+                  </Field>
+                </section>
               </div>
             ) : null}
 
@@ -973,14 +1162,13 @@ export function ConnectionForm({
                       {t("connections.addParameter")}
                     </button>
                   </div>
-                  {Object.entries(form.extraParams).length ===
-                  0 ? (
+                  {advancedParameters.length === 0 ? (
                     <p className="tw:m-0 tw:border-y tw:border-border-subtle tw:py-4 tw:text-sm tw:text-muted-foreground">
                       {t("connections.noParameters")}
                     </p>
                   ) : (
                     <div className="tw:grid tw:gap-2">
-                      {Object.entries(form.extraParams).map(
+                      {advancedParameters.map(
                         ([key, value], index) => (
                           <div
                             key={`${index}-${key}`}
@@ -993,7 +1181,7 @@ export function ConnectionForm({
                               )}
                               onChange={(event) =>
                                 updateAdvancedParameter(
-                                  index,
+                                  key,
                                   event.target.value,
                                   value,
                                 )
@@ -1006,7 +1194,7 @@ export function ConnectionForm({
                               )}
                               onChange={(event) =>
                                 updateAdvancedParameter(
-                                  index,
+                                  key,
                                   key,
                                   event.target.value,
                                 )

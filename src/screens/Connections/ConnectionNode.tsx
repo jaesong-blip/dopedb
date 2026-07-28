@@ -171,7 +171,7 @@ export default function ConnectionNode(props: Props) {
           />
         )}
         <div
-          className="db-menu tw:pointer-events-none tw:absolute tw:top-1/2 tw:right-1 tw:-translate-y-1/2 tw:opacity-0 tw:transition-opacity tw:group-hover:pointer-events-auto tw:group-hover:opacity-100 tw:focus-within:pointer-events-auto tw:focus-within:opacity-100 tw:data-[open=true]:pointer-events-auto tw:data-[open=true]:z-[var(--ds-z-popover)] tw:data-[open=true]:opacity-100"
+          className="db-menu tw:pointer-events-none tw:absolute tw:top-1/2 tw:right-1 tw:-translate-y-1/2 tw:opacity-0 tw:transition-opacity tw:group-hover:pointer-events-auto tw:group-hover:opacity-100 tw:group-focus-within:pointer-events-auto tw:group-focus-within:opacity-100 tw:focus-within:pointer-events-auto tw:focus-within:opacity-100 tw:data-[open=true]:pointer-events-auto tw:data-[open=true]:z-[var(--ds-z-popover)] tw:data-[open=true]:opacity-100"
           data-open={props.openMenuId === connection.id}
           onPointerDown={(event) => event.stopPropagation()}
           onPointerUp={(event) => event.stopPropagation()}

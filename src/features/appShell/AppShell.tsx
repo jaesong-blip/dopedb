@@ -12,7 +12,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { CatalogTable } from "../../ipc/types";
+import type { CatalogOverview, CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import SearchEverywhere from "../../features/actionSearch/SearchEverywhere";
@@ -47,9 +47,11 @@ import {
   catalogOverviewQuery,
   catalogQuery,
   driversQuery,
+  qk,
   skillStatusQuery,
   useCatalogScope,
 } from "../../lib/queries";
+import { filterCatalogOverview } from "../catalogExplorer/scopeFilter";
 import { buildConnectionSections } from "../../lib/schemaDiff";
 import type { SettingsSection } from "../../screens/Settings";
 import ShellLayout from "./ShellLayout";
@@ -182,6 +184,8 @@ function Shell() {
     queries: conns.map((connection) => ({
       ...catalogOverviewQuery(connection.id, catalogScope),
       enabled: searchEverywhereOpen && catalogScope.ready,
+      select: (overview: CatalogOverview) =>
+        filterCatalogOverview(connection, overview),
     })),
   });
   const showTerminalDock =
@@ -688,6 +692,17 @@ function Shell() {
       onCloseSchemaDiff={() => setSchemaDiffGroupKey(null)}
       onConnectionSaved={async (profile, closeEditor) => {
         await refresh();
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: qk.catalog(profile.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: qk.catalogOverview(profile.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: qk.catalogSnapshot(profile.id),
+          }),
+        ]);
         setSelectedId(profile.id);
         if (closeEditor) {
           setConnectionPreset(null);
@@ -700,6 +715,12 @@ function Shell() {
       }}
       onRetryConnections={() => void refresh()}
       onNewConnection={startNewConnection}
+      onEditConnection={(connection) => {
+        setConnectionPreset(null);
+        setEditing(connection);
+        setSettingsOpen(false);
+        setSchemaDiffGroupKey(null);
+      }}
       onSelectConnection={(id) => selectConnection(id, area)}
       onActivateDocument={workbench.activateId}
       onCloseDocument={closeDocument}

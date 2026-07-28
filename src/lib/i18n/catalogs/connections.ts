@@ -5,6 +5,7 @@ export const connectionsCatalog = defineCatalog(
   {
     "connections.browse": "Browse...",
     "connections.allDataSources": "All data sources",
+    "connections.allSchemas": "All schemas",
     "connections.advanced": "Advanced",
     "connections.advancedParameters": "Advanced parameters",
     "connections.addParameter": "Add parameter",
@@ -66,8 +67,12 @@ export const connectionsCatalog = defineCatalog(
     "connections.host": "Host",
     "connections.general": "General",
     "connections.importClipboard": "Import clipboard URL",
+    "connections.introspectionScope": "Introspection scope",
+    "connections.introspectionScopeBody":
+      "Choose the namespaces and object names shown by Database Explorer, Search Everywhere, and schema diagrams.",
     "connections.loadingSchema": "Loading schema...",
     "connections.loadingMetadata": "Loading metadata...",
+    "connections.loadingSchemaScope": "Discovering schemas...",
     "connections.materializedViews": "Materialized views ({count})",
     "connections.indexes": "Indexes ({count})",
     "connections.keys": "Keys ({count})",
@@ -78,10 +83,14 @@ export const connectionsCatalog = defineCatalog(
     "connections.noConnections": "No connections yet.",
     "connections.noObjects": "No database objects.",
     "connections.noMetadata": "No column, key, or index metadata.",
+    "connections.noSchemasDiscovered": "No schemas were discovered for this data source.",
     "connections.noParameters": "No advanced parameters.",
     "connections.noTables": "No tables.",
     "connections.noTablesMatch": 'No database objects match "{filter}".',
     "connections.objectOn": "on",
+    "connections.objectNamePattern": "Object name pattern",
+    "connections.objectNamePatternHint":
+      "Use * and ? wildcards. This filter is shared by Explorer, Search, and schema diagrams.",
     "connections.password": "Password",
     "connections.passwordStored": "stored securely",
     "connections.passwordStoredExisting": "stored",
@@ -112,6 +121,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.schemaDiffTableMissing": "Missing in this database; exists in the baseline",
     "connections.schemaDiffTitle":
       "Compared with the baseline: +{added} only here, -{missing} missing here, ~{changed} changed",
+    "connections.schemaComparison": "Schema comparison group",
     "connections.schemaGroup": "Schema group",
     "connections.schemaGroupConfirmGroup":
       'Add "{connection}" to schema group "{group}"?',
@@ -119,6 +129,8 @@ export const connectionsCatalog = defineCatalog(
       'Group "{source}" and "{target}" together as "{group}"?',
     "connections.schemaGroupPlaceholder": "billing-api",
     "connections.schemaGroupTitle": "{group} schema group",
+    "connections.schemaScopeSaveFirst":
+      "Apply this data source first, then return here to discover its schemas.",
     "connections.schemas": "Schemas",
     "connections.schemasBody":
       "Connections in one schema group can be compared across environments.",
@@ -149,6 +161,7 @@ export const connectionsCatalog = defineCatalog(
   {
     "connections.browse": "찾아보기...",
     "connections.allDataSources": "모든 데이터 소스",
+    "connections.allSchemas": "모든 스키마",
     "connections.advanced": "고급",
     "connections.advancedParameters": "고급 매개변수",
     "connections.addParameter": "매개변수 추가",
@@ -210,8 +223,12 @@ export const connectionsCatalog = defineCatalog(
     "connections.host": "호스트",
     "connections.general": "일반",
     "connections.importClipboard": "클립보드 URL 가져오기",
+    "connections.introspectionScope": "인트로스펙션 범위",
+    "connections.introspectionScopeBody":
+      "데이터베이스 탐색기, 전체 검색, 스키마 다이어그램에 표시할 네임스페이스와 객체 이름을 선택합니다.",
     "connections.loadingSchema": "스키마 불러오는 중...",
     "connections.loadingMetadata": "메타데이터 불러오는 중...",
+    "connections.loadingSchemaScope": "스키마 찾는 중...",
     "connections.materializedViews": "구체화된 뷰 ({count})",
     "connections.indexes": "인덱스 ({count})",
     "connections.keys": "키 ({count})",
@@ -222,10 +239,14 @@ export const connectionsCatalog = defineCatalog(
     "connections.noConnections": "아직 연결이 없습니다.",
     "connections.noObjects": "데이터베이스 객체가 없습니다.",
     "connections.noMetadata": "컬럼, 키 또는 인덱스 메타데이터가 없습니다.",
+    "connections.noSchemasDiscovered": "이 데이터 소스에서 스키마를 찾지 못했습니다.",
     "connections.noParameters": "고급 매개변수가 없습니다.",
     "connections.noTables": "테이블이 없습니다.",
     "connections.noTablesMatch": '"{filter}"에 맞는 데이터베이스 객체가 없습니다.',
     "connections.objectOn": "대상",
+    "connections.objectNamePattern": "객체 이름 패턴",
+    "connections.objectNamePatternHint":
+      "*와 ? 와일드카드를 사용합니다. 탐색기, 전체 검색, 스키마 다이어그램이 같은 필터를 사용합니다.",
     "connections.password": "비밀번호",
     "connections.passwordStored": "보안 저장소에 저장됨",
     "connections.passwordStoredExisting": "저장됨",
@@ -256,6 +277,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.schemaDiffTableMissing": "이 DB에는 없고 기준 DB에는 있습니다",
     "connections.schemaDiffTitle":
       "기준 DB와 비교: +{added} 이 DB에만 있음, -{missing} 이 DB에 없음, ~{changed} 변경",
+    "connections.schemaComparison": "스키마 비교 그룹",
     "connections.schemaGroup": "스키마 그룹",
     "connections.schemaGroupConfirmGroup":
       '"{connection}"을(를) 스키마 그룹 "{group}"에 추가할까요?',
@@ -263,6 +285,8 @@ export const connectionsCatalog = defineCatalog(
       '"{source}"와 "{target}"을(를) 같은 스키마 그룹 "{group}"으로 묶을까요?',
     "connections.schemaGroupPlaceholder": "billing-api",
     "connections.schemaGroupTitle": "{group} 스키마 그룹",
+    "connections.schemaScopeSaveFirst":
+      "이 데이터 소스를 먼저 적용한 뒤 돌아와 스키마를 찾으세요.",
     "connections.schemas": "스키마",
     "connections.schemasBody":
       "같은 스키마 그룹의 연결은 환경별로 비교할 수 있습니다.",

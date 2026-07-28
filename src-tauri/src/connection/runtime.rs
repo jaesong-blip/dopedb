@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use dashmap::DashMap;
-use tokio::sync::{Mutex, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
+use tokio::sync::{Mutex, OwnedMutexGuard, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 use tokio::time::Instant;
 use uuid::Uuid;
 
@@ -96,6 +96,7 @@ struct ConnectionManagerInner {
     remote_authority: Arc<dyn RemoteConnectionAuthorityPort>,
     provider_local: Arc<dyn ProviderLocalConnectionPort>,
     scope_gate: Arc<RwLock<()>>,
+    profile_mutation_gates: DashMap<Uuid, Arc<Mutex<()>>>,
     slots: DashMap<ConnectionCacheKey, Arc<Mutex<ConnectionSlot>>>,
     next_generation: AtomicU64,
     provider_binding_fence_epoch: AtomicU64,
@@ -134,6 +135,7 @@ pub(crate) struct ConnectionLease {
 pub(crate) struct ConnectionOperationScope {
     manager: ConnectionManager,
     _scope_guard: OwnedRwLockReadGuard<()>,
+    _profile_mutation_guard: Option<OwnedMutexGuard<()>>,
 }
 
 /// Exclusive keychain/material mutation boundary. Existing operations drain before
@@ -195,6 +197,7 @@ impl ConnectionOperationScope {
         let Self {
             manager,
             _scope_guard,
+            _profile_mutation_guard: _,
         } = self;
         ConnectionContext {
             manager,
@@ -206,6 +209,25 @@ impl ConnectionOperationScope {
         }
         .connect()
         .await
+    }
+
+    /// Publish a connection-local profile change without draining unrelated
+    /// database reads. The scope guard keeps the workspace/account fixed while
+    /// the caller persists the new generation and detaches old pools. Reads
+    /// that already hold the previous generation may finish; later admissions
+    /// fail the generation check or open against the replacement profile.
+    pub(crate) async fn retire_connection(self, connection_id: Uuid) {
+        let keys = self
+            .manager
+            .inner
+            .slots
+            .iter()
+            .filter(|entry| entry.key().connection_id == connection_id)
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        let retired = self.manager.detach_keys(keys).await;
+        drop(self);
+        retire_entries(retired).await;
     }
 }
 
@@ -618,6 +640,7 @@ impl ConnectionManager {
                 remote_authority,
                 provider_local,
                 scope_gate: Arc::new(RwLock::new(())),
+                profile_mutation_gates: DashMap::new(),
                 slots: DashMap::new(),
                 next_generation: AtomicU64::new(1),
                 provider_binding_fence_epoch: AtomicU64::new(1),
@@ -692,6 +715,26 @@ impl ConnectionManager {
         ConnectionOperationScope {
             manager: self.clone(),
             _scope_guard: Arc::clone(&self.inner.scope_gate).read_owned().await,
+            _profile_mutation_guard: None,
+        }
+    }
+
+    pub(crate) async fn begin_profile_mutation(
+        &self,
+        connection_id: Uuid,
+    ) -> ConnectionOperationScope {
+        let scope_guard = Arc::clone(&self.inner.scope_gate).read_owned().await;
+        let mutation_gate = Arc::clone(
+            self.inner
+                .profile_mutation_gates
+                .entry(connection_id)
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .value(),
+        );
+        ConnectionOperationScope {
+            manager: self.clone(),
+            _scope_guard: scope_guard,
+            _profile_mutation_guard: Some(mutation_gate.lock_owned().await),
         }
     }
 

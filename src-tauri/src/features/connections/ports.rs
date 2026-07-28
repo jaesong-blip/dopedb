@@ -46,9 +46,11 @@ pub(crate) trait ConnectionRepositoryPort: Clone + Send + Sync + 'static {
     fn get(&self, id: ConnectionId) -> impl Future<Output = AppResult<ConnectionProfile>> + Send;
 }
 
-pub(crate) trait ScopeMutationPort: Send {
+pub(crate) trait ProfileMutationPort: Send {
     fn retire_connection(self, id: ConnectionId) -> impl Future<Output = ()> + Send;
+}
 
+pub(crate) trait ScopeMutationPort: Send {
     fn retire_connections(self, ids: &[ConnectionId]) -> impl Future<Output = ()> + Send;
 }
 
@@ -64,12 +66,15 @@ pub(crate) trait AuthorizedConnectionPort: Send {
 }
 
 pub(crate) trait ConnectionRuntimePort: Clone + Send + Sync + 'static {
-    type ScopeRead: Send;
+    type ProfileMutation: ProfileMutationPort;
     type ScopeMutation: ScopeMutationPort;
     type ConnectionMutation: ConnectionMutationPort;
     type AuthorizedConnection: AuthorizedConnectionPort;
 
-    fn begin_scope_read(&self) -> impl Future<Output = Self::ScopeRead> + Send;
+    fn begin_profile_mutation(
+        &self,
+        id: ConnectionId,
+    ) -> impl Future<Output = Self::ProfileMutation> + Send;
 
     fn begin_scope_mutation(&self) -> impl Future<Output = Self::ScopeMutation> + Send;
 

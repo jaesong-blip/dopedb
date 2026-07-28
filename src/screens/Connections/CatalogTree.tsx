@@ -35,6 +35,7 @@ import {
   supportedObjectKinds,
   tableMatchesFilter,
 } from "../../features/catalogExplorer/catalogDomain";
+import { filterCatalog } from "../../features/catalogExplorer/scopeFilter";
 
 type Props = {
   connection: ConnectionProfile;
@@ -84,9 +85,12 @@ export default function CatalogTree(props: Props) {
     collapsedSections,
     objectSectionsOpen,
   } = props;
-  const catalog = overview
+  const unfilteredCatalog = overview
     ? catalogFromOverview(overview, fullCatalog)
     : fullCatalog;
+  const catalog = unfilteredCatalog
+    ? filterCatalog(connection, unfilteredCatalog)
+    : undefined;
   const diff = schemaDiffForConnection(
     connection,
     groupByConnectionId,

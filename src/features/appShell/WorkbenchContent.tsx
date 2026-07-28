@@ -76,7 +76,8 @@ type Props = {
   onCreateDemoDatabase: () => void;
   onCancelEditing: () => void;
   onRetryConnections: () => void;
-  onNewConnection: () => void;
+  onNewConnection: (preset?: ConnectionLaunchPreset) => void;
+  onEditConnection: (connection: ConnectionProfile) => void;
   onSelectConnection: (id: string) => void;
   onActivateDocument: (id: string) => void;
   onCloseDocument: (id: string) => void;
@@ -148,11 +149,18 @@ export default function WorkbenchContent(props: Props) {
     return (
       <div className="tw:h-full tw:min-h-0">
         <ConnectionForm
-          key={`connection-${connectionPreset?.engine ?? "default"}-${connectionPreset?.provider ?? "auto"}-${connectionPreset?.source ?? "standard"}`}
+          key={
+            editing === "new"
+              ? `connection-new-${connectionPreset?.engine ?? "default"}-${connectionPreset?.provider ?? "auto"}-${connectionPreset?.source ?? "standard"}`
+              : `connection-${editing.id}`
+          }
           initial={editing === "new" ? null : editing}
           preset={editing === "new" ? connectionPreset : null}
+          connections={connections}
           creatingDemo={props.creatingDemo}
           onCreateDemoDatabase={props.onCreateDemoDatabase}
+          onNewConnection={props.onNewConnection}
+          onEditConnection={props.onEditConnection}
           onSaved={props.onConnectionSaved}
           onCancel={props.onCancelEditing}
         />
