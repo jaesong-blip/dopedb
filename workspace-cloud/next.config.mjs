@@ -4,6 +4,9 @@ const scriptPolicy = process.env.NODE_ENV === "production"
   : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
 
 const nextConfig = {
+  experimental: {
+    useTypeScriptCli: true,
+  },
   poweredByHeader: false,
   turbopack: { root: process.cwd() },
   async headers() {

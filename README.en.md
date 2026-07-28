@@ -41,7 +41,7 @@ Requirements:
 
 - Rust stable 1.94 or newer
 - Node.js 24
-- pnpm 10.26.1
+- pnpm 11.17.0
 - Xcode Command Line Tools for macOS builds
 
 ```sh

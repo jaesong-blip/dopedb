@@ -6,6 +6,9 @@ const repoRoot = path.join(__dirname, "..");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    useTypeScriptCli: true,
+  },
   turbopack: {
     root: repoRoot,
   },

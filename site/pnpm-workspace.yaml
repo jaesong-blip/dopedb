@@ -1,0 +1,5 @@
+overrides:
+  postcss: ^8.5.22
+  sharp: ^0.35.3
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true

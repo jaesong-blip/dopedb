@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const POSITIVE_DATABASE_ID = /^[1-9][0-9]*$/;
 const DISALLOWED_JOB_PROPERTIES = new Set(["continue-on-error", "if"]);
-const EXPECTED_RELEASE_WORKFLOW_SHA256 = "ed5708233ed4ed832c9db8864f0371fb8f0b8e39c5bb48e7332037cdcd01d31b";
+const EXPECTED_RELEASE_WORKFLOW_SHA256 = "882c11684a2f69018ba52b31bc18dab460598267079082f4dc9f9e97b9ef31cd";
 const EXPECTED_RELEASE_JOB_IDS = Object.freeze(["verify-release", "publish-tauri", "finalize-release"]);
 const EXPECTED_RELEASE_JOB_PROPERTIES = Object.freeze({
   "verify-release": ["runs-on", "timeout-minutes", "permissions", "steps"],
@@ -31,8 +31,8 @@ const REQUIRED_VERIFY_RELEASE_VERSION_GUARDS = Object.freeze([
 // contract. These audited normalized job hashes additionally lock every setup
 // action, use/with/env mapping, comment, blank line, and unnamed sibling.
 const EXPECTED_CRITICAL_JOB_SHA256 = Object.freeze({
-  "publish-tauri": "f28924a5be710875c2533fc8c6723c3d3f8894302aa889b7b406f3523b1a8b82",
-  "finalize-release": "92d2512cea6770f366c0ccbb6c3d6973d78477322a78a9cfb4f86a0dd59cee9d",
+  "publish-tauri": "3ed24ce86d33b80516a6752e2b5dc33f371a874ed43ccfabf8018d0594b6c8e7",
+  "finalize-release": "b78a3589ea50574229254787aea3edde87b1ded55f0fa918d452c4079a78f864",
 });
 const EXPECTED_CRITICAL_JOB_STEP_INVENTORIES = Object.freeze({
   "publish-tauri": [

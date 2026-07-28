@@ -3,7 +3,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+import * as ts from "@typescript/typescript6";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSessionMock = vi.hoisted(() => vi.fn());

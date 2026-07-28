@@ -124,7 +124,7 @@ Required local tools:
 
 - Rust stable 1.94 or newer
 - Node.js 24
-- pnpm 10.26.1
+- pnpm 11.17.0
 - Xcode Command Line Tools
 
 Main commands:
@@ -196,13 +196,9 @@ The local updater key path used during setup was `~/.tauri/dopedb-updater.key`. 
 
 Use the latest stable compatible library versions, including major releases, and
 update the affected safety tests whenever an upgrade changes parser, database, broker,
-or credential-store behavior. The desktop currently builds with TypeScript 7; the
-two Next.js apps use TypeScript 6.0.3 because Next.js 16.2.11 cannot load TypeScript
-7's new API yet.
-
-Current non-library tooling hold:
-
-- `pnpm 11`: current supply-chain policy rejected a same-day transitive package in the site lockfile; stay on pnpm 10.26.1 until that policy is intentionally configured.
+or credential-store behavior. The desktop and both Next.js apps build with
+TypeScript 7. pnpm 11 supply-chain policy, Next.js CLI type-checking, and audited
+toolchain holds are documented in [`dependencies.md`](dependencies.md).
 
 ## macOS Distribution
 
