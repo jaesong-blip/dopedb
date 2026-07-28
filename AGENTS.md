@@ -10,6 +10,20 @@ Before changing files, read `CLAUDE.md` for the project conventions and `CONTRIB
 
 All commit messages must follow [`docs/commit.md`](docs/commit.md).
 
+## GitHub account switching
+
+The shared workstation's default active GitHub CLI account is `jaesong-blip`;
+for this repository, `jaesong-blip` and `json-choi` are the same human
+operator and both use the direct-`main` workflow. Run `pnpm repo:identity` so
+every commit uses `json-choi <77596321+json-choi@users.noreply.github.com>`.
+Use `pnpm gh:owner -- gh ...` or `pnpm gh:owner -- git push ...` only for one
+owner-attributed operation. The repository wrapper verifies `json-choi`,
+serializes the switch, and restores `jaesong-blip` even when the wrapped
+command fails. Never use a raw `gh auth switch`, expose a token, or leave
+`json-choi` active. If a previous process was killed during a switch, confirm
+it is no longer running and use `pnpm gh:restore`. See
+[`docs/github-account-switching.md`](docs/github-account-switching.md).
+
 ## Identity and workflow selection
 
 1. Determine both the authenticated GitHub login and the remote repository owner before starting work:
@@ -20,13 +34,18 @@ All commit messages must follow [`docs/commit.md`](docs/commit.md).
    ```
 
 2. Inspect `git status` before switching branches or pulling. Never discard or overwrite another person's uncommitted work.
-3. When `login == owner`, use the owner workflow:
-   - Work directly on a clean, up-to-date `main`; do not create a work branch or pull request.
+3. When `owner == json-choi` and `login` is either `jaesong-blip` or
+   `json-choi`, use the repository-operator workflow:
+   - Run `pnpm repo:identity` and work directly on a clean, up-to-date `main`.
+   - Do not create a work branch, pull request, or additional worktree unless
+     the user explicitly requests it.
    - Before committing user-requested work, create a GitHub Issue or reuse the existing issue for that request.
    - Link every such commit to the issue with `Refs: #<number>` or `Closes: #<number>`, run the relevant validation, and push normally to `origin/main`.
+   - When `jaesong-blip` is active, use `pnpm gh:owner -- git push origin main`
+     for the push, then verify that the wrapper restored `jaesong-blip`.
    - The owner may use the administrator bypass only to omit the pull-request requirement. Never force-push, delete `main`, conceal failed validation, or bypass release restrictions.
    - Observe the required `main` CI jobs after pushing. If a job fails, fix it under the same issue before treating the work as complete.
-4. When `login != owner`, use `work/<exact-github-login>/<short-topic>`. The login segment is case-sensitive and must exactly match the account that will run the canary workflow.
+4. Any other login uses `work/<exact-github-login>/<short-topic>`. The login segment is case-sensitive and must exactly match the account that will run the canary workflow.
 5. Contributors push only their own work branch and open a pull request into `main`. They must not push directly to `main`, use another contributor's namespace, or bypass protection rules.
 
 ## Pull requests and main
@@ -34,7 +53,9 @@ All commit messages must follow [`docs/commit.md`](docs/commit.md).
 - Contributor pull requests target `main`.
 - Contributor changes require the `build` and `windows-check` jobs, an up-to-date branch, one approval, resolved conversations, linear history, and CODEOWNERS review for protected files.
 - Stale approvals are dismissed, and the author of the latest push cannot provide the final approval.
-- The repository owner works through an issue-linked direct `main` commit instead of a pull request, validates before pushing, and verifies the same CI jobs after pushing.
+- The `jaesong-blip`/`json-choi` repository operator works through an
+  issue-linked direct `main` commit instead of a pull request, validates before
+  pushing, and verifies the same CI jobs after pushing.
 - Never force-push or delete `main`, and never attempt to hide or ignore a failed protection or CI result.
 - GitHub Actions, version files, and these policy documents are owned by `@json-choi`. Do not weaken their CODEOWNERS coverage.
 

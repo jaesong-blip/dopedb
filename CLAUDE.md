@@ -9,11 +9,27 @@ Tauri v2 기반 데이터베이스 클라이언트. React/TS 프론트 + Rust �
 커밋 메시지는 `docs/commit.md` 규칙을 따른다.
 
 1. 작업 전에 `gh api user --jq .login`과 `gh repo view --json owner --jq .owner.login`으로 현재 계정과 원격 저장소 소유자를 확인하고, `git status`로 다른 작업자의 변경이 없는지 확인한다.
-2. 현재 계정이 저장소 소유자이면 깨끗하고 최신인 `main`에서 직접 작업하며 작업 브랜치나 PR을 만들지 않는다. 사용자 요청 작업은 커밋 전에 기존 GitHub Issue를 확인하거나 새 이슈를 만들고, 커밋 마지막에 `Refs: #번호` 또는 `Closes: #번호`를 반드시 넣는다.
-3. 소유자는 관련 검증을 통과한 뒤 `origin/main`에 일반 push하고, push 뒤 `build`와 `windows-check` 결과를 확인한다. 관리자 bypass는 PR 생략에만 사용하며 force push, `main` 삭제, 실패한 검증 은폐, 릴리스 제한 우회에는 사용하지 않는다.
-4. 현재 계정이 소유자가 아니면 반드시 `work/<정확한-GitHub-login>/<짧은-작업명>` 브랜치를 사용한다. login은 대소문자까지 실제 계정과 같아야 한다.
+2. 원격 소유자가 `json-choi`이고 현재 계정이 `jaesong-blip` 또는
+   `json-choi`이면 동일한 저장소 운영자로 취급한다. `pnpm repo:identity`로
+   커미터를 `json-choi <77596321+json-choi@users.noreply.github.com>`으로
+   고정하고 깨끗하고 최신인 `main`에서 직접 작업한다. 사용자가 명시적으로
+   요청하지 않으면 작업 브랜치, PR, 추가 worktree를 만들지 않는다.
+3. 저장소 운영자는 사용자 요청 작업을 커밋하기 전에 기존 GitHub Issue를
+   확인하거나 새 이슈를 만들고, 커밋 마지막에 `Refs: #번호` 또는
+   `Closes: #번호`를 반드시 넣는다. 검증 뒤 `jaesong-blip`이 활성 계정이면
+   `pnpm gh:owner -- git push origin main`으로 push하고 `build`와
+   `windows-check` 결과를 확인한다. 관리자 bypass는 PR 생략에만 사용한다.
+4. 그 외 계정만 `work/<정확한-GitHub-login>/<짧은-작업명>` 브랜치를 사용한다. login은 대소문자까지 실제 계정과 같아야 한다.
 5. 기여자는 본인의 `work/` 브랜치만 push하고 PR 대상은 `main`으로 한다. `main`이나 다른 작업자의 브랜치에 직접 push하지 않고, 보호 규칙·실패한 CI·필수 리뷰를 우회하지 않는다.
 6. Actions, 버전 파일, `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`는 `@json-choi` CODEOWNERS 대상이다. 보호 범위를 약화하지 않는다.
+
+공유 개발 환경의 기본 GitHub CLI 계정은 `jaesong-blip`이다. GitHub가
+소유자 작업으로 기록해야 하는 단일 명령만 `pnpm gh:owner -- gh ...` 또는
+`pnpm gh:owner -- git push ...`로 실행한다. 저장소 wrapper는 `json-choi`
+전환을 검증하고 성공·실패 후 `jaesong-blip`으로 복귀한다. 원시
+`gh auth switch`를 사용하거나 토큰을 출력·복사하지 않는다. 비정상 종료 뒤에는
+실행 중인 wrapper가 없는지 확인하고 `pnpm gh:restore`를 사용한다. 상세 계약은
+[`docs/github-account-switching.md`](docs/github-account-switching.md)를 따른다.
 
 기여자 카나리는 작업 브랜치를 push한 뒤 보호된 `main`의 workflow를 실행한다.
 

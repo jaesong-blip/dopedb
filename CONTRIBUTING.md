@@ -18,15 +18,29 @@ git status --short --branch
 
 Never discard another person's uncommitted work.
 
-### Repository owner
+The shared workstation keeps `jaesong-blip` as the default GitHub CLI account.
+For this repository, `jaesong-blip` and `json-choi` are the same human
+operator. Configure every checkout's commit identity with
+`pnpm repo:identity`. For one owner-attributed operation, use
+`pnpm gh:owner -- gh ...` or `pnpm gh:owner -- git push ...`. The wrapper
+verifies `json-choi` and always restores `jaesong-blip`; do not use raw
+`gh auth switch` during repository work. If a killed process leaves stale
+state, confirm no wrapper is active and run `pnpm gh:restore`. See
+[`docs/github-account-switching.md`](docs/github-account-switching.md).
 
-When `login` and `owner` match, work directly on a clean, up-to-date `main`. Do not create a work branch or pull request.
+### Repository operator
 
-1. Reuse an existing GitHub Issue for the user request or create one before committing.
-2. Implement and run the relevant validation on `main`.
-3. Write a Korean Conventional Commit with `Refs: #<number>` or `Closes: #<number>` in the footer.
-4. Push normally with `git push origin main`.
-5. Verify the required `build` and `windows-check` jobs after the push. If either fails, fix it under the same issue.
+When the remote owner is `json-choi` and `login` is either `jaesong-blip` or
+`json-choi`, work directly on a clean, up-to-date `main`. Do not create a work
+branch, pull request, or additional worktree unless the user explicitly
+requests it.
+
+1. Run `pnpm repo:identity`.
+2. Reuse an existing GitHub Issue for the user request or create one before committing.
+3. Implement and run the relevant validation on `main`.
+4. Write a Korean Conventional Commit with `Refs: #<number>` or `Closes: #<number>` in the footer.
+5. If `jaesong-blip` is active, push with `pnpm gh:owner -- git push origin main`.
+6. Verify the required `build` and `windows-check` jobs after the push. If either fails, fix it under the same issue.
 
 The owner administrator bypass is used only to omit the pull-request requirement. It does not permit force-pushing, deleting `main`, concealing failed validation, or bypassing release restrictions.
 
