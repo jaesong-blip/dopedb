@@ -121,6 +121,9 @@ export default function ShellLayout(props: Props) {
     creatingDemo,
   } = props;
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
+  const databaseExplorerVisible =
+    databaseExplorerOpen && !settingsOpen;
+  const servicesVisible = servicesOpen && !settingsOpen;
   const rightDockWidth = showTerminalDock && !terminalOverlay
     ? terminalWidth
     : 0;
@@ -131,14 +134,14 @@ export default function ShellLayout(props: Props) {
       data-platform={IS_MACOS ? "macos" : "other"}
       data-terminal-open={showTerminalDock}
       data-mobile-explorer-open={mobileExplorerOpen}
-      data-database-explorer-open={databaseExplorerOpen}
-      data-services-open={servicesOpen}
+      data-database-explorer-open={databaseExplorerVisible}
+      data-services-open={servicesVisible}
       style={{
-        gridTemplateColumns: databaseExplorerOpen
+        gridTemplateColumns: databaseExplorerVisible
           ? `${sidebarWidth}px 3px minmax(0, 1fr) ${rightDockWidth}px`
           : `0 0 minmax(0, 1fr) ${rightDockWidth}px`,
         gridTemplateRows: `40px minmax(0, 1fr) ${
-          servicesOpen ? servicesHeight : 0
+          servicesVisible ? servicesHeight : 0
         }px 24px`,
       }}
     >
@@ -146,8 +149,8 @@ export default function ShellLayout(props: Props) {
         area={area}
         selected={selected}
         supportsSql={supportsSql}
-        databaseExplorerOpen={databaseExplorerOpen}
-        servicesOpen={servicesOpen}
+        databaseExplorerOpen={databaseExplorerVisible}
+        servicesOpen={servicesVisible}
         showTerminalDock={showTerminalDock}
         searchEverywhereOpen={props.searchEverywhereOpen}
         account={
@@ -183,8 +186,8 @@ export default function ShellLayout(props: Props) {
 
       <div
         className="tool-window-sidebar tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:max-[560px]:contents"
-        aria-hidden={!databaseExplorerOpen && !compact}
-        inert={!databaseExplorerOpen && !compact ? true : undefined}
+        aria-hidden={!databaseExplorerVisible}
+        inert={!databaseExplorerVisible ? true : undefined}
       >
         {area === "dashboard" &&
         !settingsOpen &&
@@ -239,7 +242,7 @@ export default function ShellLayout(props: Props) {
       />
       <div
         className="sidebar-resizer tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[560px]:hidden"
-        hidden={!databaseExplorerOpen}
+        hidden={!databaseExplorerVisible}
         title={t("app.dragResize")}
         onMouseDown={props.onStartSidebarDrag}
         onDoubleClick={props.onResetSidebar}
@@ -281,7 +284,7 @@ export default function ShellLayout(props: Props) {
         />
       )}
 
-      {servicesOpen && (
+      {servicesVisible && (
         <QueryServicesToolWindow
           sessions={queryServiceSessions}
           activeSessionId={activeQueryServiceSessionId}

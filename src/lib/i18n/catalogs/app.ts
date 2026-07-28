@@ -90,10 +90,14 @@ export const appCatalog = defineCatalog(
     "settings.languageBody":
       "Choose the UI language for the desktop client. The setting is saved on this device.",
     "settings.languageTitle": "Language",
+    "settings.noSearchResults": "No settings match this search.",
     "settings.retiredArchive": "Retired chat archive",
     "settings.retiredArchiveDescription":
       "Read-only conversations retained from the retired chat experience.",
     "settings.safety": "Safety",
+    "settings.scopeApplication": "Application",
+    "settings.scopeDataSource": "Data source",
+    "settings.searchPlaceholder": "Search settings",
     "settings.selectConnection": "Select a connection to edit its safety settings.",
     "settings.selectConnectionTitle": "Select a connection first",
     "settings.updates": "Updates",
@@ -193,10 +197,14 @@ export const appCatalog = defineCatalog(
     "settings.languageBody":
       "데스크톱 클라이언트의 UI 언어를 선택하세요. 이 설정은 이 기기에 저장됩니다.",
     "settings.languageTitle": "언어",
+    "settings.noSearchResults": "검색과 일치하는 설정이 없습니다.",
     "settings.retiredArchive": "이전 대화 보관함",
     "settings.retiredArchiveDescription":
       "이전 채팅 환경에서 보존된 읽기 전용 대화입니다.",
     "settings.safety": "안전",
+    "settings.scopeApplication": "애플리케이션",
+    "settings.scopeDataSource": "데이터 소스",
+    "settings.searchPlaceholder": "설정 검색",
     "settings.selectConnection": "안전 설정을 편집하려면 연결을 선택하세요.",
     "settings.selectConnectionTitle": "먼저 연결을 선택하세요",
     "settings.updates": "업데이트",
