@@ -4,12 +4,19 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import {
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
+import SearchEverywhere from "../../features/actionSearch/SearchEverywhere";
+import type { SearchEverywhereItem } from "../../features/actionSearch/domain";
 import {
   createDemoSqlite,
   upsertConnection,
@@ -37,8 +44,11 @@ import {
   useOperationActivity,
 } from "../../lib/operationActivity";
 import {
+  catalogOverviewQuery,
+  catalogQuery,
   driversQuery,
   skillStatusQuery,
+  useCatalogScope,
 } from "../../lib/queries";
 import { buildConnectionSections } from "../../lib/schemaDiff";
 import type { SettingsSection } from "../../screens/Settings";
@@ -83,6 +93,8 @@ export default function App() {
 
 function Shell() {
   const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const catalogScope = useCatalogScope();
   const { unseen, latest, markSeen } = useOperationActivity();
   const toast = useToast();
   // Keep one bounded Skill inventory observer alive for the app lifecycle. This performs
@@ -124,6 +136,9 @@ function Shell() {
   const [connectionPreset, setConnectionPreset] =
     useState<ConnectionLaunchPreset | null>(null);
   const [creatingDemo, setCreatingDemo] = useState(false);
+  const [searchEverywhereOpen, setSearchEverywhereOpen] =
+    useState(false);
+  const lastShiftAtRef = useRef(0);
   const { legacyAuditOpen, restoredDocumentKind } = useRestoredWorkbenchState();
   const [area, setArea] = usePersistentAppArea();
   const {
@@ -163,6 +178,12 @@ function Shell() {
   } = useDashboardCreation(openDashboard);
 
   const selected = conns.find((c) => c.id === selectedId) ?? null;
+  const searchCatalogQueries = useQueries({
+    queries: conns.map((connection) => ({
+      ...catalogOverviewQuery(connection.id, catalogScope),
+      enabled: searchEverywhereOpen && catalogScope.ready,
+    })),
+  });
   const showTerminalDock =
     terminalDockOpen && !!selected && !settingsOpen && editing === null;
   // Schema diff is a SQL-only comparison feature — a group whose connections are MongoDB
@@ -204,6 +225,23 @@ function Shell() {
   const selectedTable = activeDocument?.kind === "data" ? activeDocument.table : null;
 
   useSqlEditorPreload(selected?.id ?? null, supportsSql);
+
+  useEffect(() => {
+    const openOnDoubleShift = (event: KeyboardEvent) => {
+      if (event.key !== "Shift" || event.repeat) return;
+      const now = performance.now();
+      if (now - lastShiftAtRef.current < 500) {
+        event.preventDefault();
+        lastShiftAtRef.current = 0;
+        setSearchEverywhereOpen(true);
+      } else {
+        lastShiftAtRef.current = now;
+      }
+    };
+    window.addEventListener("keydown", openOnDoubleShift);
+    return () =>
+      window.removeEventListener("keydown", openOnDoubleShift);
+  }, []);
 
   useEffect(() => {
     if (schemaDiffGroupKey && !activeSchemaGroup) setSchemaDiffGroupKey(null);
@@ -408,6 +446,224 @@ function Shell() {
     }
   }
 
+  const searchEverywhereItems = useMemo<
+    readonly SearchEverywhereItem[]
+  >(() => {
+    const actions: SearchEverywhereItem[] = [
+      {
+        id: "action:new-data-source",
+        kind: "action",
+        label: t("connections.new"),
+        keywords: ["database", "connection", "source", "연결"],
+        run: () => startNewConnection(),
+      },
+      {
+        id: "action:new-query",
+        kind: "action",
+        label: t("ide.action.newQuery"),
+        keywords: ["sql", "console", "query", "쿼리"],
+        shortcut: "⌘N",
+        disabled: !selected || !supportsSql,
+        run: openQueryDocument,
+      },
+      {
+        id: "action:database-explorer",
+        kind: "action",
+        label: t("ide.action.databaseExplorer"),
+        keywords: ["tool window", "schema", "tables", "탐색기"],
+        run: toggleDatabaseExplorer,
+      },
+      {
+        id: "action:services",
+        kind: "action",
+        label: t("services.title"),
+        keywords: ["tool window", "output", "result", "session"],
+        run: toggleServices,
+      },
+      {
+        id: "action:dashboards",
+        kind: "action",
+        label: t("tabs.dashboard"),
+        keywords: ["chart", "visualization", "대시보드"],
+        run: () => {
+          setSettingsOpen(false);
+          setEditing(null);
+          setSchemaDiffGroupKey(null);
+          setArea("dashboard");
+          if (!compactShell) showDatabaseExplorer();
+        },
+      },
+      {
+        id: "action:ai-chat",
+        kind: "action",
+        label: t("terminal.agentTitle"),
+        keywords: ["codex", "claude", "agent", "terminal"],
+        disabled: !selected,
+        run: openOrFocusTerminalDock,
+      },
+      {
+        id: "action:settings",
+        kind: "action",
+        label: t("common.settings"),
+        keywords: ["preferences", "설정"],
+        shortcut: "⌘,",
+        run: () => {
+          setSettingsSection(undefined);
+          setSettingsOpen(true);
+          setSchemaDiffGroupKey(null);
+          setMobileExplorerOpen(false);
+        },
+      },
+    ];
+
+    const connections: SearchEverywhereItem[] = conns.map(
+      (connection) => ({
+        id: `connection:${connection.id}`,
+        kind: "connection",
+        label: connection.name || t("app.unnamed"),
+        detail: [
+          connection.engine,
+          connection.host,
+          connection.database,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        keywords: [
+          connection.provider,
+          connection.env ?? "",
+          connection.username,
+        ],
+        run: () => selectConnection(connection.id, "workspace"),
+      }),
+    );
+
+    const documents: SearchEverywhereItem[] =
+      selectedDocuments.map((document) => {
+        const label =
+          document.kind === "sql"
+            ? document.title
+            : document.kind === "data"
+              ? [
+                  document.table.schema,
+                  document.table.name,
+                ]
+                  .filter(Boolean)
+                  .join(".")
+              : document.kind === "schema"
+                ? t("tabs.schema")
+                : document.kind === "activity"
+                  ? t("tabs.activity")
+                  : t("tabs.documents");
+        return {
+          id: `document:${document.id}`,
+          kind: "document",
+          label,
+          detail:
+            selected?.name || selected?.database || t("app.unnamed"),
+          keywords: [document.kind],
+          run: () => activateDocument(document),
+        };
+      });
+
+    const databaseObjects: SearchEverywhereItem[] =
+      searchCatalogQueries.flatMap((query, queryIndex) => {
+        const connection = conns[queryIndex];
+        if (!connection || !query.data) return [];
+        return query.data.relations.map((relation) => ({
+          id: `object:${connection.id}:${relation.schema ?? ""}:${relation.name}:${relation.kind}`,
+          kind: "databaseObject" as const,
+          label: [relation.schema, relation.name]
+            .filter(Boolean)
+            .join("."),
+          detail: [
+            connection.name || connection.database,
+            relation.kind,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          keywords: [
+            connection.engine,
+            connection.database,
+            relation.comment ?? "",
+          ],
+          run: async () => {
+            try {
+              const catalog = await queryClient.fetchQuery(
+                catalogQuery(connection.id, catalogScope),
+              );
+              const table = catalog.tables.find(
+                (candidate) =>
+                  candidate.name === relation.name &&
+                  candidate.schema === relation.schema &&
+                  candidate.kind === relation.kind,
+              );
+              if (table) {
+                openTableDocument(connection, table);
+              } else {
+                selectConnection(connection.id, "workspace");
+              }
+            } catch (error) {
+              toast(errMessage(error), "error");
+            }
+          },
+        }));
+      });
+
+    const settings: SearchEverywhereItem[] = (
+      [
+        ["agent-tools", t("settings.agentTools"), false],
+        ["cli", t("settings.cli"), false],
+        ["archive", t("settings.retiredArchive"), false],
+        ["safety", t("settings.safety"), !selected],
+        ["language", t("settings.languageTitle"), false],
+        ["updates", t("settings.updates"), false],
+      ] satisfies ReadonlyArray<
+        readonly [SettingsSection, string, boolean]
+      >
+    ).map(([section, label, disabled]) => ({
+      id: `setting:${section}`,
+      kind: "setting",
+      label,
+      detail: t("common.settings"),
+      disabled,
+      keywords: [section],
+      run: () => {
+        setSettingsSection(section);
+        setSettingsOpen(true);
+        setSchemaDiffGroupKey(null);
+        setEditing(null);
+        setMobileExplorerOpen(false);
+      },
+    }));
+
+    return [
+      ...actions,
+      ...connections,
+      ...documents,
+      ...databaseObjects,
+      ...settings,
+    ];
+  }, [
+    catalogScope,
+    compactShell,
+    conns,
+    queryClient,
+    searchCatalogQueries,
+    selected,
+    selectedDocuments,
+    showDatabaseExplorer,
+    supportsSql,
+    t,
+    toast,
+    toggleDatabaseExplorer,
+    toggleServices,
+  ]);
+  const searchObjectsLoading =
+    searchEverywhereOpen &&
+    searchCatalogQueries.some(
+      (query) => query.isPending || query.isFetching,
+    );
+
   const mainContent = (
     <WorkbenchContent
       settingsOpen={settingsOpen}
@@ -477,7 +733,8 @@ function Shell() {
   );
 
   return (
-    <ShellLayout
+    <>
+      <ShellLayout
       area={area}
       settingsOpen={settingsOpen}
       editing={editing}
@@ -501,6 +758,7 @@ function Shell() {
       mainContent={mainContent}
       availableUpdate={availableUpdate}
       showTerminalDock={showTerminalDock}
+      searchEverywhereOpen={searchEverywhereOpen}
       terminalOverlay={terminalOverlay}
       terminalWidth={terminalDockWidth}
       skillStatus={skillStatusQ.data ?? null}
@@ -539,6 +797,7 @@ function Shell() {
       onOpenAgentTools={openAgentToolsSettings}
       onOpenAgentArchive={openAgentArchiveSettings}
       onOpenTerminal={openOrFocusTerminalDock}
+      onSearchEverywhere={() => setSearchEverywhereOpen(true)}
       onSelectDashboardConnection={(id) => selectConnection(id, "dashboard")}
       onDashboardFocus={setDashboardFocusId}
       onSelectWorkspaceConnection={(id) => selectConnection(id, "workspace")}
@@ -586,6 +845,14 @@ function Shell() {
       onOpenUpdateSettings={openUpdateSettings}
       onTerminalWidthChange={updateTerminalDockWidth}
       onCloseTerminal={closeTerminalDock}
-    />
+      />
+      {searchEverywhereOpen ? (
+        <SearchEverywhere
+          items={searchEverywhereItems}
+          loadingObjects={searchObjectsLoading}
+          onClose={() => setSearchEverywhereOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }

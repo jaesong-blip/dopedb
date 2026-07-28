@@ -21,12 +21,14 @@ export function IdeTopBar({
   databaseExplorerOpen,
   servicesOpen,
   showTerminalDock,
+  searchEverywhereOpen,
   account,
   onNewQuery,
   onArea,
   onToggleDatabaseExplorer,
   onToggleServices,
   onOpenTerminal,
+  onSearchEverywhere,
   onSettings,
 }: {
   area: AppArea;
@@ -35,20 +37,18 @@ export function IdeTopBar({
   databaseExplorerOpen: boolean;
   servicesOpen: boolean;
   showTerminalDock: boolean;
+  searchEverywhereOpen: boolean;
   account: ReactNode;
   onNewQuery: () => void;
   onArea: (area: AppArea) => void;
   onToggleDatabaseExplorer: () => void;
   onToggleServices: () => void;
   onOpenTerminal: () => void;
+  onSearchEverywhere: () => void;
   onSettings: () => void;
 }) {
   const { t } = useI18n();
   const queryDisabled = !selected || !supportsSql;
-  const focusExplorer = () =>
-    document
-      .querySelector<HTMLInputElement>(".table-filter, .ide-explorer-search")
-      ?.focus();
 
   return (
     <header
@@ -147,9 +147,10 @@ export function IdeTopBar({
         <button
           type="button"
           className="btn small icon-only"
-          onClick={focusExplorer}
-          title={t("ide.action.findObject")}
-          aria-label={t("ide.action.findObject")}
+          onClick={onSearchEverywhere}
+          title={t("ide.action.searchEverywhere")}
+          aria-label={t("ide.action.searchEverywhere")}
+          aria-pressed={searchEverywhereOpen}
         >
           <Icon name="search" />
         </button>

@@ -48,6 +48,7 @@ type Props = {
   mainContent: ReactNode;
   availableUpdate: Update | null;
   showTerminalDock: boolean;
+  searchEverywhereOpen: boolean;
   terminalOverlay: boolean;
   terminalWidth: number;
   skillStatus: SkillStatus | null;
@@ -70,6 +71,7 @@ type Props = {
   onOpenAgentTools: () => void;
   onOpenAgentArchive: () => void;
   onOpenTerminal: () => void;
+  onSearchEverywhere: () => void;
   onSelectDashboardConnection: (id: string) => void;
   onDashboardFocus: (id: string | null) => void;
   onSelectWorkspaceConnection: (id: string) => void;
@@ -154,6 +156,7 @@ export default function ShellLayout(props: Props) {
         databaseExplorerOpen={databaseExplorerOpen}
         servicesOpen={servicesOpen}
         showTerminalDock={showTerminalDock}
+        searchEverywhereOpen={props.searchEverywhereOpen}
         account={
           <WorkspaceAccount
             compact
@@ -166,6 +169,7 @@ export default function ShellLayout(props: Props) {
         onToggleDatabaseExplorer={props.onToggleDatabaseExplorer}
         onToggleServices={props.onToggleServices}
         onOpenTerminal={props.onOpenTerminal}
+        onSearchEverywhere={props.onSearchEverywhere}
         onSettings={props.onSettings}
       />
 
