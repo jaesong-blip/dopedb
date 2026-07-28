@@ -11,6 +11,8 @@ mod session;
 mod setup_desktop;
 mod setup_runtime;
 mod setup_session;
+#[cfg(all(test, windows))]
+mod windows_pty_test_support;
 
 pub(super) use desktop::DesktopTerminalAdapter;
 pub(super) use setup_desktop::DesktopSkillSetupTerminalAdapter;

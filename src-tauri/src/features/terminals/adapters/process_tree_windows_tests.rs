@@ -17,6 +17,7 @@ use windows_sys::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
 };
 
+use super::super::windows_pty_test_support::{CursorPositionResponder, CURSOR_POSITION_RESPONSE};
 use super::*;
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
@@ -24,8 +25,6 @@ const CHILD_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
 const DESCENDANT_EXIT_TIMEOUT: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
 const MAX_PTY_DIAGNOSTIC_BYTES: usize = 1024;
-const CURSOR_POSITION_REQUEST: &[u8] = b"\x1b[6n";
-const CURSOR_POSITION_RESPONSE: &[u8] = b"\x1b[1;1R";
 
 #[derive(Debug)]
 struct DescendantIdentity {
@@ -51,32 +50,6 @@ struct PtyOutputState {
     bytes: Vec<u8>,
     cursor_position_responses: usize,
     cursor_position_response_error: Option<String>,
-}
-
-/// PowerShell can ask the ConPTY client for the cursor position before it
-/// processes `-EncodedCommand`. Keep this byte-stream parser stateful because
-/// the four-byte request can arrive split across PTY reads.
-#[derive(Default)]
-struct CursorPositionResponder {
-    matched: usize,
-}
-
-impl CursorPositionResponder {
-    fn observe(&mut self, bytes: &[u8]) -> usize {
-        let mut responses = 0;
-        for &byte in bytes {
-            if byte == CURSOR_POSITION_REQUEST[self.matched] {
-                self.matched += 1;
-                if self.matched == CURSOR_POSITION_REQUEST.len() {
-                    responses += 1;
-                    self.matched = 0;
-                }
-            } else {
-                self.matched = usize::from(byte == CURSOR_POSITION_REQUEST[0]);
-            }
-        }
-        responses
-    }
 }
 
 impl PtyOutputCapture {

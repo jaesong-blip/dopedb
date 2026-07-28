@@ -237,11 +237,15 @@ fn skill_setup_shell_finds_the_bundled_cli_directory_without_connection_state() 
 #[test]
 fn skill_setup_cmd_shell_finds_the_bundled_cli_shim_without_connection_state() {
     use std::io::{Read, Write};
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
     use portable_pty::{native_pty_system, PtySize};
 
     use super::super::process_tree::ProcessTree;
+    use super::super::windows_pty_test_support::{
+        CursorPositionResponder, CURSOR_POSITION_RESPONSE,
+    };
 
     let fixture = tempfile::tempdir().unwrap();
     let cli = fixture.path().join("dopedb.cmd");
@@ -268,14 +272,45 @@ fn skill_setup_cmd_shell_finds_the_bundled_cli_shim_without_connection_state() {
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().unwrap();
     let (output_tx, output_rx) = std::sync::mpsc::channel();
+    let (cursor_response_tx, cursor_response_rx) = std::sync::mpsc::sync_channel(1);
+    let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
+    let response_writer = Arc::clone(&writer);
     let reader_thread = std::thread::spawn(move || {
         let mut output = Vec::new();
-        reader.read_to_end(&mut output).unwrap();
+        let mut chunk = [0_u8; 256];
+        let mut responder = CursorPositionResponder::default();
+        loop {
+            let count = match reader.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(count) => count,
+                Err(error) => panic!("could not read the Windows Skill setup PTY: {error}"),
+            };
+            output.extend_from_slice(&chunk[..count]);
+            let responses = responder.observe(&chunk[..count]);
+            if responses > 0 {
+                let mut writer = response_writer
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                for _ in 0..responses {
+                    writer.write_all(CURSOR_POSITION_RESPONSE).unwrap();
+                    writer.flush().unwrap();
+                    let _ = cursor_response_tx.try_send(());
+                }
+            }
+        }
         output_tx.send(output).unwrap();
     });
-    let mut writer = pair.master.take_writer().unwrap();
-    writer.write_all(b"dopedb version\r\nexit\r\n").unwrap();
-    writer.flush().unwrap();
+
+    cursor_response_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("PowerShell did not complete the initial ConPTY cursor-position handshake");
+    {
+        let mut writer = writer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        writer.write_all(b"dopedb version\r\nexit\r\n").unwrap();
+        writer.flush().unwrap();
+    }
 
     let deadline = Instant::now() + Duration::from_secs(20);
     let status = loop {
