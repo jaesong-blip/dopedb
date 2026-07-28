@@ -127,6 +127,16 @@ export default function ShellLayout(props: Props) {
   const rightDockWidth = showTerminalDock && !terminalOverlay
     ? terminalWidth
     : 0;
+  const statusQuerySession =
+    queryServiceSessions.find(
+      (session) =>
+        session.id === activeQueryServiceSessionId &&
+        session.connectionId === selectedId,
+    ) ??
+    queryServiceSessions.find(
+      (session) => session.connectionId === selectedId,
+    ) ??
+    null;
 
   return (
     <div
@@ -300,6 +310,12 @@ export default function ShellLayout(props: Props) {
         selectedTable={selectedTable}
         settingsOpen={settingsOpen}
         connectionCount={connections.length}
+        querySession={statusQuerySession}
+        onQueryStatus={() => {
+          if (!statusQuerySession) return;
+          props.onActivateQueryServiceSession(statusQuerySession.id);
+          if (!servicesVisible) props.onToggleServices();
+        }}
         onSettings={props.onSettings}
       />
     </div>

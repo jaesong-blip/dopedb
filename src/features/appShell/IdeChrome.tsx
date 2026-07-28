@@ -4,8 +4,13 @@
 import type { ReactNode } from "react";
 import type { CatalogTable } from "../../ipc/types";
 import type { ConnectionProfile } from "../connections/domain";
+import type { QueryServiceSession } from "../queryServices/domain";
 import { Icon } from "../../components/Icon";
-import { StatusDot } from "../../design-system/components/Status";
+import {
+  StatusBarItem,
+  StatusDot,
+  type StatusTone,
+} from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 import { tableLabel } from "../../lib/tableRef";
 import type { AppArea } from "./WorkbenchRail";
@@ -173,19 +178,29 @@ export function IdeStatusBar({
   selectedTable,
   settingsOpen,
   connectionCount,
+  querySession,
+  onQueryStatus,
   onSettings,
 }: {
   selected: ConnectionProfile | null;
   selectedTable: CatalogTable | null;
   settingsOpen: boolean;
   connectionCount: number;
+  querySession: QueryServiceSession | null;
+  onQueryStatus: () => void;
   onSettings: () => void;
 }) {
   const { t } = useI18n();
+  const queryLabel = querySession
+    ? t(`services.status.${querySession.status}`)
+    : null;
+  const querySummary = querySession
+    ? queryServiceSummary(querySession, t)
+    : null;
 
   return (
     <footer
-      className="ide-statusbar tw:z-[var(--ds-z-sticky)] tw:flex tw:min-w-0 tw:items-center tw:border-t tw:border-border-subtle tw:bg-card tw:text-xs tw:leading-none tw:text-muted-foreground"
+      className="ide-statusbar tw:z-[var(--ds-z-sticky)] tw:flex tw:min-w-0 tw:items-center tw:overflow-hidden tw:border-t tw:border-border-subtle tw:bg-card tw:text-xs tw:leading-none tw:text-muted-foreground"
       aria-label={t("ide.statusBar")}
     >
       <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:px-2">
@@ -200,32 +215,50 @@ export function IdeStatusBar({
         ) : null}
       </div>
       <div className="tw:flex-1" />
-      <span className="tw:inline-flex tw:h-[23px] tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit">
+      <StatusBarItem>
         <StatusDot tone={selected ? "success" : "neutral"} />
         {selected ? t("ide.connected") : t("ide.disconnected")}
-      </span>
+      </StatusBarItem>
       {selected ? (
         <>
-          <span className="tw:inline-flex tw:h-[23px] tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit">
+          <StatusBarItem>
             {selected.engine}
-          </span>
-          <span className="tw:inline-flex tw:h-[23px] tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit">
-            {selected.database}
-          </span>
-          <span className="tw:inline-flex tw:h-[23px] tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit">
+          </StatusBarItem>
+          <StatusBarItem title={selected.database}>
+            <span className="tw:max-w-[240px] tw:truncate">
+              {selected.database}
+            </span>
+          </StatusBarItem>
+          <StatusBarItem>
             {selected.readonlyDefault
               ? t("ide.readOnly")
               : t("ide.writeEnabled")}
-          </span>
+          </StatusBarItem>
         </>
       ) : (
-        <span className="tw:inline-flex tw:h-[23px] tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit">
+        <StatusBarItem>
           {t("ide.dataSourceCount", { count: connectionCount })}
-        </span>
+        </StatusBarItem>
       )}
-      <span className="tw:inline-flex tw:h-[23px] tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit">
+      {querySession && queryLabel ? (
+        <StatusBarItem
+          onClick={onQueryStatus}
+          title={`${querySession.consoleTitle} · ${queryLabel}${
+            querySummary ? ` · ${querySummary}` : ""
+          }`}
+        >
+          <StatusDot tone={queryStatusTone(querySession.status)} />
+          <span>{queryLabel}</span>
+          {querySummary ? (
+            <span className="tw:max-w-[200px] tw:truncate">
+              · {querySummary}
+            </span>
+          ) : null}
+        </StatusBarItem>
+      ) : null}
+      <StatusBarItem>
         UTF-8
-      </span>
+      </StatusBarItem>
       <button
         type="button"
         data-active={settingsOpen}
@@ -238,4 +271,51 @@ export function IdeStatusBar({
       </button>
     </footer>
   );
+}
+
+function queryStatusTone(
+  status: QueryServiceSession["status"],
+): StatusTone {
+  if (status === "completed") return "success";
+  if (status === "failed") return "danger";
+  if (status === "running" || status === "waiting") {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function queryServiceSummary(
+  session: QueryServiceSession,
+  t: ReturnType<typeof useI18n>["t"],
+): string | null {
+  const result = session.result;
+  if (result.kind === "materialized") {
+    if (result.outcome.result) {
+      return t("ide.queryRowsDuration", {
+        count: result.outcome.result.rowCount,
+        duration: Math.round(result.outcome.result.durationMs),
+      });
+    }
+    if (result.outcome.affected != null) {
+      return t("ide.queryAffected", {
+        count: result.outcome.affected,
+      });
+    }
+  }
+  if (result.kind === "stream") {
+    if (result.stream.durationMs != null) {
+      return t("ide.queryRowsDuration", {
+        count: result.stream.rowCount,
+        duration: Math.round(result.stream.durationMs),
+      });
+    }
+    return t("ide.queryRows", { count: result.stream.rowCount });
+  }
+  if (result.kind === "script") {
+    return t("ide.queryStatements", {
+      count: result.outcome.statements.length,
+    });
+  }
+  if (result.kind === "error") return result.error.message;
+  return null;
 }

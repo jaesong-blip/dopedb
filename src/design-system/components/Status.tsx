@@ -16,6 +16,38 @@ export function StatusDot({ tone = "neutral" }: { tone?: StatusTone }) {
   );
 }
 
+export function StatusBarItem({
+  children,
+  onClick,
+  title,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+  title?: string;
+}) {
+  const className =
+    "tw:inline-flex tw:h-[23px] tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit";
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`${className} tw:cursor-pointer tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:bg-muted tw:focus-visible:text-foreground tw:focus-visible:outline-none`}
+        onClick={onClick}
+        title={title}
+      >
+        {children}
+      </button>
+    );
+  }
+
+  return (
+    <span className={className} title={title}>
+      {children}
+    </span>
+  );
+}
+
 export function LoadingLabel({ children }: { children: ReactNode }) {
   return (
     <span

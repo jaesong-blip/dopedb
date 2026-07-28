@@ -160,8 +160,8 @@ Elevation은 세 단계만 허용한다.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.
 - `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.
-- `StatusDot`, `LoadingLabel`, `InlineNotice`: lifecycle 상태 점, 비동기 진행
-  label, warning/danger inline 상태 행.
+- `StatusDot`, `StatusBarItem`, `LoadingLabel`, `InlineNotice`: lifecycle 상태 점,
+  IDE 하단 상태 segment, 비동기 진행 label, warning/danger inline 상태 행.
 - `SettingsGroup`: 설정·정책 화면의 제목, 중립 border, dense spacing을 공유하는
   control group surface.
 
