@@ -963,7 +963,7 @@ src/lib/
   terminalSessions.ts
 src/screens/Settings/AgentTools/
   index.tsx
-  agentTools.css
+  styles.ts            # Tailwind layout contract
 ```
 
 기존 `AgentChatProvider`와 `AgentFeedProvider`는 Terminal state와 Operation activity로
