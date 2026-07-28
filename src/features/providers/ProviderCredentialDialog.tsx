@@ -28,6 +28,7 @@ import {
 import type {
   ProviderCredentialDialogStatus,
   ProviderIntegrationSummary,
+  ProviderKind,
 } from "./domain";
 
 const statusKey: Record<ProviderCredentialDialogStatus, "providerCredentials.accessDenied" | "providerCredentials.credentialsRequired" | "providerCredentials.deletionPending" | "providerCredentials.ready" | "providerCredentials.revoked" | "providerCredentials.scopeInsufficient" | "providerCredentials.unavailable" | "providerCredentials.unsupported"> = {
@@ -82,9 +83,11 @@ function initialFocus(container: HTMLElement | null) {
 }
 
 export function ProviderCredentialDialog({
+  initialProvider,
   onClose,
   returnFocus,
 }: {
+  initialProvider?: ProviderKind;
   onClose: () => void;
   returnFocus: () => void;
 }) {
@@ -105,6 +108,19 @@ export function ProviderCredentialDialog({
     () => integrations.data?.find((item) => item.id === state.selectedIntegrationId) ?? null,
     [integrations.data, state.selectedIntegrationId],
   );
+
+  useEffect(() => {
+    if (!initialProvider || state.selectedIntegrationId) return;
+    const matchingIntegration = integrations.data?.find(
+      (integration) => integration.provider === initialProvider,
+    );
+    if (matchingIntegration) {
+      dispatch({
+        type: "select",
+        integrationId: matchingIntegration.id,
+      });
+    }
+  }, [initialProvider, integrations.data, state.selectedIntegrationId]);
 
   const close = () => {
     dispatch({ type: "discard" });
@@ -269,12 +285,26 @@ export function ProviderCredentialDialog({
           </div>
         ) : null}
         {loadFailed ? (
-          <p
-            className="tw:mt-4 tw:mb-0 tw:rounded-sm tw:bg-danger-muted tw:p-2 tw:text-sm tw:text-danger"
-            role="alert"
-          >
-            {t("providerCredentials.error")}
-          </p>
+          <div className="tw:mt-4 tw:flex tw:items-center tw:justify-between tw:gap-3 tw:rounded-sm tw:bg-danger-muted tw:p-2">
+            <p
+              className="tw:m-0 tw:text-sm tw:text-danger"
+              role="alert"
+            >
+              {t("providerCredentials.error")}
+            </p>
+            <button
+              className="btn small"
+              type="button"
+              onClick={() =>
+                void Promise.all([
+                  integrations.refetch(),
+                  bindings.refetch(),
+                ])
+              }
+            >
+              {t("app.retry")}
+            </button>
+          </div>
         ) : null}
         {actionFailed ? (
           <p

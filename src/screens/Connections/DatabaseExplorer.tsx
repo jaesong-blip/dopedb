@@ -14,6 +14,8 @@ import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import type { ConnectionLaunchPreset } from "../../features/connections/presets";
 import { deleteConnection } from "../../features/connections/tauriAdapter";
+import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
+import type { ProviderKind } from "../../features/providers/domain";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
 import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
 import {
@@ -85,6 +87,9 @@ export function DatabaseExplorer({
   const catalogScope = useCatalogScope();
   const catalogScopeKeyRef = useRef(catalogScope.key);
   const [globalFilter, setGlobalFilter] = useState("");
+  const [providerCredentialsOpen, setProviderCredentialsOpen] =
+    useState<ProviderKind | null>(null);
+  const providerReturnFocusRef = useRef<HTMLElement | null>(null);
   const {
     state: {
       wanted,
@@ -102,6 +107,14 @@ export function DatabaseExplorer({
     },
     commands,
   } = useCatalogExplorerState(catalogScope.key);
+
+  function openProviderCredentials(provider: ProviderKind) {
+    providerReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setProviderCredentialsOpen(provider);
+  }
   const {
     sections,
     groupByConnectionId,
@@ -475,32 +488,34 @@ export function DatabaseExplorer({
             </ToolWindowSection>
 
             <ToolWindowSection title={t("connections.connectCloudProvider")}>
-              {renderLaunchButton("Neon", {
-                engine: "postgres",
-                provider: "neon",
-                source: "cloud",
-              })}
-              {renderLaunchButton("Google Cloud SQL", {
-                engine: "postgres",
-                provider: "gcpCloudSql",
-                source: "cloud",
-              })}
-              {renderLaunchButton("PlanetScale", {
-                engine: "mysql",
-                provider: "planetScale",
-                source: "cloud",
-              })}
+              <ToolWindowAction
+                leading={<Icon name="key" />}
+                trailing={<Icon name="chevronRight" />}
+                onClick={() => openProviderCredentials("neon")}
+              >
+                {t("connections.providerNeon")}
+              </ToolWindowAction>
+              <ToolWindowAction
+                leading={<Icon name="key" />}
+                trailing={<Icon name="chevronRight" />}
+                onClick={() =>
+                  openProviderCredentials("gcpCloudSql")
+                }
+              >
+                {t("connections.providerGcpCloudSql")}
+              </ToolWindowAction>
+              <ToolWindowAction
+                leading={<Icon name="key" />}
+                trailing={<Icon name="chevronRight" />}
+                onClick={() =>
+                  openProviderCredentials("planetScale")
+                }
+              >
+                {t("connections.providerPlanetScale")}
+              </ToolWindowAction>
             </ToolWindowSection>
 
-            <ToolWindowSection title={t("connections.exploreDemoDatabases")}>
-              {renderLaunchButton(t("connections.demoPostgres"), {
-                engine: "postgres",
-                source: "demo",
-              })}
-              {renderLaunchButton(t("connections.demoMysql"), {
-                engine: "mysql",
-                source: "demo",
-              })}
+            <ToolWindowSection title={t("connections.sampleDatabase")}>
               <ToolWindowAction
                 leading={<EngineMark engine="sqlite" />}
                 trailing={<Icon name="download" />}
@@ -561,6 +576,13 @@ export function DatabaseExplorer({
           mode={workspaceDialog.mode}
           onBound={onConnectionUpdated}
           onClose={() => commands.patch({ workspaceDialog: null })}
+        />
+      ) : null}
+      {providerCredentialsOpen ? (
+        <ProviderCredentialDialog
+          initialProvider={providerCredentialsOpen}
+          onClose={() => setProviderCredentialsOpen(null)}
+          returnFocus={() => providerReturnFocusRef.current?.focus()}
         />
       ) : null}
     </aside>

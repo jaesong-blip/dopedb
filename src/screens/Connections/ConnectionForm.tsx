@@ -1,7 +1,7 @@
 // DopeDB-style Data Sources and Drivers editor. Connection parsing and
 // persistence stay in the feature layer; this screen composes Tailwind v4
 // layout with canonical design-system form, tab, and tool-window primitives.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import EngineMark from "../../components/EngineMark";
@@ -32,6 +32,8 @@ import {
   CONNECTION_DEFAULT_PORTS,
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
+import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
+import type { ProviderKind } from "../../features/providers/domain";
 import {
   installDriver,
   testConnectionProfile,
@@ -104,6 +106,9 @@ export function ConnectionForm({
   >(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
+  const [providerCredentialsOpen, setProviderCredentialsOpen] =
+    useState<ProviderKind | null>(null);
+  const providerReturnFocusRef = useRef<HTMLElement | null>(null);
   const isNew = initial === null;
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
@@ -150,23 +155,19 @@ export function ConnectionForm({
     { engine: "sqlite", provider: "generic", label: "SQLite" },
     { engine: "mongodb", provider: "generic", label: "MongoDB" },
   ];
-  const cloudSources: Array<{
-    engine: Engine;
-    provider: Provider;
+  const cloudProviders: Array<{
+    provider: ProviderKind;
     label: string;
   }> = [
     {
-      engine: "postgres",
       provider: "neon",
       label: t("connections.providerNeon"),
     },
     {
-      engine: "postgres",
       provider: "gcpCloudSql",
       label: t("connections.providerGcpCloudSql"),
     },
     {
-      engine: "mysql",
       provider: "planetScale",
       label: t("connections.providerPlanetScale"),
     },
@@ -199,6 +200,14 @@ export function ConnectionForm({
     if (activeTab === "schemas" && isDocumentEngine(engine)) {
       setActiveTab("general");
     }
+  }
+
+  function openProviderCredentials(provider: ProviderKind) {
+    providerReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setProviderCredentialsOpen(provider);
   }
 
   function setSrv(checked: boolean) {
@@ -464,10 +473,7 @@ export function ConnectionForm({
                   leading={<EngineMark engine={source.engine} />}
                   trailing={<Icon name="chevronRight" />}
                   selected={
-                    form.engine === source.engine &&
-                    (form.provider === source.provider ||
-                      (source.provider === "auto" &&
-                        form.provider === "generic"))
+                    form.engine === source.engine
                   }
                   onClick={() =>
                     selectSource(source.engine, source.provider)
@@ -481,20 +487,16 @@ export function ConnectionForm({
             <ToolWindowSection
               title={t("connections.connectCloudProvider")}
             >
-              {cloudSources.map((source) => (
+              {cloudProviders.map((provider) => (
                 <ToolWindowAction
-                  key={source.provider}
-                  leading={<EngineMark engine={source.engine} />}
+                  key={provider.provider}
+                  leading={<Icon name="key" />}
                   trailing={<Icon name="chevronRight" />}
-                  selected={
-                    form.engine === source.engine &&
-                    form.provider === source.provider
-                  }
                   onClick={() =>
-                    selectSource(source.engine, source.provider)
+                    openProviderCredentials(provider.provider)
                   }
                 >
-                  {source.label}
+                  {provider.label}
                 </ToolWindowAction>
               ))}
             </ToolWindowSection>
@@ -542,7 +544,16 @@ export function ConnectionForm({
                         <option value="mongodb">MongoDB</option>
                       </SelectInput>
                     </Field>
-                    <Field label={t("connections.provider")}>
+                    <Field
+                      label={t("connections.connectionMethod")}
+                      hint={
+                        <InfoTip
+                          label={t(
+                            "connections.connectionMethodHint",
+                          )}
+                        />
+                      }
+                    >
                       <SelectInput
                         value={form.provider}
                         onChange={(event) => {
@@ -1079,6 +1090,13 @@ export function ConnectionForm({
             : t("common.ok")}
         </button>
       </footer>
+      {providerCredentialsOpen ? (
+        <ProviderCredentialDialog
+          initialProvider={providerCredentialsOpen}
+          onClose={() => setProviderCredentialsOpen(null)}
+          returnFocus={() => providerReturnFocusRef.current?.focus()}
+        />
+      ) : null}
     </div>
   );
 }

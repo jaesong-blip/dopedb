@@ -12,7 +12,7 @@ import {
 export type ConnectionLaunchPreset = {
   engine?: ConnectionEngine;
   provider?: ConnectionProvider;
-  source?: "standard" | "cloud" | "demo";
+  source?: "standard";
 };
 
 export const CONNECTION_DEFAULT_PORTS: Record<ConnectionEngine, number> = {
@@ -27,32 +27,23 @@ export function blankConnection(
 ): ConnectionProfile {
   const engine = preset?.engine ?? "postgres";
   const provider = preset?.provider ?? "auto";
-  const demo = preset?.source === "demo";
-  const engineLabel =
-    engine === "postgres"
-      ? "PostgreSQL"
-      : engine === "mysql"
-        ? "MySQL"
-        : engine === "sqlite"
-          ? "SQLite"
-          : "MongoDB";
 
   return {
     id: connectionId(crypto.randomUUID()),
-    name: demo ? `Demo ${engineLabel}` : "",
+    name: "",
     engine,
     provider,
     driverId: null,
     host: "localhost",
     port: CONNECTION_DEFAULT_PORTS[engine],
-    database: demo && engine !== "sqlite" ? "dopedb_demo" : "",
+    database: "",
     username: "",
     sslmode: "prefer",
     extraParams: {},
     readonlyDefault: true,
     allowWrites: false,
     secretRef: null,
-    env: demo ? "dev" : null,
+    env: null,
     schemaGroup: null,
     workspaceAccess: "local",
     credentialMode: "local",
@@ -64,9 +55,10 @@ export function demoSqliteConnection(path: string): ConnectionProfile {
     ...blankConnection({
       engine: "sqlite",
       provider: "generic",
-      source: "demo",
     }),
+    name: "Demo SQLite",
     database: path,
     driverId: "sqlx-sqlite",
+    env: "dev",
   };
 }
