@@ -81,7 +81,7 @@ export default function QueryServicesToolWindow({
 
   return (
     <section
-      className="services-tool-window tw:relative tw:mx-1 tw:mb-1 tw:flex tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background"
+      className="services-tool-window tw:relative tw:col-[1/-1] tw:row-start-3 tw:mx-1 tw:mb-1 tw:flex tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background"
       aria-label={t("services.title")}
     >
       <div

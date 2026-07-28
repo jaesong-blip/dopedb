@@ -49,6 +49,7 @@ type Props = {
   activeWorkbenchDocumentId: string | null;
   sidebarWidth: number;
   mainRef: RefObject<HTMLElement | null>;
+  terminalButtonRef: RefObject<HTMLButtonElement | null>;
   mainContent: ReactNode;
   availableUpdate: Update | null;
   showTerminalDock: boolean;
@@ -155,7 +156,7 @@ export default function ShellLayout(props: Props) {
 
   return (
     <div
-      className="app"
+      className="app tw:grid tw:h-dvh tw:overflow-hidden tw:bg-muted"
       data-platform={IS_MACOS ? "macos" : "other"}
       data-terminal-open={showTerminalDock}
       data-mobile-explorer-open={mobileExplorerOpen}
@@ -193,6 +194,7 @@ export default function ShellLayout(props: Props) {
         onToggleLocalHistory={props.onToggleLocalHistory}
         onToggleServices={props.onToggleServices}
         onOpenTerminal={props.onOpenTerminal}
+        terminalButtonRef={props.terminalButtonRef}
         onSearchEverywhere={props.onSearchEverywhere}
         onSettings={props.onSettings}
       />
@@ -213,7 +215,7 @@ export default function ShellLayout(props: Props) {
       />
 
       <div
-        className="tool-window-sidebar tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:max-[560px]:contents"
+        className="tool-window-sidebar tw:col-start-1 tw:row-start-2 tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:max-[560px]:contents"
         aria-hidden={!leftToolWindowVisible}
         inert={!leftToolWindowVisible ? true : undefined}
       >
@@ -278,7 +280,7 @@ export default function ShellLayout(props: Props) {
         onClick={props.onDismissMobileExplorer}
       />
       <div
-        className="sidebar-resizer tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[560px]:hidden"
+        className="sidebar-resizer tw:col-start-2 tw:row-start-2 tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[560px]:hidden"
         hidden={!leftToolWindowVisible}
         title={t("app.dragResize")}
         onMouseDown={props.onStartSidebarDrag}
@@ -286,7 +288,7 @@ export default function ShellLayout(props: Props) {
       />
       <main
         ref={mainRef}
-        className="main tw:m-1 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:max-[560px]:m-0 tw:max-[560px]:min-h-0 tw:max-[560px]:rounded-none tw:max-[560px]:border-0 tw:max-[560px]:pt-[var(--ds-window-controls-safe-height)]"
+        className="main tw:col-start-3 tw:row-start-2 tw:m-1 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:max-[560px]:m-0 tw:max-[560px]:min-h-0 tw:max-[560px]:rounded-none tw:max-[560px]:border-0 tw:max-[560px]:pt-[var(--ds-window-controls-safe-height)]"
         tabIndex={-1}
         inert={mobileExplorerOpen ? true : undefined}
       >

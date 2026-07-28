@@ -1,7 +1,7 @@
 /** Responsive geometry policy for the Terminal Dock shell. */
-export const TERMINAL_DOCK_DEFAULT_WIDTH = 480;
-export const TERMINAL_DOCK_MIN_WIDTH = 360;
-export const TERMINAL_DOCK_MAX_WIDTH = 720;
+export const TERMINAL_DOCK_DEFAULT_WIDTH = 360;
+export const TERMINAL_DOCK_MIN_WIDTH = 300;
+export const TERMINAL_DOCK_MAX_WIDTH = 640;
 
 export function clampTerminalDockWidth(
   requestedWidth: number,

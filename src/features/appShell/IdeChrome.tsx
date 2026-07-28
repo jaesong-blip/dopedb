@@ -1,7 +1,7 @@
 // DopeDB 2026.1 desktop chrome: project context and real tool-window launchers share
 // one quiet title toolbar. macOS owns its native File/Edit/View menus, so the
 // WebView must not draw a second application menu inside the window.
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { CatalogTable } from "../../ipc/types";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
@@ -35,6 +35,7 @@ export function IdeTopBar({
   onToggleLocalHistory,
   onToggleServices,
   onOpenTerminal,
+  terminalButtonRef,
   onSearchEverywhere,
   onSettings,
 }: {
@@ -53,6 +54,7 @@ export function IdeTopBar({
   onToggleLocalHistory: () => void;
   onToggleServices: () => void;
   onOpenTerminal: () => void;
+  terminalButtonRef: RefObject<HTMLButtonElement | null>;
   onSearchEverywhere: () => void;
   onSettings: () => void;
 }) {
@@ -61,7 +63,7 @@ export function IdeTopBar({
 
   return (
     <header
-      className="ide-topbar tw:relative tw:z-[var(--ds-z-sticky)] tw:flex tw:h-full tw:min-w-0 tw:select-none tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:px-2 tw:text-muted-foreground"
+      className="ide-topbar tw:relative tw:col-[1/-1] tw:row-start-1 tw:z-[var(--ds-z-sticky)] tw:flex tw:h-full tw:min-w-0 tw:select-none tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:px-2 tw:text-muted-foreground"
       data-tauri-drag-region="deep"
     >
       <div
@@ -150,6 +152,7 @@ export function IdeTopBar({
           <Icon name="play" />
         </button>
         <button
+          ref={terminalButtonRef}
           type="button"
           className="btn small icon-only"
           disabled={!selected}
@@ -215,7 +218,7 @@ export function IdeStatusBar({
 
   return (
     <footer
-      className="ide-statusbar tw:z-[var(--ds-z-sticky)] tw:flex tw:min-w-0 tw:items-center tw:overflow-hidden tw:border-t tw:border-border-subtle tw:bg-card tw:text-xs tw:leading-none tw:text-muted-foreground"
+      className="ide-statusbar tw:col-[1/-1] tw:row-start-4 tw:z-[var(--ds-z-sticky)] tw:flex tw:min-w-0 tw:items-center tw:overflow-hidden tw:border-t tw:border-border-subtle tw:bg-card tw:text-xs tw:leading-none tw:text-muted-foreground"
       aria-label={t("ide.statusBar")}
     >
       <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:px-2">

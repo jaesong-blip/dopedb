@@ -146,7 +146,6 @@ export default function Sql({
   onQueryServiceSessionChange,
   onShowQueryServices,
   onOpenHistory,
-  onOpenAgent,
   onRetrySafety,
 }: {
   connection: ConnectionProfile;
@@ -165,7 +164,6 @@ export default function Sql({
   onQueryServiceSessionChange: (session: QueryServiceSession) => void;
   onShowQueryServices: (sessionId: string) => void;
   onOpenHistory: () => void;
-  onOpenAgent: () => void;
   onRetrySafety: () => void;
 }) {
   const { t } = useI18n();
@@ -507,33 +505,6 @@ export default function Sql({
   return (
     <WorkbenchPane>
       <WorkbenchToolbar label={t("sql.documentTitle")} compact>
-        <div className="tw:flex tw:min-w-0 tw:flex-[0_1_auto] tw:items-center tw:gap-1 tw:max-[760px]:shrink-0">
-          <input
-            className="tw:h-control-sm tw:w-[clamp(120px,18vw,240px)] tw:border-transparent tw:bg-transparent tw:font-semibold tw:focus:border-border-strong tw:focus:bg-background tw:max-[760px]:w-[140px]"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            aria-label={t("sql.documentTitle")}
-            spellCheck={false}
-          />
-          <span
-            data-state={documentSaveState}
-            className="tw:shrink-0 tw:text-xs tw:text-muted-foreground tw:data-[state=conflict]:text-danger tw:data-[state=error]:text-danger tw:data-[state=saving]:text-primary"
-            title={documentSaveError ?? undefined}
-          >
-            {documentSaveState === "saving"
-              ? t("common.saving")
-              : documentSaveState === "saved"
-                ? t("sql.saved")
-                : documentSaveState === "conflict"
-                  ? t("sql.saveConflict")
-                  : documentSaveState === "error"
-                    ? t("sql.saveFailed")
-                    : recovered
-                      ? t("sql.recovered")
-                      : t("sql.unsaved")}
-          </span>
-        </div>
-        <WorkbenchDivider />
         <div className="ds-control-row scrollbar-sleek tw:flex tw:min-h-0 tw:min-w-0 tw:flex-[0_1_auto] tw:flex-nowrap tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:max-[760px]:shrink-0">
           <button
             className="btn primary small icon-only"
@@ -618,15 +589,16 @@ export default function Sql({
           ) : (
             <>
               <span
-                className="badge tw:max-w-[180px] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground"
-                title={`${connection.name || t("app.unnamed")} · ${connection.database}`}
+                className="tw:inline-flex tw:h-control-sm tw:shrink-0 tw:items-center tw:gap-1 tw:px-1 tw:text-sm tw:text-muted-foreground"
+                title={t("sql.txAutoHint")}
               >
-                {connection.database ||
-                  connection.name ||
-                  t("app.unnamed")}
+                <span>{t("sql.tx")}</span>
+                <strong className="tw:font-medium tw:text-foreground">
+                  {t("sql.txAuto")}
+                </strong>
               </span>
               <span
-                className="badge tw:text-muted-foreground"
+                className="tw:inline-flex tw:h-control-sm tw:shrink-0 tw:items-center tw:px-1 tw:text-sm tw:text-muted-foreground"
                 title={
                   safety.autoRunReads
                     ? t("sql.readAutoHint")
@@ -636,14 +608,6 @@ export default function Sql({
                 {safety.autoRunReads
                   ? t("sql.readAuto")
                   : t("sql.readReview")}
-              </span>
-              <span
-                className="badge tw:text-muted-foreground"
-                title={t("sql.rowLimitHint", {
-                  count: safety.maxRows,
-                })}
-              >
-                {t("sql.rowLimit", { count: safety.maxRows })}
               </span>
             </>
           )}
@@ -666,15 +630,51 @@ export default function Sql({
             </span>
           ) : null}
         </div>
-        <span className="tw:min-w-2 tw:flex-1 tw:max-[760px]:hidden" />
-        <button
-          className="btn small ghost icon-only tw:shrink-0"
-          onClick={onOpenAgent}
-          title={t("sql.openAgentTerminal")}
-          aria-label={t("sql.openAgentTerminal")}
+        <span className="tw:min-w-1 tw:flex-1" />
+        <span
+          className="tw:inline-flex tw:h-control-sm tw:min-w-0 tw:max-w-[180px] tw:shrink tw:items-center tw:gap-1 tw:px-1 tw:text-sm tw:text-foreground"
+          title={`${connection.name || t("app.unnamed")} · ${connection.database}`}
         >
-          <Icon name="user" />
-        </button>
+          <Icon
+            name="database"
+            className="tw:shrink-0 tw:text-muted-foreground"
+          />
+          <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+            {connection.engine === "sqlite"
+              ? "main"
+              : connection.database || connection.name || t("app.unnamed")}
+          </span>
+        </span>
+        <span
+          data-state={documentSaveState}
+          className="tw:grid tw:size-control-sm tw:shrink-0 tw:place-items-center tw:text-muted-foreground tw:data-[state=conflict]:text-danger tw:data-[state=error]:text-danger tw:data-[state=saving]:text-primary"
+          title={
+            documentSaveError ??
+            (documentSaveState === "saving"
+              ? t("common.saving")
+              : documentSaveState === "saved"
+                ? t("sql.saved")
+                : documentSaveState === "conflict"
+                  ? t("sql.saveConflict")
+                  : documentSaveState === "error"
+                    ? t("sql.saveFailed")
+                    : recovered
+                      ? t("sql.recovered")
+                      : t("sql.unsaved"))
+          }
+          role="status"
+        >
+          <Icon
+            name={
+              documentSaveState === "saving"
+                ? "refresh"
+                : documentSaveState === "conflict" ||
+                    documentSaveState === "error"
+                  ? "alert"
+                  : "check"
+            }
+          />
+        </span>
       </WorkbenchToolbar>
       <div className="tw:min-h-[180px] tw:flex-1 tw:overflow-hidden tw:bg-background tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0">
         <LazySqlViewer

@@ -110,11 +110,6 @@ function Shell() {
     clear: clearConnections,
   } = useConnectionProfiles();
   const {
-    width: sidebarW,
-    startDrag: startSidebarDrag,
-    reset: resetSidebarWidth,
-  } = useSidebarWidth();
-  const {
     databaseExplorerOpen,
     localHistoryOpen,
     servicesOpen,
@@ -130,6 +125,13 @@ function Shell() {
     startServicesResize,
     resetServicesHeight,
   } = useToolWindowLayout();
+  const {
+    width: sidebarW,
+    startDrag: startSidebarDrag,
+    reset: resetSidebarWidth,
+  } = useSidebarWidth(
+    localHistoryOpen ? "localHistory" : "databaseExplorer",
+  );
   const queryServices = useQueryServices();
   const [selectedId, setSelectedId] = usePersistentSelectedConnection();
   const {
@@ -705,13 +707,10 @@ function Shell() {
       selectedDocuments={selectedDocuments}
       activeDocument={activeDocument}
       activeDocumentId={activeDocumentId}
-      selectedTable={selectedTable}
       supportsSql={supportsSql}
       dashboardFocusId={dashboardFocusId}
       initialAuditOpen={legacyAuditOpen.current}
       availableUpdate={availableUpdate}
-      showTerminalDock={showTerminalDock}
-      terminalButtonRef={terminalButtonRef}
       creatingDemo={creatingDemo}
       onCreateDemoDatabase={() => void createDemoDatabase()}
       onCloseSettings={() => setSettingsOpen(false)}
@@ -752,6 +751,7 @@ function Shell() {
       onDeletedConnection={handleDeletedConnection}
       onSelectConnection={(id) => selectConnection(id, area)}
       onActivateDocument={workbench.activateId}
+      onRenameDocument={workbench.updateTitle}
       onCloseDocument={closeDocument}
       onNewQuery={() => void openQueryDocument()}
       onOpenActivity={() => openStableDocument("activity")}
@@ -800,6 +800,7 @@ function Shell() {
       activeWorkbenchDocumentId={activeDocumentId}
       sidebarWidth={sidebarW}
       mainRef={mainRef}
+      terminalButtonRef={terminalButtonRef}
       mainContent={mainContent}
       availableUpdate={availableUpdate}
       showTerminalDock={showTerminalDock}

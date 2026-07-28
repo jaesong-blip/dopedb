@@ -69,6 +69,10 @@ export const sqlCatalog = defineCatalog(
     "sql.signalWriteStatement": "Write/DDL runs directly",
     "sql.signalWritesDisabled": "Writes are off",
     "sql.statementCount": "{count} statements",
+    "sql.tx": "Tx:",
+    "sql.txAuto": "Auto",
+    "sql.txAutoHint":
+      "Each statement uses the database's automatic transaction behavior. Manual commit and rollback are not available yet.",
     "sql.unsaved": "Unsaved",
     "sql.writeCommitted": "write committed",
     "sql.writesDisabledScript":
@@ -141,6 +145,10 @@ export const sqlCatalog = defineCatalog(
     "sql.signalWriteStatement": "쓰기/DDL 바로 실행",
     "sql.signalWritesDisabled": "쓰기 비활성화됨",
     "sql.statementCount": "{count}개 문장",
+    "sql.tx": "Tx:",
+    "sql.txAuto": "자동",
+    "sql.txAutoHint":
+      "각 문장은 데이터베이스의 자동 트랜잭션 동작을 사용합니다. 수동 커밋과 롤백은 아직 제공하지 않습니다.",
     "sql.unsaved": "저장되지 않음",
     "sql.writeCommitted": "쓰기 커밋됨",
     "sql.writesDisabledScript":

@@ -63,7 +63,10 @@ export function DashboardSidebar({
   const dashboards = list.data ?? [];
 
   return (
-    <aside className="sidebar tw:flex tw:min-h-0 tw:flex-col" id="workbench-sidebar">
+    <aside
+      className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:min-h-0 tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:rounded-md tw:border tw:border-border-subtle tw:bg-background"
+      id="workbench-sidebar"
+    >
       {workspaceHeader}
       <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-3 tw:overflow-hidden tw:px-2 tw:py-3">
         <label className="tw:grid tw:gap-1 tw:text-xs tw:text-muted-foreground">

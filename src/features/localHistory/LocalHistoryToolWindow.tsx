@@ -133,7 +133,7 @@ export default function LocalHistoryToolWindow({
   }
 
   return (
-    <aside className="sidebar tw:flex tw:min-h-0 tw:flex-col tw:overflow-hidden">
+    <aside className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:min-h-0 tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background">
       <ToolWindowHeader
         title={t("localHistory.title")}
         actions={

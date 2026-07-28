@@ -414,7 +414,7 @@ export function DatabaseExplorer({
 
   return (
     <aside
-      className="sidebar tw:flex tw:flex-col tw:overflow-hidden tw:bg-background"
+      className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background"
       id="workbench-sidebar"
     >
       <ToolWindowHeader

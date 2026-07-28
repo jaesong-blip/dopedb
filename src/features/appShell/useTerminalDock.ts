@@ -1,8 +1,11 @@
 import { useCallback, useRef, useState } from "react";
 
-const MIN = 360;
-const MAX = 720;
-const DEFAULT = 480;
+import {
+  clampTerminalDockWidth,
+  TERMINAL_DOCK_DEFAULT_WIDTH,
+} from "../terminals/layout";
+
+const LEGACY_DEFAULT_WIDTH = 480;
 
 export function useTerminalDock() {
   const [open, setOpen] = useState(() => {
@@ -12,7 +15,14 @@ export function useTerminalDock() {
   });
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem("terminalDockWidth"));
-    return saved >= MIN && saved <= MAX ? saved : DEFAULT;
+    const requested =
+      saved === LEGACY_DEFAULT_WIDTH
+        ? TERMINAL_DOCK_DEFAULT_WIDTH
+        : saved || TERMINAL_DOCK_DEFAULT_WIDTH;
+    return clampTerminalDockWidth(
+      requested,
+      typeof window === "undefined" ? 1_280 : window.innerWidth,
+    );
   });
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -28,7 +38,7 @@ export function useTerminalDock() {
   }, []);
 
   const resize = useCallback((next: number) => {
-    const bounded = Math.min(MAX, Math.max(MIN, Math.round(next)));
+    const bounded = clampTerminalDockWidth(next, window.innerWidth);
     setWidth(bounded);
     localStorage.setItem("terminalDockWidth", String(bounded));
   }, []);

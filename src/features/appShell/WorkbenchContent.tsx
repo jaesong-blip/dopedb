@@ -1,10 +1,7 @@
 import type { Update } from "@tauri-apps/plugin-updater";
-import type { RefObject } from "react";
 
-import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
 import WorkbenchDocumentStrip from "../../components/WorkbenchDocumentStrip";
-import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
@@ -14,7 +11,6 @@ import type { WorkbenchDocument } from "../workbench/domain";
 import type { CatalogTable, SafetySettings } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
-import { tableLabel } from "../../lib/tableRef";
 import Activity from "../../screens/Activity";
 import { ConnectionForm } from "../../screens/Connections";
 import Dashboards from "../../screens/Dashboards";
@@ -57,13 +53,10 @@ type Props = {
   selectedDocuments: WorkbenchDocument[];
   activeDocument: WorkbenchDocument | null;
   activeDocumentId: string | null;
-  selectedTable: CatalogTable | null;
   supportsSql: boolean;
   dashboardFocusId: string | null;
   initialAuditOpen: boolean;
   availableUpdate: Update | null;
-  showTerminalDock: boolean;
-  terminalButtonRef: RefObject<HTMLButtonElement | null>;
   creatingDemo: boolean;
   onCloseSettings: () => void;
   onUpdateChecked: (update: Update | null) => void;
@@ -81,6 +74,7 @@ type Props = {
   onDeletedConnection: (id: string) => Promise<void>;
   onSelectConnection: (id: string) => void;
   onActivateDocument: (id: string) => void;
+  onRenameDocument: (id: string, title: string) => void;
   onCloseDocument: (id: string) => void;
   onNewQuery: () => void;
   onOpenActivity: () => void;
@@ -114,13 +108,10 @@ export default function WorkbenchContent(props: Props) {
     selectedDocuments,
     activeDocument,
     activeDocumentId,
-    selectedTable,
     supportsSql,
     dashboardFocusId,
     initialAuditOpen,
     availableUpdate,
-    showTerminalDock,
-    terminalButtonRef,
   } = props;
 
   if (settingsOpen) {
@@ -200,56 +191,15 @@ export default function WorkbenchContent(props: Props) {
 
   return (
     <>
-      {selected && (
-        <header
-          className="main-head ds-workbench-head tw:min-h-[calc(var(--ds-control-lg)+var(--ds-space-2))] tw:shrink-0 tw:items-center tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2"
-          data-tauri-drag-region="deep"
-        >
-          <div className="ds-workbench-title">
-            <div className="ds-title-line tw:flex-nowrap">
-              <EngineMark engine={selected.engine} />
-              <strong>{selected.name || t("app.unnamed")}</strong>
-              {selected.env ? (
-                <EnvironmentBadge environment={selected.env} />
-              ) : null}
-              <span className="ds-meta-dot" />
-              <span className="tw:min-w-0 tw:overflow-hidden tw:text-sm tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
-                {selected.database}
-              </span>
-              {area === "workspace" && selectedTable && (
-                <>
-                  <span className="ds-meta-dot" />
-                  <span className="tw:min-w-0 tw:overflow-hidden tw:text-sm tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
-                    {tableLabel(selected.engine, selectedTable)}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-          <div className="ds-control-row tw:ml-auto tw:shrink-0">
-            <button
-              ref={terminalButtonRef}
-              type="button"
-              data-main-terminal-toggle
-              className="btn small icon-only"
-              onClick={props.onOpenTerminal}
-              title={t(showTerminalDock ? "terminal.focusPanel" : "terminal.title")}
-              aria-label={t(showTerminalDock ? "terminal.focusPanel" : "terminal.title")}
-              aria-pressed={showTerminalDock}
-            >
-              <Icon name="terminal" />
-            </button>
-          </div>
-        </header>
-      )}
-
       {selected && area === "workspace" && (
         <WorkbenchDocumentStrip
           documents={selectedDocuments}
           activeId={activeDocumentId}
           engine={selected.engine}
+          connectionName={selected.name || t("app.unnamed")}
           supportsSql={supportsSql}
           onActivate={props.onActivateDocument}
+          onRename={props.onRenameDocument}
           onClose={props.onCloseDocument}
           onNewQuery={props.onNewQuery}
           onOpenActivity={props.onOpenActivity}
@@ -326,7 +276,6 @@ export default function WorkbenchContent(props: Props) {
             onQueryServiceSessionChange={props.onQueryServiceSessionChange}
             onShowQueryServices={props.onShowQueryServices}
             onOpenHistory={props.onOpenActivity}
-            onOpenAgent={props.onOpenTerminal}
             onRetrySafety={props.onRetrySafety}
           />
         ) : activeDocument.kind === "documents" ? (

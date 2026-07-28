@@ -2,74 +2,10 @@
  * Canonical application-shell geometry.
  *
  * Component visuals live beside their JSX as Tailwind v4 utilities. This file
- * only owns the desktop grid, its named placement hooks, the draggable divider,
- * and the compact overlay relationship that cannot be expressed from a child
- * without duplicating shell state.
+ * only owns selector-dependent workbench behavior and the compact overlay
+ * relationship that cannot be expressed from a child without duplicating
+ * shell state. Desktop placement and visuals live in Tailwind v4 utilities.
  */
-.app {
-  display: grid;
-  /* Middle track is the drag divider; the live widths are supplied inline. */
-  grid-template-columns: 304px 3px minmax(0, 1fr) 0;
-  grid-template-rows: 40px minmax(0, 1fr) 0 24px;
-  height: 100dvh;
-  overflow: hidden;
-  background: var(--ds-color-muted);
-}
-
-.app[data-platform="macos"] {
-  --ds-window-controls-safe-height: 0px;
-}
-
-.ide-topbar {
-  grid-column: 1 / -1;
-  grid-row: 1;
-}
-
-.workbench-rail {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.tool-window-sidebar {
-  grid-column: 1;
-  grid-row: 2 / 4;
-}
-
-.tool-window-sidebar > .sidebar {
-  width: calc(100% - var(--ds-space-1));
-  height: calc(100% - (var(--ds-space-1) * 2));
-  margin: var(--ds-space-1) 0 var(--ds-space-1) var(--ds-space-1);
-  border: var(--ds-border-width) solid var(--ds-color-border-subtle);
-  border-radius: var(--ds-radius-md);
-  background: var(--ds-color-background);
-}
-
-.sidebar-resizer {
-  grid-column: 2;
-  grid-row: 2 / 4;
-}
-
-.main {
-  grid-column: 3;
-  grid-row: 2;
-}
-
-.terminal-dock,
-.ide-assistant-welcome {
-  grid-column: 4;
-  grid-row: 2;
-}
-
-.services-tool-window {
-  grid-column: 3 / 5;
-  grid-row: 3;
-}
-
-.ide-statusbar {
-  grid-column: 1 / -1;
-  grid-row: 4;
-}
-
 /* A WorkbenchPane owns its own scrolling and reaches the editor edges. */
 .workbench-canvas:has(> [data-workbench-pane]) {
   overflow: hidden;
