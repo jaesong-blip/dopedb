@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "verificationStatus": "measured",
+  "measurementScope": "Actual macOS Tauri WKWebView run using a local SQLite fixture. Twelve 50,000-row, four-column reads traversed the production Operation, read-only pool, bounded Tauri Channel, React commit acknowledgement, audit, and history path. Aggregate durations only; no SQL text, row values, connection identifiers, or credentials.",
+  "environment": {
+    "appVersion": "0.3.10",
+    "os": "macOS 26.3",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "memoryBytes": 25769803776,
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "webview": "WKWebView"
+  },
+  "workload": {
+    "engine": "SQLite",
+    "rows": 50000,
+    "columns": 4,
+    "sampleCount": 12,
+    "batchRows": 256,
+    "batchesPerRun": 196
+  },
+  "metrics": {
+    "poolConnectUs": {
+      "p50": 144,
+      "p95": 160
+    },
+    "backendToFirstBatchUs": {
+      "p50": 1016,
+      "p95": 2083
+    },
+    "backendCompleteMs": {
+      "p50": 387,
+      "p95": 452
+    },
+    "operationFinalizeUs": {
+      "p50": 833,
+      "p95": 948
+    },
+    "auditPersistUs": {
+      "p50": 304,
+      "p95": 441
+    },
+    "historyPersistUs": {
+      "p50": 205,
+      "p95": 403
+    },
+    "provenanceAfterFinalizeUs": {
+      "p50": 523,
+      "p95": 829
+    }
+  },
+  "decisions": {
+    "sqliteProvenance": "Keep the serialized tamper-evident audit append and scope-pinned history insert. Their combined post-finalize p95 is below 1 ms and they run after the first interactive commit, so combining or weakening those safety boundaries has no measured UX benefit.",
+    "poolInitialization": "Keep access-keyed lazy write-pool creation. Read acquisitions open only a DB-enforced read-only pool; a separate writable pool is created only after an approved write acquisition. The measured warm read-pool handoff p95 is 160 us, so parallel eager initialization would add unused authority and connections.",
+    "nextBottleneck": "The full 50,000-row completion is dominated by 196 bounded WebView acknowledgement cycles, while click-to-interactive p95 is 6 ms. Preserve the current 256-row memory bound unless full-result completion becomes a user-visible bottleneck."
+  },
+  "evidence": {
+    "runtimeInteraction": "scripts/perf/query-runtime-profile.json",
+    "competitorBaseline": "scripts/perf/query-competitor-baseline.json",
+    "executorBenchmark": "src-tauri/benchmarks/desktop-streaming-summary.json",
+    "poolImplementation": "src-tauri/src/connection/pool.rs",
+    "poolCacheIdentity": "src-tauri/src/connection/runtime/cache.rs",
+    "provenanceImplementation": "src-tauri/src/features/queries/adapters/desktop_provenance.rs"
+  }
+}

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "measurementScope": "Tauri desktop click-to-first-batch and click-to-first-React-interactive measures emitted by production Performance marks. Aggregate durations only; no query text, rows, connection identifiers, or credentials.",
-  "verificationStatus": "instrumented_not_executed",
-  "unverifiedReason": "Repository automation has no configured Tauri desktop database target, so native Channel/WebView interaction timing has not been executed.",
+  "verificationStatus": "measured",
+  "unverifiedReason": null,
   "instrumentation": {
     "marks": [
       "desktop_query_interaction_start",
@@ -30,6 +30,15 @@
     "maxClickToFirstBatchP95Ms": 5000,
     "maxClickToReactInteractiveP95Ms": 5000
   },
-  "sampleCount": 0,
-  "metrics": null
+  "sampleCount": 10,
+  "metrics": {
+    "clickToFirstBatchMs": {
+      "p50": 5,
+      "p95": 6
+    },
+    "clickToReactInteractiveMs": {
+      "p50": 5,
+      "p95": 6
+    }
+  }
 }
