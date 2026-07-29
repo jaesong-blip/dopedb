@@ -5,6 +5,10 @@ import type { CatalogTable } from "../../ipc/types";
 import type { SqlDocument } from "../sqlDocuments/domain";
 import { sqlRecoveryKey } from "../sqlDocuments/domain";
 import { tableKey } from "../../lib/tableRef";
+import {
+  DEFAULT_SQL_RESOLVE_MODE,
+  type SqlResolveMode,
+} from "../queries/resolveMode";
 
 export type WorkbenchDocument =
   | {
@@ -25,6 +29,7 @@ export type WorkbenchDocument =
       draft: string;
       title: string;
       selectedSchema: string | null;
+      resolveMode: SqlResolveMode;
       persistedId: string | null;
       revision: number;
       recovered: boolean;
@@ -77,6 +82,7 @@ export function queryDocument(
         draft: draft ?? "SELECT 1;",
         title: "Untitled query",
         selectedSchema: null,
+        resolveMode: DEFAULT_SQL_RESOLVE_MODE,
         persistedId: null,
         revision: 0,
         recovered: false,
@@ -94,6 +100,7 @@ interface SqlRecoverySnapshot {
   title: string;
   draft: string;
   selectedSchema: string | null;
+  resolveMode: SqlResolveMode;
 }
 
 function readRecovery(document: SqlDocument): SqlRecoverySnapshot | null {
@@ -109,6 +116,11 @@ function readRecovery(document: SqlDocument): SqlRecoverySnapshot | null {
         recovery.selectedSchema === undefined ||
         recovery.selectedSchema === null ||
         typeof recovery.selectedSchema === "string"
+      ) ||
+      !(
+        recovery.resolveMode === undefined ||
+        recovery.resolveMode === "playground" ||
+        recovery.resolveMode === "script"
       )
     ) {
       return null;
@@ -118,6 +130,7 @@ function readRecovery(document: SqlDocument): SqlRecoverySnapshot | null {
       title: recovery.title,
       draft: recovery.draft,
       selectedSchema: recovery.selectedSchema ?? null,
+      resolveMode: recovery.resolveMode ?? DEFAULT_SQL_RESOLVE_MODE,
     };
   } catch {
     return null;
@@ -133,13 +146,15 @@ export function persistedQueryDocument(document: SqlDocument): QueryDocument {
     draft: recovery?.draft ?? document.content,
     title: recovery?.title ?? document.title,
     selectedSchema: recovery?.selectedSchema ?? document.selectedSchema,
+    resolveMode: recovery?.resolveMode ?? document.resolveMode,
     persistedId: document.id,
     revision: document.localRevision,
     recovered:
       !!recovery &&
       (recovery.draft !== document.content ||
         recovery.title !== document.title ||
-        recovery.selectedSchema !== document.selectedSchema),
+        recovery.selectedSchema !== document.selectedSchema ||
+        recovery.resolveMode !== document.resolveMode),
   };
 }
 

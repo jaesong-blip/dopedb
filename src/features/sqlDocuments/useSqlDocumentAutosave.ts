@@ -15,6 +15,7 @@ import type {
 } from "./domain";
 import { sqlRecoveryKey } from "./domain";
 import type { SqlDocumentGateway } from "./ports";
+import type { SqlResolveMode } from "../queries/resolveMode";
 
 export type DocumentSaveState =
   | "saved"
@@ -27,6 +28,7 @@ export interface DocumentConflict {
   current: SqlDocument;
   localTitle: string;
   localSelectedSchema: string | null;
+  localResolveMode: SqlResolveMode;
   localContent: string;
 }
 
@@ -37,10 +39,12 @@ interface SqlDocumentAutosaveOptions {
   revision: number;
   title: string;
   selectedSchema: string | null;
+  resolveMode: SqlResolveMode;
   content: string;
   recovered: boolean;
   onTitleChange: (title: string) => void;
   onSelectedSchemaChange: (selectedSchema: string | null) => void;
+  onResolveModeChange: (resolveMode: SqlResolveMode) => void;
   onContentChange: (content: string) => void;
   onPersisted: (document: SqlDocument) => void;
 }
@@ -52,10 +56,12 @@ export function useSqlDocumentAutosave({
   revision,
   title,
   selectedSchema,
+  resolveMode,
   content,
   recovered,
   onTitleChange,
   onSelectedSchemaChange,
+  onResolveModeChange,
   onContentChange,
   onPersisted,
 }: SqlDocumentAutosaveOptions) {
@@ -68,12 +74,14 @@ export function useSqlDocumentAutosave({
   const callbacks = useRef({
     onTitleChange,
     onSelectedSchemaChange,
+    onResolveModeChange,
     onContentChange,
     onPersisted,
   });
   callbacks.current = {
     onTitleChange,
     onSelectedSchemaChange,
+    onResolveModeChange,
     onContentChange,
     onPersisted,
   };
@@ -81,11 +89,13 @@ export function useSqlDocumentAutosave({
     revision: number;
     title: string | null;
     selectedSchema: string | null | undefined;
+    resolveMode: SqlResolveMode | undefined;
     content: string | null;
   }>({
     revision,
     title: recovered ? null : title,
     selectedSchema: recovered ? undefined : selectedSchema,
+    resolveMode: recovered ? undefined : resolveMode,
     content: recovered ? null : content,
   });
 
@@ -94,6 +104,7 @@ export function useSqlDocumentAutosave({
       expectedRevision: number,
       nextTitle: string,
       nextSelectedSchema: string | null,
+      nextResolveMode: SqlResolveMode,
       nextContent: string,
     ) => {
       if (!documentId) return;
@@ -106,6 +117,7 @@ export function useSqlDocumentAutosave({
           connectionId,
           title: nextTitle,
           selectedSchema: nextSelectedSchema,
+          resolveMode: nextResolveMode,
           content: nextContent,
           expectedRevision,
         });
@@ -115,6 +127,7 @@ export function useSqlDocumentAutosave({
             current: outcome.document,
             localTitle: nextTitle,
             localSelectedSchema: nextSelectedSchema,
+            localResolveMode: nextResolveMode,
             localContent: nextContent,
           });
           setSaveState("conflict");
@@ -124,6 +137,7 @@ export function useSqlDocumentAutosave({
           revision: outcome.document.localRevision,
           title: outcome.document.title,
           selectedSchema: outcome.document.selectedSchema,
+          resolveMode: outcome.document.resolveMode,
           content: outcome.document.content,
         };
         localStorage.removeItem(sqlRecoveryKey(documentId));
@@ -147,6 +161,7 @@ export function useSqlDocumentAutosave({
       baseline.revision !== revision ||
       baseline.title !== title ||
       baseline.selectedSchema !== selectedSchema ||
+      baseline.resolveMode !== resolveMode ||
       baseline.content !== content;
     if (!dirty) {
       setSaveState("saved");
@@ -155,11 +170,17 @@ export function useSqlDocumentAutosave({
     setSaveState("dirty");
     localStorage.setItem(
       sqlRecoveryKey(documentId),
-      JSON.stringify({ revision, title, selectedSchema, draft: content }),
+      JSON.stringify({
+        revision,
+        title,
+        selectedSchema,
+        resolveMode,
+        draft: content,
+      }),
     );
     if (!title.trim()) return;
     const timer = window.setTimeout(() => {
-      void persist(revision, title, selectedSchema, content);
+      void persist(revision, title, selectedSchema, resolveMode, content);
     }, 700);
     return () => window.clearTimeout(timer);
   }, [
@@ -169,6 +190,7 @@ export function useSqlDocumentAutosave({
     persist,
     recovered,
     revision,
+    resolveMode,
     selectedSchema,
     title,
   ]);
@@ -188,11 +210,13 @@ export function useSqlDocumentAutosave({
       revision: current.localRevision,
       title: current.title,
       selectedSchema: current.selectedSchema,
+      resolveMode: current.resolveMode,
       content: current.content,
     };
     localStorage.removeItem(sqlRecoveryKey(documentId));
     callbacks.current.onTitleChange(current.title);
     callbacks.current.onSelectedSchemaChange(current.selectedSchema);
+    callbacks.current.onResolveModeChange(current.resolveMode);
     callbacks.current.onContentChange(current.content);
     callbacks.current.onPersisted(current);
     setConflict(null);
@@ -205,6 +229,7 @@ export function useSqlDocumentAutosave({
       conflict.current.localRevision,
       conflict.localTitle,
       conflict.localSelectedSchema,
+      conflict.localResolveMode,
       conflict.localContent,
     );
   }, [conflict, persist]);

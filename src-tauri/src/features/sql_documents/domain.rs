@@ -11,6 +11,7 @@ use crate::kernel::identity::{ConnectionId, SqlDocumentId};
 
 const MAX_DOCUMENT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_TITLE_CHARS: usize = 160;
+pub(crate) const DEFAULT_SQL_RESOLVE_MODE: &str = "playground";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SqlDialect {
@@ -62,6 +63,7 @@ pub(crate) struct SqlDocument {
     pub(crate) title: String,
     pub(crate) dialect: String,
     pub(crate) selected_schema: Option<String>,
+    pub(crate) resolve_mode: String,
     pub(crate) content: String,
     pub(crate) local_revision: i64,
     pub(crate) remote_id: Option<String>,
@@ -88,6 +90,7 @@ impl SqlDocument {
         dialect: SqlDialect,
         title: String,
         selected_schema: Option<String>,
+        resolve_mode: String,
         content: String,
         now: String,
     ) -> Self {
@@ -97,6 +100,7 @@ impl SqlDocument {
             title,
             dialect: dialect.as_str().into(),
             selected_schema,
+            resolve_mode,
             content,
             local_revision: 1,
             remote_id: None,
@@ -106,6 +110,16 @@ impl SqlDocument {
             created_at: now.clone(),
             updated_at: now,
         }
+    }
+}
+
+pub(crate) fn normalize_resolve_mode(value: Option<String>) -> AppResult<String> {
+    match value.as_deref().unwrap_or(DEFAULT_SQL_RESOLVE_MODE) {
+        "playground" => Ok("playground".into()),
+        "script" => Ok("script".into()),
+        _ => Err(AppError::Config(
+            "SQL document resolve mode must be playground or script".into(),
+        )),
     }
 }
 

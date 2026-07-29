@@ -97,8 +97,9 @@ impl SqliteSqlDocumentRepository {
 impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
     async fn list(&self, authority: &SqlDocumentAuthority) -> AppResult<Vec<SqlDocument>> {
         let rows = sqlx::query(
-            "SELECT id, connection_id, title, dialect, selected_schema, content, local_revision,
-                    remote_id, remote_revision, dirty, sync_status, created_at, updated_at
+            "SELECT id, connection_id, title, dialect, selected_schema, resolve_mode,
+                    content, local_revision, remote_id, remote_revision, dirty, sync_status,
+                    created_at, updated_at
              FROM sql_documents
              WHERE workspace_id = ?1 AND account_scope = ?2 AND connection_id = ?3
                AND deleted_at IS NULL
@@ -148,10 +149,10 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
         sqlx::query(
             "INSERT INTO sql_documents
                 (id, workspace_id, account_scope, connection_id, title, dialect,
-                 selected_schema, content,
+                 selected_schema, resolve_mode, content,
                  local_revision, remote_id, remote_revision, dirty, sync_status,
                  deleted_at, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,NULL,NULL,1,'local',NULL,?9,?10)",
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,1,NULL,NULL,1,'local',NULL,?10,?11)",
         )
         .bind(document.id.to_string())
         .bind(authority.resource.workspace_id.to_string())
@@ -160,6 +161,7 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
         .bind(&document.title)
         .bind(&document.dialect)
         .bind(&document.selected_schema)
+        .bind(&document.resolve_mode)
         .bind(&document.content)
         .bind(&document.created_at)
         .bind(&document.updated_at)
@@ -178,16 +180,17 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
         let mut transaction = self.store.pool().begin().await?;
         let update = sqlx::query(
             "UPDATE sql_documents
-             SET title = ?1, selected_schema = ?2, content = ?3,
+             SET title = ?1, selected_schema = ?2, resolve_mode = ?3, content = ?4,
                  local_revision = local_revision + 1,
                  dirty = 1,
                  sync_status = CASE WHEN remote_id IS NULL THEN 'local' ELSE 'dirty' END,
-                 updated_at = ?4
-             WHERE id = ?5 AND workspace_id = ?6 AND account_scope = ?7
-               AND connection_id = ?8 AND local_revision = ?9 AND deleted_at IS NULL",
+                 updated_at = ?5
+             WHERE id = ?6 AND workspace_id = ?7 AND account_scope = ?8
+               AND connection_id = ?9 AND local_revision = ?10 AND deleted_at IS NULL",
         )
         .bind(&command.title)
         .bind(&command.selected_schema)
+        .bind(&command.resolve_mode)
         .bind(&command.content)
         .bind(&command.updated_at)
         .bind(command.id.to_string())
@@ -282,8 +285,9 @@ async fn load_scoped_document(
     id: SqlDocumentId,
 ) -> AppResult<SqlDocument> {
     let row = sqlx::query(
-        "SELECT id, connection_id, title, dialect, selected_schema, content, local_revision,
-                remote_id, remote_revision, dirty, sync_status, created_at, updated_at
+        "SELECT id, connection_id, title, dialect, selected_schema, resolve_mode,
+                content, local_revision, remote_id, remote_revision, dirty, sync_status,
+                created_at, updated_at
          FROM sql_documents
          WHERE id = ?1 AND workspace_id = ?2 AND account_scope = ?3
            AND connection_id = ?4 AND deleted_at IS NULL",
@@ -305,6 +309,7 @@ fn row_to_document(row: &sqlx::sqlite::SqliteRow) -> AppResult<SqlDocument> {
         title: row.try_get("title")?,
         dialect: row.try_get("dialect")?,
         selected_schema: row.try_get("selected_schema")?,
+        resolve_mode: row.try_get("resolve_mode")?,
         content: row.try_get("content")?,
         local_revision: row.try_get("local_revision")?,
         remote_id: row.try_get("remote_id")?,

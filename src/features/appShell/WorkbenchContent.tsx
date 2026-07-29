@@ -6,6 +6,7 @@ import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { QueryServiceSession } from "../queryServices/domain";
+import type { SqlResolveMode } from "../queries/resolveMode";
 import type { SqlDocument } from "../sqlDocuments/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import type { CatalogTable, SafetySettings } from "../../ipc/types";
@@ -83,6 +84,7 @@ type Props = {
   onSetQueryDraft: (value: string) => void;
   onSetQueryTitle: (value: string) => void;
   onSetQuerySchema: (value: string | null) => void;
+  onSetQueryResolveMode: (value: SqlResolveMode) => void;
   onPersistedQuery: (document: SqlDocument) => void;
   onQueryServiceSessionChange: (session: QueryServiceSession) => void;
   onShowQueryServices: (sessionId: string) => void;
@@ -272,6 +274,8 @@ export default function WorkbenchContent(props: Props) {
             setTitle={props.onSetQueryTitle}
             selectedSchema={activeDocument.selectedSchema}
             setSelectedSchema={props.onSetQuerySchema}
+            resolveMode={activeDocument.resolveMode}
+            setResolveMode={props.onSetQueryResolveMode}
             persistedId={activeDocument.persistedId}
             revision={activeDocument.revision}
             recovered={activeDocument.recovered}

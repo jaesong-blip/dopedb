@@ -30,6 +30,7 @@ import {
   effectiveSqlNamespace,
   sqlNamespaceOptions,
 } from "../../features/queries/namespace";
+import type { SqlResolveMode } from "../../features/queries/resolveMode";
 import { useSqlResultStream } from "../../features/queries/useSqlResultStream";
 import type {
   PreviewReport,
@@ -59,6 +60,7 @@ import LazySqlViewer from "../../components/LazySqlViewer";
 import {
   WorkbenchDivider,
   WorkbenchPane,
+  WorkbenchSelect,
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
 import { useI18n } from "../../lib/i18n";
@@ -160,6 +162,8 @@ export default function Sql({
   setTitle,
   selectedSchema,
   setSelectedSchema,
+  resolveMode,
+  setResolveMode,
   persistedId,
   revision,
   recovered,
@@ -180,6 +184,8 @@ export default function Sql({
   setTitle: (title: string) => void;
   selectedSchema: string | null;
   setSelectedSchema: (selectedSchema: string | null) => void;
+  resolveMode: SqlResolveMode;
+  setResolveMode: (resolveMode: SqlResolveMode) => void;
   persistedId: string | null;
   revision: number;
   recovered: boolean;
@@ -252,6 +258,10 @@ export default function Sql({
     if (!effectiveNamespace || selectedSchema === effectiveNamespace) return;
     setSelectedSchema(effectiveNamespace);
   }, [effectiveNamespace, selectedSchema, setSelectedSchema]);
+  const resolveModeHint =
+    resolveMode === "script"
+      ? t("sql.resolveModeScriptHint")
+      : t("sql.resolveModePlaygroundHint");
 
   const {
     saveState: documentSaveState,
@@ -267,10 +277,12 @@ export default function Sql({
     revision,
     title,
     selectedSchema,
+    resolveMode,
     content: draft,
     recovered,
     onTitleChange: setTitle,
     onSelectedSchemaChange: setSelectedSchema,
+    onResolveModeChange: setResolveMode,
     onContentChange: setDraft,
     onPersisted,
   });
@@ -721,30 +733,26 @@ export default function Sql({
                 : t("sql.safetyLoading")}
             </button>
           ) : (
-            <>
-              <span
-                className="tw:inline-flex tw:h-control-sm tw:shrink-0 tw:items-center tw:gap-1 tw:px-1 tw:text-sm tw:text-muted-foreground"
-                title={t("sql.txAutoHint")}
-              >
-                <span>{t("sql.tx")}</span>
-                <strong className="tw:font-medium tw:text-foreground">
-                  {t("sql.txAuto")}
-                </strong>
-              </span>
-              <span
-                className="tw:inline-flex tw:h-control-sm tw:shrink-0 tw:items-center tw:px-1 tw:text-sm tw:text-muted-foreground"
-                title={
-                  safety.autoRunReads
-                    ? t("sql.readAutoHint")
-                    : t("sql.readReviewHint")
-                }
-              >
-                {safety.autoRunReads
-                  ? t("sql.readAuto")
-                  : t("sql.readReview")}
-              </span>
-            </>
+            <span
+              className="tw:inline-flex tw:h-control-sm tw:shrink-0 tw:items-center tw:gap-1 tw:px-1 tw:text-sm tw:text-muted-foreground"
+              title={t("sql.txAutoHint")}
+            >
+              <span>{t("sql.tx")}</span>
+              <strong className="tw:font-medium tw:text-foreground">
+                {t("sql.txAuto")}
+              </strong>
+            </span>
           )}
+          <WorkbenchSelect
+            label={t("sql.resolveMode")}
+            title={resolveModeHint}
+            value={resolveMode}
+            disabled={running}
+            onChange={(value) => setResolveMode(value as SqlResolveMode)}
+          >
+            <option value="playground">{t("sql.resolveModePlayground")}</option>
+            <option value="script">{t("sql.resolveModeScript")}</option>
+          </WorkbenchSelect>
           {draftIsScript ? (
             <span className="badge tw:text-muted-foreground">
               {t("sql.statementCount", {
@@ -765,32 +773,23 @@ export default function Sql({
           ) : null}
         </div>
         <span className="tw:min-w-1 tw:flex-1" />
-        <label
-          className="tw:inline-flex tw:h-control-sm tw:min-w-0 tw:max-w-[180px] tw:shrink tw:items-center tw:gap-1 tw:rounded-xs tw:px-1 tw:text-sm tw:text-foreground tw:hover:bg-muted"
+        <WorkbenchSelect
+          label={t("sql.schemaSelector")}
           title={t("sql.schemaSelectorHint", {
             connection: connection.name || t("app.unnamed"),
             schema: effectiveNamespace,
           })}
+          icon="database"
+          value={effectiveNamespace}
+          disabled={running || namespaceOptions.length === 0}
+          onChange={setSelectedSchema}
         >
-          <Icon
-            name="database"
-            className="tw:shrink-0 tw:text-muted-foreground"
-          />
-          <span className="tw:sr-only">{t("sql.schemaSelector")}</span>
-          <select
-            className="tw:h-control-sm tw:min-w-0 tw:max-w-[140px] tw:cursor-pointer tw:truncate tw:border-0 tw:bg-transparent tw:p-0 tw:pr-1 tw:font-sans tw:text-sm tw:text-foreground tw:shadow-none tw:outline-none tw:focus:border-transparent tw:focus:shadow-none tw:disabled:cursor-default tw:disabled:opacity-50"
-            value={effectiveNamespace}
-            disabled={running || namespaceOptions.length === 0}
-            onChange={(event) => setSelectedSchema(event.target.value)}
-            aria-label={t("sql.schemaSelector")}
-          >
-            {namespaceOptions.map((namespace) => (
-              <option key={namespace} value={namespace}>
-                {namespace}
-              </option>
-            ))}
-          </select>
-        </label>
+          {namespaceOptions.map((namespace) => (
+            <option key={namespace} value={namespace}>
+              {namespace}
+            </option>
+          ))}
+        </WorkbenchSelect>
         <span
           data-state={documentSaveState}
           className="tw:grid tw:size-control-sm tw:shrink-0 tw:place-items-center tw:text-muted-foreground tw:data-[state=conflict]:text-danger tw:data-[state=error]:text-danger tw:data-[state=saving]:text-primary"
@@ -829,6 +828,10 @@ export default function Sql({
           onChange={setDraft}
           onRun={executeSql}
           catalog={catalog}
+          engine={connection.engine}
+          resolveMode={resolveMode}
+          defaultSchema={effectiveNamespace}
+          namespaceOptions={namespaceOptions}
           minHeight="180px"
         />
       </div>

@@ -2,6 +2,7 @@
 // dispatch commands here instead of mutating document arrays in multiple places.
 
 import type { SqlDocument } from "../sqlDocuments/domain";
+import type { SqlResolveMode } from "../queries/resolveMode";
 import {
   persistedQueryDocument,
   stableDocument,
@@ -38,6 +39,7 @@ export type WorkbenchAction =
   | { type: "updateDraft"; id: string; draft: string }
   | { type: "updateTitle"; id: string; title: string }
   | { type: "updateSelectedSchema"; id: string; selectedSchema: string | null }
+  | { type: "updateResolveMode"; id: string; resolveMode: SqlResolveMode }
   | { type: "persist"; id: string; document: SqlDocument };
 
 export function workbenchReducer(
@@ -137,6 +139,15 @@ export function workbenchReducer(
             : document,
         ),
       };
+    case "updateResolveMode":
+      return {
+        ...state,
+        documents: state.documents.map((document) =>
+          document.id === action.id && document.kind === "sql"
+            ? { ...document, resolveMode: action.resolveMode }
+            : document,
+        ),
+      };
     case "persist":
       return {
         ...state,
@@ -147,6 +158,7 @@ export function workbenchReducer(
                 draft: action.document.content,
                 title: action.document.title,
                 selectedSchema: action.document.selectedSchema,
+                resolveMode: action.document.resolveMode,
                 revision: action.document.localRevision,
                 recovered: false,
               }

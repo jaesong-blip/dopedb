@@ -35,7 +35,7 @@
     },
     "src/features/workbench/state.test.ts": {
       "tests": 4,
-      "protects": "Workbench document identity, fallback, and save ownership"
+      "protects": "Workbench document identity, save ownership, and SQL resolve context"
     },
     "src/features/workspaces/authPolicy.test.ts": {
       "tests": 3,

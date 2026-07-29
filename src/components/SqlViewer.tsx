@@ -3,25 +3,52 @@
 // autocomplete (table + column names), and `onRun` binds Mod-Enter to execute.
 import { useMemo } from "react";
 import CodeMirror from "@uiw/react-codemirror";
-import { sql, type SQLNamespace } from "@codemirror/lang-sql";
+import {
+  MySQL,
+  PostgreSQL,
+  SQLite,
+  StandardSQL,
+  keywordCompletionSource,
+  schemaCompletionSource,
+  sql,
+  type SQLDialect,
+  type SQLNamespace,
+} from "@codemirror/lang-sql";
+import {
+  autocompletion,
+  type CompletionSource,
+} from "@codemirror/autocomplete";
 import { EditorView, keymap } from "@codemirror/view";
 import type { Catalog } from "../ipc/types";
+import type { ConnectionEngine } from "../features/connections/domain";
+import {
+  DEFAULT_SQL_RESOLVE_MODE,
+  resolveSqlNamespaceAtCaret,
+  type SqlResolveMode,
+} from "../features/queries/resolveMode";
 
-// Catalog → CodeMirror schema map. Each table contributes its columns under the bare
-// name, and (for Postgres, where `schema` is set) also under a schema namespace so
-// `public.users.` completes. Bare-name collisions across schemas take the
-// last table — fine for autocomplete hints.
+// Catalog → CodeMirror schema map. Namespaced tables stay below their schema so
+// `defaultSchema` controls which ones complete as bare names. Registering every
+// PostgreSQL table at the root would leak candidates from unrelated schemas.
 function buildSchema(catalog: Catalog): SQLNamespace {
   const ns: Record<string, SQLNamespace> = {};
   for (const t of catalog.tables) {
     const cols = t.columns.map((c) => c.name);
-    ns[t.name] = cols;
     if (t.schema) {
       const s = (ns[t.schema] ??= {}) as Record<string, SQLNamespace>;
       s[t.name] = cols;
+    } else {
+      ns[t.name] = cols;
     }
   }
   return ns;
+}
+
+function editorDialect(engine: ConnectionEngine | undefined): SQLDialect {
+  if (engine === "postgres") return PostgreSQL;
+  if (engine === "mysql") return MySQL;
+  if (engine === "sqlite") return SQLite;
+  return StandardSQL;
 }
 
 export interface SqlViewerProps {
@@ -30,6 +57,10 @@ export interface SqlViewerProps {
   onChange?: (v: string) => void;
   onRun?: (selectedSql?: string) => void;
   catalog?: Catalog;
+  engine?: ConnectionEngine;
+  resolveMode?: SqlResolveMode;
+  defaultSchema?: string;
+  namespaceOptions?: readonly string[];
   minHeight?: string;
 }
 
@@ -39,13 +70,45 @@ export default function SqlViewer({
   onChange,
   onRun,
   catalog,
+  engine,
+  resolveMode = DEFAULT_SQL_RESOLVE_MODE,
+  defaultSchema,
+  namespaceOptions = [],
   minHeight = "80px",
 }: SqlViewerProps) {
   const extensions = useMemo(() => {
+    const dialect = editorDialect(engine);
     const ext = [
-      sql(catalog ? { schema: buildSchema(catalog) } : undefined),
+      sql({ dialect }),
       EditorView.lineWrapping,
     ];
+    if (catalog) {
+      const schema = buildSchema(catalog);
+      const schemaCompletion: CompletionSource = (context) => {
+        const resolvedDefaultSchema = defaultSchema
+          ? resolveSqlNamespaceAtCaret({
+              sqlBeforeCaret: context.state.sliceDoc(0, context.pos),
+              engine: engine ?? "sqlite",
+              mode: resolveMode,
+              selectedNamespace: defaultSchema,
+              namespaceOptions,
+            })
+          : undefined;
+        return schemaCompletionSource({
+          dialect,
+          schema,
+          defaultSchema: resolvedDefaultSchema,
+        })(context);
+      };
+      ext.push(
+        autocompletion({
+          override: [
+            schemaCompletion,
+            keywordCompletionSource(dialect, true),
+          ],
+        }),
+      );
+    }
     if (onRun) {
       ext.push(
         keymap.of([
@@ -63,7 +126,14 @@ export default function SqlViewer({
       );
     }
     return ext;
-  }, [catalog, onRun]);
+  }, [
+    catalog,
+    defaultSchema,
+    engine,
+    namespaceOptions,
+    onRun,
+    resolveMode,
+  ]);
 
   return (
     <CodeMirror

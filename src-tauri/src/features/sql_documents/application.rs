@@ -10,7 +10,8 @@ use crate::kernel::identity::{ConnectionId, SqlDocumentId};
 use crate::kernel::sql_namespace::normalize_sql_namespace;
 
 use super::domain::{
-    content_hash, normalize_title, validate_content, SqlDocument, SqlDocumentRevision,
+    content_hash, normalize_resolve_mode, normalize_title, validate_content, SqlDocument,
+    SqlDocumentRevision,
 };
 use super::ports::{
     SaveDocumentCommand, SaveRepositoryOutcome, SqlDocumentAuthorityGuard,
@@ -23,6 +24,7 @@ pub(crate) struct CreateSqlDocumentRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) title: Option<String>,
     pub(crate) selected_schema: Option<String>,
+    pub(crate) resolve_mode: Option<String>,
     pub(crate) content: Option<String>,
 }
 
@@ -33,6 +35,7 @@ pub(crate) struct SaveSqlDocumentRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) title: String,
     pub(crate) selected_schema: Option<String>,
+    pub(crate) resolve_mode: String,
     pub(crate) content: String,
     pub(crate) expected_revision: i64,
 }
@@ -84,6 +87,7 @@ where
     pub(crate) async fn create(&self, request: CreateSqlDocumentRequest) -> AppResult<SqlDocument> {
         let title = normalize_title(request.title.as_deref().unwrap_or("Untitled query"))?;
         let selected_schema = normalize_sql_namespace(request.selected_schema)?;
+        let resolve_mode = normalize_resolve_mode(request.resolve_mode)?;
         let content = request.content.unwrap_or_else(|| "SELECT 1;".into());
         validate_content(&content)?;
 
@@ -94,6 +98,7 @@ where
             guard.authority().dialect,
             title,
             selected_schema,
+            resolve_mode,
             content,
             self.generator.now(),
         );
@@ -112,6 +117,7 @@ where
         }
         let title = normalize_title(&request.title)?;
         let selected_schema = normalize_sql_namespace(request.selected_schema)?;
+        let resolve_mode = normalize_resolve_mode(Some(request.resolve_mode))?;
         validate_content(&request.content)?;
         let attempted_content_hash = content_hash(&request.content);
         let expected_revision = request.expected_revision;
@@ -124,6 +130,7 @@ where
                     id: request.id,
                     title,
                     selected_schema,
+                    resolve_mode,
                     content: request.content,
                     expected_revision,
                     updated_at: self.generator.now(),

@@ -54,6 +54,13 @@ export const sqlCatalog = defineCatalog(
     "sql.recovered": "Recovered draft",
     "sql.resultsTab": "Results",
     "sql.resultsEmpty": "Run a query to see results here",
+    "sql.resolveMode": "Resolve mode",
+    "sql.resolveModePlayground": "Playground",
+    "sql.resolveModePlaygroundHint":
+      "Resolve every statement against the selected schema context.",
+    "sql.resolveModeScript": "Script",
+    "sql.resolveModeScriptHint":
+      "Let USE or SET search_path change completion context for later statements.",
     "sql.run": "Run",
     "sql.runHint": "Cmd+Enter to run (selection runs alone)",
     "sql.running": "Running",
@@ -145,6 +152,13 @@ export const sqlCatalog = defineCatalog(
     "sql.recovered": "복구된 초안",
     "sql.resultsTab": "결과",
     "sql.resultsEmpty": "쿼리를 실행하면 결과가 여기에 표시됩니다",
+    "sql.resolveMode": "객체 해석 모드",
+    "sql.resolveModePlayground": "Playground",
+    "sql.resolveModePlaygroundHint":
+      "모든 문장을 선택한 스키마 문맥에서 각각 해석합니다.",
+    "sql.resolveModeScript": "Script",
+    "sql.resolveModeScriptHint":
+      "USE 또는 SET search_path 이후 문장의 자동완성 문맥을 전환합니다.",
     "sql.run": "실행",
     "sql.runHint": "Cmd+Enter로 실행 (선택 영역만 실행 가능)",
     "sql.running": "실행 중",

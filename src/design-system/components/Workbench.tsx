@@ -46,6 +46,48 @@ export function WorkbenchDivider() {
   );
 }
 
+export function WorkbenchSelect({
+  label,
+  title,
+  value,
+  disabled = false,
+  icon,
+  onChange,
+  children,
+}: {
+  label: string;
+  title?: string;
+  value: string;
+  disabled?: boolean;
+  icon?: IconName;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <label
+      className="tw:inline-flex tw:h-control-sm tw:min-w-0 tw:max-w-[180px] tw:shrink tw:items-center tw:gap-1 tw:rounded-xs tw:px-1 tw:text-sm tw:text-foreground tw:hover:bg-muted"
+      title={title}
+    >
+      {icon ? (
+        <Icon
+          name={icon}
+          className="tw:shrink-0 tw:text-muted-foreground"
+        />
+      ) : null}
+      <span className="tw:sr-only">{label}</span>
+      <select
+        className="tw:h-control-sm tw:min-w-0 tw:max-w-[140px] tw:cursor-pointer tw:truncate tw:border-0 tw:bg-transparent tw:p-0 tw:pr-1 tw:font-sans tw:text-sm tw:text-foreground tw:shadow-none tw:outline-none tw:focus:border-transparent tw:focus:shadow-none tw:disabled:cursor-default tw:disabled:opacity-50"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={label}
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
 export function WorkbenchContextHeader({
   icon,
   title,

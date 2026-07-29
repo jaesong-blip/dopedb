@@ -366,6 +366,8 @@ CREATE TABLE IF NOT EXISTS sql_documents (
     title             TEXT NOT NULL,
     dialect           TEXT NOT NULL,
     selected_schema   TEXT,
+    resolve_mode      TEXT NOT NULL DEFAULT 'playground'
+                      CHECK(resolve_mode IN ('playground', 'script')),
     content           TEXT NOT NULL,
     local_revision    INTEGER NOT NULL CHECK(local_revision > 0),
     remote_id         TEXT,

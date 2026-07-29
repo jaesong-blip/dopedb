@@ -1,6 +1,8 @@
 // SQL document domain contract. Branded ids prevent a workspace, connection, and
 // document string from being passed to the wrong feature command by accident.
 
+import type { SqlResolveMode } from "../queries/resolveMode";
+
 declare const connectionIdBrand: unique symbol;
 declare const sqlDocumentIdBrand: unique symbol;
 
@@ -21,6 +23,7 @@ export interface SqlDocument {
   title: string;
   dialect: string;
   selectedSchema: string | null;
+  resolveMode: SqlResolveMode;
   content: string;
   localRevision: number;
   remoteId: string | null;
@@ -42,6 +45,7 @@ export interface CreateSqlDocumentRequest {
   connectionId: ConnectionId;
   title?: string | null;
   selectedSchema?: string | null;
+  resolveMode?: SqlResolveMode | null;
   content?: string | null;
 }
 
@@ -50,6 +54,7 @@ export interface SaveSqlDocumentRequest {
   connectionId: ConnectionId;
   title: string;
   selectedSchema: string | null;
+  resolveMode: SqlResolveMode;
   content: string;
   expectedRevision: number;
 }

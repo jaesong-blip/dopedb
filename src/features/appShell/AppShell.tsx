@@ -29,6 +29,7 @@ import type { Dashboard } from "../../features/dashboards/domain";
 import { useQueryServices } from "../../features/queryServices/useQueryServices";
 import type { SqlDocument } from "../../features/sqlDocuments/domain";
 import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
+import type { SqlResolveMode } from "../../features/queries/resolveMode";
 import {
   queryDocument,
   stableDocument,
@@ -412,6 +413,11 @@ function Shell() {
     workbench.updateSelectedSchema(activeDocument.id, value);
   }
 
+  function setActiveQueryResolveMode(value: SqlResolveMode) {
+    if (!activeDocument || activeDocument.kind !== "sql") return;
+    workbench.updateResolveMode(activeDocument.id, value);
+  }
+
   function applySavedQuery(saved: SqlDocument) {
     if (!activeDocument || activeDocument.kind !== "sql") return;
     workbench.applyPersisted(activeDocument.id, saved);
@@ -765,6 +771,7 @@ function Shell() {
       onSetQueryDraft={setActiveQueryDraft}
       onSetQueryTitle={setActiveQueryTitle}
       onSetQuerySchema={setActiveQuerySchema}
+      onSetQueryResolveMode={setActiveQueryResolveMode}
       onPersistedQuery={applySavedQuery}
       onQueryServiceSessionChange={queryServices.updateSession}
       onShowQueryServices={(sessionId) => {

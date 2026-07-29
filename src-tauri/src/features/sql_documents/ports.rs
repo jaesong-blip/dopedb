@@ -35,6 +35,7 @@ pub(crate) struct SaveDocumentCommand {
     pub(crate) id: SqlDocumentId,
     pub(crate) title: String,
     pub(crate) selected_schema: Option<String>,
+    pub(crate) resolve_mode: String,
     pub(crate) content: String,
     pub(crate) expected_revision: i64,
     pub(crate) updated_at: String,

@@ -13,6 +13,7 @@ import {
   type SqlDocument,
 } from "../sqlDocuments/domain";
 import type { SqlDocumentGateway } from "../sqlDocuments/ports";
+import type { SqlResolveMode } from "../queries/resolveMode";
 import {
   persistedQueryDocument,
   queryDocument,
@@ -174,6 +175,13 @@ export function useWorkbenchDocuments({
     [],
   );
 
+  const updateResolveMode = useCallback(
+    (id: string, resolveMode: SqlResolveMode) => {
+      dispatch({ type: "updateResolveMode", id, resolveMode });
+    },
+    [],
+  );
+
   const applyPersisted = useCallback((id: string, document: SqlDocument) => {
     dispatch({ type: "persist", id, document });
   }, []);
@@ -210,6 +218,7 @@ export function useWorkbenchDocuments({
     updateDraft,
     updateTitle,
     updateSelectedSchema,
+    updateResolveMode,
     applyPersisted,
     openQuery,
   };

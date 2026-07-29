@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { connectionId, sqlDocumentId, type SqlDocument } from "../sqlDocuments/domain";
+import { resolveSqlNamespaceAtCaret } from "../queries/resolveMode";
 import { queryDocument, stableDocument } from "./domain";
 import { emptyWorkbenchState, workbenchReducer } from "./state";
 
@@ -10,6 +11,7 @@ function storedDocument(id = "doc-1"): SqlDocument {
     title: "Saved query",
     dialect: "postgresql",
     selectedSchema: "billing",
+    resolveMode: "script",
     content: "SELECT 1;",
     localRevision: 2,
     remoteId: null,
@@ -85,7 +87,12 @@ describe("workbench state ownership", () => {
       id: query.id,
       selectedSchema: "public",
     });
-    const persisted = workbenchReducer(selected, {
+    const resolved = workbenchReducer(selected, {
+      type: "updateResolveMode",
+      id: query.id,
+      resolveMode: "playground",
+    });
+    const persisted = workbenchReducer(resolved, {
       type: "persist",
       id: query.id,
       document: storedDocument(),
@@ -97,5 +104,26 @@ describe("workbench state ownership", () => {
     expect(current.draft).toBe("SELECT 1;");
     expect(current.revision).toBe(2);
     expect(current.selectedSchema).toBe("billing");
+    expect(current.resolveMode).toBe("script");
+    expect(
+      resolveSqlNamespaceAtCaret({
+        sqlBeforeCaret:
+          "SELECT * FROM users;\nSET search_path TO billing;\nSELECT * FROM invoices",
+        engine: "postgres",
+        mode: current.resolveMode,
+        selectedNamespace: "public",
+        namespaceOptions: ["billing", "public"],
+      }),
+    ).toBe("billing");
+    expect(
+      resolveSqlNamespaceAtCaret({
+        sqlBeforeCaret:
+          "-- SET search_path TO billing;\nSELECT 'USE billing' AS note",
+        engine: "postgres",
+        mode: "script",
+        selectedNamespace: "public",
+        namespaceOptions: ["billing", "public"],
+      }),
+    ).toBe("public");
   });
 });
