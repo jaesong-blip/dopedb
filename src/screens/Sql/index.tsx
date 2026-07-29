@@ -31,7 +31,11 @@ import {
   sqlNamespaceOptions,
 } from "../../features/queries/namespace";
 import type { SqlResolveMode } from "../../features/queries/resolveMode";
-import type { SqlCursorPosition } from "../../features/queries/editorStatus";
+import type {
+  SqlCursorPosition,
+  SqlExecutionStatus,
+  SqlRunSource,
+} from "../../features/queries/editorStatus";
 import { useSqlResultStream } from "../../features/queries/useSqlResultStream";
 import type {
   PreviewReport,
@@ -89,6 +93,8 @@ interface QueryErrorInfo extends AppErrorDetails {
 interface LastAttempt {
   sql: string;
   at: string;
+  documentSnapshot: string;
+  source: SqlRunSource;
 }
 
 interface PendingSqlApproval {
@@ -107,8 +113,20 @@ type ResultKind = "single" | "script";
 
 interface ParameterDialogState {
   sql: string;
+  source: SqlRunSource;
   parameters: SqlParameter[];
   action: "apply" | "explain" | "run";
+}
+
+function wholeDocumentRunSource(draft: string): SqlRunSource | null {
+  const sql = draft.trim();
+  if (!sql) return null;
+  const from = draft.indexOf(sql);
+  return {
+    sql,
+    from,
+    to: from + sql.length,
+  };
 }
 
 function buildSqlHelpPrompt({
@@ -316,7 +334,7 @@ export default function Sql({
     }
   }
 
-  async function runSql(sql: string) {
+  async function runSql(sql: string, source: SqlRunSource) {
     if (!sql || running || !safetyReady) return;
     globalThis.performance?.clearMarks?.(
       "desktop_query_interaction_start",
@@ -351,7 +369,7 @@ export default function Sql({
     setRun(null);
     setScriptOut(null);
     setResultKind(script ? "script" : "single");
-    setLastAttempt({ sql, at });
+    setLastAttempt({ sql, at, documentSnapshot: draft, source });
 
     try {
       await execute(async () => {
@@ -428,21 +446,31 @@ export default function Sql({
     }
   }
 
-  function executeSql(selectedSql?: string) {
-    const sql = selectedSql?.trim() || draft.trim();
-    if (!sql || running || !safetyReady) return;
-    const parameters = findSqlParameters(sql, connection.engine);
+  function executeSql(selectedSource?: SqlRunSource) {
+    const source = selectedSource ?? wholeDocumentRunSource(draft);
+    if (!source?.sql || running || !safetyReady) return;
+    const parameters = findSqlParameters(source.sql, connection.engine);
     if (parameters.length > 0) {
-      setParameterDialog({ sql, parameters, action: "run" });
+      setParameterDialog({
+        sql: source.sql,
+        source,
+        parameters,
+        action: "run",
+      });
       return;
     }
-    void runSql(sql);
+    void runSql(source.sql, source);
   }
 
   function openParameterDialog() {
     if (draftParameters.length === 0) return;
     setParameterDialog({
       sql: draft,
+      source: wholeDocumentRunSource(draft) ?? {
+        sql: draft,
+        from: 0,
+        to: draft.length,
+      },
       parameters: draftParameters,
       action: "apply",
     });
@@ -458,7 +486,7 @@ export default function Sql({
     );
     setParameterValues(values);
     setParameterDialog(null);
-    if (pending.action === "run") void runSql(sql);
+    if (pending.action === "run") void runSql(sql, pending.source);
     else if (pending.action === "explain") void explainSql(sql);
   }
 
@@ -535,6 +563,11 @@ export default function Sql({
     if (draftParameters.length > 0) {
       setParameterDialog({
         sql: draft,
+        source: wholeDocumentRunSource(draft) ?? {
+          sql: draft,
+          from: 0,
+          to: draft.length,
+        },
         parameters: draftParameters,
         action: "explain",
       });
@@ -569,6 +602,76 @@ export default function Sql({
       }),
     [connection, effectiveNamespace, promptSql, runErr],
   );
+  const editorExecutionStatus = useMemo<SqlExecutionStatus | null>(() => {
+    const attempt = lastAttempt;
+    const sql = attempt?.sql.trim();
+    if (!attempt || !sql || attempt.documentSnapshot !== draft) return null;
+    if (runErr) {
+      return {
+        source: attempt.source,
+        state: "failed",
+        label: t("services.status.failed"),
+      };
+    }
+    if (pendingApproval || pendingScriptApproval) {
+      return {
+        source: attempt.source,
+        state: "waiting",
+        label: t("services.status.waiting"),
+      };
+    }
+    if (
+      running ||
+      stream.phase === "connecting" ||
+      stream.phase === "streaming"
+    ) {
+      return {
+        source: attempt.source,
+        state: "running",
+        label: t("sql.runningFor", { seconds: elapsed }),
+      };
+    }
+    if (cancelled || stream.phase === "cancelled") {
+      return {
+        source: attempt.source,
+        state: "cancelled",
+        label: t("services.status.cancelled"),
+      };
+    }
+    const durationMs =
+      stream.durationMs ?? run?.outcome.result?.durationMs ?? null;
+    if (
+      scriptOut ||
+      run ||
+      stream.phase === "complete"
+    ) {
+      return {
+        source: attempt.source,
+        state: "completed",
+        label:
+          durationMs === null
+            ? t("services.status.completed")
+            : `${Math.round(durationMs)} ms`,
+      };
+    }
+    return null;
+  }, [
+    cancelled,
+    draft,
+    elapsed,
+    lastAttempt?.documentSnapshot,
+    lastAttempt?.source,
+    lastAttempt?.sql,
+    pendingApproval,
+    pendingScriptApproval,
+    run,
+    runErr,
+    running,
+    scriptOut,
+    stream.durationMs,
+    stream.phase,
+    t,
+  ]);
 
   useEffect(() => {
     const session = serviceSessionRef.current;
@@ -825,6 +928,7 @@ export default function Sql({
           namespaceOptions={namespaceOptions}
           minHeight="180px"
           onCursorChange={onCursorChange}
+          executionStatus={editorExecutionStatus}
         />
       </div>
 

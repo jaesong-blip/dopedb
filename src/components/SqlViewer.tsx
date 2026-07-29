@@ -18,13 +18,21 @@ import {
   autocompletion,
   type CompletionSource,
 } from "@codemirror/autocomplete";
-import { type EditorState } from "@codemirror/state";
-import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
+import { type EditorState, type Extension } from "@codemirror/state";
+import {
+  Decoration,
+  EditorView,
+  keymap,
+  WidgetType,
+  type ViewUpdate,
+} from "@codemirror/view";
 import type { Catalog } from "../ipc/types";
 import type { ConnectionEngine } from "../features/connections/domain";
 import {
   SQL_EDITOR_INDENT_SIZE,
   type SqlCursorPosition,
+  type SqlExecutionStatus,
+  type SqlRunSource,
 } from "../features/queries/editorStatus";
 import {
   DEFAULT_SQL_RESOLVE_MODE,
@@ -60,7 +68,7 @@ export interface SqlViewerProps {
   value: string;
   editable?: boolean;
   onChange?: (v: string) => void;
-  onRun?: (selectedSql?: string) => void;
+  onRun?: (source?: SqlRunSource) => void;
   catalog?: Catalog;
   engine?: ConnectionEngine;
   resolveMode?: SqlResolveMode;
@@ -68,6 +76,7 @@ export interface SqlViewerProps {
   namespaceOptions?: readonly string[];
   minHeight?: string;
   onCursorChange?: (position: SqlCursorPosition) => void;
+  executionStatus?: SqlExecutionStatus | null;
 }
 
 function cursorPosition(state: EditorState): SqlCursorPosition {
@@ -77,6 +86,88 @@ function cursorPosition(state: EditorState): SqlCursorPosition {
     line: line.number,
     column: head - line.from + 1,
   };
+}
+
+function selectedRunSource(state: EditorState): SqlRunSource | undefined {
+  const selection = state.selection.main;
+  if (selection.empty) return undefined;
+  const raw = state.sliceDoc(selection.from, selection.to);
+  const sql = raw.trim();
+  const leadingWhitespace = raw.length - raw.trimStart().length;
+  const trailingWhitespace = raw.length - raw.trimEnd().length;
+  return {
+    sql,
+    from: selection.from + leadingWhitespace,
+    to: selection.to - trailingWhitespace,
+  };
+}
+
+class SqlExecutionWidget extends WidgetType {
+  constructor(private readonly status: SqlExecutionStatus) {
+    super();
+  }
+
+  eq(other: SqlExecutionWidget): boolean {
+    return (
+      this.status.state === other.status.state &&
+      this.status.label === other.status.label
+    );
+  }
+
+  toDOM(): HTMLElement {
+    const root = document.createElement("span");
+    root.dataset.state = this.status.state;
+    root.className =
+      "tw:ml-3 tw:inline-flex tw:select-none tw:items-center tw:gap-1.5 tw:font-sans tw:text-xs tw:text-muted-foreground tw:data-[state=completed]:text-success tw:data-[state=failed]:text-danger tw:data-[state=waiting]:text-warning";
+    root.title = this.status.label;
+    root.setAttribute("aria-label", this.status.label);
+
+    const mark = document.createElement("span");
+    mark.className = "tw:font-bold";
+    mark.textContent =
+      this.status.state === "completed"
+        ? "✓"
+        : this.status.state === "failed"
+          ? "!"
+          : this.status.state === "cancelled"
+            ? "■"
+            : "●";
+
+    const label = document.createElement("span");
+    label.textContent = this.status.label;
+    root.append(mark, label);
+    return root;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+function executionStatusExtension(
+  value: string,
+  status: SqlExecutionStatus | null | undefined,
+): Extension {
+  const source = status?.source;
+  if (
+    !status ||
+    !source ||
+    !source.sql ||
+    source.from < 0 ||
+    source.to < source.from ||
+    source.to > value.length ||
+    value.slice(source.from, source.to).trim() !== source.sql
+  ) {
+    return [];
+  }
+  return EditorView.decorations.of(
+    Decoration.set([
+      Decoration.widget({
+        widget: new SqlExecutionWidget(status),
+        side: 1,
+      }).range(source.to),
+    ]),
+  );
 }
 
 export default function SqlViewer({
@@ -91,6 +182,7 @@ export default function SqlViewer({
   namespaceOptions = [],
   minHeight = "80px",
   onCursorChange,
+  executionStatus,
 }: SqlViewerProps) {
   const extensions = useMemo(() => {
     const dialect = editorDialect(engine);
@@ -132,9 +224,7 @@ export default function SqlViewer({
             key: "Mod-Enter",
             run: (view) => {
               // Run just the selection when there is one; otherwise the whole draft.
-              const sel = view.state.selection.main;
-              const picked = sel.empty ? undefined : view.state.sliceDoc(sel.from, sel.to);
-              onRun(picked);
+              onRun(selectedRunSource(view.state));
               return true;
             },
           },
@@ -171,6 +261,14 @@ export default function SqlViewer({
     },
     [onCursorChange, reportCursor],
   );
+  const executionExtension = useMemo(
+    () => executionStatusExtension(value, executionStatus),
+    [executionStatus, value],
+  );
+  const allExtensions = useMemo(
+    () => [...extensions, executionExtension],
+    [executionExtension, extensions],
+  );
 
   return (
     <CodeMirror
@@ -181,7 +279,7 @@ export default function SqlViewer({
       onChange={onChange}
       onCreateEditor={handleCreateEditor}
       onUpdate={handleUpdate}
-      extensions={extensions}
+      extensions={allExtensions}
       basicSetup={{
         lineNumbers: true,
         foldGutter: false,

@@ -170,6 +170,12 @@ Elevation은 세 단계만 허용한다.
   사용한다. Playground/Script resolve mode도 같은 `WorkbenchSelect`를 사용하고
   문서에 영속하며, SQL editor의 engine dialect와 caret 기준 schema completion
   context를 바꾼다. selector를 위해 feature CSS나 style map을 만들지 않는다.
+  SQL 실행 상태는 실행 당시 document snapshot과 정확한 CodeMirror source
+  range가 현재 문서에 그대로 남아 있을 때만 문장 끝 inline widget으로
+  표시한다. 성공 duration과 running/waiting/failed/cancelled label은 Services와
+  같은 lifecycle projection을 사용한다. 동일한 SQL이 여러 번 있어도 단순
+  문자열 검색으로 첫 occurrence에 붙이지 않으며, widget은 정적 Tailwind
+  utility와 semantic token만 사용한다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
