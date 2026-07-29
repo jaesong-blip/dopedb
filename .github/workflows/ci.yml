@@ -60,6 +60,9 @@ jobs:
             . -> target
             src-tauri -> src-tauri/target
 
+      - name: Stage CLI sidecar
+        run: bash scripts/build-sidecars.sh
+
       - name: Test critical Rust paths
         run: |
           cargo test --package dopedb --lib
