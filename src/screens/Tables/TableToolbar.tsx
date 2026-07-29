@@ -3,6 +3,7 @@ import ToolbarMenu, {
   ToolbarMenuItem,
 } from "../../components/ToolbarMenu";
 import {
+  WorkbenchButton,
   WorkbenchDivider,
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
@@ -84,60 +85,60 @@ export default function TableToolbar(props: Props) {
     <WorkbenchToolbar label={t("tables.querySurface")}>
       <div className="table-toolbar-scroll scrollbar-sleek tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:overscroll-x-contain">
         <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1">
-          <button
-            className="btn small ghost icon-only tw:shrink-0"
+          <WorkbenchButton
+            iconOnly
             disabled={busy}
             title={t("common.refresh")}
             aria-label={t("common.refresh")}
             onClick={props.onRefresh}
           >
             {busy ? "…" : <Icon name="refresh" />}
-          </button>
-          <button
-            className="btn small ghost icon-only tw:shrink-0"
+          </WorkbenchButton>
+          <WorkbenchButton
+            iconOnly
             disabled={!canEdit}
             title={canEdit ? t("tables.insert") : noEditTitle}
             aria-label={t("tables.insert")}
             onClick={() => props.onOpenEdit("insert")}
           >
             <Icon name="plus" />
-          </button>
-          <button
-            className="btn small ghost icon-only tw:shrink-0"
+          </WorkbenchButton>
+          <WorkbenchButton
+            iconOnly
             disabled={!canEdit || selected == null}
             title={canEdit ? t("tables.edit") : noEditTitle}
             aria-label={t("tables.edit")}
             onClick={() => props.onOpenEdit("edit")}
           >
             <Icon name="pencil" />
-          </button>
-          <button
-            className="btn small ghost icon-only tw:shrink-0"
+          </WorkbenchButton>
+          <WorkbenchButton
+            iconOnly
             disabled={!canEdit || selected == null}
             title={canEdit ? t("tables.delete") : noEditTitle}
             aria-label={t("tables.delete")}
             onClick={props.onDelete}
           >
             <Icon name="minus" />
-          </button>
+          </WorkbenchButton>
           {stagedCount > 0 ? (
             <>
-              <button
-                className="btn small tw:bg-selection tw:text-selection-foreground"
+              <WorkbenchButton
+                variant="selected"
                 onClick={props.onReviewStaged}
                 title={t("tables.reviewStaged")}
               >
                 <Icon name="check" />
                 {t("tables.stagedCount", { count: stagedCount })}
-              </button>
-              <button
-                className="btn small icon-only"
+              </WorkbenchButton>
+              <WorkbenchButton
+                iconOnly
                 onClick={props.onDiscardStaged}
                 title={t("tables.discardStaged")}
                 aria-label={t("tables.discardStaged")}
               >
                 <Icon name="close" />
-              </button>
+              </WorkbenchButton>
             </>
           ) : null}
         </div>
@@ -154,25 +155,23 @@ export default function TableToolbar(props: Props) {
               {t("sql.txAuto")}
             </strong>
           </span>
-          <button
-            type="button"
-            className="btn small ghost tw:shrink-0"
+          <WorkbenchButton
             onClick={props.onShowDdl}
             title={t("connections.showDdl")}
           >
             DDL
-          </button>
-          <button
-            type="button"
-            className="btn small icon-only tw:data-[active=true]:text-primary"
-            data-active={activeFilters > 0}
+          </WorkbenchButton>
+          <WorkbenchButton
+            active={activeFilters > 0}
+            iconOnly
+            tone={activeFilters > 0 ? "primary" : "neutral"}
             disabled={activeFilters === 0}
             onClick={props.onClearFilters}
             title={t("tables.clear")}
             aria-label={t("tables.clear")}
           >
             <Icon name="filter" />
-          </button>
+          </WorkbenchButton>
         </div>
       </div>
 
@@ -187,8 +186,9 @@ export default function TableToolbar(props: Props) {
         onPage={props.onPage}
         onRefresh={props.onRefresh}
       >
-        <button
-          className="btn small icon-only tw:@max-[480px]:hidden tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
+        <WorkbenchButton
+          collapse="compact"
+          iconOnly
           disabled={!catalogAvailable}
           aria-expanded={jobsOpen}
           title={
@@ -198,16 +198,17 @@ export default function TableToolbar(props: Props) {
           onClick={props.onToggleJobs}
         >
           <Icon name="download" />
-        </button>
-        <button
-          className="btn small icon-only tw:@max-[480px]:hidden tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
+        </WorkbenchButton>
+        <WorkbenchButton
+          collapse="compact"
+          iconOnly
           aria-expanded={structureOpen}
           title={t("tables.structureTitle")}
           aria-label={t("tables.structureTitle")}
           onClick={props.onToggleStructure}
         >
           <Icon name="columns" />
-        </button>
+        </WorkbenchButton>
         <span className="tw:@max-[480px]:hidden">
           <ToolbarMenu
             label={t("tables.exportPageTitle")}

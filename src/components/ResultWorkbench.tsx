@@ -1,6 +1,7 @@
 import type { SqlStreamRowSource } from "../features/queries/domain";
 import {
   DataGridStatusPill,
+  WorkbenchButton,
   WorkbenchDivider,
   WorkbenchToolbar,
 } from "../design-system/components/Workbench";
@@ -41,9 +42,9 @@ export function ResultWorkbenchToolbar({
         <Icon name="table" />
       </span>
       <WorkbenchDivider />
-      <button
-        type="button"
-        className="btn small ghost icon-only icon-xs"
+      <WorkbenchButton
+        iconOnly
+        size="xs"
         aria-pressed={filterOpen}
         aria-label={t("services.resultSearch")}
         title={t("services.resultSearch")}
@@ -51,7 +52,7 @@ export function ResultWorkbenchToolbar({
         onClick={onToggleFilter}
       >
         <Icon name="search" />
-      </button>
+      </WorkbenchButton>
       {filterOpen ? (
         <input
           autoFocus
@@ -107,13 +108,11 @@ export function ResultWorkbenchFooter({
       }
       actions={
         onShowMore && showMoreCount > 0 ? (
-          <button
-            type="button"
-            className="btn small ghost"
+          <WorkbenchButton
             onClick={onShowMore}
           >
             {t("sql.showMore", { count: showMoreCount, total })}
-          </button>
+          </WorkbenchButton>
         ) : undefined
       }
     >

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Icon } from "../../components/Icon";
+import { WorkbenchButton } from "../../design-system/components/Workbench";
 import { useI18n } from "../../lib/i18n";
 
 export default function Pager({
@@ -38,70 +39,64 @@ export default function Pager({
       role="group"
       aria-label={t("tables.pagination")}
     >
-      <button
-        className="btn small icon-only tw:@max-[760px]:hidden"
+      <WorkbenchButton
+        collapse="narrow"
+        iconOnly
         disabled={busy || !hasPrev}
         onClick={() => onPage(0)}
         title={t("common.first")}
         aria-label={t("common.first")}
       >
         <Icon name="chevronsLeft" />
-      </button>
-      <button
-        className={
-          collapseNavigation
-            ? "btn small icon-only tw:@max-[760px]:hidden"
-            : "btn small icon-only"
-        }
+      </WorkbenchButton>
+      <WorkbenchButton
+        collapse={collapseNavigation ? "narrow" : "never"}
+        iconOnly
         disabled={busy || !hasPrev}
         onClick={() => onPage(page - 1)}
         title={t("common.prev")}
         aria-label={t("common.prev")}
       >
         <Icon name="arrowLeft" />
-      </button>
+      </WorkbenchButton>
       <span
-        className={
-          collapseNavigation
-            ? "tw:min-w-[58px] tw:text-center tw:text-sm tw:text-muted-foreground tw:whitespace-nowrap tw:@max-[760px]:hidden"
-            : "tw:min-w-[58px] tw:text-center tw:text-sm tw:text-muted-foreground tw:whitespace-nowrap"
-        }
+        data-collapse={collapseNavigation}
+        className="tw:min-w-[58px] tw:text-center tw:text-sm tw:text-muted-foreground tw:whitespace-nowrap tw:@max-[760px]:data-[collapse=true]:hidden"
       >
         {t("tables.page", { page: page + 1 })}
         {lastPage != null && ` / ${lastPage + 1}`}
       </span>
-      <button
-        className={
-          collapseNavigation
-            ? "btn small icon-only tw:@max-[760px]:hidden"
-            : "btn small icon-only"
-        }
+      <WorkbenchButton
+        collapse={collapseNavigation ? "narrow" : "never"}
+        iconOnly
         disabled={busy || !hasNext}
         onClick={() => onPage(page + 1)}
         title={t("common.next")}
         aria-label={t("common.next")}
       >
         <Icon name="arrowRight" />
-      </button>
-      <button
-        className="btn small icon-only tw:@max-[760px]:hidden"
+      </WorkbenchButton>
+      <WorkbenchButton
+        collapse="narrow"
+        iconOnly
         disabled={busy || lastPage == null || !hasNext}
         onClick={() => lastPage != null && onPage(lastPage)}
         title={t("tables.last")}
         aria-label={t("tables.last")}
       >
         <Icon name="chevronsRight" />
-      </button>
+      </WorkbenchButton>
       {showRefresh ? (
-        <button
-          className="btn small icon-only refresh tw:@max-[480px]:hidden"
+        <WorkbenchButton
+          collapse="compact"
+          iconOnly
           disabled={busy}
           aria-label={t("common.refresh")}
           title={t("common.refresh")}
           onClick={onRefresh}
         >
           {busy ? "…" : <Icon name="refresh" />}
-        </button>
+        </WorkbenchButton>
       ) : null}
       {children}
     </div>

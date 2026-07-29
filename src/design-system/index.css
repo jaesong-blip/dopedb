@@ -19,6 +19,7 @@
   --color-popover: var(--ds-popover);
   --color-popover-foreground: var(--ds-popover-foreground);
   --color-primary: var(--ds-primary);
+  --color-primary-hover: var(--ds-primary-hover);
   --color-primary-foreground: var(--ds-primary-foreground);
   --color-secondary: var(--ds-secondary);
   --color-secondary-foreground: var(--ds-secondary-foreground);

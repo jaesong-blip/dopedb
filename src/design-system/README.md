@@ -217,6 +217,12 @@ Elevation은 세 단계만 허용한다.
 - `IdeToolTabStrip`, `IdeToolTab`: Services 같은 tool window의 tab row와
   둥근 selected capsule. 일반 document 전환은 40px `document`, Services처럼
   36px command row와 나란히 놓이는 tab은 `compact` density를 사용한다.
+- `WorkbenchButton`: query, table, result command row의 32px label/icon action.
+  `variant`, `tone`, `active`, `collapse` data contract로 상태와 compact overflow를
+  표현하며 화면이 전역 `.btn` 조합이나 조건부 class string을 만들지 않는다.
+- `ToolbarMenu` trigger도 `custom`/`variant` data contract가 label, icon,
+  tree badge, grid header 밀도를 소유한다. feature가 trigger별 class map을
+  만들거나 전역 `.btn`을 섞지 않는다.
 - `ToolWindowHeader`: Database Explorer, Agent, provider 패널의 고정 헤더와
   우측 action 슬롯.
 - `ToolWindowSideSurface`: Explorer, Local History, Dashboard의 데스크톱

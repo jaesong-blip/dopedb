@@ -63,6 +63,7 @@ import ApprovalCard from "../../components/ApprovalCard";
 import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
 import {
+  WorkbenchButton,
   WorkbenchDivider,
   WorkbenchPane,
   WorkbenchSelect,
@@ -744,25 +745,26 @@ export default function Sql({
     <WorkbenchPane>
       <WorkbenchToolbar label={t("sql.documentTitle")} compact>
         <div className="ds-control-row scrollbar-sleek tw:flex tw:min-h-0 tw:min-w-0 tw:flex-[0_1_auto] tw:flex-nowrap tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:max-[760px]:shrink-0">
-          <button
-            className="btn small ghost icon-only tw:text-success"
+          <WorkbenchButton
+            iconOnly
+            tone="success"
             disabled={!draft.trim() || running || !safetyReady}
             onClick={() => void executeSql()}
             title={t("sql.runHint")}
             aria-label={running ? t("sql.running") : t("sql.run")}
           >
             <Icon name={running ? "refresh" : "play"} />
-          </button>
-          <button
-            className="btn small ghost icon-only"
+          </WorkbenchButton>
+          <WorkbenchButton
+            iconOnly
             onClick={onOpenHistory}
             title={t("sql.history")}
             aria-label={t("sql.history")}
           >
             <Icon name="history" />
-          </button>
-          <button
-            className="btn small ghost icon-only"
+          </WorkbenchButton>
+          <WorkbenchButton
+            iconOnly
             disabled={draftParameters.length === 0 || running}
             onClick={openParameterDialog}
             title={
@@ -775,9 +777,9 @@ export default function Sql({
             aria-label={t("sql.viewParameters")}
           >
             <Icon name="parameter" />
-          </button>
-          <button
-            className="btn small ghost icon-only"
+          </WorkbenchButton>
+          <WorkbenchButton
+            iconOnly
             disabled={
               !draft.trim() ||
               draftIsScript ||
@@ -790,16 +792,16 @@ export default function Sql({
             onClick={explain}
           >
             <Icon name={explaining ? "refresh" : "target"} />
-          </button>
-          <button
-            className="btn small ghost icon-only"
+          </WorkbenchButton>
+          <WorkbenchButton
+            iconOnly
             disabled={!draft.trim() || formatting || running}
             onClick={() => void formatDraft()}
             title={t("sql.formatTitle")}
             aria-label={t("sql.format")}
           >
             <Icon name={formatting ? "refresh" : "list"} />
-          </button>
+          </WorkbenchButton>
           <WorkbenchDivider />
           {!safetyReady ? (
             <button
@@ -827,8 +829,8 @@ export default function Sql({
               </strong>
             </span>
           )}
-          <button
-            className="btn small ghost icon-only"
+          <WorkbenchButton
+            iconOnly
             disabled={!running}
             onClick={() => {
               cancel();
@@ -844,7 +846,7 @@ export default function Sql({
             aria-label={t("sql.cancel")}
           >
             <Icon name="stop" />
-          </button>
+          </WorkbenchButton>
           <WorkbenchSelect
             label={t("sql.resolveMode")}
             title={resolveModeHint}
@@ -941,12 +943,18 @@ export default function Sql({
           >
             <span>{t("sql.saveConflictBody")}</span>
             <div className="ds-control-row">
-              <button className="btn small" onClick={loadSavedConflictVersion}>
+              <WorkbenchButton
+                variant="default"
+                onClick={loadSavedConflictVersion}
+              >
                 {t("sql.loadSaved")}
-              </button>
-              <button className="btn small" onClick={keepLocalConflictVersion}>
+              </WorkbenchButton>
+              <WorkbenchButton
+                variant="default"
+                onClick={keepLocalConflictVersion}
+              >
                 {t("sql.keepMine")}
-              </button>
+              </WorkbenchButton>
             </div>
           </div>
         )}
@@ -967,17 +975,20 @@ export default function Sql({
           >
             <summary className="tw:flex tw:min-h-workbench-toolbar tw:cursor-pointer tw:items-center tw:gap-2 tw:px-3 tw:py-1 tw:font-semibold">
               {t("sql.queryPlan")}
-              <button
-                className="btn small icon-only icon-xs tw:ml-auto"
-                onClick={(event) => {
-                  event.preventDefault();
-                  setPlan(null);
-                }}
-                title={t("common.close")}
-                aria-label={t("common.close")}
-              >
-                <Icon name="close" />
-              </button>
+              <span className="tw:ml-auto">
+                <WorkbenchButton
+                  iconOnly
+                  size="xs"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setPlan(null);
+                  }}
+                  title={t("common.close")}
+                  aria-label={t("common.close")}
+                >
+                  <Icon name="close" />
+                </WorkbenchButton>
+              </span>
             </summary>
             {plan.plan ? (
               <pre className="tw:m-0 tw:overflow-x-auto tw:border-t tw:border-border-subtle tw:bg-background tw:p-3 tw:font-mono tw:text-sm tw:whitespace-pre">
@@ -1049,8 +1060,8 @@ export default function Sql({
               </label>
             )}
             <div className="ds-action-row ds-control-row">
-              <button
-                className="btn primary"
+              <WorkbenchButton
+                variant="primary"
                 disabled={
                   running ||
                   (!!pendingScriptApproval.proposal.confirmationPhrase &&
@@ -1060,14 +1071,14 @@ export default function Sql({
                 onClick={() => void approvePendingScript()}
               >
                 {t("approval.approveAndRunWrite")}
-              </button>
-              <button
-                className="btn"
+              </WorkbenchButton>
+              <WorkbenchButton
+                variant="default"
                 disabled={running}
                 onClick={() => void rejectPendingScript()}
               >
                 {t("approval.reject")}
-              </button>
+              </WorkbenchButton>
             </div>
           </section>
         )}

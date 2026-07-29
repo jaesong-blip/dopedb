@@ -14,6 +14,7 @@ import {
   toTsv,
 } from "../lib/export";
 import { useI18n } from "../lib/i18n";
+import { WorkbenchButton } from "../design-system/components/Workbench";
 import { Icon } from "./Icon";
 import ToolbarMenu, { ToolbarMenuItem } from "./ToolbarMenu";
 import { useToast } from "./Toast";
@@ -68,12 +69,9 @@ export default function ResultToolbar({
       data-presentation={presentation}
       className="tw:inline-flex tw:items-center tw:gap-1 tw:align-middle tw:data-[presentation=inline]:ml-2 tw:data-[presentation=workbench]:ml-auto"
     >
-      <button
-        className={
-          presentation === "workbench"
-            ? "btn small ghost icon-only icon-xs"
-            : "btn small ghost"
-        }
+      <WorkbenchButton
+        iconOnly={presentation === "workbench"}
+        size={presentation === "workbench" ? "xs" : "md"}
         title={t("results.copyTitle")}
         aria-label={t("results.copyTitle")}
         onClick={() =>
@@ -91,7 +89,7 @@ export default function ResultToolbar({
         ) : (
           t("results.copy")
         )}
-      </button>
+      </WorkbenchButton>
       {presentation === "workbench" ? (
         <ToolbarMenu
           label={t("results.downloadCsvTitle")}
@@ -112,8 +110,7 @@ export default function ResultToolbar({
         </ToolbarMenu>
       ) : (
         <>
-          <button
-            className="btn small ghost"
+          <WorkbenchButton
             title={t("results.downloadCsvTitle")}
             disabled={disabled}
             onClick={exportCsv}
@@ -121,9 +118,8 @@ export default function ResultToolbar({
             {scopeLabel
               ? t("results.exportCsv", { scope: scopeLabel })
               : "CSV"}
-          </button>
-          <button
-            className="btn small ghost"
+          </WorkbenchButton>
+          <WorkbenchButton
             title={t("results.downloadJsonTitle")}
             disabled={disabled}
             onClick={exportJson}
@@ -131,7 +127,7 @@ export default function ResultToolbar({
             {scopeLabel
               ? t("results.exportJson", { scope: scopeLabel })
               : "JSON"}
-          </button>
+          </WorkbenchButton>
         </>
       )}
       {disabled && (
