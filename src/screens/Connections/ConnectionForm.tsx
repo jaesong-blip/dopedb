@@ -35,13 +35,18 @@ import {
   PanelTabs,
   type PanelTab,
 } from "../../design-system/components/PanelTabs";
+import { SegmentedControl } from "../../design-system/components/SegmentedControl";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import {
   ToolWindowAction,
   ToolWindowRailAction,
   ToolWindowSection,
 } from "../../design-system/components/ToolWindow";
-import { parseConnectionUrl } from "../../features/connections/connectionUrl";
+import {
+  CONNECTION_INPUT_MODE_PARAMETER,
+  formatConnectionUrl,
+  parseConnectionUrl,
+} from "../../features/connections/connectionUrl";
 import {
   diagnoseConnection,
   type ConnectionDiagnosticCode,
@@ -94,6 +99,7 @@ const PROVIDER_ORDER: Provider[] = [
 ];
 
 type ConnectionEditorView = "dataSources" | "drivers";
+type ConnectionInputMode = "default" | "urlOnly";
 
 const POSTGRES_SSL_MODES = [
   "disable",
@@ -130,6 +136,7 @@ const MONGO_TLS_PARAMETERS = [
 const CONTROLLED_CONNECTION_PARAMETERS = new Set<string>([
   ...SQL_TLS_PARAMETERS,
   ...MONGO_TLS_PARAMETERS,
+  CONNECTION_INPUT_MODE_PARAMETER,
   "srv",
 ]);
 
@@ -232,6 +239,15 @@ export function ConnectionForm({
   const [isNew, setIsNew] = useState(initial === null);
   const [persisted, setPersisted] = useState(initial !== null);
   const [password, setPassword] = useState("");
+  const [connectionInputMode, setConnectionInputMode] =
+    useState<ConnectionInputMode>(
+      form.extraParams[CONNECTION_INPUT_MODE_PARAMETER] === "urlOnly"
+        ? "urlOnly"
+        : "default",
+    );
+  const [connectionUrlDraft, setConnectionUrlDraft] = useState(() =>
+    formatConnectionUrl(form),
+  );
   const [activeTab, setActiveTab] =
     useState<ConnectionTab>("general");
   const [busy, setBusy] = useState(false);
@@ -360,9 +376,17 @@ export function ConnectionForm({
     driverCatalog.isError,
     driverCatalog.isPending,
   );
-  const hasBlockingProblems = connectionDiagnostics.some(
-    (diagnostic) => diagnostic.tone === "danger",
-  );
+  const parsedConnectionUrl =
+    connectionInputMode === "urlOnly"
+      ? parseConnectionUrl(connectionUrlDraft)
+      : null;
+  const connectionUrlInvalid =
+    connectionInputMode === "urlOnly" && parsedConnectionUrl === null;
+  const hasBlockingProblems =
+    connectionUrlInvalid ||
+    connectionDiagnostics.some(
+      (diagnostic) => diagnostic.tone === "danger",
+    );
   const problemItems: DiagnosticItem[] = connectionDiagnostics.map(
     (diagnostic) => ({
       id: diagnostic.id,
@@ -370,6 +394,13 @@ export function ConnectionForm({
       title: diagnosticMessage(diagnostic.code),
     }),
   );
+  if (connectionUrlInvalid) {
+    problemItems.push({
+      id: "connection-url-invalid",
+      tone: "danger",
+      title: t("connections.problemConnectionUrlInvalid"),
+    });
+  }
   if (messageIsError && message) {
     problemItems.push({
       id: "connection-runtime",
@@ -383,6 +414,13 @@ export function ConnectionForm({
   const hostValidation = fieldValidation("connection-host");
   const portValidation = fieldValidation("connection-port");
   const databaseValidation = fieldValidation("connection-database");
+  const connectionUrlValidation: FieldValidation | undefined =
+    connectionUrlInvalid
+      ? {
+          tone: "danger",
+          message: t("connections.problemConnectionUrlInvalid"),
+        }
+      : undefined;
   const providers = PROVIDER_ORDER.filter(
     (provider) =>
       provider === "auto" ||
@@ -569,6 +607,14 @@ export function ConnectionForm({
   }
 
   function openDiagnostic(diagnosticId: string) {
+    if (diagnosticId === "connection-url-invalid") {
+      setProblemsOpen(false);
+      setActiveTab("general");
+      requestAnimationFrame(() =>
+        document.getElementById("connection-url")?.focus(),
+      );
+      return;
+    }
     const diagnostic = connectionDiagnostics.find(
       (candidate) => candidate.id === diagnosticId,
     );
@@ -764,22 +810,78 @@ export function ConnectionForm({
     );
   }
 
-  function applyConnectionUrl(raw: string, showFeedback: boolean) {
+  function selectConnectionInputMode(mode: ConnectionInputMode) {
+    if (mode === connectionInputMode) return;
+    if (mode === "urlOnly") {
+      setConnectionUrlDraft(formatConnectionUrl(form));
+    }
+    setForm((current) => {
+      const extraParams = { ...current.extraParams };
+      if (mode === "urlOnly") {
+        extraParams[CONNECTION_INPUT_MODE_PARAMETER] = "urlOnly";
+      } else {
+        delete extraParams[CONNECTION_INPUT_MODE_PARAMETER];
+      }
+      return { ...current, extraParams };
+    });
+    setConnectionInputMode(mode);
+    setMessage(null);
+    setMessageIsError(false);
+  }
+
+  function applyConnectionUrl(
+    raw: string,
+    showFeedback: boolean,
+    normalizeDraft = false,
+    inputMode = connectionInputMode,
+  ) {
     const parsed = parseConnectionUrl(raw);
     if (!parsed) return false;
-    setForm((current) => ({
-      ...current,
+    const parsedEngine = parsed.update.engine ?? form.engine;
+    const internalExtraParams = Object.fromEntries(
+      Object.entries(form.extraParams).filter(
+        ([key]) =>
+          !isDocumentEngine(parsedEngine) &&
+          isIntrospectionParameter(key),
+      ),
+    );
+    if (inputMode === "urlOnly") {
+      internalExtraParams[CONNECTION_INPUT_MODE_PARAMETER] = "urlOnly";
+    }
+    const nextForm: ConnectionProfile = {
+      ...form,
       ...parsed.update,
-      id: current.id,
-      secretRef: current.secretRef,
-    }));
+      name:
+        normalizeDraft && !form.name.trim()
+          ? (parsed.update.name ?? form.name)
+          : form.name,
+      extraParams: {
+        ...internalExtraParams,
+        ...(parsed.update.extraParams ?? {}),
+      },
+      id: form.id,
+      secretRef: form.secretRef,
+    };
+    setForm(nextForm);
     if (parsed.password != null) setPassword(parsed.password);
+    if (normalizeDraft) {
+      setConnectionUrlDraft(formatConnectionUrl(nextForm));
+    }
     setMessage(null);
     setMessageIsError(false);
     if (showFeedback) {
       toast(t("connections.clipboardImported"));
     }
     return true;
+  }
+
+  function editConnectionUrl(raw: string) {
+    setConnectionUrlDraft(raw);
+    applyConnectionUrl(raw, false);
+  }
+
+  function normalizeConnectionUrl(raw = connectionUrlDraft) {
+    applyConnectionUrl(raw, false, true);
   }
 
   async function importConnectionUrlFromClipboard(
@@ -793,7 +895,13 @@ export function ConnectionForm({
     }
     try {
       const text = await navigator.clipboard.readText();
-      const imported = applyConnectionUrl(text, showFeedback);
+      const imported = applyConnectionUrl(
+        text,
+        showFeedback,
+        true,
+        "urlOnly",
+      );
+      if (imported) setConnectionInputMode("urlOnly");
       if (!imported && showFeedback) {
         toast(t("connections.clipboardNoConnectionUrl"), "error");
       }
@@ -818,6 +926,9 @@ export function ConnectionForm({
         password || undefined,
       );
       setForm(saved);
+      if (connectionInputMode === "urlOnly") {
+        setConnectionUrlDraft(formatConnectionUrl(saved));
+      }
       setIsNew(false);
       setPersisted(true);
       setPassword("");
@@ -836,19 +947,26 @@ export function ConnectionForm({
 
   function duplicateCurrentConnection() {
     if (isNew || form.workspaceAccess !== "local") return;
-    setForm((current) => ({
-      ...current,
-      id: connectionId(crypto.randomUUID()),
-      name: t("connections.copyName", {
-        name: current.name || t("app.unnamed"),
-      }),
-      secretRef: null,
-      workspaceAccess: "local",
-      credentialMode: "local",
-    }));
+    setForm((current) => {
+      const extraParams = { ...current.extraParams };
+      delete extraParams[CONNECTION_INPUT_MODE_PARAMETER];
+      return {
+        ...current,
+        id: connectionId(crypto.randomUUID()),
+        name: t("connections.copyName", {
+          name: current.name || t("app.unnamed"),
+        }),
+        extraParams,
+        secretRef: null,
+        workspaceAccess: "local",
+        credentialMode: "local",
+      };
+    });
     setIsNew(true);
     setPersisted(false);
     setPassword("");
+    setConnectionInputMode("default");
+    setConnectionUrlDraft("");
     setActiveTab("general");
     setMessage(null);
     setMessageIsError(false);
@@ -948,10 +1066,18 @@ export function ConnectionForm({
         <div
           className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:overflow-hidden tw:bg-background"
           onKeyDown={(event) => {
+            const target = event.target as HTMLInputElement;
             if (
               event.key === "Enter" &&
-              (event.target as HTMLElement).tagName === "INPUT" &&
-              (event.target as HTMLInputElement).type !== "search" &&
+              target.id === "connection-url" &&
+              !busy
+            ) {
+              event.preventDefault();
+              normalizeConnectionUrl(target.value);
+            } else if (
+              event.key === "Enter" &&
+              target.tagName === "INPUT" &&
+              target.type !== "search" &&
               !busy
             ) {
               event.preventDefault();
@@ -1518,11 +1644,65 @@ export function ConnectionForm({
                       </span>
                     </div>
                   ) : null}
+
+                  <div className="tw:grid tw:gap-1.5">
+                    <span className="tw:text-sm tw:font-medium tw:text-muted-foreground">
+                      {t("connections.connectionType")}
+                    </span>
+                    <SegmentedControl
+                      value={connectionInputMode}
+                      label={t("connections.connectionType")}
+                      options={[
+                        {
+                          value: "default",
+                          label: t(
+                            "connections.connectionTypeDefault",
+                          ),
+                        },
+                        {
+                          value: "urlOnly",
+                          label: t(
+                            "connections.connectionTypeUrlOnly",
+                          ),
+                        },
+                      ]}
+                      disabled={busy}
+                      onChange={selectConnectionInputMode}
+                    />
+                  </div>
                 </section>
 
                 <div className="tw:h-px tw:bg-border-subtle" />
 
-                {isSqlite ? (
+                {connectionInputMode === "urlOnly" ? (
+                  <section className="tw:grid tw:gap-3">
+                    <Field
+                      label={t("connections.connectionUrl")}
+                      validation={connectionUrlValidation}
+                    >
+                      <TextInput
+                        id="connection-url"
+                        value={connectionUrlDraft}
+                        aria-invalid={
+                          connectionUrlValidation?.tone === "danger" ||
+                          undefined
+                        }
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        onChange={(event) =>
+                          editConnectionUrl(event.target.value)
+                        }
+                        onBlur={(event) =>
+                          normalizeConnectionUrl(event.target.value)
+                        }
+                      />
+                    </Field>
+                    <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">
+                      {t("connections.connectionUrlOverrides")}
+                    </p>
+                  </section>
+                ) : isSqlite ? (
                   <section className="tw:grid tw:gap-3">
                     <h3>{t("connections.database")}</h3>
                     <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-2">
@@ -1675,21 +1855,6 @@ export function ConnectionForm({
                   </>
                 )}
 
-                {isNew ? (
-                  <div className="tw:flex tw:justify-end">
-                    <button
-                      type="button"
-                      className="btn small"
-                      disabled={busy}
-                      onClick={() =>
-                        void importConnectionUrlFromClipboard(true)
-                      }
-                    >
-                      <Icon name="copy" />
-                      {t("connections.importClipboard")}
-                    </button>
-                  </div>
-                ) : null}
               </div>
             ) : null}
 

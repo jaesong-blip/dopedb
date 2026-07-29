@@ -82,7 +82,12 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   version, 설치 상태, 지원 connection method와 capability만 표시한다. cloud
   action은 실제 credential inventory를 열고 로그인·권한·조회 실패를 그대로
   드러내며, 존재하지 않는 cloud resource browser를 모양만 만들어 대체하지
-  않는다.
+  않는다. General의 connection type은 `Default`와 실제 URL parser가 소유하는
+  `URL only`만 제공한다. URL mode도 분리된 임시 모델을 저장하지 않고 Test,
+  Apply, OK가 사용하는 하나의 `ConnectionProfile`로 즉시 정규화하며 password,
+  token과 DopeDB 내부 parameter는 redacted URL projection에 표시하지 않는다.
+  선택 mode는 driver URL과 분리된 내부 profile metadata로 저장·복원한다.
+  runtime이 지원하지 않는 SQLite In-memory는 선택지처럼 보이게 만들지 않는다.
 - tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
   하나의 layout 문법으로 구현한다.
 - Database Explorer header는 전체 tree의 expand/collapse, 실제 view option,
@@ -175,6 +180,8 @@ Elevation은 세 단계만 허용한다.
 - `Field`, `TextInput`, `SelectInput`, `CheckboxField`: label, focus, disabled
   상태를 함께 소유하는 dense form control.
 - `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.
+- `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
+  radiogroup, keyboard focus와 semantic selection treatment.
 - `EnvironmentBadge`: dev/staging/prod 의미색과 대문자 표기를 한곳에서 소유.
 - `TreeSectionButton`, `TreeSearch`: DopeDB 객체 트리의 일반 문장형
   hierarchy row, keyboard toggle과 dense object search. 데이터베이스·스키마·
@@ -287,8 +294,8 @@ Elevation은 세 단계만 허용한다.
 툴윈도우 primitive는
 [`src/design-system/components/ToolWindow.tsx`](components/ToolWindow.tsx)에
 있고 form과 tab primitive는 같은 디렉터리의 `FormControls.tsx`,
-`PanelTabs.tsx`에 있다. 같은 형태는 화면에서 utility 문자열로 다시 만들지
-않는다.
+`PanelTabs.tsx`, `SegmentedControl.tsx`에 있다. 같은 형태는 화면에서 utility
+문자열로 다시 만들지 않는다.
 
 ### 버튼
 

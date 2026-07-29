@@ -13,6 +13,57 @@ export type ParsedConnectionUrl = {
   password: string | null;
 };
 
+export const CONNECTION_INPUT_MODE_PARAMETER =
+  "dopedb.connectionInputMode";
+
+const CONNECTION_META_PARAMETER_KEYS = new Set([
+  "allowwrites",
+  "connectionname",
+  "env",
+  "environment",
+  "group",
+  "name",
+  "readonly",
+  "schemagroup",
+  "writes",
+]);
+
+const CONNECTION_SECRET_PARAMETER_KEYS = new Set([
+  "accesstoken",
+  "apikey",
+  "clientsecret",
+  "pass",
+  "passwd",
+  "password",
+  "privatekey",
+  "refreshtoken",
+  "secret",
+  "token",
+]);
+
+function normalizedParameterKey(key: string): string {
+  return key.trim().toLowerCase().replace(/[-_]/g, "");
+}
+
+function isConnectionMetaParameter(key: string): boolean {
+  return CONNECTION_META_PARAMETER_KEYS.has(normalizedParameterKey(key));
+}
+
+function isConnectionSecretParameter(key: string): boolean {
+  return CONNECTION_SECRET_PARAMETER_KEYS.has(
+    normalizedParameterKey(key),
+  );
+}
+
+function isConnectionUrlControlParameter(key: string): boolean {
+  const normalized = normalizedParameterKey(key);
+  return normalized === "ssl" || normalized === "sslmode";
+}
+
+function isInternalConnectionParameter(key: string): boolean {
+  return key.trim().toLowerCase().startsWith("dopedb.");
+}
+
 function decodeUrlPart(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -75,10 +126,14 @@ function normalizeSslMode(engine: Engine, value: string | null): string | null {
 }
 
 function sqliteDatabaseFromUrl(url: URL): string {
-  if (url.protocol === "file:") return decodeUrlPart(url.pathname);
+  const path = decodeUrlPart(url.pathname);
+  const normalizedPath = /^\/[a-z]:\//i.test(path)
+    ? path.slice(1)
+    : path;
+  if (url.protocol === "file:") return normalizedPath;
   if (url.hostname && !url.pathname) return decodeUrlPart(url.hostname);
   if (url.hostname) return decodeUrlPart(`${url.hostname}${url.pathname}`);
-  return decodeUrlPart(url.pathname);
+  return normalizedPath;
 }
 
 function parseMongoConnectionUrl(text: string): ParsedConnectionUrl | null {
@@ -92,24 +147,16 @@ function parseMongoConnectionUrl(text: string): ParsedConnectionUrl | null {
   const srv = !!srvFlag;
   const database = rawDatabase ? decodeUrlPart(rawDatabase) : "";
   const params = new URLSearchParams(rawQuery ?? "");
-  const dopedbMetaKeys = new Set([
-    "allow_writes",
-    "allowwrites",
-    "connection_name",
-    "connectionname",
-    "env",
-    "environment",
-    "name",
-    "pass",
-    "password",
-    "read_only",
-    "readonly",
-    "writes",
-  ]);
   const extraParams: Record<string, string> = {};
   params.forEach((value, key) => {
     const normalizedKey = key.toLowerCase();
-    if (dopedbMetaKeys.has(normalizedKey)) return;
+    if (
+      isConnectionMetaParameter(key) ||
+      isConnectionSecretParameter(key) ||
+      isInternalConnectionParameter(key)
+    ) {
+      return;
+    }
     if (normalizedKey === "ssl" || normalizedKey === "tls") {
       const enabled = parseOptionalBoolean(value);
       if (enabled === true) extraParams.tls = "true";
@@ -169,13 +216,14 @@ function parseMongoConnectionUrl(text: string): ParsedConnectionUrl | null {
 export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
   const text = raw.trim().replace(/^['"`]+|['"`]+$/g, "");
   if (!text) return null;
-  if (/^mongodb(\+srv)?:\/\//i.test(text)) {
-    return parseMongoConnectionUrl(text);
+  const driverUrl = text.replace(/^jdbc:/i, "");
+  if (/^mongodb(\+srv)?:\/\//i.test(driverUrl)) {
+    return parseMongoConnectionUrl(driverUrl);
   }
 
   let url: URL;
   try {
-    url = new URL(text);
+    url = new URL(driverUrl);
   } catch {
     return null;
   }
@@ -195,7 +243,12 @@ export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
 
   const extraParams: Record<string, string> = {};
   url.searchParams.forEach((value, key) => {
-    if (key.toLowerCase() === "password" || key.toLowerCase() === "pass") {
+    if (
+      isConnectionMetaParameter(key) ||
+      isConnectionSecretParameter(key) ||
+      isConnectionUrlControlParameter(key) ||
+      isInternalConnectionParameter(key)
+    ) {
       return;
     }
     extraParams[key] = value;
@@ -252,4 +305,103 @@ export function parseConnectionUrl(raw: string): ParsedConnectionUrl | null {
       firstSearchParam(url.searchParams, ["password", "pass"]) ||
       null,
   };
+}
+
+function encodedPath(value: string): string {
+  return value
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function urlHost(value: string): string {
+  const host = value.trim();
+  return host.includes(":") &&
+    !host.includes(",") &&
+    !host.startsWith("[")
+    ? `[${host}]`
+    : host;
+}
+
+function safeConnectionParameters(
+  profile: ConnectionProfile,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  Object.entries(profile.extraParams)
+    .filter(
+      ([key]) =>
+        key !== "srv" &&
+        !isConnectionMetaParameter(key) &&
+        !isConnectionSecretParameter(key) &&
+        !isConnectionUrlControlParameter(key) &&
+        !isInternalConnectionParameter(key),
+    )
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([key, value]) => params.set(key, value));
+  if (
+    profile.engine === "postgres" ||
+    profile.engine === "mysql"
+  ) {
+    params.set("sslmode", profile.sslmode);
+  }
+  return params;
+}
+
+function withQuery(base: string, params: URLSearchParams): string {
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
+}
+
+/**
+ * Produces the redacted URL projection shown by the property editor.
+ * Credentials remain in the dedicated password state/keychain and DopeDB-only
+ * introspection metadata never leaks into a driver URL.
+ */
+export function formatConnectionUrl(
+  profile: ConnectionProfile,
+): string {
+  const params = safeConnectionParameters(profile);
+  if (profile.engine === "sqlite") {
+    const normalizedPath = profile.database.replace(/\\/g, "/");
+    const path = encodedPath(normalizedPath);
+    const base = normalizedPath.startsWith("/")
+      ? `sqlite://${path}`
+      : /^[a-z]:\//i.test(normalizedPath)
+        ? `sqlite:///${path}`
+        : `sqlite:${path}`;
+    return withQuery(base, params);
+  }
+
+  const username = profile.username.trim()
+    ? `${encodeURIComponent(profile.username.trim())}@`
+    : "";
+  if (profile.engine === "mongodb") {
+    const srv = profile.extraParams.srv === "true";
+    const scheme = srv ? "mongodb+srv" : "mongodb";
+    const host = urlHost(profile.host);
+    const authority =
+      srv || host.includes(",") || !profile.port
+        ? host
+        : `${host}:${profile.port}`;
+    const database = profile.database.trim()
+      ? `/${encodeURIComponent(profile.database.trim())}`
+      : "";
+    return withQuery(
+      `${scheme}://${username}${authority}${database}`,
+      params,
+    );
+  }
+
+  const scheme =
+    profile.engine === "postgres" ? "postgresql" : "mysql";
+  const host = urlHost(profile.host);
+  const port = profile.port ? `:${profile.port}` : "";
+  const database = profile.database.trim()
+    ? `/${encodeURIComponent(profile.database.trim())}`
+    : "";
+  return withQuery(
+    `${scheme}://${username}${host}${port}${database}`,
+    params,
+  );
 }

@@ -42,6 +42,12 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionMethod": "Connection method",
     "connections.connectionMethodHint":
       "Controls provider-specific connection behavior. Cloud account credentials are managed separately.",
+    "connections.connectionType": "Connection type",
+    "connections.connectionTypeDefault": "Default",
+    "connections.connectionTypeUrlOnly": "URL only",
+    "connections.connectionUrl": "URL",
+    "connections.connectionUrlOverrides":
+      "Overrides the connection settings above.",
     "connections.connection": "Connection",
     "connections.createDataSource": "Create data source",
     "connections.copyName": "{name} copy",
@@ -87,6 +93,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.problemHostInvalid":
       "Enter a host name without a URL scheme or whitespace.",
     "connections.problemHostRequired": "Enter the database host.",
+    "connections.problemConnectionUrlInvalid":
+      "Enter a supported PostgreSQL, MySQL, SQLite, or MongoDB URL.",
     "connections.problemMongoDatabaseRequired":
       "Enter the MongoDB database name.",
     "connections.problemNameRequired": "Enter a data source name.",
@@ -262,6 +270,12 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionMethod": "연결 방식",
     "connections.connectionMethodHint":
       "공급자별 연결 동작을 선택합니다. 클라우드 계정 자격 증명은 별도로 관리됩니다.",
+    "connections.connectionType": "연결 유형",
+    "connections.connectionTypeDefault": "기본",
+    "connections.connectionTypeUrlOnly": "URL 전용",
+    "connections.connectionUrl": "URL",
+    "connections.connectionUrlOverrides":
+      "위 연결 설정을 이 URL로 재정의합니다.",
     "connections.connection": "연결",
     "connections.createDataSource": "데이터 소스 생성",
     "connections.copyName": "{name} 복사본",
@@ -307,6 +321,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.problemHostInvalid":
       "URL scheme과 공백 없이 호스트 이름을 입력하세요.",
     "connections.problemHostRequired": "데이터베이스 호스트를 입력하세요.",
+    "connections.problemConnectionUrlInvalid":
+      "지원되는 PostgreSQL, MySQL, SQLite 또는 MongoDB URL을 입력하세요.",
     "connections.problemMongoDatabaseRequired":
       "MongoDB 데이터베이스 이름을 입력하세요.",
     "connections.problemNameRequired": "데이터 소스 이름을 입력하세요.",
