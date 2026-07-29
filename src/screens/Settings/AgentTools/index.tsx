@@ -406,7 +406,6 @@ export default function AgentTools() {
                       )}
                       {canRepair && (
                         <ConfirmButton
-                          className="btn"
                           disabled={busy !== null}
                           confirmLabel={t("agentTools.repairConfirm", {
                             count: target.conflicts.length,
@@ -418,7 +417,6 @@ export default function AgentTools() {
                       )}
                       {canRemove && (
                         <ConfirmButton
-                          className="btn"
                           disabled={busy !== null}
                           confirmLabel={t("agentTools.removeConfirm")}
                           onConfirm={() => void runMutation("remove", target.target)}
@@ -451,7 +449,6 @@ export default function AgentTools() {
           </div>
           {cleanupReady.length > 0 && (
             <ConfirmButton
-              className="btn"
               disabled={busy !== null}
               confirmLabel={t("agentTools.legacyCleanupConfirm", {
                 count: cleanupReady.length,

@@ -224,9 +224,11 @@ function DashboardTile({
             <Icon name={selected ? "refresh" : "play"} />
           </button>
           <ConfirmButton
-            className="btn danger small icon-only"
             label={t("common.delete")}
             disabled={running || deleting}
+            iconOnly
+            size="compact"
+            variant="danger"
             confirmLabel={t("dashboard.deleteConfirm")}
             onConfirm={onDelete}
           >

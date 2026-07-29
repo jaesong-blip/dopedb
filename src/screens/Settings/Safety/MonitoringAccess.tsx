@@ -166,8 +166,9 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
         <div className="ds-action-row ds-control-row tw:items-center">
           {status.roleGranted ? (
             <ConfirmButton
-              className="btn danger small"
               disabled={busy}
+              size="compact"
+              variant="danger"
               confirmLabel={t("safety.monitoringRevokeConfirm")}
               onConfirm={() => propose.mutate(false)}
             >
@@ -175,8 +176,9 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
             </ConfirmButton>
           ) : (
             <ConfirmButton
-              className="btn primary small"
               disabled={busy}
+              size="compact"
+              variant="primary"
               confirmLabel={t("safety.monitoringEnableConfirm")}
               onConfirm={() => propose.mutate(true)}
             >

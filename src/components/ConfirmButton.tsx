@@ -1,23 +1,33 @@
 // Inline two-step confirm: one click arms it ("Really delete? Yes / No"), auto-reverts
-// after 3s if untouched. No window.confirm. Styling reuses .btn; inline flex, no css file.
+// after 3s if untouched. No window.confirm.
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Button,
+  type ButtonProps,
+} from "../design-system/components/Button";
 import { useI18n } from "../lib/i18n";
 
 export default function ConfirmButton({
   children,
   onConfirm,
-  className = "btn",
   disabled,
   confirmLabel,
   label,
+  iconOnly = false,
+  presentation = "button",
+  size = "default",
+  tone = "neutral",
+  variant = "default",
 }: {
   children: ReactNode;
   onConfirm: () => void;
-  className?: string;
   disabled?: boolean;
   confirmLabel?: string;
   label?: string;
-}) {
+} & Pick<
+  ButtonProps,
+  "iconOnly" | "presentation" | "size" | "tone" | "variant"
+>) {
   const { t } = useI18n();
   const [armed, setArmed] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -26,10 +36,13 @@ export default function ConfirmButton({
 
   if (!armed) {
     return (
-      <button
-        type="button"
-        className={className}
+      <Button
         disabled={disabled}
+        iconOnly={iconOnly}
+        presentation={presentation}
+        size={size}
+        tone={tone}
+        variant={variant}
         title={label}
         aria-label={label}
         onClick={() => {
@@ -38,7 +51,7 @@ export default function ConfirmButton({
         }}
       >
         {children}
-      </button>
+      </Button>
     );
   }
 
@@ -47,9 +60,9 @@ export default function ConfirmButton({
       <span className="tw:text-muted-foreground">
         {confirmLabel ?? t("common.reallyDelete")}
       </span>
-      <button
-        type="button"
-        className="btn danger small"
+      <Button
+        size="compact"
+        variant="danger"
         disabled={disabled}
         onClick={() => {
           window.clearTimeout(timer.current);
@@ -58,10 +71,9 @@ export default function ConfirmButton({
         }}
       >
         {t("common.yes")}
-      </button>
-      <button
-        type="button"
-        className="btn small"
+      </Button>
+      <Button
+        size="compact"
         autoFocus
         disabled={disabled}
         onClick={() => {
@@ -70,7 +82,7 @@ export default function ConfirmButton({
         }}
       >
         {t("common.no")}
-      </button>
+      </Button>
     </span>
   );
 }

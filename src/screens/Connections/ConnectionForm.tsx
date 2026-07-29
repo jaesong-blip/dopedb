@@ -14,6 +14,7 @@ import {
   CommandMenuGroup,
   CommandMenuItem,
 } from "../../design-system/components/CommandMenu";
+import { Button } from "../../design-system/components/Button";
 import {
   DiagnosticCount,
   DiagnosticSummary,
@@ -1220,10 +1221,11 @@ export function ConnectionForm({
                   ref={addMenuAnchorRef}
                   className="tw:relative tw:flex"
                 >
-                  <button
+                  <Button
                     ref={addButtonRef}
-                    type="button"
-                    className="btn small icon-only icon-xs"
+                    iconOnly
+                    size="xs"
+                    variant="ghost"
                     onClick={() => {
                       setAddSearch("");
                       setAddMenuOpen((open) => !open);
@@ -1235,7 +1237,7 @@ export function ConnectionForm({
                     aria-controls="connection-add-menu"
                   >
                     <Icon name="plus" />
-                  </button>
+                  </Button>
                   {addMenuOpen ? (
                     <CommandMenu
                       id="connection-add-menu"
@@ -1349,31 +1351,35 @@ export function ConnectionForm({
               </div>
               {!isNew && form.workspaceAccess === "local" ? (
                 <>
-                  <button
+                  <Button
                     ref={workspaceButtonRef}
-                    type="button"
-                    className="btn small icon-only icon-xs"
+                    iconOnly
+                    size="xs"
+                    variant="ghost"
                     disabled={busy}
                     onClick={() => setWorkspaceDialogOpen(true)}
                     title={t("workspace.copyToWorkspace")}
                     aria-label={t("workspace.copyToWorkspace")}
                   >
                     <Icon name="upload" />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn small icon-only icon-xs"
+                  </Button>
+                  <Button
+                    iconOnly
+                    size="xs"
+                    variant="ghost"
                     disabled={busy}
                     onClick={duplicateCurrentConnection}
                     title={t("connections.duplicate")}
                     aria-label={t("connections.duplicate")}
                   >
                     <Icon name="copy" />
-                  </button>
+                  </Button>
                   <ConfirmButton
-                    className="btn small icon-only icon-xs"
                     disabled={busy}
+                    iconOnly
                     label={t("common.delete")}
+                    size="xs"
+                    variant="ghost"
                     confirmLabel={t(
                       isDemoSqliteConnection(form)
                         ? "connections.reallyDeleteDemo"
@@ -1388,9 +1394,10 @@ export function ConnectionForm({
                 </>
               ) : null}
               {isNew ? (
-                <button
-                  type="button"
-                  className="btn small icon-only icon-xs"
+                <Button
+                  iconOnly
+                  size="xs"
+                  variant="ghost"
                   disabled={busy}
                   onClick={() =>
                     void importConnectionUrlFromClipboard(true)
@@ -1399,43 +1406,46 @@ export function ConnectionForm({
                   aria-label={t("connections.importClipboard")}
                 >
                   <Icon name="copy" />
-                </button>
+                </Button>
               ) : null}
-              <button
-                type="button"
-                className="btn small icon-only icon-xs"
-                data-active={catalogSearchOpen || undefined}
+              <Button
+                active={catalogSearchOpen}
+                iconOnly
+                size="xs"
+                variant="ghost"
                 onClick={() => setCatalogSearchOpen((open) => !open)}
                 title={t("connections.searchDataSources")}
                 aria-label={t("connections.searchDataSources")}
                 aria-pressed={catalogSearchOpen}
               >
                 <Icon name="search" />
-              </button>
+              </Button>
               </div>
             ) : editorView === "drivers" ? (
               <div className="tw:flex tw:items-center tw:gap-1">
-                <button
-                  type="button"
-                  className="btn small icon-only icon-xs"
+                <Button
+                  iconOnly
+                  size="xs"
+                  variant="ghost"
                   disabled={driverCatalog.isFetching}
                   onClick={() => void driverCatalog.refetch()}
                   title={t("common.refresh")}
                   aria-label={t("common.refresh")}
                 >
                   <Icon name="refresh" />
-                </button>
-                <button
-                  type="button"
-                  className="btn small icon-only icon-xs"
-                  data-active={catalogSearchOpen || undefined}
+                </Button>
+                <Button
+                  active={catalogSearchOpen}
+                  iconOnly
+                  size="xs"
+                  variant="ghost"
                   onClick={() => setCatalogSearchOpen((open) => !open)}
                   title={t("connections.searchDrivers")}
                   aria-label={t("connections.searchDrivers")}
                   aria-pressed={catalogSearchOpen}
                 >
                   <Icon name="search" />
-                </button>
+                </Button>
               </div>
             ) : null}
           </div>
@@ -1624,15 +1634,16 @@ export function ConnectionForm({
                     </option>
                   ))}
                 </SelectInput>
-                <button
-                  type="button"
-                  className="btn small icon-only tw:shrink-0"
+                <Button
+                  iconOnly
+                  size="compact"
+                  variant="ghost"
                   onClick={() => onNewConnection()}
                   title={t("connections.new")}
                   aria-label={t("connections.new")}
                 >
                   <Icon name="plus" />
-                </button>
+                </Button>
               </>
             ) : editorView === "clouds" ? (
               <SelectInput
@@ -1780,9 +1791,8 @@ export function ConnectionForm({
 
                     {activeDriver?.installMode === "managed" &&
                     activeDriver.installState === "available" ? (
-                      <button
-                        type="button"
-                        className="btn small"
+                      <Button
+                        size="compact"
                         disabled={installingDriverId !== null}
                         onClick={() =>
                           void downloadDriver(activeDriver)
@@ -1792,7 +1802,7 @@ export function ConnectionForm({
                         {installingDriverId === activeDriver.id
                           ? t("connections.driverDownloading")
                           : t("connections.driverDownload")}
-                      </button>
+                      </Button>
                     ) : null}
                   </div>
                   {driverValidation ? (
@@ -1853,9 +1863,8 @@ export function ConnectionForm({
                           }
                           placeholder="/path/to/app.db"
                         />
-                        <button
-                          type="button"
-                          className="btn small"
+                        <Button
+                          size="compact"
                           onClick={() =>
                             void pickFile().then(
                               (file) =>
@@ -1864,7 +1873,7 @@ export function ConnectionForm({
                           }
                         >
                           {t("connections.browse")}
-                        </button>
+                        </Button>
                       </div>
                     </PropertyRow>
                   </section>
@@ -2302,10 +2311,9 @@ export function ConnectionForm({
                               }
                               placeholder="/path/to/ca.pem"
                             />
-                            <button
-                              type="button"
-                              className="btn"
+                            <Button
                               disabled={!mongoTlsEnabled}
+                              size="compact"
                               onClick={() =>
                                 void pickExtraParameterFile(
                                   "tlsCAFile",
@@ -2313,7 +2321,7 @@ export function ConnectionForm({
                               }
                             >
                               {t("connections.browse")}
-                            </button>
+                            </Button>
                           </div>
                         </Field>
                         <Field
@@ -2336,10 +2344,9 @@ export function ConnectionForm({
                               }
                               placeholder="/path/to/client.pem"
                             />
-                            <button
-                              type="button"
-                              className="btn"
+                            <Button
                               disabled={!mongoTlsEnabled}
+                              size="compact"
                               onClick={() =>
                                 void pickExtraParameterFile(
                                   "tlsCertificateKeyFile",
@@ -2347,7 +2354,7 @@ export function ConnectionForm({
                               }
                             >
                               {t("connections.browse")}
-                            </button>
+                            </Button>
                           </div>
                         </Field>
                       </div>
@@ -2401,16 +2408,15 @@ export function ConnectionForm({
                                 }
                                 placeholder={placeholder}
                               />
-                              <button
-                                type="button"
-                                className="btn"
+                              <Button
                                 disabled={!sqlTlsEnabled}
+                                size="compact"
                                 onClick={() =>
                                   void pickExtraParameterFile(key)
                                 }
                               >
                                 {t("connections.browse")}
-                              </button>
+                              </Button>
                             </div>
                           </Field>
                         ))}
@@ -2451,15 +2457,14 @@ export function ConnectionForm({
                       <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
                         {errMessage(schemaDiscovery.error)}
                       </span>
-                      <button
-                        className="btn small"
-                        type="button"
+                      <Button
+                        size="compact"
                         disabled={schemaDiscovery.isFetching}
                         onClick={() => void schemaDiscovery.refetch()}
                       >
                         <Icon name="refresh" />
                         {t("common.refresh")}
-                      </button>
+                      </Button>
                     </div>
                   ) : !schemaDiscovery.data ? (
                     <div className="tw:text-sm tw:text-muted-foreground">
@@ -2584,14 +2589,13 @@ export function ConnectionForm({
                     <h3>
                       {t("connections.advancedParameters")}
                     </h3>
-                    <button
-                      type="button"
-                      className="btn small"
+                    <Button
+                      size="compact"
                       onClick={addAdvancedParameter}
                     >
                       <Icon name="plus" />
                       {t("connections.addParameter")}
-                    </button>
+                    </Button>
                   </div>
                   {advancedParameters.length === 0 ? (
                     <p className="tw:m-0 tw:border-y tw:border-border-subtle tw:py-4 tw:text-sm tw:text-muted-foreground">
@@ -2631,9 +2635,10 @@ export function ConnectionForm({
                                 )
                               }
                             />
-                            <button
-                              type="button"
-                              className="btn small icon-only icon-xs"
+                            <Button
+                              iconOnly
+                              size="xs"
+                              variant="ghost"
                               onClick={() =>
                                 removeAdvancedParameter(key)
                               }
@@ -2641,7 +2646,7 @@ export function ConnectionForm({
                               aria-label={t("common.remove")}
                             >
                               <Icon name="close" />
-                            </button>
+                            </Button>
                           </div>
                         ),
                       )}
@@ -2720,9 +2725,8 @@ export function ConnectionForm({
                       </p>
                     </div>
                     <div>
-                      <button
-                        type="button"
-                        className="btn primary"
+                      <Button
+                        variant="primary"
                         onClick={(event) =>
                           openProviderCredentials(
                             catalogCloudProvider,
@@ -2732,7 +2736,7 @@ export function ConnectionForm({
                       >
                         <Icon name="key" />
                         {t("connections.cloudCredentialDescription")}
-                      </button>
+                      </Button>
                     </div>
                   </section>
                 </div>
@@ -2792,9 +2796,8 @@ export function ConnectionForm({
                     {catalogDriver.installMode === "managed" &&
                     catalogDriver.installState === "available" ? (
                       <div>
-                        <button
-                          type="button"
-                          className="btn primary"
+                        <Button
+                          variant="primary"
                           disabled={installingDriverId !== null}
                           onClick={() =>
                             void downloadDriver(catalogDriver)
@@ -2804,7 +2807,7 @@ export function ConnectionForm({
                           {installingDriverId === catalogDriver.id
                             ? t("connections.driverDownloading")
                             : t("connections.driverDownload")}
-                        </button>
+                        </Button>
                       </div>
                     ) : null}
                   </section>
@@ -2840,46 +2843,48 @@ export function ConnectionForm({
       <ModalFooter>
         {editorView === "dataSources" ? (
           <>
-            <button
-              className="btn"
+            <Button
               disabled={busy}
+              size="compact"
               onClick={onCancel}
             >
               {t("common.cancel")}
-            </button>
-            <button
-              className="btn"
+            </Button>
+            <Button
               disabled={busy || hasBlockingProblems}
+              size="compact"
               onClick={() => void save(false)}
             >
               {running === "apply"
                 ? t("common.saving")
                 : t("common.apply")}
-            </button>
-            <button
-              className="btn primary"
+            </Button>
+            <Button
+              variant="primary"
               disabled={busy || hasBlockingProblems}
+              size="compact"
               onClick={() => void save(true)}
             >
               {running === "save"
                 ? t("common.saving")
                 : t("common.ok")}
-            </button>
+            </Button>
           </>
         ) : (
           <>
-            <button className="btn" onClick={onCancel}>
+            <Button size="compact" onClick={onCancel}>
               {t("common.cancel")}
-            </button>
-            <button className="btn" disabled>
+            </Button>
+            <Button size="compact" disabled>
               {t("common.apply")}
-            </button>
-            <button
-              className="btn primary"
+            </Button>
+            <Button
+              size="compact"
+              variant="primary"
               onClick={onCancel}
             >
               {t("common.ok")}
-            </button>
+            </Button>
           </>
         )}
       </ModalFooter>

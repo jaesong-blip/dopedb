@@ -124,8 +124,8 @@ export default function CliSettings() {
             <div className="ds-action-row ds-control-row tw:mt-4">
               {status.conflict ? (
                 <ConfirmButton
-                  className="btn primary"
                   disabled={busy || !status.bundledAvailable}
+                  variant="primary"
                   confirmLabel={t("cli.replaceConfirm")}
                   onConfirm={() => void install()}
                 >

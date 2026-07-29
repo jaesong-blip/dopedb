@@ -363,13 +363,16 @@ export default function ConnectionNode(props: Props) {
               </PopupMenuCheckbox>
               {connection.workspaceAccess === "local" ? (
                 <ConfirmButton
-                  className="tw:flex tw:min-h-control-md tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-sm tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-left tw:text-sm tw:text-danger tw:hover:bg-muted"
                   confirmLabel={t(
                     isDemoSqliteConnection(connection)
                       ? "connections.reallyDeleteDemo"
                       : "common.reallyDelete",
                   )}
                   disabled={props.deletingId === connection.id}
+                  presentation="menuItem"
+                  size="compact"
+                  tone="danger"
+                  variant="ghost"
                   onConfirm={props.onDelete}
                 >
                   {t("common.delete")}

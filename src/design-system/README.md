@@ -219,6 +219,8 @@ Elevation은 세 단계만 허용한다.
   36px command row와 나란히 놓이는 tab은 `compact` density를 사용한다.
 - `Button`: 전역 `.btn`을 대체하는 Tailwind button primitive. variant, density,
   icon geometry, tone, active/expanded state를 semantic prop으로 소유한다.
+  popup 내부 full-width action은 화면별 class를 만들지 않고
+  `presentation="menuItem"`을 사용한다.
 - `WorkbenchButton`: `Button`을 합성한 query, table, result command row의
   32px label/icon action.
   `variant`, `tone`, `active`, `collapse` data contract로 상태와 compact overflow를
