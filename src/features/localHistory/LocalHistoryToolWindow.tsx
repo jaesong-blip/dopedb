@@ -135,49 +135,53 @@ export default function LocalHistoryToolWindow({
   return (
     <aside className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:min-h-0 tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background">
       <ToolWindowHeader
-        title={t("localHistory.title")}
+        title={
+          <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-6">
+            <span className="tw:truncate">{t("localHistory.title")}</span>
+            <span className="tw:truncate tw:font-medium tw:text-muted-foreground">
+              {t("localHistory.recent")}
+            </span>
+          </span>
+        }
         actions={
-          <>
-            <button
-              type="button"
-              className="btn small icon-only icon-xs"
-              disabled={!canRestore}
-              onClick={() => {
-                if (!selectedDocument || !activeRevision) return;
-                onRestoreRevision(
-                  selectedDocument.id,
-                  activeRevision.content,
-                );
-              }}
-              title={t("localHistory.restore")}
-              aria-label={t("localHistory.restore")}
-            >
-              <Icon name="history" />
-            </button>
-            <button
-              type="button"
-              className="btn small icon-only icon-xs"
-              onClick={onClose}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-            >
-              <Icon name="close" />
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn small icon-only icon-xs"
+            onClick={onClose}
+            title={t("common.close")}
+            aria-label={t("common.close")}
+          >
+            <Icon name="close" />
+          </button>
         }
       />
-      <div className="tw:p-1">
-        <TreeSearch
-          clearLabel={t("common.close")}
-          placeholder={t("localHistory.search")}
-          value={filter}
-          onChange={setFilter}
-        />
+      <div className="tw:flex tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:p-1">
+        <div className="tw:min-w-0 tw:flex-1">
+          <TreeSearch
+            clearLabel={t("common.close")}
+            placeholder={t("localHistory.search")}
+            value={filter}
+            onChange={setFilter}
+          />
+        </div>
+        <button
+          type="button"
+          className="btn small icon-only icon-xs tw:shrink-0"
+          disabled={!canRestore}
+          onClick={() => {
+            if (!selectedDocument || !activeRevision) return;
+            onRestoreRevision(
+              selectedDocument.id,
+              activeRevision.content,
+            );
+          }}
+          title={t("localHistory.restore")}
+          aria-label={t("localHistory.restore")}
+        >
+          <Icon name="history" />
+        </button>
       </div>
       <section className="tw:flex tw:min-h-0 tw:flex-[3] tw:flex-col tw:border-b tw:border-border-subtle">
-        <h2 className="tw:m-0 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:text-muted-foreground">
-          {t("localHistory.recent")}
-        </h2>
         <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1">
           {loading ? (
             <div className="tw:p-2 tw:text-sm">

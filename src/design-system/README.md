@@ -195,6 +195,10 @@ Elevation은 세 단계만 허용한다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
+- Local History의 현재 `Recent` view는 tool-window header가 소유한다. 실제
+  revision 복원 action은 검색/필터 문맥과 같은 command row에 두고 panel
+  close와 섞지 않는다. project external-change 기능이 생기기 전에는 빈 file
+  tree나 가짜 view action을 추가하지 않는다.
 - Services는 tool window 이름과 닫기 action을 전체 폭 `ToolWindowHeader`가
   소유한다. 그 아래에서 실행 가능한 database/document/session tree와
   Output/Result tab surface를 약 `32% / 68%`로 나눈다. Schema·Activity처럼
