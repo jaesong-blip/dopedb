@@ -51,6 +51,7 @@ import {
 } from "../../design-system/components/ToolWindow";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
+import { deleteWorkspaceConnection } from "../../features/workspaces/tauriAdapter";
 import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
 import ConnectionNode from "./ConnectionNode";
@@ -261,7 +262,11 @@ export function DatabaseExplorer({
   async function removeConnection(conn: ConnectionProfile) {
     commands.patch({ deletingId: conn.id });
     try {
-      await deleteConnection(conn.id);
+      if (conn.workspaceAccess === "manage") {
+        await deleteWorkspaceConnection(conn.id);
+      } else {
+        await deleteConnection(conn.id);
+      }
       commands.forget(conn.id);
       forgetDetails(conn.id);
       queryClient.removeQueries({ queryKey: qk.catalog(conn.id, catalogScope.key) });

@@ -97,3 +97,15 @@ export function bindWorkspaceConnectionCredentials(
     password,
   });
 }
+
+export function updateWorkspaceConnection(
+  profile: ConnectionProfile,
+): Promise<ConnectionProfile> {
+  return invoke("update_workspace_connection", { profile });
+}
+
+export function deleteWorkspaceConnection(
+  id: ConnectionId,
+): Promise<ConnectionProfile> {
+  return invoke("delete_workspace_connection", { id });
+}

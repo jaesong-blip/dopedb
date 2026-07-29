@@ -89,6 +89,10 @@ import { ProviderCredentialDialog } from "../../features/providers/ProviderCrede
 import type { ProviderKind } from "../../features/providers/domain";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import {
+  deleteWorkspaceConnection,
+  updateWorkspaceConnection,
+} from "../../features/workspaces/tauriAdapter";
+import {
   isIntrospectionParameter,
   nextSchemaScopeSelection,
   OBJECT_PATTERN_PARAMETER,
@@ -99,6 +103,7 @@ import {
 import {
   deleteConnection,
   installDriver,
+  testConnection,
   testConnectionProfile,
   upsertConnection,
 } from "../../features/connections/tauriAdapter";
@@ -290,8 +295,9 @@ export function ConnectionForm({
   const [catalogDriverId, setCatalogDriverId] = useState<string | null>(
     null,
   );
-  const [workspaceDialogOpen, setWorkspaceDialogOpen] =
-    useState(false);
+  const [workspaceDialogMode, setWorkspaceDialogMode] = useState<
+    "copy" | "credentials" | null
+  >(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addSearch, setAddSearch] = useState("");
   const [problemsOpen, setProblemsOpen] = useState(false);
@@ -310,6 +316,9 @@ export function ConnectionForm({
 
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
+  const isSharedTemplate = form.workspaceAccess !== "local";
+  const canEditConnection =
+    !isSharedTemplate || form.workspaceAccess === "manage";
   const supportsSqlSessionOptions =
     form.engine === "postgres" || form.engine === "mysql";
   const supportsStartupScript = supportsSqlSessionOptions;
@@ -332,6 +341,7 @@ export function ConnectionForm({
     enabled:
       persisted &&
       activeTab === "schemas" &&
+      !isSharedTemplate &&
       !isMongo &&
       catalogScope.ready,
   });
@@ -409,19 +419,24 @@ export function ConnectionForm({
     ) ??
     visibleCatalogDrivers[0] ??
     null;
+  const diagnosticProfile = isSharedTemplate
+    ? { ...form, extraParams: {} }
+    : form;
   const connectionDiagnostics = diagnoseConnection(
-    form,
+    diagnosticProfile,
     connections,
     driverCatalog.data ?? [],
     driverCatalog.isError,
     driverCatalog.isPending,
   );
   const parsedConnectionUrl =
-    connectionInputMode === "urlOnly"
+    !isSharedTemplate && connectionInputMode === "urlOnly"
       ? parseConnectionUrl(connectionUrlDraft)
       : null;
   const connectionUrlInvalid =
-    connectionInputMode === "urlOnly" && parsedConnectionUrl === null;
+    !isSharedTemplate &&
+    connectionInputMode === "urlOnly" &&
+    parsedConnectionUrl === null;
   const hasBlockingProblems =
     connectionUrlInvalid ||
     connectionDiagnostics.some(
@@ -471,17 +486,19 @@ export function ConnectionForm({
           message: t("connections.problemConnectionUrlInvalid"),
         }
       : undefined;
-  const tabs: readonly PanelTab<ConnectionTab>[] = [
-    { id: "general", label: t("connections.general") },
-    { id: "options", label: t("connections.options") },
-    { id: "sshSsl", label: t("connections.sshSsl") },
-    {
-      id: "schemas",
-      label: t("connections.schemas"),
-      disabled: isMongo,
-    },
-    { id: "advanced", label: t("connections.advanced") },
-  ];
+  const tabs: readonly PanelTab<ConnectionTab>[] = isSharedTemplate
+    ? [{ id: "general", label: t("connections.general") }]
+    : [
+        { id: "general", label: t("connections.general") },
+        { id: "options", label: t("connections.options") },
+        { id: "sshSsl", label: t("connections.sshSsl") },
+        {
+          id: "schemas",
+          label: t("connections.schemas"),
+          disabled: isMongo,
+        },
+        { id: "advanced", label: t("connections.advanced") },
+      ];
   const standardSources: Array<{
     engine: Engine;
     provider: Provider;
@@ -993,10 +1010,13 @@ export function ConnectionForm({
     setRunning(closeEditor ? "save" : "apply");
     setMessage(null);
     try {
-      const saved = await upsertConnection(
-        form,
-        password || undefined,
-      );
+      const saved = isSharedTemplate
+        ? await updateWorkspaceConnection({
+            ...form,
+            readonlyDefault: true,
+            allowWrites: false,
+          })
+        : await upsertConnection(form, password || undefined);
       setForm(saved);
       if (connectionInputMode === "urlOnly") {
         setConnectionUrlDraft(formatConnectionUrl(saved));
@@ -1046,11 +1066,20 @@ export function ConnectionForm({
   }
 
   async function removeCurrentConnection() {
-    if (isNew || form.workspaceAccess !== "local") return;
+    if (
+      isNew ||
+      (isSharedTemplate && form.workspaceAccess !== "manage")
+    ) {
+      return;
+    }
     setBusy(true);
     setMessage(null);
     try {
-      await deleteConnection(form.id);
+      if (isSharedTemplate) {
+        await deleteWorkspaceConnection(form.id);
+      } else {
+        await deleteConnection(form.id);
+      }
       toast(t("connections.connectionDeleted"));
       await onDeletedConnection(form.id);
       onCancel();
@@ -1070,7 +1099,11 @@ export function ConnectionForm({
     setRunning("test");
     setMessage(null);
     try {
-      await testConnectionProfile(form, password || undefined);
+      if (isSharedTemplate) {
+        await testConnection(form.id);
+      } else {
+        await testConnectionProfile(form, password || undefined);
+      }
       setMessage(`✓ ${t("connections.connectionOk")}`);
       setMessageIsError(false);
     } catch (error) {
@@ -1357,7 +1390,7 @@ export function ConnectionForm({
                     size="xs"
                     variant="ghost"
                     disabled={busy}
-                    onClick={() => setWorkspaceDialogOpen(true)}
+                    onClick={() => setWorkspaceDialogMode("copy")}
                     title={t("workspace.copyToWorkspace")}
                     aria-label={t("workspace.copyToWorkspace")}
                   >
@@ -1392,6 +1425,38 @@ export function ConnectionForm({
                     <Icon name="trash" />
                   </ConfirmButton>
                 </>
+              ) : null}
+              {!isNew &&
+              isSharedTemplate &&
+              form.credentialMode === "memberLocal" &&
+              form.workspaceAccess !== "view" ? (
+                <Button
+                  ref={workspaceButtonRef}
+                  iconOnly
+                  size="xs"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() =>
+                    setWorkspaceDialogMode("credentials")
+                  }
+                  title={t("workspace.bindCredentialsShort")}
+                  aria-label={t("workspace.bindCredentialsShort")}
+                >
+                  <Icon name="key" />
+                </Button>
+              ) : null}
+              {!isNew && form.workspaceAccess === "manage" ? (
+                <ConfirmButton
+                  disabled={busy}
+                  iconOnly
+                  label={t("common.delete")}
+                  size="xs"
+                  variant="ghost"
+                  confirmLabel={t("common.reallyDelete")}
+                  onConfirm={() => void removeCurrentConnection()}
+                >
+                  <Icon name="trash" />
+                </ConfirmButton>
               ) : null}
               {isNew ? (
                 <Button
@@ -1695,6 +1760,7 @@ export function ConnectionForm({
                 id="connection-name"
                 density="compact"
                 value={form.name}
+                disabled={!canEditConnection}
                 aria-invalid={
                   nameValidation?.tone === "danger" || undefined
                 }
@@ -1732,30 +1798,32 @@ export function ConnectionForm({
               <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-4">
                 <section className="tw:grid tw:gap-1.5">
                   <div className="tw:flex tw:min-h-control-md tw:flex-wrap tw:items-center tw:gap-x-6 tw:gap-y-1 tw:text-sm tw:text-foreground">
-                    <label className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5">
-                      <span>{t("connections.connectionType")}:</span>
-                      <InlineSelect
-                        value={connectionInputMode}
-                        aria-label={t("connections.connectionType")}
-                        disabled={busy}
-                        onChange={(event) =>
-                          selectConnectionInputMode(
-                            event.target.value as ConnectionInputMode,
-                          )
-                        }
-                      >
-                        <option value="default">
-                          {t(
-                            "connections.connectionTypeDefault",
-                          )}
-                        </option>
-                        <option value="urlOnly">
-                          {t(
-                            "connections.connectionTypeUrlOnly",
-                          )}
-                        </option>
-                      </InlineSelect>
-                    </label>
+                    {!isSharedTemplate ? (
+                      <label className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5">
+                        <span>{t("connections.connectionType")}:</span>
+                        <InlineSelect
+                          value={connectionInputMode}
+                          aria-label={t("connections.connectionType")}
+                          disabled={busy}
+                          onChange={(event) =>
+                            selectConnectionInputMode(
+                              event.target.value as ConnectionInputMode,
+                            )
+                          }
+                        >
+                          <option value="default">
+                            {t(
+                              "connections.connectionTypeDefault",
+                            )}
+                          </option>
+                          <option value="urlOnly">
+                            {t(
+                              "connections.connectionTypeUrlOnly",
+                            )}
+                          </option>
+                        </InlineSelect>
+                      </label>
+                    ) : null}
 
                     <label className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5">
                       <span>{t("connections.driver")}:</span>
@@ -1774,6 +1842,7 @@ export function ConnectionForm({
                           )
                         }
                         disabled={
+                          !canEditConnection ||
                           driverCatalog.isPending ||
                           drivers.length === 0
                         }
@@ -1812,7 +1881,8 @@ export function ConnectionForm({
                   ) : null}
                 </section>
 
-                {connectionInputMode === "urlOnly" ? (
+                {!isSharedTemplate &&
+                connectionInputMode === "urlOnly" ? (
                   <section className="tw:grid tw:gap-2">
                     <PropertyRow
                       label={t("connections.connectionUrl")}
@@ -1889,6 +1959,7 @@ export function ConnectionForm({
                             id="connection-host"
                             density="compact"
                             value={form.host}
+                            disabled={!canEditConnection}
                             aria-invalid={
                               hostValidation?.tone === "danger" ||
                               undefined
@@ -1921,7 +1992,10 @@ export function ConnectionForm({
                               portValidation?.tone === "danger" ||
                               undefined
                             }
-                            disabled={isMongo && srv}
+                            disabled={
+                              !canEditConnection ||
+                              (isMongo && srv)
+                            }
                             onChange={(event) => {
                               if (event.target.value !== "") {
                                 set(
@@ -1958,6 +2032,7 @@ export function ConnectionForm({
                         id="connection-database"
                         density="compact"
                         value={form.database}
+                        disabled={!canEditConnection}
                         required={isMongo}
                         aria-invalid={
                           databaseValidation?.tone === "danger" ||
@@ -1969,7 +2044,7 @@ export function ConnectionForm({
                       />
                     </PropertyRow>
 
-                    {isMongo ? (
+                    {isMongo && !isSharedTemplate ? (
                       <PropertyRow label={t("connections.srv")}>
                         <CheckboxField
                           label={t("connections.srv")}
@@ -1981,35 +2056,148 @@ export function ConnectionForm({
                       </PropertyRow>
                     ) : null}
 
-                    <PropertyRow label={t("connections.user")}>
-                      <TextInput
-                        density="compact"
-                        aria-label={t("connections.user")}
-                        value={form.username}
-                        onChange={(event) =>
-                          set("username", event.target.value)
-                        }
-                      />
-                    </PropertyRow>
+                    {isSharedTemplate ? (
+                      <>
+                        <PropertyRow
+                          label={t("connections.sslMode")}
+                        >
+                          <SelectInput
+                            density="compact"
+                            value={form.sslmode}
+                            disabled={!canEditConnection}
+                            onChange={(event) =>
+                              set("sslmode", event.target.value)
+                            }
+                          >
+                            {(isMongo
+                              ? ["disable", "require"]
+                              : sqlSslModes
+                            ).map((mode) => (
+                              <option key={mode} value={mode}>
+                                {mode}
+                              </option>
+                            ))}
+                          </SelectInput>
+                        </PropertyRow>
+                        <PropertyRow
+                          label={t("connections.environment")}
+                        >
+                          <SelectInput
+                            density="compact"
+                            value={form.env ?? ""}
+                            disabled={!canEditConnection}
+                            onChange={(event) =>
+                              set(
+                                "env",
+                                event.target.value || null,
+                              )
+                            }
+                          >
+                            <option value="">
+                              {t("common.none")}
+                            </option>
+                            <option value="dev">dev</option>
+                            <option value="staging">staging</option>
+                            <option value="prod">prod</option>
+                          </SelectInput>
+                        </PropertyRow>
+                        {!isMongo ? (
+                          <PropertyRow
+                            label={t("connections.schemaGroup")}
+                          >
+                            <TextInput
+                              density="compact"
+                              value={form.schemaGroup ?? ""}
+                              disabled={!canEditConnection}
+                              onChange={(event) =>
+                                set(
+                                  "schemaGroup",
+                                  event.target.value.trim() || null,
+                                )
+                              }
+                              placeholder={t(
+                                "connections.schemaGroupPlaceholder",
+                              )}
+                            />
+                          </PropertyRow>
+                        ) : null}
+                        <PropertyRow
+                          label={t("workspace.bindCredentialsShort")}
+                        >
+                          <div className="tw:flex tw:min-h-control-md tw:flex-wrap tw:items-center tw:gap-2">
+                            <StatusBadge
+                              tone={
+                                form.credentialMode === "managed" ||
+                                form.secretRef
+                                  ? "success"
+                                  : "warning"
+                              }
+                            >
+                              {form.credentialMode === "managed" ||
+                              form.secretRef
+                                ? t("providerCredentials.ready")
+                                : t(
+                                    "providerCredentials.credentialsRequired",
+                                  )}
+                            </StatusBadge>
+                            {form.credentialMode === "memberLocal" &&
+                            form.workspaceAccess !== "view" ? (
+                              <Button
+                                size="compact"
+                                onClick={() =>
+                                  setWorkspaceDialogMode(
+                                    "credentials",
+                                  )
+                                }
+                              >
+                                {t(
+                                  "workspace.bindCredentialsShort",
+                                )}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </PropertyRow>
+                        <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-3 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                          {t("workspace.copySecurityNote")}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <PropertyRow
+                          label={t("connections.user")}
+                        >
+                          <TextInput
+                            density="compact"
+                            aria-label={t("connections.user")}
+                            value={form.username}
+                            onChange={(event) =>
+                              set("username", event.target.value)
+                            }
+                          />
+                        </PropertyRow>
 
-                    <PropertyRow label={t("connections.password")}>
-                      <TextInput
-                        density="compact"
-                        type="password"
-                        aria-label={t("connections.password")}
-                        value={password}
-                        onChange={(event) =>
-                          setPassword(event.target.value)
-                        }
-                        placeholder={
-                          form.secretRef
-                            ? `•••••• (${t(
-                                "connections.passwordStoredExisting",
-                              )})`
-                            : t("connections.passwordStored")
-                        }
-                      />
-                    </PropertyRow>
+                        <PropertyRow
+                          label={t("connections.password")}
+                        >
+                          <TextInput
+                            density="compact"
+                            type="password"
+                            aria-label={t("connections.password")}
+                            value={password}
+                            onChange={(event) =>
+                              setPassword(event.target.value)
+                            }
+                            placeholder={
+                              form.secretRef
+                                ? `•••••• (${t(
+                                    "connections.passwordStoredExisting",
+                                  )})`
+                                : t("connections.passwordStored")
+                            }
+                          />
+                        </PropertyRow>
+                      </>
+                    )}
                   </section>
                 )}
 
@@ -2842,34 +3030,44 @@ export function ConnectionForm({
 
       <ModalFooter>
         {editorView === "dataSources" ? (
-          <>
+          canEditConnection ? (
+            <>
+              <Button
+                disabled={busy}
+                size="compact"
+                onClick={onCancel}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                disabled={busy || hasBlockingProblems}
+                size="compact"
+                onClick={() => void save(false)}
+              >
+                {running === "apply"
+                  ? t("common.saving")
+                  : t("common.apply")}
+              </Button>
+              <Button
+                variant="primary"
+                disabled={busy || hasBlockingProblems}
+                size="compact"
+                onClick={() => void save(true)}
+              >
+                {running === "save"
+                  ? t("common.saving")
+                  : t("common.ok")}
+              </Button>
+            </>
+          ) : (
             <Button
-              disabled={busy}
+              variant="primary"
               size="compact"
               onClick={onCancel}
             >
-              {t("common.cancel")}
+              {t("common.ok")}
             </Button>
-            <Button
-              disabled={busy || hasBlockingProblems}
-              size="compact"
-              onClick={() => void save(false)}
-            >
-              {running === "apply"
-                ? t("common.saving")
-                : t("common.apply")}
-            </Button>
-            <Button
-              variant="primary"
-              disabled={busy || hasBlockingProblems}
-              size="compact"
-              onClick={() => void save(true)}
-            >
-              {running === "save"
-                ? t("common.saving")
-                : t("common.ok")}
-            </Button>
-          </>
+          )
         ) : (
           <>
             <Button size="compact" onClick={onCancel}>
@@ -2899,14 +3097,18 @@ export function ConnectionForm({
           returnFocus={() => providerReturnFocusRef.current?.focus()}
         />
       ) : null}
-      {workspaceDialogOpen &&
-      !isNew &&
-      form.workspaceAccess === "local" ? (
+      {workspaceDialogMode && !isNew ? (
         <WorkspaceConnectionDialog
           connection={form}
-          mode="copy"
-          onBound={() => undefined}
-          onClose={() => setWorkspaceDialogOpen(false)}
+          mode={workspaceDialogMode}
+          onBound={(bound) => {
+            setForm(bound);
+            void onSaved(bound, false).catch((error) => {
+              setMessage(errMessage(error));
+              setMessageIsError(true);
+            });
+          }}
+          onClose={() => setWorkspaceDialogMode(null)}
           returnFocusRef={workspaceButtonRef}
         />
       ) : null}

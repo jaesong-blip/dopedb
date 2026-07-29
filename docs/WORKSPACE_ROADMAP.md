@@ -424,13 +424,15 @@ Exit criteria:
 
 ## Milestone 2 — Shared Connections
 
-Implementation snapshot (2026-07-23): an Admin or Owner can copy a Personal
-Workspace connection into a team workspace. The cloud API accepts a strict redacted
+Implementation snapshot (2026-07-29): an Admin or Owner can copy a Personal
+Workspace connection into a team workspace and manage the shared template lifecycle
+with optimistic revisions. The cloud API accepts a strict redacted
 template whose schema has no username, password, token, certificate, connection URL,
 advanced parameter, or `secret_ref` field. The sharer's secret is duplicated only
 inside that device's OS credential store. In member-local mode, other members receive a
 synchronized template with Credentials Required state and bind their own
-username/password locally. Cached
+username/password locally. Template updates preserve that member-local overlay, and
+template deletion removes the synchronized local cache and its credential reference. Cached
 role authority is enforced in manual queries, scripts, previews, schema introspection,
 dashboards, monitoring grants, and Agent CLI reads. Analyst is read-only; Editor can enter the
 existing local write/approval path; Admin/Owner can manage membership. Credential references,
@@ -462,7 +464,7 @@ lease rows contain no plaintext credential; the desktop caches only a live pool 
 shortly before provider expiry.
 
 This core deliberately shares endpoint templates plus one redacted provider resource
-selector. It does not yet satisfy the later per-connection grant, shared-template editing,
+selector. It does not yet satisfy the later per-connection grant,
 provider-resource inventory/import, or full tombstone-sync deliverables listed below.
 
 Deliverables:

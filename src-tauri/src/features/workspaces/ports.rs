@@ -132,11 +132,20 @@ pub(crate) trait WorkspaceControlPlanePort: Clone + Send + Sync + 'static {
         profile: &ConnectionProfile,
     ) -> impl Future<Output = AppResult<(ConnectionProfile, i64)>> + Send;
 
+    fn update_connection(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+        profile: &ConnectionProfile,
+        expected_revision: i64,
+    ) -> impl Future<Output = AppResult<(ConnectionProfile, i64)>> + Send;
+
     fn delete_connection(
         &self,
         account_id: &AccountId,
         workspace_id: WorkspaceId,
         connection_id: ConnectionId,
+        expected_revision: i64,
     ) -> impl Future<Output = AppResult<()>> + Send;
 
     fn console_url(&self, workspace_id: Option<WorkspaceId>) -> AppResult<String>;

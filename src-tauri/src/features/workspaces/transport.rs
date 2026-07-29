@@ -10,8 +10,9 @@ use crate::state::AppState;
 
 use super::{
     Workspace, WorkspaceAuthState, WorkspaceAuthorityFingerprint, WorkspaceConnectionCopyRequest,
-    WorkspaceCredentialBindingRequest, WorkspaceDeviceAuthorization, WorkspaceFeatureState,
-    WorkspaceLoginPoll, WorkspaceLoginPollStatus,
+    WorkspaceConnectionUpdateRequest, WorkspaceCredentialBindingRequest,
+    WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceLoginPoll,
+    WorkspaceLoginPollStatus,
 };
 
 async fn revoke_if_authority_changed(
@@ -213,6 +214,33 @@ pub async fn bind_workspace_connection_credentials(
             password: Zeroizing::new(password),
         })
         .await?;
+    state.terminals.stop_connection(id, &app);
+    Ok(profile)
+}
+
+#[tauri::command]
+pub async fn update_workspace_connection(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    profile: ConnectionProfile,
+) -> AppResult<ConnectionProfile> {
+    let connection_id = profile.id.into();
+    let profile = state
+        .services
+        .workspace
+        .update_connection(WorkspaceConnectionUpdateRequest { profile })
+        .await?;
+    state.terminals.stop_connection(connection_id, &app);
+    Ok(profile)
+}
+
+#[tauri::command]
+pub async fn delete_workspace_connection(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    id: ConnectionId,
+) -> AppResult<ConnectionProfile> {
+    let profile = state.services.workspace.delete_connection(id).await?;
     state.terminals.stop_connection(id, &app);
     Ok(profile)
 }

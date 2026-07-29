@@ -32,6 +32,10 @@ pub(crate) struct WorkspaceCredentialBindingRequest {
     pub(crate) password: Zeroizing<String>,
 }
 
+pub(crate) struct WorkspaceConnectionUpdateRequest {
+    pub(crate) profile: crate::model::ConnectionProfile,
+}
+
 pub(crate) struct WorkspaceUseCases<R, A, C, V, E>
 where
     V: ConnectionCredentialVault + ?Sized,

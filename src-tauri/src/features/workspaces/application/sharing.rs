@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::features::connections::{ConnectionCredentialVault, MAX_CONNECTION_CREDENTIAL_BYTES};
+use crate::kernel::identity::ConnectionId;
 use crate::model::{ConnectionProfile, WorkspaceConnectionAccess, WorkspaceCredentialMode};
 
 use super::super::domain::{validate_member_username, WorkspaceKind};
@@ -11,7 +12,10 @@ use super::super::ports::{
     WorkspaceConfigurationPort, WorkspaceConnectionMutationPort, WorkspaceControlPlanePort,
     WorkspaceRepositoryPort, WorkspaceRuntimePort,
 };
-use super::{WorkspaceConnectionCopyRequest, WorkspaceCredentialBindingRequest, WorkspaceUseCases};
+use super::{
+    WorkspaceConnectionCopyRequest, WorkspaceConnectionUpdateRequest,
+    WorkspaceCredentialBindingRequest, WorkspaceUseCases,
+};
 
 impl<R, A, C, V, E> WorkspaceUseCases<R, A, C, V, E>
 where
@@ -133,7 +137,7 @@ where
                 }
                 match self
                     .control_plane
-                    .delete_connection(&account.user.id, workspace_id, created.id.into())
+                    .delete_connection(&account.user.id, workspace_id, created.id.into(), revision)
                     .await
                 {
                     Ok(()) => {
@@ -158,6 +162,127 @@ where
                 Err(error)
             }
         }
+    }
+
+    /// Update one shared, secret-free template and reconcile it into the active
+    /// account scope while preserving that member's local credential overlay.
+    pub(crate) async fn update_connection(
+        &self,
+        request: WorkspaceConnectionUpdateRequest,
+    ) -> AppResult<ConnectionProfile> {
+        let WorkspaceConnectionUpdateRequest { mut profile } = request;
+        let connection_id = ConnectionId::from(profile.id);
+        let mutation = self
+            .runtime
+            .begin_connection_mutation(connection_id)
+            .await?;
+        let current = mutation.profile().clone();
+        if profile.id != current.id {
+            return Err(AppError::Config(
+                "shared connection update id does not match the active template".into(),
+            ));
+        }
+        if current.workspace_access != WorkspaceConnectionAccess::Manage {
+            return Err(AppError::Blocked {
+                reason: "managing this shared connection requires workspace manage access".into(),
+            });
+        }
+        if profile.credential_mode != current.credential_mode {
+            return Err(AppError::Config(
+                "shared connection credential mode cannot be changed by the template editor".into(),
+            ));
+        }
+        let account_user_id = mutation.selected_account_id()?;
+        let workspace_id = self.repository.active_workspace_id().await?;
+        profile.readonly_default = true;
+        profile.allow_writes = false;
+        profile.workspace_access = current.workspace_access;
+        profile.credential_mode = current.credential_mode;
+
+        let mut remote = self
+            .control_plane
+            .remote_connections(&account_user_id, workspace_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Network(
+                    "the workspace service has not deployed shared connections yet".into(),
+                )
+            })?;
+        let position = remote
+            .iter()
+            .position(|(candidate, _)| candidate.id == current.id)
+            .ok_or_else(|| AppError::NotFound(format!("shared connection {connection_id}")))?;
+        let expected_revision = remote[position].1;
+        let updated = self
+            .control_plane
+            .update_connection(&account_user_id, workspace_id, &profile, expected_revision)
+            .await?;
+        remote[position] = updated;
+
+        // Release the per-connection read pin before the runtime takes its exclusive
+        // workspace sync gate.
+        mutation.retire(connection_id).await;
+        let removed_credential_ids = self
+            .runtime
+            .sync_remote_connections(workspace_id, &account_user_id, &remote)
+            .await?;
+        for credential_id in removed_credential_ids {
+            self.delete_secret_best_effort(credential_id, "update_workspace_connection");
+        }
+        self.repository.get_connection(connection_id).await
+    }
+
+    /// Delete a shared template through the workspace authority, then remove its
+    /// local cache and every member-local credential reference returned by sync.
+    pub(crate) async fn delete_connection(
+        &self,
+        connection_id: ConnectionId,
+    ) -> AppResult<ConnectionProfile> {
+        let mutation = self
+            .runtime
+            .begin_connection_mutation(connection_id)
+            .await?;
+        let current = mutation.profile().clone();
+        if current.workspace_access != WorkspaceConnectionAccess::Manage {
+            return Err(AppError::Blocked {
+                reason: "deleting this shared connection requires workspace manage access".into(),
+            });
+        }
+        let account_user_id = mutation.selected_account_id()?;
+        let workspace_id = self.repository.active_workspace_id().await?;
+        let mut remote = self
+            .control_plane
+            .remote_connections(&account_user_id, workspace_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::Network(
+                    "the workspace service has not deployed shared connections yet".into(),
+                )
+            })?;
+        let position = remote
+            .iter()
+            .position(|(candidate, _)| candidate.id == current.id)
+            .ok_or_else(|| AppError::NotFound(format!("shared connection {connection_id}")))?;
+        let expected_revision = remote[position].1;
+        self.control_plane
+            .delete_connection(
+                &account_user_id,
+                workspace_id,
+                connection_id,
+                expected_revision,
+            )
+            .await?;
+        remote.remove(position);
+
+        mutation.retire(connection_id).await;
+        let removed_credential_ids = self
+            .runtime
+            .sync_remote_connections(workspace_id, &account_user_id, &remote)
+            .await?;
+        for credential_id in removed_credential_ids {
+            self.delete_secret_best_effort(credential_id, "delete_workspace_connection");
+        }
+        Ok(current)
     }
 
     /// Store one member's database credential only in the OS credential store and

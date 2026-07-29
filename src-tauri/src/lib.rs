@@ -114,6 +114,8 @@ pub fn run() {
             features::workspaces::transport::set_active_workspace_account,
             features::workspaces::transport::copy_connection_to_workspace,
             features::workspaces::transport::bind_workspace_connection_credentials,
+            features::workspaces::transport::update_workspace_connection,
+            features::workspaces::transport::delete_workspace_connection,
             features::providers::transport::list_provider_integrations,
             features::providers::transport::list_provider_credential_bindings,
             features::providers::transport::begin_provider_credential_binding,

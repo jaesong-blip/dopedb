@@ -134,6 +134,7 @@ pub(super) async fn share_connection(
             "{origin}/api/v1/workspaces/{workspace_id}/connections"
         ))
         .bearer_auth(token.as_str())
+        .header("if-match", "\"0\"")
         .json(&request)
         .send()
         .await
@@ -153,12 +154,69 @@ pub(super) async fn share_connection(
     )
 }
 
+/// Replace one redacted template using the content revision returned by the last
+/// workspace sync. Member-local credentials are absent from the request type.
+pub(super) async fn update_connection(
+    user_id: &str,
+    workspace_id: Uuid,
+    profile: &ConnectionProfile,
+    expected_revision: i64,
+) -> AppResult<(ConnectionProfile, i64)> {
+    let token = fetch_workspace_session(user_id)?
+        .map(Zeroizing::new)
+        .ok_or_else(|| {
+            AppError::Config(
+                "updating a shared connection requires an authenticated session".into(),
+            )
+        })?;
+    let request = SharedConnectionRequest {
+        name: &profile.name,
+        engine: crate::store::engine_str(profile.engine),
+        provider: crate::store::provider_str(profile.provider),
+        driver_id: &profile.driver_id,
+        host: &profile.host,
+        port: profile.port,
+        database: &profile.database,
+        sslmode: &profile.sslmode,
+        readonly_default: true,
+        allow_writes: false,
+        env: &profile.env,
+        schema_group: &profile.schema_group,
+    };
+    let origin = origin()?;
+    let response = client()?
+        .patch(format!(
+            "{origin}/api/v1/workspaces/{workspace_id}/connections/{}",
+            profile.id
+        ))
+        .bearer_auth(token.as_str())
+        .header("if-match", format!("\"{expected_revision}\""))
+        .json(&request)
+        .send()
+        .await
+        .map_err(|error| request_error("updating shared connection", error))?;
+    if response.status() == StatusCode::UNAUTHORIZED {
+        delete_workspace_session(user_id)?;
+    }
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    remote_connection(
+        response
+            .json::<CreatedConnectionResponse>()
+            .await
+            .map_err(|error| request_error("reading updated shared connection", error))?
+            .connection,
+    )
+}
+
 /// Roll back a newly shared template when a later local credential/cache step fails.
 /// The server performs the same workspace and RBAC checks as every other mutation.
 pub(super) async fn delete_connection(
     user_id: &str,
     workspace_id: Uuid,
     connection_id: Uuid,
+    expected_revision: i64,
 ) -> AppResult<()> {
     let token = fetch_workspace_session(user_id)?
         .map(Zeroizing::new)
@@ -173,6 +231,7 @@ pub(super) async fn delete_connection(
             "{origin}/api/v1/workspaces/{workspace_id}/connections/{connection_id}"
         ))
         .bearer_auth(token.as_str())
+        .header("if-match", format!("\"{expected_revision}\""))
         .send()
         .await
         .map_err(|error| request_error("deleting shared connection", error))?;

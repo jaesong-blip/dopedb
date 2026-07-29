@@ -171,7 +171,9 @@ export default function ConnectionNode(props: Props) {
         <span className="db-conn-name tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
           {connection.name || t("app.unnamed")}
         </span>
-        {connection.engine !== "mongodb" && availableSchemas.length > 0 ? (
+        {connection.workspaceAccess === "local" &&
+        connection.engine !== "mongodb" &&
+        availableSchemas.length > 0 ? (
           <span
             className="tw:shrink-0"
             onPointerDown={(event) => event.stopPropagation()}
@@ -182,10 +184,7 @@ export default function ConnectionNode(props: Props) {
             <ToolbarMenu
               label={t("connections.introspectionScope")}
               align="start"
-              disabled={
-                props.schemaScopeSaving ||
-                connection.workspaceAccess === "view"
-              }
+              disabled={props.schemaScopeSaving}
               triggerVariant="treeBadge"
               menuSize="scope"
               trigger={
@@ -310,7 +309,8 @@ export default function ConnectionNode(props: Props) {
           </Button>
           {props.openMenuId === connection.id ? (
             <PopupMenu id={`connection-menu-${connection.id}`}>
-              {connection.workspaceAccess === "local" ? (
+              {connection.workspaceAccess === "local" ||
+              connection.workspaceAccess === "manage" ? (
                 <PopupMenuItem
                   onClick={() => {
                     props.onOpenMenu(null);
@@ -319,8 +319,10 @@ export default function ConnectionNode(props: Props) {
                 >
                   {t("connections.edit")}
                 </PopupMenuItem>
-              ) : connection.workspaceAccess !== "view" &&
-                connection.credentialMode === "memberLocal" ? (
+              ) : null}
+              {connection.workspaceAccess !== "view" &&
+              connection.workspaceAccess !== "local" &&
+              connection.credentialMode === "memberLocal" ? (
                 <PopupMenuItem
                   onClick={() => {
                     props.onOpenMenu(null);
@@ -361,7 +363,8 @@ export default function ConnectionNode(props: Props) {
               >
                 {t("connections.showRowCounts")}
               </PopupMenuCheckbox>
-              {connection.workspaceAccess === "local" ? (
+              {connection.workspaceAccess === "local" ||
+              connection.workspaceAccess === "manage" ? (
                 <ConfirmButton
                   confirmLabel={t(
                     isDemoSqliteConnection(connection)

@@ -43,7 +43,7 @@ use authentication::{
 };
 use connections::{
     authorize_connection, delete_connection, issue_managed_connection_lease,
-    release_managed_connection_lease, remote_connections, share_connection,
+    release_managed_connection_lease, remote_connections, share_connection, update_connection,
 };
 use provider_local_target::provider_local_target;
 
@@ -401,16 +401,34 @@ impl WorkspaceControlPlanePort for HostedWorkspaceControlPlane {
         share_connection(account_id.as_str(), workspace_id.into(), profile).await
     }
 
+    async fn update_connection(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+        profile: &ConnectionProfile,
+        expected_revision: i64,
+    ) -> AppResult<(ConnectionProfile, i64)> {
+        update_connection(
+            account_id.as_str(),
+            workspace_id.into(),
+            profile,
+            expected_revision,
+        )
+        .await
+    }
+
     async fn delete_connection(
         &self,
         account_id: &AccountId,
         workspace_id: WorkspaceId,
         connection_id: ConnectionId,
+        expected_revision: i64,
     ) -> AppResult<()> {
         delete_connection(
             account_id.as_str(),
             workspace_id.into(),
             connection_id.into(),
+            expected_revision,
         )
         .await
     }
