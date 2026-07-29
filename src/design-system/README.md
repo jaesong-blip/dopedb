@@ -67,6 +67,9 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   button에 붙이지 않는다. 실제 활성 workspace 이름과 전환, 새 연결, workspace
   관리 action을 제공하는 portal menu여야 하며 Explorer 안에 같은 selector를
   중복 배치하지 않는다.
+- title toolbar 중앙에는 현재 주요 tool window의 직접 launcher만 둔다.
+  보조 tool window와 document 생성 action은 끝단의 실제 `ToolbarMenu`에
+  배치하고, 구현되지 않은 Files/VCS를 모양만 있는 launcher로 만들지 않는다.
 - tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
   하나의 layout 문법으로 구현한다.
 - 색상보다 `muted`, `selection`, `border`를 먼저 사용한다.

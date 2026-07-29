@@ -10,6 +10,9 @@ import {
   type SqlEditorStatus,
 } from "../queries/editorStatus";
 import { Icon } from "../../components/Icon";
+import ToolbarMenu, {
+  ToolbarMenuItem,
+} from "../../components/ToolbarMenu";
 import {
   StatusBarItem,
   StatusDot,
@@ -103,43 +106,12 @@ export function IdeTopBar({
         <button
           type="button"
           className="btn small icon-only"
-          disabled={!selected || !supportsSql}
-          onClick={onToggleLocalHistory}
-          title={t("localHistory.title")}
-          aria-label={t("localHistory.title")}
-          aria-pressed={localHistoryOpen}
-        >
-          <Icon name="history" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only"
           onClick={onToggleServices}
           title={t("services.title")}
           aria-label={t("services.title")}
           aria-pressed={servicesOpen}
         >
           <Icon name="list" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only"
-          onClick={() => onArea("dashboard")}
-          title={t("tabs.dashboard")}
-          aria-label={t("tabs.dashboard")}
-          aria-pressed={area === "dashboard" && databaseExplorerOpen}
-        >
-          <Icon name="dashboard" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only"
-          disabled={queryDisabled}
-          onClick={onNewQuery}
-          title={t("ide.action.newQuery")}
-          aria-label={t("ide.action.newQuery")}
-        >
-          <Icon name="play" />
         </button>
         <button
           ref={terminalButtonRef}
@@ -153,6 +125,37 @@ export function IdeTopBar({
         >
           <Icon name="user" />
         </button>
+        <button
+          type="button"
+          className="btn small icon-only"
+          onClick={() => onArea("dashboard")}
+          title={t("tabs.dashboard")}
+          aria-label={t("tabs.dashboard")}
+          aria-pressed={area === "dashboard" && databaseExplorerOpen}
+        >
+          <Icon name="dashboard" />
+        </button>
+        <ToolbarMenu
+          align="start"
+          icon="moreHorizontal"
+          label={t("ide.action.more")}
+        >
+          <ToolbarMenuItem
+            icon={localHistoryOpen ? "check" : "history"}
+            disabled={!selected || !supportsSql}
+            onClick={onToggleLocalHistory}
+            aria-pressed={localHistoryOpen}
+          >
+            {t("localHistory.title")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
+            icon="play"
+            disabled={queryDisabled}
+            onClick={onNewQuery}
+          >
+            {t("ide.action.newQuery")}
+          </ToolbarMenuItem>
+        </ToolbarMenu>
       </div>
 
       <div className="tw:ml-auto tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:[&_.btn]:[--ds-icon-button-size:28px]">
