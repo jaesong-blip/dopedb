@@ -14,6 +14,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { QueryResult } from "../ipc/types";
 import type { GridSort } from "../lib/sqlBuild";
@@ -21,6 +22,13 @@ import type { SqlStreamRowSource } from "../features/queries/domain";
 import { Icon } from "./Icon";
 import DataGridVirtual from "./DataGridVirtual";
 import { useI18n } from "../lib/i18n";
+import {
+  extendGridSelection,
+  gridSelectionClipboardText,
+  gridSelectionIncludes,
+  singleGridCell,
+  type GridCellSelection,
+} from "./dataGridSelection";
 
 function cell(v: unknown): string {
   if (v === null || v === undefined) return "NULL";
@@ -107,7 +115,7 @@ function DataGridTable({
   // Column widths keyed by header-cell index (0 = rownum). Empty map = auto layout.
   const [widths, setWidths] = useState<Record<number, number>>({});
   // Selected cell (click to select, ⌘C to copy, Esc to clear). Independent of onCellClick.
-  const [sel, setSel] = useState<{ row: number; col: number } | null>(null);
+  const [sel, setSel] = useState<GridCellSelection | null>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const sig = result.columns.join(" ");
   useEffect(() => {
@@ -182,8 +190,12 @@ function DataGridTable({
   }
 
   // Click and Enter (see below) both land here so keyboard nav opens the same viewer a click does.
-  function selectCell(i: number, j: number) {
-    setSel({ row: i, col: j });
+  function selectCell(i: number, j: number, extend: boolean) {
+    if (extend && sel) {
+      setSel(extendGridSelection(sel, i, j));
+      return;
+    }
+    setSel(singleGridCell(i, j));
     onSelectRow?.(i);
     onCellClick?.(result.rows[i]?.[j], i, result.columns[j]);
   }
@@ -201,7 +213,12 @@ function DataGridTable({
       if ((window.getSelection()?.toString() ?? "") !== "") return; // real selection wins
       e.preventDefault();
       void navigator.clipboard.writeText(
-        copyText(result.rows[sel.row]?.[sel.col]),
+        gridSelectionClipboardText(
+          sel,
+          (row) => result.rows[row],
+          cell,
+          copyText,
+        ),
       );
       return;
     }
@@ -213,7 +230,7 @@ function DataGridTable({
       result.rows.length > 0
     ) {
       e.preventDefault();
-      const cur = sel ?? { row: 0, col: 0 };
+      const cur = sel?.focus ?? { row: 0, col: 0 };
       const row =
         !sel
           ? 0
@@ -228,7 +245,11 @@ function DataGridTable({
           : e.key === "ArrowRight"
             ? Math.min(result.columns.length - 1, cur.col + 1)
             : cur.col;
-      setSel({ row, col });
+      setSel(
+        e.shiftKey && sel
+          ? extendGridSelection(sel, row, col)
+          : singleGridCell(row, col),
+      );
       tableRef.current
         ?.querySelector<HTMLTableCellElement>(
           `tbody tr:nth-child(${row + 1}) td:nth-child(${col + 2})`,
@@ -237,7 +258,7 @@ function DataGridTable({
       return;
     }
     if (e.key === "Enter" && sel) {
-      selectCell(sel.row, sel.col);
+      selectCell(sel.focus.row, sel.focus.col, false);
     }
   }
 
@@ -373,11 +394,13 @@ function DataGridTable({
               </td>
               {row.map((v, j) => {
                 const text = cell(v);
-                const isSel = sel?.row === i && sel.col === j;
+                const isSel = gridSelectionIncludes(sel, i, j);
+                const isFocus =
+                  sel?.focus.row === i && sel.focus.col === j;
                 return (
                   <td
                     key={j}
-                    className={`tw:max-w-[480px] tw:overflow-hidden tw:bg-background tw:text-ellipsis${v === null ? " tw:text-muted-foreground tw:italic" : ""}${numericCols[j] ? " tw:text-right tw:tabular-nums" : ""}${interactive ? " tw:cursor-pointer" : ""}${isSel ? " tw:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]" : ""}`}
+                    className={`tw:max-w-[480px] tw:overflow-hidden tw:bg-background tw:text-ellipsis${v === null ? " tw:text-muted-foreground tw:italic" : ""}${numericCols[j] ? " tw:text-right tw:tabular-nums" : ""}${interactive ? " tw:cursor-pointer" : ""}${isSel ? " tw:!bg-selection" : ""}${isFocus ? " tw:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]" : ""}`}
                     // fixed layout clips by width not length, so any value can be truncated → always title it
                     title={
                       fixed || text.length > 40 || text.includes("\n")
@@ -385,10 +408,12 @@ function DataGridTable({
                         : undefined
                     }
                     // Roving tabindex: only the selected cell is a tab stop; arrows move it (onKeyDown above).
-                    tabIndex={isSel ? 0 : -1}
+                    tabIndex={isFocus ? 0 : -1}
                     aria-selected={isSel}
                     data-grid-value
-                    onClick={() => selectCell(i, j)}
+                    onClick={(event: ReactMouseEvent) =>
+                      selectCell(i, j, event.shiftKey)
+                    }
                   >
                     {text}
                   </td>

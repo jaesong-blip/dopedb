@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { virtualGridWindow } from "./DataGridVirtual";
+import {
+  extendGridSelection,
+  gridSelectionClipboardText,
+  gridSelectionIncludes,
+  singleGridCell,
+} from "./dataGridSelection";
 
 const offsets = Array.from({ length: 51 }, (_, index) => 56 + index * 180);
 
@@ -19,7 +25,7 @@ describe("DataGridVirtual window", () => {
     expect(cellCount).toBeLessThan(400);
   });
 
-  it("includes the first and final keyboard-scrollable coordinates", () => {
+  it("keeps boundary coordinates and rectangular selection deterministic", () => {
     expect(
       virtualGridWindow(1_000, 50, offsets, {
         top: 0,
@@ -36,5 +42,20 @@ describe("DataGridVirtual window", () => {
     });
     expect(final.endRow).toBe(1_000);
     expect(final.visibleColumns[final.visibleColumns.length - 1]).toBe(49);
+
+    const selection = extendGridSelection(singleGridCell(0, 1), 1, 2);
+    expect(gridSelectionIncludes(selection, 0, 1)).toBe(true);
+    expect(gridSelectionIncludes(selection, 1, 2)).toBe(true);
+    expect(gridSelectionIncludes(selection, 0, 0)).toBe(false);
+    expect(
+      gridSelectionClipboardText(
+        selection,
+        (row) => [
+          ["a", "b", "c"],
+          ["d", "e", "f"],
+        ][row],
+        String,
+      ),
+    ).toBe("b\tc\ne\tf");
   });
 });

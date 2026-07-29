@@ -232,6 +232,10 @@ Elevation은 세 단계만 허용한다.
   컴포넌트의 정적 Tailwind v4 utility와 semantic token으로만 구성한다.
   grid 전용 CSS 파일이나 class selector를 다시 만들지 않는다. 주변 pane이
   compact/busy 상태를 투영할 때도 이 data attribute를 사용한다.
+  두 grid의 셀 선택은 공용 anchor/focus 좌표 계약을 사용한다. Shift+click과
+  Shift+방향키는 직사각형 범위를 확장하고, 범위 복사는 행을 줄바꿈하고 셀을
+  tab으로 구분한 텍스트를 만든다. 선택 배경과 focus ring도 기존
+  `selection`/`ring` semantic token만 사용한다.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.
 - `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.
