@@ -71,7 +71,6 @@ type Props = {
   onRefresh: () => void;
   onDelete: () => void;
   onOpenTable: (table: CatalogTable) => void;
-  onShowDdl: (table: CatalogTable) => void;
   onRequestDetails: () => void;
   onRetryOverview: () => void;
   onToggleRelationSection: (key: string) => void;
@@ -392,7 +391,6 @@ export default function ConnectionNode(props: Props) {
           collapsedSections={props.collapsedSections}
           objectSectionsOpen={props.objectSectionsOpen}
           onOpenTable={props.onOpenTable}
-          onShowDdl={props.onShowDdl}
           onRequestDetails={props.onRequestDetails}
           onRetryOverview={props.onRetryOverview}
           onToggleRelationSection={props.onToggleRelationSection}

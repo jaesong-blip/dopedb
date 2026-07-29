@@ -131,7 +131,7 @@ export default function TableExpressionBar({
   const { t } = useI18n();
   return (
     <div
-      className="tw:grid tw:shrink-0 tw:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] tw:border-b tw:border-border-subtle tw:bg-background tw:@max-[760px]:grid-cols-2"
+      className="tw:grid tw:shrink-0 tw:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)] tw:border-b tw:border-border-subtle tw:bg-background tw:@max-[480px]:grid-cols-2"
       aria-label={t("tables.expressionBar")}
     >
       <ExpressionField

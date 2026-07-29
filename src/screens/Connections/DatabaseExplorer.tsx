@@ -364,9 +364,6 @@ export function DatabaseExplorer({
         onRefresh={() => void refreshSchema(connection.id)}
         onDelete={() => void removeConnection(connection)}
         onOpenTable={(table) => onOpenTable(connection, table)}
-        onShowDdl={(table) =>
-          commands.openDdlDialog({ connection, table })
-        }
         onRequestDetails={() => requestDetails(connection.id)}
         onRetryOverview={() => {
           commands.clearRefreshError(connection.id);

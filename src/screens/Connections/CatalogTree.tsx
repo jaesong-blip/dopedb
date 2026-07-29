@@ -49,7 +49,6 @@ type Props = {
   collapsedSections: Set<string>;
   objectSectionsOpen: Set<string>;
   onOpenTable: (table: CatalogTable) => void;
-  onShowDdl: (table: CatalogTable) => void;
   onRequestDetails: () => void;
   onRetryOverview: () => void;
   onToggleRelationSection: (key: string) => void;
@@ -460,16 +459,6 @@ export default function CatalogTree(props: Props) {
                 ~{table.rowEstimate.toLocaleString()}
               </span>
             )}
-          {!isDocumentEngine(connection.engine) && (
-            <button
-              className="ddl-btn tw:absolute tw:top-1/2 tw:right-2 tw:-translate-y-1/2 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:text-2xs tw:font-semibold tw:text-muted-foreground tw:opacity-0 tw:transition-opacity tw:group-hover:opacity-100 tw:group-focus-within:opacity-100 tw:hover:border-ring tw:hover:text-foreground"
-              type="button"
-              title={t("connections.showDdl")}
-              onClick={() => props.onShowDdl(table)}
-            >
-              DDL
-            </button>
-          )}
         </div>
         {detailsOpen && renderTableDetails(table)}
       </div>
