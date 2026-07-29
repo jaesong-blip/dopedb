@@ -76,6 +76,13 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   provider/driver `CommandMenu`를 즉시 연다. engine/provider preset이 명시된
   진입만 해당 속성 form을 바로 표시한다. 실제 생성하지 않는 demo나 지원하지
   않는 provider resource를 선택지 설명으로 약속하지 않는다.
+- Data Sources and Drivers dialog는 왼쪽의 세로 catalog rail에서 data source,
+  driver, cloud credential 책임을 분리한다. data source와 driver는 각각 하나의
+  검색 가능한 목록만 가지며, driver detail은 backend catalog가 반환한 이름,
+  version, 설치 상태, 지원 connection method와 capability만 표시한다. cloud
+  action은 실제 credential inventory를 열고 로그인·권한·조회 실패를 그대로
+  드러내며, 존재하지 않는 cloud resource browser를 모양만 만들어 대체하지
+  않는다.
 - tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
   하나의 layout 문법으로 구현한다.
 - Database Explorer header는 전체 tree의 expand/collapse, 실제 view option,
@@ -163,6 +170,8 @@ Elevation은 세 단계만 허용한다.
   우측 action 슬롯.
 - `ToolWindowSection`: dense tool window 안의 제목 있는 명령 그룹.
 - `ToolWindowAction`: provider/demo/object launcher의 icon-label-trailing 행.
+- `ToolWindowRailAction`: tool window·catalog의 좁은 세로 rail에서 쓰는
+  icon action과 pressed/selected 상태.
 - `Field`, `TextInput`, `SelectInput`, `CheckboxField`: label, focus, disabled
   상태를 함께 소유하는 dense form control.
 - `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.

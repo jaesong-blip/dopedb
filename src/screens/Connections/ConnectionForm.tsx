@@ -35,8 +35,10 @@ import {
   PanelTabs,
   type PanelTab,
 } from "../../design-system/components/PanelTabs";
+import { TreeSearch } from "../../design-system/components/TreeControls";
 import {
   ToolWindowAction,
+  ToolWindowRailAction,
   ToolWindowSection,
 } from "../../design-system/components/ToolWindow";
 import { parseConnectionUrl } from "../../features/connections/connectionUrl";
@@ -90,6 +92,8 @@ const PROVIDER_ORDER: Provider[] = [
   "planetScale",
   "gcpCloudSql",
 ];
+
+type ConnectionEditorView = "dataSources" | "drivers";
 
 const POSTGRES_SSL_MODES = [
   "disable",
@@ -240,7 +244,14 @@ export function ConnectionForm({
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsError, setMessageIsError] = useState(false);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
-    useState<ProviderKind | null>(null);
+    useState<ProviderKind | "all" | null>(null);
+  const [editorView, setEditorView] =
+    useState<ConnectionEditorView>("dataSources");
+  const [sourceSearch, setSourceSearch] = useState("");
+  const [driverSearch, setDriverSearch] = useState("");
+  const [catalogDriverId, setCatalogDriverId] = useState<string | null>(
+    null,
+  );
   const [workspaceDialogOpen, setWorkspaceDialogOpen] =
     useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -305,6 +316,43 @@ export function ConnectionForm({
     : drivers.find((driver) => driver.recommended) ??
       drivers[0] ??
       null;
+  const normalizedSourceSearch = sourceSearch.trim().toLocaleLowerCase();
+  const visibleConnections = normalizedSourceSearch
+    ? connections.filter((connection) =>
+        [
+          connection.name,
+          connection.engine,
+          connection.provider,
+          connection.host,
+          connection.database,
+        ].some((value) =>
+          value.toLocaleLowerCase().includes(normalizedSourceSearch),
+        ),
+      )
+    : connections;
+  const normalizedDriverSearch = driverSearch.trim().toLocaleLowerCase();
+  const visibleCatalogDrivers = (driverCatalog.data ?? []).filter(
+    (driver) =>
+      normalizedDriverSearch.length === 0 ||
+      [
+        driver.name,
+        driver.engine,
+        driver.version,
+        ...driver.supportedProviders,
+        ...driver.capabilities,
+      ].some((value) =>
+        value.toLocaleLowerCase().includes(normalizedDriverSearch),
+      ),
+  );
+  const catalogDriver =
+    visibleCatalogDrivers.find(
+      (driver) => driver.id === catalogDriverId,
+    ) ??
+    visibleCatalogDrivers.find(
+      (driver) => driver.id === activeDriver?.id,
+    ) ??
+    visibleCatalogDrivers[0] ??
+    null;
   const connectionDiagnostics = diagnoseConnection(
     form,
     connections,
@@ -605,7 +653,7 @@ export function ConnectionForm({
   }
 
   function openProviderCredentials(
-    provider: ProviderKind,
+    provider?: ProviderKind,
     returnFocus?: HTMLElement | null,
   ) {
     providerReturnFocusRef.current =
@@ -613,7 +661,7 @@ export function ConnectionForm({
       (document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null);
-    setProviderCredentialsOpen(provider);
+    setProviderCredentialsOpen(provider ?? "all");
   }
 
   function setSrv(checked: boolean) {
@@ -929,9 +977,6 @@ export function ConnectionForm({
           >
             {t("connections.dataSourcesAndDrivers")}
           </h2>
-          <span className="tw:text-sm tw:text-muted-foreground">
-            — {isNew ? t("connections.new") : t("connections.edit")}
-          </span>
         </div>
         <button
           type="button"
@@ -945,12 +990,45 @@ export function ConnectionForm({
       </header>
 
       <div className="tw:flex tw:min-h-0 tw:flex-1">
+        <nav
+          className="tw:flex tw:w-11 tw:shrink-0 tw:flex-col tw:items-center tw:gap-1 tw:border-r tw:border-border-subtle tw:bg-card tw:px-1 tw:py-2 tw:@max-[760px]:hidden"
+          aria-label={t("connections.dataSourceCatalogNavigation")}
+        >
+          <ToolWindowRailAction
+            selected={editorView === "dataSources"}
+            onClick={() => setEditorView("dataSources")}
+            title={t("connections.dataSources")}
+            aria-label={t("connections.dataSources")}
+          >
+            <Icon name="database" />
+          </ToolWindowRailAction>
+          <ToolWindowRailAction
+            selected={editorView === "drivers"}
+            onClick={() => setEditorView("drivers")}
+            title={t("connections.drivers")}
+            aria-label={t("connections.drivers")}
+          >
+            <Icon name="download" />
+          </ToolWindowRailAction>
+          <ToolWindowRailAction
+            onClick={() => openProviderCredentials()}
+            title={t("connections.connectCloudProvider")}
+            aria-label={t("connections.connectCloudProvider")}
+          >
+            <Icon name="key" />
+          </ToolWindowRailAction>
+        </nav>
         <aside className="tw:flex tw:w-[244px] tw:shrink-0 tw:flex-col tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
           <div className="tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:border-b tw:border-border-subtle tw:px-3">
             <strong className="tw:text-sm">
-              {t("connections.dataSources")}
+              {t(
+                editorView === "dataSources"
+                  ? "connections.dataSources"
+                  : "connections.drivers",
+              )}
             </strong>
-            <div className="tw:flex tw:items-center tw:gap-1">
+            {editorView === "dataSources" ? (
+              <div className="tw:flex tw:items-center tw:gap-1">
               <div
                 ref={addMenuAnchorRef}
                 className="tw:relative tw:flex"
@@ -1136,14 +1214,47 @@ export function ConnectionForm({
                   <Icon name="copy" />
                 </button>
               ) : null}
-            </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn small icon-only icon-xs"
+                disabled={driverCatalog.isFetching}
+                onClick={() => void driverCatalog.refetch()}
+                title={t("common.refresh")}
+                aria-label={t("common.refresh")}
+              >
+                <Icon name="refresh" />
+              </button>
+            )}
+          </div>
+          <div className="tw:border-b tw:border-border-subtle tw:p-2">
+            <TreeSearch
+              value={
+                editorView === "dataSources"
+                  ? sourceSearch
+                  : driverSearch
+              }
+              placeholder={t(
+                editorView === "dataSources"
+                  ? "connections.searchDataSources"
+                  : "connections.searchDrivers",
+              )}
+              clearLabel={t("common.close")}
+              onChange={
+                editorView === "dataSources"
+                  ? setSourceSearch
+                  : setDriverSearch
+              }
+            />
           </div>
           <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-2">
-            {connections.length > 0 ? (
+            {editorView === "dataSources" &&
+            visibleConnections.length > 0 ? (
               <ToolWindowSection
                 title={t("connections.dataSources")}
               >
-                {connections.map((connection) => (
+                {visibleConnections.map((connection) => (
                   <ToolWindowAction
                     key={connection.id}
                     leading={<EngineMark engine={connection.engine} />}
@@ -1156,7 +1267,53 @@ export function ConnectionForm({
                 ))}
               </ToolWindowSection>
             ) : null}
-            <div className="tw:mt-3 tw:border-t tw:border-border-subtle tw:pt-2">
+            {editorView === "dataSources" &&
+            connections.length > 0 &&
+            visibleConnections.length === 0 ? (
+              <p className="tw:px-2 tw:py-4 tw:text-center tw:text-sm tw:text-muted-foreground">
+                {t("connections.noDataSourceResults")}
+              </p>
+            ) : null}
+            {editorView === "drivers" ? (
+              driverCatalog.isPending ? (
+                <p className="tw:px-2 tw:py-4 tw:text-center tw:text-sm tw:text-muted-foreground">
+                  {t("connections.driverCatalogLoading")}
+                </p>
+              ) : driverCatalog.isError ? (
+                <p
+                  className="tw:px-2 tw:py-4 tw:text-center tw:text-sm tw:text-danger"
+                  role="alert"
+                >
+                  {t("connections.problemDriverCatalogUnavailable")}
+                </p>
+              ) : visibleCatalogDrivers.length > 0 ? (
+                <ToolWindowSection title={t("connections.drivers")}>
+                  {visibleCatalogDrivers.map((driver) => (
+                    <ToolWindowAction
+                      key={driver.id}
+                      leading={<EngineMark engine={driver.engine} />}
+                      trailing={
+                        driver.installState === "installed" ? (
+                          <Icon name="check" />
+                        ) : (
+                          <Icon name="chevronRight" />
+                        )
+                      }
+                      selected={catalogDriver?.id === driver.id}
+                      onClick={() => setCatalogDriverId(driver.id)}
+                    >
+                      {driver.name}
+                    </ToolWindowAction>
+                  ))}
+                </ToolWindowSection>
+              ) : (
+                <p className="tw:px-2 tw:py-4 tw:text-center tw:text-sm tw:text-muted-foreground">
+                  {t("connections.noDriverResults")}
+                </p>
+              )
+            ) : null}
+            {editorView === "dataSources" ? (
+              <div className="tw:mt-3 tw:border-t tw:border-border-subtle tw:pt-2">
               <ToolWindowAction
                 leading={
                   <Icon
@@ -1183,11 +1340,14 @@ export function ConnectionForm({
               >
                 {t("connections.problems")}
               </ToolWindowAction>
-            </div>
+              </div>
+            ) : null}
           </nav>
         </aside>
 
         <section className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
+          {editorView === "dataSources" ? (
+            <>
           <div className="tw:grid tw:shrink-0 tw:grid-cols-[92px_minmax(0,1fr)] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:py-3">
             <span className="tw:text-sm tw:text-muted-foreground">
               {t("connections.name")}
@@ -1961,6 +2121,103 @@ export function ConnectionForm({
               </div>
             ) : null}
           </div>
+            </>
+          ) : catalogDriver ? (
+            <>
+              <div className="tw:flex tw:min-h-control-lg tw:shrink-0 tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4">
+                <EngineMark engine={catalogDriver.engine} />
+                <strong className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                  {catalogDriver.name}
+                </strong>
+                <span
+                  className={
+                    catalogDriver.installState === "installed"
+                      ? "badge status-ok"
+                      : "badge"
+                  }
+                >
+                  {driverStatus(catalogDriver)}
+                </span>
+              </div>
+              <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-5">
+                <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[760px] tw:gap-5">
+                  <section className="tw:grid tw:gap-3">
+                    <h3>{t("connections.driverDetails")}</h3>
+                    <dl className="tw:grid tw:grid-cols-[140px_minmax(0,1fr)] tw:gap-x-4 tw:gap-y-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-4 tw:text-sm">
+                      <dt className="tw:text-muted-foreground">
+                        {t("connections.engine")}
+                      </dt>
+                      <dd className="tw:m-0">{catalogDriver.engine}</dd>
+                      <dt className="tw:text-muted-foreground">
+                        {t("connections.driverVersion")}
+                      </dt>
+                      <dd className="tw:m-0 tw:font-mono">
+                        {catalogDriver.version}
+                      </dd>
+                      <dt className="tw:text-muted-foreground">
+                        {t("connections.driverInstallation")}
+                      </dt>
+                      <dd className="tw:m-0">
+                        {driverStatus(catalogDriver)}
+                      </dd>
+                      <dt className="tw:text-muted-foreground">
+                        {t("connections.supportedProviders")}
+                      </dt>
+                      <dd className="tw:m-0 tw:flex tw:flex-wrap tw:gap-1">
+                        {catalogDriver.supportedProviders.map(
+                          (provider) => (
+                            <span className="badge" key={provider}>
+                              {providerLabel(provider)}
+                            </span>
+                          ),
+                        )}
+                      </dd>
+                    </dl>
+                    {catalogDriver.installMode === "managed" &&
+                    catalogDriver.installState === "available" ? (
+                      <div>
+                        <button
+                          type="button"
+                          className="btn primary"
+                          disabled={installingDriverId !== null}
+                          onClick={() =>
+                            void downloadDriver(catalogDriver)
+                          }
+                        >
+                          <Icon name="download" />
+                          {installingDriverId === catalogDriver.id
+                            ? t("connections.driverDownloading")
+                            : t("connections.driverDownload")}
+                        </button>
+                      </div>
+                    ) : null}
+                  </section>
+                  <section className="tw:grid tw:gap-3">
+                    <h3>{t("connections.driverCapabilities")}</h3>
+                    <div className="tw:flex tw:flex-wrap tw:gap-2">
+                      {catalogDriver.capabilities.map((capability) => (
+                        <span className="badge" key={capability}>
+                          {capability}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                  <section className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-3">
+                    <Icon name="info" className="tw:mt-0.5 tw:text-info" />
+                    <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                      {t("connections.driverCatalogScope")}
+                    </p>
+                  </section>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="tw:grid tw:min-h-0 tw:flex-1 tw:place-items-center tw:p-6 tw:text-center tw:text-sm tw:text-muted-foreground">
+              {driverCatalog.isError
+                ? t("connections.problemDriverCatalogUnavailable")
+                : t("connections.noDriverResults")}
+            </div>
+          )}
         </section>
       </div>
 
@@ -1968,6 +2225,8 @@ export function ConnectionForm({
         className="tw:flex tw:min-h-[52px] tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-card tw:px-4"
         data-primary-flow
       >
+        {editorView === "dataSources" ? (
+          <>
         <button
           type="button"
           className="btn"
@@ -2036,10 +2295,29 @@ export function ConnectionForm({
             ? t("common.saving")
             : t("common.ok")}
         </button>
+          </>
+        ) : (
+          <>
+            <span className="tw:flex-1" />
+            <button className="btn" onClick={onCancel}>
+              {t("common.cancel")}
+            </button>
+            <button
+              className="btn primary"
+              onClick={() => setEditorView("dataSources")}
+            >
+              {t("connections.dataSources")}
+            </button>
+          </>
+        )}
       </footer>
       {providerCredentialsOpen ? (
         <ProviderCredentialDialog
-          initialProvider={providerCredentialsOpen}
+          initialProvider={
+            providerCredentialsOpen === "all"
+              ? undefined
+              : providerCredentialsOpen
+          }
           onClose={() => setProviderCredentialsOpen(null)}
           returnFocus={() => providerReturnFocusRef.current?.focus()}
         />

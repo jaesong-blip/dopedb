@@ -48,6 +48,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.database": "Database",
     "connections.databaseExplorer": "Database Explorer",
     "connections.databaseExplorerActions": "Database Explorer actions",
+    "connections.dataSourceCatalogNavigation":
+      "Data source catalog navigation",
     "connections.dataSources": "Data Sources",
     "connections.dataSourcesAndDrivers": "Data Sources and Drivers",
     "connections.editData": "Edit Data",
@@ -60,14 +62,20 @@ export const connectionsCatalog = defineCatalog(
     "connections.driverAutomatic": "Automatic (recommended)",
     "connections.driverBundled": "Bundled with this app",
     "connections.driverCatalogLoading": "Loading driver catalog...",
+    "connections.driverCatalogScope":
+      "This catalog only lists drivers the app can diagnose or install. Unsupported drivers are not presented as available.",
+    "connections.driverDetails": "Driver details",
     "connections.driverDownload": "Download",
     "connections.driverDownloadRequired": "Download required",
     "connections.driverDownloading": "Downloading...",
     "connections.driverHint":
       "Automatic selects the highest-priority compatible driver for this engine and connection method.",
+    "connections.driverInstallation": "Installation",
     "connections.driverInstalled": "{name} is installed.",
     "connections.driverInstalledStatus": "Installed",
     "connections.driverCapabilities": "Driver capabilities",
+    "connections.drivers": "Drivers",
+    "connections.driverVersion": "Version",
     "connections.problemDriverCatalogUnavailable":
       "The driver catalog could not be loaded.",
     "connections.problemDriverInstallRequired":
@@ -127,6 +135,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.noConnections": "No connections yet.",
     "connections.noDataSourceResults":
       "No data sources match this search.",
+    "connections.noDriverResults":
+      "No drivers match this search.",
     "connections.noObjects": "No database objects.",
     "connections.noMetadata": "No column, key, or index metadata.",
     "connections.noSchemasDiscovered": "No schemas were discovered for this data source.",
@@ -152,6 +162,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.providerGeneric": "Generic / self-hosted",
     "connections.providerNeon": "Neon",
     "connections.providerPlanetScale": "PlanetScale",
+    "connections.searchDataSources": "Search data sources",
+    "connections.searchDrivers": "Search drivers",
     "connections.reallyDeleteDemo":
       "Delete this connection and its Demo SQLite file?",
     "connections.readOnlyDefault": "Open read-only by default",
@@ -186,6 +198,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.sequences": "Sequences ({count})",
     "connections.showDdl": "Show CREATE DDL",
     "connections.showRowCounts": "Show row counts",
+    "connections.supportedProviders":
+      "Supported connection methods",
     "connections.scrollFromEditor": "Scroll from Editor",
     "connections.viewOptions": "View Options",
     "connections.srv": "Use mongodb+srv:// (SRV DNS lookup)",
@@ -254,6 +268,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.database": "데이터베이스",
     "connections.databaseExplorer": "데이터베이스 탐색기",
     "connections.databaseExplorerActions": "데이터베이스 탐색기 작업",
+    "connections.dataSourceCatalogNavigation":
+      "데이터 소스 카탈로그 탐색",
     "connections.dataSources": "데이터 소스",
     "connections.dataSourcesAndDrivers": "데이터 소스 및 드라이버",
     "connections.editData": "데이터 편집",
@@ -266,14 +282,20 @@ export const connectionsCatalog = defineCatalog(
     "connections.driverAutomatic": "자동 선택 (권장)",
     "connections.driverBundled": "앱에 내장됨",
     "connections.driverCatalogLoading": "드라이버 목록 불러오는 중...",
+    "connections.driverCatalogScope":
+      "앱이 진단하거나 설치할 수 있는 드라이버만 표시합니다. 지원하지 않는 드라이버를 사용 가능한 것처럼 표시하지 않습니다.",
+    "connections.driverDetails": "드라이버 상세",
     "connections.driverDownload": "다운로드",
     "connections.driverDownloadRequired": "다운로드 필요",
     "connections.driverDownloading": "다운로드 중...",
     "connections.driverHint":
       "자동 선택은 엔진과 연결 방식에 맞는 우선순위가 가장 높은 드라이버를 사용합니다.",
+    "connections.driverInstallation": "설치 상태",
     "connections.driverInstalled": "{name} 드라이버가 설치되었습니다.",
     "connections.driverInstalledStatus": "설치됨",
     "connections.driverCapabilities": "드라이버 기능",
+    "connections.drivers": "드라이버",
+    "connections.driverVersion": "버전",
     "connections.problemDriverCatalogUnavailable":
       "드라이버 목록을 불러오지 못했습니다.",
     "connections.problemDriverInstallRequired":
@@ -332,6 +354,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.noConnections": "아직 연결이 없습니다.",
     "connections.noDataSourceResults":
       "검색과 일치하는 데이터 소스가 없습니다.",
+    "connections.noDriverResults":
+      "검색과 일치하는 드라이버가 없습니다.",
     "connections.noObjects": "데이터베이스 객체가 없습니다.",
     "connections.noMetadata": "컬럼, 키 또는 인덱스 메타데이터가 없습니다.",
     "connections.noSchemasDiscovered": "이 데이터 소스에서 스키마를 찾지 못했습니다.",
@@ -357,6 +381,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.providerGeneric": "일반 / 자체 호스팅",
     "connections.providerNeon": "Neon",
     "connections.providerPlanetScale": "PlanetScale",
+    "connections.searchDataSources": "데이터 소스 검색",
+    "connections.searchDrivers": "드라이버 검색",
     "connections.reallyDeleteDemo":
       "이 연결과 Demo SQLite 파일을 삭제할까요?",
     "connections.readOnlyDefault": "기본 읽기 전용으로 열기",
@@ -391,6 +417,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.sequences": "시퀀스 ({count})",
     "connections.showDdl": "CREATE DDL 보기",
     "connections.showRowCounts": "행 수 표시",
+    "connections.supportedProviders": "지원 연결 방식",
     "connections.scrollFromEditor": "편집기 위치로 이동",
     "connections.viewOptions": "보기 옵션",
     "connections.srv": "mongodb+srv:// 사용 (SRV DNS 조회)",

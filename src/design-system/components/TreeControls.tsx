@@ -70,6 +70,7 @@ export function TreeSearch({
         className="tw:pointer-events-none tw:absolute tw:top-1/2 tw:left-2 tw:-translate-y-1/2 tw:text-xs tw:text-muted-foreground"
       />
       <input
+        type="search"
         className="ide-explorer-search tw:h-control-sm tw:w-full tw:rounded-xs tw:border tw:border-input tw:bg-background tw:pr-7 tw:pl-7 tw:font-sans tw:text-sm tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground tw:focus:border-ring"
         value={value}
         autoFocus={autoFocus}
