@@ -34,7 +34,7 @@ export default function WorkbenchRail({
 
   return (
     <nav
-      className="workbench-rail tw:hidden tw:min-w-0 tw:items-center tw:text-muted-foreground tw:max-[560px]:fixed tw:max-[560px]:right-0 tw:max-[560px]:bottom-0 tw:max-[560px]:left-0 tw:max-[560px]:z-[var(--ds-z-modal)] tw:max-[560px]:flex tw:max-[560px]:h-12 tw:max-[560px]:w-full tw:max-[560px]:flex-row tw:max-[560px]:justify-between tw:max-[560px]:border-t tw:max-[560px]:border-sidebar-border tw:max-[560px]:bg-card tw:max-[560px]:px-2 tw:max-[560px]:py-1"
+      className="workbench-rail tw:hidden tw:min-w-0 tw:items-center tw:text-muted-foreground tw:max-[561px]:fixed tw:max-[561px]:right-0 tw:max-[561px]:bottom-0 tw:max-[561px]:left-0 tw:max-[561px]:z-[var(--ds-z-modal)] tw:max-[561px]:flex tw:max-[561px]:h-12 tw:max-[561px]:w-full tw:max-[561px]:flex-row tw:max-[561px]:justify-between tw:max-[561px]:border-t tw:max-[561px]:border-sidebar-border tw:max-[561px]:bg-card tw:max-[561px]:px-2 tw:max-[561px]:py-1"
       aria-label={t("app.workbenchNavigation")}
       onKeyDown={(event) => {
         if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
@@ -60,7 +60,7 @@ export default function WorkbenchRail({
         aria-hidden="true"
       />
       <div className="tw:hidden">d</div>
-      <div className="tw:grid tw:justify-items-center tw:gap-2 tw:max-[560px]:min-w-0 tw:max-[560px]:flex tw:max-[560px]:items-center tw:max-[560px]:gap-1 tw:max-[560px]:overflow-x-auto">
+      <div className="tw:grid tw:justify-items-center tw:gap-2 tw:max-[561px]:min-w-0 tw:max-[561px]:flex tw:max-[561px]:items-center tw:max-[561px]:gap-1 tw:max-[561px]:overflow-x-auto">
         {items.map((item) => (
           <button
             key={item.id}
@@ -79,7 +79,7 @@ export default function WorkbenchRail({
           </button>
         ))}
       </div>
-      <div className="tw:mt-auto tw:grid tw:justify-items-center tw:gap-2 tw:max-[560px]:ml-1 tw:max-[560px]:mt-0 tw:max-[560px]:flex tw:max-[560px]:shrink-0 tw:max-[560px]:items-center tw:max-[560px]:gap-1">
+      <div className="tw:mt-auto tw:grid tw:justify-items-center tw:gap-2 tw:max-[561px]:ml-1 tw:max-[561px]:mt-0 tw:max-[561px]:flex tw:max-[561px]:shrink-0 tw:max-[561px]:items-center tw:max-[561px]:gap-1">
         {account}
         <button
           type="button"

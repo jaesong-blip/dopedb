@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Icon } from "../../components/Icon";
-import {
-  LoadingLabel,
-  StatusDot,
-} from "../../design-system/components/Status";
+import { LoadingLabel } from "../../design-system/components/Status";
 import {
   ToolWindowHeader,
   ToolWindowHideButton,
+  ToolWindowSideSurface,
   ToolWindowVerticalSplit,
 } from "../../design-system/components/ToolWindow";
 import { TreeSearch } from "../../design-system/components/TreeControls";
@@ -28,6 +26,8 @@ export default function LocalHistoryToolWindow({
   onActivateDocument,
   onRestoreRevision,
   onClose,
+  compact = false,
+  compactOpen = false,
 }: {
   connection: ConnectionProfile | null;
   documents: WorkbenchDocument[];
@@ -35,6 +35,8 @@ export default function LocalHistoryToolWindow({
   onActivateDocument: (id: string) => void;
   onRestoreRevision: (id: string, content: string) => void;
   onClose: () => void;
+  compact?: boolean;
+  compactOpen?: boolean;
 }) {
   const { t } = useI18n();
   const sqlDocuments = useMemo(
@@ -135,7 +137,10 @@ export default function LocalHistoryToolWindow({
   }
 
   return (
-    <aside className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:min-h-0 tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background">
+    <ToolWindowSideSurface
+      compact={compact}
+      compactOpen={compactOpen}
+    >
       <ToolWindowHeader
         title={
           <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-6">
@@ -209,14 +214,12 @@ export default function LocalHistoryToolWindow({
                     key={revision.localRevision}
                     type="button"
                     data-active={revision.localRevision === selectedRevision}
-                    className="tw:grid tw:w-full tw:min-w-0 tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)] tw:items-start tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:py-1 tw:font-sans tw:text-left tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+                    className="tw:grid tw:min-h-10 tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:font-sans tw:text-left tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
                     onClick={() =>
                       setSelectedRevision(revision.localRevision)
                     }
+                    title={revision.content}
                   >
-                    <span className="tw:grid tw:h-control-sm tw:place-items-center">
-                      <StatusDot tone={current ? "success" : "neutral"} />
-                    </span>
                     <span className="tw:grid tw:min-w-0 tw:gap-px">
                       <strong className="tw:overflow-hidden tw:text-sm tw:font-medium tw:text-ellipsis tw:whitespace-nowrap">
                         {t("localHistory.revision", {
@@ -229,9 +232,6 @@ export default function LocalHistoryToolWindow({
                       <small className="tw:overflow-hidden tw:text-2xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
                         {formatRevisionTime(revision.createdAt)}
                       </small>
-                      <code className="tw:line-clamp-2 tw:font-mono tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                        {revision.content}
-                      </code>
                     </span>
                   </button>
                 );
@@ -267,7 +267,7 @@ export default function LocalHistoryToolWindow({
           </div>
         </section>
       </ToolWindowVerticalSplit>
-    </aside>
+    </ToolWindowSideSurface>
   );
 }
 

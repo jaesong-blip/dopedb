@@ -9,13 +9,22 @@ import {
   gridSelectionIncludes,
   singleGridCell,
 } from "./dataGridSelection";
+import {
+  DATA_GRID_DEFAULT_COLUMN_WIDTH,
+  DATA_GRID_ROW_HEIGHT,
+  DATA_GRID_ROW_NUMBER_WIDTH,
+} from "../design-system/dataGridGeometry";
 
-const offsets = Array.from({ length: 51 }, (_, index) => 56 + index * 180);
+const offsets = Array.from(
+  { length: 51 },
+  (_, index) =>
+    DATA_GRID_ROW_NUMBER_WIDTH + index * DATA_GRID_DEFAULT_COLUMN_WIDTH,
+);
 
 describe("DataGridVirtual window", () => {
   it("keeps a 50k by 50 grid bounded at a 360px viewport", () => {
     const window = virtualGridWindow(50_000, 50, offsets, {
-      top: 20_000 * 32,
+      top: 20_000 * DATA_GRID_ROW_HEIGHT,
       left: 2_000,
       width: 360,
       height: 240,
@@ -38,7 +47,7 @@ describe("DataGridVirtual window", () => {
       }).startRow,
     ).toBe(0);
     const final = virtualGridWindow(1_000, 50, offsets, {
-      top: 999 * 32,
+      top: 999 * DATA_GRID_ROW_HEIGHT,
       left: 8_000,
       width: 360,
       height: 240,

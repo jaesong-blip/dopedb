@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { I18nProvider } from "./i18n";
 import { QueryProvider } from "./queryClient";
 import "../design-system/index.css";
-import "../styles.css";
 
 export function AppProviders({ children }: { children: ReactNode }) {
   return (

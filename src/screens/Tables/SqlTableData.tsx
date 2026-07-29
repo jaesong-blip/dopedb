@@ -43,7 +43,6 @@ import {
   pkColumns,
 } from "../../lib/sqlBuild";
 import TableSidePanel from "./TableSidePanel";
-import TableContextHeader from "./TableContextHeader";
 import TableExpressionBar from "./TableExpressionBar";
 import TableStructure from "./TableStructure";
 import TableToolbar from "./TableToolbar";
@@ -355,22 +354,14 @@ export default function SqlTableData({
 
   return (
     <WorkbenchPane>
-      <TableContextHeader
-        connection={connection}
-        table={table}
-        pageSize={pageSize}
-      />
-
       <TableToolbar
         table={table}
-        safety={safety}
         result={result}
         canEdit={canEdit}
         noEditTitle={noEditTitle}
         selected={selected}
         stagedCount={staged.length}
         activeFilters={activeFilters}
-        sort={sort}
         page={page}
         pageSize={pageSize}
         total={total}

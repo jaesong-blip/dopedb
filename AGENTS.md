@@ -39,9 +39,10 @@ tokens and shared primitives are authoritative.
 - When a feature is migrated, delete its legacy selectors, stylesheet import,
   and obsolete file in the same change. Never style the same responsibility
   through Tailwind and legacy CSS at once.
-- CSS is reserved for the documented shell grid, data-grid/vendor integration,
-  global reset, tokens, and canonical primitives. A new exception requires an
-  explicit rationale in the design-system README.
+- CSS is reserved for documented vendor integration, global reset, tokens, and
+  canonical primitives. Shell, tool-window, and data-grid layout belong to
+  static Tailwind utilities and shared React primitives. A new exception
+  requires an explicit rationale in the design-system README.
 - Raw colors and dynamically assembled utility fragments are forbidden.
 
 ## Work safely

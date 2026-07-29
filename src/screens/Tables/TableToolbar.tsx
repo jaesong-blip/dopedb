@@ -6,22 +6,19 @@ import {
   WorkbenchDivider,
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
-import type { CatalogTable, QueryResult, SafetySettings } from "../../ipc/types";
+import type { CatalogTable, QueryResult } from "../../ipc/types";
 import { downloadCsv, downloadJson, stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
-import type { GridSort } from "../../lib/sqlBuild";
 import Pager from "./Pager";
 
 type Props = {
   table: CatalogTable;
-  safety: SafetySettings;
   result: QueryResult | null;
   canEdit: boolean;
   noEditTitle: string;
   selected: number | null;
   stagedCount: number;
   activeFilters: number;
-  sort: GridSort | null;
   page: number;
   pageSize: number;
   total: number | null;
@@ -46,14 +43,12 @@ export default function TableToolbar(props: Props) {
   const { t } = useI18n();
   const {
     table,
-    safety,
     result,
     canEdit,
     noEditTitle,
     selected,
     stagedCount,
     activeFilters,
-    sort,
     page,
     pageSize,
     total,
@@ -69,34 +64,31 @@ export default function TableToolbar(props: Props) {
       <div className="table-toolbar-scroll scrollbar-sleek tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:overscroll-x-contain">
         <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1">
           <button
-            className="btn small ghost tw:shrink-0 tw:@max-[760px]:size-control-md tw:@max-[760px]:px-0"
+            className="btn small ghost icon-only tw:shrink-0"
             disabled={!canEdit}
             title={canEdit ? t("tables.insert") : noEditTitle}
             aria-label={t("tables.insert")}
             onClick={() => props.onOpenEdit("insert")}
           >
             <Icon name="plus" />
-            <span className="tw:@max-[760px]:hidden">{t("tables.insert")}</span>
           </button>
           <button
-            className="btn small ghost tw:shrink-0 tw:@max-[760px]:size-control-md tw:@max-[760px]:px-0"
+            className="btn small ghost icon-only tw:shrink-0"
             disabled={!canEdit || selected == null}
             title={canEdit ? t("tables.edit") : noEditTitle}
             aria-label={t("tables.edit")}
             onClick={() => props.onOpenEdit("edit")}
           >
             <Icon name="pencil" />
-            <span className="tw:@max-[760px]:hidden">{t("tables.edit")}</span>
           </button>
           <button
-            className="btn small danger-ghost tw:shrink-0 tw:@max-[760px]:size-control-md tw:@max-[760px]:px-0"
+            className="btn small ghost icon-only tw:shrink-0"
             disabled={!canEdit || selected == null}
             title={canEdit ? t("tables.delete") : noEditTitle}
             aria-label={t("tables.delete")}
             onClick={props.onDelete}
           >
             <Icon name="trash" />
-            <span className="tw:@max-[760px]:hidden">{t("tables.delete")}</span>
           </button>
           {stagedCount > 0 ? (
             <>
@@ -122,50 +114,27 @@ export default function TableToolbar(props: Props) {
 
         <WorkbenchDivider />
 
-        <div
-          className="tw:flex tw:min-w-0 tw:items-center tw:gap-3 tw:text-sm tw:text-muted-foreground tw:@max-[760px]:hidden"
-          aria-label={t("tables.querySurface")}
-        >
+        <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:@max-[760px]:hidden">
           <span
+            className="tw:inline-flex tw:h-control-sm tw:items-center tw:gap-1 tw:px-2 tw:text-sm tw:text-muted-foreground"
+            title={t("sql.txAutoHint")}
+          >
+            <span>{t("sql.tx")}</span>
+            <strong className="tw:font-medium tw:text-foreground">
+              {t("sql.txAuto")}
+            </strong>
+          </span>
+          <button
+            type="button"
+            className="btn small icon-only tw:data-[active=true]:text-primary"
             data-active={activeFilters > 0}
-            className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:data-[active=true]:text-primary"
-            title={t("tables.filterState")}
+            disabled={activeFilters === 0}
+            onClick={props.onClearFilters}
+            title={t("tables.clear")}
+            aria-label={t("tables.clear")}
           >
             <Icon name="filter" />
-            {activeFilters
-              ? t(
-                  activeFilters > 1
-                    ? "tables.activeFiltersPlural"
-                    : "tables.activeFilters",
-                  { count: activeFilters },
-                )
-              : t("tables.noFilters")}
-          </span>
-          <span
-            data-active={Boolean(sort)}
-            className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:data-[active=true]:text-primary"
-            title={t("tables.sortState")}
-          >
-            <Icon name="sort" />
-            {sort
-              ? `${sort.col} ${sort.dir.toUpperCase()}`
-              : t("tables.unsorted")}
-          </span>
-          <span
-            data-risk={safety.allowWrites}
-            className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:data-[risk=true]:text-warning"
-            title={t("tables.writePolicy")}
-          >
-            <Icon name={safety.allowWrites ? "pencil" : "circleSlash"} />
-            {safety.allowWrites
-              ? t("tables.writePolicyWrites")
-              : t("tables.writePolicyReadonly")}
-          </span>
-          {activeFilters > 0 ? (
-            <button className="btn small" onClick={props.onClearFilters}>
-              {t("tables.clear")}
-            </button>
-          ) : null}
+          </button>
         </div>
       </div>
 

@@ -23,11 +23,13 @@ import {
   singleGridCell,
   type GridCellSelection,
 } from "./dataGridSelection";
+import {
+  DATA_GRID_DEFAULT_COLUMN_WIDTH,
+  DATA_GRID_HEADER_HEIGHT,
+  DATA_GRID_ROW_HEIGHT,
+  DATA_GRID_ROW_NUMBER_WIDTH,
+} from "../design-system/dataGridGeometry";
 
-const ROW_HEIGHT = 32;
-const HEADER_HEIGHT = 32;
-const ROW_NUMBER_WIDTH = 56;
-const DEFAULT_COLUMN_WIDTH = 180;
 const OVERSCAN = 4;
 
 type Props = {
@@ -49,10 +51,13 @@ export function virtualGridWindow(
   offsets: number[],
   scroll: { top: number; left: number; width: number; height: number },
 ) {
-  const startRow = Math.max(0, Math.floor(scroll.top / ROW_HEIGHT) - OVERSCAN);
+  const startRow = Math.max(
+    0,
+    Math.floor(scroll.top / DATA_GRID_ROW_HEIGHT) - OVERSCAN,
+  );
   const endRow = Math.min(
     rowCount,
-    Math.ceil((scroll.top + scroll.height) / ROW_HEIGHT) + OVERSCAN,
+    Math.ceil((scroll.top + scroll.height) / DATA_GRID_ROW_HEIGHT) + OVERSCAN,
   );
   let firstColumn = 0;
   while (firstColumn < columnCount && offsets[firstColumn + 1] <= scroll.left)
@@ -65,7 +70,7 @@ export function virtualGridWindow(
   ) {
     if (
       offsets[index] >
-      scroll.left + scroll.width + DEFAULT_COLUMN_WIDTH * OVERSCAN
+      scroll.left + scroll.width + DATA_GRID_DEFAULT_COLUMN_WIDTH * OVERSCAN
     )
       break;
     visibleColumns.push(index);
@@ -105,16 +110,17 @@ export default function DataGridVirtual(props: Props) {
   const columnWidths = useMemo(
     () =>
       props.result.columns.map(
-        (_, index) => widths[index] ?? DEFAULT_COLUMN_WIDTH,
+        (_, index) => widths[index] ?? DATA_GRID_DEFAULT_COLUMN_WIDTH,
       ),
     [props.result.columns, widths],
   );
   const offsets = useMemo(() => {
-    const next = [ROW_NUMBER_WIDTH];
+    const next = [DATA_GRID_ROW_NUMBER_WIDTH];
     for (const width of columnWidths) next.push(next[next.length - 1] + width);
     return next;
   }, [columnWidths]);
-  const totalWidth = offsets[offsets.length - 1] ?? ROW_NUMBER_WIDTH;
+  const totalWidth =
+    offsets[offsets.length - 1] ?? DATA_GRID_ROW_NUMBER_WIDTH;
   const { startRow, endRow, visibleColumns } = virtualGridWindow(
     rowCount,
     props.result.columns.length,
@@ -201,8 +207,11 @@ export default function DataGridVirtual(props: Props) {
           : current.col;
     select(row, col, event.shiftKey);
     scrollRef.current?.scrollTo({
-      top: Math.max(0, row * ROW_HEIGHT - ROW_HEIGHT),
-      left: Math.max(0, offsets[col] - ROW_NUMBER_WIDTH),
+      top: Math.max(
+        0,
+        row * DATA_GRID_ROW_HEIGHT - DATA_GRID_ROW_HEIGHT,
+      ),
+      left: Math.max(0, offsets[col] - DATA_GRID_ROW_NUMBER_WIDTH),
     });
   };
   const resize = (event: ReactMouseEvent, index: number) => {
@@ -247,22 +256,24 @@ export default function DataGridVirtual(props: Props) {
       }
     >
       <div
-        className="tw:relative tw:min-w-full tw:[&_[data-grid-box]]:absolute tw:[&_[data-grid-box]]:box-border tw:[&_[data-grid-box]]:h-control-md tw:[&_[data-grid-box]]:overflow-hidden tw:[&_[data-grid-box]]:border-r tw:[&_[data-grid-box]]:border-b tw:[&_[data-grid-box]]:border-border-subtle tw:[&_[data-grid-box]]:bg-background tw:[&_[data-grid-box]]:px-2 tw:[&_[data-grid-box]]:py-1 tw:[&_[data-grid-box]]:leading-ui tw:[&_[data-grid-box]]:text-ellipsis tw:[&_[data-grid-box]]:whitespace-nowrap"
+        className="tw:relative tw:min-w-full tw:font-mono tw:[&_[data-grid-box]]:absolute tw:[&_[data-grid-box]]:box-border tw:[&_[data-grid-box]]:h-control-sm tw:[&_[data-grid-box]]:overflow-hidden tw:[&_[data-grid-box]]:border-r tw:[&_[data-grid-box]]:border-b tw:[&_[data-grid-box]]:border-border-subtle tw:[&_[data-grid-box]]:bg-background tw:[&_[data-grid-box]]:px-2 tw:[&_[data-grid-box]]:py-1 tw:[&_[data-grid-box]]:leading-ui tw:[&_[data-grid-box]]:text-ellipsis tw:[&_[data-grid-box]]:whitespace-nowrap"
         style={{
           width: totalWidth,
-          height: HEADER_HEIGHT + rowCount * ROW_HEIGHT,
+          height:
+            DATA_GRID_HEADER_HEIGHT + rowCount * DATA_GRID_ROW_HEIGHT,
         }}
       >
         <div
-          className="tw:sticky tw:top-0 tw:left-0 tw:right-0 tw:z-[var(--ds-z-raised)] tw:h-control-md tw:overflow-visible tw:bg-card"
+          className="tw:sticky tw:top-0 tw:left-0 tw:right-0 tw:z-[var(--ds-z-raised)] tw:h-control-sm tw:overflow-visible tw:bg-card"
           role="row"
           aria-rowindex={1}
         >
           <div
             data-grid-box
-            className="tw:top-0 tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:w-14 tw:!bg-card tw:text-right tw:text-muted-foreground"
+            className="tw:top-0 tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:!bg-card tw:text-right tw:text-muted-foreground"
             role="columnheader"
             aria-colindex={1}
+            style={{ width: DATA_GRID_ROW_NUMBER_WIDTH }}
           >
             #
           </div>
@@ -290,7 +301,8 @@ export default function DataGridVirtual(props: Props) {
               <div
                 key={name}
                 data-grid-box
-                className={`tw:top-0 tw:!bg-card tw:font-semibold${props.onSort ? " tw:cursor-pointer tw:hover:text-primary" : ""}`}
+                data-sortable={props.onSort ? "true" : undefined}
+                className="tw:top-0 tw:!bg-card tw:font-semibold tw:data-[sortable=true]:cursor-pointer tw:data-[sortable=true]:hover:text-primary"
                 role="columnheader"
                 aria-colindex={index + 2}
                 style={{ left: offsets[index], width: columnWidths[index] }}
@@ -340,19 +352,22 @@ export default function DataGridVirtual(props: Props) {
           <div
             key={rowIndex}
             data-selected={props.selectedRow === rowIndex}
-            data-zebra={rowIndex % 2 === 1}
-            className="tw:group tw:absolute tw:top-0 tw:left-0 tw:right-0 tw:h-control-md"
+            className="tw:group tw:absolute tw:top-0 tw:left-0 tw:right-0 tw:h-control-sm"
             role="row"
             aria-rowindex={rowIndex + 2}
             style={{
-              transform: `translateY(${HEADER_HEIGHT + rowIndex * ROW_HEIGHT}px)`,
+              transform: `translateY(${
+                DATA_GRID_HEADER_HEIGHT + rowIndex * DATA_GRID_ROW_HEIGHT
+              }px)`,
             }}
           >
             <div
               data-grid-box
-              className={`tw:left-0 tw:z-[var(--ds-z-base)] tw:w-14 tw:!bg-card tw:text-right tw:text-muted-foreground tw:group-data-[selected=true]:!bg-selection${props.onSelectRow ? " tw:cursor-pointer" : ""}`}
+              data-interactive={props.onSelectRow ? "true" : undefined}
+              className="tw:left-0 tw:z-[var(--ds-z-base)] tw:!bg-card tw:text-right tw:text-muted-foreground tw:group-data-[selected=true]:!bg-selection tw:data-[interactive=true]:cursor-pointer"
               role="rowheader"
               aria-colindex={1}
+              style={{ width: DATA_GRID_ROW_NUMBER_WIDTH }}
               onClick={() => props.onSelectRow?.(rowIndex)}
             >
               {props.startIndex + rowIndex + 1}
@@ -373,7 +388,11 @@ export default function DataGridVirtual(props: Props) {
                   key={columnIndex}
                   data-grid-cell={`${rowIndex}:${columnIndex}`}
                   data-grid-box
-                  className={`tw:group-data-[zebra=true]:!bg-card tw:group-data-[selected=true]:!bg-selection${value === null ? " tw:text-muted-foreground tw:italic" : ""}${interactive ? " tw:cursor-pointer" : ""}${selected ? " tw:!bg-selection" : ""}${focused ? " tw:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]" : ""}`}
+                  data-null={value === null}
+                  data-interactive={interactive}
+                  data-selected={selected}
+                  data-focused={focused}
+                  className="tw:group-data-[selected=true]:!bg-selection tw:data-[null=true]:text-muted-foreground tw:data-[null=true]:italic tw:data-[interactive=true]:cursor-pointer tw:data-[selected=true]:!bg-selection tw:data-[focused=true]:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]"
                   role="gridcell"
                   aria-colindex={columnIndex + 2}
                   aria-selected={selected}

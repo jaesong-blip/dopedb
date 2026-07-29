@@ -36,9 +36,10 @@ TSX에 직접 작성하고, utility 문자열만 보관하는 `styles.ts`, 화�
 module은 추가하지 않는다. 반복되는 시각·상호작용 패턴은 복사하지 않고 실제 공용
 컴포넌트나 정본 primitive로 디자인 시스템에 올린 뒤 문서화한다. 이전한 화면의
 낡은 selector, import, CSS 파일은 같은 변경에서 제거하고 같은 책임을 Tailwind와
-legacy CSS 양쪽에 두지 않는다. 새 CSS는 문서화된 shell/data-grid/vendor/reset/
-token/primitive 경계에서만 허용한다. `pnpm build` 후 변경한 화면을 앱에서 직접
-확인한다.
+legacy CSS 양쪽에 두지 않는다. shell, tool-window, data-grid 배치는 정적
+Tailwind와 공용 React primitive가 소유하며 새 CSS는 문서화된
+vendor/reset/token/primitive 경계에서만 허용한다. `pnpm build` 후 변경한 화면을
+앱에서 직접 확인한다.
 
 DopeDB 2026.1 reference가 UI/UX 정본이다. 변경한 scenario는
 [`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)의

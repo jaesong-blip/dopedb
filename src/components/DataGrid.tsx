@@ -5,9 +5,8 @@
 //   - onFilter   → DopeDB-style value/count popup from a header filter action
 //   - onSelectRow/onCellClick → row highlight + click-to-open a cell in the side viewer
 //   - startIndex → row numbers continue across pages (rows 101-200, not 1-100 again)
-// Columns are drag-resizable: first drag snapshots every column's rendered width and
-// flips the table to fixed layout so only the dragged column moves. Double-click a
-// handle to reset all widths (back to auto layout). Widths reset per column set.
+// Columns are drag-resizable: first drag snapshots every rendered width so only the
+// dragged column moves. Double-click resets the compact default widths.
 import {
   useEffect,
   useMemo,
@@ -19,6 +18,10 @@ import {
 import type { QueryResult } from "../ipc/types";
 import type { GridSort } from "../lib/sqlBuild";
 import type { SqlStreamRowSource } from "../features/queries/domain";
+import {
+  DATA_GRID_DEFAULT_COLUMN_WIDTH,
+  DATA_GRID_ROW_NUMBER_WIDTH,
+} from "../design-system/dataGridGeometry";
 import { Icon } from "./Icon";
 import DataGridColumnFilterMenu from "./DataGridColumnFilterMenu";
 import DataGridVirtual from "./DataGridVirtual";
@@ -113,7 +116,7 @@ function DataGridTable({
 }: DataGridProps) {
   const { t } = useI18n();
   const interactive = !!onSelectRow || !!onCellClick;
-  // Column widths keyed by header-cell index (0 = rownum). Empty map = auto layout.
+  // Column widths keyed by header-cell index (0 = rownum).
   const [widths, setWidths] = useState<Record<number, number>>({});
   // Selected cell (click to select, ⌘C to copy, Esc to clear). Independent of onCellClick.
   const [sel, setSel] = useState<GridCellSelection | null>(null);
@@ -127,10 +130,14 @@ function DataGridTable({
     // coordinates into rows, so any new result object invalidates it.
     setSel(null);
   }, [result]);
-  const fixed = Object.keys(widths).length > 0;
-  const totalW = fixed
-    ? Object.values(widths).reduce((a, b) => a + b, 0)
-    : undefined;
+  const resized = Object.keys(widths).length > 0;
+  const columnWidths = [
+    widths[0] ?? DATA_GRID_ROW_NUMBER_WIDTH,
+    ...result.columns.map(
+      (_, index) => widths[index + 1] ?? DATA_GRID_DEFAULT_COLUMN_WIDTH,
+    ),
+  ];
+  const totalW = columnWidths.reduce((total, width) => total + width, 0);
 
   // Right-align numeric columns. NUMERIC/MONEY arrive as plain decimal strings (the
   // Rust side serializes them lossless), so detect by value shape — and per column,
@@ -273,17 +280,15 @@ function DataGridTable({
     >
       <table
         ref={tableRef}
-        className={`tw:w-full tw:border-separate tw:border-spacing-0 tw:bg-background tw:text-ui tw:[&_td]:box-border tw:[&_td]:border-r tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:leading-ui tw:[&_td]:text-left tw:[&_td]:whitespace-nowrap tw:[&_th]:box-border tw:[&_th]:border-r tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-1 tw:[&_th]:leading-ui tw:[&_th]:text-left tw:[&_th]:whitespace-nowrap tw:[&_thead_th]:sticky tw:[&_thead_th]:top-0 tw:[&_thead_th]:z-[var(--ds-z-raised)] tw:[&_thead_th]:h-control-md tw:[&_thead_th]:bg-card${fixed ? " tw:table-fixed tw:[&_td]:max-w-none tw:[&_td]:overflow-hidden tw:[&_td]:text-ellipsis tw:[&_th]:max-w-none tw:[&_th]:overflow-hidden tw:[&_th]:text-ellipsis" : ""}`}
-        style={fixed ? { tableLayout: "fixed", width: totalW } : undefined}
+        className="tw:table-fixed tw:border-separate tw:border-spacing-0 tw:bg-background tw:font-mono tw:text-ui tw:[&_td]:box-border tw:[&_td]:max-w-none tw:[&_td]:overflow-hidden tw:[&_td]:border-r tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:leading-ui tw:[&_td]:text-left tw:[&_td]:text-ellipsis tw:[&_td]:whitespace-nowrap tw:[&_th]:box-border tw:[&_th]:max-w-none tw:[&_th]:overflow-hidden tw:[&_th]:border-r tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-1 tw:[&_th]:leading-ui tw:[&_th]:text-left tw:[&_th]:text-ellipsis tw:[&_th]:whitespace-nowrap tw:[&_thead_th]:sticky tw:[&_thead_th]:top-0 tw:[&_thead_th]:z-[var(--ds-z-raised)] tw:[&_thead_th]:h-control-sm tw:[&_thead_th]:bg-card"
+        style={{ tableLayout: "fixed", width: totalW }}
       >
-        {fixed && (
-          <colgroup>
-            <col style={{ width: widths[0] }} />
-            {result.columns.map((_, j) => (
-              <col key={j} style={{ width: widths[j + 1] }} />
-            ))}
-          </colgroup>
-        )}
+        <colgroup>
+          <col style={{ width: columnWidths[0] }} />
+          {result.columns.map((_, j) => (
+            <col key={j} style={{ width: columnWidths[j + 1] }} />
+          ))}
+        </colgroup>
         <thead>
           <tr>
             <th className="tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:text-right tw:text-muted-foreground">
@@ -372,10 +377,11 @@ function DataGridTable({
             <tr
               key={i}
               data-selected={selectedRow === i}
-              className="tw:group tw:[contain-intrinsic-size:0_var(--ds-control-md)] tw:[content-visibility:auto] tw:even:[&>td]:bg-card tw:hover:[&>td]:bg-muted tw:data-[selected=true]:[&>td]:bg-selection"
+              className="tw:group tw:[contain-intrinsic-size:0_var(--ds-control-sm)] tw:[content-visibility:auto] tw:hover:[&>td]:bg-muted tw:data-[selected=true]:[&>td]:bg-selection"
             >
               <td
-                className={`tw:sticky tw:left-0 tw:z-[var(--ds-z-base)] tw:bg-card tw:text-right tw:text-muted-foreground${onSelectRow ? " tw:cursor-pointer" : ""}`}
+                data-interactive={onSelectRow ? "true" : undefined}
+                className="tw:sticky tw:left-0 tw:z-[var(--ds-z-base)] tw:bg-card tw:text-right tw:text-muted-foreground tw:data-[interactive=true]:cursor-pointer"
                 role={onSelectRow ? "button" : undefined}
                 tabIndex={onSelectRow ? 0 : undefined}
                 onClick={onSelectRow ? () => onSelectRow(i) : undefined}
@@ -400,10 +406,15 @@ function DataGridTable({
                 return (
                   <td
                     key={j}
-                    className={`tw:max-w-[480px] tw:overflow-hidden tw:bg-background tw:text-ellipsis${v === null ? " tw:text-muted-foreground tw:italic" : ""}${numericCols[j] ? " tw:text-right tw:tabular-nums" : ""}${interactive ? " tw:cursor-pointer" : ""}${isSel ? " tw:!bg-selection" : ""}${isFocus ? " tw:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]" : ""}`}
-                    // fixed layout clips by width not length, so any value can be truncated → always title it
+                    data-null={v === null}
+                    data-numeric={numericCols[j]}
+                    data-interactive={interactive}
+                    data-selected={isSel}
+                    data-focused={isFocus}
+                    className="tw:max-w-[480px] tw:overflow-hidden tw:bg-background tw:text-ellipsis tw:data-[null=true]:text-muted-foreground tw:data-[null=true]:italic tw:data-[numeric=true]:text-right tw:data-[numeric=true]:tabular-nums tw:data-[interactive=true]:cursor-pointer tw:data-[selected=true]:!bg-selection tw:data-[focused=true]:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]"
+                    // Compact fixed columns can truncate any value.
                     title={
-                      fixed || text.length > 40 || text.includes("\n")
+                      resized || text.length > 40 || text.includes("\n")
                         ? text
                         : undefined
                     }

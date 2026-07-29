@@ -100,6 +100,7 @@ interface TerminalDockProps {
   activeDocumentId: string | null;
   skillStatus: SkillStatus | null;
   overlay: boolean;
+  compact?: boolean;
   width: number;
   presentation?: TerminalPresentation;
   onWidthChange: (width: number) => void;
@@ -224,6 +225,7 @@ export default function TerminalDock({
   activeDocumentId,
   skillStatus,
   overlay,
+  compact = false,
   width,
   presentation = "terminal",
   onWidthChange,
@@ -275,6 +277,13 @@ export default function TerminalDock({
   currentScopeRef.current = currentScope;
   const currentScopeKey = currentScope ? terminalScopeKey(currentScope) : null;
   const maximized = terminalLayoutForScope(state, currentScope).maximized;
+  const dockLayout = maximized
+    ? "maximized"
+    : compact
+      ? "compact"
+      : overlay
+        ? "overlay"
+        : "docked";
   const activeDocument =
     documents.find((document) => document.id === activeDocumentId) ?? null;
   const attachableDocument =
@@ -793,19 +802,19 @@ export default function TerminalDock({
     <>
       <aside
         ref={dockRef}
-        className="terminal-dock tw:relative tw:col-start-4 tw:row-start-2 tw:m-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[maximized=true]:fixed tw:data-[maximized=true]:inset-0 tw:data-[maximized=true]:z-[var(--ds-z-modal)] tw:data-[maximized=true]:m-0 tw:data-[maximized=true]:h-dvh tw:data-[maximized=true]:w-screen tw:data-[maximized=true]:rounded-none tw:data-[maximized=true]:border-0 tw:max-[901px]:data-[maximized=false]:fixed tw:max-[901px]:data-[maximized=false]:inset-y-0 tw:max-[901px]:data-[maximized=false]:right-0 tw:max-[901px]:data-[maximized=false]:z-[var(--ds-z-modal)] tw:max-[901px]:data-[maximized=false]:m-0 tw:max-[901px]:data-[maximized=false]:w-[min(520px,calc(100vw_-_44px))] tw:max-[901px]:data-[maximized=false]:rounded-none tw:max-[901px]:data-[maximized=false]:shadow-popover tw:max-[561px]:data-[maximized=false]:bottom-12 tw:max-[561px]:data-[maximized=false]:w-screen"
-        data-maximized={maximized}
+        className="terminal-dock tw:relative tw:col-start-4 tw:row-start-2 tw:m-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[layout=overlay]:fixed tw:data-[layout=overlay]:inset-y-0 tw:data-[layout=overlay]:right-0 tw:data-[layout=overlay]:z-[var(--ds-z-modal)] tw:data-[layout=overlay]:m-0 tw:data-[layout=overlay]:w-[min(520px,calc(100vw_-_44px))] tw:data-[layout=overlay]:rounded-none tw:data-[layout=overlay]:shadow-popover tw:data-[layout=compact]:fixed tw:data-[layout=compact]:top-title-toolbar tw:data-[layout=compact]:right-0 tw:data-[layout=compact]:bottom-20 tw:data-[layout=compact]:left-0 tw:data-[layout=compact]:z-[var(--ds-z-modal)] tw:data-[layout=compact]:m-0 tw:data-[layout=compact]:w-screen tw:data-[layout=compact]:rounded-none tw:data-[layout=compact]:border-x-0 tw:data-[layout=maximized]:fixed tw:data-[layout=maximized]:inset-0 tw:data-[layout=maximized]:z-[var(--ds-z-modal)] tw:data-[layout=maximized]:m-0 tw:data-[layout=maximized]:h-dvh tw:data-[layout=maximized]:w-screen tw:data-[layout=maximized]:rounded-none tw:data-[layout=maximized]:border-0"
+        data-layout={dockLayout}
         aria-label={t(
           presentation === "agent"
             ? "terminal.agentTitle"
             : "terminal.title",
         )}
-        role={overlay || maximized ? "dialog" : undefined}
-        aria-modal={overlay || maximized || undefined}
+        role={dockLayout === "docked" ? undefined : "dialog"}
+        aria-modal={dockLayout === "docked" ? undefined : true}
       >
         <div
-          className="terminal-dock-resizer tw:absolute tw:inset-y-0 tw:-left-[3px] tw:z-[var(--ds-z-raised)] tw:w-[7px] tw:cursor-col-resize tw:hover:bg-ring/30 tw:active:bg-ring/30 tw:data-[maximized=true]:hidden tw:max-[901px]:hidden"
-          data-maximized={maximized}
+          className="terminal-dock-resizer tw:absolute tw:inset-y-0 tw:-left-[3px] tw:z-[var(--ds-z-raised)] tw:w-[7px] tw:cursor-col-resize tw:hover:bg-ring/30 tw:active:bg-ring/30 tw:data-[layout=overlay]:hidden tw:data-[layout=compact]:hidden tw:data-[layout=maximized]:hidden"
+          data-layout={dockLayout}
           role="separator"
           aria-orientation="vertical"
           aria-label={t("app.dragResize")}

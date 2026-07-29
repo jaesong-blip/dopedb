@@ -4,12 +4,38 @@
 import type {
   ButtonHTMLAttributes,
   FormHTMLAttributes,
+  HTMLAttributes,
   ReactNode,
   Ref,
   TextareaHTMLAttributes,
 } from "react";
 
 import { Icon } from "../../components/Icon";
+
+export function ToolWindowSideSurface({
+  compact = false,
+  compactOpen = false,
+  children,
+  ...asideProps
+}: {
+  compact?: boolean;
+  compactOpen?: boolean;
+  children: ReactNode;
+} & Omit<HTMLAttributes<HTMLElement>, "children" | "className">) {
+  const open = !compact || compactOpen;
+  return (
+    <aside
+      {...asideProps}
+      className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:min-h-0 tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[compact=true]:fixed tw:data-[compact=true]:top-title-toolbar tw:data-[compact=true]:right-0 tw:data-[compact=true]:bottom-20 tw:data-[compact=true]:left-0 tw:data-[compact=true]:z-[var(--ds-z-modal)] tw:data-[compact=true]:m-0 tw:data-[compact=true]:h-auto tw:data-[compact=true]:w-screen tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-x-0 tw:data-[compact=true]:shadow-popover tw:data-[compact=true]:transition-transform tw:data-[compact=true]:duration-150 tw:data-[open=false]:pointer-events-none tw:data-[open=false]:-translate-x-full"
+      data-compact={compact}
+      data-open={open}
+      aria-hidden={!open || asideProps["aria-hidden"]}
+      inert={!open || asideProps.inert ? true : undefined}
+    >
+      {children}
+    </aside>
+  );
+}
 
 export function ToolWindowHeader({
   title,
@@ -139,7 +165,7 @@ export function ToolWindowComposerDock({
   children: ReactNode;
 }) {
   return (
-    <div className="tw:m-2 tw:mt-0 tw:flex tw:shrink-0 tw:flex-col tw:gap-1">
+    <div className="tw:mx-2 tw:flex tw:shrink-0 tw:flex-col">
       {children}
     </div>
   );
@@ -176,7 +202,7 @@ export function ToolWindowComposerContext({
   children: ReactNode;
 }) {
   return (
-    <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:px-1">
+    <div className="tw:flex tw:h-control-md tw:shrink-0 tw:items-center tw:gap-1 tw:px-1">
       {children}
     </div>
   );

@@ -113,7 +113,7 @@ const PROVIDER_ORDER: Provider[] = [
   "gcpCloudSql",
 ];
 
-type ConnectionEditorView = "dataSources" | "drivers";
+type ConnectionEditorView = "dataSources" | "clouds" | "drivers";
 type ConnectionInputMode = "default" | "urlOnly";
 
 const POSTGRES_SSL_MODES = [
@@ -284,6 +284,8 @@ export function ConnectionForm({
     useState<ConnectionEditorView>("dataSources");
   const [sourceSearch, setSourceSearch] = useState("");
   const [driverSearch, setDriverSearch] = useState("");
+  const [catalogCloudProvider, setCatalogCloudProvider] =
+    useState<ProviderKind>("neon");
   const [catalogDriverId, setCatalogDriverId] = useState<string | null>(
     null,
   );
@@ -1201,7 +1203,28 @@ export function ConnectionForm({
         </button>
       </header>
 
-      <div className="tw:flex tw:min-h-0 tw:flex-1">
+      <div className="tw:flex tw:min-h-0 tw:flex-1 tw:@max-[760px]:flex-col">
+        <div className="tw:hidden tw:shrink-0 tw:justify-center tw:border-b tw:border-border-subtle tw:bg-card tw:p-2 tw:@max-[760px]:flex">
+          <SegmentedControl
+            value={editorView}
+            options={[
+              {
+                value: "dataSources",
+                label: t("connections.dataSources"),
+              },
+              {
+                value: "clouds",
+                label: t("connections.connectCloudProvider"),
+              },
+              {
+                value: "drivers",
+                label: t("connections.drivers"),
+              },
+            ]}
+            label={t("connections.dataSourceCatalogNavigation")}
+            onChange={setEditorView}
+          />
+        </div>
         <nav
           className="tw:flex tw:w-11 tw:shrink-0 tw:flex-col tw:items-center tw:gap-1 tw:border-r tw:border-border-subtle tw:bg-card tw:px-1 tw:py-2 tw:@max-[760px]:hidden"
           aria-label={t("connections.dataSourceCatalogNavigation")}
@@ -1215,19 +1238,20 @@ export function ConnectionForm({
             <Icon name="database" />
           </ToolWindowRailAction>
           <ToolWindowRailAction
+            selected={editorView === "clouds"}
+            onClick={() => setEditorView("clouds")}
+            title={t("connections.connectCloudProvider")}
+            aria-label={t("connections.connectCloudProvider")}
+          >
+            <Icon name="key" />
+          </ToolWindowRailAction>
+          <ToolWindowRailAction
             selected={editorView === "drivers"}
             onClick={() => setEditorView("drivers")}
             title={t("connections.drivers")}
             aria-label={t("connections.drivers")}
           >
             <Icon name="download" />
-          </ToolWindowRailAction>
-          <ToolWindowRailAction
-            onClick={() => openProviderCredentials()}
-            title={t("connections.connectCloudProvider")}
-            aria-label={t("connections.connectCloudProvider")}
-          >
-            <Icon name="key" />
           </ToolWindowRailAction>
         </nav>
         <aside className="tw:flex tw:w-[244px] tw:shrink-0 tw:flex-col tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
@@ -1236,6 +1260,8 @@ export function ConnectionForm({
               {t(
                 editorView === "dataSources"
                   ? "connections.dataSources"
+                  : editorView === "clouds"
+                    ? "connections.connectCloudProvider"
                   : "connections.drivers",
               )}
             </strong>
@@ -1427,7 +1453,7 @@ export function ConnectionForm({
                 </button>
               ) : null}
               </div>
-            ) : (
+            ) : editorView === "drivers" ? (
               <button
                 type="button"
                 className="btn small icon-only icon-xs"
@@ -1438,9 +1464,10 @@ export function ConnectionForm({
               >
                 <Icon name="refresh" />
               </button>
-            )}
+            ) : null}
           </div>
-          <div className="tw:border-b tw:border-border-subtle tw:p-2">
+          {editorView !== "clouds" ? (
+            <div className="tw:border-b tw:border-border-subtle tw:p-2">
             <TreeSearch
               value={
                 editorView === "dataSources"
@@ -1459,7 +1486,8 @@ export function ConnectionForm({
                   : setDriverSearch
               }
             />
-          </div>
+            </div>
+          ) : null}
           <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-2">
             {editorView === "dataSources" &&
             visibleConnections.length > 0 ? (
@@ -1524,6 +1552,27 @@ export function ConnectionForm({
                 </p>
               )
             ) : null}
+            {editorView === "clouds" ? (
+              <ToolWindowSection
+                title={t("connections.connectCloudProvider")}
+              >
+                {cloudProviders.map((provider) => (
+                  <ToolWindowAction
+                    key={provider.provider}
+                    leading={<Icon name="key" />}
+                    trailing={<Icon name="chevronRight" />}
+                    selected={
+                      catalogCloudProvider === provider.provider
+                    }
+                    onClick={() =>
+                      setCatalogCloudProvider(provider.provider)
+                    }
+                  >
+                    {provider.label}
+                  </ToolWindowAction>
+                ))}
+              </ToolWindowSection>
+            ) : null}
             {editorView === "dataSources" ? (
               <div className="tw:mt-3 tw:border-t tw:border-border-subtle tw:pt-2">
               <ToolWindowAction
@@ -1558,6 +1607,77 @@ export function ConnectionForm({
         </aside>
 
         <section className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
+          <div className="tw:hidden tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:p-2 tw:@max-[760px]:flex">
+            {editorView === "dataSources" ? (
+              <>
+                <SelectInput
+                  value={isNew ? "__new__" : form.id}
+                  onChange={(event) => {
+                    const connection = connections.find(
+                      (candidate) =>
+                        candidate.id === event.target.value,
+                    );
+                    if (connection) onEditConnection(connection);
+                  }}
+                  aria-label={t("connections.dataSources")}
+                >
+                  {isNew ? (
+                    <option value="__new__">
+                      {t("connections.new")}
+                    </option>
+                  ) : null}
+                  {connections.map((connection) => (
+                    <option key={connection.id} value={connection.id}>
+                      {connection.name || t("app.unnamed")}
+                    </option>
+                  ))}
+                </SelectInput>
+                <button
+                  type="button"
+                  className="btn small icon-only tw:shrink-0"
+                  onClick={() => onNewConnection()}
+                  title={t("connections.new")}
+                  aria-label={t("connections.new")}
+                >
+                  <Icon name="plus" />
+                </button>
+              </>
+            ) : editorView === "clouds" ? (
+              <SelectInput
+                value={catalogCloudProvider}
+                onChange={(event) =>
+                  setCatalogCloudProvider(
+                    event.target.value as ProviderKind,
+                  )
+                }
+                aria-label={t("connections.connectCloudProvider")}
+              >
+                {cloudProviders.map((provider) => (
+                  <option
+                    key={provider.provider}
+                    value={provider.provider}
+                  >
+                    {provider.label}
+                  </option>
+                ))}
+              </SelectInput>
+            ) : (
+              <SelectInput
+                value={catalogDriver?.id ?? ""}
+                disabled={visibleCatalogDrivers.length === 0}
+                onChange={(event) =>
+                  setCatalogDriverId(event.target.value)
+                }
+                aria-label={t("connections.drivers")}
+              >
+                {visibleCatalogDrivers.map((driver) => (
+                  <option key={driver.id} value={driver.id}>
+                    {driver.name}
+                  </option>
+                ))}
+              </SelectInput>
+            )}
+          </div>
           {editorView === "dataSources" ? (
             <>
           <div className="tw:grid tw:shrink-0 tw:grid-cols-[92px_minmax(0,1fr)] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:py-3">
@@ -2608,6 +2728,46 @@ export function ConnectionForm({
               </div>
             ) : null}
           </div>
+            </>
+          ) : editorView === "clouds" ? (
+            <>
+              <div className="tw:flex tw:min-h-control-lg tw:shrink-0 tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4">
+                <Icon name="key" />
+                <strong className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                  {providerLabel(catalogCloudProvider)}
+                </strong>
+              </div>
+              <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-5">
+                <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[760px] tw:gap-5">
+                  <section className="tw:grid tw:gap-3">
+                    <h3>{t("connections.connectCloudProvider")}</h3>
+                    <div className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-4">
+                      <Icon
+                        name="info"
+                        className="tw:mt-0.5 tw:text-info"
+                      />
+                      <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                        {t("connections.cloudCatalogDescription")}
+                      </p>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        className="btn primary"
+                        onClick={(event) =>
+                          openProviderCredentials(
+                            catalogCloudProvider,
+                            event.currentTarget,
+                          )
+                        }
+                      >
+                        <Icon name="key" />
+                        {t("connections.cloudCredentialDescription")}
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              </div>
             </>
           ) : catalogDriver ? (
             <>

@@ -8,8 +8,8 @@ DopeDB 기준에 맞춘다. DopeDB의 안전 승인·감사 기능은 같은 UI 
 
 DopeDB는 Tailwind CSS v4를 화면 배치의 기본 도구로 사용한다. Tailwind는 별도
 디자인 언어가 아니라 `--ds-*` 역할 토큰과 앱 정본 primitive를 사용하는 얇은
-utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그리드·vendor widget·
-앱 shell처럼 CSS가 구조적으로 더 알맞은 경계는 유지한다.
+utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget처럼 CSS가
+구조적으로 더 알맞은 경계만 유지한다.
 
 영역별 UI/UX 패리티와 기능 패리티는
 [`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](../../docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)에
@@ -23,8 +23,10 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
 | Tailwind theme bridge와 진입점 | `src/design-system/index.css` |
 | 버튼·배지·카드·폼·toolbar·상태 | `src/design-system/system.css` |
 | 반복되는 React UI primitive | `src/design-system/components/` |
-| 앱 shell과 workbench 레이아웃 | `src/styles.css` |
+| 앱 shell과 workbench 레이아웃 | shell·tool-window TSX의 정적 Tailwind utility |
 | 새 화면 고유 배치 | TSX에 직접 작성한 정적 `tw:` utility |
+| React Flow generated DOM | `src/components/ErdCanvas.css` vendor integration |
+| xterm generated DOM | upstream `@xterm/xterm/css/xterm.css` + host TSX Tailwind utility |
 
 컴포넌트 코드에 토큰이 이미 있는데 hex/rgb 값을 직접 추가하지 않는다. 새 역할이
 필요하면 `tokens.css`에 surface/foreground 쌍으로 정의하고 사용한다.
@@ -47,7 +49,7 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   `system.css`가 계속 소유한다. utility로 같은 primitive를 화면마다 재구현하지
   않는다.
 - 새 screen/component CSS와 CSS module은 만들지 않는다. CSS 추가는 token,
-  reset, 정본 primitive, 문서화된 shell grid/data-grid/vendor integration
+  reset, 정본 primitive, 문서화된 vendor integration
   경계에만 허용한다.
 - 전용 CSS를 이전하면 import와 파일을 같은 변경에서 삭제한다. 호환용 wrapper나
   중복 selector를 남기지 않는다.
@@ -77,7 +79,7 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   진입만 해당 속성 form을 바로 표시한다. 실제 생성하지 않는 demo나 지원하지
   않는 provider resource를 선택지 설명으로 약속하지 않는다.
 - Data Sources and Drivers dialog는 왼쪽의 세로 catalog rail에서 data source,
-  driver, cloud credential 책임을 분리한다. data source와 driver는 각각 하나의
+  cloud credential, driver 책임을 분리한다. data source와 driver는 각각 하나의
   검색 가능한 목록만 가지며, driver detail은 backend catalog가 반환한 이름,
   version, 설치 상태, 지원 connection method와 capability만 표시한다. cloud
   action은 실제 credential inventory를 열고 로그인·권한·조회 실패를 그대로
@@ -88,6 +90,9 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   token과 DopeDB 내부 parameter는 redacted URL projection에 표시하지 않는다.
   선택 mode는 driver URL과 분리된 내부 profile metadata로 저장·복원한다.
   runtime이 지원하지 않는 SQLite In-memory는 선택지처럼 보이게 만들지 않는다.
+  760px 이하 dialog에서는 같은 세 책임을 `SegmentedControl`로 유지하고,
+  현재 data source/provider/driver를 실제 selector로 전환한다. catalog rail을
+  숨기면서 전환 기능까지 없애지 않는다.
   Options는 실제 runtime에 연결된 PostgreSQL/MySQL time zone, keep-alive,
   allowlisted session `SET` startup script와 전체 engine의 idle
   auto-disconnect만 enabled control로 제공한다. operation 단위 automatic
@@ -194,6 +199,9 @@ Elevation은 세 단계만 허용한다.
   둥근 selected capsule.
 - `ToolWindowHeader`: Database Explorer, Agent, provider 패널의 고정 헤더와
   우측 action 슬롯.
+- `ToolWindowSideSurface`: Explorer, Local History, Dashboard의 데스크톱
+  left-anchor frame과 compact full-sheet/open state. feature CSS나 부모
+  selector 없이 정적 Tailwind data variant로 같은 slide 동작을 공유한다.
 - `ToolWindowHideButton`: 닫기/숨기기의 공통 minus command.
 - `ToolWindowVerticalSplit`: Local History에서 관찰한 primary/secondary
   vertical split. 비율은 `--ds-tool-window-primary-ratio`가 소유한다.
@@ -290,10 +298,14 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   footer. `ResultWorkbenchFooter`는 `WorkbenchStatusFooter`를 합성하고, 부분
   stream은 평탄화하지 않고 완료된 결과에만 검색을 적용한다.
 - 일반·가상 `DataGrid`는 `data-data-grid-scroll` surface 계약을 공유한다.
-  sticky header, filter, zebra/hover/selection, resize handle, scrollbar는
+  sticky header, filter, hover/selection, resize handle, scrollbar는
   컴포넌트의 정적 Tailwind v4 utility와 semantic token으로만 구성한다.
   grid 전용 CSS 파일이나 class selector를 다시 만들지 않는다. 주변 pane이
   compact/busy 상태를 투영할 때도 이 data attribute를 사용한다.
+  `dataGridGeometry.ts`가 clean-room 기준의 28px header/row, 28px row-number
+  column, 144px default data column을 소유하며 일반·가상 renderer는 이 값을
+  중복 선언하지 않는다. identifier/value/row number는 `font-mono`를 사용하고
+  DopeDB 기준에 없는 강한 zebra 배경을 추가하지 않는다.
   두 grid의 셀 선택은 공용 anchor/focus 좌표 계약을 사용한다. Shift+click과
   Shift+방향키는 직사각형 범위를 확장하고, 범위 복사는 행을 줄바꿈하고 셀을
   tab으로 구분한 텍스트를 만든다. 선택 배경과 focus ring도 기존

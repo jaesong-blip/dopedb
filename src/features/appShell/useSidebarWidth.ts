@@ -1,10 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const EXPLORER_STORAGE_KEY = "sidebarW";
 const LOCAL_HISTORY_STORAGE_KEY = "localHistorySidebarW";
 const EXPLORER_MIN = 180;
 const LOCAL_HISTORY_MIN = 300;
 const MAX = 520;
+const VIEWPORT_RATIO = 0.4;
 export const DEFAULT_SIDEBAR_WIDTH = 304;
 export const DEFAULT_LOCAL_HISTORY_WIDTH = 456;
 
@@ -45,7 +46,17 @@ export function useSidebarWidth(kind: SidebarKind) {
     databaseExplorer: readWidth("databaseExplorer"),
     localHistory: readWidth("localHistory"),
   }));
-  const width = widths[kind];
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const sync = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, []);
+  const viewportMaximum = Math.max(
+    minimum(kind),
+    Math.floor(viewportWidth * VIEWPORT_RATIO),
+  );
+  const width = Math.min(widths[kind], viewportMaximum);
 
   const startDrag = useCallback(
     (event: { preventDefault(): void; clientX: number }) => {

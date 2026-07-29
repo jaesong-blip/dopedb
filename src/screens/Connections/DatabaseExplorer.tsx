@@ -41,6 +41,7 @@ import {
   ToolWindowHeader,
   ToolWindowHideButton,
   ToolWindowSection,
+  ToolWindowSideSurface,
 } from "../../design-system/components/ToolWindow";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
@@ -72,6 +73,8 @@ export function DatabaseExplorer({
   onClose,
   onCreateDemoDatabase,
   creatingDemo = false,
+  compact = false,
+  compactOpen = false,
 }: {
   connections: ConnectionProfile[];
   selectedId: string | null;
@@ -90,6 +93,8 @@ export function DatabaseExplorer({
   onClose: () => void;
   onCreateDemoDatabase: () => void;
   creatingDemo?: boolean;
+  compact?: boolean;
+  compactOpen?: boolean;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -473,8 +478,9 @@ export function DatabaseExplorer({
   }
 
   return (
-    <aside
-      className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background"
+    <ToolWindowSideSurface
+      compact={compact}
+      compactOpen={compactOpen}
       id="workbench-sidebar"
     >
       <ToolWindowHeader
@@ -783,6 +789,6 @@ export function DatabaseExplorer({
           returnFocus={() => providerReturnFocusRef.current?.focus()}
         />
       ) : null}
-    </aside>
+    </ToolWindowSideSurface>
   );
 }

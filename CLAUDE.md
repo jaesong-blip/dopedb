@@ -17,9 +17,10 @@ UI를 수정하기 전에는 `src/design-system/README.md`를 읽는다. 새 레
 TSX에 직접 두고, 반복되는 시각·상호작용 패턴은 실제 공용 컴포넌트 또는 정본
 primitive로 `src/design-system/`에 적립한 뒤 README에 기록한다. 기능을 이관하면
 기존 selector, import, 파일을 같은 변경에서 삭제하며 Tailwind와 legacy CSS가
-같은 책임을 동시에 소유하지 않게 한다. CSS 예외는 문서화된 shell grid,
-data-grid/vendor integration, reset, token, 정본 primitive뿐이다. 변경한 화면은
-직접 실행해 확인한다.
+같은 책임을 동시에 소유하지 않게 한다. shell, tool-window, data-grid 배치는
+정적 Tailwind와 공용 React primitive가 소유하며 CSS 예외는 문서화된 vendor
+integration, reset, token, 정본 primitive뿐이다. 변경한 화면은 직접 실행해
+확인한다.
 
 DopeDB 2026.1을 앱 UI/UX의 clean-room 정본으로 사용한다. Tailwind v4와
 DopeDB semantic token은 그 화면을 구현하는 수단이며 별도 시각 방향이 아니다.

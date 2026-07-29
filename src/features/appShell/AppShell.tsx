@@ -215,6 +215,9 @@ function Shell() {
   });
   const showTerminalDock =
     terminalDockOpen && !!selected && !settingsOpen && editing === null;
+  useEffect(() => {
+    if (compactShell && showTerminalDock && servicesOpen) closeServices();
+  }, [closeServices, compactShell, servicesOpen, showTerminalDock]);
   // Schema diff is a SQL-only comparison feature — a group whose connections are MongoDB
   // is never a valid diff candidate, even if one somehow carries a schemaGroup value.
   const schemaGroups = useMemo(
@@ -330,6 +333,10 @@ function Shell() {
 
   function openOrFocusTerminalDock() {
     if (!selected) return;
+    if (compactShell) {
+      closeServices();
+      setMobileExplorerOpen(false);
+    }
     if (showTerminalDock) {
       window.requestAnimationFrame(() => {
         document
@@ -796,6 +803,10 @@ function Shell() {
       onQueryServiceSessionChange={queryServices.updateSession}
       onShowQueryServices={(sessionId) => {
         queryServices.activateNewestSession(sessionId);
+        if (compactShell) {
+          closeTerminalDock();
+          setMobileExplorerOpen(false);
+        }
         showServices();
       }}
       onOpenTable={(table) => selected && openTableDocument(selected, table)}
@@ -860,14 +871,48 @@ function Shell() {
           openStableDocument("schema", false);
         }
         if (compactShell) {
+          closeServices();
+          closeTerminalDock();
           if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
           else setMobileExplorerOpen(true);
         }
       }}
-      onToggleDatabaseExplorer={toggleDatabaseExplorer}
-      onToggleLocalHistory={toggleLocalHistory}
+      onToggleDatabaseExplorer={() => {
+        if (!compactShell) {
+          toggleDatabaseExplorer();
+          return;
+        }
+        closeServices();
+        closeTerminalDock();
+        if (databaseExplorerOpen && mobileExplorerOpen) {
+          dismissMobileExplorer();
+          return;
+        }
+        showDatabaseExplorer();
+        setMobileExplorerOpen(true);
+      }}
+      onToggleLocalHistory={() => {
+        if (!compactShell) {
+          toggleLocalHistory();
+          return;
+        }
+        closeServices();
+        closeTerminalDock();
+        if (localHistoryOpen && mobileExplorerOpen) {
+          dismissMobileExplorer();
+          return;
+        }
+        showLocalHistory();
+        setMobileExplorerOpen(true);
+      }}
       onCloseLocalHistory={closeLocalHistory}
-      onToggleServices={toggleServices}
+      onToggleServices={() => {
+        if (compactShell && !servicesOpen) {
+          closeTerminalDock();
+          setMobileExplorerOpen(false);
+        }
+        toggleServices();
+      }}
       onCloseServices={closeServices}
       onActivateQueryServiceSession={queryServices.activateSession}
       onActivateWorkbenchDocument={workbench.activateId}
@@ -879,12 +924,20 @@ function Shell() {
         setSettingsOpen(true);
         setSchemaDiffGroupKey(null);
         setMobileExplorerOpen(false);
+        if (compactShell) {
+          closeServices();
+          closeTerminalDock();
+        }
       }}
       onSafetySettings={() => {
         setSettingsSection("safety");
         setSettingsOpen(true);
         setSchemaDiffGroupKey(null);
         setMobileExplorerOpen(false);
+        if (compactShell) {
+          closeServices();
+          closeTerminalDock();
+        }
       }}
       onOpenNotifications={() => {
         markSeen();

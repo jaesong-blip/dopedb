@@ -21,6 +21,7 @@ import {
   WorkbenchEmptyState,
   WorkbenchPane,
 } from "../../design-system/components/Workbench";
+import { ToolWindowSideSurface } from "../../design-system/components/ToolWindow";
 import { dashboardTileRunQueries, dashboardsQuery, qk } from "../../lib/queries";
 import { useI18n, type I18nKey } from "../../lib/i18n";
 
@@ -45,6 +46,8 @@ export function DashboardSidebar({
   onFocus,
   workspaceAccount,
   workspaceHeader,
+  compact = false,
+  compactOpen = false,
 }: {
   connections: ConnectionProfile[];
   selectedId: string | null;
@@ -53,6 +56,8 @@ export function DashboardSidebar({
   onFocus: (id: string) => void;
   workspaceAccount?: ReactNode;
   workspaceHeader?: ReactNode;
+  compact?: boolean;
+  compactOpen?: boolean;
 }) {
   const { t } = useI18n();
   const selected = connections.find((connection) => connection.id === selectedId) ?? null;
@@ -63,8 +68,9 @@ export function DashboardSidebar({
   const dashboards = list.data ?? [];
 
   return (
-    <aside
-      className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:min-h-0 tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:rounded-md tw:border tw:border-border-subtle tw:bg-background"
+    <ToolWindowSideSurface
+      compact={compact}
+      compactOpen={compactOpen}
       id="workbench-sidebar"
     >
       {workspaceHeader}
@@ -134,7 +140,7 @@ export function DashboardSidebar({
           {workspaceAccount}
         </div>
       ) : null}
-    </aside>
+    </ToolWindowSideSurface>
   );
 }
 

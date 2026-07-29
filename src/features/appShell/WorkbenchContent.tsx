@@ -224,7 +224,12 @@ export default function WorkbenchContent(props: Props) {
       <section
         data-area={area}
         data-workbench-pane
-        className="scrollbar-sleek workbench-canvas tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background tw:p-[var(--ds-pane-pad)] tw:shadow-[inset_0_var(--ds-border-width)_0_var(--ds-border-subtle)] tw:max-[760px]:p-3"
+        data-edge-to-edge={
+          area === "workspace" &&
+          activeDocument !== null &&
+          activeDocument.kind !== "welcome"
+        }
+        className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background tw:p-[var(--ds-pane-pad)] tw:shadow-[inset_0_var(--ds-border-width)_0_var(--ds-border-subtle)] tw:data-[edge-to-edge=true]:overflow-hidden tw:data-[edge-to-edge=true]:p-0 tw:max-[760px]:p-3 tw:max-[760px]:data-[edge-to-edge=true]:p-0"
       >
         {!selected ? (
           <ConnectionPicker

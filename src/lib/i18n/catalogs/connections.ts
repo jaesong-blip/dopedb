@@ -40,6 +40,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionOk": "Connection OK",
     "connections.connectionSaved": "Connection saved",
     "connections.connectCloudProvider": "Cloud accounts",
+    "connections.cloudCatalogDescription":
+      "Cloud credentials are managed separately from database connection profiles.",
     "connections.cloudCredentialDescription":
       "Configure account credentials",
     "connections.connectionMethod": "Connection method",
@@ -296,6 +298,8 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionOk": "연결 정상",
     "connections.connectionSaved": "연결이 저장되었습니다",
     "connections.connectCloudProvider": "클라우드 계정",
+    "connections.cloudCatalogDescription":
+      "클라우드 자격 증명은 데이터베이스 연결 프로필과 분리해 관리합니다.",
     "connections.cloudCredentialDescription":
       "계정 자격 증명 설정",
     "connections.connectionMethod": "연결 방식",

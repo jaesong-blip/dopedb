@@ -21,7 +21,6 @@ import type {
 } from "./domain";
 import { resolvePtyTheme } from "./ptyTheme";
 import "@xterm/xterm/css/xterm.css";
-import "./ptySurface.css";
 
 const INPUT_CHUNK_BYTES = 32 * 1024;
 const INPUT_FLUSH_MS = 4;
@@ -340,7 +339,7 @@ const PtySurface = forwardRef<PtySurfaceHandle, PtySurfaceProps>(
     return (
       <div
         ref={hostRef}
-        className={`terminal-surface${className ? ` ${className}` : ""}`}
+        className={`tw:relative tw:min-h-0 tw:min-w-0 tw:w-full tw:flex-1 tw:overflow-hidden tw:bg-background tw:p-2 tw:[&_.xterm]:h-full tw:[&_.xterm-viewport]:[scrollbar-color:var(--ds-border-strong)_transparent] tw:[&_.xterm-viewport]:[scrollbar-width:thin]${className ? ` ${className}` : ""}`}
         data-pty-id={session.id}
         role={role}
         id={id}
@@ -349,13 +348,13 @@ const PtySurface = forwardRef<PtySurfaceHandle, PtySurfaceProps>(
         hidden={!active}
       >
         {loading && (
-          <div className="terminal-surface-status tw:text-muted-foreground">
+          <div className="tw:absolute tw:inset-2 tw:z-base tw:grid tw:place-items-center tw:bg-background tw:p-3 tw:text-muted-foreground">
             {t("common.loading")}
           </div>
         )}
         {loadError && (
           <div
-            className="terminal-surface-status tw:text-ui tw:text-danger"
+            className="tw:absolute tw:inset-2 tw:z-base tw:grid tw:place-items-center tw:bg-background tw:p-3 tw:text-ui tw:text-danger"
             role="alert"
           >
             {loadError}
