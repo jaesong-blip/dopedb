@@ -3,6 +3,15 @@ export const TERMINAL_DOCK_DEFAULT_WIDTH = 396;
 export const TERMINAL_DOCK_MIN_WIDTH = 300;
 export const TERMINAL_DOCK_MAX_WIDTH = 640;
 
+export function normalizeTerminalDockWidth(requestedWidth: number): number {
+  return Math.round(
+    Math.min(
+      TERMINAL_DOCK_MAX_WIDTH,
+      Math.max(TERMINAL_DOCK_MIN_WIDTH, requestedWidth),
+    ),
+  );
+}
+
 export function clampTerminalDockWidth(
   requestedWidth: number,
   viewportWidth: number,
@@ -13,9 +22,8 @@ export function clampTerminalDockWidth(
   );
   return Math.round(
     Math.min(
-      TERMINAL_DOCK_MAX_WIDTH,
       viewportMaximum,
-      Math.max(TERMINAL_DOCK_MIN_WIDTH, requestedWidth),
+      normalizeTerminalDockWidth(requestedWidth),
     ),
   );
 }

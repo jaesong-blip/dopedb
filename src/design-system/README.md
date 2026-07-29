@@ -291,7 +291,9 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
-  compact viewport의 표시 폭 clamp는 저장된 desktop 폭을 변경하지 않는다.
+  상태는 desktop 선호 폭을 소유하고 shell projection만 현재 viewport에 맞춰
+  clamp한다. 따라서 compact viewport에서 처음 mount되거나 왕복해도 저장된
+  desktop 폭과 다음 desktop projection은 변경되지 않는다.
 - Local History의 현재 `Recent` view는 tool-window header가 소유한다. 실제
   revision 복원 action은 검색/필터 문맥과 같은 command row에 두고 panel
   close와 섞지 않는다. project external-change 기능이 생기기 전에는 빈 file

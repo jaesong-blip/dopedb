@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 
 import {
   clampTerminalDockWidth,
+  normalizeTerminalDockWidth,
   TERMINAL_DOCK_DEFAULT_WIDTH,
 } from "../terminals/layout";
 
@@ -19,10 +20,7 @@ export function useTerminalDock() {
       LEGACY_DEFAULT_WIDTHS.has(saved)
         ? TERMINAL_DOCK_DEFAULT_WIDTH
         : saved || TERMINAL_DOCK_DEFAULT_WIDTH;
-    return clampTerminalDockWidth(
-      requested,
-      typeof window === "undefined" ? 1_280 : window.innerWidth,
-    );
+    return normalizeTerminalDockWidth(requested);
   });
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
