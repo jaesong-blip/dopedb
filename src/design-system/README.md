@@ -325,7 +325,10 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   title에 유지하고 grid를 밀어내는 전체 폭 footer를 만들지 않는다.
 - `ResultWorkbenchToolbar`, `ResultWorkbenchFooter`: materialized/streaming
   결과가 공유하는 grid mode, 전체 셀 검색, 실제 export action과 행·duration
-  상태. `ResultWorkbenchFooter`는 `DataGridStatusPill`을 합성하고, 부분
+  상태. workbench export는 별도 CSV/JSON text button을 나열하지 않고
+  DopeDB command 문법의 `CSV` format menu 하나로 투영하며, inline metadata
+  표현만 명시적 text action을 유지한다. 두 표현은 같은 export handler를
+  공유한다. `ResultWorkbenchFooter`는 `DataGridStatusPill`을 합성하고, 부분
   stream은 평탄화하지 않고 완료된 결과에만 검색을 적용한다.
 - 일반·가상 `DataGrid`는 `data-data-grid-scroll` surface 계약을 공유한다.
   sticky header, filter, hover/selection, resize handle, scrollbar는

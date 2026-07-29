@@ -1,5 +1,6 @@
-// Compact export/copy controls for any result grid: Copy (TSV) · CSV · JSON.
-// Always operate on the FULL result rows, not a display-sliced subset.
+// Compact export/copy controls for any result grid. Workbench surfaces use the
+// DopeDB command grammar of Copy + one CSV format menu; inline metadata keeps
+// the explicit text actions. Every action operates on the full result rows.
 import {
   iterateSqlStreamRows,
   type SqlStreamRowSource,
@@ -14,6 +15,7 @@ import {
 } from "../lib/export";
 import { useI18n } from "../lib/i18n";
 import { Icon } from "./Icon";
+import ToolbarMenu, { ToolbarMenuItem } from "./ToolbarMenu";
 import { useToast } from "./Toast";
 
 export default function ResultToolbar({
@@ -43,6 +45,24 @@ export default function ResultToolbar({
   const disabled = partial === true;
   const source = () =>
     rowSource ? iterateSqlStreamRows(rowSource) : (rows ?? []);
+  const exportCsv = () => {
+    if (rowSource) {
+      void downloadCsvTerminalSnapshot(filenameBase, columns, source()).catch(
+        () => toast(t("results.copyFailed"), "error"),
+      );
+      return;
+    }
+    downloadCsv(filenameBase, columns, rows ?? []);
+  };
+  const exportJson = () => {
+    if (rowSource) {
+      void downloadJsonTerminalSnapshot(filenameBase, columns, source()).catch(
+        () => toast(t("results.copyFailed"), "error"),
+      );
+      return;
+    }
+    downloadJson(filenameBase, columns, rows ?? []);
+  };
   return (
     <span
       data-presentation={presentation}
@@ -72,34 +92,48 @@ export default function ResultToolbar({
           t("results.copy")
         )}
       </button>
-      <button
-        className="btn small ghost"
-        title={t("results.downloadCsvTitle")}
-        disabled={disabled}
-        onClick={() => {
-          if (rowSource) {
-            void downloadCsvTerminalSnapshot(filenameBase, columns, source()).catch(() =>
-              toast(t("results.copyFailed"), "error"),
-            );
-          } else downloadCsv(filenameBase, columns, rows ?? []);
-        }}
-      >
-        {scopeLabel ? t("results.exportCsv", { scope: scopeLabel }) : "CSV"}
-      </button>
-      <button
-        className="btn small ghost"
-        title={t("results.downloadJsonTitle")}
-        disabled={disabled}
-        onClick={() => {
-          if (rowSource) {
-            void downloadJsonTerminalSnapshot(filenameBase, columns, source()).catch(() =>
-              toast(t("results.copyFailed"), "error"),
-            );
-          } else downloadJson(filenameBase, columns, rows ?? []);
-        }}
-      >
-        {scopeLabel ? t("results.exportJson", { scope: scopeLabel }) : "JSON"}
-      </button>
+      {presentation === "workbench" ? (
+        <ToolbarMenu
+          label={t("results.downloadCsvTitle")}
+          disabled={disabled}
+          trigger={
+            <>
+              CSV
+              <Icon name="chevronDown" />
+            </>
+          }
+        >
+          <ToolbarMenuItem icon="download" onClick={exportCsv}>
+            {t("results.downloadCsvTitle")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem icon="download" onClick={exportJson}>
+            {t("results.downloadJsonTitle")}
+          </ToolbarMenuItem>
+        </ToolbarMenu>
+      ) : (
+        <>
+          <button
+            className="btn small ghost"
+            title={t("results.downloadCsvTitle")}
+            disabled={disabled}
+            onClick={exportCsv}
+          >
+            {scopeLabel
+              ? t("results.exportCsv", { scope: scopeLabel })
+              : "CSV"}
+          </button>
+          <button
+            className="btn small ghost"
+            title={t("results.downloadJsonTitle")}
+            disabled={disabled}
+            onClick={exportJson}
+          >
+            {scopeLabel
+              ? t("results.exportJson", { scope: scopeLabel })
+              : "JSON"}
+          </button>
+        </>
+      )}
       {disabled && (
         <span className="tw:text-muted-foreground">
           {t("results.partialExportUnavailable")}
