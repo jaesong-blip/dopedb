@@ -54,14 +54,49 @@ export function Field({
   );
 }
 
+export function PropertyRow({
+  label,
+  htmlFor,
+  hint,
+  validation,
+  children,
+}: {
+  label: ReactNode;
+  htmlFor?: string;
+  hint?: ReactNode;
+  validation?: FieldValidation;
+  children: ReactNode;
+}) {
+  return (
+    <div className="tw:grid tw:min-h-control-md tw:min-w-0 tw:grid-cols-[100px_minmax(0,1fr)] tw:items-start tw:gap-x-3 tw:gap-y-1.5 tw:@max-[560px]:grid-cols-1">
+      <label
+        htmlFor={htmlFor}
+        className="tw:inline-flex tw:min-h-control-md tw:items-center tw:gap-1 tw:text-sm tw:text-foreground tw:@max-[560px]:min-h-0"
+      >
+        {label}
+        {hint}
+      </label>
+      <div className="tw:grid tw:min-w-0 tw:gap-1.5 tw:[&>input]:w-full tw:[&>select]:w-full tw:[&>textarea]:w-full">
+        {children}
+        {validation ? (
+          <FieldValidationMessage validation={validation} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export const TextInput = forwardRef<
   HTMLInputElement,
-  Omit<InputHTMLAttributes<HTMLInputElement>, "className">
->(function TextInput(props, ref) {
+  Omit<InputHTMLAttributes<HTMLInputElement>, "className"> & {
+    density?: "default" | "compact";
+  }
+>(function TextInput({ density = "default", ...props }, ref) {
   return (
     <input
       ref={ref}
-      className="tw:h-control-lg tw:w-full tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-3 tw:font-sans tw:text-ui tw:text-foreground tw:shadow-control tw:outline-none tw:placeholder:text-muted-foreground tw:focus:border-ring tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-default tw:disabled:opacity-50"
+      data-density={density}
+      className="tw:h-control-lg tw:w-full tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-3 tw:font-sans tw:text-ui tw:text-foreground tw:shadow-control tw:outline-none tw:data-[density=compact]:h-control-md tw:data-[density=compact]:px-2 tw:placeholder:text-muted-foreground tw:focus:border-ring tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-default tw:disabled:opacity-50"
       {...props}
     />
   );
@@ -69,12 +104,18 @@ export const TextInput = forwardRef<
 
 export const SelectInput = forwardRef<
   HTMLSelectElement,
-  Omit<SelectHTMLAttributes<HTMLSelectElement>, "className">
->(function SelectInput({ children, ...props }, ref) {
+  Omit<SelectHTMLAttributes<HTMLSelectElement>, "className"> & {
+    density?: "default" | "compact";
+  }
+>(function SelectInput(
+  { children, density = "default", ...props },
+  ref,
+) {
   return (
     <select
       ref={ref}
-      className="tw:h-control-lg tw:w-full tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-3 tw:font-sans tw:text-ui tw:text-foreground tw:shadow-control tw:outline-none tw:focus:border-ring tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-default tw:disabled:opacity-50"
+      data-density={density}
+      className="tw:h-control-lg tw:w-full tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-3 tw:font-sans tw:text-ui tw:text-foreground tw:shadow-control tw:outline-none tw:data-[density=compact]:h-control-md tw:data-[density=compact]:px-2 tw:focus:border-ring tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-default tw:disabled:opacity-50"
       {...props}
     >
       {children}

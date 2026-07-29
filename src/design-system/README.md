@@ -238,11 +238,15 @@ Elevation은 세 단계만 허용한다.
   일반 action list의 inset rounded row와 혼용하지 않는다.
 - `ToolWindowRailAction`: tool window·catalog의 좁은 세로 rail에서 쓰는
   icon action과 pressed/selected 상태.
-- `Field`, `TextInput`, `TextAreaInput`, `SelectInput`, `CheckboxField`: label,
-  focus, disabled 상태를 함께 소유하는 dense form control. SQL/session
-  설정처럼 여러 줄인 값은 화면별 textarea class를 만들지 않고 monospace
-  `TextAreaInput`을 사용한다. 계층 checklist의 parent는 `CheckboxField`의
-  native `indeterminate` 상태로 부분 선택을 표현한다.
+- `Field`, `PropertyRow`, `TextInput`, `TextAreaInput`, `SelectInput`,
+  `CheckboxField`: label, focus, disabled 상태를 함께 소유하는 dense form
+  control. `PropertyRow`는 Data Sources General처럼 100px label과 control을
+  가로로 맞추고 compact dialog에서는 세로로 접는다. DopeDB property
+  field는 `density="compact"`의 32px control을 사용하며 feature가 별도
+  input class를 만들지 않는다. SQL/session 설정처럼 여러 줄인 값은 화면별
+  textarea class를 만들지 않고 monospace `TextAreaInput`을 사용한다. 계층
+  checklist의 parent는 `CheckboxField`의 native `indeterminate` 상태로 부분
+  선택을 표현한다.
 - `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.

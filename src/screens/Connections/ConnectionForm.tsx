@@ -23,6 +23,7 @@ import {
   CheckboxField,
   Field,
   FieldValidationMessage,
+  PropertyRow,
   SelectInput,
   TextAreaInput,
   TextInput,
@@ -108,14 +109,6 @@ import {
   driversQuery,
   useCatalogScope,
 } from "../../lib/queries";
-
-const PROVIDER_ORDER: Provider[] = [
-  "auto",
-  "generic",
-  "neon",
-  "planetScale",
-  "gcpCloudSql",
-];
 
 type ConnectionEditorView = "dataSources" | "clouds" | "drivers";
 type ConnectionInputMode = "default" | "urlOnly";
@@ -475,16 +468,6 @@ export function ConnectionForm({
           message: t("connections.problemConnectionUrlInvalid"),
         }
       : undefined;
-  const providers = PROVIDER_ORDER.filter(
-    (provider) =>
-      provider === "auto" ||
-      provider === form.provider ||
-      (driverCatalog.data ?? []).some(
-        (driver) =>
-          driver.engine === form.engine &&
-          driver.supportedProviders.includes(provider),
-      ),
-  );
   const tabs: readonly PanelTab<ConnectionTab>[] = [
     { id: "general", label: t("connections.general") },
     { id: "options", label: t("connections.options") },
@@ -1686,13 +1669,17 @@ export function ConnectionForm({
           </div>
           {editorView === "dataSources" ? (
             <>
-          <div className="tw:grid tw:shrink-0 tw:grid-cols-[92px_minmax(0,1fr)] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:py-3">
-            <span className="tw:text-sm tw:text-muted-foreground">
+          <div className="tw:grid tw:shrink-0 tw:grid-cols-[75px_minmax(0,1fr)] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:py-3">
+            <label
+              htmlFor="connection-name"
+              className="tw:text-sm tw:text-foreground"
+            >
               {t("connections.name")}
-            </span>
-            <span className="tw:grid tw:min-w-0 tw:gap-1">
+            </label>
+            <span className="tw:grid tw:min-w-0 tw:max-w-[360px] tw:gap-1">
               <TextInput
                 id="connection-name"
+                density="compact"
                 value={form.name}
                 aria-invalid={
                   nameValidation?.tone === "danger" || undefined
@@ -1728,68 +1715,22 @@ export function ConnectionForm({
               />
             ) : null}
             {!problemsOpen && activeTab === "general" ? (
-              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-5">
+              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-4">
                 <section className="tw:grid tw:gap-3">
-                  <h3>{t("connections.connection")}</h3>
-                  <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[760px]:grid-cols-1">
-                    <Field label={t("connections.engine")}>
-                      <SelectInput
-                        value={form.engine}
-                        onChange={(event) =>
-                          selectSource(event.target.value as Engine)
-                        }
-                      >
-                        <option value="postgres">PostgreSQL</option>
-                        <option value="mysql">
-                          MySQL / MariaDB
-                        </option>
-                        <option value="sqlite">SQLite</option>
-                        <option value="mongodb">MongoDB</option>
-                      </SelectInput>
-                    </Field>
-                    <Field
-                      label={t("connections.connectionMethod")}
-                      hint={
-                        <InfoTip
-                          label={t(
-                            "connections.connectionMethodHint",
-                          )}
-                        />
-                      }
-                    >
-                      <SelectInput
-                        value={form.provider}
-                        onChange={(event) => {
-                          const provider =
-                            event.target.value as Provider;
-                          setForm((current) => ({
-                            ...current,
-                            provider,
-                            driverId: null,
-                          }));
-                        }}
-                      >
-                        {providers.map((provider) => (
-                          <option key={provider} value={provider}>
-                            {providerLabel(provider)}
-                          </option>
-                        ))}
-                      </SelectInput>
-                    </Field>
-                  </div>
-
-                  <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-3">
-                    <Field
-                      label={t("connections.driver")}
-                      validation={driverValidation}
-                      hint={
-                        <InfoTip
-                          label={t("connections.driverHint")}
-                        />
-                      }
-                    >
+                  <PropertyRow
+                    label={t("connections.driver")}
+                    htmlFor="connection-driver"
+                    validation={driverValidation}
+                    hint={
+                      <InfoTip
+                        label={t("connections.driverHint")}
+                      />
+                    }
+                  >
+                    <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-2">
                       <SelectInput
                         id="connection-driver"
+                        density="compact"
                         value={form.driverId ?? ""}
                         aria-invalid={
                           driverValidation?.tone === "danger" ||
@@ -1815,62 +1756,65 @@ export function ConnectionForm({
                           </option>
                         ))}
                       </SelectInput>
-                    </Field>
-                    {activeDriver?.installMode === "managed" &&
-                    activeDriver.installState === "available" ? (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={installingDriverId !== null}
-                        onClick={() =>
-                          void downloadDriver(activeDriver)
-                        }
-                      >
-                        <Icon name="download" />
-                        {installingDriverId === activeDriver.id
-                          ? t("connections.driverDownloading")
-                          : t("connections.driverDownload")}
-                      </button>
-                    ) : null}
-                  </div>
+                      {activeDriver?.installMode === "managed" &&
+                      activeDriver.installState === "available" ? (
+                        <button
+                          type="button"
+                          className="btn small"
+                          disabled={installingDriverId !== null}
+                          onClick={() =>
+                            void downloadDriver(activeDriver)
+                          }
+                        >
+                          <Icon name="download" />
+                          {installingDriverId === activeDriver.id
+                            ? t("connections.driverDownloading")
+                            : t("connections.driverDownload")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </PropertyRow>
 
-                  <div className="tw:grid tw:gap-1.5">
-                    <span className="tw:text-sm tw:font-medium tw:text-muted-foreground">
-                      {t("connections.connectionType")}
-                    </span>
-                    <SegmentedControl
-                      value={connectionInputMode}
-                      label={t("connections.connectionType")}
-                      options={[
-                        {
-                          value: "default",
-                          label: t(
-                            "connections.connectionTypeDefault",
-                          ),
-                        },
-                        {
-                          value: "urlOnly",
-                          label: t(
-                            "connections.connectionTypeUrlOnly",
-                          ),
-                        },
-                      ]}
-                      disabled={busy}
-                      onChange={selectConnectionInputMode}
-                    />
-                  </div>
+                  <PropertyRow
+                    label={t("connections.connectionType")}
+                  >
+                    <div className="tw:flex">
+                      <SegmentedControl
+                        value={connectionInputMode}
+                        label={t("connections.connectionType")}
+                        options={[
+                          {
+                            value: "default",
+                            label: t(
+                              "connections.connectionTypeDefault",
+                            ),
+                          },
+                          {
+                            value: "urlOnly",
+                            label: t(
+                              "connections.connectionTypeUrlOnly",
+                            ),
+                          },
+                        ]}
+                        disabled={busy}
+                        onChange={selectConnectionInputMode}
+                      />
+                    </div>
+                  </PropertyRow>
                 </section>
 
                 <div className="tw:h-px tw:bg-border-subtle" />
 
                 {connectionInputMode === "urlOnly" ? (
-                  <section className="tw:grid tw:gap-3">
-                    <Field
+                  <section className="tw:grid tw:gap-2">
+                    <PropertyRow
                       label={t("connections.connectionUrl")}
+                      htmlFor="connection-url"
                       validation={connectionUrlValidation}
                     >
                       <TextInput
                         id="connection-url"
+                        density="compact"
                         value={connectionUrlDraft}
                         aria-invalid={
                           connectionUrlValidation?.tone === "danger" ||
@@ -1886,21 +1830,22 @@ export function ConnectionForm({
                           normalizeConnectionUrl(event.target.value)
                         }
                       />
-                    </Field>
-                    <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">
+                    </PropertyRow>
+                    <p className="tw:m-0 tw:pl-[112px] tw:text-xs tw:text-muted-foreground tw:@max-[560px]:pl-0">
                       {t("connections.connectionUrlOverrides")}
                     </p>
                   </section>
                 ) : isSqlite ? (
                   <section className="tw:grid tw:gap-3">
-                    <h3>{t("connections.database")}</h3>
-                    <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-2">
-                      <Field
-                        label={t("connections.databaseFile")}
-                        validation={databaseValidation}
-                      >
+                    <PropertyRow
+                      label={t("connections.databaseFile")}
+                      htmlFor="connection-database"
+                      validation={databaseValidation}
+                    >
+                      <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-2">
                         <TextInput
                           id="connection-database"
+                          density="compact"
                           value={form.database}
                           aria-invalid={
                             databaseValidation?.tone === "danger" ||
@@ -1911,32 +1856,32 @@ export function ConnectionForm({
                           }
                           placeholder="/path/to/app.db"
                         />
-                      </Field>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() =>
-                          void pickFile().then(
-                            (file) =>
-                              file && set("database", file),
-                          )
-                        }
-                      >
-                        {t("connections.browse")}
-                      </button>
-                    </div>
+                        <button
+                          type="button"
+                          className="btn small"
+                          onClick={() =>
+                            void pickFile().then(
+                              (file) =>
+                                file && set("database", file),
+                            )
+                          }
+                        >
+                          {t("connections.browse")}
+                        </button>
+                      </div>
+                    </PropertyRow>
                   </section>
                 ) : (
-                  <>
-                    <section className="tw:grid tw:gap-3">
-                      <h3>{t("connections.connection")}</h3>
-                      <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_112px] tw:gap-3 tw:@max-[560px]:grid-cols-1">
-                        <Field
-                          label={t("connections.host")}
-                          validation={hostValidation}
-                        >
+                  <section className="tw:grid tw:gap-3">
+                    <PropertyRow
+                      label={t("connections.host")}
+                      htmlFor="connection-host"
+                    >
+                      <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto_112px] tw:items-start tw:gap-3 tw:@max-[560px]:grid-cols-1 tw:@max-[560px]:gap-1.5">
+                        <div className="tw:grid tw:gap-1.5">
                           <TextInput
                             id="connection-host"
+                            density="compact"
                             value={form.host}
                             aria-invalid={
                               hostValidation?.tone === "danger" ||
@@ -1946,13 +1891,22 @@ export function ConnectionForm({
                               set("host", event.target.value)
                             }
                           />
-                        </Field>
-                        <Field
-                          label={t("connections.port")}
-                          validation={portValidation}
+                          {hostValidation ? (
+                            <FieldValidationMessage
+                              validation={hostValidation}
+                            />
+                          ) : null}
+                        </div>
+                        <label
+                          htmlFor="connection-port"
+                          className="tw:inline-flex tw:min-h-control-md tw:items-center tw:text-sm tw:text-foreground tw:@max-[560px]:min-h-0"
                         >
+                          {t("connections.port")}
+                        </label>
+                        <div className="tw:grid tw:gap-1.5">
                           <TextInput
                             id="connection-port"
+                            density="compact"
                             type="number"
                             value={form.port}
                             min={1}
@@ -1971,35 +1925,46 @@ export function ConnectionForm({
                               }
                             }}
                           />
-                        </Field>
-                      </div>
-                      <Field
-                        label={t("connections.database")}
-                        validation={databaseValidation}
-                        hint={
-                          isMongo ? (
-                            <InfoTip
-                              label={t(
-                                "connections.databaseRequiredHint",
-                              )}
+                          {portValidation ? (
+                            <FieldValidationMessage
+                              validation={portValidation}
                             />
-                          ) : null
+                          ) : null}
+                        </div>
+                      </div>
+                    </PropertyRow>
+
+                    <PropertyRow
+                      label={t("connections.database")}
+                      htmlFor="connection-database"
+                      validation={databaseValidation}
+                      hint={
+                        isMongo ? (
+                          <InfoTip
+                            label={t(
+                              "connections.databaseRequiredHint",
+                            )}
+                          />
+                        ) : null
+                      }
+                    >
+                      <TextInput
+                        id="connection-database"
+                        density="compact"
+                        value={form.database}
+                        required={isMongo}
+                        aria-invalid={
+                          databaseValidation?.tone === "danger" ||
+                          undefined
                         }
-                      >
-                        <TextInput
-                          id="connection-database"
-                          value={form.database}
-                          required={isMongo}
-                          aria-invalid={
-                            databaseValidation?.tone === "danger" ||
-                            undefined
-                          }
-                          onChange={(event) =>
-                            set("database", event.target.value)
-                          }
-                        />
-                      </Field>
-                      {isMongo ? (
+                        onChange={(event) =>
+                          set("database", event.target.value)
+                        }
+                      />
+                    </PropertyRow>
+
+                    {isMongo ? (
+                      <PropertyRow label={t("connections.srv")}>
                         <CheckboxField
                           label={t("connections.srv")}
                           checked={srv}
@@ -2007,41 +1972,39 @@ export function ConnectionForm({
                             setSrv(event.target.checked)
                           }
                         />
-                      ) : null}
-                    </section>
+                      </PropertyRow>
+                    ) : null}
 
-                    <div className="tw:h-px tw:bg-border-subtle" />
+                    <PropertyRow label={t("connections.user")}>
+                      <TextInput
+                        density="compact"
+                        aria-label={t("connections.user")}
+                        value={form.username}
+                        onChange={(event) =>
+                          set("username", event.target.value)
+                        }
+                      />
+                    </PropertyRow>
 
-                    <section className="tw:grid tw:gap-3">
-                      <h3>{t("connections.authentication")}</h3>
-                      <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[560px]:grid-cols-1">
-                        <Field label={t("connections.user")}>
-                          <TextInput
-                            value={form.username}
-                            onChange={(event) =>
-                              set("username", event.target.value)
-                            }
-                          />
-                        </Field>
-                        <Field label={t("connections.password")}>
-                          <TextInput
-                            type="password"
-                            value={password}
-                            onChange={(event) =>
-                              setPassword(event.target.value)
-                            }
-                            placeholder={
-                              form.secretRef
-                                ? `•••••• (${t(
-                                    "connections.passwordStoredExisting",
-                                  )})`
-                                : t("connections.passwordStored")
-                            }
-                          />
-                        </Field>
-                      </div>
-                    </section>
-                  </>
+                    <PropertyRow label={t("connections.password")}>
+                      <TextInput
+                        density="compact"
+                        type="password"
+                        aria-label={t("connections.password")}
+                        value={password}
+                        onChange={(event) =>
+                          setPassword(event.target.value)
+                        }
+                        placeholder={
+                          form.secretRef
+                            ? `•••••• (${t(
+                                "connections.passwordStoredExisting",
+                              )})`
+                            : t("connections.passwordStored")
+                        }
+                      />
+                    </PropertyRow>
+                  </section>
                 )}
 
               </div>
