@@ -48,6 +48,89 @@ export function StatusBarItem({
   );
 }
 
+export function StatusBarBreadcrumbs({
+  label,
+  items,
+}: {
+  label: string;
+  items: ReadonlyArray<{ id: string; label: string }>;
+}) {
+  return (
+    <nav
+      className="tw:flex tw:min-w-0 tw:items-center tw:overflow-hidden tw:px-2"
+      aria-label={label}
+    >
+      {items.map((item, index) => (
+        <span
+          key={item.id}
+          className="tw:flex tw:min-w-0 tw:items-center tw:gap-1"
+        >
+          {index > 0 ? (
+            <Icon
+              name="chevronRight"
+              className="tw:size-3 tw:shrink-0 tw:text-muted-foreground"
+            />
+          ) : null}
+          <span
+            className={
+              index === items.length - 1
+                ? "tw:truncate tw:text-foreground"
+                : "tw:truncate"
+            }
+          >
+            {item.label}
+          </span>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+export function StatusBarIconButton({
+  icon,
+  label,
+  onClick,
+  attention = false,
+  spinning = false,
+  disabled = false,
+  children,
+}: {
+  icon: IconName;
+  label: string;
+  onClick: () => void;
+  attention?: boolean;
+  spinning?: boolean;
+  disabled?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="tw:relative tw:inline-flex tw:h-[23px] tw:min-w-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:gap-1 tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-inherit tw:disabled:cursor-default tw:disabled:opacity-40 tw:not-disabled:hover:bg-muted tw:not-disabled:hover:text-foreground tw:not-disabled:focus-visible:bg-muted tw:not-disabled:focus-visible:text-foreground tw:focus-visible:outline-none"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+    >
+      <Icon
+        name={icon}
+        className={
+          spinning
+            ? "tw:animate-spin tw:motion-reduce:animate-none"
+            : undefined
+        }
+      />
+      {children}
+      {attention ? (
+        <span
+          className="tw:absolute tw:top-1 tw:right-1 tw:size-1.5 tw:rounded-full tw:bg-primary"
+          aria-hidden="true"
+        />
+      ) : null}
+    </button>
+  );
+}
+
 export function LoadingLabel({ children }: { children: ReactNode }) {
   return (
     <span

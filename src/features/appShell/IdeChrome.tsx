@@ -5,6 +5,7 @@ import type { ReactNode, RefObject } from "react";
 import type { CatalogTable } from "../../ipc/types";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
+import type { WorkbenchDocument } from "../workbench/domain";
 import {
   SQL_EDITOR_INDENT_SIZE,
   type SqlEditorStatus,
@@ -14,9 +15,9 @@ import ToolbarMenu, {
   ToolbarMenuItem,
 } from "../../components/ToolbarMenu";
 import {
+  StatusBarBreadcrumbs,
+  StatusBarIconButton,
   StatusBarItem,
-  StatusDot,
-  type StatusTone,
 } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 import { tableLabel } from "../../lib/tableRef";
@@ -184,94 +185,106 @@ export function IdeStatusBar({
   selected,
   selectedTable,
   selectedNamespace,
-  settingsOpen,
-  connectionCount,
+  activeDocument,
   querySession,
+  backgroundProcessCount,
   editorStatus,
+  writeEnabled,
   unseenOperationCount,
   onQueryStatus,
   onOpenNotifications,
-  onSettings,
+  onSafetySettings,
 }: {
   selected: ConnectionProfile | null;
   selectedTable: CatalogTable | null;
   selectedNamespace: string | null;
-  settingsOpen: boolean;
-  connectionCount: number;
+  activeDocument: WorkbenchDocument | null;
   querySession: QueryServiceSession | null;
+  backgroundProcessCount: number;
   editorStatus: SqlEditorStatus | null;
+  writeEnabled: boolean;
   unseenOperationCount: number;
   onQueryStatus: () => void;
   onOpenNotifications: () => void;
-  onSettings: () => void;
+  onSafetySettings: () => void;
 }) {
   const { t } = useI18n();
   const queryLabel = querySession
     ? t(`services.status.${querySession.status}`)
     : null;
-  const querySummary = querySession
-    ? queryServiceSummary(querySession, t)
-    : null;
+  const backgroundLabel = querySession && queryLabel
+    ? `${t("ide.backgroundProcesses", {
+        count: backgroundProcessCount,
+      })} · ${querySession.consoleTitle} · ${queryLabel}`
+    : t("ide.backgroundProcesses", {
+        count: backgroundProcessCount,
+      });
+  const breadcrumbs: Array<{ id: string; label: string }> = [
+    { id: "database", label: t("ide.databaseRoot") },
+  ];
+  if (selected) {
+    breadcrumbs.push({
+      id: `connection:${selected.id}`,
+      label: selected.name || t("app.unnamed"),
+    });
+    if (selectedNamespace) {
+      breadcrumbs.push({
+        id: `namespace:${selectedNamespace}`,
+        label: selectedNamespace,
+      });
+    }
+    if (selectedTable) {
+      const relationGroup =
+        selected.engine === "mongodb"
+          ? t("ide.collections")
+          : selectedTable.kind.toLocaleLowerCase().includes("view")
+            ? t("ide.views")
+            : t("ide.tables");
+      breadcrumbs.push(
+        { id: `group:${relationGroup}`, label: relationGroup },
+        {
+          id: `relation:${selectedTable.name}`,
+          label: tableLabel(selected.engine, selectedTable),
+        },
+      );
+    } else if (activeDocument?.kind === "sql") {
+      breadcrumbs.push({
+        id: `document:${activeDocument.id}`,
+        label: activeDocument.title,
+      });
+    } else if (
+      activeDocument?.kind === "schema" ||
+      activeDocument?.kind === "activity" ||
+      activeDocument?.kind === "documents"
+    ) {
+      breadcrumbs.push({
+        id: `document:${activeDocument.id}`,
+        label: t(`tabs.${activeDocument.kind}`),
+      });
+    }
+  }
 
   return (
     <footer
       className="ide-statusbar tw:col-[1/-1] tw:row-start-4 tw:z-[var(--ds-z-sticky)] tw:flex tw:min-w-0 tw:items-center tw:overflow-hidden tw:border-t tw:border-border-subtle tw:bg-card tw:text-xs tw:leading-none tw:text-muted-foreground"
       aria-label={t("ide.statusBar")}
     >
-      <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:px-2">
-        <span className="tw:font-semibold tw:text-foreground">DopeDB</span>
-        <span>/</span>
-        <span>{selected?.name || t("ide.noDataSource")}</span>
-        {selectedTable ? (
-          <>
-            <span>/</span>
-            <span>{tableLabel(selected?.engine ?? "postgres", selectedTable)}</span>
-          </>
-        ) : null}
-      </div>
+      <StatusBarBreadcrumbs
+        label={t("ide.databaseNavigation")}
+        items={breadcrumbs}
+      />
       <div className="tw:flex-1" />
-      <StatusBarItem>
-        <StatusDot tone={selected ? "success" : "neutral"} />
-        {selected ? t("ide.connected") : t("ide.disconnected")}
-      </StatusBarItem>
-      {selected ? (
-        <>
-          <StatusBarItem>
-            {selected.engine}
-          </StatusBarItem>
-          <StatusBarItem
-            title={`${selected.database} · ${selectedNamespace ?? selected.database}`}
-          >
-            <span className="tw:max-w-[240px] tw:truncate">
-              {selectedNamespace ?? selected.database}
-            </span>
-          </StatusBarItem>
-          <StatusBarItem>
-            {selected.readonlyDefault
-              ? t("ide.readOnly")
-              : t("ide.writeEnabled")}
-          </StatusBarItem>
-        </>
-      ) : (
-        <StatusBarItem>
-          {t("ide.dataSourceCount", { count: connectionCount })}
-        </StatusBarItem>
-      )}
-      {querySession && queryLabel ? (
-        <StatusBarItem
+      {backgroundProcessCount > 0 ? (
+        <StatusBarIconButton
+          icon="refresh"
+          label={backgroundLabel}
           onClick={onQueryStatus}
-          title={`${querySession.consoleTitle} · ${queryLabel}${
-            querySummary ? ` · ${querySummary}` : ""
-          }`}
+          spinning
         >
-          <StatusDot tone={queryStatusTone(querySession.status)} />
-          <span>{queryLabel}</span>
-          {querySummary ? (
-            <span className="tw:max-w-[200px] tw:truncate">
-              · {querySummary}
-            </span>
-          ) : null}
-        </StatusBarItem>
+          <span className="tw:tabular-nums">
+            {backgroundProcessCount}
+          </span>
+        </StatusBarIconButton>
       ) : null}
       {editorStatus ? (
         <>
@@ -291,91 +304,26 @@ export function IdeStatusBar({
           })}
         </StatusBarItem>
       ) : null}
-      <button
-        type="button"
-        className="tw:relative tw:inline-flex tw:h-[23px] tw:w-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:p-0 tw:font-sans tw:text-inherit tw:disabled:cursor-default tw:disabled:opacity-40 tw:not-disabled:hover:bg-muted tw:not-disabled:hover:text-foreground"
-        disabled={!selected}
+      {selected ? (
+        <StatusBarIconButton
+          icon={writeEnabled ? "unlock" : "lock"}
+          label={writeEnabled ? t("ide.writeEnabled") : t("ide.readOnly")}
+          onClick={onSafetySettings}
+        />
+      ) : null}
+      <StatusBarIconButton
+        icon="bell"
+        label={
+          unseenOperationCount > 0
+            ? t("ide.notificationsUnread", {
+                count: unseenOperationCount,
+              })
+            : t("ide.notifications")
+        }
         onClick={onOpenNotifications}
-        aria-label={
-          unseenOperationCount > 0
-            ? t("ide.notificationsUnread", {
-                count: unseenOperationCount,
-              })
-            : t("ide.notifications")
-        }
-        title={
-          unseenOperationCount > 0
-            ? t("ide.notificationsUnread", {
-                count: unseenOperationCount,
-              })
-            : t("ide.notifications")
-        }
-      >
-        <Icon name="bell" />
-        {unseenOperationCount > 0 ? (
-          <span
-            className="tw:absolute tw:top-1 tw:right-1 tw:size-1.5 tw:rounded-full tw:bg-primary"
-            aria-hidden="true"
-          />
-        ) : null}
-      </button>
-      <button
-        type="button"
-        data-active={settingsOpen}
-        className="tw:inline-flex tw:h-[23px] tw:w-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:p-0 tw:font-sans tw:text-inherit tw:data-[active=true]:bg-muted tw:data-[active=true]:text-foreground tw:hover:bg-muted tw:hover:text-foreground"
-        onClick={onSettings}
-        aria-label={t("common.settings")}
-        title={t("common.settings")}
-      >
-        <Icon name="gear" />
-      </button>
+        attention={unseenOperationCount > 0}
+        disabled={!selected}
+      />
     </footer>
   );
-}
-
-function queryStatusTone(
-  status: QueryServiceSession["status"],
-): StatusTone {
-  if (status === "completed") return "success";
-  if (status === "failed") return "danger";
-  if (status === "running" || status === "waiting") {
-    return "warning";
-  }
-  return "neutral";
-}
-
-function queryServiceSummary(
-  session: QueryServiceSession,
-  t: ReturnType<typeof useI18n>["t"],
-): string | null {
-  const result = session.result;
-  if (result.kind === "materialized") {
-    if (result.outcome.result) {
-      return t("ide.queryRowsDuration", {
-        count: result.outcome.result.rowCount,
-        duration: Math.round(result.outcome.result.durationMs),
-      });
-    }
-    if (result.outcome.affected != null) {
-      return t("ide.queryAffected", {
-        count: result.outcome.affected,
-      });
-    }
-  }
-  if (result.kind === "stream") {
-    if (result.stream.durationMs != null) {
-      return t("ide.queryRowsDuration", {
-        count: result.stream.rowCount,
-        duration: Math.round(result.stream.durationMs),
-      });
-    }
-    return t("ide.queryRows", { count: result.stream.rowCount });
-  }
-  if (result.kind === "script") {
-    return t("ide.queryStatements", {
-      count: result.outcome.statements.length,
-    });
-  }
-  if (result.kind === "error") return result.error.message;
-  return null;
 }

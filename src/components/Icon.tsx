@@ -227,6 +227,18 @@ const glyphs = {
       <path d="M10 21h4" />
     </>
   ),
+  lock: (
+    <>
+      <rect x="5" y="10" width="14" height="11" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  unlock: (
+    <>
+      <rect x="5" y="10" width="14" height="11" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 7.5-2" />
+    </>
+  ),
   circleSlash: (
     <>
       <circle cx="12" cy="12" r="10" />

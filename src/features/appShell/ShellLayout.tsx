@@ -38,6 +38,7 @@ type Props = {
   selectedId: string | null;
   selectedTable: CatalogTable | null;
   supportsSql: boolean;
+  writeEnabled: boolean;
   dashboardFocusId: string | null;
   compact: boolean;
   mobileExplorerOpen: boolean;
@@ -80,6 +81,7 @@ type Props = {
   }) => void;
   onResetServicesHeight: () => void;
   onSettings: () => void;
+  onSafetySettings: () => void;
   onOpenNotifications: () => void;
   onNewQuery: () => void;
   onOpenAgentArchive: () => void;
@@ -117,6 +119,7 @@ export default function ShellLayout(props: Props) {
     selectedId,
     selectedTable,
     supportsSql,
+    writeEnabled,
     dashboardFocusId,
     compact,
     mobileExplorerOpen,
@@ -152,12 +155,20 @@ export default function ShellLayout(props: Props) {
     queryServiceSessions.find(
       (session) =>
         session.id === activeQueryServiceSessionId &&
-        session.connectionId === selectedId,
+        (session.status === "running" ||
+          session.status === "waiting"),
     ) ??
     queryServiceSessions.find(
-      (session) => session.connectionId === selectedId,
+      (session) =>
+        session.status === "running" ||
+        session.status === "waiting",
     ) ??
     null;
+  const backgroundProcessCount = queryServiceSessions.filter(
+    (session) =>
+      session.status === "running" ||
+      session.status === "waiting",
+  ).length;
   const activeWorkbenchDocument =
     workbenchDocuments.find(
       (document) => document.id === activeWorkbenchDocumentId,
@@ -363,18 +374,20 @@ export default function ShellLayout(props: Props) {
         selected={selected}
         selectedTable={selectedTable}
         selectedNamespace={selectedNamespace}
-        settingsOpen={settingsOpen}
-        connectionCount={connections.length}
+        activeDocument={activeWorkbenchDocument}
         querySession={statusQuerySession}
+        backgroundProcessCount={backgroundProcessCount}
         editorStatus={activeSqlEditorStatus}
+        writeEnabled={writeEnabled}
         unseenOperationCount={props.unseenOperationCount}
         onQueryStatus={() => {
-          if (!statusQuerySession) return;
-          props.onActivateQueryServiceSession(statusQuerySession.id);
+          if (statusQuerySession) {
+            props.onActivateQueryServiceSession(statusQuerySession.id);
+          }
           if (!servicesVisible) props.onToggleServices();
         }}
         onOpenNotifications={props.onOpenNotifications}
-        onSettings={props.onSettings}
+        onSafetySettings={props.onSafetySettings}
       />
     </div>
   );

@@ -821,6 +821,7 @@ function Shell() {
       selectedId={selectedId}
       selectedTable={selectedTable}
       supportsSql={supportsSql}
+      writeEnabled={safety?.allowWrites ?? false}
       dashboardFocusId={dashboardFocusId}
       compact={compactShell}
       mobileExplorerOpen={mobileExplorerOpen}
@@ -875,6 +876,12 @@ function Shell() {
       onResetServicesHeight={resetServicesHeight}
       onSettings={() => {
         setSettingsSection(undefined);
+        setSettingsOpen(true);
+        setSchemaDiffGroupKey(null);
+        setMobileExplorerOpen(false);
+      }}
+      onSafetySettings={() => {
+        setSettingsSection("safety");
         setSettingsOpen(true);
         setSchemaDiffGroupKey(null);
         setMobileExplorerOpen(false);
