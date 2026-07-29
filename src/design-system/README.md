@@ -78,21 +78,23 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
   provider/driver `CommandMenu`를 즉시 연다. engine/provider preset이 명시된
   진입만 해당 속성 form을 바로 표시한다. 실제 생성하지 않는 demo나 지원하지
   않는 provider resource를 선택지 설명으로 약속하지 않는다.
-- Data Sources and Drivers dialog는 왼쪽의 세로 catalog rail에서 data source,
-  cloud credential, driver 책임을 분리한다. data source와 driver는 각각 하나의
-  검색 가능한 목록만 가지며, driver detail은 backend catalog가 반환한 이름,
-  version, 설치 상태, 지원 connection method와 capability만 표시한다. cloud
-  action은 실제 credential inventory를 열고 로그인·권한·조회 실패를 그대로
-  드러내며, 존재하지 않는 cloud resource browser를 모양만 만들어 대체하지
-  않는다. General의 connection type은 `Default`와 실제 URL parser가 소유하는
-  `URL only`만 제공한다. URL mode도 분리된 임시 모델을 저장하지 않고 Test,
-  Apply, OK가 사용하는 하나의 `ConnectionProfile`로 즉시 정규화하며 password,
-  token과 DopeDB 내부 parameter는 redacted URL projection에 표시하지 않는다.
+- Data Sources and Drivers dialog는 왼쪽 258px catalog pane 상단의
+  Data Sources, Cloud accounts, Drivers category tab으로 책임을 분리한다.
+  DopeDB 참조에 없는 별도 세로 icon rail을 만들지 않는다. data source와
+  driver는 각각 하나의 검색 가능한 목록만 가지며, driver detail은 backend
+  catalog가 반환한 이름, version, 설치 상태, 지원 connection method와
+  capability만 표시한다. cloud category는 실제 credential inventory를 열고
+  로그인·권한·조회 실패를 그대로 드러내며, 존재하지 않는 cloud resource
+  browser를 모양만 만들어 대체하지 않는다. General의 connection type은
+  `Default`와 실제 URL parser가 소유하는 `URL only`만 제공한다. URL mode도
+  분리된 임시 모델을 저장하지 않고 Test, Apply, OK가 사용하는 하나의
+  `ConnectionProfile`로 즉시 정규화하며 password, token과 DopeDB 내부
+  parameter는 redacted URL projection에 표시하지 않는다.
   선택 mode는 driver URL과 분리된 내부 profile metadata로 저장·복원한다.
   runtime이 지원하지 않는 SQLite In-memory는 선택지처럼 보이게 만들지 않는다.
   760px 이하 dialog에서는 같은 세 책임을 `SegmentedControl`로 유지하고,
-  현재 data source/provider/driver를 실제 selector로 전환한다. catalog rail을
-  숨기면서 전환 기능까지 없애지 않는다.
+  현재 data source/provider/driver를 실제 selector로 전환한다. desktop
+  catalog pane을 숨기면서 전환 기능까지 없애지 않는다.
   Options는 실제 runtime에 연결된 PostgreSQL/MySQL time zone, keep-alive,
   allowlisted session `SET` startup script와 전체 engine의 idle
   auto-disconnect만 enabled control로 제공한다. operation 단위 automatic
@@ -347,6 +349,10 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   위에 대형 object context header를 다시 만들지 않는다.
   fragment는 backend read-only proposal을 통과해야 하며 주석, 문장 구분자,
   다른 clause로 경계를 벗어나 generated `LIMIT`을 삼킬 수 없다.
+- MongoDB document query도 별도 큰 화면 제목이나 세로 label toolbar를 만들지
+  않는다. 실행/중지는 `WorkbenchToolbar`의 평평한 icon command, operation과
+  collection은 `WorkbenchSelect`, JSON 입력은 공용 `Field`와
+  `TextAreaInput`을 사용한다.
 - 정렬 trigger와 column filter trigger는 header 안의 서로 다른 button이다.
   filter popover는 현재 page에서 관찰한 값과 원래 개수를 검색 가능한 checklist로
   표시하고, 선택 뒤 결과가 바뀌어도 그 inventory를 유지한다. popover, field,

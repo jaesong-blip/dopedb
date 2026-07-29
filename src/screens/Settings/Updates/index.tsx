@@ -150,12 +150,12 @@ export default function Updates({
         </button>
       </div>
 
-      <div className="card tw:flex tw:flex-col tw:gap-3">
-        <div className="tw:flex tw:min-h-control-md tw:items-center tw:justify-between tw:gap-4 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
+      <div className="tw:grid tw:border-t tw:border-border-subtle">
+        <div className="tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:gap-4 tw:border-b tw:border-border-subtle tw:py-2 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
           <span className="tw:text-muted-foreground">{t("updates.installedVersion")}</span>
           <strong>{currentVersion}</strong>
         </div>
-        <div className="tw:flex tw:min-h-control-md tw:items-center tw:justify-between tw:gap-4 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
+        <div className="tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:gap-4 tw:border-b tw:border-border-subtle tw:py-2 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
           <span className="tw:text-muted-foreground">{t("updates.latestRelease")}</span>
           <strong>
             {update
@@ -165,7 +165,7 @@ export default function Updates({
                 : t("updates.none")}
           </strong>
         </div>
-        <div className="tw:flex tw:min-h-control-md tw:items-center tw:justify-between tw:gap-4 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
+        <div className="tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:gap-4 tw:border-b tw:border-border-subtle tw:py-2 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
           <span className="tw:text-muted-foreground">{t("updates.status")}</span>
           <span
             data-state={state}
@@ -179,7 +179,7 @@ export default function Updates({
         </div>
 
         {state === "downloading" && (
-          <div className="tw:my-1 tw:grid tw:gap-2">
+          <div className="tw:grid tw:gap-2 tw:border-b tw:border-border-subtle tw:py-3">
             <div className="tw:h-2 tw:w-full tw:overflow-hidden tw:rounded-full tw:border tw:border-border-subtle tw:bg-muted">
               <span
                 className="tw:block tw:h-full tw:min-w-3 tw:rounded-full tw:bg-primary tw:transition-[width] tw:duration-200"
@@ -197,7 +197,7 @@ export default function Updates({
         )}
 
         {releaseNotes && (
-          <details className="tw:border-t tw:border-border-subtle tw:pt-3">
+          <details className="tw:border-b tw:border-border-subtle tw:py-3">
             <summary className="tw:cursor-pointer tw:text-muted-foreground">
               {t("updates.releaseNotes")}
             </summary>
@@ -208,12 +208,12 @@ export default function Updates({
         )}
 
         {error && (
-          <div className="tw:text-ui tw:text-danger">
+          <div className="tw:border-b tw:border-border-subtle tw:py-3 tw:text-ui tw:text-danger">
             {t("updates.checkFailed", { error })}
           </div>
         )}
 
-        <div className="ds-action-row ds-control-row">
+        <div className="ds-action-row ds-control-row tw:pt-3">
           <button
             className="btn primary"
             disabled={!update || state === "checking" || state === "downloading"}

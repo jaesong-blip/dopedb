@@ -43,7 +43,6 @@ import { SegmentedControl } from "../../design-system/components/SegmentedContro
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import {
   ToolWindowAction,
-  ToolWindowRailAction,
   ToolWindowSearchRow,
   ToolWindowSection,
 } from "../../design-system/components/ToolWindow";
@@ -1208,81 +1207,62 @@ export function ConnectionForm({
             onChange={setEditorView}
           />
         </div>
-        <nav
-          className="tw:flex tw:w-11 tw:shrink-0 tw:flex-col tw:items-center tw:gap-1 tw:border-r tw:border-border-subtle tw:bg-card tw:px-1 tw:py-2 tw:@max-[760px]:hidden"
-          aria-label={t("connections.dataSourceCatalogNavigation")}
-        >
-          <ToolWindowRailAction
-            selected={editorView === "dataSources"}
-            onClick={() => setEditorView("dataSources")}
-            title={t("connections.dataSources")}
-            aria-label={t("connections.dataSources")}
-          >
-            <Icon name="database" />
-          </ToolWindowRailAction>
-          <ToolWindowRailAction
-            selected={editorView === "clouds"}
-            onClick={() => setEditorView("clouds")}
-            title={t("connections.connectCloudProvider")}
-            aria-label={t("connections.connectCloudProvider")}
-          >
-            <Icon name="key" />
-          </ToolWindowRailAction>
-          <ToolWindowRailAction
-            selected={editorView === "drivers"}
-            onClick={() => setEditorView("drivers")}
-            title={t("connections.drivers")}
-            aria-label={t("connections.drivers")}
-          >
-            <Icon name="download" />
-          </ToolWindowRailAction>
-        </nav>
-        <aside className="tw:flex tw:w-[214px] tw:shrink-0 tw:flex-col tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
-          <div className="tw:grid tw:h-[72px] tw:min-h-[72px] tw:grid-cols-1 tw:grid-rows-2 tw:items-center tw:border-b tw:border-border-subtle tw:px-3">
-            <strong className="tw:flex tw:h-full tw:items-center tw:text-sm">
-              {t(
-                editorView === "dataSources"
-                  ? "connections.dataSources"
-                  : editorView === "clouds"
-                    ? "connections.connectCloudProvider"
-                  : "connections.drivers",
-              )}
-            </strong>
+        <aside className="tw:flex tw:w-[258px] tw:shrink-0 tw:flex-col tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
+          <PanelTabs
+            tabs={[
+              {
+                id: "dataSources",
+                label: t("connections.dataSources"),
+              },
+              {
+                id: "clouds",
+                label: t("connections.connectCloudProvider"),
+              },
+              {
+                id: "drivers",
+                label: t("connections.drivers"),
+              },
+            ]}
+            active={editorView}
+            onChange={setEditorView}
+            label={t("connections.dataSourceCatalogNavigation")}
+          />
+          <div className="tw:flex tw:h-control-lg tw:min-h-control-lg tw:items-center tw:border-b tw:border-border-subtle tw:px-3">
             {editorView === "dataSources" ? (
               <div className="tw:flex tw:items-center tw:gap-1">
-              <div
-                ref={addMenuAnchorRef}
-                className="tw:relative tw:flex"
-              >
-                <button
-                  ref={addButtonRef}
-                  type="button"
-                  className="btn small icon-only icon-xs"
-                  onClick={() => {
-                    setAddSearch("");
-                    setAddMenuOpen((open) => !open);
-                  }}
-                  title={t("common.add")}
-                  aria-label={t("common.add")}
-                  aria-haspopup="dialog"
-                  aria-expanded={addMenuOpen}
-                  aria-controls="connection-add-menu"
+                <div
+                  ref={addMenuAnchorRef}
+                  className="tw:relative tw:flex"
                 >
-                  <Icon name="plus" />
-                </button>
-                {addMenuOpen ? (
-                  <CommandMenu
-                    id="connection-add-menu"
-                    label={t("connections.addDataSourceMenu")}
-                    searchLabel={t(
-                      "connections.addDataSourceSearchLabel",
-                    )}
-                    searchPlaceholder={t(
-                      "connections.addDataSourceSearchPlaceholder",
-                    )}
-                    searchValue={addSearch}
-                    onSearchChange={setAddSearch}
+                  <button
+                    ref={addButtonRef}
+                    type="button"
+                    className="btn small icon-only icon-xs"
+                    onClick={() => {
+                      setAddSearch("");
+                      setAddMenuOpen((open) => !open);
+                    }}
+                    title={t("common.add")}
+                    aria-label={t("common.add")}
+                    aria-haspopup="dialog"
+                    aria-expanded={addMenuOpen}
+                    aria-controls="connection-add-menu"
                   >
+                    <Icon name="plus" />
+                  </button>
+                  {addMenuOpen ? (
+                    <CommandMenu
+                      id="connection-add-menu"
+                      label={t("connections.addDataSourceMenu")}
+                      searchLabel={t(
+                        "connections.addDataSourceSearchLabel",
+                      )}
+                      searchPlaceholder={t(
+                        "connections.addDataSourceSearchPlaceholder",
+                      )}
+                      searchValue={addSearch}
+                      onSearchChange={setAddSearch}
+                    >
                     {filteredDatabaseSources.length > 0 ? (
                       <CommandMenuGroup
                         title={t("connections.database")}
@@ -1848,29 +1828,6 @@ export function ConnectionForm({
                       </button>
                     ) : null}
                   </div>
-
-                  {activeDriver ? (
-                    <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2">
-                      <div className="tw:grid tw:gap-0.5">
-                        <strong className="tw:text-ui">
-                          {activeDriver.name}
-                        </strong>
-                        <span className="tw:text-xs tw:text-muted-foreground">
-                          {activeDriver.version} ·{" "}
-                          {driverStatus(activeDriver)}
-                        </span>
-                      </div>
-                      <span
-                        className={
-                          activeDriver.installState === "installed"
-                            ? "badge status-ok"
-                            : "badge"
-                        }
-                      >
-                        {driverStatus(activeDriver)}
-                      </span>
-                    </div>
-                  ) : null}
 
                   <div className="tw:grid tw:gap-1.5">
                     <span className="tw:text-sm tw:font-medium tw:text-muted-foreground">

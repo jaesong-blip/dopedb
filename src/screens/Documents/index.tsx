@@ -11,11 +11,18 @@ import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import ResultToolbar from "../../components/ResultToolbar";
 import {
+  WorkbenchDivider,
   ResultMeta,
   WorkbenchEmptyState,
   WorkbenchPane,
+  WorkbenchSelect,
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
+import {
+  Field,
+  TextAreaInput,
+  TextInput,
+} from "../../design-system/components/FormControls";
 import { catalogQuery, useCatalogScope } from "../../lib/queries";
 import { documentsToGrid } from "../../lib/documentGrid";
 import { stamp } from "../../lib/export";
@@ -163,118 +170,117 @@ export default function Documents({
 
   return (
     <WorkbenchPane>
-      <WorkbenchToolbar label={t("documents.title")}>
-        <h2 className="tw:mr-3 tw:text-ui tw:font-semibold">
-          {t("documents.title")}
-        </h2>
-        <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
-          {t("documents.collection")}
-          <select
-            className="tw:min-w-[160px]"
-            value={collection}
-            onChange={(e) => setCollection(e.target.value)}
+      <WorkbenchToolbar label={t("documents.title")} compact>
+        <div className="ds-control-row scrollbar-sleek tw:flex tw:min-h-0 tw:min-w-0 tw:flex-[0_1_auto] tw:flex-nowrap tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden">
+          <button
+            className="btn small ghost icon-only tw:text-success"
+            disabled={!collection || running}
+            onClick={() => void execute()}
+            title={running ? t("documents.running") : t("documents.run")}
+            aria-label={running ? t("documents.running") : t("documents.run")}
           >
-            {tables.length === 0 && <option value="">{t("documents.noCollections")}</option>}
-            {tables.map((table) => (
-              <option key={table.name} value={table.name}>
-                {table.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
-          {t("documents.operation")}
-          <select
-            className="tw:min-w-[160px]"
+            <Icon name={running ? "refresh" : "play"} />
+          </button>
+          <button
+            className="btn small ghost icon-only"
+            disabled={!running}
+            onClick={cancel}
+            title={t("documents.cancel")}
+            aria-label={t("documents.cancel")}
+          >
+            <Icon name="stop" />
+          </button>
+          <WorkbenchDivider />
+          <WorkbenchSelect
+            label={t("documents.operation")}
             value={op}
-            onChange={(e) => setOp(e.target.value as Op)}
+            disabled={running}
+            onChange={(value) => setOp(value as Op)}
           >
             <option value="find">find</option>
             <option value="aggregate">aggregate</option>
             <option value="count">count</option>
-          </select>
-        </label>
-        <span className="ds-toolbar-spacer" />
-        <button
-          className="btn primary small"
-          disabled={!collection || running}
-          onClick={() => void execute()}
+          </WorkbenchSelect>
+        </div>
+        <span className="tw:min-w-1 tw:flex-1" />
+        <WorkbenchSelect
+          label={t("documents.collection")}
+          icon="database"
+          value={collection}
+          disabled={running || tables.length === 0}
+          onChange={setCollection}
         >
-          <Icon name="play" />
-          {running ? t("documents.running") : t("documents.run")}
-        </button>
-        {running && (
-          <button className="btn small" onClick={cancel}>
-            {t("documents.cancel")}
-          </button>
-        )}
+          {tables.length === 0 && (
+            <option value="">{t("documents.noCollections")}</option>
+          )}
+          {tables.map((table) => (
+            <option key={table.name} value={table.name}>
+              {table.name}
+            </option>
+          ))}
+        </WorkbenchSelect>
       </WorkbenchToolbar>
 
       {op === "find" && (
         <div className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] tw:gap-3 tw:border-b tw:border-border-subtle tw:p-3 tw:@max-[760px]:grid-cols-1">
-          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
-            {t("documents.filter")}
-            <textarea
-              className="tw:w-full tw:resize-y tw:font-mono tw:text-sm"
+          <Field label={t("documents.filter")}>
+            <TextAreaInput
+              rows={3}
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               placeholder="{}"
             />
-          </label>
-          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
-            {t("documents.projection")}
-            <textarea
-              className="tw:w-full tw:resize-y tw:font-mono tw:text-sm"
+          </Field>
+          <Field label={t("documents.projection")}>
+            <TextAreaInput
+              rows={3}
               value={projectionText}
               onChange={(e) => setProjectionText(e.target.value)}
               placeholder="{}"
             />
-          </label>
-          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
-            {t("documents.sort")}
-            <textarea
-              className="tw:w-full tw:resize-y tw:font-mono tw:text-sm"
+          </Field>
+          <Field label={t("documents.sort")}>
+            <TextAreaInput
+              rows={3}
               value={sortText}
               onChange={(e) => setSortText(e.target.value)}
               placeholder="{}"
             />
-          </label>
-          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
-            {t("documents.limit")}
-            <input
-              className="tw:w-[120px]"
-              type="number"
-              min={1}
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value) || 100)}
-            />
-          </label>
+          </Field>
+          <div className="tw:w-[120px]">
+            <Field label={t("documents.limit")}>
+              <TextInput
+                type="number"
+                min={1}
+                value={limit}
+                onChange={(e) => setLimit(Number(e.target.value) || 100)}
+              />
+            </Field>
+          </div>
         </div>
       )}
       {op === "aggregate" && (
-        <div className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] tw:gap-3 tw:border-b tw:border-border-subtle tw:p-3 tw:@max-[760px]:grid-cols-1">
-          <label className="tw:col-span-full tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
-            {t("documents.pipeline")}
-            <textarea
-              className="tw:min-h-[160px] tw:w-full tw:resize-y tw:font-mono tw:text-sm"
+        <div className="tw:shrink-0 tw:border-b tw:border-border-subtle tw:p-3">
+          <Field label={t("documents.pipeline")}>
+            <TextAreaInput
+              rows={8}
               value={pipelineText}
               onChange={(e) => setPipelineText(e.target.value)}
               placeholder="[]"
             />
-          </label>
+          </Field>
         </div>
       )}
       {op === "count" && (
-        <div className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] tw:gap-3 tw:border-b tw:border-border-subtle tw:p-3 tw:@max-[760px]:grid-cols-1">
-          <label className="tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-muted-foreground">
-            {t("documents.filter")}
-            <textarea
-              className="tw:w-full tw:resize-y tw:font-mono tw:text-sm"
+        <div className="tw:shrink-0 tw:border-b tw:border-border-subtle tw:p-3">
+          <Field label={t("documents.filter")}>
+            <TextAreaInput
+              rows={4}
               value={countFilterText}
               onChange={(e) => setCountFilterText(e.target.value)}
               placeholder="{}"
             />
-          </label>
+          </Field>
         </div>
       )}
 
