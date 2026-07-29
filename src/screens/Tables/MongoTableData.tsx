@@ -6,6 +6,7 @@ import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import {
   DataGridStatusPill,
+  WorkbenchButton,
   WorkbenchEmptyState,
   WorkbenchPane,
   WorkbenchToolbar,
@@ -73,9 +74,8 @@ export default function MongoTableData({
   return (
     <WorkbenchPane>
       <WorkbenchToolbar label={t("tables.pagination")}>
-        <button
-          type="button"
-          className="btn small ghost icon-only tw:shrink-0"
+        <WorkbenchButton
+          iconOnly
           disabled={busy}
           title={t("common.refresh")}
           aria-label={t("common.refresh")}
@@ -85,7 +85,7 @@ export default function MongoTableData({
           }}
         >
           {busy ? "…" : <Icon name="refresh" />}
-        </button>
+        </WorkbenchButton>
         <span className="tw:flex-1" />
         <Pager
           page={page}

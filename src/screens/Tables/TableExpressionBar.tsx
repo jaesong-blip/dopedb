@@ -1,4 +1,5 @@
 import { Icon } from "../../components/Icon";
+import { Button } from "../../design-system/components/Button";
 import { useI18n } from "../../lib/i18n";
 import {
   gridExpressionIssue,
@@ -77,21 +78,23 @@ function ExpressionField({
           <Icon name="alert" />
         </span>
       ) : dirty ? (
-        <button
-          type="button"
-          className="btn small icon-only icon-xs tw:shrink-0"
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           disabled={busy}
           title={t("tables.applyExpression", { label })}
           aria-label={t("tables.applyExpression", { label })}
           onClick={() => onApply(value)}
         >
           <Icon name="play" />
-        </button>
+        </Button>
       ) : null}
       {hasExpression ? (
-        <button
-          type="button"
-          className="btn small icon-only icon-xs tw:shrink-0"
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           disabled={busy}
           title={t("tables.clearExpression", { label })}
           aria-label={t("tables.clearExpression", { label })}
@@ -101,7 +104,7 @@ function ExpressionField({
           }}
         >
           <Icon name="close" />
-        </button>
+        </Button>
       ) : null}
     </div>
   );

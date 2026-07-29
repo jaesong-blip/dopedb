@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { Button } from "../design-system/components/Button";
 import {
   decodeGridValueFilter,
   encodeGridValueFilter,
@@ -157,13 +158,12 @@ export default function DataGridColumnFilterMenu({
             ) : null}
           </div>
           {filter ? (
-            <button
-              type="button"
-              className="btn small tw:justify-center"
+            <Button
+              size="compact"
               onClick={() => onFilter("")}
             >
               {t("grid.localFilterClear")}
-            </button>
+            </Button>
           ) : null}
         </div>
       </ToolbarMenu>

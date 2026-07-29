@@ -3,6 +3,7 @@
 // and hands the SQL up via onSubmit — the parent routes it through ApprovalCard so the
 // safety pipeline (classify/preview/approve/audit) applies. Never executes directly.
 import { useMemo, useState } from "react";
+import { Button } from "../design-system/components/Button";
 import { useI18n } from "../lib/i18n";
 import {
   InspectorFooter,
@@ -146,13 +147,15 @@ export default function RowEditor({
           ) : null
         }
         actions={
-          <button
-            className="btn small icon-only icon-xs"
+          <Button
+            iconOnly
+            size="xs"
+            variant="ghost"
             onClick={onCancel}
             aria-label={t("common.close")}
           >
           <Icon name="close" />
-          </button>
+          </Button>
         }
       />
       <div className="tw:mb-3 tw:flex tw:flex-col tw:gap-2">
@@ -212,12 +215,12 @@ export default function RowEditor({
       </div>
       {error && <div className="tw:text-ui tw:text-danger">{error}</div>}
       <InspectorFooter>
-        <button className="btn primary" disabled={isEdit && changedCount === 0} onClick={submit}>
+        <Button variant="primary" disabled={isEdit && changedCount === 0} onClick={submit}>
           {actionText}
-        </button>
-        <button className="btn" onClick={onCancel}>
+        </Button>
+        <Button onClick={onCancel}>
           {t("common.cancel")}
-        </button>
+        </Button>
       </InspectorFooter>
     </div>
   );

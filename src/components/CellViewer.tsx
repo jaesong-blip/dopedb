@@ -2,6 +2,7 @@
 // parses to) an object/array, wrapped plain text otherwise. Copy button lifts the
 // displayed text to the clipboard.
 import { useEffect } from "react";
+import { Button } from "../design-system/components/Button";
 import { useI18n } from "../lib/i18n";
 import { InspectorHeader } from "../design-system/components/Workbench";
 import { Icon } from "./Icon";
@@ -49,8 +50,8 @@ export default function CellViewer({
         title={column}
         actions={
           <>
-          <button
-            className="btn small"
+          <Button
+            size="compact"
             onClick={() =>
               navigator.clipboard
                 .writeText(text)
@@ -59,10 +60,16 @@ export default function CellViewer({
             }
           >
             <Icon name="copy" /> {t("common.copy")}
-          </button>
-          <button className="btn small icon-only icon-xs" onClick={onClose} aria-label={t("common.close")}>
+          </Button>
+          <Button
+            iconOnly
+            size="xs"
+            variant="ghost"
+            onClick={onClose}
+            aria-label={t("common.close")}
+          >
             <Icon name="close" />
-          </button>
+          </Button>
           </>
         }
       />

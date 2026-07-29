@@ -1,5 +1,6 @@
 import CellViewer from "../../components/CellViewer";
 import { Icon } from "../../components/Icon";
+import { Button } from "../../design-system/components/Button";
 import RowEditor, {
   type RowEditorSubmission,
 } from "../../components/RowEditor";
@@ -81,13 +82,15 @@ export default function TableSidePanel(props: Props) {
           <InspectorHeader
             title={t("tables.deleteRow")}
             actions={
-            <button
-              className="btn small icon-only icon-xs"
+            <Button
+              iconOnly
+              size="xs"
+              variant="ghost"
               aria-label={t("common.cancel")}
               onClick={props.onCloseDelete}
             >
               <Icon name="close" />
-            </button>
+            </Button>
             }
           />
           <div className="tw:mb-3 tw:flex tw:flex-col tw:gap-2">
@@ -104,12 +107,12 @@ export default function TableSidePanel(props: Props) {
             ))}
           </div>
           <InspectorFooter>
-            <button className="btn primary" onClick={props.onArmDelete}>
+            <Button variant="primary" onClick={props.onArmDelete}>
               {t("tables.reviewDelete")}
-            </button>
-            <button className="btn" onClick={props.onCloseDelete}>
+            </Button>
+            <Button onClick={props.onCloseDelete}>
               {t("common.cancel")}
-            </button>
+            </Button>
           </InspectorFooter>
         </div>
       )}
@@ -123,13 +126,15 @@ export default function TableSidePanel(props: Props) {
               </span>
             }
             actions={
-            <button
-              className="btn small icon-only icon-xs"
+            <Button
+              iconOnly
+              size="xs"
+              variant="ghost"
               aria-label={t("common.close")}
               onClick={props.onCloseReview}
             >
               <Icon name="close" />
-            </button>
+            </Button>
             }
           />
           <ol className="tw:m-0 tw:grid tw:list-none tw:gap-0 tw:p-0 tw:[&_li]:flex tw:[&_li]:items-start tw:[&_li]:justify-between tw:[&_li]:gap-2 tw:[&_li]:border-t tw:[&_li]:border-border-subtle tw:[&_li]:py-2 tw:[&_li>div]:min-w-0 tw:[&_strong]:block tw:[&_code]:mt-1 tw:[&_code]:block tw:[&_code]:[overflow-wrap:anywhere] tw:[&_code]:text-xs tw:[&_code]:text-muted-foreground">
@@ -143,13 +148,15 @@ export default function TableSidePanel(props: Props) {
                   <code>{change.sql}</code>
                 </div>
                 {!proposal && (
-                  <button
-                    className="btn small icon-only icon-xs"
+                  <Button
+                    iconOnly
+                    size="xs"
+                    variant="ghost"
                     onClick={() => props.onRemoveStaged(change.id)}
                     aria-label={t("common.delete")}
                   >
                     <Icon name="close" />
-                  </button>
+                  </Button>
                 )}
               </li>
             ))}
@@ -170,17 +177,17 @@ export default function TableSidePanel(props: Props) {
           )}
           <InspectorFooter>
             {!proposal ? (
-              <button
-                className="btn primary"
+              <Button
+                variant="primary"
                 disabled={staged.length === 0 || running || catalogPending}
                 onClick={props.onPrepare}
               >
                 {running ? t("common.loading") : t("tables.reviewAndApply")}
-              </button>
+              </Button>
             ) : (
               <>
-                <button
-                  className="btn primary"
+                <Button
+                  variant="primary"
                   disabled={
                     running ||
                     (!!proposal.confirmationPhrase &&
@@ -191,14 +198,13 @@ export default function TableSidePanel(props: Props) {
                   {running
                     ? t("common.saving")
                     : t("approval.approveAndRunWrite")}
-                </button>
-                <button
-                  className="btn"
+                </Button>
+                <Button
                   disabled={running}
                   onClick={props.onReject}
                 >
                   {t("approval.reject")}
-                </button>
+                </Button>
               </>
             )}
           </InspectorFooter>
