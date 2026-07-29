@@ -96,6 +96,11 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   selector나 checkbox로 흉내 내지 않는다. 이 값은 Advanced driver property와
   중복하지 않는 `dopedb.*` 내부 profile metadata로 저장하며 Test, Apply, OK의
   같은 validation/runtime 경로를 사용한다.
+  Schemas는 configured database를 root로 두고 backend overview가 반환한 실제
+  namespace를 checklist로 표시한다. relation에서 schema 이름을 추측하는
+  경로만 사용하지 않아 empty PostgreSQL schema도 선택할 수 있어야 한다.
+  PostgreSQL/MySQL의 다른 database는 별도 pool과 catalog identity가 구현되기
+  전까지 현재 database 아래의 가짜 node로 추가하지 않는다.
 - tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
   하나의 layout 문법으로 구현한다.
 - Database Explorer header는 전체 tree의 expand/collapse, 실제 view option,
@@ -188,7 +193,8 @@ Elevation은 세 단계만 허용한다.
 - `Field`, `TextInput`, `TextAreaInput`, `SelectInput`, `CheckboxField`: label,
   focus, disabled 상태를 함께 소유하는 dense form control. SQL/session
   설정처럼 여러 줄인 값은 화면별 textarea class를 만들지 않고 monospace
-  `TextAreaInput`을 사용한다.
+  `TextAreaInput`을 사용한다. 계층 checklist의 parent는 `CheckboxField`의
+  native `indeterminate` 상태로 부분 선택을 표현한다.
 - `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.

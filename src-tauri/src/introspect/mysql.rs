@@ -345,6 +345,11 @@ pub async fn introspect(pool: &MySqlPool, skip_fk: bool) -> AppResult<Catalog> {
 /// `information_schema.tables` is sufficient to render the connection tree;
 /// detailed metadata remains explicitly deferred to [`introspect`].
 pub(crate) async fn overview(pool: &MySqlPool) -> AppResult<CatalogOverview> {
+    let namespaces = sqlx::query_scalar::<_, Option<String>>("SELECT DATABASE()")
+        .fetch_one(pool)
+        .await?
+        .into_iter()
+        .collect();
     let relations = sqlx::query(OVERVIEW_SQL)
         .fetch_all(pool)
         .await?
@@ -372,6 +377,7 @@ pub(crate) async fn overview(pool: &MySqlPool) -> AppResult<CatalogOverview> {
         .collect::<AppResult<Vec<_>>>()?;
 
     Ok(CatalogOverview {
+        namespaces,
         relations,
         detail_state: CatalogOverviewDetailState::Deferred,
     })

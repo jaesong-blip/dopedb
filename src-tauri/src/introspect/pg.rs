@@ -138,6 +138,16 @@ WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
 ORDER BY n.nspname, c.relname
 "#;
 
+const SCHEMAS_SQL: &str = r#"
+SELECT n.nspname
+FROM pg_namespace n
+WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND n.nspname NOT LIKE 'pg_toast%'
+  AND n.nspname NOT LIKE 'pg_temp_%'
+  AND has_schema_privilege(n.oid, 'USAGE')
+ORDER BY n.nspname
+"#;
+
 // FK edges resolved on pg_catalog so composite keys stay per-column-correct. Zipping
 // conkey/confkey WITH ORDINALITY pairs each local column to the matching referenced
 // column (the old key-name join produced NxN garbage for composite FKs and cross-joined
@@ -399,6 +409,9 @@ pub(crate) async fn overview(pool: &PgPool) -> AppResult<CatalogOverview> {
     sqlx::query(AssertSqlSafe(statement_timeout_sql(CORE_RELATION_TIMEOUT)))
         .execute(&mut *tx)
         .await?;
+    let namespaces = sqlx::query_scalar::<_, String>(SCHEMAS_SQL)
+        .fetch_all(&mut *tx)
+        .await?;
     let relations = fetch_relation_overview(&mut tx)
         .await?
         .into_iter()
@@ -421,6 +434,7 @@ pub(crate) async fn overview(pool: &PgPool) -> AppResult<CatalogOverview> {
         .collect();
     tx.commit().await?;
     Ok(CatalogOverview {
+        namespaces,
         relations,
         detail_state: CatalogOverviewDetailState::Deferred,
     })

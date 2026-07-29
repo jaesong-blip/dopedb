@@ -116,6 +116,9 @@ export function filterCatalogOverview(
 ): CatalogOverview {
   return {
     ...overview,
+    namespaces: overview.namespaces.filter((namespace) =>
+      schemaMatches(profile, namespace),
+    ),
     relations: overview.relations.filter(
       (relation) =>
         schemaMatches(profile, relation.schema) &&

@@ -56,6 +56,10 @@ pub struct CatalogOverviewRelation {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogOverview {
+    /// Namespaces visible inside the profile's configured database. This list is
+    /// independent of relations so empty PostgreSQL schemas remain selectable.
+    #[serde(default)]
+    pub namespaces: Vec<String>,
     pub relations: Vec<CatalogOverviewRelation>,
     #[serde(default)]
     pub detail_state: CatalogOverviewDetailState,

@@ -97,9 +97,11 @@ export const TextAreaInput = forwardRef<
 
 export function CheckboxField({
   label,
+  indeterminate = false,
   ...props
 }: {
   label: ReactNode;
+  indeterminate?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "type">) {
   return (
     <label className="tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-2 tw:text-ui tw:text-foreground">
@@ -107,6 +109,12 @@ export function CheckboxField({
         type="checkbox"
         className="tw:size-4 tw:accent-primary"
         {...props}
+        ref={(node) => {
+          if (node) node.indeterminate = indeterminate;
+        }}
+        aria-checked={
+          indeterminate ? "mixed" : props["aria-checked"]
+        }
       />
       <span>{label}</span>
     </label>

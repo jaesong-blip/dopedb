@@ -334,13 +334,24 @@ export function ConnectionForm({
   });
   const discoveredSchemas = Array.from(
     new Set(
-      schemaDiscovery.data?.relations
-        .map((relation) =>
-          relationNamespace(form, relation.schema),
-        )
-        .filter(Boolean) ?? [],
+      [
+        ...(schemaDiscovery.data?.namespaces ?? []),
+        ...(schemaDiscovery.data?.relations
+          .map((relation) =>
+            relationNamespace(form, relation.schema),
+          )
+          .filter(Boolean) ?? []),
+      ],
     ),
   ).sort((left, right) => left.localeCompare(right));
+  const discoveredSchemaRelationCounts = new Map<string, number>();
+  for (const relation of schemaDiscovery.data?.relations ?? []) {
+    const namespace = relationNamespace(form, relation.schema);
+    discoveredSchemaRelationCounts.set(
+      namespace,
+      (discoveredSchemaRelationCounts.get(namespace) ?? 0) + 1,
+    );
+  }
   const scopedSchemas = selectedSchemaScope(form);
   const advancedParameters = Object.entries(form.extraParams).filter(
     ([key]) =>
@@ -2396,31 +2407,65 @@ export function ConnectionForm({
                       {t("connections.noSchemasDiscovered")}
                     </div>
                   ) : (
-                    <div className="tw:grid tw:gap-1 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-2">
-                      <CheckboxField
-                        label={t("connections.allSchemas")}
-                        checked={scopedSchemas.length === 0}
-                        onChange={(event) => {
-                          if (event.target.checked) setSchemaScope([]);
-                        }}
-                      />
-                      <div className="tw:my-1 tw:h-px tw:bg-border-subtle" />
-                      {discoveredSchemas.map((schema) => (
-                        <CheckboxField
-                          key={schema}
-                          label={schema}
-                          checked={
-                            scopedSchemas.length === 0 ||
-                            scopedSchemas.includes(schema)
-                          }
-                          onChange={(event) =>
-                            toggleSchemaScope(
-                              schema,
-                              event.target.checked,
-                            )
-                          }
+                    <div className="tw:grid tw:overflow-hidden tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card">
+                      <div className="tw:flex tw:min-h-10 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-muted/40 tw:px-3">
+                        <Icon
+                          name="database"
+                          className="tw:text-muted-foreground"
                         />
-                      ))}
+                        <strong className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-ui tw:font-medium">
+                          {form.database}
+                        </strong>
+                        <span className="tw:text-xs tw:text-muted-foreground">
+                          {t("connections.discoveredSchemaCount", {
+                            count: discoveredSchemas.length,
+                          })}
+                        </span>
+                      </div>
+                      <div className="tw:grid tw:gap-1 tw:p-2 tw:pl-8">
+                        <CheckboxField
+                          label={t("connections.allSchemas")}
+                          checked={scopedSchemas.length === 0}
+                          indeterminate={
+                            scopedSchemas.length > 0 &&
+                            scopedSchemas.length <
+                              discoveredSchemas.length
+                          }
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setSchemaScope([]);
+                            }
+                          }}
+                        />
+                        <div className="tw:my-1 tw:h-px tw:bg-border-subtle" />
+                        {discoveredSchemas.map((schema) => (
+                          <CheckboxField
+                            key={schema}
+                            label={
+                              <span className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2">
+                                <span className="tw:min-w-0 tw:flex-1 tw:truncate">
+                                  {schema}
+                                </span>
+                                <span className="tw:text-xs tw:tabular-nums tw:text-muted-foreground">
+                                  {discoveredSchemaRelationCounts.get(
+                                    schema,
+                                  ) ?? 0}
+                                </span>
+                              </span>
+                            }
+                            checked={
+                              scopedSchemas.length === 0 ||
+                              scopedSchemas.includes(schema)
+                            }
+                            onChange={(event) =>
+                              toggleSchemaScope(
+                                schema,
+                                event.target.checked,
+                              )
+                            }
+                          />
+                        ))}
+                      </div>
                     </div>
                   )}
                   <Field

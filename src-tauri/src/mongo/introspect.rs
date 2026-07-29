@@ -74,6 +74,7 @@ pub(crate) async fn overview(conn: &MongoConnection) -> AppResult<CatalogOvervie
     specs.sort_by(|left, right| left.name.cmp(&right.name));
 
     Ok(CatalogOverview {
+        namespaces: Vec::new(),
         relations: specs,
         detail_state: CatalogOverviewDetailState::Deferred,
     })
