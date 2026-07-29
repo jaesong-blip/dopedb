@@ -63,7 +63,7 @@ export function useWorkbenchDocuments({
 
     const preferred = supportsSql
       ? restoredDocumentKind === "documents"
-        ? "schema"
+        ? "welcome"
         : restoredDocumentKind
       : restoredDocumentKind === "sql"
         ? "documents"
@@ -74,12 +74,16 @@ export function useWorkbenchDocuments({
       queued?.connectionId === selectedConnectionId
         ? queued
         : preferred === "sql"
-          ? stableDocument(selectedConnectionId, "schema")
+          ? stableDocument(selectedConnectionId, "welcome")
           : preferred === "documents"
             ? queryDocument(selectedConnectionId, "documents")
             : stableDocument(
                 selectedConnectionId,
-                preferred === "activity" ? "activity" : "schema",
+                preferred === "activity"
+                  ? "activity"
+                  : preferred === "schema"
+                    ? "schema"
+                    : "welcome",
               );
     dispatch({ type: "initialize", document: initial });
 
@@ -149,12 +153,12 @@ export function useWorkbenchDocuments({
   }, []);
 
   const close = useCallback(
-    (id: string, connection: string, keepSchemaFallback: boolean) => {
+    (id: string, connection: string, keepWelcomeFallback: boolean) => {
       dispatch({
         type: "close",
         id,
         connectionId: connection,
-        keepSchemaFallback,
+        keepWelcomeFallback,
       });
     },
     [],

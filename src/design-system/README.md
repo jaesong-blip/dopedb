@@ -176,7 +176,7 @@ Elevation은 세 단계만 허용한다.
   같은 lifecycle projection을 사용한다. 동일한 SQL이 여러 번 있어도 단순
   문자열 검색으로 첫 occurrence에 붙이지 않으며, widget은 정적 Tailwind
   utility와 semantic token만 사용한다.
-  document tab은 schema/data/SQL/activity를 숨김 예외 없이 같은 strip에
+  document tab은 welcome/schema/data/SQL/activity를 숨김 예외 없이 같은 strip에
   투영한다. 각 tab은 읽을 수 있는 고정 폭을 유지하고 활성 문서가 바뀌면
   수평 strip 안에서 자동으로 드러난다. 끝단의 portal `ToolbarMenu`는 모든
   열린 문서를 나열해 overflow된 문서도 실제 활성화할 수 있어야 한다. 새 쿼리,

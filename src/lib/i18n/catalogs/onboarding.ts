@@ -3,6 +3,12 @@ import { defineCatalog } from "../types";
 
 export const onboardingCatalog = defineCatalog(
   {
+    "onboarding.connectedExplorerBody":
+      "Browse schemas and tables in Database Explorer, then open an object as a document.",
+    "onboarding.connectedFoot":
+      "New consoles open as documents. Query results and lifecycle stay in Services.",
+    "onboarding.connectedLead":
+      "{connection} is connected. Browse an object or open a query console to begin.",
     "onboarding.explorerBody":
       "Create a data source, connect a cloud account, or build the local Demo SQLite from Database Explorer.",
     "onboarding.explorerTitle": "Start in Database Explorer",
@@ -19,6 +25,12 @@ export const onboardingCatalog = defineCatalog(
     "onboarding.title": "Welcome to DopeDB",
   },
   {
+    "onboarding.connectedExplorerBody":
+      "데이터베이스 탐색기에서 스키마와 테이블을 찾은 뒤 객체를 문서로 여세요.",
+    "onboarding.connectedFoot":
+      "새 콘솔은 문서로 열리고 쿼리 결과와 실행 상태는 서비스에 남습니다.",
+    "onboarding.connectedLead":
+      "{connection}에 연결됐습니다. 객체를 탐색하거나 쿼리 콘솔을 열어 시작하세요.",
     "onboarding.explorerBody":
       "데이터베이스 탐색기에서 데이터 소스를 만들고 클라우드 계정을 연결하거나 로컬 Demo SQLite를 생성하세요.",
     "onboarding.explorerTitle": "데이터베이스 탐색기에서 시작",

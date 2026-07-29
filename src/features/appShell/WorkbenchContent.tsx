@@ -249,6 +249,11 @@ export default function WorkbenchContent(props: Props) {
               {supportsSql ? t("tabs.sql") : t("tabs.documents")}
             </button>
           </WorkbenchEmptyState>
+        ) : activeDocument.kind === "welcome" ? (
+          <Onboarding
+            embedded
+            connectionName={selected.name || selected.database}
+          />
         ) : activeDocument.kind === "data" ? (
           safety ? (
             <TableData

@@ -36,6 +36,7 @@ export default function WorkbenchDocumentStrip({
 
   function label(document: WorkbenchDocument, index: number) {
     if (document.kind === "data") return tableLabel(engine, document.table);
+    if (document.kind === "welcome") return t("onboarding.title");
     if (document.kind === "schema") return t("tabs.schema");
     if (document.kind === "activity") return t("tabs.activity");
     if (document.kind === "documents") return `${t("tabs.documents")} ${index + 1}`;
@@ -48,6 +49,7 @@ export default function WorkbenchDocumentStrip({
 
   function icon(document: WorkbenchDocument): IconName {
     if (document.kind === "data") return "table";
+    if (document.kind === "welcome") return "gear";
     if (document.kind === "schema") return "dashboard";
     if (document.kind === "activity") return "chart";
     if (document.kind === "documents") return "list";

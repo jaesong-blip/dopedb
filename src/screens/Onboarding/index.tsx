@@ -3,8 +3,15 @@
 import { useI18n } from "../../lib/i18n";
 import { Icon, type IconName } from "../../components/Icon";
 
-export default function Onboarding() {
+export default function Onboarding({
+  embedded = false,
+  connectionName,
+}: {
+  embedded?: boolean;
+  connectionName?: string;
+}) {
   const { t } = useI18n();
+  const connected = Boolean(connectionName);
   const guides: ReadonlyArray<{
     icon: IconName;
     title: string;
@@ -13,7 +20,11 @@ export default function Onboarding() {
     {
       icon: "database",
       title: t("onboarding.explorerTitle"),
-      body: t("onboarding.explorerBody"),
+      body: t(
+        connected
+          ? "onboarding.connectedExplorerBody"
+          : "onboarding.explorerBody",
+      ),
     },
     {
       icon: "search",
@@ -29,12 +40,14 @@ export default function Onboarding() {
 
   return (
     <div className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:overflow-hidden tw:bg-editor">
-      <header className="tw:flex tw:min-h-9 tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:text-sm">
-        <span className="tw:grid tw:size-5 tw:place-items-center tw:rounded-xs tw:bg-secondary tw:font-mono tw:text-xs tw:font-bold">
-          D
-        </span>
-        <span>{t("ide.noDataSource")}</span>
-      </header>
+      {!embedded && (
+        <header className="tw:flex tw:min-h-9 tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:text-sm">
+          <span className="tw:grid tw:size-5 tw:place-items-center tw:rounded-xs tw:bg-secondary tw:font-mono tw:text-xs tw:font-bold">
+            D
+          </span>
+          <span>{t("ide.noDataSource")}</span>
+        </header>
+      )}
       <div className="tw:grid tw:min-h-0 tw:flex-1 tw:place-items-center tw:overflow-auto tw:p-[clamp(var(--ds-space-5),5vw,64px)]">
         <main className="tw:w-full tw:max-w-[560px]">
           <div className="tw:mb-7 tw:text-center">
@@ -48,31 +61,35 @@ export default function Onboarding() {
               {t("onboarding.title")}
             </h1>
             <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-              {t("onboarding.lead")}
+              {connected
+                ? t("onboarding.connectedLead", {
+                    connection: connectionName ?? "",
+                  })
+                : t("onboarding.lead")}
             </p>
           </div>
 
           <div className="tw:grid tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
-          {guides.map((guide) => (
-            <div
-              key={guide.title}
+            {guides.map((guide) => (
+              <div
+                key={guide.title}
                 className="tw:grid tw:grid-cols-[28px_minmax(0,1fr)] tw:gap-3 tw:px-1 tw:py-3"
-            >
-              <Icon
-                name={guide.icon}
-                className="tw:mt-[var(--ds-optical-offset-xs)] tw:text-[length:var(--ds-icon-md)] tw:text-muted-foreground"
-              />
-              <div>
-                <strong className="tw:text-ui">{guide.title}</strong>
-                <p className="tw:mt-1 tw:mb-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                  {guide.body}
-                </p>
+              >
+                <Icon
+                  name={guide.icon}
+                  className="tw:mt-[var(--ds-optical-offset-xs)] tw:text-[length:var(--ds-icon-md)] tw:text-muted-foreground"
+                />
+                <div>
+                  <strong className="tw:text-ui">{guide.title}</strong>
+                  <p className="tw:mt-1 tw:mb-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                    {guide.body}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
           </div>
           <p className="tw:mt-4 tw:mb-0 tw:text-center tw:text-xs tw:text-muted-foreground">
-            {t("onboarding.foot")}
+            {t(connected ? "onboarding.connectedFoot" : "onboarding.foot")}
           </p>
         </main>
       </div>

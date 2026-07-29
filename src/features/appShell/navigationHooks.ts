@@ -55,8 +55,15 @@ export function useRestoredWorkbenchState() {
     (() => {
       const saved = localStorage.getItem("tab");
       if (saved === "history" || saved === "audit") return "activity";
-      if (saved === "sql" || saved === "documents" || saved === "schema") return saved;
-      return "schema";
+      if (
+        saved === "sql" ||
+        saved === "documents" ||
+        saved === "schema" ||
+        saved === "welcome"
+      ) {
+        return saved;
+      }
+      return "welcome";
     })(),
   ).current;
   return { legacyAuditOpen, restoredDocumentKind };

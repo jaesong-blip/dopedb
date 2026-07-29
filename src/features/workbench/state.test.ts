@@ -24,11 +24,11 @@ function storedDocument(id = "doc-1"): SqlDocument {
 }
 
 describe("workbench state ownership", () => {
-  it("restores persisted SQL without removing the connection schema document", () => {
-    const schema = stableDocument("db-1", "schema");
+  it("restores persisted SQL without removing the connection welcome document", () => {
+    const welcome = stableDocument("db-1", "welcome");
     const initialized = workbenchReducer(emptyWorkbenchState, {
       type: "initialize",
-      document: schema,
+      document: welcome,
     });
     const restored = workbenchReducer(initialized, {
       type: "restoreSql",
@@ -38,7 +38,7 @@ describe("workbench state ownership", () => {
     });
 
     expect(restored.documents.map((document) => document.kind)).toEqual([
-      "schema",
+      "welcome",
       "sql",
     ]);
     expect(restored.activeDocumentId).toContain(":sql:doc-1");
@@ -59,7 +59,7 @@ describe("workbench state ownership", () => {
     expect(second.activeDocumentId).toBe(query.id);
   });
 
-  it("creates the schema fallback when the last SQL tab closes", () => {
+  it("creates the welcome fallback when the last SQL tab closes", () => {
     const query = queryDocument("db-1", "sql");
     const state = workbenchReducer(emptyWorkbenchState, {
       type: "activate",
@@ -69,11 +69,11 @@ describe("workbench state ownership", () => {
       type: "close",
       id: query.id,
       connectionId: "db-1",
-      keepSchemaFallback: true,
+      keepWelcomeFallback: true,
     });
 
-    expect(closed.documents).toEqual([stableDocument("db-1", "schema")]);
-    expect(closed.activeDocumentId).toBe("db-1:schema");
+    expect(closed.documents).toEqual([stableDocument("db-1", "welcome")]);
+    expect(closed.activeDocumentId).toBe("db-1:welcome");
   });
 
   it("applies a successful save through the one state reducer", () => {

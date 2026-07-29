@@ -34,7 +34,7 @@ export type WorkbenchAction =
       type: "close";
       id: string;
       connectionId: string;
-      keepSchemaFallback: boolean;
+      keepWelcomeFallback: boolean;
     }
   | { type: "updateDraft"; id: string; draft: string }
   | { type: "updateTitle"; id: string; title: string }
@@ -93,8 +93,8 @@ export function workbenchReducer(
       const index = selected.findIndex((document) => document.id === action.id);
       if (index < 0) return state;
       let remaining = selected.filter((document) => document.id !== action.id);
-      if (remaining.length === 0 && action.keepSchemaFallback) {
-        remaining = [stableDocument(action.connectionId, "schema")];
+      if (remaining.length === 0 && action.keepWelcomeFallback) {
+        remaining = [stableDocument(action.connectionId, "welcome")];
       }
       const documents = [
         ...state.documents.filter(

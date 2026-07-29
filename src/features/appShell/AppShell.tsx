@@ -351,7 +351,7 @@ function Shell() {
     const connection = conns.find((candidate) => candidate.id === id);
     const initial = connection && isDocumentEngine(connection.engine)
       ? queryDocument(id, "documents")
-      : stableDocument(id, "schema");
+      : stableDocument(id, "welcome");
     workbench.prime(initial);
     setSelectedId(id);
     setEditing(null);
@@ -591,9 +591,11 @@ function Shell() {
                   .join(".")
               : document.kind === "schema"
                 ? t("tabs.schema")
-                : document.kind === "activity"
-                  ? t("tabs.activity")
-                  : t("tabs.documents");
+                : document.kind === "welcome"
+                  ? t("onboarding.title")
+                  : document.kind === "activity"
+                    ? t("tabs.activity")
+                    : t("tabs.documents");
         return {
           id: `document:${document.id}`,
           kind: "document",
