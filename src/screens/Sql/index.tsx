@@ -962,13 +962,16 @@ export default function Sql({
         {plan && (
           <details
             open
-            className="tw:mx-3 tw:my-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3"
+            className="tw:my-2 tw:border-y tw:border-border-subtle tw:bg-background"
           >
-            <summary className="tw:flex tw:cursor-pointer tw:items-center tw:gap-2 tw:font-semibold">
+            <summary className="tw:flex tw:min-h-workbench-toolbar tw:cursor-pointer tw:items-center tw:gap-2 tw:px-3 tw:py-1 tw:font-semibold">
               {t("sql.queryPlan")}
               <button
                 className="btn small icon-only icon-xs tw:ml-auto"
-                onClick={() => setPlan(null)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  setPlan(null);
+                }}
                 title={t("common.close")}
                 aria-label={t("common.close")}
               >
@@ -976,11 +979,11 @@ export default function Sql({
               </button>
             </summary>
             {plan.plan ? (
-              <pre className="tw:mt-2 tw:mb-0 tw:overflow-x-auto tw:rounded-sm tw:border tw:border-border-subtle tw:bg-background tw:p-2 tw:text-sm tw:whitespace-pre">
+              <pre className="tw:m-0 tw:overflow-x-auto tw:border-t tw:border-border-subtle tw:bg-background tw:p-3 tw:font-mono tw:text-sm tw:whitespace-pre">
                 {plan.plan}
               </pre>
             ) : (
-              <div className="tw:text-muted-foreground">
+              <div className="tw:border-t tw:border-border-subtle tw:px-3 tw:py-2 tw:text-muted-foreground">
                 {t("sql.noPlan", { mode: plan.mode })}
               </div>
             )}
@@ -1009,7 +1012,7 @@ export default function Sql({
         )}
 
         {pendingScriptApproval && (
-          <section className="tw:mx-3 tw:my-3 tw:grid tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
+          <section className="tw:my-2 tw:grid tw:gap-3 tw:border-y tw:border-warning tw:bg-background tw:p-3">
             <div className="ds-title-line">
               <strong>{t("approval.review")}</strong>
               <span className="badge risk-medium">

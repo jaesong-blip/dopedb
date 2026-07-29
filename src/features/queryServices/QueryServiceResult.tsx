@@ -12,6 +12,7 @@ import {
   SqlSnippet,
   WorkbenchEmptyState,
 } from "../../design-system/components/Workbench";
+import { Icon } from "../../components/Icon";
 import { stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
 import StreamOutcome from "../../screens/Sql/StreamOutcome";
@@ -244,41 +245,48 @@ function SqlErrorCard({
     error.position !== null ? errorPosition(error.sql, error.position) : null;
   return (
     <div
-      className="tw:m-3 tw:grid tw:gap-3 tw:rounded-md tw:border tw:border-danger-border tw:bg-danger-muted tw:p-3 tw:text-foreground"
+      className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-auto tw:text-foreground"
       role="alert"
     >
-      <div>
+      <ResultMeta>
+        <Icon name="alert" className="tw:text-danger" />
         <strong className="tw:text-danger">{t("sql.errorTitle")}</strong>
         <span className="tw:text-muted-foreground"> · {error.at}</span>
-      </div>
-      <div className="tw:grid tw:grid-cols-[max-content_minmax(0,1fr)] tw:items-start tw:gap-x-3 tw:gap-y-2 tw:[&_code]:rounded-sm tw:[&_code]:border tw:[&_code]:border-border-subtle tw:[&_code]:bg-card tw:[&_code]:p-2 tw:[&_pre]:m-0 tw:[&_pre]:overflow-auto tw:[&_pre]:rounded-sm tw:[&_pre]:border tw:[&_pre]:border-border-subtle tw:[&_pre]:bg-card tw:[&_pre]:p-2 tw:[&_pre]:text-sm tw:[&_pre]:whitespace-pre-wrap tw:[&_pre]:[overflow-wrap:anywhere] tw:max-[760px]:grid-cols-1">
-        <span className="tw:text-muted-foreground">{t("sql.errorKind")}</span>
-        <code>{error.kind ?? t("common.unknown")}</code>
-        <span className="tw:text-muted-foreground">
-          {t("sql.errorMessage")}
-        </span>
-        <pre>{error.message}</pre>
-        {position && (
+      </ResultMeta>
+      <dl className="tw:m-0 tw:grid tw:grid-cols-[max-content_minmax(0,1fr)] tw:items-stretch tw:[&>*]:m-0 tw:[&>*]:border-b tw:[&>*]:border-border-subtle tw:[&>*]:px-3 tw:[&>*]:py-2 tw:[&>dd]:min-w-0 tw:[&>dt]:text-muted-foreground tw:max-[760px]:grid-cols-1 tw:max-[760px]:[&>dt]:border-b-0 tw:max-[760px]:[&>dt]:pb-0">
+        <dt>{t("sql.errorKind")}</dt>
+        <dd>
+          <code className="tw:font-mono tw:text-sm">
+            {error.kind ?? t("common.unknown")}
+          </code>
+        </dd>
+        <dt>{t("sql.errorMessage")}</dt>
+        <dd>
+          <pre className="tw:m-0 tw:overflow-auto tw:font-mono tw:text-sm tw:whitespace-pre-wrap tw:[overflow-wrap:anywhere]">
+            {error.message}
+          </pre>
+        </dd>
+        {position ? (
           <>
-            <span className="tw:text-muted-foreground">
-              {t("sql.errorPosition")}
-            </span>
-            <pre>
-              {t("sql.errorPositionAt", {
-                line: position.line,
-                column: position.column,
-              })}
-              {"\n"}
-              {position.snippet}
-            </pre>
+            <dt>{t("sql.errorPosition")}</dt>
+            <dd>
+              <pre className="tw:m-0 tw:overflow-auto tw:font-mono tw:text-sm tw:whitespace-pre-wrap tw:[overflow-wrap:anywhere]">
+                {t("sql.errorPositionAt", {
+                  line: position.line,
+                  column: position.column,
+                })}
+                {"\n"}
+                {position.snippet}
+              </pre>
+            </dd>
           </>
-        )}
-      </div>
-      <details>
-        <summary className="tw:cursor-pointer tw:text-ui tw:text-muted-foreground">
+        ) : null}
+      </dl>
+      <details className="tw:border-b tw:border-border-subtle">
+        <summary className="tw:min-h-control-md tw:cursor-pointer tw:px-3 tw:py-2 tw:text-ui tw:text-muted-foreground">
           {t("sql.errorContext")}
         </summary>
-        <pre className="tw:mt-2 tw:max-h-[280px] tw:overflow-auto tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-2 tw:text-sm tw:whitespace-pre-wrap tw:[overflow-wrap:anywhere]">
+        <pre className="tw:m-0 tw:max-h-[280px] tw:overflow-auto tw:border-t tw:border-border-subtle tw:bg-background tw:p-3 tw:font-mono tw:text-sm tw:whitespace-pre-wrap tw:[overflow-wrap:anywhere]">
           {prompt}
         </pre>
       </details>

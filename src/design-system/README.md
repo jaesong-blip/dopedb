@@ -303,7 +303,12 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   빈 AI Chat에 disabled kebab을 남기지 않는다.
 - Query parameter dialog는 parameter token/이름과 SQL expression 값을 한 행에
   대응시키고, 빈 값에서는 primary 실행 action을 비활성화한다. 치환 설명은
-  semantic muted surface에 두며 feature 전용 CSS나 style map을 만들지 않는다.
+  divider surface에 두며 feature 전용 CSS나 style map을 만들지 않는다. title과
+  action row는 feature-local header/footer가 아니라 `ModalTitleBar`와
+  `ModalFooter`가 소유한다.
+- Explain과 Services 오류는 결과 영역 안에 별도 rounded card를 만들지 않는다.
+  `ResultMeta`와 divider 기반의 평평한 workbench row를 사용하고 SQL/error
+  원문만 monospace scroll surface로 표시한다.
 - SQL toolbar의 실행은 채움 primary button이 아니라 DopeDB command 문법의
   평평한 icon action과 semantic success glyph를 사용한다. manual transaction이
   구현되기 전에는 `Tx: Auto`에 가짜 menu chevron이나 commit/rollback action을

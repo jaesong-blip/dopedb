@@ -1,9 +1,10 @@
 import { useMemo, useState, type FormEvent } from "react";
 
-import { Icon } from "../../components/Icon";
 import {
   ModalBackdrop,
+  ModalFooter,
   ModalSurface,
+  ModalTitleBar,
 } from "../../design-system/components/Modal";
 import type { SqlParameter } from "../../features/query/sqlParameters";
 import { uniqueSqlParameters } from "../../features/query/sqlParameters";
@@ -49,28 +50,13 @@ export default function SqlParameterDialog({
           if (event.key === "Escape") onCancel();
         }}
       >
-        <form className="tw:flex tw:min-h-0 tw:flex-col" onSubmit={submit}>
-          <header className="tw:flex tw:min-h-control-xl tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-4">
-            <Icon
-              name="parameter"
-              className="tw:text-muted-foreground"
-            />
-            <h2
-              id="sql-parameters-title"
-              className="tw:m-0 tw:flex-1 tw:text-base tw:font-semibold"
-            >
-              {t("sql.parameters")}
-            </h2>
-            <button
-              type="button"
-              className="btn small icon-only"
-              onClick={onCancel}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-            >
-              <Icon name="close" />
-            </button>
-          </header>
+        <form className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col" onSubmit={submit}>
+          <ModalTitleBar
+            title={t("sql.parameters")}
+            titleId="sql-parameters-title"
+            closeLabel={t("common.close")}
+            onClose={onCancel}
+          />
 
           <div className="tw:grid tw:max-h-[50dvh] tw:gap-2 tw:overflow-auto tw:p-4">
             <div className="tw:grid tw:grid-cols-[minmax(100px,0.55fr)_minmax(180px,1fr)] tw:gap-3 tw:text-xs tw:font-medium tw:text-muted-foreground">
@@ -108,12 +94,12 @@ export default function SqlParameterDialog({
                 />
               </label>
             ))}
-            <p className="tw:m-0 tw:rounded-sm tw:bg-muted tw:px-3 tw:py-2 tw:text-xs tw:leading-body tw:text-muted-foreground">
+            <p className="tw:m-0 tw:border-y tw:border-border-subtle tw:px-1 tw:py-2 tw:text-xs tw:leading-body tw:text-muted-foreground">
               {t("sql.parameterSafety")}
             </p>
           </div>
 
-          <footer className="ds-action-row ds-control-row tw:shrink-0 tw:border-t tw:border-border-subtle tw:bg-card tw:px-4 tw:py-3">
+          <ModalFooter>
             <button type="button" className="btn" onClick={onCancel}>
               {t("common.cancel")}
             </button>
@@ -124,9 +110,9 @@ export default function SqlParameterDialog({
                   : action === "explain"
                     ? "sql.parameterExplain"
                     : "sql.parameterApply",
-              )}
+                )}
             </button>
-          </footer>
+          </ModalFooter>
         </form>
       </ModalSurface>
     </ModalBackdrop>
