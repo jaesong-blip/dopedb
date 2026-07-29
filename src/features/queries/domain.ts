@@ -52,6 +52,15 @@ export type SqlStreamReceipt = {
   durationMs: number;
 };
 
+export type ManualTransactionStatus = {
+  transactionId: string;
+  connectionId: string;
+  phase: "active" | "failed";
+  statementCount: number;
+  startedAt: string;
+  expiresAt: string;
+};
+
 // The SQL screen is the single writer for a desktop stream.  Keeping the reducer
 // with the transport DTOs makes stale-run and sequence validation testable without
 // giving a component permission to acknowledge a batch before it is accepted.

@@ -99,5 +99,6 @@ pub(crate) async fn run_write(
         result: None,
         affected: Some(affected),
         committed: true,
+        manual_transaction: false,
     })
 }

@@ -168,6 +168,8 @@ export const qk = {
   auditVerdict: (connectionId: string) => ["audit", connectionId, "verdict"] as const,
   auditSnapshot: (connectionId: string) => ["audit", connectionId, "snapshot"] as const,
   monitoring: (connectionId: string) => ["monitoring", connectionId] as const,
+  manualTransaction: (connectionId: string) =>
+    ["manualTransaction", connectionId] as const,
   dashboards: (connectionId: string) => ["dashboards", connectionId] as const,
   dashboardRun: (dashboardId: string) => ["dashboardRun", dashboardId] as const,
   drivers: () => ["drivers"] as const,

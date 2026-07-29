@@ -6,6 +6,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import type { ExecOutcome } from "../../ipc/types";
 import type {
   SqlInspection,
+  ManualTransactionStatus,
   SqlOperationProposal,
   SqlStreamBatch,
   SqlStreamBatchHandler,
@@ -13,6 +14,32 @@ import type {
   SqlStreamReady,
   SqlStreamReceipt,
 } from "./domain";
+
+export function getManualTransaction(
+  id: string,
+): Promise<ManualTransactionStatus | null> {
+  return invoke("get_manual_transaction", { id });
+}
+
+export function beginManualTransaction(
+  id: string,
+): Promise<ManualTransactionStatus> {
+  return invoke("begin_manual_transaction", { id });
+}
+
+export function commitManualTransaction(
+  id: string,
+  transactionId: string,
+): Promise<ManualTransactionStatus> {
+  return invoke("commit_manual_transaction", { id, transactionId });
+}
+
+export function rollbackManualTransaction(
+  id: string,
+  transactionId: string,
+): Promise<ManualTransactionStatus> {
+  return invoke("rollback_manual_transaction", { id, transactionId });
+}
 
 export function inspectSql(
   id: string,

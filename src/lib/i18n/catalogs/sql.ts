@@ -92,7 +92,20 @@ export const sqlCatalog = defineCatalog(
     "sql.tx": "Tx:",
     "sql.txAuto": "Auto",
     "sql.txAutoHint":
-      "Each statement uses the database's automatic transaction behavior. Manual commit and rollback are not available yet.",
+      "Each statement commits automatically. Select Tx: Auto to open one connection-scoped rollback boundary for desktop and Agent SQL.",
+    "sql.txManual": "Manual",
+    "sql.txFailed": "Failed",
+    "sql.txManualBeginHint":
+      "Begin a connection-scoped manual transaction for desktop and Agent SQL.",
+    "sql.txManualWritesRequired":
+      "Enable writes for this connection before starting a manual transaction.",
+    "sql.txManualDetail": "{count} statements are waiting for commit or rollback.",
+    "sql.txFailedHint":
+      "A statement failed. This transaction can only be rolled back.",
+    "sql.txCommit": "Commit manual transaction",
+    "sql.txRollback": "Roll back manual transaction",
+    "sql.writeStaged": "write staged in manual transaction",
+    "sql.scriptStaged": "script staged in manual transaction",
     "sql.unsaved": "Unsaved",
     "sql.viewParameters": "View parameters",
     "sql.viewParametersCount": "View {count} parameter occurrences",
@@ -190,7 +203,20 @@ export const sqlCatalog = defineCatalog(
     "sql.tx": "Tx:",
     "sql.txAuto": "자동",
     "sql.txAutoHint":
-      "각 문장은 데이터베이스의 자동 트랜잭션 동작을 사용합니다. 수동 커밋과 롤백은 아직 제공하지 않습니다.",
+      "각 문장을 자동 커밋합니다. Tx: 자동을 선택하면 데스크톱과 Agent SQL을 묶는 연결 단위 롤백 경계를 엽니다.",
+    "sql.txManual": "수동",
+    "sql.txFailed": "실패",
+    "sql.txManualBeginHint":
+      "데스크톱과 Agent SQL을 위한 연결 단위 수동 트랜잭션을 시작합니다.",
+    "sql.txManualWritesRequired":
+      "수동 트랜잭션을 시작하려면 이 연결의 쓰기를 활성화하세요.",
+    "sql.txManualDetail": "{count}개 문장이 커밋 또는 롤백을 기다립니다.",
+    "sql.txFailedHint":
+      "문장 실행이 실패했습니다. 이 트랜잭션은 롤백만 할 수 있습니다.",
+    "sql.txCommit": "수동 트랜잭션 커밋",
+    "sql.txRollback": "수동 트랜잭션 롤백",
+    "sql.writeStaged": "수동 트랜잭션에 쓰기 보류됨",
+    "sql.scriptStaged": "수동 트랜잭션에 스크립트 보류됨",
     "sql.unsaved": "저장되지 않음",
     "sql.viewParameters": "파라미터 보기",
     "sql.viewParametersCount": "파라미터 {count}개 보기",

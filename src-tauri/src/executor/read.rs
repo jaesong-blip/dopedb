@@ -386,7 +386,7 @@ where
     Ok((columns, rows, truncated))
 }
 
-async fn stream_batched<S, R, F, Fut>(
+pub(crate) async fn stream_batched<S, R, F, Fut>(
     mut stream: S,
     max_rows: usize,
     batch_rows: usize,

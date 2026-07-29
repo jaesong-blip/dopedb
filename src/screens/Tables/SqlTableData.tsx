@@ -47,6 +47,7 @@ import TableSidePanel from "./TableSidePanel";
 import TableExpressionBar from "./TableExpressionBar";
 import TableStructure from "./TableStructure";
 import TableToolbar from "./TableToolbar";
+import { useManualTransaction } from "../../features/queries/useManualTransaction";
 
 export default function SqlTableData({
   connection,
@@ -60,6 +61,7 @@ export default function SqlTableData({
   const { t } = useI18n();
   const toast = useToast();
   const agentSelection = useAgentSelection();
+  const manualTransaction = useManualTransaction(connection.id);
   const [ddlOpen, setDdlOpen] = useState(false);
   const engine = connection.engine;
   const { table, snapshotQuery } = useCatalogTableMetadata(connection.id, requestedTable);
@@ -373,6 +375,8 @@ export default function SqlTableData({
         jobsOpen={jobsOpen}
         catalogAvailable={!!catalogRelation}
         structureOpen={structure}
+        manualTransaction={manualTransaction}
+        writesEnabled={safety.allowWrites}
         onOpenEdit={openEdit}
         onDelete={doDelete}
         onReviewStaged={() =>

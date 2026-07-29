@@ -238,22 +238,60 @@ impl QueryPlatformAdapter {
             }
         };
 
-        match executor::execute(
-            live,
-            engine,
-            &classification,
-            &payload.sql,
-            namespace,
-            &settings,
-            if is_write {
-                Some(claimed.grant())
-            } else {
-                None
-            },
-            Some(&cancellation),
-        )
-        .await
-        {
+        let manual_execution = if is_write {
+            self.manual_transactions
+                .run_write(
+                    operation_pin.connection_id,
+                    &classification,
+                    &payload.sql,
+                    namespace.clone(),
+                    &settings,
+                    claimed.grant(),
+                    &cancellation,
+                )
+                .await
+        } else {
+            self.manual_transactions
+                .run_read(
+                    operation_pin.connection_id,
+                    &payload.sql,
+                    namespace.clone(),
+                    settings.max_rows,
+                    Some(&cancellation),
+                )
+                .await
+                .map(|result| {
+                    result.map(|result| crate::model::ExecOutcome {
+                        result: Some(result),
+                        affected: None,
+                        committed: false,
+                        manual_transaction: true,
+                    })
+                })
+        };
+        let (manual_transaction, execution) = match manual_execution {
+            Some(execution) => (true, execution),
+            None => (
+                false,
+                executor::execute(
+                    live,
+                    engine,
+                    &classification,
+                    &payload.sql,
+                    namespace,
+                    &settings,
+                    if is_write {
+                        Some(claimed.grant())
+                    } else {
+                        None
+                    },
+                    Some(&cancellation),
+                )
+                .await,
+            ),
+        };
+
+        match execution {
             Ok(outcome) => {
                 let row_count = outcome
                     .result
@@ -270,6 +308,7 @@ impl QueryPlatformAdapter {
                         operation_id.into(),
                         &serde_json::json!({
                             "committed": outcome.committed,
+                            "manualTransaction": manual_transaction,
                             "durationMs": duration_ms,
                             "rowCount": row_count,
                         }),
@@ -310,8 +349,20 @@ impl QueryPlatformAdapter {
                     DesktopRunRecord {
                         sql: &payload.sql,
                         kind: classification.kind,
-                        action: if outcome.committed { "execute" } else { "read" },
-                        status: "ok",
+                        action: if is_write {
+                            if outcome.committed {
+                                "execute"
+                            } else {
+                                "execute:staged"
+                            }
+                        } else {
+                            "read"
+                        },
+                        status: if is_write && !outcome.committed {
+                            "staged"
+                        } else {
+                            "ok"
+                        },
                         row_count,
                         duration_ms,
                         error: None,
@@ -334,6 +385,7 @@ impl QueryPlatformAdapter {
                     AppError::Safety(reason) if reason.starts_with("query timed out after ")
                 );
                 let error = if is_write
+                    && !manual_transaction
                     && (cancelled || timed_out || matches!(&error, AppError::OutcomeUnknown(_)))
                 {
                     match error {

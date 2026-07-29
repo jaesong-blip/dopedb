@@ -138,9 +138,11 @@ function MaterializedResult({
         <ResultMeta>
           <SqlSnippet>{sql}</SqlSnippet>
           {" · "}
-          {outcome.committed
-            ? t("sql.writeCommitted")
-            : t("sql.noRowsReturned")}
+          {outcome.manualTransaction
+            ? t("sql.writeStaged")
+            : outcome.committed
+              ? t("sql.writeCommitted")
+              : t("sql.noRowsReturned")}
           {outcome.affected !== null && (
             <> · {t("sql.affected", { count: outcome.affected })}</>
           )}{" "}
@@ -158,9 +160,11 @@ function ScriptResults({
   const { t } = useI18n();
   const summary = outcome.allReads
     ? t("sql.readOnlyScript")
-    : outcome.committed
-      ? t("sql.committed")
-      : t("sql.failedRolledBack");
+    : outcome.manualTransaction
+      ? t("sql.scriptStaged")
+      : outcome.committed
+        ? t("sql.committed")
+        : t("sql.failedRolledBack");
   return (
     <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
       <ResultMeta>

@@ -262,7 +262,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.transactionAuto": "Auto",
     "connections.transactionControl": "Transaction control",
     "connections.transactionOperationScoped":
-      "Each submitted operation uses a bounded transaction. Manual long-lived transactions are not exposed.",
+      "Automatic execution is the default. Query and data toolbars can open a bounded connection-scoped manual transaction for commit or rollback.",
     "connections.unique": "Unique",
     "connections.user": "User",
     "connections.userPassword": "User & Password",
@@ -527,7 +527,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.transactionAuto": "자동",
     "connections.transactionControl": "트랜잭션 제어",
     "connections.transactionOperationScoped":
-      "각 제출 작업은 제한된 트랜잭션을 사용합니다. 장기 수동 트랜잭션은 아직 노출하지 않습니다.",
+      "기본은 자동 실행입니다. 쿼리와 데이터 툴바에서 연결 단위 수동 트랜잭션을 열어 커밋하거나 롤백할 수 있습니다.",
     "connections.unique": "고유",
     "connections.user": "사용자",
     "connections.userPassword": "사용자 및 비밀번호",

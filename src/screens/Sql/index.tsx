@@ -23,9 +23,12 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import {
   inspectSql,
   proposeSql,
+  runSql as runSqlOperation,
   runSqlReadStream,
   runSqlStream,
 } from "../../features/queries/tauriAdapter";
+import ManualTransactionControls from "../../features/queries/ManualTransactionControls";
+import { useManualTransaction } from "../../features/queries/useManualTransaction";
 import {
   effectiveSqlNamespace,
   sqlNamespaceOptions,
@@ -219,6 +222,7 @@ export default function Sql({
   onCursorChange: (position: SqlCursorPosition) => void;
 }) {
   const { t } = useI18n();
+  const manualTransaction = useManualTransaction(connection.id);
   const draftStatements = useMemo(() => splitStatements(draft), [draft]);
   const draftIsScript = draftStatements.length > 1;
   const draftSignal = useMemo(
@@ -404,11 +408,22 @@ export default function Sql({
               return;
             }
             setRun(null);
-            await startDesktopStream((onBatch) =>
-              runSqlStream(proposal.operationId, onBatch),
-            );
+            if (manualTransaction.status) {
+              setRun({
+                sql,
+                outcome: await runSqlOperation(proposal.operationId),
+                at: new Date().toLocaleTimeString(),
+              });
+            } else {
+              await startDesktopStream((onBatch) =>
+                runSqlStream(proposal.operationId, onBatch),
+              );
+            }
           };
-          if (initialSqlRunPath(safety.autoRunReads) === "combinedReadStream") {
+          if (
+            !manualTransaction.status &&
+            initialSqlRunPath(safety.autoRunReads) === "combinedReadStream"
+          ) {
             try {
               // Exactly one IPC for auto reads. Only the backend's typed,
               // pre-target `proposalRequired` signal may enter the proposal UI.
@@ -819,15 +834,11 @@ export default function Sql({
                 : t("sql.safetyLoading")}
             </button>
           ) : (
-            <span
-              className="tw:inline-flex tw:h-control-sm tw:shrink-0 tw:items-center tw:gap-1 tw:px-1 tw:text-sm tw:text-muted-foreground"
-              title={t("sql.txAutoHint")}
-            >
-              <span>{t("sql.tx")}</span>
-              <strong className="tw:font-medium tw:text-foreground">
-                {t("sql.txAuto")}
-              </strong>
-            </span>
+            <ManualTransactionControls
+              controller={manualTransaction}
+              writesEnabled={safety.allowWrites}
+              disabled={running}
+            />
           )}
           <WorkbenchButton
             iconOnly

@@ -154,24 +154,47 @@ impl ScriptPlatformAdapter {
                 )));
             }
         };
-        let transaction = execute_script_transaction(
-            &live.write_pool,
-            &statements,
-            payload.namespace.clone(),
-            payload
-                .table_change
-                .as_ref()
-                .map(|context| context.expected_affected.as_slice()),
-            operation.grant(),
-            operation_id,
-        );
-        let (outcomes, committed) = match executor::cancel::guard(
-            Some(operation_id),
-            executor::cancel::QUERY_TIMEOUT,
-            transaction,
-        )
-        .await
-        {
+        let cancellation = executor::cancel::register(operation_id);
+        let expected_affected = payload
+            .table_change
+            .as_ref()
+            .map(|context| context.expected_affected.as_slice());
+        let manual_execution = self
+            .manual_transactions
+            .run_script(
+                operation_pin.connection_id,
+                &statements,
+                &kinds,
+                payload.namespace.clone(),
+                expected_affected,
+                settings.max_rows,
+                &cancellation,
+                operation.grant(),
+                kinds
+                    .iter()
+                    .any(|kind| matches!(kind, QueryKind::Ddl | QueryKind::Privilege)),
+            )
+            .await;
+        let (manual_transaction, transaction_result) = match manual_execution {
+            Some(result) => (true, result.map(|result| (result.statements, false))),
+            None => (
+                false,
+                executor::cancel::guard_registered(
+                    Some(&cancellation),
+                    executor::cancel::QUERY_TIMEOUT,
+                    execute_script_transaction(
+                        &live.write_pool,
+                        &statements,
+                        payload.namespace.clone(),
+                        expected_affected,
+                        operation.grant(),
+                        operation_id,
+                    ),
+                )
+                .await,
+            ),
+        };
+        let (outcomes, committed) = match transaction_result {
             Ok(result) => result,
             Err(error) => {
                 let interrupted = matches!(
@@ -180,7 +203,7 @@ impl ScriptPlatformAdapter {
                         if reason == "query cancelled"
                             || reason.starts_with("query timed out after ")
                 );
-                let error = if interrupted {
+                let error = if interrupted && !manual_transaction {
                     AppError::OutcomeUnknown(format!(
                         "script execution was interrupted before rollback or commit could be confirmed: {error}"
                     ))
@@ -222,7 +245,8 @@ impl ScriptPlatformAdapter {
             }
         };
 
-        if !committed
+        if !manual_transaction
+            && !committed
             && matches!(engine, crate::model::Engine::Mysql)
             && kinds
                 .iter()
@@ -281,18 +305,26 @@ impl ScriptPlatformAdapter {
                 sql: &payload.sql,
                 kind: script_kind,
                 action: "script:execute",
-                status: if committed { "ok" } else { "error" },
+                status: if manual_transaction {
+                    "staged"
+                } else if committed {
+                    "ok"
+                } else {
+                    "error"
+                },
                 row_count: Some(total),
                 error: first_error,
                 origin: &history_origin,
             },
         )
         .await;
-        let lifecycle = if committed {
+        let lifecycle = if committed || manual_transaction {
             self.operation
                 .succeed(
                     operation_id,
                     &serde_json::json!({
+                        "committed": committed,
+                        "manualTransaction": manual_transaction,
                         "rowCount": total,
                         "statementCount": statements.len(),
                     }),
@@ -328,6 +360,7 @@ impl ScriptPlatformAdapter {
                 statements: outcomes,
                 committed,
                 all_reads: false,
+                manual_transaction,
             },
             _lease: lease,
         })

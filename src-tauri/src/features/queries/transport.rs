@@ -14,6 +14,55 @@ use super::{
     DesktopSqlStreamReceipt, DesktopSqlStreamSinkError,
 };
 
+#[tauri::command]
+pub(crate) async fn get_manual_transaction(
+    state: State<'_, AppState>,
+    id: Uuid,
+) -> AppResult<Option<super::ManualTransactionStatus>> {
+    Ok(state
+        .services
+        .queries
+        .manual_transactions()
+        .status(id)
+        .await)
+}
+
+#[tauri::command]
+pub(crate) async fn begin_manual_transaction(
+    state: State<'_, AppState>,
+    id: Uuid,
+) -> AppResult<super::ManualTransactionStatus> {
+    state.services.queries.manual_transactions().begin(id).await
+}
+
+#[tauri::command]
+pub(crate) async fn commit_manual_transaction(
+    state: State<'_, AppState>,
+    id: Uuid,
+    transaction_id: Uuid,
+) -> AppResult<super::ManualTransactionStatus> {
+    state
+        .services
+        .queries
+        .manual_transactions()
+        .commit(id, transaction_id)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn rollback_manual_transaction(
+    state: State<'_, AppState>,
+    id: Uuid,
+    transaction_id: Uuid,
+) -> AppResult<super::ManualTransactionStatus> {
+    state
+        .services
+        .queries
+        .manual_transactions()
+        .rollback(id, transaction_id)
+        .await
+}
+
 /// Atomically classifies and read-only explains a single SQL statement.
 ///
 /// Tauri performs the sole raw UUID conversion. The feature owns the intent so

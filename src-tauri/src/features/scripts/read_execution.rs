@@ -13,7 +13,7 @@ impl ScriptPlatformAdapter {
             operation,
             payload,
             statements,
-            kinds: _,
+            kinds,
             settings,
             engine,
             history_origin,
@@ -70,31 +70,64 @@ impl ScriptPlatformAdapter {
         };
         let mut outcomes = Vec::with_capacity(statements.len());
         let mut failure = None;
-        for statement in &statements {
-            if failure.is_some() {
-                outcomes.push(statement_skipped(statement));
-                continue;
-            }
-            match executor::run_read(
-                live,
-                engine,
-                statement,
+        let cancellation = executor::cancel::register(operation_id);
+        let manual_execution = self
+            .manual_transactions
+            .run_script(
+                operation_pin.connection_id,
+                &statements,
+                &kinds,
                 payload.namespace.clone(),
+                None,
                 settings.max_rows,
-                Some(operation_id),
+                &cancellation,
+                operation.grant(),
+                false,
             )
-            .await
-            {
-                Ok(result) => outcomes.push(ScriptStatement {
-                    sql: statement.clone(),
-                    result: Some(result),
-                    affected: None,
-                    error: None,
-                }),
+            .await;
+        let manual_transaction = manual_execution.is_some();
+        if let Some(result) = manual_execution {
+            match result {
+                Ok(result) => outcomes = result.statements,
                 Err(error) => {
                     let message = error.to_string();
-                    outcomes.push(statement_error(statement, message.clone()));
+                    outcomes.push(statement_error(&statements[0], message.clone()));
+                    outcomes.extend(
+                        statements
+                            .iter()
+                            .skip(1)
+                            .map(|statement| statement_skipped(statement)),
+                    );
                     failure = Some(message);
+                }
+            }
+        } else {
+            for statement in &statements {
+                if failure.is_some() {
+                    outcomes.push(statement_skipped(statement));
+                    continue;
+                }
+                match executor::run_read(
+                    live,
+                    engine,
+                    statement,
+                    payload.namespace.clone(),
+                    settings.max_rows,
+                    Some(operation_id),
+                )
+                .await
+                {
+                    Ok(result) => outcomes.push(ScriptStatement {
+                        sql: statement.clone(),
+                        result: Some(result),
+                        affected: None,
+                        error: None,
+                    }),
+                    Err(error) => {
+                        let message = error.to_string();
+                        outcomes.push(statement_error(statement, message.clone()));
+                        failure = Some(message);
+                    }
                 }
             }
         }
@@ -133,7 +166,11 @@ impl ScriptPlatformAdapter {
             self.operation
                 .succeed(
                     operation_id,
-                    &serde_json::json!({"rowCount": total, "statementCount": statements.len()}),
+                    &serde_json::json!({
+                        "manualTransaction": manual_transaction,
+                        "rowCount": total,
+                        "statementCount": statements.len()
+                    }),
                 )
                 .await
         };
@@ -143,6 +180,7 @@ impl ScriptPlatformAdapter {
                 statements: outcomes,
                 committed: false,
                 all_reads: true,
+                manual_transaction,
             },
             _lease: lease,
         })

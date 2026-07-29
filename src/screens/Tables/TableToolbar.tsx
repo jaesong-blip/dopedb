@@ -11,6 +11,8 @@ import type { CatalogTable, QueryResult } from "../../ipc/types";
 import { downloadCsv, downloadJson, stamp } from "../../lib/export";
 import { useI18n } from "../../lib/i18n";
 import Pager from "./Pager";
+import ManualTransactionControls from "../../features/queries/ManualTransactionControls";
+import type { ManualTransactionController } from "../../features/queries/useManualTransaction";
 
 type Props = {
   table: CatalogTable;
@@ -28,6 +30,8 @@ type Props = {
   jobsOpen: boolean;
   catalogAvailable: boolean;
   structureOpen: boolean;
+  manualTransaction: ManualTransactionController;
+  writesEnabled: boolean;
   onOpenEdit: (mode: "insert" | "edit" | "duplicate") => void;
   onDelete: () => void;
   onReviewStaged: () => void;
@@ -146,15 +150,11 @@ export default function TableToolbar(props: Props) {
         <WorkbenchDivider />
 
         <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1">
-          <span
-            className="tw:inline-flex tw:h-control-sm tw:items-center tw:gap-1 tw:px-2 tw:text-sm tw:text-muted-foreground"
-            title={t("sql.txAutoHint")}
-          >
-            <span>{t("sql.tx")}</span>
-            <strong className="tw:font-medium tw:text-foreground">
-              {t("sql.txAuto")}
-            </strong>
-          </span>
+          <ManualTransactionControls
+            controller={props.manualTransaction}
+            writesEnabled={props.writesEnabled}
+            disabled={busy}
+          />
           <WorkbenchButton
             onClick={props.onShowDdl}
             title={t("connections.showDdl")}

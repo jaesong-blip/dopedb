@@ -96,6 +96,7 @@ describe("query Tauri adapter", () => {
       result: null,
       affected: null,
       committed: false,
+      manualTransaction: false,
     };
     invokeMock
       .mockResolvedValueOnce(readProposal)

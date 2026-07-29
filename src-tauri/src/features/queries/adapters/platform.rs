@@ -1,6 +1,7 @@
 //! Shared local platform dependencies for desktop and Terminal SQL adapters.
 
 use crate::connection::ConnectionManager;
+use crate::features::queries::ManualTransactionRuntime;
 use crate::operations::OperationRuntime;
 use crate::store::Store;
 
@@ -17,6 +18,7 @@ pub(crate) struct QueryPlatformAdapter {
     pub(super) terminal_runs: TerminalQueryRunRegistry,
     pub(super) desktop_streams: DesktopSqlStreamRegistry,
     pub(super) desktop_stream_cleanup: DesktopStreamCleanupRuntime,
+    pub(super) manual_transactions: ManualTransactionRuntime,
 }
 
 impl QueryPlatformAdapter {
@@ -27,6 +29,7 @@ impl QueryPlatformAdapter {
         terminal_runs: TerminalQueryRunRegistry,
         desktop_streams: DesktopSqlStreamRegistry,
         desktop_stream_cleanup: DesktopStreamCleanupRuntime,
+        manual_transactions: ManualTransactionRuntime,
     ) -> Self {
         Self {
             store,
@@ -35,6 +38,7 @@ impl QueryPlatformAdapter {
             terminal_runs,
             desktop_streams,
             desktop_stream_cleanup,
+            manual_transactions,
         }
     }
 }

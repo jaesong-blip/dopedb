@@ -147,6 +147,10 @@ pub fn run() {
             features::catalog::transport::get_table_ddl,
             features::queries::transport::inspect_sql,
             features::queries::transport::propose_sql,
+            features::queries::transport::get_manual_transaction,
+            features::queries::transport::begin_manual_transaction,
+            features::queries::transport::commit_manual_transaction,
+            features::queries::transport::rollback_manual_transaction,
             commands::approve_operation,
             commands::reject_operation,
             features::queries::transport::run_sql,
@@ -207,6 +211,7 @@ pub fn run() {
                 tauri::async_runtime::block_on(
                     queries.shutdown_desktop_streams(Duration::from_secs(2)),
                 );
+                tauri::async_runtime::block_on(queries.shutdown_manual_transactions());
                 let terminals = app_handle.state::<state::AppState>().terminals.clone();
                 terminals.shutdown_all(app_handle, Duration::from_secs(2));
                 let agents = app_handle.state::<state::AppState>().agents_acp.clone();

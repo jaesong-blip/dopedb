@@ -128,9 +128,9 @@ export type ExecOutcome = { result: QueryResult | null, affected: number | null,
 /**
  * True only when a write actually committed.
  */
-committed: boolean, };
+committed: boolean, manualTransaction: boolean, };
 export type ScriptStatement = { sql: string, result: QueryResult | null, affected: number | null, error: string | null, };
-export type ScriptOutcome = { statements: Array<ScriptStatement>, committed: boolean, allReads: boolean, };
+export type ScriptOutcome = { statements: Array<ScriptStatement>, committed: boolean, allReads: boolean, manualTransaction: boolean, };
 export type AuditEntry = { id: string, connectionId: string, ts: string, engine: Engine, agentPrompt: string | null, sql: string, kind: QueryKind,
 /**
  * e.g. "propose" | "approve" | "reject" | "execute" | "blocked".

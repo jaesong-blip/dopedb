@@ -7,8 +7,10 @@
 //! current adapters cannot switch scope and then write history/cache into a different
 //! account while their scoped-write APIs are being extracted.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, Weak};
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -96,6 +98,8 @@ struct ConnectionManagerInner {
     remote_authority: Arc<dyn RemoteConnectionAuthorityPort>,
     provider_local: Arc<dyn ProviderLocalConnectionPort>,
     scope_gate: Arc<RwLock<()>>,
+    session_gate: Arc<RwLock<()>>,
+    session_revocation_ports: StdMutex<Vec<Weak<dyn ConnectionSessionRevocationPort>>>,
     profile_mutation_gates: DashMap<Uuid, Arc<Mutex<()>>>,
     slots: DashMap<ConnectionCacheKey, Arc<Mutex<ConnectionSlot>>>,
     next_generation: AtomicU64,
@@ -136,6 +140,33 @@ pub(crate) struct ConnectionOperationScope {
     manager: ConnectionManager,
     _scope_guard: OwnedRwLockReadGuard<()>,
     _profile_mutation_guard: Option<OwnedMutexGuard<()>>,
+    _session_mutation_guard: Option<OwnedRwLockWriteGuard<()>>,
+}
+
+/// Admission fence for a long-lived connection session. Scope mutations take the
+/// matching writer gate, revoke registered sessions, and only then wait for the
+/// ordinary connection scope writer.
+pub(crate) struct ConnectionSessionAdmission {
+    operation_scope: ConnectionOperationScope,
+    admission_guard: OwnedRwLockReadGuard<()>,
+}
+
+/// A newly connected long-lived session whose admission fence remains held until
+/// the owner has published it in its revocation registry.
+pub(crate) struct ConnectionSessionLeaseStart {
+    lease: ConnectionLease,
+    _admission_guard: OwnedRwLockReadGuard<()>,
+}
+
+/// Runtime callback used to end long-lived sessions before connection/workspace
+/// authority changes. Implementations must always release their connection leases,
+/// closing a poisoned physical connection when rollback cannot be acknowledged.
+pub(crate) trait ConnectionSessionRevocationPort: Send + Sync + 'static {
+    fn revoke<'a>(
+        &'a self,
+        connection_id: Option<Uuid>,
+        reason: &'static str,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 }
 
 /// Exclusive keychain/material mutation boundary. Existing operations drain before
@@ -144,6 +175,7 @@ pub(crate) struct ConnectionMutation {
     manager: ConnectionManager,
     pin: Option<PinnedConnection>,
     scope_guard: Option<OwnedRwLockWriteGuard<()>>,
+    _session_mutation_guard: Option<OwnedRwLockWriteGuard<()>>,
 }
 
 impl ConnectionLease {
@@ -153,6 +185,38 @@ impl ConnectionLease {
 
     pub(crate) fn pin(&self) -> &PinnedConnection {
         &self.pin
+    }
+}
+
+impl ConnectionSessionLeaseStart {
+    pub(crate) fn live(&self) -> &Live {
+        self.lease.live()
+    }
+
+    pub(crate) fn into_lease(self) -> ConnectionLease {
+        self.lease
+    }
+}
+
+impl ConnectionSessionAdmission {
+    pub(crate) async fn pin_connection(&self, id: Uuid) -> AppResult<PinnedConnection> {
+        self.operation_scope.pin_connection(id).await
+    }
+
+    pub(crate) async fn connect(
+        self,
+        pin: PinnedConnection,
+        access: ConnectionAccess,
+    ) -> AppResult<ConnectionSessionLeaseStart> {
+        let Self {
+            operation_scope,
+            admission_guard,
+        } = self;
+        let lease = operation_scope.connect(pin, access).await?;
+        Ok(ConnectionSessionLeaseStart {
+            lease,
+            _admission_guard: admission_guard,
+        })
     }
 }
 
@@ -198,6 +262,7 @@ impl ConnectionOperationScope {
             manager,
             _scope_guard,
             _profile_mutation_guard: _,
+            _session_mutation_guard: _,
         } = self;
         ConnectionContext {
             manager,
@@ -642,6 +707,8 @@ impl ConnectionManager {
                 remote_authority,
                 provider_local,
                 scope_gate: Arc::new(RwLock::new(())),
+                session_gate: Arc::new(RwLock::new(())),
+                session_revocation_ports: StdMutex::new(Vec::new()),
                 profile_mutation_gates: DashMap::new(),
                 slots: DashMap::new(),
                 next_generation: AtomicU64::new(1),
@@ -660,10 +727,40 @@ impl ConnectionManager {
             .load(Ordering::Acquire)
     }
 
+    pub(crate) fn register_session_revocation_port(
+        &self,
+        port: Arc<dyn ConnectionSessionRevocationPort>,
+    ) {
+        self.inner
+            .session_revocation_ports
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(Arc::downgrade(&port));
+    }
+
+    async fn revoke_sessions(&self, connection_id: Option<Uuid>, reason: &'static str) {
+        let ports = {
+            let mut ports = self
+                .inner
+                .session_revocation_ports
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let live = ports.iter().filter_map(Weak::upgrade).collect::<Vec<_>>();
+            ports.retain(|port| port.strong_count() > 0);
+            live
+        };
+        for port in ports {
+            port.revoke(connection_id, reason).await;
+        }
+    }
+
     /// Fence every live cache entry carrying this exact durable binding id.
     /// This deliberately does not wait on `scope_gate`: active leases hold a
     /// scope read guard, while revocation must close their pool immediately.
     pub(crate) async fn force_fence_provider_binding(&self, binding_id: ProviderBindingId) {
+        let _session_gate = self.inner.session_gate.write().await;
+        self.revoke_sessions(None, "provider credential binding revoked")
+            .await;
         self.inner
             .provider_binding_fence_epoch
             .fetch_add(1, Ordering::AcqRel);
@@ -718,6 +815,7 @@ impl ConnectionManager {
             manager: self.clone(),
             _scope_guard: Arc::clone(&self.inner.scope_gate).read_owned().await,
             _profile_mutation_guard: None,
+            _session_mutation_guard: None,
         }
     }
 
@@ -725,6 +823,9 @@ impl ConnectionManager {
         &self,
         connection_id: Uuid,
     ) -> ConnectionOperationScope {
+        let session_mutation_guard = Arc::clone(&self.inner.session_gate).write_owned().await;
+        self.revoke_sessions(Some(connection_id), "connection profile changed")
+            .await;
         let scope_guard = Arc::clone(&self.inner.scope_gate).read_owned().await;
         let mutation_gate = Arc::clone(
             self.inner
@@ -737,14 +838,26 @@ impl ConnectionManager {
             manager: self.clone(),
             _scope_guard: scope_guard,
             _profile_mutation_guard: Some(mutation_gate.lock_owned().await),
+            _session_mutation_guard: Some(session_mutation_guard),
+        }
+    }
+
+    pub(crate) async fn begin_session_admission(&self) -> ConnectionSessionAdmission {
+        let admission_guard = Arc::clone(&self.inner.session_gate).read_owned().await;
+        ConnectionSessionAdmission {
+            operation_scope: self.begin_operation_scope().await,
+            admission_guard,
         }
     }
 
     pub(crate) async fn begin_scope_mutation(&self) -> ConnectionMutation {
+        let session_mutation_guard = Arc::clone(&self.inner.session_gate).write_owned().await;
+        self.revoke_sessions(None, "connection scope changed").await;
         ConnectionMutation {
             manager: self.clone(),
             pin: None,
             scope_guard: Some(Arc::clone(&self.inner.scope_gate).write_owned().await),
+            _session_mutation_guard: Some(session_mutation_guard),
         }
     }
 
@@ -753,6 +866,9 @@ impl ConnectionManager {
         id: Uuid,
         access: ConnectionAccess,
     ) -> AppResult<ConnectionMutation> {
+        let session_mutation_guard = Arc::clone(&self.inner.session_gate).write_owned().await;
+        self.revoke_sessions(Some(id), "connection authority changed")
+            .await;
         let scope_guard = Arc::clone(&self.inner.scope_gate).write_owned().await;
         let pin = self.inner.store.pin_connection_for_read(id).await?;
         authorize_pin(
@@ -769,6 +885,7 @@ impl ConnectionManager {
             manager: self.clone(),
             pin: Some(pin),
             scope_guard: Some(scope_guard),
+            _session_mutation_guard: Some(session_mutation_guard),
         })
     }
 
@@ -777,6 +894,8 @@ impl ConnectionManager {
         id: Uuid,
         account_user_id: Option<&str>,
     ) -> AppResult<Workspace> {
+        let _session_gate = self.inner.session_gate.write().await;
+        self.revoke_sessions(None, "workspace changed").await;
         let _gate = self.inner.scope_gate.write().await;
         let workspace = self
             .inner
@@ -790,6 +909,9 @@ impl ConnectionManager {
     }
 
     pub(crate) async fn activate_workspace_account(&self, user_id: &str) -> AppResult<Workspace> {
+        let _session_gate = self.inner.session_gate.write().await;
+        self.revoke_sessions(None, "workspace account changed")
+            .await;
         let _gate = self.inner.scope_gate.write().await;
         let workspace = self.inner.store.activate_workspace_account(user_id).await?;
         let retired = self.detach_all().await;
@@ -799,6 +921,9 @@ impl ConnectionManager {
     }
 
     pub(crate) async fn remove_workspace_account(&self, user_id: &str) -> AppResult<()> {
+        let _session_gate = self.inner.session_gate.write().await;
+        self.revoke_sessions(None, "workspace account removed")
+            .await;
         let _gate = self.inner.scope_gate.write().await;
         self.inner.store.remove_workspace_account(user_id).await?;
         let retired = self.detach_all().await;
@@ -812,6 +937,9 @@ impl ConnectionManager {
         user: &WorkspaceAuthUser,
         workspaces: &[(Uuid, String, WorkspaceRole)],
     ) -> AppResult<()> {
+        let _session_gate = self.inner.session_gate.write().await;
+        self.revoke_sessions(None, "workspace memberships changed")
+            .await;
         let _gate = self.inner.scope_gate.write().await;
         self.inner
             .store
@@ -832,6 +960,9 @@ impl ConnectionManager {
         account_user_id: &str,
         connections: &[(ConnectionProfile, i64)],
     ) -> AppResult<Vec<Uuid>> {
+        let _session_gate = self.inner.session_gate.write().await;
+        self.revoke_sessions(None, "workspace connections changed")
+            .await;
         let gate = self.inner.scope_gate.write().await;
         let removed_credential_ids = self
             .inner

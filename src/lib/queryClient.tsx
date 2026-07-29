@@ -17,6 +17,7 @@ const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
   "history",
   "audit",
   "monitoring",
+  "manualTransaction",
   "dashboards",
   "dashboardRun",
   "tableRows",

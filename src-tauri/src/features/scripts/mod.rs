@@ -23,6 +23,7 @@ use crate::connection::{
 use crate::error::{AppError, AppResult};
 use crate::executor;
 use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
+use crate::features::queries::ManualTransactionRuntime;
 use crate::kernel::agent_policy::QUERY_PLAN_TTL;
 use crate::model::{HistoryEntry, QueryKind, ScriptOutcome, ScriptStatement};
 use crate::operations::{
@@ -168,6 +169,7 @@ struct ScriptPlatformAdapter {
     connections: ConnectionManager,
     catalog: CatalogFeature,
     operation: OperationRuntime,
+    manual_transactions: ManualTransactionRuntime,
 }
 
 struct PreparedScriptRun {
@@ -215,6 +217,7 @@ pub(crate) fn compose(
     connections: ConnectionManager,
     catalog: CatalogFeature,
     operation: OperationRuntime,
+    manual_transactions: ManualTransactionRuntime,
 ) -> ScriptFeature {
     ScriptFeature {
         application: ScriptUseCases::new(ScriptPlatformAdapter::new(
@@ -222,6 +225,7 @@ pub(crate) fn compose(
             connections,
             catalog,
             operation,
+            manual_transactions,
         )),
     }
 }
@@ -232,12 +236,14 @@ impl ScriptPlatformAdapter {
         connections: ConnectionManager,
         catalog: CatalogFeature,
         operation: OperationRuntime,
+        manual_transactions: ManualTransactionRuntime,
     ) -> Self {
         Self {
             store,
             connections,
             catalog,
             operation,
+            manual_transactions,
         }
     }
 }

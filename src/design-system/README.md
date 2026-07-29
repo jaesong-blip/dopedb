@@ -225,6 +225,9 @@ Elevation은 세 단계만 허용한다.
   32px label/icon action.
   `variant`, `tone`, `active`, `collapse` data contract로 상태와 compact overflow를
   표현하며 화면이 전역 `.btn` 조합이나 조건부 class string을 만들지 않는다.
+- `ManualTransactionControls`: query/data toolbar가 공유하는 feature composition.
+  `WorkbenchButton`만 합성해 Auto/Manual/failed 상태와 commit/rollback command를
+  같은 밀도로 표시하며 화면별 Tx utility나 style map을 만들지 않는다.
 - `ToolbarMenu` trigger도 `custom`/`variant` data contract가 label, icon,
   tree badge, grid header 밀도를 소유한다. feature가 trigger별 class map을
   만들거나 전역 `.btn`을 섞지 않는다.

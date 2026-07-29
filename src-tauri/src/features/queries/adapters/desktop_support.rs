@@ -259,59 +259,78 @@ impl QueryPlatformAdapter {
             duration_ms = operation_started.elapsed().as_millis() as u64,
             "desktop query stream phase"
         );
-        let streamed = executor::read::run_read_streamed_registered(
-            live,
-            pin.profile.engine,
-            &payload.sql,
-            namespace,
-            settings.max_rows,
-            DESKTOP_STREAM_BATCH_ROWS,
-            Some(&cancellation),
-            |batch| {
-                if first_batch_ms.is_none() {
-                    first_batch_ms = Some(operation_started.elapsed().as_millis() as u64);
-                    tracing::debug!(
-                        phase = TRACE_FIRST_BATCH,
-                        duration_ms = first_batch_ms,
-                        "desktop query stream phase"
-                    );
-                }
-                let batch_sequence = sequence;
-                let event = DesktopSqlStreamBatch {
-                    operation_id,
-                    sequence: batch_sequence,
-                    columns: batch.columns,
-                    rows: batch.rows,
-                };
-                sequence = sequence.saturating_add(1);
-                let send_started = Instant::now();
-                let dispatched = stream
-                    .borrow()
-                    .dispatch(batch_sequence, event, &mut emit)
-                    .map_err(stream_sink_error);
+        let mut consume_batch = |batch: executor::read::ReadBatch| {
+            if first_batch_ms.is_none() {
+                first_batch_ms = Some(operation_started.elapsed().as_millis() as u64);
                 tracing::debug!(
-                    phase = TRACE_SERIALIZE_CHANNEL_SEND,
-                    duration_ms = send_started.elapsed().as_millis() as u64,
+                    phase = TRACE_FIRST_BATCH,
+                    duration_ms = first_batch_ms,
                     "desktop query stream phase"
                 );
-                let stream = stream.borrow();
-                async move {
-                    dispatched?;
-                    let ack_started = Instant::now();
-                    let result = stream
-                        .wait_for_ack(batch_sequence)
-                        .await
-                        .map_err(stream_sink_error);
-                    tracing::debug!(
-                        phase = TRACE_CHANNEL_ACK_WAIT,
-                        duration_ms = ack_started.elapsed().as_millis() as u64,
-                        "desktop query stream phase"
-                    );
-                    result
-                }
-            },
-        )
-        .await;
+            }
+            let batch_sequence = sequence;
+            let event = DesktopSqlStreamBatch {
+                operation_id,
+                sequence: batch_sequence,
+                columns: batch.columns,
+                rows: batch.rows,
+            };
+            sequence = sequence.saturating_add(1);
+            let send_started = Instant::now();
+            let dispatched = stream
+                .borrow()
+                .dispatch(batch_sequence, event, &mut emit)
+                .map_err(stream_sink_error);
+            tracing::debug!(
+                phase = TRACE_SERIALIZE_CHANNEL_SEND,
+                duration_ms = send_started.elapsed().as_millis() as u64,
+                "desktop query stream phase"
+            );
+            let stream = stream.borrow();
+            async move {
+                dispatched?;
+                let ack_started = Instant::now();
+                let result = stream
+                    .wait_for_ack(batch_sequence)
+                    .await
+                    .map_err(stream_sink_error);
+                tracing::debug!(
+                    phase = TRACE_CHANNEL_ACK_WAIT,
+                    duration_ms = ack_started.elapsed().as_millis() as u64,
+                    "desktop query stream phase"
+                );
+                result
+            }
+        };
+        let manual_stream = self
+            .manual_transactions
+            .run_read_streamed(
+                pin.connection_id,
+                &payload.sql,
+                namespace.clone(),
+                settings.max_rows,
+                DESKTOP_STREAM_BATCH_ROWS,
+                Some(&cancellation),
+                &mut consume_batch,
+            )
+            .await;
+        let manual_transaction = manual_stream.is_some();
+        let streamed = match manual_stream {
+            Some(result) => result,
+            None => {
+                executor::read::run_read_streamed_registered(
+                    live,
+                    pin.profile.engine,
+                    &payload.sql,
+                    namespace,
+                    settings.max_rows,
+                    DESKTOP_STREAM_BATCH_ROWS,
+                    Some(&cancellation),
+                    consume_batch,
+                )
+                .await
+            }
+        };
         stream.close();
         match streamed {
             Ok(summary) => {
@@ -326,12 +345,31 @@ impl QueryPlatformAdapter {
                     duration_ms = operation_started.elapsed().as_millis() as u64,
                     "desktop query stream phase"
                 );
-                if let Err(error) = self.operation.succeed(operation_id.into(), &serde_json::json!({
-                    "committed": false, "durationMs": summary.duration_ms, "rowCount": summary.row_count,
-                })).await {
-                    let _ = self.operation.fail(operation_id.into(), &serde_json::json!({"reason":"local_receipt_failed"})).await;
+                if let Err(error) = self
+                    .operation
+                    .succeed(
+                        operation_id.into(),
+                        &serde_json::json!({
+                            "committed": false, "manualTransaction": manual_transaction,
+                            "durationMs": summary.duration_ms, "rowCount": summary.row_count,
+                        }),
+                    )
+                    .await
+                {
+                    let _ = self
+                        .operation
+                        .fail(
+                            operation_id.into(),
+                            &serde_json::json!({"reason":"local_receipt_failed"}),
+                        )
+                        .await;
                     finalizer.disarm().await;
-                    return Err(DesktopSqlRunError::Execution(Box::new(DesktopSqlExecutionFailure { error, _lease: lease })));
+                    return Err(DesktopSqlRunError::Execution(Box::new(
+                        DesktopSqlExecutionFailure {
+                            error,
+                            _lease: lease,
+                        },
+                    )));
                 }
                 tracing::debug!(
                     phase = TRACE_OPERATION_FINALIZE_COMPLETE,

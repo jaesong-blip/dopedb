@@ -71,6 +71,7 @@ impl ApplicationServices {
             connections.clone(),
             catalog.clone(),
             operation.clone(),
+            queries.manual_transactions(),
         );
         let schema = schema_editor::compose(catalog.clone(), script.clone());
         let connection_feature = connection_feature::compose(

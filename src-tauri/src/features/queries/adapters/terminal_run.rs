@@ -41,6 +41,7 @@ pub(crate) struct PreparedAgentQueryRun {
     origin: super::super::domain::AgentQueryInvocationOrigin,
     terminal_runs: super::provenance::TerminalQueryRunRegistry,
     cancellation: executor::cancel::CancelHandle,
+    manual_transactions: crate::features::queries::ManualTransactionRuntime,
 }
 
 /// Successful result whose lease survives Broker response projection.
@@ -69,6 +70,7 @@ impl PreparedAgentQueryRun {
             origin,
             terminal_runs,
             cancellation,
+            manual_transactions,
         } = self;
         let operation_id = claimed.record().id;
         let engine = operation_pin.profile.engine;
@@ -120,46 +122,68 @@ impl PreparedAgentQueryRun {
                 ));
             }
         };
-        let result =
-            match safety::run_read_only_cancellable(
+        let manual_result = manual_transactions
+            .run_read(
+                operation_pin.connection_id,
+                &event_context.sql,
+                None,
+                max_rows,
+                Some(&cancellation),
+            )
+            .await;
+        let manual_transaction = manual_result.is_some();
+        let result = if let Some(result) = manual_result {
+            result
+        } else {
+            safety::run_read_only_cancellable(
                 pool_ref(live.ro()),
                 &event_context.sql,
                 max_rows,
                 Some(&cancellation),
             )
             .await
-            {
-                Ok(result) => result,
-                Err(error) => {
-                    let cancelled =
-                        matches!(&error, AppError::Safety(reason) if reason == "query cancelled");
-                    record_run_failure(
-                        &store,
-                        &operation_pin,
-                        &event_context.sql,
-                        engine,
-                        origin,
-                        &error,
-                    )
-                    .await;
-                    let _ =
-                        if cancelled {
-                            operation
-                                .confirm_cancelled(
-                                    operation_id,
-                                    &serde_json::json!({"reason": "user_cancelled"}),
-                                )
-                                .await
-                        } else {
-                            operation.fail(operation_id, &serde_json::json!({
-                        "error": error.to_string(), "reason": "read_execution_failed",
-                    })).await
-                        };
-                    return Err(AgentQueryRunError::Execution(
-                        AgentQueryExecutionFailure::new(error, lease),
-                    ));
-                }
-            };
+        };
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                let cancelled =
+                    matches!(&error, AppError::Safety(reason) if reason == "query cancelled");
+                record_run_failure(
+                    &store,
+                    &operation_pin,
+                    &event_context.sql,
+                    engine,
+                    origin,
+                    &error,
+                )
+                .await;
+                let _ = if cancelled {
+                    operation
+                        .confirm_cancelled(
+                            operation_id,
+                            &serde_json::json!({"reason": "user_cancelled"}),
+                        )
+                        .await
+                } else {
+                    operation
+                        .fail(
+                            operation_id,
+                            &serde_json::json!({
+                                "error": error.to_string(),
+                                "reason": if manual_transaction {
+                                    "manual_transaction_read_failed"
+                                } else {
+                                    "read_execution_failed"
+                                },
+                            }),
+                        )
+                        .await
+                };
+                return Err(AgentQueryRunError::Execution(
+                    AgentQueryExecutionFailure::new(error, lease),
+                ));
+            }
+        };
         audit_best_effort(
             &store,
             operation_pin.connection_id,
@@ -364,6 +388,7 @@ impl QueryPlatformAdapter {
             origin: payload.origin,
             terminal_runs: self.terminal_runs.clone(),
             cancellation,
+            manual_transactions: self.manual_transactions.clone(),
         })
     }
 }

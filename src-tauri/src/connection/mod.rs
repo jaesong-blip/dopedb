@@ -29,7 +29,7 @@ pub(crate) use remote_authority::{
 };
 pub(crate) use runtime::{
     ConnectionAccess, ConnectionContext, ConnectionLease, ConnectionManager, ConnectionMutation,
-    ConnectionOperationScope,
+    ConnectionOperationScope, ConnectionSessionRevocationPort,
 };
 
 /// The executor module refers to the engine-tagged pool enum as `Pool`; keep a

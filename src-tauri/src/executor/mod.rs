@@ -48,6 +48,7 @@ pub(crate) async fn execute(
                 result: Some(result),
                 affected: None,
                 committed: false,
+                manual_transaction: false,
             })
         }
         QueryKind::Write | QueryKind::Ddl | QueryKind::Privilege => {

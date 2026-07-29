@@ -303,6 +303,9 @@ pub struct ExecOutcome {
     pub affected: Option<u64>,
     /// True only when a write actually committed.
     pub committed: bool,
+    /// True when this result remains inside the connection's open manual transaction.
+    #[serde(default)]
+    pub manual_transaction: bool,
 }
 
 /// One statement's outcome inside a `run_script` run. Exactly one of `result`/
@@ -325,6 +328,9 @@ pub struct ScriptOutcome {
     pub statements: Vec<ScriptStatement>,
     pub committed: bool,
     pub all_reads: bool,
+    /// True when successful mutations remain staged until an explicit commit.
+    #[serde(default)]
+    pub manual_transaction: bool,
 }
 
 /// One append-only, hash-chained audit record (compliance log).

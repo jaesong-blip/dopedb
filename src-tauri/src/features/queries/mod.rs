@@ -3,6 +3,7 @@
 mod adapters;
 mod application;
 mod domain;
+mod manual_transaction;
 mod ports;
 pub(crate) mod transport;
 
@@ -32,6 +33,7 @@ pub(crate) use domain::{
     DesktopSqlStreamBatch, DesktopSqlStreamReady, DesktopSqlStreamSinkError,
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
+pub(crate) use manual_transaction::{ManualTransactionRuntime, ManualTransactionStatus};
 pub(crate) use ports::{QueryRunAuthorizationError, QueryRunAuthorizationPort};
 
 #[cfg(test)]
@@ -48,6 +50,9 @@ pub(crate) struct QueriesFeature {
     desktop_streams: DesktopSqlStreamRegistry,
     desktop_stream_cleanup: DesktopStreamCleanupRuntime,
     _desktop_stream_cleanup_owner: DesktopStreamCleanupOwner,
+    manual_transactions: ManualTransactionRuntime,
+    _manual_transaction_revocation_port:
+        std::sync::Arc<dyn crate::connection::ConnectionSessionRevocationPort>,
 }
 
 impl QueriesFeature {
@@ -57,6 +62,14 @@ impl QueriesFeature {
         self.desktop_stream_cleanup
             .shutdown_and_drain(timeout)
             .await;
+    }
+
+    pub(crate) fn manual_transactions(&self) -> ManualTransactionRuntime {
+        self.manual_transactions.clone()
+    }
+
+    pub(crate) async fn shutdown_manual_transactions(&self) {
+        self.manual_transactions.shutdown().await;
     }
 
     pub(crate) fn reserve_pending_desktop_sql_stream(
@@ -337,6 +350,13 @@ pub(crate) fn compose(
     let desktop_streams = DesktopSqlStreamRegistry::default();
     let desktop_stream_cleanup = DesktopStreamCleanupRuntime::default();
     let desktop_stream_cleanup_owner = desktop_stream_cleanup.composition_owner();
+    let manual_transactions = ManualTransactionRuntime::new(store.clone(), connections.clone());
+    let manual_transaction_revocation_port: std::sync::Arc<
+        dyn crate::connection::ConnectionSessionRevocationPort,
+    > = std::sync::Arc::new(manual_transactions.clone());
+    connections.register_session_revocation_port(std::sync::Arc::clone(
+        &manual_transaction_revocation_port,
+    ));
     let adapter = QueryPlatformAdapter::new(
         store,
         connections,
@@ -344,6 +364,7 @@ pub(crate) fn compose(
         provenance.clone(),
         desktop_streams.clone(),
         desktop_stream_cleanup.clone(),
+        manual_transactions.clone(),
     );
     QueriesFeature {
         application: QueryUseCases::new(adapter),
@@ -352,5 +373,7 @@ pub(crate) fn compose(
         desktop_streams,
         desktop_stream_cleanup,
         _desktop_stream_cleanup_owner: desktop_stream_cleanup_owner,
+        manual_transactions,
+        _manual_transaction_revocation_port: manual_transaction_revocation_port,
     }
 }
