@@ -3116,9 +3116,6 @@ export function ConnectionForm({
             <Button size="compact" onClick={onCancel}>
               {t("common.cancel")}
             </Button>
-            <Button size="compact" disabled>
-              {t("common.apply")}
-            </Button>
             <Button
               size="compact"
               variant="primary"
