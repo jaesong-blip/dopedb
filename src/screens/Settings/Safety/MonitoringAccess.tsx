@@ -80,7 +80,7 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
 
   if (statusQuery.isPending) {
     return (
-      <section className="ds-panel tw:mt-2 tw:grid tw:gap-3">
+      <section className="tw:mt-2 tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:py-3">
         <Skeleton lines={2} />
       </section>
     );
@@ -89,7 +89,7 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
   if (statusQuery.error || !statusQuery.data) {
     return (
       <section
-        className="ds-panel tw:mt-2 tw:grid tw:gap-3 tw:border-danger"
+        className="tw:mt-2 tw:grid tw:gap-2 tw:border-t tw:border-danger tw:py-3"
         role="alert"
       >
         <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[640px]:flex-col">
@@ -126,7 +126,7 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
   return (
     <section
       data-tone={status.roleGranted ? "trust" : "risk"}
-      className="ds-panel tw:mt-2 tw:grid tw:gap-3 tw:data-[tone=risk]:border-warning tw:data-[tone=trust]:border-success"
+      className="tw:mt-2 tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:py-3 tw:data-[tone=risk]:border-warning tw:data-[tone=trust]:border-success"
     >
       <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[640px]:flex-col">
         <div className="tw:min-w-0">

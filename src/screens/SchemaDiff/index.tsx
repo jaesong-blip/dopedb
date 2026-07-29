@@ -9,8 +9,15 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import EngineMark from "../../components/EngineMark";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import {
+  IdeTab,
+  IdeTabStrip,
+  IdeToolTab,
+  IdeToolTabStrip,
+} from "../../design-system/components/IdeTabs";
+import {
   WorkbenchEmptyState,
   WorkbenchPane,
+  WorkbenchSelect,
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
 import { Icon } from "../../components/Icon";
@@ -208,74 +215,71 @@ export default function SchemaDiff({
   if (!schemaGroupIsCompatible(group)) {
     return (
       <WorkbenchPane>
-        <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-3 tw:p-3">
-          <SchemaDiffHeader group={group} onClose={onClose} />
-          <div className="ds-panel tw:border-warning">
-            <WorkbenchEmptyState icon="alert">
-              <strong>{t("schemaDiff.incompatibleTitle")}</strong>
-              <p className="tw:m-0">{t("schemaDiff.incompatibleBody")}</p>
-            </WorkbenchEmptyState>
-          </div>
-        </div>
+        <SchemaDiffDocumentStrip group={group} onClose={onClose} />
+        <WorkbenchEmptyState icon="alert">
+          <strong>{t("schemaDiff.incompatibleTitle")}</strong>
+          <p className="tw:m-0">{t("schemaDiff.incompatibleBody")}</p>
+        </WorkbenchEmptyState>
       </WorkbenchPane>
     );
   }
 
   return (
     <WorkbenchPane>
-      <section className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-3 tw:overflow-hidden tw:p-3">
-      <SchemaDiffHeader group={group} onClose={onClose} />
+      <SchemaDiffDocumentStrip group={group} onClose={onClose} />
 
       <WorkbenchToolbar label={t("schemaDiff.detailTitle")}>
-        <label className="tw:grid tw:min-w-[180px] tw:gap-1 tw:text-xs tw:font-bold tw:text-muted-foreground tw:max-[920px]:min-w-0 tw:max-[920px]:flex-[1_1_180px]">
-          <span>{t("schemaDiff.baseline")}</span>
-          <select
-            className="tw:min-w-[180px] tw:max-[920px]:w-full tw:max-[920px]:min-w-0"
-            value={baseline?.id ?? ""}
-            onChange={(event) => changeBaseline(event.target.value)}
-          >
-            {group.connections.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connectionName(connection)}{connection.env ? ` · ${connection.env}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="tw:grid tw:min-w-[180px] tw:gap-1 tw:text-xs tw:font-bold tw:text-muted-foreground tw:max-[920px]:min-w-0 tw:max-[920px]:flex-[1_1_180px]">
-          <span>{t("schemaDiff.target")}</span>
-          <select
-            className="tw:min-w-[180px] tw:max-[920px]:w-full tw:max-[920px]:min-w-0"
-            value={targetId}
-            onChange={(event) => setTargetId(event.target.value)}
-            disabled={targets.length === 0}
-          >
-            {targets.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connectionName(connection)}{connection.env ? ` · ${connection.env}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+        <span className="tw:shrink-0 tw:text-xs tw:text-muted-foreground">
+          {t("schemaDiff.baseline")}
+        </span>
+        <WorkbenchSelect
+          label={t("schemaDiff.baseline")}
+          value={baseline?.id ?? ""}
+          onChange={changeBaseline}
+        >
+          {group.connections.map((connection) => (
+            <option key={connection.id} value={connection.id}>
+              {connectionName(connection)}
+              {connection.env ? ` · ${connection.env}` : ""}
+            </option>
+          ))}
+        </WorkbenchSelect>
+        <span className="tw:ml-2 tw:shrink-0 tw:text-xs tw:text-muted-foreground">
+          {t("schemaDiff.target")}
+        </span>
+        <WorkbenchSelect
+          label={t("schemaDiff.target")}
+          value={targetId}
+          onChange={setTargetId}
+          disabled={targets.length === 0}
+        >
+          {targets.map((connection) => (
+            <option key={connection.id} value={connection.id}>
+              {connectionName(connection)}
+              {connection.env ? ` · ${connection.env}` : ""}
+            </option>
+          ))}
+        </WorkbenchSelect>
         <span className="ds-toolbar-spacer" />
-        <button className="btn small" disabled={refreshing} onClick={() => void refreshAll()}>
+        <button
+          className="btn small icon-only"
+          disabled={refreshing}
+          onClick={() => void refreshAll()}
+          title={refreshing ? t("schemaDiff.refreshing") : t("schemaDiff.refreshAll")}
+          aria-label={refreshing ? t("schemaDiff.refreshing") : t("schemaDiff.refreshAll")}
+        >
           <Icon name="refresh" />
-          {refreshing ? t("schemaDiff.refreshing") : t("schemaDiff.refreshAll")}
         </button>
       </WorkbenchToolbar>
 
       {targets.length === 0 ? (
-        <div className="ds-panel">
-          <WorkbenchEmptyState icon="database">
-            <strong>{t("schemaDiff.needTargetTitle")}</strong>
-            <p className="tw:m-0">{t("schemaDiff.needTargetBody")}</p>
-          </WorkbenchEmptyState>
-        </div>
+        <WorkbenchEmptyState icon="database">
+          <strong>{t("schemaDiff.needTargetTitle")}</strong>
+          <p className="tw:m-0">{t("schemaDiff.needTargetBody")}</p>
+        </WorkbenchEmptyState>
       ) : (
-        <>
-          <div
-            className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] tw:gap-2"
-            aria-label={t("schemaDiff.groupOverview")}
-          >
+        <section className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
+          <IdeToolTabStrip label={t("schemaDiff.groupOverview")}>
             {targets.map((target) => {
               const result = queryById.get(target.id);
               const targetError = refreshErrors[target.id] ?? result?.error;
@@ -284,56 +288,55 @@ export default function SchemaDiff({
               const counts = diff ? diffCounts(diff) : null;
               const selected = target.id === targetId;
               return (
-                <button
+                <IdeToolTab
                   key={target.id}
-                  type="button"
-                  data-selected={selected}
-                  className="tw:grid tw:min-h-[64px] tw:min-w-0 tw:cursor-pointer tw:content-center tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3 tw:font-sans tw:text-left tw:text-foreground tw:shadow-control tw:data-[selected=true]:border-primary tw:data-[selected=true]:ring-1 tw:data-[selected=true]:ring-primary tw:hover:border-border-strong tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-                  aria-pressed={selected}
+                  active={selected}
+                  size="document"
                   onClick={() => setTargetId(target.id)}
                 >
-                  <span className="tw:flex tw:items-center tw:gap-2">
-                    <span className="tw:overflow-hidden tw:font-bold tw:text-ellipsis tw:whitespace-nowrap">
-                      {connectionName(target)}
-                    </span>
-                    {target.env ? (
-                      <EnvironmentBadge environment={target.env} />
-                    ) : null}
+                  <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                    {connectionName(target)}
                   </span>
+                  {target.env ? <EnvironmentBadge environment={target.env} /> : null}
                   {error ? (
-                    <span className="tw:text-danger">
-                      {t("schemaDiff.loadFailed")}
-                    </span>
+                    <Icon name="alert" className="tw:shrink-0 tw:text-danger" />
                   ) : !diff ? (
-                    <span className="tw:text-muted-foreground">
-                      {t("common.loading")}
-                    </span>
+                    <span className="tw:shrink-0 tw:text-muted-foreground">…</span>
                   ) : diff.total === 0 ? (
-                    <span className="tw:flex tw:items-center tw:gap-2 tw:text-success">
-                      <Icon name="check" /> {t("schemaDiff.inSync")}
-                    </span>
+                    <Icon name="check" className="tw:shrink-0 tw:text-success" />
                   ) : (
-                    <span className="tw:flex tw:items-center tw:gap-2 tw:font-mono tw:text-ui tw:font-bold tw:tabular-nums">
+                    <span className="tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:font-mono tw:text-xs tw:font-bold tw:tabular-nums">
                       <span className="tw:text-success">+{counts?.added ?? 0}</span>
                       <span className="tw:text-danger">−{counts?.missing ?? 0}</span>
                       <span className="tw:text-warning">~{counts?.changed ?? 0}</span>
                     </span>
                   )}
-                </button>
+                </IdeToolTab>
               );
             })}
-          </div>
+          </IdeToolTabStrip>
 
-          {[...Object.entries(refreshErrors)].map(([connectionId, error]) => {
-            const connection = group.connections.find((candidate) => candidate.id === connectionId);
-            return (
-              <div className="tw:shrink-0 tw:break-all tw:text-ui tw:text-danger" key={connectionId}>
-                {t("schemaDiff.connectionError", { connection: connection ? connectionName(connection) : connectionId, error })}
-              </div>
-            );
-          })}
+          {Object.entries(refreshErrors).length > 0 ? (
+            <div className="tw:grid tw:shrink-0 tw:gap-1 tw:border-b tw:border-danger-border tw:bg-danger-muted tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+              {[...Object.entries(refreshErrors)].map(([connectionId, error]) => {
+                const connection = group.connections.find(
+                  (candidate) => candidate.id === connectionId,
+                );
+                return (
+                  <span className="tw:break-all" key={connectionId}>
+                    {t("schemaDiff.connectionError", {
+                      connection: connection
+                        ? connectionName(connection)
+                        : connectionId,
+                      error,
+                    })}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
 
-          <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-card">
+          <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
             <WorkbenchToolbar label={t("schemaDiff.filterStatus")} compact>
               <div className="ds-control-row tw:inline-flex tw:gap-2" role="group" aria-label={t("schemaDiff.filterStatus")}>
                 {(["all", "added", "missing", "changed"] as const).map((status) => (
@@ -395,14 +398,13 @@ export default function SchemaDiff({
               />
             )}
           </div>
-        </>
+        </section>
       )}
-      </section>
     </WorkbenchPane>
   );
 }
 
-function SchemaDiffHeader({
+function SchemaDiffDocumentStrip({
   group,
   onClose,
 }: {
@@ -412,22 +414,31 @@ function SchemaDiffHeader({
   const { t } = useI18n();
   const engine = group.connections[0]?.engine;
   return (
-    <header className="ds-workbench-head tw:shrink-0">
-      <div className="ds-workbench-title">
-        <div className="ds-title-line">
-          {engine && <EngineMark engine={engine} />}
-          <h2 className="tw:m-0 tw:text-heading">{group.label}</h2>
-          <span className="ds-context-badge">{t("schemaDiff.groupBadge", { count: group.connections.length })}</span>
-        </div>
-        <p className="tw:mt-1 tw:mb-0 tw:text-muted-foreground">
-          {t("schemaDiff.subtitle")}
-        </p>
-      </div>
-      <button className="btn small" onClick={onClose}>
-        <Icon name="close" />
-        {t("common.close")}
-      </button>
-    </header>
+    <IdeTabStrip label={t("schemaDiff.detailTitle")}>
+      <IdeTab
+        active
+        title={`${group.label} · ${t("schemaDiff.subtitle")}`}
+        tabIndex={0}
+        onActivate={() => undefined}
+        trailing={
+          <button
+            type="button"
+            className="btn small icon-only icon-xs tw:mr-1"
+            onClick={onClose}
+            title={t("common.close")}
+            aria-label={t("common.close")}
+          >
+            <Icon name="close" />
+          </button>
+        }
+      >
+        {engine ? <EngineMark engine={engine} /> : null}
+        <span>{group.label}</span>
+        <span className="ds-context-badge tw:shrink-0">
+          {t("schemaDiff.groupBadge", { count: group.connections.length })}
+        </span>
+      </IdeTab>
+    </IdeTabStrip>
   );
 }
 
@@ -460,7 +471,7 @@ function SchemaDiffGrid({
         {objects.map((object) => (
           <div
             data-status={object.status}
-            className="tw:min-h-12 tw:border-b tw:border-border-subtle tw:bg-card tw:data-[status=added]:shadow-[inset_var(--ds-border-width-bold)_0_0_var(--ds-success)] tw:data-[status=changed]:shadow-[inset_var(--ds-border-width-bold)_0_0_var(--ds-warning)] tw:data-[status=missing]:shadow-[inset_var(--ds-border-width-bold)_0_0_var(--ds-danger)] tw:hover:bg-muted"
+            className="tw:min-h-12 tw:border-b tw:border-border-subtle tw:bg-background tw:data-[status=added]:shadow-[inset_var(--ds-border-width-bold)_0_0_var(--ds-success)] tw:data-[status=changed]:shadow-[inset_var(--ds-border-width-bold)_0_0_var(--ds-warning)] tw:data-[status=missing]:shadow-[inset_var(--ds-border-width-bold)_0_0_var(--ds-danger)] tw:hover:bg-muted"
             role="row"
             key={object.id}
           >

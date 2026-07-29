@@ -72,7 +72,7 @@ export default function Safety({ connectionId }: { connectionId: string }) {
   }
 
   return (
-    <div className="tw:flex tw:w-full tw:max-w-[880px] tw:flex-col tw:gap-3 tw:p-4 tw:max-[640px]:max-w-none">
+    <div className="tw:flex tw:w-full tw:max-w-[880px] tw:flex-col tw:gap-4 tw:max-[640px]:max-w-none">
       <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[860px]:flex-col tw:max-[860px]:items-start">
         <div className="tw:inline-flex tw:items-center tw:gap-2 tw:max-[640px]:flex-col tw:max-[640px]:items-start">
           <h2>{t("safety.title")}</h2>
@@ -86,7 +86,7 @@ export default function Safety({ connectionId }: { connectionId: string }) {
         </span>
       </div>
 
-      <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(264px,0.8fr)] tw:gap-2 tw:max-[1180px]:grid-cols-2 tw:max-[860px]:grid-cols-1">
+      <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(264px,0.8fr)] tw:gap-4 tw:max-[1180px]:grid-cols-2 tw:max-[860px]:grid-cols-1">
         <SettingsGroup title={t("safety.guardrails")}>
           {TOGGLES.map((item) => (
             <label
@@ -140,7 +140,7 @@ export default function Safety({ connectionId }: { connectionId: string }) {
 
       <div className="tw:flex tw:justify-start">
         <button
-          className="btn primary tw:max-[640px]:w-full"
+          className="btn tw:max-[640px]:w-full"
           disabled={busy}
           onClick={save}
         >

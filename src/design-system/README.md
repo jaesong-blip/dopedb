@@ -239,12 +239,13 @@ Elevation은 세 단계만 허용한다.
 - `ModalBackdrop`, `ModalSurface`, `ModalTitleBar`, `ModalDetailActionBar`,
   `ModalFooter`: background interaction을 차단하는 공용 viewport backdrop,
   responsive dialog frame과 30px title/48px detail action/50px primary action
-  bar. SQL parameter처럼 실행 전에 값을 완성하는 feature dialog도 이 frame을
-  사용하고 별도 modal CSS를 만들지 않는다. `size="settings"`는 945×700 설정
-  dialog를, `size="dataSources"`는 공식 Data Sources 정본의 888×731 frame을
-  compact full-height fallback과 함께 소유한다. Data Sources의 `Problems`는
-  catalog 하단, `Test Connection`은 detail action bar, `Cancel/Apply/OK`는
-  `ModalFooter`에 두며 한 footer에 섞지 않는다.
+  bar. SQL parameter, DDL viewer, provider credential처럼 background interaction을
+  막는 feature dialog도 이 frame을 사용하고 별도 modal CSS를 만들지 않는다.
+  `size="settings"`는 945×700 설정 dialog를, `size="dataSources"`는 공식
+  Data Sources 정본의 888×731 frame을 compact full-height fallback과 함께
+  소유한다. Data Sources의 `Problems`는 catalog 하단, `Test Connection`은
+  detail action bar, `Cancel/Apply/OK`는 `ModalFooter`에 두며 한 footer에
+  섞지 않는다.
 - `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchSelect`,
   `WorkbenchContextHeader`, `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터
   편집기·SQL·문서 화면의 평평한 IDE pane, command row, compact context select,
@@ -264,7 +265,11 @@ Elevation은 세 단계만 허용한다.
   문자열 검색으로 첫 occurrence에 붙이지 않으며, widget은 정적 Tailwind
   utility와 semantic token만 사용한다.
   document tab은 welcome/schema/data/SQL/activity를 숨김 예외 없이 같은 strip에
-  투영한다. 각 tab은 읽을 수 있는 고정 폭을 유지하고 활성 문서가 바뀌면
+  투영한다. 스키마 비교처럼 일시적으로 중앙 workbench를 점유하는 도구도 큰
+  화면 제목이나 card dashboard를 만들지 않고 같은 `IdeTabStrip`과
+  `WorkbenchToolbar`를 사용한다. 비교 대상 전환은 `IdeToolTabStrip`으로
+  표현하고 결과 grid 바깥에 별도 rounded panel을 추가하지 않는다.
+  각 tab은 읽을 수 있는 고정 폭을 유지하고 활성 문서가 바뀌면
   수평 strip 안에서 자동으로 드러난다. 끝단의 portal `ToolbarMenu`는 모든
   열린 문서를 나열해 overflow된 문서도 실제 활성화할 수 있어야 한다. 새 쿼리,
   Activity처럼 title toolbar나 status에서 이미 제공하는 action을 tab strip에
@@ -354,8 +359,8 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   문서를 연다. 화면 전용 status CSS나 style map은 만들지 않는다.
 - `DiagnosticSummary`, `DiagnosticCount`: 설정·속성 편집기의 Problems 목록과
   오류/경고 개수를 같은 compact hierarchy로 표시.
-- `SettingsGroup`: 설정·정책 화면의 제목, 중립 border, dense spacing을 공유하는
-  control group surface.
+- `SettingsGroup`: 설정·정책 화면의 제목, 상단 divider, dense spacing을 공유하는
+  평평한 control group. Settings dialog 안에 card surface를 다시 중첩하지 않는다.
 
 툴윈도우 primitive는
 [`src/design-system/components/ToolWindow.tsx`](components/ToolWindow.tsx)에

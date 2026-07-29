@@ -80,7 +80,7 @@ export function ModalTitleBar({
         className="btn small icon-only icon-xs"
         onClick={onClose}
         title={closeLabel}
-      aria-label={closeLabel}
+        aria-label={closeLabel}
       >
         <Icon name="close" />
       </button>

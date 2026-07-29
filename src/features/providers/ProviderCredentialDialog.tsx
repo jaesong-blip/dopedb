@@ -1,7 +1,6 @@
 // Device-local provider binding wizard. The reducer owns the ephemeral secret and
 // one-use receipt; query caches receive summaries only.
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Icon } from "../../components/Icon";
@@ -10,6 +9,12 @@ import {
   Field,
   TextInput,
 } from "../../design-system/components/FormControls";
+import {
+  ModalBackdrop,
+  ModalFooter,
+  ModalSurface,
+  ModalTitleBar,
+} from "../../design-system/components/Modal";
 import { useI18n } from "../../lib/i18n";
 import {
   providerCredentialBindingsQuery,
@@ -102,7 +107,7 @@ export function ProviderCredentialDialog({
   const [pending, setPending] = useState<"begin" | "verify" | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [actionFailed, setActionFailed] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
 
   const selectedIntegration = useMemo(
     () => integrations.data?.find((item) => item.id === state.selectedIntegrationId) ?? null,
@@ -240,221 +245,215 @@ export function ProviderCredentialDialog({
   const loading = !loadFailed && (integrations.data === undefined || bindings.data === undefined);
   const visibleStatus = state.status ?? selectedIntegration?.state ?? null;
 
-  return createPortal(
-    <div
-      className="tw:fixed tw:inset-0 tw:z-[var(--ds-z-modal)] tw:grid tw:place-items-center tw:bg-overlay tw:p-4 tw:max-[560px]:items-end tw:max-[560px]:p-2"
-      role="presentation"
-      onMouseDown={close}
-    >
-      <section
+  return (
+    <ModalBackdrop onMouseDown={close}>
+      <ModalSurface
         ref={dialogRef}
-        className="ds-panel tw:max-h-[min(680px,calc(100dvh_-_var(--ds-space-8)))] tw:w-[min(560px,100%)] tw:overflow-auto tw:p-4 tw:shadow-popover tw:max-[560px]:max-h-[min(720px,calc(100dvh_-_var(--ds-space-4)))] tw:max-[560px]:p-3"
-        role="dialog"
-        aria-modal="true"
         aria-labelledby="provider-credential-title"
         aria-describedby="provider-credential-boundary"
         aria-busy={loading || pending !== null || revoking !== null}
-        onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="tw:flex tw:items-center tw:justify-between tw:gap-3">
-          <div>
-            <p className="tw:m-0 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
+        <ModalTitleBar
+          title={t("providerCredentials.title")}
+          titleId="provider-credential-title"
+          closeLabel={t("common.close")}
+          onClose={close}
+        />
+        <div className="tw:min-h-0 tw:min-w-0 tw:flex-1 tw:overflow-auto tw:bg-background tw:p-4">
+          <div className="tw:border-b tw:border-border-subtle tw:pb-3">
+            <strong className="tw:text-sm">
               {t("providerCredentials.memberLocal")}
-            </p>
-            <h2
-              id="provider-credential-title"
-              className="tw:m-0 tw:text-heading tw:tracking-[-0.01em]"
-            >
-              {t("providerCredentials.title")}
-            </h2>
-          </div>
-          <button className="btn ghost small icon-only icon-xs" type="button" onClick={close} aria-label={t("common.close")}>
-            <Icon name="close" />
-          </button>
-        </header>
-        <p
-          id="provider-credential-boundary"
-          className="tw:mt-3 tw:mb-0 tw:text-sm tw:leading-[1.5] tw:text-muted-foreground"
-        >
-          {t("providerCredentials.localBoundary")}
-        </p>
-
-        {loading ? (
-          <div className="tw:mt-4" aria-label={t("common.loading")}>
-            <Skeleton lines={3} />
-          </div>
-        ) : null}
-        {loadFailed ? (
-          <div className="tw:mt-4 tw:flex tw:items-center tw:justify-between tw:gap-3 tw:rounded-sm tw:bg-danger-muted tw:p-2">
+            </strong>
             <p
-              className="tw:m-0 tw:text-sm tw:text-danger"
+              id="provider-credential-boundary"
+              className="tw:mt-1 tw:mb-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground"
+            >
+              {t("providerCredentials.localBoundary")}
+            </p>
+          </div>
+
+          {loading ? (
+            <div className="tw:mt-4" aria-label={t("common.loading")}>
+              <Skeleton lines={3} />
+            </div>
+          ) : null}
+          {loadFailed ? (
+            <div className="tw:mt-4 tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border-l-2 tw:border-danger tw:bg-danger-muted tw:p-2">
+              <p
+                className="tw:m-0 tw:text-sm tw:text-danger"
+                role="alert"
+              >
+                {t("providerCredentials.error")}
+              </p>
+              <button
+                className="btn small"
+                type="button"
+                onClick={() =>
+                  void Promise.all([
+                    integrations.refetch(),
+                    bindings.refetch(),
+                  ])
+                }
+              >
+                {t("app.retry")}
+              </button>
+            </div>
+          ) : null}
+          {actionFailed ? (
+            <p
+              className="tw:mt-4 tw:mb-0 tw:border-l-2 tw:border-danger tw:bg-danger-muted tw:p-2 tw:text-sm tw:text-danger"
               role="alert"
             >
-              {t("providerCredentials.error")}
+              {t("providerCredentials.actionError")}
             </p>
-            <button
-              className="btn small"
-              type="button"
-              onClick={() =>
-                void Promise.all([
-                  integrations.refetch(),
-                  bindings.refetch(),
-                ])
-              }
-            >
-              {t("app.retry")}
-            </button>
-          </div>
-        ) : null}
-        {actionFailed ? (
-          <p
-            className="tw:mt-4 tw:mb-0 tw:rounded-sm tw:bg-danger-muted tw:p-2 tw:text-sm tw:text-danger"
-            role="alert"
-          >
-            {t("providerCredentials.actionError")}
-          </p>
-        ) : null}
-        {!loading && !loadFailed && integrations.data?.length === 0 ? (
-          <p className="tw:mt-4 tw:mb-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-muted-foreground">
-            {t("providerCredentials.empty")}
-          </p>
-        ) : null}
-        {!loading && !loadFailed && integrations.data && integrations.data.length > 0 ? (
-          <>
-            <div
-              className="tw:mt-4 tw:border-t tw:border-border-subtle"
-              aria-label={t("providerCredentials.select")}
-            >
-              <p className="tw:m-0 tw:px-0 tw:py-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
-                {t("providerCredentials.select")}
-              </p>
-              {integrations.data.map((integration) => {
-                const selected = integration.id === state.selectedIntegrationId;
-                return (
-                  <button
-                    type="button"
-                    key={integration.id}
-                    className="tw:flex tw:min-h-control-xl tw:w-full tw:cursor-pointer tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-t tw:border-border-subtle tw:bg-transparent tw:p-2 tw:font-sans tw:text-left tw:text-foreground tw:aria-pressed:bg-selection tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-                    onClick={() => {
-                      setActionFailed(false);
-                      dispatch({ type: "select", integrationId: integration.id });
-                    }}
-                    aria-pressed={selected}
-                  >
+          ) : null}
+          {!loading && !loadFailed && integrations.data?.length === 0 ? (
+            <p className="tw:mt-4 tw:mb-0 tw:text-sm tw:text-muted-foreground">
+              {t("providerCredentials.empty")}
+            </p>
+          ) : null}
+          {!loading && !loadFailed && integrations.data && integrations.data.length > 0 ? (
+            <>
+              <div
+                className="tw:mt-4 tw:border-t tw:border-border-subtle"
+                aria-label={t("providerCredentials.select")}
+              >
+                <p className="tw:m-0 tw:px-0 tw:py-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
+                  {t("providerCredentials.select")}
+                </p>
+                {integrations.data.map((integration) => {
+                  const selected = integration.id === state.selectedIntegrationId;
+                  return (
+                    <button
+                      type="button"
+                      key={integration.id}
+                      className="tw:flex tw:min-h-control-xl tw:w-full tw:cursor-pointer tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-t tw:border-border-subtle tw:bg-transparent tw:p-2 tw:font-sans tw:text-left tw:text-foreground tw:aria-pressed:bg-selection tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+                      onClick={() => {
+                        setActionFailed(false);
+                        dispatch({ type: "select", integrationId: integration.id });
+                      }}
+                      aria-pressed={selected}
+                    >
+                      <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
+                        <strong className="tw:text-sm">
+                          {integration.displayName}
+                        </strong>
+                        <small className="tw:text-2xs tw:text-muted-foreground">
+                          {integration.provider}
+                        </small>
+                      </span>
+                      <ProviderStatusBadge status={integration.state}>
+                        {t(statusKey[integration.state])}
+                      </ProviderStatusBadge>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedIntegration ? (
+                <div className="tw:mt-4 tw:grid tw:gap-3">
+                  <div className="tw:flex tw:items-center tw:gap-2 tw:border-l-2 tw:border-border-strong tw:px-2 tw:py-1">
+                    <Icon name="info" className="tw:text-muted-foreground" />
                     <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
                       <strong className="tw:text-sm">
-                        {integration.displayName}
+                        {t("providerCredentials.memberLocal")}
                       </strong>
                       <small className="tw:text-2xs tw:text-muted-foreground">
-                        {integration.provider}
+                        {t("providerCredentials.managed")}
                       </small>
                     </span>
-                    <ProviderStatusBadge status={integration.state}>
-                      {t(statusKey[integration.state])}
-                    </ProviderStatusBadge>
-                  </button>
-                );
-              })}
-            </div>
+                  </div>
+                  {selectedIntegration.provider === "neon" ? (
+                    <Field
+                      label={t("providerCredentials.apiKey")}
+                      hint={
+                        <small className="tw:font-normal">
+                          {t("providerCredentials.apiKeyHint")}
+                        </small>
+                      }
+                    >
+                      <TextInput
+                        autoComplete="off"
+                        type="password"
+                        value={state.apiKey}
+                        onChange={(event) => dispatch({ type: "setApiKey", value: event.target.value })}
+                        disabled={pending !== null}
+                      />
+                    </Field>
+                  ) : null}
+                  {selectedIntegration.provider === "gcpCloudSql" ? (
+                    <p className="tw:m-0 tw:border-l-2 tw:border-border-strong tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
+                      {t("providerCredentials.gcpHint")}
+                    </p>
+                  ) : null}
+                  {selectedIntegration.provider === "planetScale" ? (
+                    <p className="tw:m-0 tw:border-l-2 tw:border-border-strong tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
+                      {t("providerCredentials.planetscaleHint")}
+                    </p>
+                  ) : null}
+                  {visibleStatus ? (
+                    <p
+                      data-tone={statusTone(visibleStatus)}
+                      className="tw:m-0 tw:border-l-2 tw:border-border-strong tw:px-2 tw:py-1 tw:text-sm tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
+                      role={visibleStatus === "ready" ? "status" : "alert"}
+                    >
+                      {t("providerCredentials.status", { status: t(statusKey[visibleStatus]) })}
+                    </p>
+                  ) : null}
+                  {state.phase === "complete" && state.status === "ready" ? (
+                    <p className="tw:m-0 tw:border-l-2 tw:border-success tw:px-2 tw:py-1 tw:text-sm tw:text-success">
+                      {t("providerCredentials.success")}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
-            {selectedIntegration ? (
-              <div className="tw:mt-4 tw:grid tw:gap-3">
-                <div className="tw:flex tw:items-center tw:gap-2 tw:border-l-2 tw:border-border-strong tw:bg-background tw:p-2">
-                  <Icon name="info" className="tw:text-muted-foreground" />
-                  <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
-                    <strong className="tw:text-sm">
-                      {t("providerCredentials.memberLocal")}
-                    </strong>
-                    <small className="tw:text-2xs tw:text-muted-foreground">
-                      {t("providerCredentials.managed")}
-                    </small>
-                  </span>
-                </div>
-                {selectedIntegration.provider === "neon" ? (
-                  <Field
-                    label={t("providerCredentials.apiKey")}
-                    hint={
-                      <small className="tw:font-normal">
-                        {t("providerCredentials.apiKeyHint")}
-                      </small>
-                    }
-                  >
-                    <TextInput
-                      autoComplete="off"
-                      type="password"
-                      value={state.apiKey}
-                      onChange={(event) => dispatch({ type: "setApiKey", value: event.target.value })}
-                      disabled={pending !== null}
-                    />
-                  </Field>
-                ) : null}
-                {selectedIntegration.provider === "gcpCloudSql" ? (
-                  <p className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-muted-foreground">
-                    {t("providerCredentials.gcpHint")}
-                  </p>
-                ) : null}
-                {selectedIntegration.provider === "planetScale" ? (
-                  <p className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-muted-foreground">
-                    {t("providerCredentials.planetscaleHint")}
-                  </p>
-                ) : null}
-                {visibleStatus ? (
-                  <p
-                    data-tone={statusTone(visibleStatus)}
-                    className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:data-[tone=danger]:bg-danger-muted tw:data-[tone=danger]:text-danger tw:data-[tone=success]:text-success tw:data-[tone=warning]:text-warning"
-                    role={visibleStatus === "ready" ? "status" : "alert"}
-                  >
-                    {t("providerCredentials.status", { status: t(statusKey[visibleStatus]) })}
-                  </p>
-                ) : null}
-                {state.phase === "complete" && state.status === "ready" ? (
-                  <p className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-success">
-                    {t("providerCredentials.success")}
-                  </p>
-                ) : null}
-                <div className="ds-control-row tw:flex tw:justify-end tw:gap-2 tw:[&_.primary]:min-w-[10ch] tw:max-[560px]:[&_.btn]:flex-1">
-                  <button className="btn" type="button" onClick={close}>{t("common.close")}</button>
-                  <button
-                    className="btn primary"
-                    type="button"
-                    disabled={!supportsMemberLocal(selectedIntegration) || pending !== null}
-                    onClick={() => void begin()}
-                  >
-                    {pending === "verify" ? t("providerCredentials.verifying") : t("providerCredentials.verify")}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="tw:mt-4 tw:border-t tw:border-border-subtle">
-              <p className="tw:m-0 tw:px-0 tw:py-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
-                {t("providerCredentials.memberLocal")}
-              </p>
-              {bindings.data?.length ? bindings.data.map((binding) => (
-                <div
-                  className="tw:flex tw:min-h-control-xl tw:w-full tw:items-center tw:justify-between tw:gap-3 tw:border-t tw:border-border-subtle tw:bg-transparent tw:p-2"
-                  key={binding.id}
-                >
-                  <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
-                    <strong className="tw:text-sm">{binding.provider}</strong>
-                    <small className="tw:text-2xs tw:text-muted-foreground">
-                      {t(statusKey[binding.state])}
-                    </small>
-                  </span>
-                  <button className="btn ghost small" type="button" disabled={revoking !== null} onClick={() => void revoke(binding.id)}>
-                    {revoking === binding.id ? t("providerCredentials.revokePending") : t("providerCredentials.revoke")}
-                  </button>
-                </div>
-              )) : (
-                <p className="tw:m-0 tw:rounded-sm tw:bg-background tw:p-2 tw:text-sm tw:text-muted-foreground">
-                  {t("providerCredentials.noBindings")}
+              <div className="tw:mt-4 tw:border-t tw:border-border-subtle">
+                <p className="tw:m-0 tw:px-0 tw:py-2 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
+                  {t("providerCredentials.memberLocal")}
                 </p>
-              )}
-            </div>
-          </>
-        ) : null}
-      </section>
-    </div>,
-    document.body,
+                {bindings.data?.length ? bindings.data.map((binding) => (
+                  <div
+                    className="tw:flex tw:min-h-control-xl tw:w-full tw:items-center tw:justify-between tw:gap-3 tw:border-t tw:border-border-subtle tw:bg-transparent tw:p-2"
+                    key={binding.id}
+                  >
+                    <span className="tw:grid tw:min-w-0 tw:gap-[var(--ds-segment-gap)]">
+                      <strong className="tw:text-sm">{binding.provider}</strong>
+                      <small className="tw:text-2xs tw:text-muted-foreground">
+                        {t(statusKey[binding.state])}
+                      </small>
+                    </span>
+                    <button className="btn ghost small" type="button" disabled={revoking !== null} onClick={() => void revoke(binding.id)}>
+                      {revoking === binding.id ? t("providerCredentials.revokePending") : t("providerCredentials.revoke")}
+                    </button>
+                  </div>
+                )) : (
+                  <p className="tw:m-0 tw:py-2 tw:text-sm tw:text-muted-foreground">
+                    {t("providerCredentials.noBindings")}
+                  </p>
+                )}
+              </div>
+            </>
+          ) : null}
+        </div>
+        <ModalFooter>
+          <button className="btn" type="button" onClick={close}>
+            {t("common.close")}
+          </button>
+          {selectedIntegration ? (
+            <button
+              className="btn primary"
+              type="button"
+              disabled={!supportsMemberLocal(selectedIntegration) || pending !== null}
+              onClick={() => void begin()}
+            >
+              {pending === "verify"
+                ? t("providerCredentials.verifying")
+                : t("providerCredentials.verify")}
+            </button>
+          ) : null}
+        </ModalFooter>
+      </ModalSurface>
+    </ModalBackdrop>
   );
 }
