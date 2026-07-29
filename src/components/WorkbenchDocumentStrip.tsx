@@ -1,38 +1,34 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ConnectionProfile } from "../features/connections/domain";
 import type { WorkbenchDocument } from "../features/workbench/domain";
 import { tableLabel } from "../lib/tableRef";
 import { useI18n } from "../lib/i18n";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
+import ToolbarMenu, { ToolbarMenuItem } from "./ToolbarMenu";
 
 export default function WorkbenchDocumentStrip({
   documents,
   activeId,
   engine,
   connectionName,
-  supportsSql,
   onActivate,
   onRename,
   onClose,
-  onNewQuery,
-  onOpenActivity,
 }: {
   documents: WorkbenchDocument[];
   activeId: string | null;
   engine: ConnectionProfile["engine"];
   connectionName: string;
-  supportsSql: boolean;
   onActivate: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onClose: (id: string) => void;
-  onNewQuery: () => void;
-  onOpenActivity: () => void;
 }) {
   const { t } = useI18n();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const visibleDocuments = documents.filter((document) => document.kind !== "schema");
+  const activeTabRef = useRef<HTMLDivElement>(null);
+  const visibleDocuments = documents;
   const hasVisibleActiveDocument = visibleDocuments.some(
     (document) => document.id === activeId,
   );
@@ -50,7 +46,28 @@ export default function WorkbenchDocumentStrip({
     return t("tabs.schema");
   }
 
+  function icon(document: WorkbenchDocument): IconName {
+    if (document.kind === "data") return "table";
+    if (document.kind === "schema") return "dashboard";
+    if (document.kind === "activity") return "chart";
+    if (document.kind === "documents") return "list";
+    return "play";
+  }
+
   let queryIndex = 0;
+  const presentedDocuments = visibleDocuments.map((document) => {
+    const index =
+      document.kind === "sql" || document.kind === "documents" ? queryIndex++ : 0;
+    return { document, title: label(document, index) };
+  });
+
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [activeId, visibleDocuments.length]);
+
   function finishRename(id: string) {
     const title = renameValue.trim();
     if (title) onRename(id, title);
@@ -58,9 +75,9 @@ export default function WorkbenchDocumentStrip({
   }
 
   return (
-    <div className="workbench-document-strip tw:flex tw:min-h-control-lg tw:min-w-0 tw:items-stretch tw:border-b tw:border-border-subtle tw:bg-muted">
+    <div className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:items-stretch tw:border-b tw:border-border-subtle tw:bg-muted">
       <div
-        className="workbench-document-tabs ds-control-row tw:flex tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:thin]"
+        className="ds-control-row tw:flex tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:none] tw:[&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label={t("app.workbenchNavigation")}
         onKeyDown={(event) => {
@@ -75,17 +92,15 @@ export default function WorkbenchDocumentStrip({
           tabs[(current + direction + tabs.length) % tabs.length]?.focus();
         }}
       >
-        {visibleDocuments.map((document) => {
-          const index =
-            document.kind === "sql" || document.kind === "documents" ? queryIndex++ : 0;
-          const title = label(document, index);
+        {presentedDocuments.map(({ document, title }) => {
           const active = activeId === document.id;
           const renaming =
             document.kind === "sql" && renamingId === document.id;
           return (
             <div
+              ref={active ? activeTabRef : undefined}
               data-active={active}
-              className="workbench-document-tab tw:flex tw:min-w-0 tw:max-w-[220px] tw:flex-[0_1_180px] tw:items-center tw:border-r tw:border-border-subtle tw:text-muted-foreground tw:data-[active=true]:bg-secondary tw:data-[active=true]:text-selection-foreground tw:data-[active=true]:shadow-[inset_0_calc(var(--ds-border-width-strong)*-1)_0_var(--ds-selection-foreground)] tw:max-[760px]:basis-[148px]"
+              className="tw:flex tw:min-w-[132px] tw:max-w-[220px] tw:flex-[0_0_180px] tw:items-center tw:border-r tw:border-border-subtle tw:text-muted-foreground tw:data-[active=true]:bg-secondary tw:data-[active=true]:text-selection-foreground tw:data-[active=true]:shadow-[inset_0_calc(var(--ds-border-width-strong)*-1)_0_var(--ds-selection-foreground)] tw:max-[760px]:basis-[148px]"
               key={document.id}
             >
               {renaming ? (
@@ -109,7 +124,7 @@ export default function WorkbenchDocumentStrip({
               ) : (
                 <button
                   type="button"
-                  className="workbench-document-select tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-inset tw:focus-visible:ring-ring tw:[&_.icon]:shrink-0 tw:[&>span]:min-w-0 tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis tw:[&>span]:whitespace-nowrap"
+                  className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-inset tw:focus-visible:ring-ring tw:[&_.icon]:shrink-0 tw:[&>span]:min-w-0 tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis tw:[&>span]:whitespace-nowrap"
                   role="tab"
                   aria-selected={active}
                   tabIndex={
@@ -125,19 +140,7 @@ export default function WorkbenchDocumentStrip({
                   }}
                   title={title}
                 >
-                  <Icon
-                    name={
-                      document.kind === "data"
-                        ? "table"
-                        : document.kind === "schema"
-                          ? "dashboard"
-                          : document.kind === "activity"
-                            ? "chart"
-                            : document.kind === "documents"
-                              ? "list"
-                              : "play"
-                    }
-                  />
+                  <Icon name={icon(document)} />
                   <span>{title}</span>
                 </button>
               )}
@@ -154,25 +157,29 @@ export default function WorkbenchDocumentStrip({
           );
         })}
       </div>
-      <div className="ds-control-row tw:flex tw:shrink-0 tw:items-center tw:border-l tw:border-border-subtle tw:px-2 tw:max-[760px]:px-1">
-        <button
-          type="button"
-          className="btn small icon-only"
-          onClick={onOpenActivity}
-          title={t("tabs.activity")}
-          aria-label={t("tabs.activity")}
+      <div className="ds-control-row tw:flex tw:shrink-0 tw:items-center tw:border-l tw:border-border-subtle tw:px-1">
+        <ToolbarMenu
+          label={t("tabs.openDocuments")}
+          icon="moreVertical"
+          disabled={presentedDocuments.length === 0}
         >
-          <Icon name="chart" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only"
-          onClick={onNewQuery}
-          title={supportsSql ? t("tabs.sql") : t("tabs.documents")}
-          aria-label={supportsSql ? t("tabs.sql") : t("tabs.documents")}
-        >
-          <Icon name="plus" />
-        </button>
+          {presentedDocuments.map(({ document, title }) => {
+            const active = document.id === activeId;
+            return (
+              <ToolbarMenuItem
+                key={document.id}
+                icon={active ? "check" : icon(document)}
+                aria-current={active ? "page" : undefined}
+                onClick={() => onActivate(document.id)}
+                title={title}
+              >
+                <span className="tw:max-w-[320px] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                  {title}
+                </span>
+              </ToolbarMenuItem>
+            );
+          })}
+        </ToolbarMenu>
       </div>
     </div>
   );

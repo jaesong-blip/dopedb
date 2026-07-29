@@ -215,12 +215,9 @@ export default function WorkbenchContent(props: Props) {
           activeId={activeDocumentId}
           engine={selected.engine}
           connectionName={selected.name || t("app.unnamed")}
-          supportsSql={supportsSql}
           onActivate={props.onActivateDocument}
           onRename={props.onRenameDocument}
           onClose={props.onCloseDocument}
-          onNewQuery={props.onNewQuery}
-          onOpenActivity={props.onOpenActivity}
         />
       )}
 

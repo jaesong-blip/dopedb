@@ -176,6 +176,12 @@ Elevation은 세 단계만 허용한다.
   같은 lifecycle projection을 사용한다. 동일한 SQL이 여러 번 있어도 단순
   문자열 검색으로 첫 occurrence에 붙이지 않으며, widget은 정적 Tailwind
   utility와 semantic token만 사용한다.
+  document tab은 schema/data/SQL/activity를 숨김 예외 없이 같은 strip에
+  투영한다. 각 tab은 읽을 수 있는 고정 폭을 유지하고 활성 문서가 바뀌면
+  수평 strip 안에서 자동으로 드러난다. 끝단의 portal `ToolbarMenu`는 모든
+  열린 문서를 나열해 overflow된 문서도 실제 활성화할 수 있어야 한다. 새 쿼리,
+  Activity처럼 title toolbar나 status에서 이미 제공하는 action을 tab strip에
+  중복 배치하지 않으며, tab용 feature CSS나 style map을 만들지 않는다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.

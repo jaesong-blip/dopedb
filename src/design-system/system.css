@@ -632,34 +632,24 @@ h3 {
 }
 
 /* Orca's thin neutral scrollbar recipe for dense application surfaces. */
-.scrollbar-sleek,
-.workbench-document-tabs {
+.scrollbar-sleek {
   scrollbar-color: var(--ds-border-strong) transparent;
   scrollbar-width: thin;
 }
 
-:where(
-  .scrollbar-sleek,
-  .workbench-document-tabs
-)::-webkit-scrollbar {
+.scrollbar-sleek::-webkit-scrollbar {
   width: var(--ds-space-2);
   height: var(--ds-space-2);
 }
 
-:where(
-  .scrollbar-sleek,
-  .workbench-document-tabs
-)::-webkit-scrollbar-thumb {
+.scrollbar-sleek::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: var(--ds-radius-pill);
   background: var(--ds-border-strong);
   background-clip: padding-box;
 }
 
-:where(
-  .scrollbar-sleek,
-  .workbench-document-tabs
-)::-webkit-scrollbar-track {
+.scrollbar-sleek::-webkit-scrollbar-track {
   background: transparent;
 }
 
