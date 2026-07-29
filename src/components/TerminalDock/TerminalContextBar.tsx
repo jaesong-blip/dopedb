@@ -3,9 +3,11 @@
 import type { SkillInstallState } from "../../ipc/types";
 import type { TerminalSessionSummary } from "../../features/terminals/domain";
 import { terminalSessionIsRunning } from "../../features/terminals/state";
+import { Button } from "../../design-system/components/Button";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import {
   InlineNotice,
+  StatusBadge,
   StatusDot,
 } from "../../design-system/components/Status";
 import { Icon } from "../Icon";
@@ -49,27 +51,27 @@ export default function TerminalContextBar({
   const skillBadge = (() => {
     if (skillState === "managed_current") {
       return {
-        tone: "success",
+        tone: "success" as const,
         icon: "check" as const,
         label: t("terminal.skillReady"),
       };
     }
     if (skillState === null) {
       return {
-        tone: "warning",
+        tone: "warning" as const,
         icon: "alert" as const,
         label: t("terminal.skillChecking"),
       };
     }
     if (skillState === "missing") {
       return {
-        tone: "warning",
+        tone: "warning" as const,
         icon: "alert" as const,
         label: t("terminal.skillMissing"),
       };
     }
     return {
-      tone: "warning",
+      tone: "warning" as const,
       icon: "alert" as const,
       label: t("terminal.skillAttention"),
     };
@@ -88,51 +90,53 @@ export default function TerminalContextBar({
           <StatusDot tone={terminalLifecycleTone(active.lifecycle)} />
           {lifecycleLabel}
         </span>
-        <span className="badge tw:shrink-0 tw:max-w-[240px]">
+        <StatusBadge density="compact">
           <Icon name="database" />
           {t("terminal.pinned", {
             name: active.connection.connectionName,
           })}
-        </span>
+        </StatusBadge>
         {active.connection.environment && (
           <EnvironmentBadge environment={active.connection.environment} />
         )}
-        <span
-          data-policy={active.connection.policy}
-          className="badge tw:shrink-0 tw:max-w-[240px] tw:data-[policy=readOnly]:border-success tw:data-[policy=readOnly]:text-success tw:data-[policy=approvalRequired]:border-warning tw:data-[policy=approvalRequired]:text-warning"
+        <StatusBadge
+          density="compact"
+          tone={
+            active.connection.policy === "readOnly"
+              ? "success"
+              : "warning"
+          }
         >
           {active.connection.policy === "readOnly"
             ? t("terminal.readOnly")
             : t("terminal.approvalRequired")}
-        </span>
+        </StatusBadge>
         {active.profile !== "shell" && (
-          <span
-            data-tone={skillBadge.tone}
-            className="badge tw:shrink-0 tw:max-w-[240px] tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
-          >
+          <StatusBadge density="compact" tone={skillBadge.tone}>
             <Icon name={skillBadge.icon} />
             {skillBadge.label}
-          </span>
+          </StatusBadge>
         )}
         <span className="tw:min-w-1 tw:flex-1" />
-        <button
-          type="button"
-          className="btn small icon-only"
+        <Button
+          iconOnly
+          size="compact"
+          variant="ghost"
           onClick={onRename}
           title={t("terminal.rename")}
           aria-label={t("terminal.rename")}
         >
           <Icon name="pencil" />
-        </button>
+        </Button>
         {terminalSessionIsRunning(active) ? (
-          <button type="button" className="btn small" onClick={onStop}>
+          <Button size="compact" onClick={onStop}>
             {t("terminal.stop")}
-          </button>
+          </Button>
         ) : (
-          <button type="button" className="btn small" onClick={onRestart}>
+          <Button size="compact" onClick={onRestart}>
             <Icon name="refresh" />
             {t("terminal.restart")}
-          </button>
+          </Button>
         )}
       </div>
 

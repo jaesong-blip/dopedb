@@ -21,7 +21,7 @@ export function StatusBadge({
     <span
       data-tone={tone}
       data-density={density}
-      className="badge tw:shrink-0 tw:data-[density=compact]:min-h-[18px] tw:data-[density=compact]:px-1.5 tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
+      className="tw:inline-flex tw:min-h-[20px] tw:max-w-full tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:rounded-full tw:border tw:border-border-subtle tw:bg-secondary tw:px-2 tw:text-xs tw:font-semibold tw:leading-none tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground tw:data-[density=compact]:min-h-[18px] tw:data-[density=compact]:px-1.5 tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning tw:[&_.icon]:shrink-0"
       title={title}
     >
       {children}

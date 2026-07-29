@@ -15,6 +15,7 @@ import type {
   TerminalSessionSummary,
 } from "../../features/terminals/domain";
 import { terminalPopupPosition } from "../../features/terminals/layout";
+import { Button } from "../../design-system/components/Button";
 import { StatusDot, type StatusTone } from "../../design-system/components/Status";
 import { Icon } from "../Icon";
 import { useI18n } from "../../lib/i18n";
@@ -373,14 +374,11 @@ export default function TerminalTabs({
           </div>
         ))}
       </div>
-      <div className="ds-control-row tw:flex tw:shrink-0 tw:self-center tw:[&_.btn]:shrink-0">
-        <button
-          type="button"
-          className={
-            presentation === "agent"
-              ? "btn small ghost tw:px-2"
-              : "btn small icon-only"
-          }
+      <div className="ds-control-row tw:flex tw:shrink-0 tw:self-center">
+        <Button
+          iconOnly={presentation !== "agent"}
+          size="compact"
+          variant="ghost"
           data-terminal-focus-target="launcher"
           onClick={(event) =>
             onOpenPopup({
@@ -404,22 +402,24 @@ export default function TerminalTabs({
         >
           <Icon name="plus" />
           {presentation === "agent" ? t("terminal.newChat") : null}
-        </button>
+        </Button>
         {presentation === "agent" && (
-          <button
-            type="button"
-            className="btn small icon-only"
+          <Button
+            iconOnly
+            size="compact"
+            variant="ghost"
             onClick={onOpenArchive}
             title={t("terminal.openArchive")}
             aria-label={t("terminal.openArchive")}
           >
             <Icon name="history" />
-          </button>
+          </Button>
         )}
         {sessions.length > 0 ? (
-          <button
-            type="button"
-            className="btn small icon-only"
+          <Button
+            iconOnly
+            size="compact"
+            variant="ghost"
             onClick={(event) => {
               const target = sessions.find((session) => session.id === activeId);
               if (target) openTabPopup(target, event.currentTarget);
@@ -430,24 +430,26 @@ export default function TerminalTabs({
             aria-expanded={popup?.kind === "tab"}
           >
             <Icon name="moreVertical" />
-          </button>
+          </Button>
         ) : null}
         {presentation !== "agent" && (
-          <button
-            type="button"
-            className="btn small icon-only"
+          <Button
+            iconOnly
+            size="compact"
+            variant="ghost"
             onClick={onToggleMaximize}
             title={maximized ? t("terminal.restore") : t("terminal.maximize")}
             aria-label={maximized ? t("terminal.restore") : t("terminal.maximize")}
             aria-pressed={maximized}
           >
             <Icon name={maximized ? "minimize" : "maximize"} />
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           ref={closeButtonRef}
-          type="button"
-          className="btn small icon-only"
+          iconOnly
+          size="compact"
+          variant="ghost"
           onClick={onPanelClose}
           title={t(
             presentation === "agent"
@@ -461,7 +463,7 @@ export default function TerminalTabs({
           )}
         >
           <Icon name="minus" />
-        </button>
+        </Button>
       </div>
       {popup && (
         <TerminalActionPopup
@@ -507,16 +509,14 @@ export function TerminalEmptyActions({
   return (
     <div className="ds-control-row tw:flex tw:flex-wrap tw:justify-center">
       {profiles.map((profile) => (
-        <button
+        <Button
           key={profile.id}
-          type="button"
-          className="btn"
           disabled={creatingProfile !== null}
           onClick={() => onCreate(profile.id)}
         >
           <Icon name={terminalProfileIcon(profile.id)} />
           {creatingProfile === profile.id ? t("terminal.creating") : profile.label}
-        </button>
+        </Button>
       ))}
     </div>
   );
