@@ -9,6 +9,7 @@ import ConfirmButton from "../../../components/ConfirmButton";
 import InfoTip from "../../../components/InfoTip";
 import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
+import { Button } from "../../../design-system/components/Button";
 import { useI18n } from "../../../lib/i18n";
 import { cliInstallationStatusQuery, qk } from "../../../lib/queries";
 
@@ -132,16 +133,15 @@ export default function CliSettings() {
                   {actionLabel}
                 </ConfirmButton>
               ) : (
-                <button
-                  className="btn primary"
+                <Button
+                  variant="primary"
                   disabled={busy || !status.bundledAvailable || ready}
                   onClick={() => void install()}
                 >
                   {busy ? t("cli.working") : ready ? t("cli.ready") : actionLabel}
-                </button>
+                </Button>
               )}
-              <button
-                className="btn"
+              <Button
                 disabled={busy || statusQ.isFetching}
                 onClick={() => {
                   setError(null);
@@ -149,7 +149,7 @@ export default function CliSettings() {
                 }}
               >
                 {t("cli.refresh")}
-              </button>
+              </Button>
             </div>
           </>
         )

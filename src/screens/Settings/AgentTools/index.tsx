@@ -22,6 +22,7 @@ import ConfirmButton from "../../../components/ConfirmButton";
 import InfoTip from "../../../components/InfoTip";
 import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
+import { Button } from "../../../design-system/components/Button";
 import {
   legacyMcpCleanupStatusQuery,
   qk,
@@ -387,8 +388,7 @@ export default function AgentTools() {
                   {(canInstall || canRepair || canRemove) && (
                     <div className="ds-control-row tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-[var(--ds-control-gap)]">
                       {canInstall && (
-                        <button
-                          className="btn"
+                        <Button
                           disabled={busy !== null || setupPlan !== null}
                           onClick={(event) =>
                             openSetup(
@@ -402,7 +402,7 @@ export default function AgentTools() {
                               ? "agentTools.update"
                               : "agentTools.install",
                           )}
-                        </button>
+                        </Button>
                       )}
                       {canRepair && (
                         <ConfirmButton
@@ -518,8 +518,8 @@ export default function AgentTools() {
 
       <div className="ds-control-row tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-[var(--ds-control-gap)]">
         {combinedSetupPlan?.command && !setupPlan && (
-          <button
-            className="btn primary"
+          <Button
+            variant="primary"
             disabled={busy !== null}
             onClick={(event) =>
               openSetup(combinedSetupPlan, event.currentTarget)
@@ -532,19 +532,17 @@ export default function AgentTools() {
                   ? "agentTools.installAndUpdate"
                   : "agentTools.installAll",
             )}
-          </button>
+          </Button>
         )}
         {anyCurrent && (
-          <button
-            className="btn"
+          <Button
             disabled={busy !== null}
             onClick={() => void runSelfTest()}
           >
             {t("agentTools.selfTest")}
-          </button>
+          </Button>
         )}
-        <button
-          className="btn"
+        <Button
           disabled={
             busy !== null ||
             statusQ.isFetching ||
@@ -561,7 +559,7 @@ export default function AgentTools() {
           }}
         >
           {t("agentTools.checkAgain")}
-        </button>
+        </Button>
       </div>
     </div>
   );

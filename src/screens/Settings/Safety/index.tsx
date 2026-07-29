@@ -5,7 +5,9 @@ import type { SafetySettings } from "../../../ipc/types";
 import { errMessage } from "../../../ipc/types";
 import InfoTip from "../../../components/InfoTip";
 import { useToast } from "../../../components/Toast";
+import { Button } from "../../../design-system/components/Button";
 import { SettingsGroup } from "../../../design-system/components/Settings";
+import { StatusBadge } from "../../../design-system/components/Status";
 import { useI18n, type I18nKey } from "../../../lib/i18n";
 import MonitoringAccess from "./MonitoringAccess";
 
@@ -78,12 +80,11 @@ export default function Safety({ connectionId }: { connectionId: string }) {
           <h2>{t("safety.title")}</h2>
           <InfoTip label={t("safety.body")} />
         </div>
-        <span
-          data-mode={settings.allowWrites ? "write" : "readOnly"}
-          className="badge tw:data-[mode=readOnly]:border-success tw:data-[mode=readOnly]:text-success tw:data-[mode=write]:border-warning tw:data-[mode=write]:text-warning"
+        <StatusBadge
+          tone={settings.allowWrites ? "warning" : "success"}
         >
           {settings.allowWrites ? t("safety.modeWrites") : t("safety.modeReadOnly")}
-        </span>
+        </StatusBadge>
       </div>
 
       <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(264px,0.8fr)] tw:gap-4 tw:max-[1180px]:grid-cols-2 tw:max-[860px]:grid-cols-1">
@@ -138,14 +139,13 @@ export default function Safety({ connectionId }: { connectionId: string }) {
         </SettingsGroup>
       </div>
 
-      <div className="tw:flex tw:justify-start">
-        <button
-          className="btn tw:max-[640px]:w-full"
+      <div className="tw:flex tw:justify-start tw:max-[640px]:[&>button]:w-full">
+        <Button
           disabled={busy}
           onClick={save}
         >
           {busy ? t("common.saving") : t("common.save")}
-        </button>
+        </Button>
       </div>
 
       <MonitoringAccess connectionId={connectionId} />

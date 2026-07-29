@@ -15,6 +15,7 @@ import ConfirmButton from "../../../components/ConfirmButton";
 import { Icon } from "../../../components/Icon";
 import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
+import { Button } from "../../../design-system/components/Button";
 import { StatusBadge } from "../../../design-system/components/Status";
 import { monitoringStatusQuery, qk } from "../../../lib/queries";
 import { useI18n } from "../../../lib/i18n";
@@ -139,12 +140,11 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
             {t("safety.monitoringBody")}
           </p>
         </div>
-        <span
-          data-granted={status.roleGranted}
-          className="badge tw:data-[granted=false]:border-warning tw:data-[granted=false]:text-warning tw:data-[granted=true]:border-success tw:data-[granted=true]:text-success"
+        <StatusBadge
+          tone={status.roleGranted ? "success" : "warning"}
         >
           {coverageLabel}
-        </span>
+        </StatusBadge>
       </div>
 
       <div className="tw:grid tw:gap-1 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-relaxed">
@@ -188,10 +188,10 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
             </ConfirmButton>
           )}
           {!status.roleGranted && (
-            <button className="btn small" disabled={busy} onClick={copyGrant}>
+            <Button size="compact" disabled={busy} onClick={copyGrant}>
               <Icon name="copy" />
               {t("safety.monitoringCopyGrant")}
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -235,8 +235,9 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
             </label>
           )}
           <div className="ds-action-row ds-control-row">
-            <button
-              className="btn primary small"
+            <Button
+              size="compact"
+              variant="primary"
               disabled={
                 busy
                 || (
@@ -249,14 +250,14 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
               {apply.isPending
                 ? t("safety.monitoringWorking")
                 : t("safety.monitoringApproveApply")}
-            </button>
-            <button
-              className="btn small"
+            </Button>
+            <Button
+              size="compact"
               disabled={busy}
               onClick={() => reject.mutate(proposal)}
             >
               {t("approval.reject")}
-            </button>
+            </Button>
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 // Small semantic status primitives shared by tool windows and asynchronous
 // workflows. Color always communicates state, never navigation selection.
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 
 import { Icon, type IconName } from "../../components/Icon";
 
@@ -9,20 +9,25 @@ export type StatusTone = "neutral" | "success" | "warning" | "danger";
 export function StatusBadge({
   tone = "neutral",
   density = "default",
+  iconOnly = false,
   title,
   children,
+  ...props
 }: {
   tone?: StatusTone;
   density?: "default" | "compact";
+  iconOnly?: boolean;
   title?: string;
   children: ReactNode;
-}) {
+} & Omit<HTMLAttributes<HTMLSpanElement>, "children" | "className">) {
   return (
     <span
       data-tone={tone}
       data-density={density}
-      className="tw:inline-flex tw:min-h-[20px] tw:max-w-full tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:rounded-full tw:border tw:border-border-subtle tw:bg-secondary tw:px-2 tw:text-xs tw:font-semibold tw:leading-none tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground tw:data-[density=compact]:min-h-[18px] tw:data-[density=compact]:px-1.5 tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning tw:[&_.icon]:shrink-0"
+      data-icon-only={iconOnly}
+      className="tw:inline-flex tw:min-h-[20px] tw:max-w-full tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:rounded-full tw:border tw:border-border-subtle tw:bg-secondary tw:px-2 tw:text-xs tw:font-semibold tw:leading-none tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground tw:data-[density=compact]:min-h-[18px] tw:data-[density=compact]:px-1.5 tw:data-[icon-only=true]:size-control-md tw:data-[icon-only=true]:min-w-control-md tw:data-[icon-only=true]:justify-center tw:data-[icon-only=true]:gap-0 tw:data-[icon-only=true]:p-0 tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning tw:[&_.icon]:shrink-0"
       title={title}
+      {...props}
     >
       {children}
     </span>

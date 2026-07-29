@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 import { Icon, type IconName } from "../../../components/Icon";
 import InfoTip from "../../../components/InfoTip";
+import { Button } from "../../../design-system/components/Button";
+import {
+  StatusBadge,
+  type StatusTone,
+} from "../../../design-system/components/Status";
 import { errMessage } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
 
@@ -43,6 +49,12 @@ function stateIcon(state: UpdateState): IconName {
     default:
       return "info";
   }
+}
+
+function stateTone(state: UpdateState): StatusTone {
+  if (state === "available" || state === "ready") return "success";
+  if (state === "error") return "danger";
+  return "neutral";
 }
 
 export default function Updates({
@@ -145,9 +157,13 @@ export default function Updates({
           <h2>{t("updates.title")}</h2>
           <InfoTip label={t("updates.description")} />
         </div>
-        <button className="btn small" disabled={state === "checking" || state === "downloading"} onClick={refresh}>
+        <Button
+          size="compact"
+          disabled={state === "checking" || state === "downloading"}
+          onClick={refresh}
+        >
           {t("updates.checkAgain")}
-        </button>
+        </Button>
       </div>
 
       <div className="tw:grid tw:border-t tw:border-border-subtle">
@@ -167,15 +183,15 @@ export default function Updates({
         </div>
         <div className="tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:gap-4 tw:border-b tw:border-border-subtle tw:py-2 tw:max-[760px]:flex-col tw:max-[760px]:items-start tw:max-[760px]:gap-1">
           <span className="tw:text-muted-foreground">{t("updates.status")}</span>
-          <span
-            data-state={state}
-            className="badge icon-only-badge tw:text-muted-foreground tw:data-[state=available]:border-success tw:data-[state=available]:text-success tw:data-[state=ready]:border-success tw:data-[state=ready]:text-success tw:data-[state=error]:border-danger tw:data-[state=error]:text-danger"
+          <StatusBadge
+            iconOnly
+            tone={stateTone(state)}
             title={stateLabel}
             aria-label={stateLabel}
             role="img"
           >
             <Icon name={stateIcon(state)} />
-          </span>
+          </StatusBadge>
         </div>
 
         {state === "downloading" && (
@@ -214,16 +230,22 @@ export default function Updates({
         )}
 
         <div className="ds-action-row ds-control-row tw:pt-3">
-          <button
-            className="btn primary"
+          <Button
+            variant="primary"
             disabled={!update || state === "checking" || state === "downloading"}
             onClick={install}
           >
             {state === "downloading" ? t("updates.installing") : t("updates.updateAndRelaunch")}
-          </button>
-          <a className="btn" href="https://github.com/json-choi/dopedb/releases/latest">
+          </Button>
+          <Button
+            onClick={() =>
+              void openUrl(
+                "https://github.com/json-choi/dopedb/releases/latest",
+              )
+            }
+          >
             {t("updates.openReleases")}
-          </a>
+          </Button>
         </div>
       </div>
     </div>

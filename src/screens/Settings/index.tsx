@@ -5,6 +5,7 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
+import { Button } from "../../design-system/components/Button";
 import {
   Field,
   SelectInput,
@@ -303,9 +304,13 @@ export default function Settings({
           </div>
 
           <ModalFooter>
-            <button className="btn primary" onClick={close}>
+            <Button
+              size="compact"
+              variant="primary"
+              onClick={close}
+            >
               {t("common.done")}
-            </button>
+            </Button>
           </ModalFooter>
         </div>
       </ModalSurface>
