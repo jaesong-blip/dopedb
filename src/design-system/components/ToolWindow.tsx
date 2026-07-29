@@ -101,18 +101,21 @@ export function ToolWindowAction({
   leading,
   trailing,
   selected = false,
+  flush = false,
   children,
   ...buttonProps
 }: {
   leading: ReactNode;
   trailing?: ReactNode;
   selected?: boolean;
+  flush?: boolean;
   children: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">) {
   return (
     <button
       type="button"
-      className="tw:grid tw:min-h-control-md tw:w-full tw:cursor-pointer tw:grid-cols-[20px_minmax(0,1fr)_16px] tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-left tw:text-sm tw:text-foreground tw:aria-pressed:bg-selection tw:aria-pressed:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-50 tw:hover:bg-muted"
+      data-flush={flush || undefined}
+      className="tw:grid tw:min-h-control-md tw:w-full tw:cursor-pointer tw:grid-cols-[20px_minmax(0,1fr)_16px] tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-left tw:text-sm tw:text-foreground tw:aria-pressed:bg-selection tw:aria-pressed:text-selection-foreground tw:data-[flush=true]:rounded-none tw:data-[flush=true]:px-5 tw:disabled:cursor-progress tw:disabled:opacity-50 tw:hover:bg-muted"
       aria-pressed={selected}
       {...buttonProps}
     >

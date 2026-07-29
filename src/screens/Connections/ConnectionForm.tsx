@@ -1486,7 +1486,7 @@ export function ConnectionForm({
               />
             </ToolWindowSearchRow>
           ) : null}
-          <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-2">
+          <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:py-2">
             {editorView === "dataSources" &&
             visibleConnections.length > 0 ? (
               <ToolWindowSection
@@ -1495,6 +1495,7 @@ export function ConnectionForm({
                 {visibleConnections.map((connection) => (
                   <ToolWindowAction
                     key={connection.id}
+                    flush
                     leading={
                       <EngineMark engine={connection.engine} size="tree" />
                     }
@@ -1531,6 +1532,7 @@ export function ConnectionForm({
                   {visibleCatalogDrivers.map((driver) => (
                     <ToolWindowAction
                       key={driver.id}
+                      flush
                       leading={
                         <EngineMark engine={driver.engine} size="tree" />
                       }
@@ -1561,6 +1563,7 @@ export function ConnectionForm({
                 {cloudProviders.map((provider) => (
                   <ToolWindowAction
                     key={provider.provider}
+                    flush
                     leading={<Icon name="key" />}
                     trailing={<Icon name="chevronRight" />}
                     selected={
@@ -1577,8 +1580,9 @@ export function ConnectionForm({
             ) : null}
           </nav>
           {editorView === "dataSources" ? (
-            <div className="tw:shrink-0 tw:border-t tw:border-border-subtle tw:p-2">
+            <div className="tw:shrink-0 tw:border-t tw:border-border-subtle tw:py-2">
               <ToolWindowAction
+                flush
                 leading={
                   <Icon
                     name="alert"
