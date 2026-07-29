@@ -8,9 +8,21 @@ export const terminalCatalog = defineCatalog(
       "Start a signed-in Codex or Claude session. The local Agent stays pinned to this database and uses the version-matched DopeDB CLI.",
     "terminal.agentEmptyTitle": "Start an Agent conversation",
     "terminal.agentComposer": "Agent message composer",
+    "terminal.agentAddContext": "Add database or SQL context",
+    "terminal.agentContextCount": "{count} attached",
+    "terminal.agentDatabase": "Current data source",
+    "terminal.agentDocument": "Active SQL document",
+    "terminal.agentHintAttachment":
+      "Use @ to attach the active SQL document",
+    "terminal.agentHintDatabase":
+      "Every conversation stays pinned to the selected data source",
+    "terminal.agentHintSafety":
+      "Database changes still follow DopeDB safety policy",
     "terminal.agentModel": "Agent model",
+    "terminal.agentNoDocument": "Open a SQL document to attach it",
     "terminal.agentPrompt":
-      "Type your task. Press Enter to send, Shift+Enter for a new line.",
+      "Type your task. Use @ to attach database or SQL context.",
+    "terminal.agentRemoveContext": "Remove context",
     "terminal.agentSend": "Send to Agent",
     "terminal.agentSessions": "AI Chat sessions",
     "terminal.agentTitle": "AI Chat",
@@ -41,6 +53,7 @@ export const terminalCatalog = defineCatalog(
     "terminal.inputFailed": "Terminal input failed: {error}",
     "terminal.loadFailed": "Could not load Terminal sessions: {error}",
     "terminal.maximize": "Maximize Terminal",
+    "terminal.newChat": "New Chat",
     "terminal.newSession": "New session",
     "terminal.noSelection": "Select a Terminal session.",
     "terminal.openArchive": "Open legacy conversation archive",
@@ -73,9 +86,21 @@ export const terminalCatalog = defineCatalog(
       "로그인된 Codex 또는 Claude 세션을 시작하세요. 로컬 Agent는 이 데이터베이스에 고정되며 앱 버전과 일치하는 DopeDB CLI를 사용합니다.",
     "terminal.agentEmptyTitle": "Agent 대화 시작",
     "terminal.agentComposer": "Agent 메시지 입력",
+    "terminal.agentAddContext": "데이터베이스 또는 SQL 문맥 추가",
+    "terminal.agentContextCount": "{count}개 첨부",
+    "terminal.agentDatabase": "현재 데이터 소스",
+    "terminal.agentDocument": "활성 SQL 문서",
+    "terminal.agentHintAttachment":
+      "@로 활성 SQL 문서를 첨부할 수 있습니다",
+    "terminal.agentHintDatabase":
+      "각 대화는 선택한 데이터 소스에 고정됩니다",
+    "terminal.agentHintSafety":
+      "데이터베이스 변경에는 DopeDB 안전 정책이 그대로 적용됩니다",
     "terminal.agentModel": "Agent 모델",
+    "terminal.agentNoDocument": "첨부할 SQL 문서를 먼저 여세요",
     "terminal.agentPrompt":
-      "요청을 입력하세요. Enter로 보내고 Shift+Enter로 줄을 바꿉니다.",
+      "요청을 입력하세요. @로 데이터베이스 또는 SQL 문맥을 첨부합니다.",
+    "terminal.agentRemoveContext": "문맥 제거",
     "terminal.agentSend": "Agent에게 보내기",
     "terminal.agentSessions": "AI Chat 세션",
     "terminal.agentTitle": "AI Chat",
@@ -106,6 +131,7 @@ export const terminalCatalog = defineCatalog(
     "terminal.inputFailed": "Terminal 입력을 전송하지 못했습니다: {error}",
     "terminal.loadFailed": "Terminal 세션을 불러오지 못했습니다: {error}",
     "terminal.maximize": "Terminal 최대화",
+    "terminal.newChat": "새 대화",
     "terminal.newSession": "새 세션",
     "terminal.noSelection": "Terminal 세션을 선택하세요.",
     "terminal.openArchive": "이전 대화 읽기 전용 보관함 열기",

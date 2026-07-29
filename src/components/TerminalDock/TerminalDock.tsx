@@ -18,6 +18,7 @@ import type {
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
+import type { WorkbenchDocument } from "../../features/workbench/domain";
 import { workspaceContextQuery } from "../../features/workspaces/queries";
 import {
   clampTerminalDockWidth,
@@ -80,13 +81,17 @@ const ACTIVE_SESSION_STORAGE = "terminalActiveSessionByScope";
 // A JavaScript character can encode to four UTF-8 bytes. Keep the composer
 // below the Terminal backend's 64 KiB input boundary including paste markers.
 const AGENT_PROMPT_MAX_CHARS = 12 * 1024;
+const AGENT_DOCUMENT_CONTEXT_MAX_CHARS = 4 * 1024;
 
 type AgentProfile = Exclude<TerminalProfile, "shell">;
+type AgentAttachment = "database" | "document";
 
 type OutputWriter = (chunk: TerminalOutputChunk) => void;
 
 interface TerminalDockProps {
   connection: ConnectionProfile;
+  documents: WorkbenchDocument[];
+  activeDocumentId: string | null;
   skillStatus: SkillStatus | null;
   overlay: boolean;
   width: number;
@@ -102,6 +107,61 @@ function TerminalEmpty({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
+}
+
+function buildAgentPrompt({
+  prompt,
+  attachments,
+  connection,
+  document,
+}: {
+  prompt: string;
+  attachments: AgentAttachment[];
+  connection: ConnectionProfile;
+  document: WorkbenchDocument | null;
+}) {
+  const context: string[] = [];
+  if (attachments.includes("database")) {
+    context.push(
+      [
+        "Attached data source:",
+        `- Name: ${connection.name || "(unnamed)"}`,
+        `- Engine: ${connection.engine}`,
+        `- Database: ${connection.database}`,
+      ].join("\n"),
+    );
+  }
+  if (
+    attachments.includes("document") &&
+    document &&
+    (document.kind === "sql" || document.kind === "documents")
+  ) {
+    const draft = document.draft ?? "";
+    const content = draft.slice(
+      0,
+      AGENT_DOCUMENT_CONTEXT_MAX_CHARS,
+    );
+    context.push(
+      [
+        `Attached SQL document: ${document.kind === "sql" ? document.title : "Document"}`,
+        "```sql",
+        content,
+        draft.length > content.length
+          ? "-- Context truncated by DopeDB"
+          : "",
+        "```",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+  if (context.length === 0) return prompt;
+  const prefixBudget = Math.max(
+    0,
+    AGENT_PROMPT_MAX_CHARS - prompt.length - 2,
+  );
+  const prefix = context.join("\n\n").slice(0, prefixBudget).trim();
+  return prefix ? `${prefix}\n\n${prompt}` : prompt;
 }
 
 function restoreTerminalDockState(
@@ -154,6 +214,8 @@ function restoreTerminalDockState(
 
 export default function TerminalDock({
   connection,
+  documents,
+  activeDocumentId,
   skillStatus,
   overlay,
   width,
@@ -173,6 +235,11 @@ export default function TerminalDock({
   const [agentPrompt, setAgentPrompt] = useState("");
   const [agentProfile, setAgentProfile] =
     useState<AgentProfile>("codex");
+  const [agentAttachments, setAgentAttachments] = useState<
+    AgentAttachment[]
+  >([]);
+  const [agentAttachmentMenuOpen, setAgentAttachmentMenuOpen] =
+    useState(false);
   const [sendingAgentPrompt, setSendingAgentPrompt] = useState(false);
   const [closingId, setClosingId] = useState<TerminalSessionId | null>(null);
   const dockRef = useRef<HTMLElement>(null);
@@ -202,6 +269,24 @@ export default function TerminalDock({
   currentScopeRef.current = currentScope;
   const currentScopeKey = currentScope ? terminalScopeKey(currentScope) : null;
   const maximized = terminalLayoutForScope(state, currentScope).maximized;
+  const activeDocument =
+    documents.find((document) => document.id === activeDocumentId) ?? null;
+  const attachableDocument =
+    activeDocument?.kind === "sql" || activeDocument?.kind === "documents"
+      ? activeDocument
+      : null;
+
+  useEffect(() => {
+    setAgentPrompt("");
+    setAgentAttachments([]);
+    setAgentAttachmentMenuOpen(false);
+  }, [connection.id]);
+
+  useEffect(() => {
+    setAgentAttachments((current) =>
+      current.filter((attachment) => attachment !== "document"),
+    );
+  }, [activeDocumentId]);
 
   const focusDockTarget = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -517,7 +602,12 @@ export default function TerminalDock({
           ? active
           : await createSession(agentProfile);
       if (!session) return;
-      const normalized = prompt.replace(/\r\n?/g, "\n");
+      const normalized = buildAgentPrompt({
+        prompt: prompt.replace(/\r\n?/g, "\n"),
+        attachments: agentAttachments,
+        connection,
+        document: attachableDocument,
+      });
       const input = normalized.includes("\n")
         ? `\u001b[200~${normalized}\u001b[201~\r`
         : `${normalized}\r`;
@@ -525,6 +615,8 @@ export default function TerminalDock({
         ...new TextEncoder().encode(input),
       ]);
       setAgentPrompt("");
+      setAgentAttachments([]);
+      setAgentAttachmentMenuOpen(false);
     } catch (error) {
       dispatch({
         type: "error",
@@ -533,6 +625,24 @@ export default function TerminalDock({
     } finally {
       setSendingAgentPrompt(false);
     }
+  }
+
+  function attachAgentContext(attachment: AgentAttachment) {
+    setAgentAttachments((current) =>
+      current.includes(attachment)
+        ? current
+        : [...current, attachment],
+    );
+    setAgentPrompt((current) =>
+      current.endsWith("@") ? current.slice(0, -1) : current,
+    );
+    setAgentAttachmentMenuOpen(false);
+  }
+
+  function removeAgentContext(attachment: AgentAttachment) {
+    setAgentAttachments((current) =>
+      current.filter((candidate) => candidate !== attachment),
+    );
   }
 
   async function stopSession(session: TerminalSessionSummary) {
@@ -764,21 +874,28 @@ export default function TerminalDock({
             </TerminalEmpty>
           ) : visibleSessions.length === 0 ? (
             <TerminalEmpty>
-              <Icon name={presentation === "agent" ? "user" : "terminal"} />
-              <strong>
-                {t(
-                  presentation === "agent"
-                    ? "terminal.agentEmptyTitle"
-                    : "terminal.emptyTitle",
-                )}
-              </strong>
-              <p>
-                {t(
-                  presentation === "agent"
-                    ? "terminal.agentEmptyBody"
-                    : "terminal.emptyBody",
-                )}
-              </p>
+              {presentation === "agent" ? (
+                <div className="tw:grid tw:gap-4 tw:text-left tw:text-sm">
+                  <div className="tw:flex tw:items-center tw:gap-2">
+                    <Icon name="database" />
+                    <span>{t("terminal.agentHintDatabase")}</span>
+                  </div>
+                  <div className="tw:flex tw:items-center tw:gap-2">
+                    <Icon name="file" />
+                    <span>{t("terminal.agentHintAttachment")}</span>
+                  </div>
+                  <div className="tw:flex tw:items-center tw:gap-2">
+                    <Icon name="check" />
+                    <span>{t("terminal.agentHintSafety")}</span>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Icon name="terminal" />
+                  <strong>{t("terminal.emptyTitle")}</strong>
+                  <p>{t("terminal.emptyBody")}</p>
+                </>
+              )}
               {presentation !== "agent" ? (
                 <TerminalEmptyActions
                   creatingProfile={state.creatingProfile}
@@ -800,30 +917,157 @@ export default function TerminalDock({
           )}
         </div>
         {presentation === "agent" ? (
-          <form
-            className="tw:m-3 tw:mt-0 tw:flex tw:shrink-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-input tw:bg-card tw:focus-within:border-ring"
-            aria-label={t("terminal.agentComposer")}
-            onSubmit={submitAgentPrompt}
-          >
-            <textarea
-              className="tw:min-h-20 tw:w-full tw:resize-none tw:border-0 tw:bg-transparent tw:px-3 tw:py-2 tw:font-sans tw:text-sm tw:leading-body tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground"
-              value={agentPrompt}
-              maxLength={AGENT_PROMPT_MAX_CHARS}
-              placeholder={t("terminal.agentPrompt")}
-              aria-label={t("terminal.agentPrompt")}
-              onChange={(event) => setAgentPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-            <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:border-t tw:border-border-subtle tw:px-2">
+          <div className="tw:m-3 tw:mt-0 tw:flex tw:shrink-0 tw:flex-col tw:gap-1">
+            <form
+              className="tw:relative tw:flex tw:min-h-[168px] tw:flex-col tw:rounded-md tw:border tw:border-input tw:bg-card tw:focus-within:border-ring"
+              aria-label={t("terminal.agentComposer")}
+              onSubmit={submitAgentPrompt}
+            >
+              {agentAttachments.length > 0 ? (
+                <div className="tw:flex tw:flex-wrap tw:gap-1 tw:border-b tw:border-border-subtle tw:px-2 tw:py-1">
+                  {agentAttachments.map((attachment) => (
+                    <span
+                      key={attachment}
+                      className="tw:inline-flex tw:h-control-sm tw:items-center tw:gap-1 tw:rounded-xs tw:bg-muted tw:px-2 tw:text-xs tw:text-foreground"
+                    >
+                      <Icon
+                        name={
+                          attachment === "database" ? "database" : "file"
+                        }
+                      />
+                      {attachment === "database"
+                        ? connection.name || t("app.unnamed")
+                        : attachableDocument?.kind === "sql"
+                          ? attachableDocument.title
+                          : t("terminal.agentDocument")}
+                      <button
+                        type="button"
+                        className="tw:grid tw:size-4 tw:cursor-pointer tw:place-items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:p-0 tw:text-muted-foreground tw:hover:bg-background tw:hover:text-foreground"
+                        onClick={() => removeAgentContext(attachment)}
+                        title={t("terminal.agentRemoveContext")}
+                        aria-label={t("terminal.agentRemoveContext")}
+                      >
+                        <Icon name="close" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <textarea
+                className="tw:min-h-28 tw:w-full tw:flex-1 tw:resize-none tw:border-0 tw:bg-transparent tw:px-3 tw:py-2 tw:font-sans tw:text-sm tw:leading-body tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground"
+                value={agentPrompt}
+                maxLength={AGENT_PROMPT_MAX_CHARS}
+                placeholder={t("terminal.agentPrompt")}
+                aria-label={t("terminal.agentPrompt")}
+                onChange={(event) => {
+                  setAgentPrompt(event.target.value);
+                  if (event.target.value.endsWith("@")) {
+                    setAgentAttachmentMenuOpen(true);
+                  }
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Escape" &&
+                    agentAttachmentMenuOpen
+                  ) {
+                    event.preventDefault();
+                    setAgentAttachmentMenuOpen(false);
+                    return;
+                  }
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+              />
+              <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:px-2">
+                <button
+                  type="button"
+                  className="btn small icon-only"
+                  onClick={() =>
+                    setAgentAttachmentMenuOpen((open) => !open)
+                  }
+                  title={t("terminal.agentAddContext")}
+                  aria-label={t("terminal.agentAddContext")}
+                  aria-haspopup="menu"
+                  aria-expanded={agentAttachmentMenuOpen}
+                >
+                  <Icon name="plus" />
+                </button>
+                <Icon
+                  name="database"
+                  className="tw:text-sm tw:text-muted-foreground"
+                />
+                <span className="tw:text-xs tw:text-muted-foreground">
+                  {t("terminal.agentContextCount", {
+                    count: agentAttachments.length,
+                  })}
+                </span>
+                <span className="tw:flex-1" />
+                <button
+                  type="submit"
+                  className="btn small icon-only"
+                  disabled={
+                    !agentPrompt.trim() ||
+                    sendingAgentPrompt ||
+                    state.creatingProfile !== null
+                  }
+                  title={t("terminal.agentSend")}
+                  aria-label={t("terminal.agentSend")}
+                >
+                  <Icon name="send" />
+                </button>
+              </div>
+              {agentAttachmentMenuOpen ? (
+                <div
+                  className="tw:absolute tw:right-2 tw:bottom-control-lg tw:left-2 tw:z-[var(--ds-z-popover)] tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:shadow-popover"
+                  role="menu"
+                  aria-label={t("terminal.agentAddContext")}
+                >
+                  <button
+                    type="button"
+                    className="tw:flex tw:min-h-control-lg tw:cursor-pointer tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:px-3 tw:font-sans tw:text-left tw:text-sm tw:text-foreground tw:hover:bg-muted"
+                    onClick={() => attachAgentContext("database")}
+                    role="menuitem"
+                  >
+                    <Icon name="database" />
+                    <span className="tw:min-w-0 tw:flex-1">
+                      <strong className="tw:block tw:font-medium">
+                        {t("terminal.agentDatabase")}
+                      </strong>
+                      <small className="tw:block tw:overflow-hidden tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                        {connection.name || t("app.unnamed")} ·{" "}
+                        {connection.database}
+                      </small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="tw:flex tw:min-h-control-lg tw:cursor-pointer tw:items-center tw:gap-2 tw:border-0 tw:border-t tw:border-border-subtle tw:bg-transparent tw:px-3 tw:font-sans tw:text-left tw:text-sm tw:text-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-50 tw:hover:bg-muted"
+                    disabled={!attachableDocument}
+                    onClick={() => attachAgentContext("document")}
+                    role="menuitem"
+                  >
+                    <Icon name="file" />
+                    <span className="tw:min-w-0 tw:flex-1">
+                      <strong className="tw:block tw:font-medium">
+                        {t("terminal.agentDocument")}
+                      </strong>
+                      <small className="tw:block tw:overflow-hidden tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                        {attachableDocument?.kind === "sql"
+                          ? attachableDocument.title
+                          : t("terminal.agentNoDocument")}
+                      </small>
+                    </span>
+                  </button>
+                </div>
+              ) : null}
+            </form>
+            <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:px-1">
               <Icon
                 name="user"
                 className="tw:text-sm tw:text-muted-foreground"
@@ -840,21 +1084,13 @@ export default function TerminalDock({
                 <option value="claude">{t("terminal.claude")}</option>
               </select>
               <span className="tw:flex-1" />
-              <button
-                type="submit"
-                className="btn small icon-only"
-                disabled={
-                  !agentPrompt.trim() ||
-                  sendingAgentPrompt ||
-                  state.creatingProfile !== null
-                }
-                title={t("terminal.agentSend")}
-                aria-label={t("terminal.agentSend")}
-              >
-                <Icon name="send" />
-              </button>
+              <span className="tw:text-xs tw:text-muted-foreground">
+                {t("terminal.pinned", {
+                  name: connection.name || t("app.unnamed"),
+                })}
+              </span>
             </div>
-          </form>
+          </div>
         ) : null}
       </aside>
 

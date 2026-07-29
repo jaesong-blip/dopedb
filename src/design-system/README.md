@@ -165,6 +165,10 @@ Elevation은 세 단계만 허용한다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
+- AI Chat composer는 큰 multiline surface, 내부 context chip/action row,
+  외부 model/data-source context row의 세 층을 사용한다. 첨부 chip과 popup은
+  semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
+  않는다.
 - `ResultMeta`, `SqlSnippet`: 결과 pane의 고정 metadata bar와 축약 SQL 표기.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.

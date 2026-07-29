@@ -313,6 +313,8 @@ export default function ShellLayout(props: Props) {
       {showTerminalDock && selected && (
         <TerminalDock
           connection={selected}
+          documents={workbenchDocuments}
+          activeDocumentId={activeWorkbenchDocumentId}
           skillStatus={skillStatus}
           overlay={terminalOverlay}
           width={terminalWidth}

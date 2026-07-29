@@ -376,7 +376,11 @@ export default function TerminalTabs({
       <div className="ds-control-row tw:flex tw:shrink-0 tw:self-center tw:[&_.btn]:shrink-0">
         <button
           type="button"
-          className="btn small icon-only"
+          className={
+            presentation === "agent"
+              ? "btn small tw:px-2"
+              : "btn small icon-only"
+          }
           data-terminal-focus-target="launcher"
           onClick={(event) =>
             onOpenPopup({
@@ -385,27 +389,21 @@ export default function TerminalTabs({
               rect: event.currentTarget.getBoundingClientRect(),
             })
           }
-          title={t("terminal.newSession")}
-          aria-label={t("terminal.newSession")}
+          title={t(
+            presentation === "agent"
+              ? "terminal.newChat"
+              : "terminal.newSession",
+          )}
+          aria-label={t(
+            presentation === "agent"
+              ? "terminal.newChat"
+              : "terminal.newSession",
+          )}
           aria-haspopup="menu"
           aria-expanded={popup?.kind === "profile"}
         >
           <Icon name="plus" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only"
-          disabled={sessions.length === 0}
-          onClick={(event) => {
-            const target = sessions.find((session) => session.id === activeId);
-            if (target) openTabPopup(target, event.currentTarget);
-          }}
-          title={t("terminal.tabActions")}
-          aria-label={t("terminal.tabActions")}
-          aria-haspopup="menu"
-          aria-expanded={popup?.kind === "tab"}
-        >
-          <Icon name="moreVertical" />
+          {presentation === "agent" ? t("terminal.newChat") : null}
         </button>
         {presentation === "agent" && (
           <button
@@ -421,13 +419,30 @@ export default function TerminalTabs({
         <button
           type="button"
           className="btn small icon-only"
-          onClick={onToggleMaximize}
-          title={maximized ? t("terminal.restore") : t("terminal.maximize")}
-          aria-label={maximized ? t("terminal.restore") : t("terminal.maximize")}
-          aria-pressed={maximized}
+          disabled={sessions.length === 0}
+          onClick={(event) => {
+            const target = sessions.find((session) => session.id === activeId);
+            if (target) openTabPopup(target, event.currentTarget);
+          }}
+          title={t("terminal.tabActions")}
+          aria-label={t("terminal.tabActions")}
+          aria-haspopup="menu"
+          aria-expanded={popup?.kind === "tab"}
         >
-          <Icon name={maximized ? "minimize" : "maximize"} />
+          <Icon name="moreVertical" />
         </button>
+        {presentation !== "agent" && (
+          <button
+            type="button"
+            className="btn small icon-only"
+            onClick={onToggleMaximize}
+            title={maximized ? t("terminal.restore") : t("terminal.maximize")}
+            aria-label={maximized ? t("terminal.restore") : t("terminal.maximize")}
+            aria-pressed={maximized}
+          >
+            <Icon name={maximized ? "minimize" : "maximize"} />
+          </button>
+        )}
         <button
           ref={closeButtonRef}
           type="button"
