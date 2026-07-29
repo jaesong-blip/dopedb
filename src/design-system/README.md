@@ -208,6 +208,11 @@ Elevation은 세 단계만 허용한다.
   결과가 공유하는 grid mode, 전체 셀 검색, 실제 export action과 행·duration
   footer. `ResultWorkbenchFooter`는 `WorkbenchStatusFooter`를 합성하고, 부분
   stream은 평탄화하지 않고 완료된 결과에만 검색을 적용한다.
+- 일반·가상 `DataGrid`는 `data-data-grid-scroll` surface 계약을 공유한다.
+  sticky header, filter, zebra/hover/selection, resize handle, scrollbar는
+  컴포넌트의 정적 Tailwind v4 utility와 semantic token으로만 구성한다.
+  grid 전용 CSS 파일이나 class selector를 다시 만들지 않는다. 주변 pane이
+  compact/busy 상태를 투영할 때도 이 data attribute를 사용한다.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.
 - `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.
@@ -264,7 +269,8 @@ icon action은 투명한 surface로 시작하고 hover/active에서만 중립 �
 
 - `.card` / `.ds-card`: 반복 항목과 작은 정보 그룹
 - `.ds-panel`: 넓은 작업 surface
-- `.grid-panel`, `.grid-scroll`: 데이터 결과 surface
+- `.grid-panel`: job 결과 surface
+- `[data-data-grid-scroll]`: Tailwind로 구성하는 표·쿼리 결과 surface
 
 Surface는 기본적으로 `card + border + rounded-lg + no shadow`다. floating surface만
 `--ds-shadow-popover`를 사용한다.

@@ -372,7 +372,7 @@ function VisualizationFrame({
     <div
       data-dashboard-visualization
       data-compact={compactView}
-      className="tw:min-w-0 tw:data-[compact=true]:min-h-0 tw:data-[compact=true]:flex-1 tw:data-[compact=true]:overflow-hidden tw:data-[compact=true]:[&_.grid-scroll]:max-h-[230px]"
+      className="tw:min-w-0 tw:data-[compact=true]:min-h-0 tw:data-[compact=true]:flex-1 tw:data-[compact=true]:overflow-hidden tw:data-[compact=true]:[&_[data-data-grid-scroll]]:max-h-[230px]"
     >
       {children}
     </div>
@@ -444,7 +444,7 @@ export default function DashboardVisualizationView({
         />
       )}
       {!compact && (
-        <details className="tw:mt-4 tw:[&_.grid-scroll]:max-h-[360px]">
+        <details className="tw:mt-4 tw:[&_[data-data-grid-scroll]]:max-h-[360px]">
           <summary className="tw:mb-2 tw:w-fit tw:cursor-pointer tw:rounded-xs tw:text-sm tw:text-muted-foreground tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring">
             {t("dashboard.rawData")}
           </summary>

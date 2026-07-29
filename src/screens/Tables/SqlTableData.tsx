@@ -395,7 +395,7 @@ export default function SqlTableData({
       {/* Dim (not blank) the stale grid while paging/sorting/filtering re-queries. */}
       <div
         data-busy={busy && Boolean(result)}
-        className="tw:flex tw:min-h-0 tw:flex-1 tw:data-[busy=true]:[&_.grid-scroll]:pointer-events-none tw:data-[busy=true]:[&_.grid-scroll]:opacity-50 tw:@max-[920px]:flex-col"
+        className="tw:flex tw:min-h-0 tw:flex-1 tw:data-[busy=true]:[&_[data-data-grid-scroll]]:pointer-events-none tw:data-[busy=true]:[&_[data-data-grid-scroll]]:opacity-50 tw:@max-[920px]:flex-col"
       >
         {result ? (
           result.rows.length ? (

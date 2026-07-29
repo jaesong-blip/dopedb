@@ -217,7 +217,8 @@ export default function DataGridVirtual(props: Props) {
   return (
     <div
       ref={scrollRef}
-      className="grid-scroll virtual-grid tw:data-[surface=workbench]:min-h-0 tw:data-[surface=workbench]:flex-1 tw:data-[surface=workbench]:rounded-none tw:data-[surface=workbench]:border-0 tw:data-[surface=workbench]:shadow-none"
+      data-data-grid-scroll
+      className="tw:relative tw:max-h-[60vh] tw:min-h-[180px] tw:overflow-auto tw:rounded-lg tw:border tw:border-border-subtle tw:bg-background tw:shadow-panel tw:[contain:strict] tw:[&::-webkit-scrollbar]:size-[11px] tw:[&::-webkit-scrollbar-corner]:bg-transparent tw:[&::-webkit-scrollbar-thumb]:rounded-full tw:[&::-webkit-scrollbar-thumb]:border-[var(--ds-border-width-bold)] tw:[&::-webkit-scrollbar-thumb]:border-transparent tw:[&::-webkit-scrollbar-thumb]:bg-muted-foreground tw:[&::-webkit-scrollbar-thumb]:bg-clip-padding tw:[&::-webkit-scrollbar-thumb:hover]:bg-foreground tw:[&::-webkit-scrollbar-track]:bg-transparent tw:data-[surface=workbench]:min-h-0 tw:data-[surface=workbench]:flex-1 tw:data-[surface=workbench]:rounded-none tw:data-[surface=workbench]:border-0 tw:data-[surface=workbench]:shadow-none"
       data-surface={props.surface ?? "panel"}
       role="grid"
       aria-rowcount={rowCount + 1}
@@ -234,15 +235,20 @@ export default function DataGridVirtual(props: Props) {
       }
     >
       <div
-        className="virtual-grid-canvas"
+        className="tw:relative tw:min-w-full tw:[&_[data-grid-box]]:absolute tw:[&_[data-grid-box]]:box-border tw:[&_[data-grid-box]]:h-control-md tw:[&_[data-grid-box]]:overflow-hidden tw:[&_[data-grid-box]]:border-r tw:[&_[data-grid-box]]:border-b tw:[&_[data-grid-box]]:border-border-subtle tw:[&_[data-grid-box]]:bg-background tw:[&_[data-grid-box]]:px-2 tw:[&_[data-grid-box]]:py-1 tw:[&_[data-grid-box]]:leading-ui tw:[&_[data-grid-box]]:text-ellipsis tw:[&_[data-grid-box]]:whitespace-nowrap"
         style={{
           width: totalWidth,
           height: HEADER_HEIGHT + rowCount * ROW_HEIGHT,
         }}
       >
-        <div className="virtual-grid-header" role="row" aria-rowindex={1}>
+        <div
+          className="tw:sticky tw:top-0 tw:left-0 tw:right-0 tw:z-[var(--ds-z-raised)] tw:h-control-md tw:overflow-visible tw:bg-card"
+          role="row"
+          aria-rowindex={1}
+        >
           <div
-            className="virtual-grid-rownum virtual-grid-header-cell"
+            data-grid-box
+            className="tw:top-0 tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:w-14 tw:!bg-card tw:text-right tw:text-muted-foreground"
             role="columnheader"
             aria-colindex={1}
           >
@@ -271,14 +277,15 @@ export default function DataGridVirtual(props: Props) {
             return (
               <div
                 key={name}
-                className="virtual-grid-header-cell"
+                data-grid-box
+                className={`tw:top-0 tw:!bg-card tw:font-semibold${props.onSort ? " tw:cursor-pointer tw:hover:text-primary" : ""}`}
                 role="columnheader"
                 aria-colindex={index + 2}
                 style={{ left: offsets[index], width: columnWidths[index] }}
                 {...sortableHeaderProps}
               >
                 <span
-                  className="grid-column-title"
+                  className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1 tw:align-middle tw:[&_.icon]:shrink-0 tw:[&_.icon]:text-xs tw:[&_.icon]:text-muted-foreground tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis"
                   title={props.columnMeta?.[name]?.dataType}
                 >
                   {props.columnMeta?.[name] ? (
@@ -289,14 +296,14 @@ export default function DataGridVirtual(props: Props) {
                   <span>{name}</span>
                 </span>
                 {props.sort?.col === name && (
-                  <span className="sort-arrow">
+                  <span className="tw:text-2xs tw:text-primary">
                     <Icon
                       name={props.sort.dir === "asc" ? "caretUp" : "caretDown"}
                     />
                   </span>
                 )}
                 <span
-                  className="col-resizer"
+                  className="tw:absolute tw:top-0 tw:right-0 tw:z-[var(--ds-z-sticky)] tw:h-full tw:w-2 tw:cursor-col-resize tw:hover:bg-primary/55 tw:active:bg-primary/55"
                   title={t("grid.resizeHint")}
                   onMouseDown={(event) => resize(event, index)}
                   onClick={(event) => event.stopPropagation()}
@@ -320,7 +327,9 @@ export default function DataGridVirtual(props: Props) {
         ).map((rowIndex) => (
           <div
             key={rowIndex}
-            className={`virtual-grid-row${props.selectedRow === rowIndex ? " selected" : ""}`}
+            data-selected={props.selectedRow === rowIndex}
+            data-zebra={rowIndex % 2 === 1}
+            className="tw:group tw:absolute tw:top-0 tw:left-0 tw:right-0 tw:h-control-md"
             role="row"
             aria-rowindex={rowIndex + 2}
             style={{
@@ -328,7 +337,8 @@ export default function DataGridVirtual(props: Props) {
             }}
           >
             <div
-              className="virtual-grid-rownum"
+              data-grid-box
+              className={`tw:left-0 tw:z-[var(--ds-z-base)] tw:w-14 tw:!bg-card tw:text-right tw:text-muted-foreground tw:group-data-[selected=true]:!bg-selection${props.onSelectRow ? " tw:cursor-pointer" : ""}`}
               role="rowheader"
               aria-colindex={1}
               onClick={() => props.onSelectRow?.(rowIndex)}
@@ -344,7 +354,8 @@ export default function DataGridVirtual(props: Props) {
                 <div
                   key={columnIndex}
                   data-grid-cell={`${rowIndex}:${columnIndex}`}
-                  className={`virtual-grid-cell${value === null ? " nullcell" : ""}${interactive ? " clickable" : ""}${selected ? " cell-sel" : ""}`}
+                  data-grid-box
+                  className={`tw:group-data-[zebra=true]:!bg-card tw:group-data-[selected=true]:!bg-selection${value === null ? " tw:text-muted-foreground tw:italic" : ""}${interactive ? " tw:cursor-pointer" : ""}${selected ? " tw:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]" : ""}`}
                   role="gridcell"
                   aria-colindex={columnIndex + 2}
                   aria-selected={selected}

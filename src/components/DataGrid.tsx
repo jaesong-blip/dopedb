@@ -21,7 +21,6 @@ import type { SqlStreamRowSource } from "../features/queries/domain";
 import { Icon } from "./Icon";
 import DataGridVirtual from "./DataGridVirtual";
 import { useI18n } from "../lib/i18n";
-import "./grid.css";
 
 function cell(v: unknown): string {
   if (v === null || v === undefined) return "NULL";
@@ -244,14 +243,15 @@ function DataGridTable({
 
   return (
     <div
-      className="grid-scroll tw:data-[surface=workbench]:min-h-0 tw:data-[surface=workbench]:flex-1 tw:data-[surface=workbench]:rounded-none tw:data-[surface=workbench]:border-0 tw:data-[surface=workbench]:shadow-none"
+      data-data-grid-scroll
+      className="tw:max-h-[60vh] tw:overflow-auto tw:rounded-lg tw:border tw:border-border-subtle tw:bg-background tw:shadow-panel tw:[&::-webkit-scrollbar]:size-[11px] tw:[&::-webkit-scrollbar-corner]:bg-transparent tw:[&::-webkit-scrollbar-thumb]:rounded-full tw:[&::-webkit-scrollbar-thumb]:border-[var(--ds-border-width-bold)] tw:[&::-webkit-scrollbar-thumb]:border-transparent tw:[&::-webkit-scrollbar-thumb]:bg-muted-foreground tw:[&::-webkit-scrollbar-thumb]:bg-clip-padding tw:[&::-webkit-scrollbar-thumb:hover]:bg-foreground tw:[&::-webkit-scrollbar-track]:bg-transparent tw:data-[surface=workbench]:min-h-0 tw:data-[surface=workbench]:flex-1 tw:data-[surface=workbench]:rounded-none tw:data-[surface=workbench]:border-0 tw:data-[surface=workbench]:shadow-none"
       data-surface={surface ?? "panel"}
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
       <table
         ref={tableRef}
-        className={fixed ? "grid fixed" : "grid"}
+        className={`tw:w-full tw:border-separate tw:border-spacing-0 tw:bg-background tw:text-ui tw:[&_td]:box-border tw:[&_td]:border-r tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:leading-ui tw:[&_td]:text-left tw:[&_td]:whitespace-nowrap tw:[&_th]:box-border tw:[&_th]:border-r tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-1 tw:[&_th]:leading-ui tw:[&_th]:text-left tw:[&_th]:whitespace-nowrap tw:[&_thead_th]:sticky tw:[&_thead_th]:top-0 tw:[&_thead_th]:z-[var(--ds-z-raised)] tw:[&_thead_th]:h-control-md tw:[&_thead_th]:bg-card${fixed ? " tw:table-fixed tw:[&_td]:max-w-none tw:[&_td]:overflow-hidden tw:[&_td]:text-ellipsis tw:[&_th]:max-w-none tw:[&_th]:overflow-hidden tw:[&_th]:text-ellipsis" : ""}`}
         style={fixed ? { tableLayout: "fixed", width: totalW } : undefined}
       >
         {fixed && (
@@ -264,11 +264,17 @@ function DataGridTable({
         )}
         <thead>
           <tr>
-            <th className="rownum">#</th>
+            <th className="tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:text-right tw:text-muted-foreground">
+              #
+            </th>
             {result.columns.map((c, j) => (
               <th
                 key={c}
-                className={onSort ? "sortable" : undefined}
+                className={
+                  onSort
+                    ? "tw:cursor-pointer tw:select-none tw:hover:text-primary"
+                    : undefined
+                }
                 role={onSort ? "button" : undefined}
                 tabIndex={onSort ? 0 : undefined}
                 aria-sort={
@@ -293,7 +299,7 @@ function DataGridTable({
                 }
               >
                 <span
-                  className="grid-column-title"
+                  className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1 tw:align-middle tw:[&_.icon]:shrink-0 tw:[&_.icon]:text-xs tw:[&_.icon]:text-muted-foreground tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis"
                   title={columnMeta?.[c]?.dataType}
                 >
                   {columnMeta?.[c] ? (
@@ -302,13 +308,13 @@ function DataGridTable({
                   <span>{c}</span>
                 </span>
                 {sort?.col === c && (
-                  <span className="sort-arrow">
+                  <span className="tw:text-2xs tw:text-primary">
                     {" "}
                     <Icon name={sort.dir === "asc" ? "caretUp" : "caretDown"} />
                   </span>
                 )}
                 <span
-                  className="col-resizer"
+                  className="tw:absolute tw:top-0 tw:right-0 tw:z-[var(--ds-z-sticky)] tw:h-full tw:w-2 tw:cursor-col-resize tw:hover:bg-primary/55 tw:active:bg-primary/55"
                   title={t("grid.resizeHint")}
                   onMouseDown={(e) => startResize(e, j + 1)}
                   onClick={(e) => e.stopPropagation()}
@@ -321,12 +327,15 @@ function DataGridTable({
             ))}
           </tr>
           {onFilter && (
-            <tr className="filter-row">
-              <th className="rownum" />
+            <tr>
+              <th className="tw:!top-control-md tw:!h-auto tw:!p-1 tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:text-right tw:text-muted-foreground" />
               {result.columns.map((c) => (
-                <th key={c}>
+                <th
+                  key={c}
+                  className="tw:!top-control-md tw:!h-auto tw:!p-1"
+                >
                   <input
-                    className="filter-input"
+                    className="tw:w-full tw:min-w-[72px] tw:text-sm tw:font-normal"
                     value={filters?.[c] ?? ""}
                     placeholder={t("grid.filterPlaceholder")}
                     aria-label={t("grid.filterLabel", { col: c })}
@@ -339,9 +348,13 @@ function DataGridTable({
         </thead>
         <tbody>
           {result.rows.map((row, i) => (
-            <tr key={i} className={selectedRow === i ? "selected" : undefined}>
+            <tr
+              key={i}
+              data-selected={selectedRow === i}
+              className="tw:group tw:[contain-intrinsic-size:0_var(--ds-control-md)] tw:[content-visibility:auto] tw:even:[&>td]:bg-card tw:hover:[&>td]:bg-muted tw:data-[selected=true]:[&>td]:bg-selection"
+            >
               <td
-                className="rownum"
+                className={`tw:sticky tw:left-0 tw:z-[var(--ds-z-base)] tw:bg-card tw:text-right tw:text-muted-foreground${onSelectRow ? " tw:cursor-pointer" : ""}`}
                 role={onSelectRow ? "button" : undefined}
                 tabIndex={onSelectRow ? 0 : undefined}
                 onClick={onSelectRow ? () => onSelectRow(i) : undefined}
@@ -364,12 +377,7 @@ function DataGridTable({
                 return (
                   <td
                     key={j}
-                    className={
-                      (v === null ? "nullcell" : "") +
-                      (numericCols[j] ? " numcell" : "") +
-                      (interactive ? " clickable" : "") +
-                      (isSel ? " cell-sel" : "")
-                    }
+                    className={`tw:max-w-[480px] tw:overflow-hidden tw:bg-background tw:text-ellipsis${v === null ? " tw:text-muted-foreground tw:italic" : ""}${numericCols[j] ? " tw:text-right tw:tabular-nums" : ""}${interactive ? " tw:cursor-pointer" : ""}${isSel ? " tw:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]" : ""}`}
                     // fixed layout clips by width not length, so any value can be truncated → always title it
                     title={
                       fixed || text.length > 40 || text.includes("\n")

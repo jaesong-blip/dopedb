@@ -554,8 +554,7 @@ h3 {
 }
 
 .app :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
-.table-filter,
-.filter-input {
+.table-filter {
   box-sizing: border-box;
   border: var(--ds-border-width) solid var(--ds-input);
   border-radius: var(--ds-radius-sm);
@@ -565,16 +564,14 @@ h3 {
 }
 
 .app :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
-.table-filter,
-.filter-input {
+.table-filter {
   height: var(--ds-control-field);
   min-height: var(--ds-control-field);
   padding: 0 var(--ds-control-pad-x-sm);
   line-height: var(--ds-line-ui);
 }
 
-.table-filter,
-.filter-input {
+.table-filter {
   width: 100%;
 }
 
@@ -596,8 +593,7 @@ h3 {
   select:focus,
   textarea:focus
 ),
-.table-filter:focus,
-.filter-input:focus {
+.table-filter:focus {
   border-color: var(--ds-focus);
   box-shadow: var(--ds-focus-ring);
   outline: none;
@@ -622,13 +618,6 @@ h3 {
 .ds-object-row.active {
   background: var(--ds-selection);
   color: var(--ds-selection-foreground);
-}
-
-.grid-scroll {
-  border: var(--ds-border-width) solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-lg);
-  background: var(--ds-surface-0);
-  box-shadow: var(--ds-shadow-panel);
 }
 
 /* Orca's thin neutral scrollbar recipe for dense application surfaces. */
