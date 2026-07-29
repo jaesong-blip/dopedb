@@ -4,6 +4,7 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import { Icon } from "../../components/Icon";
 import AcpChatPanel from "../agents/AcpChatPanel";
 import { AgentSelectionProvider } from "../agents/selectionContext";
+import type { BackgroundTask } from "../backgroundTasks/domain";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import { defaultSqlNamespace } from "../queries/namespace";
@@ -50,6 +51,8 @@ type Props = {
   servicesHeight: number;
   queryServiceSessions: QueryServiceSession[];
   activeQueryServiceSessionId: string | null;
+  backgroundTasks: BackgroundTask[];
+  cancellingBackgroundTaskKeys: ReadonlySet<string>;
   workbenchDocuments: WorkbenchDocument[];
   activeWorkbenchDocumentId: string | null;
   sqlEditorStatus: SqlEditorStatus | null;
@@ -74,6 +77,8 @@ type Props = {
   onToggleServices: () => void;
   onCloseServices: () => void;
   onActivateQueryServiceSession: (id: string) => void;
+  onCancelBackgroundTask: (task: BackgroundTask) => Promise<void>;
+  onOpenAgentTask: (connectionId: string) => void;
   onActivateWorkbenchDocument: (id: string) => void;
   onRestoreWorkbenchDocument: (id: string, content: string) => void;
   onStartServicesResize: (event: {
@@ -161,24 +166,6 @@ function ShellLayoutContent(props: Props) {
         typeof window === "undefined" ? 1_280 : window.innerWidth,
       )
     : 0;
-  const statusQuerySession =
-    queryServiceSessions.find(
-      (session) =>
-        session.id === activeQueryServiceSessionId &&
-        (session.status === "running" ||
-          session.status === "waiting"),
-    ) ??
-    queryServiceSessions.find(
-      (session) =>
-        session.status === "running" ||
-        session.status === "waiting",
-    ) ??
-    null;
-  const backgroundProcessCount = queryServiceSessions.filter(
-    (session) =>
-      session.status === "running" ||
-      session.status === "waiting",
-  ).length;
   const activeWorkbenchDocument =
     workbenchDocuments.find(
       (document) => document.id === activeWorkbenchDocumentId,
@@ -396,17 +383,19 @@ function ShellLayoutContent(props: Props) {
         selectedDatabase={selectedDatabase}
         selectedNamespace={selectedNamespace}
         activeDocument={activeWorkbenchDocument}
-        querySession={statusQuerySession}
-        backgroundProcessCount={backgroundProcessCount}
+        backgroundTasks={props.backgroundTasks}
+        cancellingBackgroundTaskKeys={
+          props.cancellingBackgroundTaskKeys
+        }
         editorStatus={activeSqlEditorStatus}
         writeEnabled={writeEnabled}
         unseenOperationCount={props.unseenOperationCount}
-        onQueryStatus={() => {
-          if (statusQuerySession) {
-            props.onActivateQueryServiceSession(statusQuerySession.id);
-          }
+        onOpenQueryTask={(sessionId) => {
+          props.onActivateQueryServiceSession(sessionId);
           if (!servicesVisible) props.onToggleServices();
         }}
+        onOpenAgentTask={props.onOpenAgentTask}
+        onCancelBackgroundTask={props.onCancelBackgroundTask}
         onOpenNotifications={props.onOpenNotifications}
         onSafetySettings={props.onSafetySettings}
       />

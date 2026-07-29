@@ -14,6 +14,8 @@ import {
 } from "@tanstack/react-query";
 import type { CatalogOverview, CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
+import type { BackgroundTask } from "../../features/backgroundTasks/domain";
+import { useBackgroundTasks } from "../../features/backgroundTasks/useBackgroundTasks";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import SearchEverywhere from "../../features/actionSearch/SearchEverywhere";
 import type { SearchEverywhereItem } from "../../features/actionSearch/domain";
@@ -145,6 +147,11 @@ function Shell() {
     catalogScope,
     reportQueryServicesPersistenceError,
   );
+  const backgroundTasks = useBackgroundTasks({
+    connections: conns,
+    querySessions: queryServices.sessions,
+    workspaceScopeKey: catalogScope.key,
+  });
   const [selectedId, setSelectedId] = usePersistentSelectedConnection();
   const {
     safety,
@@ -361,6 +368,34 @@ function Shell() {
     setSchemaDiffGroupKey(null);
     setMobileExplorerOpen(false);
     openTerminalDock();
+  }
+
+  function openAgentTask(connectionId: string) {
+    if (!conns.some((connection) => connection.id === connectionId)) return;
+    if (selected?.id !== connectionId) {
+      selectConnection(connectionId, "workspace");
+    }
+    if (compactShell) closeServices();
+    setSettingsOpen(false);
+    setEditing(null);
+    setSchemaDiffGroupKey(null);
+    setMobileExplorerOpen(false);
+    if (!showTerminalDock) openTerminalDock();
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-agent-focus-target="active-session"], [data-agent-focus-target="launcher"]',
+        )
+        ?.focus();
+    });
+  }
+
+  async function cancelBackgroundTask(task: BackgroundTask) {
+    try {
+      await backgroundTasks.cancelTask(task);
+    } catch (error) {
+      toast(errMessage(error), "error");
+    }
   }
 
   function selectConnection(id: string, nextArea: AppArea = area) {
@@ -858,6 +893,8 @@ function Shell() {
       servicesHeight={servicesHeight}
       queryServiceSessions={queryServices.sessions}
       activeQueryServiceSessionId={queryServices.activeSessionId}
+      backgroundTasks={backgroundTasks.tasks}
+      cancellingBackgroundTaskKeys={backgroundTasks.cancellingKeys}
       workbenchDocuments={selectedDocuments}
       activeWorkbenchDocumentId={activeDocumentId}
       sqlEditorStatus={sqlEditorStatus}
@@ -930,6 +967,8 @@ function Shell() {
       }}
       onCloseServices={closeServices}
       onActivateQueryServiceSession={queryServices.activateSession}
+      onCancelBackgroundTask={cancelBackgroundTask}
+      onOpenAgentTask={openAgentTask}
       onActivateWorkbenchDocument={workbench.activateId}
       onRestoreWorkbenchDocument={workbench.updateDraft}
       onStartServicesResize={startServicesResize}

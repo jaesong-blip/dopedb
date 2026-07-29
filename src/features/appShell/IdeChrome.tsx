@@ -3,8 +3,9 @@
 // WebView must not draw a second application menu inside the window.
 import type { ReactNode, RefObject } from "react";
 import type { CatalogTable } from "../../ipc/types";
+import BackgroundTasksMenu from "../backgroundTasks/BackgroundTasksMenu";
+import type { BackgroundTask } from "../backgroundTasks/domain";
 import type { ConnectionProfile } from "../connections/domain";
-import type { QueryServiceSession } from "../queryServices/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import {
   SQL_EDITOR_INDENT_SIZE,
@@ -174,12 +175,14 @@ export function IdeStatusBar({
   selectedDatabase,
   selectedNamespace,
   activeDocument,
-  querySession,
-  backgroundProcessCount,
+  backgroundTasks,
+  cancellingBackgroundTaskKeys,
   editorStatus,
   writeEnabled,
   unseenOperationCount,
-  onQueryStatus,
+  onOpenQueryTask,
+  onOpenAgentTask,
+  onCancelBackgroundTask,
   onOpenNotifications,
   onSafetySettings,
 }: {
@@ -188,26 +191,18 @@ export function IdeStatusBar({
   selectedDatabase: string | null;
   selectedNamespace: string | null;
   activeDocument: WorkbenchDocument | null;
-  querySession: QueryServiceSession | null;
-  backgroundProcessCount: number;
+  backgroundTasks: BackgroundTask[];
+  cancellingBackgroundTaskKeys: ReadonlySet<string>;
   editorStatus: SqlEditorStatus | null;
   writeEnabled: boolean;
   unseenOperationCount: number;
-  onQueryStatus: () => void;
+  onOpenQueryTask: (sessionId: string) => void;
+  onOpenAgentTask: (connectionId: string) => void;
+  onCancelBackgroundTask: (task: BackgroundTask) => Promise<void>;
   onOpenNotifications: () => void;
   onSafetySettings: () => void;
 }) {
   const { t } = useI18n();
-  const queryLabel = querySession
-    ? t(`services.status.${querySession.status}`)
-    : null;
-  const backgroundLabel = querySession && queryLabel
-    ? `${t("ide.backgroundProcesses", {
-        count: backgroundProcessCount,
-      })} · ${querySession.consoleTitle} · ${queryLabel}`
-    : t("ide.backgroundProcesses", {
-        count: backgroundProcessCount,
-      });
   const breadcrumbs: Array<{ id: string; label: string }> = [
     { id: "database", label: t("ide.databaseRoot") },
   ];
@@ -269,17 +264,14 @@ export function IdeStatusBar({
         />
       }
     >
-      {backgroundProcessCount > 0 ? (
-        <StatusBarIconButton
-          icon="refresh"
-          label={backgroundLabel}
-          onClick={onQueryStatus}
-          spinning
-        >
-          <span className="tw:tabular-nums">
-            {backgroundProcessCount}
-          </span>
-        </StatusBarIconButton>
+      {backgroundTasks.length > 0 ? (
+        <BackgroundTasksMenu
+          tasks={backgroundTasks}
+          cancellingKeys={cancellingBackgroundTaskKeys}
+          onCancel={onCancelBackgroundTask}
+          onOpenAgent={onOpenAgentTask}
+          onOpenQuery={onOpenQueryTask}
+        />
       ) : null}
       {editorStatus ? (
         <>

@@ -280,6 +280,10 @@ Elevation은 세 단계만 허용한다.
   객체 폴더 이름을 uppercase category heading처럼 바꾸지 않는다.
 - `PopupMenu`, `PopupMenuItem`, `PopupMenuCheckbox`: 평평한 popover menu
   surface와 keyboard-focus 가능한 command/check row.
+- `ToolbarMenu triggerVariant="statusBar"`와 `menuSize="tasks"`: status bar
+  높이를 유지하는 background-task trigger와 380px 이내의 관찰·중단 popup.
+  실제 전역 작업 모델에 있는 task만 표시하고 지원되지 않는 중단 control은
+  만들지 않는다.
 - `CommandMenu`, `CommandMenuGroup`, `CommandMenuItem`: 검색 입력, 분류,
   설명이 필요한 생성·선택 command popup.
 - `ModalBackdrop`, `ModalSurface`, `ModalTitleBar`, `ModalDetailActionBar`,
