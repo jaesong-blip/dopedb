@@ -258,6 +258,7 @@ export default function Sql({
     useState<PendingSqlApproval | null>(null);
   const [pendingScriptApproval, setPendingScriptApproval] =
     useState<PendingScriptApproval | null>(null);
+  const [approvalRejected, setApprovalRejected] = useState(false);
   const [scriptConfirmation, setScriptConfirmation] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [parameterValues, setParameterValues] = useState<
@@ -414,6 +415,7 @@ export default function Sql({
     const at = new Date().toLocaleTimeString();
     const sessionId = nextQueryServiceSessionId(documentId);
     serviceSessionRef.current = {
+      schemaVersion: 1,
       id: sessionId,
       documentId,
       connectionId: connection.id,
@@ -433,6 +435,7 @@ export default function Sql({
     });
     onShowQueryServices(sessionId);
     setRunErr(null);
+    setApprovalRejected(false);
     setPendingApproval(null);
     setPendingScriptApproval(null);
     setRun(null);
@@ -608,6 +611,7 @@ export default function Sql({
         pending.proposal.operationId,
         pending.proposal.payloadHash,
       );
+      setApprovalRejected(true);
       setPendingScriptApproval(null);
       setScriptConfirmation("");
     } catch (e) {
@@ -716,7 +720,7 @@ export default function Sql({
         label: t("sql.runningFor", { seconds: elapsed }),
       };
     }
-    if (cancelled || stream.phase === "cancelled") {
+    if (approvalRejected || cancelled || stream.phase === "cancelled") {
       return {
         source: attempt.source,
         state: "cancelled",
@@ -741,6 +745,7 @@ export default function Sql({
     }
     return null;
   }, [
+    approvalRejected,
     cancelled,
     draft,
     elapsed,
@@ -792,7 +797,7 @@ export default function Sql({
       ? "failed"
       : pendingApproval || pendingScriptApproval
         ? "waiting"
-        : cancelled || stream.phase === "cancelled"
+        : approvalRejected || cancelled || stream.phase === "cancelled"
           ? "cancelled"
           : running ||
               stream.phase === "connecting" ||
@@ -810,6 +815,7 @@ export default function Sql({
     });
   }, [
     aiPrompt,
+    approvalRejected,
     cancelled,
     lastAttempt?.sql,
     onQueryServiceSessionChange,
@@ -1115,7 +1121,10 @@ export default function Sql({
               });
               setPendingApproval(null);
             }}
-            onReject={() => setPendingApproval(null)}
+            onReject={() => {
+              setApprovalRejected(true);
+              setPendingApproval(null);
+            }}
           />
         )}
 

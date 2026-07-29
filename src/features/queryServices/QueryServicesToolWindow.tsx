@@ -20,7 +20,7 @@ import type {
 } from "./domain";
 import QueryServiceResult from "./QueryServiceResult";
 
-type ServicesTab = "output" | "result";
+type ServicesTab = "output" | `result:${number}`;
 type ServiceDocument = Extract<
   WorkbenchDocument,
   { kind: "data" | "sql" | "documents" }
@@ -55,7 +55,7 @@ export default function QueryServicesToolWindow({
   compact?: boolean;
 }) {
   const { t } = useI18n();
-  const [tab, setTab] = useState<ServicesTab>("result");
+  const [tab, setTab] = useState<ServicesTab>("result:0");
   const [databaseOpen, setDatabaseOpen] = useState(true);
   const [collapsedConnections, setCollapsedConnections] = useState<Set<string>>(
     () => new Set(),
@@ -89,9 +89,17 @@ export default function QueryServicesToolWindow({
   const activeConnection =
     connections.find((connection) => connection.id === active?.connectionId) ??
     null;
-  const resultTabLabel = active
-    ? sessionResultLabel(active, activeConnection) ?? t("services.resultTab")
-    : t("services.resultTab");
+  const resultTabs = active
+    ? sessionResultTabs(active, activeConnection, t)
+    : [];
+  const activeResultIndex =
+    tab === "output" ? 0 : Number(tab.slice("result:".length));
+  const activeResultTab =
+    resultTabs[activeResultIndex] ?? resultTabs[0] ?? null;
+
+  useEffect(() => {
+    setTab("result:0");
+  }, [active?.id]);
 
   function toggleConnection(id: string) {
     setCollapsedConnections((current) => {
@@ -226,25 +234,33 @@ export default function QueryServicesToolWindow({
             density="compact"
             status={
               active ? (
-                <span className="tw:inline-flex tw:h-control-sm tw:max-w-[min(30vw,320px)] tw:items-center tw:gap-1 tw:overflow-hidden tw:px-2 tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                <span className="tw:inline-flex tw:h-control-sm tw:max-w-[min(30vw,320px)] tw:shrink-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:px-2 tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap tw:max-[760px]:hidden">
                   <StatusDot tone={statusTone(active.status)} />
                   {statusLabel(active.status, t)}
                 </span>
               ) : null
             }
           >
-            {(["output", "result"] as const).map((id) => (
+            <IdeToolTab
+              active={tab === "output"}
+              size="compact"
+              onClick={() => setTab("output")}
+            >
+              <Icon name="terminal" />
+              <span className="tw:overflow-hidden tw:text-ellipsis">
+                {t("services.outputTab")}
+              </span>
+            </IdeToolTab>
+            {resultTabs.map((resultTab, index) => (
               <IdeToolTab
-                key={id}
-                active={tab === id}
-                size={id === "result" ? "document" : "compact"}
-                onClick={() => setTab(id)}
+                key={resultTab.id}
+                active={tab === `result:${index}`}
+                size="document"
+                onClick={() => setTab(`result:${index}`)}
               >
-                <Icon name={id === "output" ? "terminal" : "table"} />
+                <Icon name="table" />
                 <span className="tw:overflow-hidden tw:text-ellipsis">
-                  {id === "output"
-                    ? t("services.outputTab")
-                    : resultTabLabel}
+                  {resultTab.label}
                 </span>
               </IdeToolTab>
             ))}
@@ -259,7 +275,11 @@ export default function QueryServicesToolWindow({
             ) : tab === "output" ? (
               <ServiceOutput session={active} />
             ) : (
-              <QueryServiceResult key={active.id} result={active.result} />
+              <QueryServiceResult
+                key={`${active.id}:${activeResultTab?.id ?? "result"}`}
+                result={active.result}
+                scriptStatementIndex={activeResultTab?.statementIndex}
+              />
             )}
           </div>
         </div>
@@ -444,12 +464,58 @@ function sessionResultLabel(
       session.result.outcome.result !== null) ||
     session.result.kind === "stream";
   if (!tabular) return null;
+  return (
+    sqlResultLabel(session, session.sql, connection) ??
+    session.consoleTitle
+  );
+}
 
+function sessionResultTabs(
+  session: QueryServiceSession,
+  connection: ConnectionProfile | null,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (session.result.kind === "script") {
+    const resultLabels = session.result.outcome.statements.map(
+      (statement) =>
+        sqlResultLabel(session, statement.sql, connection),
+    );
+    const duplicateLabels = new Set(
+      resultLabels.filter(
+        (label, index) =>
+          label !== null && resultLabels.indexOf(label) !== index,
+      ),
+    );
+    const statements = resultLabels.map((label, index) => ({
+      id: `statement:${index}`,
+      label:
+        label && !duplicateLabels.has(label)
+          ? label
+          : t("services.resultNumber", { number: index + 1 }),
+      statementIndex: index,
+    }));
+    if (statements.length > 0) return statements;
+  }
+  return [
+    {
+      id: "result",
+      label:
+        sessionResultLabel(session, connection) ?? t("services.resultTab"),
+      statementIndex: undefined,
+    },
+  ];
+}
+
+function sqlResultLabel(
+  session: QueryServiceSession,
+  sql: string,
+  connection: ConnectionProfile | null,
+) {
   const source =
     /\bfrom\s+([A-Za-z_][\w$]*)(?:\s*\.\s*([A-Za-z_][\w$]*))?/i.exec(
-      session.sql,
+      sql,
     );
-  if (!source) return session.consoleTitle;
+  if (!source) return null;
   if (source[2]) return `${source[1]}.${source[2]}`;
   const target = [session.database, session.namespace]
     .filter((part, index, parts) => part && parts.indexOf(part) === index)

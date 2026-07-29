@@ -216,7 +216,9 @@ Elevation은 세 단계만 허용한다.
   뒤의 status slot에 표시하고, 실행 결과는 editor inline marker가 소유한다.
 - `IdeToolTabStrip`, `IdeToolTab`: Services 같은 tool window의 tab row와
   둥근 selected capsule. 일반 document 전환은 40px `document`, Services처럼
-  36px command row와 나란히 놓이는 tab은 `compact` density를 사용한다.
+  36px command row와 나란히 놓이는 tab은 `compact` density를 사용한다. 다중
+  결과 tab이 가용 폭을 넘으면 strip 안에서 수평 이동하고 바깥 pane을
+  밀어내지 않는다.
 - `Button`: 전역 `.btn`을 대체하는 Tailwind button primitive. variant, density,
   icon geometry, tone, active/expanded state를 semantic prop으로 소유한다.
   popup 내부 full-width action은 화면별 class를 만들지 않고

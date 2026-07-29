@@ -144,6 +144,19 @@ CREATE TABLE IF NOT EXISTS query_history (
 );
 CREATE INDEX IF NOT EXISTS idx_history_conn ON query_history(connection_id, executed_at);
 
+CREATE TABLE IF NOT EXISTS query_service_sessions (
+    workspace_id  TEXT NOT NULL,
+    account_scope TEXT NOT NULL,
+    id            TEXT NOT NULL,
+    connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    updated_at    INTEGER NOT NULL,
+    status        TEXT NOT NULL CHECK(status IN ('completed', 'failed', 'cancelled')),
+    snapshot_json TEXT NOT NULL,
+    PRIMARY KEY (workspace_id, account_scope, id)
+);
+CREATE INDEX IF NOT EXISTS idx_query_service_sessions_scope_updated
+    ON query_service_sessions(workspace_id, account_scope, updated_at DESC);
+
 -- Append-only, hash-chained compliance log. Rows are never updated or deleted;
 -- `verify_chain` recomputes hashes to make post-hoc edits evident (tamper-EVIDENT,
 -- not tamper-proof — anyone with write access to this file could rebuild the chain).

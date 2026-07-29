@@ -253,6 +253,28 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
         )
         .await
         .unwrap();
+    let services_snapshot =
+        crate::features::queries::validate_query_service_session_snapshot(serde_json::json!({
+            "schemaVersion": 1,
+            "id": "document-alpha:1",
+            "documentId": "document-alpha",
+            "connectionId": connection_id,
+            "connectionName": "Shared",
+            "consoleTitle": "Alpha query",
+            "database": ":memory:",
+            "namespace": "main",
+            "sql": "SELECT 'alpha'",
+            "startedAt": "2026-01-01T00:00:00Z",
+            "startedLabel": "00:00:00",
+            "updatedAt": 1,
+            "status": "completed",
+            "result": {"kind": "materialized"}
+        }))
+        .unwrap();
+    store
+        .save_query_service_session(workspace_id, user_a.id.as_str(), services_snapshot.clone())
+        .await
+        .unwrap();
     seed_legacy_chat_thread(&store, connection_id, "alpha archive").await;
 
     store
@@ -294,6 +316,23 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
         .is_none());
     assert!(store.list_history(connection_id).await.unwrap().is_empty());
     assert!(store
+        .list_query_service_sessions(workspace_id, user_b.id.as_str())
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(matches!(
+        store
+            .list_query_service_sessions(workspace_id, user_a.id.as_str())
+            .await,
+        Err(AppError::Blocked { .. })
+    ));
+    assert!(matches!(
+        store
+            .save_query_service_session(workspace_id, user_a.id.as_str(), services_snapshot,)
+            .await,
+        Err(AppError::Blocked { .. })
+    ));
+    assert!(store
         .list_retired_chat_archive_threads()
         .await
         .unwrap()
@@ -316,6 +355,14 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
         Some(r#"{"owner":"alpha"}"#)
     );
     assert_eq!(store.list_history(connection_id).await.unwrap().len(), 1);
+    assert_eq!(
+        store
+            .list_query_service_sessions(workspace_id, user_a.id.as_str())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
     assert_eq!(
         store
             .list_retired_chat_archive_threads()

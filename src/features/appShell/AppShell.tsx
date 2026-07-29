@@ -104,6 +104,10 @@ function Shell() {
   const catalogScope = useCatalogScope();
   const { unseen, latest, markSeen } = useOperationActivity();
   const toast = useToast();
+  const reportQueryServicesPersistenceError = useCallback(
+    (error: unknown) => toast(errMessage(error), "error"),
+    [toast],
+  );
   // Keep one bounded Skill inventory observer alive for the app lifecycle. This performs
   // the required startup scan and rechecks after focus without creating install roots.
   useQuery(skillStatusQuery());
@@ -137,7 +141,10 @@ function Shell() {
   } = useSidebarWidth(
     localHistoryOpen ? "localHistory" : "databaseExplorer",
   );
-  const queryServices = useQueryServices();
+  const queryServices = useQueryServices(
+    catalogScope,
+    reportQueryServicesPersistenceError,
+  );
   const [selectedId, setSelectedId] = usePersistentSelectedConnection();
   const {
     safety,

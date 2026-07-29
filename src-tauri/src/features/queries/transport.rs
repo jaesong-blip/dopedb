@@ -15,6 +15,33 @@ use super::{
 };
 
 #[tauri::command]
+pub(crate) async fn list_query_service_sessions(
+    state: State<'_, AppState>,
+    expected_workspace_id: Uuid,
+    expected_account_scope: String,
+) -> AppResult<Vec<serde_json::Value>> {
+    state
+        .services
+        .queries
+        .list_query_service_sessions(expected_workspace_id, &expected_account_scope)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn save_query_service_session(
+    state: State<'_, AppState>,
+    expected_workspace_id: Uuid,
+    expected_account_scope: String,
+    session: serde_json::Value,
+) -> AppResult<()> {
+    state
+        .services
+        .queries
+        .save_query_service_session(expected_workspace_id, &expected_account_scope, session)
+        .await
+}
+
+#[tauri::command]
 pub(crate) async fn get_manual_transaction(
     state: State<'_, AppState>,
     id: Uuid,

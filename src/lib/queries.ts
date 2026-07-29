@@ -63,6 +63,8 @@ const LOG_STALE_MS = 10_000;
 export type CatalogScope = {
   key: string;
   ready: boolean;
+  workspaceId: string | null;
+  accountScope: string | null;
   error?: unknown;
   recover?: () => Promise<void>;
 };
@@ -104,6 +106,12 @@ export function useCatalogScope(): CatalogScope {
   return {
     key,
     ready: settledKey === key && (prerequisiteReady || error !== undefined),
+    workspaceId: workspace?.id ?? null,
+    accountScope: workspace
+      ? teamWorkspace
+        ? auth.data?.user?.id ?? null
+        : "personal"
+      : null,
     error,
     recover: error === undefined
       ? undefined

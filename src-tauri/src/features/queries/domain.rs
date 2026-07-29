@@ -4,11 +4,157 @@
 //! data; platform persistence, pool handles, and protocol UUID conversion stay in adapters.
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use uuid::Uuid;
 
+use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{ConnectionId, OperationId, QueryRunId};
 use crate::kernel::TerminalAuthority;
 use crate::model::{ConnectionProfile, QueryResult};
 use crate::monitoring::HealthSnapshot;
+
+const MAX_QUERY_SERVICE_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_QUERY_SERVICE_ID_BYTES: usize = 512;
+const MAX_QUERY_SERVICE_LABEL_BYTES: usize = 512;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum QueryServiceSessionStatus {
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+impl QueryServiceSessionStatus {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct QueryServiceSessionSnapshot {
+    pub(crate) id: String,
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) updated_at: i64,
+    pub(crate) status: QueryServiceSessionStatus,
+    pub(crate) snapshot: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct QueryServiceSessionEnvelope {
+    schema_version: u32,
+    id: String,
+    document_id: String,
+    connection_id: String,
+    connection_name: String,
+    console_title: String,
+    database: String,
+    namespace: String,
+    sql: String,
+    started_at: String,
+    started_label: String,
+    updated_at: i64,
+    status: String,
+    result: Value,
+}
+
+pub(crate) fn validate_query_service_session_snapshot(
+    snapshot: Value,
+) -> AppResult<QueryServiceSessionSnapshot> {
+    let encoded = serde_json::to_vec(&snapshot)?;
+    if encoded.len() > MAX_QUERY_SERVICE_SNAPSHOT_BYTES {
+        return Err(AppError::Blocked {
+            reason: "the Services result exceeded the local persistence limit".into(),
+        });
+    }
+    let envelope: QueryServiceSessionEnvelope = serde_json::from_slice(&encoded)?;
+    if envelope.schema_version != 1 {
+        return Err(AppError::Config(
+            "Services snapshot schema version is unsupported".into(),
+        ));
+    }
+    validate_bounded_label(
+        "Services session id",
+        &envelope.id,
+        MAX_QUERY_SERVICE_ID_BYTES,
+    )?;
+    validate_bounded_label(
+        "Services document id",
+        &envelope.document_id,
+        MAX_QUERY_SERVICE_ID_BYTES,
+    )?;
+    for (label, value) in [
+        ("connection name", envelope.connection_name.as_str()),
+        ("console title", envelope.console_title.as_str()),
+        ("database name", envelope.database.as_str()),
+        ("namespace", envelope.namespace.as_str()),
+        ("started label", envelope.started_label.as_str()),
+    ] {
+        validate_bounded_label(label, value, MAX_QUERY_SERVICE_LABEL_BYTES)?;
+    }
+    if envelope.sql.len() > MAX_QUERY_SERVICE_SNAPSHOT_BYTES {
+        return Err(AppError::Blocked {
+            reason: "the Services SQL text exceeded the local persistence limit".into(),
+        });
+    }
+    DateTime::parse_from_rfc3339(&envelope.started_at)
+        .map_err(|_| AppError::Config("Services startedAt is invalid".into()))?;
+    if envelope.updated_at <= 0 {
+        return Err(AppError::Config(
+            "Services updatedAt must be a positive millisecond timestamp".into(),
+        ));
+    }
+    let connection_id = Uuid::parse_str(&envelope.connection_id)
+        .map(ConnectionId::from)
+        .map_err(|_| AppError::Config("Services connectionId is invalid".into()))?;
+    let status = match envelope.status.as_str() {
+        "completed" => QueryServiceSessionStatus::Completed,
+        "failed" => QueryServiceSessionStatus::Failed,
+        "cancelled" => QueryServiceSessionStatus::Cancelled,
+        _ => {
+            return Err(AppError::Config(
+                "only terminal Services sessions can be persisted".into(),
+            ))
+        }
+    };
+    let result_kind = envelope
+        .result
+        .get("kind")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::Config("Services result kind is missing".into()))?;
+    let valid_result = match status {
+        QueryServiceSessionStatus::Completed => {
+            matches!(result_kind, "materialized" | "stream" | "script")
+        }
+        QueryServiceSessionStatus::Failed => result_kind == "error",
+        QueryServiceSessionStatus::Cancelled => matches!(result_kind, "none" | "stream"),
+    };
+    if !valid_result {
+        return Err(AppError::Config(
+            "Services status and result kind are inconsistent".into(),
+        ));
+    }
+    Ok(QueryServiceSessionSnapshot {
+        id: envelope.id,
+        connection_id,
+        updated_at: envelope.updated_at,
+        status,
+        snapshot,
+    })
+}
+
+fn validate_bounded_label(label: &str, value: &str, max_bytes: usize) -> AppResult<()> {
+    if value.is_empty() || value.len() > max_bytes || value.chars().any(char::is_control) {
+        return Err(AppError::Config(format!("{label} is empty or invalid")));
+    }
+    Ok(())
+}
 
 /// Broker-only read-plan input bound to one authenticated Terminal authority.
 #[derive(Debug, Clone, PartialEq, Eq)]

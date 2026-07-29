@@ -11,6 +11,7 @@ mod agent_acp;
 mod bootstrap;
 mod migrations;
 mod projections;
+mod query_services;
 mod repositories;
 mod retired_chat_archive;
 mod workspace_codec;

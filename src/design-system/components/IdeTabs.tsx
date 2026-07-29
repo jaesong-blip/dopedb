@@ -100,7 +100,7 @@ export function IdeToolTabStrip({
       className="tw:flex tw:h-document-tab tw:min-h-document-tab tw:shrink-0 tw:items-center tw:border-b tw:border-border-subtle tw:bg-background tw:px-1 tw:data-[density=compact]:h-workbench-toolbar tw:data-[density=compact]:min-h-workbench-toolbar"
     >
       <div
-        className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1"
+        className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1 tw:overflow-x-auto tw:[scrollbar-width:none] tw:[&::-webkit-scrollbar]:hidden"
         role="tablist"
         aria-label={label}
       >

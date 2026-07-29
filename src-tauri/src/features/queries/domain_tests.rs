@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::Utc;
 use uuid::Uuid;
 
-use super::domain::planning_guidance;
+use super::domain::{planning_guidance, validate_query_service_session_snapshot};
 use crate::executor::namespace::{postgres_search_path_statement, resolve_sql_namespace};
 use crate::model::{
     ConnectionProfile, Engine, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
@@ -73,4 +73,28 @@ fn query_guidance_and_namespace_contracts_stay_fail_closed() {
         "SET LOCAL search_path TO \"tenant\"\"; DROP SCHEMA public; --\"",
     );
     assert!(resolve_sql_namespace(&production, Some("attached".into())).is_err());
+
+    let connection_id = Uuid::new_v4();
+    let services_snapshot = serde_json::json!({
+        "schemaVersion": 1,
+        "id": "document-1:1",
+        "documentId": "document-1",
+        "connectionId": connection_id,
+        "connectionName": "Fixture",
+        "consoleTitle": "Query",
+        "database": "app",
+        "namespace": "public",
+        "sql": "SELECT 1",
+        "startedAt": "2026-01-01T00:00:00Z",
+        "startedLabel": "00:00:00",
+        "updatedAt": 1,
+        "status": "completed",
+        "result": {"kind": "materialized"}
+    });
+    let validated = validate_query_service_session_snapshot(services_snapshot.clone()).unwrap();
+    assert_eq!(Uuid::from(validated.connection_id), connection_id);
+    assert_eq!(validated.status.as_str(), "completed");
+    let mut running_snapshot = services_snapshot;
+    running_snapshot["status"] = serde_json::json!("running");
+    assert!(validate_query_service_session_snapshot(running_snapshot).is_err());
 }

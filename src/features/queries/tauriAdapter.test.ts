@@ -16,6 +16,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 import { invoke } from "@tauri-apps/api/core";
 
 import type { ExecOutcome } from "../../ipc/types";
+import type { QueryServiceSession } from "../queryServices/domain";
+import {
+  listQueryServiceSessions,
+  saveQueryServiceSession,
+} from "../queryServices/tauriAdapter";
 import type { SqlOperationProposal } from "./domain";
 import {
   inspectSql,
@@ -97,6 +102,66 @@ describe("query Tauri adapter", () => {
       namespace: "billing",
       origin: null,
     });
+
+    const serviceSession: QueryServiceSession = {
+      schemaVersion: 1,
+      id: "document-1:1",
+      documentId: "document-1",
+      connectionId: "00000000-0000-0000-0000-000000000001",
+      connectionName: "Fixture",
+      consoleTitle: "Query",
+      database: "analytics",
+      namespace: "billing",
+      sql: "SELECT 1",
+      startedAt: "2026-01-01T00:00:00Z",
+      startedLabel: "00:00:00",
+      updatedAt: 1,
+      status: "completed",
+      result: {
+        kind: "materialized",
+        sql: "SELECT 1",
+        outcome: {
+          result: null,
+          affected: null,
+          committed: false,
+          manualTransaction: false,
+        },
+        at: "00:00:00",
+        maxRows: 1000,
+      },
+    };
+    invokeMock.mockResolvedValueOnce([serviceSession]);
+    const serviceScope = {
+      workspaceId: "00000000-0000-0000-0000-000000000010",
+      accountScope: "account-1",
+    };
+    await expect(listQueryServiceSessions(serviceScope)).resolves.toEqual([
+      serviceSession,
+    ]);
+    await saveQueryServiceSession(serviceScope, serviceSession);
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      2,
+      "list_query_service_sessions",
+      {
+        expectedWorkspaceId: serviceScope.workspaceId,
+        expectedAccountScope: serviceScope.accountScope,
+      },
+    );
+    expect(invokeMock).toHaveBeenNthCalledWith(
+      3,
+      "save_query_service_session",
+      {
+        expectedWorkspaceId: serviceScope.workspaceId,
+        expectedAccountScope: serviceScope.accountScope,
+        session: serviceSession,
+      },
+    );
+    invokeMock.mockResolvedValueOnce([
+      { ...serviceSession, result: { kind: "none" } },
+    ]);
+    await expect(listQueryServiceSessions(serviceScope)).rejects.toThrow(
+      "Invalid Services session terminal state",
+    );
   });
 
   it("runs only a proposal that is both read-only and approval-free", async () => {

@@ -227,7 +227,7 @@ impl Store {
         .bind(user.id.as_str())
         .execute(&mut *tx)
         .await?;
-        for table in ["query_history", "schema_cache"] {
+        for table in ["query_history", "query_service_sessions", "schema_cache"] {
             let statement = format!(
                 "UPDATE {table} SET account_scope = ?1
                  WHERE account_scope = 'personal' AND connection_id IN (

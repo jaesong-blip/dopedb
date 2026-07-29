@@ -156,6 +156,8 @@ pub fn run() {
             features::queries::transport::begin_manual_transaction,
             features::queries::transport::commit_manual_transaction,
             features::queries::transport::rollback_manual_transaction,
+            features::queries::transport::list_query_service_sessions,
+            features::queries::transport::save_query_service_session,
             commands::approve_operation,
             commands::reject_operation,
             features::queries::transport::run_sql,

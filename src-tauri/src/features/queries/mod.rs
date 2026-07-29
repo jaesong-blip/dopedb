@@ -29,9 +29,10 @@ pub(crate) use adapters::{
 };
 use application::QueryUseCases;
 pub(crate) use domain::{
-    DesktopPreviewIntent, DesktopSqlInspectionRequest, DesktopSqlProposalRequest,
-    DesktopSqlStreamBatch, DesktopSqlStreamReady, DesktopSqlStreamSinkError,
-    TerminalQueryPlanRequest, TerminalSqlProposalRequest,
+    validate_query_service_session_snapshot, DesktopPreviewIntent, DesktopSqlInspectionRequest,
+    DesktopSqlProposalRequest, DesktopSqlStreamBatch, DesktopSqlStreamReady,
+    DesktopSqlStreamSinkError, QueryServiceSessionSnapshot, TerminalQueryPlanRequest,
+    TerminalSqlProposalRequest,
 };
 pub(crate) use manual_transaction::{
     ManualExecutionTarget, ManualScriptRequest, ManualTransactionRuntime, ManualTransactionStatus,
@@ -53,6 +54,7 @@ pub(crate) struct QueriesFeature {
     desktop_stream_cleanup: DesktopStreamCleanupRuntime,
     _desktop_stream_cleanup_owner: DesktopStreamCleanupOwner,
     manual_transactions: ManualTransactionRuntime,
+    store: Store,
     _manual_transaction_revocation_port:
         std::sync::Arc<dyn crate::connection::ConnectionSessionRevocationPort>,
 }
@@ -72,6 +74,28 @@ impl QueriesFeature {
 
     pub(crate) async fn shutdown_manual_transactions(&self) {
         self.manual_transactions.shutdown().await;
+    }
+
+    pub(crate) async fn list_query_service_sessions(
+        &self,
+        expected_workspace_id: uuid::Uuid,
+        expected_account_scope: &str,
+    ) -> crate::error::AppResult<Vec<serde_json::Value>> {
+        self.store
+            .list_query_service_sessions(expected_workspace_id, expected_account_scope)
+            .await
+    }
+
+    pub(crate) async fn save_query_service_session(
+        &self,
+        expected_workspace_id: uuid::Uuid,
+        expected_account_scope: &str,
+        snapshot: serde_json::Value,
+    ) -> crate::error::AppResult<()> {
+        let snapshot = validate_query_service_session_snapshot(snapshot)?;
+        self.store
+            .save_query_service_session(expected_workspace_id, expected_account_scope, snapshot)
+            .await
     }
 
     pub(crate) fn reserve_pending_desktop_sql_stream(
@@ -360,7 +384,7 @@ pub(crate) fn compose(
         &manual_transaction_revocation_port,
     ));
     let adapter = QueryPlatformAdapter::new(
-        store,
+        store.clone(),
         connections,
         operation.clone(),
         provenance.clone(),
@@ -376,6 +400,7 @@ pub(crate) fn compose(
         desktop_stream_cleanup,
         _desktop_stream_cleanup_owner: desktop_stream_cleanup_owner,
         manual_transactions,
+        store,
         _manual_transaction_revocation_port: manual_transaction_revocation_port,
     }
 }

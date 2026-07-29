@@ -25,8 +25,10 @@ const PAGE_STEP = 200;
 
 export default function QueryServiceResult({
   result,
+  scriptStatementIndex,
 }: {
   result: QueryServiceResultModel;
+  scriptStatementIndex?: number;
 }) {
   if (result.kind === "none") {
     return (
@@ -55,7 +57,13 @@ export default function QueryServiceResult({
     );
   }
   if (result.kind === "script") {
-    return <ScriptResults outcome={result.outcome} at={result.at} />;
+    return (
+      <ScriptResults
+        outcome={result.outcome}
+        at={result.at}
+        statementIndex={scriptStatementIndex}
+      />
+    );
   }
   return <SqlErrorCard error={result.error} prompt={result.prompt} />;
 }
@@ -156,7 +164,10 @@ function MaterializedResult({
 function ScriptResults({
   outcome,
   at,
-}: Omit<Extract<QueryServiceResultModel, { kind: "script" }>, "kind">) {
+  statementIndex,
+}: Omit<Extract<QueryServiceResultModel, { kind: "script" }>, "kind"> & {
+  statementIndex?: number;
+}) {
   const { t } = useI18n();
   const summary = outcome.allReads
     ? t("sql.readOnlyScript")
@@ -165,13 +176,19 @@ function ScriptResults({
       : outcome.committed
         ? t("sql.committed")
         : t("sql.failedRolledBack");
+  const statements =
+    statementIndex === undefined
+      ? outcome.statements.map((statement, index) => ({ statement, index }))
+      : outcome.statements[statementIndex]
+        ? [{ statement: outcome.statements[statementIndex], index: statementIndex }]
+        : [];
   return (
     <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
       <ResultMeta>
         {summary} ·{" "}
         {t("sql.statementCount", { count: outcome.statements.length })} · {at}
       </ResultMeta>
-      {outcome.statements.map((statement, index) => (
+      {statements.map(({ statement, index }) => (
         <section
           key={`${index}:${statement.sql}`}
           className="tw:border-t tw:border-border-subtle tw:pt-2"
