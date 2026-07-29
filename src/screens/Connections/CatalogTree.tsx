@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Catalog,
   CatalogConstraint,
@@ -10,10 +10,7 @@ import type {
 } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
-import {
-  TreeSearch,
-  TreeSectionButton,
-} from "../../design-system/components/TreeControls";
+import { TreeSectionButton } from "../../design-system/components/TreeControls";
 import { LoadingLabel } from "../../design-system/components/Status";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
@@ -51,17 +48,18 @@ type Props = {
   catalogs: Record<string, Catalog>;
   collapsedSections: Set<string>;
   objectSectionsOpen: Set<string>;
-  onFilter: (value: string) => void;
   onOpenTable: (table: CatalogTable) => void;
   onShowDdl: (table: CatalogTable) => void;
   onRequestDetails: () => void;
   onRetryOverview: () => void;
   onToggleRelationSection: (key: string) => void;
   onToggleObjectSection: (kind: string) => void;
+  revealRequest: number;
 };
 
 export default function CatalogTree(props: Props) {
   const { t } = useI18n();
+  const treeRef = useRef<HTMLDivElement>(null);
   const [expandedTables, setExpandedTables] = useState<Set<string>>(
     () => new Set(),
   );
@@ -128,6 +126,59 @@ export default function CatalogTree(props: Props) {
       supportedKinds.has(section.kind) ||
       filteredObjects.some((object) => object.kind === section.kind),
   );
+
+  useEffect(() => {
+    if (
+      !selected ||
+      props.revealRequest === 0 ||
+      !selectedTableKey ||
+      !unfilteredCatalog
+    ) {
+      return;
+    }
+    const table = unfilteredCatalog.tables.find(
+      (candidate) => tableKey(candidate) === selectedTableKey,
+    );
+    if (!table) return;
+
+    setDatabaseOpen(true);
+    const schemaKey = schemaStateKey(table.schema ?? "");
+    setCollapsedSchemas((current) => {
+      if (!current.has(schemaKey)) return current;
+      const next = new Set(current);
+      next.delete(schemaKey);
+      return next;
+    });
+    const relationSectionKey = isDocumentEngine(connection.engine)
+      ? "collections"
+      : `${schemaKey}:${table.kind === "view" ? "view" : "table"}`;
+    if (
+      collapsedSections.has(
+        `${connection.id}:${relationSectionKey}`,
+      )
+    ) {
+      props.onToggleRelationSection(relationSectionKey);
+    }
+
+    let innerFrame = 0;
+    const outerFrame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(() => {
+        const row = [...treeRef.current?.querySelectorAll<HTMLElement>(
+          "[data-table-key]",
+        ) ?? []].find(
+          (candidate) => candidate.dataset.tableKey === selectedTableKey,
+        );
+        row?.scrollIntoView({ block: "nearest" });
+        row?.querySelector<HTMLButtonElement>(".tbl-name")?.focus();
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outerFrame);
+      if (innerFrame) cancelAnimationFrame(innerFrame);
+    };
+    // The request counter deliberately snapshots the current catalog/tree callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.revealRequest]);
 
   function toggleTableDetails(table: CatalogTable) {
     const key = tableKey(table);
@@ -351,6 +402,7 @@ export default function CatalogTree(props: Props) {
       <div className="tw:flex tw:flex-col tw:gap-px" key={key}>
         <div
           className="db-table ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui"
+          data-table-key={key}
           data-diff={tone ?? "none"}
           aria-selected={selected && selectedTableKey === key}
           title={
@@ -675,18 +727,10 @@ export default function CatalogTree(props: Props) {
   }
 
   return (
-    <div className="tw:flex tw:flex-col tw:gap-px tw:pt-1 tw:pr-0 tw:pb-2 tw:pl-3">
-      {catalog &&
-        catalog.tables.length + (catalog.objects?.length ?? 0) > 5 && (
-          <div className="tw:mb-1">
-            <TreeSearch
-              clearLabel={t("common.close")}
-              placeholder={t("connections.filterTables")}
-              value={filter}
-              onChange={props.onFilter}
-            />
-          </div>
-        )}
+    <div
+      ref={treeRef}
+      className="tw:flex tw:flex-col tw:gap-px tw:pt-1 tw:pr-0 tw:pb-2 tw:pl-3"
+    >
       {error ? (
         <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-danger">
           <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">

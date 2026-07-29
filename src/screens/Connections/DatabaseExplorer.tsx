@@ -47,7 +47,9 @@ import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
 import ConnectionNode from "./ConnectionNode";
 import DdlModal from "./DdlModal";
+import { catalogFromOverview } from "./catalogOverview";
 import { useCatalogTree } from "./useCatalogTree";
+import { tableKey } from "../../lib/tableRef";
 
 // DopeDB-style Database Explorer: connections in the sidebar, the selected one
 // expanded to reveal its tables. Clicking a table opens its data in the main area.
@@ -95,6 +97,7 @@ export function DatabaseExplorer({
   const catalogScopeKeyRef = useRef(catalogScope.key);
   const [globalFilter, setGlobalFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [revealRequest, setRevealRequest] = useState(0);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
   const providerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -102,7 +105,6 @@ export function DatabaseExplorer({
     state: {
       wanted,
       refreshErrors: refreshErrs,
-      filters,
       openConnections: open,
       refreshingId: refreshing,
       deletingId: deleting,
@@ -298,7 +300,7 @@ export function DatabaseExplorer({
         fullCatalog={catalogs[connection.id]}
         error={errs[connection.id]}
         detailError={detailErrs[connection.id]}
-        filter={globalFilter || filters[connection.id] || ""}
+        filter={globalFilter}
         groupByConnectionId={groupByConnectionId}
         catalogs={catalogs}
         collapsedSections={collapsedSections}
@@ -315,7 +317,6 @@ export function DatabaseExplorer({
         }
         onRefresh={() => void refreshSchema(connection.id)}
         onDelete={() => void removeConnection(connection)}
-        onFilter={(value) => commands.filter(connection.id, value)}
         onOpenTable={(table) => onOpenTable(connection, table)}
         onShowDdl={(table) =>
           commands.openDdlDialog({ connection, table })
@@ -334,6 +335,7 @@ export function DatabaseExplorer({
         onToggleObjectSection={(kind) =>
           toggleObjectSection(connection.id, kind)
         }
+        revealRequest={revealRequest}
       />
     );
   }
@@ -425,6 +427,34 @@ export function DatabaseExplorer({
     connections.find((connection) => connection.id === selectedId) ?? null;
   const selectedSupportsSql =
     selectedConnection !== null && selectedConnection.engine !== "mongodb";
+  const selectedCatalog = selectedId
+    ? overviews[selectedId]
+      ? catalogFromOverview(overviews[selectedId], catalogs[selectedId])
+      : catalogs[selectedId]
+    : undefined;
+  const selectedTable =
+    selectedTableKey && selectedCatalog
+      ? selectedCatalog.tables.find(
+          (table) => tableKey(table) === selectedTableKey,
+        ) ?? null
+      : null;
+  const selectedSchemaGroup = selectedId
+    ? groupByConnectionId.get(selectedId) ?? null
+    : null;
+  const selectedSchemaGroupComparable =
+    selectedSupportsSql &&
+    selectedSchemaGroup !== null &&
+    selectedSchemaGroup.connections.length > 1 &&
+    schemaGroupIsCompatible(selectedSchemaGroup);
+
+  function revealEditorObject() {
+    if (!selectedConnection || !selectedTableKey) return;
+    setGlobalFilter("");
+    setSearchOpen(false);
+    commands.openConnection(selectedConnection.id);
+    ensureGroupLoaded(selectedConnection.id);
+    setRevealRequest((request) => request + 1);
+  }
 
   function renderLaunchButton(
     label: string,
@@ -450,6 +480,16 @@ export function DatabaseExplorer({
         title={t("connections.databaseExplorer")}
         actions={
           <>
+            <button
+              type="button"
+              className="btn small icon-only icon-xs"
+              disabled={!selectedTableKey}
+              onClick={revealEditorObject}
+              title={t("connections.scrollFromEditor")}
+              aria-label={t("connections.scrollFromEditor")}
+            >
+              <Icon name="target" />
+            </button>
             <button
               type="button"
               className="btn small icon-only icon-xs"
@@ -497,7 +537,7 @@ export function DatabaseExplorer({
       />
       {workspaceHeader}
       <div
-        className="tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:gap-[2px] tw:border-b tw:border-border-subtle tw:bg-background tw:px-1"
+        className="tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:gap-[2px] tw:overflow-x-auto tw:border-b tw:border-border-subtle tw:bg-background tw:px-1"
         role="toolbar"
         aria-label={t("connections.databaseExplorerActions")}
       >
@@ -513,22 +553,22 @@ export function DatabaseExplorer({
         <button
           type="button"
           className="btn small icon-only icon-xs"
-          disabled={!selectedId}
-          onClick={() => selectedId && void refreshSchema(selectedId)}
-          title={t("connections.refreshSchema")}
-          aria-label={t("connections.refreshSchema")}
-        >
-          <Icon name="refresh" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only icon-xs"
           disabled={!selectedConnection}
           onClick={() => selectedConnection && onEdit(selectedConnection)}
           title={t("connections.dataSourcesAndDrivers")}
           aria-label={t("connections.dataSourcesAndDrivers")}
         >
           <Icon name="gear" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only icon-xs"
+          disabled={!selectedId}
+          onClick={() => selectedId && void refreshSchema(selectedId)}
+          title={t("connections.refreshSchema")}
+          aria-label={t("connections.refreshSchema")}
+        >
+          <Icon name="refresh" />
         </button>
         <button
           type="button"
@@ -543,16 +583,65 @@ export function DatabaseExplorer({
         <button
           type="button"
           className="btn small icon-only icon-xs"
-          aria-pressed={searchOpen}
-          onClick={() => {
-            if (searchOpen) setGlobalFilter("");
-            setSearchOpen(!searchOpen);
-          }}
-          title={t("connections.filterTables")}
-          aria-label={t("connections.filterTables")}
+          disabled={!selectedConnection || !selectedTable}
+          onClick={() =>
+            selectedConnection &&
+            selectedTable &&
+            onOpenTable(selectedConnection, selectedTable)
+          }
+          title={t("connections.editData")}
+          aria-label={t("connections.editData")}
         >
-          <Icon name="search" />
+          <Icon name="table" />
         </button>
+        <button
+          type="button"
+          className="btn small icon-only icon-xs"
+          disabled={!selectedSupportsSql || !selectedTable}
+          onClick={() =>
+            selectedConnection &&
+            selectedTable &&
+            commands.openDdlDialog({
+              connection: selectedConnection,
+              table: selectedTable,
+            })
+          }
+          title={t("connections.showDdl")}
+          aria-label={t("connections.showDdl")}
+        >
+          <Icon name="file" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only icon-xs"
+          disabled={!selectedSchemaGroupComparable}
+          onClick={() =>
+            selectedSchemaGroup && onOpenSchemaDiff(selectedSchemaGroup)
+          }
+          title={t("connections.compareSchemaStructure")}
+          aria-label={t("connections.compareSchemaStructure")}
+        >
+          <Icon name="columns" />
+        </button>
+        <ToolbarMenu
+          icon="view"
+          label={t("connections.viewOptions")}
+        >
+          <ToolbarMenuItem
+            icon={showRowCounts ? "check" : "list"}
+            onClick={() =>
+              commands.patch({ showRowCounts: !showRowCounts })
+            }
+          >
+            {t("connections.showRowCounts")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
+            icon="search"
+            onClick={() => setSearchOpen(true)}
+          >
+            {t("connections.filterTables")}
+          </ToolbarMenuItem>
+        </ToolbarMenu>
       </div>
       {connections.length > 0 && searchOpen ? (
         <div className="tw:border-b tw:border-border-subtle tw:p-2">

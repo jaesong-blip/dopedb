@@ -62,13 +62,13 @@ type Props = {
   onWorkspaceDialog: (mode: "copy" | "credentials") => void;
   onRefresh: () => void;
   onDelete: () => void;
-  onFilter: (value: string) => void;
   onOpenTable: (table: CatalogTable) => void;
   onShowDdl: (table: CatalogTable) => void;
   onRequestDetails: () => void;
   onRetryOverview: () => void;
   onToggleRelationSection: (key: string) => void;
   onToggleObjectSection: (kind: string) => void;
+  revealRequest: number;
 };
 
 export default function ConnectionNode(props: Props) {
@@ -290,13 +290,13 @@ export default function ConnectionNode(props: Props) {
           catalogs={props.catalogs}
           collapsedSections={props.collapsedSections}
           objectSectionsOpen={props.objectSectionsOpen}
-          onFilter={props.onFilter}
           onOpenTable={props.onOpenTable}
           onShowDdl={props.onShowDdl}
           onRequestDetails={props.onRequestDetails}
           onRetryOverview={props.onRetryOverview}
           onToggleRelationSection={props.onToggleRelationSection}
           onToggleObjectSection={props.onToggleObjectSection}
+          revealRequest={props.revealRequest}
         />
       )}
     </div>

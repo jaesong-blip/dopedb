@@ -80,8 +80,12 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   하나의 layout 문법으로 구현한다.
 - Database Explorer header는 전체 tree의 expand/collapse, 실제 view option,
   hide를 소유한다. 그 아래 command row가 data source 추가, refresh, 설정,
-  query console과 search toggle을 소유하며, 검색 input은 toggle이 열었을
-  때만 표시한다. connection row마다 같은 global action을 반복하지 않는다.
+  query console, 선택 relation의 data/DDL, schema compare와 view option을
+  소유한다. 현재 editor 객체 동기화는 header action이 tree의 database,
+  schema, object section을 실제로 펼치고 대상 row로 focus를 이동한다.
+  검색 input은 view option이 열었을 때만 하나만 표시하며 connection subtree에
+  검색 input을 중복하지 않는다. backend disconnect lifecycle이 없는 동안
+  DopeDB의 Deactivate를 모양만 있는 action으로 추가하지 않는다.
 - 색상보다 `muted`, `selection`, `border`를 먼저 사용한다.
 - 일반 surface는 평평하게 유지한다. 그림자는 popover, dialog, toast처럼 떠 있는
   surface에만 사용한다.

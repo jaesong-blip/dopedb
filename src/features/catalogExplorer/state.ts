@@ -15,7 +15,6 @@ type CatalogExplorerAction =
   | { type: "openConnection"; id: string }
   | { type: "clearRefreshError"; id: string }
   | { type: "setRefreshError"; id: string; message: string }
-  | { type: "filter"; id: string; value: string }
   | { type: "toggleObjectSection"; key: string }
   | { type: "toggleCollapsedSection"; key: string };
 
@@ -26,7 +25,6 @@ export function initialCatalogExplorerState(
     scopeKey,
     wanted: new Set(),
     refreshErrors: {},
-    filters: {},
     openConnections: new Set(),
     refreshingId: null,
     deletingId: null,
@@ -84,11 +82,6 @@ export function catalogExplorerReducer(
           [action.id]: action.message,
         },
       };
-    case "filter":
-      return {
-        ...state,
-        filters: { ...state.filters, [action.id]: action.value },
-      };
     case "toggleObjectSection":
       return {
         ...state,
@@ -140,8 +133,6 @@ export function useCatalogExplorerState(scopeKey: string) {
         dispatch({ type: "clearRefreshError", id }),
       setRefreshError: (id: string, message: string) =>
         dispatch({ type: "setRefreshError", id, message }),
-      filter: (id: string, value: string) =>
-        dispatch({ type: "filter", id, value }),
       toggleObjectSection: (key: string) =>
         dispatch({ type: "toggleObjectSection", key }),
       toggleCollapsedSection: (key: string) =>

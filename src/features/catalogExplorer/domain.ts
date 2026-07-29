@@ -15,7 +15,6 @@ export type CatalogExplorerState = {
   scopeKey: string;
   wanted: Set<string>;
   refreshErrors: Record<string, string>;
-  filters: Record<string, string>;
   openConnections: Set<string>;
   refreshingId: string | null;
   deletingId: string | null;
