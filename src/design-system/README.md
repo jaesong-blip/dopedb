@@ -231,7 +231,10 @@ Elevation은 세 단계만 허용한다.
 - `ModalBackdrop`, `ModalSurface`: background interaction을 차단하는 공용
   viewport backdrop과 responsive dialog frame. SQL parameter처럼 실행 전에
   값을 완성하는 feature dialog도 이 frame과 `.ds-action-row` footer를 사용하고
-  별도 modal CSS를 만들지 않는다.
+  별도 modal CSS를 만들지 않는다. `size="settings"`는 DopeDB 정본에서 추출한
+  945×700 설정 dialog와 compact full-height fallback을 소유한다. Settings
+  feature는 이 frame 안에서 300px search/hierarchy, breadcrumb/content와
+  실제 action footer를 조합하며 중앙 workbench를 대체하지 않는다.
 - `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchSelect`,
   `WorkbenchContextHeader`, `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터
   편집기·SQL·문서 화면의 평평한 IDE pane, command row, compact context select,

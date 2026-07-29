@@ -142,12 +142,11 @@ export default function ShellLayout(props: Props) {
     creatingDemo,
   } = props;
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
-  const databaseExplorerVisible =
-    databaseExplorerOpen && !settingsOpen;
-  const localHistoryVisible = localHistoryOpen && !settingsOpen;
+  const databaseExplorerVisible = databaseExplorerOpen;
+  const localHistoryVisible = localHistoryOpen;
   const leftToolWindowVisible =
     databaseExplorerVisible || localHistoryVisible;
-  const servicesVisible = servicesOpen && !settingsOpen;
+  const servicesVisible = servicesOpen;
   const rightDockWidth = showTerminalDock && !terminalOverlay
     ? terminalWidth
     : 0;
@@ -224,6 +223,7 @@ export default function ShellLayout(props: Props) {
         servicesOpen={servicesVisible}
         showTerminalDock={showTerminalDock}
         searchEverywhereOpen={props.searchEverywhereOpen}
+        settingsOpen={settingsOpen}
         account={
           <WorkspaceAccount
             compact
@@ -249,7 +249,7 @@ export default function ShellLayout(props: Props) {
       />
 
       <WorkbenchRail
-        area={settingsOpen ? null : area}
+        area={area}
         dashboardAvailable={!selected || supportsSql}
         settingsOpen={settingsOpen}
         sidebarExpanded={!compact || mobileExplorerOpen}
@@ -280,7 +280,6 @@ export default function ShellLayout(props: Props) {
             compactOpen={mobileExplorerOpen}
           />
         ) : area === "dashboard" &&
-        !settingsOpen &&
         editing === null &&
         !activeSchemaGroup ? (
           <DashboardSidebar

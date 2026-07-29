@@ -3,11 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 import type { ConnectionProfile } from "../../features/connections/domain";
+import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import {
   Field,
   SelectInput,
 } from "../../design-system/components/FormControls";
+import {
+  ModalBackdrop,
+  ModalSurface,
+} from "../../design-system/components/Modal";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import { useI18n } from "../../lib/i18n";
 import AgentTools from "./AgentTools";
@@ -149,105 +154,171 @@ export default function Settings({
     return () => window.removeEventListener("keydown", h);
   }, []);
 
-  return (
-    <div
-      data-settings
-      className="tw:grid tw:h-full tw:min-h-0 tw:grid-cols-[232px_minmax(0,1fr)] tw:bg-background tw:@max-[700px]:grid-cols-1 tw:@max-[700px]:grid-rows-[auto_minmax(0,1fr)]"
-    >
-      <aside className="tw:flex tw:min-h-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card tw:p-2 tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">
-        <div className="tw:flex tw:items-center tw:justify-between tw:px-2 tw:pt-2 tw:pb-3">
-          <strong>{t("common.settings")}</strong>
-          <button className="btn small" onClick={close}>
-            {t("common.done")}
-          </button>
-        </div>
-        <div className="tw:px-1 tw:pb-2">
-          <TreeSearch
-            value={filter}
-            placeholder={t("settings.searchPlaceholder")}
-            clearLabel={t("common.close")}
-            onChange={setFilter}
-          />
-        </div>
-        <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:@max-[700px]:flex tw:@max-[700px]:overflow-x-auto tw:@max-[700px]:overflow-y-hidden">
-          {(["application", "dataSource"] as const).map((scope) => {
-            const entries = filteredEntries.filter(
-              (entry) => entry.scope === scope,
-            );
-            if (entries.length === 0) return null;
-            return (
-              <section
-                key={scope}
-                className="tw:grid tw:gap-0.5 tw:pb-3 tw:@max-[700px]:flex tw:@max-[700px]:shrink-0 tw:@max-[700px]:items-center tw:@max-[700px]:pb-0"
-              >
-                <h2 className="tw:m-0 tw:px-3 tw:py-1.5 tw:text-2xs tw:font-bold tw:tracking-[0.05em] tw:text-muted-foreground tw:uppercase">
-                  {t(
-                    scope === "application"
-                      ? "settings.scopeApplication"
-                      : "settings.scopeDataSource",
-                  )}
-                </h2>
-                {entries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    data-active={section === entry.id}
-                    className="tw:shrink-0 tw:cursor-pointer tw:rounded-sm tw:border-0 tw:bg-transparent tw:px-3 tw:py-2 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:whitespace-nowrap tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
-                    onClick={() => setSection(entry.id)}
-                    disabled={entry.disabled}
-                    title={
-                      entry.id === "safety" && !connection
-                        ? t("settings.selectConnectionTitle")
-                        : undefined
-                    }
-                  >
-                    {entry.label}
-                  </button>
-                ))}
-              </section>
-            );
-          })}
-          {filteredEntries.length === 0 ? (
-            <p className="tw:m-0 tw:px-3 tw:py-4 tw:text-sm tw:text-muted-foreground">
-              {t("settings.noSearchResults")}
-            </p>
-          ) : null}
-        </nav>
-      </aside>
+  const activeEntry =
+    settingsEntries.find((entry) => entry.id === section) ??
+    settingsEntries[0];
 
-      <div className="tw:min-w-0 tw:overflow-auto tw:p-[var(--ds-pane-pad)] tw:[container-name:settings-body] tw:[container-type:inline-size] tw:@max-[700px]:p-3">
-        {section === "agent-tools" && <AgentTools />}
-        {section === "cli" && <CliSettings />}
-        {section === "archive" && <RetiredChatArchive connection={connection} />}
-        {section === "updates" && (
-          <Updates initialUpdate={availableUpdate} onChecked={onUpdateChecked} />
-        )}
-        {section === "language" && (
-          <div className="tw:grid tw:max-w-[560px] tw:gap-4 tw:p-4">
-            <div className="tw:inline-flex tw:items-center tw:gap-2">
-              <h2>{t("settings.languageTitle")}</h2>
-              <InfoTip label={t("settings.languageBody")} />
-            </div>
-            <Field label={t("language.label")}>
-              <SelectInput
-                value={lang}
-                onChange={(e) => setLang(e.target.value as typeof lang)}
-              >
-                <option value="ko">{t("language.korean")}</option>
-                <option value="en">{t("language.english")}</option>
-              </SelectInput>
-            </Field>
+  return (
+    <ModalBackdrop>
+      <ModalSurface
+        size="settings"
+        aria-labelledby="settings-dialog-title"
+      >
+        <div
+          data-settings
+          className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:bg-background"
+        >
+          <header className="tw:grid tw:min-h-11 tw:shrink-0 tw:grid-cols-[36px_minmax(0,1fr)_36px] tw:items-center tw:border-b tw:border-border-subtle tw:bg-card tw:px-2">
+            <span aria-hidden="true" />
+            <h1
+              id="settings-dialog-title"
+              className="tw:m-0 tw:text-center tw:text-base tw:font-semibold"
+            >
+              {t("common.settings")}
+            </h1>
+            <button
+              type="button"
+              className="btn small icon-only icon-xs"
+              onClick={close}
+              title={t("common.close")}
+              aria-label={t("common.close")}
+            >
+              <Icon name="close" />
+            </button>
+          </header>
+
+          <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-[300px_minmax(0,1fr)] tw:@max-[700px]:grid-cols-1 tw:@max-[700px]:grid-rows-[auto_minmax(0,1fr)]">
+            <aside className="tw:flex tw:min-h-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card tw:p-2 tw:@max-[700px]:max-h-[188px] tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">
+              <div className="tw:px-1 tw:py-1">
+                <TreeSearch
+                  value={filter}
+                  autoFocus
+                  placeholder={t("settings.searchPlaceholder")}
+                  clearLabel={t("common.close")}
+                  onChange={setFilter}
+                  onEscape={() => {
+                    if (filter) setFilter("");
+                    else close();
+                  }}
+                />
+              </div>
+              <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:pt-2">
+                {(["application", "dataSource"] as const).map((scope) => {
+                  const entries = filteredEntries.filter(
+                    (entry) => entry.scope === scope,
+                  );
+                  if (entries.length === 0) return null;
+                  return (
+                    <section
+                      key={scope}
+                      className="tw:grid tw:gap-0.5 tw:pb-2"
+                    >
+                      <div className="tw:flex tw:min-h-control-sm tw:items-center tw:gap-1 tw:px-2 tw:text-ui tw:font-semibold">
+                        <Icon
+                          name="chevronDown"
+                          className="tw:text-muted-foreground"
+                        />
+                        <span>
+                          {t(
+                            scope === "application"
+                              ? "settings.scopeApplication"
+                              : "settings.scopeDataSource",
+                          )}
+                        </span>
+                      </div>
+                      {entries.map((entry) => (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          data-active={section === entry.id}
+                          className="tw:min-h-control-sm tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:pr-3 tw:pl-8 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
+                          onClick={() => setSection(entry.id)}
+                          disabled={entry.disabled}
+                          title={
+                            entry.id === "safety" && !connection
+                              ? t("settings.selectConnectionTitle")
+                              : undefined
+                          }
+                        >
+                          {entry.label}
+                        </button>
+                      ))}
+                    </section>
+                  );
+                })}
+                {filteredEntries.length === 0 ? (
+                  <p className="tw:m-0 tw:px-3 tw:py-4 tw:text-sm tw:text-muted-foreground">
+                    {t("settings.noSearchResults")}
+                  </p>
+                ) : null}
+              </nav>
+            </aside>
+
+            <section className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col">
+              <div className="tw:flex tw:min-h-11 tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:text-ui tw:font-semibold">
+                <span className="tw:text-muted-foreground">
+                  {t(
+                    activeEntry?.scope === "dataSource"
+                      ? "settings.scopeDataSource"
+                      : "settings.scopeApplication",
+                  )}
+                </span>
+                <Icon
+                  name="chevronRight"
+                  className="tw:text-muted-foreground"
+                />
+                <span>{activeEntry?.label}</span>
+              </div>
+              <div className="tw:min-h-0 tw:min-w-0 tw:flex-1 tw:overflow-auto tw:p-[var(--ds-pane-pad)] tw:[container-name:settings-body] tw:[container-type:inline-size] tw:@max-[700px]:p-3">
+                {section === "agent-tools" && <AgentTools />}
+                {section === "cli" && <CliSettings />}
+                {section === "archive" && (
+                  <RetiredChatArchive connection={connection} />
+                )}
+                {section === "updates" && (
+                  <Updates
+                    initialUpdate={availableUpdate}
+                    onChecked={onUpdateChecked}
+                  />
+                )}
+                {section === "language" && (
+                  <div className="tw:grid tw:max-w-[560px] tw:gap-4 tw:p-4">
+                    <div className="tw:inline-flex tw:items-center tw:gap-2">
+                      <h2>{t("settings.languageTitle")}</h2>
+                      <InfoTip label={t("settings.languageBody")} />
+                    </div>
+                    <Field label={t("language.label")}>
+                      <SelectInput
+                        value={lang}
+                        onChange={(e) =>
+                          setLang(e.target.value as typeof lang)
+                        }
+                      >
+                        <option value="ko">{t("language.korean")}</option>
+                        <option value="en">{t("language.english")}</option>
+                      </SelectInput>
+                    </Field>
+                  </div>
+                )}
+                {section === "safety" &&
+                  (connection ? (
+                    <Safety connectionId={connection.id} />
+                  ) : (
+                    <div className="tw:text-muted-foreground">
+                      {t("settings.selectConnection")}
+                    </div>
+                  ))}
+              </div>
+            </section>
           </div>
-        )}
-        {section === "safety" &&
-          (connection ? (
-            <Safety connectionId={connection.id} />
-          ) : (
-            <div className="tw:text-muted-foreground">
-              {t("settings.selectConnection")}
-            </div>
-          ))}
-      </div>
-    </div>
+
+          <footer className="tw:flex tw:min-h-[52px] tw:shrink-0 tw:items-center tw:justify-end tw:border-t tw:border-border-subtle tw:bg-card tw:px-4">
+            <button className="btn primary" onClick={close}>
+              {t("common.done")}
+            </button>
+          </footer>
+        </div>
+      </ModalSurface>
+    </ModalBackdrop>
   );
 }

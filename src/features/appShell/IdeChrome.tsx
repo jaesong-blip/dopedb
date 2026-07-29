@@ -41,6 +41,7 @@ export function IdeTopBar({
   servicesOpen,
   showTerminalDock,
   searchEverywhereOpen,
+  settingsOpen,
   workspace,
   account,
   onNewQuery,
@@ -61,6 +62,7 @@ export function IdeTopBar({
   servicesOpen: boolean;
   showTerminalDock: boolean;
   searchEverywhereOpen: boolean;
+  settingsOpen: boolean;
   workspace: ReactNode;
   account: ReactNode;
   onNewQuery: () => void;
@@ -153,6 +155,7 @@ export function IdeTopBar({
           <Icon name="search" />
         </IdeToolbarLauncher>
         <IdeToolbarLauncher
+          active={settingsOpen}
           onClick={onSettings}
           title={t("common.settings")}
           aria-label={t("common.settings")}

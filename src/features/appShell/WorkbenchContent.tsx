@@ -1,5 +1,5 @@
 import type { Update } from "@tauri-apps/plugin-updater";
-import { useCallback } from "react";
+import { useCallback, type ReactNode } from "react";
 
 import { Icon } from "../../components/Icon";
 import WorkbenchDocumentStrip from "../../components/WorkbenchDocumentStrip";
@@ -132,31 +132,35 @@ export default function WorkbenchContent(props: Props) {
     [activeSqlDocumentId, props.onSqlCursorChange],
   );
 
-  if (settingsOpen) {
-    return (
-      <Settings
-        connection={selected}
-        initialSection={settingsSection}
-        refreshSafety={props.onRefreshSafety}
-        availableUpdate={availableUpdate}
-        onUpdateChecked={props.onUpdateChecked}
-        onClose={props.onCloseSettings}
-      />
-    );
-  }
+  const settingsDialog = settingsOpen ? (
+    <Settings
+      connection={selected}
+      initialSection={settingsSection}
+      refreshSafety={props.onRefreshSafety}
+      availableUpdate={availableUpdate}
+      onUpdateChecked={props.onUpdateChecked}
+      onClose={props.onCloseSettings}
+    />
+  ) : null;
+  const withSettings = (content: ReactNode) => (
+    <>
+      {content}
+      {settingsDialog}
+    </>
+  );
 
   if (activeSchemaGroup) {
-    return (
+    return withSettings(
       <SchemaDiff
         key={activeSchemaGroup.key}
         group={activeSchemaGroup}
         onClose={props.onCloseSchemaDiff}
-      />
+      />,
     );
   }
 
   if (editing !== null) {
-    return (
+    return withSettings(
       <div className="tw:h-full tw:min-h-0">
         <ConnectionForm
           key={
@@ -175,12 +179,12 @@ export default function WorkbenchContent(props: Props) {
           onSaved={props.onConnectionSaved}
           onCancel={props.onCancelEditing}
         />
-      </div>
+      </div>,
     );
   }
 
   if (loadError) {
-    return (
+    return withSettings(
       <div className="tw:flex tw:h-full tw:min-w-0 tw:flex-col tw:items-center tw:justify-center tw:gap-2 tw:bg-muted tw:p-[var(--ds-pane-pad)] tw:text-center tw:leading-relaxed tw:[&>*]:max-w-[min(520px,100%)]">
         <div className="tw:break-words tw:text-ui tw:text-danger" role="alert">
           {t("app.couldNotLoadConnections", { error: loadError })}
@@ -188,12 +192,12 @@ export default function WorkbenchContent(props: Props) {
         <button className="btn" onClick={props.onRetryConnections}>
           {t("app.retry")}
         </button>
-      </div>
+      </div>,
     );
   }
 
   if (connections.length === 0) {
-    return <Onboarding />;
+    return withSettings(<Onboarding />);
   }
 
   const safetyFallback = safetyError ? (
@@ -324,6 +328,7 @@ export default function WorkbenchContent(props: Props) {
           />
         )}
       </section>
+      {settingsDialog}
     </>
   );
 }

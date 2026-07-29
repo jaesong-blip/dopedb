@@ -214,7 +214,7 @@ function Shell() {
     })),
   });
   const showTerminalDock =
-    terminalDockOpen && !!selected && !settingsOpen && editing === null;
+    terminalDockOpen && !!selected && editing === null;
   useEffect(() => {
     if (compactShell && showTerminalDock && servicesOpen) closeServices();
   }, [closeServices, compactShell, servicesOpen, showTerminalDock]);
