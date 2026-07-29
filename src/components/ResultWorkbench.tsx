@@ -9,7 +9,6 @@ import { Icon } from "./Icon";
 import ResultToolbar from "./ResultToolbar";
 
 export function ResultWorkbenchToolbar({
-  sql,
   columns,
   rows,
   rowSource,
@@ -21,7 +20,6 @@ export function ResultWorkbenchToolbar({
   onToggleFilter,
   onFilterChange,
 }: {
-  sql: string;
   columns: string[];
   rows?: unknown[][];
   rowSource?: SqlStreamRowSource;
@@ -64,12 +62,6 @@ export function ResultWorkbenchToolbar({
           aria-label={t("services.resultSearch")}
         />
       ) : null}
-      <span
-        className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:px-1 tw:font-mono tw:text-xs tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground"
-        title={sql}
-      >
-        {sql}
-      </span>
       <ResultToolbar
         columns={columns}
         rows={rows}

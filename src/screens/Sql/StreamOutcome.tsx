@@ -75,7 +75,6 @@ export default function StreamOutcome({
       ) : (
         <>
           <ResultWorkbenchToolbar
-            sql={sql}
             columns={stream.columns}
             rows={filteredRows ?? undefined}
             rowSource={filteredRows === null ? stream.rowSource : undefined}

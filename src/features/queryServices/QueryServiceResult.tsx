@@ -95,7 +95,6 @@ function MaterializedResult({
       {result ? (
         <>
           <ResultWorkbenchToolbar
-            sql={sql}
             columns={result.columns}
             rows={filteredRows}
             filenameBase={`query-${stamp()}`}
