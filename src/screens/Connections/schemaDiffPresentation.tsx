@@ -9,6 +9,7 @@ import {
   type TableSchemaDiff,
 } from "../../lib/schemaDiff";
 import { Icon } from "../../components/Icon";
+import { StatusBadge } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -64,12 +65,13 @@ export function SchemaDiffBadge({
   const diff = compareCatalogs(current, baselineCatalog);
   if (diff.total === 0) {
     return (
-      <span
-        className="badge status-ok tw:min-h-[18px] tw:shrink-0 tw:px-1.5"
+      <StatusBadge
+        tone="success"
+        density="compact"
         title={t("connections.schemaDiffInSync")}
       >
         <Icon name="check" />
-      </span>
+      </StatusBadge>
     );
   }
   const counts = diffCounts(diff);

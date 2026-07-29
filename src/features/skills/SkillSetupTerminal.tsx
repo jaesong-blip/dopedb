@@ -274,7 +274,7 @@ export default function SkillSetupTerminal({
           onReady={handleSurfaceReady}
           onPromptVisible={handlePromptVisible}
           ariaLabel={t("agentTools.setupTerminalAria")}
-          className="tw:h-full tw:p-2"
+          fill
         />
       ) : (
         <div

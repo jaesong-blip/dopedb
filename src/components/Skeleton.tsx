@@ -5,15 +5,16 @@ import { useI18n } from "../lib/i18n";
 
 export default function Skeleton({
   lines = 3,
-  className = "",
+  inset = false,
 }: {
   lines?: number;
-  className?: string;
+  inset?: boolean;
 }) {
   const { t } = useI18n();
   return (
     <div
-      className={`tw:flex tw:w-full tw:flex-col tw:gap-3 tw:py-2 ${className}`.trim()}
+      data-inset={inset || undefined}
+      className="tw:flex tw:w-full tw:flex-col tw:gap-3 tw:py-2 tw:data-[inset=true]:p-4"
       role="status"
       aria-busy="true"
       aria-label={t("common.loading")}

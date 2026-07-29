@@ -34,6 +34,7 @@ import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
 import { useToast } from "../../components/Toast";
 import { Field } from "../../design-system/components/FormControls";
+import { StatusBadge } from "../../design-system/components/Status";
 import { qk } from "../../lib/queries";
 import { useI18n } from "../../lib/i18n";
 
@@ -828,9 +829,9 @@ export default function SchemaEditor({
               })}
             </span>
             {plan.requiresRebuild && (
-              <span className="badge risk-high">
+              <StatusBadge tone="danger">
                 {t("schema.editorRebuild")}
-              </span>
+              </StatusBadge>
             )}
           </div>
           {plan.warnings.map((warning) => (

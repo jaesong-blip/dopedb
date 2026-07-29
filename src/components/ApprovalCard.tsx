@@ -27,6 +27,10 @@ import type {
 import { Icon, type IconName } from "./Icon";
 import LazySqlViewer from "./LazySqlViewer";
 import { useI18n, type I18nKey } from "../lib/i18n";
+import {
+  StatusBadge,
+  type StatusTone,
+} from "../design-system/components/Status";
 
 const ENGINE_LABEL: Record<Engine, string> = {
   postgres: "PostgreSQL",
@@ -35,14 +39,16 @@ const ENGINE_LABEL: Record<Engine, string> = {
   mongodb: "MongoDB",
 };
 
-function riskClass(risk: RiskLevel): string {
-  return `badge risk-${risk}`;
-}
-
 const RISK_LABEL: Record<RiskLevel, I18nKey> = {
   low: "approval.riskLow",
   medium: "approval.riskMedium",
   high: "approval.riskHigh",
+};
+
+const RISK_TONE: Record<RiskLevel, StatusTone> = {
+  low: "success",
+  medium: "warning",
+  high: "danger",
 };
 
 function StatusGlyph({
@@ -227,7 +233,9 @@ export default function ApprovalCard({
       {cls ? (
         <>
           <span className="badge kind">{cls.kind.toUpperCase()}</span>
-          <span className={riskClass(cls.risk)}>{t(RISK_LABEL[cls.risk])}</span>
+          <StatusBadge tone={RISK_TONE[cls.risk]}>
+            {t(RISK_LABEL[cls.risk])}
+          </StatusBadge>
           <span className="badge dialect">{ENGINE_LABEL[engine]}</span>
           {cls.noWhere && (
             <span className="badge nowhere">{t("approval.noWhere")}</span>

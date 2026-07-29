@@ -68,6 +68,7 @@ import {
   WorkbenchSelect,
   WorkbenchToolbar,
 } from "../../design-system/components/Workbench";
+import { StatusBadge } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 import { catalogQuery, useCatalogScope } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
@@ -1015,11 +1016,11 @@ export default function Sql({
           <section className="tw:my-2 tw:grid tw:gap-3 tw:border-y tw:border-warning tw:bg-background tw:p-3">
             <div className="ds-title-line">
               <strong>{t("approval.review")}</strong>
-              <span className="badge risk-medium">
+              <StatusBadge tone="warning">
                 {t("sql.statementCount", {
                   count: pendingScriptApproval.proposal.statementCount,
                 })}
-              </span>
+              </StatusBadge>
             </div>
             <LazySqlViewer value={pendingScriptApproval.sql} minHeight="96px" />
             <div className="tw:text-sm tw:text-muted-foreground tw:[&_code]:font-mono tw:[&_code]:text-xs tw:[&_code]:[overflow-wrap:anywhere]">

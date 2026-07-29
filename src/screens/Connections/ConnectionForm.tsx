@@ -41,6 +41,7 @@ import {
   type PanelTab,
 } from "../../design-system/components/PanelTabs";
 import { SegmentedControl } from "../../design-system/components/SegmentedControl";
+import { StatusBadge } from "../../design-system/components/Status";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import {
   ToolWindowAction,
@@ -2751,15 +2752,15 @@ export function ConnectionForm({
                 <strong className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
                   {catalogDriver.name}
                 </strong>
-                <span
-                  className={
+                <StatusBadge
+                  tone={
                     catalogDriver.installState === "installed"
-                      ? "badge status-ok"
-                      : "badge"
+                      ? "success"
+                      : "neutral"
                   }
                 >
                   {driverStatus(catalogDriver)}
-                </span>
+                </StatusBadge>
               </div>
               <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-5">
                 <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[760px] tw:gap-5">

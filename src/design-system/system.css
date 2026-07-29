@@ -345,23 +345,6 @@ h3 {
   color: var(--ds-text);
 }
 
-.badge.status-ok,
-.badge.risk-low {
-  color: var(--ds-success);
-  border-color: color-mix(in srgb, var(--ds-success) var(--ds-status-border-mix), var(--ds-border-subtle));
-}
-
-.badge.risk-medium {
-  color: var(--ds-warning);
-  border-color: color-mix(in srgb, var(--ds-warning) var(--ds-status-border-mix), var(--ds-border-subtle));
-}
-
-.badge.status-error,
-.badge.risk-high {
-  color: var(--ds-danger);
-  border-color: color-mix(in srgb, var(--ds-danger) var(--ds-status-border-mix), var(--ds-border-subtle));
-}
-
 .badge.nowhere {
   background: var(--ds-danger-emphasis);
   border-color: var(--ds-danger-emphasis);

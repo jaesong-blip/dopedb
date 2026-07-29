@@ -376,7 +376,7 @@ export default function SchemaDiff({
                 </div>
               </WorkbenchEmptyState>
             ) : !baselineCatalog || (selectedTarget && !catalogs.has(selectedTarget.id)) ? (
-              <Skeleton lines={7} className="tw:p-4" />
+              <Skeleton lines={7} inset />
             ) : selectedDiff?.total === 0 ? (
               <WorkbenchEmptyState icon="check">
                 <div className="tw:text-center">

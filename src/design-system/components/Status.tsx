@@ -6,6 +6,29 @@ import { Icon, type IconName } from "../../components/Icon";
 
 export type StatusTone = "neutral" | "success" | "warning" | "danger";
 
+export function StatusBadge({
+  tone = "neutral",
+  density = "default",
+  title,
+  children,
+}: {
+  tone?: StatusTone;
+  density?: "default" | "compact";
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      data-tone={tone}
+      data-density={density}
+      className="badge tw:shrink-0 tw:data-[density=compact]:min-h-[18px] tw:data-[density=compact]:px-1.5 tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
+      title={title}
+    >
+      {children}
+    </span>
+  );
+}
+
 export function StatusDot({ tone = "neutral" }: { tone?: StatusTone }) {
   return (
     <span
@@ -48,14 +71,11 @@ export function StatusBarItem({
   onClick?: () => void;
   title?: string;
 }) {
-  const className =
-    "tw:inline-flex tw:h-full tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit";
-
   if (onClick) {
     return (
       <button
         type="button"
-        className={`${className} tw:cursor-pointer tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:bg-muted tw:focus-visible:text-foreground tw:focus-visible:outline-none`}
+        className="tw:inline-flex tw:h-full tw:min-w-0 tw:shrink-0 tw:cursor-pointer tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:bg-muted tw:focus-visible:text-foreground tw:focus-visible:outline-none"
         onClick={onClick}
         title={title}
       >
@@ -65,7 +85,10 @@ export function StatusBarItem({
   }
 
   return (
-    <span className={className} title={title}>
+    <span
+      className="tw:inline-flex tw:h-full tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit"
+      title={title}
+    >
       {children}
     </span>
   );
@@ -95,11 +118,10 @@ export function StatusBarBreadcrumbs({
             />
           ) : null}
           <span
-            className={
-              index === items.length - 1
-                ? "tw:truncate tw:text-foreground"
-                : "tw:truncate"
+            data-current={
+              index === items.length - 1 || undefined
             }
+            className="tw:truncate tw:data-[current=true]:text-foreground"
           >
             {item.label}
           </span>

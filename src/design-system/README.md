@@ -393,10 +393,12 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   공통 command row. `triggerVariant="badge"`는 Explorer의 선택/전체 수처럼
   조밀한 범위 trigger를 소유한다. trigger가 compact 전환이나 tool-window
   교체로 viewport 밖에 나가면 열린 portal도 함께 닫는다.
-- `StatusDot`, `StatusBarItem`, `StatusBarBreadcrumbs`,
+- `StatusBadge`, `StatusDot`, `StatusBarItem`, `StatusBarBreadcrumbs`,
   `StatusBarIconButton`, `LoadingLabel`, `InlineNotice`: lifecycle 상태 점,
-  IDE 하단 상태 segment, database breadcrumb, icon action, 비동기 진행 label,
-  warning/danger inline 상태 행. 왼쪽 breadcrumb는
+  semantic success/warning/danger badge, IDE 하단 상태 segment, database
+  breadcrumb, icon action, 비동기 진행 label, warning/danger inline 상태 행.
+  `StatusBadge`의 tone은 `data-tone`과 정적 Tailwind variant가 소유하며 화면별
+  `riskClass`/`badgeClass` style map을 만들지 않는다. 왼쪽 breadcrumb는
   `Database → data source → namespace → object group → object/document` 순서를
   사용한다. 오른쪽은 실제 running/waiting session 수, CodeMirror가 보고한
   `line:column`, line ending, encoding, 동일한 editor indent 설정, 실제
@@ -468,9 +470,9 @@ Surface는 기본적으로 `card + border + rounded-lg + no shadow`다. floating
 
 - `.badge`: 중립 metadata
 - `.badge.kind`: 선택보다 약한 category 표기
-- `.badge.status-ok`, `.badge.risk-low`: 성공/trust
-- `.badge.risk-medium`: warning/review
-- `.badge.status-error`, `.badge.risk-high`: 오류/차단
+- `StatusBadge tone="success"`: 성공/trust
+- `StatusBadge tone="warning"`: warning/review
+- `StatusBadge tone="danger"`: 오류/차단
 - `.badge.nowhere`: 실행 위치가 없어 실제로 차단된 상태
 
 ### Form

@@ -2,14 +2,12 @@ import { Icon } from "./Icon";
 
 export default function InfoTip({
   label,
-  className,
 }: {
   label: string;
-  className?: string;
 }) {
   return (
     <span
-      className={"ui-help" + (className ? ` ${className}` : "")}
+      className="ui-help"
       title={label}
       aria-label={label}
       role="img"

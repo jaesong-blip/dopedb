@@ -33,6 +33,10 @@ import {
   buildSkillSetupPlan,
   type SkillSetupPlan,
 } from "../../../features/skills/setupPolicy";
+import {
+  StatusBadge,
+  type StatusTone,
+} from "../../../design-system/components/Status";
 
 type Mutation = "repair" | "remove";
 
@@ -88,10 +92,12 @@ const reasonLabel: Record<SkillStatusReason, I18nKey> = {
   unsafe_path_component: "agentTools.reasonUnsafePathComponent",
 };
 
-function badgeClass(state: SkillInstallState) {
-  if (state === "managed_current") return "badge status-ok";
-  if (state === "missing" || state === "managed_older") return "badge risk-medium";
-  return "badge status-error";
+function skillStateTone(state: SkillInstallState): StatusTone {
+  if (state === "managed_current") return "success";
+  if (state === "missing" || state === "managed_older") {
+    return "warning";
+  }
+  return "danger";
 }
 
 export default function AgentTools() {
@@ -296,9 +302,9 @@ export default function AgentTools() {
                       <h3 className="tw:m-0 tw:text-title tw:leading-ui tw:font-bold tw:tracking-normal tw:text-foreground tw:normal-case">
                         {target.displayName}
                       </h3>
-                      <span className={badgeClass(target.state)}>
+                      <StatusBadge tone={skillStateTone(target.state)}>
                         {t(stateLabel[target.state])}
-                      </span>
+                      </StatusBadge>
                     </div>
                     <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:text-ui tw:text-muted-foreground tw:@max-[520px]:justify-start">
                       <span>
@@ -471,13 +477,13 @@ export default function AgentTools() {
               <div className="tw:grid tw:gap-1 tw:py-3" key={target.id}>
                 <div className="tw:flex tw:items-center tw:gap-2">
                   <span>{target.displayName}</span>
-                  <span
-                    className={
+                  <StatusBadge
+                    tone={
                       target.state === "ready"
-                        ? "badge risk-medium"
+                        ? "warning"
                         : target.state === "manual_review"
-                          ? "badge status-error"
-                          : "badge status-ok"
+                          ? "danger"
+                          : "success"
                     }
                   >
                     {t(
@@ -487,7 +493,7 @@ export default function AgentTools() {
                           ? "agentTools.legacyCleanupManual"
                           : "agentTools.legacyCleanupAbsent",
                     )}
-                  </span>
+                  </StatusBadge>
                 </div>
                 <code className="tw:[overflow-wrap:anywhere]">
                   {target.path}

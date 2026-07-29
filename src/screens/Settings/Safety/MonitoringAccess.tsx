@@ -15,6 +15,7 @@ import ConfirmButton from "../../../components/ConfirmButton";
 import { Icon } from "../../../components/Icon";
 import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
+import { StatusBadge } from "../../../design-system/components/Status";
 import { monitoringStatusQuery, qk } from "../../../lib/queries";
 import { useI18n } from "../../../lib/i18n";
 
@@ -202,7 +203,9 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
                 ? t("safety.monitoringReviewGrant")
                 : t("safety.monitoringReviewRevoke")}
             </strong>
-            <span className="badge risk-high">{t("approval.riskHigh")}</span>
+            <StatusBadge tone="danger">
+              {t("approval.riskHigh")}
+            </StatusBadge>
           </div>
           <code className="tw:block tw:overflow-x-auto tw:bg-muted tw:p-2 tw:text-sm tw:whitespace-nowrap tw:text-foreground">
             {proposal.sql};

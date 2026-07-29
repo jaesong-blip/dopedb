@@ -52,7 +52,7 @@ interface PtySurfaceProps {
   onPromptVisible?: () => void;
   ariaLabel: string;
   ariaLabelledBy?: string;
-  className?: string;
+  fill?: boolean;
   id?: string;
   role?: "region" | "tabpanel";
 }
@@ -102,7 +102,7 @@ const PtySurface = forwardRef<PtySurfaceHandle, PtySurfaceProps>(
       onPromptVisible,
       ariaLabel,
       ariaLabelledBy,
-      className,
+      fill = false,
       id,
       role = "region",
     },
@@ -339,7 +339,8 @@ const PtySurface = forwardRef<PtySurfaceHandle, PtySurfaceProps>(
     return (
       <div
         ref={hostRef}
-        className={`tw:relative tw:min-h-0 tw:min-w-0 tw:w-full tw:flex-1 tw:overflow-hidden tw:bg-background tw:p-2 tw:[&_.xterm]:h-full tw:[&_.xterm-viewport]:[scrollbar-color:var(--ds-border-strong)_transparent] tw:[&_.xterm-viewport]:[scrollbar-width:thin]${className ? ` ${className}` : ""}`}
+        data-fill={fill || undefined}
+        className="tw:relative tw:min-h-0 tw:min-w-0 tw:w-full tw:flex-1 tw:overflow-hidden tw:bg-background tw:p-2 tw:data-[fill=true]:h-full tw:[&_.xterm]:h-full tw:[&_.xterm-viewport]:[scrollbar-color:var(--ds-border-strong)_transparent] tw:[&_.xterm-viewport]:[scrollbar-width:thin]"
         data-pty-id={session.id}
         role={role}
         id={id}
