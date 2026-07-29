@@ -30,6 +30,7 @@ pub(crate) struct WorkspaceCredentialBindingRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) username: String,
     pub(crate) password: Zeroizing<String>,
+    pub(crate) ssh_alias: Option<String>,
 }
 
 pub(crate) struct WorkspaceConnectionUpdateRequest {

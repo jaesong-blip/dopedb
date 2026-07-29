@@ -9,11 +9,13 @@ import {
   CONNECTION_KEEP_ALIVE_MAX_SECONDS,
   CONNECTION_KEEP_ALIVE_MIN_SECONDS,
   CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
+  CONNECTION_SSH_ALIAS_PARAMETER,
   CONNECTION_STARTUP_SCRIPT_MAX_LENGTH,
   CONNECTION_STARTUP_SCRIPT_PARAMETER,
   CONNECTION_TIME_ZONE_PARAMETER,
   isBoundedConnectionOptionSeconds,
   isConnectionTimeZone,
+  isSshHostAlias,
 } from "./options";
 
 export type ConnectionDiagnosticCode =
@@ -28,6 +30,9 @@ export type ConnectionDiagnosticCode =
   | "keepAliveInvalid"
   | "autoDisconnectInvalid"
   | "startupScriptTooLong"
+  | "sshAliasInvalid"
+  | "sshTunnelSingleHostRequired"
+  | "sshTunnelSrvUnsupported"
   | "driverCatalogUnavailable"
   | "driverUnavailable"
   | "driverInstallRequired";
@@ -36,7 +41,7 @@ export type ConnectionDiagnostic = {
   id: string;
   code: ConnectionDiagnosticCode;
   tone: "warning" | "danger";
-  tab: "general" | "options";
+  tab: "general" | "options" | "sshSsl";
   fieldId: string | null;
 };
 
@@ -194,6 +199,40 @@ export function diagnoseConnection(
         "danger",
         "connection-startup-script",
         "options",
+      ),
+    );
+  }
+  const sshAlias =
+    profile.extraParams[CONNECTION_SSH_ALIAS_PARAMETER]?.trim() ?? "";
+  if (sshAlias && !isSshHostAlias(sshAlias)) {
+    diagnostics.push(
+      issue(
+        "sshAliasInvalid",
+        "danger",
+        "connection-ssh-alias",
+        "sshSsl",
+      ),
+    );
+  } else if (sshAlias && profile.host.includes(",")) {
+    diagnostics.push(
+      issue(
+        "sshTunnelSingleHostRequired",
+        "danger",
+        "connection-host",
+        "general",
+      ),
+    );
+  } else if (
+    sshAlias &&
+    profile.engine === "mongodb" &&
+    profile.extraParams.srv === "true"
+  ) {
+    diagnostics.push(
+      issue(
+        "sshTunnelSrvUnsupported",
+        "danger",
+        "connection-ssh-alias",
+        "sshSsl",
       ),
     );
   }

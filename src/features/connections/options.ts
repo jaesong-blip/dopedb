@@ -12,6 +12,7 @@ export const CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER =
   "dopedb.autoDisconnectSeconds";
 export const CONNECTION_STARTUP_SCRIPT_PARAMETER =
   "dopedb.startupScript";
+export const CONNECTION_SSH_ALIAS_PARAMETER = "dopedb.sshAlias";
 
 export const CONNECTION_KEEP_ALIVE_MIN_SECONDS = 10;
 export const CONNECTION_KEEP_ALIVE_MAX_SECONDS = 86_400;
@@ -25,6 +26,7 @@ const CONNECTION_OPTION_PARAMETERS = new Set([
   CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
   CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
   CONNECTION_STARTUP_SCRIPT_PARAMETER,
+  CONNECTION_SSH_ALIAS_PARAMETER,
 ]);
 
 export function isConnectionOptionParameter(key: string): boolean {
@@ -44,7 +46,20 @@ export function isConnectionOptionSupported(
   if (key === CONNECTION_STARTUP_SCRIPT_PARAMETER) {
     return engine === "postgres" || engine === "mysql";
   }
+  if (key === CONNECTION_SSH_ALIAS_PARAMETER) {
+    return engine !== "sqlite";
+  }
   return isConnectionOptionParameter(key);
+}
+
+export function isSshHostAlias(value: string): boolean {
+  const normalized = value.trim();
+  return (
+    normalized.length > 0 &&
+    normalized.length <= 255 &&
+    !normalized.startsWith("-") &&
+    /^[A-Za-z0-9._-]+$/u.test(normalized)
+  );
 }
 
 export function connectionOption(

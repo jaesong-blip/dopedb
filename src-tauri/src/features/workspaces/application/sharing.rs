@@ -295,6 +295,7 @@ where
             connection_id,
             username,
             password,
+            ssh_alias,
         } = request;
         let username = validate_member_username(&username)?;
         if password.is_empty() || password.len() > MAX_CONNECTION_CREDENTIAL_BYTES {
@@ -322,6 +323,21 @@ where
                 reason: "your workspace role cannot execute this connection".into(),
             });
         }
+        let mut binding_extra_params = profile.extra_params.clone();
+        if let Some(ssh_alias) = ssh_alias {
+            let ssh_alias = ssh_alias.trim();
+            if ssh_alias.is_empty() {
+                binding_extra_params.remove(crate::connection::ssh::SSH_ALIAS_PARAMETER);
+            } else {
+                binding_extra_params.insert(
+                    crate::connection::ssh::SSH_ALIAS_PARAMETER.into(),
+                    ssh_alias.into(),
+                );
+            }
+        }
+        let mut binding_profile = profile.clone();
+        binding_profile.extra_params = binding_extra_params.clone();
+        crate::connection::ssh::validate_profile(&binding_profile)?;
         let account_user_id = mutation.selected_account_id()?;
         let previous_credential_id = profile
             .secret_ref
@@ -340,7 +356,7 @@ where
                 connection_id,
                 &account_user_id,
                 username,
-                &profile.extra_params,
+                &binding_extra_params,
                 Some(&credential_ref),
             )
             .await

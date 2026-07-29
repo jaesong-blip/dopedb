@@ -9,8 +9,8 @@ mod provider_local;
 pub mod providers;
 mod remote_authority;
 mod runtime;
+pub(crate) mod ssh;
 
-pub use crate::driver::connect;
 pub use keychain::{delete_secret, fetch_secret, store_secret};
 pub use pool::{DbPool, LiveConnection};
 pub(crate) use provider_local::{

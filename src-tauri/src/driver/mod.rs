@@ -145,6 +145,7 @@ fn find(id: &str) -> AppResult<&'static DriverDefinition> {
 
 fn resolve(profile: &ConnectionProfile) -> AppResult<&'static DriverDefinition> {
     providers::validate_connection_options(profile)?;
+    crate::connection::ssh::validate_profile(profile)?;
     let provider = providers::resolve(profile);
     let selected = match profile.driver_id.as_deref() {
         Some(id) => find(id)?,

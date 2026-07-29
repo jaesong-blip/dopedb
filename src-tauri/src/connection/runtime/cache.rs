@@ -19,6 +19,7 @@ use super::{
     release_managed_bounded, ConnectionAccess, Live, ManagedLeaseHandle, ProviderLocalBindingPin,
     ProviderLocalTarget, MANAGED_RELEASE_TIMEOUT,
 };
+use crate::connection::ssh::SshTunnel;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct ConnectionCacheKey {
@@ -73,6 +74,7 @@ pub(super) struct CacheEntry {
     pub(super) generation: u64,
     pub(super) retire_at: Option<Instant>,
     pub(super) managed_lease: StdMutex<Option<ManagedLeaseHandle>>,
+    pub(super) ssh_tunnel: StdMutex<Option<SshTunnel>>,
     pub(super) closed: AtomicBool,
 }
 
@@ -81,8 +83,21 @@ impl CacheEntry {
         lock_unpoisoned(&self.managed_lease).take()
     }
 
+    fn take_ssh_tunnel(&self) -> Option<SshTunnel> {
+        lock_unpoisoned(&self.ssh_tunnel).take()
+    }
+
+    fn ssh_transport_is_running(&self) -> bool {
+        lock_unpoisoned(&self.ssh_tunnel)
+            .as_mut()
+            .is_none_or(SshTunnel::is_running)
+    }
+
     async fn close_once(&self) {
         if !self.closed.swap(true, Ordering::AcqRel) {
+            if let Some(tunnel) = self.take_ssh_tunnel() {
+                tunnel.close().await;
+            }
             self.live.close().await;
         }
     }
@@ -101,8 +116,12 @@ impl Drop for CacheEntry {
     fn drop(&mut self) {
         let should_close = !self.closed.swap(true, Ordering::AcqRel);
         let live = should_close.then(|| self.live.clone());
+        let ssh_tunnel = self.take_ssh_tunnel();
         let managed_lease = self.take_managed_lease();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            if let Some(tunnel) = ssh_tunnel {
+                runtime.spawn(tunnel.close());
+            }
             if let Some(live) = live {
                 runtime.spawn(async move { live.close().await });
             }
@@ -146,6 +165,7 @@ pub(super) fn cache_entry_expired(entry: &CacheEntry) -> bool {
     entry
         .retire_at
         .is_some_and(|retire_at| retire_at <= Instant::now())
+        || !entry.ssh_transport_is_running()
 }
 
 pub(super) async fn retire_entries(entries: Vec<Arc<CacheEntry>>) {

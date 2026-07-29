@@ -205,6 +205,7 @@ pub async fn bind_workspace_connection_credentials(
     id: ConnectionId,
     username: String,
     password: String,
+    ssh_alias: Option<String>,
 ) -> AppResult<ConnectionProfile> {
     let profile = state
         .services
@@ -213,6 +214,7 @@ pub async fn bind_workspace_connection_credentials(
             connection_id: id,
             username,
             password: Zeroizing::new(password),
+            ssh_alias,
         })
         .await?;
     state.terminals.stop_connection(id, &app);

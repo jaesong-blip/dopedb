@@ -224,10 +224,27 @@ impl AdHocConnectionPort for SystemAdHocConnection {
     ) -> AppResult<()> {
         // A reachability probe only pings the target; it never needs a write
         // credential or a write-capable pool (including for MongoDB profiles).
-        let live =
-            connection::connect(profile, password.as_str(), AD_HOC_CONNECTION_TEST_ACCESS).await?;
+        let transport = connection::ssh::open(profile, profile).await?;
+        let live = match driver::connect(
+            &transport.profile,
+            password.as_str(),
+            AD_HOC_CONNECTION_TEST_ACCESS,
+        )
+        .await
+        {
+            Ok(live) => live,
+            Err(error) => {
+                if let Some(tunnel) = transport.tunnel {
+                    tunnel.close().await;
+                }
+                return Err(error);
+            }
+        };
         let result = live.test().await;
         live.close().await;
+        if let Some(tunnel) = transport.tunnel {
+            tunnel.close().await;
+        }
         result
     }
 }

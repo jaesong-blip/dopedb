@@ -111,6 +111,12 @@ export const connectionsCatalog = defineCatalog(
       "Enter an auto-disconnect interval from 30 through 86400 seconds.",
     "connections.problemStartupScriptTooLong":
       "Keep the startup script within 4096 characters.",
+    "connections.problemSshAliasInvalid":
+      "Use an OpenSSH Host alias with letters, numbers, dots, underscores, or hyphens.",
+    "connections.problemSshTunnelSingleHostRequired":
+      "An SSH tunnel requires one database host.",
+    "connections.problemSshTunnelSrvUnsupported":
+      "MongoDB SRV discovery cannot use a single-host SSH tunnel.",
     "connections.problemMongoDatabaseRequired":
       "Enter the MongoDB database name.",
     "connections.problemNameRequired": "Enter a data source name.",
@@ -241,9 +247,11 @@ export const connectionsCatalog = defineCatalog(
     "connections.startupScriptPlaceholder":
       "SET application_name = 'DopeDB';",
     "connections.sshSsl": "SSH/SSL",
-    "connections.sshUnsupportedBody":
-      "Direct SSL is supported. SSH tunnel profiles are not available in this build.",
-    "connections.sshUnsupportedTitle": "SSH tunnel",
+    "connections.sshHostAlias": "OpenSSH Host alias",
+    "connections.sshHostAliasHint":
+      "Optional. DopeDB runs the system ssh client; keys, passphrases, agents, ProxyJump, and host-key policy stay in ~/.ssh/config and the OS.",
+    "connections.sshHostAliasPlaceholder": "database-bastion",
+    "connections.sshTunnel": "SSH tunnel",
     "connections.tables": "Tables ({count})",
     "connections.test": "Test connection",
     "connections.tabList": "Data source settings",
@@ -371,6 +379,12 @@ export const connectionsCatalog = defineCatalog(
       "30초부터 86400초 사이의 자동 연결 해제 간격을 입력하세요.",
     "connections.problemStartupScriptTooLong":
       "시작 스크립트는 4096자 이내로 입력하세요.",
+    "connections.problemSshAliasInvalid":
+      "영문자, 숫자, 점, 밑줄 또는 하이픈으로 된 OpenSSH Host 별칭을 입력하세요.",
+    "connections.problemSshTunnelSingleHostRequired":
+      "SSH 터널에는 데이터베이스 호스트 하나만 사용할 수 있습니다.",
+    "connections.problemSshTunnelSrvUnsupported":
+      "MongoDB SRV 검색은 단일 호스트 SSH 터널과 함께 사용할 수 없습니다.",
     "connections.problemMongoDatabaseRequired":
       "MongoDB 데이터베이스 이름을 입력하세요.",
     "connections.problemNameRequired": "데이터 소스 이름을 입력하세요.",
@@ -498,9 +512,11 @@ export const connectionsCatalog = defineCatalog(
     "connections.startupScriptPlaceholder":
       "SET application_name = 'DopeDB';",
     "connections.sshSsl": "SSH/SSL",
-    "connections.sshUnsupportedBody":
-      "직접 SSL 연결은 지원합니다. 이 빌드에서는 SSH 터널 프로필을 사용할 수 없습니다.",
-    "connections.sshUnsupportedTitle": "SSH 터널",
+    "connections.sshHostAlias": "OpenSSH Host 별칭",
+    "connections.sshHostAliasHint":
+      "선택 사항입니다. DopeDB는 시스템 ssh만 실행하며 키, passphrase, agent, ProxyJump, host-key 정책은 ~/.ssh/config와 OS에 남습니다.",
+    "connections.sshHostAliasPlaceholder": "database-bastion",
+    "connections.sshTunnel": "SSH 터널",
     "connections.tables": "테이블 ({count})",
     "connections.test": "연결 테스트",
     "connections.tabList": "데이터 소스 설정",

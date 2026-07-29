@@ -20,6 +20,7 @@ import {
   parseWorkspaceChoice,
 } from "../choices";
 import type { ConnectionProfile } from "../../connections/domain";
+import { CONNECTION_SSH_ALIAS_PARAMETER } from "../../connections/options";
 import { errDetails } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
 import { useToast } from "../../../components/Toast";
@@ -76,6 +77,9 @@ export default function WorkspaceConnectionDialog({
   const [targetValue, setTargetValue] = useState("");
   const [username, setUsername] = useState(connection.username);
   const [password, setPassword] = useState("");
+  const [sshAlias, setSshAlias] = useState(
+    connection.extraParams[CONNECTION_SSH_ALIAS_PARAMETER] ?? "",
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLFormElement>(null);
@@ -142,6 +146,7 @@ export default function WorkspaceConnectionDialog({
           connection.id,
           username,
           password,
+          sshAlias,
         );
         onBound(bound);
         toast(t("workspace.credentialsBound"));
@@ -261,6 +266,24 @@ export default function WorkspaceConnectionDialog({
                   required
                 />
               </Field>
+              {connection.engine !== "sqlite" ? (
+                <Field label={t("connections.sshHostAlias")}>
+                  <TextInput
+                    value={sshAlias}
+                    onChange={(event) =>
+                      setSshAlias(event.target.value)
+                    }
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    maxLength={255}
+                    pattern="[A-Za-z0-9._][A-Za-z0-9._-]*"
+                    placeholder={t(
+                      "connections.sshHostAliasPlaceholder",
+                    )}
+                  />
+                </Field>
+              ) : null}
             </>
           )}
           {error ? (

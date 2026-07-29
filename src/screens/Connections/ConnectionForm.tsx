@@ -71,6 +71,7 @@ import {
   CONNECTION_KEEP_ALIVE_MAX_SECONDS,
   CONNECTION_KEEP_ALIVE_MIN_SECONDS,
   CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
+  CONNECTION_SSH_ALIAS_PARAMETER,
   CONNECTION_STARTUP_SCRIPT_MAX_LENGTH,
   CONNECTION_STARTUP_SCRIPT_PARAMETER,
   CONNECTION_TIME_ZONE_PARAMETER,
@@ -156,6 +157,7 @@ const MONGO_TLS_PARAMETERS = [
 const CONTROLLED_CONNECTION_PARAMETERS = new Set<string>([
   ...SQL_TLS_PARAMETERS,
   ...MONGO_TLS_PARAMETERS,
+  CONNECTION_SSH_ALIAS_PARAMETER,
   CONNECTION_INPUT_MODE_PARAMETER,
   CONNECTION_TIME_ZONE_PARAMETER,
   CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
@@ -479,6 +481,9 @@ export function ConnectionForm({
   const startupScriptValidation = fieldValidation(
     "connection-startup-script",
   );
+  const sshAliasValidation = fieldValidation(
+    "connection-ssh-alias",
+  );
   const connectionUrlValidation: FieldValidation | undefined =
     connectionUrlInvalid
       ? {
@@ -647,6 +652,14 @@ export function ConnectionForm({
         return t("connections.problemAutoDisconnectInvalid");
       case "startupScriptTooLong":
         return t("connections.problemStartupScriptTooLong");
+      case "sshAliasInvalid":
+        return t("connections.problemSshAliasInvalid");
+      case "sshTunnelSingleHostRequired":
+        return t(
+          "connections.problemSshTunnelSingleHostRequired",
+        );
+      case "sshTunnelSrvUnsupported":
+        return t("connections.problemSshTunnelSrvUnsupported");
       case "driverCatalogUnavailable":
         return t(
           "connections.problemDriverCatalogUnavailable",
@@ -712,6 +725,7 @@ export function ConnectionForm({
         delete extraParams[CONNECTION_TIME_ZONE_PARAMETER];
         delete extraParams[CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER];
         delete extraParams[CONNECTION_STARTUP_SCRIPT_PARAMETER];
+        delete extraParams[CONNECTION_SSH_ALIAS_PARAMETER];
       }
       if (engine === "mongodb" || engine === "sqlite") {
         for (const key of SQL_TLS_PARAMETERS) delete extraParams[key];
@@ -2612,20 +2626,48 @@ export function ConnectionForm({
                     </>
                   )}
                 </section>
-                <div className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-3">
-                  <Icon
-                    name="info"
-                    className="tw:mt-0.5 tw:text-info"
-                  />
-                  <div className="tw:grid tw:gap-1">
-                    <strong>
-                      {t("connections.sshUnsupportedTitle")}
-                    </strong>
+                {!isSqlite ? (
+                  <section className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-4">
+                    <h3>{t("connections.sshTunnel")}</h3>
+                    <Field label={t("connections.sshHostAlias")}>
+                      <div className="tw:grid tw:gap-1.5">
+                        <TextInput
+                          id="connection-ssh-alias"
+                          value={
+                            form.extraParams[
+                              CONNECTION_SSH_ALIAS_PARAMETER
+                            ] ?? ""
+                          }
+                          aria-invalid={
+                            sshAliasValidation?.tone === "danger" ||
+                            undefined
+                          }
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          maxLength={255}
+                          placeholder={t(
+                            "connections.sshHostAliasPlaceholder",
+                          )}
+                          onChange={(event) =>
+                            setExtraParameter(
+                              CONNECTION_SSH_ALIAS_PARAMETER,
+                              event.target.value,
+                            )
+                          }
+                        />
+                        {sshAliasValidation ? (
+                          <FieldValidationMessage
+                            validation={sshAliasValidation}
+                          />
+                        ) : null}
+                      </div>
+                    </Field>
                     <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                      {t("connections.sshUnsupportedBody")}
+                      {t("connections.sshHostAliasHint")}
                     </p>
-                  </div>
-                </div>
+                  </section>
+                ) : null}
               </div>
             ) : null}
 
