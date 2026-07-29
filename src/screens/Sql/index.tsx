@@ -44,6 +44,11 @@ import {
 import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
 import { useSqlDocumentAutosave } from "../../features/sqlDocuments/useSqlDocumentAutosave";
 import { buildRunSignal } from "../../features/query/runSignal";
+import {
+  findSqlParameters,
+  materializeSqlParameters,
+  type SqlParameter,
+} from "../../features/query/sqlParameters";
 import ApprovalCard from "../../components/ApprovalCard";
 import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
@@ -61,6 +66,7 @@ import {
   initialSqlRunPath,
   proposalSqlRunPath,
 } from "./runPath";
+import SqlParameterDialog from "./SqlParameterDialog";
 
 interface Run {
   sql: string;
@@ -91,6 +97,12 @@ interface PendingScriptApproval {
 }
 
 type ResultKind = "single" | "script";
+
+interface ParameterDialogState {
+  sql: string;
+  parameters: SqlParameter[];
+  action: "apply" | "explain" | "run";
+}
 
 function buildSqlHelpPrompt({
   connection,
@@ -195,6 +207,11 @@ export default function Sql({
     useState<PendingScriptApproval | null>(null);
   const [scriptConfirmation, setScriptConfirmation] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const [parameterValues, setParameterValues] = useState<
+    Record<string, string>
+  >({});
+  const [parameterDialog, setParameterDialog] =
+    useState<ParameterDialogState | null>(null);
   const serviceSessionRef = useRef<
     Omit<QueryServiceSession, "status" | "result" | "updatedAt"> | undefined
   >(undefined);
@@ -204,6 +221,10 @@ export default function Sql({
   const [planErr, setPlanErr] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
   const [formatting, setFormatting] = useState(false);
+  const draftParameters = useMemo(
+    () => findSqlParameters(draft, connection.engine),
+    [connection.engine, draft],
+  );
 
   const {
     saveState: documentSaveState,
@@ -251,8 +272,7 @@ export default function Sql({
     }
   }
 
-  async function executeSql(selectedSql?: string) {
-    const sql = selectedSql?.trim() || draft.trim();
+  async function runSql(sql: string) {
     if (!sql || running || !safetyReady) return;
     globalThis.performance?.clearMarks?.(
       "desktop_query_interaction_start",
@@ -347,6 +367,40 @@ export default function Sql({
     }
   }
 
+  function executeSql(selectedSql?: string) {
+    const sql = selectedSql?.trim() || draft.trim();
+    if (!sql || running || !safetyReady) return;
+    const parameters = findSqlParameters(sql, connection.engine);
+    if (parameters.length > 0) {
+      setParameterDialog({ sql, parameters, action: "run" });
+      return;
+    }
+    void runSql(sql);
+  }
+
+  function openParameterDialog() {
+    if (draftParameters.length === 0) return;
+    setParameterDialog({
+      sql: draft,
+      parameters: draftParameters,
+      action: "apply",
+    });
+  }
+
+  function applyParameterValues(values: Record<string, string>) {
+    const pending = parameterDialog;
+    if (!pending) return;
+    const sql = materializeSqlParameters(
+      pending.sql,
+      pending.parameters,
+      values,
+    );
+    setParameterValues(values);
+    setParameterDialog(null);
+    if (pending.action === "run") void runSql(sql);
+    else if (pending.action === "explain") void explainSql(sql);
+  }
+
   async function approvePendingScript() {
     const pending = pendingScriptApproval;
     if (!pending || running) return;
@@ -394,14 +448,14 @@ export default function Sql({
     }
   }
 
-  async function explain() {
-    if (!draft.trim() || draftIsScript || explaining) return;
+  async function explainSql(sql: string) {
+    if (!sql.trim() || splitStatements(sql).length > 1 || explaining) return;
     setPlanErr(null);
     setExplaining(true);
     try {
       // One backend inspection owns classification, authority pinning, and the
       // read-only Explain. There is no classify-to-preview IPC race to bridge.
-      const inspection = await inspectSql(connection.id, draft);
+      const inspection = await inspectSql(connection.id, sql);
       setPlan(inspection.report);
     } catch (e) {
       setPlanErr(errMessage(e));
@@ -409,6 +463,19 @@ export default function Sql({
     } finally {
       setExplaining(false);
     }
+  }
+
+  function explain() {
+    if (!draft.trim() || draftIsScript || explaining) return;
+    if (draftParameters.length > 0) {
+      setParameterDialog({
+        sql: draft,
+        parameters: draftParameters,
+        action: "explain",
+      });
+      return;
+    }
+    void explainSql(draft);
   }
 
   // A plan describes the draft it was generated from — invalidate it on edit.
@@ -522,6 +589,21 @@ export default function Sql({
             aria-label={t("sql.history")}
           >
             <Icon name="history" />
+          </button>
+          <button
+            className="btn small ghost icon-only"
+            disabled={draftParameters.length === 0 || running}
+            onClick={openParameterDialog}
+            title={
+              draftParameters.length > 0
+                ? t("sql.viewParametersCount", {
+                    count: draftParameters.length,
+                  })
+                : t("sql.noParameters")
+            }
+            aria-label={t("sql.viewParameters")}
+          >
+            <Icon name="parameter" />
           </button>
           <button
             className="btn small ghost icon-only"
@@ -824,6 +906,15 @@ export default function Sql({
         )}
 
       </div>
+      {parameterDialog ? (
+        <SqlParameterDialog
+          parameters={parameterDialog.parameters}
+          initialValues={parameterValues}
+          action={parameterDialog.action}
+          onCancel={() => setParameterDialog(null)}
+          onApply={applyParameterValues}
+        />
+      ) : null}
     </WorkbenchPane>
   );
 }

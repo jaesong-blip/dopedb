@@ -32,6 +32,17 @@ export const sqlCatalog = defineCatalog(
     "sql.openAgentReady": "{name} opened.",
     "sql.openAgentTerminal": "Open Agent Terminal",
     "sql.openAgentTitle": "Open {name}",
+    "sql.noParameters": "No user parameters in this query",
+    "sql.parameterApply": "Apply values",
+    "sql.parameterExplain": "Show query plan",
+    "sql.parameterName": "Parameter",
+    "sql.parameterRun": "Run query",
+    "sql.parameters": "Query parameters",
+    "sql.parameterSafety":
+      "Values are inserted as SQL expressions. The completed SQL is classified again and follows the same approval and safety policy before execution.",
+    "sql.parameterValue": "Value",
+    "sql.parameterValueFor": "Value for {name}",
+    "sql.parameterValuePlaceholder": "SQL expression, for example 42 or 'Seoul'",
     "sql.planning": "Planning...",
     "sql.queryPlan": "Query plan",
     "sql.readAuto": "Read Auto",
@@ -74,6 +85,8 @@ export const sqlCatalog = defineCatalog(
     "sql.txAutoHint":
       "Each statement uses the database's automatic transaction behavior. Manual commit and rollback are not available yet.",
     "sql.unsaved": "Unsaved",
+    "sql.viewParameters": "View parameters",
+    "sql.viewParametersCount": "View {count} parameter occurrences",
     "sql.writeCommitted": "write committed",
     "sql.writesDisabledScript":
       "Writes are disabled for this connection - a script that modifies data will be blocked. Enable writes in Settings > Safety.",
@@ -108,6 +121,17 @@ export const sqlCatalog = defineCatalog(
     "sql.openAgentReady": "{name}를 열었습니다.",
     "sql.openAgentTerminal": "Agent Terminal 열기",
     "sql.openAgentTitle": "{name} 열기",
+    "sql.noParameters": "이 쿼리에는 사용자 파라미터가 없습니다",
+    "sql.parameterApply": "값 적용",
+    "sql.parameterExplain": "쿼리 플랜 보기",
+    "sql.parameterName": "파라미터",
+    "sql.parameterRun": "쿼리 실행",
+    "sql.parameters": "쿼리 파라미터",
+    "sql.parameterSafety":
+      "값은 SQL 표현식으로 삽입됩니다. 완성된 SQL은 실행 전에 다시 분류되며 같은 승인·안전 정책을 거칩니다.",
+    "sql.parameterValue": "값",
+    "sql.parameterValueFor": "{name} 값",
+    "sql.parameterValuePlaceholder": "SQL 표현식, 예: 42 또는 '서울'",
     "sql.planning": "플랜 확인 중...",
     "sql.queryPlan": "쿼리 플랜",
     "sql.readAuto": "읽기 자동",
@@ -150,6 +174,8 @@ export const sqlCatalog = defineCatalog(
     "sql.txAutoHint":
       "각 문장은 데이터베이스의 자동 트랜잭션 동작을 사용합니다. 수동 커밋과 롤백은 아직 제공하지 않습니다.",
     "sql.unsaved": "저장되지 않음",
+    "sql.viewParameters": "파라미터 보기",
+    "sql.viewParametersCount": "파라미터 {count}개 보기",
     "sql.writeCommitted": "쓰기 커밋됨",
     "sql.writesDisabledScript":
       "이 연결은 쓰기가 비활성화되어 있습니다. 데이터를 수정하는 스크립트는 차단됩니다. 설정 > 안전에서 쓰기를 활성화하세요.",

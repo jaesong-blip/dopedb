@@ -86,6 +86,12 @@ const glyphs = {
       <path d="M8 11h7M16 13l5 5M21 13l-5 5" />
     </>
   ),
+  parameter: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 17V7h3a3 3 0 0 1 0 6h-3" />
+    </>
+  ),
   procedure: (
     <>
       <path d="M8 3H5a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h3" />

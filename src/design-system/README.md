@@ -155,7 +155,9 @@ Elevation은 세 단계만 허용한다.
 - `CommandMenu`, `CommandMenuGroup`, `CommandMenuItem`: 검색 입력, 분류,
   설명이 필요한 생성·선택 command popup.
 - `ModalBackdrop`, `ModalSurface`: background interaction을 차단하는 공용
-  viewport backdrop과 responsive dialog frame.
+  viewport backdrop과 responsive dialog frame. SQL parameter처럼 실행 전에
+  값을 완성하는 feature dialog도 이 frame과 `.ds-action-row` footer를 사용하고
+  별도 modal CSS를 만들지 않는다.
 - `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchContextHeader`,
   `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터 편집기·SQL·문서 화면의
   평평한 IDE pane, command row, object context, empty state 계약.
@@ -169,6 +171,9 @@ Elevation은 세 단계만 허용한다.
   외부 model/data-source context row의 세 층을 사용한다. 첨부 chip과 popup은
   semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
   않는다.
+- Query parameter dialog는 parameter token/이름과 SQL expression 값을 한 행에
+  대응시키고, 빈 값에서는 primary 실행 action을 비활성화한다. 치환 설명은
+  semantic muted surface에 두며 feature 전용 CSS나 style map을 만들지 않는다.
 - `ResultMeta`, `SqlSnippet`: 결과 pane의 고정 metadata bar와 축약 SQL 표기.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.
