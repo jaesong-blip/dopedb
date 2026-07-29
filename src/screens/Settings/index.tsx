@@ -11,7 +11,9 @@ import {
 } from "../../design-system/components/FormControls";
 import {
   ModalBackdrop,
+  ModalFooter,
   ModalSurface,
+  ModalTitleBar,
 } from "../../design-system/components/Modal";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import { useI18n } from "../../lib/i18n";
@@ -168,24 +170,12 @@ export default function Settings({
           data-settings
           className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:bg-background"
         >
-          <header className="tw:grid tw:min-h-11 tw:shrink-0 tw:grid-cols-[36px_minmax(0,1fr)_36px] tw:items-center tw:border-b tw:border-border-subtle tw:bg-card tw:px-2">
-            <span aria-hidden="true" />
-            <h1
-              id="settings-dialog-title"
-              className="tw:m-0 tw:text-center tw:text-base tw:font-semibold"
-            >
-              {t("common.settings")}
-            </h1>
-            <button
-              type="button"
-              className="btn small icon-only icon-xs"
-              onClick={close}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-            >
-              <Icon name="close" />
-            </button>
-          </header>
+          <ModalTitleBar
+            title={t("common.settings")}
+            titleId="settings-dialog-title"
+            closeLabel={t("common.close")}
+            onClose={close}
+          />
 
           <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-[300px_minmax(0,1fr)] tw:@max-[700px]:grid-cols-1 tw:@max-[700px]:grid-rows-[auto_minmax(0,1fr)]">
             <aside className="tw:flex tw:min-h-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card tw:p-2 tw:@max-[700px]:max-h-[188px] tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">
@@ -255,7 +245,7 @@ export default function Settings({
             </aside>
 
             <section className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col">
-              <div className="tw:flex tw:min-h-11 tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:text-ui tw:font-semibold">
+              <div className="tw:flex tw:h-[42px] tw:min-h-[42px] tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:text-ui tw:font-semibold">
                 <span className="tw:text-muted-foreground">
                   {t(
                     activeEntry?.scope === "dataSource"
@@ -312,11 +302,11 @@ export default function Settings({
             </section>
           </div>
 
-          <footer className="tw:flex tw:min-h-[52px] tw:shrink-0 tw:items-center tw:justify-end tw:border-t tw:border-border-subtle tw:bg-card tw:px-4">
+          <ModalFooter>
             <button className="btn primary" onClick={close}>
               {t("common.done")}
             </button>
-          </footer>
+          </ModalFooter>
         </div>
       </ModalSurface>
     </ModalBackdrop>

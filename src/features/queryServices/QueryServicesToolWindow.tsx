@@ -35,6 +35,7 @@ export default function QueryServicesToolWindow({
   activeDocumentId,
   onActivate,
   onActivateDocument,
+  onNewQuery,
   onClose,
   onStartResize,
   onResetHeight,
@@ -47,6 +48,7 @@ export default function QueryServicesToolWindow({
   activeDocumentId: string | null;
   onActivate: (id: string) => void;
   onActivateDocument: (id: string) => void;
+  onNewQuery: () => void;
   onClose: () => void;
   onStartResize: (event: {
     preventDefault(): void;
@@ -115,7 +117,7 @@ export default function QueryServicesToolWindow({
 
   return (
     <section
-      className="services-tool-window tw:relative tw:col-[1/-1] tw:row-start-3 tw:mx-1 tw:mb-1 tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[compact=true]:fixed tw:data-[compact=true]:top-title-toolbar tw:data-[compact=true]:right-0 tw:data-[compact=true]:bottom-20 tw:data-[compact=true]:left-0 tw:data-[compact=true]:z-[var(--ds-z-modal)] tw:data-[compact=true]:m-0 tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-x-0"
+      className="services-tool-window tw:relative tw:col-[1/-1] tw:row-start-3 tw:mx-[2px] tw:mb-1 tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[compact=true]:fixed tw:data-[compact=true]:top-title-toolbar tw:data-[compact=true]:right-0 tw:data-[compact=true]:bottom-20 tw:data-[compact=true]:left-0 tw:data-[compact=true]:z-[var(--ds-z-modal)] tw:data-[compact=true]:m-0 tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-x-0"
       data-compact={compact}
       aria-label={t("services.title")}
     >
@@ -138,6 +140,15 @@ export default function QueryServicesToolWindow({
       <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1">
         <aside className="tw:flex tw:w-[32%] tw:min-w-[220px] tw:max-w-[460px] tw:shrink-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-background">
           <WorkbenchToolbar label={t("services.sessions")} compact>
+            <button
+              type="button"
+              className="btn small icon-only"
+              onClick={onNewQuery}
+              title={t("ide.action.newQuery")}
+              aria-label={t("ide.action.newQuery")}
+            >
+              <Icon name="plus" />
+            </button>
             <button
               type="button"
               className="btn small icon-only"
@@ -224,7 +235,10 @@ export default function QueryServicesToolWindow({
                                 <ServiceDocumentNode
                                   key={document.id}
                                   document={document}
-                                  active={document.id === activeDocumentId}
+                                  active={
+                                    active === null &&
+                                    document.id === activeDocumentId
+                                  }
                                   sessions={sessions.filter(
                                     (session) =>
                                       session.documentId === document.id,
@@ -270,6 +284,7 @@ export default function QueryServicesToolWindow({
               <IdeToolTab
                 key={id}
                 active={tab === id}
+                size={id === "result" ? "document" : "compact"}
                 onClick={() => setTab(id)}
               >
                 <Icon name={id === "output" ? "terminal" : "table"} />
@@ -325,14 +340,17 @@ function ServiceDocumentNode({
         ? document.title
         : t("tabs.documents");
   const duration = latest ? sessionDuration(latest) : null;
+  const activeSessionInDocument = sessions.some(
+    (session) => session.id === activeSessionId,
+  );
   return (
     <div className="tw:flex tw:flex-col tw:gap-px">
       <button
         type="button"
         role="treeitem"
-        data-active={active}
-        aria-selected={active}
-        className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+        data-active={active && !activeSessionInDocument}
+        aria-selected={active && !activeSessionInDocument}
+        className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-secondary tw:data-[active=true]:text-secondary-foreground tw:hover:bg-muted"
         onClick={() => onActivateDocument(document.id)}
       >
         <Icon
@@ -384,7 +402,7 @@ function ServiceSessionRow({
       type="button"
       role="treeitem"
       data-active={active}
-      className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+      className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-secondary tw:data-[active=true]:text-secondary-foreground tw:hover:bg-muted"
       onClick={() => onActivate(session.id)}
       aria-selected={active}
       title={`${label} · ${session.startedLabel}`}

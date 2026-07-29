@@ -90,7 +90,7 @@ function MaterializedResult({
   const visibleRows = filteredRows.slice(0, limit);
 
   return (
-    <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
+    <div className="tw:relative tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
       {result ? (
         <>
           <ResultWorkbenchToolbar

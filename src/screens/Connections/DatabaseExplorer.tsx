@@ -40,6 +40,7 @@ import {
   ToolWindowAction,
   ToolWindowHeader,
   ToolWindowHideButton,
+  ToolWindowSearchRow,
   ToolWindowSection,
   ToolWindowSideSurface,
 } from "../../design-system/components/ToolWindow";
@@ -383,7 +384,7 @@ export function DatabaseExplorer({
           className="tw:flex tw:min-h-control-sm tw:items-center tw:gap-1 tw:px-1 tw:text-xs tw:text-muted-foreground tw:data-[active=true]:text-primary"
           title={t("connections.schemaGroupTitle", { group: group.label })}
         >
-          {engine && <EngineMark engine={engine} />}
+          {engine && <EngineMark engine={engine} size="tree" />}
           <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:font-bold tw:text-foreground">
             {group.label}
           </span>
@@ -646,19 +647,21 @@ export function DatabaseExplorer({
         </ToolbarMenu>
       </div>
       {connections.length > 0 && searchOpen ? (
-        <div className="tw:border-b tw:border-border-subtle tw:p-2">
-          <TreeSearch
-            value={globalFilter}
-            placeholder={t("connections.filterTables")}
-            clearLabel={t("common.close")}
-            onChange={updateGlobalFilter}
-            autoFocus
-            onEscape={() => {
-              setGlobalFilter("");
-              setSearchOpen(false);
-            }}
-          />
-        </div>
+        <ToolWindowSearchRow>
+          <div className="tw:min-w-0 tw:flex-1">
+            <TreeSearch
+              value={globalFilter}
+              placeholder={t("connections.filterTables")}
+              clearLabel={t("common.close")}
+              onChange={updateGlobalFilter}
+              autoFocus
+              onEscape={() => {
+                setGlobalFilter("");
+                setSearchOpen(false);
+              }}
+            />
+          </div>
+        </ToolWindowSearchRow>
       ) : null}
 
       <div className="explorer tw:min-h-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:p-1 tw:[container-name:db-sidebar] tw:[container-type:inline-size]">

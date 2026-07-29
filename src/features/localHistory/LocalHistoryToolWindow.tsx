@@ -5,6 +5,7 @@ import { LoadingLabel } from "../../design-system/components/Status";
 import {
   ToolWindowHeader,
   ToolWindowHideButton,
+  ToolWindowSearchRow,
   ToolWindowSideSurface,
   ToolWindowVerticalSplit,
 } from "../../design-system/components/ToolWindow";
@@ -157,7 +158,7 @@ export default function LocalHistoryToolWindow({
           />
         }
       />
-      <div className="tw:flex tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:p-1">
+      <ToolWindowSearchRow>
         <div className="tw:min-w-0 tw:flex-1">
           <TreeSearch
             clearLabel={t("common.close")}
@@ -182,7 +183,7 @@ export default function LocalHistoryToolWindow({
         >
           <Icon name="history" />
         </button>
-      </div>
+      </ToolWindowSearchRow>
       <ToolWindowVerticalSplit>
         <section className="tw:flex tw:flex-col">
           <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1">
@@ -214,7 +215,7 @@ export default function LocalHistoryToolWindow({
                     key={revision.localRevision}
                     type="button"
                     data-active={revision.localRevision === selectedRevision}
-                    className="tw:grid tw:min-h-10 tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:font-sans tw:text-left tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+                    className="tw:grid tw:min-h-11 tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:font-sans tw:text-left tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
                     onClick={() =>
                       setSelectedRevision(revision.localRevision)
                     }
@@ -249,7 +250,7 @@ export default function LocalHistoryToolWindow({
                 key={document.id}
                 type="button"
                 data-active={document.id === selectedDocument?.id}
-                className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+                className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-secondary tw:data-[active=true]:text-secondary-foreground tw:hover:bg-muted"
                 onClick={() => selectDocument(document)}
               >
                 <Icon

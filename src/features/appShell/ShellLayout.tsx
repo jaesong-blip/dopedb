@@ -19,6 +19,7 @@ import { tableKey } from "../../lib/tableRef";
 import { DatabaseExplorer } from "../../screens/Connections";
 import { DashboardSidebar } from "../../screens/Dashboards";
 import type { ConnectionLaunchPreset } from "../connections/presets";
+import { clampTerminalDockWidth } from "../terminals/layout";
 import type { EditingConnection } from "./WorkbenchContent";
 import { IdeStatusBar, IdeTopBar } from "./IdeChrome";
 import WorkbenchRail, { type AppArea } from "./WorkbenchRail";
@@ -148,7 +149,10 @@ export default function ShellLayout(props: Props) {
     databaseExplorerVisible || localHistoryVisible;
   const servicesVisible = servicesOpen;
   const rightDockWidth = showTerminalDock && !terminalOverlay
-    ? terminalWidth
+    ? clampTerminalDockWidth(
+        terminalWidth,
+        typeof window === "undefined" ? 1_280 : window.innerWidth,
+      )
     : 0;
   const statusQuerySession =
     queryServiceSessions.find(
@@ -201,7 +205,7 @@ export default function ShellLayout(props: Props) {
         gridTemplateColumns: compact
           ? "minmax(0, 1fr)"
           : leftToolWindowVisible
-            ? `${sidebarWidth}px 3px minmax(0, 1fr) ${rightDockWidth}px`
+            ? `${sidebarWidth}px 4px minmax(0, 1fr) ${rightDockWidth}px`
             : `0 0 minmax(0, 1fr) ${rightDockWidth}px`,
         gridTemplateRows: compact
           ? "var(--ds-title-toolbar-height) minmax(0, 1fr) var(--ds-status-bar-height)"
@@ -333,7 +337,7 @@ export default function ShellLayout(props: Props) {
       <main
         ref={mainRef}
         data-compact={compact}
-        className="main tw:col-start-3 tw:row-start-2 tw:m-panel-gutter tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:data-[compact=true]:col-start-1 tw:data-[compact=true]:m-0 tw:data-[compact=true]:min-h-0 tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-0"
+        className="main tw:col-start-3 tw:row-start-2 tw:mt-0 tw:mr-panel-gutter tw:mb-panel-gutter tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:data-[compact=true]:col-start-1 tw:data-[compact=true]:m-0 tw:data-[compact=true]:min-h-0 tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-0"
         tabIndex={-1}
         inert={mobileExplorerOpen ? true : undefined}
       >
@@ -363,7 +367,7 @@ export default function ShellLayout(props: Props) {
           skillStatus={skillStatus}
           overlay={terminalOverlay}
           compact={compact}
-          width={terminalWidth}
+          width={rightDockWidth}
           presentation="agent"
           onWidthChange={props.onTerminalWidthChange}
           onOpenArchive={props.onOpenAgentArchive}
@@ -380,6 +384,7 @@ export default function ShellLayout(props: Props) {
           activeDocumentId={activeWorkbenchDocumentId}
           onActivate={props.onActivateQueryServiceSession}
           onActivateDocument={props.onActivateWorkbenchDocument}
+          onNewQuery={props.onNewQuery}
           onClose={props.onCloseServices}
           onStartResize={props.onStartServicesResize}
           onResetHeight={props.onResetServicesHeight}

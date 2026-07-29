@@ -102,7 +102,7 @@ export default function ConnectionNode(props: Props) {
         data-nested={props.nested}
         data-dragging={props.draggingId === connection.id}
         data-drop-target={isDropTarget}
-        className="db-conn ds-object-row tw:group tw:relative tw:touch-none tw:select-none tw:gap-1 tw:rounded-xs tw:pr-[calc(var(--ds-control-sm)+var(--ds-space-1))] tw:font-medium tw:data-[nested=true]:pl-2 tw:data-[dragging=true]:opacity-50 tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring"
+        className="db-conn ds-object-row tw:group tw:relative tw:touch-none tw:select-none tw:gap-1 tw:rounded-xs tw:pr-[calc(var(--ds-control-sm)+var(--ds-space-1))] tw:text-ui tw:font-medium tw:leading-ui tw:data-[nested=true]:pl-2 tw:data-[dragging=true]:opacity-50 tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring"
         role="button"
         aria-selected={props.selected}
         aria-label={`${connection.name || t("app.unnamed")} · ${description}`}
@@ -143,7 +143,9 @@ export default function ConnectionNode(props: Props) {
             name={props.expanded ? "chevronDown" : "chevronRight"}
           />
         </span>
-        {!props.nested && <EngineMark engine={connection.engine} />}
+        {!props.nested && (
+          <EngineMark engine={connection.engine} size="tree" />
+        )}
         <span className="db-conn-name tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
           {connection.name || t("app.unnamed")}
         </span>

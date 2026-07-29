@@ -11,7 +11,7 @@ type StoredToolWindowLayout = {
   servicesHeight: number;
 };
 
-const DEFAULT_SERVICES_HEIGHT = 280;
+const DEFAULT_SERVICES_HEIGHT = 284;
 const MIN_SERVICES_HEIGHT = 160;
 const MAX_SERVICES_HEIGHT = 560;
 
@@ -58,7 +58,11 @@ function readLayout(): StoredToolWindowLayout {
             : DEFAULT_LAYOUT.servicesOpen,
         servicesHeight:
           "servicesHeight" in parsed && typeof parsed.servicesHeight === "number"
-            ? clampServicesHeight(parsed.servicesHeight)
+            ? clampServicesHeight(
+                parsed.servicesHeight === 280
+                  ? DEFAULT_SERVICES_HEIGHT
+                  : parsed.servicesHeight,
+              )
             : DEFAULT_LAYOUT.servicesHeight,
       };
     }

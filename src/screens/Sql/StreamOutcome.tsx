@@ -63,7 +63,7 @@ export default function StreamOutcome({
 
   return (
     <div
-      className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col"
+      className="tw:relative tw:flex tw:min-h-0 tw:flex-1 tw:flex-col"
       aria-live="polite"
     >
       {stream.columns.length === 0 ? (

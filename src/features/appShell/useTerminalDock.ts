@@ -5,7 +5,7 @@ import {
   TERMINAL_DOCK_DEFAULT_WIDTH,
 } from "../terminals/layout";
 
-const LEGACY_DEFAULT_WIDTHS = new Set([360, 480]);
+const LEGACY_DEFAULT_WIDTHS = new Set([360, 392, 480]);
 
 export function useTerminalDock() {
   const [open, setOpen] = useState(() => {

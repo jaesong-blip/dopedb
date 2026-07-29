@@ -9,6 +9,7 @@ export default function Pager({
   total,
   rows,
   busy,
+  showRefresh = true,
   onPage,
   onRefresh,
   children,
@@ -18,6 +19,7 @@ export default function Pager({
   total: number | null;
   rows: number;
   busy: boolean;
+  showRefresh?: boolean;
   onPage: (page: number) => void;
   onRefresh: () => void;
   children?: ReactNode;
@@ -74,15 +76,17 @@ export default function Pager({
       >
         <Icon name="chevronsRight" />
       </button>
-      <button
-        className="btn small icon-only refresh tw:@max-[480px]:hidden"
-        disabled={busy}
-        aria-label={t("common.refresh")}
-        title={t("common.refresh")}
-        onClick={onRefresh}
-      >
-        {busy ? "…" : <Icon name="refresh" />}
-      </button>
+      {showRefresh ? (
+        <button
+          className="btn small icon-only refresh tw:@max-[480px]:hidden"
+          disabled={busy}
+          aria-label={t("common.refresh")}
+          title={t("common.refresh")}
+          onClick={onRefresh}
+        >
+          {busy ? "…" : <Icon name="refresh" />}
+        </button>
+      ) : null}
       {children}
     </div>
   );

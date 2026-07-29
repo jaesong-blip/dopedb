@@ -18,10 +18,26 @@ const ENGINE_LABEL: Record<Engine, string> = {
   mongodb: "MongoDB",
 };
 
-export default function EngineMark({ engine }: { engine: Engine }) {
+export default function EngineMark({
+  engine,
+  size = "control",
+}: {
+  engine: Engine;
+  size?: "control" | "tree";
+}) {
   const label = ENGINE_LABEL[engine];
   return (
-    <span className="ds-engine-mark" data-engine={engine} title={label} aria-label={label}>
+    <span
+      className={
+        size === "tree"
+          ? "ds-engine-mark tw:size-4 tw:min-w-4"
+          : "ds-engine-mark"
+      }
+      data-engine={engine}
+      data-size={size}
+      title={label}
+      aria-label={label}
+    >
       <img src={ENGINE_ICON[engine]} alt="" aria-hidden="true" draggable={false} />
     </span>
   );

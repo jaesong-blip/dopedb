@@ -39,7 +39,9 @@ export default function WorkbenchDocumentStrip({
   const keyboardFallbackId = visibleDocuments[0]?.id ?? null;
 
   function label(document: WorkbenchDocument, index: number) {
-    if (document.kind === "data") return tableLabel(engine, document.table);
+    if (document.kind === "data") {
+      return `${tableLabel(engine, document.table)} [${connectionName}]`;
+    }
     if (document.kind === "welcome") return t("onboarding.title");
     if (document.kind === "schema") return t("tabs.schema");
     if (document.kind === "activity") return t("tabs.activity");

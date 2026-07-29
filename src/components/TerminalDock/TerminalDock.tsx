@@ -456,15 +456,6 @@ export default function TerminalDock({
   );
 
   useEffect(() => {
-    const clamp = () => {
-      const next = clampTerminalDockWidth(width, window.innerWidth);
-      if (next !== width) onWidthChange(next);
-    };
-    window.addEventListener("resize", clamp);
-    return () => window.removeEventListener("resize", clamp);
-  }, [onWidthChange, width]);
-
-  useEffect(() => {
     const modal = overlay || maximized;
     if (!modal && !popup) return;
     const inertTargets = modal
@@ -802,7 +793,7 @@ export default function TerminalDock({
     <>
       <aside
         ref={dockRef}
-        className="terminal-dock tw:relative tw:col-start-4 tw:row-start-2 tw:m-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[layout=overlay]:fixed tw:data-[layout=overlay]:inset-y-0 tw:data-[layout=overlay]:right-0 tw:data-[layout=overlay]:z-[var(--ds-z-modal)] tw:data-[layout=overlay]:m-0 tw:data-[layout=overlay]:w-[min(520px,calc(100vw_-_44px))] tw:data-[layout=overlay]:rounded-none tw:data-[layout=overlay]:shadow-popover tw:data-[layout=compact]:fixed tw:data-[layout=compact]:top-title-toolbar tw:data-[layout=compact]:right-0 tw:data-[layout=compact]:bottom-20 tw:data-[layout=compact]:left-0 tw:data-[layout=compact]:z-[var(--ds-z-modal)] tw:data-[layout=compact]:m-0 tw:data-[layout=compact]:w-screen tw:data-[layout=compact]:rounded-none tw:data-[layout=compact]:border-x-0 tw:data-[layout=maximized]:fixed tw:data-[layout=maximized]:inset-0 tw:data-[layout=maximized]:z-[var(--ds-z-modal)] tw:data-[layout=maximized]:m-0 tw:data-[layout=maximized]:h-dvh tw:data-[layout=maximized]:w-screen tw:data-[layout=maximized]:rounded-none tw:data-[layout=maximized]:border-0"
+        className="terminal-dock tw:relative tw:col-start-4 tw:row-start-2 tw:mt-0 tw:mr-1 tw:mb-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[layout=overlay]:fixed tw:data-[layout=overlay]:inset-y-0 tw:data-[layout=overlay]:right-0 tw:data-[layout=overlay]:z-[var(--ds-z-modal)] tw:data-[layout=overlay]:m-0 tw:data-[layout=overlay]:w-[min(520px,calc(100vw_-_44px))] tw:data-[layout=overlay]:rounded-none tw:data-[layout=overlay]:shadow-popover tw:data-[layout=compact]:fixed tw:data-[layout=compact]:top-title-toolbar tw:data-[layout=compact]:right-0 tw:data-[layout=compact]:bottom-20 tw:data-[layout=compact]:left-0 tw:data-[layout=compact]:z-[var(--ds-z-modal)] tw:data-[layout=compact]:m-0 tw:data-[layout=compact]:w-screen tw:data-[layout=compact]:rounded-none tw:data-[layout=compact]:border-x-0 tw:data-[layout=maximized]:fixed tw:data-[layout=maximized]:inset-0 tw:data-[layout=maximized]:z-[var(--ds-z-modal)] tw:data-[layout=maximized]:m-0 tw:data-[layout=maximized]:h-dvh tw:data-[layout=maximized]:w-screen tw:data-[layout=maximized]:rounded-none tw:data-[layout=maximized]:border-0"
         data-layout={dockLayout}
         aria-label={t(
           presentation === "agent"

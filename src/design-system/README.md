@@ -135,12 +135,18 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
 | `--ds-primary` / `--ds-primary-foreground` | 단일 affirmative action |
 | `--ds-secondary` / `--ds-secondary-foreground` | 낮은 강조의 control |
 | `--ds-muted` / `--ds-muted-foreground` | caption, placeholder, 비활성 chrome |
-| `--ds-selection` / `--ds-selection-foreground` | hover, active, current row |
+| `--ds-selection` / `--ds-selection-foreground` | muted IDE selection, active tab, current row; affirmative primary blue와 분리 |
 | `--ds-destructive` / `--ds-destructive-foreground` | 삭제·폐기·차단 |
 | `--ds-input` | form field와 outline control |
 | `--ds-ring` | focus-visible과 selected cell outline |
 | `--ds-editor-surface` | SQL editor와 코드 인접 surface |
 | `--ds-worktree-sidebar*` | database explorer와 navigation |
+
+`--ds-background`는 editor와 tool-window 내부의 가장 어두운 작업 면,
+`--ds-card`와 `--ds-bg-app`은 title/status chrome 및 panel gutter를 소유한다.
+따라서 화면별 wrapper가 임의의 어두운 배경을 다시 만들지 않는다.
+title toolbar의 project-context tint는 `--ds-title-toolbar-background`가
+소유하며 feature 화면에서 gradient를 다시 선언하지 않는다.
 
 DopeDB 기존 화면은 `--ds-surface-*`, `--ds-text*`, `--ds-accent*` 별칭을 사용한다.
 이 별칭은 위 역할 토큰에 연결되어 있으므로 새 화면에서는 역할이 더 명확한 정본
@@ -205,6 +211,8 @@ Elevation은 세 단계만 허용한다.
 - `ToolWindowHideButton`: 닫기/숨기기의 공통 minus command.
 - `ToolWindowVerticalSplit`: Local History에서 관찰한 primary/secondary
   vertical split. 비율은 `--ds-tool-window-primary-ratio`가 소유한다.
+- `EngineMark`: form/action 기본 크기와 28px object row 안의 `tree` 크기를
+  함께 소유한다. feature가 이미지 크기나 wrapper 크기를 다시 지정하지 않는다.
 - `ToolWindowComposer`, `ToolWindowComposerDock`, `ToolWindowComposerInput`,
   `ToolWindowComposerContext`: AI Chat의 multiline 입력면, 내부 context row와
   외부 model/data-source row.
@@ -228,13 +236,15 @@ Elevation은 세 단계만 허용한다.
   surface와 keyboard-focus 가능한 command/check row.
 - `CommandMenu`, `CommandMenuGroup`, `CommandMenuItem`: 검색 입력, 분류,
   설명이 필요한 생성·선택 command popup.
-- `ModalBackdrop`, `ModalSurface`: background interaction을 차단하는 공용
-  viewport backdrop과 responsive dialog frame. SQL parameter처럼 실행 전에
-  값을 완성하는 feature dialog도 이 frame과 `.ds-action-row` footer를 사용하고
-  별도 modal CSS를 만들지 않는다. `size="settings"`는 DopeDB 정본에서 추출한
-  945×700 설정 dialog와 compact full-height fallback을 소유한다. Settings
-  feature는 이 frame 안에서 300px search/hierarchy, breadcrumb/content와
-  실제 action footer를 조합하며 중앙 workbench를 대체하지 않는다.
+- `ModalBackdrop`, `ModalSurface`, `ModalTitleBar`, `ModalDetailActionBar`,
+  `ModalFooter`: background interaction을 차단하는 공용 viewport backdrop,
+  responsive dialog frame과 30px title/48px detail action/50px primary action
+  bar. SQL parameter처럼 실행 전에 값을 완성하는 feature dialog도 이 frame을
+  사용하고 별도 modal CSS를 만들지 않는다. `size="settings"`는 945×700 설정
+  dialog를, `size="dataSources"`는 공식 Data Sources 정본의 888×731 frame을
+  compact full-height fallback과 함께 소유한다. Data Sources의 `Problems`는
+  catalog 하단, `Test Connection`은 detail action bar, `Cancel/Apply/OK`는
+  `ModalFooter`에 두며 한 footer에 섞지 않는다.
 - `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchSelect`,
   `WorkbenchContextHeader`, `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터
   편집기·SQL·문서 화면의 평평한 IDE pane, command row, compact context select,
@@ -268,6 +278,7 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
+  compact viewport의 표시 폭 clamp는 저장된 desktop 폭을 변경하지 않는다.
 - Local History의 현재 `Recent` view는 tool-window header가 소유한다. 실제
   revision 복원 action은 검색/필터 문맥과 같은 command row에 두고 panel
   close와 섞지 않는다. project external-change 기능이 생기기 전에는 빈 file
@@ -293,12 +304,12 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   구현되기 전에는 `Tx: Auto`에 가짜 menu chevron이나 commit/rollback action을
   붙이지 않는다.
 - `ResultMeta`, `SqlSnippet`: 결과 pane의 고정 metadata bar와 축약 SQL 표기.
-- `WorkbenchStatusFooter`: table data와 query result가 공유하는 고정 하단
-  상태선. 페이지/visible row 범위, duration, 선택 상태처럼 현재 grid에서
-  계산된 값만 표시하며 상단 context header와 같은 정보를 중복하지 않는다.
+- `DataGridStatusPill`: table data와 query result가 공유하는 grid 하단 중앙의
+  floating row-count surface. 범위·duration·선택 상태의 상세 정보는 접근 가능한
+  title에 유지하고 grid를 밀어내는 전체 폭 footer를 만들지 않는다.
 - `ResultWorkbenchToolbar`, `ResultWorkbenchFooter`: materialized/streaming
   결과가 공유하는 grid mode, 전체 셀 검색, 실제 export action과 행·duration
-  footer. `ResultWorkbenchFooter`는 `WorkbenchStatusFooter`를 합성하고, 부분
+  상태. `ResultWorkbenchFooter`는 `DataGridStatusPill`을 합성하고, 부분
   stream은 평탄화하지 않고 완료된 결과에만 검색을 적용한다.
 - 일반·가상 `DataGrid`는 `data-data-grid-scroll` surface 계약을 공유한다.
   sticky header, filter, hover/selection, resize handle, scrollbar는
@@ -316,6 +327,10 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 - SQL table data editor는 command toolbar 바로 아래에 같은 폭의 `WHERE`와
   `ORDER BY` expression field를 둔다. Enter 또는 field action으로 실제
   server query를 다시 실행하고 Escape는 적용되지 않은 draft를 되돌린다.
+  refresh는 DopeDB command 순서처럼 toolbar 왼쪽의 첫 실제 action으로 두고,
+  삭제는 row 제거 의미의 minus glyph를 사용한다. SQL/Mongo 문서 모두
+  connection context를 document tab과 status bar에 표시하므로 data surface
+  위에 대형 object context header를 다시 만들지 않는다.
   fragment는 backend read-only proposal을 통과해야 하며 주석, 문장 구분자,
   다른 clause로 경계를 벗어나 generated `LIMIT`을 삼킬 수 없다.
 - 정렬 trigger와 column filter trigger는 header 안의 서로 다른 button이다.

@@ -1,7 +1,7 @@
 import type { SqlStreamRowSource } from "../features/queries/domain";
 import {
+  DataGridStatusPill,
   WorkbenchDivider,
-  WorkbenchStatusFooter,
   WorkbenchToolbar,
 } from "../design-system/components/Workbench";
 import { useI18n } from "../lib/i18n";
@@ -103,7 +103,16 @@ export function ResultWorkbenchFooter({
 }) {
   const { t } = useI18n();
   return (
-    <WorkbenchStatusFooter
+    <DataGridStatusPill
+      title={
+        duration === null
+          ? t("services.rowSummaryState", {
+              visible,
+              total,
+              state: state ?? t("sql.running"),
+            })
+          : t("services.rowSummary", { visible, total, duration })
+      }
       actions={
         onShowMore && showMoreCount > 0 ? (
           <button
@@ -116,17 +125,9 @@ export function ResultWorkbenchFooter({
         ) : undefined
       }
     >
-      <span>
-        {duration === null
-          ? t("services.rowSummaryState", {
-              visible,
-              total,
-              state: state ?? t("sql.running"),
-            })
-          : t("services.rowSummary", { visible, total, duration })}
-        {truncated ? ` · ${t("sql.capped", { count: maxRows })}` : ""}
-      </span>
-    </WorkbenchStatusFooter>
+      {t("ide.queryRows", { count: visible })}
+      {truncated ? ` · ${t("sql.capped", { count: maxRows })}` : ""}
+    </DataGridStatusPill>
   );
 }
 

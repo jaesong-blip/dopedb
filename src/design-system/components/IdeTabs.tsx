@@ -108,10 +108,12 @@ export function IdeToolTabStrip({
 
 export function IdeToolTab({
   active,
+  size = "compact",
   children,
   onClick,
 }: {
   active: boolean;
+  size?: "compact" | "document";
   children: ReactNode;
   onClick: () => void;
 }) {
@@ -121,7 +123,8 @@ export function IdeToolTab({
       role="tab"
       aria-selected={active}
       data-active={active}
-      className="tw:flex tw:h-control-md tw:max-w-[min(42vw,420px)] tw:cursor-pointer tw:items-center tw:gap-1.5 tw:overflow-hidden tw:rounded-sm tw:border tw:border-transparent tw:bg-transparent tw:px-3 tw:font-sans tw:text-sm tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground tw:data-[active=true]:border-selection tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted tw:hover:text-foreground"
+      data-size={size}
+      className="tw:flex tw:h-control-md tw:min-w-[88px] tw:max-w-[min(42vw,420px)] tw:cursor-pointer tw:items-center tw:gap-1.5 tw:overflow-hidden tw:rounded-sm tw:border tw:border-transparent tw:bg-transparent tw:px-3 tw:font-sans tw:text-sm tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground tw:data-[size=document]:min-w-[120px] tw:data-[active=true]:border-selection tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted tw:hover:text-foreground"
       onClick={onClick}
     >
       {children}

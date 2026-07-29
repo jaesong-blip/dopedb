@@ -105,6 +105,13 @@
   --ds-status-bar-height: 32px;
   --ds-panel-gutter: 4px;
   --ds-tool-window-primary-ratio: 46%;
+  --ds-title-toolbar-background: linear-gradient(
+    90deg,
+    #282a2c 0 68px,
+    #3d4530 70px,
+    #424c32 96px,
+    var(--ds-card) 700px
+  );
   --ds-sidebar-min: 180px;
   --ds-sidebar-default: 304px;
   --ds-sidebar-max: 520px;
@@ -116,11 +123,11 @@
    * Canonical DopeDB-derived dark roles. The aliases below keep DopeDB's existing
    * semantic API while preserving the surface/foreground pair contract.
    */
-  --ds-background: #1e1f22;
+  --ds-background: #191a1c;
   --ds-foreground: #dfe1e5;
-  --ds-card: #2b2d30;
+  --ds-card: #26282c;
   --ds-card-foreground: #dfe1e5;
-  --ds-popover: #2b2d30;
+  --ds-popover: #26282c;
   --ds-popover-foreground: #dfe1e5;
   --ds-primary: #3574f0;
   --ds-primary-foreground: #ffffff;
@@ -130,20 +137,20 @@
   --ds-secondary-foreground: #dfe1e5;
   --ds-muted: #2b2d30;
   --ds-muted-foreground: #9da0a8;
-  --ds-selection: #2f65ca;
-  --ds-selection-foreground: #ffffff;
+  --ds-selection: #30426e;
+  --ds-selection-foreground: var(--ds-foreground);
   --ds-destructive: #db5c5c;
   --ds-destructive-foreground: #ffffff;
   --ds-input: #43454a;
   --ds-ring: #548af7;
-  --ds-editor-surface: #1e1f22;
-  --ds-worktree-sidebar: #1e1f22;
+  --ds-editor-surface: #191a1c;
+  --ds-worktree-sidebar: #191a1c;
   --ds-worktree-sidebar-foreground: #dfe1e5;
   --ds-worktree-sidebar-accent: #2b2d30;
   --ds-worktree-sidebar-border: rgb(255 255 255 / 0.08);
 
   /* DopeDB surface aliases */
-  --ds-bg-app: var(--ds-background);
+  --ds-bg-app: var(--ds-card);
   --ds-bg-sidebar: var(--ds-worktree-sidebar);
   --ds-sidebar-border: var(--ds-worktree-sidebar-border);
   --ds-surface-0: var(--ds-card);

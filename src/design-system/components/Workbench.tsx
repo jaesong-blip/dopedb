@@ -8,7 +8,7 @@ export function WorkbenchPane({ children }: { children: ReactNode }) {
   return (
     <section
       data-workbench-pane
-      className="tw:flex tw:h-full tw:min-h-0 tw:min-w-0 tw:flex-col tw:overflow-hidden tw:bg-background tw:[container-type:inline-size]"
+      className="tw:relative tw:flex tw:h-full tw:min-h-0 tw:min-w-0 tw:flex-col tw:overflow-hidden tw:bg-background tw:[container-type:inline-size]"
     >
       {children}
     </section>
@@ -152,18 +152,25 @@ export function ResultMeta({ children }: { children: ReactNode }) {
   );
 }
 
-export function WorkbenchStatusFooter({
+export function DataGridStatusPill({
   children,
   actions,
+  title,
 }: {
   children: ReactNode;
   actions?: ReactNode;
+  title?: string;
 }) {
   return (
-    <footer className="tw:relative tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:justify-center tw:gap-1 tw:border-t tw:border-border-subtle tw:bg-card tw:px-3 tw:text-xs tw:text-muted-foreground">
-      {children}
+    <footer
+      className="tw:absolute tw:bottom-3 tw:left-1/2 tw:z-[var(--ds-z-raised)] tw:flex tw:h-control-lg tw:min-w-[108px] tw:max-w-[calc(100%_-_var(--ds-space-4))] tw:-translate-x-1/2 tw:items-center tw:justify-center tw:gap-1 tw:rounded-md tw:border tw:border-border-strong tw:bg-card tw:px-3 tw:text-sm tw:whitespace-nowrap tw:text-foreground tw:shadow-control"
+      title={title}
+    >
+      <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis">
+        {children}
+      </span>
       {actions ? (
-        <div className="tw:absolute tw:right-2 tw:flex tw:items-center">
+        <div className="tw:ml-1 tw:flex tw:items-center tw:border-l tw:border-border-subtle tw:pl-2">
           {actions}
         </div>
       ) : null}

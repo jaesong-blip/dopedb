@@ -26,7 +26,7 @@ export function ToolWindowSideSurface({
   return (
     <aside
       {...asideProps}
-      className="sidebar tw:my-1 tw:ml-1 tw:flex tw:h-[calc(100%_-_(var(--ds-space-1)*2))] tw:min-h-0 tw:w-[calc(100%_-_var(--ds-space-1))] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[compact=true]:fixed tw:data-[compact=true]:top-title-toolbar tw:data-[compact=true]:right-0 tw:data-[compact=true]:bottom-20 tw:data-[compact=true]:left-0 tw:data-[compact=true]:z-[var(--ds-z-modal)] tw:data-[compact=true]:m-0 tw:data-[compact=true]:h-auto tw:data-[compact=true]:w-screen tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-x-0 tw:data-[compact=true]:shadow-popover tw:data-[compact=true]:transition-transform tw:data-[compact=true]:duration-150 tw:data-[open=false]:pointer-events-none tw:data-[open=false]:-translate-x-full"
+      className="sidebar tw:mt-0 tw:mr-0 tw:mb-1 tw:ml-[2px] tw:flex tw:h-[calc(100%_-_var(--ds-space-1))] tw:min-h-0 tw:w-[calc(100%_-_2px)] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[compact=true]:fixed tw:data-[compact=true]:top-title-toolbar tw:data-[compact=true]:right-0 tw:data-[compact=true]:bottom-20 tw:data-[compact=true]:left-0 tw:data-[compact=true]:z-[var(--ds-z-modal)] tw:data-[compact=true]:m-0 tw:data-[compact=true]:h-auto tw:data-[compact=true]:w-screen tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-x-0 tw:data-[compact=true]:shadow-popover tw:data-[compact=true]:transition-transform tw:data-[compact=true]:duration-150 tw:data-[open=false]:pointer-events-none tw:data-[open=false]:-translate-x-full"
       data-compact={compact}
       data-open={open}
       aria-hidden={!open || asideProps["aria-hidden"]}
@@ -45,7 +45,7 @@ export function ToolWindowHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="tw:flex tw:h-tool-window-header tw:min-h-tool-window-header tw:shrink-0 tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-background tw:px-3 tw:text-ui">
+    <header className="tw:flex tw:h-[calc(var(--ds-tool-window-header-height)_-_1px)] tw:min-h-[calc(var(--ds-tool-window-header-height)_-_1px)] tw:shrink-0 tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-background tw:px-3 tw:text-ui">
       <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
         {title}
       </strong>
@@ -53,6 +53,18 @@ export function ToolWindowHeader({
         <div className="tw:flex tw:items-center tw:gap-[2px]">{actions}</div>
       ) : null}
     </header>
+  );
+}
+
+export function ToolWindowSearchRow({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:px-1 tw:pt-1 tw:pb-[3px]">
+      {children}
+    </div>
   );
 }
 

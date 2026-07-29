@@ -65,6 +65,15 @@ export default function TableToolbar(props: Props) {
         <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1">
           <button
             className="btn small ghost icon-only tw:shrink-0"
+            disabled={busy}
+            title={t("common.refresh")}
+            aria-label={t("common.refresh")}
+            onClick={props.onRefresh}
+          >
+            {busy ? "…" : <Icon name="refresh" />}
+          </button>
+          <button
+            className="btn small ghost icon-only tw:shrink-0"
             disabled={!canEdit}
             title={canEdit ? t("tables.insert") : noEditTitle}
             aria-label={t("tables.insert")}
@@ -88,7 +97,7 @@ export default function TableToolbar(props: Props) {
             aria-label={t("tables.delete")}
             onClick={props.onDelete}
           >
-            <Icon name="trash" />
+            <Icon name="minus" />
           </button>
           {stagedCount > 0 ? (
             <>
@@ -144,6 +153,7 @@ export default function TableToolbar(props: Props) {
         total={total}
         rows={rows}
         busy={busy}
+        showRefresh={false}
         onPage={props.onPage}
         onRefresh={props.onRefresh}
       >

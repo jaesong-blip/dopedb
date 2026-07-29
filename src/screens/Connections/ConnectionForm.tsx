@@ -30,7 +30,10 @@ import {
 } from "../../design-system/components/FormControls";
 import {
   ModalBackdrop,
+  ModalDetailActionBar,
+  ModalFooter,
   ModalSurface,
+  ModalTitleBar,
 } from "../../design-system/components/Modal";
 import {
   PanelTabs,
@@ -41,6 +44,7 @@ import { TreeSearch } from "../../design-system/components/TreeControls";
 import {
   ToolWindowAction,
   ToolWindowRailAction,
+  ToolWindowSearchRow,
   ToolWindowSection,
 } from "../../design-system/components/ToolWindow";
 import {
@@ -284,6 +288,7 @@ export function ConnectionForm({
     useState<ConnectionEditorView>("dataSources");
   const [sourceSearch, setSourceSearch] = useState("");
   const [driverSearch, setDriverSearch] = useState("");
+  const [catalogSearchOpen, setCatalogSearchOpen] = useState(false);
   const [catalogCloudProvider, setCatalogCloudProvider] =
     useState<ProviderKind>("neon");
   const [catalogDriverId, setCatalogDriverId] = useState<string | null>(
@@ -1146,8 +1151,7 @@ export function ConnectionForm({
   return (
     <ModalBackdrop>
       <ModalSurface
-        size="wide"
-        fill
+        size="dataSources"
         aria-labelledby="connection-editor-title"
         aria-busy={busy}
       >
@@ -1182,26 +1186,12 @@ export function ConnectionForm({
             }
           }}
         >
-      <header className="tw:flex tw:min-h-12 tw:shrink-0 tw:items-center tw:justify-between tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4">
-        <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
-          <Icon name="database" className="tw:text-info" />
-          <h2
-            id="connection-editor-title"
-            className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap"
-          >
-            {t("connections.dataSourcesAndDrivers")}
-          </h2>
-        </div>
-        <button
-          type="button"
-          className="btn small icon-only icon-xs"
-          onClick={onCancel}
-          title={t("common.close")}
-          aria-label={t("common.close")}
-        >
-          <Icon name="close" />
-        </button>
-      </header>
+      <ModalTitleBar
+        title={t("connections.dataSourcesAndDrivers")}
+        titleId="connection-editor-title"
+        closeLabel={t("common.close")}
+        onClose={onCancel}
+      />
 
       <div className="tw:flex tw:min-h-0 tw:flex-1 tw:@max-[760px]:flex-col">
         <div className="tw:hidden tw:shrink-0 tw:justify-center tw:border-b tw:border-border-subtle tw:bg-card tw:p-2 tw:@max-[760px]:flex">
@@ -1254,9 +1244,9 @@ export function ConnectionForm({
             <Icon name="download" />
           </ToolWindowRailAction>
         </nav>
-        <aside className="tw:flex tw:w-[244px] tw:shrink-0 tw:flex-col tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
-          <div className="tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:border-b tw:border-border-subtle tw:px-3">
-            <strong className="tw:text-sm">
+        <aside className="tw:flex tw:w-[214px] tw:shrink-0 tw:flex-col tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
+          <div className="tw:grid tw:h-[72px] tw:min-h-[72px] tw:grid-cols-1 tw:grid-rows-2 tw:items-center tw:border-b tw:border-border-subtle tw:px-3">
+            <strong className="tw:flex tw:h-full tw:items-center tw:text-sm">
               {t(
                 editorView === "dataSources"
                   ? "connections.dataSources"
@@ -1321,34 +1311,6 @@ export function ConnectionForm({
                         ))}
                       </CommandMenuGroup>
                     ) : null}
-                    {filteredCloudProviders.length > 0 ? (
-                      <CommandMenuGroup
-                        title={t(
-                          "connections.connectCloudProvider",
-                        )}
-                      >
-                        {filteredCloudProviders.map((provider) => (
-                          <CommandMenuItem
-                            key={provider.provider}
-                            leading={<Icon name="key" />}
-                            trailing={<Icon name="chevronRight" />}
-                            description={t(
-                              "connections.cloudCredentialDescription",
-                            )}
-                            onClick={() => {
-                              setAddMenuOpen(false);
-                              setAddSearch("");
-                              openProviderCredentials(
-                                provider.provider,
-                                addButtonRef.current,
-                              );
-                            }}
-                          >
-                            {provider.label}
-                          </CommandMenuItem>
-                        ))}
-                      </CommandMenuGroup>
-                    ) : null}
                     {filteredFileSources.length > 0 ||
                     demoMatches ? (
                       <CommandMenuGroup
@@ -1388,6 +1350,34 @@ export function ConnectionForm({
                               : t("connections.demoSqlite")}
                           </CommandMenuItem>
                         ) : null}
+                      </CommandMenuGroup>
+                    ) : null}
+                    {filteredCloudProviders.length > 0 ? (
+                      <CommandMenuGroup
+                        title={t(
+                          "connections.connectCloudProvider",
+                        )}
+                      >
+                        {filteredCloudProviders.map((provider) => (
+                          <CommandMenuItem
+                            key={provider.provider}
+                            leading={<Icon name="key" />}
+                            trailing={<Icon name="chevronRight" />}
+                            description={t(
+                              "connections.cloudCredentialDescription",
+                            )}
+                            onClick={() => {
+                              setAddMenuOpen(false);
+                              setAddSearch("");
+                              openProviderCredentials(
+                                provider.provider,
+                                addButtonRef.current,
+                              );
+                            }}
+                          >
+                            {provider.label}
+                          </CommandMenuItem>
+                        ))}
                       </CommandMenuGroup>
                     ) : null}
                     {!hasAddResults ? (
@@ -1452,41 +1442,75 @@ export function ConnectionForm({
                   <Icon name="copy" />
                 </button>
               ) : null}
-              </div>
-            ) : editorView === "drivers" ? (
               <button
                 type="button"
                 className="btn small icon-only icon-xs"
-                disabled={driverCatalog.isFetching}
-                onClick={() => void driverCatalog.refetch()}
-                title={t("common.refresh")}
-                aria-label={t("common.refresh")}
+                data-active={catalogSearchOpen || undefined}
+                onClick={() => setCatalogSearchOpen((open) => !open)}
+                title={t("connections.searchDataSources")}
+                aria-label={t("connections.searchDataSources")}
+                aria-pressed={catalogSearchOpen}
               >
-                <Icon name="refresh" />
+                <Icon name="search" />
               </button>
+              </div>
+            ) : editorView === "drivers" ? (
+              <div className="tw:flex tw:items-center tw:gap-1">
+                <button
+                  type="button"
+                  className="btn small icon-only icon-xs"
+                  disabled={driverCatalog.isFetching}
+                  onClick={() => void driverCatalog.refetch()}
+                  title={t("common.refresh")}
+                  aria-label={t("common.refresh")}
+                >
+                  <Icon name="refresh" />
+                </button>
+                <button
+                  type="button"
+                  className="btn small icon-only icon-xs"
+                  data-active={catalogSearchOpen || undefined}
+                  onClick={() => setCatalogSearchOpen((open) => !open)}
+                  title={t("connections.searchDrivers")}
+                  aria-label={t("connections.searchDrivers")}
+                  aria-pressed={catalogSearchOpen}
+                >
+                  <Icon name="search" />
+                </button>
+              </div>
             ) : null}
           </div>
-          {editorView !== "clouds" ? (
-            <div className="tw:border-b tw:border-border-subtle tw:p-2">
-            <TreeSearch
-              value={
-                editorView === "dataSources"
-                  ? sourceSearch
-                  : driverSearch
-              }
-              placeholder={t(
-                editorView === "dataSources"
-                  ? "connections.searchDataSources"
-                  : "connections.searchDrivers",
-              )}
-              clearLabel={t("common.close")}
-              onChange={
-                editorView === "dataSources"
-                  ? setSourceSearch
-                  : setDriverSearch
-              }
-            />
-            </div>
+          {editorView !== "clouds" && catalogSearchOpen ? (
+            <ToolWindowSearchRow>
+              <TreeSearch
+                value={
+                  editorView === "dataSources"
+                    ? sourceSearch
+                    : driverSearch
+                }
+                autoFocus
+                placeholder={t(
+                  editorView === "dataSources"
+                    ? "connections.searchDataSources"
+                    : "connections.searchDrivers",
+                )}
+                clearLabel={t("common.close")}
+                onChange={
+                  editorView === "dataSources"
+                    ? setSourceSearch
+                    : setDriverSearch
+                }
+                onEscape={() => {
+                  if (editorView === "dataSources" && sourceSearch) {
+                    setSourceSearch("");
+                  } else if (editorView === "drivers" && driverSearch) {
+                    setDriverSearch("");
+                  } else {
+                    setCatalogSearchOpen(false);
+                  }
+                }}
+              />
+            </ToolWindowSearchRow>
           ) : null}
           <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-2">
             {editorView === "dataSources" &&
@@ -1497,7 +1521,9 @@ export function ConnectionForm({
                 {visibleConnections.map((connection) => (
                   <ToolWindowAction
                     key={connection.id}
-                    leading={<EngineMark engine={connection.engine} />}
+                    leading={
+                      <EngineMark engine={connection.engine} size="tree" />
+                    }
                     trailing={<Icon name="chevronRight" />}
                     selected={!isNew && connection.id === form.id}
                     onClick={() => onEditConnection(connection)}
@@ -1531,7 +1557,9 @@ export function ConnectionForm({
                   {visibleCatalogDrivers.map((driver) => (
                     <ToolWindowAction
                       key={driver.id}
-                      leading={<EngineMark engine={driver.engine} />}
+                      leading={
+                        <EngineMark engine={driver.engine} size="tree" />
+                      }
                       trailing={
                         driver.installState === "installed" ? (
                           <Icon name="check" />
@@ -1573,8 +1601,9 @@ export function ConnectionForm({
                 ))}
               </ToolWindowSection>
             ) : null}
-            {editorView === "dataSources" ? (
-              <div className="tw:mt-3 tw:border-t tw:border-border-subtle tw:pt-2">
+          </nav>
+          {editorView === "dataSources" ? (
+            <div className="tw:shrink-0 tw:border-t tw:border-border-subtle tw:p-2">
               <ToolWindowAction
                 leading={
                   <Icon
@@ -1597,13 +1626,12 @@ export function ConnectionForm({
                   />
                 }
                 selected={problemsOpen}
-                onClick={() => setProblemsOpen(true)}
+                onClick={() => setProblemsOpen((open) => !open)}
               >
                 {t("connections.problems")}
               </ToolWindowAction>
-              </div>
-            ) : null}
-          </nav>
+            </div>
+          ) : null}
         </aside>
 
         <section className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
@@ -2728,6 +2756,35 @@ export function ConnectionForm({
               </div>
             ) : null}
           </div>
+          <ModalDetailActionBar>
+            <button
+              type="button"
+              className="tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-0 tw:font-sans tw:text-sm tw:font-medium tw:text-info tw:disabled:cursor-default tw:disabled:text-muted-foreground"
+              disabled={busy || hasBlockingProblems}
+              onClick={() => void test()}
+            >
+              {running === "test"
+                ? t("connections.testing")
+                : t("connections.test")}
+            </button>
+            {message ? (
+              <span
+                className={
+                  messageIsError
+                    ? "tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-danger"
+                    : "tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-muted-foreground"
+                }
+                role={messageIsError ? "alert" : "status"}
+                title={message}
+              >
+                {message}
+              </span>
+            ) : activeDriver ? (
+              <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-muted-foreground">
+                {activeDriver.name} {activeDriver.version}
+              </span>
+            ) : null}
+          </ModalDetailActionBar>
             </>
           ) : editorView === "clouds" ? (
             <>
@@ -2868,80 +2925,34 @@ export function ConnectionForm({
         </section>
       </div>
 
-      <footer
-        className="tw:flex tw:min-h-[52px] tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-card tw:px-4"
-        data-primary-flow
-      >
+      <ModalFooter>
         {editorView === "dataSources" ? (
           <>
-        <button
-          type="button"
-          className="btn"
-          aria-pressed={problemsOpen}
-          onClick={() => setProblemsOpen((open) => !open)}
-        >
-          <Icon
-            name={
-              problemItems.length === 0 ? "check" : "alert"
-            }
-          />
-          {t("connections.problems")}
-          <DiagnosticCount
-            count={problemItems.length}
-            hasErrors={problemItems.some(
-              (item) => item.tone === "danger",
-            )}
-          />
-        </button>
-        <button
-          className="btn"
-          disabled={busy || hasBlockingProblems}
-          onClick={() => void test()}
-        >
-          {running === "test"
-            ? t("connections.testing")
-            : t("connections.test")}
-        </button>
-        {message ? (
-          <span
-            className={
-              messageIsError
-                ? "tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-danger"
-                : "tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-success"
-            }
-            role={messageIsError ? "alert" : "status"}
-            title={message}
-          >
-            {message}
-          </span>
-        ) : (
-          <span className="tw:flex-1" />
-        )}
-        <button
-          className="btn"
-          disabled={busy}
-          onClick={onCancel}
-        >
-          {t("common.cancel")}
-        </button>
-        <button
-          className="btn"
-          disabled={busy || hasBlockingProblems}
-          onClick={() => void save(false)}
-        >
-          {running === "apply"
-            ? t("common.saving")
-            : t("common.apply")}
-        </button>
-        <button
-          className="btn primary"
-          disabled={busy || hasBlockingProblems}
-          onClick={() => void save(true)}
-        >
-          {running === "save"
-            ? t("common.saving")
-            : t("common.ok")}
-        </button>
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={onCancel}
+            >
+              {t("common.cancel")}
+            </button>
+            <button
+              className="btn"
+              disabled={busy || hasBlockingProblems}
+              onClick={() => void save(false)}
+            >
+              {running === "apply"
+                ? t("common.saving")
+                : t("common.apply")}
+            </button>
+            <button
+              className="btn primary"
+              disabled={busy || hasBlockingProblems}
+              onClick={() => void save(true)}
+            >
+              {running === "save"
+                ? t("common.saving")
+                : t("common.ok")}
+            </button>
           </>
         ) : (
           <>
@@ -2957,7 +2968,7 @@ export function ConnectionForm({
             </button>
           </>
         )}
-      </footer>
+      </ModalFooter>
       {providerCredentialsOpen ? (
         <ProviderCredentialDialog
           initialProvider={

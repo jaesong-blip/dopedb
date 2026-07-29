@@ -2,10 +2,10 @@ import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import DataGrid from "../../components/DataGrid";
+import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import {
-  MetadataDot,
-  WorkbenchContextHeader,
+  DataGridStatusPill,
   WorkbenchEmptyState,
   WorkbenchPane,
   WorkbenchToolbar,
@@ -20,7 +20,7 @@ import {
   documentCountQuery,
   documentRowsQuery,
 } from "../../lib/queries";
-import { tableKey, tableLabel } from "../../lib/tableRef";
+import { tableKey } from "../../lib/tableRef";
 import Pager from "./Pager";
 
 const PAGE = 100;
@@ -72,38 +72,20 @@ export default function MongoTableData({
 
   return (
     <WorkbenchPane>
-      <WorkbenchContextHeader
-        icon={table.kind === "view" ? "view" : "collection"}
-        title={tableLabel(connection.engine, table)}
-        badge={
-          table.kind === "view"
-            ? t("schema.view")
-            : t("tables.sourceCollection")
-        }
-        metadata={
-          <>
-          <span>LIMIT {pageSize.toLocaleString()}</span>
-          {documentPage && (
-            <>
-              <MetadataDot />
-              <span>
-                {total != null
-                  ? t("tables.rowRangeTotal", {
-                      from,
-                      to,
-                      total: total.toLocaleString(),
-                    })
-                  : t("tables.rowRange", { from, to })}
-                {documentPage.truncated ? " (truncated)" : ""}
-              </span>
-              <MetadataDot />
-              <span>{documentPage.durationMs} ms</span>
-            </>
-          )}
-          </>
-        }
-      />
       <WorkbenchToolbar label={t("tables.pagination")}>
+        <button
+          type="button"
+          className="btn small ghost icon-only tw:shrink-0"
+          disabled={busy}
+          title={t("common.refresh")}
+          aria-label={t("common.refresh")}
+          onClick={() => {
+            void rowsQuery.refetch();
+            void countQuery.refetch();
+          }}
+        >
+          {busy ? "…" : <Icon name="refresh" />}
+        </button>
         <span className="tw:flex-1" />
         <Pager
           page={page}
@@ -111,6 +93,7 @@ export default function MongoTableData({
           total={total}
           rows={rows}
           busy={busy}
+          showRefresh={false}
           onPage={setPage}
           onRefresh={() => {
             void rowsQuery.refetch();
@@ -160,6 +143,26 @@ export default function MongoTableData({
           ))
         )}
       </div>
+      {documentPage ? (
+        <DataGridStatusPill
+          title={[
+            total != null
+              ? t("tables.rowRangeTotal", {
+                  from,
+                  to,
+                  total: total.toLocaleString(),
+                })
+              : t("tables.rowRange", { from, to }),
+            documentPage.truncated ? t("tables.truncated") : null,
+            `${documentPage.durationMs} ms`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
+          {t("ide.queryRows", { count: rows })}
+          {documentPage.truncated ? ` · ${t("tables.truncated")}` : ""}
+        </DataGridStatusPill>
+      ) : null}
     </WorkbenchPane>
   );
 }

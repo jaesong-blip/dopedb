@@ -28,10 +28,9 @@ import JobPanel from "../../components/JobPanel";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import {
-  MetadataDot,
+  DataGridStatusPill,
   WorkbenchEmptyState,
   WorkbenchPane,
-  WorkbenchStatusFooter,
 } from "../../design-system/components/Workbench";
 import { tableRowsQuery } from "../../lib/queries";
 import { tableKey } from "../../lib/tableRef";
@@ -535,30 +534,29 @@ export default function SqlTableData({
       </div>
 
       {result ? (
-        <WorkbenchStatusFooter>
-          <span>
-            {total != null
+        <DataGridStatusPill
+          title={[
+            total != null
               ? t("tables.rowRangeTotal", {
                   from,
                   to,
                   total: total.toLocaleString(),
                 })
-              : t("tables.rowRange", { from, to })}
-            {result.truncated ? ` · ${t("tables.truncated")}` : ""}
-          </span>
-          <MetadataDot />
-          <span>{result.durationMs} ms</span>
-          {selected != null ? (
-            <>
-              <MetadataDot />
-              <span>
-                {t("tables.selectedRow", {
+              : t("tables.rowRange", { from, to }),
+            result.truncated ? t("tables.truncated") : null,
+            `${result.durationMs} ms`,
+            selected != null
+              ? t("tables.selectedRow", {
                   row: page * pageSize + selected + 1,
-                })}
-              </span>
-            </>
-          ) : null}
-        </WorkbenchStatusFooter>
+                })
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        >
+          {t("ide.queryRows", { count: result.rows.length })}
+          {result.truncated ? ` · ${t("tables.truncated")}` : ""}
+        </DataGridStatusPill>
       ) : null}
     </WorkbenchPane>
   );
