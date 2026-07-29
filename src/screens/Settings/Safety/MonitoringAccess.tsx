@@ -99,7 +99,11 @@ export default function MonitoringAccess({ connectionId }: { connectionId: strin
           </div>
         </div>
         <p className="tw:text-ui tw:text-danger">
-          {t("safety.monitoringError", { error: errMessage(statusQuery.error) })}
+          {t("safety.monitoringError", {
+            error: statusQuery.error
+              ? errMessage(statusQuery.error)
+              : t("common.unknown"),
+          })}
         </p>
       </section>
     );

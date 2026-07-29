@@ -292,6 +292,7 @@ export default function ShellLayout(props: Props) {
             focusId={dashboardFocusId}
             onSelectConnection={props.onSelectDashboardConnection}
             onFocus={props.onDashboardFocus}
+            onClose={props.onToggleDatabaseExplorer}
             compact={compact}
             compactOpen={mobileExplorerOpen}
           />

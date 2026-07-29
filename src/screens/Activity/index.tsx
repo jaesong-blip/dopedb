@@ -169,155 +169,155 @@ export default function Activity({
 
   return (
     <WorkbenchPane>
-      <div className="tw:mx-auto tw:flex tw:min-h-0 tw:w-full tw:max-w-[1120px] tw:flex-1 tw:flex-col tw:gap-4 tw:overflow-auto tw:p-3">
-      <details
-        data-danger={integrityDanger}
-        className="tw:group tw:overflow-hidden tw:rounded-lg tw:border tw:border-border-subtle tw:bg-card tw:data-[danger=true]:border-danger tw:data-[danger=true]:bg-danger-muted"
-        open={auditOpen}
-        onToggle={handleAuditToggle}
-      >
-        <summary
-          id="activity-audit-summary"
-          className="tw:grid tw:min-h-control-xl tw:cursor-pointer tw:list-none tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:p-3 tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring tw:[&::-webkit-details-marker]:hidden tw:max-[760px]:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)]"
+      <div className="tw:mx-auto tw:flex tw:min-h-0 tw:w-full tw:max-w-[1120px] tw:flex-1 tw:flex-col tw:overflow-auto">
+        <details
+          data-danger={integrityDanger}
+          className="tw:group tw:shrink-0 tw:border-b tw:border-border-subtle tw:bg-background tw:data-[danger=true]:border-danger tw:data-[danger=true]:bg-danger-muted"
+          open={auditOpen}
+          onToggle={handleAuditToggle}
         >
-          <Icon
-            name={integrityIcon}
-            data-danger={integrityDanger}
-            className="tw:text-title tw:text-primary tw:data-[danger=true]:text-danger"
-          />
-          <span className="tw:grid tw:min-w-0 tw:gap-1">
-            <strong
-              className="tw:text-ui tw:leading-ui tw:text-foreground"
-              role={integrityError || chainBroken ? "alert" : "status"}
-              aria-live="polite"
-            >
-              {integrityTitle}
-            </strong>
-            {integrityError && (
-              <span className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-                {t("activity.auditVerifyError", { error: integrityError })}
-              </span>
-            )}
-          </span>
-          <span className="tw:inline-flex tw:items-center tw:gap-1 tw:text-sm tw:whitespace-nowrap tw:text-muted-foreground tw:max-[760px]:col-start-2">
-            {auditEntries
-              ? t("activity.auditDetailsCount", { count: auditEntries.length })
-              : t("activity.auditDetails")}
+          <summary
+            id="activity-audit-summary"
+            className="tw:grid tw:min-h-workbench-toolbar tw:cursor-pointer tw:list-none tw:grid-cols-[var(--ds-icon-md)_minmax(0,1fr)_auto] tw:items-center tw:gap-2 tw:px-3 tw:py-1 tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring tw:[&::-webkit-details-marker]:hidden tw:max-[760px]:grid-cols-[var(--ds-icon-md)_minmax(0,1fr)]"
+          >
             <Icon
-              name="chevronRight"
-              className="tw:transition-transform tw:group-open:rotate-90"
+              name={integrityIcon}
+              data-danger={integrityDanger}
+              className="tw:text-primary tw:data-[danger=true]:text-danger"
             />
-          </span>
-        </summary>
+            <span className="tw:grid tw:min-w-0">
+              <strong
+                className="tw:text-sm tw:leading-ui tw:text-foreground"
+                role={integrityError || chainBroken ? "alert" : "status"}
+                aria-live="polite"
+              >
+                {integrityTitle}
+              </strong>
+              {integrityError && (
+                <span className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+                  {t("activity.auditVerifyError", { error: integrityError })}
+                </span>
+              )}
+            </span>
+            <span className="tw:inline-flex tw:items-center tw:gap-1 tw:text-xs tw:whitespace-nowrap tw:text-muted-foreground tw:max-[760px]:col-start-2">
+              {auditEntries
+                ? t("activity.auditDetailsCount", { count: auditEntries.length })
+                : t("activity.auditDetails")}
+              <Icon
+                name="chevronRight"
+                className="tw:transition-transform tw:group-open:rotate-90"
+              />
+            </span>
+          </summary>
+
+          <section
+            className="tw:grid tw:max-h-[min(48vh,480px)] tw:gap-3 tw:overflow-y-auto tw:border-t tw:border-border-subtle tw:bg-background tw:p-3 tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
+            role="region"
+            aria-labelledby="activity-audit-summary"
+            tabIndex={0}
+          >
+            <div className="tw:grid tw:min-w-0 tw:gap-1 tw:[&>*]:m-0">
+              <h3>{t("activity.auditTitle")}</h3>
+              <p className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+                {t("activity.auditRecordsDescription")}
+              </p>
+            </div>
+
+            {auditDetailsError && (
+              <div className="tw:text-ui tw:text-danger">
+                {t("activity.auditLoadError", { error: auditDetailsError })}
+              </div>
+            )}
+            {auditDetailsLoading && auditEntries === null && <Skeleton lines={4} />}
+            {!auditDetailsLoading && auditEntries?.length === 0 && !auditDetailsError && (
+              <div className="tw:text-ui tw:leading-relaxed tw:text-muted-foreground">
+                {t("activity.auditEmpty")}
+              </div>
+            )}
+
+            {auditEntries && auditEntries.length > 0 && (
+              <ul className="tw:m-0 tw:flex tw:list-none tw:flex-col tw:gap-2 tw:p-0">
+                {auditEntries.map((entry) => (
+                  <li
+                    key={entry.id}
+                    data-tampered={entry.id === tamperedId}
+                    className="tw:border-b tw:border-border-subtle tw:pb-3 tw:data-[tampered=true]:border-danger"
+                  >
+                    {entry.id === tamperedId && (
+                      <div className="tw:mb-2 tw:flex tw:items-center tw:gap-1 tw:font-semibold tw:text-danger">
+                        <Icon name="alert" />
+                        {t("activity.auditTampered")}
+                      </div>
+                    )}
+                    <div className="tw:mb-2 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                      <span
+                        data-tone={actionTone(entry.action)}
+                        className="badge tw:normal-case tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=primary]:border-primary tw:data-[tone=primary]:text-primary tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success"
+                      >
+                        {entry.action}
+                      </span>
+                      {entry.kind.toLowerCase() !== entry.action.toLowerCase() && (
+                        <span className="badge kind">{entry.kind}</span>
+                      )}
+                      <span className="tw:text-muted-foreground" title={fullTime(entry.ts)}>
+                        {relTime(entry.ts)}
+                      </span>
+                      {entry.approvedBy && (
+                        <span className="tw:text-muted-foreground">
+                          {t("activity.auditBy", { name: entry.approvedBy })}
+                        </span>
+                      )}
+                    </div>
+                    {entry.agentPrompt && (
+                      <div className="tw:break-words tw:text-muted-foreground" title={entry.agentPrompt}>
+                        “{entry.agentPrompt.length > 120
+                          ? `${entry.agentPrompt.slice(0, 120)}…`
+                        : entry.agentPrompt}”
+                      </div>
+                    )}
+                    <code className="tw:my-1 tw:block tw:rounded-sm tw:bg-muted tw:px-2 tw:py-0.5 tw:font-mono tw:text-sm tw:whitespace-pre-wrap tw:break-words">
+                      {entry.sql}
+                    </code>
+                    {entry.error && (
+                      <div className="tw:text-ui tw:text-danger">{entry.error}</div>
+                    )}
+                    <div className="tw:break-words tw:font-mono tw:text-xs tw:text-muted-foreground">
+                      <span title={entry.prevHash ?? ""}>
+                        {t("activity.auditPrev", { hash: short(entry.prevHash) })}
+                      </span>
+                      {" → "}
+                      <span title={entry.hash}>
+                        {t("activity.auditHash", { hash: short(entry.hash) })}
+                      </span>
+                      {entry.affectedEstimate !== null && (
+                        <span>
+                          {" · "}
+                          {t("activity.auditRowsEstimate", { count: entry.affectedEstimate })}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </details>
 
         <section
-          className="tw:grid tw:max-h-[min(48vh,480px)] tw:gap-3 tw:overflow-y-auto tw:border-t tw:border-border-subtle tw:bg-card tw:p-3 tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-ring"
-          role="region"
-          aria-labelledby="activity-audit-summary"
-          tabIndex={0}
+          className="tw:grid tw:min-w-0 tw:gap-3 tw:p-3"
+          aria-labelledby="activity-query-title"
         >
-          <div className="tw:grid tw:min-w-0 tw:gap-1 tw:[&>*]:m-0">
-            <h3>{t("activity.auditTitle")}</h3>
-            <p className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-              {t("activity.auditRecordsDescription")}
-            </p>
-          </div>
-
-          {auditDetailsError && (
-            <div className="tw:text-ui tw:text-danger">
-              {t("activity.auditLoadError", { error: auditDetailsError })}
+          <div className="tw:flex tw:items-start tw:justify-between tw:gap-3">
+            <div className="tw:grid tw:min-w-0 tw:gap-1 tw:[&>*]:m-0">
+              <h3 id="activity-query-title">{t("activity.queries")}</h3>
+              <p className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+                {t("activity.queriesDescription")}
+              </p>
             </div>
-          )}
-          {auditDetailsLoading && auditEntries === null && <Skeleton lines={4} />}
-          {!auditDetailsLoading && auditEntries?.length === 0 && !auditDetailsError && (
-            <div className="tw:text-ui tw:leading-relaxed tw:text-muted-foreground">
-              {t("activity.auditEmpty")}
-            </div>
-          )}
-
-          {auditEntries && auditEntries.length > 0 && (
-            <ul className="tw:m-0 tw:flex tw:list-none tw:flex-col tw:gap-2 tw:p-0">
-              {auditEntries.map((entry) => (
-                <li
-                  key={entry.id}
-                  data-tampered={entry.id === tamperedId}
-                  className="tw:border-b tw:border-border-subtle tw:pb-3 tw:data-[tampered=true]:border-danger"
-                >
-                  {entry.id === tamperedId && (
-                    <div className="tw:mb-2 tw:flex tw:items-center tw:gap-1 tw:font-semibold tw:text-danger">
-                      <Icon name="alert" />
-                      {t("activity.auditTampered")}
-                    </div>
-                  )}
-                  <div className="tw:mb-2 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-                    <span
-                      data-tone={actionTone(entry.action)}
-                      className="badge tw:normal-case tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=primary]:border-primary tw:data-[tone=primary]:text-primary tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success"
-                    >
-                      {entry.action}
-                    </span>
-                    {entry.kind.toLowerCase() !== entry.action.toLowerCase() && (
-                      <span className="badge kind">{entry.kind}</span>
-                    )}
-                    <span className="tw:text-muted-foreground" title={fullTime(entry.ts)}>
-                      {relTime(entry.ts)}
-                    </span>
-                    {entry.approvedBy && (
-                      <span className="tw:text-muted-foreground">
-                        {t("activity.auditBy", { name: entry.approvedBy })}
-                      </span>
-                    )}
-                  </div>
-                  {entry.agentPrompt && (
-                    <div className="tw:break-words tw:text-muted-foreground" title={entry.agentPrompt}>
-                      “{entry.agentPrompt.length > 120
-                        ? `${entry.agentPrompt.slice(0, 120)}…`
-                      : entry.agentPrompt}”
-                    </div>
-                  )}
-                  <code className="tw:my-1 tw:block tw:rounded-sm tw:bg-muted tw:px-2 tw:py-0.5 tw:font-mono tw:text-sm tw:whitespace-pre-wrap tw:break-words">
-                    {entry.sql}
-                  </code>
-                  {entry.error && (
-                    <div className="tw:text-ui tw:text-danger">{entry.error}</div>
-                  )}
-                  <div className="tw:break-words tw:font-mono tw:text-xs tw:text-muted-foreground">
-                    <span title={entry.prevHash ?? ""}>
-                      {t("activity.auditPrev", { hash: short(entry.prevHash) })}
-                    </span>
-                    {" → "}
-                    <span title={entry.hash}>
-                      {t("activity.auditHash", { hash: short(entry.hash) })}
-                    </span>
-                    {entry.affectedEstimate !== null && (
-                      <span>
-                        {" · "}
-                        {t("activity.auditRowsEstimate", { count: entry.affectedEstimate })}
-                      </span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </details>
-
-      <section
-        className="tw:grid tw:min-w-0 tw:gap-3"
-        aria-labelledby="activity-query-title"
-      >
-        <div className="tw:flex tw:items-start tw:justify-between tw:gap-3">
-          <div className="tw:grid tw:min-w-0 tw:gap-1 tw:[&>*]:m-0">
-            <h3 id="activity-query-title">{t("activity.queries")}</h3>
-            <p className="tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-              {t("activity.queriesDescription")}
-            </p>
+            <button className="btn small" onClick={refresh} disabled={busy}>
+              {busy ? "..." : t("common.refresh")}
+            </button>
           </div>
-          <button className="btn small" onClick={refresh} disabled={busy}>
-            {busy ? "..." : t("common.refresh")}
-          </button>
-        </div>
 
         {rows.length > 0 && (
           <div className="tw:flex tw:items-center tw:gap-2 tw:max-[760px]:flex-col tw:max-[760px]:items-stretch">
@@ -447,7 +447,7 @@ export default function Activity({
             {t("activity.matching", { cap: CAP, count: filtered.length })}
           </div>
         )}
-      </section>
+        </section>
       </div>
     </WorkbenchPane>
   );

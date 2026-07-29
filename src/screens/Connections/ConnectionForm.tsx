@@ -2798,7 +2798,7 @@ export function ConnectionForm({
                 <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[760px] tw:gap-5">
                   <section className="tw:grid tw:gap-3">
                     <h3>{t("connections.connectCloudProvider")}</h3>
-                    <div className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-4">
+                    <div className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:border-y tw:border-border-subtle tw:py-3">
                       <Icon
                         name="info"
                         className="tw:mt-0.5 tw:text-info"
@@ -2847,7 +2847,7 @@ export function ConnectionForm({
                 <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[760px] tw:gap-5">
                   <section className="tw:grid tw:gap-3">
                     <h3>{t("connections.driverDetails")}</h3>
-                    <dl className="tw:grid tw:grid-cols-[140px_minmax(0,1fr)] tw:gap-x-4 tw:gap-y-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-4 tw:text-sm">
+                    <dl className="tw:grid tw:grid-cols-[140px_minmax(0,1fr)] tw:gap-x-4 tw:text-sm tw:[&>*]:border-b tw:[&>*]:border-border-subtle tw:[&>*]:py-2.5">
                       <dt className="tw:text-muted-foreground">
                         {t("connections.engine")}
                       </dt>
@@ -2906,7 +2906,7 @@ export function ConnectionForm({
                       ))}
                     </div>
                   </section>
-                  <section className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:p-3">
+                  <section className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-3">
                     <Icon name="info" className="tw:mt-0.5 tw:text-info" />
                     <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
                       {t("connections.driverCatalogScope")}
@@ -2956,15 +2956,17 @@ export function ConnectionForm({
           </>
         ) : (
           <>
-            <span className="tw:flex-1" />
             <button className="btn" onClick={onCancel}>
               {t("common.cancel")}
             </button>
+            <button className="btn" disabled>
+              {t("common.apply")}
+            </button>
             <button
               className="btn primary"
-              onClick={() => setEditorView("dataSources")}
+              onClick={onCancel}
             >
-              {t("connections.dataSources")}
+              {t("common.ok")}
             </button>
           </>
         )}

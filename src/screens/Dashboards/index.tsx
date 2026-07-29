@@ -21,7 +21,12 @@ import {
   WorkbenchEmptyState,
   WorkbenchPane,
 } from "../../design-system/components/Workbench";
-import { ToolWindowSideSurface } from "../../design-system/components/ToolWindow";
+import {
+  ToolWindowHeader,
+  ToolWindowHideButton,
+  ToolWindowSearchRow,
+  ToolWindowSideSurface,
+} from "../../design-system/components/ToolWindow";
 import { dashboardTileRunQueries, dashboardsQuery, qk } from "../../lib/queries";
 import { useI18n, type I18nKey } from "../../lib/i18n";
 
@@ -44,6 +49,7 @@ export function DashboardSidebar({
   focusId,
   onSelectConnection,
   onFocus,
+  onClose,
   workspaceAccount,
   workspaceHeader,
   compact = false,
@@ -54,6 +60,7 @@ export function DashboardSidebar({
   focusId: string | null;
   onSelectConnection: (id: string) => void;
   onFocus: (id: string) => void;
+  onClose: () => void;
   workspaceAccount?: ReactNode;
   workspaceHeader?: ReactNode;
   compact?: boolean;
@@ -74,13 +81,30 @@ export function DashboardSidebar({
       id="workbench-sidebar"
     >
       {workspaceHeader}
-      <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-3 tw:overflow-hidden tw:px-2 tw:py-3">
-        <label className="tw:grid tw:gap-1 tw:text-xs tw:text-muted-foreground">
-          <span>{t("app.thisConnection")}</span>
+      <ToolWindowHeader
+        title={
+          <span className="tw:inline-flex tw:min-w-0 tw:items-baseline tw:gap-2">
+            <span className="tw:truncate">{t("dashboard.library")}</span>
+            <span className="tw:font-normal tw:text-muted-foreground tw:tabular-nums">
+              {dashboards.length}
+            </span>
+          </span>
+        }
+        actions={
+          <ToolWindowHideButton
+            label={t("common.close")}
+            onClick={onClose}
+          />
+        }
+      />
+      <ToolWindowSearchRow>
+        <label className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center">
+          <span className="tw:sr-only">{t("app.thisConnection")}</span>
           <select
-            className="tw:min-h-control-md tw:w-full tw:min-w-0"
+            className="tw:h-control-sm tw:w-full tw:min-w-0 tw:border-0 tw:bg-transparent tw:px-2 tw:text-sm tw:shadow-none"
             value={selectedId ?? ""}
             onChange={(event) => onSelectConnection(event.target.value)}
+            aria-label={t("app.thisConnection")}
           >
             <option value="" disabled>
               {t("settings.selectConnectionTitle")}
@@ -92,12 +116,9 @@ export function DashboardSidebar({
             ))}
           </select>
         </label>
+      </ToolWindowSearchRow>
 
-        <div className="tw:flex tw:items-baseline tw:justify-between tw:gap-2 tw:px-1">
-          <strong>{t("dashboard.library")}</strong>
-          <span className="tw:text-muted-foreground">{dashboards.length}</span>
-        </div>
-
+      <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-hidden tw:p-1">
         <div className="tw:grid tw:min-h-0 tw:content-start tw:gap-1 tw:overflow-y-auto tw:[&>p]:m-2 tw:[&>p]:text-sm tw:[&>p]:leading-relaxed">
           {!selected ? (
             <p className="tw:text-muted-foreground">
@@ -347,12 +368,11 @@ export default function Dashboards({
       )}
 
       {loading ? (
-        <section className="ds-panel tw:min-h-[240px]">
+        <section className="tw:min-h-[240px] tw:p-3">
           <Skeleton lines={3} />
         </section>
       ) : loadError ? null : dashboards.length === 0 ? (
-        <section className="ds-panel">
-          <WorkbenchEmptyState icon="chart">
+        <WorkbenchEmptyState icon="chart">
           <h3>{t("dashboard.emptyTitle")}</h3>
           <p className="tw:m-0 tw:max-w-[56ch] tw:leading-relaxed tw:text-pretty tw:text-muted-foreground">
             {t("dashboard.emptyBody")}
@@ -361,8 +381,7 @@ export default function Dashboards({
             <Icon name="terminal" />
             {t("dashboard.openAgent")}
           </button>
-          </WorkbenchEmptyState>
-        </section>
+        </WorkbenchEmptyState>
       ) : (
         <>
           <header className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:items-center tw:justify-between tw:gap-3 tw:@max-[760px]:items-start">

@@ -123,7 +123,7 @@ export default function TableToolbar(props: Props) {
 
         <WorkbenchDivider />
 
-        <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:@max-[760px]:hidden">
+        <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1">
           <span
             className="tw:inline-flex tw:h-control-sm tw:items-center tw:gap-1 tw:px-2 tw:text-sm tw:text-muted-foreground"
             title={t("sql.txAutoHint")}
