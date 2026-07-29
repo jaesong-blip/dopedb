@@ -163,7 +163,7 @@ export default function WorkspaceSwitcher({
         className="tw:my-1 tw:h-px tw:bg-border-subtle"
         role="separator"
       />
-      <ToolbarMenuItem icon="plus" onClick={onNew}>
+      <ToolbarMenuItem icon="plus" onClick={() => onNew()}>
         {t("connections.new")}
       </ToolbarMenuItem>
       <ToolbarMenuItem

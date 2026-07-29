@@ -250,6 +250,15 @@ export function ConnectionForm({
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const workspaceButtonRef = useRef<HTMLButtonElement | null>(null);
   const providerReturnFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (initial !== null || preset !== null) return;
+    const frame = window.requestAnimationFrame(() => {
+      setAddMenuOpen(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [initial, preset]);
+
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
   const srv = form.extraParams.srv === "true";
