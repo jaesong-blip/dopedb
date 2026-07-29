@@ -16,7 +16,7 @@ function menuItems(root: HTMLElement | null) {
   if (!root) return [];
   return [
     ...root.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), [role="menuitem"]:not([aria-disabled="true"])',
+      'button:not(:disabled), [role="menuitem"]:not([aria-disabled="true"]), [role="menuitemcheckbox"] input:not(:disabled)',
     ),
   ];
 }
@@ -29,6 +29,7 @@ export default function ToolbarMenu({
   align = "end",
   disabled = false,
   pressed,
+  triggerVariant = "default",
 }: {
   label: string;
   icon?: IconName;
@@ -37,6 +38,7 @@ export default function ToolbarMenu({
   align?: "start" | "end";
   disabled?: boolean;
   pressed?: boolean;
+  triggerVariant?: "default" | "badge";
 }) {
   const generatedId = useId();
   const menuId = `toolbar-menu-${generatedId.replace(/:/g, "")}`;
@@ -63,6 +65,17 @@ export default function ToolbarMenu({
         const trigger = triggerRef.current?.getBoundingClientRect();
         const menu = menuRef.current?.getBoundingClientRect();
         if (!trigger || !menu) return;
+        if (
+          trigger.width === 0 ||
+          trigger.height === 0 ||
+          trigger.right <= 0 ||
+          trigger.bottom <= 0 ||
+          trigger.left >= window.innerWidth ||
+          trigger.top >= window.innerHeight
+        ) {
+          close();
+          return;
+        }
         const rootStyle = getComputedStyle(document.documentElement);
         const gap =
           Number.parseFloat(rootStyle.getPropertyValue("--ds-popover-offset-lg")) || 6;
@@ -91,6 +104,16 @@ export default function ToolbarMenu({
       document.removeEventListener("scroll", update, true);
     };
   }, [align, open]);
+
+  useEffect(() => {
+    const trigger = triggerRef.current;
+    if (!open || !trigger) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) close();
+    });
+    observer.observe(trigger);
+    return () => observer.disconnect();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -180,7 +203,9 @@ export default function ToolbarMenu({
         type="button"
         className={
           trigger
-            ? "tw:inline-flex tw:h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-sm tw:font-semibold tw:text-foreground tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+            ? triggerVariant === "badge"
+              ? "tw:inline-flex tw:min-h-control-xs tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1 tw:rounded-xs tw:border tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-2xs tw:font-medium tw:text-muted-foreground tw:aria-expanded:border-ring tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:border-ring tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+              : "tw:inline-flex tw:h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-sm tw:font-semibold tw:text-foreground tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
             : "btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:aria-pressed:bg-selection tw:aria-pressed:text-selection-foreground"
         }
         disabled={disabled}

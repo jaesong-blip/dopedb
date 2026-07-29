@@ -7,6 +7,7 @@ import ConfirmButton from "../../components/ConfirmButton";
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
+import ToolbarMenu from "../../components/ToolbarMenu";
 import {
   PopupMenu,
   PopupMenuCheckbox,
@@ -24,6 +25,11 @@ import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
 import { SchemaDiffBadge } from "./schemaDiffPresentation";
 import CatalogTree from "./CatalogTree";
 import type { DropTarget } from "../../features/catalogExplorer/catalogDomain";
+import {
+  nextSchemaScopeSelection,
+  relationNamespace,
+  selectedSchemaScope,
+} from "../../features/catalogExplorer/scopeFilter";
 
 type Props = {
   connection: ConnectionProfile;
@@ -40,6 +46,8 @@ type Props = {
   deletingId: string | null;
   showRowCounts: boolean;
   onShowRowCounts: (show: boolean) => void;
+  schemaScopeSaving: boolean;
+  onSetSchemaScope: (schemas: string[]) => void;
   overview?: CatalogOverview;
   fullCatalog?: Catalog;
   error?: string;
@@ -94,6 +102,20 @@ export default function ConnectionNode(props: Props) {
   const isDropTarget =
     props.dropTarget?.kind === "connection" &&
     props.dropTarget.id === connection.id;
+  const availableSchemas = Array.from(
+    new Set([
+      ...(props.overview?.namespaces ?? []),
+      ...(props.overview?.relations.map((relation) =>
+        relationNamespace(connection, relation.schema),
+      ) ?? []),
+    ]),
+  ).sort((left, right) => left.localeCompare(right));
+  const scopedSchemas = selectedSchemaScope(connection);
+  const selectedSchemaCount =
+    scopedSchemas.length === 0
+      ? availableSchemas.length
+      : availableSchemas.filter((schema) => scopedSchemas.includes(schema))
+          .length;
 
   return (
     <div className="tw:relative">
@@ -149,6 +171,82 @@ export default function ConnectionNode(props: Props) {
         <span className="db-conn-name tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
           {connection.name || t("app.unnamed")}
         </span>
+        {connection.engine !== "mongodb" && availableSchemas.length > 0 ? (
+          <span
+            className="tw:shrink-0"
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <ToolbarMenu
+              label={t("connections.introspectionScope")}
+              align="start"
+              disabled={
+                props.schemaScopeSaving ||
+                connection.workspaceAccess === "view"
+              }
+              triggerVariant="badge"
+              trigger={
+                <>
+                  {availableSchemas.length === 1
+                    ? "1"
+                    : `${selectedSchemaCount} of ${availableSchemas.length}`}
+                </>
+              }
+            >
+              <div className="tw:grid tw:w-[min(300px,calc(100vw-(var(--ds-viewport-gutter)*2)))]">
+                <div className="tw:flex tw:min-h-control-md tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-2 tw:py-1">
+                  <Icon
+                    name="database"
+                    className="tw:shrink-0 tw:text-muted-foreground"
+                  />
+                  <strong className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-sm tw:text-ellipsis tw:whitespace-nowrap">
+                    {connection.database}
+                  </strong>
+                  <span className="tw:text-xs tw:text-muted-foreground">
+                    {t("connections.discoveredSchemaCount", {
+                      count: availableSchemas.length,
+                    })}
+                  </span>
+                </div>
+                <PopupMenuCheckbox
+                  checked={scopedSchemas.length === 0}
+                  disabled={props.schemaScopeSaving}
+                  onChange={(event) => {
+                    if (event.target.checked) props.onSetSchemaScope([]);
+                  }}
+                >
+                  {t("connections.allSchemas")}
+                </PopupMenuCheckbox>
+                <div className="tw:grid tw:border-t tw:border-border-subtle tw:pt-1 tw:pl-4">
+                  {availableSchemas.map((schema) => (
+                    <PopupMenuCheckbox
+                      key={schema}
+                      checked={
+                        scopedSchemas.length === 0 ||
+                        scopedSchemas.includes(schema)
+                      }
+                      disabled={props.schemaScopeSaving}
+                      onChange={(event) =>
+                        props.onSetSchemaScope(
+                          nextSchemaScopeSelection(
+                            availableSchemas,
+                            scopedSchemas,
+                            schema,
+                            event.target.checked,
+                          ),
+                        )
+                      }
+                    >
+                      {schema}
+                    </PopupMenuCheckbox>
+                  ))}
+                </div>
+              </div>
+            </ToolbarMenu>
+          </span>
+        ) : null}
         {connection.env ? (
           <EnvironmentBadge environment={connection.env} />
         ) : null}

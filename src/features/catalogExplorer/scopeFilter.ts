@@ -36,6 +36,23 @@ export function selectedSchemaScope(profile: ConnectionProfile): string[] {
   return value.split(",").map((schema) => schema.trim()).filter(Boolean);
 }
 
+export function nextSchemaScopeSelection(
+  availableSchemas: string[],
+  selectedSchemas: string[],
+  schema: string,
+  checked: boolean,
+): string[] {
+  if (selectedSchemas.length === 0) {
+    if (checked || availableSchemas.length <= 1) return [];
+    return availableSchemas.filter((candidate) => candidate !== schema);
+  }
+  const next = checked
+    ? [...new Set([...selectedSchemas, schema])]
+    : selectedSchemas.filter((candidate) => candidate !== schema);
+  if (next.length === 0) return selectedSchemas;
+  return next.length === availableSchemas.length ? [] : next;
+}
+
 export function objectPattern(profile: ConnectionProfile): string {
   return profile.extraParams[OBJECT_PATTERN_PARAMETER]?.trim() ?? "";
 }

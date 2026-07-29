@@ -87,6 +87,7 @@ import type { ProviderKind } from "../../features/providers/domain";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import {
   isIntrospectionParameter,
+  nextSchemaScopeSelection,
   OBJECT_PATTERN_PARAMETER,
   relationNamespace,
   SCHEMA_SCOPE_PARAMETER,
@@ -883,21 +884,13 @@ export function ConnectionForm({
   }
 
   function toggleSchemaScope(schema: string, checked: boolean) {
-    if (!checked && discoveredSchemas.length === 1) return;
-    if (scopedSchemas.length === 0) {
-      if (!checked) {
-        setSchemaScope(
-          discoveredSchemas.filter((candidate) => candidate !== schema),
-        );
-      }
-      return;
-    }
-    const next = checked
-      ? [...new Set([...scopedSchemas, schema])]
-      : scopedSchemas.filter((candidate) => candidate !== schema);
-    if (next.length === 0) return;
     setSchemaScope(
-      next.length === discoveredSchemas.length ? [] : next,
+      nextSchemaScopeSelection(
+        discoveredSchemas,
+        scopedSchemas,
+        schema,
+        checked,
+      ),
     );
   }
 

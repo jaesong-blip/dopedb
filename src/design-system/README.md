@@ -113,6 +113,10 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
   query console, 선택 relation의 data/DDL, schema compare와 view option을
   소유한다. 현재 editor 객체 동기화는 header action이 tree의 database,
   schema, object section을 실제로 펼치고 대상 row로 focus를 이동한다.
+  SQL data source 행의 작은 범위 badge는 발견한 namespace 중 현재 선택 수를
+  표시하고 portal `ToolbarMenu`의 실제 checklist를 연다. 이 checklist는 Data
+  Sources의 Schemas 탭과 같은 저장 값을 사용하며 화면별 popup이나 별도 style
+  map을 만들지 않는다.
   검색 input은 view option이 열었을 때만 하나만 표시하며 connection subtree에
   검색 input을 중복하지 않는다. backend disconnect lifecycle이 없는 동안
   DopeDB의 Deactivate를 모양만 있는 action으로 추가하지 않는다.
@@ -350,7 +354,10 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   Tailwind v4 utility로만 구성한다.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.
-- `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.
+- `ToolbarMenu`, `ToolbarMenuItem`: portal 기반 floating command/check surface와
+  공통 command row. `triggerVariant="badge"`는 Explorer의 선택/전체 수처럼
+  조밀한 범위 trigger를 소유한다. trigger가 compact 전환이나 tool-window
+  교체로 viewport 밖에 나가면 열린 portal도 함께 닫는다.
 - `StatusDot`, `StatusBarItem`, `StatusBarBreadcrumbs`,
   `StatusBarIconButton`, `LoadingLabel`, `InlineNotice`: lifecycle 상태 점,
   IDE 하단 상태 segment, database breadcrumb, icon action, 비동기 진행 label,

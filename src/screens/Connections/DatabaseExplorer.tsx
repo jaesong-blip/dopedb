@@ -13,7 +13,11 @@ import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import type { ConnectionLaunchPreset } from "../../features/connections/presets";
-import { deleteConnection } from "../../features/connections/tauriAdapter";
+import {
+  deleteConnection,
+  upsertConnection,
+} from "../../features/connections/tauriAdapter";
+import { SCHEMA_SCOPE_PARAMETER } from "../../features/catalogExplorer/scopeFilter";
 import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
 import type { ProviderKind } from "../../features/providers/domain";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
@@ -104,6 +108,7 @@ export function DatabaseExplorer({
   const catalogScopeKeyRef = useRef(catalogScope.key);
   const [globalFilter, setGlobalFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [savingScopeId, setSavingScopeId] = useState<string | null>(null);
   const [revealRequest, setRevealRequest] = useState(0);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
@@ -274,6 +279,36 @@ export function DatabaseExplorer({
     }
   }
 
+  async function setSchemaScope(
+    connection: ConnectionProfile,
+    schemas: string[],
+  ) {
+    if (
+      savingScopeId !== null ||
+      connection.workspaceAccess === "view"
+    ) {
+      return;
+    }
+    setSavingScopeId(connection.id);
+    try {
+      const extraParams = { ...connection.extraParams };
+      if (schemas.length > 0) {
+        extraParams[SCHEMA_SCOPE_PARAMETER] = JSON.stringify(schemas);
+      } else {
+        delete extraParams[SCHEMA_SCOPE_PARAMETER];
+      }
+      const updated = await upsertConnection({
+        ...connection,
+        extraParams,
+      });
+      onConnectionUpdated(updated);
+    } catch (error) {
+      toast(errMessage(error), "error");
+    } finally {
+      setSavingScopeId(null);
+    }
+  }
+
   function toggleObjectSection(connectionId: string, kind: string) {
     const key = `${connectionId}:${kind}`;
     if (!objectSectionsOpen.has(key)) requestDetails(connectionId);
@@ -303,6 +338,10 @@ export function DatabaseExplorer({
         deletingId={deleting}
         showRowCounts={showRowCounts}
         onShowRowCounts={(show) => commands.patch({ showRowCounts: show })}
+        schemaScopeSaving={savingScopeId === connection.id}
+        onSetSchemaScope={(schemas) =>
+          void setSchemaScope(connection, schemas)
+        }
         overview={overviews[connection.id]}
         fullCatalog={catalogs[connection.id]}
         error={errs[connection.id]}
