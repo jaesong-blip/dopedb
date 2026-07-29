@@ -285,7 +285,8 @@ export default function SqlViewer({
         foldGutter: false,
         tabSize: SQL_EDITOR_INDENT_SIZE,
       }}
-      style={{ minHeight, fontSize: "13px" }}
+      className="tw:text-ui"
+      style={{ minHeight }}
     />
   );
 }
