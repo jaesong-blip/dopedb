@@ -744,7 +744,7 @@ export default function Sql({
       <WorkbenchToolbar label={t("sql.documentTitle")} compact>
         <div className="ds-control-row scrollbar-sleek tw:flex tw:min-h-0 tw:min-w-0 tw:flex-[0_1_auto] tw:flex-nowrap tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:max-[760px]:shrink-0">
           <button
-            className="btn primary small icon-only"
+            className="btn small ghost icon-only tw:text-success"
             disabled={!draft.trim() || running || !safetyReady}
             onClick={() => void executeSql()}
             title={t("sql.runHint")}

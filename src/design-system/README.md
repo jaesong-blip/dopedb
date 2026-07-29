@@ -206,6 +206,10 @@ Elevation은 세 단계만 허용한다.
 - Query parameter dialog는 parameter token/이름과 SQL expression 값을 한 행에
   대응시키고, 빈 값에서는 primary 실행 action을 비활성화한다. 치환 설명은
   semantic muted surface에 두며 feature 전용 CSS나 style map을 만들지 않는다.
+- SQL toolbar의 실행은 채움 primary button이 아니라 DopeDB command 문법의
+  평평한 icon action과 semantic success glyph를 사용한다. manual transaction이
+  구현되기 전에는 `Tx: Auto`에 가짜 menu chevron이나 commit/rollback action을
+  붙이지 않는다.
 - `ResultMeta`, `SqlSnippet`: 결과 pane의 고정 metadata bar와 축약 SQL 표기.
 - `WorkbenchStatusFooter`: table data와 query result가 공유하는 고정 하단
   상태선. 페이지/visible row 범위, duration, 선택 상태처럼 현재 grid에서
