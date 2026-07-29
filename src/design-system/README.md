@@ -420,7 +420,7 @@ Cancel, Close, Dismiss는 destructive가 아니다. 기본 `.btn` 또는 `.btn.g
 
 1. 24px: 패널 닫기, tab/목록의 제거처럼 주변 문맥이 분명한 보조 action
 2. 32px: toolbar, pagination, refresh, overflow menu의 기본 icon action
-3. 36px: product rail과 workspace처럼 앱의 주 navigation action
+3. 36px: title toolbar의 workspace처럼 앱의 주 navigation action
 
 아이콘만 있는 `.btn`에는 반드시 `.icon-only`와 `aria-label`을 함께 둔다. `title`은
 hover tooltip으로 병행할 수 있지만 접근 가능한 이름을 대신하지 않는다. 보통
@@ -538,9 +538,13 @@ toolbar의 command overflow menu는 반드시 portal 기반 `ToolbarMenu`를 사
 Tauri 최소 창 크기에서는 explorer와 main을 세로로 고정 분할하지 않는다. 고정
 분할은 header와 toolbar가 본문 높이를 모두 소비해 데이터 행을 볼 수 없게 만든다.
 
-- 560px 이하에서는 main이 rail 위의 전체 높이를 소유한다.
-- explorer는 왼쪽 drawer이며 현재 product rail 버튼, 바깥 scrim, `Esc`로
-  열고 닫는다.
+- 560px 이하에서도 별도 product rail이나 bottom navigation을 만들지 않는다.
+  workspace, Explorer, Services, AI Chat, account, search, settings 진입은
+  desktop과 같은 `IdeTitleToolbar`가 소유한다.
+- main과 열린 compact tool window는 title toolbar 아래부터 32px status bar
+  바로 위까지의 전체 높이를 소유한다.
+- explorer는 왼쪽 drawer이며 title toolbar의 현재 Explorer launcher, 바깥
+  scrim, `Esc`로 열고 닫는다.
 - table/connection을 선택하면 drawer를 닫아 결과에 초점을 돌린다.
 - macOS overlay title bar의 높이는 닫힌 drawer에서도 main 위쪽에 구조적으로
   예약한다.

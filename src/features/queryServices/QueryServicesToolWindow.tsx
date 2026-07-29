@@ -117,7 +117,7 @@ export default function QueryServicesToolWindow({
 
   return (
     <section
-      className="services-tool-window tw:relative tw:col-[1/-1] tw:row-start-3 tw:mx-[2px] tw:mb-1 tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[compact=true]:fixed tw:data-[compact=true]:top-title-toolbar tw:data-[compact=true]:right-0 tw:data-[compact=true]:bottom-20 tw:data-[compact=true]:left-0 tw:data-[compact=true]:z-[var(--ds-z-modal)] tw:data-[compact=true]:m-0 tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-x-0"
+      className="services-tool-window tw:relative tw:col-[1/-1] tw:row-start-3 tw:mx-[2px] tw:mb-1 tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[compact=true]:fixed tw:data-[compact=true]:top-title-toolbar tw:data-[compact=true]:right-0 tw:data-[compact=true]:bottom-status-bar tw:data-[compact=true]:left-0 tw:data-[compact=true]:z-[var(--ds-z-modal)] tw:data-[compact=true]:m-0 tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-x-0"
       data-compact={compact}
       aria-label={t("services.title")}
     >

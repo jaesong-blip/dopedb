@@ -25,7 +25,7 @@ import Settings, { type SettingsSection } from "../../screens/Settings";
 import Sql from "../../screens/Sql";
 import TableData from "../../screens/Tables";
 import ConnectionPicker from "./ConnectionPicker";
-import type { AppArea } from "./WorkbenchRail";
+import type { AppArea } from "./navigation";
 
 export type EditingConnection = ConnectionProfile | "new" | null;
 

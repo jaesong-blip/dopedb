@@ -22,7 +22,7 @@ import type { ConnectionLaunchPreset } from "../connections/presets";
 import { clampTerminalDockWidth } from "../terminals/layout";
 import type { EditingConnection } from "./WorkbenchContent";
 import { IdeStatusBar, IdeTopBar } from "./IdeChrome";
-import WorkbenchRail, { type AppArea } from "./WorkbenchRail";
+import type { AppArea } from "./navigation";
 
 const IS_MACOS =
   typeof navigator !== "undefined" &&
@@ -193,7 +193,7 @@ export default function ShellLayout(props: Props) {
 
   return (
     <div
-      className="app tw:grid tw:h-dvh tw:overflow-hidden tw:bg-muted tw:data-[compact=true]:h-[calc(100dvh-48px)]"
+      className="app tw:grid tw:h-dvh tw:overflow-hidden tw:bg-muted"
       data-compact={compact}
       data-platform={IS_MACOS ? "macos" : "other"}
       data-terminal-open={showTerminalDock}
@@ -252,21 +252,6 @@ export default function ShellLayout(props: Props) {
         }
       />
 
-      <WorkbenchRail
-        area={area}
-        dashboardAvailable={!selected || supportsSql}
-        settingsOpen={settingsOpen}
-        sidebarExpanded={!compact || mobileExplorerOpen}
-        account={
-          <WorkspaceAccount
-            compact
-            onScopeChanged={props.onWorkspaceScopeChanged}
-          />
-        }
-        onArea={props.onArea}
-        onSettings={props.onSettings}
-      />
-
       <div
         className="tool-window-sidebar tw:col-start-1 tw:row-start-2 tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:max-[561px]:contents"
         aria-hidden={!leftToolWindowVisible}
@@ -322,7 +307,7 @@ export default function ShellLayout(props: Props) {
       <button
         type="button"
         data-open={mobileExplorerOpen}
-        className="mobile-sidebar-scrim tw:hidden tw:max-[561px]:fixed tw:max-[561px]:inset-x-0 tw:max-[561px]:top-title-toolbar tw:max-[561px]:bottom-20 tw:max-[561px]:z-[var(--ds-z-sticky)] tw:max-[561px]:block tw:max-[561px]:cursor-default tw:max-[561px]:border-0 tw:max-[561px]:bg-overlay tw:max-[561px]:p-0 tw:max-[561px]:opacity-0 tw:max-[561px]:pointer-events-none tw:max-[561px]:transition-opacity tw:max-[561px]:duration-150 tw:max-[561px]:data-[open=true]:opacity-100 tw:max-[561px]:data-[open=true]:pointer-events-auto"
+        className="mobile-sidebar-scrim tw:hidden tw:max-[561px]:fixed tw:max-[561px]:inset-x-0 tw:max-[561px]:top-title-toolbar tw:max-[561px]:bottom-status-bar tw:max-[561px]:z-[var(--ds-z-sticky)] tw:max-[561px]:block tw:max-[561px]:cursor-default tw:max-[561px]:border-0 tw:max-[561px]:bg-overlay tw:max-[561px]:p-0 tw:max-[561px]:opacity-0 tw:max-[561px]:pointer-events-none tw:max-[561px]:transition-opacity tw:max-[561px]:duration-150 tw:max-[561px]:data-[open=true]:opacity-100 tw:max-[561px]:data-[open=true]:pointer-events-auto"
         aria-label={t("common.close")}
         aria-hidden={!mobileExplorerOpen}
         tabIndex={mobileExplorerOpen ? 0 : -1}

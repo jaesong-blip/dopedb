@@ -26,7 +26,7 @@ import {
 } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 import { tableLabel } from "../../lib/tableRef";
-import type { AppArea } from "./WorkbenchRail";
+import type { AppArea } from "./navigation";
 
 const IS_MACOS =
   typeof navigator !== "undefined" &&

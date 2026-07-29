@@ -63,7 +63,7 @@ import ShellLayout from "./ShellLayout";
 import WorkbenchContent, {
   type EditingConnection,
 } from "./WorkbenchContent";
-import type { AppArea } from "./WorkbenchRail";
+import type { AppArea } from "./navigation";
 import { useAvailableUpdate } from "./useAvailableUpdate";
 import { useConnectionProfiles } from "./useConnectionProfiles";
 import { useOperationNudge } from "./useOperationNudge";

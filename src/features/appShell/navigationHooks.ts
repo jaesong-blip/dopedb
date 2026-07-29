@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import type { Dashboard } from "../dashboards/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
-import type { AppArea } from "./WorkbenchRail";
+import type { AppArea } from "./navigation";
 
 export function preloadSqlEditor() {
   void import("../../components/SqlViewer").catch(() => undefined);
