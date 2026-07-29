@@ -620,7 +620,7 @@ h3 {
   color: var(--ds-selection-foreground);
 }
 
-/* Orca's thin neutral scrollbar recipe for dense application surfaces. */
+/* Thin neutral scrollbar recipe for dense DopeDB-style application surfaces. */
 .scrollbar-sleek {
   scrollbar-color: var(--ds-border-strong) transparent;
   scrollbar-width: thin;

@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Icon } from "../../components/Icon";
 import { StatusDot } from "../../design-system/components/Status";
-import { ToolWindowHeader } from "../../design-system/components/ToolWindow";
+import {
+  ToolWindowHeader,
+  ToolWindowHideButton,
+} from "../../design-system/components/ToolWindow";
+import {
+  IdeToolTab,
+  IdeToolTabStrip,
+} from "../../design-system/components/IdeTabs";
 import { TreeSectionButton } from "../../design-system/components/TreeControls";
 import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
@@ -107,20 +114,15 @@ export default function QueryServicesToolWindow({
       <ToolWindowHeader
         title={t("services.title")}
         actions={
-          <button
-            type="button"
-            className="btn small ghost icon-only icon-xs"
+          <ToolWindowHideButton
+            label={t("common.close")}
             onClick={onClose}
-            title={t("common.close")}
-            aria-label={t("common.close")}
-          >
-            <Icon name="close" />
-          </button>
+          />
         }
       />
 
       <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1">
-        <aside className="tw:flex tw:w-[32%] tw:min-w-[220px] tw:max-w-[460px] tw:shrink-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card">
+        <aside className="tw:flex tw:w-[32%] tw:min-w-[220px] tw:max-w-[460px] tw:shrink-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-background">
           <div
             className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1"
             role="tree"
@@ -213,38 +215,32 @@ export default function QueryServicesToolWindow({
         </aside>
 
         <div className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col">
-          <div className="tw:flex tw:h-control-md tw:shrink-0 tw:items-end tw:border-b tw:border-border-subtle tw:bg-card tw:px-1">
-            <div
-              className="tw:flex tw:min-w-0 tw:flex-1 tw:items-end"
-              role="tablist"
-              aria-label={t("services.tabs")}
-            >
-              {(["output", "result"] as const).map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === id}
-                  data-active={tab === id}
-                  className="tw:relative tw:flex tw:h-control-md tw:max-w-[min(42vw,420px)] tw:cursor-pointer tw:items-center tw:gap-1.5 tw:overflow-hidden tw:border-0 tw:bg-transparent tw:px-3 tw:font-sans tw:text-sm tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground tw:data-[active=true]:text-foreground tw:data-[active=true]:after:absolute tw:data-[active=true]:after:right-2 tw:data-[active=true]:after:bottom-0 tw:data-[active=true]:after:left-2 tw:data-[active=true]:after:h-0.5 tw:data-[active=true]:after:bg-primary tw:hover:text-foreground"
-                  onClick={() => setTab(id)}
-                >
-                  <Icon name={id === "output" ? "terminal" : "table"} />
-                  <span className="tw:overflow-hidden tw:text-ellipsis">
-                    {id === "output"
-                      ? t("services.outputTab")
-                      : resultTabLabel}
-                  </span>
-                </button>
-              ))}
-            </div>
-            {active && (
-              <span className="tw:mb-1 tw:inline-flex tw:h-control-sm tw:max-w-[min(30vw,320px)] tw:items-center tw:gap-1 tw:overflow-hidden tw:px-2 tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
-                <StatusDot tone={statusTone(active.status)} />
-                {statusLabel(active.status, t)}
-              </span>
-            )}
-          </div>
+          <IdeToolTabStrip
+            label={t("services.tabs")}
+            status={
+              active ? (
+                <span className="tw:inline-flex tw:h-control-sm tw:max-w-[min(30vw,320px)] tw:items-center tw:gap-1 tw:overflow-hidden tw:px-2 tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                  <StatusDot tone={statusTone(active.status)} />
+                  {statusLabel(active.status, t)}
+                </span>
+              ) : null
+            }
+          >
+            {(["output", "result"] as const).map((id) => (
+              <IdeToolTab
+                key={id}
+                active={tab === id}
+                onClick={() => setTab(id)}
+              >
+                <Icon name={id === "output" ? "terminal" : "table"} />
+                <span className="tw:overflow-hidden tw:text-ellipsis">
+                  {id === "output"
+                    ? t("services.outputTab")
+                    : resultTabLabel}
+                </span>
+              </IdeToolTab>
+            ))}
+          </IdeToolTabStrip>
 
           <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
             {!active ? (

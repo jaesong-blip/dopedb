@@ -283,7 +283,7 @@ export default function TerminalTabs({
   }
 
   return (
-    <header className="terminal-tabs-row tw:relative tw:flex tw:min-h-[calc(var(--ds-control-lg)+var(--ds-space-2))] tw:shrink-0 tw:items-stretch tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:p-1">
+    <header className="terminal-tabs-row tw:relative tw:flex tw:h-tool-window-header tw:min-h-tool-window-header tw:shrink-0 tw:items-stretch tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-background tw:p-1">
       <div
         className="terminal-session-tabs ds-control-row tw:relative tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:thin]"
         role="tablist"
@@ -295,7 +295,7 @@ export default function TerminalTabs({
       >
         {sessions.length === 0 && (
           <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:px-2 tw:text-muted-foreground tw:[&_strong]:text-foreground">
-            <Icon name={presentation === "agent" ? "user" : "terminal"} />
+            {presentation === "terminal" ? <Icon name="terminal" /> : null}
             <strong>
               {t(
                 presentation === "agent"
@@ -378,7 +378,7 @@ export default function TerminalTabs({
           type="button"
           className={
             presentation === "agent"
-              ? "btn small tw:px-2"
+              ? "btn small ghost tw:px-2"
               : "btn small icon-only"
           }
           data-terminal-focus-target="launcher"
@@ -460,7 +460,7 @@ export default function TerminalTabs({
               : "terminal.closePanel",
           )}
         >
-          <Icon name="close" />
+          <Icon name="minus" />
         </button>
       </div>
       {popup && (

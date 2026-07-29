@@ -7,6 +7,8 @@ import {
 } from "../../design-system/components/Status";
 import {
   ToolWindowHeader,
+  ToolWindowHideButton,
+  ToolWindowVerticalSplit,
 } from "../../design-system/components/ToolWindow";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import type { ConnectionProfile } from "../connections/domain";
@@ -144,15 +146,10 @@ export default function LocalHistoryToolWindow({
           </span>
         }
         actions={
-          <button
-            type="button"
-            className="btn small icon-only icon-xs"
+          <ToolWindowHideButton
+            label={t("common.close")}
             onClick={onClose}
-            title={t("common.close")}
-            aria-label={t("common.close")}
-          >
-            <Icon name="close" />
-          </button>
+          />
         }
       />
       <div className="tw:flex tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:p-1">
@@ -181,93 +178,95 @@ export default function LocalHistoryToolWindow({
           <Icon name="history" />
         </button>
       </div>
-      <section className="tw:flex tw:min-h-0 tw:flex-[3] tw:flex-col tw:border-b tw:border-border-subtle">
-        <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1">
-          {loading ? (
-            <div className="tw:p-2 tw:text-sm">
-              <LoadingLabel>{t("common.loading")}</LoadingLabel>
-            </div>
-          ) : error ? (
-            <div
-              className="tw:p-2 tw:text-sm tw:text-danger"
-              role="alert"
-            >
-              {t("localHistory.loadFailed", { error })}
-            </div>
-          ) : !selectedDocument ? (
-            <p className="tw:m-0 tw:p-2 tw:text-sm tw:text-muted-foreground">
-              {t("localHistory.noDocument")}
-            </p>
-          ) : filteredRevisions.length === 0 ? (
-            <p className="tw:m-0 tw:p-2 tw:text-sm tw:text-muted-foreground">
-              {t("localHistory.empty")}
-            </p>
-          ) : (
-            filteredRevisions.map((revision) => {
-              const current =
-                revision.localRevision === selectedDocument.revision;
-              return (
-                <button
-                  key={revision.localRevision}
-                  type="button"
-                  data-active={revision.localRevision === selectedRevision}
-                  className="tw:grid tw:w-full tw:min-w-0 tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)] tw:items-start tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:py-1 tw:font-sans tw:text-left tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
-                  onClick={() =>
-                    setSelectedRevision(revision.localRevision)
-                  }
-                >
-                  <span className="tw:grid tw:h-control-sm tw:place-items-center">
-                    <StatusDot tone={current ? "success" : "neutral"} />
-                  </span>
-                  <span className="tw:grid tw:min-w-0 tw:gap-px">
-                    <strong className="tw:overflow-hidden tw:text-sm tw:font-medium tw:text-ellipsis tw:whitespace-nowrap">
-                      {t("localHistory.revision", {
-                        revision: revision.localRevision,
-                      })}
-                      {current
-                        ? ` · ${t("localHistory.current")}`
-                        : ""}
-                    </strong>
-                    <small className="tw:overflow-hidden tw:text-2xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
-                      {formatRevisionTime(revision.createdAt)}
-                    </small>
-                    <code className="tw:line-clamp-2 tw:font-mono tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                      {revision.content}
-                    </code>
-                  </span>
-                </button>
-              );
-            })
-          )}
-        </div>
-      </section>
-      <section className="tw:flex tw:min-h-0 tw:flex-[2] tw:flex-col">
-        <h2 className="tw:m-0 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:text-muted-foreground">
-          {t("localHistory.files")}
-        </h2>
-        <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1">
-          {filteredDocuments.map((document) => (
-            <button
-              key={document.id}
-              type="button"
-              data-active={document.id === selectedDocument?.id}
-              className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
-              onClick={() => selectDocument(document)}
-            >
-              <Icon
-                name="file"
-                className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
-              />
-              <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-                {document.title}
-              </span>
-              <span className="tw:text-2xs tw:text-muted-foreground">
-                r{document.revision}
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
+      <ToolWindowVerticalSplit>
+        <section className="tw:flex tw:flex-col">
+          <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1">
+            {loading ? (
+              <div className="tw:p-2 tw:text-sm">
+                <LoadingLabel>{t("common.loading")}</LoadingLabel>
+              </div>
+            ) : error ? (
+              <div
+                className="tw:p-2 tw:text-sm tw:text-danger"
+                role="alert"
+              >
+                {t("localHistory.loadFailed", { error })}
+              </div>
+            ) : !selectedDocument ? (
+              <p className="tw:m-0 tw:p-2 tw:text-sm tw:text-muted-foreground">
+                {t("localHistory.noDocument")}
+              </p>
+            ) : filteredRevisions.length === 0 ? (
+              <p className="tw:m-0 tw:p-2 tw:text-sm tw:text-muted-foreground">
+                {t("localHistory.empty")}
+              </p>
+            ) : (
+              filteredRevisions.map((revision) => {
+                const current =
+                  revision.localRevision === selectedDocument.revision;
+                return (
+                  <button
+                    key={revision.localRevision}
+                    type="button"
+                    data-active={revision.localRevision === selectedRevision}
+                    className="tw:grid tw:w-full tw:min-w-0 tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)] tw:items-start tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:py-1 tw:font-sans tw:text-left tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+                    onClick={() =>
+                      setSelectedRevision(revision.localRevision)
+                    }
+                  >
+                    <span className="tw:grid tw:h-control-sm tw:place-items-center">
+                      <StatusDot tone={current ? "success" : "neutral"} />
+                    </span>
+                    <span className="tw:grid tw:min-w-0 tw:gap-px">
+                      <strong className="tw:overflow-hidden tw:text-sm tw:font-medium tw:text-ellipsis tw:whitespace-nowrap">
+                        {t("localHistory.revision", {
+                          revision: revision.localRevision,
+                        })}
+                        {current
+                          ? ` · ${t("localHistory.current")}`
+                          : ""}
+                      </strong>
+                      <small className="tw:overflow-hidden tw:text-2xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
+                        {formatRevisionTime(revision.createdAt)}
+                      </small>
+                      <code className="tw:line-clamp-2 tw:font-mono tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                        {revision.content}
+                      </code>
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </section>
+        <section className="tw:flex tw:flex-col">
+          <h2 className="tw:m-0 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:text-muted-foreground">
+            {t("localHistory.files")}
+          </h2>
+          <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1">
+            {filteredDocuments.map((document) => (
+              <button
+                key={document.id}
+                type="button"
+                data-active={document.id === selectedDocument?.id}
+                className="ds-object-row tw:w-full tw:min-w-0 tw:cursor-pointer tw:gap-1 tw:rounded-xs tw:border-0 tw:bg-transparent tw:font-sans tw:text-left tw:text-ui tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:hover:bg-muted"
+                onClick={() => selectDocument(document)}
+              >
+                <Icon
+                  name="file"
+                  className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)] tw:text-muted-foreground"
+                />
+                <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+                  {document.title}
+                </span>
+                <span className="tw:text-2xs tw:text-muted-foreground">
+                  r{document.revision}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      </ToolWindowVerticalSplit>
     </aside>
   );
 }

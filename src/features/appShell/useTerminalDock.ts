@@ -5,7 +5,7 @@ import {
   TERMINAL_DOCK_DEFAULT_WIDTH,
 } from "../terminals/layout";
 
-const LEGACY_DEFAULT_WIDTH = 480;
+const LEGACY_DEFAULT_WIDTHS = new Set([360, 480]);
 
 export function useTerminalDock() {
   const [open, setOpen] = useState(() => {
@@ -16,7 +16,7 @@ export function useTerminalDock() {
   const [width, setWidth] = useState(() => {
     const saved = Number(localStorage.getItem("terminalDockWidth"));
     const requested =
-      saved === LEGACY_DEFAULT_WIDTH
+      LEGACY_DEFAULT_WIDTHS.has(saved)
         ? TERMINAL_DOCK_DEFAULT_WIDTH
         : saved || TERMINAL_DOCK_DEFAULT_WIDTH;
     return clampTerminalDockWidth(

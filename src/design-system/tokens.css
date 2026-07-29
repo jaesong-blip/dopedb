@@ -1,5 +1,5 @@
 /*
- * DopeDB design tokens, aligned with Orca's UI system.
+ * DopeDB design tokens, extracted from the DopeDB clean-room reference.
  *
  * The visual contract is monochrome and quiet: neutral surfaces carry the app
  * chrome, while color is reserved for focus and meaningful database state.
@@ -82,12 +82,12 @@
   --ds-z-modal: 50;
   --ds-z-toast: 1000;
 
-  /* Orca keeps ordinary surfaces flat; only floating surfaces receive elevation. */
+  /* DopeDB keeps ordinary surfaces flat; only floating surfaces receive elevation. */
   --ds-shadow-control: 0 1px 2px rgb(0 0 0 / 0.18);
   --ds-shadow-panel: none;
   --ds-shadow-popover: 0 10px 24px rgb(0 0 0 / 0.18);
 
-  /* Orca control sizes: xs 24, sm 32, default 36, lg 40. */
+  /* Compact DopeDB control sizes. */
   --ds-control-xs: 24px;
   --ds-control-sm: 28px;
   --ds-control-md: 32px;
@@ -98,6 +98,13 @@
   --ds-control-field-xs: var(--ds-control-xs);
   --ds-icon-sm: 14px;
   --ds-icon-md: 16px;
+  --ds-title-toolbar-height: 40px;
+  --ds-tool-window-header-height: 40px;
+  --ds-document-tab-height: 40px;
+  --ds-workbench-toolbar-height: 36px;
+  --ds-status-bar-height: 32px;
+  --ds-panel-gutter: 4px;
+  --ds-tool-window-primary-ratio: 46%;
   --ds-sidebar-min: 180px;
   --ds-sidebar-default: 304px;
   --ds-sidebar-max: 520px;
@@ -106,7 +113,7 @@
   --ds-line: var(--ds-border-width) solid var(--ds-border-subtle);
 
   /*
-   * Canonical Orca dark roles. The aliases below keep DopeDB's existing
+   * Canonical DopeDB-derived dark roles. The aliases below keep DopeDB's existing
    * semantic API while preserving the surface/foreground pair contract.
    */
   --ds-background: #1e1f22;
@@ -167,7 +174,7 @@
   --ds-hover: var(--ds-muted);
   --ds-hover-strong: var(--ds-selection);
 
-  /* Status colors mirror Orca's state-only use of color. */
+  /* Status colors keep DopeDB's state-only use of color. */
   --ds-info: #60a5fa;
   --ds-positive: #86efac;
   --ds-positive-soft: color-mix(in srgb, var(--ds-positive) 10%, transparent);
@@ -228,7 +235,7 @@
   color: var(--ds-text);
 }
 
-/* The explorer is Orca's dedicated worktree-sidebar role. */
+/* The explorer has its own DopeDB-style tree surface role. */
 .sidebar {
   --ds-surface-0: var(--ds-worktree-sidebar);
   --ds-surface-1: #252629;

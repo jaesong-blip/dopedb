@@ -26,7 +26,7 @@ export function StatusBarItem({
   title?: string;
 }) {
   const className =
-    "tw:inline-flex tw:h-[23px] tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit";
+    "tw:inline-flex tw:h-full tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-1 tw:whitespace-nowrap tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit";
 
   if (onClick) {
     return (
@@ -57,7 +57,7 @@ export function StatusBarBreadcrumbs({
 }) {
   return (
     <nav
-      className="tw:flex tw:min-w-0 tw:items-center tw:overflow-hidden tw:px-2"
+      className="tw:flex tw:h-full tw:min-w-0 tw:items-center tw:overflow-hidden tw:px-2"
       aria-label={label}
     >
       {items.map((item, index) => (
@@ -106,7 +106,7 @@ export function StatusBarIconButton({
   return (
     <button
       type="button"
-      className="tw:relative tw:inline-flex tw:h-[23px] tw:min-w-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:gap-1 tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-inherit tw:disabled:cursor-default tw:disabled:opacity-40 tw:not-disabled:hover:bg-muted tw:not-disabled:hover:text-foreground tw:not-disabled:focus-visible:bg-muted tw:not-disabled:focus-visible:text-foreground tw:focus-visible:outline-none"
+      className="tw:relative tw:inline-flex tw:h-full tw:min-w-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:gap-1 tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-inherit tw:disabled:cursor-default tw:disabled:opacity-40 tw:not-disabled:hover:bg-muted tw:not-disabled:hover:text-foreground tw:not-disabled:focus-visible:bg-muted tw:not-disabled:focus-visible:text-foreground tw:focus-visible:outline-none"
       onClick={onClick}
       disabled={disabled}
       aria-label={label}

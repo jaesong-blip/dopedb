@@ -166,10 +166,10 @@ DopeDB 기존 화면은 `--ds-surface-*`, `--ds-text*`, `--ds-accent*` 별칭을
 DopeDB 2026.1의 compact control과 둥근 outer tool-window geometry를 역할별
 scale로 표현한다.
 
-- 작은 내부 요소: `--ds-radius-xs` (6px)
-- button/input: `--ds-radius-sm` (8px)
-- 일반 surface: `--ds-radius-md` (10px)
-- card/panel: `--ds-radius-lg` (14px)
+- 작은 내부 요소: `--ds-radius-xs` (4px)
+- button/input: `--ds-radius-sm` (6px)
+- 일반 surface: `--ds-radius-md` (8px)
+- card/panel: `--ds-radius-lg` (10px)
 - badge/count: `--ds-radius-pill`
 
 Elevation은 세 단계만 허용한다.
@@ -184,8 +184,22 @@ Elevation은 세 단계만 허용한다.
 
 ### React primitive
 
+- `IdeTitleToolbar`, `IdeStatusBarSurface`: DopeDB title/status chrome의
+  고정 높이와 좌·중앙·우 slot. feature shell은 command와 state만 제공한다.
+- `IdeToolbarLauncher`: title toolbar의 32px launcher와 중립적인 open/pressed
+  상태. tool window가 열렸다는 이유만으로 primary 파랑을 사용하지 않는다.
+- `IdeTabStrip`, `IdeTab`: 평평한 document strip과 strip 안쪽의 둥근 active
+  tab. 화면별 rectangular selection이나 bottom accent를 다시 만들지 않는다.
+- `IdeToolTabStrip`, `IdeToolTab`: Services 같은 tool window의 tab row와
+  둥근 selected capsule.
 - `ToolWindowHeader`: Database Explorer, Agent, provider 패널의 고정 헤더와
   우측 action 슬롯.
+- `ToolWindowHideButton`: 닫기/숨기기의 공통 minus command.
+- `ToolWindowVerticalSplit`: Local History에서 관찰한 primary/secondary
+  vertical split. 비율은 `--ds-tool-window-primary-ratio`가 소유한다.
+- `ToolWindowComposer`, `ToolWindowComposerDock`, `ToolWindowComposerInput`,
+  `ToolWindowComposerContext`: AI Chat의 multiline 입력면, 내부 context row와
+  외부 model/data-source row.
 - `ToolWindowSection`: dense tool window 안의 제목 있는 명령 그룹.
 - `ToolWindowAction`: provider/demo/object launcher의 icon-label-trailing 행.
 - `ToolWindowRailAction`: tool window·catalog의 좁은 세로 rail에서 쓰는
@@ -234,6 +248,12 @@ Elevation은 세 단계만 허용한다.
   열린 문서를 나열해 overflow된 문서도 실제 활성화할 수 있어야 한다. 새 쿼리,
   Activity처럼 title toolbar나 status에서 이미 제공하는 action을 tab strip에
   중복 배치하지 않으며, tab용 feature CSS나 style map을 만들지 않는다.
+
+DopeDB 참조에서 추출한 chrome 높이, panel gutter, 화면별 비교 순서와 기능
+결정 대기 목록은
+[`docs/DopeDB_VISUAL_REFERENCE_SPEC.md`](../../docs/DopeDB_VISUAL_REFERENCE_SPEC.md)를
+따른다. 이 값은 DopeDB 자체 screenshot baseline이 아니라 같은 논리 viewport의
+DopeDB 관찰에서 가져온 역할 계약이다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.

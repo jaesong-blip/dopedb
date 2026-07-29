@@ -201,9 +201,9 @@ export default function ShellLayout(props: Props) {
         gridTemplateColumns: leftToolWindowVisible
           ? `${sidebarWidth}px 3px minmax(0, 1fr) ${rightDockWidth}px`
           : `0 0 minmax(0, 1fr) ${rightDockWidth}px`,
-        gridTemplateRows: `40px minmax(0, 1fr) ${
+        gridTemplateRows: `var(--ds-title-toolbar-height) minmax(0, 1fr) ${
           servicesVisible ? servicesHeight : 0
-        }px 24px`,
+        }px var(--ds-status-bar-height)`,
       }}
     >
       <IdeTopBar
@@ -318,7 +318,7 @@ export default function ShellLayout(props: Props) {
       />
       <main
         ref={mainRef}
-        className="main tw:col-start-3 tw:row-start-2 tw:m-1 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:max-[560px]:m-0 tw:max-[560px]:min-h-0 tw:max-[560px]:rounded-none tw:max-[560px]:border-0 tw:max-[560px]:pt-[var(--ds-window-controls-safe-height)]"
+        className="main tw:col-start-3 tw:row-start-2 tw:m-panel-gutter tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:outline-none tw:[container-name:main-pane] tw:[container-type:inline-size] tw:max-[560px]:m-0 tw:max-[560px]:min-h-0 tw:max-[560px]:rounded-none tw:max-[560px]:border-0 tw:max-[560px]:pt-[var(--ds-window-controls-safe-height)]"
         tabIndex={-1}
         inert={mobileExplorerOpen ? true : undefined}
       >

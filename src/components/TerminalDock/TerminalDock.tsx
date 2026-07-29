@@ -66,6 +66,12 @@ import {
   InlineNotice,
   LoadingLabel,
 } from "../../design-system/components/Status";
+import {
+  ToolWindowComposer,
+  ToolWindowComposerContext,
+  ToolWindowComposerDock,
+  ToolWindowComposerInput,
+} from "../../design-system/components/ToolWindow";
 import { Icon } from "../Icon";
 import TerminalContextBar from "./TerminalContextBar";
 import TerminalSurface from "./TerminalSurface";
@@ -917,9 +923,8 @@ export default function TerminalDock({
           )}
         </div>
         {presentation === "agent" ? (
-          <div className="tw:m-3 tw:mt-0 tw:flex tw:shrink-0 tw:flex-col tw:gap-1">
-            <form
-              className="tw:relative tw:flex tw:min-h-[168px] tw:flex-col tw:rounded-md tw:border tw:border-input tw:bg-card tw:focus-within:border-ring"
+          <ToolWindowComposerDock>
+            <ToolWindowComposer
               aria-label={t("terminal.agentComposer")}
               onSubmit={submitAgentPrompt}
             >
@@ -953,8 +958,7 @@ export default function TerminalDock({
                   ))}
                 </div>
               ) : null}
-              <textarea
-                className="tw:min-h-28 tw:w-full tw:flex-1 tw:resize-none tw:border-0 tw:bg-transparent tw:px-3 tw:py-2 tw:font-sans tw:text-sm tw:leading-body tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground"
+              <ToolWindowComposerInput
                 value={agentPrompt}
                 maxLength={AGENT_PROMPT_MAX_CHARS}
                 placeholder={t("terminal.agentPrompt")}
@@ -1066,8 +1070,8 @@ export default function TerminalDock({
                   </button>
                 </div>
               ) : null}
-            </form>
-            <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:px-1">
+            </ToolWindowComposer>
+            <ToolWindowComposerContext>
               <Icon
                 name="user"
                 className="tw:text-sm tw:text-muted-foreground"
@@ -1089,8 +1093,8 @@ export default function TerminalDock({
                   name: connection.name || t("app.unnamed"),
                 })}
               </span>
-            </div>
-          </div>
+            </ToolWindowComposerContext>
+          </ToolWindowComposerDock>
         ) : null}
       </aside>
 

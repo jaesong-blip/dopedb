@@ -47,6 +47,12 @@
   --spacing-control-md: var(--ds-control-md);
   --spacing-control-lg: var(--ds-control-lg);
   --spacing-control-xl: var(--ds-control-xl);
+  --spacing-title-toolbar: var(--ds-title-toolbar-height);
+  --spacing-tool-window-header: var(--ds-tool-window-header-height);
+  --spacing-document-tab: var(--ds-document-tab-height);
+  --spacing-workbench-toolbar: var(--ds-workbench-toolbar-height);
+  --spacing-status-bar: var(--ds-status-bar-height);
+  --spacing-panel-gutter: var(--ds-panel-gutter);
 
   --font-sans: var(--ds-font-sans);
   --font-mono: var(--ds-font-mono);

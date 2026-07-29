@@ -30,7 +30,7 @@ export function WorkbenchToolbar({
       aria-label={label}
       data-workbench-toolbar
       data-compact={compact}
-      className="ds-control-row tw:flex tw:min-h-control-lg tw:shrink-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:border-b tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:data-[compact=true]:h-control-lg tw:data-[compact=true]:py-0"
+      className="ds-control-row tw:flex tw:min-h-workbench-toolbar tw:shrink-0 tw:items-center tw:gap-1 tw:overflow-hidden tw:border-b tw:border-border-subtle tw:bg-background tw:px-2 tw:py-1 tw:data-[compact=true]:h-workbench-toolbar tw:data-[compact=true]:py-0"
     >
       {children}
     </div>

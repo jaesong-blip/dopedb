@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ConnectionProfile } from "../features/connections/domain";
 import type { WorkbenchDocument } from "../features/workbench/domain";
+import {
+  IdeTab,
+  IdeTabStrip,
+} from "../design-system/components/IdeTabs";
 import { tableLabel } from "../lib/tableRef";
 import { useI18n } from "../lib/i18n";
 import { Icon, type IconName } from "./Icon";
@@ -77,12 +81,9 @@ export default function WorkbenchDocumentStrip({
   }
 
   return (
-    <div className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:items-stretch tw:border-b tw:border-border-subtle tw:bg-muted">
-      <div
-        className="ds-control-row tw:flex tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:none] tw:[&::-webkit-scrollbar]:hidden"
-        role="tablist"
-        aria-label={t("app.workbenchNavigation")}
-        onKeyDown={(event) => {
+    <IdeTabStrip
+      label={t("app.workbenchNavigation")}
+      onKeyDown={(event) => {
           if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
           const tabs = [
             ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
@@ -92,74 +93,8 @@ export default function WorkbenchDocumentStrip({
           event.preventDefault();
           const direction = event.key === "ArrowRight" ? 1 : -1;
           tabs[(current + direction + tabs.length) % tabs.length]?.focus();
-        }}
-      >
-        {presentedDocuments.map(({ document, title }) => {
-          const active = activeId === document.id;
-          const renaming =
-            document.kind === "sql" && renamingId === document.id;
-          return (
-            <div
-              ref={active ? activeTabRef : undefined}
-              data-active={active}
-              className="tw:flex tw:min-w-[132px] tw:max-w-[220px] tw:flex-[0_0_180px] tw:items-center tw:border-r tw:border-border-subtle tw:text-muted-foreground tw:data-[active=true]:bg-secondary tw:data-[active=true]:text-selection-foreground tw:data-[active=true]:shadow-[inset_0_calc(var(--ds-border-width-strong)*-1)_0_var(--ds-selection-foreground)] tw:max-[760px]:basis-[148px]"
-              key={document.id}
-            >
-              {renaming ? (
-                <input
-                  autoFocus
-                  className="tw:m-1 tw:min-w-0 tw:flex-1 tw:border-border-strong tw:bg-background tw:px-1 tw:text-sm tw:text-foreground"
-                  value={renameValue}
-                  aria-label={t("sql.documentTitle")}
-                  onChange={(event) => setRenameValue(event.target.value)}
-                  onBlur={() => finishRename(document.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      finishRename(document.id);
-                    } else if (event.key === "Escape") {
-                      event.preventDefault();
-                      setRenamingId(null);
-                    }
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-inherit tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-inset tw:focus-visible:ring-ring tw:[&_.icon]:shrink-0 tw:[&>span]:min-w-0 tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis tw:[&>span]:whitespace-nowrap"
-                  role="tab"
-                  aria-selected={active}
-                  tabIndex={
-                    active || (!hasVisibleActiveDocument && document.id === keyboardFallbackId)
-                      ? 0
-                      : -1
-                  }
-                  onClick={() => onActivate(document.id)}
-                  onDoubleClick={() => {
-                    if (document.kind !== "sql") return;
-                    setRenameValue(document.title);
-                    setRenamingId(document.id);
-                  }}
-                  title={title}
-                >
-                  <Icon name={icon(document)} />
-                  <span>{title}</span>
-                </button>
-              )}
-              <button
-                type="button"
-                className="btn small icon-only icon-xs tw:mr-1"
-                onClick={() => onClose(document.id)}
-                title={t("common.close")}
-                aria-label={`${t("common.close")}: ${title}`}
-              >
-                <Icon name="close" />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      <div className="ds-control-row tw:flex tw:shrink-0 tw:items-center tw:border-l tw:border-border-subtle tw:px-1">
+      }}
+      actions={
         <ToolbarMenu
           label={t("tabs.openDocuments")}
           icon="moreVertical"
@@ -182,7 +117,65 @@ export default function WorkbenchDocumentStrip({
             );
           })}
         </ToolbarMenu>
-      </div>
-    </div>
+      }
+    >
+        {presentedDocuments.map(({ document, title }) => {
+          const active = activeId === document.id;
+          const renaming =
+            document.kind === "sql" && renamingId === document.id;
+          return (
+            <IdeTab
+              tabRef={active ? activeTabRef : undefined}
+              active={active}
+              title={title}
+              tabIndex={
+                active || (!hasVisibleActiveDocument && document.id === keyboardFallbackId)
+                  ? 0
+                  : -1
+              }
+              onActivate={() => onActivate(document.id)}
+              onDoubleClick={() => {
+                if (document.kind !== "sql") return;
+                setRenameValue(document.title);
+                setRenamingId(document.id);
+              }}
+              editing={renaming ? (
+                <input
+                  autoFocus
+                  className="tw:m-1 tw:min-w-0 tw:flex-1 tw:border-border-strong tw:bg-background tw:px-1 tw:text-sm tw:text-foreground"
+                  value={renameValue}
+                  aria-label={t("sql.documentTitle")}
+                  onChange={(event) => setRenameValue(event.target.value)}
+                  onBlur={() => finishRename(document.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      finishRename(document.id);
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      setRenamingId(null);
+                    }
+                  }}
+                />
+              ) : undefined}
+              trailing={
+                <button
+                  type="button"
+                  className="btn small icon-only icon-xs tw:mr-1"
+                  onClick={() => onClose(document.id)}
+                  title={t("common.close")}
+                  aria-label={`${t("common.close")}: ${title}`}
+                >
+                  <Icon name="close" />
+                </button>
+              }
+              key={document.id}
+            >
+              <Icon name={icon(document)} />
+              <span>{title}</span>
+            </IdeTab>
+          );
+        })}
+    </IdeTabStrip>
   );
 }

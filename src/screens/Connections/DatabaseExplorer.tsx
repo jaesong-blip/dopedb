@@ -39,6 +39,7 @@ import ToolbarMenu, {
 import {
   ToolWindowAction,
   ToolWindowHeader,
+  ToolWindowHideButton,
   ToolWindowSection,
 } from "../../design-system/components/ToolWindow";
 import { TreeSearch } from "../../design-system/components/TreeControls";
@@ -523,15 +524,10 @@ export function DatabaseExplorer({
                 {t("connections.showRowCounts")}
               </ToolbarMenuItem>
             </ToolbarMenu>
-            <button
-              type="button"
-              className="btn small icon-only icon-xs"
+            <ToolWindowHideButton
+              label={t("common.close")}
               onClick={onClose}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-            >
-              <Icon name="close" />
-            </button>
+            />
           </>
         }
       />

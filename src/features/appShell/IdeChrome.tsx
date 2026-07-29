@@ -15,6 +15,11 @@ import ToolbarMenu, {
   ToolbarMenuItem,
 } from "../../components/ToolbarMenu";
 import {
+  IdeStatusBarSurface,
+  IdeToolbarLauncher,
+  IdeTitleToolbar,
+} from "../../design-system/components/AppChrome";
+import {
   StatusBarBreadcrumbs,
   StatusBarIconButton,
   StatusBarItem,
@@ -72,60 +77,41 @@ export function IdeTopBar({
   const queryDisabled = !selected || !supportsSql;
 
   return (
-    <header
-      className="ide-topbar tw:relative tw:col-[1/-1] tw:row-start-1 tw:z-[var(--ds-z-sticky)] tw:flex tw:h-full tw:min-w-0 tw:select-none tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:px-2 tw:text-muted-foreground"
-      data-tauri-drag-region="deep"
-    >
-      <div
-        className={
-          IS_MACOS
-            ? "tw:block tw:w-[68px] tw:shrink-0"
-            : "tw:hidden tw:shrink-0"
-        }
-        aria-hidden="true"
-      />
-      {workspace}
-
-      <div
-        className="tw:absolute tw:left-1/2 tw:flex tw:-translate-x-1/2 tw:items-center tw:gap-1 tw:[&_.btn]:[--ds-icon-button-size:28px]"
-        role="toolbar"
-        aria-label={t("ide.mainToolbar")}
-      >
-        <button
-          type="button"
-          className="btn small icon-only"
+    <IdeTitleToolbar
+      macosInset={IS_MACOS}
+      context={workspace}
+      launchersLabel={t("ide.mainToolbar")}
+      launchers={
+        <>
+        <IdeToolbarLauncher
+          active={area === "workspace" && databaseExplorerOpen}
           onClick={() => {
             if (area === "workspace") onToggleDatabaseExplorer();
             else onArea("workspace");
           }}
           title={t("ide.action.databaseExplorer")}
           aria-label={t("ide.action.databaseExplorer")}
-          aria-pressed={area === "workspace" && databaseExplorerOpen}
         >
           <Icon name="database" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only"
+        </IdeToolbarLauncher>
+        <IdeToolbarLauncher
+          active={servicesOpen}
           onClick={onToggleServices}
           title={t("services.title")}
           aria-label={t("services.title")}
-          aria-pressed={servicesOpen}
         >
           <Icon name="list" />
-        </button>
-        <button
-          ref={terminalButtonRef}
-          type="button"
-          className="btn small icon-only"
+        </IdeToolbarLauncher>
+        <IdeToolbarLauncher
+          buttonRef={terminalButtonRef}
+          active={showTerminalDock}
           disabled={!selected}
           onClick={onOpenTerminal}
           title={t("terminal.agentTitle")}
           aria-label={t("terminal.agentTitle")}
-          aria-pressed={showTerminalDock}
         >
           <Icon name="user" />
-        </button>
+        </IdeToolbarLauncher>
         <ToolbarMenu
           align="start"
           icon="moreHorizontal"
@@ -153,31 +139,29 @@ export function IdeTopBar({
             {t("ide.action.newQuery")}
           </ToolbarMenuItem>
         </ToolbarMenu>
-      </div>
-
-      <div className="tw:ml-auto tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:[&_.btn]:[--ds-icon-button-size:28px]">
-        <div className="tw:size-7 tw:shrink-0">{account}</div>
-        <button
-          type="button"
-          className="btn small icon-only"
+        </>
+      }
+      actions={
+        <>
+        <div className="tw:size-8 tw:shrink-0">{account}</div>
+        <IdeToolbarLauncher
+          active={searchEverywhereOpen}
           onClick={onSearchEverywhere}
           title={t("ide.action.searchEverywhere")}
           aria-label={t("ide.action.searchEverywhere")}
-          aria-pressed={searchEverywhereOpen}
         >
           <Icon name="search" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only"
+        </IdeToolbarLauncher>
+        <IdeToolbarLauncher
           onClick={onSettings}
           title={t("common.settings")}
           aria-label={t("common.settings")}
         >
           <Icon name="gear" />
-        </button>
-      </div>
-    </header>
+        </IdeToolbarLauncher>
+        </>
+      }
+    />
   );
 }
 
@@ -265,15 +249,15 @@ export function IdeStatusBar({
   }
 
   return (
-    <footer
-      className="ide-statusbar tw:col-[1/-1] tw:row-start-4 tw:z-[var(--ds-z-sticky)] tw:flex tw:min-w-0 tw:items-center tw:overflow-hidden tw:border-t tw:border-border-subtle tw:bg-card tw:text-xs tw:leading-none tw:text-muted-foreground"
-      aria-label={t("ide.statusBar")}
+    <IdeStatusBarSurface
+      label={t("ide.statusBar")}
+      breadcrumbs={
+        <StatusBarBreadcrumbs
+          label={t("ide.databaseNavigation")}
+          items={breadcrumbs}
+        />
+      }
     >
-      <StatusBarBreadcrumbs
-        label={t("ide.databaseNavigation")}
-        items={breadcrumbs}
-      />
-      <div className="tw:flex-1" />
       {backgroundProcessCount > 0 ? (
         <StatusBarIconButton
           icon="refresh"
@@ -324,6 +308,6 @@ export function IdeStatusBar({
         attention={unseenOperationCount > 0}
         disabled={!selected}
       />
-    </footer>
+    </IdeStatusBarSurface>
   );
 }
