@@ -1,9 +1,10 @@
-/** Credential-free Agent CLI status and read-only retired chat archive contracts. */
+/** ACP conversation, credential-free CLI status, and retired archive contracts. */
 
 import type { ConnectionId } from "../connections/domain";
 
 declare const retiredChatThreadIdBrand: unique symbol;
 declare const retiredChatMessageIdBrand: unique symbol;
+declare const acpSessionIdBrand: unique symbol;
 
 /** Opaque identity for one immutable thread created by the retired in-app chat. */
 export type RetiredChatThreadId = string & {
@@ -23,6 +24,14 @@ export function retiredChatMessageId(value: string): RetiredChatMessageId {
   return value as RetiredChatMessageId;
 }
 
+export type AcpSessionId = string & {
+  readonly [acpSessionIdBrand]: "AcpSessionId";
+};
+
+export function acpSessionId(value: string): AcpSessionId {
+  return value as AcpSessionId;
+}
+
 export type AgentProvider = "claude" | "codex";
 
 export interface AgentCliInfo {
@@ -32,21 +41,6 @@ export interface AgentCliInfo {
   authenticated: boolean;
   authMethod: string | null;
   note: string;
-}
-
-/** One model-scoped weekly cap, named as the provider displays it. */
-export interface AgentModelUsage {
-  model: string;
-  percentLeft: number;
-}
-
-/** How much of one provider's subscription quota is still available. */
-export interface AgentUsage {
-  provider: AgentProvider;
-  sessionPercentLeft: number;
-  weeklyPercentLeft: number | null;
-  modelWindows: AgentModelUsage[];
-  resetsAt: string | null;
 }
 
 /** A persisted, read-only conversation created before Terminal sessions replaced chat. */
@@ -70,4 +64,97 @@ export interface RetiredChatArchiveMessage {
   text: string;
   error: string | null;
   createdAt: string;
+}
+
+export type AcpSessionLifecycle =
+  | "starting"
+  | "ready"
+  | "running"
+  | "waitingPermission"
+  | "failed"
+  | "closed";
+
+export interface AcpSessionSummary {
+  id: AcpSessionId;
+  connectionId: ConnectionId;
+  provider: "codex";
+  title: string;
+  lifecycle: AcpSessionLifecycle;
+  acpSessionId: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AcpPermissionOption {
+  id: string;
+  name: string;
+  kind:
+    | "allowOnce"
+    | "allowAlways"
+    | "rejectOnce"
+    | "rejectAlways"
+    | "unknown";
+}
+
+type AcpEventBase = {
+  sessionId: AcpSessionId;
+  sequence: number;
+  createdAt: string;
+};
+
+export type AcpSessionEvent = AcpEventBase &
+  (
+    | {
+        type: "userMessage";
+        text: string;
+        attachments: string[];
+      }
+    | {
+        type: "sessionUpdate";
+        update: Record<string, unknown>;
+      }
+    | {
+        type: "permissionRequest";
+        requestId: string;
+        toolCall: Record<string, unknown>;
+        options: AcpPermissionOption[];
+      }
+    | {
+        type: "turnEnd";
+        stopReason: string;
+      }
+    | {
+        type: "status";
+        lifecycle: AcpSessionLifecycle;
+      }
+    | {
+        type: "error";
+        message: string;
+      }
+  );
+
+export interface AcpSessionFocus {
+  session: AcpSessionSummary;
+  events: AcpSessionEvent[];
+  replayTruncated: boolean;
+}
+
+export interface AcpSessionChanged {
+  session: AcpSessionSummary;
+  event: AcpSessionEvent | null;
+}
+
+export interface AcpTableContext {
+  schema: string | null;
+  table: string;
+  column: string | null;
+  rowIndex: number | null;
+  row: Record<string, unknown> | null;
+}
+
+export interface AcpPromptContext {
+  documentName: string | null;
+  documentText: string | null;
+  table: AcpTableContext | null;
 }

@@ -44,29 +44,6 @@ export function StatusDot({ tone = "neutral" }: { tone?: StatusTone }) {
   );
 }
 
-/**
- * Quota meter: the fill length is what remains, while the color warns on what is
- * already consumed, so a nearly full quota stays quiet in persistent chrome.
- */
-export function UsageMeter({ percentLeft }: { percentLeft: number }) {
-  const used = 100 - percentLeft;
-  const tone: StatusTone =
-    used >= 80 ? "danger" : used >= 60 ? "warning" : "neutral";
-
-  return (
-    <span
-      aria-hidden="true"
-      className="tw:block tw:h-1 tw:w-8 tw:shrink-0 tw:overflow-hidden tw:rounded-full tw:bg-border-subtle"
-    >
-      <span
-        data-tone={tone}
-        className="tw:block tw:h-full tw:rounded-full tw:bg-muted-foreground tw:data-[tone=danger]:bg-danger tw:data-[tone=warning]:bg-warning"
-        style={{ width: `${percentLeft}%` }}
-      />
-    </span>
-  );
-}
-
 export function StatusBarItem({
   children,
   onClick,

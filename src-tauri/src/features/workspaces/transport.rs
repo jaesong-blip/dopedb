@@ -24,6 +24,7 @@ async fn revoke_if_authority_changed(
         Ok(after) if &after == before => Ok(()),
         Ok(_) => {
             state.terminals.stop_all(app);
+            state.agents_acp.shutdown_all();
             state.services.providers.invalidate_scope().await
         }
         // An authority read failure is not evidence that a durable local
@@ -215,6 +216,7 @@ pub async fn bind_workspace_connection_credentials(
         })
         .await?;
     state.terminals.stop_connection(id, &app);
+    state.agents_acp.stop_connection(id);
     Ok(profile)
 }
 
@@ -231,6 +233,7 @@ pub async fn update_workspace_connection(
         .update_connection(WorkspaceConnectionUpdateRequest { profile })
         .await?;
     state.terminals.stop_connection(connection_id, &app);
+    state.agents_acp.stop_connection(connection_id);
     Ok(profile)
 }
 
@@ -242,5 +245,6 @@ pub async fn delete_workspace_connection(
 ) -> AppResult<ConnectionProfile> {
     let profile = state.services.workspace.delete_connection(id).await?;
     state.terminals.stop_connection(id, &app);
+    state.agents_acp.stop_connection(id);
     Ok(profile)
 }

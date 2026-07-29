@@ -13,6 +13,7 @@ import {
 } from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import { useTablePageState } from "../../features/tableData/state";
+import { useAgentSelection } from "../../features/agents/selectionContext";
 import type { CatalogTable, QueryResult } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import { documentsToGrid } from "../../lib/documentGrid";
@@ -34,6 +35,7 @@ export default function MongoTableData({
   table: CatalogTable;
 }) {
   const { t } = useI18n();
+  const agentSelection = useAgentSelection();
   const pageSize = PAGE;
   const key = tableKey(table);
   const [page, setPage] = useTablePageState(key);
@@ -117,6 +119,21 @@ export default function MongoTableData({
               result={result}
               surface="workbench"
               startIndex={page * pageSize}
+              onCellClick={(_value, rowIndex, column) => {
+                agentSelection.select({
+                  connectionId: connection.id,
+                  schema: table.schema ?? null,
+                  table: table.name,
+                  column,
+                  rowIndex: page * pageSize + rowIndex,
+                  row: Object.fromEntries(
+                    result.columns.map((name, index) => [
+                      name,
+                      result.rows[rowIndex]?.[index] ?? null,
+                    ]),
+                  ),
+                });
+              }}
               columnMeta={Object.fromEntries(
                 table.columns.map((column) => [
                   column.name,

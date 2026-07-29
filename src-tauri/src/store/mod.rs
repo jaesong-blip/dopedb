@@ -7,6 +7,7 @@
 //! runtime, not the compile-time `query!` macro) because this is a
 //! runtime-arbitrary-SQL client.
 
+mod agent_acp;
 mod bootstrap;
 mod migrations;
 mod projections;

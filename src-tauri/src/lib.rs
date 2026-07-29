@@ -72,8 +72,15 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            features::agents::transport::start_agent_acp_session,
+            features::agents::transport::resume_agent_acp_session,
+            features::agents::transport::list_agent_acp_sessions,
+            features::agents::transport::focus_agent_acp_session,
+            features::agents::transport::prompt_agent_acp_session,
+            features::agents::transport::cancel_agent_acp_session,
+            features::agents::transport::respond_agent_acp_permission,
+            features::agents::transport::close_agent_acp_session,
             features::agents::transport::detect_agent_clis,
-            features::agents::transport::agent_usage,
             features::agents::transport::list_retired_chat_archive_threads,
             features::agents::transport::get_retired_chat_archive_messages,
             features::workspaces::transport::workspace_feature_state,
@@ -202,6 +209,9 @@ pub fn run() {
                 );
                 let terminals = app_handle.state::<state::AppState>().terminals.clone();
                 terminals.shutdown_all(app_handle, Duration::from_secs(2));
+                let agents = app_handle.state::<state::AppState>().agents_acp.clone();
+                agents.shutdown_all();
+                tauri::async_runtime::block_on(agents.flush_persistence(Duration::from_secs(2)));
                 let broker = app_handle.state::<state::AppState>().broker.clone();
                 tauri::async_runtime::block_on(broker.shutdown_and_wait(Duration::from_secs(2)));
             }

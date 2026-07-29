@@ -2,10 +2,7 @@
 // one quiet title toolbar. macOS owns its native File/Edit/View menus, so the
 // WebView must not draw a second application menu inside the window.
 import type { ReactNode, RefObject } from "react";
-import { useQuery } from "@tanstack/react-query";
 import type { CatalogTable } from "../../ipc/types";
-import type { AgentProvider } from "../agents/domain";
-import { agentUsageQuery } from "../agents/queryOptions";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
@@ -26,7 +23,6 @@ import {
   StatusBarBreadcrumbs,
   StatusBarIconButton,
   StatusBarItem,
-  UsageMeter,
 } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 import { tableLabel } from "../../lib/tableRef";
@@ -35,12 +31,6 @@ import type { AppArea } from "./navigation";
 const IS_MACOS =
   typeof navigator !== "undefined" &&
   /Macintosh|Mac OS X/.test(navigator.userAgent);
-
-// Provider brand names are not translated; only the surrounding sentence is.
-const AGENT_USAGE_LABEL: Record<AgentProvider, string> = {
-  claude: "Claude",
-  codex: "Codex",
-};
 
 export function IdeTopBar({
   area,
@@ -178,54 +168,6 @@ export function IdeTopBar({
   );
 }
 
-/** Remaining Agent CLI quota; providers that cannot be read render nothing. */
-function AgentUsageStatus() {
-  const { t } = useI18n();
-  const { data } = useQuery(agentUsageQuery());
-
-  return (
-    <>
-      {(data ?? []).map((usage) => {
-        const detail = [
-          t("ide.agentUsageSession", { percent: usage.sessionPercentLeft }),
-        ];
-        if (usage.weeklyPercentLeft !== null) {
-          detail.push(
-            t("ide.agentUsageWeekly", { percent: usage.weeklyPercentLeft }),
-          );
-        }
-        for (const window of usage.modelWindows) {
-          detail.push(
-            t("ide.agentUsageModel", {
-              model: window.model,
-              percent: window.percentLeft,
-            }),
-          );
-        }
-        if (usage.resetsAt) {
-          detail.push(
-            t("ide.agentUsageResets", { time: resetLabel(usage.resetsAt) }),
-          );
-        }
-        return (
-          <StatusBarItem key={usage.provider} title={detail.join(" · ")}>
-            {AGENT_USAGE_LABEL[usage.provider]}
-            <UsageMeter percentLeft={usage.sessionPercentLeft} />
-            <span className="tw:tabular-nums">{usage.sessionPercentLeft}%</span>
-          </StatusBarItem>
-        );
-      })}
-    </>
-  );
-}
-
-function resetLabel(value: string) {
-  const at = new Date(value);
-  return Number.isNaN(at.getTime())
-    ? value
-    : at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
 export function IdeStatusBar({
   selected,
   selectedTable,
@@ -349,7 +291,6 @@ export function IdeStatusBar({
           })}
         </StatusBarItem>
       ) : null}
-      <AgentUsageStatus />
       {selected ? (
         <StatusBarIconButton
           icon={writeEnabled ? "unlock" : "lock"}

@@ -427,10 +427,6 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   engine/schema 이름과 top toolbar의 Settings action을 하단에 중복하지 않는다.
   잠금 action은 해당 data source의 Safety 설정을, bell action은 실제 Activity
   문서를 연다. 화면 전용 status CSS나 style map은 만들지 않는다.
-- `UsageMeter`: 남은 할당량을 채움 길이로, 소진된 비율을 tone으로 표시하는 얇은
-  막대. 60% 미만 소진은 muted, 80% 미만은 warning, 그 이상은 danger를 쓰며 채움
-  폭만 inline style로 둔다. 상태바 Agent 사용량처럼 숫자와 함께 놓아 색이 유일한
-  신호가 되지 않게 한다.
 - `DiagnosticSummary`, `DiagnosticCount`: 설정·속성 편집기의 Problems 목록과
   오류/경고 개수를 같은 compact hierarchy로 표시.
 - `SettingsGroup`: 설정·정책 화면의 제목, 상단 divider, dense spacing을 공유하는
@@ -444,6 +440,15 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 있고 form과 tab primitive는 같은 디렉터리의 `FormControls.tsx`,
 `PanelTabs.tsx`, `SegmentedControl.tsx`에 있다. 같은 형태는 화면에서 utility
 문자열로 다시 만들지 않는다.
+
+ACP처럼 protocol이 작업 상태를 소유하는 화면은
+[`src/design-system/components/Agent.tsx`](components/Agent.tsx)의
+`AgentToolCallCard`, `AgentPermissionCard`를 사용한다. 전자는 tool의 제목,
+진행 상태, 구조화 결과와 상세 입력/출력을 한 observation surface에 묶고,
+후자는 protocol이 실제로 제공한 선택지만 approval action으로 받는다. 화면별로
+승인 card의 warning border, status dot, icon/본문/action grid를 복제하지 않는다.
+Agent provider나 model 선택은 이 primitive의 책임이 아니며, 지원 결정이 없는
+provider를 disabled option으로 노출하지 않는다.
 
 ### 버튼
 

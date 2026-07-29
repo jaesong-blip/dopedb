@@ -1,27 +1,95 @@
-//! Tauri transport for CLI probes, provider quota, and read-only retired archives.
+//! Tauri transport for ACP sessions, CLI probes, and read-only retired archives.
 
 use tauri::State;
 
 use crate::error::AppResult;
-use crate::kernel::identity::RetiredChatThreadId;
+use crate::kernel::identity::{AcpSessionId, ConnectionId, RetiredChatThreadId};
 use crate::state::AppState;
 
 use super::domain::{
-    AgentCliInfo, AgentUsage, RetiredChatArchiveMessage, RetiredChatArchiveThread,
+    AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, RetiredChatArchiveMessage,
+    RetiredChatArchiveThread,
 };
+
+/// Start one connection-pinned session through the official Codex ACP adapter.
+#[tauri::command]
+pub async fn start_agent_acp_session(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    connection_id: ConnectionId,
+) -> AppResult<AcpSessionFocus> {
+    state.agents_acp.start(connection_id, app).await
+}
+
+/// Resume persisted history through the official adapter's ACP session/load path.
+#[tauri::command]
+pub async fn resume_agent_acp_session(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    id: AcpSessionId,
+) -> AppResult<AcpSessionFocus> {
+    state.agents_acp.resume(id, app).await
+}
+
+/// List workspace-scoped ACP conversations, including persisted closed history.
+#[tauri::command]
+pub async fn list_agent_acp_sessions(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<AcpSessionSummary>> {
+    state.agents_acp.list().await
+}
+
+/// Replay a bounded ACP event stream when switching conversations.
+#[tauri::command]
+pub async fn focus_agent_acp_session(
+    state: State<'_, AppState>,
+    id: AcpSessionId,
+    after_sequence: Option<u64>,
+) -> AppResult<AcpSessionFocus> {
+    state.agents_acp.focus(id, after_sequence).await
+}
+
+/// Submit a prompt plus bounded editor context to the pinned ACP session.
+#[tauri::command]
+pub fn prompt_agent_acp_session(
+    state: State<'_, AppState>,
+    id: AcpSessionId,
+    prompt: String,
+    context: AcpPromptContext,
+) -> AppResult<()> {
+    state.agents_acp.prompt(id, prompt, context)
+}
+
+/// Cancel only the active ACP turn.
+#[tauri::command]
+pub fn cancel_agent_acp_session(state: State<'_, AppState>, id: AcpSessionId) -> AppResult<()> {
+    state.agents_acp.cancel(id)
+}
+
+/// Resolve an actual ACP permission request with one offered option or cancel it.
+#[tauri::command]
+pub fn respond_agent_acp_permission(
+    state: State<'_, AppState>,
+    id: AcpSessionId,
+    request_id: String,
+    option_id: Option<String>,
+) -> AppResult<()> {
+    state
+        .agents_acp
+        .respond_permission(id, &request_id, option_id)
+}
+
+/// Close one ACP process and immediately revoke its connection capability.
+#[tauri::command]
+pub fn close_agent_acp_session(state: State<'_, AppState>, id: AcpSessionId) -> AppResult<()> {
+    state.agents_acp.close(id)
+}
 
 /// Claude Code / Codex CLI status for connection-pinned Terminal profiles.
 #[tauri::command]
 pub async fn detect_agent_clis(state: State<'_, AppState>) -> AppResult<Vec<AgentCliInfo>> {
     let agents = state.services.agents.clone();
     Ok(agents.detect_clis().await)
-}
-
-/// Remaining subscription quota for the signed-in Agent CLIs, for the status bar.
-#[tauri::command]
-pub async fn agent_usage(state: State<'_, AppState>) -> AppResult<Vec<AgentUsage>> {
-    let agents = state.services.agents.clone();
-    Ok(agents.usage().await)
 }
 
 /// List the read-only archive left by the retired in-app Agent chat.

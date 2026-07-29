@@ -2,7 +2,8 @@ import type { ReactNode, RefObject } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 import { Icon } from "../../components/Icon";
-import TerminalDock from "../../components/TerminalDock/TerminalDock";
+import AcpChatPanel from "../agents/AcpChatPanel";
+import { AgentSelectionProvider } from "../agents/selectionContext";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import { defaultSqlNamespace } from "../queries/namespace";
@@ -12,7 +13,7 @@ import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
 import LocalHistoryToolWindow from "../localHistory/LocalHistoryToolWindow";
 import WorkspaceAccount from "../workspaces/components/WorkspaceAccount";
 import WorkspaceSwitcher from "../workspaces/components/WorkspaceSwitcher";
-import type { CatalogTable, SkillStatus } from "../../ipc/types";
+import type { CatalogTable } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
 import { tableKey } from "../../lib/tableRef";
@@ -62,7 +63,6 @@ type Props = {
   searchEverywhereOpen: boolean;
   terminalOverlay: boolean;
   terminalWidth: number;
-  skillStatus: SkillStatus | null;
   creatingDemo: boolean;
   onWorkspaceScopeChanged: () => Promise<void>;
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
@@ -108,6 +108,14 @@ type Props = {
 };
 
 export default function ShellLayout(props: Props) {
+  return (
+    <AgentSelectionProvider>
+      <ShellLayoutContent {...props} />
+    </AgentSelectionProvider>
+  );
+}
+
+function ShellLayoutContent(props: Props) {
   const { t } = useI18n();
   const {
     area,
@@ -139,7 +147,6 @@ export default function ShellLayout(props: Props) {
     showTerminalDock,
     terminalOverlay,
     terminalWidth,
-    skillStatus,
     creatingDemo,
   } = props;
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
@@ -346,15 +353,14 @@ export default function ShellLayout(props: Props) {
       </main>
 
       {showTerminalDock && selected && (
-        <TerminalDock
+        <AcpChatPanel
           connection={selected}
           documents={workbenchDocuments}
           activeDocumentId={activeWorkbenchDocumentId}
-          skillStatus={skillStatus}
+          selectedTable={selectedTable}
           overlay={terminalOverlay}
           compact={compact}
           width={rightDockWidth}
-          presentation="agent"
           onWidthChange={props.onTerminalWidthChange}
           onOpenArchive={props.onOpenAgentArchive}
           onClose={props.onCloseTerminal}

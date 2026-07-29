@@ -48,6 +48,9 @@ pub async fn upsert_connection(
     state
         .terminals
         .stop_connection(ConnectionId::from(saved.id), &app);
+    state
+        .agents_acp
+        .stop_connection(ConnectionId::from(saved.id));
     Ok(saved)
 }
 
@@ -65,6 +68,7 @@ pub async fn set_connections_schema_group(
         .await?;
     for id in ids {
         state.terminals.stop_connection(id, &app);
+        state.agents_acp.stop_connection(id);
     }
     Ok(profiles)
 }
@@ -77,6 +81,7 @@ pub async fn delete_connection(
 ) -> AppResult<()> {
     let deleted = state.services.connections.delete(id).await?;
     state.terminals.stop_connection(id, &app);
+    state.agents_acp.stop_connection(id);
     match state.services.connections.list_profiles().await {
         Ok(remaining) => {
             if let Err(error) =

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::broker::BrokerRuntime;
 use crate::connection::ConnectionManager;
 use crate::error::AppResult;
+use crate::features::agents::acp::AcpRuntime;
 use crate::features::providers;
 use crate::features::terminals::{self, TerminalsFeature};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
@@ -21,6 +22,8 @@ pub struct AppState {
     pub(crate) skills: SkillManager,
     /// PTY sessions, bounded output replay, and process-tree lifecycle.
     pub(crate) terminals: TerminalsFeature,
+    /// Official ACP client sessions. Authentication remains in local agent tooling.
+    pub(crate) agents_acp: AcpRuntime,
     /// Desktop-only approval capability. CLI and Terminal adapters are composed
     /// without this authority and therefore cannot obtain it.
     pub(crate) local_operation_approval: LocalApprovalAuthority,
@@ -29,6 +32,7 @@ pub struct AppState {
 impl AppState {
     pub async fn new() -> AppResult<Self> {
         let store = Store::open().await?;
+        store.recover_interrupted_agent_acp_sessions().await?;
         let providers = providers::compose(store.clone());
         let connections = ConnectionManager::with_authorities(
             store.clone(),
@@ -39,6 +43,7 @@ impl AppState {
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let broker = BrokerRuntime::new(operation.runtime_id().into());
         let terminals = terminals::compose(store.clone(), broker.clone());
+        let agents_acp = AcpRuntime::new(store.clone(), broker.clone());
         let services = ApplicationServices::with_providers(
             store.clone(),
             connections.clone(),
@@ -53,6 +58,7 @@ impl AppState {
             broker,
             skills,
             terminals,
+            agents_acp,
             local_operation_approval,
         })
     }

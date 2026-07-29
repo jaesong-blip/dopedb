@@ -28,10 +28,6 @@ export const appCatalog = defineCatalog(
     "ide.agentReadyBody":
       "Connect a data source, then use the pinned terminal and approval ledger.",
     "ide.agentReadyTitle": "Database-aware Agent",
-    "ide.agentUsageModel": "{model}: {percent}% left",
-    "ide.agentUsageResets": "Resets {time}",
-    "ide.agentUsageSession": "Session limit: {percent}% left",
-    "ide.agentUsageWeekly": "Weekly limit: {percent}% left",
     "ide.backgroundProcesses": "{count} background processes",
     "ide.collections": "collections",
     "ide.connected": "Connected",
@@ -160,10 +156,6 @@ export const appCatalog = defineCatalog(
     "ide.agentReadyBody":
       "데이터 소스를 연결한 뒤 고정 Terminal과 승인 원장을 사용하세요.",
     "ide.agentReadyTitle": "데이터베이스 인식 Agent",
-    "ide.agentUsageModel": "{model}: {percent}% 남음",
-    "ide.agentUsageResets": "{time} 초기화",
-    "ide.agentUsageSession": "세션 한도: {percent}% 남음",
-    "ide.agentUsageWeekly": "주간 한도: {percent}% 남음",
     "ide.backgroundProcesses": "백그라운드 작업 {count}개",
     "ide.collections": "컬렉션",
     "ide.connected": "연결됨",

@@ -47,6 +47,7 @@ uuid_identity!(DashboardId);
 uuid_identity!(QueryRunId);
 uuid_identity!(QueryExecutionId);
 uuid_identity!(TerminalSessionId);
+uuid_identity!(AcpSessionId);
 uuid_identity!(RuntimeId);
 uuid_identity!(RetiredChatThreadId);
 uuid_identity!(RetiredChatMessageId);

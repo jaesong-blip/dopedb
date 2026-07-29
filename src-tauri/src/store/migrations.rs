@@ -688,6 +688,39 @@ CREATE TABLE IF NOT EXISTS agent_chat_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_chat_messages_thread ON agent_chat_messages(thread_id, created_at);
 
+-- Current ACP conversations. Authentication and provider credentials are never
+-- stored here: `acp_session_id` is only the official adapter's opaque resume
+-- identity. Events are bounded projections used to restore the observation and
+-- approval surface after an app restart.
+CREATE TABLE IF NOT EXISTS agent_acp_sessions (
+    id             TEXT PRIMARY KEY,
+    connection_id  TEXT NOT NULL,
+    workspace_id   TEXT NOT NULL,
+    account_scope  TEXT NOT NULL,
+    provider       TEXT NOT NULL CHECK(provider IN ('codex')),
+    title          TEXT NOT NULL,
+    lifecycle      TEXT NOT NULL CHECK(lifecycle IN (
+                       'starting', 'ready', 'running', 'waiting_permission',
+                       'failed', 'closed'
+                   )),
+    acp_session_id TEXT,
+    error          TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_acp_sessions_scope
+    ON agent_acp_sessions(workspace_id, account_scope, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_acp_events (
+    session_id  TEXT NOT NULL REFERENCES agent_acp_sessions(id) ON DELETE CASCADE,
+    sequence    INTEGER NOT NULL CHECK(sequence > 0),
+    created_at  TEXT NOT NULL,
+    payload     TEXT NOT NULL CHECK(length(payload) <= 524288),
+    PRIMARY KEY(session_id, sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_acp_events_session
+    ON agent_acp_events(session_id, sequence);
+
 -- Provider API credentials are intentionally local-only. `keyring_ref` is an
 -- opaque UUID naming an OS Keychain/Credential Manager entry; no token,
 -- refresh credential, endpoint, or provider response is ever persisted here

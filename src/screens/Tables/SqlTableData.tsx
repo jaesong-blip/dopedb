@@ -16,6 +16,7 @@ import {
 } from "../../features/tableData/tauriAdapter";
 import { useCatalogTableMetadata } from "../../features/tableData/catalogTable";
 import type { RowEditorState } from "../../features/tableData/domain";
+import { useAgentSelection } from "../../features/agents/selectionContext";
 import { useTableDataState } from "../../features/tableData/state";
 import {
   FILTER_DEBOUNCE_MS,
@@ -58,6 +59,7 @@ export default function SqlTableData({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const agentSelection = useAgentSelection();
   const [ddlOpen, setDdlOpen] = useState(false);
   const engine = connection.engine;
   const { table, snapshotQuery } = useCatalogTableMetadata(connection.id, requestedTable);
@@ -460,6 +462,19 @@ export default function SqlTableData({
                   selectedRow: i,
                   selectedCell: { value, column },
                   jobsOpen: false,
+                });
+                agentSelection.select({
+                  connectionId: connection.id,
+                  schema: table.schema ?? null,
+                  table: table.name,
+                  column,
+                  rowIndex: page * pageSize + i,
+                  row: Object.fromEntries(
+                    result.columns.map((name, index) => [
+                      name,
+                      result.rows[i]?.[index] ?? null,
+                    ]),
+                  ),
                 });
               }}
               columnMeta={Object.fromEntries(

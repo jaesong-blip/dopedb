@@ -1,5 +1,6 @@
-//! Agent CLI readiness, subscription quota, and read-only retired chat archive slice.
+//! ACP runtime, local CLI readiness, and read-only retired chat archive slice.
 
+pub(crate) mod acp;
 pub(crate) mod adapters;
 mod application;
 pub(crate) mod domain;
@@ -8,17 +9,12 @@ pub(crate) mod transport;
 
 use crate::store::Store;
 
-use adapters::{HttpAgentUsage, ProcessAgentCliProbe, SqliteRetiredChatArchive};
+use adapters::{ProcessAgentCliProbe, SqliteRetiredChatArchive};
 pub(crate) use application::AgentsUseCases;
 pub(crate) use domain::{AgentProvider, RetiredChatArchiveMessage, RetiredChatArchiveThread};
 
-pub(crate) type AgentsFeature =
-    AgentsUseCases<ProcessAgentCliProbe, HttpAgentUsage, SqliteRetiredChatArchive>;
+pub(crate) type AgentsFeature = AgentsUseCases<ProcessAgentCliProbe, SqliteRetiredChatArchive>;
 
 pub(crate) fn compose(store: Store) -> AgentsFeature {
-    AgentsUseCases::new(
-        ProcessAgentCliProbe,
-        HttpAgentUsage::new(),
-        SqliteRetiredChatArchive::new(store),
-    )
+    AgentsUseCases::new(ProcessAgentCliProbe, SqliteRetiredChatArchive::new(store))
 }

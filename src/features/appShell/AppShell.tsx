@@ -1,5 +1,5 @@
 // Desktop workbench shell: coordinates the selected connection, document surface,
-// workspace navigation, and the persistent connection-pinned Terminal Dock.
+// workspace navigation, and the persistent connection-pinned Agent panel.
 import {
   useCallback,
   useEffect,
@@ -106,7 +106,7 @@ function Shell() {
   const toast = useToast();
   // Keep one bounded Skill inventory observer alive for the app lifecycle. This performs
   // the required startup scan and rechecks after focus without creating install roots.
-  const skillStatusQ = useQuery(skillStatusQuery());
+  useQuery(skillStatusQuery());
   const {
     connections: conns,
     setConnections: setConns,
@@ -341,7 +341,7 @@ function Shell() {
       window.requestAnimationFrame(() => {
         document
           .querySelector<HTMLButtonElement>(
-            '[data-terminal-focus-target="active-session"], [data-terminal-focus-target="launcher"]',
+            '[data-agent-focus-target="active-session"], [data-agent-focus-target="launcher"]',
           )
           ?.focus();
       });
@@ -544,7 +544,7 @@ function Shell() {
         id: "action:ai-chat",
         kind: "action",
         label: t("terminal.agentTitle"),
-        keywords: ["codex", "claude", "agent", "terminal"],
+        keywords: ["codex", "agent", "acp"],
         disabled: !selected,
         run: openOrFocusTerminalDock,
       },
@@ -855,7 +855,6 @@ function Shell() {
       searchEverywhereOpen={searchEverywhereOpen}
       terminalOverlay={terminalOverlay}
       terminalWidth={terminalDockWidth}
-      skillStatus={skillStatusQ.data ?? null}
       creatingDemo={creatingDemo}
       onWorkspaceScopeChanged={reloadWorkspaceScope}
       onNewConnection={startNewConnection}
