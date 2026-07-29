@@ -211,6 +211,9 @@ Elevation은 세 단계만 허용한다.
   상태. tool window가 열렸다는 이유만으로 primary 파랑을 사용하지 않는다.
 - `IdeTabStrip`, `IdeTab`: 평평한 document strip과 strip 안쪽의 둥근 active
   tab. 화면별 rectangular selection이나 bottom accent를 다시 만들지 않는다.
+- query toolbar는 정상 autosave 완료 아이콘을 상시 반복하지 않는다. 저장 중,
+  미저장, conflict, 실패처럼 사용자가 알아야 하는 예외 상태만 schema selector
+  뒤의 status slot에 표시하고, 실행 결과는 editor inline marker가 소유한다.
 - `IdeToolTabStrip`, `IdeToolTab`: Services 같은 tool window의 tab row와
   둥근 selected capsule. 일반 document 전환은 40px `document`, Services처럼
   36px command row와 나란히 놓이는 tab은 `compact` density를 사용한다.

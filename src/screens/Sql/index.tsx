@@ -885,15 +885,14 @@ export default function Sql({
             </option>
           ))}
         </WorkbenchSelect>
-        <span
-          data-state={documentSaveState}
-          className="tw:grid tw:size-control-sm tw:shrink-0 tw:place-items-center tw:text-muted-foreground tw:data-[state=conflict]:text-danger tw:data-[state=error]:text-danger tw:data-[state=saving]:text-primary"
-          title={
-            documentSaveError ??
-            (documentSaveState === "saving"
-              ? t("common.saving")
-              : documentSaveState === "saved"
-                ? t("sql.saved")
+        {documentSaveState !== "saved" ? (
+          <span
+            data-state={documentSaveState}
+            className="tw:grid tw:size-control-sm tw:shrink-0 tw:place-items-center tw:text-muted-foreground tw:data-[state=conflict]:text-danger tw:data-[state=error]:text-danger tw:data-[state=saving]:text-primary"
+            title={
+              documentSaveError ??
+              (documentSaveState === "saving"
+                ? t("common.saving")
                 : documentSaveState === "conflict"
                   ? t("sql.saveConflict")
                   : documentSaveState === "error"
@@ -901,20 +900,21 @@ export default function Sql({
                     : recovered
                       ? t("sql.recovered")
                       : t("sql.unsaved"))
-          }
-          role="status"
-        >
-          <Icon
-            name={
-              documentSaveState === "saving"
-                ? "refresh"
-                : documentSaveState === "conflict" ||
-                    documentSaveState === "error"
-                  ? "alert"
-                  : "check"
             }
-          />
-        </span>
+            role="status"
+          >
+            <Icon
+              name={
+                documentSaveState === "saving"
+                  ? "refresh"
+                  : documentSaveState === "conflict" ||
+                      documentSaveState === "error"
+                    ? "alert"
+                    : "info"
+              }
+            />
+          </span>
+        ) : null}
       </WorkbenchToolbar>
       <div className="tw:min-h-[180px] tw:flex-1 tw:overflow-hidden tw:bg-background tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0">
         <LazySqlViewer
