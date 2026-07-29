@@ -275,17 +275,12 @@ export default function WorkbenchContent(props: Props) {
             safetyFallback
           )
         ) : activeDocument.kind === "schema" ? (
-          safety ? (
-            <SchemaExplorer
-              key={activeDocument.id}
-              connection={selected}
-              selectedTable={null}
-              safety={safety}
-              onOpenTable={props.onOpenTable}
-            />
-          ) : (
-            safetyFallback
-          )
+          <SchemaExplorer
+            key={activeDocument.id}
+            connection={selected}
+            selectedTable={null}
+            onOpenTable={props.onOpenTable}
+          />
         ) : activeDocument.kind === "sql" ? (
           <Sql
             key={activeDocument.id}

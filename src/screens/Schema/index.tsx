@@ -12,7 +12,6 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   CatalogRelationV2,
   CatalogTable,
-  SafetySettings,
 } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
@@ -34,7 +33,6 @@ import {
   relationDisplayName,
 } from "../../lib/erdGraph";
 import { useI18n } from "../../lib/i18n";
-import SchemaEditor from "./SchemaEditor";
 import { schemaDetailsEnabled } from "./detailLifecycle";
 import {
   filterCatalog,
@@ -70,12 +68,10 @@ function legacyTableFor(
 export default function SchemaExplorer({
   connection,
   selectedTable,
-  safety,
   onOpenTable,
 }: {
   connection: ConnectionProfile;
   selectedTable: CatalogTable | null;
-  safety: SafetySettings;
   onOpenTable: (table: CatalogTable) => void;
 }) {
   const { t } = useI18n();
@@ -103,7 +99,6 @@ export default function SchemaExplorer({
   const snapshot = snapshotQuery.data;
   const [filter, setFilter] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -265,16 +260,6 @@ export default function SchemaExplorer({
           <button
             className="btn small icon-only"
             type="button"
-            aria-expanded={editorOpen}
-            title={t("schema.editorTitle")}
-            aria-label={t("schema.editorTitle")}
-            onClick={() => setEditorOpen((open) => !open)}
-          >
-            <Icon name="pencil" />
-          </button>
-          <button
-            className="btn small icon-only"
-            type="button"
             aria-expanded={inspectorOpen}
             aria-controls="schema-inspector"
             title={t(
@@ -289,17 +274,6 @@ export default function SchemaExplorer({
           </button>
         </div>
       </div>
-
-      {editorOpen && (
-        <SchemaEditor
-          connectionId={connection.id}
-          engine={connection.engine}
-          snapshot={snapshot}
-          relation={selected}
-          safety={safety}
-          onClose={() => setEditorOpen(false)}
-        />
-      )}
 
       {snapshot.relations.length === 0 ? (
         <WorkbenchEmptyState icon="database">

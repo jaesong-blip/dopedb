@@ -11,10 +11,6 @@ import {
   IdeToolTabStrip,
 } from "../../design-system/components/IdeTabs";
 import { TreeSectionButton } from "../../design-system/components/TreeControls";
-import {
-  WorkbenchButton,
-  WorkbenchToolbar,
-} from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import { useI18n } from "../../lib/i18n";
@@ -38,7 +34,6 @@ export default function QueryServicesToolWindow({
   activeDocumentId,
   onActivate,
   onActivateDocument,
-  onNewQuery,
   onClose,
   onStartResize,
   onResetHeight,
@@ -51,7 +46,6 @@ export default function QueryServicesToolWindow({
   activeDocumentId: string | null;
   onActivate: (id: string) => void;
   onActivateDocument: (id: string) => void;
-  onNewQuery: () => void;
   onClose: () => void;
   onStartResize: (event: {
     preventDefault(): void;
@@ -108,16 +102,6 @@ export default function QueryServicesToolWindow({
     });
   }
 
-  function expandAll() {
-    setDatabaseOpen(true);
-    setCollapsedConnections(new Set());
-  }
-
-  function collapseAll() {
-    setDatabaseOpen(false);
-    setCollapsedConnections(new Set(serviceConnections.map(({ id }) => id)));
-  }
-
   return (
     <section
       className="services-tool-window tw:relative tw:col-[1/-1] tw:row-start-3 tw:mx-[2px] tw:mb-1 tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[compact=true]:fixed tw:data-[compact=true]:top-title-toolbar tw:data-[compact=true]:right-0 tw:data-[compact=true]:bottom-status-bar tw:data-[compact=true]:left-0 tw:data-[compact=true]:z-[var(--ds-z-modal)] tw:data-[compact=true]:m-0 tw:data-[compact=true]:rounded-none tw:data-[compact=true]:border-x-0"
@@ -142,38 +126,6 @@ export default function QueryServicesToolWindow({
 
       <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1">
         <aside className="tw:flex tw:w-[32%] tw:min-w-[220px] tw:max-w-[460px] tw:shrink-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-background">
-          <WorkbenchToolbar label={t("services.sessions")} compact>
-            <WorkbenchButton
-              iconOnly
-              onClick={onNewQuery}
-              title={t("ide.action.newQuery")}
-              aria-label={t("ide.action.newQuery")}
-            >
-              <Icon name="plus" />
-            </WorkbenchButton>
-            <WorkbenchButton
-              iconOnly
-              disabled={
-                databaseOpen &&
-                collapsedConnections.size === 0 &&
-                serviceConnections.length > 0
-              }
-              onClick={expandAll}
-              title={t("connections.expandAll")}
-              aria-label={t("connections.expandAll")}
-            >
-              <Icon name="chevronsRight" />
-            </WorkbenchButton>
-            <WorkbenchButton
-              iconOnly
-              disabled={!databaseOpen}
-              onClick={collapseAll}
-              title={t("connections.collapseAll")}
-              aria-label={t("connections.collapseAll")}
-            >
-              <Icon name="chevronsLeft" />
-            </WorkbenchButton>
-          </WorkbenchToolbar>
           <div
             className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1"
             role="tree"

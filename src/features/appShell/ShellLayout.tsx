@@ -370,7 +370,6 @@ export default function ShellLayout(props: Props) {
           activeDocumentId={activeWorkbenchDocumentId}
           onActivate={props.onActivateQueryServiceSession}
           onActivateDocument={props.onActivateWorkbenchDocument}
-          onNewQuery={props.onNewQuery}
           onClose={props.onCloseServices}
           onStartResize={props.onStartServicesResize}
           onResetHeight={props.onResetServicesHeight}
