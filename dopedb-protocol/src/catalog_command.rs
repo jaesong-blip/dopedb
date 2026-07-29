@@ -12,6 +12,38 @@ use crate::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CatalogArguments {
     pub connection: ConnectionSelector,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DatabaseListArguments {
+    pub connection: ConnectionSelector,
+}
+
+pub struct DatabaseListCommand;
+
+impl CommandSpec for DatabaseListCommand {
+    type Arguments = DatabaseListArguments;
+    type Result = DatabaseListResult;
+
+    const NAME: CommandName = CommandName::DatabaseList;
+    const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::TerminalSession;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DatabaseSummary {
+    pub name: String,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DatabaseListResult {
+    pub connection_id: Uuid,
+    pub databases: Vec<DatabaseSummary>,
 }
 
 pub struct CatalogShowCommand;
@@ -47,6 +79,7 @@ pub struct SchemaSummary {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SchemaListResult {
     pub connection_id: Uuid,
+    pub database: String,
     pub schemas: Vec<SchemaSummary>,
 }
 
@@ -54,6 +87,8 @@ pub struct SchemaListResult {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableDescribeArguments {
     pub connection: ConnectionSelector,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
     pub table: String,
 }
 
@@ -71,5 +106,6 @@ impl CommandSpec for TableDescribeCommand {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableDescribeResult {
     pub connection_id: Uuid,
+    pub database: String,
     pub relation: Relation,
 }

@@ -62,6 +62,7 @@ impl SqlDocumentAuthorityPort for ConnectionSqlDocumentAuthority {
             },
             account_scope,
             dialect: dialect(pin.profile.engine),
+            database: pin.profile.database.clone(),
         };
         Ok(ConnectionSqlDocumentGuard {
             authority,
@@ -97,7 +98,8 @@ impl SqliteSqlDocumentRepository {
 impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
     async fn list(&self, authority: &SqlDocumentAuthority) -> AppResult<Vec<SqlDocument>> {
         let rows = sqlx::query(
-            "SELECT id, connection_id, title, dialect, selected_schema, resolve_mode,
+            "SELECT id, connection_id, title, dialect, selected_database,
+                    selected_schema, resolve_mode,
                     content, local_revision, remote_id, remote_revision, dirty, sync_status,
                     created_at, updated_at
              FROM sql_documents
@@ -149,10 +151,10 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
         sqlx::query(
             "INSERT INTO sql_documents
                 (id, workspace_id, account_scope, connection_id, title, dialect,
-                 selected_schema, resolve_mode, content,
+                 selected_database, selected_schema, resolve_mode, content,
                  local_revision, remote_id, remote_revision, dirty, sync_status,
                  deleted_at, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,1,NULL,NULL,1,'local',NULL,?10,?11)",
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,1,NULL,NULL,1,'local',NULL,?11,?12)",
         )
         .bind(document.id.to_string())
         .bind(authority.resource.workspace_id.to_string())
@@ -160,6 +162,7 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
         .bind(authority.resource.connection_id.to_string())
         .bind(&document.title)
         .bind(&document.dialect)
+        .bind(&document.selected_database)
         .bind(&document.selected_schema)
         .bind(&document.resolve_mode)
         .bind(&document.content)
@@ -180,15 +183,17 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
         let mut transaction = self.store.pool().begin().await?;
         let update = sqlx::query(
             "UPDATE sql_documents
-             SET title = ?1, selected_schema = ?2, resolve_mode = ?3, content = ?4,
+             SET title = ?1, selected_database = ?2, selected_schema = ?3,
+                 resolve_mode = ?4, content = ?5,
                  local_revision = local_revision + 1,
                  dirty = 1,
                  sync_status = CASE WHEN remote_id IS NULL THEN 'local' ELSE 'dirty' END,
-                 updated_at = ?5
-             WHERE id = ?6 AND workspace_id = ?7 AND account_scope = ?8
-               AND connection_id = ?9 AND local_revision = ?10 AND deleted_at IS NULL",
+                 updated_at = ?6
+             WHERE id = ?7 AND workspace_id = ?8 AND account_scope = ?9
+               AND connection_id = ?10 AND local_revision = ?11 AND deleted_at IS NULL",
         )
         .bind(&command.title)
+        .bind(&command.selected_database)
         .bind(&command.selected_schema)
         .bind(&command.resolve_mode)
         .bind(&command.content)
@@ -285,7 +290,8 @@ async fn load_scoped_document(
     id: SqlDocumentId,
 ) -> AppResult<SqlDocument> {
     let row = sqlx::query(
-        "SELECT id, connection_id, title, dialect, selected_schema, resolve_mode,
+        "SELECT id, connection_id, title, dialect, selected_database,
+                selected_schema, resolve_mode,
                 content, local_revision, remote_id, remote_revision, dirty, sync_status,
                 created_at, updated_at
          FROM sql_documents
@@ -308,6 +314,7 @@ fn row_to_document(row: &sqlx::sqlite::SqliteRow) -> AppResult<SqlDocument> {
         connection_id: ConnectionId::from(parse_uuid(row.try_get("connection_id")?)?),
         title: row.try_get("title")?,
         dialect: row.try_get("dialect")?,
+        selected_database: row.try_get("selected_database")?,
         selected_schema: row.try_get("selected_schema")?,
         resolve_mode: row.try_get("resolve_mode")?,
         content: row.try_get("content")?,

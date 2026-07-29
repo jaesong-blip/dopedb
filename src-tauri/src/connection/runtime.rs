@@ -23,7 +23,7 @@ use crate::features::workspaces::{Workspace, WorkspaceAuthUser, WorkspaceRole};
 use crate::kernel::identity::{
     AccountId, ConnectionId, DashboardId, ProviderBindingId, WorkspaceId,
 };
-use crate::model::ConnectionProfile;
+use crate::model::{ConnectionProfile, Engine, WorkspaceCredentialMode};
 use crate::store::{PinnedConnection, PinnedDashboard, Store};
 
 use super::remote_authority::RemoteConnectionAuthorityPort;
@@ -43,6 +43,38 @@ use cache::{
 };
 
 const MANAGED_RELEASE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_TARGET_DATABASE_BYTES: usize = 255;
+
+fn resolve_target_database(
+    profile: &ConnectionProfile,
+    requested: Option<&str>,
+    authorization: &ConnectionAuthorization,
+) -> AppResult<String> {
+    let database = requested.unwrap_or(&profile.database);
+    if database.is_empty()
+        || database.len() > MAX_TARGET_DATABASE_BYTES
+        || database.chars().any(char::is_control)
+    {
+        return Err(AppError::Config(
+            "target database name is empty or invalid".into(),
+        ));
+    }
+    if profile.engine == Engine::Sqlite && database != profile.database {
+        return Err(AppError::Blocked {
+            reason: "SQLite connections are bound to one database file".into(),
+        });
+    }
+    if database != profile.database
+        && (profile.credential_mode == WorkspaceCredentialMode::Managed
+            || authorization.provider_local_target.is_some())
+    {
+        return Err(AppError::Blocked {
+            reason: "this credential authority is bound to the connection's configured database"
+                .into(),
+        });
+    }
+    Ok(database.to_owned())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ConnectionAccess {
@@ -129,6 +161,7 @@ pub(crate) struct ConnectionContext {
 /// Clone: adapters retain one lease for the complete operation.
 pub(crate) struct ConnectionLease {
     pin: PinnedConnection,
+    target_database: String,
     entry: Arc<CacheEntry>,
     _scope_guard: OwnedRwLockReadGuard<()>,
 }
@@ -186,11 +219,19 @@ impl ConnectionLease {
     pub(crate) fn pin(&self) -> &PinnedConnection {
         &self.pin
     }
+
+    pub(crate) fn target_database(&self) -> &str {
+        &self.target_database
+    }
 }
 
 impl ConnectionSessionLeaseStart {
     pub(crate) fn live(&self) -> &Live {
         self.lease.live()
+    }
+
+    pub(crate) fn target_database(&self) -> &str {
+        self.lease.target_database()
     }
 
     pub(crate) fn into_lease(self) -> ConnectionLease {
@@ -203,16 +244,19 @@ impl ConnectionSessionAdmission {
         self.operation_scope.pin_connection(id).await
     }
 
-    pub(crate) async fn connect(
+    pub(crate) async fn connect_to_database(
         self,
         pin: PinnedConnection,
         access: ConnectionAccess,
+        database: Option<String>,
     ) -> AppResult<ConnectionSessionLeaseStart> {
         let Self {
             operation_scope,
             admission_guard,
         } = self;
-        let lease = operation_scope.connect(pin, access).await?;
+        let lease = operation_scope
+            .connect_to_database(pin, access, database)
+            .await?;
         Ok(ConnectionSessionLeaseStart {
             lease,
             _admission_guard: admission_guard,
@@ -247,6 +291,15 @@ impl ConnectionOperationScope {
         pin: PinnedConnection,
         access: ConnectionAccess,
     ) -> AppResult<ConnectionLease> {
+        self.connect_to_database(pin, access, None).await
+    }
+
+    pub(crate) async fn connect_to_database(
+        self,
+        pin: PinnedConnection,
+        access: ConnectionAccess,
+        database: Option<String>,
+    ) -> AppResult<ConnectionLease> {
         let authorization = authorize_pin(
             self.manager.inner.remote_authority.as_ref(),
             self.manager.inner.provider_local.as_ref(),
@@ -272,7 +325,7 @@ impl ConnectionOperationScope {
             provider_binding_fence_epoch,
             scope_guard: Some(_scope_guard),
         }
-        .connect()
+        .connect_to_database(database)
         .await
     }
 
@@ -332,7 +385,24 @@ impl ConnectionContext {
         &self.pin
     }
 
-    pub(crate) async fn connect(mut self) -> AppResult<ConnectionLease> {
+    pub(crate) async fn connect(self) -> AppResult<ConnectionLease> {
+        self.connect_to_database(None).await
+    }
+
+    /// Open the same authorized server identity against one selected database.
+    ///
+    /// The durable profile, workspace/account pin, credential binding, and RBAC
+    /// generation remain authoritative. Only the target database varies, and it is
+    /// part of the pool cache identity so a lease can never receive a pool opened for
+    /// another database.
+    pub(crate) async fn connect_to_database(
+        mut self,
+        database: Option<String>,
+    ) -> AppResult<ConnectionLease> {
+        let target_database =
+            resolve_target_database(&self.pin.profile, database.as_deref(), &self.authorization)?;
+        let mut target_profile = self.pin.profile.clone();
+        target_profile.database.clone_from(&target_database);
         'reopen: loop {
             if self.provider_binding_fence_epoch != self.manager.provider_binding_fence_epoch() {
                 self.authorization = authorize_pin(
@@ -355,6 +425,7 @@ impl ConnectionContext {
                 self.access,
                 self.authorization.provider_local_target.as_ref(),
                 self.authorization.provider_local_pin.as_ref(),
+                &target_database,
             );
             let slot = self
                 .manager
@@ -399,6 +470,7 @@ impl ConnectionContext {
                                 self.access,
                                 refreshed.provider_local_target.as_ref(),
                                 refreshed.provider_local_pin.as_ref(),
+                                &target_database,
                             ) != key
                             {
                                 drop(entry);
@@ -488,6 +560,7 @@ impl ConnectionContext {
                         }
                         return Ok(ConnectionLease {
                             pin: self.pin,
+                            target_database,
                             entry,
                             _scope_guard: self
                                 .scope_guard
@@ -507,7 +580,7 @@ impl ConnectionContext {
                 let opened = connect_authorized(
                     Arc::clone(&self.manager.inner.remote_authority),
                     Arc::clone(&self.manager.inner.provider_local),
-                    &self.pin.profile,
+                    &target_profile,
                     &self.authorization,
                     self.access,
                 )
@@ -540,6 +613,7 @@ impl ConnectionContext {
                         self.access,
                         reauthorized.provider_local_target.as_ref(),
                         reauthorized.provider_local_pin.as_ref(),
+                        &target_database,
                     ) != key
                     {
                         drop(state);
@@ -619,6 +693,7 @@ impl ConnectionContext {
                 }
                 return Ok(ConnectionLease {
                     pin: self.pin,
+                    target_database,
                     entry,
                     _scope_guard: self
                         .scope_guard
@@ -661,11 +736,13 @@ impl ConnectionContext {
                 self.access,
                 self.authorization.provider_local_target.as_ref(),
                 self.authorization.provider_local_pin.as_ref(),
+                &self.pin.profile.database,
             ) != ConnectionCacheKey::new(
                 &self.pin,
                 self.access,
                 refreshed.provider_local_target.as_ref(),
                 refreshed.provider_local_pin.as_ref(),
+                &self.pin.profile.database,
             ) || opened_provider_target_expiry_shrank(
                 &opened,
                 refreshed.provider_local_target.as_ref(),

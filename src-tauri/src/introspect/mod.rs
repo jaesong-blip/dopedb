@@ -8,13 +8,14 @@ mod pg;
 mod sqlite;
 
 pub(crate) use catalog_v2::{
-    load_catalog_in_context, load_catalog_snapshot_in_context, CatalogReadMode,
+    load_catalog_in_context, load_catalog_snapshot_in_context, snapshot_from_catalog,
+    CatalogReadMode,
 };
 
 use crate::connection::{DbPool, Live};
 use crate::error::{AppError, AppResult};
 use crate::features::catalog::{
-    Catalog, CatalogOverview, Column, DatabaseObject, ForeignKey, Index, Table,
+    Catalog, CatalogOverview, Column, DatabaseObject, DatabaseSummary, ForeignKey, Index, Table,
 };
 
 /// Introspect a live connection's schema. SQL engines read via the read-only
@@ -43,6 +44,41 @@ pub(crate) async fn overview(conn: &Live) -> AppResult<CatalogOverview> {
         },
         Live::Mongo(conn) => crate::mongo::introspect::overview(conn).await,
     }
+}
+
+/// Discover databases reachable through the credential behind one connection.
+///
+/// Engines expose different server/catalog concepts, so the adapter returns only
+/// names that can be selected as a target database. The configured database remains
+/// the default and is restored by the shared normalizer if a server omits it.
+pub(crate) async fn databases(conn: &Live, configured: &str) -> AppResult<Vec<DatabaseSummary>> {
+    let names = match conn {
+        Live::Sql(live) => match live.ro() {
+            DbPool::Postgres(pool) => pg::databases(pool).await?,
+            DbPool::Mysql(pool) => mysql::databases(pool).await?,
+            DbPool::Sqlite(_) => vec![configured.to_owned()],
+        },
+        Live::Mongo(conn) => crate::mongo::introspect::databases(conn).await?,
+    };
+    Ok(database_summaries(names, configured))
+}
+
+fn database_summaries(mut names: Vec<String>, configured: &str) -> Vec<DatabaseSummary> {
+    names.retain(|name| {
+        !name.is_empty() && name.len() <= 255 && !name.chars().any(char::is_control)
+    });
+    if !names.iter().any(|name| name == configured) {
+        names.push(configured.to_owned());
+    }
+    names.sort();
+    names.dedup();
+    names
+        .into_iter()
+        .map(|name| DatabaseSummary {
+            is_default: name == configured,
+            name,
+        })
+        .collect()
 }
 
 /// The CREATE-TABLE DDL for one table, read through the read-only pool.

@@ -996,24 +996,39 @@ function promptContext(
   const document =
     activeDocument?.kind === "sql"
       ? {
+          database: activeDocument.selectedDatabase || connection.database,
           documentName: activeDocument.title,
           documentText: activeDocument.draft.slice(
             0,
             MAX_DOCUMENT_CONTEXT_CHARS,
           ),
         }
-      : { documentName: null, documentText: null };
+      : {
+          database: null,
+          documentName: null,
+          documentText: null,
+        };
   const activeDataTable =
     activeDocument?.kind === "data" ? activeDocument.table : selectedTable;
-  if (!activeDataTable) return { ...document, table: null };
+  if (!activeDataTable) {
+    return {
+      ...document,
+      database: document.database ?? connection.database,
+      table: null,
+    };
+  }
+  const database = activeDataTable.database ?? connection.database;
   const selectedMatches =
     selection?.connectionId === connection.id &&
+    (selection.database ?? connection.database) === database &&
     selection.table === activeDataTable.name &&
     (selection.schema ?? null) === (activeDataTable.schema ?? null);
   return {
     ...document,
+    database,
     table: selectedMatches
       ? {
+          database: selection.database,
           schema: selection.schema,
           table: selection.table,
           column: selection.column,
@@ -1021,6 +1036,7 @@ function promptContext(
           row: selection.row,
         }
       : {
+          database,
           schema: activeDataTable.schema ?? null,
           table: activeDataTable.name,
           column: null,
@@ -1044,9 +1060,11 @@ function contextSummary(context: AcpPromptContext) {
   if (context.table) {
     labels.push({
       icon: "table",
-      text: context.table.schema
-        ? `${context.table.schema}.${context.table.table}`
-        : context.table.table,
+      text: [
+        context.table.database,
+        context.table.schema,
+        context.table.table,
+      ].filter(Boolean).join("."),
     });
     if (context.table.column) {
       labels.push({

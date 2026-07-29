@@ -14,11 +14,15 @@ import {
   cliInstallationStatus,
   cancelQuery,
   getCatalog,
+  getDatabaseCatalog,
+  getDatabaseCatalogOverview,
+  getDatabaseCatalogSnapshot,
   getCatalogOverview,
   getCatalogSnapshot,
   getMonitoringStatus,
   legacyMcpCleanupStatus,
   listHistory,
+  listConnectionDatabases,
   refreshCatalog,
   runDocumentRead,
   skillStatus,
@@ -27,6 +31,7 @@ import type {
   Catalog,
   CatalogOverview,
   CatalogTable,
+  DatabaseSummary,
   Engine,
   QueryResult,
 } from "../ipc/types";
@@ -159,6 +164,34 @@ export const qk = {
     scope === undefined
       ? (["catalogOverview", connectionId] as const)
       : (["catalogOverview", connectionId, scope] as const),
+  connectionDatabases: (connectionId: string, scope?: string) =>
+    scope === undefined
+      ? (["connectionDatabases", connectionId] as const)
+      : (["connectionDatabases", connectionId, scope] as const),
+  databaseCatalog: (
+    connectionId: string,
+    database: string,
+    scope?: string,
+  ) =>
+    scope === undefined
+      ? (["databaseCatalog", connectionId, database] as const)
+      : (["databaseCatalog", connectionId, database, scope] as const),
+  databaseCatalogOverview: (
+    connectionId: string,
+    database: string,
+    scope?: string,
+  ) =>
+    scope === undefined
+      ? (["databaseCatalogOverview", connectionId, database] as const)
+      : (["databaseCatalogOverview", connectionId, database, scope] as const),
+  databaseCatalogSnapshot: (
+    connectionId: string,
+    database: string,
+    scope?: string,
+  ) =>
+    scope === undefined
+      ? (["databaseCatalogSnapshot", connectionId, database] as const)
+      : (["databaseCatalogSnapshot", connectionId, database, scope] as const),
   catalogSnapshot: (connectionId: string, scope?: string) =>
     scope === undefined
       ? (["catalogSnapshot", connectionId] as const)
@@ -264,6 +297,58 @@ export function catalogOverviewQuery(connectionId: string, scope?: CatalogScope)
   });
 }
 
+export function connectionDatabasesQuery(
+  connectionId: string,
+  scope?: CatalogScope,
+) {
+  return queryOptions({
+    queryKey: qk.connectionDatabases(connectionId, scope?.key),
+    enabled: scope?.ready ?? true,
+    staleTime: CATALOG_STALE_MS,
+    retry: false,
+    queryFn: (): Promise<DatabaseSummary[]> =>
+      readCatalogInScope(scope, () => listConnectionDatabases(connectionId)),
+  });
+}
+
+export function databaseCatalogQuery(
+  connectionId: string,
+  database: string,
+  scope?: CatalogScope,
+) {
+  return queryOptions({
+    queryKey: qk.databaseCatalog(connectionId, database, scope?.key),
+    enabled: scope?.ready ?? true,
+    staleTime: CATALOG_STALE_MS,
+    retry: false,
+    queryFn: () =>
+      readCatalogInScope(scope, () =>
+        getDatabaseCatalog(connectionId, database)
+      ),
+  });
+}
+
+export function databaseCatalogOverviewQuery(
+  connectionId: string,
+  database: string,
+  scope?: CatalogScope,
+) {
+  return queryOptions({
+    queryKey: qk.databaseCatalogOverview(
+      connectionId,
+      database,
+      scope?.key,
+    ),
+    enabled: scope?.ready ?? true,
+    staleTime: CATALOG_STALE_MS,
+    retry: false,
+    queryFn: () =>
+      readCatalogInScope(scope, () =>
+        getDatabaseCatalogOverview(connectionId, database)
+      ),
+  });
+}
+
 export function catalogSnapshotQuery(
   connectionId: string,
   enabled = true,
@@ -275,6 +360,28 @@ export function catalogSnapshotQuery(
     staleTime: CATALOG_STALE_MS,
     retry: false,
     queryFn: () => readCatalogInScope(scope, () => getCatalogSnapshot(connectionId)),
+  });
+}
+
+export function databaseCatalogSnapshotQuery(
+  connectionId: string,
+  database: string,
+  enabled = true,
+  scope?: CatalogScope,
+) {
+  return queryOptions({
+    queryKey: qk.databaseCatalogSnapshot(
+      connectionId,
+      database,
+      scope?.key,
+    ),
+    enabled: enabled && (scope?.ready ?? true),
+    staleTime: CATALOG_STALE_MS,
+    retry: false,
+    queryFn: () =>
+      readCatalogInScope(scope, () =>
+        getDatabaseCatalogSnapshot(connectionId, database)
+      ),
   });
 }
 
@@ -471,12 +578,32 @@ export function tableRowsQuery(args: TableRowsArgs) {
       const [pageOut, countOut] =
         engine === "sqlite"
           ? [
-              await runSqlBoundedPage(connectionId, pageSql, "data-view"),
-              await runSqlBoundedPage(connectionId, countSql, "data-view"),
+              await runSqlBoundedPage(
+                connectionId,
+                pageSql,
+                "data-view",
+                table.database ?? undefined,
+              ),
+              await runSqlBoundedPage(
+                connectionId,
+                countSql,
+                "data-view",
+                table.database ?? undefined,
+              ),
             ]
           : await Promise.all([
-              runSqlBoundedPage(connectionId, pageSql, "data-view"),
-              runSqlBoundedPage(connectionId, countSql, "data-view"),
+              runSqlBoundedPage(
+                connectionId,
+                pageSql,
+                "data-view",
+                table.database ?? undefined,
+              ),
+              runSqlBoundedPage(
+                connectionId,
+                countSql,
+                "data-view",
+                table.database ?? undefined,
+              ),
             ]);
       const total = countOut.result?.rows?.[0]?.[0];
       return {

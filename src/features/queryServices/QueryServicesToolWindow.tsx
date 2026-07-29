@@ -451,8 +451,11 @@ function sessionResultLabel(
     );
   if (!source) return session.consoleTitle;
   if (source[2]) return `${source[1]}.${source[2]}`;
-  return session.namespace
-    ? `${session.namespace}.${source[1]}`
+  const target = [session.database, session.namespace]
+    .filter((part, index, parts) => part && parts.indexOf(part) === index)
+    .join(".");
+  return target
+    ? `${target}.${source[1]}`
     : connection?.engine === "sqlite"
       ? `main.${source[1]}`
       : source[1];

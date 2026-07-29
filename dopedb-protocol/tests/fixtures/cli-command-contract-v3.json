@@ -50,19 +50,29 @@
     }
   },
   {
+    "command": "database.list",
+    "arguments": {
+      "connection": "id:00000000-0000-0000-0000-000000000001"
+    },
+    "resultFixture": "database-list"
+  },
+  {
     "command": "catalog.show",
     "arguments": {
-      "connection": "current"
+      "connection": "current",
+      "database": "app"
     },
     "resultFixture": "catalog-snapshot-v2"
   },
   {
     "command": "schema.list",
     "arguments": {
-      "connection": "id:00000000-0000-0000-0000-000000000001"
+      "connection": "id:00000000-0000-0000-0000-000000000001",
+      "database": "analytics"
     },
     "result": {
       "connectionId": "00000000-0000-0000-0000-000000000001",
+      "database": "analytics",
       "schemas": [
         {
           "name": "public",
@@ -77,6 +87,7 @@
     "command": "table.describe",
     "arguments": {
       "connection": "id:00000000-0000-0000-0000-000000000001",
+      "database": "app",
       "table": "public.users"
     },
     "resultFixture": "catalog-relation-0"
@@ -124,12 +135,14 @@
     "command": "query.plan",
     "arguments": {
       "connection": "id:00000000-0000-0000-0000-000000000001",
+      "database": "analytics",
       "sql": "SELECT id, email FROM public.users",
       "maxRows": 100
     },
     "result": {
       "connectionId": "00000000-0000-0000-0000-000000000001",
       "connectionName": "Production",
+      "database": "analytics",
       "environment": "prod",
       "planId": "00000000-0000-0000-0000-000000000002",
       "decision": "allow",
@@ -160,6 +173,7 @@
     "result": {
       "connectionId": "00000000-0000-0000-0000-000000000001",
       "connectionName": "Production",
+      "database": "analytics",
       "planId": "00000000-0000-0000-0000-000000000002",
       "queryRunId": "00000000-0000-0000-0000-000000000004",
       "planningDecision": "allow",
@@ -218,6 +232,7 @@
     "command": "sql.propose",
     "arguments": {
       "connection": "id:00000000-0000-0000-0000-000000000001",
+      "database": "analytics",
       "sql": "UPDATE public.users SET email = 'new@example.test' WHERE id = 1"
     },
     "resultFixture": "operation-summary"

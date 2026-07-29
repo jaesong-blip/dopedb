@@ -38,13 +38,14 @@ export function useTableDdl(
   connectionId: string,
   table: string,
   schema?: string | null,
+  database?: string | null,
 ) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   useEffect(() => {
     let active = true;
     dispatch({ type: "loading" });
-    getTableDdl(connectionId, table, schema)
+    getTableDdl(connectionId, table, schema, database)
       .then((text) => active && dispatch({ type: "loaded", text }))
       .catch(
         (cause) =>
@@ -54,7 +55,7 @@ export function useTableDdl(
     return () => {
       active = false;
     };
-  }, [connectionId, schema, table]);
+  }, [connectionId, database, schema, table]);
 
   return {
     ...state,

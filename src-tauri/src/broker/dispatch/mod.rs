@@ -29,18 +29,19 @@ use dopedb_protocol::{
     ConnectionListResult, ConnectionSelector, ConnectionSelectorArguments, ConnectionShowCommand,
     ConnectionSummary, ConnectionTestCommand, ConnectionTestResult, DashboardCreateArguments,
     DashboardCreateCommand, DashboardCreateResult, DashboardKind as ProtocolDashboardKind,
-    DashboardRecord, DashboardVisualization, DatabaseEngine, DocumentPage as ProtocolDocumentPage,
-    DocumentQuery as ProtocolDocumentQuery, DocumentRunArguments, DocumentRunCommand,
-    DocumentRunResult, EmptyArguments, ErrorCode, OperationCancelCommand, OperationShowCommand,
-    OperationSummary, OperationWaitArguments, OperationWaitCommand, ProtocolError,
-    QueryCancelCommand, QueryHealth, QueryPlanArguments, QueryPlanCommand, QueryPlanResult,
-    QueryResultPage, QueryRunArguments, QueryRunCommand, QueryRunResult, RequestEnvelope,
-    ResponseEnvelope, SchemaListCommand, SchemaListResult, SchemaSummary, SkillInstallCommand,
-    SkillMutationArguments, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
-    SkillsGetCommand, SkillsListCommand, SqlProposeArguments, SqlProposeCommand, StatusCommand,
-    StatusResult, TableDescribeArguments, TableDescribeCommand, TableDescribeResult,
-    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, MAX_RESPONSE_BYTES, MAX_STRING_BYTES,
-    PROTOCOL_MAX, PROTOCOL_MIN,
+    DashboardRecord, DashboardVisualization, DatabaseEngine, DatabaseListCommand,
+    DatabaseListResult, DatabaseSummary as ProtocolDatabaseSummary,
+    DocumentPage as ProtocolDocumentPage, DocumentQuery as ProtocolDocumentQuery,
+    DocumentRunArguments, DocumentRunCommand, DocumentRunResult, EmptyArguments, ErrorCode,
+    OperationCancelCommand, OperationShowCommand, OperationSummary, OperationWaitArguments,
+    OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryHealth, QueryPlanArguments,
+    QueryPlanCommand, QueryPlanResult, QueryResultPage, QueryRunArguments, QueryRunCommand,
+    QueryRunResult, RequestEnvelope, ResponseEnvelope, SchemaListCommand, SchemaListResult,
+    SchemaSummary, SkillInstallCommand, SkillMutationArguments, SkillRemoveCommand,
+    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand,
+    SqlProposeArguments, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeArguments,
+    TableDescribeCommand, TableDescribeResult, VersionCommand, VersionResult,
+    COMMAND_SCHEMA_VERSION, MAX_RESPONSE_BYTES, MAX_STRING_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -176,6 +177,7 @@ impl BrokerDispatcher {
             CommandName::ConnectionList
             | CommandName::ConnectionShow
             | CommandName::ConnectionTest
+            | CommandName::DatabaseList
             | CommandName::CatalogShow
             | CommandName::SchemaList
             | CommandName::TableDescribe => connection_catalog::handle(self, &request).await,

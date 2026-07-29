@@ -28,6 +28,7 @@ use super::terminal_support::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct StoredAgentReadPayload {
     pub(super) sql: String,
+    pub(super) database: String,
     pub(super) max_rows: u64,
     pub(super) decision: String,
     pub(super) origin: AgentQueryInvocationOrigin,
@@ -89,9 +90,10 @@ impl QueryPlatformAdapter {
         let policy =
             capture_agent_read_policy(&operation_pin).map_err(AgentQueryPlanError::Application)?;
         let lease = context
-            .connect()
+            .connect_to_database(request.database)
             .await
             .map_err(AgentQueryPlanError::Application)?;
+        let database = lease.target_database().to_owned();
         let live = lease
             .live()
             .sql()
@@ -125,6 +127,7 @@ impl QueryPlatformAdapter {
         .await;
         let payload = serde_json::to_value(StoredAgentReadPayload {
             sql: request.sql,
+            database: database.clone(),
             max_rows,
             decision: decision.clone(),
             origin: AgentQueryInvocationOrigin::Cli,
@@ -147,11 +150,12 @@ impl QueryPlatformAdapter {
                     terminal_session_id: Some(authority.terminal_session_id.into()),
                     actor,
                     kind: OperationKind::ReadQuery,
-                    payload_schema_version: 1,
+                    payload_schema_version: 2,
                     payload,
                     schema_fingerprint: None,
                     risk_level: operation_risk(&classification),
                     preview: serde_json::json!({
+                        "database": database,
                         "decision": decision,
                         "estimatedRows": preview.estimated_rows,
                         "health": health,
@@ -172,6 +176,7 @@ impl QueryPlatformAdapter {
             plan: AgentQueryPlan {
                 connection_id: ConnectionId::from(profile.id),
                 connection_name: profile.name,
+                database: lease.target_database().to_owned(),
                 environment: profile.env,
                 plan_id,
                 decision,

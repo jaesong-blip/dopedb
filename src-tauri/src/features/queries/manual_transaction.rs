@@ -34,6 +34,12 @@ use crate::store::Store;
 
 const MANUAL_TRANSACTION_TTL: ChronoDuration = ChronoDuration::minutes(30);
 
+fn database_mismatch() -> AppError {
+    AppError::Blocked {
+        reason: "the active manual transaction belongs to another database; commit or roll it back before switching".into(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ManualTransactionPhase {
@@ -46,6 +52,7 @@ pub(crate) enum ManualTransactionPhase {
 pub(crate) struct ManualTransactionStatus {
     pub(crate) transaction_id: Uuid,
     pub(crate) connection_id: Uuid,
+    pub(crate) database: String,
     pub(crate) phase: ManualTransactionPhase,
     pub(crate) statement_count: u64,
     pub(crate) started_at: DateTime<Utc>,
@@ -54,6 +61,23 @@ pub(crate) struct ManualTransactionStatus {
 
 pub(crate) struct ManualScriptExecution {
     pub(crate) statements: Vec<ScriptStatement>,
+}
+
+pub(crate) struct ManualExecutionTarget<'a> {
+    pub(crate) connection_id: Uuid,
+    pub(crate) database: &'a str,
+    pub(crate) namespace: Option<String>,
+}
+
+pub(crate) struct ManualScriptRequest<'a> {
+    pub(crate) target: ManualExecutionTarget<'a>,
+    pub(crate) statements: &'a [String],
+    pub(crate) kinds: &'a [QueryKind],
+    pub(crate) expected_affected: Option<&'a [u64]>,
+    pub(crate) max_rows: u64,
+    pub(crate) cancellation: &'a executor::cancel::CancelHandle,
+    pub(crate) grant: &'a ExecutionGrant,
+    pub(crate) contains_unsupported_kind: bool,
 }
 
 enum ManualConnection {
@@ -140,6 +164,7 @@ struct ManualSessionState {
 struct ManualSession {
     transaction_id: Uuid,
     connection_id: Uuid,
+    database: String,
     engine: Engine,
     started_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
@@ -153,6 +178,7 @@ impl ManualSession {
         ManualTransactionStatus {
             transaction_id: self.transaction_id,
             connection_id: self.connection_id,
+            database: self.database.clone(),
             phase: state.phase,
             statement_count: state.statement_count,
             started_at: self.started_at,
@@ -165,6 +191,7 @@ impl ManualSession {
         let status = ManualTransactionStatus {
             transaction_id: self.transaction_id,
             connection_id: self.connection_id,
+            database: self.database.clone(),
             phase: state.phase,
             statement_count: state.statement_count,
             started_at: self.started_at,
@@ -406,10 +433,23 @@ impl ManualTransactionRuntime {
         }
     }
 
-    pub(crate) async fn begin(&self, connection_id: Uuid) -> AppResult<ManualTransactionStatus> {
+    pub(crate) async fn begin(
+        &self,
+        connection_id: Uuid,
+        database: Option<String>,
+    ) -> AppResult<ManualTransactionStatus> {
         let admission = self.connections.begin_session_admission().await;
         let mut sessions = self.sessions.lock().await;
         if let Some(session) = sessions.get(&connection_id) {
+            if database
+                .as_deref()
+                .is_some_and(|database| database != session.database)
+            {
+                return Err(AppError::Blocked {
+                    reason: "this connection already has a manual transaction in another database"
+                        .into(),
+                });
+            }
             return Ok(session.status().await);
         }
         let pin = admission.pin_connection(connection_id).await?;
@@ -431,12 +471,16 @@ impl ManualTransactionRuntime {
             });
         }
         let engine = pin.profile.engine;
-        let start = admission.connect(pin, ConnectionAccess::Write).await?;
+        let start = admission
+            .connect_to_database(pin, ConnectionAccess::Write, database)
+            .await?;
+        let database = start.target_database().to_owned();
         let connection = ManualConnection::begin(&start.live().sql()?.write_pool).await?;
         let started_at = Utc::now();
         let session = Arc::new(ManualSession {
             transaction_id: Uuid::new_v4(),
             connection_id,
+            database,
             engine,
             started_at,
             expires_at: started_at + MANUAL_TRANSACTION_TTL,
@@ -516,37 +560,51 @@ impl ManualTransactionRuntime {
 
     pub(crate) async fn run_read(
         &self,
-        connection_id: Uuid,
+        target: ManualExecutionTarget<'_>,
         sql: &str,
-        namespace: Option<String>,
         max_rows: u64,
         cancellation: Option<&executor::cancel::CancelHandle>,
     ) -> Option<AppResult<QueryResult>> {
-        let session = self.sessions.lock().await.get(&connection_id).cloned()?;
+        let session = self
+            .sessions
+            .lock()
+            .await
+            .get(&target.connection_id)
+            .cloned()?;
+        if session.database != target.database {
+            return Some(Err(database_mismatch()));
+        }
         Some(
             session
-                .run_read(sql, namespace, max_rows, cancellation)
+                .run_read(sql, target.namespace, max_rows, cancellation)
                 .await,
         )
     }
 
     pub(crate) async fn run_write(
         &self,
-        connection_id: Uuid,
+        target: ManualExecutionTarget<'_>,
         classification: &Classification,
         sql: &str,
-        namespace: Option<String>,
         settings: &SafetySettings,
         grant: &ExecutionGrant,
         cancellation: &executor::cancel::CancelHandle,
     ) -> Option<AppResult<ExecOutcome>> {
-        let session = self.sessions.lock().await.get(&connection_id).cloned()?;
+        let session = self
+            .sessions
+            .lock()
+            .await
+            .get(&target.connection_id)
+            .cloned()?;
+        if session.database != target.database {
+            return Some(Err(database_mismatch()));
+        }
         Some(
             session
                 .run_write(
                     classification,
                     sql,
-                    namespace,
+                    target.namespace,
                     settings,
                     grant,
                     cancellation,
@@ -557,9 +615,8 @@ impl ManualTransactionRuntime {
 
     pub(crate) async fn run_read_streamed<F, Fut>(
         &self,
-        connection_id: Uuid,
+        target: ManualExecutionTarget<'_>,
         sql: &str,
-        namespace: Option<String>,
         max_rows: u64,
         batch_rows: usize,
         cancellation: Option<&executor::cancel::CancelHandle>,
@@ -569,35 +626,53 @@ impl ManualTransactionRuntime {
         F: FnMut(executor::read::ReadBatch) -> Fut + Send,
         Fut: Future<Output = AppResult<()>> + Send,
     {
-        let session = self.sessions.lock().await.get(&connection_id).cloned()?;
+        let session = self
+            .sessions
+            .lock()
+            .await
+            .get(&target.connection_id)
+            .cloned()?;
+        if session.database != target.database {
+            return Some(Err(database_mismatch()));
+        }
         Some(
             session
-                .run_read_streamed(sql, namespace, max_rows, batch_rows, cancellation, on_batch)
+                .run_read_streamed(
+                    sql,
+                    target.namespace,
+                    max_rows,
+                    batch_rows,
+                    cancellation,
+                    on_batch,
+                )
                 .await,
         )
     }
 
     pub(crate) async fn run_script(
         &self,
-        connection_id: Uuid,
-        statements: &[String],
-        kinds: &[QueryKind],
-        namespace: Option<String>,
-        expected_affected: Option<&[u64]>,
-        max_rows: u64,
-        cancellation: &executor::cancel::CancelHandle,
-        grant: &ExecutionGrant,
-        contains_unsupported_kind: bool,
+        request: ManualScriptRequest<'_>,
     ) -> Option<AppResult<ManualScriptExecution>> {
-        let session = self.sessions.lock().await.get(&connection_id).cloned()?;
-        if cancellation.id() != grant.operation_id() {
+        let session = self
+            .sessions
+            .lock()
+            .await
+            .get(&request.target.connection_id)
+            .cloned()?;
+        if session.database != request.target.database {
+            return Some(Err(database_mismatch()));
+        }
+        if request.cancellation.id() != request.grant.operation_id() {
             return Some(Err(AppError::Blocked {
                 reason: "manual script transaction scope does not match its approved operation"
                     .into(),
             }));
         }
-        let _exact_payload = (grant.payload_sha256(), grant.connection_id());
-        if contains_unsupported_kind {
+        let _exact_payload = (
+            request.grant.payload_sha256(),
+            request.grant.connection_id(),
+        );
+        if request.contains_unsupported_kind {
             return Some(Err(AppError::Blocked {
                 reason: "DDL and privilege statements are excluded from a manual rollback boundary"
                     .into(),
@@ -606,12 +681,12 @@ impl ManualTransactionRuntime {
         Some(
             session
                 .run_script(
-                    statements,
-                    kinds,
-                    namespace,
-                    expected_affected,
-                    max_rows,
-                    cancellation,
+                    request.statements,
+                    request.kinds,
+                    request.target.namespace,
+                    request.expected_affected,
+                    request.max_rows,
+                    request.cancellation,
                 )
                 .await,
         )

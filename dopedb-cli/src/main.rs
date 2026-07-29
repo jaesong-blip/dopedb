@@ -9,9 +9,9 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use args::{
-    AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, DashboardCommand, DocumentCommand,
-    OperationCommand, QueryCommand, SchemaCommand, SkillCommand, SkillsCommand, SqlCommand,
-    TableCommand,
+    AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, DashboardCommand, DatabaseCommand,
+    DocumentCommand, OperationCommand, QueryCommand, SchemaCommand, SkillCommand, SkillsCommand,
+    SqlCommand, TableCommand,
 };
 use output::OutputMode;
 
@@ -68,25 +68,50 @@ async fn main() -> ExitCode {
                 commands::connection::test(&selector, OutputMode::from_json_flag(output.json)).await
             }
         },
+        Command::Database(arguments) => match arguments.command {
+            DatabaseCommand::List { connection, output } => {
+                commands::catalog::databases(&connection, OutputMode::from_json_flag(output.json))
+                    .await
+            }
+        },
         Command::Catalog(arguments) => match arguments.command {
-            CatalogCommand::Show { connection, output } => {
-                commands::catalog::show(&connection, OutputMode::from_json_flag(output.json)).await
+            CatalogCommand::Show {
+                connection,
+                database,
+                output,
+            } => {
+                commands::catalog::show(
+                    &connection,
+                    database,
+                    OutputMode::from_json_flag(output.json),
+                )
+                .await
             }
         },
         Command::Schema(arguments) => match arguments.command {
-            SchemaCommand::List { connection, output } => {
-                commands::catalog::schemas(&connection, OutputMode::from_json_flag(output.json))
-                    .await
+            SchemaCommand::List {
+                connection,
+                database,
+                output,
+            } => {
+                commands::catalog::schemas(
+                    &connection,
+                    database,
+                    OutputMode::from_json_flag(output.json),
+                )
+                .await
             }
         },
         Command::Table(arguments) => match arguments.command {
             TableCommand::Describe {
                 table,
                 connection,
+                database,
                 output,
             } => {
                 commands::catalog::describe(
                     &connection,
+                    database,
                     table,
                     OutputMode::from_json_flag(output.json),
                 )
@@ -112,12 +137,14 @@ async fn main() -> ExitCode {
         Command::Query(arguments) => match arguments.command {
             QueryCommand::Plan {
                 connection,
+                database,
                 file,
                 max_rows,
                 output,
             } => {
                 commands::query::plan(
                     &connection,
+                    database,
                     &file,
                     max_rows,
                     OutputMode::from_json_flag(output.json),
@@ -160,11 +187,13 @@ async fn main() -> ExitCode {
         Command::Sql(arguments) => match arguments.command {
             SqlCommand::Propose {
                 connection,
+                database,
                 file,
                 output,
             } => {
                 commands::query::propose(
                     &connection,
+                    database,
                     &file,
                     OutputMode::from_json_flag(output.json),
                 )

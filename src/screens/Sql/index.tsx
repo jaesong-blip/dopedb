@@ -74,7 +74,11 @@ import {
 } from "../../design-system/components/Workbench";
 import { StatusBadge } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
-import { catalogQuery, useCatalogScope } from "../../lib/queries";
+import {
+  connectionDatabasesQuery,
+  databaseCatalogQuery,
+  useCatalogScope,
+} from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
 import {
@@ -136,11 +140,13 @@ function wholeDocumentRunSource(draft: string): SqlRunSource | null {
 
 function buildSqlHelpPrompt({
   connection,
+  database,
   namespace,
   sql,
   error,
 }: {
   connection: ConnectionProfile;
+  database: string;
   namespace: string;
   sql: string;
   error: QueryErrorInfo | null;
@@ -150,7 +156,7 @@ function buildSqlHelpPrompt({
     "",
     `Connection: ${connection.name || "(unnamed)"}`,
     `Engine: ${connection.engine}`,
-    `Database: ${connection.database}`,
+    `Database: ${database}`,
     `Schema: ${namespace}`,
     "",
     "SQL:",
@@ -184,6 +190,8 @@ export default function Sql({
   setDraft,
   title,
   setTitle,
+  selectedDatabase,
+  setSelectedDatabase,
   selectedSchema,
   setSelectedSchema,
   resolveMode,
@@ -207,6 +215,8 @@ export default function Sql({
   setDraft: (s: string) => void;
   title: string;
   setTitle: (title: string) => void;
+  selectedDatabase: string;
+  setSelectedDatabase: (selectedDatabase: string) => void;
   selectedSchema: string | null;
   setSelectedSchema: (selectedSchema: string | null) => void;
   resolveMode: SqlResolveMode;
@@ -222,7 +232,6 @@ export default function Sql({
   onCursorChange: (position: SqlCursorPosition) => void;
 }) {
   const { t } = useI18n();
-  const manualTransaction = useManualTransaction(connection.id);
   const draftStatements = useMemo(() => splitStatements(draft), [draft]);
   const draftIsScript = draftStatements.length > 1;
   const draftSignal = useMemo(
@@ -270,21 +279,72 @@ export default function Sql({
     [connection.engine, draft],
   );
   const catalogScope = useCatalogScope();
-  const { data: catalog } = useQuery(catalogQuery(connection.id, catalogScope));
+  const databasesQuery = useQuery(
+    connectionDatabasesQuery(connection.id, catalogScope),
+  );
+  const databaseOptions = useMemo(() => {
+    if (!databasesQuery.data) {
+      return [selectedDatabase || connection.database].filter(Boolean);
+    }
+    const names = databasesQuery.data?.map((database) => database.name) ?? [];
+    return names.includes(connection.database)
+      ? names
+      : [connection.database, ...names].filter(Boolean);
+  }, [connection.database, databasesQuery.data, selectedDatabase]);
+  const effectiveDatabase = databaseOptions.includes(selectedDatabase)
+    ? selectedDatabase
+    : databaseOptions[0] ?? connection.database;
+  const targetConnection = useMemo(
+    () => ({ ...connection, database: effectiveDatabase }),
+    [connection, effectiveDatabase],
+  );
+  const catalogQueryResult = useQuery(
+    databaseCatalogQuery(
+      connection.id,
+      effectiveDatabase,
+      catalogScope,
+    ),
+  );
+  const catalog = catalogQueryResult.data;
   const namespaceOptions = useMemo(
-    () => sqlNamespaceOptions(connection, catalog),
-    [catalog, connection],
+    () => sqlNamespaceOptions(targetConnection, catalog),
+    [catalog, targetConnection],
   );
   const effectiveNamespace = useMemo(
     () =>
-      effectiveSqlNamespace(connection, selectedSchema, namespaceOptions),
-    [connection, namespaceOptions, selectedSchema],
+      effectiveSqlNamespace(
+        targetConnection,
+        selectedSchema,
+        namespaceOptions,
+      ),
+    [namespaceOptions, selectedSchema, targetConnection],
+  );
+  const manualTransaction = useManualTransaction(
+    connection.id,
+    effectiveDatabase,
   );
 
   useEffect(() => {
+    if (!databasesQuery.data) return;
+    if (!effectiveDatabase || selectedDatabase === effectiveDatabase) return;
+    setSelectedDatabase(effectiveDatabase);
+  }, [
+    databasesQuery.data,
+    effectiveDatabase,
+    selectedDatabase,
+    setSelectedDatabase,
+  ]);
+
+  useEffect(() => {
+    if (!catalogQueryResult.data) return;
     if (!effectiveNamespace || selectedSchema === effectiveNamespace) return;
     setSelectedSchema(effectiveNamespace);
-  }, [effectiveNamespace, selectedSchema, setSelectedSchema]);
+  }, [
+    catalogQueryResult.data,
+    effectiveNamespace,
+    selectedSchema,
+    setSelectedSchema,
+  ]);
   const resolveModeHint =
     resolveMode === "script"
       ? t("sql.resolveModeScriptHint")
@@ -303,11 +363,13 @@ export default function Sql({
     documentId: persistedId ? sqlDocumentId(persistedId) : null,
     revision,
     title,
+    selectedDatabase: effectiveDatabase,
     selectedSchema,
     resolveMode,
     content: draft,
     recovered,
     onTitleChange: setTitle,
+    onSelectedDatabaseChange: setSelectedDatabase,
     onSelectedSchemaChange: setSelectedSchema,
     onResolveModeChange: setResolveMode,
     onContentChange: setDraft,
@@ -357,6 +419,7 @@ export default function Sql({
       connectionId: connection.id,
       connectionName: connection.name,
       consoleTitle: title,
+      database: effectiveDatabase,
       namespace: effectiveNamespace,
       sql,
       startedAt: new Date().toISOString(),
@@ -386,6 +449,7 @@ export default function Sql({
             sql,
             "manual",
             effectiveNamespace,
+            effectiveDatabase,
           );
           if (proposal.approvalRequired) {
             setPendingScriptApproval({ proposal, sql, at });
@@ -402,6 +466,7 @@ export default function Sql({
               sql,
               "manual",
               effectiveNamespace,
+              effectiveDatabase,
             );
             if (proposalSqlRunPath(proposal) === "approval") {
               setPendingApproval({ proposal, sql, at });
@@ -435,6 +500,7 @@ export default function Sql({
                   onBatch,
                   "manual",
                   effectiveNamespace,
+                  effectiveDatabase,
                 ),
               );
             } catch (error) {
@@ -565,6 +631,7 @@ export default function Sql({
         connection.id,
         sql,
         effectiveNamespace,
+        effectiveDatabase,
       );
       setPlan(inspection.report);
     } catch (e) {
@@ -613,11 +680,12 @@ export default function Sql({
     () =>
       buildSqlHelpPrompt({
         connection,
+        database: effectiveDatabase,
         namespace: effectiveNamespace,
         sql: promptSql,
         error: runErr,
       }),
-    [connection, effectiveNamespace, promptSql, runErr],
+    [connection, effectiveDatabase, effectiveNamespace, promptSql, runErr],
   );
   const editorExecutionStatus = useMemo<SqlExecutionStatus | null>(() => {
     const attempt = lastAttempt;
@@ -881,6 +949,23 @@ export default function Sql({
           ) : null}
         </div>
         <span className="tw:min-w-1 tw:flex-1" />
+        <WorkbenchSelect
+          label={t("sql.databaseSelector")}
+          title={t("sql.databaseSelectorHint", {
+            connection: connection.name || t("app.unnamed"),
+            database: effectiveDatabase,
+          })}
+          icon="database"
+          value={effectiveDatabase}
+          disabled={running || databaseOptions.length < 2}
+          onChange={setSelectedDatabase}
+        >
+          {databaseOptions.map((database) => (
+            <option key={database} value={database}>
+              {database}
+            </option>
+          ))}
+        </WorkbenchSelect>
         <WorkbenchSelect
           label={t("sql.schemaSelector")}
           title={t("sql.schemaSelectorHint", {

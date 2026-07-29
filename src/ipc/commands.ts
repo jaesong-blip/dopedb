@@ -13,6 +13,7 @@ import type {
   DocumentPage,
   DocumentOperationProposal,
   DocumentQuery,
+  DatabaseSummary,
   HistoryEntry,
   LegacyMcpCleanupExpectation,
   LegacyMcpCleanupReceipt,
@@ -96,6 +97,33 @@ export function getCatalogOverview(id: string): Promise<CatalogOverview> {
   return invoke("get_catalog_overview", { id });
 }
 
+export function listConnectionDatabases(id: string): Promise<DatabaseSummary[]> {
+  return invoke("list_connection_databases", { id });
+}
+
+export async function getDatabaseCatalog(
+  id: string,
+  database: string,
+): Promise<Catalog> {
+  return JSON.parse(
+    await invoke<string>("get_database_schema", { id, database }),
+  ) as Catalog;
+}
+
+export function getDatabaseCatalogOverview(
+  id: string,
+  database: string,
+): Promise<CatalogOverview> {
+  return invoke("get_database_catalog_overview", { id, database });
+}
+
+export function getDatabaseCatalogSnapshot(
+  id: string,
+  database: string,
+): Promise<CatalogSnapshot> {
+  return invoke("get_database_catalog_snapshot", { id, database });
+}
+
 // The CREATE-TABLE DDL for one table (MySQL/SQLite native; Postgres synthesized).
 export function getTableDdl(
   id: string,
@@ -103,6 +131,20 @@ export function getTableDdl(
   schema?: string | null,
 ): Promise<string> {
   return invoke("get_table_ddl", { id, schema: schema ?? null, table });
+}
+
+export function getDatabaseTableDdl(
+  id: string,
+  database: string,
+  table: string,
+  schema?: string | null,
+): Promise<string> {
+  return invoke("get_database_table_ddl", {
+    id,
+    database,
+    schema: schema ?? null,
+    table,
+  });
 }
 
 export function approveOperation(
@@ -176,10 +218,12 @@ export function proposeScript(
   sql: string,
   origin?: string,
   namespace?: string,
+  database?: string,
 ): Promise<ScriptOperationProposal> {
   return invoke("propose_script", {
     id,
     sql,
+    database: database ?? null,
     namespace: namespace ?? null,
     origin: origin ?? null,
   });
@@ -189,9 +233,11 @@ export function proposeTableChanges(
   id: string,
   statements: string[],
   catalogFingerprint: string,
+  database?: string,
 ): Promise<ScriptOperationProposal> {
   return invoke("propose_table_changes", {
     id,
+    database: database ?? null,
     statements,
     catalogFingerprint,
   });

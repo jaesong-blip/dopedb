@@ -23,8 +23,12 @@ export function getManualTransaction(
 
 export function beginManualTransaction(
   id: string,
+  database?: string,
 ): Promise<ManualTransactionStatus> {
-  return invoke("begin_manual_transaction", { id });
+  return invoke("begin_manual_transaction", {
+    id,
+    database: database ?? null,
+  });
 }
 
 export function commitManualTransaction(
@@ -45,10 +49,12 @@ export function inspectSql(
   id: string,
   sql: string,
   namespace?: string,
+  database?: string,
 ): Promise<SqlInspection> {
   return invoke("inspect_sql", {
     id,
     sql,
+    database: database ?? null,
     namespace: namespace ?? null,
   });
 }
@@ -58,10 +64,12 @@ export function proposeSql(
   sql: string,
   origin?: string,
   namespace?: string,
+  database?: string,
 ): Promise<SqlOperationProposal> {
   return invoke("propose_sql", {
     id,
     sql,
+    database: database ?? null,
     namespace: namespace ?? null,
     origin: origin ?? null,
   });
@@ -216,11 +224,13 @@ export function runSqlReadStream(
   onBatch: SqlStreamBatchHandler,
   origin?: string,
   namespace?: string,
+  database?: string,
 ): SqlStreamController {
   return startSqlStream("", onBatch, (capability, onRows) =>
     invoke<SqlStreamReceipt>("run_sql_read_stream", {
       id,
       sql,
+      database: database ?? null,
       namespace: namespace ?? null,
       origin: origin ?? null,
       capability,
@@ -289,8 +299,9 @@ export async function runSqlBoundedPage(
   id: string,
   sql: string,
   origin?: string,
+  database?: string,
 ): Promise<ExecOutcome> {
-  const proposal = await proposeSql(id, sql, origin);
+  const proposal = await proposeSql(id, sql, origin, undefined, database);
   if (proposal.approvalRequired || proposal.classification.kind !== "read") {
     throw new Error(
       "read execution helper rejected a target-mutating proposal",

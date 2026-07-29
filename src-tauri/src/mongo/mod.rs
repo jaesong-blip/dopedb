@@ -31,6 +31,14 @@ impl MongoConnection {
         self.client.database(&self.db_name)
     }
 
+    pub(crate) fn database_name(&self) -> &str {
+        &self.db_name
+    }
+
+    pub(crate) async fn database_names(&self) -> AppResult<Vec<String>> {
+        self.client.list_database_names().await.map_err(Into::into)
+    }
+
     /// Liveness probe. `ping` is a stateless no-op command — the sole
     /// `run_command` in this module; the query path never uses raw commands.
     pub async fn ping(&self) -> AppResult<()> {

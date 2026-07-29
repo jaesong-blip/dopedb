@@ -55,6 +55,7 @@ export type SqlStreamReceipt = {
 export type ManualTransactionStatus = {
   transactionId: string;
   connectionId: string;
+  database: string;
   phase: "active" | "failed";
   statementCount: number;
   startedAt: string;

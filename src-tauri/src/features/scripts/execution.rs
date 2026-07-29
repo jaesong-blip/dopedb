@@ -89,7 +89,7 @@ impl ScriptPlatformAdapter {
             }
             let snapshot = self
                 .catalog
-                .load_snapshot(planned.connection_id.into(), CatalogReadPolicy::Refresh)
+                .load_database_snapshot(planned.connection_id.into(), payload.database.clone())
                 .await
                 .map_err(DesktopScriptRunError::Application)?;
             if snapshot.fingerprint() != context.request.catalog_fingerprint {
@@ -134,7 +134,7 @@ impl ScriptPlatformAdapter {
             }
             let snapshot = self
                 .catalog
-                .load_snapshot(planned.connection_id.into(), CatalogReadPolicy::Refresh)
+                .load_database_snapshot(planned.connection_id.into(), payload.database.clone())
                 .await
                 .map_err(DesktopScriptRunError::Application)?;
             if snapshot.fingerprint() != context.catalog_fingerprint {

@@ -279,6 +279,7 @@ pub(crate) async fn overview(pool: &SqlitePool) -> AppResult<CatalogOverview> {
         .collect::<AppResult<Vec<_>>>()?;
 
     Ok(CatalogOverview {
+        database: None,
         namespaces: vec!["main".into()],
         relations,
         detail_state: CatalogOverviewDetailState::Deferred,

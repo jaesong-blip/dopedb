@@ -41,6 +41,7 @@ impl QueryPlatformAdapter {
             DesktopSqlProposalRequest {
                 connection_id: request.connection_id,
                 sql: request.sql,
+                database: request.database,
                 namespace: None,
                 origin: Some("cli".into()),
             },
@@ -59,6 +60,7 @@ impl QueryPlatformAdapter {
                 DesktopSqlInspectionRequest {
                     connection_id: request.connection_id,
                     sql: request.sql.clone(),
+                    database: request.database,
                     namespace: request.namespace,
                     intent: DesktopPreviewIntent::ImpactPreview,
                 },
@@ -92,6 +94,7 @@ impl QueryPlatformAdapter {
         let payload = match serde_json::to_value(StoredDesktopSqlPayload {
             sql: request.sql,
             history_origin: history_origin.clone(),
+            database: inspection.database.clone(),
             namespace: inspection.namespace.clone(),
         })
         .map_err(AppError::from)

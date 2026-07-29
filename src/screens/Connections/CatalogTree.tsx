@@ -42,6 +42,7 @@ type Props = {
   fullCatalog?: Catalog;
   error?: string;
   detailError?: string;
+  applySchemaScope?: boolean;
   filter: string;
   showRowCounts: boolean;
   groupByConnectionId: Map<string, SchemaConnectionGroup>;
@@ -87,7 +88,9 @@ export default function CatalogTree(props: Props) {
     ? catalogFromOverview(overview, fullCatalog)
     : fullCatalog;
   const catalog = unfilteredCatalog
-    ? filterCatalog(connection, unfilteredCatalog)
+    ? props.applySchemaScope === false
+      ? unfilteredCatalog
+      : filterCatalog(connection, unfilteredCatalog)
     : undefined;
   const diff = schemaDiffForConnection(
     connection,
@@ -125,6 +128,8 @@ export default function CatalogTree(props: Props) {
       supportedKinds.has(section.kind) ||
       filteredObjects.some((object) => object.kind === section.kind),
   );
+  const databaseSectionKey = (section: string) =>
+    `${connection.database}\u0000${section}`;
 
   useEffect(() => {
     if (
@@ -148,9 +153,10 @@ export default function CatalogTree(props: Props) {
       next.delete(schemaKey);
       return next;
     });
-    const relationSectionKey = isDocumentEngine(connection.engine)
+    const relationSection = isDocumentEngine(connection.engine)
       ? "collections"
       : `${schemaKey}:${table.kind === "view" ? "view" : "table"}`;
+    const relationSectionKey = databaseSectionKey(relationSection);
     if (
       collapsedSections.has(
         `${connection.id}:${relationSectionKey}`,
@@ -593,8 +599,8 @@ export default function CatalogTree(props: Props) {
     const schemaViews = contents.relations.filter(
       (table) => table.kind === "view",
     );
-    const tableSectionKey = `${schemaKey}:table`;
-    const viewSectionKey = `${schemaKey}:view`;
+    const tableSectionKey = databaseSectionKey(`${schemaKey}:table`);
+    const viewSectionKey = databaseSectionKey(`${schemaKey}:view`);
     const tablesOpen =
       Boolean(normalizedFilter) ||
       !collapsedSections.has(`${connection.id}:${tableSectionKey}`);
@@ -645,7 +651,9 @@ export default function CatalogTree(props: Props) {
                 (object) => object.kind === section.kind,
               );
               if (normalizedFilter && objects.length === 0) return null;
-              const objectSectionKey = `${schemaKey}:${section.kind}`;
+              const objectSectionKey = databaseSectionKey(
+                `${schemaKey}:${section.kind}`,
+              );
               const expanded =
                 Boolean(normalizedFilter) ||
                 objectSectionsOpen.has(
@@ -688,9 +696,12 @@ export default function CatalogTree(props: Props) {
 
   function renderDatabaseContents() {
     if (isDocumentEngine(connection.engine)) {
+      const collectionSectionKey = databaseSectionKey("collections");
       const tablesOpen =
         Boolean(normalizedFilter) ||
-        !collapsedSections.has(`${connection.id}:collections`);
+        !collapsedSections.has(
+          `${connection.id}:${collectionSectionKey}`,
+        );
       return (
         <>
           {(tables.length > 0 || (!normalizedFilter && catalog)) && (
@@ -699,7 +710,7 @@ export default function CatalogTree(props: Props) {
                 expanded={tablesOpen}
                 icon="collection"
                 onToggle={() =>
-                  props.onToggleRelationSection("collections")
+                  props.onToggleRelationSection(collectionSectionKey)
                 }
               >
                 {t("connections.collections", { count: tables.length })}

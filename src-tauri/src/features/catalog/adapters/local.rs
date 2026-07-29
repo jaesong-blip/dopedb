@@ -13,14 +13,35 @@ use crate::error::{AppError, AppResult};
 use crate::introspect::{self, CatalogReadMode};
 use crate::kernel::identity::ConnectionId;
 use crate::kernel::TerminalAuthority;
+use crate::model::{Provider, WorkspaceCredentialMode};
 use crate::store::Store;
 
-use super::super::domain::{Catalog, CatalogOverview, CatalogReadPolicy};
+use super::super::domain::{Catalog, CatalogOverview, CatalogReadPolicy, DatabaseSummary};
 use super::super::ports::CatalogGatewayPort;
 
 const CATALOG_OVERVIEW_TIMEOUT: Duration = Duration::from_secs(20);
 const CATALOG_DETAIL_TIMEOUT: Duration = Duration::from_secs(60);
 const CATALOG_DDL_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn database_bound_authority(pin: &crate::store::PinnedConnection) -> bool {
+    let profile = &pin.profile;
+    profile.credential_mode == WorkspaceCredentialMode::Managed
+        || (pin.requires_remote_rbac
+            && profile.credential_mode == WorkspaceCredentialMode::MemberLocal
+            && matches!(profile.provider, Provider::Neon | Provider::GcpCloudSql))
+}
+
+fn scope_catalog(mut catalog: Catalog, database: &str) -> Catalog {
+    for table in &mut catalog.tables {
+        table.database = Some(database.to_owned());
+    }
+    catalog
+}
+
+fn scope_overview(mut overview: CatalogOverview, database: &str) -> CatalogOverview {
+    overview.database = Some(database.to_owned());
+    overview
+}
 
 async fn bounded_catalog_read<T>(
     label: &'static str,
@@ -97,8 +118,11 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .connections
                 .pin(connection_id.into(), ConnectionAccess::Read)
                 .await?;
+            let database = context.pin().profile.database.clone();
             let _load = self.loads.acquire(connection_id).await;
-            introspect::load_catalog_in_context(&self.store, context, policy.into()).await
+            introspect::load_catalog_in_context(&self.store, context, policy.into())
+                .await
+                .map(|catalog| scope_catalog(catalog, &database))
         })
         .await
     }
@@ -128,9 +152,98 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .connections
                 .pin(connection_id.into(), ConnectionAccess::Read)
                 .await?;
+            let database = context.pin().profile.database.clone();
             let lease = context.connect().await?;
-            introspect::overview(lease.live()).await
+            introspect::overview(lease.live())
+                .await
+                .map(|overview| scope_overview(overview, &database))
         })
+        .await
+    }
+
+    async fn list_databases(&self, connection_id: ConnectionId) -> AppResult<Vec<DatabaseSummary>> {
+        bounded_catalog_read("database discovery", CATALOG_OVERVIEW_TIMEOUT, async move {
+            let context = self
+                .connections
+                .pin(connection_id.into(), ConnectionAccess::Read)
+                .await?;
+            let configured = context.pin().profile.database.clone();
+            if database_bound_authority(context.pin()) {
+                return Ok(vec![DatabaseSummary {
+                    name: configured,
+                    is_default: true,
+                }]);
+            }
+            let lease = context.connect().await?;
+            introspect::databases(lease.live(), &configured).await
+        })
+        .await
+    }
+
+    async fn load_database(
+        &self,
+        connection_id: ConnectionId,
+        database: String,
+    ) -> AppResult<Catalog> {
+        bounded_catalog_read(
+            "database catalog metadata",
+            CATALOG_DETAIL_TIMEOUT,
+            async move {
+                let context = self
+                    .connections
+                    .pin(connection_id.into(), ConnectionAccess::Read)
+                    .await?;
+                let lease = context.connect_to_database(Some(database.clone())).await?;
+                introspect::introspect(lease.live())
+                    .await
+                    .map(|catalog| scope_catalog(catalog, &database))
+            },
+        )
+        .await
+    }
+
+    async fn load_database_snapshot(
+        &self,
+        connection_id: ConnectionId,
+        database: String,
+    ) -> AppResult<CatalogSnapshot> {
+        bounded_catalog_read(
+            "database catalog snapshot",
+            CATALOG_DETAIL_TIMEOUT,
+            async move {
+                let context = self
+                    .connections
+                    .pin(connection_id.into(), ConnectionAccess::Read)
+                    .await?;
+                let lease = context.connect_to_database(Some(database.clone())).await?;
+                let catalog = introspect::introspect(lease.live()).await?;
+                let mut profile = lease.pin().profile.clone();
+                profile.database = database;
+                introspect::snapshot_from_catalog(&profile, &catalog)
+            },
+        )
+        .await
+    }
+
+    async fn load_database_overview(
+        &self,
+        connection_id: ConnectionId,
+        database: String,
+    ) -> AppResult<CatalogOverview> {
+        bounded_catalog_read(
+            "database catalog overview",
+            CATALOG_OVERVIEW_TIMEOUT,
+            async move {
+                let context = self
+                    .connections
+                    .pin(connection_id.into(), ConnectionAccess::Read)
+                    .await?;
+                let lease = context.connect_to_database(Some(database.clone())).await?;
+                introspect::overview(lease.live())
+                    .await
+                    .map(|overview| scope_overview(overview, &database))
+            },
+        )
         .await
     }
 
@@ -156,6 +269,57 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
         .await
     }
 
+    async fn list_terminal_databases(
+        &self,
+        authority: &TerminalAuthority,
+    ) -> AppResult<Vec<DatabaseSummary>> {
+        bounded_catalog_read(
+            "terminal database discovery",
+            CATALOG_OVERVIEW_TIMEOUT,
+            async {
+                let context = self
+                    .connections
+                    .pin(authority.connection_id.into(), ConnectionAccess::Read)
+                    .await?;
+                ensure_terminal_pin(authority, context.pin())?;
+                let configured = context.pin().profile.database.clone();
+                if database_bound_authority(context.pin()) {
+                    return Ok(vec![DatabaseSummary {
+                        name: configured,
+                        is_default: true,
+                    }]);
+                }
+                let lease = context.connect().await?;
+                introspect::databases(lease.live(), &configured).await
+            },
+        )
+        .await
+    }
+
+    async fn load_terminal_database_snapshot(
+        &self,
+        authority: &TerminalAuthority,
+        database: String,
+    ) -> AppResult<CatalogSnapshot> {
+        bounded_catalog_read(
+            "terminal database catalog snapshot",
+            CATALOG_DETAIL_TIMEOUT,
+            async {
+                let context = self
+                    .connections
+                    .pin(authority.connection_id.into(), ConnectionAccess::Read)
+                    .await?;
+                ensure_terminal_pin(authority, context.pin())?;
+                let lease = context.connect_to_database(Some(database.clone())).await?;
+                let catalog = introspect::introspect(lease.live()).await?;
+                let mut profile = lease.pin().profile.clone();
+                profile.database = database;
+                introspect::snapshot_from_catalog(&profile, &catalog)
+            },
+        )
+        .await
+    }
+
     async fn table_ddl(
         &self,
         connection_id: ConnectionId,
@@ -169,6 +333,24 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .await?;
             let _load = self.loads.acquire(connection_id).await;
             let lease = context.connect().await?;
+            introspect::table_ddl(lease.live(), schema, table).await
+        })
+        .await
+    }
+
+    async fn database_table_ddl(
+        &self,
+        connection_id: ConnectionId,
+        database: String,
+        schema: Option<&str>,
+        table: &str,
+    ) -> AppResult<String> {
+        bounded_catalog_read("database table DDL", CATALOG_DDL_TIMEOUT, async move {
+            let context = self
+                .connections
+                .pin(connection_id.into(), ConnectionAccess::Read)
+                .await?;
+            let lease = context.connect_to_database(Some(database)).await?;
             introspect::table_ddl(lease.live(), schema, table).await
         })
         .await

@@ -107,6 +107,7 @@ fn response_timeout(command: dopedb_protocol::CommandName) -> Duration {
 
     match command {
         CommandName::ConnectionTest
+        | CommandName::DatabaseList
         | CommandName::CatalogShow
         | CommandName::SchemaList
         | CommandName::TableDescribe

@@ -242,6 +242,7 @@ function Shell() {
       : !isDocumentEngine(selected.engine));
   const workbench = useWorkbenchDocuments({
     selectedConnectionId: selected?.id ?? null,
+    selectedConnectionDatabase: selected?.database ?? null,
     supportsSql,
     restoredDocumentKind,
     sqlDocuments: tauriSqlDocumentGateway,
@@ -305,6 +306,7 @@ function Shell() {
     try {
       document = await workbench.openQuery({
         connectionId: selected.id,
+        database: selected.database,
         supportsSql,
         title: "History query",
         content: sql,
@@ -408,6 +410,7 @@ function Shell() {
     try {
       const document = await workbench.openQuery({
         connectionId: selected.id,
+        database: selected.database,
         supportsSql,
       });
       activateDocument(document);
@@ -436,6 +439,11 @@ function Shell() {
   function setActiveQuerySchema(value: string | null) {
     if (!activeDocument || activeDocument.kind !== "sql") return;
     workbench.updateSelectedSchema(activeDocument.id, value);
+  }
+
+  function setActiveQueryDatabase(value: string) {
+    if (!activeDocument || activeDocument.kind !== "sql") return;
+    workbench.updateSelectedDatabase(activeDocument.id, value);
   }
 
   function setActiveQueryResolveMode(value: SqlResolveMode) {
@@ -797,6 +805,7 @@ function Shell() {
       onOpenTerminal={openOrFocusTerminalDock}
       onSetQueryDraft={setActiveQueryDraft}
       onSetQueryTitle={setActiveQueryTitle}
+      onSetQueryDatabase={setActiveQueryDatabase}
       onSetQuerySchema={setActiveQuerySchema}
       onSetQueryResolveMode={setActiveQueryResolveMode}
       onPersistedQuery={applySavedQuery}

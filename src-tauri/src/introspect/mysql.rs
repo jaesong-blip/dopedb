@@ -74,6 +74,20 @@ WHERE table_schema = DATABASE()
 ORDER BY table_name
 "#;
 
+const DATABASES_SQL: &str = r#"
+SELECT schema_name
+FROM information_schema.schemata
+WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+ORDER BY schema_name
+"#;
+
+pub(crate) async fn databases(pool: &MySqlPool) -> AppResult<Vec<String>> {
+    sqlx::query_scalar::<_, String>(DATABASES_SQL)
+        .fetch_all(pool)
+        .await
+        .map_err(Into::into)
+}
+
 const CONSTRAINTS_SQL: &str = r#"
 SELECT tc.table_name, tc.constraint_name, tc.constraint_type,
        k.column_name, k.ordinal_position
@@ -377,6 +391,7 @@ pub(crate) async fn overview(pool: &MySqlPool) -> AppResult<CatalogOverview> {
         .collect::<AppResult<Vec<_>>>()?;
 
     Ok(CatalogOverview {
+        database: None,
         namespaces,
         relations,
         detail_state: CatalogOverviewDetailState::Deferred,

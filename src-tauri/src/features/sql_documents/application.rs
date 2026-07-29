@@ -10,8 +10,8 @@ use crate::kernel::identity::{ConnectionId, SqlDocumentId};
 use crate::kernel::sql_namespace::normalize_sql_namespace;
 
 use super::domain::{
-    content_hash, normalize_resolve_mode, normalize_title, validate_content, SqlDocument,
-    SqlDocumentRevision,
+    content_hash, normalize_resolve_mode, normalize_title, validate_content, NewSqlDocument,
+    SqlDocument, SqlDocumentRevision,
 };
 use super::ports::{
     SaveDocumentCommand, SaveRepositoryOutcome, SqlDocumentAuthorityGuard,
@@ -23,6 +23,7 @@ use super::ports::{
 pub(crate) struct CreateSqlDocumentRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) title: Option<String>,
+    pub(crate) selected_database: Option<String>,
     pub(crate) selected_schema: Option<String>,
     pub(crate) resolve_mode: Option<String>,
     pub(crate) content: Option<String>,
@@ -34,6 +35,7 @@ pub(crate) struct SaveSqlDocumentRequest {
     pub(crate) id: SqlDocumentId,
     pub(crate) connection_id: ConnectionId,
     pub(crate) title: String,
+    pub(crate) selected_database: String,
     pub(crate) selected_schema: Option<String>,
     pub(crate) resolve_mode: String,
     pub(crate) content: String,
@@ -86,20 +88,25 @@ where
 
     pub(crate) async fn create(&self, request: CreateSqlDocumentRequest) -> AppResult<SqlDocument> {
         let title = normalize_title(request.title.as_deref().unwrap_or("Untitled query"))?;
-        let selected_schema = normalize_sql_namespace(request.selected_schema)?;
         let resolve_mode = normalize_resolve_mode(request.resolve_mode)?;
         let content = request.content.unwrap_or_else(|| "SELECT 1;".into());
         validate_content(&content)?;
 
         let guard = self.authority.authorize(request.connection_id).await?;
+        let selected_database =
+            normalize_database(request.selected_database, &guard.authority().database)?;
+        let selected_schema = normalize_sql_namespace(request.selected_schema)?;
         let document = SqlDocument::create(
             self.generator.next_id(),
-            request.connection_id,
-            guard.authority().dialect,
-            title,
-            selected_schema,
-            resolve_mode,
-            content,
+            NewSqlDocument {
+                connection_id: request.connection_id,
+                dialect: guard.authority().dialect,
+                title,
+                selected_database,
+                selected_schema,
+                resolve_mode,
+                content,
+            },
             self.generator.now(),
         );
         self.repository.create(guard.authority(), &document).await?;
@@ -122,6 +129,8 @@ where
         let attempted_content_hash = content_hash(&request.content);
         let expected_revision = request.expected_revision;
         let guard = self.authority.authorize(request.connection_id).await?;
+        let selected_database =
+            normalize_database(Some(request.selected_database), &guard.authority().database)?;
         let outcome = self
             .repository
             .save(
@@ -129,6 +138,7 @@ where
                 SaveDocumentCommand {
                     id: request.id,
                     title,
+                    selected_database,
                     selected_schema,
                     resolve_mode,
                     content: request.content,
@@ -177,4 +187,14 @@ where
         }
         Ok(())
     }
+}
+
+fn normalize_database(value: Option<String>, fallback: &str) -> AppResult<String> {
+    let database = value.unwrap_or_else(|| fallback.to_owned());
+    if database.is_empty() || database.len() > 255 || database.chars().any(char::is_control) {
+        return Err(AppError::Config(
+            "SQL document target database is empty or invalid".into(),
+        ));
+    }
+    Ok(database)
 }

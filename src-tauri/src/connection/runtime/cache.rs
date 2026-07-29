@@ -36,6 +36,7 @@ pub(super) struct ConnectionCacheKey {
     provider_resource_identity: Option<String>,
     pub(super) provider_binding_id: Option<Uuid>,
     provider_binding_revision: Option<i64>,
+    target_database: String,
     access: ConnectionAccess,
 }
 
@@ -45,6 +46,7 @@ impl ConnectionCacheKey {
         access: ConnectionAccess,
         provider_target: Option<&ProviderLocalTarget>,
         provider_binding: Option<&ProviderLocalBindingPin>,
+        target_database: &str,
     ) -> Self {
         Self {
             workspace_id: pin.scope.workspace_id,
@@ -62,6 +64,7 @@ impl ConnectionCacheKey {
             provider_resource_identity: provider_target.map(ProviderLocalTarget::cache_identity),
             provider_binding_id: provider_binding.map(|binding| binding.binding_id.into()),
             provider_binding_revision: provider_binding.map(|binding| binding.binding_revision),
+            target_database: target_database.to_owned(),
             // A read entry is constructed without a write-capable pool. It therefore
             // can never satisfy a later write request, even for local credentials.
             access,

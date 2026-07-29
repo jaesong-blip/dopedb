@@ -15,6 +15,7 @@ use crate::monitoring::HealthSnapshot;
 pub(crate) struct TerminalQueryPlanRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) sql: String,
+    pub(crate) database: Option<String>,
     pub(crate) max_rows: Option<u64>,
     pub(crate) authority: TerminalAuthority,
 }
@@ -41,6 +42,7 @@ pub(crate) enum DesktopPreviewIntent {
 pub(crate) struct DesktopSqlInspectionRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) sql: String,
+    pub(crate) database: Option<String>,
     pub(crate) namespace: Option<String>,
     pub(crate) intent: DesktopPreviewIntent,
 }
@@ -50,6 +52,7 @@ pub(crate) struct DesktopSqlInspectionRequest {
 pub(crate) struct DesktopSqlProposalRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) sql: String,
+    pub(crate) database: Option<String>,
     pub(crate) namespace: Option<String>,
     pub(crate) origin: Option<String>,
 }
@@ -118,6 +121,7 @@ impl std::fmt::Display for DesktopSqlStreamSinkError {
 pub(crate) struct TerminalSqlProposalRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) sql: String,
+    pub(crate) database: Option<String>,
     pub(crate) authority: TerminalAuthority,
 }
 
@@ -148,6 +152,7 @@ impl AgentQueryInvocationOrigin {
 pub(crate) struct AgentQueryPlan {
     pub(crate) connection_id: ConnectionId,
     pub(crate) connection_name: String,
+    pub(crate) database: String,
     pub(crate) environment: Option<String>,
     pub(crate) plan_id: OperationId,
     pub(crate) decision: String,
@@ -163,6 +168,7 @@ pub(crate) struct AgentQueryPlan {
 pub(crate) struct AgentQueryRunEventContext {
     pub(crate) connection_id: ConnectionId,
     pub(crate) connection_name: String,
+    pub(crate) database: String,
     pub(crate) plan_id: OperationId,
     pub(crate) sql: String,
 }
@@ -172,6 +178,7 @@ pub(crate) struct AgentQueryRunEventContext {
 pub(crate) struct AgentQueryRun {
     pub(crate) connection_id: ConnectionId,
     pub(crate) connection_name: String,
+    pub(crate) database: String,
     pub(crate) plan_id: OperationId,
     pub(crate) planning_decision: String,
     pub(crate) query_run_id: QueryRunId,

@@ -74,6 +74,9 @@ export const sqlCatalog = defineCatalog(
       "This document changed in another surface. Compare before replacing either version.",
     "sql.saveFailed": "Autosave failed",
     "sql.saved": "Saved",
+    "sql.databaseSelector": "Execution database",
+    "sql.databaseSelectorHint":
+      "{connection} queries run against the {database} database.",
     "sql.schemaSelector": "Execution schema",
     "sql.schemaSelectorHint": "{connection} queries run in the {schema} schema.",
     "sql.scriptNote":
@@ -185,6 +188,9 @@ export const sqlCatalog = defineCatalog(
       "다른 화면에서 이 문서가 변경되었습니다. 어느 버전도 덮어쓰기 전에 비교하세요.",
     "sql.saveFailed": "자동 저장 실패",
     "sql.saved": "저장됨",
+    "sql.databaseSelector": "실행 데이터베이스",
+    "sql.databaseSelectorHint":
+      "{connection} 쿼리를 {database} 데이터베이스에서 실행합니다.",
     "sql.schemaSelector": "실행 스키마",
     "sql.schemaSelectorHint": "{connection} 쿼리를 {schema} 스키마에서 실행합니다.",
     "sql.scriptNote":

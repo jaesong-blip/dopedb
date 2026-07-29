@@ -14,6 +14,7 @@ const MAX_SQL_INPUT_BYTES: u64 = MAX_STRING_BYTES as u64;
 
 pub(crate) async fn plan(
     connection: &str,
+    database: Option<String>,
     file: &str,
     max_rows: Option<u64>,
     mode: OutputMode,
@@ -24,6 +25,7 @@ pub(crate) async fn plan(
     let result: QueryPlanResult = client
         .request::<QueryPlanCommand>(&QueryPlanArguments {
             connection,
+            database,
             sql,
             max_rows,
         })
@@ -33,6 +35,7 @@ pub(crate) async fn plan(
         OutputMode::Human => output::write_human(&[
             format!("Plan: {}", result.plan_id),
             format!("Connection: {}", result.connection_name),
+            format!("Database: {}", result.database),
             format!("Decision: {}", result.decision),
             format!("Expires: {}", result.expires_at),
         ]),
@@ -84,6 +87,7 @@ pub(crate) async fn cancel(operation_id: &str, mode: OutputMode) -> Result<(), C
 
 pub(crate) async fn propose(
     connection: &str,
+    database: Option<String>,
     file: &str,
     mode: OutputMode,
 ) -> Result<(), ClientError> {
@@ -91,7 +95,11 @@ pub(crate) async fn propose(
     let client = BrokerClient::discover()?;
     let connection = resolve_selector(&client, parse_selector(connection)?).await?;
     let result: OperationSummary = client
-        .request::<SqlProposeCommand>(&SqlProposeArguments { connection, sql })
+        .request::<SqlProposeCommand>(&SqlProposeArguments {
+            connection,
+            database,
+            sql,
+        })
         .await?;
     write_operation(&result, mode)
 }

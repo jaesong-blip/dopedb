@@ -28,6 +28,7 @@ export type WorkbenchDocument =
       kind: "sql";
       draft: string;
       title: string;
+      selectedDatabase: string;
       selectedSchema: string | null;
       resolveMode: SqlResolveMode;
       persistedId: string | null;
@@ -71,6 +72,7 @@ export function queryDocument(
   connectionId: string,
   kind: QueryDocument["kind"],
   draft?: string | null,
+  database = "",
 ): QueryDocument {
   sequence += 1;
   const suffix = `${Date.now().toString(36)}-${sequence.toString(36)}`;
@@ -81,6 +83,7 @@ export function queryDocument(
         kind,
         draft: draft ?? "SELECT 1;",
         title: "Untitled query",
+        selectedDatabase: database,
         selectedSchema: null,
         resolveMode: DEFAULT_SQL_RESOLVE_MODE,
         persistedId: null,
@@ -99,6 +102,7 @@ interface SqlRecoverySnapshot {
   revision: number;
   title: string;
   draft: string;
+  selectedDatabase: string;
   selectedSchema: string | null;
   resolveMode: SqlResolveMode;
 }
@@ -112,6 +116,10 @@ function readRecovery(document: SqlDocument): SqlRecoverySnapshot | null {
       recovery.revision !== document.localRevision ||
       typeof recovery.title !== "string" ||
       typeof recovery.draft !== "string" ||
+      !(
+        recovery.selectedDatabase === undefined ||
+        typeof recovery.selectedDatabase === "string"
+      ) ||
       !(
         recovery.selectedSchema === undefined ||
         recovery.selectedSchema === null ||
@@ -129,6 +137,8 @@ function readRecovery(document: SqlDocument): SqlRecoverySnapshot | null {
       revision: recovery.revision,
       title: recovery.title,
       draft: recovery.draft,
+      selectedDatabase:
+        recovery.selectedDatabase ?? document.selectedDatabase,
       selectedSchema: recovery.selectedSchema ?? null,
       resolveMode: recovery.resolveMode ?? DEFAULT_SQL_RESOLVE_MODE,
     };
@@ -145,6 +155,8 @@ export function persistedQueryDocument(document: SqlDocument): QueryDocument {
     kind: "sql",
     draft: recovery?.draft ?? document.content,
     title: recovery?.title ?? document.title,
+    selectedDatabase:
+      recovery?.selectedDatabase ?? document.selectedDatabase,
     selectedSchema: recovery?.selectedSchema ?? document.selectedSchema,
     resolveMode: recovery?.resolveMode ?? document.resolveMode,
     persistedId: document.id,
@@ -153,6 +165,7 @@ export function persistedQueryDocument(document: SqlDocument): QueryDocument {
       !!recovery &&
       (recovery.draft !== document.content ||
         recovery.title !== document.title ||
+        recovery.selectedDatabase !== document.selectedDatabase ||
         recovery.selectedSchema !== document.selectedSchema ||
         recovery.resolveMode !== document.resolveMode),
   };

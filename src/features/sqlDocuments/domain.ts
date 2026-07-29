@@ -22,6 +22,7 @@ export interface SqlDocument {
   connectionId: ConnectionId;
   title: string;
   dialect: string;
+  selectedDatabase: string;
   selectedSchema: string | null;
   resolveMode: SqlResolveMode;
   content: string;
@@ -44,6 +45,7 @@ export interface SqlDocumentRevision {
 export interface CreateSqlDocumentRequest {
   connectionId: ConnectionId;
   title?: string | null;
+  selectedDatabase?: string | null;
   selectedSchema?: string | null;
   resolveMode?: SqlResolveMode | null;
   content?: string | null;
@@ -53,6 +55,7 @@ export interface SaveSqlDocumentRequest {
   id: SqlDocumentId;
   connectionId: ConnectionId;
   title: string;
+  selectedDatabase: string;
   selectedSchema: string | null;
   resolveMode: SqlResolveMode;
   content: string;

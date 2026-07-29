@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import type { Catalog, CatalogOverview } from "../../ipc/types";
+
+import type {
+  Catalog,
+  CatalogOverview,
+  DatabaseSummary,
+} from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import {
-  catalogOverviewQuery,
-  catalogQuery,
+  connectionDatabasesQuery,
+  databaseCatalogOverviewQuery,
+  databaseCatalogQuery,
   qk,
   type CatalogScope,
 } from "../../lib/queries";
@@ -17,75 +23,183 @@ export function shouldLoadCatalogDetails(
   return scopeReady && overviewReady && explicitlyRequested;
 }
 
+export function databaseCatalogKey(
+  connectionId: string,
+  database: string,
+) {
+  return `${connectionId}\u0000${database}`;
+}
+
+type DatabaseTarget = {
+  connectionId: string;
+  database: string;
+  isDefault: boolean;
+};
+
 /**
- * Paints the bounded relation tree first. Full metadata is opt-in so merely
- * expanding a workspace connection cannot start a heavy catalog scan.
+ * Discovers the databases visible through each server connection, then paints one
+ * bounded relation tree per database. Full metadata remains opt-in per exact
+ * `(connection, database)` target.
  */
 export function useCatalogTree(
   connectionIds: string[],
   scope: CatalogScope,
 ) {
   const queryClient = useQueryClient();
-  const [detailConnectionIds, setDetailConnectionIds] = useState<Set<string>>(
-    new Set(),
-  );
-  useEffect(() => setDetailConnectionIds(new Set()), [scope.key]);
-  const requestDetails = useCallback((connectionId: string) => {
-    setDetailConnectionIds((ids) =>
-      ids.has(connectionId) ? ids : new Set(ids).add(connectionId)
-    );
-    if (
-      queryClient.getQueryState(qk.catalog(connectionId, scope.key))?.status
-      === "error"
-    ) {
-      void queryClient.refetchQueries({
-        queryKey: qk.catalog(connectionId, scope.key),
-        exact: true,
+  const [detailTargets, setDetailTargets] = useState<Set<string>>(new Set());
+  useEffect(() => setDetailTargets(new Set()), [scope.key]);
+
+  const { databasesByConnection, databaseErrs } = useQueries({
+    queries: connectionIds.map((id) => connectionDatabasesQuery(id, scope)),
+    combine: (results) => {
+      const databasesByConnection: Record<string, DatabaseSummary[]> = {};
+      const databaseErrs: Record<string, string> = {};
+      results.forEach((result, index) => {
+        const id = connectionIds[index];
+        if (result.data) databasesByConnection[id] = result.data;
+        else if (result.error) databaseErrs[id] = errMessage(result.error);
       });
-    }
-  }, [queryClient, scope.key]);
+      return { databasesByConnection, databaseErrs };
+    },
+  });
+
+  const targets = useMemo(
+    () =>
+      connectionIds.flatMap((connectionId) =>
+        (databasesByConnection[connectionId] ?? []).map(
+          (database): DatabaseTarget => ({
+            connectionId,
+            database: database.name,
+            isDefault: database.isDefault,
+          }),
+        ),
+      ),
+    [connectionIds, databasesByConnection],
+  );
+
+  const requestDetails = useCallback(
+    (connectionId: string, database: string) => {
+      const key = databaseCatalogKey(connectionId, database);
+      setDetailTargets((targets) =>
+        targets.has(key) ? targets : new Set(targets).add(key)
+      );
+      if (
+        queryClient.getQueryState(
+          qk.databaseCatalog(connectionId, database, scope.key),
+        )?.status === "error"
+      ) {
+        void queryClient.refetchQueries({
+          queryKey: qk.databaseCatalog(connectionId, database, scope.key),
+          exact: true,
+        });
+      }
+    },
+    [queryClient, scope.key],
+  );
+
   const forgetDetails = useCallback((connectionId: string) => {
-    setDetailConnectionIds((ids) => {
-      if (!ids.has(connectionId)) return ids;
-      const next = new Set(ids);
-      next.delete(connectionId);
-      return next;
+    setDetailTargets((targets) => {
+      const next = new Set(
+        [...targets].filter(
+          (target) => !target.startsWith(`${connectionId}\u0000`),
+        ),
+      );
+      return next.size === targets.size ? targets : next;
     });
   }, []);
-  const { overviews, overviewErrs } = useQueries({
-    queries: connectionIds.map((id) => catalogOverviewQuery(id, scope)),
+
+  const { databaseOverviews, overviewErrsByDatabase } = useQueries({
+    queries: targets.map((target) =>
+      databaseCatalogOverviewQuery(
+        target.connectionId,
+        target.database,
+        scope,
+      )
+    ),
     combine: (results) => {
-      const overviews: Record<string, CatalogOverview> = {};
-      const overviewErrs: Record<string, string> = {};
+      const databaseOverviews: Record<string, CatalogOverview> = {};
+      const overviewErrsByDatabase: Record<string, string> = {};
       results.forEach((result, index) => {
-        const id = connectionIds[index];
-        if (result.data) overviews[id] = result.data;
-        else if (result.error) overviewErrs[id] = errMessage(result.error);
+        const target = targets[index];
+        const key = databaseCatalogKey(
+          target.connectionId,
+          target.database,
+        );
+        if (result.data) databaseOverviews[key] = result.data;
+        else if (result.error) {
+          overviewErrsByDatabase[key] = errMessage(result.error);
+        }
       });
-      return { overviews, overviewErrs };
+      return { databaseOverviews, overviewErrsByDatabase };
     },
   });
-  const { catalogs, detailErrs } = useQueries({
-    queries: connectionIds.map((id) => ({
-      ...catalogQuery(id, scope),
-      enabled: shouldLoadCatalogDetails(
-        scope.ready,
-        overviews[id] !== undefined,
-        detailConnectionIds.has(id),
-      ),
-    })),
+
+  const { databaseCatalogs, detailErrsByDatabase } = useQueries({
+    queries: targets.map((target) => {
+      const key = databaseCatalogKey(
+        target.connectionId,
+        target.database,
+      );
+      return {
+        ...databaseCatalogQuery(
+          target.connectionId,
+          target.database,
+          scope,
+        ),
+        enabled: shouldLoadCatalogDetails(
+          scope.ready,
+          databaseOverviews[key] !== undefined,
+          detailTargets.has(key),
+        ),
+      };
+    }),
     combine: (results) => {
-      const catalogs: Record<string, Catalog> = {};
-      const detailErrs: Record<string, string> = {};
+      const databaseCatalogs: Record<string, Catalog> = {};
+      const detailErrsByDatabase: Record<string, string> = {};
       results.forEach((result, index) => {
-        const id = connectionIds[index];
-        if (result.data) catalogs[id] = result.data;
-        else if (result.error) detailErrs[id] = errMessage(result.error);
+        const target = targets[index];
+        const key = databaseCatalogKey(
+          target.connectionId,
+          target.database,
+        );
+        if (result.data) databaseCatalogs[key] = result.data;
+        else if (result.error) {
+          detailErrsByDatabase[key] = errMessage(result.error);
+        }
       });
-      return { catalogs, detailErrs };
+      return { databaseCatalogs, detailErrsByDatabase };
     },
   });
+
+  // Schema comparison remains connection-level and uses the configured database.
+  // Secondary databases are independent targets, never accidental schema siblings.
+  const overviews: Record<string, CatalogOverview> = {};
+  const overviewErrs: Record<string, string> = { ...databaseErrs };
+  const catalogs: Record<string, Catalog> = {};
+  const detailErrs: Record<string, string> = {};
+  for (const target of targets) {
+    if (!target.isDefault) continue;
+    const key = databaseCatalogKey(target.connectionId, target.database);
+    if (databaseOverviews[key]) {
+      overviews[target.connectionId] = databaseOverviews[key];
+    }
+    if (overviewErrsByDatabase[key]) {
+      overviewErrs[target.connectionId] = overviewErrsByDatabase[key];
+    }
+    if (databaseCatalogs[key]) {
+      catalogs[target.connectionId] = databaseCatalogs[key];
+    }
+    if (detailErrsByDatabase[key]) {
+      detailErrs[target.connectionId] = detailErrsByDatabase[key];
+    }
+  }
+
   return {
+    databasesByConnection,
+    databaseOverviews,
+    overviewErrsByDatabase,
+    databaseCatalogs,
+    detailErrsByDatabase,
     overviews,
     overviewErrs,
     catalogs,

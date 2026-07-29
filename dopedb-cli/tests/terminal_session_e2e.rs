@@ -101,11 +101,13 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                     let arguments: CatalogArguments =
                         serde_json::from_value(request.arguments.clone()).unwrap();
                     assert_eq!(arguments.connection, ConnectionSelector::Current);
+                    assert_eq!(arguments.database, None);
                     respond(
                         &mut stream,
                         &request,
                         &SchemaListResult {
                             connection_id,
+                            database: "app".into(),
                             schemas: vec![SchemaSummary {
                                 name: "main".into(),
                                 relation_count: 1,
@@ -119,6 +121,7 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                     let arguments: QueryPlanArguments =
                         serde_json::from_value(request.arguments.clone()).unwrap();
                     assert_eq!(arguments.connection, ConnectionSelector::Current);
+                    assert_eq!(arguments.database, None);
                     assert_eq!(arguments.sql, "SELECT name FROM users ORDER BY name");
                     respond(
                         &mut stream,
@@ -126,6 +129,7 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                         &QueryPlanResult {
                             connection_id,
                             connection_name: "fixture".into(),
+                            database: "app".into(),
                             environment: Some("test".into()),
                             plan_id,
                             decision: "allow".into(),
@@ -159,6 +163,7 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                         &QueryRunResult {
                             connection_id,
                             connection_name: "fixture".into(),
+                            database: "app".into(),
                             plan_id,
                             query_run_id,
                             planning_decision: "allow".into(),
@@ -187,6 +192,7 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
     assert!(schema.status.success());
     assert!(schema.stderr.is_empty());
     let schema: SchemaListResult = serde_json::from_slice(&schema.stdout).unwrap();
+    assert_eq!(schema.database, "app");
     assert_eq!(schema.schemas[0].name, "main");
 
     let mut plan_child = terminal_command(&runtime_file, session_id, &token)
@@ -214,6 +220,7 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
     assert!(planned.status.success());
     assert!(planned.stderr.is_empty());
     let planned: QueryPlanResult = serde_json::from_slice(&planned.stdout).unwrap();
+    assert_eq!(planned.database, "app");
     assert_eq!(planned.plan_id, plan_id);
 
     let run = terminal_command(&runtime_file, session_id, &token)
@@ -227,6 +234,7 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
     assert!(!serialized.contains(&token));
     assert!(!serialized.contains("must-never-escape"));
     let run: QueryRunResult = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(run.database, "app");
     assert_eq!(run.query_run_id, query_run_id);
     assert_eq!(run.result.row_count, 2);
 }

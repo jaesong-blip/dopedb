@@ -135,6 +135,7 @@ impl BrokerDispatcher {
             .propose_terminal_sql(TerminalSqlProposalRequest {
                 connection_id: connection.id.into(),
                 sql: arguments.sql,
+                database: arguments.database,
                 authority: authority.clone(),
             })
             .await

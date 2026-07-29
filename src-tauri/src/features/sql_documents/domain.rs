@@ -62,6 +62,7 @@ pub(crate) struct SqlDocument {
     pub(crate) connection_id: ConnectionId,
     pub(crate) title: String,
     pub(crate) dialect: String,
+    pub(crate) selected_database: String,
     pub(crate) selected_schema: Option<String>,
     pub(crate) resolve_mode: String,
     pub(crate) content: String,
@@ -83,25 +84,27 @@ pub(crate) struct SqlDocumentRevision {
     pub(crate) created_at: String,
 }
 
+pub(crate) struct NewSqlDocument {
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) dialect: SqlDialect,
+    pub(crate) title: String,
+    pub(crate) selected_database: String,
+    pub(crate) selected_schema: Option<String>,
+    pub(crate) resolve_mode: String,
+    pub(crate) content: String,
+}
+
 impl SqlDocument {
-    pub(crate) fn create(
-        id: SqlDocumentId,
-        connection_id: ConnectionId,
-        dialect: SqlDialect,
-        title: String,
-        selected_schema: Option<String>,
-        resolve_mode: String,
-        content: String,
-        now: String,
-    ) -> Self {
+    pub(crate) fn create(id: SqlDocumentId, input: NewSqlDocument, now: String) -> Self {
         Self {
             id,
-            connection_id,
-            title,
-            dialect: dialect.as_str().into(),
-            selected_schema,
-            resolve_mode,
-            content,
+            connection_id: input.connection_id,
+            title: input.title,
+            dialect: input.dialect.as_str().into(),
+            selected_database: input.selected_database,
+            selected_schema: input.selected_schema,
+            resolve_mode: input.resolve_mode,
+            content: input.content,
             local_revision: 1,
             remote_id: None,
             remote_revision: None,

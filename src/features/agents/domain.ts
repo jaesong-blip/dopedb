@@ -146,6 +146,7 @@ export interface AcpSessionChanged {
 }
 
 export interface AcpTableContext {
+  database: string | null;
   schema: string | null;
   table: string;
   column: string | null;
@@ -154,6 +155,7 @@ export interface AcpTableContext {
 }
 
 export interface AcpPromptContext {
+  database: string | null;
   documentName: string | null;
   documentText: string | null;
   table: AcpTableContext | null;

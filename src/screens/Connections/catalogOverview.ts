@@ -10,6 +10,7 @@ import type {
 export function catalogOverviewTable(relation: CatalogOverviewRelation): CatalogTable {
   const parent = relation.parent;
   return {
+    database: null,
     schema: relation.schema,
     name: relation.name,
     kind: relation.kind,
@@ -53,7 +54,10 @@ export function catalogFromOverview(
 
   return {
     tables: overview.relations.map((relation) => {
-      const current = catalogOverviewTable(relation);
+      const current = {
+        ...catalogOverviewTable(relation),
+        database: overview.database,
+      };
       const detail = detailsByKey.get(
         relationKey(current.schema, current.name),
       );

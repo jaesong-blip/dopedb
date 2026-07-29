@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use super::super::domain::{AgentQueryRun, AgentQueryRunEventContext};
 use super::super::ports::QueryRunProvenancePort;
+use super::super::ManualExecutionTarget;
 use super::errors::{
     AgentQueryExecutionFailure, AgentQueryProvenanceFailure, AgentQueryRunError,
     AgentQueryRunPrepareError,
@@ -74,7 +75,10 @@ impl PreparedAgentQueryRun {
         } = self;
         let operation_id = claimed.record().id;
         let engine = operation_pin.profile.engine;
-        let lease = match context.connect().await {
+        let lease = match context
+            .connect_to_database(Some(event_context.database.clone()))
+            .await
+        {
             Ok(lease) => lease,
             Err(error) => {
                 record_run_failure(
@@ -124,9 +128,12 @@ impl PreparedAgentQueryRun {
         };
         let manual_result = manual_transactions
             .run_read(
-                operation_pin.connection_id,
+                ManualExecutionTarget {
+                    connection_id: operation_pin.connection_id,
+                    database: lease.target_database(),
+                    namespace: None,
+                },
                 &event_context.sql,
-                None,
                 max_rows,
                 Some(&cancellation),
             )
@@ -242,6 +249,7 @@ impl PreparedAgentQueryRun {
             run: AgentQueryRun {
                 connection_id: event_context.connection_id,
                 connection_name: event_context.connection_name,
+                database: event_context.database,
                 plan_id: event_context.plan_id,
                 planning_decision: decision,
                 query_run_id,
@@ -265,7 +273,7 @@ impl QueryPlatformAdapter {
             }
             Err(error) => return Err(AgentQueryRunPrepareError::Application(error)),
         };
-        if planned.payload_schema_version != 1
+        if planned.payload_schema_version != 2
             || planned.kind != OperationKind::ReadQuery
             || planned.actor.kind != OperationActorKind::Agent
         {
@@ -380,6 +388,7 @@ impl QueryPlatformAdapter {
             event_context: AgentQueryRunEventContext {
                 connection_id: ConnectionId::from(pin.connection_id),
                 connection_name: pin.profile.name.clone(),
+                database: payload.database,
                 plan_id,
                 sql: payload.sql,
             },

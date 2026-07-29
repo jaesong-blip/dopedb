@@ -12,6 +12,18 @@ pub(crate) enum CatalogReadPolicy {
     Refresh,
 }
 
+/// One database the current credential can reach through a server connection.
+///
+/// The configured database is always retained as the default even when the server
+/// cannot enumerate peers. Names are target identifiers only; credentials and
+/// connection fields never travel in this projection.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseSummary {
+    pub name: String,
+    pub is_default: bool,
+}
+
 /// The intentionally bounded shape returned by the workspace connection tree.
 ///
 /// An overview is a complete relation tree, not a partial `Catalog` snapshot.
@@ -56,6 +68,10 @@ pub struct CatalogOverviewRelation {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogOverview {
+    /// Exact target database used for this overview. Older cache-era payloads omit
+    /// it and are interpreted by the caller as the connection's configured default.
+    #[serde(default)]
+    pub database: Option<String>,
     /// Namespaces visible inside the profile's configured database. This list is
     /// independent of relations so empty PostgreSQL schemas remain selectable.
     #[serde(default)]
@@ -177,6 +193,8 @@ fn default_kind() -> String {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Table {
+    #[serde(default)]
+    pub database: Option<String>,
     pub schema: Option<String>,
     pub name: String,
     #[serde(default = "default_kind")]

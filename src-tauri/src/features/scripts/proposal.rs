@@ -31,6 +31,17 @@ impl ScriptPlatformAdapter {
                 _scope: operation_scope,
             }));
         }
+        let database = request
+            .database
+            .as_deref()
+            .unwrap_or(&pin.profile.database)
+            .to_owned();
+        if database.is_empty() || database.len() > 255 || database.chars().any(char::is_control) {
+            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                error: AppError::Config("target database name is empty or invalid".into()),
+                _scope: operation_scope,
+            }));
+        }
         let namespace = match crate::executor::namespace::resolve_sql_namespace(
             &pin.profile,
             request.namespace,
@@ -185,6 +196,7 @@ impl ScriptPlatformAdapter {
         let payload = serde_json::to_value(StoredDesktopScriptPayload {
             sql: request.sql,
             history_origin: history_origin.clone(),
+            database: database.clone(),
             namespace,
             schema_change: schema_change.clone(),
             table_change: table_change.clone(),
@@ -221,6 +233,7 @@ impl ScriptPlatformAdapter {
                     schema_fingerprint,
                     risk_level: script_operation_risk(&classifications),
                     preview: serde_json::json!({
+                        "database": database,
                         "classifications": classifications,
                         "ddlPlan": schema_change.map(|context| context.plan),
                         "expectedAffected": table_change.map(|context| context.expected_affected),

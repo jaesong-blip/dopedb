@@ -13,8 +13,8 @@ use adapters::ScopedCatalogGateway;
 pub(crate) use application::CatalogUseCases;
 pub(crate) use domain::{
     Catalog, CatalogOverview, CatalogOverviewDetailState, CatalogOverviewRelation,
-    CatalogOverviewRelationRef, CatalogReadPolicy, Column, DatabaseObject, ForeignKey, Index,
-    Table,
+    CatalogOverviewRelationRef, CatalogReadPolicy, Column, DatabaseObject, DatabaseSummary,
+    ForeignKey, Index, Table,
 };
 pub(crate) use dopedb_protocol::catalog::CatalogSnapshot;
 

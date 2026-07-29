@@ -30,6 +30,8 @@ pub(crate) enum Command {
     Skill(SkillArguments),
     /// Inspect and test connection metadata in the active Terminal scope.
     Connection(ConnectionArguments),
+    /// List databases reachable through one server connection.
+    Database(DatabaseArguments),
     /// Load the canonical database catalog.
     Catalog(CatalogArguments),
     /// List database schemas or namespaces.
@@ -174,6 +176,22 @@ pub(crate) enum ConnectionCommand {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct DatabaseArguments {
+    #[command(subcommand)]
+    pub(crate) command: DatabaseCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum DatabaseCommand {
+    List {
+        #[arg(long)]
+        connection: String,
+        #[command(flatten)]
+        output: OutputArguments,
+    },
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct CatalogArguments {
     #[command(subcommand)]
     pub(crate) command: CatalogCommand,
@@ -184,6 +202,8 @@ pub(crate) enum CatalogCommand {
     Show {
         #[arg(long)]
         connection: String,
+        #[arg(long)]
+        database: Option<String>,
         #[command(flatten)]
         output: OutputArguments,
     },
@@ -200,6 +220,8 @@ pub(crate) enum SchemaCommand {
     List {
         #[arg(long)]
         connection: String,
+        #[arg(long)]
+        database: Option<String>,
         #[command(flatten)]
         output: OutputArguments,
     },
@@ -217,6 +239,8 @@ pub(crate) enum TableCommand {
         table: String,
         #[arg(long)]
         connection: String,
+        #[arg(long)]
+        database: Option<String>,
         #[command(flatten)]
         output: OutputArguments,
     },
@@ -255,6 +279,8 @@ pub(crate) enum QueryCommand {
     Plan {
         #[arg(long)]
         connection: String,
+        #[arg(long)]
+        database: Option<String>,
         /// Read SQL from stdin. The first release accepts only `--file -`.
         #[arg(long, value_name = "-")]
         file: String,
@@ -338,6 +364,8 @@ pub(crate) enum SqlCommand {
     Propose {
         #[arg(long)]
         connection: String,
+        #[arg(long)]
+        database: Option<String>,
         /// Read SQL from stdin. The first release accepts only `--file -`.
         #[arg(long, value_name = "-")]
         file: String,

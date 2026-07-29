@@ -49,12 +49,13 @@ export default function ManualTransactionControls({
   const detail = t("sql.txManualDetail", {
     count: status.statementCount,
   });
+  const targetDetail = `${detail} · ${status.database}`;
   return (
     <>
       <WorkbenchButton
         variant="selected"
         disabled
-        title={failed ? t("sql.txFailedHint") : detail}
+        title={failed ? t("sql.txFailedHint") : targetDetail}
       >
         <span>{t("sql.tx")}</span>
         <strong>

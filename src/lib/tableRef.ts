@@ -9,6 +9,9 @@ export function quoteIdent(engine: Engine, name: string): string {
 export function tableRef(engine: Engine, t: CatalogTable): string {
   const q = (n: string) => quoteIdent(engine, n);
   if (engine === "postgres" && t.schema) return `${q(t.schema)}.${q(t.name)}`;
+  if (engine === "mysql" && t.database) {
+    return `${q(t.database)}.${q(t.name)}`;
+  }
   return q(t.name);
 }
 
@@ -19,5 +22,5 @@ export function tableLabel(engine: Engine, t: CatalogTable): string {
 }
 
 export function tableKey(t: CatalogTable): string {
-  return `${t.schema ?? ""}.${t.name}`;
+  return `${t.database ?? ""}.${t.schema ?? ""}.${t.name}`;
 }

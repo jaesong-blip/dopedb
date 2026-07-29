@@ -25,6 +25,18 @@ const SAMPLE_DOCS: usize = 50;
 /// Concurrent per-collection introspection probes.
 const PROBE_CONCURRENCY: usize = 8;
 
+pub(crate) async fn databases(conn: &MongoConnection) -> AppResult<Vec<String>> {
+    let configured = conn.database_name();
+    let mut names = conn
+        .database_names()
+        .await?
+        .into_iter()
+        .filter(|name| name == configured || !matches!(name.as_str(), "admin" | "config" | "local"))
+        .collect::<Vec<_>>();
+    names.sort();
+    Ok(names)
+}
+
 /// Introspect the profile's database into the shared catalog shape.
 pub async fn introspect(conn: &MongoConnection) -> AppResult<Catalog> {
     let db = conn.database();
@@ -74,6 +86,7 @@ pub(crate) async fn overview(conn: &MongoConnection) -> AppResult<CatalogOvervie
     specs.sort_by(|left, right| left.name.cmp(&right.name));
 
     Ok(CatalogOverview {
+        database: None,
         namespaces: Vec::new(),
         relations: specs,
         detail_state: CatalogOverviewDetailState::Deferred,

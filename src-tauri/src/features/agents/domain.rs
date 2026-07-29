@@ -151,6 +151,7 @@ pub(crate) struct AcpSessionChanged {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AcpTableContext {
+    pub(crate) database: Option<String>,
     pub(crate) schema: Option<String>,
     pub(crate) table: String,
     pub(crate) column: Option<String>,
@@ -163,6 +164,7 @@ pub(crate) struct AcpTableContext {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AcpPromptContext {
+    pub(crate) database: Option<String>,
     pub(crate) document_name: Option<String>,
     pub(crate) document_text: Option<String>,
     pub(crate) table: Option<AcpTableContext>,

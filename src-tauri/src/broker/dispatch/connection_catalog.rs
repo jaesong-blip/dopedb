@@ -12,9 +12,10 @@ pub(super) async fn handle(
             BrokerCapability::ConnectionRead
         }
         CommandName::ConnectionTest => BrokerCapability::ConnectionTest,
-        CommandName::CatalogShow | CommandName::SchemaList | CommandName::TableDescribe => {
-            BrokerCapability::CatalogRead
-        }
+        CommandName::DatabaseList
+        | CommandName::CatalogShow
+        | CommandName::SchemaList
+        | CommandName::TableDescribe => BrokerCapability::CatalogRead,
         _ => return failure(request_id, ErrorCode::InvalidRequest, false),
     };
     let session = match dispatcher.authenticate(request, capability) {
@@ -54,6 +55,18 @@ pub(super) async fn handle(
                 request_id,
                 dispatcher
                     .connection_test(&session, &arguments, client_protocol_version)
+                    .await,
+            )
+        }
+        CommandName::DatabaseList => {
+            let arguments = match decode_arguments::<DatabaseListCommand>(request) {
+                Ok(arguments) => arguments,
+                Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            respond(
+                request_id,
+                dispatcher
+                    .database_list(&session, &arguments.connection, client_protocol_version)
                     .await,
             )
         }
@@ -185,14 +198,47 @@ impl BrokerDispatcher {
     ) -> Result<CatalogSnapshot, ErrorCode> {
         self.resolve_connection(session, &arguments.connection, client_protocol_version)
             .await?;
-        self.services()?
+        let authority = terminal_authority(session, client_protocol_version);
+        if let Some(database) = &arguments.database {
+            self.services()?
+                .catalog
+                .load_terminal_database_snapshot(&authority, database.clone())
+                .await
+                .map_err(map_application_error)
+        } else {
+            self.services()?
+                .catalog
+                .load_terminal_snapshot(&authority, CatalogReadPolicy::CacheFirst)
+                .await
+                .map_err(map_application_error)
+        }
+    }
+
+    async fn database_list(
+        &self,
+        session: &AuthenticatedSession,
+        connection_selector: &ConnectionSelector,
+        client_protocol_version: u16,
+    ) -> Result<DatabaseListResult, ErrorCode> {
+        let connection = self
+            .resolve_connection(session, connection_selector, client_protocol_version)
+            .await?;
+        let databases = self
+            .services()?
             .catalog
-            .load_terminal_snapshot(
-                &terminal_authority(session, client_protocol_version),
-                CatalogReadPolicy::CacheFirst,
-            )
+            .list_terminal_databases(&terminal_authority(session, client_protocol_version))
             .await
-            .map_err(map_application_error)
+            .map_err(map_application_error)?
+            .into_iter()
+            .map(|database| ProtocolDatabaseSummary {
+                name: database.name,
+                is_default: database.is_default,
+            })
+            .collect();
+        Ok(DatabaseListResult {
+            connection_id: connection.id,
+            databases,
+        })
     }
 
     async fn schema_list(
@@ -225,6 +271,7 @@ impl BrokerDispatcher {
         }
         Ok(SchemaListResult {
             connection_id: catalog.connection_id(),
+            database: catalog.database().to_owned(),
             schemas: counts
                 .into_iter()
                 .map(|(name, counts)| SchemaSummary {
@@ -254,6 +301,7 @@ impl BrokerDispatcher {
                 session,
                 &CatalogArguments {
                     connection: arguments.connection.clone(),
+                    database: arguments.database.clone(),
                 },
                 client_protocol_version,
             )
@@ -281,6 +329,7 @@ impl BrokerDispatcher {
         };
         Ok(TableDescribeResult {
             connection_id: catalog.connection_id(),
+            database: catalog.database().to_owned(),
             relation,
         })
     }

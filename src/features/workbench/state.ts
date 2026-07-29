@@ -38,6 +38,7 @@ export type WorkbenchAction =
     }
   | { type: "updateDraft"; id: string; draft: string }
   | { type: "updateTitle"; id: string; title: string }
+  | { type: "updateSelectedDatabase"; id: string; selectedDatabase: string }
   | { type: "updateSelectedSchema"; id: string; selectedSchema: string | null }
   | { type: "updateResolveMode"; id: string; resolveMode: SqlResolveMode }
   | { type: "persist"; id: string; document: SqlDocument };
@@ -130,6 +131,19 @@ export function workbenchReducer(
             : document,
         ),
       };
+    case "updateSelectedDatabase":
+      return {
+        ...state,
+        documents: state.documents.map((document) =>
+          document.id === action.id && document.kind === "sql"
+            ? {
+                ...document,
+                selectedDatabase: action.selectedDatabase,
+                selectedSchema: null,
+              }
+            : document,
+        ),
+      };
     case "updateSelectedSchema":
       return {
         ...state,
@@ -157,6 +171,7 @@ export function workbenchReducer(
                 ...document,
                 draft: action.document.content,
                 title: action.document.title,
+                selectedDatabase: action.document.selectedDatabase,
                 selectedSchema: action.document.selectedSchema,
                 resolveMode: action.document.resolveMode,
                 revision: action.document.localRevision,

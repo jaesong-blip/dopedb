@@ -85,6 +85,7 @@ type Props = {
   onOpenTerminal: () => void;
   onSetQueryDraft: (value: string) => void;
   onSetQueryTitle: (value: string) => void;
+  onSetQueryDatabase: (value: string) => void;
   onSetQuerySchema: (value: string | null) => void;
   onSetQueryResolveMode: (value: SqlResolveMode) => void;
   onPersistedQuery: (document: SqlDocument) => void;
@@ -293,6 +294,8 @@ export default function WorkbenchContent(props: Props) {
             setDraft={props.onSetQueryDraft}
             title={activeDocument.title}
             setTitle={props.onSetQueryTitle}
+            selectedDatabase={activeDocument.selectedDatabase}
+            setSelectedDatabase={props.onSetQueryDatabase}
             selectedSchema={activeDocument.selectedSchema}
             setSelectedSchema={props.onSetQuerySchema}
             resolveMode={activeDocument.resolveMode}

@@ -27,6 +27,7 @@ import {
 
 interface UseWorkbenchDocumentsOptions {
   selectedConnectionId: string | null;
+  selectedConnectionDatabase: string | null;
   supportsSql: boolean;
   restoredDocumentKind: WorkbenchDocument["kind"];
   sqlDocuments: SqlDocumentGateway;
@@ -35,6 +36,7 @@ interface UseWorkbenchDocumentsOptions {
 
 interface OpenQueryOptions {
   connectionId: string;
+  database: string;
   supportsSql: boolean;
   title?: string;
   content?: string;
@@ -42,6 +44,7 @@ interface OpenQueryOptions {
 
 export function useWorkbenchDocuments({
   selectedConnectionId,
+  selectedConnectionDatabase,
   supportsSql,
   restoredDocumentKind,
   sqlDocuments,
@@ -98,6 +101,7 @@ export function useWorkbenchDocuments({
             await sqlDocuments.create({
               connectionId: connectionId(selectedConnectionId),
               title: "Untitled query",
+              selectedDatabase: selectedConnectionDatabase,
               content: "SELECT 1;",
             }),
           ];
@@ -115,6 +119,7 @@ export function useWorkbenchDocuments({
       });
   }, [
     restoredDocumentKind,
+    selectedConnectionDatabase,
     selectedConnectionId,
     sqlDocuments,
     supportsSql,
@@ -179,6 +184,13 @@ export function useWorkbenchDocuments({
     [],
   );
 
+  const updateSelectedDatabase = useCallback(
+    (id: string, selectedDatabase: string) => {
+      dispatch({ type: "updateSelectedDatabase", id, selectedDatabase });
+    },
+    [],
+  );
+
   const updateResolveMode = useCallback(
     (id: string, resolveMode: SqlResolveMode) => {
       dispatch({ type: "updateResolveMode", id, resolveMode });
@@ -193,6 +205,7 @@ export function useWorkbenchDocuments({
   const openQuery = useCallback(
     async ({
       connectionId: rawConnectionId,
+      database,
       supportsSql: canUseSql,
       title = "Untitled query",
       content = "SELECT 1;",
@@ -203,6 +216,7 @@ export function useWorkbenchDocuments({
       const document = await sqlDocuments.create({
         connectionId: connectionId(rawConnectionId),
         title,
+        selectedDatabase: database,
         content,
       });
       return persistedQueryDocument(document);
@@ -221,6 +235,7 @@ export function useWorkbenchDocuments({
     close,
     updateDraft,
     updateTitle,
+    updateSelectedDatabase,
     updateSelectedSchema,
     updateResolveMode,
     applyPersisted,

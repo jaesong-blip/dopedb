@@ -3,6 +3,8 @@ import type { Catalog, CatalogTable } from "../../ipc/types";
 import {
   catalogQuery,
   catalogSnapshotQuery,
+  databaseCatalogQuery,
+  databaseCatalogSnapshotQuery,
   useCatalogScope,
 } from "../../lib/queries";
 
@@ -14,6 +16,7 @@ export function resolveCatalogTable(
   return catalog?.tables.find(
     (candidate) =>
       candidate.name === requested.name
+      && candidate.database === requested.database
       && candidate.schema === requested.schema
       && candidate.kind === requested.kind
       && (
@@ -27,10 +30,44 @@ export function resolveCatalogTable(
 /** Shares the full-catalog upgrade and delayed snapshot read used by editable SQL tables. */
 export function useCatalogTableMetadata(connectionId: string, requested: CatalogTable) {
   const scope = useCatalogScope();
-  const catalogQueryResult = useQuery(catalogQuery(connectionId, scope));
+  const database = requested.database ?? "";
+  const defaultCatalogQuery = useQuery({
+    ...catalogQuery(connectionId, scope),
+    enabled: !requested.database && scope.ready,
+  });
+  const selectedCatalogQuery = useQuery({
+    ...databaseCatalogQuery(connectionId, database, scope),
+    enabled: !!requested.database && scope.ready,
+  });
+  const catalogQueryResult = requested.database
+    ? selectedCatalogQuery
+    : defaultCatalogQuery;
   const table = resolveCatalogTable(catalogQueryResult.data, requested);
-  const snapshotQuery = useQuery(
-    catalogSnapshotQuery(connectionId, catalogQueryResult.data !== undefined, scope),
-  );
+  const defaultSnapshotQuery = useQuery({
+    ...catalogSnapshotQuery(
+      connectionId,
+      catalogQueryResult.data !== undefined,
+      scope,
+    ),
+    enabled:
+      !requested.database
+      && catalogQueryResult.data !== undefined
+      && scope.ready,
+  });
+  const selectedSnapshotQuery = useQuery({
+    ...databaseCatalogSnapshotQuery(
+      connectionId,
+      database,
+      catalogQueryResult.data !== undefined,
+      scope,
+    ),
+    enabled:
+      !!requested.database
+      && catalogQueryResult.data !== undefined
+      && scope.ready,
+  });
+  const snapshotQuery = requested.database
+    ? selectedSnapshotQuery
+    : defaultSnapshotQuery;
   return { table, snapshotQuery };
 }

@@ -93,7 +93,11 @@ impl ScriptPlatformAdapter {
         }
 
         let lease = match operation_scope
-            .connect(operation_pin.clone(), ConnectionAccess::Write)
+            .connect_to_database(
+                operation_pin.clone(),
+                ConnectionAccess::Write,
+                Some(payload.database.clone()),
+            )
             .await
         {
             Ok(lease) => lease,
@@ -161,19 +165,22 @@ impl ScriptPlatformAdapter {
             .map(|context| context.expected_affected.as_slice());
         let manual_execution = self
             .manual_transactions
-            .run_script(
-                operation_pin.connection_id,
-                &statements,
-                &kinds,
-                payload.namespace.clone(),
+            .run_script(ManualScriptRequest {
+                target: ManualExecutionTarget {
+                    connection_id: operation_pin.connection_id,
+                    database: &payload.database,
+                    namespace: payload.namespace.clone(),
+                },
+                statements: &statements,
+                kinds: &kinds,
                 expected_affected,
-                settings.max_rows,
-                &cancellation,
-                operation.grant(),
-                kinds
+                max_rows: settings.max_rows,
+                cancellation: &cancellation,
+                grant: operation.grant(),
+                contains_unsupported_kind: kinds
                     .iter()
                     .any(|kind| matches!(kind, QueryKind::Ddl | QueryKind::Privilege)),
-            )
+            })
             .await;
         let (manual_transaction, transaction_result) = match manual_execution {
             Some(result) => (true, result.map(|result| (result.statements, false))),

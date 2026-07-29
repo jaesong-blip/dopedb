@@ -148,6 +148,22 @@ WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
 ORDER BY n.nspname
 "#;
 
+const DATABASES_SQL: &str = r#"
+SELECT datname
+FROM pg_database
+WHERE datallowconn
+  AND NOT datistemplate
+  AND has_database_privilege(oid, 'CONNECT')
+ORDER BY datname
+"#;
+
+pub(crate) async fn databases(pool: &PgPool) -> AppResult<Vec<String>> {
+    sqlx::query_scalar::<_, String>(DATABASES_SQL)
+        .fetch_all(pool)
+        .await
+        .map_err(Into::into)
+}
+
 // FK edges resolved on pg_catalog so composite keys stay per-column-correct. Zipping
 // conkey/confkey WITH ORDINALITY pairs each local column to the matching referenced
 // column (the old key-name join produced NxN garbage for composite FKs and cross-joined
@@ -434,6 +450,7 @@ pub(crate) async fn overview(pool: &PgPool) -> AppResult<CatalogOverview> {
         .collect();
     tx.commit().await?;
     Ok(CatalogOverview {
+        database: None,
         namespaces,
         relations,
         detail_state: CatalogOverviewDetailState::Deferred,

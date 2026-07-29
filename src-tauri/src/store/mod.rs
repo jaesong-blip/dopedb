@@ -200,6 +200,20 @@ impl Store {
         let _ = sqlx::query("ALTER TABLE sql_documents ADD COLUMN selected_schema TEXT")
             .execute(&pool)
             .await;
+        let _ = sqlx::query("ALTER TABLE sql_documents ADD COLUMN selected_database TEXT")
+            .execute(&pool)
+            .await;
+        sqlx::query(
+            "UPDATE sql_documents
+             SET selected_database = (
+               SELECT connections.database
+               FROM connections
+               WHERE connections.id = sql_documents.connection_id
+             )
+             WHERE selected_database IS NULL",
+        )
+        .execute(&pool)
+        .await?;
         let _ = sqlx::query(
             "ALTER TABLE sql_documents ADD COLUMN resolve_mode TEXT NOT NULL
              DEFAULT 'playground' CHECK(resolve_mode IN ('playground', 'script'))",

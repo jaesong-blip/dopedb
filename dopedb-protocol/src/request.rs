@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-2 command catalog. Any addition, removal, or meaning change requires a
+/// Version-3 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -35,6 +35,8 @@ pub enum CommandName {
     ConnectionShow,
     #[serde(rename = "connection.test")]
     ConnectionTest,
+    #[serde(rename = "database.list")]
+    DatabaseList,
     #[serde(rename = "catalog.show")]
     CatalogShow,
     #[serde(rename = "schema.list")]
@@ -66,7 +68,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -79,6 +81,7 @@ impl CommandName {
         Self::ConnectionList,
         Self::ConnectionShow,
         Self::ConnectionTest,
+        Self::DatabaseList,
         Self::CatalogShow,
         Self::SchemaList,
         Self::TableDescribe,
@@ -107,6 +110,7 @@ impl CommandName {
             Self::ConnectionList => "connection.list",
             Self::ConnectionShow => "connection.show",
             Self::ConnectionTest => "connection.test",
+            Self::DatabaseList => "database.list",
             Self::CatalogShow => "catalog.show",
             Self::SchemaList => "schema.list",
             Self::TableDescribe => "table.describe",

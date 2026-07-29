@@ -5,7 +5,7 @@
 Send exactly one SQL statement through stdin:
 
 ```text
-dopedb sql propose --connection id:<uuid> --file - --json <<'SQL'
+dopedb sql propose --connection id:<uuid> --database <database> --file - --json <<'SQL'
 UPDATE public.users SET active = false WHERE id = 42
 SQL
 ```

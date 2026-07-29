@@ -13,6 +13,8 @@ use crate::{
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryPlanArguments {
     pub connection: ConnectionSelector,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
     pub sql: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_rows: Option<u64>,
@@ -56,6 +58,7 @@ pub struct QueryHealth {
 pub struct QueryPlanResult {
     pub connection_id: Uuid,
     pub connection_name: String,
+    pub database: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<String>,
     pub plan_id: Uuid,
@@ -99,6 +102,7 @@ pub struct QueryResultPage {
 pub struct QueryRunResult {
     pub connection_id: Uuid,
     pub connection_name: String,
+    pub database: String,
     pub plan_id: Uuid,
     pub query_run_id: Uuid,
     pub planning_decision: String,
@@ -125,6 +129,8 @@ impl CommandSpec for QueryCancelCommand {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SqlProposeArguments {
     pub connection: ConnectionSelector,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
     pub sql: String,
 }
 

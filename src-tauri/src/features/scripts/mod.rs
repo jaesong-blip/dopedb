@@ -22,8 +22,10 @@ use crate::connection::{
 };
 use crate::error::{AppError, AppResult};
 use crate::executor;
-use crate::features::catalog::{CatalogFeature, CatalogReadPolicy};
-use crate::features::queries::ManualTransactionRuntime;
+use crate::features::catalog::CatalogFeature;
+use crate::features::queries::{
+    ManualExecutionTarget, ManualScriptRequest, ManualTransactionRuntime,
+};
 use crate::kernel::agent_policy::QUERY_PLAN_TTL;
 use crate::model::{HistoryEntry, QueryKind, ScriptOutcome, ScriptStatement};
 use crate::operations::{
@@ -34,13 +36,14 @@ use crate::operations::{
 use crate::safety;
 use crate::store::{PinnedConnection, Store};
 
-const DESKTOP_SCRIPT_PAYLOAD_SCHEMA_VERSION: u32 = 2;
+const DESKTOP_SCRIPT_PAYLOAD_SCHEMA_VERSION: u32 = 3;
 
 /// Desktop script input accepted only at the immutable proposal boundary.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesktopScriptProposalRequest {
     pub(crate) connection_id: Uuid,
     pub(crate) sql: String,
+    pub(crate) database: Option<String>,
     pub(crate) namespace: Option<String>,
     pub(crate) origin: Option<String>,
     /// Present only for a Catalog-pinned plan produced by the structured schema
@@ -82,6 +85,7 @@ pub(crate) struct DesktopScriptProposalReceipt {
 struct StoredDesktopScriptPayload {
     sql: String,
     history_origin: String,
+    database: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     namespace: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

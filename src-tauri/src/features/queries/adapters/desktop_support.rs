@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::connection::{ConnectionAccess, DbPool};
 use crate::error::AppError;
 use crate::executor;
+use crate::features::queries::ManualExecutionTarget;
 use crate::kernel::identity::OperationId;
 use crate::model::{Classification, PreviewMode, PreviewReport, QueryKind, SafetySettings};
 use crate::operations::{
@@ -207,7 +208,14 @@ impl QueryPlatformAdapter {
             duration_ms = operation_started.elapsed().as_millis() as u64,
             "desktop query stream phase"
         );
-        let lease = match scope.connect(pin.clone(), ConnectionAccess::Read).await {
+        let lease = match scope
+            .connect_to_database(
+                pin.clone(),
+                ConnectionAccess::Read,
+                Some(payload.database.clone()),
+            )
+            .await
+        {
             Ok(lease) => lease,
             Err(error) => {
                 let result = self
@@ -305,9 +313,12 @@ impl QueryPlatformAdapter {
         let manual_stream = self
             .manual_transactions
             .run_read_streamed(
-                pin.connection_id,
+                ManualExecutionTarget {
+                    connection_id: pin.connection_id,
+                    database: &payload.database,
+                    namespace: namespace.clone(),
+                },
                 &payload.sql,
-                namespace.clone(),
                 settings.max_rows,
                 DESKTOP_STREAM_BATCH_ROWS,
                 Some(&cancellation),

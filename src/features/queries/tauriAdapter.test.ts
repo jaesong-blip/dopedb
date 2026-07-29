@@ -66,7 +66,7 @@ describe("query Tauri adapter", () => {
     });
 
     await expect(
-      inspectSql("connection-1", "SELECT 1", "billing"),
+      inspectSql("connection-1", "SELECT 1", "billing", "analytics"),
     ).resolves.toEqual({
       classification: readProposal.classification,
       report: readProposal.preview,
@@ -74,6 +74,7 @@ describe("query Tauri adapter", () => {
     expect(invokeMock).toHaveBeenCalledWith("inspect_sql", {
       id: "connection-1",
       sql: "SELECT 1",
+      database: "analytics",
       namespace: "billing",
     });
   });
@@ -81,11 +82,18 @@ describe("query Tauri adapter", () => {
   it("preserves the propose SQL command and camelCase wire shape", async () => {
     invokeMock.mockResolvedValueOnce(readProposal);
 
-    await proposeSql("connection-1", "SELECT 1", undefined, "billing");
+    await proposeSql(
+      "connection-1",
+      "SELECT 1",
+      undefined,
+      "billing",
+      "analytics",
+    );
 
     expect(invokeMock).toHaveBeenCalledWith("propose_sql", {
       id: "connection-1",
       sql: "SELECT 1",
+      database: "analytics",
       namespace: "billing",
       origin: null,
     });
@@ -103,11 +111,17 @@ describe("query Tauri adapter", () => {
       .mockResolvedValueOnce(outcome);
 
     await expect(
-      runSqlBoundedPage("connection-1", "SELECT 1", "data-view"),
+      runSqlBoundedPage(
+        "connection-1",
+        "SELECT 1",
+        "data-view",
+        "analytics",
+      ),
     ).resolves.toBe(outcome);
     expect(invokeMock).toHaveBeenNthCalledWith(1, "propose_sql", {
       id: "connection-1",
       sql: "SELECT 1",
+      database: "analytics",
       namespace: null,
       origin: "data-view",
     });
@@ -205,6 +219,7 @@ describe("query Tauri adapter", () => {
       onBatch,
       "data-view",
       "billing",
+      "analytics",
     );
     await controller.completion;
 
@@ -212,6 +227,7 @@ describe("query Tauri adapter", () => {
     expect(invokeMock).toHaveBeenCalledWith("run_sql_read_stream", {
       id: "connection-1",
       sql: "SELECT 1",
+      database: "analytics",
       namespace: "billing",
       origin: "data-view",
       capability: expect.stringMatching(/^[0-9a-f]{64}$/),

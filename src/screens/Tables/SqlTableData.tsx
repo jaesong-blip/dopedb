@@ -61,7 +61,10 @@ export default function SqlTableData({
   const { t } = useI18n();
   const toast = useToast();
   const agentSelection = useAgentSelection();
-  const manualTransaction = useManualTransaction(connection.id);
+  const manualTransaction = useManualTransaction(
+    connection.id,
+    requestedTable.database ?? connection.database,
+  );
   const [ddlOpen, setDdlOpen] = useState(false);
   const engine = connection.engine;
   const { table, snapshotQuery } = useCatalogTableMetadata(connection.id, requestedTable);
@@ -278,6 +281,7 @@ export default function SqlTableData({
         connection.id,
         staged.map((change) => change.sql),
         fingerprint,
+        table.database ?? connection.database,
       );
       commands.patch({ proposal, reviewing: true });
       if (!proposal.approvalRequired) {
@@ -469,6 +473,7 @@ export default function SqlTableData({
                 });
                 agentSelection.select({
                   connectionId: connection.id,
+                  database: table.database ?? connection.database,
                   schema: table.schema ?? null,
                   table: table.name,
                   column,

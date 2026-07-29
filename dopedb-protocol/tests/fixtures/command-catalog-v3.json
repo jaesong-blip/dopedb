@@ -11,6 +11,7 @@
   "connection.list",
   "connection.show",
   "connection.test",
+  "database.list",
   "catalog.show",
   "schema.list",
   "table.describe",

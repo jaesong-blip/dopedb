@@ -365,6 +365,7 @@ CREATE TABLE IF NOT EXISTS sql_documents (
     connection_id     TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
     title             TEXT NOT NULL,
     dialect           TEXT NOT NULL,
+    selected_database TEXT NOT NULL,
     selected_schema   TEXT,
     resolve_mode      TEXT NOT NULL DEFAULT 'playground'
                       CHECK(resolve_mode IN ('playground', 'script')),

@@ -4,6 +4,7 @@ use crate::audit::{self, RecordArgs};
 use crate::connection::ConnectionAccess;
 use crate::error::AppError;
 use crate::executor;
+use crate::features::queries::ManualExecutionTarget;
 use crate::kernel::identity::OperationId;
 use crate::model::QueryKind;
 use crate::operations::{capture_policy, ensure_operation_scope, OperationKind};
@@ -167,13 +168,14 @@ impl QueryPlatformAdapter {
         }
 
         let lease = match operation_scope
-            .connect(
+            .connect_to_database(
                 operation_pin.clone(),
                 if is_write {
                     ConnectionAccess::Write
                 } else {
                     ConnectionAccess::Read
                 },
+                Some(payload.database.clone()),
             )
             .await
         {
@@ -241,10 +243,13 @@ impl QueryPlatformAdapter {
         let manual_execution = if is_write {
             self.manual_transactions
                 .run_write(
-                    operation_pin.connection_id,
+                    ManualExecutionTarget {
+                        connection_id: operation_pin.connection_id,
+                        database: &payload.database,
+                        namespace: namespace.clone(),
+                    },
                     &classification,
                     &payload.sql,
-                    namespace.clone(),
                     &settings,
                     claimed.grant(),
                     &cancellation,
@@ -253,9 +258,12 @@ impl QueryPlatformAdapter {
         } else {
             self.manual_transactions
                 .run_read(
-                    operation_pin.connection_id,
+                    ManualExecutionTarget {
+                        connection_id: operation_pin.connection_id,
+                        database: &payload.database,
+                        namespace: namespace.clone(),
+                    },
                     &payload.sql,
-                    namespace.clone(),
                     settings.max_rows,
                     Some(&cancellation),
                 )

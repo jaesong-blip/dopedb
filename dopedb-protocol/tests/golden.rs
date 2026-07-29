@@ -1,13 +1,13 @@
 use dopedb_protocol::{
     catalog::CatalogSnapshot, decode_arguments, AppOpenCommand, AppOpenResult,
     AuthenticationRequirement, CatalogShowCommand, CommandName, CommandSpec, ConnectionListCommand,
-    ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand, DocumentRunCommand,
-    ErrorCode, OperationCancelCommand, OperationShowCommand, OperationWaitCommand, ProtocolError,
-    QueryCancelCommand, QueryPlanCommand, QueryRunCommand, RequestEnvelope, ResponseEnvelope,
-    RuntimeDiscovery, SchemaListCommand, SkillInstallCommand, SkillRemoveCommand,
-    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand,
-    StatusCommand, StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
-    COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
+    ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand, DatabaseListCommand,
+    DocumentRunCommand, ErrorCode, OperationCancelCommand, OperationShowCommand,
+    OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand,
+    RequestEnvelope, ResponseEnvelope, RuntimeDiscovery, SchemaListCommand, SkillInstallCommand,
+    SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand, SkillsGetCommand,
+    SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeCommand,
+    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -68,10 +68,18 @@ fn resolve_result_fixture(contract: &CliCommandContract) -> Value {
     }
     match contract.result_fixture.as_deref() {
         Some("catalog-snapshot-v2") => value(include_str!("fixtures/catalog-snapshot-v2.json")),
+        Some("database-list") => json!({
+            "connectionId": "00000000-0000-0000-0000-000000000001",
+            "databases": [
+                {"name": "analytics", "isDefault": false},
+                {"name": "app", "isDefault": true}
+            ]
+        }),
         Some("catalog-relation-0") => {
             let catalog = value(include_str!("fixtures/catalog-snapshot-v2.json"));
             json!({
                 "connectionId": catalog["connectionId"],
+                "database": catalog["database"],
                 "relation": catalog["relations"][0]
             })
         }
@@ -147,6 +155,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
         CommandName::ConnectionList => typed_cli_contract::<ConnectionListCommand>(request, result),
         CommandName::ConnectionShow => typed_cli_contract::<ConnectionShowCommand>(request, result),
         CommandName::ConnectionTest => typed_cli_contract::<ConnectionTestCommand>(request, result),
+        CommandName::DatabaseList => typed_cli_contract::<DatabaseListCommand>(request, result),
         CommandName::CatalogShow => typed_cli_contract::<CatalogShowCommand>(request, result),
         CommandName::SchemaList => typed_cli_contract::<SchemaListCommand>(request, result),
         CommandName::TableDescribe => typed_cli_contract::<TableDescribeCommand>(request, result),
@@ -174,7 +183,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v2_command_schema() {
+fn query_plan_request_matches_v3_command_schema() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -192,12 +201,13 @@ fn query_plan_request_matches_v2_command_schema() {
 #[test]
 fn every_phase_six_cli_command_has_request_success_error_and_redaction_goldens() {
     let contracts: Vec<CliCommandContract> =
-        serde_json::from_str(include_str!("fixtures/cli-command-contract-v2.json"))
+        serde_json::from_str(include_str!("fixtures/cli-command-contract-v3.json"))
             .expect("CLI command manifest must decode");
     let expected = [
         CommandName::ConnectionList,
         CommandName::ConnectionShow,
         CommandName::ConnectionTest,
+        CommandName::DatabaseList,
         CommandName::CatalogShow,
         CommandName::SchemaList,
         CommandName::TableDescribe,
@@ -450,7 +460,7 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 
     let future: RequestEnvelope = serde_json::from_value(serde_json::json!({
         "protocolVersion": 1,
-        "commandSchemaVersion": 2,
+        "commandSchemaVersion": 3,
         "requestId": "018f1111-2222-7333-8444-555566667777",
         "command": "future.command",
         "arguments": {"approved": true}
@@ -460,13 +470,13 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v2_catalog() {
+fn command_names_match_the_v3_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v2.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v3.json")).unwrap();
     assert_eq!(actual, expected);
 }
 

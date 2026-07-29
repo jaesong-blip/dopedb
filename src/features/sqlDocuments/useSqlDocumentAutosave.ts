@@ -27,6 +27,7 @@ export type DocumentSaveState =
 export interface DocumentConflict {
   current: SqlDocument;
   localTitle: string;
+  localSelectedDatabase: string;
   localSelectedSchema: string | null;
   localResolveMode: SqlResolveMode;
   localContent: string;
@@ -38,11 +39,13 @@ interface SqlDocumentAutosaveOptions {
   documentId: SqlDocumentId | null;
   revision: number;
   title: string;
+  selectedDatabase: string;
   selectedSchema: string | null;
   resolveMode: SqlResolveMode;
   content: string;
   recovered: boolean;
   onTitleChange: (title: string) => void;
+  onSelectedDatabaseChange: (selectedDatabase: string) => void;
   onSelectedSchemaChange: (selectedSchema: string | null) => void;
   onResolveModeChange: (resolveMode: SqlResolveMode) => void;
   onContentChange: (content: string) => void;
@@ -55,11 +58,13 @@ export function useSqlDocumentAutosave({
   documentId,
   revision,
   title,
+  selectedDatabase,
   selectedSchema,
   resolveMode,
   content,
   recovered,
   onTitleChange,
+  onSelectedDatabaseChange,
   onSelectedSchemaChange,
   onResolveModeChange,
   onContentChange,
@@ -73,6 +78,7 @@ export function useSqlDocumentAutosave({
   const saveSequence = useRef(0);
   const callbacks = useRef({
     onTitleChange,
+    onSelectedDatabaseChange,
     onSelectedSchemaChange,
     onResolveModeChange,
     onContentChange,
@@ -80,6 +86,7 @@ export function useSqlDocumentAutosave({
   });
   callbacks.current = {
     onTitleChange,
+    onSelectedDatabaseChange,
     onSelectedSchemaChange,
     onResolveModeChange,
     onContentChange,
@@ -88,12 +95,14 @@ export function useSqlDocumentAutosave({
   const persistedBaseline = useRef<{
     revision: number;
     title: string | null;
+    selectedDatabase: string | null;
     selectedSchema: string | null | undefined;
     resolveMode: SqlResolveMode | undefined;
     content: string | null;
   }>({
     revision,
     title: recovered ? null : title,
+    selectedDatabase: recovered ? null : selectedDatabase,
     selectedSchema: recovered ? undefined : selectedSchema,
     resolveMode: recovered ? undefined : resolveMode,
     content: recovered ? null : content,
@@ -103,6 +112,7 @@ export function useSqlDocumentAutosave({
     async (
       expectedRevision: number,
       nextTitle: string,
+      nextSelectedDatabase: string,
       nextSelectedSchema: string | null,
       nextResolveMode: SqlResolveMode,
       nextContent: string,
@@ -116,6 +126,7 @@ export function useSqlDocumentAutosave({
           id: documentId,
           connectionId,
           title: nextTitle,
+          selectedDatabase: nextSelectedDatabase,
           selectedSchema: nextSelectedSchema,
           resolveMode: nextResolveMode,
           content: nextContent,
@@ -126,6 +137,7 @@ export function useSqlDocumentAutosave({
           setConflict({
             current: outcome.document,
             localTitle: nextTitle,
+            localSelectedDatabase: nextSelectedDatabase,
             localSelectedSchema: nextSelectedSchema,
             localResolveMode: nextResolveMode,
             localContent: nextContent,
@@ -136,6 +148,7 @@ export function useSqlDocumentAutosave({
         persistedBaseline.current = {
           revision: outcome.document.localRevision,
           title: outcome.document.title,
+          selectedDatabase: outcome.document.selectedDatabase,
           selectedSchema: outcome.document.selectedSchema,
           resolveMode: outcome.document.resolveMode,
           content: outcome.document.content,
@@ -160,6 +173,7 @@ export function useSqlDocumentAutosave({
       recovered ||
       baseline.revision !== revision ||
       baseline.title !== title ||
+      baseline.selectedDatabase !== selectedDatabase ||
       baseline.selectedSchema !== selectedSchema ||
       baseline.resolveMode !== resolveMode ||
       baseline.content !== content;
@@ -173,6 +187,7 @@ export function useSqlDocumentAutosave({
       JSON.stringify({
         revision,
         title,
+        selectedDatabase,
         selectedSchema,
         resolveMode,
         draft: content,
@@ -180,7 +195,14 @@ export function useSqlDocumentAutosave({
     );
     if (!title.trim()) return;
     const timer = window.setTimeout(() => {
-      void persist(revision, title, selectedSchema, resolveMode, content);
+      void persist(
+        revision,
+        title,
+        selectedDatabase,
+        selectedSchema,
+        resolveMode,
+        content,
+      );
     }, 700);
     return () => window.clearTimeout(timer);
   }, [
@@ -191,6 +213,7 @@ export function useSqlDocumentAutosave({
     recovered,
     revision,
     resolveMode,
+    selectedDatabase,
     selectedSchema,
     title,
   ]);
@@ -209,12 +232,14 @@ export function useSqlDocumentAutosave({
     persistedBaseline.current = {
       revision: current.localRevision,
       title: current.title,
+      selectedDatabase: current.selectedDatabase,
       selectedSchema: current.selectedSchema,
       resolveMode: current.resolveMode,
       content: current.content,
     };
     localStorage.removeItem(sqlRecoveryKey(documentId));
     callbacks.current.onTitleChange(current.title);
+    callbacks.current.onSelectedDatabaseChange(current.selectedDatabase);
     callbacks.current.onSelectedSchemaChange(current.selectedSchema);
     callbacks.current.onResolveModeChange(current.resolveMode);
     callbacks.current.onContentChange(current.content);
@@ -228,6 +253,7 @@ export function useSqlDocumentAutosave({
     void persist(
       conflict.current.localRevision,
       conflict.localTitle,
+      conflict.localSelectedDatabase,
       conflict.localSelectedSchema,
       conflict.localResolveMode,
       conflict.localContent,

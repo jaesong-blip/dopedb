@@ -8,19 +8,22 @@ Use:
 dopedb connection list --json
 dopedb connection show id:<uuid> --json
 dopedb connection test id:<uuid> --json
+dopedb database list --connection id:<uuid> --json
 ```
 
-Do not select the first result. If the user has not identified a database and
-there is no pinned `current` connection, ask them to choose.
+Do not select the first connection or non-default database. If the user has not
+identified a connection and there is no pinned `current` connection, ask them
+to choose. If they have not identified a database, use only the database marked
+`isDefault`.
 
 ## Inspect before querying
 
 Prefer canonical catalog commands over assumptions:
 
 ```text
-dopedb catalog show --connection id:<uuid> --json
-dopedb schema list --connection id:<uuid> --json
-dopedb table describe schema.table --connection id:<uuid> --json
+dopedb catalog show --connection id:<uuid> --database <database> --json
+dopedb schema list --connection id:<uuid> --database <database> --json
+dopedb table describe schema.table --connection id:<uuid> --database <database> --json
 ```
 
 Qualify relation names when the engine supports schemas or namespaces.
@@ -30,7 +33,7 @@ Qualify relation names when the engine supports schemas or namespaces.
 Pass SQL through stdin:
 
 ```text
-dopedb query plan --connection id:<uuid> --file - --json <<'SQL'
+dopedb query plan --connection id:<uuid> --database <database> --file - --json <<'SQL'
 SELECT id, email FROM public.users LIMIT 100
 SQL
 ```

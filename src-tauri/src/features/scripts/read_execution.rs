@@ -21,7 +21,11 @@ impl ScriptPlatformAdapter {
         let operation_id = operation.record().id;
 
         let lease = match operation_scope
-            .connect(operation_pin.clone(), ConnectionAccess::Read)
+            .connect_to_database(
+                operation_pin.clone(),
+                ConnectionAccess::Read,
+                Some(payload.database.clone()),
+            )
             .await
         {
             Ok(lease) => lease,
@@ -73,17 +77,20 @@ impl ScriptPlatformAdapter {
         let cancellation = executor::cancel::register(operation_id);
         let manual_execution = self
             .manual_transactions
-            .run_script(
-                operation_pin.connection_id,
-                &statements,
-                &kinds,
-                payload.namespace.clone(),
-                None,
-                settings.max_rows,
-                &cancellation,
-                operation.grant(),
-                false,
-            )
+            .run_script(ManualScriptRequest {
+                target: ManualExecutionTarget {
+                    connection_id: operation_pin.connection_id,
+                    database: &payload.database,
+                    namespace: payload.namespace.clone(),
+                },
+                statements: &statements,
+                kinds: &kinds,
+                expected_affected: None,
+                max_rows: settings.max_rows,
+                cancellation: &cancellation,
+                grant: operation.grant(),
+                contains_unsupported_kind: false,
+            })
             .await;
         let manual_transaction = manual_execution.is_some();
         if let Some(result) = manual_execution {

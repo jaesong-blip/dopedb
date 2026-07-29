@@ -23,9 +23,7 @@ import type { ProviderKind } from "../../features/providers/domain";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
 import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
 import {
-  fetchFreshCatalog,
   qk,
-  replaceFreshCatalog,
   useCatalogScope,
 } from "../../lib/queries";
 import {
@@ -171,8 +169,19 @@ export function DatabaseExplorer({
   }, [catalogScope.key]);
 
   const wantedIds = useMemo(() => [...wanted].sort(), [wanted]);
-  const { overviews, overviewErrs, catalogs, detailErrs, requestDetails, forgetDetails } =
-    useCatalogTree(wantedIds, catalogScope);
+  const {
+    databasesByConnection,
+    databaseOverviews,
+    overviewErrsByDatabase,
+    databaseCatalogs,
+    detailErrsByDatabase,
+    overviews,
+    overviewErrs,
+    catalogs,
+    detailErrs,
+    requestDetails,
+    forgetDetails,
+  } = useCatalogTree(wantedIds, catalogScope);
   const errs = { ...overviewErrs, ...refreshErrs };
 
   // Expanding a node subscribes to its catalog; the query cache decides whether that is a
@@ -182,9 +191,12 @@ export function DatabaseExplorer({
     commands.want(id);
     commands.clearRefreshError(id);
     if (
-      queryClient.getQueryState(qk.catalogOverview(id, catalogScope.key))?.status === "error"
+      queryClient.getQueryState(qk.connectionDatabases(id, catalogScope.key))
+        ?.status === "error"
     ) {
-      void queryClient.refetchQueries({ queryKey: qk.catalogOverview(id, catalogScope.key) });
+      void queryClient.refetchQueries({
+        queryKey: qk.connectionDatabases(id, catalogScope.key),
+      });
     }
   }
 
@@ -237,17 +249,29 @@ export function DatabaseExplorer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  // Force a live re-introspection — the schema cache is written once and never
-  // expires, so a table list can go stale (e.g. tables added after first connect).
-  // Writing the result into the shared cache updates every surface reading this catalog.
+  // Refresh every database target discovered through this server connection. The
+  // database-scoped endpoints are live reads; invalidating their exact prefix replaces
+  // relation and detail projections without reusing the legacy configured-database cache.
   async function refreshSchema(id: string) {
     const scopeKey = catalogScope.key;
     commands.patch({ refreshingId: id });
     commands.clearRefreshError(id);
     try {
-      const catalog = await fetchFreshCatalog(id);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: qk.connectionDatabases(id, scopeKey),
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["databaseCatalogOverview", id],
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["databaseCatalog", id],
+          refetchType: "active",
+        }),
+      ]);
       if (catalogScopeKeyRef.current !== scopeKey) return;
-      await replaceFreshCatalog(queryClient, id, scopeKey, catalog);
       commands.want(id);
     } catch (e) {
       if (catalogScopeKeyRef.current !== scopeKey) return;
@@ -275,6 +299,15 @@ export function DatabaseExplorer({
       });
       queryClient.removeQueries({
         queryKey: qk.catalogSnapshot(conn.id, catalogScope.key),
+      });
+      queryClient.removeQueries({
+        queryKey: qk.connectionDatabases(conn.id, catalogScope.key),
+      });
+      queryClient.removeQueries({
+        queryKey: ["databaseCatalogOverview", conn.id],
+      });
+      queryClient.removeQueries({
+        queryKey: ["databaseCatalog", conn.id],
       });
       toast(t("connections.connectionDeleted"));
       onDeleted(conn.id);
@@ -317,7 +350,17 @@ export function DatabaseExplorer({
 
   function toggleObjectSection(connectionId: string, kind: string) {
     const key = `${connectionId}:${kind}`;
-    if (!objectSectionsOpen.has(key)) requestDetails(connectionId);
+    if (!objectSectionsOpen.has(key)) {
+      const separator = kind.indexOf("\u0000");
+      const connection = connections.find(
+        (candidate) => candidate.id === connectionId,
+      );
+      const database =
+        separator >= 0
+          ? kind.slice(0, separator)
+          : connection?.database;
+      if (database) requestDetails(connectionId, database);
+    }
     commands.toggleObjectSection(key);
   }
 
@@ -352,6 +395,11 @@ export function DatabaseExplorer({
         fullCatalog={catalogs[connection.id]}
         error={errs[connection.id]}
         detailError={detailErrs[connection.id]}
+        databases={databasesByConnection[connection.id]}
+        databaseOverviews={databaseOverviews}
+        databaseCatalogs={databaseCatalogs}
+        overviewErrorsByDatabase={overviewErrsByDatabase}
+        detailErrorsByDatabase={detailErrsByDatabase}
         filter={globalFilter}
         groupByConnectionId={groupByConnectionId}
         catalogs={catalogs}
@@ -370,11 +418,17 @@ export function DatabaseExplorer({
         onRefresh={() => void refreshSchema(connection.id)}
         onDelete={() => void removeConnection(connection)}
         onOpenTable={(table) => onOpenTable(connection, table)}
-        onRequestDetails={() => requestDetails(connection.id)}
-        onRetryOverview={() => {
+        onRequestDetails={(database) =>
+          requestDetails(connection.id, database)
+        }
+        onRetryOverview={(database) => {
           commands.clearRefreshError(connection.id);
           void queryClient.refetchQueries({
-            queryKey: qk.catalogOverview(connection.id, catalogScope.key),
+            queryKey: qk.databaseCatalogOverview(
+              connection.id,
+              database,
+              catalogScope.key,
+            ),
             exact: true,
           });
         }}

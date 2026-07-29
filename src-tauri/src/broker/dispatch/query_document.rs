@@ -124,6 +124,7 @@ impl BrokerDispatcher {
             .plan_terminal_read(TerminalQueryPlanRequest {
                 connection_id: connection.id.into(),
                 sql: arguments.sql,
+                database: arguments.database,
                 max_rows: arguments.max_rows,
                 authority: terminal_authority(session, client_protocol_version),
             })
@@ -140,6 +141,7 @@ impl BrokerDispatcher {
         Ok(QueryPlanResult {
             connection_id: plan.connection_id.into(),
             connection_name: plan.connection_name.clone(),
+            database: plan.database.clone(),
             environment: plan.environment.clone(),
             plan_id: plan.plan_id.into(),
             decision: plan.decision.clone(),
@@ -169,6 +171,7 @@ impl BrokerDispatcher {
         Ok(QueryRunResult {
             connection_id: run.connection_id.into(),
             connection_name: run.connection_name.clone(),
+            database: run.database.clone(),
             plan_id: run.plan_id.into(),
             query_run_id: run.query_run_id.into(),
             planning_decision: run.planning_decision.clone(),

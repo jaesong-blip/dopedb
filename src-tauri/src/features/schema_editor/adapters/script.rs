@@ -33,6 +33,7 @@ impl SchemaScriptPort for ScriptSchemaGateway {
             .propose_desktop(DesktopScriptProposalRequest {
                 connection_id: command.connection_id.into(),
                 sql: command.plan.sql(),
+                database: None,
                 namespace: None,
                 origin: Some("schema_editor".into()),
                 schema_change: Some(SchemaScriptContext {

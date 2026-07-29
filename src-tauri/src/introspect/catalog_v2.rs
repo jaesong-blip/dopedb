@@ -75,7 +75,7 @@ pub(crate) async fn load_catalog_snapshot_in_context(
         ));
     }
     let catalog = super::introspect(lease.live()).await?;
-    let snapshot = to_snapshot(&lease.pin().profile, &catalog)?;
+    let snapshot = snapshot_from_catalog(&lease.pin().profile, &catalog)?;
     match store.put_catalog_if_current(lease.pin(), &snapshot).await? {
         CacheWriteOutcome::Stored | CacheWriteOutcome::NotPersisted => {}
         CacheWriteOutcome::Stale => {
@@ -100,7 +100,7 @@ async fn introspect_and_maybe_store(
         return Ok(catalog);
     }
 
-    let snapshot = to_snapshot(&lease.pin().profile, &catalog)?;
+    let snapshot = snapshot_from_catalog(&lease.pin().profile, &catalog)?;
     match store.put_catalog_if_current(lease.pin(), &snapshot).await? {
         CacheWriteOutcome::Stored | CacheWriteOutcome::NotPersisted => Ok(catalog),
         CacheWriteOutcome::Stale => Err(AppError::Blocked {
@@ -109,7 +109,10 @@ async fn introspect_and_maybe_store(
     }
 }
 
-fn to_snapshot(profile: &ConnectionProfile, catalog: &Catalog) -> AppResult<v2::CatalogSnapshot> {
+pub(crate) fn snapshot_from_catalog(
+    profile: &ConnectionProfile,
+    catalog: &Catalog,
+) -> AppResult<v2::CatalogSnapshot> {
     let namespaces = catalog
         .tables
         .iter()
@@ -416,6 +419,7 @@ fn relation_to_table(relation: &v2::Relation) -> Table {
         })
         .collect();
     Table {
+        database: None,
         schema: relation.object.namespace.clone(),
         name: relation.object.name.clone(),
         kind: object_kind_name(relation.object.kind).into(),

@@ -10,7 +10,10 @@ import {
   rollbackManualTransaction,
 } from "./tauriAdapter";
 
-export function useManualTransaction(connectionId: string) {
+export function useManualTransaction(
+  connectionId: string,
+  database?: string,
+) {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +33,7 @@ export function useManualTransaction(connectionId: string) {
     setError(null);
     try {
       if (action === "begin") {
-        const status = await beginManualTransaction(connectionId);
+        const status = await beginManualTransaction(connectionId, database);
         queryClient.setQueryData(qk.manualTransaction(connectionId), status);
       } else if (action === "commit") {
         await commitManualTransaction(connectionId, current!.transactionId);
@@ -63,6 +66,11 @@ export function useManualTransaction(connectionId: string) {
     loading: query.isPending,
     busy,
     error,
+    targetDatabase: database ?? null,
+    targetMatches:
+      query.data == null
+      || database == null
+      || query.data.database === database,
     begin: () => mutate("begin"),
     commit: () => mutate("commit"),
     rollback: () => mutate("rollback"),

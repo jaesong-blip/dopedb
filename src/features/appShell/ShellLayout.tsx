@@ -192,6 +192,13 @@ function ShellLayoutContent(props: Props) {
           defaultSqlNamespace(selected)
         : defaultSqlNamespace(selected)
     : null;
+  const selectedDatabase = selected
+    ? activeWorkbenchDocument?.kind === "sql"
+      ? activeWorkbenchDocument.selectedDatabase || selected.database
+      : activeWorkbenchDocument?.kind === "data"
+        ? activeWorkbenchDocument.table.database ?? selected.database
+        : selected.database
+    : null;
   const activeSqlEditorStatus =
     activeWorkbenchDocument?.kind === "sql" &&
     props.sqlEditorStatus?.documentId === activeWorkbenchDocument.id
@@ -386,6 +393,7 @@ function ShellLayoutContent(props: Props) {
       <IdeStatusBar
         selected={selected}
         selectedTable={selectedTable}
+        selectedDatabase={selectedDatabase}
         selectedNamespace={selectedNamespace}
         activeDocument={activeWorkbenchDocument}
         querySession={statusQuerySession}

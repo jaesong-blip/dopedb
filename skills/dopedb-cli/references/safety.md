@@ -19,8 +19,11 @@ Database commands require an explicit selector:
 - `current` is valid only inside a DopeDB-created Terminal with a pinned
   connection.
 
-If scope changes, obtain new metadata and a new plan. A plan from an old scope
-must fail rather than being retargeted.
+Server connections may expose several databases. Discover them through
+`database list` and pass the exact `--database` to catalog, schema, table, query,
+and SQL proposal commands. If connection or database scope changes, obtain new
+metadata and a new plan. A plan from an old scope must fail rather than being
+retargeted.
 
 ## Read protection
 

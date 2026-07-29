@@ -10,7 +10,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub(super) const DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION: u32 = 2;
+pub(super) const DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION: u32 = 3;
 
 /// Exact immutable proposal rendered by the desktop before approval or execution.
 #[derive(Debug, Clone, Serialize)]
@@ -32,6 +32,7 @@ pub(crate) struct DesktopSqlProposalReceipt {
 pub(super) struct StoredDesktopSqlPayload {
     pub(super) sql: String,
     pub(super) history_origin: String,
+    pub(super) database: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) namespace: Option<String>,
 }
@@ -52,6 +53,8 @@ pub(crate) enum DesktopSqlPreviewAuthority {
 pub(crate) struct DesktopSqlInspectionReceipt {
     pub(super) classification: Classification,
     pub(super) report: PreviewReport,
+    #[serde(skip)]
+    pub(super) database: String,
     #[serde(skip)]
     pub(super) namespace: Option<String>,
     #[serde(skip)]

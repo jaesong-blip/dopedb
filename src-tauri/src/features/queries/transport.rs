@@ -31,8 +31,14 @@ pub(crate) async fn get_manual_transaction(
 pub(crate) async fn begin_manual_transaction(
     state: State<'_, AppState>,
     id: Uuid,
+    database: Option<String>,
 ) -> AppResult<super::ManualTransactionStatus> {
-    state.services.queries.manual_transactions().begin(id).await
+    state
+        .services
+        .queries
+        .manual_transactions()
+        .begin(id, database)
+        .await
 }
 
 #[tauri::command]
@@ -73,6 +79,7 @@ pub(crate) async fn inspect_sql(
     state: State<'_, AppState>,
     id: Uuid,
     sql: String,
+    database: Option<String>,
     namespace: Option<String>,
 ) -> AppResult<DesktopSqlInspectionReceipt> {
     state
@@ -81,6 +88,7 @@ pub(crate) async fn inspect_sql(
         .inspect_desktop_sql(DesktopSqlInspectionRequest {
             connection_id: id.into(),
             sql,
+            database,
             namespace,
             intent: DesktopPreviewIntent::ReadOnlyExplain,
         })
@@ -94,6 +102,7 @@ pub(crate) async fn propose_sql(
     state: State<'_, AppState>,
     id: Uuid,
     sql: String,
+    database: Option<String>,
     namespace: Option<String>,
     origin: Option<String>,
 ) -> AppResult<DesktopSqlProposalReceipt> {
@@ -103,6 +112,7 @@ pub(crate) async fn propose_sql(
         .propose_desktop_sql(DesktopSqlProposalRequest {
             connection_id: id.into(),
             sql,
+            database,
             namespace,
             origin,
         })
@@ -160,12 +170,16 @@ pub(crate) async fn run_sql_stream(
 }
 
 /// Atomically plans and streams an auto-run desktop read in one IPC request.
+// Keep the individual fields flat: they are the versioned Tauri wire contract
+// consumed by the desktop adapter, not an internal application function.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub(crate) async fn run_sql_read_stream(
     state: State<'_, AppState>,
     webview: tauri::WebviewWindow,
     id: Uuid,
     sql: String,
+    database: Option<String>,
     namespace: Option<String>,
     origin: Option<String>,
     capability: String,
@@ -183,6 +197,7 @@ pub(crate) async fn run_sql_read_stream(
             DesktopSqlProposalRequest {
                 connection_id: id.into(),
                 sql,
+                database,
                 namespace,
                 origin,
             },

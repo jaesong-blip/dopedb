@@ -63,6 +63,7 @@ export type {
   Index as CatalogIndex,
   Table as CatalogTable,
   DatabaseObject as CatalogObject,
+  DatabaseSummary,
 } from "./generated/catalog-feature-contracts";
 export type CatalogObjectKind = import("./generated/catalog-feature-contracts").DatabaseObject["kind"];
 

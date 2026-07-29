@@ -122,6 +122,7 @@ export default function MongoTableData({
               onCellClick={(_value, rowIndex, column) => {
                 agentSelection.select({
                   connectionId: connection.id,
+                  database: table.database ?? connection.database,
                   schema: table.schema ?? null,
                   table: table.name,
                   column,

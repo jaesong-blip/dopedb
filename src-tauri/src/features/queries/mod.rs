@@ -33,7 +33,9 @@ pub(crate) use domain::{
     DesktopSqlStreamBatch, DesktopSqlStreamReady, DesktopSqlStreamSinkError,
     TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
-pub(crate) use manual_transaction::{ManualTransactionRuntime, ManualTransactionStatus};
+pub(crate) use manual_transaction::{
+    ManualExecutionTarget, ManualScriptRequest, ManualTransactionRuntime, ManualTransactionStatus,
+};
 pub(crate) use ports::{QueryRunAuthorizationError, QueryRunAuthorizationPort};
 
 #[cfg(test)]

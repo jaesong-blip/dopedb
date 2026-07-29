@@ -15,6 +15,7 @@ pub(crate) struct SqlDocumentAuthority {
     pub(crate) resource: WorkspaceConnectionId,
     pub(crate) account_scope: AccountScopeId,
     pub(crate) dialect: SqlDialect,
+    pub(crate) database: String,
 }
 
 pub(crate) trait SqlDocumentAuthorityGuard {
@@ -34,6 +35,7 @@ pub(crate) trait SqlDocumentAuthorityPort: Clone + Send + Sync + 'static {
 pub(crate) struct SaveDocumentCommand {
     pub(crate) id: SqlDocumentId,
     pub(crate) title: String,
+    pub(crate) selected_database: String,
     pub(crate) selected_schema: Option<String>,
     pub(crate) resolve_mode: String,
     pub(crate) content: String,

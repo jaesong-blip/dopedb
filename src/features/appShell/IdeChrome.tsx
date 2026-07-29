@@ -171,6 +171,7 @@ export function IdeTopBar({
 export function IdeStatusBar({
   selected,
   selectedTable,
+  selectedDatabase,
   selectedNamespace,
   activeDocument,
   querySession,
@@ -184,6 +185,7 @@ export function IdeStatusBar({
 }: {
   selected: ConnectionProfile | null;
   selectedTable: CatalogTable | null;
+  selectedDatabase: string | null;
   selectedNamespace: string | null;
   activeDocument: WorkbenchDocument | null;
   querySession: QueryServiceSession | null;
@@ -214,6 +216,12 @@ export function IdeStatusBar({
       id: `connection:${selected.id}`,
       label: selected.name || t("app.unnamed"),
     });
+    if (selectedDatabase) {
+      breadcrumbs.push({
+        id: `database:${selectedDatabase}`,
+        label: selectedDatabase,
+      });
+    }
     if (selectedNamespace) {
       breadcrumbs.push({
         id: `namespace:${selectedNamespace}`,

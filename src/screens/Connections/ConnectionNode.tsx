@@ -20,6 +20,7 @@ import type {
   Catalog,
   CatalogOverview,
   CatalogTable,
+  DatabaseSummary,
 } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
@@ -31,6 +32,7 @@ import {
   relationNamespace,
   selectedSchemaScope,
 } from "../../features/catalogExplorer/scopeFilter";
+import { databaseCatalogKey } from "./useCatalogTree";
 
 type Props = {
   connection: ConnectionProfile;
@@ -53,6 +55,11 @@ type Props = {
   fullCatalog?: Catalog;
   error?: string;
   detailError?: string;
+  databases?: DatabaseSummary[];
+  databaseOverviews: Record<string, CatalogOverview>;
+  databaseCatalogs: Record<string, Catalog>;
+  overviewErrorsByDatabase: Record<string, string>;
+  detailErrorsByDatabase: Record<string, string>;
   filter: string;
   groupByConnectionId: Map<string, SchemaConnectionGroup>;
   catalogs: Record<string, Catalog>;
@@ -72,8 +79,8 @@ type Props = {
   onRefresh: () => void;
   onDelete: () => void;
   onOpenTable: (table: CatalogTable) => void;
-  onRequestDetails: () => void;
-  onRetryOverview: () => void;
+  onRequestDetails: (database: string) => void;
+  onRetryOverview: (database: string) => void;
   onToggleRelationSection: (key: string) => void;
   onToggleObjectSection: (kind: string) => void;
   revealRequest: number;
@@ -386,29 +393,68 @@ export default function ConnectionNode(props: Props) {
         </div>
       </div>
 
-      {props.expanded && (
-        <CatalogTree
-          connection={connection}
-          selected={props.selected}
-          selectedTableKey={props.selectedTableKey}
-          overview={props.overview}
-          fullCatalog={props.fullCatalog}
-          error={props.error}
-          detailError={props.detailError}
-          filter={props.filter}
-          showRowCounts={props.showRowCounts}
-          groupByConnectionId={props.groupByConnectionId}
-          catalogs={props.catalogs}
-          collapsedSections={props.collapsedSections}
-          objectSectionsOpen={props.objectSectionsOpen}
-          onOpenTable={props.onOpenTable}
-          onRequestDetails={props.onRequestDetails}
-          onRetryOverview={props.onRetryOverview}
-          onToggleRelationSection={props.onToggleRelationSection}
-          onToggleObjectSection={props.onToggleObjectSection}
-          revealRequest={props.revealRequest}
-        />
-      )}
+      {props.expanded &&
+        (props.databases && props.databases.length > 0 ? (
+          props.databases.map((database) => {
+            const key = databaseCatalogKey(connection.id, database.name);
+            return (
+              <CatalogTree
+                key={key}
+                connection={{ ...connection, database: database.name }}
+                selected={props.selected}
+                selectedTableKey={props.selectedTableKey}
+                overview={props.databaseOverviews[key]}
+                fullCatalog={props.databaseCatalogs[key]}
+                error={props.overviewErrorsByDatabase[key]}
+                detailError={props.detailErrorsByDatabase[key]}
+                applySchemaScope={database.isDefault}
+                filter={props.filter}
+                showRowCounts={props.showRowCounts}
+                groupByConnectionId={
+                  database.isDefault
+                    ? props.groupByConnectionId
+                    : new Map()
+                }
+                catalogs={database.isDefault ? props.catalogs : {}}
+                collapsedSections={props.collapsedSections}
+                objectSectionsOpen={props.objectSectionsOpen}
+                onOpenTable={props.onOpenTable}
+                onRequestDetails={() =>
+                  props.onRequestDetails(database.name)
+                }
+                onRetryOverview={() =>
+                  props.onRetryOverview(database.name)
+                }
+                onToggleRelationSection={props.onToggleRelationSection}
+                onToggleObjectSection={props.onToggleObjectSection}
+                revealRequest={props.revealRequest}
+              />
+            );
+          })
+        ) : (
+          <CatalogTree
+            connection={connection}
+            selected={props.selected}
+            selectedTableKey={props.selectedTableKey}
+            error={props.error}
+            filter={props.filter}
+            showRowCounts={props.showRowCounts}
+            groupByConnectionId={props.groupByConnectionId}
+            catalogs={props.catalogs}
+            collapsedSections={props.collapsedSections}
+            objectSectionsOpen={props.objectSectionsOpen}
+            onOpenTable={props.onOpenTable}
+            onRequestDetails={() =>
+              props.onRequestDetails(connection.database)
+            }
+            onRetryOverview={() =>
+              props.onRetryOverview(connection.database)
+            }
+            onToggleRelationSection={props.onToggleRelationSection}
+            onToggleObjectSection={props.onToggleObjectSection}
+            revealRequest={props.revealRequest}
+          />
+        ))}
     </div>
   );
 }

@@ -28,6 +28,7 @@ export default function DdlModal({
     connection.id,
     table.name,
     table.schema,
+    table.database,
   );
   const closeRef = useRef<HTMLButtonElement>(null);
 

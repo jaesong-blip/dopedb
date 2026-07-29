@@ -51,6 +51,9 @@ impl QueryPlatformAdapter {
             Ok(namespace) => namespace,
             Err(error) => return Err(scoped(error, operation_scope)),
         };
+        let database = request
+            .database
+            .unwrap_or_else(|| pin.profile.database.clone());
         let analysis = match safety::classify_with_integrity(&request.sql, pin.profile.engine) {
             Ok(analysis) => analysis,
             Err(error) => return Err(scoped(error, operation_scope)),
@@ -87,6 +90,7 @@ impl QueryPlatformAdapter {
             return Ok(DesktopSqlInspectionReceipt {
                 classification,
                 report,
+                database,
                 namespace,
                 pin,
                 policy_snapshot: policy.snapshot,
@@ -101,9 +105,10 @@ impl QueryPlatformAdapter {
         // allowed ImpactPreview. It always acquires the read capability; write
         // credentials and write pools are unreachable before durable approval.
         let lease = match operation_scope
-            .connect(
+            .connect_to_database(
                 pin.clone(),
                 desktop_preview_connection_access(&classification, &settings),
+                Some(database.clone()),
             )
             .await
         {
@@ -150,6 +155,7 @@ impl QueryPlatformAdapter {
         Ok(DesktopSqlInspectionReceipt {
             classification,
             report,
+            database,
             namespace,
             pin,
             policy_snapshot: policy.snapshot,
