@@ -81,7 +81,7 @@ export default function TerminalContextBar({
     <>
       <div
         data-terminal-context-bar
-        className="terminal-context-strip tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:overflow-x-auto tw:border-b tw:border-border-subtle tw:bg-background tw:p-2 tw:[scrollbar-width:thin] tw:max-[560px]:px-1"
+        className="tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:overflow-x-auto tw:border-b tw:border-border-subtle tw:bg-background tw:p-2 tw:[scrollbar-width:thin] tw:max-[560px]:px-1"
       >
         <span
           className="tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:text-xs tw:text-muted-foreground tw:whitespace-nowrap"

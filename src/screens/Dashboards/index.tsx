@@ -157,7 +157,7 @@ export function DashboardSidebar({
         </div>
       </div>
       {workspaceAccount ? (
-        <div className="sidebar-foot ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
+        <div className="ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
           {workspaceAccount}
         </div>
       ) : null}

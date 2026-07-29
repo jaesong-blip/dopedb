@@ -236,7 +236,7 @@ export default function ApprovalCard({
           <StatusBadge tone={RISK_TONE[cls.risk]}>
             {t(RISK_LABEL[cls.risk])}
           </StatusBadge>
-          <span className="badge dialect">{ENGINE_LABEL[engine]}</span>
+          <span className="badge">{ENGINE_LABEL[engine]}</span>
           {cls.noWhere && (
             <span className="badge nowhere">{t("approval.noWhere")}</span>
           )}

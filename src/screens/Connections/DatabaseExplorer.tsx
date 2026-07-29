@@ -769,7 +769,7 @@ export function DatabaseExplorer({
         </ToolWindowSearchRow>
       ) : null}
 
-      <div className="explorer tw:min-h-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:p-1 tw:[container-name:db-sidebar] tw:[container-type:inline-size]">
+      <div className="tw:min-h-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:p-1 tw:[container-name:db-sidebar] tw:[container-type:inline-size]">
         {connections.length === 0 ? (
           <div className="tw:grid tw:gap-5 tw:p-3">
             <ToolWindowSection title={t("connections.createDataSource")}>
@@ -851,7 +851,7 @@ export function DatabaseExplorer({
       </div>
 
       {workspaceAccount ? (
-        <div className="sidebar-foot ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
+        <div className="ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
           {workspaceAccount}
         </div>
       ) : null}

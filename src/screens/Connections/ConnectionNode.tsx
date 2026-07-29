@@ -131,7 +131,7 @@ export default function ConnectionNode(props: Props) {
         data-nested={props.nested}
         data-dragging={props.draggingId === connection.id}
         data-drop-target={isDropTarget}
-        className="db-conn ds-object-row tw:group tw:relative tw:touch-none tw:select-none tw:gap-1 tw:rounded-xs tw:pr-[calc(var(--ds-control-sm)+var(--ds-space-1))] tw:text-ui tw:font-medium tw:leading-ui tw:data-[nested=true]:pl-2 tw:data-[dragging=true]:opacity-50 tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring"
+        className="ds-object-row tw:group tw:relative tw:touch-none tw:select-none tw:gap-1 tw:rounded-xs tw:pr-[calc(var(--ds-control-sm)+var(--ds-space-1))] tw:text-ui tw:font-medium tw:leading-ui tw:data-[nested=true]:pl-2 tw:data-[dragging=true]:opacity-50 tw:data-[drop-target=true]:bg-muted tw:data-[drop-target=true]:ring-2 tw:data-[drop-target=true]:ring-ring"
         role="button"
         aria-selected={props.selected}
         aria-label={`${connection.name || t("app.unnamed")} · ${description}`}
@@ -157,12 +157,13 @@ export default function ConnectionNode(props: Props) {
         }}
       >
         <span
-          className="tw tw:grid tw:w-3 tw:shrink-0 tw:place-items-center tw:text-2xs tw:text-muted-foreground"
+          className="tw:grid tw:w-3 tw:shrink-0 tw:place-items-center tw:text-2xs tw:text-muted-foreground"
           title={
             props.expanded
               ? t("connections.collapse")
               : t("connections.expand")
           }
+          onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
             props.onToggleOpen();
@@ -175,7 +176,7 @@ export default function ConnectionNode(props: Props) {
         {!props.nested && (
           <EngineMark engine={connection.engine} size="tree" />
         )}
-        <span className="db-conn-name tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
           {connection.name || t("app.unnamed")}
         </span>
         {connection.workspaceAccess === "local" &&

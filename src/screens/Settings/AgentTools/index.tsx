@@ -246,10 +246,10 @@ export default function AgentTools() {
 
   return (
     <div
-      className="screen tw:max-w-[800px]"
+      className="tw:w-full tw:max-w-[800px] tw:p-4 tw:@max-[700px]:p-0"
       data-primary-flow
     >
-      <div className="settings-title-row">
+      <div className="tw:inline-flex tw:items-center tw:gap-2">
         <h2>{t("agentTools.title")}</h2>
         <InfoTip label={t("agentTools.description")} />
       </div>

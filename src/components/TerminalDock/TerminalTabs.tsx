@@ -284,9 +284,9 @@ export default function TerminalTabs({
   }
 
   return (
-    <header className="terminal-tabs-row tw:relative tw:flex tw:h-tool-window-header tw:min-h-tool-window-header tw:shrink-0 tw:items-stretch tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-background tw:p-1">
+    <header className="tw:relative tw:flex tw:h-tool-window-header tw:min-h-tool-window-header tw:shrink-0 tw:items-stretch tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-background tw:p-1">
       <div
-        className="terminal-session-tabs ds-control-row tw:relative tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:thin]"
+        className="ds-control-row tw:relative tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-1 tw:items-stretch tw:overflow-x-auto tw:[scrollbar-width:thin]"
         role="tablist"
         aria-label={t(
           presentation === "agent"

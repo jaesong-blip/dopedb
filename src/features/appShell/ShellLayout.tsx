@@ -254,7 +254,7 @@ function ShellLayoutContent(props: Props) {
       />
 
       <div
-        className="tool-window-sidebar tw:col-start-1 tw:row-start-2 tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:max-[561px]:contents"
+        className="tw:col-start-1 tw:row-start-2 tw:min-h-0 tw:min-w-0 tw:overflow-hidden tw:max-[561px]:contents"
         aria-hidden={!leftToolWindowVisible}
         inert={!leftToolWindowVisible ? true : undefined}
       >
@@ -308,14 +308,14 @@ function ShellLayoutContent(props: Props) {
       <button
         type="button"
         data-open={mobileExplorerOpen}
-        className="mobile-sidebar-scrim tw:hidden tw:max-[561px]:fixed tw:max-[561px]:inset-x-0 tw:max-[561px]:top-title-toolbar tw:max-[561px]:bottom-status-bar tw:max-[561px]:z-[var(--ds-z-sticky)] tw:max-[561px]:block tw:max-[561px]:cursor-default tw:max-[561px]:border-0 tw:max-[561px]:bg-overlay tw:max-[561px]:p-0 tw:max-[561px]:opacity-0 tw:max-[561px]:pointer-events-none tw:max-[561px]:transition-opacity tw:max-[561px]:duration-150 tw:max-[561px]:data-[open=true]:opacity-100 tw:max-[561px]:data-[open=true]:pointer-events-auto"
+        className="tw:hidden tw:max-[561px]:fixed tw:max-[561px]:inset-x-0 tw:max-[561px]:top-title-toolbar tw:max-[561px]:bottom-status-bar tw:max-[561px]:z-[var(--ds-z-sticky)] tw:max-[561px]:block tw:max-[561px]:cursor-default tw:max-[561px]:border-0 tw:max-[561px]:bg-overlay tw:max-[561px]:p-0 tw:max-[561px]:opacity-0 tw:max-[561px]:pointer-events-none tw:max-[561px]:transition-opacity tw:max-[561px]:duration-150 tw:max-[561px]:data-[open=true]:opacity-100 tw:max-[561px]:data-[open=true]:pointer-events-auto"
         aria-label={t("common.close")}
         aria-hidden={!mobileExplorerOpen}
         tabIndex={mobileExplorerOpen ? 0 : -1}
         onClick={props.onDismissMobileExplorer}
       />
       <div
-        className="sidebar-resizer tw:col-start-2 tw:row-start-2 tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[561px]:hidden"
+        className="tw:col-start-2 tw:row-start-2 tw:ml-[var(--ds-active-offset)] tw:cursor-col-resize tw:bg-transparent tw:hover:bg-muted tw:active:bg-muted tw:max-[561px]:hidden"
         hidden={!leftToolWindowVisible}
         title={t("app.dragResize")}
         onMouseDown={props.onStartSidebarDrag}

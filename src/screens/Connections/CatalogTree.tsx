@@ -406,7 +406,7 @@ export default function CatalogTree(props: Props) {
     return (
       <div className="tw:flex tw:flex-col tw:gap-px" key={key}>
         <div
-          className="db-table ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui"
+          className="ds-object-row tw:group tw:relative tw:gap-1 tw:rounded-xs tw:select-none tw:text-ui"
           data-table-key={key}
           data-diff={tone ?? "none"}
           aria-selected={selected && selectedTableKey === key}
@@ -475,7 +475,7 @@ export default function CatalogTree(props: Props) {
     return (
       <div
         key={`missing-${tableKey(table)}`}
-        className="db-table ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-muted-foreground"
+        className="ds-object-row tw:cursor-default tw:gap-1 tw:rounded-xs tw:text-muted-foreground"
         title={t("connections.schemaDiffTableMissing")}
       >
         <span

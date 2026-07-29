@@ -21,7 +21,7 @@ export function IdeTitleToolbar({
 }) {
   return (
     <header
-      className="ide-topbar tw:relative tw:col-[1/-1] tw:row-start-1 tw:z-[var(--ds-z-sticky)] tw:flex tw:h-title-toolbar tw:min-w-0 tw:select-none tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:bg-[image:var(--ds-title-toolbar-background)] tw:px-2 tw:text-muted-foreground"
+      className="tw:relative tw:col-[1/-1] tw:row-start-1 tw:z-[var(--ds-z-sticky)] tw:flex tw:h-title-toolbar tw:min-w-0 tw:select-none tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:bg-[image:var(--ds-title-toolbar-background)] tw:px-2 tw:text-muted-foreground"
       data-tauri-drag-region="deep"
     >
       {macosInset ? (
@@ -77,7 +77,7 @@ export function IdeStatusBarSurface({
 }) {
   return (
     <footer
-      className="ide-statusbar tw:col-[1/-1] tw:row-start-4 tw:z-[var(--ds-z-sticky)] tw:flex tw:h-status-bar tw:min-w-0 tw:items-center tw:overflow-hidden tw:border-t tw:border-border-subtle tw:bg-card tw:text-xs tw:leading-none tw:text-muted-foreground tw:max-[561px]:row-start-3"
+      className="tw:col-[1/-1] tw:row-start-4 tw:z-[var(--ds-z-sticky)] tw:flex tw:h-status-bar tw:min-w-0 tw:items-center tw:overflow-hidden tw:border-t tw:border-border-subtle tw:bg-card tw:text-xs tw:leading-none tw:text-muted-foreground tw:max-[561px]:row-start-3"
       aria-label={label}
     >
       {breadcrumbs}

@@ -216,7 +216,7 @@ export function useSchemaGroupDrag(
       event.button !== 0 ||
       (event.target instanceof HTMLElement &&
         !!event.target.closest(
-          "button,input,select,textarea,a,summary,details,.db-menu,.tw,.ddl-btn",
+          "button,input,select,textarea,a,summary,details,.db-menu",
         ))
     ) {
       return;

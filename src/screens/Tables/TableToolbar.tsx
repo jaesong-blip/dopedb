@@ -87,7 +87,7 @@ export default function TableToolbar(props: Props) {
 
   return (
     <WorkbenchToolbar label={t("tables.querySurface")}>
-      <div className="table-toolbar-scroll scrollbar-sleek tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:overscroll-x-contain">
+      <div className="scrollbar-sleek tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:overscroll-x-contain">
         <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1">
           <WorkbenchButton
             iconOnly
