@@ -1,5 +1,5 @@
 // SQL table query, paging, filtering, and staged row-edit controller.
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type {
   CatalogTable,
@@ -27,6 +27,7 @@ import type { RowEditorSubmission } from "../../components/RowEditor";
 import JobPanel from "../../components/JobPanel";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import DdlModal from "../Connections/DdlModal";
 import {
   DataGridStatusPill,
   WorkbenchEmptyState,
@@ -57,6 +58,7 @@ export default function SqlTableData({
 }) {
   const { t } = useI18n();
   const toast = useToast();
+  const [ddlOpen, setDdlOpen] = useState(false);
   const engine = connection.engine;
   const { table, snapshotQuery } = useCatalogTableMetadata(connection.id, requestedTable);
 
@@ -396,6 +398,7 @@ export default function SqlTableData({
         }
         onPage={(nextPage) => commands.patch({ page: nextPage })}
         onRefresh={() => void rowsQuery.refetch()}
+        onShowDdl={() => setDdlOpen(true)}
         onToggleJobs={() =>
           commands.patch({
             jobsOpen: !jobsOpen,
@@ -557,6 +560,13 @@ export default function SqlTableData({
           {t("ide.queryRows", { count: result.rows.length })}
           {result.truncated ? ` · ${t("tables.truncated")}` : ""}
         </DataGridStatusPill>
+      ) : null}
+      {ddlOpen ? (
+        <DdlModal
+          connection={connection}
+          table={table}
+          onClose={() => setDdlOpen(false)}
+        />
       ) : null}
     </WorkbenchPane>
   );

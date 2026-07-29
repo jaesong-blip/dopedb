@@ -34,6 +34,7 @@ type Props = {
   onClearFilters: () => void;
   onPage: (page: number) => void;
   onRefresh: () => void;
+  onShowDdl: () => void;
   onToggleJobs: () => void;
   onToggleStructure: () => void;
   onCopyRow: (json: boolean) => void;
@@ -58,6 +59,22 @@ export default function TableToolbar(props: Props) {
     catalogAvailable,
     structureOpen,
   } = props;
+  const exportCsv = () => {
+    if (!result) return;
+    downloadCsv(
+      `${table.name}-page${page + 1}-${stamp()}`,
+      result.columns,
+      result.rows,
+    );
+  };
+  const exportJson = () => {
+    if (!result) return;
+    downloadJson(
+      `${table.name}-page${page + 1}-${stamp()}`,
+      result.columns,
+      result.rows,
+    );
+  };
 
   return (
     <WorkbenchToolbar label={t("tables.querySurface")}>
@@ -135,6 +152,14 @@ export default function TableToolbar(props: Props) {
           </span>
           <button
             type="button"
+            className="btn small ghost tw:shrink-0"
+            onClick={props.onShowDdl}
+            title={t("connections.showDdl")}
+          >
+            DDL
+          </button>
+          <button
+            type="button"
             className="btn small icon-only tw:data-[active=true]:text-primary"
             data-active={activeFilters > 0}
             disabled={activeFilters === 0}
@@ -178,6 +203,32 @@ export default function TableToolbar(props: Props) {
         >
           <Icon name="columns" />
         </button>
+        <span className="tw:@max-[760px]:hidden">
+          <ToolbarMenu
+            label={t("tables.exportPageTitle")}
+            trigger={
+              <>
+                CSV
+                <Icon name="chevronDown" />
+              </>
+            }
+          >
+            <ToolbarMenuItem
+              icon="download"
+              disabled={!rows}
+              onClick={exportCsv}
+            >
+              {t("tables.exportCsv")}
+            </ToolbarMenuItem>
+            <ToolbarMenuItem
+              icon="download"
+              disabled={!rows}
+              onClick={exportJson}
+            >
+              {t("tables.exportJson")}
+            </ToolbarMenuItem>
+          </ToolbarMenu>
+        </span>
         <ToolbarMenu label={t("tables.more")} icon="moreVertical">
           <ToolbarMenuItem
             icon="refresh"
@@ -222,14 +273,7 @@ export default function TableToolbar(props: Props) {
             icon="download"
             disabled={!rows}
             title={t("tables.exportPageTitle")}
-            onClick={() =>
-              result &&
-              downloadCsv(
-                `${table.name}-page${page + 1}-${stamp()}`,
-                result.columns,
-                result.rows,
-              )
-            }
+            onClick={exportCsv}
           >
             {t("tables.exportCsv")}
           </ToolbarMenuItem>
@@ -237,14 +281,7 @@ export default function TableToolbar(props: Props) {
             icon="download"
             disabled={!rows}
             title={t("tables.exportPageTitle")}
-            onClick={() =>
-              result &&
-              downloadJson(
-                `${table.name}-page${page + 1}-${stamp()}`,
-                result.columns,
-                result.rows,
-              )
-            }
+            onClick={exportJson}
           >
             {t("tables.exportJson")}
           </ToolbarMenuItem>

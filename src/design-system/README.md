@@ -344,9 +344,13 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   `ORDER BY` expression field를 둔다. Enter 또는 field action으로 실제
   server query를 다시 실행하고 Escape는 적용되지 않은 draft를 되돌린다.
   refresh는 DopeDB command 순서처럼 toolbar 왼쪽의 첫 실제 action으로 두고,
-  삭제는 row 제거 의미의 minus glyph를 사용한다. SQL/Mongo 문서 모두
-  connection context를 document tab과 status bar에 표시하므로 data surface
-  위에 대형 object context header를 다시 만들지 않는다.
+  삭제는 row 제거 의미의 minus glyph를 사용한다. 이미 구현된 relation DDL과
+  현재 page export는 `TableToolbar`의 직접 `DDL`, `CSV` command로 투영한다.
+  compact 폭에서는 DDL을 유지하고 CSV/JSON만 기존 `더보기` command surface로
+  접는다. direct command와 overflow command는 같은 handler를 공유하며 화면별
+  export 구현이나 style map을 복제하지 않는다. SQL/Mongo 문서 모두 connection
+  context를 document tab과 status bar에 표시하므로 data surface 위에 대형
+  object context header를 다시 만들지 않는다.
   fragment는 backend read-only proposal을 통과해야 하며 주석, 문장 구분자,
   다른 clause로 경계를 벗어나 generated `LIMIT`을 삼킬 수 없다.
 - MongoDB document query도 별도 큰 화면 제목이나 세로 label toolbar를 만들지
