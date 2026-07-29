@@ -51,6 +51,14 @@ never offers a login. Holding that line is what keeps subscription users
 working, and it means a policy change at one provider drops only that adapter.
 Do not build a bespoke chat protocol or a per-provider integration.
 
+Never call a provider's API from the app. All provider traffic goes through the
+official CLI binary, and side features are not exempt — showing subscription
+usage is subject to the same rule. Reading a stored token to call
+`api.anthropic.com` or a provider backend directly is a prohibited path, not a
+shortcut. Anthropic began enforcing this server-side in March 2026, rejecting
+requests that do not come through the CLI binary; what got cut off then were
+open-source tools using tokens directly, not large products.
+
 The Agent can only judge well when it sees the real schema, so introspection
 breadth and depth outrank visual features.
 
