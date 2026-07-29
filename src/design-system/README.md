@@ -201,9 +201,13 @@ Elevation은 세 단계만 허용한다.
   대응시키고, 빈 값에서는 primary 실행 action을 비활성화한다. 치환 설명은
   semantic muted surface에 두며 feature 전용 CSS나 style map을 만들지 않는다.
 - `ResultMeta`, `SqlSnippet`: 결과 pane의 고정 metadata bar와 축약 SQL 표기.
+- `WorkbenchStatusFooter`: table data와 query result가 공유하는 고정 하단
+  상태선. 페이지/visible row 범위, duration, 선택 상태처럼 현재 grid에서
+  계산된 값만 표시하며 상단 context header와 같은 정보를 중복하지 않는다.
 - `ResultWorkbenchToolbar`, `ResultWorkbenchFooter`: materialized/streaming
   결과가 공유하는 grid mode, 전체 셀 검색, 실제 export action과 행·duration
-  footer. 부분 stream은 평탄화하지 않고 완료된 결과에만 검색을 적용한다.
+  footer. `ResultWorkbenchFooter`는 `WorkbenchStatusFooter`를 합성하고, 부분
+  stream은 평탄화하지 않고 완료된 결과에만 검색을 적용한다.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.
 - `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.

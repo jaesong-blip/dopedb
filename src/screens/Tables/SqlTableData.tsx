@@ -28,8 +28,10 @@ import JobPanel from "../../components/JobPanel";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import {
+  MetadataDot,
   WorkbenchEmptyState,
   WorkbenchPane,
+  WorkbenchStatusFooter,
 } from "../../design-system/components/Workbench";
 import { tableRowsQuery } from "../../lib/queries";
 import { tableKey } from "../../lib/tableRef";
@@ -327,10 +329,6 @@ export default function SqlTableData({
         connection={connection}
         table={table}
         pageSize={pageSize}
-        result={result}
-        total={total}
-        from={from}
-        to={to}
       />
 
       <TableToolbar
@@ -491,6 +489,33 @@ export default function SqlTableData({
           />
         ) : null}
       </div>
+
+      {result ? (
+        <WorkbenchStatusFooter>
+          <span>
+            {total != null
+              ? t("tables.rowRangeTotal", {
+                  from,
+                  to,
+                  total: total.toLocaleString(),
+                })
+              : t("tables.rowRange", { from, to })}
+            {result.truncated ? ` · ${t("tables.truncated")}` : ""}
+          </span>
+          <MetadataDot />
+          <span>{result.durationMs} ms</span>
+          {selected != null ? (
+            <>
+              <MetadataDot />
+              <span>
+                {t("tables.selectedRow", {
+                  row: page * pageSize + selected + 1,
+                })}
+              </span>
+            </>
+          ) : null}
+        </WorkbenchStatusFooter>
+      ) : null}
     </WorkbenchPane>
   );
 }

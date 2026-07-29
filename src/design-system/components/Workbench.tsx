@@ -152,6 +152,25 @@ export function ResultMeta({ children }: { children: ReactNode }) {
   );
 }
 
+export function WorkbenchStatusFooter({
+  children,
+  actions,
+}: {
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <footer className="tw:relative tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:justify-center tw:gap-1 tw:border-t tw:border-border-subtle tw:bg-card tw:px-3 tw:text-xs tw:text-muted-foreground">
+      {children}
+      {actions ? (
+        <div className="tw:absolute tw:right-2 tw:flex tw:items-center">
+          {actions}
+        </div>
+      ) : null}
+    </footer>
+  );
+}
+
 export function SqlSnippet({ children }: { children: ReactNode }) {
   return (
     <code className="tw:inline-block tw:max-w-[60ch] tw:overflow-hidden tw:rounded-sm tw:bg-muted tw:px-1.5 tw:py-px tw:align-bottom tw:font-mono tw:text-sm tw:text-ellipsis tw:whitespace-nowrap">

@@ -1,6 +1,7 @@
 import type { SqlStreamRowSource } from "../features/queries/domain";
 import {
   WorkbenchDivider,
+  WorkbenchStatusFooter,
   WorkbenchToolbar,
 } from "../design-system/components/Workbench";
 import { useI18n } from "../lib/i18n";
@@ -102,7 +103,19 @@ export function ResultWorkbenchFooter({
 }) {
   const { t } = useI18n();
   return (
-    <footer className="tw:relative tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:justify-center tw:border-t tw:border-border-subtle tw:bg-card tw:px-3 tw:text-xs tw:text-muted-foreground">
+    <WorkbenchStatusFooter
+      actions={
+        onShowMore && showMoreCount > 0 ? (
+          <button
+            type="button"
+            className="btn small ghost"
+            onClick={onShowMore}
+          >
+            {t("sql.showMore", { count: showMoreCount, total })}
+          </button>
+        ) : undefined
+      }
+    >
       <span>
         {duration === null
           ? t("services.rowSummaryState", {
@@ -113,16 +126,7 @@ export function ResultWorkbenchFooter({
           : t("services.rowSummary", { visible, total, duration })}
         {truncated ? ` · ${t("sql.capped", { count: maxRows })}` : ""}
       </span>
-      {onShowMore && showMoreCount > 0 ? (
-        <button
-          type="button"
-          className="btn small ghost tw:absolute tw:right-2"
-          onClick={onShowMore}
-        >
-          {t("sql.showMore", { count: showMoreCount, total })}
-        </button>
-      ) : null}
-    </footer>
+    </WorkbenchStatusFooter>
   );
 }
 
