@@ -3,6 +3,12 @@
 AI 작업자는 변경 전에 `AGENTS.md`와 `CLAUDE.md`를 읽는다. 협업 또는 릴리스
 정책을 바꾸면 세 파일을 같은 변경에서 갱신한다.
 
+기능을 넣을지는 두 파일의 제품 방향으로 판단한다. DopeDB의 축은 workspace가
+연결과 대시보드를 공유하는 것, 연결을 간단하게 유지하는 것, Agent가 일하고
+화면이 관찰·승인·복구하는 것이다. 개별 기능의 결정 상태는
+[`docs/DopeDB_VISUAL_REFERENCE_SPEC.md`](docs/DopeDB_VISUAL_REFERENCE_SPEC.md)의
+기능 범위 결정 표가 소유한다.
+
 ## 기본 흐름
 
 1. `git status --short --branch`로 다른 작업을 확인하고 보존한다.

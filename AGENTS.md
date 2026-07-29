@@ -11,9 +11,60 @@ Before changing TSX, CSS, Tailwind utilities, or layout, also read
 [`src/design-system/README.md`](src/design-system/README.md). DopeDB semantic
 tokens and shared primitives are authoritative.
 
+## Product direction
+
+DopeDB has three product axes. Judge every feature against them, not against
+DopeDB's feature list.
+
+**1. A workspace shares connections and dashboards.** The unit of the product
+is a team workspace, not one person's machine. Connection profiles and BI
+dashboards exist to be shared inside it, while secrets stay in each member's
+own credential store and never travel with the shared record. A feature that
+makes a connection or a dashboard shareable outranks a local-only convenience.
+
+**2. Connecting stays trivial.** Reaching a database is the first thing every
+user does and the place they give up. Prefer the fewest fields that can work,
+real defaults, and one verified path per engine. Do not inherit DopeDB's
+property-tab surface just because it exists — every extra option has to earn
+its place against the cost of a longer first run. Where the OS already owns a
+mechanism, delegate to it rather than rebuilding it in a form: SSH tunnelling
+takes a `~/.ssh/config` host alias and spawns the system `ssh`, so keys,
+passphrases, agents, and ProxyJump stay outside the app.
+
+**3. The Agent does the work; the screen watches, approves, and undoes.** A
+connection-pinned Agent does most of the database work by hand-free command.
+When deciding whether a feature belongs, ask in order:
+
+1. Can the Agent not do this? Credential entry, write approval, result
+   inspection, audit review, and schema verification are the screen's job.
+2. Does Agent autonomy make this more necessary? A boundary that undoes an
+   execution, a handle that stops a runaway, and preserved results all matter
+   more as the Agent gets more autonomous.
+3. Would the Agent do it faster in SQL or in conversation? Then do not build
+   it. Re-querying with new conditions, object DDL authoring, revision
+   diffing, and inline completion are better as one sentence than as buttons.
+
+Agents are attached over ACP (Agent Client Protocol). Run the official adapters
+Anthropic and OpenAI publish, unmodified, and let the user's local `claude` /
+`codex` login own authentication — the app never reads or refreshes a token and
+never offers a login. Holding that line is what keeps subscription users
+working, and it means a policy change at one provider drops only that adapter.
+Do not build a bespoke chat protocol or a per-provider integration.
+
+The Agent can only judge well when it sees the real schema, so introspection
+breadth and depth outrank visual features.
+
+[`docs/DopeDB_VISUAL_REFERENCE_SPEC.md`](docs/DopeDB_VISUAL_REFERENCE_SPEC.md)
+owns the per-feature decision table. Anything decided `구현 안 함` or `범위 밖`
+is not built regardless of tracker priority and gets no label, icon, or
+disabled placeholder; anything `미결` is not started. To reverse a decision,
+change that table first and the screen second.
+
 ## UI/UX source of truth
 
-- DopeDB 2026.1 is the primary clean-room UI/UX target. Use
+- DopeDB 2026.1 is the primary clean-room UI/UX target **for features that
+  pass the product-direction test above**. Follow its structure, density, and
+  interactions; do not inherit its feature list. Use
   [`docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`](docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md)
   to track visible parity and functional parity separately.
 - Tailwind v4 and DopeDB semantic primitives are the implementation system, not

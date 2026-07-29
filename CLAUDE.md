@@ -22,9 +22,55 @@ primitive로 `src/design-system/`에 적립한 뒤 README에 기록한다. 기�
 integration, reset, token, 정본 primitive뿐이다. 변경한 화면은 직접 실행해
 확인한다.
 
-DopeDB 2026.1을 앱 UI/UX의 clean-room 정본으로 사용한다. Tailwind v4와
-DopeDB semantic token은 그 화면을 구현하는 수단이며 별도 시각 방향이 아니다.
-UI/UX 차이와 기능 부재는
+## 제품 방향
+
+DopeDB에는 세 개의 제품 축이 있다. 기능을 넣을지는 DopeDB의 기능 목록이
+아니라 이 축으로 판단한다.
+
+**1. workspace가 연결과 대시보드를 공유한다.** 제품의 단위는 한 사람의
+컴퓨터가 아니라 팀 workspace다. 연결 프로필과 BI 대시보드는 그 안에서 공유되기
+위해 존재하며, 비밀값은 각자의 credential store에 남고 공유 레코드를 따라가지
+않는다. 연결이나 대시보드를 공유 가능하게 만드는 기능은 로컬 편의 기능보다
+우선한다.
+
+**2. 연결은 간단하게 유지한다.** 데이터베이스에 닿는 일은 모든 사용자가 처음
+하는 일이고 포기하는 지점이다. 동작하는 최소 입력, 실제 기본값, engine별로
+검증된 경로 하나를 우선한다. DopeDB에 property tab이 있다는 이유로 그 표면을
+그대로 가져오지 않는다. 옵션을 하나 늘리려면 첫 실행이 길어지는 비용을 이겨야
+한다. OS가 이미 소유한 메커니즘은 form으로 다시 만들지 않고 위임한다. SSH
+터널은 `~/.ssh/config`의 Host 별칭만 받고 시스템 `ssh`를 띄우므로 키,
+passphrase, agent, ProxyJump는 앱 밖에 남는다.
+
+**3. Agent가 일하고 화면은 관찰·승인·복구한다.** 데이터베이스 작업의 대부분은
+연결에 고정된 Agent가 수행한다. 기능을 넣을지는 다음 순서로 묻는다.
+
+1. Agent가 대신할 수 없는 일인가. 자격 증명 입력, 쓰기 승인, 결과 확인,
+   감사 열람, 스키마 검증은 사람만 할 수 있으므로 화면이 소유한다.
+2. Agent에게 맡기면 오히려 위험해지는 일인가. 실행을 되돌리는 경계, 폭주를
+   끊는 손잡이, 실행 결과의 보존은 Agent 자율성이 커질수록 더 필요하다.
+3. Agent가 SQL이나 대화로 더 빨리 해내는 일인가. 그렇다면 만들지 않는다.
+   결과 재조회, object DDL 편집, revision 비교, inline completion은 buttons
+   대신 명령 한 문장이 낫다.
+
+Agent는 ACP(Agent Client Protocol) 클라이언트로 붙인다. Anthropic과 OpenAI가
+배포하는 공식 어댑터를 수정 없이 구동하고, 인증은 사용자의 로컬 `claude`,
+`codex` 로그인이 소유한다. 앱은 토큰을 읽거나 갱신하지 않고 로그인도 제공하지
+않는다. 이 경계를 지켜야 구독 사용자가 그대로 쓸 수 있고, 한 공급자의 정책이
+바뀌어도 그 어댑터만 빠진다. 자체 채팅 프로토콜이나 provider별 통합을 따로
+만들지 않는다.
+
+Agent가 정확히 판단하려면 실제 스키마를 정확히 봐야 한다. introspection의
+범위와 깊이는 시각 기능보다 우선한다.
+
+각 기능의 결정 상태는 `docs/DopeDB_VISUAL_REFERENCE_SPEC.md`의 기능 범위
+결정 표가 소유한다. `AI가 대체`와 `범위 밖`으로 정한 기능은 트래커의
+우선순위와 무관하게 구현하지 않고 label, icon, disabled placeholder도 만들지
+않는다. 결정을 뒤집을 때는 그 표를 먼저 고친다.
+
+DopeDB 2026.1은 위 판단을 통과한 기능의 UI/UX clean-room 정본이다. 화면
+구조, 밀도, 상호작용은 DopeDB을 따르되 기능 목록까지 따르지는 않는다.
+Tailwind v4와 DopeDB semantic token은 그 화면을 구현하는 수단이며 별도 시각
+방향이 아니다. UI/UX 차이와 기능 부재는
 `docs/DopeDB_PARITY_IMPLEMENTATION_TRACKER.md`에서 별도 상태로 관리한다.
 DopeDB 자체 screenshot baseline 통과를 DopeDB 패리티 완료로 해석하지 않고,
 enabled control에는 실제 command와 state owner가 있어야 한다.
