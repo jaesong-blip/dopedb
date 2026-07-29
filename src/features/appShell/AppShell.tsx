@@ -30,6 +30,10 @@ import { useQueryServices } from "../../features/queryServices/useQueryServices"
 import type { SqlDocument } from "../../features/sqlDocuments/domain";
 import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
 import type { SqlResolveMode } from "../../features/queries/resolveMode";
+import type {
+  SqlCursorPosition,
+  SqlEditorStatus,
+} from "../../features/queries/editorStatus";
 import {
   queryDocument,
   stableDocument,
@@ -171,6 +175,20 @@ function Shell() {
   const [settingsSection, setSettingsSection] = useState<
     SettingsSection | undefined
   >(undefined);
+  const [sqlEditorStatus, setSqlEditorStatus] =
+    useState<SqlEditorStatus | null>(null);
+  const handleSqlCursorChange = useCallback(
+    (documentId: string, position: SqlCursorPosition) => {
+      setSqlEditorStatus((current) =>
+        current?.documentId === documentId &&
+        current.line === position.line &&
+        current.column === position.column
+          ? current
+          : { documentId, ...position },
+      );
+    },
+    [],
+  );
   const [schemaDiffGroupKey, setSchemaDiffGroupKey] = useState<string | null>(null);
   const { availableUpdate, sync: syncAvailableUpdate } = useAvailableUpdate();
   const openDashboard = useCallback((dashboard: Dashboard) => {
@@ -784,6 +802,7 @@ function Shell() {
         legacyAuditOpen.current = false;
       }}
       onRetrySafety={refreshSafety}
+      onSqlCursorChange={handleSqlCursorChange}
     />
   );
 
@@ -811,6 +830,8 @@ function Shell() {
       activeQueryServiceSessionId={queryServices.activeSessionId}
       workbenchDocuments={selectedDocuments}
       activeWorkbenchDocumentId={activeDocumentId}
+      sqlEditorStatus={sqlEditorStatus}
+      unseenOperationCount={unseen}
       sidebarWidth={sidebarW}
       mainRef={mainRef}
       terminalButtonRef={terminalButtonRef}
@@ -855,6 +876,10 @@ function Shell() {
         setSettingsOpen(true);
         setSchemaDiffGroupKey(null);
         setMobileExplorerOpen(false);
+      }}
+      onOpenNotifications={() => {
+        markSeen();
+        openStableDocument("activity");
       }}
       onNewQuery={() => void openQueryDocument()}
       onOpenAgentArchive={openAgentArchiveSettings}

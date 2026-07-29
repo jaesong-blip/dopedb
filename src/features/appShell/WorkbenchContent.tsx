@@ -1,4 +1,5 @@
 import type { Update } from "@tauri-apps/plugin-updater";
+import { useCallback } from "react";
 
 import { Icon } from "../../components/Icon";
 import WorkbenchDocumentStrip from "../../components/WorkbenchDocumentStrip";
@@ -7,6 +8,7 @@ import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { QueryServiceSession } from "../queryServices/domain";
 import type { SqlResolveMode } from "../queries/resolveMode";
+import type { SqlCursorPosition } from "../queries/editorStatus";
 import type { SqlDocument } from "../sqlDocuments/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import type { CatalogTable, SafetySettings } from "../../ipc/types";
@@ -92,6 +94,10 @@ type Props = {
   onLoadSql: (sql: string) => Promise<void>;
   onInitialAuditOpenConsumed: () => void;
   onRetrySafety: () => void;
+  onSqlCursorChange: (
+    documentId: string,
+    position: SqlCursorPosition,
+  ) => void;
 };
 
 export default function WorkbenchContent(props: Props) {
@@ -116,6 +122,15 @@ export default function WorkbenchContent(props: Props) {
     initialAuditOpen,
     availableUpdate,
   } = props;
+  const activeSqlDocumentId =
+    activeDocument?.kind === "sql" ? activeDocument.id : null;
+  const reportActiveSqlCursor = useCallback(
+    (position: SqlCursorPosition) => {
+      if (!activeSqlDocumentId) return;
+      props.onSqlCursorChange(activeSqlDocumentId, position);
+    },
+    [activeSqlDocumentId, props.onSqlCursorChange],
+  );
 
   if (settingsOpen) {
     return (
@@ -284,6 +299,7 @@ export default function WorkbenchContent(props: Props) {
             onShowQueryServices={props.onShowQueryServices}
             onOpenHistory={props.onOpenActivity}
             onRetrySafety={props.onRetrySafety}
+            onCursorChange={reportActiveSqlCursor}
           />
         ) : activeDocument.kind === "documents" ? (
           <Documents

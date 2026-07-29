@@ -5,6 +5,10 @@ import type { ReactNode, RefObject } from "react";
 import type { CatalogTable } from "../../ipc/types";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
+import {
+  SQL_EDITOR_INDENT_SIZE,
+  type SqlEditorStatus,
+} from "../queries/editorStatus";
 import { Icon } from "../../components/Icon";
 import {
   StatusBarItem,
@@ -198,7 +202,10 @@ export function IdeStatusBar({
   settingsOpen,
   connectionCount,
   querySession,
+  editorStatus,
+  unseenOperationCount,
   onQueryStatus,
+  onOpenNotifications,
   onSettings,
 }: {
   selected: ConnectionProfile | null;
@@ -207,7 +214,10 @@ export function IdeStatusBar({
   settingsOpen: boolean;
   connectionCount: number;
   querySession: QueryServiceSession | null;
+  editorStatus: SqlEditorStatus | null;
+  unseenOperationCount: number;
   onQueryStatus: () => void;
+  onOpenNotifications: () => void;
   onSettings: () => void;
 }) {
   const { t } = useI18n();
@@ -278,9 +288,52 @@ export function IdeStatusBar({
           ) : null}
         </StatusBarItem>
       ) : null}
+      {editorStatus ? (
+        <>
+          <StatusBarItem>
+            {editorStatus.line}:{editorStatus.column}
+          </StatusBarItem>
+          <StatusBarItem>LF</StatusBarItem>
+        </>
+      ) : null}
       <StatusBarItem>
         UTF-8
       </StatusBarItem>
+      {editorStatus ? (
+        <StatusBarItem>
+          {t("ide.indentSpaces", {
+            count: SQL_EDITOR_INDENT_SIZE,
+          })}
+        </StatusBarItem>
+      ) : null}
+      <button
+        type="button"
+        className="tw:relative tw:inline-flex tw:h-[23px] tw:w-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:p-0 tw:font-sans tw:text-inherit tw:disabled:cursor-default tw:disabled:opacity-40 tw:not-disabled:hover:bg-muted tw:not-disabled:hover:text-foreground"
+        disabled={!selected}
+        onClick={onOpenNotifications}
+        aria-label={
+          unseenOperationCount > 0
+            ? t("ide.notificationsUnread", {
+                count: unseenOperationCount,
+              })
+            : t("ide.notifications")
+        }
+        title={
+          unseenOperationCount > 0
+            ? t("ide.notificationsUnread", {
+                count: unseenOperationCount,
+              })
+            : t("ide.notifications")
+        }
+      >
+        <Icon name="bell" />
+        {unseenOperationCount > 0 ? (
+          <span
+            className="tw:absolute tw:top-1 tw:right-1 tw:size-1.5 tw:rounded-full tw:bg-primary"
+            aria-hidden="true"
+          />
+        ) : null}
+      </button>
       <button
         type="button"
         data-active={settingsOpen}

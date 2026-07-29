@@ -1,7 +1,7 @@
 // CodeMirror 6 SQL viewer/editor, shared by the Ask screen, ApprovalCard, and the SQL
 // screen. Read-only by default; when a `catalog` is passed it feeds schema-aware
 // autocomplete (table + column names), and `onRun` binds Mod-Enter to execute.
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import {
   MySQL,
@@ -18,9 +18,14 @@ import {
   autocompletion,
   type CompletionSource,
 } from "@codemirror/autocomplete";
-import { EditorView, keymap } from "@codemirror/view";
+import { type EditorState } from "@codemirror/state";
+import { EditorView, keymap, type ViewUpdate } from "@codemirror/view";
 import type { Catalog } from "../ipc/types";
 import type { ConnectionEngine } from "../features/connections/domain";
+import {
+  SQL_EDITOR_INDENT_SIZE,
+  type SqlCursorPosition,
+} from "../features/queries/editorStatus";
 import {
   DEFAULT_SQL_RESOLVE_MODE,
   resolveSqlNamespaceAtCaret,
@@ -62,6 +67,16 @@ export interface SqlViewerProps {
   defaultSchema?: string;
   namespaceOptions?: readonly string[];
   minHeight?: string;
+  onCursorChange?: (position: SqlCursorPosition) => void;
+}
+
+function cursorPosition(state: EditorState): SqlCursorPosition {
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  return {
+    line: line.number,
+    column: head - line.from + 1,
+  };
 }
 
 export default function SqlViewer({
@@ -75,6 +90,7 @@ export default function SqlViewer({
   defaultSchema,
   namespaceOptions = [],
   minHeight = "80px",
+  onCursorChange,
 }: SqlViewerProps) {
   const extensions = useMemo(() => {
     const dialect = editorDialect(engine);
@@ -134,6 +150,27 @@ export default function SqlViewer({
     onRun,
     resolveMode,
   ]);
+  const reportCursor = useCallback(
+    (state: EditorState) => {
+      onCursorChange?.(cursorPosition(state));
+    },
+    [onCursorChange],
+  );
+  const handleCreateEditor = useCallback(
+    (view: EditorView) => {
+      reportCursor(view.state);
+    },
+    [reportCursor],
+  );
+  const handleUpdate = useCallback(
+    (update: ViewUpdate) => {
+      if (!onCursorChange || (!update.selectionSet && !update.docChanged)) {
+        return;
+      }
+      reportCursor(update.state);
+    },
+    [onCursorChange, reportCursor],
+  );
 
   return (
     <CodeMirror
@@ -142,8 +179,14 @@ export default function SqlViewer({
       editable={editable}
       readOnly={!editable}
       onChange={onChange}
+      onCreateEditor={handleCreateEditor}
+      onUpdate={handleUpdate}
       extensions={extensions}
-      basicSetup={{ lineNumbers: true, foldGutter: false }}
+      basicSetup={{
+        lineNumbers: true,
+        foldGutter: false,
+        tabSize: SQL_EDITOR_INDENT_SIZE,
+      }}
       style={{ minHeight, fontSize: "13px" }}
     />
   );

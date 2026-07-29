@@ -31,6 +31,7 @@ import {
   sqlNamespaceOptions,
 } from "../../features/queries/namespace";
 import type { SqlResolveMode } from "../../features/queries/resolveMode";
+import type { SqlCursorPosition } from "../../features/queries/editorStatus";
 import { useSqlResultStream } from "../../features/queries/useSqlResultStream";
 import type {
   PreviewReport,
@@ -172,6 +173,7 @@ export default function Sql({
   onShowQueryServices,
   onOpenHistory,
   onRetrySafety,
+  onCursorChange,
 }: {
   connection: ConnectionProfile;
   documentId: string;
@@ -194,6 +196,7 @@ export default function Sql({
   onShowQueryServices: (sessionId: string) => void;
   onOpenHistory: () => void;
   onRetrySafety: () => void;
+  onCursorChange: (position: SqlCursorPosition) => void;
 }) {
   const { t } = useI18n();
   const draftStatements = useMemo(() => splitStatements(draft), [draft]);
@@ -821,6 +824,7 @@ export default function Sql({
           defaultSchema={effectiveNamespace}
           namespaceOptions={namespaceOptions}
           minHeight="180px"
+          onCursorChange={onCursorChange}
         />
       </div>
 

@@ -214,6 +214,12 @@ const glyphs = {
       <path d="M12 16v-4M12 8h.01" />
     </>
   ),
+  bell: (
+    <>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+      <path d="M10 21h4" />
+    </>
+  ),
   circleSlash: (
     <>
       <circle cx="12" cy="12" r="10" />

@@ -197,6 +197,10 @@ Elevation은 세 단계만 허용한다.
 - `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.
 - `StatusDot`, `StatusBarItem`, `LoadingLabel`, `InlineNotice`: lifecycle 상태 점,
   IDE 하단 상태 segment, 비동기 진행 label, warning/danger inline 상태 행.
+  SQL 상태선은 CodeMirror가 보고한 실제 `line:column`, line ending, encoding과
+  동일한 editor indent 설정을 `StatusBarItem`으로 나눈다. Agent broker의
+  unread operation은 공용 bell action의 semantic dot으로만 표시하고 누르면
+  실제 Activity 문서를 연다. 화면 전용 status CSS나 style map은 만들지 않는다.
 - `DiagnosticSummary`, `DiagnosticCount`: 설정·속성 편집기의 Problems 목록과
   오류/경고 개수를 같은 compact hierarchy로 표시.
 - `SettingsGroup`: 설정·정책 화면의 제목, 중립 border, dense spacing을 공유하는

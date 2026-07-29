@@ -6,6 +6,7 @@ import TerminalDock from "../../components/TerminalDock/TerminalDock";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import { defaultSqlNamespace } from "../queries/namespace";
+import type { SqlEditorStatus } from "../queries/editorStatus";
 import type { WorkbenchDocument } from "../workbench/domain";
 import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
 import LocalHistoryToolWindow from "../localHistory/LocalHistoryToolWindow";
@@ -48,6 +49,8 @@ type Props = {
   activeQueryServiceSessionId: string | null;
   workbenchDocuments: WorkbenchDocument[];
   activeWorkbenchDocumentId: string | null;
+  sqlEditorStatus: SqlEditorStatus | null;
+  unseenOperationCount: number;
   sidebarWidth: number;
   mainRef: RefObject<HTMLElement | null>;
   terminalButtonRef: RefObject<HTMLButtonElement | null>;
@@ -77,6 +80,7 @@ type Props = {
   }) => void;
   onResetServicesHeight: () => void;
   onSettings: () => void;
+  onOpenNotifications: () => void;
   onNewQuery: () => void;
   onOpenAgentArchive: () => void;
   onOpenTerminal: () => void;
@@ -167,6 +171,11 @@ export default function ShellLayout(props: Props) {
           defaultSqlNamespace(selected)
         : defaultSqlNamespace(selected)
     : null;
+  const activeSqlEditorStatus =
+    activeWorkbenchDocument?.kind === "sql" &&
+    props.sqlEditorStatus?.documentId === activeWorkbenchDocument.id
+      ? props.sqlEditorStatus
+      : null;
 
   return (
     <div
@@ -361,11 +370,14 @@ export default function ShellLayout(props: Props) {
         settingsOpen={settingsOpen}
         connectionCount={connections.length}
         querySession={statusQuerySession}
+        editorStatus={activeSqlEditorStatus}
+        unseenOperationCount={props.unseenOperationCount}
         onQueryStatus={() => {
           if (!statusQuerySession) return;
           props.onActivateQueryServiceSession(statusQuerySession.id);
           if (!servicesVisible) props.onToggleServices();
         }}
+        onOpenNotifications={props.onOpenNotifications}
         onSettings={props.onSettings}
       />
     </div>
