@@ -16,6 +16,9 @@ export const connectionsCatalog = defineCatalog(
     "connections.allowWrites": "Allow write operations",
     "connections.allowWritesBody":
       "Writes still pass through DopeDB safety review and approval.",
+    "connections.autoDisconnect": "Auto-disconnect after",
+    "connections.autoDisconnectSeconds":
+      "Auto-disconnect interval in seconds",
     "connections.authentication": "Authentication",
     "connections.caCertificate": "CA certificate path",
     "connections.clientCertificate": "Client certificate path",
@@ -95,6 +98,14 @@ export const connectionsCatalog = defineCatalog(
     "connections.problemHostRequired": "Enter the database host.",
     "connections.problemConnectionUrlInvalid":
       "Enter a supported PostgreSQL, MySQL, SQLite, or MongoDB URL.",
+    "connections.problemTimeZoneInvalid":
+      "Enter a valid time zone such as UTC, Asia/Seoul, or +09:00.",
+    "connections.problemKeepAliveInvalid":
+      "Enter a keep-alive interval from 10 through 86400 seconds.",
+    "connections.problemAutoDisconnectInvalid":
+      "Enter an auto-disconnect interval from 30 through 86400 seconds.",
+    "connections.problemStartupScriptTooLong":
+      "Keep the startup script within 4096 characters.",
     "connections.problemMongoDatabaseRequired":
       "Enter the MongoDB database name.",
     "connections.problemNameRequired": "Enter a data source name.",
@@ -177,8 +188,13 @@ export const connectionsCatalog = defineCatalog(
     "connections.readOnlyDefault": "Open read-only by default",
     "connections.readOnlyDefaultBody":
       "New consoles and table editors start in read-only mode.",
+    "connections.keepAlive": "Run keep-alive query each",
+    "connections.keepAliveSeconds":
+      "Keep-alive interval in seconds",
     "connections.refreshSchema": "Refresh schema",
     "connections.saved": "Saved.",
+    "connections.safety": "Safety",
+    "connections.seconds": "seconds",
     "connections.schemaDiffInSync": "Schema matches the baseline",
     "connections.schemaDiffMissingSection": "Missing here ({count})",
     "connections.schemaDiffPendingChip": "diff",
@@ -214,6 +230,11 @@ export const connectionsCatalog = defineCatalog(
     "connections.sslMode": "SSL mode",
     "connections.sslConfiguration": "SSL configuration",
     "connections.sqliteNoTls": "SQLite does not use a network TLS connection.",
+    "connections.startupScript": "Startup script",
+    "connections.startupScriptHint":
+      "Runs allowlisted session SET statements whenever a new PostgreSQL or MySQL connection is established.",
+    "connections.startupScriptPlaceholder":
+      "SET application_name = 'DopeDB';",
     "connections.sshSsl": "SSH/SSL",
     "connections.sshUnsupportedBody":
       "Direct SSL is supported. SSH tunnel profiles are not available in this build.",
@@ -223,6 +244,12 @@ export const connectionsCatalog = defineCatalog(
     "connections.tabList": "Data source settings",
     "connections.testing": "Testing...",
     "connections.triggers": "Triggers ({count})",
+    "connections.timeZone": "Time zone",
+    "connections.timeZonePlaceholder": "UTC, Asia/Seoul, +09:00",
+    "connections.transactionAuto": "Auto",
+    "connections.transactionControl": "Transaction control",
+    "connections.transactionOperationScoped":
+      "Each submitted operation uses a bounded transaction. Manual long-lived transactions are not exposed.",
     "connections.unique": "Unique",
     "connections.user": "User",
     "connections.userPassword": "User & Password",
@@ -244,6 +271,9 @@ export const connectionsCatalog = defineCatalog(
     "connections.allowWrites": "쓰기 작업 허용",
     "connections.allowWritesBody":
       "쓰기는 계속 DopeDB 안전 검토와 승인을 거칩니다.",
+    "connections.autoDisconnect": "다음 시간 후 자동 연결 해제",
+    "connections.autoDisconnectSeconds":
+      "자동 연결 해제 간격(초)",
     "connections.authentication": "인증",
     "connections.caCertificate": "CA 인증서 경로",
     "connections.clientCertificate": "클라이언트 인증서 경로",
@@ -323,6 +353,14 @@ export const connectionsCatalog = defineCatalog(
     "connections.problemHostRequired": "데이터베이스 호스트를 입력하세요.",
     "connections.problemConnectionUrlInvalid":
       "지원되는 PostgreSQL, MySQL, SQLite 또는 MongoDB URL을 입력하세요.",
+    "connections.problemTimeZoneInvalid":
+      "UTC, Asia/Seoul 또는 +09:00 같은 올바른 시간대를 입력하세요.",
+    "connections.problemKeepAliveInvalid":
+      "10초부터 86400초 사이의 keep-alive 간격을 입력하세요.",
+    "connections.problemAutoDisconnectInvalid":
+      "30초부터 86400초 사이의 자동 연결 해제 간격을 입력하세요.",
+    "connections.problemStartupScriptTooLong":
+      "시작 스크립트는 4096자 이내로 입력하세요.",
     "connections.problemMongoDatabaseRequired":
       "MongoDB 데이터베이스 이름을 입력하세요.",
     "connections.problemNameRequired": "데이터 소스 이름을 입력하세요.",
@@ -404,8 +442,12 @@ export const connectionsCatalog = defineCatalog(
     "connections.readOnlyDefault": "기본 읽기 전용으로 열기",
     "connections.readOnlyDefaultBody":
       "새 콘솔과 테이블 편집기를 읽기 전용으로 시작합니다.",
+    "connections.keepAlive": "다음 간격마다 keep-alive 쿼리 실행",
+    "connections.keepAliveSeconds": "keep-alive 간격(초)",
     "connections.refreshSchema": "스키마 새로고침",
     "connections.saved": "저장되었습니다.",
+    "connections.safety": "안전",
+    "connections.seconds": "초",
     "connections.schemaDiffInSync": "기준 DB와 스키마가 같습니다",
     "connections.schemaDiffMissingSection": "이 환경에 없음 ({count})",
     "connections.schemaDiffPendingChip": "diff",
@@ -440,6 +482,11 @@ export const connectionsCatalog = defineCatalog(
     "connections.sslMode": "SSL 모드",
     "connections.sslConfiguration": "SSL 구성",
     "connections.sqliteNoTls": "SQLite는 네트워크 TLS 연결을 사용하지 않습니다.",
+    "connections.startupScript": "시작 스크립트",
+    "connections.startupScriptHint":
+      "새 PostgreSQL 또는 MySQL 연결을 만들 때 허용된 session SET 문만 실행합니다.",
+    "connections.startupScriptPlaceholder":
+      "SET application_name = 'DopeDB';",
     "connections.sshSsl": "SSH/SSL",
     "connections.sshUnsupportedBody":
       "직접 SSL 연결은 지원합니다. 이 빌드에서는 SSH 터널 프로필을 사용할 수 없습니다.",
@@ -449,6 +496,12 @@ export const connectionsCatalog = defineCatalog(
     "connections.tabList": "데이터 소스 설정",
     "connections.testing": "테스트 중...",
     "connections.triggers": "트리거 ({count})",
+    "connections.timeZone": "시간대",
+    "connections.timeZonePlaceholder": "UTC, Asia/Seoul, +09:00",
+    "connections.transactionAuto": "자동",
+    "connections.transactionControl": "트랜잭션 제어",
+    "connections.transactionOperationScoped":
+      "각 제출 작업은 제한된 트랜잭션을 사용합니다. 장기 수동 트랜잭션은 아직 노출하지 않습니다.",
     "connections.unique": "고유",
     "connections.user": "사용자",
     "connections.userPassword": "사용자 및 비밀번호",

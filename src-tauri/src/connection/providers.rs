@@ -1,12 +1,220 @@
 //! Per-provider connection-string normalization. We do NOT bundle any external CA files — a custom CA can be
 //! supplied per connection via `extra_params["sslrootcert"]` (documented, not shipped).
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
+use sqlparser::ast::{Expr, ObjectName, Set, Statement};
+use sqlparser::dialect::{Dialect, MySqlDialect, PostgreSqlDialect};
+use sqlparser::parser::Parser;
 use sqlx::mysql::{MySqlConnectOptions, MySqlSslMode};
 use sqlx::postgres::PgConnectOptions;
 
+use crate::error::{AppError, AppResult};
 use crate::model::{ConnectionProfile, Engine, Provider};
+
+const TIME_ZONE_PARAMETER: &str = "dopedb.timeZone";
+const KEEP_ALIVE_SECONDS_PARAMETER: &str = "dopedb.keepAliveSeconds";
+const AUTO_DISCONNECT_SECONDS_PARAMETER: &str = "dopedb.autoDisconnectSeconds";
+const STARTUP_SCRIPT_PARAMETER: &str = "dopedb.startupScript";
+
+const KEEP_ALIVE_MIN_SECONDS: u64 = 10;
+const AUTO_DISCONNECT_MIN_SECONDS: u64 = 30;
+const CONNECTION_OPTION_MAX_SECONDS: u64 = 86_400;
+const STARTUP_SCRIPT_MAX_CHARACTERS: usize = 4_096;
+
+#[derive(Clone)]
+pub struct ConnectionRuntimeOptions {
+    pub keep_alive_interval: Option<Duration>,
+    pub auto_disconnect_timeout: Option<Duration>,
+    pub startup_script: Option<Arc<str>>,
+}
+
+fn bounded_seconds(
+    profile: &ConnectionProfile,
+    key: &str,
+    min: u64,
+) -> AppResult<Option<Duration>> {
+    let Some(raw) = profile.extra_params.get(key) else {
+        return Ok(None);
+    };
+    let seconds = raw.trim().parse::<u64>().map_err(|_| {
+        AppError::Config(format!(
+            "{key} must be an integer from {min} through {CONNECTION_OPTION_MAX_SECONDS}"
+        ))
+    })?;
+    if !(min..=CONNECTION_OPTION_MAX_SECONDS).contains(&seconds) {
+        return Err(AppError::Config(format!(
+            "{key} must be from {min} through {CONNECTION_OPTION_MAX_SECONDS} seconds"
+        )));
+    }
+    Ok(Some(Duration::from_secs(seconds)))
+}
+
+fn time_zone(profile: &ConnectionProfile) -> Option<&str> {
+    profile
+        .extra_params
+        .get(TIME_ZONE_PARAMETER)
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+pub fn connection_runtime_options(
+    profile: &ConnectionProfile,
+) -> AppResult<ConnectionRuntimeOptions> {
+    let startup_script = profile
+        .extra_params
+        .get(STARTUP_SCRIPT_PARAMETER)
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if startup_script.is_some() && !matches!(profile.engine, Engine::Postgres | Engine::Mysql) {
+        return Err(AppError::Config(
+            "startup scripts are available only for PostgreSQL and MySQL".into(),
+        ));
+    }
+    if startup_script.is_some_and(|script| script.chars().count() > STARTUP_SCRIPT_MAX_CHARACTERS) {
+        return Err(AppError::Config(format!(
+            "{STARTUP_SCRIPT_PARAMETER} must not exceed {STARTUP_SCRIPT_MAX_CHARACTERS} characters"
+        )));
+    }
+    if let Some(script) = startup_script {
+        validate_startup_script(script, profile.engine)?;
+    }
+
+    let zone = time_zone(profile);
+    if zone.is_some() && !matches!(profile.engine, Engine::Postgres | Engine::Mysql) {
+        return Err(AppError::Config(
+            "connection time zones are available only for PostgreSQL and MySQL".into(),
+        ));
+    }
+    if zone.is_some_and(|value| {
+        value.len() > 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"_./:+-".contains(&byte))
+    }) {
+        return Err(AppError::Config(format!(
+            "{TIME_ZONE_PARAMETER} must be an IANA name or numeric offset"
+        )));
+    }
+
+    let keep_alive_interval = bounded_seconds(
+        profile,
+        KEEP_ALIVE_SECONDS_PARAMETER,
+        KEEP_ALIVE_MIN_SECONDS,
+    )?;
+    if keep_alive_interval.is_some() && !matches!(profile.engine, Engine::Postgres | Engine::Mysql)
+    {
+        return Err(AppError::Config(
+            "keep-alive queries are available only for PostgreSQL and MySQL".into(),
+        ));
+    }
+
+    Ok(ConnectionRuntimeOptions {
+        keep_alive_interval,
+        auto_disconnect_timeout: bounded_seconds(
+            profile,
+            AUTO_DISCONNECT_SECONDS_PARAMETER,
+            AUTO_DISCONNECT_MIN_SECONDS,
+        )?,
+        startup_script: startup_script.map(Arc::<str>::from),
+    })
+}
+
+pub fn validate_connection_options(profile: &ConnectionProfile) -> AppResult<()> {
+    connection_runtime_options(profile).map(|_| ())
+}
+
+fn startup_value_is_literal(value: &Expr) -> bool {
+    match value {
+        Expr::Identifier(_) | Expr::CompoundIdentifier(_) | Expr::Value(_) => true,
+        Expr::Nested(value) => startup_value_is_literal(value),
+        Expr::UnaryOp { expr, .. } => matches!(expr.as_ref(), Expr::Value(_)),
+        _ => false,
+    }
+}
+
+fn startup_variable_allowed(engine: Engine, variable: &ObjectName) -> bool {
+    let variable = variable
+        .to_string()
+        .trim_matches(['`', '"'])
+        .to_ascii_lowercase();
+    let allowed = match engine {
+        Engine::Postgres => &[
+            "application_name",
+            "bytea_output",
+            "client_min_messages",
+            "datestyle",
+            "extra_float_digits",
+            "idle_in_transaction_session_timeout",
+            "intervalstyle",
+            "lock_timeout",
+            "search_path",
+            "statement_timeout",
+            "timezone",
+        ][..],
+        Engine::Mysql => &[
+            "character_set_results",
+            "collation_connection",
+            "group_concat_max_len",
+            "max_execution_time",
+            "optimizer_switch",
+            "sql_mode",
+            "time_zone",
+        ][..],
+        Engine::Sqlite | Engine::Mongodb => &[][..],
+    };
+    allowed.contains(&variable.as_str())
+}
+
+fn startup_set_allowed(engine: Engine, set: &Set) -> bool {
+    match set {
+        Set::SingleAssignment {
+            variable, values, ..
+        } => {
+            startup_variable_allowed(engine, variable)
+                && values.iter().all(startup_value_is_literal)
+        }
+        Set::MultipleAssignments { assignments } => assignments.iter().all(|assignment| {
+            startup_variable_allowed(engine, &assignment.name)
+                && startup_value_is_literal(&assignment.value)
+        }),
+        Set::SetTimeZone { value, .. } => {
+            engine == Engine::Postgres && startup_value_is_literal(value)
+        }
+        Set::SetNames { .. } | Set::SetNamesDefault {} => engine == Engine::Mysql,
+        _ => false,
+    }
+}
+
+pub(crate) fn validate_startup_script(script: &str, engine: Engine) -> AppResult<()> {
+    let dialect: Box<dyn Dialect> = match engine {
+        Engine::Postgres => Box::new(PostgreSqlDialect {}),
+        Engine::Mysql => Box::new(MySqlDialect {}),
+        Engine::Sqlite | Engine::Mongodb => {
+            return Err(AppError::Config(
+                "startup scripts are available only for PostgreSQL and MySQL".into(),
+            ))
+        }
+    };
+    let statements = Parser::parse_sql(&*dialect, script).map_err(|error| {
+        AppError::Config(format!("startup script could not be parsed: {error}"))
+    })?;
+    if statements.is_empty()
+        || statements.iter().any(|statement| {
+            !matches!(
+                statement,
+                Statement::Set(set) if startup_set_allowed(engine, set)
+            )
+        })
+    {
+        return Err(AppError::Config(
+            "startup script accepts only allowlisted session SET statements".into(),
+        ));
+    }
+    Ok(())
+}
 
 /// Classify a profile by host. Cheap substring match — hosts are provider-fixed.
 pub fn detect(p: &ConnectionProfile) -> Provider {
@@ -54,6 +262,9 @@ pub fn apply_pg_tuning(p: &ConnectionProfile, mut opts: PgConnectOptions) -> PgC
         // client-side statement caching breaks connections → disable it.
         opts = opts.statement_cache_capacity(0);
     }
+    if let Some(zone) = time_zone(p) {
+        opts = opts.options([("timezone", zone)]);
+    }
     // Neon negotiates channel_binding via SCRAM automatically; its cold-start
     // penalty is handled by connect_timeout(), not an option here.
 
@@ -84,6 +295,9 @@ pub fn apply_mysql_tuning(
     p: &ConnectionProfile,
     mut opts: MySqlConnectOptions,
 ) -> MySqlConnectOptions {
+    if let Some(zone) = time_zone(p) {
+        opts = opts.timezone(Some(zone.to_owned()));
+    }
     if resolve(p) == Provider::PlanetScale {
         // PlanetScale requires TLS with identity verification.
         opts = opts.ssl_mode(MySqlSslMode::VerifyIdentity);

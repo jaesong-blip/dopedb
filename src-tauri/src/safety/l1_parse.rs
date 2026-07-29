@@ -459,12 +459,8 @@ mod tests {
     }
 
     #[test]
-    fn plain_explain_is_read() {
-        assert_eq!(c("EXPLAIN SELECT * FROM users").kind, QueryKind::Read);
-    }
-
-    #[test]
     fn explain_analyze_delete_is_write() {
+        assert_eq!(c("EXPLAIN SELECT * FROM users").kind, QueryKind::Read);
         // EXPLAIN ANALYZE actually runs the DELETE — must be a write, not a read.
         let r = c("EXPLAIN ANALYZE DELETE FROM orders");
         assert_eq!(r.kind, QueryKind::Write);
@@ -499,5 +495,24 @@ mod tests {
         assert_eq!(r.kind, QueryKind::Write);
         assert_eq!(r.risk, RiskLevel::High);
         assert!(r.notes[0].contains("typed document-query API"));
+    }
+
+    #[test]
+    fn startup_scripts_allow_only_literal_session_settings() {
+        use crate::connection::providers::validate_startup_script;
+
+        assert!(validate_startup_script(
+            "SET application_name = 'DopeDB'; SET statement_timeout = 5000",
+            Engine::Postgres,
+        )
+        .is_ok());
+        assert!(validate_startup_script("SET NAMES utf8mb4", Engine::Mysql).is_ok());
+        assert!(validate_startup_script("DELETE FROM users", Engine::Postgres).is_err());
+        assert!(validate_startup_script("SET ROLE admin", Engine::Postgres).is_err());
+        assert!(validate_startup_script(
+            "SET application_name = dangerous_function()",
+            Engine::Postgres,
+        )
+        .is_err());
     }
 }

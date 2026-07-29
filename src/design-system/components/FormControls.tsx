@@ -4,6 +4,7 @@ import type {
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
+  TextareaHTMLAttributes,
 } from "react";
 import { forwardRef } from "react";
 
@@ -78,6 +79,19 @@ export const SelectInput = forwardRef<
     >
       {children}
     </select>
+  );
+});
+
+export const TextAreaInput = forwardRef<
+  HTMLTextAreaElement,
+  Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className">
+>(function TextAreaInput(props, ref) {
+  return (
+    <textarea
+      ref={ref}
+      className="tw:min-h-24 tw:w-full tw:resize-y tw:rounded-sm tw:border tw:border-input tw:bg-background tw:px-3 tw:py-2 tw:font-mono tw:text-ui tw:text-foreground tw:shadow-control tw:outline-none tw:placeholder:text-muted-foreground tw:focus:border-ring tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-default tw:disabled:opacity-50"
+      {...props}
+    />
   );
 });
 

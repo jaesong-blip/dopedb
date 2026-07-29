@@ -2,6 +2,19 @@ import type {
   ConnectionProfile,
   DriverDescriptor,
 } from "./domain";
+import {
+  CONNECTION_AUTO_DISCONNECT_MAX_SECONDS,
+  CONNECTION_AUTO_DISCONNECT_MIN_SECONDS,
+  CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
+  CONNECTION_KEEP_ALIVE_MAX_SECONDS,
+  CONNECTION_KEEP_ALIVE_MIN_SECONDS,
+  CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
+  CONNECTION_STARTUP_SCRIPT_MAX_LENGTH,
+  CONNECTION_STARTUP_SCRIPT_PARAMETER,
+  CONNECTION_TIME_ZONE_PARAMETER,
+  isBoundedConnectionOptionSeconds,
+  isConnectionTimeZone,
+} from "./options";
 
 export type ConnectionDiagnosticCode =
   | "nameRequired"
@@ -11,6 +24,10 @@ export type ConnectionDiagnosticCode =
   | "portInvalid"
   | "sqliteFileRequired"
   | "mongoDatabaseRequired"
+  | "timeZoneInvalid"
+  | "keepAliveInvalid"
+  | "autoDisconnectInvalid"
+  | "startupScriptTooLong"
   | "driverCatalogUnavailable"
   | "driverUnavailable"
   | "driverInstallRequired";
@@ -19,7 +36,7 @@ export type ConnectionDiagnostic = {
   id: string;
   code: ConnectionDiagnosticCode;
   tone: "warning" | "danger";
-  tab: "general";
+  tab: "general" | "options";
   fieldId: string | null;
 };
 
@@ -27,12 +44,13 @@ function issue(
   code: ConnectionDiagnosticCode,
   tone: ConnectionDiagnostic["tone"],
   fieldId: string | null,
+  tab: ConnectionDiagnostic["tab"] = "general",
 ): ConnectionDiagnostic {
   return {
     id: `connection-${code}`,
     code,
     tone,
-    tab: "general",
+    tab,
     fieldId,
   };
 }
@@ -113,6 +131,71 @@ export function diagnoseConnection(
         ),
       );
     }
+  }
+
+  const timeZone =
+    profile.extraParams[CONNECTION_TIME_ZONE_PARAMETER]?.trim() ?? "";
+  if (timeZone && !isConnectionTimeZone(timeZone)) {
+    diagnostics.push(
+      issue(
+        "timeZoneInvalid",
+        "danger",
+        "connection-time-zone",
+        "options",
+      ),
+    );
+  }
+  const keepAlive =
+    profile.extraParams[CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER];
+  if (
+    keepAlive !== undefined &&
+    !isBoundedConnectionOptionSeconds(
+      keepAlive,
+      CONNECTION_KEEP_ALIVE_MIN_SECONDS,
+      CONNECTION_KEEP_ALIVE_MAX_SECONDS,
+    )
+  ) {
+    diagnostics.push(
+      issue(
+        "keepAliveInvalid",
+        "danger",
+        "connection-keep-alive",
+        "options",
+      ),
+    );
+  }
+  const autoDisconnect =
+    profile.extraParams[
+      CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER
+    ];
+  if (
+    autoDisconnect !== undefined &&
+    !isBoundedConnectionOptionSeconds(
+      autoDisconnect,
+      CONNECTION_AUTO_DISCONNECT_MIN_SECONDS,
+      CONNECTION_AUTO_DISCONNECT_MAX_SECONDS,
+    )
+  ) {
+    diagnostics.push(
+      issue(
+        "autoDisconnectInvalid",
+        "danger",
+        "connection-auto-disconnect",
+        "options",
+      ),
+    );
+  }
+  const startupScript =
+    profile.extraParams[CONNECTION_STARTUP_SCRIPT_PARAMETER] ?? "";
+  if (startupScript.length > CONNECTION_STARTUP_SCRIPT_MAX_LENGTH) {
+    diagnostics.push(
+      issue(
+        "startupScriptTooLong",
+        "danger",
+        "connection-startup-script",
+        "options",
+      ),
+    );
   }
 
   if (driverCatalogFailed) {

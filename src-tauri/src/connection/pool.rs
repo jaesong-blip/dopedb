@@ -7,10 +7,12 @@
 //!   - MySQL:    `after_connect` sets `SESSION transaction_read_only = 1`.
 //!   - SQLite:   a second handle opened `read_only(true)` (file-level, unforgeable).
 
+use std::time::Duration;
+
 use sqlx::mysql::{MySqlConnectOptions, MySqlPool, MySqlPoolOptions, MySqlSslMode};
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions, PgSslMode};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
-use sqlx::Executor;
+use sqlx::{AssertSqlSafe, Executor};
 
 use crate::error::{AppError, AppResult};
 use crate::model::{ConnectionProfile, Engine, WorkspaceCredentialMode};
@@ -65,6 +67,14 @@ impl DbPool {
             DbPool::Sqlite(pool) => pool.close().await,
         }
     }
+
+    fn is_closed(&self) -> bool {
+        match self {
+            DbPool::Postgres(pool) => pool.is_closed(),
+            DbPool::Mysql(pool) => pool.is_closed(),
+            DbPool::Sqlite(pool) => pool.is_closed(),
+        }
+    }
 }
 
 /// An open connection. Write acquisitions contain separate read/write and read-only
@@ -105,6 +115,34 @@ impl LiveConnection {
             self.read_pool.close().await;
         }
     }
+
+    fn start_keep_alive(&self, interval: Option<Duration>) {
+        let Some(interval) = interval else {
+            return;
+        };
+        let read_pool = self.read_pool.clone();
+        let write_pool = self.has_writable_pool.then(|| self.write_pool.clone());
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // The pools were just opened and verified. Wait one complete
+            // interval before issuing the first keep-alive query.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                if read_pool.is_closed() {
+                    break;
+                }
+                let _ = read_pool.ping().await;
+                if let Some(write_pool) = write_pool.as_ref() {
+                    if write_pool.is_closed() {
+                        break;
+                    }
+                    let _ = write_pool.ping().await;
+                }
+            }
+        });
+    }
 }
 
 /// Finish opening a writable pool after its read-only companion is live.  If the
@@ -140,6 +178,7 @@ pub(crate) async fn connect_sqlx(
     let skip_fk_metadata = providers::skip_fk_metadata(profile);
     let acquire = providers::connect_timeout(profile);
     let max_connections = pool_connection_limit(profile.credential_mode);
+    let runtime = providers::connection_runtime_options(profile)?;
 
     let (write_pool, read_pool, has_writable_pool) = match adapter_engine {
         Engine::Postgres => {
@@ -152,13 +191,21 @@ pub(crate) async fn connect_sqlx(
                 .ssl_mode(pg_ssl_mode(&profile.sslmode)?);
             let base = providers::apply_pg_tuning(profile, base);
 
+            let read_startup = runtime.startup_script.clone();
             let ro = PgPoolOptions::new()
                 .max_connections(max_connections)
                 .acquire_timeout(acquire)
-                .after_connect(|conn, _meta| {
+                .idle_timeout(runtime.auto_disconnect_timeout)
+                .after_connect(move |conn, _meta| {
+                    let startup = read_startup.clone();
                     Box::pin(async move {
                         conn.execute("SET default_transaction_read_only = on")
                             .await?;
+                        if let Some(script) = startup {
+                            sqlx::raw_sql(AssertSqlSafe(script))
+                                .execute(&mut *conn)
+                                .await?;
+                        }
                         Ok(())
                     })
                 })
@@ -166,11 +213,24 @@ pub(crate) async fn connect_sqlx(
                 .await?;
             let ro = DbPool::Postgres(ro);
             if writable {
+                let write_startup = runtime.startup_script.clone();
                 let rw = writable_pool_or_close_read(
                     &ro,
                     PgPoolOptions::new()
                         .max_connections(max_connections)
                         .acquire_timeout(acquire)
+                        .idle_timeout(runtime.auto_disconnect_timeout)
+                        .after_connect(move |conn, _meta| {
+                            let startup = write_startup.clone();
+                            Box::pin(async move {
+                                if let Some(script) = startup {
+                                    sqlx::raw_sql(AssertSqlSafe(script))
+                                        .execute(&mut *conn)
+                                        .await?;
+                                }
+                                Ok(())
+                            })
+                        })
                         .connect_with(providers::apply_pg_tuning(
                             profile,
                             PgConnectOptions::new()
@@ -199,10 +259,13 @@ pub(crate) async fn connect_sqlx(
                 .ssl_mode(mysql_ssl_mode(&profile.sslmode)?);
             let base = providers::apply_mysql_tuning(profile, base);
 
+            let read_startup = runtime.startup_script.clone();
             let ro = MySqlPoolOptions::new()
                 .max_connections(max_connections)
                 .acquire_timeout(acquire)
-                .after_connect(|conn, _meta| {
+                .idle_timeout(runtime.auto_disconnect_timeout)
+                .after_connect(move |conn, _meta| {
+                    let startup = read_startup.clone();
                     Box::pin(async move {
                         // Fail CLOSED: the read pool must be genuinely read-only. Try the
                         // modern variable, then the legacy MariaDB name; if neither exists,
@@ -219,6 +282,11 @@ pub(crate) async fn connect_sqlx(
                                     .into(),
                             ));
                         }
+                        if let Some(script) = startup {
+                            sqlx::raw_sql(AssertSqlSafe(script))
+                                .execute(&mut *conn)
+                                .await?;
+                        }
                         Ok(())
                     })
                 })
@@ -226,11 +294,24 @@ pub(crate) async fn connect_sqlx(
                 .await?;
             let ro = DbPool::Mysql(ro);
             if writable {
+                let write_startup = runtime.startup_script.clone();
                 let rw = writable_pool_or_close_read(
                     &ro,
                     MySqlPoolOptions::new()
                         .max_connections(max_connections)
                         .acquire_timeout(acquire)
+                        .idle_timeout(runtime.auto_disconnect_timeout)
+                        .after_connect(move |conn, _meta| {
+                            let startup = write_startup.clone();
+                            Box::pin(async move {
+                                if let Some(script) = startup {
+                                    sqlx::raw_sql(AssertSqlSafe(script))
+                                        .execute(&mut *conn)
+                                        .await?;
+                                }
+                                Ok(())
+                            })
+                        })
                         .connect_with(providers::apply_mysql_tuning(
                             profile,
                             MySqlConnectOptions::new()
@@ -256,6 +337,7 @@ pub(crate) async fn connect_sqlx(
             let ro_opts = SqliteConnectOptions::new().filename(path).read_only(true);
             let ro = SqlitePoolOptions::new()
                 .max_connections(max_connections)
+                .idle_timeout(runtime.auto_disconnect_timeout)
                 .connect_with(ro_opts)
                 .await?;
             let ro = DbPool::Sqlite(ro);
@@ -267,6 +349,7 @@ pub(crate) async fn connect_sqlx(
                     &ro,
                     SqlitePoolOptions::new()
                         .max_connections(max_connections)
+                        .idle_timeout(runtime.auto_disconnect_timeout)
                         .connect_with(rw_opts)
                         .await,
                 )
@@ -283,12 +366,14 @@ pub(crate) async fn connect_sqlx(
         }
     };
 
-    Ok(LiveConnection {
+    let live = LiveConnection {
         read_pool,
         write_pool,
         has_writable_pool,
         skip_fk_metadata,
-    })
+    };
+    live.start_keep_alive(runtime.keep_alive_interval);
+    Ok(live)
 }
 
 // Fail CLOSED on unknown sslmode: a typo like "verrify-full" must NOT silently

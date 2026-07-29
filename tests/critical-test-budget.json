@@ -77,7 +77,7 @@
     },
     "src-tauri/src/safety/l1_parse.rs": {
       "tests": 14,
-      "protects": "Fail-safe SQL classification for high-risk statement shapes"
+      "protects": "Fail-safe SQL classification for high-risk statement shapes and connection startup script session allowlisting"
     },
     "src-tauri/src/safety/l2_enforce.rs": {
       "tests": 4,

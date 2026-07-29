@@ -24,6 +24,7 @@ import {
   Field,
   FieldValidationMessage,
   SelectInput,
+  TextAreaInput,
   TextInput,
   type FieldValidation,
 } from "../../design-system/components/FormControls";
@@ -43,7 +44,6 @@ import {
   ToolWindowSection,
 } from "../../design-system/components/ToolWindow";
 import {
-  CONNECTION_INPUT_MODE_PARAMETER,
   formatConnectionUrl,
   parseConnectionUrl,
 } from "../../features/connections/connectionUrl";
@@ -56,6 +56,21 @@ import type {
   DriverDescriptor,
 } from "../../features/connections/domain";
 import { connectionId } from "../../features/connections/domain";
+import {
+  CONNECTION_AUTO_DISCONNECT_MAX_SECONDS,
+  CONNECTION_AUTO_DISCONNECT_MIN_SECONDS,
+  CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
+  CONNECTION_INPUT_MODE_PARAMETER,
+  CONNECTION_KEEP_ALIVE_MAX_SECONDS,
+  CONNECTION_KEEP_ALIVE_MIN_SECONDS,
+  CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
+  CONNECTION_STARTUP_SCRIPT_MAX_LENGTH,
+  CONNECTION_STARTUP_SCRIPT_PARAMETER,
+  CONNECTION_TIME_ZONE_PARAMETER,
+  connectionOption,
+  isConnectionOptionParameter,
+  isConnectionOptionSupported,
+} from "../../features/connections/options";
 import {
   blankConnection,
   CONNECTION_DEFAULT_PORTS,
@@ -137,6 +152,10 @@ const CONTROLLED_CONNECTION_PARAMETERS = new Set<string>([
   ...SQL_TLS_PARAMETERS,
   ...MONGO_TLS_PARAMETERS,
   CONNECTION_INPUT_MODE_PARAMETER,
+  CONNECTION_TIME_ZONE_PARAMETER,
+  CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
+  CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
+  CONNECTION_STARTUP_SCRIPT_PARAMETER,
   "srv",
 ]);
 
@@ -288,6 +307,13 @@ export function ConnectionForm({
 
   const isSqlite = form.engine === "sqlite";
   const isMongo = form.engine === "mongodb";
+  const supportsSqlSessionOptions =
+    form.engine === "postgres" || form.engine === "mysql";
+  const supportsStartupScript = supportsSqlSessionOptions;
+  const keepAliveEnabled =
+    CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER in form.extraParams;
+  const autoDisconnectEnabled =
+    CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER in form.extraParams;
   const srv = form.extraParams.srv === "true";
   const mongoTlsEnabled =
     form.extraParams.tls?.toLowerCase() === "true";
@@ -414,6 +440,16 @@ export function ConnectionForm({
   const hostValidation = fieldValidation("connection-host");
   const portValidation = fieldValidation("connection-port");
   const databaseValidation = fieldValidation("connection-database");
+  const timeZoneValidation = fieldValidation("connection-time-zone");
+  const keepAliveValidation = fieldValidation(
+    "connection-keep-alive",
+  );
+  const autoDisconnectValidation = fieldValidation(
+    "connection-auto-disconnect",
+  );
+  const startupScriptValidation = fieldValidation(
+    "connection-startup-script",
+  );
   const connectionUrlValidation: FieldValidation | undefined =
     connectionUrlInvalid
       ? {
@@ -581,6 +617,14 @@ export function ConnectionForm({
         return t("connections.problemSqliteFileRequired");
       case "mongoDatabaseRequired":
         return t("connections.problemMongoDatabaseRequired");
+      case "timeZoneInvalid":
+        return t("connections.problemTimeZoneInvalid");
+      case "keepAliveInvalid":
+        return t("connections.problemKeepAliveInvalid");
+      case "autoDisconnectInvalid":
+        return t("connections.problemAutoDisconnectInvalid");
+      case "startupScriptTooLong":
+        return t("connections.problemStartupScriptTooLong");
       case "driverCatalogUnavailable":
         return t(
           "connections.problemDriverCatalogUnavailable",
@@ -638,6 +682,14 @@ export function ConnectionForm({
       if (isDocumentEngine(engine)) {
         delete extraParams[SCHEMA_SCOPE_PARAMETER];
         delete extraParams[OBJECT_PATTERN_PARAMETER];
+        delete extraParams[CONNECTION_TIME_ZONE_PARAMETER];
+        delete extraParams[CONNECTION_STARTUP_SCRIPT_PARAMETER];
+        delete extraParams[CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER];
+      }
+      if (engine === "sqlite") {
+        delete extraParams[CONNECTION_TIME_ZONE_PARAMETER];
+        delete extraParams[CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER];
+        delete extraParams[CONNECTION_STARTUP_SCRIPT_PARAMETER];
       }
       if (engine === "mongodb" || engine === "sqlite") {
         for (const key of SQL_TLS_PARAMETERS) delete extraParams[key];
@@ -738,6 +790,27 @@ export function ConnectionForm({
       else delete extraParams[key];
       return { ...current, extraParams };
     });
+  }
+
+  function toggleTimedConnectionOption(
+    key: string,
+    checked: boolean,
+    defaultSeconds: number,
+  ) {
+    setExtraParameter(key, checked ? String(defaultSeconds) : "");
+  }
+
+  function setTimedConnectionOptionValue(
+    key: string,
+    value: string,
+  ) {
+    setForm((current) => ({
+      ...current,
+      extraParams: {
+        ...current.extraParams,
+        [key]: value,
+      },
+    }));
   }
 
   async function pickExtraParameterFile(key: string) {
@@ -841,8 +914,10 @@ export function ConnectionForm({
     const internalExtraParams = Object.fromEntries(
       Object.entries(form.extraParams).filter(
         ([key]) =>
-          !isDocumentEngine(parsedEngine) &&
-          isIntrospectionParameter(key),
+          (!isDocumentEngine(parsedEngine) &&
+            isIntrospectionParameter(key)) ||
+          (isConnectionOptionParameter(key) &&
+            isConnectionOptionSupported(key, parsedEngine)),
       ),
     );
     if (inputMode === "urlOnly") {
@@ -1859,28 +1934,10 @@ export function ConnectionForm({
             ) : null}
 
             {!problemsOpen && activeTab === "options" ? (
-              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[720px] tw:gap-5">
-                <Field
-                  label={t("connections.environment")}
-                  hint={
-                    <InfoTip
-                      label={t("connections.environmentHint")}
-                    />
-                  }
-                >
-                  <SelectInput
-                    value={form.env ?? ""}
-                    onChange={(event) =>
-                      set("env", event.target.value || null)
-                    }
-                  >
-                    <option value="">{t("common.none")}</option>
-                    <option value="dev">dev</option>
-                    <option value="staging">staging</option>
-                    <option value="prod">prod</option>
-                  </SelectInput>
-                </Field>
-                <div className="tw:grid tw:gap-4 tw:border-y tw:border-border-subtle tw:py-4">
+              <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[760px] tw:gap-6">
+                <section className="tw:grid tw:gap-4">
+                  <h3>{t("connections.connection")}</h3>
+
                   <div className="tw:grid tw:gap-1">
                     <CheckboxField
                       label={t("connections.readOnlyDefault")}
@@ -1896,6 +1953,226 @@ export function ConnectionForm({
                       {t("connections.readOnlyDefaultBody")}
                     </p>
                   </div>
+
+                  {!isMongo ? (
+                    <div className="tw:grid tw:grid-cols-[220px_minmax(0,1fr)] tw:items-start tw:gap-3 tw:border-y tw:border-border-subtle tw:py-3 tw:@max-[620px]:grid-cols-1">
+                      <span className="tw:text-sm tw:font-medium tw:text-muted-foreground">
+                        {t("connections.transactionControl")}
+                      </span>
+                      <div className="tw:grid tw:gap-1">
+                        <strong className="tw:text-ui tw:font-medium tw:text-foreground">
+                          {t("connections.transactionAuto")}
+                        </strong>
+                        <p className="tw:m-0 tw:text-xs tw:text-muted-foreground">
+                          {t(
+                            "connections.transactionOperationScoped",
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {supportsSqlSessionOptions ? (
+                    <Field
+                      label={t("connections.timeZone")}
+                      validation={timeZoneValidation}
+                    >
+                      <TextInput
+                        id="connection-time-zone"
+                        value={connectionOption(
+                          form,
+                          CONNECTION_TIME_ZONE_PARAMETER,
+                        )}
+                        aria-invalid={
+                          timeZoneValidation?.tone === "danger" ||
+                          undefined
+                        }
+                        onChange={(event) =>
+                          setExtraParameter(
+                            CONNECTION_TIME_ZONE_PARAMETER,
+                            event.target.value,
+                          )
+                        }
+                        placeholder={t(
+                          "connections.timeZonePlaceholder",
+                        )}
+                      />
+                    </Field>
+                  ) : null}
+
+                  {supportsSqlSessionOptions ? (
+                    <div className="tw:grid tw:gap-2">
+                      <CheckboxField
+                        label={t("connections.keepAlive")}
+                        checked={keepAliveEnabled}
+                        onChange={(event) =>
+                          toggleTimedConnectionOption(
+                            CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
+                            event.target.checked,
+                            60,
+                          )
+                        }
+                      />
+                      <div className="tw:flex tw:items-center tw:gap-2 tw:pl-6">
+                        <div className="tw:w-32">
+                          <TextInput
+                            id="connection-keep-alive"
+                            type="number"
+                            inputMode="numeric"
+                            min={CONNECTION_KEEP_ALIVE_MIN_SECONDS}
+                            max={CONNECTION_KEEP_ALIVE_MAX_SECONDS}
+                            value={connectionOption(
+                              form,
+                              CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
+                            )}
+                            disabled={!keepAliveEnabled}
+                            aria-invalid={
+                              keepAliveValidation?.tone ===
+                                "danger" || undefined
+                            }
+                            aria-label={t(
+                              "connections.keepAliveSeconds",
+                            )}
+                            onChange={(event) =>
+                              setTimedConnectionOptionValue(
+                                CONNECTION_KEEP_ALIVE_SECONDS_PARAMETER,
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                        <span className="tw:shrink-0 tw:text-sm tw:text-muted-foreground">
+                          {t("connections.seconds")}
+                        </span>
+                      </div>
+                      {keepAliveValidation ? (
+                        <div className="tw:pl-6">
+                          <FieldValidationMessage
+                            validation={keepAliveValidation}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="tw:grid tw:gap-2">
+                    <CheckboxField
+                      label={t("connections.autoDisconnect")}
+                      checked={autoDisconnectEnabled}
+                      onChange={(event) =>
+                        toggleTimedConnectionOption(
+                          CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
+                          event.target.checked,
+                          600,
+                        )
+                      }
+                    />
+                    <div className="tw:flex tw:items-center tw:gap-2 tw:pl-6">
+                      <div className="tw:w-32">
+                        <TextInput
+                          id="connection-auto-disconnect"
+                          type="number"
+                          inputMode="numeric"
+                          min={
+                            CONNECTION_AUTO_DISCONNECT_MIN_SECONDS
+                          }
+                          max={
+                            CONNECTION_AUTO_DISCONNECT_MAX_SECONDS
+                          }
+                          value={connectionOption(
+                            form,
+                            CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
+                          )}
+                          disabled={!autoDisconnectEnabled}
+                          aria-invalid={
+                            autoDisconnectValidation?.tone ===
+                              "danger" || undefined
+                          }
+                          aria-label={t(
+                            "connections.autoDisconnectSeconds",
+                          )}
+                          onChange={(event) =>
+                            setTimedConnectionOptionValue(
+                              CONNECTION_AUTO_DISCONNECT_SECONDS_PARAMETER,
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <span className="tw:shrink-0 tw:text-sm tw:text-muted-foreground">
+                        {t("connections.seconds")}
+                      </span>
+                    </div>
+                    {autoDisconnectValidation ? (
+                      <div className="tw:pl-6">
+                        <FieldValidationMessage
+                          validation={autoDisconnectValidation}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {supportsStartupScript ? (
+                    <Field
+                      label={t("connections.startupScript")}
+                      hint={
+                        <InfoTip
+                          label={t(
+                            "connections.startupScriptHint",
+                          )}
+                        />
+                      }
+                      validation={startupScriptValidation}
+                    >
+                      <TextAreaInput
+                        id="connection-startup-script"
+                        value={connectionOption(
+                          form,
+                          CONNECTION_STARTUP_SCRIPT_PARAMETER,
+                        )}
+                        maxLength={
+                          CONNECTION_STARTUP_SCRIPT_MAX_LENGTH
+                        }
+                        aria-invalid={
+                          startupScriptValidation?.tone ===
+                            "danger" || undefined
+                        }
+                        onChange={(event) =>
+                          setExtraParameter(
+                            CONNECTION_STARTUP_SCRIPT_PARAMETER,
+                            event.target.value,
+                          )
+                        }
+                        placeholder={t(
+                          "connections.startupScriptPlaceholder",
+                        )}
+                      />
+                    </Field>
+                  ) : null}
+                </section>
+
+                <section className="tw:grid tw:gap-4 tw:border-t tw:border-border-subtle tw:pt-5">
+                  <h3>{t("connections.safety")}</h3>
+                  <Field
+                    label={t("connections.environment")}
+                    hint={
+                      <InfoTip
+                        label={t("connections.environmentHint")}
+                      />
+                    }
+                  >
+                    <SelectInput
+                      value={form.env ?? ""}
+                      onChange={(event) =>
+                        set("env", event.target.value || null)
+                      }
+                    >
+                      <option value="">{t("common.none")}</option>
+                      <option value="dev">dev</option>
+                      <option value="staging">staging</option>
+                      <option value="prod">prod</option>
+                    </SelectInput>
+                  </Field>
                   <div className="tw:grid tw:gap-1">
                     <CheckboxField
                       label={t("connections.allowWrites")}
@@ -1908,11 +2185,11 @@ export function ConnectionForm({
                       {t("connections.allowWritesBody")}
                     </p>
                   </div>
-                </div>
-                <div className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:text-muted-foreground">
-                  <Icon name="info" />
-                  <span>{t("connections.writeAccessHint")}</span>
-                </div>
+                  <div className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:text-muted-foreground">
+                    <Icon name="info" />
+                    <span>{t("connections.writeAccessHint")}</span>
+                  </div>
+                </section>
               </div>
             ) : null}
 

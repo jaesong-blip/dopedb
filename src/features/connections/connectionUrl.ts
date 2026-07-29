@@ -13,9 +13,6 @@ export type ParsedConnectionUrl = {
   password: string | null;
 };
 
-export const CONNECTION_INPUT_MODE_PARAMETER =
-  "dopedb.connectionInputMode";
-
 const CONNECTION_META_PARAMETER_KEYS = new Set([
   "allowwrites",
   "connectionname",

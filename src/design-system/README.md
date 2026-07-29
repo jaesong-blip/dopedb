@@ -88,6 +88,14 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
   token과 DopeDB 내부 parameter는 redacted URL projection에 표시하지 않는다.
   선택 mode는 driver URL과 분리된 내부 profile metadata로 저장·복원한다.
   runtime이 지원하지 않는 SQLite In-memory는 선택지처럼 보이게 만들지 않는다.
+  Options는 실제 runtime에 연결된 PostgreSQL/MySQL time zone, keep-alive,
+  allowlisted session `SET` startup script와 전체 engine의 idle
+  auto-disconnect만 enabled control로 제공한다. operation 단위 automatic
+  transaction은 읽기 전용 상태로 설명하고 manual transaction, sticky single
+  session, switch-schema, auto-sync처럼 backend lifecycle이 없는 기능은
+  selector나 checkbox로 흉내 내지 않는다. 이 값은 Advanced driver property와
+  중복하지 않는 `dopedb.*` 내부 profile metadata로 저장하며 Test, Apply, OK의
+  같은 validation/runtime 경로를 사용한다.
 - tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
   하나의 layout 문법으로 구현한다.
 - Database Explorer header는 전체 tree의 expand/collapse, 실제 view option,
@@ -177,8 +185,10 @@ Elevation은 세 단계만 허용한다.
 - `ToolWindowAction`: provider/demo/object launcher의 icon-label-trailing 행.
 - `ToolWindowRailAction`: tool window·catalog의 좁은 세로 rail에서 쓰는
   icon action과 pressed/selected 상태.
-- `Field`, `TextInput`, `SelectInput`, `CheckboxField`: label, focus, disabled
-  상태를 함께 소유하는 dense form control.
+- `Field`, `TextInput`, `TextAreaInput`, `SelectInput`, `CheckboxField`: label,
+  focus, disabled 상태를 함께 소유하는 dense form control. SQL/session
+  설정처럼 여러 줄인 값은 화면별 textarea class를 만들지 않고 monospace
+  `TextAreaInput`을 사용한다.
 - `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.

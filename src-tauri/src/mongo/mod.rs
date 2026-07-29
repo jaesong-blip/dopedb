@@ -48,8 +48,10 @@ pub(crate) async fn connect(
     let mut options = ClientOptions::parse(&uri)
         .await
         .map_err(|e| sanitize(e, secret))?;
+    let runtime = providers::connection_runtime_options(profile)?;
     options.app_name = Some("DopeDB".into());
     options.server_selection_timeout = Some(providers::connect_timeout(profile));
+    options.max_idle_time = runtime.auto_disconnect_timeout;
     let client = Client::with_options(options).map_err(|e| sanitize(e, secret))?;
     let conn = MongoConnection {
         client,
