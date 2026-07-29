@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
+import { Button } from "../../design-system/components/Button";
 import {
   Field,
   TextInput,
@@ -15,6 +16,10 @@ import {
   ModalSurface,
   ModalTitleBar,
 } from "../../design-system/components/Modal";
+import {
+  StatusBadge,
+  type StatusTone,
+} from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
 import {
   providerCredentialBindingsQuery,
@@ -47,7 +52,7 @@ const statusKey: Record<ProviderCredentialDialogStatus, "providerCredentials.acc
   unsupported: "providerCredentials.unsupported",
 };
 
-function statusTone(status: ProviderCredentialDialogStatus) {
+function statusTone(status: ProviderCredentialDialogStatus): StatusTone {
   if (status === "ready") return "success";
   if (
     status === "scopeInsufficient" ||
@@ -68,12 +73,9 @@ function ProviderStatusBadge({
   children: string;
 }) {
   return (
-    <span
-      data-tone={statusTone(status)}
-      className="badge tw:shrink-0 tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"
-    >
+    <StatusBadge tone={statusTone(status)}>
       {children}
-    </span>
+    </StatusBadge>
   );
 }
 
@@ -285,9 +287,8 @@ export function ProviderCredentialDialog({
               >
                 {t("providerCredentials.error")}
               </p>
-              <button
-                className="btn small"
-                type="button"
+              <Button
+                size="compact"
                 onClick={() =>
                   void Promise.all([
                     integrations.refetch(),
@@ -296,7 +297,7 @@ export function ProviderCredentialDialog({
                 }
               >
                 {t("app.retry")}
-              </button>
+              </Button>
             </div>
           ) : null}
           {actionFailed ? (
@@ -423,9 +424,14 @@ export function ProviderCredentialDialog({
                         {t(statusKey[binding.state])}
                       </small>
                     </span>
-                    <button className="btn ghost small" type="button" disabled={revoking !== null} onClick={() => void revoke(binding.id)}>
+                    <Button
+                      size="compact"
+                      variant="ghost"
+                      disabled={revoking !== null}
+                      onClick={() => void revoke(binding.id)}
+                    >
                       {revoking === binding.id ? t("providerCredentials.revokePending") : t("providerCredentials.revoke")}
-                    </button>
+                    </Button>
                   </div>
                 )) : (
                   <p className="tw:m-0 tw:py-2 tw:text-sm tw:text-muted-foreground">
@@ -437,20 +443,20 @@ export function ProviderCredentialDialog({
           ) : null}
         </div>
         <ModalFooter>
-          <button className="btn" type="button" onClick={close}>
+          <Button size="compact" onClick={close}>
             {t("common.close")}
-          </button>
+          </Button>
           {selectedIntegration ? (
-            <button
-              className="btn primary"
-              type="button"
+            <Button
+              size="compact"
+              variant="primary"
               disabled={!supportsMemberLocal(selectedIntegration) || pending !== null}
               onClick={() => void begin()}
             >
               {pending === "verify"
                 ? t("providerCredentials.verifying")
                 : t("providerCredentials.verify")}
-            </button>
+            </Button>
           ) : null}
         </ModalFooter>
       </ModalSurface>

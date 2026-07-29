@@ -23,6 +23,7 @@ import type { ConnectionProfile } from "../../connections/domain";
 import { errDetails } from "../../../ipc/types";
 import { useI18n } from "../../../lib/i18n";
 import { useToast } from "../../../components/Toast";
+import { Button } from "../../../design-system/components/Button";
 import {
   Field,
   SelectInput,
@@ -270,19 +271,17 @@ export default function WorkspaceConnectionDialog({
               {error}
             </div>
           ) : null}
-          <footer className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:max-[520px]:[&_.btn:not(.icon-only)]:w-full">
-            <button
+          <footer className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:max-[520px]:[&>button]:w-full">
+            <Button
               ref={cancelRef}
-              className="btn"
-              type="button"
               onClick={onClose}
               disabled={pending}
             >
               {t("common.cancel")}
-            </button>
-            <button
-              className="btn primary"
+            </Button>
+            <Button
               type="submit"
+              variant="primary"
               disabled={
                 pending ||
                 (mode === "copy" && !selectedTargetValue)
@@ -293,7 +292,7 @@ export default function WorkspaceConnectionDialog({
                 : mode === "copy"
                   ? t("workspace.copy")
                   : t("workspace.bind")}
-            </button>
+            </Button>
           </footer>
         </form>
       </ModalSurface>
