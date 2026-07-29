@@ -232,10 +232,13 @@ Elevation은 세 단계만 허용한다.
 - `ToolbarMenu triggerVariant="gridHeader"`: 28px data-grid header 안의
   filter action을 24px로 제한해 header를 늘리지 않는다.
 - `ToolWindowSection`: dense tool window 안의 제목 있는 명령 그룹.
+  `prominence="catalog"`는 Data Sources처럼 강한 group heading을 사용한다.
 - `ToolWindowAction`: provider/demo/object launcher의 icon-label-trailing 행.
   `flush`는 Data Sources catalog처럼 selection surface가 pane 전체 폭을
   소유하되 icon/label은 20px content inset을 유지해야 하는 목록에만 사용한다.
-  일반 action list의 inset rounded row와 혼용하지 않는다.
+  일반 action list의 inset rounded row와 혼용하지 않는다. 단순히 상세 영역을
+  바꾸는 catalog row는 navigation chevron을 표시하지 않고, 실제 status나
+  command가 있을 때만 trailing slot을 예약한다.
 - `ToolWindowRailAction`: tool window·catalog의 좁은 세로 rail에서 쓰는
   icon action과 pressed/selected 상태.
 - `Field`, `PropertyRow`, `TextInput`, `TextAreaInput`, `SelectInput`,

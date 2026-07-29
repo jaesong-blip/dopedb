@@ -1475,6 +1475,7 @@ export function ConnectionForm({
             visibleConnections.length > 0 ? (
               <ToolWindowSection
                 title={t("connections.dataSources")}
+                prominence="catalog"
               >
                 {visibleConnections.map((connection) => (
                   <ToolWindowAction
@@ -1483,7 +1484,6 @@ export function ConnectionForm({
                     leading={
                       <EngineMark engine={connection.engine} size="tree" />
                     }
-                    trailing={<Icon name="chevronRight" />}
                     selected={!isNew && connection.id === form.id}
                     onClick={() => onEditConnection(connection)}
                   >
@@ -1512,7 +1512,10 @@ export function ConnectionForm({
                   {t("connections.problemDriverCatalogUnavailable")}
                 </p>
               ) : visibleCatalogDrivers.length > 0 ? (
-                <ToolWindowSection title={t("connections.drivers")}>
+                <ToolWindowSection
+                  title={t("connections.drivers")}
+                  prominence="catalog"
+                >
                   {visibleCatalogDrivers.map((driver) => (
                     <ToolWindowAction
                       key={driver.id}
@@ -1523,9 +1526,7 @@ export function ConnectionForm({
                       trailing={
                         driver.installState === "installed" ? (
                           <Icon name="check" />
-                        ) : (
-                          <Icon name="chevronRight" />
-                        )
+                        ) : null
                       }
                       selected={catalogDriver?.id === driver.id}
                       onClick={() => setCatalogDriverId(driver.id)}
@@ -1543,13 +1544,13 @@ export function ConnectionForm({
             {editorView === "clouds" ? (
               <ToolWindowSection
                 title={t("connections.clouds")}
+                prominence="catalog"
               >
                 {cloudProviders.map((provider) => (
                   <ToolWindowAction
                     key={provider.provider}
                     flush
                     leading={<Icon name="key" />}
-                    trailing={<Icon name="chevronRight" />}
                     selected={
                       catalogCloudProvider === provider.provider
                     }
@@ -1568,16 +1569,16 @@ export function ConnectionForm({
               <ToolWindowAction
                 flush
                 leading={
-                  <Icon
-                    name="alert"
-                    className={
+                  <span
+                    data-danger={
                       problemItems.some(
                         (item) => item.tone === "danger",
-                      )
-                        ? "tw:text-danger"
-                        : "tw:text-muted-foreground"
+                      ) || undefined
                     }
-                  />
+                    className="tw:text-muted-foreground tw:data-[danger=true]:text-danger"
+                  >
+                    <Icon name="alert" />
+                  </span>
                 }
                 trailing={
                   <DiagnosticCount
@@ -2688,11 +2689,8 @@ export function ConnectionForm({
             </button>
             {message ? (
               <span
-                className={
-                  messageIsError
-                    ? "tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-danger"
-                    : "tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-muted-foreground"
-                }
+                data-error={messageIsError || undefined}
+                className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-sm tw:text-muted-foreground tw:data-[error=true]:text-danger"
                 role={messageIsError ? "alert" : "status"}
                 title={message}
               >
