@@ -125,21 +125,17 @@ export function IdeTopBar({
         >
           <Icon name="user" />
         </button>
-        <button
-          type="button"
-          className="btn small icon-only"
-          onClick={() => onArea("dashboard")}
-          title={t("tabs.dashboard")}
-          aria-label={t("tabs.dashboard")}
-          aria-pressed={area === "dashboard" && databaseExplorerOpen}
-        >
-          <Icon name="dashboard" />
-        </button>
         <ToolbarMenu
           align="start"
           icon="moreHorizontal"
           label={t("ide.action.more")}
         >
+          <ToolbarMenuItem
+            icon="dashboard"
+            onClick={() => onArea("dashboard")}
+          >
+            {t("tabs.dashboard")}
+          </ToolbarMenuItem>
           <ToolbarMenuItem
             icon={localHistoryOpen ? "check" : "history"}
             disabled={!selected || !supportsSql}

@@ -33,6 +33,9 @@ import {
 } from "../../lib/schemaDiff";
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
+import ToolbarMenu, {
+  ToolbarMenuItem,
+} from "../../components/ToolbarMenu";
 import {
   ToolWindowAction,
   ToolWindowHeader,
@@ -62,6 +65,8 @@ export function DatabaseExplorer({
   workspaceAccount,
   workspaceHeader,
   onNewConnection,
+  onNewQuery,
+  onClose,
   onCreateDemoDatabase,
   creatingDemo = false,
 }: {
@@ -78,6 +83,8 @@ export function DatabaseExplorer({
   workspaceAccount?: ReactNode;
   workspaceHeader?: ReactNode;
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
+  onNewQuery: () => void;
+  onClose: () => void;
   onCreateDemoDatabase: () => void;
   creatingDemo?: boolean;
 }) {
@@ -87,6 +94,7 @@ export function DatabaseExplorer({
   const catalogScope = useCatalogScope();
   const catalogScopeKeyRef = useRef(catalogScope.key);
   const [globalFilter, setGlobalFilter] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
   const providerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -177,6 +185,22 @@ export function DatabaseExplorer({
     const willOpen = !open.has(id);
     commands.toggleConnection(id);
     if (willOpen) ensureGroupLoaded(id);
+  }
+
+  function expandAllConnections() {
+    for (const connection of connections) ensureGroupLoaded(connection.id);
+    commands.patch({
+      openConnections: new Set(
+        connections.map((connection) => connection.id),
+      ),
+    });
+  }
+
+  function collapseAllConnections() {
+    commands.patch({
+      openConnections: new Set(),
+      objectSectionsOpen: new Set(),
+    });
   }
 
   function updateGlobalFilter(value: string) {
@@ -397,6 +421,11 @@ export function DatabaseExplorer({
     );
   }
 
+  const selectedConnection =
+    connections.find((connection) => connection.id === selectedId) ?? null;
+  const selectedSupportsSql =
+    selectedConnection !== null && selectedConnection.engine !== "mongodb";
+
   function renderLaunchButton(
     label: string,
     preset: ConnectionLaunchPreset,
@@ -421,46 +450,122 @@ export function DatabaseExplorer({
         title={t("connections.databaseExplorer")}
         actions={
           <>
-          <button
-            type="button"
-            className="btn small icon-only icon-xs"
-            onClick={() => onNewConnection()}
-            title={t("connections.new")}
-            aria-label={t("connections.new")}
-          >
-            <Icon name="plus" />
-          </button>
-          <button
-            type="button"
-            className="btn small icon-only icon-xs"
-            disabled={!selectedId}
-            onClick={() => selectedId && void refreshSchema(selectedId)}
-            title={t("connections.refreshSchema")}
-            aria-label={t("connections.refreshSchema")}
-          >
-            <Icon name="refresh" />
-          </button>
-          <button
-            type="button"
-            className="btn small icon-only icon-xs"
-            disabled={!selectedId || !open.has(selectedId)}
-            onClick={() => selectedId && commands.toggleConnection(selectedId)}
-            title={t("connections.collapse")}
-            aria-label={t("connections.collapse")}
-          >
-            <Icon name="chevronsLeft" />
-          </button>
+            <button
+              type="button"
+              className="btn small icon-only icon-xs"
+              disabled={connections.length === 0}
+              onClick={expandAllConnections}
+              title={t("connections.expandAll")}
+              aria-label={t("connections.expandAll")}
+            >
+              <Icon name="chevronsRight" />
+            </button>
+            <button
+              type="button"
+              className="btn small icon-only icon-xs"
+              disabled={open.size === 0}
+              onClick={collapseAllConnections}
+              title={t("connections.collapseAll")}
+              aria-label={t("connections.collapseAll")}
+            >
+              <Icon name="chevronsLeft" />
+            </button>
+            <ToolbarMenu
+              icon="moreVertical"
+              label={t("connections.options")}
+            >
+              <ToolbarMenuItem
+                icon={showRowCounts ? "check" : "view"}
+                onClick={() =>
+                  commands.patch({ showRowCounts: !showRowCounts })
+                }
+              >
+                {t("connections.showRowCounts")}
+              </ToolbarMenuItem>
+            </ToolbarMenu>
+            <button
+              type="button"
+              className="btn small icon-only icon-xs"
+              onClick={onClose}
+              title={t("common.close")}
+              aria-label={t("common.close")}
+            >
+              <Icon name="close" />
+            </button>
           </>
         }
       />
       {workspaceHeader}
-      {connections.length > 0 ? (
+      <div
+        className="tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:gap-[2px] tw:border-b tw:border-border-subtle tw:bg-background tw:px-1"
+        role="toolbar"
+        aria-label={t("connections.databaseExplorerActions")}
+      >
+        <button
+          type="button"
+          className="btn small icon-only icon-xs"
+          onClick={() => onNewConnection()}
+          title={t("connections.new")}
+          aria-label={t("connections.new")}
+        >
+          <Icon name="plus" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only icon-xs"
+          disabled={!selectedId}
+          onClick={() => selectedId && void refreshSchema(selectedId)}
+          title={t("connections.refreshSchema")}
+          aria-label={t("connections.refreshSchema")}
+        >
+          <Icon name="refresh" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only icon-xs"
+          disabled={!selectedConnection}
+          onClick={() => selectedConnection && onEdit(selectedConnection)}
+          title={t("connections.dataSourcesAndDrivers")}
+          aria-label={t("connections.dataSourcesAndDrivers")}
+        >
+          <Icon name="gear" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only icon-xs"
+          disabled={!selectedSupportsSql}
+          onClick={onNewQuery}
+          title={t("ide.action.newQuery")}
+          aria-label={t("ide.action.newQuery")}
+        >
+          <Icon name="play" />
+        </button>
+        <button
+          type="button"
+          className="btn small icon-only icon-xs"
+          aria-pressed={searchOpen}
+          onClick={() => {
+            if (searchOpen) setGlobalFilter("");
+            setSearchOpen(!searchOpen);
+          }}
+          title={t("connections.filterTables")}
+          aria-label={t("connections.filterTables")}
+        >
+          <Icon name="search" />
+        </button>
+      </div>
+      {connections.length > 0 && searchOpen ? (
         <div className="tw:border-b tw:border-border-subtle tw:p-2">
           <TreeSearch
             value={globalFilter}
             placeholder={t("connections.filterTables")}
             clearLabel={t("common.close")}
             onChange={updateGlobalFilter}
+            autoFocus
+            onEscape={() => {
+              setGlobalFilter("");
+              setSearchOpen(false);
+            }}
           />
         </div>
       ) : null}

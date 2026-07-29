@@ -53,11 +53,15 @@ export function TreeSearch({
   placeholder,
   clearLabel,
   onChange,
+  autoFocus = false,
+  onEscape,
 }: {
   value: string;
   placeholder: string;
   clearLabel: string;
   onChange: (value: string) => void;
+  autoFocus?: boolean;
+  onEscape?: () => void;
 }) {
   return (
     <label className="tw:relative tw:block tw:min-w-0">
@@ -68,8 +72,14 @@ export function TreeSearch({
       <input
         className="ide-explorer-search tw:h-control-sm tw:w-full tw:rounded-xs tw:border tw:border-input tw:bg-background tw:pr-7 tw:pl-7 tw:font-sans tw:text-sm tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground tw:focus:border-ring"
         value={value}
+        autoFocus={autoFocus}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || !onEscape) return;
+          event.preventDefault();
+          onEscape();
+        }}
       />
       {value ? (
         <button

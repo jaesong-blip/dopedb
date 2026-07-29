@@ -70,12 +70,18 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
 - title toolbar 중앙에는 현재 주요 tool window의 직접 launcher만 둔다.
   보조 tool window와 document 생성 action은 끝단의 실제 `ToolbarMenu`에
   배치하고, 구현되지 않은 Files/VCS를 모양만 있는 launcher로 만들지 않는다.
+  DopeDB 기준 위치에 없는 DopeDB 전용 Dashboard도 직접 launcher로 승격하지
+  않고 More menu가 소유한다.
 - generic `새 연결` 진입은 특정 engine form을 임의 선택하지 않고 검색 가능한
   provider/driver `CommandMenu`를 즉시 연다. engine/provider preset이 명시된
   진입만 해당 속성 form을 바로 표시한다. 실제 생성하지 않는 demo나 지원하지
   않는 provider resource를 선택지 설명으로 약속하지 않는다.
 - tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
   하나의 layout 문법으로 구현한다.
+- Database Explorer header는 전체 tree의 expand/collapse, 실제 view option,
+  hide를 소유한다. 그 아래 command row가 data source 추가, refresh, 설정,
+  query console과 search toggle을 소유하며, 검색 input은 toggle이 열었을
+  때만 표시한다. connection row마다 같은 global action을 반복하지 않는다.
 - 색상보다 `muted`, `selection`, `border`를 먼저 사용한다.
 - 일반 surface는 평평하게 유지한다. 그림자는 popover, dialog, toast처럼 떠 있는
   surface에만 사용한다.

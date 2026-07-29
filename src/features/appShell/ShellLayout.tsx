@@ -281,6 +281,8 @@ export default function ShellLayout(props: Props) {
             onDeleted={props.onDeletedConnection}
             onConnectionUpdated={props.onConnectionUpdated}
             onNewConnection={props.onNewConnection}
+            onNewQuery={props.onNewQuery}
+            onClose={props.onToggleDatabaseExplorer}
             onCreateDemoDatabase={props.onCreateDemoDatabase}
             creatingDemo={creatingDemo}
           />
