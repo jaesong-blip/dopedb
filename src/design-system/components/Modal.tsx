@@ -9,6 +9,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { Icon } from "../../components/Icon";
+import { Button } from "./Button";
 
 export function ModalBackdrop({
   children,
@@ -75,15 +76,16 @@ export function ModalTitleBar({
       >
         {title}
       </h1>
-      <button
-        type="button"
-        className="btn small icon-only icon-xs"
+      <Button
+        iconOnly
+        size="xs"
+        variant="ghost"
         onClick={onClose}
         title={closeLabel}
         aria-label={closeLabel}
       >
         <Icon name="close" />
-      </button>
+      </Button>
     </header>
   );
 }

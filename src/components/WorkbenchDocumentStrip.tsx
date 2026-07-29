@@ -6,6 +6,7 @@ import {
   IdeTab,
   IdeTabStrip,
 } from "../design-system/components/IdeTabs";
+import { Button } from "../design-system/components/Button";
 import { tableLabel } from "../lib/tableRef";
 import { useI18n } from "../lib/i18n";
 import { Icon, type IconName } from "./Icon";
@@ -161,15 +162,16 @@ export default function WorkbenchDocumentStrip({
                 />
               ) : undefined}
               trailing={
-                <button
-                  type="button"
-                  className="btn small icon-only icon-xs tw:mr-1"
+                <Button
+                  iconOnly
+                  size="xs"
+                  variant="ghost"
                   onClick={() => onClose(document.id)}
                   title={t("common.close")}
                   aria-label={`${t("common.close")}: ${title}`}
                 >
                   <Icon name="close" />
-                </button>
+                </Button>
               }
               key={document.id}
             >

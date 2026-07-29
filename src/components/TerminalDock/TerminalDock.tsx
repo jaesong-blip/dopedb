@@ -66,6 +66,7 @@ import {
   InlineNotice,
   LoadingLabel,
 } from "../../design-system/components/Status";
+import { Button } from "../../design-system/components/Button";
 import {
   ToolWindowComposer,
   ToolWindowComposerContext,
@@ -847,15 +848,16 @@ export default function TerminalDock({
             icon="alert"
             role="alert"
             action={
-              <button
-                type="button"
-                className="btn small icon-only icon-xs"
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
                 onClick={() => dispatch({ type: "error", error: null })}
                 title={t("common.close")}
                 aria-label={t("common.close")}
               >
                 <Icon name="close" />
-              </button>
+              </Button>
             }
           >
             {state.error}
@@ -989,9 +991,10 @@ export default function TerminalDock({
                 }}
               />
               <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:px-2">
-                <button
-                  type="button"
-                  className="btn small icon-only"
+                <Button
+                  iconOnly
+                  size="compact"
+                  variant="ghost"
                   onClick={() =>
                     setAgentAttachmentMenuOpen((open) => !open)
                   }
@@ -1001,7 +1004,7 @@ export default function TerminalDock({
                   aria-expanded={agentAttachmentMenuOpen}
                 >
                   <Icon name="plus" />
-                </button>
+                </Button>
                 <Icon
                   name="database"
                   className="tw:text-sm tw:text-muted-foreground"
@@ -1012,9 +1015,11 @@ export default function TerminalDock({
                   })}
                 </span>
                 <span className="tw:flex-1" />
-                <button
+                <Button
                   type="submit"
-                  className="btn small icon-only"
+                  iconOnly
+                  size="compact"
+                  variant="ghost"
                   disabled={
                     !agentPrompt.trim() ||
                     sendingAgentPrompt ||
@@ -1024,7 +1029,7 @@ export default function TerminalDock({
                   aria-label={t("terminal.agentSend")}
                 >
                   <Icon name="send" />
-                </button>
+                </Button>
               </div>
               {agentAttachmentMenuOpen ? (
                 <div

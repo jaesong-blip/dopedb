@@ -29,13 +29,13 @@ export function IdeTitleToolbar({
       ) : null}
       <div className="tw:min-w-0 tw:max-[561px]:hidden">{context}</div>
       <div
-        className="tw:absolute tw:left-1/2 tw:flex tw:-translate-x-1/2 tw:items-center tw:gap-1 tw:[&_.btn]:[--ds-icon-button-size:32px]"
+        className="tw:absolute tw:left-1/2 tw:flex tw:-translate-x-1/2 tw:items-center tw:gap-1"
         role="toolbar"
         aria-label={launchersLabel}
       >
         {launchers}
       </div>
-      <div className="tw:ml-auto tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:[&_.btn]:[--ds-icon-button-size:32px]">
+      <div className="tw:ml-auto tw:flex tw:shrink-0 tw:items-center tw:gap-1">
         {actions}
       </div>
     </header>

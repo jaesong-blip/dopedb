@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Icon } from "../../components/Icon";
+import { Button } from "../../design-system/components/Button";
 import { LoadingLabel } from "../../design-system/components/Status";
 import {
   ToolWindowHeader,
@@ -167,9 +168,10 @@ export default function LocalHistoryToolWindow({
             onChange={setFilter}
           />
         </div>
-        <button
-          type="button"
-          className="btn small icon-only icon-xs tw:shrink-0"
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           disabled={!canRestore}
           onClick={() => {
             if (!selectedDocument || !activeRevision) return;
@@ -182,7 +184,7 @@ export default function LocalHistoryToolWindow({
           aria-label={t("localHistory.restore")}
         >
           <Icon name="history" />
-        </button>
+        </Button>
       </ToolWindowSearchRow>
       <ToolWindowVerticalSplit>
         <section className="tw:flex tw:flex-col">
