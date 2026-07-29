@@ -229,6 +229,8 @@ Elevation은 세 단계만 허용한다.
 - `ToolbarMenu menuSize="scope"`: Explorer schema scope popover의 outer
   frame을 300px로 고정한다. feature child가 popover padding과 border를
   중복 계산하지 않는다.
+- `ToolbarMenu triggerVariant="gridHeader"`: 28px data-grid header 안의
+  filter action을 24px로 제한해 header를 늘리지 않는다.
 - `ToolWindowSection`: dense tool window 안의 제목 있는 명령 그룹.
 - `ToolWindowAction`: provider/demo/object launcher의 icon-label-trailing 행.
   `flush`는 Data Sources catalog처럼 selection surface가 pane 전체 폭을

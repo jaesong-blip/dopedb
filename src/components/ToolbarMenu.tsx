@@ -39,7 +39,7 @@ export default function ToolbarMenu({
   align?: "start" | "end";
   disabled?: boolean;
   pressed?: boolean;
-  triggerVariant?: "default" | "badge" | "treeBadge";
+  triggerVariant?: "default" | "badge" | "treeBadge" | "gridHeader";
   menuSize?: "default" | "scope";
 }) {
   const generatedId = useId();
@@ -211,7 +211,9 @@ export default function ToolbarMenu({
               : triggerVariant === "badge"
                 ? "tw:inline-flex tw:min-h-control-xs tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1 tw:rounded-xs tw:border tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-2xs tw:font-medium tw:text-muted-foreground tw:aria-expanded:border-ring tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:border-ring tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
               : "tw:inline-flex tw:h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-sm tw:font-semibold tw:text-foreground tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-            : "btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:aria-pressed:bg-selection tw:aria-pressed:text-selection-foreground"
+            : triggerVariant === "gridHeader"
+              ? "btn small icon-only icon-xs tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:aria-pressed:bg-selection tw:aria-pressed:text-selection-foreground"
+              : "btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:aria-pressed:bg-selection tw:aria-pressed:text-selection-foreground"
         }
         disabled={disabled}
         title={label}

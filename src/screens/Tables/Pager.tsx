@@ -10,6 +10,7 @@ export default function Pager({
   rows,
   busy,
   showRefresh = true,
+  collapseNavigation = false,
   onPage,
   onRefresh,
   children,
@@ -20,6 +21,7 @@ export default function Pager({
   rows: number;
   busy: boolean;
   showRefresh?: boolean;
+  collapseNavigation?: boolean;
   onPage: (page: number) => void;
   onRefresh: () => void;
   children?: ReactNode;
@@ -46,7 +48,11 @@ export default function Pager({
         <Icon name="chevronsLeft" />
       </button>
       <button
-        className="btn small icon-only"
+        className={
+          collapseNavigation
+            ? "btn small icon-only tw:@max-[760px]:hidden"
+            : "btn small icon-only"
+        }
         disabled={busy || !hasPrev}
         onClick={() => onPage(page - 1)}
         title={t("common.prev")}
@@ -54,12 +60,22 @@ export default function Pager({
       >
         <Icon name="arrowLeft" />
       </button>
-      <span className="tw:min-w-[58px] tw:text-center tw:text-sm tw:text-muted-foreground tw:whitespace-nowrap">
+      <span
+        className={
+          collapseNavigation
+            ? "tw:min-w-[58px] tw:text-center tw:text-sm tw:text-muted-foreground tw:whitespace-nowrap tw:@max-[760px]:hidden"
+            : "tw:min-w-[58px] tw:text-center tw:text-sm tw:text-muted-foreground tw:whitespace-nowrap"
+        }
+      >
         {t("tables.page", { page: page + 1 })}
         {lastPage != null && ` / ${lastPage + 1}`}
       </span>
       <button
-        className="btn small icon-only"
+        className={
+          collapseNavigation
+            ? "btn small icon-only tw:@max-[760px]:hidden"
+            : "btn small icon-only"
+        }
         disabled={busy || !hasNext}
         onClick={() => onPage(page + 1)}
         title={t("common.next")}

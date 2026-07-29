@@ -38,12 +38,12 @@ function ExpressionField({
 
   return (
     <div className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:border-r tw:border-border-subtle tw:last:border-r-0">
-      <span className="tw:inline-flex tw:h-control-md tw:shrink-0 tw:items-center tw:gap-1 tw:px-2 tw:text-xs tw:font-semibold tw:text-muted-foreground">
+      <span className="tw:inline-flex tw:h-control-sm tw:shrink-0 tw:items-center tw:gap-1 tw:px-2 tw:text-xs tw:font-semibold tw:text-muted-foreground">
         <Icon name={kind === "where" ? "filter" : "sort"} />
         {label}
       </span>
       <input
-        className="tw:h-control-md tw:min-w-0 tw:flex-1 tw:rounded-none tw:border-0 tw:bg-transparent tw:px-1 tw:font-mono tw:text-sm tw:text-foreground tw:shadow-none tw:focus-visible:ring-0 tw:aria-invalid:text-danger"
+        className="tw:h-control-sm tw:min-h-control-sm tw:min-w-0 tw:flex-1 tw:rounded-none tw:border-0 tw:bg-transparent tw:px-1 tw:font-mono tw:text-sm tw:text-foreground tw:shadow-none tw:focus-visible:ring-0 tw:aria-invalid:text-danger"
         value={value}
         disabled={busy}
         aria-label={t(
@@ -70,7 +70,7 @@ function ExpressionField({
       />
       {issue ? (
         <span
-          className="tw:inline-flex tw:size-control-md tw:shrink-0 tw:items-center tw:justify-center tw:text-danger"
+          className="tw:inline-flex tw:size-control-sm tw:shrink-0 tw:items-center tw:justify-center tw:text-danger"
           title={error}
           aria-label={error}
         >
@@ -79,7 +79,7 @@ function ExpressionField({
       ) : dirty ? (
         <button
           type="button"
-          className="btn small icon-only tw:shrink-0"
+          className="btn small icon-only icon-xs tw:shrink-0"
           disabled={busy}
           title={t("tables.applyExpression", { label })}
           aria-label={t("tables.applyExpression", { label })}
@@ -91,7 +91,7 @@ function ExpressionField({
       {hasExpression ? (
         <button
           type="button"
-          className="btn small icon-only tw:shrink-0"
+          className="btn small icon-only icon-xs tw:shrink-0"
           disabled={busy}
           title={t("tables.clearExpression", { label })}
           aria-label={t("tables.clearExpression", { label })}

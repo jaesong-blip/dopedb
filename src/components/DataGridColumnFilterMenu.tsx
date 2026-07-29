@@ -93,6 +93,7 @@ export default function DataGridColumnFilterMenu({
         icon="filter"
         align="start"
         pressed={Boolean(filter)}
+        triggerVariant="gridHeader"
       >
         <div className="tw:grid tw:w-56 tw:gap-1 tw:p-1">
           <div className="tw:px-1 tw:pt-1 tw:text-right tw:text-xs tw:font-semibold tw:text-muted-foreground">

@@ -280,7 +280,7 @@ function DataGridTable({
     >
       <table
         ref={tableRef}
-        className="tw:table-fixed tw:border-separate tw:border-spacing-0 tw:bg-background tw:font-mono tw:text-ui tw:[&_td]:box-border tw:[&_td]:max-w-none tw:[&_td]:overflow-hidden tw:[&_td]:border-r tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:leading-ui tw:[&_td]:text-left tw:[&_td]:text-ellipsis tw:[&_td]:whitespace-nowrap tw:[&_th]:box-border tw:[&_th]:max-w-none tw:[&_th]:overflow-hidden tw:[&_th]:border-r tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-1 tw:[&_th]:leading-ui tw:[&_th]:text-left tw:[&_th]:text-ellipsis tw:[&_th]:whitespace-nowrap tw:[&_thead_th]:sticky tw:[&_thead_th]:top-0 tw:[&_thead_th]:z-[var(--ds-z-raised)] tw:[&_thead_th]:h-control-sm tw:[&_thead_th]:bg-card"
+        className="tw:table-fixed tw:border-separate tw:border-spacing-0 tw:bg-background tw:font-mono tw:text-ui tw:[&_td]:box-border tw:[&_td]:max-w-none tw:[&_td]:overflow-hidden tw:[&_td]:border-r tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:leading-ui tw:[&_td]:text-left tw:[&_td]:text-ellipsis tw:[&_td]:whitespace-nowrap tw:[&_th]:box-border tw:[&_th]:max-w-none tw:[&_th]:overflow-hidden tw:[&_th]:border-r tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-px tw:[&_th]:leading-ui tw:[&_th]:text-left tw:[&_th]:text-ellipsis tw:[&_th]:whitespace-nowrap tw:[&_thead_th]:sticky tw:[&_thead_th]:top-0 tw:[&_thead_th]:z-[var(--ds-z-raised)] tw:[&_thead_th]:h-control-sm tw:[&_thead_th]:bg-card"
         style={{ tableLayout: "fixed", width: totalW }}
       >
         <colgroup>
@@ -311,7 +311,7 @@ function DataGridTable({
                   {onSort ? (
                     <button
                       type="button"
-                      className="tw:inline-flex tw:h-control-md tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-1 tw:overflow-hidden tw:border-0 tw:bg-transparent tw:p-0 tw:font-sans tw:text-left tw:text-ui tw:font-semibold tw:text-inherit tw:hover:text-primary tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+                      className="tw:inline-flex tw:h-control-xs tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-1 tw:overflow-hidden tw:border-0 tw:bg-transparent tw:p-0 tw:font-sans tw:text-left tw:text-ui tw:font-semibold tw:text-inherit tw:hover:text-primary tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
                       title={columnMeta?.[c]?.dataType}
                       onClick={() => onSort(c)}
                     >

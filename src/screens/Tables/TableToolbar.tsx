@@ -75,6 +75,10 @@ export default function TableToolbar(props: Props) {
       result.rows,
     );
   };
+  const lastPage =
+    total != null ? Math.max(0, Math.ceil(total / pageSize) - 1) : null;
+  const hasPrev = page > 0;
+  const hasNext = total != null ? page < (lastPage ?? 0) : rows === pageSize;
 
   return (
     <WorkbenchToolbar label={t("tables.querySurface")}>
@@ -179,11 +183,12 @@ export default function TableToolbar(props: Props) {
         rows={rows}
         busy={busy}
         showRefresh={false}
+        collapseNavigation
         onPage={props.onPage}
         onRefresh={props.onRefresh}
       >
         <button
-          className="btn small icon-only tw:@max-[760px]:hidden tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
+          className="btn small icon-only tw:@max-[480px]:hidden tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
           disabled={!catalogAvailable}
           aria-expanded={jobsOpen}
           title={
@@ -195,7 +200,7 @@ export default function TableToolbar(props: Props) {
           <Icon name="download" />
         </button>
         <button
-          className="btn small icon-only tw:@max-[760px]:hidden tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
+          className="btn small icon-only tw:@max-[480px]:hidden tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
           aria-expanded={structureOpen}
           title={t("tables.structureTitle")}
           aria-label={t("tables.structureTitle")}
@@ -203,7 +208,7 @@ export default function TableToolbar(props: Props) {
         >
           <Icon name="columns" />
         </button>
-        <span className="tw:@max-[760px]:hidden">
+        <span className="tw:@max-[480px]:hidden">
           <ToolbarMenu
             label={t("tables.exportPageTitle")}
             trigger={
@@ -230,6 +235,34 @@ export default function TableToolbar(props: Props) {
           </ToolbarMenu>
         </span>
         <ToolbarMenu label={t("tables.more")} icon="moreVertical">
+          <ToolbarMenuItem
+            icon="chevronsLeft"
+            disabled={busy || !hasPrev}
+            onClick={() => props.onPage(0)}
+          >
+            {t("common.first")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
+            icon="arrowLeft"
+            disabled={busy || !hasPrev}
+            onClick={() => props.onPage(page - 1)}
+          >
+            {t("common.prev")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
+            icon="arrowRight"
+            disabled={busy || !hasNext}
+            onClick={() => props.onPage(page + 1)}
+          >
+            {t("common.next")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
+            icon="chevronsRight"
+            disabled={busy || lastPage == null || !hasNext}
+            onClick={() => lastPage != null && props.onPage(lastPage)}
+          >
+            {t("tables.last")}
+          </ToolbarMenuItem>
           <ToolbarMenuItem
             icon="refresh"
             disabled={busy}
