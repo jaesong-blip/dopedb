@@ -733,7 +733,9 @@ export function DatabaseExplorer({
               </ToolWindowAction>
             </ToolWindowSection>
 
-            <ToolWindowSection title={t("connections.connectCloudProvider")}>
+            <ToolWindowSection
+              title={t("connections.dataSourceFromCloudProvider")}
+            >
               <ToolWindowAction
                 leading={<Icon name="key" />}
                 trailing={<Icon name="chevronRight" />}

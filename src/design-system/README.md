@@ -79,11 +79,13 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
   진입만 해당 속성 form을 바로 표시한다. 실제 생성하지 않는 demo나 지원하지
   않는 provider resource를 선택지 설명으로 약속하지 않는다.
 - Data Sources and Drivers dialog는 왼쪽 258px catalog pane 상단의
-  Data Sources, Cloud accounts, Drivers category tab으로 책임을 분리한다.
+  Data Sources, Clouds, Drivers category tab으로 책임을 분리한다.
   DopeDB 참조에 없는 별도 세로 icon rail을 만들지 않는다. data source와
   driver는 각각 하나의 검색 가능한 목록만 가지며, driver detail은 backend
   catalog가 반환한 이름, version, 설치 상태, 지원 connection method와
-  capability만 표시한다. cloud category는 실제 credential inventory를 열고
+  capability만 표시한다. `+` popup의 provider group은 DopeDB 용어인
+  `Data Source from Cloud Provider`를 사용한다. Clouds category는 실제
+  credential inventory를 열고
   로그인·권한·조회 실패를 그대로 드러내며, 존재하지 않는 cloud resource
   browser를 모양만 만들어 대체하지 않는다. General의 connection type은
   `Default`와 실제 URL parser가 소유하는 `URL only`만 제공한다. URL mode도

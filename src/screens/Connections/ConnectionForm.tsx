@@ -576,7 +576,8 @@ export function ConnectionForm({
     matchesAddSearch(
       provider.label,
       provider.provider,
-      t("connections.connectCloudProvider"),
+      t("connections.clouds"),
+      t("connections.dataSourceFromCloudProvider"),
       "cloud",
     ),
   );
@@ -1196,7 +1197,7 @@ export function ConnectionForm({
               },
               {
                 value: "clouds",
-                label: t("connections.connectCloudProvider"),
+                label: t("connections.clouds"),
               },
               {
                 value: "drivers",
@@ -1216,7 +1217,7 @@ export function ConnectionForm({
               },
               {
                 id: "clouds",
-                label: t("connections.connectCloudProvider"),
+                label: t("connections.clouds"),
               },
               {
                 id: "drivers",
@@ -1328,7 +1329,7 @@ export function ConnectionForm({
                     {filteredCloudProviders.length > 0 ? (
                       <CommandMenuGroup
                         title={t(
-                          "connections.connectCloudProvider",
+                          "connections.dataSourceFromCloudProvider",
                         )}
                       >
                         {filteredCloudProviders.map((provider) => (
@@ -1555,7 +1556,7 @@ export function ConnectionForm({
             ) : null}
             {editorView === "clouds" ? (
               <ToolWindowSection
-                title={t("connections.connectCloudProvider")}
+                title={t("connections.clouds")}
               >
                 {cloudProviders.map((provider) => (
                   <ToolWindowAction
@@ -1651,7 +1652,7 @@ export function ConnectionForm({
                     event.target.value as ProviderKind,
                   )
                 }
-                aria-label={t("connections.connectCloudProvider")}
+                aria-label={t("connections.clouds")}
               >
                 {cloudProviders.map((provider) => (
                   <option
@@ -2747,7 +2748,7 @@ export function ConnectionForm({
               <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-5">
                 <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[760px] tw:gap-5">
                   <section className="tw:grid tw:gap-3">
-                    <h3>{t("connections.connectCloudProvider")}</h3>
+                    <h3>{t("connections.clouds")}</h3>
                     <div className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-3 tw:border-y tw:border-border-subtle tw:py-3">
                       <Icon
                         name="info"
