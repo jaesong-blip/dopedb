@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import {
+  gridExpressionIssue,
+} from "../lib/sqlBuild";
 import { virtualGridWindow } from "./DataGridVirtual";
 import {
   extendGridSelection,
@@ -57,5 +60,17 @@ describe("DataGridVirtual window", () => {
         String,
       ),
     ).toBe("b\tc\ne\tf");
+
+    expect(gridExpressionIssue("where", "city = 'Berlin'")).toBeNull();
+    expect(gridExpressionIssue("orderBy", "city DESC, id ASC")).toBeNull();
+    expect(gridExpressionIssue("where", "1 = 1; DELETE FROM users")).toBe(
+      "statementBoundary",
+    );
+    expect(gridExpressionIssue("where", "1 = 1 -- swallow LIMIT")).toBe(
+      "statementBoundary",
+    );
+    expect(gridExpressionIssue("orderBy", "city DESC LIMIT 5000")).toBe(
+      "clauseBoundary",
+    );
   });
 });

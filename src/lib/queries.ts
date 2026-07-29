@@ -139,6 +139,8 @@ export type TableRowsArgs = {
   engine: Engine;
   table: CatalogTable;
   filters: Record<string, string>;
+  whereExpression: string;
+  orderByExpression: string;
   sort: GridSort | null;
   pageSize: number;
   page: number;
@@ -177,7 +179,14 @@ export const qk = {
       "tableRows",
       args.connectionId,
       tableKey(args.table),
-      { filters: args.filters, sort: args.sort, pageSize: args.pageSize, page: args.page },
+      {
+        filters: args.filters,
+        whereExpression: args.whereExpression,
+        orderByExpression: args.orderByExpression,
+        sort: args.sort,
+        pageSize: args.pageSize,
+        page: args.page,
+      },
     ] as const,
   documentRows: (args: DocumentRowsArgs) =>
     [
@@ -425,25 +434,48 @@ export function documentCountQuery(connectionId: string, collection: string) {
 // One page of table data plus its exact total. Both statements are issued together so a
 // cached page always carries the row count that was true when it was read.
 export function tableRowsQuery(args: TableRowsArgs) {
-  const { connectionId, engine, table, filters, sort, pageSize, page } = args;
+  const {
+    connectionId,
+    engine,
+    table,
+    filters,
+    whereExpression,
+    orderByExpression,
+    sort,
+    pageSize,
+    page,
+  } = args;
   return queryOptions({
     queryKey: qk.tableRows(args),
     staleTime: LOG_STALE_MS,
     queryFn: async (): Promise<TableRowsPage> => {
       const pageSql = buildPageQuery(engine, table, {
         filters,
+        whereExpression,
+        orderByExpression,
         sort,
         limit: pageSize,
         offset: page * pageSize,
       });
-      const [pageOut, countOut] = await Promise.all([
-        runSqlBoundedPage(connectionId, pageSql, "data-view"),
-        runSqlBoundedPage(
-          connectionId,
-          buildCountQuery(engine, table, filters),
-          "data-view",
-        ),
-      ]);
+      const countSql = buildCountQuery(
+        engine,
+        table,
+        filters,
+        whereExpression,
+      );
+      // SQLite serializes the operation-history writes that accompany both reads.
+      // Starting page and count proposals together intermittently raises SQLITE_BUSY,
+      // so keep this engine sequential while network databases retain parallel reads.
+      const [pageOut, countOut] =
+        engine === "sqlite"
+          ? [
+              await runSqlBoundedPage(connectionId, pageSql, "data-view"),
+              await runSqlBoundedPage(connectionId, countSql, "data-view"),
+            ]
+          : await Promise.all([
+              runSqlBoundedPage(connectionId, pageSql, "data-view"),
+              runSqlBoundedPage(connectionId, countSql, "data-view"),
+            ]);
       const total = countOut.result?.rows?.[0]?.[0];
       return {
         result: pageOut.result ?? null,

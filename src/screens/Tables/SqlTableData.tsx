@@ -44,6 +44,7 @@ import {
 } from "../../lib/sqlBuild";
 import TableSidePanel from "./TableSidePanel";
 import TableContextHeader from "./TableContextHeader";
+import TableExpressionBar from "./TableExpressionBar";
 import TableStructure from "./TableStructure";
 import TableToolbar from "./TableToolbar";
 
@@ -73,6 +74,10 @@ export default function SqlTableData({
       sort,
       filters,
       appliedFilters,
+      whereExpression,
+      appliedWhereExpression,
+      orderByExpression,
+      appliedOrderByExpression,
       selectedRow: selected,
       selectedCell: cellSel,
       editor,
@@ -94,6 +99,8 @@ export default function SqlTableData({
       engine,
       table,
       filters: appliedFilters,
+      whereExpression: appliedWhereExpression,
+      orderByExpression: appliedOrderByExpression,
       sort,
       pageSize,
       page,
@@ -125,7 +132,9 @@ export default function SqlTableData({
   // round-trip to a literal (binary/json/array/composite), both disable it — same as noPk.
   const nonScalarPk = hasNonScalarPk(table);
   const canEdit = pkColumns(table).length > 0 && !nonScalarPk;
-  const activeFilters = Object.values(filters).filter((v) => v.trim()).length;
+  const activeFilters =
+    Object.values(appliedFilters).filter((v) => v.trim()).length +
+    (appliedWhereExpression.trim() ? 1 : 0);
 
   // Fresh rows landed, so any row/cell the user had selected now points at data that may
   // no longer be there, and a stale write error no longer describes what is on screen.
@@ -142,7 +151,28 @@ export default function SqlTableData({
   const to = page * pageSize + rows;
 
   function cycleSort(col: string) {
+    commands.patch({
+      orderByExpression: "",
+      appliedOrderByExpression: "",
+    });
     commands.cycleSort(col);
+  }
+
+  function applyWhereExpression(value: string) {
+    commands.patch({
+      whereExpression: value,
+      appliedWhereExpression: value,
+      page: 0,
+    });
+  }
+
+  function applyOrderByExpression(value: string) {
+    commands.patch({
+      orderByExpression: value,
+      appliedOrderByExpression: value,
+      sort: null,
+      page: 0,
+    });
   }
 
   const selRow = selected != null && result ? result.rows[selected] : null;
@@ -366,7 +396,14 @@ export default function SqlTableData({
             proposal: null,
           })
         }
-        onClearFilters={() => commands.patch({ filters: {} })}
+        onClearFilters={() =>
+          commands.patch({
+            filters: {},
+            appliedFilters: {},
+            whereExpression: "",
+            appliedWhereExpression: "",
+          })
+        }
         onPage={(nextPage) => commands.patch({ page: nextPage })}
         onRefresh={() => void rowsQuery.refetch()}
         onToggleJobs={() =>
@@ -382,6 +419,22 @@ export default function SqlTableData({
           commands.patch({ structureOpen: !structure })
         }
         onCopyRow={copyRow}
+      />
+
+      <TableExpressionBar
+        whereExpression={whereExpression}
+        appliedWhereExpression={appliedWhereExpression}
+        orderByExpression={orderByExpression}
+        appliedOrderByExpression={appliedOrderByExpression}
+        busy={busy}
+        onWhereChange={(value) =>
+          commands.patch({ whereExpression: value })
+        }
+        onOrderByChange={(value) =>
+          commands.patch({ orderByExpression: value })
+        }
+        onApplyWhere={applyWhereExpression}
+        onApplyOrderBy={applyOrderByExpression}
       />
 
       {structure && <TableStructure table={table} />}

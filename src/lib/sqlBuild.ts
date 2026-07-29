@@ -3,11 +3,91 @@
 // literal escaping + WHERE/ORDER BY/paging/DML builders live here so pagination is
 // stable (always ordered) and generated writes are injection-safe.
 import type { CatalogColumn, CatalogTable, Engine } from "../ipc/types";
+import { decodeGridValueFilter } from "./gridValueFilter";
 import { quoteIdent, tableRef } from "./tableRef";
 
 export interface GridSort {
   col: string;
   dir: "asc" | "desc";
+}
+
+export type GridExpressionKind = "where" | "orderBy";
+
+export type GridExpressionIssue =
+  | "tooLong"
+  | "statementBoundary"
+  | "unbalanced"
+  | "clauseBoundary";
+
+// DopeDB accepts SQL-dialect fragments in its WHERE and ORDER BY fields. These
+// fragments still pass through the backend read-only proposal gate, but we also keep
+// them inside their generated clause: comments, statement separators and clause
+// escapes must not be able to swallow the mandatory LIMIT or append a second query.
+export function gridExpressionIssue(
+  kind: GridExpressionKind,
+  raw: string,
+): GridExpressionIssue | null {
+  if (raw.length > 2_048) return "tooLong";
+  let visible = "";
+  let quote: "'" | '"' | "`" | "]" | null = null;
+  let depth = 0;
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+    const next = raw[index + 1];
+    if (quote) {
+      visible += " ";
+      if (quote === "]") {
+        if (char === "]") quote = null;
+      } else if (char === quote) {
+        if (next === quote) {
+          visible += " ";
+          index += 1;
+        } else {
+          quote = null;
+        }
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+      visible += " ";
+      continue;
+    }
+    if (char === "[") {
+      quote = "]";
+      visible += " ";
+      continue;
+    }
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth < 0) return "unbalanced";
+    }
+    visible += char;
+  }
+  if (quote || depth !== 0) return "unbalanced";
+  if (
+    visible.includes("\0") ||
+    visible.includes(";") ||
+    visible.includes("--") ||
+    visible.includes("/*") ||
+    visible.includes("*/") ||
+    /(^|\s)#/.test(visible)
+  ) {
+    return "statementBoundary";
+  }
+  const clauseEscape =
+    kind === "where"
+      ? /\b(?:union|intersect|except|order\s+by|limit|offset|fetch|returning)\b/i
+      : /\b(?:select|from|where|group\s+by|having|union|intersect|except|limit|offset|fetch|returning)\b/i;
+  return clauseEscape.test(visible) ? "clauseBoundary" : null;
+}
+
+function assertGridExpression(kind: GridExpressionKind, raw: string) {
+  const issue = gridExpressionIssue(kind, raw);
+  if (issue) {
+    throw new Error(`invalid ${kind === "where" ? "WHERE" : "ORDER BY"} expression: ${issue}`);
+  }
 }
 
 // A SQL string literal. Single quotes are doubled for every engine; backslashes are
@@ -113,6 +193,23 @@ function filterClause(engine: Engine, col: CatalogColumn, raw: string): string |
   const v = raw.trim();
   if (!v) return null;
   const q = quoteIdent(engine, col.name);
+  const selectedValues = decodeGridValueFilter(raw);
+  if (selectedValues) {
+    const values = selectedValues.filter(
+      (value): value is string => value !== null,
+    );
+    const clauses: string[] = [];
+    if (values.length > 0) {
+      clauses.push(
+        `${q} IN (${values
+          .map((value) => sqlValue(engine, col.dataType, value))
+          .join(", ")})`,
+      );
+    }
+    if (selectedValues.includes(null)) clauses.push(`${q} IS NULL`);
+    if (clauses.length === 0) return null;
+    return clauses.length === 1 ? clauses[0] : `(${clauses.join(" OR ")})`;
+  }
   const low = v.toLowerCase();
   if (low === "null") return `${q} IS NULL`;
   if (low === "not null") return `${q} IS NOT NULL`;
@@ -127,11 +224,17 @@ function buildWhere(
   engine: Engine,
   columns: CatalogColumn[],
   filters: Record<string, string>,
+  whereExpression = "",
 ): string {
   const parts: string[] = [];
   for (const col of columns) {
     const c = filterClause(engine, col, filters[col.name] ?? "");
     if (c) parts.push(c);
+  }
+  const expression = whereExpression.trim();
+  if (expression) {
+    assertGridExpression("where", expression);
+    parts.push(`(${expression})`);
   }
   return parts.join(" AND ");
 }
@@ -144,7 +247,17 @@ function pkTiebreakers(engine: Engine, table: CatalogTable, exclude?: string): s
     .map((c) => quoteIdent(engine, c.name));
 }
 
-function buildOrderBy(engine: Engine, table: CatalogTable, sort: GridSort | null): string {
+function buildOrderBy(
+  engine: Engine,
+  table: CatalogTable,
+  sort: GridSort | null,
+  orderByExpression = "",
+): string {
+  const expression = orderByExpression.trim();
+  if (expression) {
+    assertGridExpression("orderBy", expression);
+    return `ORDER BY ${expression}`;
+  }
   if (sort) {
     const dir = sort.dir === "desc" ? "DESC" : "ASC";
     const keys = [`${quoteIdent(engine, sort.col)} ${dir}`, ...pkTiebreakers(engine, table, sort.col)];
@@ -165,10 +278,27 @@ function nn(n: number): number {
 export function buildPageQuery(
   engine: Engine,
   table: CatalogTable,
-  opts: { filters: Record<string, string>; sort: GridSort | null; limit: number; offset: number },
+  opts: {
+    filters: Record<string, string>;
+    whereExpression?: string;
+    orderByExpression?: string;
+    sort: GridSort | null;
+    limit: number;
+    offset: number;
+  },
 ): string {
-  const where = buildWhere(engine, table.columns, opts.filters);
-  const order = buildOrderBy(engine, table, opts.sort);
+  const where = buildWhere(
+    engine,
+    table.columns,
+    opts.filters,
+    opts.whereExpression,
+  );
+  const order = buildOrderBy(
+    engine,
+    table,
+    opts.sort,
+    opts.orderByExpression,
+  );
   return (
     `SELECT * FROM ${tableRef(engine, table)}` +
     (where ? ` WHERE ${where}` : "") +
@@ -181,8 +311,14 @@ export function buildCountQuery(
   engine: Engine,
   table: CatalogTable,
   filters: Record<string, string>,
+  whereExpression = "",
 ): string {
-  const where = buildWhere(engine, table.columns, filters);
+  const where = buildWhere(
+    engine,
+    table.columns,
+    filters,
+    whereExpression,
+  );
   return `SELECT COUNT(*) AS n FROM ${tableRef(engine, table)}` + (where ? ` WHERE ${where}` : "");
 }
 

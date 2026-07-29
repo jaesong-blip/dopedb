@@ -5,10 +5,12 @@ export const tablesCatalog = defineCatalog(
   {
     "tables.activeFilters": "{count} filter",
     "tables.activeFiltersPlural": "{count} filters",
+    "tables.applyExpression": "Apply {label}",
     "tables.catalogRequired": "Schema metadata is still loading. Try again in a moment.",
     "tables.changeSetRolledBack":
       "The staged transaction was rolled back. Reload rows before retrying.",
     "tables.clear": "Clear",
+    "tables.clearExpression": "Clear {label}",
     "tables.cols": "{count} cols",
     "tables.column": "Column",
     "tables.columnPolicy": "Columns",
@@ -24,6 +26,14 @@ export const tablesCatalog = defineCatalog(
     "tables.duplicate": "Duplicate",
     "tables.edit": "Edit",
     "tables.editor": "Data editor",
+    "tables.expressionBar": "WHERE and ORDER BY",
+    "tables.expressionClauseBoundary":
+      "Keep the expression inside this clause. Add other clauses in their own field.",
+    "tables.expressionStatementBoundary":
+      "Comments and statement separators are not allowed here.",
+    "tables.expressionTooLong": "The expression is too long.",
+    "tables.expressionUnbalanced":
+      "Close every quote, identifier and parenthesis before applying.",
     "tables.exportCsv": "Export CSV",
     "tables.exportJson": "Export JSON",
     "tables.exportPageTitle": "Exports the current page",
@@ -42,6 +52,7 @@ export const tablesCatalog = defineCatalog(
     "tables.nonScalarPk":
       "Primary key is a binary/JSON/array/composite type - row editing disabled (value can't be matched safely)",
     "tables.nullable": "Nullable",
+    "tables.orderByExpression": "ORDER BY expression",
     "tables.page": "Page {page}",
     "tables.pagination": "Table pagination",
     "tables.querySurface": "Query and grid policy",
@@ -70,14 +81,17 @@ export const tablesCatalog = defineCatalog(
     "tables.writePolicy": "Write policy",
     "tables.writePolicyReadonly": "read-only",
     "tables.writePolicyWrites": "writes allowed",
+    "tables.whereExpression": "WHERE expression",
   },
   {
     "tables.activeFilters": "필터 {count}개",
     "tables.activeFiltersPlural": "필터 {count}개",
+    "tables.applyExpression": "{label} 적용",
     "tables.catalogRequired": "스키마 메타데이터를 불러오는 중입니다. 잠시 후 다시 시도하세요.",
     "tables.changeSetRolledBack":
       "변경 트랜잭션이 롤백되었습니다. 행을 새로고침한 뒤 다시 시도하세요.",
     "tables.clear": "초기화",
+    "tables.clearExpression": "{label} 초기화",
     "tables.cols": "{count}개 컬럼",
     "tables.column": "컬럼",
     "tables.columnPolicy": "컬럼",
@@ -93,6 +107,14 @@ export const tablesCatalog = defineCatalog(
     "tables.duplicate": "복제",
     "tables.edit": "편집",
     "tables.editor": "데이터 편집기",
+    "tables.expressionBar": "WHERE 및 ORDER BY",
+    "tables.expressionClauseBoundary":
+      "이 입력은 현재 절 안에서만 작성하세요. 다른 절은 별도 입력란에 작성합니다.",
+    "tables.expressionStatementBoundary":
+      "주석과 문장 구분자는 이 입력에서 사용할 수 없습니다.",
+    "tables.expressionTooLong": "표현식이 너무 깁니다.",
+    "tables.expressionUnbalanced":
+      "적용하기 전에 따옴표, 식별자, 괄호를 모두 닫으세요.",
     "tables.exportCsv": "CSV 내보내기",
     "tables.exportJson": "JSON 내보내기",
     "tables.exportPageTitle": "현재 페이지를 내보냅니다",
@@ -111,6 +133,7 @@ export const tablesCatalog = defineCatalog(
     "tables.nonScalarPk":
       "기본 키가 binary/JSON/array/composite 타입이라 행 편집이 비활성화되었습니다 (값을 안전하게 매칭할 수 없음)",
     "tables.nullable": "NULL 허용",
+    "tables.orderByExpression": "ORDER BY 표현식",
     "tables.page": "{page}페이지",
     "tables.pagination": "테이블 페이지 이동",
     "tables.querySurface": "쿼리 및 그리드 정책",
@@ -139,5 +162,6 @@ export const tablesCatalog = defineCatalog(
     "tables.writePolicy": "쓰기 정책",
     "tables.writePolicyReadonly": "읽기 전용",
     "tables.writePolicyWrites": "쓰기 허용",
+    "tables.whereExpression": "WHERE 표현식",
   },
 );

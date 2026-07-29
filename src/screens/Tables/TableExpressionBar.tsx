@@ -1,0 +1,155 @@
+import { Icon } from "../../components/Icon";
+import { useI18n } from "../../lib/i18n";
+import {
+  gridExpressionIssue,
+  type GridExpressionIssue,
+  type GridExpressionKind,
+} from "../../lib/sqlBuild";
+
+type ExpressionFieldProps = {
+  kind: GridExpressionKind;
+  value: string;
+  appliedValue: string;
+  busy: boolean;
+  onChange: (value: string) => void;
+  onApply: (value: string) => void;
+};
+
+function ExpressionField({
+  kind,
+  value,
+  appliedValue,
+  busy,
+  onChange,
+  onApply,
+}: ExpressionFieldProps) {
+  const { t } = useI18n();
+  const label = kind === "where" ? "WHERE" : "ORDER BY";
+  const issue = gridExpressionIssue(kind, value);
+  const dirty = value !== appliedValue;
+  const hasExpression = Boolean(value || appliedValue);
+  const issueLabel: Record<GridExpressionIssue, string> = {
+    tooLong: t("tables.expressionTooLong"),
+    statementBoundary: t("tables.expressionStatementBoundary"),
+    unbalanced: t("tables.expressionUnbalanced"),
+    clauseBoundary: t("tables.expressionClauseBoundary"),
+  };
+  const error = issue ? issueLabel[issue] : undefined;
+
+  return (
+    <div className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:border-r tw:border-border-subtle tw:last:border-r-0">
+      <span className="tw:inline-flex tw:h-control-md tw:shrink-0 tw:items-center tw:gap-1 tw:px-2 tw:text-xs tw:font-semibold tw:text-muted-foreground">
+        <Icon name={kind === "where" ? "filter" : "sort"} />
+        {label}
+      </span>
+      <input
+        className="tw:h-control-md tw:min-w-0 tw:flex-1 tw:rounded-none tw:border-0 tw:bg-transparent tw:px-1 tw:font-mono tw:text-sm tw:text-foreground tw:shadow-none tw:focus-visible:ring-0 tw:aria-invalid:text-danger"
+        value={value}
+        disabled={busy}
+        aria-label={t(
+          kind === "where"
+            ? "tables.whereExpression"
+            : "tables.orderByExpression",
+        )}
+        aria-invalid={Boolean(issue)}
+        title={error}
+        spellCheck={false}
+        autoCapitalize="none"
+        autoCorrect="off"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onChange(appliedValue);
+            return;
+          }
+          if (event.key !== "Enter" || issue || !dirty) return;
+          event.preventDefault();
+          onApply(value);
+        }}
+      />
+      {issue ? (
+        <span
+          className="tw:inline-flex tw:size-control-md tw:shrink-0 tw:items-center tw:justify-center tw:text-danger"
+          title={error}
+          aria-label={error}
+        >
+          <Icon name="alert" />
+        </span>
+      ) : dirty ? (
+        <button
+          type="button"
+          className="btn small icon-only tw:shrink-0"
+          disabled={busy}
+          title={t("tables.applyExpression", { label })}
+          aria-label={t("tables.applyExpression", { label })}
+          onClick={() => onApply(value)}
+        >
+          <Icon name="play" />
+        </button>
+      ) : null}
+      {hasExpression ? (
+        <button
+          type="button"
+          className="btn small icon-only tw:shrink-0"
+          disabled={busy}
+          title={t("tables.clearExpression", { label })}
+          aria-label={t("tables.clearExpression", { label })}
+          onClick={() => {
+            onChange("");
+            onApply("");
+          }}
+        >
+          <Icon name="close" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+export default function TableExpressionBar({
+  whereExpression,
+  appliedWhereExpression,
+  orderByExpression,
+  appliedOrderByExpression,
+  busy,
+  onWhereChange,
+  onOrderByChange,
+  onApplyWhere,
+  onApplyOrderBy,
+}: {
+  whereExpression: string;
+  appliedWhereExpression: string;
+  orderByExpression: string;
+  appliedOrderByExpression: string;
+  busy: boolean;
+  onWhereChange: (value: string) => void;
+  onOrderByChange: (value: string) => void;
+  onApplyWhere: (value: string) => void;
+  onApplyOrderBy: (value: string) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      className="tw:flex tw:shrink-0 tw:border-b tw:border-border-subtle tw:bg-background"
+      aria-label={t("tables.expressionBar")}
+    >
+      <ExpressionField
+        kind="where"
+        value={whereExpression}
+        appliedValue={appliedWhereExpression}
+        busy={busy}
+        onChange={onWhereChange}
+        onApply={onApplyWhere}
+      />
+      <ExpressionField
+        kind="orderBy"
+        value={orderByExpression}
+        appliedValue={appliedOrderByExpression}
+        busy={busy}
+        onChange={onOrderByChange}
+        onApply={onApplyOrderBy}
+      />
+    </div>
+  );
+}

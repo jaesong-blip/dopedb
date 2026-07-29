@@ -236,6 +236,16 @@ Elevation은 세 단계만 허용한다.
   Shift+방향키는 직사각형 범위를 확장하고, 범위 복사는 행을 줄바꿈하고 셀을
   tab으로 구분한 텍스트를 만든다. 선택 배경과 focus ring도 기존
   `selection`/`ring` semantic token만 사용한다.
+- SQL table data editor는 command toolbar 바로 아래에 같은 폭의 `WHERE`와
+  `ORDER BY` expression field를 둔다. Enter 또는 field action으로 실제
+  server query를 다시 실행하고 Escape는 적용되지 않은 draft를 되돌린다.
+  fragment는 backend read-only proposal을 통과해야 하며 주석, 문장 구분자,
+  다른 clause로 경계를 벗어나 generated `LIMIT`을 삼킬 수 없다.
+- 정렬 trigger와 column filter trigger는 header 안의 서로 다른 button이다.
+  filter popover는 현재 page에서 관찰한 값과 원래 개수를 검색 가능한 checklist로
+  표시하고, 선택 뒤 결과가 바뀌어도 그 inventory를 유지한다. popover, field,
+  selected trigger는 공용 menu와 semantic `popover`/`selection` token의 정적
+  Tailwind v4 utility로만 구성한다.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.
 - `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.

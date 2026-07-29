@@ -26,6 +26,10 @@ export type TableDataState = {
   sort: GridSort | null;
   filters: Record<string, string>;
   appliedFilters: Record<string, string>;
+  whereExpression: string;
+  appliedWhereExpression: string;
+  orderByExpression: string;
+  appliedOrderByExpression: string;
   selectedRow: number | null;
   selectedCell: SelectedCell | null;
   editor: RowEditorState | null;

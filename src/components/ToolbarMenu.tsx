@@ -28,6 +28,7 @@ export default function ToolbarMenu({
   children,
   align = "end",
   disabled = false,
+  pressed,
 }: {
   label: string;
   icon?: IconName;
@@ -35,6 +36,7 @@ export default function ToolbarMenu({
   children: ReactNode;
   align?: "start" | "end";
   disabled?: boolean;
+  pressed?: boolean;
 }) {
   const generatedId = useId();
   const menuId = `toolbar-menu-${generatedId.replace(/:/g, "")}`;
@@ -122,6 +124,12 @@ export default function ToolbarMenu({
   }, [open, position]);
 
   function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
+    if (
+      event.target instanceof HTMLInputElement ||
+      event.target instanceof HTMLTextAreaElement
+    ) {
+      return;
+    }
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
     const items = menuItems(menuRef.current);
     if (items.length === 0) return;
@@ -173,13 +181,14 @@ export default function ToolbarMenu({
         className={
           trigger
             ? "tw:inline-flex tw:h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-sm tw:font-semibold tw:text-foreground tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-            : "btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
+            : "btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:aria-pressed:bg-selection tw:aria-pressed:text-selection-foreground"
         }
         disabled={disabled}
         title={label}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-pressed={pressed}
         aria-controls={open ? menuId : undefined}
         onClick={() => {
           if (open) close();

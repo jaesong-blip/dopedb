@@ -2,7 +2,7 @@
 // Sticky header + row numbers + null styling. All interactivity is opt-in via callbacks
 // so the plain read-only callers (SQL, document, and dashboard results) render unchanged:
 //   - onSort     → clickable headers that cycle asc/desc/none (arrow on the sorted col)
-//   - onFilter   → a per-column filter row under the header
+//   - onFilter   → DopeDB-style value/count popup from a header filter action
 //   - onSelectRow/onCellClick → row highlight + click-to-open a cell in the side viewer
 //   - startIndex → row numbers continue across pages (rows 101-200, not 1-100 again)
 // Columns are drag-resizable: first drag snapshots every column's rendered width and
@@ -20,6 +20,7 @@ import type { QueryResult } from "../ipc/types";
 import type { GridSort } from "../lib/sqlBuild";
 import type { SqlStreamRowSource } from "../features/queries/domain";
 import { Icon } from "./Icon";
+import DataGridColumnFilterMenu from "./DataGridColumnFilterMenu";
 import DataGridVirtual from "./DataGridVirtual";
 import { useI18n } from "../lib/i18n";
 import {
@@ -291,13 +292,6 @@ function DataGridTable({
             {result.columns.map((c, j) => (
               <th
                 key={c}
-                className={
-                  onSort
-                    ? "tw:cursor-pointer tw:select-none tw:hover:text-primary"
-                    : undefined
-                }
-                role={onSort ? "button" : undefined}
-                tabIndex={onSort ? 0 : undefined}
                 aria-sort={
                   onSort
                     ? sort?.col === c
@@ -307,33 +301,58 @@ function DataGridTable({
                       : "none"
                     : undefined
                 }
-                onClick={onSort ? () => onSort(c) : undefined}
-                onKeyDown={
-                  onSort
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onSort(c);
-                        }
-                      }
-                    : undefined
-                }
               >
-                <span
-                  className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1 tw:align-middle tw:[&_.icon]:shrink-0 tw:[&_.icon]:text-xs tw:[&_.icon]:text-muted-foreground tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis"
-                  title={columnMeta?.[c]?.dataType}
-                >
-                  {columnMeta?.[c] ? (
-                    <Icon name={columnMeta[c].pk ? "key" : "columns"} />
+                <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1">
+                  {onSort ? (
+                    <button
+                      type="button"
+                      className="tw:inline-flex tw:h-control-md tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-1 tw:overflow-hidden tw:border-0 tw:bg-transparent tw:p-0 tw:font-sans tw:text-left tw:text-ui tw:font-semibold tw:text-inherit tw:hover:text-primary tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+                      title={columnMeta?.[c]?.dataType}
+                      onClick={() => onSort(c)}
+                    >
+                      {columnMeta?.[c] ? (
+                        <Icon
+                          name={columnMeta[c].pk ? "key" : "columns"}
+                          className="tw:shrink-0 tw:text-xs tw:text-muted-foreground"
+                        />
+                      ) : null}
+                      <span className="tw:overflow-hidden tw:text-ellipsis">
+                        {c}
+                      </span>
+                      {sort?.col === c ? (
+                        <Icon
+                          name={
+                            sort.dir === "asc" ? "caretUp" : "caretDown"
+                          }
+                          className="tw:shrink-0 tw:text-2xs tw:text-primary"
+                        />
+                      ) : null}
+                    </button>
+                  ) : (
+                    <span
+                      className="tw:inline-flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1 tw:overflow-hidden"
+                      title={columnMeta?.[c]?.dataType}
+                    >
+                      {columnMeta?.[c] ? (
+                        <Icon
+                          name={columnMeta[c].pk ? "key" : "columns"}
+                          className="tw:shrink-0 tw:text-xs tw:text-muted-foreground"
+                        />
+                      ) : null}
+                      <span className="tw:overflow-hidden tw:text-ellipsis">
+                        {c}
+                      </span>
+                    </span>
+                  )}
+                  {onFilter ? (
+                    <DataGridColumnFilterMenu
+                      column={c}
+                      values={result.rows.map((row) => row[j])}
+                      filter={filters?.[c] ?? ""}
+                      onFilter={(value) => onFilter(c, value)}
+                    />
                   ) : null}
-                  <span>{c}</span>
                 </span>
-                {sort?.col === c && (
-                  <span className="tw:text-2xs tw:text-primary">
-                    {" "}
-                    <Icon name={sort.dir === "asc" ? "caretUp" : "caretDown"} />
-                  </span>
-                )}
                 <span
                   className="tw:absolute tw:top-0 tw:right-0 tw:z-[var(--ds-z-sticky)] tw:h-full tw:w-2 tw:cursor-col-resize tw:hover:bg-primary/55 tw:active:bg-primary/55"
                   title={t("grid.resizeHint")}
@@ -347,25 +366,6 @@ function DataGridTable({
               </th>
             ))}
           </tr>
-          {onFilter && (
-            <tr>
-              <th className="tw:!top-control-md tw:!h-auto tw:!p-1 tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:text-right tw:text-muted-foreground" />
-              {result.columns.map((c) => (
-                <th
-                  key={c}
-                  className="tw:!top-control-md tw:!h-auto tw:!p-1"
-                >
-                  <input
-                    className="tw:w-full tw:min-w-[72px] tw:text-sm tw:font-normal"
-                    value={filters?.[c] ?? ""}
-                    placeholder={t("grid.filterPlaceholder")}
-                    aria-label={t("grid.filterLabel", { col: c })}
-                    onChange={(e) => onFilter(c, e.target.value)}
-                  />
-                </th>
-              ))}
-            </tr>
-          )}
         </thead>
         <tbody>
           {result.rows.map((row, i) => (
