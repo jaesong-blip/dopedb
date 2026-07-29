@@ -128,7 +128,6 @@ export const connectionsCatalog = defineCatalog(
       "No configuration problems were found.",
     "connections.problemSqliteFileRequired":
       "Choose a SQLite database file.",
-    "connections.driverPlanned": "Planned — not available in this build",
     "connections.duplicate": "Duplicate connection",
     "connections.demoCreating": "Creating Demo SQLite...",
     "connections.demoCreated": "Demo SQLite is ready.",
@@ -395,7 +394,6 @@ export const connectionsCatalog = defineCatalog(
     "connections.problemsEmpty": "구성 문제를 찾지 못했습니다.",
     "connections.problemSqliteFileRequired":
       "SQLite 데이터베이스 파일을 선택하세요.",
-    "connections.driverPlanned": "준비 중 — 이 빌드에서는 사용할 수 없음",
     "connections.duplicate": "연결 복제",
     "connections.demoCreating": "Demo SQLite 생성 중...",
     "connections.demoCreated": "Demo SQLite가 준비되었습니다.",

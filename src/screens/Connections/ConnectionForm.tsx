@@ -180,6 +180,7 @@ function compatibleDrivers(
 ): DriverDescriptor[] {
   return drivers.filter(
     (driver) =>
+      driver.installState !== "planned" &&
       driver.engine === engine &&
       (provider === "auto" ||
         driver.supportedProviders.includes(provider)),
@@ -401,15 +402,18 @@ export function ConnectionForm({
   const normalizedDriverSearch = driverSearch.trim().toLocaleLowerCase();
   const visibleCatalogDrivers = (driverCatalog.data ?? []).filter(
     (driver) =>
-      normalizedDriverSearch.length === 0 ||
-      [
-        driver.name,
-        driver.engine,
-        driver.version,
-        ...driver.supportedProviders,
-        ...driver.capabilities,
-      ].some((value) =>
-        value.toLocaleLowerCase().includes(normalizedDriverSearch),
+      driver.installState !== "planned" &&
+      (
+        normalizedDriverSearch.length === 0 ||
+        [
+          driver.name,
+          driver.engine,
+          driver.version,
+          ...driver.supportedProviders,
+          ...driver.capabilities,
+        ].some((value) =>
+          value.toLocaleLowerCase().includes(normalizedDriverSearch),
+        )
       ),
   );
   const catalogDriver =
@@ -1148,9 +1152,6 @@ export function ConnectionForm({
   }
 
   function driverStatus(driver: DriverDescriptor): string {
-    if (driver.installState === "planned") {
-      return t("connections.driverPlanned");
-    }
     if (driver.installMode === "bundled") {
       return t("connections.driverBundled");
     }
