@@ -693,29 +693,6 @@ export default function Sql({
           >
             <Icon name={formatting ? "refresh" : "list"} />
           </button>
-          {running ? (
-            <>
-              <span
-                className="badge icon-only-badge"
-                title={t("sql.runningFor", { seconds: elapsed })}
-                aria-label={t("sql.runningFor", { seconds: elapsed })}
-                role="img"
-              >
-                <Icon name="refresh" />
-              </span>
-              <button
-                className="btn small icon-only"
-                onClick={() => {
-                  cancel();
-                  void cancelDesktopStream();
-                }}
-                title={t("sql.cancel")}
-                aria-label={t("sql.cancel")}
-              >
-                <Icon name="close" />
-              </button>
-            </>
-          ) : null}
           <WorkbenchDivider />
           {!safetyReady ? (
             <button
@@ -743,6 +720,24 @@ export default function Sql({
               </strong>
             </span>
           )}
+          <button
+            className="btn small ghost icon-only"
+            disabled={!running}
+            onClick={() => {
+              cancel();
+              void cancelDesktopStream();
+            }}
+            title={
+              running
+                ? `${t("sql.cancel")} · ${t("sql.runningFor", {
+                    seconds: elapsed,
+                  })}`
+                : t("sql.cancel")
+            }
+            aria-label={t("sql.cancel")}
+          >
+            <Icon name="stop" />
+          </button>
           <WorkbenchSelect
             label={t("sql.resolveMode")}
             title={resolveModeHint}
@@ -753,14 +748,7 @@ export default function Sql({
             <option value="playground">{t("sql.resolveModePlayground")}</option>
             <option value="script">{t("sql.resolveModeScript")}</option>
           </WorkbenchSelect>
-          {draftIsScript ? (
-            <span className="badge tw:text-muted-foreground">
-              {t("sql.statementCount", {
-                count: draftStatements.length,
-              })}
-            </span>
-          ) : null}
-          {!running && draftSignal ? (
+          {!running && draftSignal && draftSignal.tone !== "muted" ? (
             <span
               data-tone={draftSignal.tone}
               className="badge icon-only-badge tw:data-[tone=danger]:border-danger tw:data-[tone=danger]:text-danger tw:data-[tone=warning]:border-warning tw:data-[tone=warning]:text-warning"

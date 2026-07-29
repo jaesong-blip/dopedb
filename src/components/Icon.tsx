@@ -222,6 +222,7 @@ const glyphs = {
   ),
   check: <path d="M20 6 9 17l-5-5" />,
   play: <path d="M5 3l14 9-14 9V3z" />,
+  stop: <rect x="6" y="6" width="12" height="12" rx="1" />,
   pause: (
     <>
       <path d="M8 5v14M16 5v14" />
