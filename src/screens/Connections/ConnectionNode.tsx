@@ -6,6 +6,7 @@ import type {
 import ConfirmButton from "../../components/ConfirmButton";
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
+import { Button } from "../../design-system/components/Button";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import ToolbarMenu from "../../components/ToolbarMenu";
 import {
@@ -283,14 +284,18 @@ export default function ConnectionNode(props: Props) {
               event.preventDefault();
               props.onOpenMenu(null);
               event.currentTarget
-                .querySelector<HTMLButtonElement>(".db-menu-trigger")
+                .querySelector<HTMLButtonElement>(
+                  "[data-connection-menu-trigger]",
+                )
                 ?.focus();
             }
           }}
         >
-          <button
-            type="button"
-            className="btn small icon-only icon-xs db-menu-trigger"
+          <Button
+            data-connection-menu-trigger
+            iconOnly
+            size="xs"
+            variant="ghost"
             title={t("connections.connectionMenu")}
             aria-label={t("connections.connectionMenu")}
             aria-expanded={props.openMenuId === connection.id}
@@ -302,7 +307,7 @@ export default function ConnectionNode(props: Props) {
             }
           >
             <Icon name="moreVertical" />
-          </button>
+          </Button>
           {props.openMenuId === connection.id ? (
             <PopupMenu id={`connection-menu-${connection.id}`}>
               {connection.workspaceAccess === "local" ? (

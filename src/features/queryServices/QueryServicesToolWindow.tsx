@@ -11,7 +11,10 @@ import {
   IdeToolTabStrip,
 } from "../../design-system/components/IdeTabs";
 import { TreeSectionButton } from "../../design-system/components/TreeControls";
-import { WorkbenchToolbar } from "../../design-system/components/Workbench";
+import {
+  WorkbenchButton,
+  WorkbenchToolbar,
+} from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import { useI18n } from "../../lib/i18n";
@@ -140,18 +143,16 @@ export default function QueryServicesToolWindow({
       <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1">
         <aside className="tw:flex tw:w-[32%] tw:min-w-[220px] tw:max-w-[460px] tw:shrink-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-background">
           <WorkbenchToolbar label={t("services.sessions")} compact>
-            <button
-              type="button"
-              className="btn small icon-only"
+            <WorkbenchButton
+              iconOnly
               onClick={onNewQuery}
               title={t("ide.action.newQuery")}
               aria-label={t("ide.action.newQuery")}
             >
               <Icon name="plus" />
-            </button>
-            <button
-              type="button"
-              className="btn small icon-only"
+            </WorkbenchButton>
+            <WorkbenchButton
+              iconOnly
               disabled={
                 databaseOpen &&
                 collapsedConnections.size === 0 &&
@@ -162,17 +163,16 @@ export default function QueryServicesToolWindow({
               aria-label={t("connections.expandAll")}
             >
               <Icon name="chevronsRight" />
-            </button>
-            <button
-              type="button"
-              className="btn small icon-only"
+            </WorkbenchButton>
+            <WorkbenchButton
+              iconOnly
               disabled={!databaseOpen}
               onClick={collapseAll}
               title={t("connections.collapseAll")}
               aria-label={t("connections.collapseAll")}
             >
               <Icon name="chevronsLeft" />
-            </button>
+            </WorkbenchButton>
           </WorkbenchToolbar>
           <div
             className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-1"

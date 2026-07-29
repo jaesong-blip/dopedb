@@ -37,6 +37,7 @@ import {
 } from "../../lib/schemaDiff";
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
+import { Button } from "../../design-system/components/Button";
 import ToolbarMenu, {
   ToolbarMenuItem,
 } from "../../components/ToolbarMenu";
@@ -524,36 +525,39 @@ export function DatabaseExplorer({
         title={t("connections.databaseExplorer")}
         actions={
           <>
-            <button
-              type="button"
-              className="btn small icon-only icon-xs"
+            <Button
+              iconOnly
+              size="xs"
+              variant="ghost"
               disabled={!selectedTableKey}
               onClick={revealEditorObject}
               title={t("connections.scrollFromEditor")}
               aria-label={t("connections.scrollFromEditor")}
             >
               <Icon name="target" />
-            </button>
-            <button
-              type="button"
-              className="btn small icon-only icon-xs"
+            </Button>
+            <Button
+              iconOnly
+              size="xs"
+              variant="ghost"
               disabled={connections.length === 0}
               onClick={expandAllConnections}
               title={t("connections.expandAll")}
               aria-label={t("connections.expandAll")}
             >
               <Icon name="chevronsRight" />
-            </button>
-            <button
-              type="button"
-              className="btn small icon-only icon-xs"
+            </Button>
+            <Button
+              iconOnly
+              size="xs"
+              variant="ghost"
               disabled={open.size === 0}
               onClick={collapseAllConnections}
               title={t("connections.collapseAll")}
               aria-label={t("connections.collapseAll")}
             >
               <Icon name="chevronsLeft" />
-            </button>
+            </Button>
             <ToolbarMenu
               icon="moreVertical"
               label={t("connections.options")}
@@ -580,48 +584,53 @@ export function DatabaseExplorer({
         role="toolbar"
         aria-label={t("connections.databaseExplorerActions")}
       >
-        <button
-          type="button"
-          className="btn small icon-only icon-xs"
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           onClick={() => onNewConnection()}
           title={t("connections.new")}
           aria-label={t("connections.new")}
         >
           <Icon name="plus" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only icon-xs"
+        </Button>
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           disabled={!selectedConnection}
           onClick={() => selectedConnection && onEdit(selectedConnection)}
           title={t("connections.dataSourcesAndDrivers")}
           aria-label={t("connections.dataSourcesAndDrivers")}
         >
           <Icon name="gear" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only icon-xs"
+        </Button>
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           disabled={!selectedId}
           onClick={() => selectedId && void refreshSchema(selectedId)}
           title={t("connections.refreshSchema")}
           aria-label={t("connections.refreshSchema")}
         >
           <Icon name="refresh" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only icon-xs"
+        </Button>
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           disabled={!selectedSupportsSql}
           onClick={onNewQuery}
           title={t("ide.action.newQuery")}
           aria-label={t("ide.action.newQuery")}
         >
           <Icon name="play" />
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only icon-xs"
+        </Button>
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           disabled={!selectedConnection || !selectedTable}
           onClick={() =>
             selectedConnection &&
@@ -632,10 +641,10 @@ export function DatabaseExplorer({
           aria-label={t("connections.editData")}
         >
           <Icon name="table" />
-        </button>
-        <button
-          type="button"
-          className="btn small ghost tw:shrink-0"
+        </Button>
+        <Button
+          size="compact"
+          variant="ghost"
           disabled={!selectedSupportsSql || !selectedTable}
           onClick={() =>
             selectedConnection &&
@@ -649,10 +658,11 @@ export function DatabaseExplorer({
           aria-label={t("connections.showDdl")}
         >
           DDL
-        </button>
-        <button
-          type="button"
-          className="btn small icon-only icon-xs"
+        </Button>
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
           disabled={!selectedSchemaGroupComparable}
           onClick={() =>
             selectedSchemaGroup && onOpenSchemaDiff(selectedSchemaGroup)
@@ -661,7 +671,7 @@ export function DatabaseExplorer({
           aria-label={t("connections.compareSchemaStructure")}
         >
           <Icon name="columns" />
-        </button>
+        </Button>
         <ToolbarMenu
           icon="view"
           label={t("connections.viewOptions")}

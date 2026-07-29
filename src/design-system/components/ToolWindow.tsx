@@ -11,6 +11,7 @@ import type {
 } from "react";
 
 import { Icon } from "../../components/Icon";
+import { Button } from "./Button";
 
 export function ToolWindowSideSurface({
   compact = false,
@@ -172,16 +173,17 @@ export function ToolWindowHideButton({
   "children" | "title" | "aria-label"
 >) {
   return (
-    <button
+    <Button
       ref={buttonRef}
-      type="button"
-      className="btn small icon-only icon-xs"
+      iconOnly
+      size="xs"
+      variant="ghost"
       title={label}
       aria-label={label}
       {...buttonProps}
     >
       <Icon name="minus" />
-    </button>
+    </Button>
   );
 }
 
