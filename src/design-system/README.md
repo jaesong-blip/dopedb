@@ -115,8 +115,10 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
 - Database Explorer header는 전체 tree의 expand/collapse, 실제 view option,
   hide를 소유한다. 그 아래 command row가 data source 추가, refresh, 설정,
   query console, 선택 relation의 data/DDL, schema compare와 view option을
-  소유한다. 현재 editor 객체 동기화는 header action이 tree의 database,
-  schema, object section을 실제로 펼치고 대상 row로 focus를 이동한다.
+  소유한다. DDL은 DopeDB처럼 generic file glyph가 아니라 조밀한 `DDL`
+  text command로 표시해 data action과 구분한다. 현재 editor 객체 동기화는
+  header action이 tree의 database, schema, object section을 실제로 펼치고
+  대상 row로 focus를 이동한다.
   SQL data source 행의 작은 범위 badge는 발견한 namespace 중 현재 선택 수를
   표시하고 portal `ToolbarMenu`의 실제 checklist를 연다. 이 checklist는 Data
   Sources의 Schemas 탭과 같은 저장 값을 사용하며 화면별 popup이나 별도 style

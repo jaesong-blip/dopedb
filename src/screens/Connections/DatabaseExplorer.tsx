@@ -638,7 +638,7 @@ export function DatabaseExplorer({
         </button>
         <button
           type="button"
-          className="btn small icon-only icon-xs"
+          className="btn small ghost tw:shrink-0"
           disabled={!selectedSupportsSql || !selectedTable}
           onClick={() =>
             selectedConnection &&
@@ -651,7 +651,7 @@ export function DatabaseExplorer({
           title={t("connections.showDdl")}
           aria-label={t("connections.showDdl")}
         >
-          <Icon name="file" />
+          DDL
         </button>
         <button
           type="button"
