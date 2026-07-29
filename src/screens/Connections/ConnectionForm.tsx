@@ -23,6 +23,7 @@ import {
   CheckboxField,
   Field,
   FieldValidationMessage,
+  InlineSelect,
   PropertyRow,
   SelectInput,
   TextAreaInput,
@@ -1718,21 +1719,38 @@ export function ConnectionForm({
             ) : null}
             {!problemsOpen && activeTab === "general" ? (
               <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[840px] tw:gap-4">
-                <section className="tw:grid tw:gap-3">
-                  <PropertyRow
-                    label={t("connections.driver")}
-                    htmlFor="connection-driver"
-                    validation={driverValidation}
-                    hint={
-                      <InfoTip
-                        label={t("connections.driverHint")}
-                      />
-                    }
-                  >
-                    <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-2">
-                      <SelectInput
+                <section className="tw:grid tw:gap-1.5">
+                  <div className="tw:flex tw:min-h-control-md tw:flex-wrap tw:items-center tw:gap-x-6 tw:gap-y-1 tw:text-sm tw:text-foreground">
+                    <label className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5">
+                      <span>{t("connections.connectionType")}:</span>
+                      <InlineSelect
+                        value={connectionInputMode}
+                        aria-label={t("connections.connectionType")}
+                        disabled={busy}
+                        onChange={(event) =>
+                          selectConnectionInputMode(
+                            event.target.value as ConnectionInputMode,
+                          )
+                        }
+                      >
+                        <option value="default">
+                          {t(
+                            "connections.connectionTypeDefault",
+                          )}
+                        </option>
+                        <option value="urlOnly">
+                          {t(
+                            "connections.connectionTypeUrlOnly",
+                          )}
+                        </option>
+                      </InlineSelect>
+                    </label>
+
+                    <label className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1.5">
+                      <span>{t("connections.driver")}:</span>
+                      <InlineSelect
                         id="connection-driver"
-                        density="compact"
+                        title={t("connections.driverHint")}
                         value={form.driverId ?? ""}
                         aria-invalid={
                           driverValidation?.tone === "danger" ||
@@ -1757,55 +1775,32 @@ export function ConnectionForm({
                             {driver.name} {driver.version}
                           </option>
                         ))}
-                      </SelectInput>
-                      {activeDriver?.installMode === "managed" &&
-                      activeDriver.installState === "available" ? (
-                        <button
-                          type="button"
-                          className="btn small"
-                          disabled={installingDriverId !== null}
-                          onClick={() =>
-                            void downloadDriver(activeDriver)
-                          }
-                        >
-                          <Icon name="download" />
-                          {installingDriverId === activeDriver.id
-                            ? t("connections.driverDownloading")
-                            : t("connections.driverDownload")}
-                        </button>
-                      ) : null}
-                    </div>
-                  </PropertyRow>
+                      </InlineSelect>
+                    </label>
 
-                  <PropertyRow
-                    label={t("connections.connectionType")}
-                  >
-                    <div className="tw:flex">
-                      <SegmentedControl
-                        value={connectionInputMode}
-                        label={t("connections.connectionType")}
-                        options={[
-                          {
-                            value: "default",
-                            label: t(
-                              "connections.connectionTypeDefault",
-                            ),
-                          },
-                          {
-                            value: "urlOnly",
-                            label: t(
-                              "connections.connectionTypeUrlOnly",
-                            ),
-                          },
-                        ]}
-                        disabled={busy}
-                        onChange={selectConnectionInputMode}
-                      />
-                    </div>
-                  </PropertyRow>
+                    {activeDriver?.installMode === "managed" &&
+                    activeDriver.installState === "available" ? (
+                      <button
+                        type="button"
+                        className="btn small"
+                        disabled={installingDriverId !== null}
+                        onClick={() =>
+                          void downloadDriver(activeDriver)
+                        }
+                      >
+                        <Icon name="download" />
+                        {installingDriverId === activeDriver.id
+                          ? t("connections.driverDownloading")
+                          : t("connections.driverDownload")}
+                      </button>
+                    ) : null}
+                  </div>
+                  {driverValidation ? (
+                    <FieldValidationMessage
+                      validation={driverValidation}
+                    />
+                  ) : null}
                 </section>
-
-                <div className="tw:h-px tw:bg-border-subtle" />
 
                 {connectionInputMode === "urlOnly" ? (
                   <section className="tw:grid tw:gap-2">
