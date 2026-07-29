@@ -398,6 +398,10 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   engine/schema 이름과 top toolbar의 Settings action을 하단에 중복하지 않는다.
   잠금 action은 해당 data source의 Safety 설정을, bell action은 실제 Activity
   문서를 연다. 화면 전용 status CSS나 style map은 만들지 않는다.
+- `UsageMeter`: 남은 할당량을 채움 길이로, 소진된 비율을 tone으로 표시하는 얇은
+  막대. 60% 미만 소진은 muted, 80% 미만은 warning, 그 이상은 danger를 쓰며 채움
+  폭만 inline style로 둔다. 상태바 Agent 사용량처럼 숫자와 함께 놓아 색이 유일한
+  신호가 되지 않게 한다.
 - `DiagnosticSummary`, `DiagnosticCount`: 설정·속성 편집기의 Problems 목록과
   오류/경고 개수를 같은 compact hierarchy로 표시.
 - `SettingsGroup`: 설정·정책 화면의 제목, 상단 divider, dense spacing을 공유하는

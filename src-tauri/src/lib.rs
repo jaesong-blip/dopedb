@@ -73,6 +73,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             features::agents::transport::detect_agent_clis,
+            features::agents::transport::agent_usage,
             features::agents::transport::list_retired_chat_archive_threads,
             features::agents::transport::get_retired_chat_archive_messages,
             features::workspaces::transport::workspace_feature_state,

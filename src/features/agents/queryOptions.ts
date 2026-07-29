@@ -6,6 +6,7 @@ import type { RetiredChatThreadId } from "./domain";
 import { agentQueryKeys } from "./queryKeys";
 import {
   detectAgentClis,
+  getAgentUsage,
   getRetiredChatArchiveMessages,
   listRetiredChatArchiveThreads,
 } from "./tauriAdapter";
@@ -16,6 +17,16 @@ export function agentCliDetectionQuery() {
     queryKey: agentQueryKeys.cliStatus(),
     staleTime: 15_000,
     queryFn: detectAgentClis,
+  });
+}
+
+// Quota moves slowly and every read calls the provider, so poll on a wide interval.
+export function agentUsageQuery() {
+  return queryOptions({
+    queryKey: agentQueryKeys.usage(),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+    queryFn: getAgentUsage,
   });
 }
 

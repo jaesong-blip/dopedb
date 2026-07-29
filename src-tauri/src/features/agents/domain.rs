@@ -1,4 +1,4 @@
-//! Credential-free Agent CLI status and read-only retired-chat archive contracts.
+//! Agent CLI status, remaining subscription quota, and read-only retired-chat contracts.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,29 @@ pub(crate) struct AgentCliInfo {
     pub(crate) authenticated: bool,
     pub(crate) auth_method: Option<String>,
     pub(crate) note: String,
+}
+
+/// How much of one provider's subscription quota is still available.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentUsage {
+    pub(crate) provider: AgentProvider,
+    /// Remaining share of the short rolling window, 0..=100.
+    pub(crate) session_percent_left: u8,
+    /// Remaining share of the weekly window when the provider reports one.
+    pub(crate) weekly_percent_left: Option<u8>,
+    /// Per-model weekly caps the provider scopes separately from the account window.
+    pub(crate) model_windows: Vec<AgentModelUsage>,
+    /// When the short window refills, if the provider reports it.
+    pub(crate) resets_at: Option<DateTime<Utc>>,
+}
+
+/// One model-scoped weekly cap, named as the provider displays it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentModelUsage {
+    pub(crate) model: String,
+    pub(crate) percent_left: u8,
 }
 
 /// A thread persisted by the retired in-app Agent chat; it has no mutation path.

@@ -34,6 +34,21 @@ export interface AgentCliInfo {
   note: string;
 }
 
+/** One model-scoped weekly cap, named as the provider displays it. */
+export interface AgentModelUsage {
+  model: string;
+  percentLeft: number;
+}
+
+/** How much of one provider's subscription quota is still available. */
+export interface AgentUsage {
+  provider: AgentProvider;
+  sessionPercentLeft: number;
+  weeklyPercentLeft: number | null;
+  modelWindows: AgentModelUsage[];
+  resetsAt: string | null;
+}
+
 /** A persisted, read-only conversation created before Terminal sessions replaced chat. */
 export interface RetiredChatArchiveThread {
   id: RetiredChatThreadId;

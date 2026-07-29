@@ -3,27 +3,40 @@
 use crate::error::AppResult;
 use crate::kernel::identity::RetiredChatThreadId;
 
-use super::domain::{AgentCliInfo, RetiredChatArchiveMessage, RetiredChatArchiveThread};
-use super::ports::{AgentCliProbePort, RetiredChatArchivePort};
+use super::domain::{
+    AgentCliInfo, AgentUsage, RetiredChatArchiveMessage, RetiredChatArchiveThread,
+};
+use super::ports::{AgentCliProbePort, AgentUsagePort, RetiredChatArchivePort};
 
 #[derive(Clone)]
-pub(crate) struct AgentsUseCases<C, A> {
+pub(crate) struct AgentsUseCases<C, U, A> {
     cli_probe: C,
+    usage: U,
     archive: A,
 }
 
-impl<C, A> AgentsUseCases<C, A>
+impl<C, U, A> AgentsUseCases<C, U, A>
 where
     C: AgentCliProbePort,
+    U: AgentUsagePort,
     A: RetiredChatArchivePort,
 {
-    pub(crate) fn new(cli_probe: C, archive: A) -> Self {
-        Self { cli_probe, archive }
+    pub(crate) fn new(cli_probe: C, usage: U, archive: A) -> Self {
+        Self {
+            cli_probe,
+            usage,
+            archive,
+        }
     }
 
     /// Detect only the installed CLI's own status; provider credentials never cross this port.
     pub(crate) async fn detect_clis(&self) -> Vec<AgentCliInfo> {
         self.cli_probe.detect().await
+    }
+
+    /// Report remaining provider quota; credentials stay inside the adapter.
+    pub(crate) async fn usage(&self) -> Vec<AgentUsage> {
+        self.usage.fetch().await
     }
 
     /// List retired in-app chat threads without exposing any write operation.

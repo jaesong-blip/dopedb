@@ -1,4 +1,4 @@
-//! Tauri transport for credential-free CLI probes and read-only retired archives.
+//! Tauri transport for CLI probes, provider quota, and read-only retired archives.
 
 use tauri::State;
 
@@ -6,13 +6,22 @@ use crate::error::AppResult;
 use crate::kernel::identity::RetiredChatThreadId;
 use crate::state::AppState;
 
-use super::domain::{AgentCliInfo, RetiredChatArchiveMessage, RetiredChatArchiveThread};
+use super::domain::{
+    AgentCliInfo, AgentUsage, RetiredChatArchiveMessage, RetiredChatArchiveThread,
+};
 
 /// Claude Code / Codex CLI status for connection-pinned Terminal profiles.
 #[tauri::command]
 pub async fn detect_agent_clis(state: State<'_, AppState>) -> AppResult<Vec<AgentCliInfo>> {
     let agents = state.services.agents.clone();
     Ok(agents.detect_clis().await)
+}
+
+/// Remaining subscription quota for the signed-in Agent CLIs, for the status bar.
+#[tauri::command]
+pub async fn agent_usage(state: State<'_, AppState>) -> AppResult<Vec<AgentUsage>> {
+    let agents = state.services.agents.clone();
+    Ok(agents.usage().await)
 }
 
 /// List the read-only archive left by the retired in-app Agent chat.
