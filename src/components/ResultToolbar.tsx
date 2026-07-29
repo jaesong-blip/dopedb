@@ -13,6 +13,7 @@ import {
   toTsv,
 } from "../lib/export";
 import { useI18n } from "../lib/i18n";
+import { Icon } from "./Icon";
 import { useToast } from "./Toast";
 
 export default function ResultToolbar({
@@ -22,6 +23,7 @@ export default function ResultToolbar({
   filenameBase,
   scopeLabel,
   partial,
+  presentation = "inline",
 }: {
   columns: string[];
   rows?: unknown[][];
@@ -32,6 +34,8 @@ export default function ResultToolbar({
   scopeLabel?: string;
   /** Running streams are partial snapshots and cannot be exported as complete. */
   partial?: boolean;
+  /** Dense Services toolbar presentation; the default remains inline metadata. */
+  presentation?: "inline" | "workbench";
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -40,10 +44,18 @@ export default function ResultToolbar({
   const source = () =>
     rowSource ? iterateSqlStreamRows(rowSource) : (rows ?? []);
   return (
-    <span className="tw:ml-2 tw:inline-flex tw:items-center tw:gap-2 tw:align-middle">
+    <span
+      data-presentation={presentation}
+      className="tw:inline-flex tw:items-center tw:gap-1 tw:align-middle tw:data-[presentation=inline]:ml-2 tw:data-[presentation=workbench]:ml-auto"
+    >
       <button
-        className="btn small ghost"
+        className={
+          presentation === "workbench"
+            ? "btn small ghost icon-only icon-xs"
+            : "btn small ghost"
+        }
         title={t("results.copyTitle")}
+        aria-label={t("results.copyTitle")}
         onClick={() =>
           (rowSource
             ? copyTsvTerminalSnapshot(columns, source())
@@ -54,7 +66,11 @@ export default function ResultToolbar({
         }
         disabled={disabled}
       >
-        {t("results.copy")}
+        {presentation === "workbench" ? (
+          <Icon name="copy" />
+        ) : (
+          t("results.copy")
+        )}
       </button>
       <button
         className="btn small ghost"

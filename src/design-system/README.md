@@ -167,6 +167,14 @@ Elevation은 세 단계만 허용한다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
+- Services는 tool window 이름과 닫기 action을 전체 폭 `ToolWindowHeader`가
+  소유한다. 그 아래에서 실행 가능한 database/document/session tree와
+  Output/Result tab surface를 약 `32% / 68%`로 나눈다. Schema·Activity처럼
+  query lifecycle에 속하지 않는 열린 문서는 Services tree에 투영하지 않는다.
+- tabular Result는 `WorkbenchToolbar`에 현재 grid 표시, 실제 전체 셀 검색,
+  복사·CSV·JSON action을 놓고 `DataGrid` 아래 고정 footer에
+  visible/filtered row count와 duration을 표시한다. DopeDB에 보인다는 이유만으로
+  transaction, DDL, edit action을 handler 없이 추가하지 않는다.
 - AI Chat composer는 큰 multiline surface, 내부 context chip/action row,
   외부 model/data-source context row의 세 층을 사용한다. 첨부 chip과 popup은
   semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
@@ -175,6 +183,9 @@ Elevation은 세 단계만 허용한다.
   대응시키고, 빈 값에서는 primary 실행 action을 비활성화한다. 치환 설명은
   semantic muted surface에 두며 feature 전용 CSS나 style map을 만들지 않는다.
 - `ResultMeta`, `SqlSnippet`: 결과 pane의 고정 metadata bar와 축약 SQL 표기.
+- `ResultWorkbenchToolbar`, `ResultWorkbenchFooter`: materialized/streaming
+  결과가 공유하는 grid mode, 전체 셀 검색, 실제 export action과 행·duration
+  footer. 부분 stream은 평탄화하지 않고 완료된 결과에만 검색을 적용한다.
 - `InspectorHeader`, `InspectorFooter`: 셀 보기·행 편집·검토 inspector의 제목,
   action cluster, sticky footer 계약.
 - `ToolbarMenuItem`: portal 기반 `ToolbarMenu` 안에서 사용하는 공통 command row.

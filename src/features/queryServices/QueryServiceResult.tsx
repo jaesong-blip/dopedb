@@ -1,7 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import DataGrid from "../../components/DataGrid";
 import ResultToolbar from "../../components/ResultToolbar";
+import {
+  ResultWorkbenchFooter,
+  ResultWorkbenchToolbar,
+  resultCellText,
+} from "../../components/ResultWorkbench";
 import {
   ResultMeta,
   SqlSnippet,
@@ -70,63 +75,77 @@ function MaterializedResult({
 >) {
   const { t } = useI18n();
   const [limit, setLimit] = useState(PAGE_STEP);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filter, setFilter] = useState("");
   const result = outcome.result;
+  const normalizedFilter = filter.trim().toLocaleLowerCase();
+  const filteredRows = useMemo(() => {
+    if (!result || !normalizedFilter) return result?.rows ?? [];
+    return result.rows.filter((row) =>
+      row.some((value) =>
+        resultCellText(value).toLocaleLowerCase().includes(normalizedFilter),
+      ),
+    );
+  }, [normalizedFilter, result]);
+  const visibleRows = filteredRows.slice(0, limit);
 
   return (
     <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
-      <ResultMeta>
-        <SqlSnippet>{sql}</SqlSnippet>
-        {result ? (
-          <>
-            {" · "}
-            {t(result.truncated ? "agent.rowsTruncated" : "agent.rows", {
-              count: result.rowCount,
-            })}
-            {result.truncated &&
-              ` - ${t("sql.capped", { count: maxRows })}`}{" "}
-            · {result.durationMs} ms · {at}
-            {" · "}
-            <ResultToolbar
-              columns={result.columns}
-              rows={result.rows}
-              filenameBase={`query-${stamp()}`}
-            />
-          </>
-        ) : (
-          <>
-            {" · "}
-            {outcome.committed
-              ? t("sql.writeCommitted")
-              : t("sql.noRowsReturned")}
-            {outcome.affected !== null && (
-              <> · {t("sql.affected", { count: outcome.affected })}</>
-            )}{" "}
-            · {at}
-          </>
-        )}
-      </ResultMeta>
-      {result && (
+      {result ? (
         <>
+          <ResultWorkbenchToolbar
+            sql={sql}
+            columns={result.columns}
+            rows={filteredRows}
+            filenameBase={`query-${stamp()}`}
+            filterOpen={filterOpen}
+            filter={filter}
+            onToggleFilter={() => {
+              setFilterOpen((open) => !open);
+              if (filterOpen) setFilter("");
+            }}
+            onFilterChange={(value) => {
+              setFilter(value);
+              setLimit(PAGE_STEP);
+            }}
+          />
           <DataGrid
-            result={
-              limit < result.rows.length
-                ? { ...result, rows: result.rows.slice(0, limit) }
-                : result
-            }
+            result={{
+              ...result,
+              rows: visibleRows,
+              rowCount: filteredRows.length,
+            }}
             surface="workbench"
           />
-          {result.rows.length > limit && (
-            <button
-              className="btn tw:m-3 tw:self-start"
-              onClick={() => setLimit((current) => current + PAGE_STEP)}
-            >
-              {t("sql.showMore", {
-                count: Math.min(PAGE_STEP, result.rows.length - limit),
-                total: result.rows.length,
-              })}
-            </button>
-          )}
+          <ResultWorkbenchFooter
+            visible={visibleRows.length}
+            total={result.rows.length}
+            duration={result.durationMs}
+            truncated={result.truncated}
+            maxRows={maxRows}
+            showMoreCount={Math.min(
+              PAGE_STEP,
+              filteredRows.length - visibleRows.length,
+            )}
+            onShowMore={
+              filteredRows.length > limit
+                ? () => setLimit((current) => current + PAGE_STEP)
+                : undefined
+            }
+          />
         </>
+      ) : (
+        <ResultMeta>
+          <SqlSnippet>{sql}</SqlSnippet>
+          {" · "}
+          {outcome.committed
+            ? t("sql.writeCommitted")
+            : t("sql.noRowsReturned")}
+          {outcome.affected !== null && (
+            <> · {t("sql.affected", { count: outcome.affected })}</>
+          )}{" "}
+          · {at}
+        </ResultMeta>
       )}
     </div>
   );
