@@ -396,6 +396,9 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   오류/경고 개수를 같은 compact hierarchy로 표시.
 - `SettingsGroup`: 설정·정책 화면의 제목, 상단 divider, dense spacing을 공유하는
   평평한 control group. Settings dialog 안에 card surface를 다시 중첩하지 않는다.
+  300px settings rail은 검색 input에 8px 좌우 gutter를 두고 hierarchy의
+  hover/selection row는 rail 전체 폭을 차지하는 평평한 surface를 사용한다.
+  선택 항목을 inset rounded pill로 만들지 않는다.
 
 툴윈도우 primitive는
 [`src/design-system/components/ToolWindow.tsx`](components/ToolWindow.tsx)에

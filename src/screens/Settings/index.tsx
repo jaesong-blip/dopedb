@@ -178,8 +178,8 @@ export default function Settings({
           />
 
           <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-[300px_minmax(0,1fr)] tw:@max-[700px]:grid-cols-1 tw:@max-[700px]:grid-rows-[auto_minmax(0,1fr)]">
-            <aside className="tw:flex tw:min-h-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card tw:p-2 tw:@max-[700px]:max-h-[188px] tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">
-              <div className="tw:px-1 tw:py-1">
+            <aside className="tw:flex tw:min-h-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card tw:py-2 tw:@max-[700px]:max-h-[188px] tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">
+              <div className="tw:px-2 tw:py-1">
                 <TreeSearch
                   value={filter}
                   autoFocus
@@ -221,7 +221,7 @@ export default function Settings({
                           key={entry.id}
                           type="button"
                           data-active={section === entry.id}
-                          className="tw:min-h-control-sm tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:pr-3 tw:pl-8 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
+                          className="tw:min-h-control-sm tw:cursor-pointer tw:rounded-none tw:border-0 tw:bg-transparent tw:pr-3 tw:pl-8 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
                           onClick={() => setSection(entry.id)}
                           disabled={entry.disabled}
                           title={
