@@ -416,21 +416,22 @@ export default function TerminalTabs({
             <Icon name="history" />
           </button>
         )}
-        <button
-          type="button"
-          className="btn small icon-only"
-          disabled={sessions.length === 0}
-          onClick={(event) => {
-            const target = sessions.find((session) => session.id === activeId);
-            if (target) openTabPopup(target, event.currentTarget);
-          }}
-          title={t("terminal.tabActions")}
-          aria-label={t("terminal.tabActions")}
-          aria-haspopup="menu"
-          aria-expanded={popup?.kind === "tab"}
-        >
-          <Icon name="moreVertical" />
-        </button>
+        {sessions.length > 0 ? (
+          <button
+            type="button"
+            className="btn small icon-only"
+            onClick={(event) => {
+              const target = sessions.find((session) => session.id === activeId);
+              if (target) openTabPopup(target, event.currentTarget);
+            }}
+            title={t("terminal.tabActions")}
+            aria-label={t("terminal.tabActions")}
+            aria-haspopup="menu"
+            aria-expanded={popup?.kind === "tab"}
+          >
+            <Icon name="moreVertical" />
+          </button>
+        ) : null}
         {presentation !== "agent" && (
           <button
             type="button"

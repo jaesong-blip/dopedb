@@ -210,7 +210,8 @@ Elevation은 세 단계만 허용한다.
 - AI Chat composer는 큰 multiline surface, 내부 context chip/action row,
   외부 model/data-source context row의 세 층을 사용한다. 첨부 chip과 popup은
   semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
-  않는다.
+  않는다. session 전용 tab action menu는 활성 session이 있을 때만 표시하며
+  빈 AI Chat에 disabled kebab을 남기지 않는다.
 - Query parameter dialog는 parameter token/이름과 SQL expression 값을 한 행에
   대응시키고, 빈 값에서는 primary 실행 action을 비활성화한다. 치환 설명은
   semantic muted surface에 두며 feature 전용 CSS나 style map을 만들지 않는다.
