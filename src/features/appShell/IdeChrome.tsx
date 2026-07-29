@@ -32,6 +32,7 @@ export function IdeTopBar({
   servicesOpen,
   showTerminalDock,
   searchEverywhereOpen,
+  workspace,
   account,
   onNewQuery,
   onArea,
@@ -51,6 +52,7 @@ export function IdeTopBar({
   servicesOpen: boolean;
   showTerminalDock: boolean;
   searchEverywhereOpen: boolean;
+  workspace: ReactNode;
   account: ReactNode;
   onNewQuery: () => void;
   onArea: (area: AppArea) => void;
@@ -78,23 +80,7 @@ export function IdeTopBar({
         }
         aria-hidden="true"
       />
-      <button
-        type="button"
-        className="tw:inline-flex tw:h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-sm tw:font-semibold tw:text-foreground tw:hover:bg-muted"
-        onClick={() => onArea("workspace")}
-        aria-label={t("ide.project")}
-      >
-        <span className="tw:grid tw:size-5 tw:shrink-0 tw:place-items-center tw:rounded-xs tw:bg-secondary tw:font-mono tw:text-xs tw:font-bold tw:text-foreground">
-          D
-        </span>
-        <span className="tw:max-w-[170px] tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {t("ide.project")}
-        </span>
-        <Icon
-          name="chevronDown"
-          className="tw:text-xs tw:text-muted-foreground"
-        />
-      </button>
+      {workspace}
 
       <div
         className="tw:absolute tw:left-1/2 tw:flex tw:-translate-x-1/2 tw:items-center tw:gap-1 tw:[&_.btn]:[--ds-icon-button-size:28px]"

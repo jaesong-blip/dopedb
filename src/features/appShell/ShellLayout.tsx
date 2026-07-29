@@ -220,6 +220,12 @@ export default function ShellLayout(props: Props) {
         terminalButtonRef={props.terminalButtonRef}
         onSearchEverywhere={props.onSearchEverywhere}
         onSettings={props.onSettings}
+        workspace={
+          <WorkspaceSwitcher
+            onNew={props.onNewConnection}
+            onChanged={props.onWorkspaceScopeChanged}
+          />
+        }
       />
 
       <WorkbenchRail
@@ -256,12 +262,6 @@ export default function ShellLayout(props: Props) {
         editing === null &&
         !activeSchemaGroup ? (
           <DashboardSidebar
-            workspaceHeader={
-              <WorkspaceSwitcher
-                onNew={props.onNewConnection}
-                onChanged={props.onWorkspaceScopeChanged}
-              />
-            }
             connections={connections}
             selectedId={selectedId}
             focusId={dashboardFocusId}
@@ -270,12 +270,6 @@ export default function ShellLayout(props: Props) {
           />
         ) : (
           <DatabaseExplorer
-            workspaceHeader={
-              <WorkspaceSwitcher
-                onNew={props.onNewConnection}
-                onChanged={props.onWorkspaceScopeChanged}
-              />
-            }
             connections={connections}
             selectedId={selectedId}
             selectedTableKey={selectedTable ? tableKey(selectedTable) : null}

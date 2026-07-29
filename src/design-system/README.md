@@ -63,7 +63,10 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며, 데이터 그
 - 앱 chrome은 눈에 띄지 않고 사용자의 데이터와 도구를 감싼다.
 - macOS native menu와 별도로 WebView 안에 File/Edit/View 계열 텍스트 메뉴를
   만들지 않는다. 앱 내부 title toolbar는 project context, tool-window launcher,
-  search와 settings를 소유한다.
+  search와 settings를 소유한다. project context의 chevron은 단순 화면 이동
+  button에 붙이지 않는다. 실제 활성 workspace 이름과 전환, 새 연결, workspace
+  관리 action을 제공하는 portal menu여야 하며 Explorer 안에 같은 selector를
+  중복 배치하지 않는다.
 - tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
   하나의 layout 문법으로 구현한다.
 - 색상보다 `muted`, `selection`, `border`를 먼저 사용한다.

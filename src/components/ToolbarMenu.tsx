@@ -24,12 +24,14 @@ function menuItems(root: HTMLElement | null) {
 export default function ToolbarMenu({
   label,
   icon,
+  trigger,
   children,
   align = "end",
   disabled = false,
 }: {
   label: string;
-  icon: IconName;
+  icon?: IconName;
+  trigger?: ReactNode;
   children: ReactNode;
   align?: "start" | "end";
   disabled?: boolean;
@@ -168,7 +170,11 @@ export default function ToolbarMenu({
       <button
         ref={triggerRef}
         type="button"
-        className="btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
+        className={
+          trigger
+            ? "tw:inline-flex tw:h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-sm tw:font-semibold tw:text-foreground tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+            : "btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground"
+        }
         disabled={disabled}
         title={label}
         aria-label={label}
@@ -190,7 +196,7 @@ export default function ToolbarMenu({
           setOpen(true);
         }}
       >
-        <Icon name={icon} />
+        {trigger ?? (icon ? <Icon name={icon} /> : null)}
       </button>
       {menu}
     </span>
