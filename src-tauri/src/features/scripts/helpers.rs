@@ -56,6 +56,7 @@ pub(super) fn script_operation_risk(
 pub(super) async fn execute_script_transaction(
     pool: &DbPool,
     statements: &[String],
+    namespace: Option<String>,
     expected_affected: Option<&[u64]>,
     grant: &ExecutionGrant,
     operation_id: Uuid,
@@ -67,10 +68,23 @@ pub(super) async fn execute_script_transaction(
     }
     let _exact_payload = (grant.payload_sha256(), grant.connection_id());
     macro_rules! run_transaction {
-        ($pool:expr) => {{
+        ($pool:expr, $context:expr) => {{
             let mut outcomes = Vec::with_capacity(statements.len());
             match $pool.begin().await {
                 Ok(mut transaction) => {
+                    if let Some(context) = $context {
+                        if let Err(error) = sqlx::query(AssertSqlSafe(context))
+                            .execute(&mut *transaction)
+                            .await
+                        {
+                            transaction.rollback().await.map_err(|rollback| {
+                                AppError::OutcomeUnknown(format!(
+                                    "script namespace rollback acknowledgement failed: {rollback}"
+                                ))
+                            })?;
+                            return Err(AppError::from(error));
+                        }
+                    }
                     let mut succeeded = true;
                     for (index, statement) in statements.iter().enumerate() {
                         match sqlx::query(AssertSqlSafe(statement.as_str()))
@@ -135,10 +149,13 @@ pub(super) async fn execute_script_transaction(
             }
         }};
     }
+    let postgres_context = namespace
+        .as_deref()
+        .map(crate::executor::namespace::postgres_search_path_statement);
     Ok(match pool {
-        DbPool::Postgres(pool) => run_transaction!(pool),
-        DbPool::Mysql(pool) => run_transaction!(pool),
-        DbPool::Sqlite(pool) => run_transaction!(pool),
+        DbPool::Postgres(pool) => run_transaction!(pool, postgres_context.as_deref()),
+        DbPool::Mysql(pool) => run_transaction!(pool, None::<&str>),
+        DbPool::Sqlite(pool) => run_transaction!(pool, None::<&str>),
     })
 }
 

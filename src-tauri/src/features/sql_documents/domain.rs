@@ -61,6 +61,7 @@ pub(crate) struct SqlDocument {
     pub(crate) connection_id: ConnectionId,
     pub(crate) title: String,
     pub(crate) dialect: String,
+    pub(crate) selected_schema: Option<String>,
     pub(crate) content: String,
     pub(crate) local_revision: i64,
     pub(crate) remote_id: Option<String>,
@@ -86,6 +87,7 @@ impl SqlDocument {
         connection_id: ConnectionId,
         dialect: SqlDialect,
         title: String,
+        selected_schema: Option<String>,
         content: String,
         now: String,
     ) -> Self {
@@ -94,6 +96,7 @@ impl SqlDocument {
             connection_id,
             title,
             dialect: dialect.as_str().into(),
+            selected_schema,
             content,
             local_revision: 1,
             remote_id: None,

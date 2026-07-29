@@ -194,6 +194,7 @@ export function IdeTopBar({
 export function IdeStatusBar({
   selected,
   selectedTable,
+  selectedNamespace,
   settingsOpen,
   connectionCount,
   querySession,
@@ -202,6 +203,7 @@ export function IdeStatusBar({
 }: {
   selected: ConnectionProfile | null;
   selectedTable: CatalogTable | null;
+  selectedNamespace: string | null;
   settingsOpen: boolean;
   connectionCount: number;
   querySession: QueryServiceSession | null;
@@ -242,9 +244,11 @@ export function IdeStatusBar({
           <StatusBarItem>
             {selected.engine}
           </StatusBarItem>
-          <StatusBarItem title={selected.database}>
+          <StatusBarItem
+            title={`${selected.database} · ${selectedNamespace ?? selected.database}`}
+          >
             <span className="tw:max-w-[240px] tw:truncate">
-              {selected.database}
+              {selectedNamespace ?? selected.database}
             </span>
           </StatusBarItem>
           <StatusBarItem>

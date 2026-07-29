@@ -5,6 +5,7 @@ import { Icon } from "../../components/Icon";
 import TerminalDock from "../../components/TerminalDock/TerminalDock";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
+import { defaultSqlNamespace } from "../queries/namespace";
 import type { WorkbenchDocument } from "../workbench/domain";
 import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
 import LocalHistoryToolWindow from "../localHistory/LocalHistoryToolWindow";
@@ -153,6 +154,19 @@ export default function ShellLayout(props: Props) {
       (session) => session.connectionId === selectedId,
     ) ??
     null;
+  const activeWorkbenchDocument =
+    workbenchDocuments.find(
+      (document) => document.id === activeWorkbenchDocumentId,
+    ) ?? null;
+  const selectedNamespace = selected
+    ? activeWorkbenchDocument?.kind === "sql"
+      ? activeWorkbenchDocument.selectedSchema ??
+        defaultSqlNamespace(selected)
+      : activeWorkbenchDocument?.kind === "data"
+        ? activeWorkbenchDocument.table.schema ??
+          defaultSqlNamespace(selected)
+        : defaultSqlNamespace(selected)
+    : null;
 
   return (
     <div
@@ -343,6 +357,7 @@ export default function ShellLayout(props: Props) {
       <IdeStatusBar
         selected={selected}
         selectedTable={selectedTable}
+        selectedNamespace={selectedNamespace}
         settingsOpen={settingsOpen}
         connectionCount={connections.length}
         querySession={statusQuerySession}

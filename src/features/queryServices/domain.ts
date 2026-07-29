@@ -49,6 +49,7 @@ export type QueryServiceSession = {
   connectionId: string;
   connectionName: string;
   consoleTitle: string;
+  namespace: string;
   sql: string;
   startedAt: string;
   startedLabel: string;

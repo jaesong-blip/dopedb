@@ -163,7 +163,10 @@ Elevation은 세 단계만 허용한다.
   평평한 IDE pane, command row, object context, empty state 계약.
   중앙 workbench의 data source 문맥은 별도 대형 connection header를 만들지
   않고 document tab, context toolbar, status bar에 나눠 표시한다. SQL 문서
-  제목은 tab을 더블 클릭해 편집한다.
+  제목은 tab을 더블 클릭해 편집한다. SQL schema selector는 catalog에서 발견한
+  namespace만 표시하는 compact native control이며, 선택값을 문서에 영속하고
+  Explain/read/write/script 실행과 status/Services projection이 같은 값을
+  사용한다. selector 한 곳을 위해 feature CSS나 style map을 만들지 않는다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.

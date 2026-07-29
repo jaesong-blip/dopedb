@@ -41,6 +41,7 @@ pub(crate) enum DesktopPreviewIntent {
 pub(crate) struct DesktopSqlInspectionRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) sql: String,
+    pub(crate) namespace: Option<String>,
     pub(crate) intent: DesktopPreviewIntent,
 }
 
@@ -49,6 +50,7 @@ pub(crate) struct DesktopSqlInspectionRequest {
 pub(crate) struct DesktopSqlProposalRequest {
     pub(crate) connection_id: ConnectionId,
     pub(crate) sql: String,
+    pub(crate) namespace: Option<String>,
     pub(crate) origin: Option<String>,
 }
 

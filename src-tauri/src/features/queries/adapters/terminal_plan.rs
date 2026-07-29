@@ -99,6 +99,7 @@ impl QueryPlatformAdapter {
         let preview = safety::preview(
             pool_ref(live.ro()),
             &request.sql,
+            None,
             &classification,
             &settings,
         )

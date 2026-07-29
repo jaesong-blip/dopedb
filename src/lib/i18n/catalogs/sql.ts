@@ -67,6 +67,8 @@ export const sqlCatalog = defineCatalog(
       "This document changed in another surface. Compare before replacing either version.",
     "sql.saveFailed": "Autosave failed",
     "sql.saved": "Saved",
+    "sql.schemaSelector": "Execution schema",
+    "sql.schemaSelectorHint": "{connection} queries run in the {schema} schema.",
     "sql.scriptNote":
       "A script that modifies data runs as ONE transaction - all statements commit together or none do. A read-only script runs sequentially.",
     "sql.showMore": "Show {count} more of {total}",
@@ -156,6 +158,8 @@ export const sqlCatalog = defineCatalog(
       "다른 화면에서 이 문서가 변경되었습니다. 어느 버전도 덮어쓰기 전에 비교하세요.",
     "sql.saveFailed": "자동 저장 실패",
     "sql.saved": "저장됨",
+    "sql.schemaSelector": "실행 스키마",
+    "sql.schemaSelectorHint": "{connection} 쿼리를 {schema} 스키마에서 실행합니다.",
     "sql.scriptNote":
       "데이터를 수정하는 스크립트는 하나의 트랜잭션으로 실행됩니다. 모든 문장이 함께 커밋되거나 모두 롤백됩니다. 읽기 전용 스크립트는 순서대로 실행됩니다.",
     "sql.showMore": "{total}개 중 {count}개 더 보기",

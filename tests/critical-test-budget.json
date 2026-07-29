@@ -65,7 +65,7 @@
     },
     "src-tauri/src/features/queries/domain_tests.rs": {
       "tests": 1,
-      "protects": "Production monitoring guidance does not become an execution block"
+      "protects": "Production guidance stays non-blocking while SQL namespaces remain bounded and safely quoted"
     },
     "src-tauri/src/operations/canonicalize.rs": {
       "tests": 3,

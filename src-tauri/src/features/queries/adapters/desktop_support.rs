@@ -16,7 +16,7 @@ use crate::store::PinnedConnection;
 
 use super::desktop_contracts::{
     DesktopSqlExecutionFailure, DesktopSqlRunBlocked, DesktopSqlRunError, DesktopSqlStreamReceipt,
-    StoredDesktopSqlPayload,
+    StoredDesktopSqlPayload, DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION,
 };
 use super::desktop_provenance::{record_desktop_run, DesktopRunRecord};
 use super::desktop_trace::{
@@ -102,7 +102,9 @@ impl QueryPlatformAdapter {
             .get(operation_id.into())
             .await
             .map_err(DesktopSqlRunError::Application)?;
-        if planned.payload_schema_version != 1 || planned.kind != OperationKind::ReadQuery {
+        if planned.payload_schema_version != DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION
+            || planned.kind != OperationKind::ReadQuery
+        {
             return Err(DesktopSqlRunError::Application(AppError::Blocked {
                 reason: "only a planned desktop read can stream results".into(),
             }));
@@ -116,6 +118,11 @@ impl QueryPlatformAdapter {
             .await
             .map_err(DesktopSqlRunError::Application)?;
         ensure_operation_scope(&planned, &pin).map_err(DesktopSqlRunError::Application)?;
+        let namespace = crate::executor::namespace::resolve_sql_namespace(
+            &pin.profile,
+            payload.namespace.clone(),
+        )
+        .map_err(DesktopSqlRunError::Application)?;
         let settings = self
             .store
             .get_safety(pin.connection_id)
@@ -256,6 +263,7 @@ impl QueryPlatformAdapter {
             live,
             pin.profile.engine,
             &payload.sql,
+            namespace,
             settings.max_rows,
             DESKTOP_STREAM_BATCH_ROWS,
             Some(&cancellation),

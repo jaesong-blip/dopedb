@@ -67,6 +67,7 @@ pub(crate) async fn run_read_streamed_registered<F, Fut>(
     live: &LiveConnection,
     _engine: Engine,
     sql: &str,
+    namespace: Option<String>,
     max_rows: u64,
     batch_rows: usize,
     cancellation: Option<&cancel::CancelHandle>,
@@ -82,47 +83,74 @@ where
     let batch_rows = batch_rows.clamp(1, 256);
     let max = max_rows as usize;
     let inner = async {
-        let (mut columns, row_count, truncated) = match &live.read_pool {
+        let (columns, row_count, truncated) = match &live.read_pool {
             Pool::Postgres(pool) => {
-                stream_batched(
-                    sqlx::query(AssertSqlSafe(sql)).fetch(pool),
-                    max,
-                    batch_rows,
-                    pg_value,
-                    &mut on_batch,
-                )
-                .await?
+                if let Some(namespace) = namespace.as_deref() {
+                    let mut transaction = pool.begin().await?;
+                    let context =
+                        crate::executor::namespace::postgres_search_path_statement(namespace);
+                    sqlx::query(AssertSqlSafe(context))
+                        .execute(&mut *transaction)
+                        .await?;
+                    let (columns, row_count, truncated) = stream_batched(
+                        sqlx::query(AssertSqlSafe(sql)).fetch(&mut *transaction),
+                        max,
+                        batch_rows,
+                        pg_value,
+                        &mut on_batch,
+                    )
+                    .await?;
+                    let columns = if columns.is_empty() {
+                        (&mut *transaction)
+                            .describe(AssertSqlSafe(sql).into_sql_str())
+                            .await
+                            .ok()
+                            .map(describe_cols)
+                            .unwrap_or_default()
+                    } else {
+                        columns
+                    };
+                    transaction.rollback().await?;
+                    (columns, row_count, truncated)
+                } else {
+                    let (columns, row_count, truncated) = stream_batched(
+                        sqlx::query(AssertSqlSafe(sql)).fetch(pool),
+                        max,
+                        batch_rows,
+                        pg_value,
+                        &mut on_batch,
+                    )
+                    .await?;
+                    (with_headers(columns, pool, sql).await, row_count, truncated)
+                }
             }
             Pool::Mysql(pool) => {
-                stream_batched(
+                let (columns, row_count, truncated) = stream_batched(
                     sqlx::query(AssertSqlSafe(sql)).fetch(pool),
                     max,
                     batch_rows,
                     mysql_value,
                     &mut on_batch,
                 )
-                .await?
+                .await?;
+                (with_headers(columns, pool, sql).await, row_count, truncated)
             }
             Pool::Sqlite(pool) => {
-                stream_batched(
+                let (columns, row_count, truncated) = stream_batched(
                     sqlx::query(AssertSqlSafe(sql)).fetch(pool),
                     max,
                     batch_rows,
                     sqlite_value,
                     &mut on_batch,
                 )
-                .await?
+                .await?;
+                (with_headers(columns, pool, sql).await, row_count, truncated)
             }
         };
         // Keep zero-row metadata inside the same cancellation/timeout envelope as
         // cursor iteration. It must also become a page so renderers can build an
         // empty grid with the real column names.
-        if columns.is_empty() {
-            columns = match &live.read_pool {
-                Pool::Postgres(pool) => with_headers(Vec::new(), pool, sql).await,
-                Pool::Mysql(pool) => with_headers(Vec::new(), pool, sql).await,
-                Pool::Sqlite(pool) => with_headers(Vec::new(), pool, sql).await,
-            };
+        if row_count == 0 {
             on_batch(ReadBatch {
                 columns: columns.clone(),
                 rows: Vec::new(),
@@ -149,11 +177,20 @@ pub async fn run_read(
     live: &LiveConnection,
     _engine: Engine, // pool enum is self-describing; kept to honor the executor contract
     sql: &str,
+    namespace: Option<String>,
     max_rows: u64,
     query_id: Option<Uuid>,
 ) -> AppResult<QueryResult> {
     let cancellation = query_id.map(cancel::register);
-    run_read_registered(live, _engine, sql, max_rows, cancellation.as_ref()).await
+    run_read_registered(
+        live,
+        _engine,
+        sql,
+        namespace,
+        max_rows,
+        cancellation.as_ref(),
+    )
+    .await
 }
 
 /// Job-engine read path: retain no more than `max_bytes` of decoded rows per
@@ -222,6 +259,7 @@ pub(crate) async fn run_read_registered(
     live: &LiveConnection,
     _engine: Engine,
     sql: &str,
+    namespace: Option<String>,
     max_rows: u64,
     cancellation: Option<&cancel::CancelHandle>,
 ) -> AppResult<QueryResult> {
@@ -232,10 +270,37 @@ pub(crate) async fn run_read_registered(
     let inner = async {
         let (columns, rows, truncated) = match &live.read_pool {
             Pool::Postgres(pool) => {
-                let (c, r, t) =
-                    stream_capped(sqlx::query(AssertSqlSafe(sql)).fetch(pool), max, pg_value)
+                if let Some(namespace) = namespace.as_deref() {
+                    let mut transaction = pool.begin().await?;
+                    let context =
+                        crate::executor::namespace::postgres_search_path_statement(namespace);
+                    sqlx::query(AssertSqlSafe(context))
+                        .execute(&mut *transaction)
                         .await?;
-                (with_headers(c, pool, sql).await, r, t)
+                    let (columns, rows, truncated) = stream_capped(
+                        sqlx::query(AssertSqlSafe(sql)).fetch(&mut *transaction),
+                        max,
+                        pg_value,
+                    )
+                    .await?;
+                    let columns = if columns.is_empty() {
+                        (&mut *transaction)
+                            .describe(AssertSqlSafe(sql).into_sql_str())
+                            .await
+                            .ok()
+                            .map(describe_cols)
+                            .unwrap_or_default()
+                    } else {
+                        columns
+                    };
+                    transaction.rollback().await?;
+                    (columns, rows, truncated)
+                } else {
+                    let (c, r, t) =
+                        stream_capped(sqlx::query(AssertSqlSafe(sql)).fetch(pool), max, pg_value)
+                            .await?;
+                    (with_headers(c, pool, sql).await, r, t)
+                }
             }
             Pool::Mysql(pool) => {
                 let (c, r, t) = stream_capped(

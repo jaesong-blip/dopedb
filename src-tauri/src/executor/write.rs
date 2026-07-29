@@ -21,6 +21,7 @@ pub(crate) async fn run_write(
     live: &LiveConnection,
     _engine: Engine, // pool enum is self-describing; kept to honor the executor contract
     sql: &str,
+    namespace: Option<String>,
     settings: &SafetySettings,
     grant: &ExecutionGrant,
     cancellation: &cancel::CancelHandle,
@@ -43,6 +44,13 @@ pub(crate) async fn run_write(
         let affected: u64 = match &live.write_pool {
             Pool::Postgres(pool) => {
                 let mut tx = pool.begin().await?;
+                if let Some(namespace) = namespace.as_deref() {
+                    let context =
+                        crate::executor::namespace::postgres_search_path_statement(namespace);
+                    sqlx::query(AssertSqlSafe(context))
+                        .execute(&mut *tx)
+                        .await?;
+                }
                 let n = sqlx::query(AssertSqlSafe(sql))
                     .execute(&mut *tx)
                     .await?

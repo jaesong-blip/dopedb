@@ -14,18 +14,28 @@ import type {
   SqlStreamReceipt,
 } from "./domain";
 
-export function inspectSql(id: string, sql: string): Promise<SqlInspection> {
-  return invoke("inspect_sql", { id, sql });
+export function inspectSql(
+  id: string,
+  sql: string,
+  namespace?: string,
+): Promise<SqlInspection> {
+  return invoke("inspect_sql", {
+    id,
+    sql,
+    namespace: namespace ?? null,
+  });
 }
 
 export function proposeSql(
   id: string,
   sql: string,
   origin?: string,
+  namespace?: string,
 ): Promise<SqlOperationProposal> {
   return invoke("propose_sql", {
     id,
     sql,
+    namespace: namespace ?? null,
     origin: origin ?? null,
   });
 }
@@ -178,11 +188,13 @@ export function runSqlReadStream(
   sql: string,
   onBatch: SqlStreamBatchHandler,
   origin?: string,
+  namespace?: string,
 ): SqlStreamController {
   return startSqlStream("", onBatch, (capability, onRows) =>
     invoke<SqlStreamReceipt>("run_sql_read_stream", {
       id,
       sql,
+      namespace: namespace ?? null,
       origin: origin ?? null,
       capability,
       onRows,

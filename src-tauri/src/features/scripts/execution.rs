@@ -13,7 +13,7 @@ impl ScriptPlatformAdapter {
             .get(operation_id)
             .await
             .map_err(DesktopScriptRunError::Application)?;
-        if planned.payload_schema_version != 1
+        if planned.payload_schema_version != DESKTOP_SCRIPT_PAYLOAD_SCHEMA_VERSION
             || !matches!(
                 planned.kind,
                 OperationKind::ReadQuery
@@ -26,9 +26,10 @@ impl ScriptPlatformAdapter {
                 reason: "operation is not a supported SQL script proposal".into(),
             }));
         }
-        let payload: StoredDesktopScriptPayload = serde_json::from_value(planned.payload.clone())
-            .map_err(AppError::from)
-            .map_err(DesktopScriptRunError::Application)?;
+        let mut payload: StoredDesktopScriptPayload =
+            serde_json::from_value(planned.payload.clone())
+                .map_err(AppError::from)
+                .map_err(DesktopScriptRunError::Application)?;
         let operation_scope = self.connections.begin_operation_scope().await;
         let operation_pin = match operation_scope.pin_connection(planned.connection_id).await {
             Ok(pin) => pin,
@@ -41,6 +42,19 @@ impl ScriptPlatformAdapter {
         };
         ensure_operation_scope(&planned, &operation_pin)
             .map_err(DesktopScriptRunError::Application)?;
+        let namespace = match crate::executor::namespace::resolve_sql_namespace(
+            &operation_pin.profile,
+            payload.namespace.clone(),
+        ) {
+            Ok(namespace) => namespace,
+            Err(error) => {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error,
+                    _scope: operation_scope,
+                }))
+            }
+        };
+        payload.namespace = namespace;
         let settings = match self.store.get_safety(operation_pin.connection_id).await {
             Ok(settings) => settings,
             Err(error) => {

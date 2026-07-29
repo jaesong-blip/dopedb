@@ -407,6 +407,11 @@ function Shell() {
     workbench.updateTitle(activeDocument.id, value);
   }
 
+  function setActiveQuerySchema(value: string | null) {
+    if (!activeDocument || activeDocument.kind !== "sql") return;
+    workbench.updateSelectedSchema(activeDocument.id, value);
+  }
+
   function applySavedQuery(saved: SqlDocument) {
     if (!activeDocument || activeDocument.kind !== "sql") return;
     workbench.applyPersisted(activeDocument.id, saved);
@@ -759,6 +764,7 @@ function Shell() {
       onOpenTerminal={openOrFocusTerminalDock}
       onSetQueryDraft={setActiveQueryDraft}
       onSetQueryTitle={setActiveQueryTitle}
+      onSetQuerySchema={setActiveQuerySchema}
       onPersistedQuery={applySavedQuery}
       onQueryServiceSessionChange={queryServices.updateSession}
       onShowQueryServices={(sessionId) => {

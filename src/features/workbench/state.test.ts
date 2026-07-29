@@ -9,6 +9,7 @@ function storedDocument(id = "doc-1"): SqlDocument {
     connectionId: connectionId("db-1"),
     title: "Saved query",
     dialect: "postgresql",
+    selectedSchema: "billing",
     content: "SELECT 1;",
     localRevision: 2,
     remoteId: null,
@@ -79,7 +80,12 @@ describe("workbench state ownership", () => {
       type: "activate",
       document: query,
     });
-    const persisted = workbenchReducer(state, {
+    const selected = workbenchReducer(state, {
+      type: "updateSelectedSchema",
+      id: query.id,
+      selectedSchema: "public",
+    });
+    const persisted = workbenchReducer(selected, {
       type: "persist",
       id: query.id,
       document: storedDocument(),
@@ -90,5 +96,6 @@ describe("workbench state ownership", () => {
     if (current?.kind !== "sql") throw new Error("expected SQL document");
     expect(current.draft).toBe("SELECT 1;");
     expect(current.revision).toBe(2);
+    expect(current.selectedSchema).toBe("billing");
   });
 });

@@ -157,6 +157,7 @@ impl ScriptPlatformAdapter {
         let transaction = execute_script_transaction(
             &live.write_pool,
             &statements,
+            payload.namespace.clone(),
             payload
                 .table_change
                 .as_ref()

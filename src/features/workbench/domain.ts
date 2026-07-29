@@ -24,6 +24,7 @@ export type WorkbenchDocument =
       kind: "sql";
       draft: string;
       title: string;
+      selectedSchema: string | null;
       persistedId: string | null;
       revision: number;
       recovered: boolean;
@@ -75,6 +76,7 @@ export function queryDocument(
         kind,
         draft: draft ?? "SELECT 1;",
         title: "Untitled query",
+        selectedSchema: null,
         persistedId: null,
         revision: 0,
         recovered: false,
@@ -91,6 +93,7 @@ interface SqlRecoverySnapshot {
   revision: number;
   title: string;
   draft: string;
+  selectedSchema: string | null;
 }
 
 function readRecovery(document: SqlDocument): SqlRecoverySnapshot | null {
@@ -101,11 +104,21 @@ function readRecovery(document: SqlDocument): SqlRecoverySnapshot | null {
     if (
       recovery.revision !== document.localRevision ||
       typeof recovery.title !== "string" ||
-      typeof recovery.draft !== "string"
+      typeof recovery.draft !== "string" ||
+      !(
+        recovery.selectedSchema === undefined ||
+        recovery.selectedSchema === null ||
+        typeof recovery.selectedSchema === "string"
+      )
     ) {
       return null;
     }
-    return recovery as SqlRecoverySnapshot;
+    return {
+      revision: recovery.revision,
+      title: recovery.title,
+      draft: recovery.draft,
+      selectedSchema: recovery.selectedSchema ?? null,
+    };
   } catch {
     return null;
   }
@@ -119,11 +132,14 @@ export function persistedQueryDocument(document: SqlDocument): QueryDocument {
     kind: "sql",
     draft: recovery?.draft ?? document.content,
     title: recovery?.title ?? document.title,
+    selectedSchema: recovery?.selectedSchema ?? document.selectedSchema,
     persistedId: document.id,
     revision: document.localRevision,
     recovered:
       !!recovery &&
-      (recovery.draft !== document.content || recovery.title !== document.title),
+      (recovery.draft !== document.content ||
+        recovery.title !== document.title ||
+        recovery.selectedSchema !== document.selectedSchema),
   };
 }
 

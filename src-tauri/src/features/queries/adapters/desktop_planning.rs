@@ -20,6 +20,7 @@ use super::super::domain::{
 };
 use super::desktop_contracts::{
     DesktopSqlInspectionError, DesktopSqlProposalReceipt, StoredDesktopSqlPayload,
+    DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION,
 };
 use super::desktop_support::{operation_kind, operation_risk};
 use super::platform::QueryPlatformAdapter;
@@ -40,6 +41,7 @@ impl QueryPlatformAdapter {
             DesktopSqlProposalRequest {
                 connection_id: request.connection_id,
                 sql: request.sql,
+                namespace: None,
                 origin: Some("cli".into()),
             },
             Some(request.authority),
@@ -57,6 +59,7 @@ impl QueryPlatformAdapter {
                 DesktopSqlInspectionRequest {
                     connection_id: request.connection_id,
                     sql: request.sql.clone(),
+                    namespace: request.namespace,
                     intent: DesktopPreviewIntent::ImpactPreview,
                 },
                 terminal.as_ref(),
@@ -89,6 +92,7 @@ impl QueryPlatformAdapter {
         let payload = match serde_json::to_value(StoredDesktopSqlPayload {
             sql: request.sql,
             history_origin: history_origin.clone(),
+            namespace: inspection.namespace.clone(),
         })
         .map_err(AppError::from)
         {
@@ -133,7 +137,7 @@ impl QueryPlatformAdapter {
                         .map(|authority| authority.terminal_session_id.into()),
                     actor,
                     kind: operation_kind(classification.kind),
-                    payload_schema_version: 1,
+                    payload_schema_version: DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION,
                     payload,
                     schema_fingerprint: None,
                     risk_level: operation_risk(&classification),

@@ -79,6 +79,7 @@ impl ScriptPlatformAdapter {
                 live,
                 engine,
                 statement,
+                payload.namespace.clone(),
                 settings.max_rows,
                 Some(operation_id),
             )

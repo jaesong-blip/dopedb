@@ -185,6 +185,7 @@ pub async fn propose_script(
     state: State<'_, AppState>,
     id: Uuid,
     sql: String,
+    namespace: Option<String>,
     origin: Option<String>,
 ) -> AppResult<DesktopScriptProposalReceipt> {
     state
@@ -193,6 +194,7 @@ pub async fn propose_script(
         .propose_desktop(DesktopScriptProposalRequest {
             connection_id: id,
             sql,
+            namespace,
             origin,
             schema_change: None,
             table_change: None,
@@ -220,6 +222,7 @@ pub async fn propose_table_changes(
         .propose_desktop(DesktopScriptProposalRequest {
             connection_id: id,
             sql: statements.join(";\n"),
+            namespace: None,
             origin: Some("table_editor".into()),
             schema_change: None,
             table_change: Some(TableScriptContext {

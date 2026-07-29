@@ -26,6 +26,7 @@ export type DocumentSaveState =
 export interface DocumentConflict {
   current: SqlDocument;
   localTitle: string;
+  localSelectedSchema: string | null;
   localContent: string;
 }
 
@@ -35,9 +36,11 @@ interface SqlDocumentAutosaveOptions {
   documentId: SqlDocumentId | null;
   revision: number;
   title: string;
+  selectedSchema: string | null;
   content: string;
   recovered: boolean;
   onTitleChange: (title: string) => void;
+  onSelectedSchemaChange: (selectedSchema: string | null) => void;
   onContentChange: (content: string) => void;
   onPersisted: (document: SqlDocument) => void;
 }
@@ -48,9 +51,11 @@ export function useSqlDocumentAutosave({
   documentId,
   revision,
   title,
+  selectedSchema,
   content,
   recovered,
   onTitleChange,
+  onSelectedSchemaChange,
   onContentChange,
   onPersisted,
 }: SqlDocumentAutosaveOptions) {
@@ -62,21 +67,25 @@ export function useSqlDocumentAutosave({
   const saveSequence = useRef(0);
   const callbacks = useRef({
     onTitleChange,
+    onSelectedSchemaChange,
     onContentChange,
     onPersisted,
   });
   callbacks.current = {
     onTitleChange,
+    onSelectedSchemaChange,
     onContentChange,
     onPersisted,
   };
   const persistedBaseline = useRef<{
     revision: number;
     title: string | null;
+    selectedSchema: string | null | undefined;
     content: string | null;
   }>({
     revision,
     title: recovered ? null : title,
+    selectedSchema: recovered ? undefined : selectedSchema,
     content: recovered ? null : content,
   });
 
@@ -84,6 +93,7 @@ export function useSqlDocumentAutosave({
     async (
       expectedRevision: number,
       nextTitle: string,
+      nextSelectedSchema: string | null,
       nextContent: string,
     ) => {
       if (!documentId) return;
@@ -95,6 +105,7 @@ export function useSqlDocumentAutosave({
           id: documentId,
           connectionId,
           title: nextTitle,
+          selectedSchema: nextSelectedSchema,
           content: nextContent,
           expectedRevision,
         });
@@ -103,6 +114,7 @@ export function useSqlDocumentAutosave({
           setConflict({
             current: outcome.document,
             localTitle: nextTitle,
+            localSelectedSchema: nextSelectedSchema,
             localContent: nextContent,
           });
           setSaveState("conflict");
@@ -111,6 +123,7 @@ export function useSqlDocumentAutosave({
         persistedBaseline.current = {
           revision: outcome.document.localRevision,
           title: outcome.document.title,
+          selectedSchema: outcome.document.selectedSchema,
           content: outcome.document.content,
         };
         localStorage.removeItem(sqlRecoveryKey(documentId));
@@ -133,6 +146,7 @@ export function useSqlDocumentAutosave({
       recovered ||
       baseline.revision !== revision ||
       baseline.title !== title ||
+      baseline.selectedSchema !== selectedSchema ||
       baseline.content !== content;
     if (!dirty) {
       setSaveState("saved");
@@ -141,11 +155,11 @@ export function useSqlDocumentAutosave({
     setSaveState("dirty");
     localStorage.setItem(
       sqlRecoveryKey(documentId),
-      JSON.stringify({ revision, title, draft: content }),
+      JSON.stringify({ revision, title, selectedSchema, draft: content }),
     );
     if (!title.trim()) return;
     const timer = window.setTimeout(() => {
-      void persist(revision, title, content);
+      void persist(revision, title, selectedSchema, content);
     }, 700);
     return () => window.clearTimeout(timer);
   }, [
@@ -155,6 +169,7 @@ export function useSqlDocumentAutosave({
     persist,
     recovered,
     revision,
+    selectedSchema,
     title,
   ]);
 
@@ -172,10 +187,12 @@ export function useSqlDocumentAutosave({
     persistedBaseline.current = {
       revision: current.localRevision,
       title: current.title,
+      selectedSchema: current.selectedSchema,
       content: current.content,
     };
     localStorage.removeItem(sqlRecoveryKey(documentId));
     callbacks.current.onTitleChange(current.title);
+    callbacks.current.onSelectedSchemaChange(current.selectedSchema);
     callbacks.current.onContentChange(current.content);
     callbacks.current.onPersisted(current);
     setConflict(null);
@@ -187,6 +204,7 @@ export function useSqlDocumentAutosave({
     void persist(
       conflict.current.localRevision,
       conflict.localTitle,
+      conflict.localSelectedSchema,
       conflict.localContent,
     );
   }, [conflict, persist]);

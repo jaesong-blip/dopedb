@@ -11,7 +11,7 @@ use crate::safety;
 
 use super::desktop_contracts::{
     DesktopSqlExecutionFailure, DesktopSqlRunBlocked, DesktopSqlRunError, DesktopSqlRunReceipt,
-    StoredDesktopSqlPayload,
+    StoredDesktopSqlPayload, DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION,
 };
 use super::desktop_provenance::{record_desktop_run, DesktopRunRecord};
 use super::desktop_support::operation_kind;
@@ -29,7 +29,7 @@ impl QueryPlatformAdapter {
             .get(operation_id.into())
             .await
             .map_err(DesktopSqlRunError::Application)?;
-        if planned.payload_schema_version != 1
+        if planned.payload_schema_version != DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION
             || !matches!(
                 planned.kind,
                 OperationKind::ReadQuery
@@ -52,6 +52,11 @@ impl QueryPlatformAdapter {
             .map_err(DesktopSqlRunError::Application)?;
         ensure_operation_scope(&planned, &operation_pin)
             .map_err(DesktopSqlRunError::Application)?;
+        let namespace = crate::executor::namespace::resolve_sql_namespace(
+            &operation_pin.profile,
+            payload.namespace.clone(),
+        )
+        .map_err(DesktopSqlRunError::Application)?;
         let settings = self
             .store
             .get_safety(operation_pin.connection_id)
@@ -238,6 +243,7 @@ impl QueryPlatformAdapter {
             engine,
             &classification,
             &payload.sql,
+            namespace,
             &settings,
             if is_write {
                 Some(claimed.grant())

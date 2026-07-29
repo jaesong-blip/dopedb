@@ -365,6 +365,7 @@ CREATE TABLE IF NOT EXISTS sql_documents (
     connection_id     TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
     title             TEXT NOT NULL,
     dialect           TEXT NOT NULL,
+    selected_schema   TEXT,
     content           TEXT NOT NULL,
     local_revision    INTEGER NOT NULL CHECK(local_revision > 0),
     remote_id         TEXT,

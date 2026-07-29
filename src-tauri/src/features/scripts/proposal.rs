@@ -31,6 +31,18 @@ impl ScriptPlatformAdapter {
                 _scope: operation_scope,
             }));
         }
+        let namespace = match crate::executor::namespace::resolve_sql_namespace(
+            &pin.profile,
+            request.namespace,
+        ) {
+            Ok(namespace) => namespace,
+            Err(error) => {
+                return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
+                    error,
+                    _scope: operation_scope,
+                }))
+            }
+        };
         let settings = self
             .store
             .get_safety(pin.connection_id)
@@ -173,6 +185,7 @@ impl ScriptPlatformAdapter {
         let payload = serde_json::to_value(StoredDesktopScriptPayload {
             sql: request.sql,
             history_origin: history_origin.clone(),
+            namespace,
             schema_change: schema_change.clone(),
             table_change: table_change.clone(),
         })
@@ -203,7 +216,7 @@ impl ScriptPlatformAdapter {
                     terminal_session_id: None,
                     actor: actor_for_pin(&pin, history_origin),
                     kind: operation_kind,
-                    payload_schema_version: 1,
+                    payload_schema_version: DESKTOP_SCRIPT_PAYLOAD_SCHEMA_VERSION,
                     payload,
                     schema_fingerprint,
                     risk_level: script_operation_risk(&classifications),

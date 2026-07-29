@@ -24,12 +24,13 @@ const PREVIEW_TIMEOUT: Duration = Duration::from_millis(STATEMENT_TIMEOUT_MS + 2
 pub async fn preview(
     pool: PoolRef<'_>,
     sql: &str,
+    namespace: Option<&str>,
     classification: &Classification,
     settings: &SafetySettings,
 ) -> AppResult<PreviewReport> {
     match classification.kind {
         QueryKind::Read => {
-            let (estimated_rows, plan) = explain(pool, sql).await;
+            let (estimated_rows, plan) = explain(pool, sql, namespace).await;
             Ok(PreviewReport {
                 mode: PreviewMode::Explain,
                 estimated_rows,
@@ -52,7 +53,7 @@ pub async fn preview(
 
         QueryKind::Write => {
             // EXPLAIN (no ANALYZE) plans a write without executing it.
-            let (estimated_rows, plan) = explain(pool, sql).await;
+            let (estimated_rows, plan) = explain(pool, sql, namespace).await;
             let note = estimated_rows
                 .filter(|rows| *rows > settings.exec_preview_row_limit)
                 .map(|rows| {
@@ -80,26 +81,48 @@ pub async fn preview(
 
 /// Best-effort EXPLAIN → (estimated_rows, plan text). Failures are non-fatal
 /// (returns `(None, None)`): a missing preview must not block classification.
-async fn explain(pool: PoolRef<'_>, sql: &str) -> (Option<i64>, Option<String>) {
+async fn explain(
+    pool: PoolRef<'_>,
+    sql: &str,
+    namespace: Option<&str>,
+) -> (Option<i64>, Option<String>) {
     let out = match pool {
         PoolRef::Postgres(p) => {
             let q = format!("EXPLAIN (FORMAT JSON) {sql}");
-            timeout(PREVIEW_TIMEOUT, sqlx::query(AssertSqlSafe(q)).fetch_one(p))
-                .await
-                .ok()
-                .and_then(|r| r.ok())
-                .map(|row| {
-                    let v: serde_json::Value = row
-                        .try_get::<serde_json::Value, _>(0)
-                        .ok()
-                        .or_else(|| {
-                            row.try_get::<String, _>(0)
-                                .ok()
-                                .and_then(|s| serde_json::from_str(&s).ok())
-                        })
-                        .unwrap_or(serde_json::Value::Null);
-                    (find_number(&v, &["Plan Rows"]), Some(v.to_string()))
-                })
+            timeout(PREVIEW_TIMEOUT, async {
+                if let Some(namespace) = namespace {
+                    let mut transaction = p.begin().await.ok()?;
+                    let context =
+                        crate::executor::namespace::postgres_search_path_statement(namespace);
+                    sqlx::query(AssertSqlSafe(context))
+                        .execute(&mut *transaction)
+                        .await
+                        .ok()?;
+                    let row = sqlx::query(AssertSqlSafe(q))
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .ok();
+                    let _ = transaction.rollback().await;
+                    row
+                } else {
+                    sqlx::query(AssertSqlSafe(q)).fetch_one(p).await.ok()
+                }
+            })
+            .await
+            .ok()
+            .flatten()
+            .map(|row| {
+                let v: serde_json::Value = row
+                    .try_get::<serde_json::Value, _>(0)
+                    .ok()
+                    .or_else(|| {
+                        row.try_get::<String, _>(0)
+                            .ok()
+                            .and_then(|s| serde_json::from_str(&s).ok())
+                    })
+                    .unwrap_or(serde_json::Value::Null);
+                (find_number(&v, &["Plan Rows"]), Some(v.to_string()))
+            })
         }
         PoolRef::Mysql(p) => {
             let q = format!("EXPLAIN FORMAT=JSON {sql}");

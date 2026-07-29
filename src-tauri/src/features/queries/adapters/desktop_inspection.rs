@@ -44,6 +44,13 @@ impl QueryPlatformAdapter {
                 return Err(scoped(error, operation_scope));
             }
         }
+        let namespace = match crate::executor::namespace::resolve_sql_namespace(
+            &pin.profile,
+            request.namespace,
+        ) {
+            Ok(namespace) => namespace,
+            Err(error) => return Err(scoped(error, operation_scope)),
+        };
         let analysis = match safety::classify_with_integrity(&request.sql, pin.profile.engine) {
             Ok(analysis) => analysis,
             Err(error) => return Err(scoped(error, operation_scope)),
@@ -80,6 +87,7 @@ impl QueryPlatformAdapter {
             return Ok(DesktopSqlInspectionReceipt {
                 classification,
                 report,
+                namespace,
                 pin,
                 policy_snapshot: policy.snapshot,
                 policy_revision: policy.revision,
@@ -122,6 +130,7 @@ impl QueryPlatformAdapter {
         let report = match safety::preview(
             pool_ref(live.ro()),
             &request.sql,
+            namespace.as_deref(),
             &classification,
             &settings,
         )
@@ -141,6 +150,7 @@ impl QueryPlatformAdapter {
         Ok(DesktopSqlInspectionReceipt {
             classification,
             report,
+            namespace,
             pin,
             policy_snapshot: policy.snapshot,
             policy_revision: policy.revision,

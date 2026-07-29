@@ -65,24 +65,28 @@ describe("query Tauri adapter", () => {
       report: readProposal.preview,
     });
 
-    await expect(inspectSql("connection-1", "SELECT 1")).resolves.toEqual({
+    await expect(
+      inspectSql("connection-1", "SELECT 1", "billing"),
+    ).resolves.toEqual({
       classification: readProposal.classification,
       report: readProposal.preview,
     });
     expect(invokeMock).toHaveBeenCalledWith("inspect_sql", {
       id: "connection-1",
       sql: "SELECT 1",
+      namespace: "billing",
     });
   });
 
   it("preserves the propose SQL command and camelCase wire shape", async () => {
     invokeMock.mockResolvedValueOnce(readProposal);
 
-    await proposeSql("connection-1", "SELECT 1");
+    await proposeSql("connection-1", "SELECT 1", undefined, "billing");
 
     expect(invokeMock).toHaveBeenCalledWith("propose_sql", {
       id: "connection-1",
       sql: "SELECT 1",
+      namespace: "billing",
       origin: null,
     });
   });
@@ -103,6 +107,7 @@ describe("query Tauri adapter", () => {
     expect(invokeMock).toHaveBeenNthCalledWith(1, "propose_sql", {
       id: "connection-1",
       sql: "SELECT 1",
+      namespace: null,
       origin: "data-view",
     });
     expect(invokeMock).toHaveBeenNthCalledWith(2, "run_sql", {
@@ -198,6 +203,7 @@ describe("query Tauri adapter", () => {
       "SELECT 1",
       onBatch,
       "data-view",
+      "billing",
     );
     await controller.completion;
 
@@ -205,6 +211,7 @@ describe("query Tauri adapter", () => {
     expect(invokeMock).toHaveBeenCalledWith("run_sql_read_stream", {
       id: "connection-1",
       sql: "SELECT 1",
+      namespace: "billing",
       origin: "data-view",
       capability: expect.stringMatching(/^[0-9a-f]{64}$/),
       onRows: channels[0],

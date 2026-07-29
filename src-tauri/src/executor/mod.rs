@@ -7,6 +7,7 @@
 //! [`ExecutionGrant`] issued by the durable Operation Runtime.
 
 pub mod cancel;
+pub(crate) mod namespace;
 pub mod read;
 pub mod write;
 
@@ -27,15 +28,22 @@ pub(crate) async fn execute(
     engine: Engine,
     classification: &Classification,
     sql: &str,
+    namespace: Option<String>,
     settings: &SafetySettings,
     grant: Option<&ExecutionGrant>,
     cancellation: Option<&cancel::CancelHandle>,
 ) -> AppResult<ExecOutcome> {
     match classification.kind {
         QueryKind::Read => {
-            let result =
-                read::run_read_registered(live, engine, sql, settings.max_rows, cancellation)
-                    .await?;
+            let result = read::run_read_registered(
+                live,
+                engine,
+                sql,
+                namespace,
+                settings.max_rows,
+                cancellation,
+            )
+            .await?;
             Ok(ExecOutcome {
                 result: Some(result),
                 affected: None,
@@ -49,7 +57,7 @@ pub(crate) async fn execute(
             let cancellation = cancellation.ok_or_else(|| AppError::Blocked {
                 reason: "write execution requires an operation cancellation scope".into(),
             })?;
-            write::run_write(live, engine, sql, settings, grant, cancellation).await
+            write::run_write(live, engine, sql, namespace, settings, grant, cancellation).await
         }
     }
 }

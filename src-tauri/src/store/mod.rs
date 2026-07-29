@@ -196,6 +196,9 @@ impl Store {
         )
         .execute(&pool)
         .await;
+        let _ = sqlx::query("ALTER TABLE sql_documents ADD COLUMN selected_schema TEXT")
+            .execute(&pool)
+            .await;
         add_workspace_columns(&pool).await;
         migrate_workspace_foundation(&pool).await?;
         migrate_audit_no_cascade(&pool).await?;

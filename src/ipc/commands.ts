@@ -175,10 +175,12 @@ export function proposeScript(
   id: string,
   sql: string,
   origin?: string,
+  namespace?: string,
 ): Promise<ScriptOperationProposal> {
   return invoke("propose_script", {
     id,
     sql,
+    namespace: namespace ?? null,
     origin: origin ?? null,
   });
 }

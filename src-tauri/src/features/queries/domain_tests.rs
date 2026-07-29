@@ -4,13 +4,14 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use super::domain::planning_guidance;
+use crate::executor::namespace::{postgres_search_path_statement, resolve_sql_namespace};
 use crate::model::{
     ConnectionProfile, Engine, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
 };
 use crate::monitoring::HealthSnapshot;
 
 #[test]
-fn production_and_limited_monitoring_are_guidance_not_blocks() {
+fn query_guidance_and_namespace_contracts_stay_fail_closed() {
     let production = ConnectionProfile {
         id: Uuid::new_v4(),
         name: "query-feature-test".into(),
@@ -58,4 +59,18 @@ fn production_and_limited_monitoring_are_guidance_not_blocks() {
         .iter()
         .any(|suggestion| suggestion.contains("pg_monitor")));
     assert!(suggestions.windows(2).all(|pair| pair[0] <= pair[1]));
+
+    let mut postgres = production.clone();
+    postgres.engine = Engine::Postgres;
+    postgres.database = "app".into();
+    let adversarial = "tenant\"; DROP SCHEMA public; --";
+    assert_eq!(
+        resolve_sql_namespace(&postgres, Some(adversarial.into())).unwrap(),
+        Some(adversarial.into()),
+    );
+    assert_eq!(
+        postgres_search_path_statement(adversarial),
+        "SET LOCAL search_path TO \"tenant\"\"; DROP SCHEMA public; --\"",
+    );
+    assert!(resolve_sql_namespace(&production, Some("attached".into())).is_err());
 }

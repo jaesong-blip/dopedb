@@ -10,6 +10,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub(super) const DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION: u32 = 2;
+
 /// Exact immutable proposal rendered by the desktop before approval or execution.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +32,8 @@ pub(crate) struct DesktopSqlProposalReceipt {
 pub(super) struct StoredDesktopSqlPayload {
     pub(super) sql: String,
     pub(super) history_origin: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) namespace: Option<String>,
 }
 
 /// Authority retained by an impact preview. Pre-connection skipped reports keep
@@ -48,6 +52,8 @@ pub(crate) enum DesktopSqlPreviewAuthority {
 pub(crate) struct DesktopSqlInspectionReceipt {
     pub(super) classification: Classification,
     pub(super) report: PreviewReport,
+    #[serde(skip)]
+    pub(super) namespace: Option<String>,
     #[serde(skip)]
     pub(super) pin: PinnedConnection,
     #[serde(skip)]

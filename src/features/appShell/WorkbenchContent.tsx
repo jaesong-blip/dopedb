@@ -82,6 +82,7 @@ type Props = {
   onOpenTerminal: () => void;
   onSetQueryDraft: (value: string) => void;
   onSetQueryTitle: (value: string) => void;
+  onSetQuerySchema: (value: string | null) => void;
   onPersistedQuery: (document: SqlDocument) => void;
   onQueryServiceSessionChange: (session: QueryServiceSession) => void;
   onShowQueryServices: (sessionId: string) => void;
@@ -269,6 +270,8 @@ export default function WorkbenchContent(props: Props) {
             setDraft={props.onSetQueryDraft}
             title={activeDocument.title}
             setTitle={props.onSetQueryTitle}
+            selectedSchema={activeDocument.selectedSchema}
+            setSelectedSchema={props.onSetQuerySchema}
             persistedId={activeDocument.persistedId}
             revision={activeDocument.revision}
             recovered={activeDocument.recovered}

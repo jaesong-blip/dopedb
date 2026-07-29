@@ -24,6 +24,7 @@ pub(crate) async fn inspect_sql(
     state: State<'_, AppState>,
     id: Uuid,
     sql: String,
+    namespace: Option<String>,
 ) -> AppResult<DesktopSqlInspectionReceipt> {
     state
         .services
@@ -31,6 +32,7 @@ pub(crate) async fn inspect_sql(
         .inspect_desktop_sql(DesktopSqlInspectionRequest {
             connection_id: id.into(),
             sql,
+            namespace,
             intent: DesktopPreviewIntent::ReadOnlyExplain,
         })
         .await
@@ -43,6 +45,7 @@ pub(crate) async fn propose_sql(
     state: State<'_, AppState>,
     id: Uuid,
     sql: String,
+    namespace: Option<String>,
     origin: Option<String>,
 ) -> AppResult<DesktopSqlProposalReceipt> {
     state
@@ -51,6 +54,7 @@ pub(crate) async fn propose_sql(
         .propose_desktop_sql(DesktopSqlProposalRequest {
             connection_id: id.into(),
             sql,
+            namespace,
             origin,
         })
         .await
@@ -113,6 +117,7 @@ pub(crate) async fn run_sql_read_stream(
     webview: tauri::WebviewWindow,
     id: Uuid,
     sql: String,
+    namespace: Option<String>,
     origin: Option<String>,
     capability: String,
     on_rows: Channel<DesktopSqlStreamReady>,
@@ -129,6 +134,7 @@ pub(crate) async fn run_sql_read_stream(
             DesktopSqlProposalRequest {
                 connection_id: id.into(),
                 sql,
+                namespace,
                 origin,
             },
             webview.label().to_string(),

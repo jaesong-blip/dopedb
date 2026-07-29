@@ -33,11 +33,14 @@ use crate::operations::{
 use crate::safety;
 use crate::store::{PinnedConnection, Store};
 
+const DESKTOP_SCRIPT_PAYLOAD_SCHEMA_VERSION: u32 = 2;
+
 /// Desktop script input accepted only at the immutable proposal boundary.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesktopScriptProposalRequest {
     pub(crate) connection_id: Uuid,
     pub(crate) sql: String,
+    pub(crate) namespace: Option<String>,
     pub(crate) origin: Option<String>,
     /// Present only for a Catalog-pinned plan produced by the structured schema
     /// editor. The public manual-script command always supplies `None`.
@@ -78,6 +81,8 @@ pub(crate) struct DesktopScriptProposalReceipt {
 struct StoredDesktopScriptPayload {
     sql: String,
     history_origin: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    namespace: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     schema_change: Option<SchemaScriptContext>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

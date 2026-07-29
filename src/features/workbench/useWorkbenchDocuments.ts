@@ -167,6 +167,13 @@ export function useWorkbenchDocuments({
     dispatch({ type: "updateTitle", id, title });
   }, []);
 
+  const updateSelectedSchema = useCallback(
+    (id: string, selectedSchema: string | null) => {
+      dispatch({ type: "updateSelectedSchema", id, selectedSchema });
+    },
+    [],
+  );
+
   const applyPersisted = useCallback((id: string, document: SqlDocument) => {
     dispatch({ type: "persist", id, document });
   }, []);
@@ -202,6 +209,7 @@ export function useWorkbenchDocuments({
     close,
     updateDraft,
     updateTitle,
+    updateSelectedSchema,
     applyPersisted,
     openQuery,
   };

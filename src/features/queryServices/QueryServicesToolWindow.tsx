@@ -444,5 +444,9 @@ function sessionResultLabel(
     );
   if (!source) return session.consoleTitle;
   if (source[2]) return `${source[1]}.${source[2]}`;
-  return connection?.engine === "sqlite" ? `main.${source[1]}` : source[1];
+  return session.namespace
+    ? `${session.namespace}.${source[1]}`
+    : connection?.engine === "sqlite"
+      ? `main.${source[1]}`
+      : source[1];
 }

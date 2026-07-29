@@ -26,6 +26,10 @@ import {
   runSqlReadStream,
   runSqlStream,
 } from "../../features/queries/tauriAdapter";
+import {
+  effectiveSqlNamespace,
+  sqlNamespaceOptions,
+} from "../../features/queries/namespace";
 import { useSqlResultStream } from "../../features/queries/useSqlResultStream";
 import type {
   PreviewReport,
@@ -106,10 +110,12 @@ interface ParameterDialogState {
 
 function buildSqlHelpPrompt({
   connection,
+  namespace,
   sql,
   error,
 }: {
   connection: ConnectionProfile;
+  namespace: string;
   sql: string;
   error: QueryErrorInfo | null;
 }) {
@@ -119,6 +125,7 @@ function buildSqlHelpPrompt({
     `Connection: ${connection.name || "(unnamed)"}`,
     `Engine: ${connection.engine}`,
     `Database: ${connection.database}`,
+    `Schema: ${namespace}`,
     "",
     "SQL:",
     "```sql",
@@ -151,6 +158,8 @@ export default function Sql({
   setDraft,
   title,
   setTitle,
+  selectedSchema,
+  setSelectedSchema,
   persistedId,
   revision,
   recovered,
@@ -169,6 +178,8 @@ export default function Sql({
   setDraft: (s: string) => void;
   title: string;
   setTitle: (title: string) => void;
+  selectedSchema: string | null;
+  setSelectedSchema: (selectedSchema: string | null) => void;
   persistedId: string | null;
   revision: number;
   recovered: boolean;
@@ -225,6 +236,22 @@ export default function Sql({
     () => findSqlParameters(draft, connection.engine),
     [connection.engine, draft],
   );
+  const catalogScope = useCatalogScope();
+  const { data: catalog } = useQuery(catalogQuery(connection.id, catalogScope));
+  const namespaceOptions = useMemo(
+    () => sqlNamespaceOptions(connection, catalog),
+    [catalog, connection],
+  );
+  const effectiveNamespace = useMemo(
+    () =>
+      effectiveSqlNamespace(connection, selectedSchema, namespaceOptions),
+    [connection, namespaceOptions, selectedSchema],
+  );
+
+  useEffect(() => {
+    if (!effectiveNamespace || selectedSchema === effectiveNamespace) return;
+    setSelectedSchema(effectiveNamespace);
+  }, [effectiveNamespace, selectedSchema, setSelectedSchema]);
 
   const {
     saveState: documentSaveState,
@@ -239,9 +266,11 @@ export default function Sql({
     documentId: persistedId ? sqlDocumentId(persistedId) : null,
     revision,
     title,
+    selectedSchema,
     content: draft,
     recovered,
     onTitleChange: setTitle,
+    onSelectedSchemaChange: setSelectedSchema,
     onContentChange: setDraft,
     onPersisted,
   });
@@ -289,6 +318,7 @@ export default function Sql({
       connectionId: connection.id,
       connectionName: connection.name,
       consoleTitle: title,
+      namespace: effectiveNamespace,
       sql,
       startedAt: new Date().toISOString(),
       startedLabel: at,
@@ -312,7 +342,12 @@ export default function Sql({
       await execute(async () => {
         await resetDesktopStream();
         if (script) {
-          const proposal = await proposeScript(connection.id, sql, "manual");
+          const proposal = await proposeScript(
+            connection.id,
+            sql,
+            "manual",
+            effectiveNamespace,
+          );
           if (proposal.approvalRequired) {
             setPendingScriptApproval({ proposal, sql, at });
             setScriptConfirmation("");
@@ -323,7 +358,12 @@ export default function Sql({
           setScriptOut({ outcome, at });
         } else {
           const runPlannedSql = async () => {
-            const proposal = await proposeSql(connection.id, sql, "manual");
+            const proposal = await proposeSql(
+              connection.id,
+              sql,
+              "manual",
+              effectiveNamespace,
+            );
             if (proposalSqlRunPath(proposal) === "approval") {
               setPendingApproval({ proposal, sql, at });
               return;
@@ -339,7 +379,13 @@ export default function Sql({
               // pre-target `proposalRequired` signal may enter the proposal UI.
               setRun(null);
               await startDesktopStream((onBatch) =>
-                runSqlReadStream(connection.id, sql, onBatch, "manual"),
+                runSqlReadStream(
+                  connection.id,
+                  sql,
+                  onBatch,
+                  "manual",
+                  effectiveNamespace,
+                ),
               );
             } catch (error) {
               if (!canFallbackFromCombinedRead(errDetails(error).kind))
@@ -455,7 +501,11 @@ export default function Sql({
     try {
       // One backend inspection owns classification, authority pinning, and the
       // read-only Explain. There is no classify-to-preview IPC race to bridge.
-      const inspection = await inspectSql(connection.id, sql);
+      const inspection = await inspectSql(
+        connection.id,
+        sql,
+        effectiveNamespace,
+      );
       setPlan(inspection.report);
     } catch (e) {
       setPlanErr(errMessage(e));
@@ -493,14 +543,16 @@ export default function Sql({
     return () => clearInterval(timer);
   }, [running]);
 
-  // #8: feed schema-aware autocomplete. Same introspected Catalog the sidebar tree and the
-  // Schema view read, served from the shared query cache. Failure just leaves completion off.
-  const catalogScope = useCatalogScope();
-  const { data: catalog } = useQuery(catalogQuery(connection.id, catalogScope));
   const promptSql = lastAttempt?.sql || draft;
   const aiPrompt = useMemo(
-    () => buildSqlHelpPrompt({ connection, sql: promptSql, error: runErr }),
-    [connection, promptSql, runErr],
+    () =>
+      buildSqlHelpPrompt({
+        connection,
+        namespace: effectiveNamespace,
+        sql: promptSql,
+        error: runErr,
+      }),
+    [connection, effectiveNamespace, promptSql, runErr],
   );
 
   useEffect(() => {
@@ -713,20 +765,32 @@ export default function Sql({
           ) : null}
         </div>
         <span className="tw:min-w-1 tw:flex-1" />
-        <span
-          className="tw:inline-flex tw:h-control-sm tw:min-w-0 tw:max-w-[180px] tw:shrink tw:items-center tw:gap-1 tw:px-1 tw:text-sm tw:text-foreground"
-          title={`${connection.name || t("app.unnamed")} · ${connection.database}`}
+        <label
+          className="tw:inline-flex tw:h-control-sm tw:min-w-0 tw:max-w-[180px] tw:shrink tw:items-center tw:gap-1 tw:rounded-xs tw:px-1 tw:text-sm tw:text-foreground tw:hover:bg-muted"
+          title={t("sql.schemaSelectorHint", {
+            connection: connection.name || t("app.unnamed"),
+            schema: effectiveNamespace,
+          })}
         >
           <Icon
             name="database"
             className="tw:shrink-0 tw:text-muted-foreground"
           />
-          <span className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-            {connection.engine === "sqlite"
-              ? "main"
-              : connection.database || connection.name || t("app.unnamed")}
-          </span>
-        </span>
+          <span className="tw:sr-only">{t("sql.schemaSelector")}</span>
+          <select
+            className="tw:h-control-sm tw:min-w-0 tw:max-w-[140px] tw:cursor-pointer tw:truncate tw:border-0 tw:bg-transparent tw:p-0 tw:pr-1 tw:font-sans tw:text-sm tw:text-foreground tw:shadow-none tw:outline-none tw:focus:border-transparent tw:focus:shadow-none tw:disabled:cursor-default tw:disabled:opacity-50"
+            value={effectiveNamespace}
+            disabled={running || namespaceOptions.length === 0}
+            onChange={(event) => setSelectedSchema(event.target.value)}
+            aria-label={t("sql.schemaSelector")}
+          >
+            {namespaceOptions.map((namespace) => (
+              <option key={namespace} value={namespace}>
+                {namespace}
+              </option>
+            ))}
+          </select>
+        </label>
         <span
           data-state={documentSaveState}
           className="tw:grid tw:size-control-sm tw:shrink-0 tw:place-items-center tw:text-muted-foreground tw:data-[state=conflict]:text-danger tw:data-[state=error]:text-danger tw:data-[state=saving]:text-primary"
