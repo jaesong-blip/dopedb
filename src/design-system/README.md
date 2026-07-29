@@ -212,7 +212,8 @@ Elevation은 세 단계만 허용한다.
 - `IdeTabStrip`, `IdeTab`: 평평한 document strip과 strip 안쪽의 둥근 active
   tab. 화면별 rectangular selection이나 bottom accent를 다시 만들지 않는다.
 - `IdeToolTabStrip`, `IdeToolTab`: Services 같은 tool window의 tab row와
-  둥근 selected capsule.
+  둥근 selected capsule. 일반 document 전환은 40px `document`, Services처럼
+  36px command row와 나란히 놓이는 tab은 `compact` density를 사용한다.
 - `ToolWindowHeader`: Database Explorer, Agent, provider 패널의 고정 헤더와
   우측 action 슬롯.
 - `ToolWindowSideSurface`: Explorer, Local History, Dashboard의 데스크톱

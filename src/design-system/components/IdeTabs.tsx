@@ -87,13 +87,18 @@ export function IdeToolTabStrip({
   label,
   children,
   status,
+  density = "document",
 }: {
   label: string;
   children: ReactNode;
   status?: ReactNode;
+  density?: "compact" | "document";
 }) {
   return (
-    <div className="tw:flex tw:h-document-tab tw:min-h-document-tab tw:shrink-0 tw:items-center tw:border-b tw:border-border-subtle tw:bg-background tw:px-1">
+    <div
+      data-density={density}
+      className="tw:flex tw:h-document-tab tw:min-h-document-tab tw:shrink-0 tw:items-center tw:border-b tw:border-border-subtle tw:bg-background tw:px-1 tw:data-[density=compact]:h-workbench-toolbar tw:data-[density=compact]:min-h-workbench-toolbar"
+    >
       <div
         className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1"
         role="tablist"

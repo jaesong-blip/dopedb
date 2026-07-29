@@ -271,6 +271,7 @@ export default function QueryServicesToolWindow({
         <div className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col">
           <IdeToolTabStrip
             label={t("services.tabs")}
+            density="compact"
             status={
               active ? (
                 <span className="tw:inline-flex tw:h-control-sm tw:max-w-[min(30vw,320px)] tw:items-center tw:gap-1 tw:overflow-hidden tw:px-2 tw:text-xs tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
