@@ -37,7 +37,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionSaved": "Connection saved",
     "connections.connectCloudProvider": "Cloud accounts",
     "connections.cloudCredentialDescription":
-      "Manage account credentials and resources",
+      "Configure account credentials",
     "connections.connectionMethod": "Connection method",
     "connections.connectionMethodHint":
       "Controls provider-specific connection behavior. Cloud account credentials are managed separately.",
@@ -236,7 +236,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.connectionSaved": "연결이 저장되었습니다",
     "connections.connectCloudProvider": "클라우드 계정",
     "connections.cloudCredentialDescription":
-      "계정 자격 증명과 리소스 관리",
+      "계정 자격 증명 설정",
     "connections.connectionMethod": "연결 방식",
     "connections.connectionMethodHint":
       "공급자별 연결 동작을 선택합니다. 클라우드 계정 자격 증명은 별도로 관리됩니다.",
