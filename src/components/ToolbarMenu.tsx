@@ -30,6 +30,7 @@ export default function ToolbarMenu({
   disabled = false,
   pressed,
   triggerVariant = "default",
+  menuSize = "default",
 }: {
   label: string;
   icon?: IconName;
@@ -38,7 +39,8 @@ export default function ToolbarMenu({
   align?: "start" | "end";
   disabled?: boolean;
   pressed?: boolean;
-  triggerVariant?: "default" | "badge";
+  triggerVariant?: "default" | "badge" | "treeBadge";
+  menuSize?: "default" | "scope";
 }) {
   const generatedId = useId();
   const menuId = `toolbar-menu-${generatedId.replace(/:/g, "")}`;
@@ -175,7 +177,8 @@ export default function ToolbarMenu({
           role="menu"
           aria-label={label}
           data-placement={position?.placement}
-          className="tw:fixed tw:z-[var(--ds-z-popover)] tw:grid tw:max-h-[calc(100dvh-(var(--ds-viewport-gutter)*2))] tw:min-w-[var(--ds-menu-min-width)] tw:max-w-[min(var(--ds-menu-max-width),calc(100vw-(var(--ds-viewport-gutter)*2)))] tw:gap-[var(--ds-segment-gap)] tw:overflow-auto tw:overscroll-contain tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:p-1 tw:text-popover-foreground tw:shadow-popover"
+          data-size={menuSize}
+          className="tw:fixed tw:z-[var(--ds-z-popover)] tw:grid tw:max-h-[calc(100dvh-(var(--ds-viewport-gutter)*2))] tw:min-w-[var(--ds-menu-min-width)] tw:max-w-[min(var(--ds-menu-max-width),calc(100vw-(var(--ds-viewport-gutter)*2)))] tw:gap-[var(--ds-segment-gap)] tw:overflow-auto tw:overscroll-contain tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:p-1 tw:text-popover-foreground tw:shadow-popover tw:data-[size=scope]:w-[min(var(--ds-schema-scope-menu-width),calc(100vw-(var(--ds-viewport-gutter)*2)))]"
           style={{
             left: position?.left ?? 0,
             top: position?.top ?? 0,
@@ -203,8 +206,10 @@ export default function ToolbarMenu({
         type="button"
         className={
           trigger
-            ? triggerVariant === "badge"
-              ? "tw:inline-flex tw:min-h-control-xs tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1 tw:rounded-xs tw:border tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-2xs tw:font-medium tw:text-muted-foreground tw:aria-expanded:border-ring tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:border-ring tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+            ? triggerVariant === "treeBadge"
+              ? "tw:inline-flex tw:h-[var(--ds-tree-badge-height)] tw:min-h-[var(--ds-tree-badge-height)] tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1 tw:rounded-xs tw:border tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-2xs tw:font-medium tw:leading-none tw:text-muted-foreground tw:aria-expanded:border-ring tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:border-ring tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+              : triggerVariant === "badge"
+                ? "tw:inline-flex tw:min-h-control-xs tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1 tw:rounded-xs tw:border tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-2xs tw:font-medium tw:text-muted-foreground tw:aria-expanded:border-ring tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:border-ring tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
               : "tw:inline-flex tw:h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:font-sans tw:text-sm tw:font-semibold tw:text-foreground tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:disabled:cursor-progress tw:disabled:opacity-55 tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
             : "btn small icon-only tw:aria-expanded:bg-selection tw:aria-expanded:text-selection-foreground tw:aria-pressed:bg-selection tw:aria-pressed:text-selection-foreground"
         }

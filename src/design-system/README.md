@@ -221,11 +221,14 @@ Elevation은 세 단계만 허용한다.
 - `ToolWindowHideButton`: 닫기/숨기기의 공통 minus command.
 - `ToolWindowVerticalSplit`: Local History에서 관찰한 primary/secondary
   vertical split. 비율은 `--ds-tool-window-primary-ratio`가 소유한다.
-- `EngineMark`: form/action 기본 크기와 28px object row 안의 `tree` 크기를
+- `EngineMark`: form/action 기본 크기와 24px tree row 안의 `tree` 크기를
   함께 소유한다. feature가 이미지 크기나 wrapper 크기를 다시 지정하지 않는다.
 - `ToolWindowComposer`, `ToolWindowComposerDock`, `ToolWindowComposerInput`,
   `ToolWindowComposerContext`: AI Chat의 multiline 입력면, 내부 context row와
   외부 model/data-source row.
+- `ToolbarMenu menuSize="scope"`: Explorer schema scope popover의 outer
+  frame을 300px로 고정한다. feature child가 popover padding과 border를
+  중복 계산하지 않는다.
 - `ToolWindowSection`: dense tool window 안의 제목 있는 명령 그룹.
 - `ToolWindowAction`: provider/demo/object launcher의 icon-label-trailing 행.
   `flush`는 Data Sources catalog처럼 selection surface가 pane 전체 폭을

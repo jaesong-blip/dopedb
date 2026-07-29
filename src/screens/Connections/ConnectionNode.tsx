@@ -186,7 +186,8 @@ export default function ConnectionNode(props: Props) {
                 props.schemaScopeSaving ||
                 connection.workspaceAccess === "view"
               }
-              triggerVariant="badge"
+              triggerVariant="treeBadge"
+              menuSize="scope"
               trigger={
                 <>
                   {availableSchemas.length === 1
@@ -195,7 +196,7 @@ export default function ConnectionNode(props: Props) {
                 </>
               }
             >
-              <div className="tw:grid tw:w-[min(300px,calc(100vw-(var(--ds-viewport-gutter)*2)))]">
+              <div className="tw:grid tw:w-full">
                 <div className="tw:flex tw:min-h-control-md tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-2 tw:py-1">
                   <Icon
                     name="database"

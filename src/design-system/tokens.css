@@ -57,6 +57,7 @@
   --ds-viewport-gutter: var(--ds-space-2);
   --ds-menu-min-width: 176px;
   --ds-menu-max-width: 320px;
+  --ds-schema-scope-menu-width: 300px;
   --ds-motion-distance-sm: 6px;
   --ds-active-offset: -1px;
 
@@ -96,6 +97,9 @@
   --ds-control-field: var(--ds-control-lg);
   --ds-control-field-sm: var(--ds-control-md);
   --ds-control-field-xs: var(--ds-control-xs);
+  --ds-tree-row-height: 24px;
+  --ds-tree-row-padding-block: 2px;
+  --ds-tree-badge-height: 20px;
   --ds-icon-sm: 14px;
   --ds-icon-md: 16px;
   --ds-title-toolbar-height: 40px;
