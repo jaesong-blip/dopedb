@@ -214,12 +214,9 @@ body::before {
 .invitation-row button { min-height: var(--ds-control-sm); padding: 0 var(--ds-space-2); }
 .member-actions button:disabled, .invitation-actions button:disabled { cursor: wait; opacity: var(--ds-disabled-opacity); }
 .invitation-list p { margin: 9px 0 0; line-height: 1.5; }
-.provider-access-panel { padding: var(--ds-space-5); border-top: var(--ds-border-width) solid var(--ds-border); display: grid; gap: var(--ds-space-4); }
-.provider-access-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-3); }
-.provider-access-heading > div { display: grid; gap: var(--ds-space-1); }
-.provider-access-heading strong, .provider-row strong, .integration-row strong { font-size: var(--ds-font-size-sm); }
-.provider-access-heading small, .provider-row small, .integration-row small, .managed-access-actions p, .provider-empty { color: var(--ds-text-muted); font-size: var(--ds-font-size-2xs); line-height: var(--ds-line-body); }
-.provider-access-heading > span, .provider-state { color: var(--ds-accent); font: var(--ds-font-size-2xs) "SFMono-Regular", monospace; text-transform: uppercase; white-space: nowrap; }
+.provider-row strong, .integration-row strong { font-size: var(--ds-font-size-sm); }
+.provider-row small, .integration-row small, .managed-access-actions p { color: var(--ds-text-muted); font-size: var(--ds-font-size-2xs); line-height: var(--ds-line-body); }
+.provider-state { color: var(--ds-accent); font: var(--ds-font-size-2xs) "SFMono-Regular", monospace; text-transform: uppercase; white-space: nowrap; }
 .provider-catalog, .integration-list { display: grid; border-top: var(--ds-border-width) solid var(--ds-border); }
 .provider-row, .integration-row { min-height: 58px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ds-space-3); border-bottom: var(--ds-border-width) solid var(--ds-border); }
 .provider-row > div, .integration-row > div { display: grid; gap: var(--ds-space-1); }
@@ -250,7 +247,6 @@ body::before {
 .managed-access-actions p { margin: 0; }
 .managed-access-actions > div { --ds-row-control-size: var(--ds-control-sm); display: flex; gap: var(--ds-space-2); flex: none; }
 .managed-access-actions .accent-button { border-color: var(--ds-accent-emphasis); background: var(--ds-accent-emphasis); color: var(--ds-text-on-accent); font-weight: 800; }
-.provider-empty { margin: 0; padding: var(--ds-space-5) 0; }
 .workspace-monogram { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--ds-accent) 45%, transparent); color: var(--ds-accent); font: 11px monospace; }
 .workspace-card h3 { margin: 0 0 5px; font-size: 14px; }
 .workspace-card p { margin: 0; color: var(--ds-text-muted); font: 9px monospace; text-transform: uppercase; }

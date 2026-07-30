@@ -43,6 +43,7 @@ export function useProviderAccess(
     gcpSetupInstances,
     selectedGcpProjectId,
     selectedGcpInstanceId,
+    gcpEnvironmentClassification,
     gcpProductionApproved,
     gcpRestartApproved,
     loading,
@@ -64,6 +65,7 @@ export function useProviderAccess(
   const setGcpSetupInstances = setField("gcpSetupInstances");
   const setSelectedGcpProjectId = setField("selectedGcpProjectId");
   const setSelectedGcpInstanceId = setField("selectedGcpInstanceId");
+  const setGcpEnvironmentClassification = setField("gcpEnvironmentClassification");
   const setGcpProductionApproved = setField("gcpProductionApproved");
   const setGcpRestartApproved = setField("gcpRestartApproved");
   const setLoading = setField("loading");
@@ -186,6 +188,7 @@ export function useProviderAccess(
     if (!gcpSetupId) {
       setGcpSetupInventory(null);
       setGcpSetupInstances([]);
+      setGcpEnvironmentClassification("");
       return;
     }
     const controller = new AbortController();
@@ -227,6 +230,7 @@ export function useProviderAccess(
     setSelectedGcpProjectId(projectId);
     setSelectedGcpInstanceId("");
     setGcpSetupInstances([]);
+    setGcpEnvironmentClassification("");
     setGcpProductionApproved(false);
     setGcpRestartApproved(false);
     if (!projectId) return;
@@ -260,6 +264,7 @@ export function useProviderAccess(
 
   function selectGcpInstance(instanceId: string) {
     setSelectedGcpInstanceId(instanceId);
+    setGcpEnvironmentClassification("");
     setGcpProductionApproved(false);
     setGcpRestartApproved(false);
   }
@@ -276,8 +281,20 @@ export function useProviderAccess(
       !project
       || !instance
       || !instance.ready
-      || instance.production === "unknown"
-      || (instance.production && !gcpProductionApproved)
+      || (
+        instance.production === "unknown"
+        && gcpEnvironmentClassification === ""
+      )
+      || (
+        (
+          instance.production === true
+          || (
+            instance.production === "unknown"
+            && gcpEnvironmentClassification === "production"
+          )
+        )
+        && !gcpProductionApproved
+      )
       || (!instance.iamAuthenticationEnabled && !gcpRestartApproved)
     ) {
       setError("Cloud SQL 대상과 필요한 승인을 확인하세요.");
@@ -297,6 +314,9 @@ export function useProviderAccess(
             projectId: project.id,
             projectNumber: project.number,
             instanceId: instance.id,
+            environmentClassification: instance.production === "unknown"
+              ? gcpEnvironmentClassification
+              : null,
             approveProduction: gcpProductionApproved,
             approveInstanceRestart: gcpRestartApproved,
           }),
@@ -353,13 +373,12 @@ export function useProviderAccess(
       setGcpSetupInstances([]);
       setSelectedGcpProjectId("");
       setSelectedGcpInstanceId("");
+      setGcpEnvironmentClassification("");
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.delete("provider");
       nextUrl.searchParams.delete("status");
       nextUrl.searchParams.delete("gcpSetup");
-      window.history.replaceState({}, "", nextUrl);
-      await load();
-      setSelectedIntegrationId(integrationId);
+      window.location.replace(nextUrl);
     } finally {
       setMutation("");
     }
@@ -757,6 +776,7 @@ export function useProviderAccess(
     gcpSetupInstances,
     selectedGcpProjectId,
     selectedGcpInstanceId,
+    gcpEnvironmentClassification,
     gcpProductionApproved,
     gcpRestartApproved,
     loading,
@@ -779,6 +799,7 @@ export function useProviderAccess(
     selectResource,
     selectGcpInstance,
     selectGcpProject,
+    setGcpEnvironmentClassification,
     setGcpProductionApproved,
     setGcpRestartApproved,
     setNeonConfiguration,

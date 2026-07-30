@@ -43,7 +43,7 @@ function requiredClaim(
 }
 
 async function publicKey(issuer: string, kid: string) {
-  const discoveryUrl = new URL("/.well-known/openid-configuration", `${issuer}/`);
+  const discoveryUrl = new URL(".well-known/openid-configuration", `${issuer}/`);
   const discoveryResponse = await fetch(discoveryUrl, {
     cache: "no-store",
     signal: AbortSignal.timeout(10_000),

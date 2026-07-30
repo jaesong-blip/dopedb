@@ -11,6 +11,7 @@ import {
   type GcpCloudSqlCredential,
 } from "./gcp-cloud-sql-core";
 import {
+  gcpCloudSqlProduction,
   listGcpOAuthInstances,
   type GcpSetupCredential,
 } from "./gcp-cloud-oauth";
@@ -41,6 +42,7 @@ export type GcpCloudBootstrapInput = {
   projectId: string;
   projectNumber: string;
   instanceId: string;
+  environmentClassification: "production" | "development" | null;
   writeAccess: boolean;
   approveProduction: boolean;
   approveInstanceRestart: boolean;
@@ -740,6 +742,90 @@ async function instanceDetails(
       encodeURIComponent(instanceId)
     }`,
   ))!;
+}
+
+async function ensureEnvironmentClassification(
+  credential: GcpSetupCredential,
+  input: GcpCloudBootstrapInput,
+  classification: "production" | "development",
+) {
+  const desiredProduction = classification === "production";
+  const details = await instanceDetails(
+    credential,
+    input.projectId,
+    input.instanceId,
+  );
+  const currentProduction = gcpCloudSqlProduction(details);
+  if (currentProduction !== "unknown") {
+    if (currentProduction !== desiredProduction) {
+      throw new ProviderRequestError(
+        "gcpCloudSql",
+        "Cloud SQL environment classification changed during setup",
+        409,
+      );
+    }
+    return currentProduction;
+  }
+  const settings = details.settings && typeof details.settings === "object"
+    && !Array.isArray(details.settings)
+    ? details.settings as JsonObject
+    : null;
+  if (!settings || typeof settings.settingsVersion !== "string") {
+    throw new ProviderRequestError(
+      "gcpCloudSql",
+      "Cloud SQL settings version is unavailable",
+      409,
+    );
+  }
+  const currentLabels = settings.userLabels
+    && typeof settings.userLabels === "object"
+    && !Array.isArray(settings.userLabels)
+    ? settings.userLabels as JsonObject
+    : {};
+  let operation: JsonObject;
+  try {
+    operation = (await googleRequest(
+      credential,
+      `${SQL_ADMIN_ORIGIN}/projects/${encodeURIComponent(input.projectId)}/instances/${
+        encodeURIComponent(input.instanceId)
+      }`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          settings: {
+            settingsVersion: settings.settingsVersion,
+            userLabels: {
+              ...currentLabels,
+              environment: classification,
+            },
+          },
+        }),
+      },
+    ))!;
+  } catch (error) {
+    if (error instanceof ProviderRequestError && error.status === 403) {
+      throw new ProviderRequestError(
+        "gcpCloudSql",
+        "The Google account needs Cloud SQL Admin permission to classify this instance",
+        403,
+      );
+    }
+    throw error;
+  }
+  await waitSqlOperation(credential, input.projectId, operation);
+  const confirmed = await instanceDetails(
+    credential,
+    input.projectId,
+    input.instanceId,
+  );
+  if (gcpCloudSqlProduction(confirmed) !== desiredProduction) {
+    throw new ProviderRequestError(
+      "gcpCloudSql",
+      "Cloud SQL environment classification was not applied",
+      409,
+    );
+  }
+  return desiredProduction;
 }
 
 async function enableIamAuthentication(
@@ -1532,17 +1618,39 @@ export async function bootstrapGcpCloudSql(input: {
       409,
     );
   }
-  if (selected.production === "unknown") {
+  let selectedProduction = selected.production;
+  if (selectedProduction === "unknown" && !configuration.environmentClassification) {
     throw new ProviderRequestError(
       "gcpCloudSql",
-      "Add an environment=production or environment=development label before connecting this instance",
+      "Choose a production or development classification before connecting this instance",
       409,
     );
   }
-  if (selected.production && !configuration.approveProduction) {
+  const requestedProduction = configuration.environmentClassification === "production";
+  if (
+    (
+      selectedProduction === true
+      || (selectedProduction === "unknown" && requestedProduction)
+    )
+    && !configuration.approveProduction
+  ) {
     throw new ProviderRequestError(
       "gcpCloudSql",
       "Production Cloud SQL access requires explicit administrator approval",
+      409,
+    );
+  }
+  if (configuration.environmentClassification) {
+    selectedProduction = await ensureEnvironmentClassification(
+      input.credential,
+      configuration,
+      configuration.environmentClassification,
+    );
+  }
+  if (selectedProduction === "unknown") {
+    throw new ProviderRequestError(
+      "gcpCloudSql",
+      "Cloud SQL environment classification could not be confirmed",
       409,
     );
   }
@@ -1662,7 +1770,7 @@ export async function bootstrapGcpCloudSql(input: {
   return {
     configuration: durableConfiguration,
     engine,
-    production: selected.production,
+    production: selectedProduction,
     iamAuthenticationChanged,
     databaseUsers: {
       read: readEmail,

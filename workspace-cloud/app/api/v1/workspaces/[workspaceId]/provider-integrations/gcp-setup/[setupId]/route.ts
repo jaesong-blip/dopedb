@@ -126,6 +126,11 @@ export async function POST(request: Request, context: RouteContext) {
     || typeof body.projectId !== "string"
     || typeof body.projectNumber !== "string"
     || typeof body.instanceId !== "string"
+    || !(
+      body.environmentClassification === null
+      || body.environmentClassification === "production"
+      || body.environmentClassification === "development"
+    )
     || typeof body.approveProduction !== "boolean"
     || typeof body.approveInstanceRestart !== "boolean"
   ) {
@@ -144,6 +149,7 @@ export async function POST(request: Request, context: RouteContext) {
         projectId: body.projectId,
         projectNumber: body.projectNumber,
         instanceId: body.instanceId,
+        environmentClassification: body.environmentClassification,
         // Shared managed connections deliberately issue read-only leases.
         writeAccess: false,
         approveProduction: body.approveProduction,

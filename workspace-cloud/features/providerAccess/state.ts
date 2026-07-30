@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import type {
+  GcpEnvironmentClassification,
   GcpSetupInstance,
   GcpSetupInventory,
   Integration,
@@ -31,6 +32,7 @@ export type ProviderAccessState = {
   gcpSetupInstances: GcpSetupInstance[];
   selectedGcpProjectId: string;
   selectedGcpInstanceId: string;
+  gcpEnvironmentClassification: GcpEnvironmentClassification;
   gcpProductionApproved: boolean;
   gcpRestartApproved: boolean;
   loading: boolean;
@@ -62,6 +64,7 @@ export const initialProviderAccessState: ProviderAccessState = {
   gcpSetupInstances: [],
   selectedGcpProjectId: "",
   selectedGcpInstanceId: "",
+  gcpEnvironmentClassification: "",
   gcpProductionApproved: false,
   gcpRestartApproved: false,
   loading: true,

@@ -112,7 +112,9 @@ function bearer(credential: GcpSetupCredential) {
   return { authorization: `Bearer ${credential.accessToken}` };
 }
 
-function production(details: Record<string, unknown>): true | false | "unknown" {
+export function gcpCloudSqlProduction(
+  details: Record<string, unknown>,
+): true | false | "unknown" {
   const settings = details.settings as Record<string, unknown> | undefined;
   const labels = settings?.userLabels as Record<string, unknown> | undefined;
   const value = typeof labels?.environment === "string"
@@ -129,7 +131,7 @@ export async function listGcpOAuthProjects(
   credential: GcpSetupCredential,
 ): Promise<GcpOAuthProject[]> {
   const body = await googleJson(
-    `${RESOURCE_MANAGER}/projects?query=state%3AACTIVE&pageSize=100`,
+    `${RESOURCE_MANAGER}/projects:search?query=state%3AACTIVE&pageSize=100`,
     { headers: bearer(credential) },
   );
   if (typeof body.nextPageToken === "string") {
@@ -183,7 +185,7 @@ export async function listGcpOAuthInstances(
       engine,
       region: typeof row.region === "string" ? row.region : "unknown",
       ready: row.state === "RUNNABLE",
-      production: production(row),
+      production: gcpCloudSqlProduction(row),
       iamAuthenticationEnabled,
     }];
   });

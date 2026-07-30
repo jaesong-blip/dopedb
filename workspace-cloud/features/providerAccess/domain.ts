@@ -115,6 +115,8 @@ export type GcpSetupInstance = {
   iamAuthenticationEnabled: boolean;
 };
 
+export type GcpEnvironmentClassification = "" | "production" | "development";
+
 export type GcpSetupInventory = {
   account: string;
   expiresAt: string;
