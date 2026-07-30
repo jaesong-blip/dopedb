@@ -7,18 +7,19 @@ use crate::kernel::identity::{AcpSessionId, ConnectionId, RetiredChatThreadId};
 use crate::state::AppState;
 
 use super::domain::{
-    AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, RetiredChatArchiveMessage,
-    RetiredChatArchiveThread,
+    AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, AgentProvider,
+    RetiredChatArchiveMessage, RetiredChatArchiveThread,
 };
 
-/// Start one connection-pinned session through the official Codex ACP adapter.
+/// Start one connection-pinned session through an official ACP registry adapter.
 #[tauri::command]
 pub async fn start_agent_acp_session(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
     connection_id: ConnectionId,
+    provider: AgentProvider,
 ) -> AppResult<AcpSessionFocus> {
-    state.agents_acp.start(connection_id, app).await
+    state.agents_acp.start(connection_id, provider, app).await
 }
 
 /// Resume persisted history through the official adapter's ACP session/load path.
@@ -83,6 +84,20 @@ pub fn respond_agent_acp_permission(
 #[tauri::command]
 pub fn close_agent_acp_session(state: State<'_, AppState>, id: AcpSessionId) -> AppResult<()> {
     state.agents_acp.close(id)
+}
+
+/// Change one option that the active ACP adapter actually advertised.
+#[tauri::command]
+pub async fn set_agent_acp_config_option(
+    state: State<'_, AppState>,
+    id: AcpSessionId,
+    config_id: String,
+    value: String,
+) -> AppResult<()> {
+    state
+        .agents_acp
+        .set_config_option(id, config_id, value)
+        .await
 }
 
 /// Claude Code / Codex CLI status for connection-pinned Terminal profiles.

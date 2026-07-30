@@ -1,6 +1,6 @@
 //! Official ACP client runtime for the in-app Agent surface.
 //!
-//! Authentication stays entirely with the locally installed Codex tooling. This
+//! Authentication stays entirely with the locally installed Agent tooling. This
 //! module never opens its auth files, reads a token, refreshes credentials, or
 //! offers a login flow.
 
@@ -13,8 +13,9 @@ use std::time::Duration;
 use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, Implementation, InitializeRequest, LoadSessionRequest,
     NewSessionRequest, PermissionOptionKind, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
-    SessionNotification, TextContent,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionConfigOption, SessionId, SessionNotification, SetSessionConfigOptionRequest,
+    TextContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, ConnectionTo};
@@ -37,6 +38,7 @@ use super::domain::{
     AcpSessionEventPayload, AcpSessionFocus, AcpSessionLifecycle, AcpSessionSummary, AgentProvider,
 };
 
+const CLAUDE_ACP_PACKAGE: &str = "@agentclientprotocol/claude-agent-acp@0.63.0";
 const CODEX_ACP_PACKAGE: &str = "@agentclientprotocol/codex-acp@1.1.7";
 const ACP_CAPABILITY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ACP_START_TIMEOUT: Duration = Duration::from_secs(120);
@@ -49,6 +51,9 @@ const MAX_ROW_BYTES: usize = 64 * 1024;
 const MAX_CONTEXT_LABEL_BYTES: usize = 512;
 const MAX_PERMISSION_OPTIONS: usize = 16;
 const MAX_PERMISSION_OPTION_BYTES: usize = 1024;
+const MAX_CONFIG_OPTIONS: usize = 64;
+const MAX_CONFIG_OPTION_ID_BYTES: usize = 256;
+const MAX_CONFIG_OPTION_VALUE_BYTES: usize = 1024;
 const EVENT_NAME: &str = "agent-acp:changed";
 
 #[derive(Clone)]
@@ -72,6 +77,7 @@ struct AcpSession {
     busy: AtomicBool,
     command: Mutex<Option<tokio::sync::mpsc::UnboundedSender<SessionCommand>>>,
     permissions: Mutex<HashMap<String, PendingPermission>>,
+    config_options: Mutex<HashMap<String, HashSet<String>>>,
     app: AppHandle,
 }
 
@@ -93,6 +99,11 @@ enum SessionCommand {
     },
     Cancel,
     Close,
+    SetConfigOption {
+        config_id: String,
+        value: String,
+        response: oneshot::Sender<AppResult<()>>,
+    },
 }
 
 impl AcpRuntime {
@@ -142,9 +153,10 @@ impl AcpRuntime {
     pub(crate) async fn start(
         &self,
         connection_id: ConnectionId,
+        provider: AgentProvider,
         app: AppHandle,
     ) -> AppResult<AcpSessionFocus> {
-        self.launch(connection_id, app, None).await
+        self.launch(connection_id, provider, app, None).await
     }
 
     pub(crate) async fn resume(
@@ -171,6 +183,7 @@ impl AcpRuntime {
         let connection_id = focus.session.connection_id;
         self.launch(
             connection_id,
+            focus.session.provider,
             app,
             Some(ResumeSeed {
                 summary: focus.session,
@@ -183,6 +196,7 @@ impl AcpRuntime {
     async fn launch(
         &self,
         connection_id: ConnectionId,
+        provider: AgentProvider,
         app: AppHandle,
         resume_seed: Option<ResumeSeed>,
     ) -> AppResult<AcpSessionFocus> {
@@ -205,7 +219,7 @@ impl AcpRuntime {
 
         let npx = crate::cli_environment::find_executable("npx").ok_or_else(|| {
             AppError::Agent(
-                "Node.js `npx` was not found. Install Node.js to run the official Codex ACP adapter."
+                "Node.js `npx` was not found. Install Node.js to run the official ACP adapter."
                     .into(),
             )
         })?;
@@ -226,6 +240,11 @@ impl AcpRuntime {
                 if seed.summary.connection_id != connection_id {
                     return Err(AppError::Blocked {
                         reason: "the Agent session belongs to another connection".into(),
+                    });
+                }
+                if seed.summary.provider != provider {
+                    return Err(AppError::Blocked {
+                        reason: "the Agent session belongs to another provider".into(),
                     });
                 }
                 let previous_last_sequence =
@@ -256,7 +275,7 @@ impl AcpRuntime {
                     AcpSessionSummary {
                         id,
                         connection_id,
-                        provider: AgentProvider::Codex,
+                        provider,
                         title: "New Agent session".into(),
                         lifecycle: AcpSessionLifecycle::Starting,
                         acp_session_id: None,
@@ -304,6 +323,7 @@ impl AcpRuntime {
             busy: AtomicBool::new(false),
             command: Mutex::new(None),
             permissions: Mutex::new(HashMap::new()),
+            config_options: Mutex::new(HashMap::new()),
             app,
         });
         self.sessions.insert(id, session.clone());
@@ -338,14 +358,16 @@ impl AcpRuntime {
         match tokio::time::timeout(ACP_START_TIMEOUT, ready_rx).await {
             Ok(Ok(Ok(()))) => session.focus(None),
             Ok(Ok(Err(error))) => Err(error),
-            Ok(Err(_)) => Err(AppError::Agent(
-                "the Codex ACP startup task stopped before initialization".into(),
-            )),
+            Ok(Err(_)) => Err(AppError::Agent(format!(
+                "the {} ACP startup task stopped before initialization",
+                provider_name(provider)
+            ))),
             Err(_) => {
                 let _ = self.close(id);
-                Err(AppError::Timeout(
-                    "the official Codex ACP adapter did not initialize within 120 seconds".into(),
-                ))
+                Err(AppError::Timeout(format!(
+                    "the official {} ACP adapter did not initialize within 120 seconds",
+                    provider_name(provider)
+                )))
             }
         }
     }
@@ -382,9 +404,10 @@ impl AcpRuntime {
             .is_err()
         {
             session.busy.store(false, Ordering::SeqCst);
-            return Err(AppError::Agent(
-                "the Codex ACP session is no longer available".into(),
-            ));
+            return Err(AppError::Agent(format!(
+                "the {} ACP session is no longer available",
+                provider_name(session.summary().provider)
+            )));
         }
         Ok(())
     }
@@ -392,10 +415,12 @@ impl AcpRuntime {
     pub(crate) fn cancel(&self, id: AcpSessionId) -> AppResult<()> {
         let session = self.session(id)?;
         session.cancel_pending_permissions();
-        session
-            .sender()?
-            .send(SessionCommand::Cancel)
-            .map_err(|_| AppError::Agent("the Codex ACP session is no longer available".into()))
+        session.sender()?.send(SessionCommand::Cancel).map_err(|_| {
+            AppError::Agent(format!(
+                "the {} ACP session is no longer available",
+                provider_name(session.summary().provider)
+            ))
+        })
     }
 
     pub(crate) fn respond_permission(
@@ -418,6 +443,46 @@ impl AcpRuntime {
         session.busy.store(false, Ordering::SeqCst);
         session.set_lifecycle(AcpSessionLifecycle::Closed, None);
         Ok(())
+    }
+
+    pub(crate) async fn set_config_option(
+        &self,
+        id: AcpSessionId,
+        config_id: String,
+        value: String,
+    ) -> AppResult<()> {
+        let session = self.session(id)?;
+        validate_config_option_value(&config_id, &value)?;
+        if !session.allows_config_option(&config_id, &value) {
+            return Err(AppError::Blocked {
+                reason: "the ACP adapter did not advertise that model option".into(),
+            });
+        }
+        if session.summary().lifecycle != AcpSessionLifecycle::Ready {
+            return Err(AppError::Blocked {
+                reason: "the Agent session is not ready to change configuration".into(),
+            });
+        }
+        let (response_tx, response_rx) = oneshot::channel();
+        session
+            .sender()?
+            .send(SessionCommand::SetConfigOption {
+                config_id,
+                value,
+                response: response_tx,
+            })
+            .map_err(|_| {
+                AppError::Agent(format!(
+                    "the {} ACP session is no longer available",
+                    provider_name(session.summary().provider)
+                ))
+            })?;
+        response_rx.await.map_err(|_| {
+            AppError::Agent(format!(
+                "the {} ACP session stopped before applying its configuration",
+                provider_name(session.summary().provider)
+            ))
+        })?
     }
 
     pub(crate) fn stop_connection(&self, connection_id: ConnectionId) -> usize {
@@ -468,9 +533,12 @@ impl AcpSession {
     }
 
     fn sender(&self) -> AppResult<tokio::sync::mpsc::UnboundedSender<SessionCommand>> {
-        lock_unpoisoned(&self.command)
-            .clone()
-            .ok_or_else(|| AppError::Agent("the Codex ACP session is no longer available".into()))
+        lock_unpoisoned(&self.command).clone().ok_or_else(|| {
+            AppError::Agent(format!(
+                "the {} ACP session is no longer available",
+                provider_name(self.summary().provider)
+            ))
+        })
     }
 
     fn focus(&self, after_sequence: Option<u64>) -> AppResult<AcpSessionFocus> {
@@ -641,6 +709,12 @@ impl AcpSession {
             let _ = permission.response.send(None);
         }
     }
+
+    fn allows_config_option(&self, config_id: &str, value: &str) -> bool {
+        lock_unpoisoned(&self.config_options)
+            .get(config_id)
+            .is_some_and(|values| values.contains(value))
+    }
 }
 
 impl PersistenceTracker {
@@ -780,17 +854,18 @@ async fn run_session(
                 Implementation::new("dopedb", env!("CARGO_PKG_VERSION")).title("DopeDB"),
             );
             let initialized = connection.send_request(initialize).block_task().await?;
-            let acp_session_id = if let Some(resume) = resume {
+            let (acp_session_id, config_options) = if let Some(resume) = resume {
                 if !initialized.agent_capabilities.load_session {
-                    let message =
-                        "the official Codex ACP adapter does not support session history loading"
-                            .to_owned();
+                    let message = format!(
+                        "the official {} ACP adapter does not support session history loading",
+                        provider_name(connection_session.summary().provider)
+                    );
                     complete_ready(&ready_for_connection, Err(AppError::Agent(message.clone())));
                     connection_session.set_lifecycle(AcpSessionLifecycle::Failed, Some(message));
                     return Ok(());
                 }
                 let acp_session_id = SessionId::from(resume.acp_session_id);
-                connection
+                let loaded = connection
                     .send_request(LoadSessionRequest::new(
                         acp_session_id.clone(),
                         &launch.working_directory,
@@ -800,15 +875,16 @@ async fn run_session(
                 connection_session
                     .discard_replaced_history(resume.previous_last_sequence)
                     .await;
-                acp_session_id
+                (acp_session_id, loaded.config_options)
             } else {
-                connection
+                let created = connection
                     .send_request(NewSessionRequest::new(&launch.working_directory))
                     .block_task()
-                    .await?
-                    .session_id
+                    .await?;
+                (created.session_id, created.config_options)
             };
             connection_session.set_acp_session_id(acp_session_id.to_string());
+            push_session_configuration(&connection_session, config_options);
             connection_session.set_lifecycle(AcpSessionLifecycle::Ready, None);
             complete_ready(&ready_for_connection, Ok(()));
 
@@ -839,6 +915,33 @@ async fn run_session(
                         connection
                             .send_notification(CancelNotification::new(acp_session_id.clone()))?;
                     }
+                    SessionCommand::SetConfigOption {
+                        config_id,
+                        value,
+                        response,
+                    } => {
+                        let result = connection
+                            .send_request(SetSessionConfigOptionRequest::new(
+                                acp_session_id.clone(),
+                                config_id,
+                                value.as_str(),
+                            ))
+                            .block_task()
+                            .await
+                            .map(|updated| {
+                                push_session_configuration(
+                                    &connection_session,
+                                    Some(updated.config_options),
+                                );
+                            })
+                            .map_err(|error| {
+                                AppError::Agent(actionable_acp_error(
+                                    connection_session.summary().provider,
+                                    &error.to_string(),
+                                ))
+                            });
+                        let _ = response.send(result);
+                    }
                     SessionCommand::Close => break,
                 }
             }
@@ -862,7 +965,7 @@ async fn run_session(
             }
         }
         Err(error) => {
-            let message = actionable_acp_error(&error.to_string());
+            let message = actionable_acp_error(session.summary().provider, &error.to_string());
             complete_ready(&ready, Err(AppError::Agent(message.clone())));
             session.push(AcpSessionEventPayload::Error {
                 message: message.clone(),
@@ -898,7 +1001,8 @@ async fn run_turn(
                         return Ok(true);
                     }
                     Err(error) => {
-                        let message = actionable_acp_error(&error.to_string());
+                        let message =
+                            actionable_acp_error(session.summary().provider, &error.to_string());
                         session.push(AcpSessionEventPayload::Error { message });
                         if connection.is_incoming_closed() {
                             return Err(error);
@@ -924,15 +1028,104 @@ async fn run_turn(
                         // The runtime's atomic busy gate prevents this path. Ignore a
                         // stale duplicate rather than interleaving ACP prompt turns.
                     }
+                    Some(SessionCommand::SetConfigOption { response, .. }) => {
+                        let _ = response.send(Err(AppError::Blocked {
+                            reason: "the Agent configuration cannot change during a turn".into(),
+                        }));
+                    }
                 }
             }
         }
     }
 }
 
+fn push_session_configuration(
+    session: &AcpSession,
+    config_options: Option<Vec<SessionConfigOption>>,
+) {
+    let config_options = config_options.unwrap_or_default();
+    if config_options.len() > MAX_CONFIG_OPTIONS {
+        lock_unpoisoned(&session.config_options).clear();
+        session.push(AcpSessionEventPayload::Error {
+            message: format!(
+                "the ACP adapter advertised more than {MAX_CONFIG_OPTIONS} configuration options"
+            ),
+        });
+        return;
+    }
+    match bounded_json_value(&config_options, "ACP session configuration") {
+        Ok(serde_json::Value::Array(config_options)) => {
+            let mut allowed = HashMap::<String, HashSet<String>>::new();
+            let config_options = config_options
+                .into_iter()
+                .filter_map(|option| {
+                    let object = option.as_object()?;
+                    if object.get("category")?.as_str()? != "model"
+                        || object.get("type")?.as_str()? != "select"
+                    {
+                        return None;
+                    }
+                    let id = object.get("id")?.as_str()?.to_owned();
+                    if id.is_empty() || id.len() > MAX_CONFIG_OPTION_ID_BYTES {
+                        return None;
+                    }
+                    let mut values = HashSet::new();
+                    collect_config_select_values(object.get("options"), &mut values);
+                    if let Some(current) =
+                        object.get("currentValue").and_then(|value| value.as_str())
+                    {
+                        if !current.is_empty() && current.len() <= MAX_CONFIG_OPTION_VALUE_BYTES {
+                            values.insert(current.to_owned());
+                        }
+                    }
+                    if values.is_empty() {
+                        return None;
+                    }
+                    allowed.insert(id, values);
+                    Some(serde_json::Value::Object(object.clone()))
+                })
+                .collect::<Vec<_>>();
+            *lock_unpoisoned(&session.config_options) = allowed;
+            session.push(AcpSessionEventPayload::SessionConfiguration { config_options });
+        }
+        Ok(_) => {
+            lock_unpoisoned(&session.config_options).clear();
+            session.push(AcpSessionEventPayload::Error {
+                message: "the ACP adapter returned an invalid session configuration".into(),
+            });
+        }
+        Err(message) => {
+            lock_unpoisoned(&session.config_options).clear();
+            session.push(AcpSessionEventPayload::Error { message });
+        }
+    }
+}
+
+fn collect_config_select_values(value: Option<&serde_json::Value>, values: &mut HashSet<String>) {
+    let Some(entries) = value.and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    for entry in entries {
+        let Some(object) = entry.as_object() else {
+            continue;
+        };
+        if let Some(value) = object.get("value").and_then(serde_json::Value::as_str) {
+            if !value.is_empty() && value.len() <= MAX_CONFIG_OPTION_VALUE_BYTES {
+                values.insert(value.to_owned());
+            }
+        } else {
+            collect_config_select_values(object.get("options"), values);
+        }
+    }
+}
+
 fn agent_config(session: &AcpSession, launch: &LaunchContext) -> AcpAgentConfig {
+    let package = match session.summary().provider {
+        AgentProvider::Claude => CLAUDE_ACP_PACKAGE,
+        AgentProvider::Codex => CODEX_ACP_PACKAGE,
+    };
     let mut config = AcpAgentConfig::new(&launch.npx)
-        .args(["-y", CODEX_ACP_PACKAGE])
+        .args(["-y", package])
         .env(
             "PATH",
             crate::cli_environment::executable_search_path(Some(&launch.cli_directory))
@@ -1190,6 +1383,20 @@ fn normalize_prompt(prompt: String) -> AppResult<String> {
     Ok(prompt)
 }
 
+fn validate_config_option_value(config_id: &str, value: &str) -> AppResult<()> {
+    if config_id.trim().is_empty() || value.trim().is_empty() {
+        return Err(AppError::Config(
+            "the ACP configuration option and value are required".into(),
+        ));
+    }
+    if config_id.len() > MAX_CONFIG_OPTION_ID_BYTES || value.len() > MAX_CONFIG_OPTION_VALUE_BYTES {
+        return Err(AppError::Blocked {
+            reason: "the ACP configuration option exceeded its size limit".into(),
+        });
+    }
+    Ok(())
+}
+
 fn permission_kind(kind: PermissionOptionKind) -> &'static str {
     match kind {
         PermissionOptionKind::AllowOnce => "allowOnce",
@@ -1200,16 +1407,26 @@ fn permission_kind(kind: PermissionOptionKind) -> &'static str {
     }
 }
 
-fn actionable_acp_error(message: &str) -> String {
+fn actionable_acp_error(provider: AgentProvider, message: &str) -> String {
     let lower = message.to_ascii_lowercase();
     if lower.contains("auth") || lower.contains("login") || lower.contains("unauthorized") {
-        return "Codex is not authenticated. Run `codex login` in a terminal, then start a new Agent session.".into();
+        return match provider {
+            AgentProvider::Claude => "Claude is not authenticated. Run `claude auth login` in a terminal, then start a new Agent session.".into(),
+            AgentProvider::Codex => "Codex is not authenticated. Run `codex login` in a terminal, then start a new Agent session.".into(),
+        };
     }
     if lower.contains("not found") && lower.contains("npx") {
         return "Node.js `npx` is unavailable. Install Node.js, then start a new Agent session."
             .into();
     }
-    format!("Codex ACP error: {message}")
+    format!("{} ACP error: {message}", provider_name(provider))
+}
+
+fn provider_name(provider: AgentProvider) -> &'static str {
+    match provider {
+        AgentProvider::Claude => "Claude",
+        AgentProvider::Codex => "Codex",
+    }
 }
 
 fn complete_ready(

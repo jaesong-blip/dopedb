@@ -18,7 +18,6 @@ import { Button } from "../../design-system/components/Button";
 import {
   InlineNotice,
   LoadingLabel,
-  StatusBadge,
   StatusDot,
   type StatusTone,
 } from "../../design-system/components/Status";
@@ -41,10 +40,12 @@ import type { WorkbenchDocument } from "../workbench/domain";
 import type {
   AcpPermissionOption,
   AcpPromptContext,
+  AcpSessionConfigOption,
   AcpSessionEvent,
   AcpSessionId,
   AcpSessionLifecycle,
   AcpSessionSummary,
+  AgentProvider,
 } from "./domain";
 import AcpStructuredResult from "./AcpStructuredResult";
 import { useAgentSelection } from "./selectionContext";
@@ -57,6 +58,7 @@ import {
   promptAgentAcpSession,
   respondAgentAcpPermission,
   resumeAgentAcpSession,
+  setAgentAcpConfigOption,
   startAgentAcpSession,
 } from "./tauriAdapter";
 
@@ -136,6 +138,11 @@ export default function AcpChatPanel({
   >({});
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [selectedProvider, setSelectedProvider] =
+    useState<AgentProvider>("codex");
+  const [includeEditorContext, setIncludeEditorContext] = useState(true);
+  const [configChanging, setConfigChanging] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [permissionSubmitting, setPermissionSubmitting] = useState<string | null>(
@@ -157,6 +164,16 @@ export default function AcpChatPanel({
     Object.prototype.hasOwnProperty.call(eventsBySession, active.id);
   const events = active ? eventsBySession[active.id] ?? [] : [];
   const transcript = useMemo(() => projectTranscript(events), [events]);
+  const configOptions = useMemo(
+    () => latestConfigOptions(events),
+    [events],
+  );
+  const modelOption = configOptions.find(
+    (option) =>
+      option.category === "model" &&
+      option.type === "select" &&
+      typeof option.currentValue === "string",
+  );
   const activeDocument =
     documents.find((document) => document.id === activeDocumentId) ?? null;
   const context = useMemo(
@@ -170,6 +187,14 @@ export default function AcpChatPanel({
     [activeDocument, connection, selectedTable, selection],
   );
   const contextLabels = useMemo(() => contextSummary(context), [context]);
+  const submittedContext = includeEditorContext
+    ? context
+    : {
+        database: context.database,
+        documentName: null,
+        documentText: null,
+        table: null,
+      };
   const pendingPermissionId =
     active?.lifecycle === "waitingPermission"
       ? [...events]
@@ -266,6 +291,10 @@ export default function AcpChatPanel({
   }, [activeId, connectionSessions]);
 
   useEffect(() => {
+    if (active) setSelectedProvider(active.provider);
+  }, [active]);
+
+  useEffect(() => {
     if (!active || eventsBySession[active.id]) return;
     void focusAgentAcpSession(active.id)
       .then(applyFocus)
@@ -280,15 +309,24 @@ export default function AcpChatPanel({
     element.scrollTop = element.scrollHeight;
   }, [events.length, active?.id]);
 
-  async function startSession() {
-    if (starting) return;
+  async function startSession(provider = selectedProvider) {
+    if (starting) return null;
     setStarting(true);
     setError(null);
     try {
-      const focus = await startAgentAcpSession(connection.id);
+      const focus = await startAgentAcpSession(connection.id, provider);
       applyFocus(focus);
+      setSelectedProvider(provider);
+      setHistoryOpen(false);
+      return focus;
     } catch (reason) {
-      setError(t("agent.acpStartFailed", { error: errMessage(reason) }));
+      setError(
+        t("agent.acpStartFailed", {
+          provider: providerLabel(provider),
+          error: errMessage(reason),
+        }),
+      );
+      return null;
     } finally {
       setStarting(false);
     }
@@ -298,7 +336,10 @@ export default function AcpChatPanel({
     setActiveId(id);
     setError(null);
     try {
-      applyFocus(await focusAgentAcpSession(id));
+      const focus = await focusAgentAcpSession(id);
+      applyFocus(focus);
+      setSelectedProvider(focus.session.provider);
+      setHistoryOpen(false);
     } catch (reason) {
       setError(t("agent.acpLoadFailed", { error: errMessage(reason) }));
     }
@@ -319,14 +360,53 @@ export default function AcpChatPanel({
 
   async function sendPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!active || active.lifecycle !== "ready" || !prompt.trim()) return;
+    if (starting || !prompt.trim()) return;
     const submitted = prompt;
     setError(null);
     try {
-      await promptAgentAcpSession(active.id, submitted, context);
+      let session = active;
+      if (
+        !session ||
+        session.lifecycle === "closed" ||
+        session.lifecycle === "failed"
+      ) {
+        const focus = await startSession(selectedProvider);
+        session = focus?.session ?? null;
+      }
+      if (!session || session.lifecycle !== "ready") return;
+      await promptAgentAcpSession(session.id, submitted, submittedContext);
       setPrompt("");
     } catch (reason) {
       setError(t("agent.acpSendFailed", { error: errMessage(reason) }));
+    }
+  }
+
+  async function changeProvider(provider: AgentProvider) {
+    if (provider === selectedProvider && active?.provider === provider) return;
+    setSelectedProvider(provider);
+    if (active && active.provider !== provider) {
+      await startSession(provider);
+    }
+  }
+
+  async function changeConfigOption(
+    option: AcpSessionConfigOption,
+    value: string,
+  ) {
+    if (!active || configChanging || option.currentValue === value) return;
+    setConfigChanging(option.id);
+    setError(null);
+    try {
+      await setAgentAcpConfigOption(active.id, option.id, value);
+    } catch (reason) {
+      setError(
+        t("agent.acpConfigFailed", {
+          name: option.name,
+          error: errMessage(reason),
+        }),
+      );
+    } finally {
+      setConfigChanging(null);
     }
   }
 
@@ -405,47 +485,29 @@ export default function AcpChatPanel({
         onDoubleClick={() => onWidthChange(TERMINAL_DOCK_DEFAULT_WIDTH)}
       />
       <ToolWindowHeader
-        title={
-          <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
-            <Icon name="user" />
-            <span className="tw:truncate">{t("agent.acpTitle")}</span>
-            <span className="tw:text-xs tw:font-medium tw:text-muted-foreground">
-              Codex
-            </span>
-            {active ? (
-              <StatusBadge
-                density="compact"
-                tone={lifecycleTone(active.lifecycle)}
-              >
-                <StatusDot tone={lifecycleTone(active.lifecycle)} />
-                {lifecycleLabel(active.lifecycle, t)}
-              </StatusBadge>
-            ) : null}
-          </span>
-        }
+        title={t("agent.acpTitle")}
         actions={
           <>
             <Button
-              iconOnly
-              size="xs"
+              size="compact"
               variant="ghost"
-              onClick={onOpenArchive}
-              title={t("agent.acpArchive")}
-              aria-label={t("agent.acpArchive")}
+              disabled={starting}
+              onClick={() => void startSession()}
+              title={t("agent.acpNew")}
             >
-              <Icon name="history" />
+              <Icon name="plus" />
+              {t("agent.acpNew")}
             </Button>
             <Button
               iconOnly
               size="xs"
               variant="ghost"
-              disabled={starting}
-              onClick={() => void startSession()}
-              title={t("agent.acpNew")}
-              aria-label={t("agent.acpNew")}
-              data-agent-focus-target="launcher"
+              aria-pressed={historyOpen}
+              onClick={() => setHistoryOpen((current) => !current)}
+              title={t("agent.acpSessions")}
+              aria-label={t("agent.acpSessions")}
             >
-              <Icon name="plus" />
+              <Icon name="history" />
             </Button>
             <ToolWindowHideButton
               label={t("common.close")}
@@ -477,39 +539,60 @@ export default function AcpChatPanel({
         </InlineNotice>
       ) : null}
 
-      {connectionSessions.length > 0 ? (
-        <div className="tw:flex tw:h-control-lg tw:shrink-0 tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:px-2">
-          <Icon name="database" className="tw:text-muted-foreground" />
-          <select
-            className="tw:h-control-md tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-sm tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-            value={active?.id ?? ""}
-            onChange={(event) =>
-              void selectSession(event.target.value as AcpSessionId)
-            }
-            aria-label={t("agent.acpSessions")}
-            data-agent-focus-target="active-session"
-          >
-            {connectionSessions.map((session) => (
-              <option key={session.id} value={session.id}>
-                {session.title} · {lifecycleLabel(session.lifecycle, t)}
-              </option>
-            ))}
-          </select>
-          {active &&
-          active.lifecycle !== "closed" &&
-          active.lifecycle !== "failed" ? (
+      {historyOpen ? (
+        <section className="tw:grid tw:max-h-[min(360px,45vh)] tw:shrink-0 tw:overflow-auto tw:border-b tw:border-border-subtle tw:bg-background tw:p-1">
+          {connectionSessions.length > 0 ? (
+            connectionSessions.map((session) => (
+              <button
+                key={session.id}
+                type="button"
+                className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:text-left tw:text-sm tw:text-foreground tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground"
+                data-active={session.id === active?.id}
+                onClick={() => void selectSession(session.id)}
+              >
+                <Icon name="database" />
+                <span className="tw:min-w-0 tw:flex-1 tw:truncate">
+                  {session.title}
+                </span>
+                <span className="tw:text-xs tw:text-muted-foreground">
+                  {providerLabel(session.provider)}
+                </span>
+                <StatusDot tone={lifecycleTone(session.lifecycle)} />
+                <span className="tw:sr-only">
+                  {lifecycleLabel(session.lifecycle, t)}
+                </span>
+              </button>
+            ))
+          ) : (
+            <p className="tw:m-0 tw:px-2 tw:py-3 tw:text-xs tw:text-muted-foreground">
+              {t("agent.acpNoSessions")}
+            </p>
+          )}
+          <div className="tw:mt-1 tw:flex tw:items-center tw:justify-between tw:border-t tw:border-border-subtle tw:px-1 tw:pt-1">
             <Button
-              iconOnly
-              size="xs"
+              size="compact"
               variant="ghost"
-              onClick={() => void closeSession()}
-              title={t("agent.acpCloseSession")}
-              aria-label={t("agent.acpCloseSession")}
+              onClick={onOpenArchive}
             >
-              <Icon name="trash" />
+              <Icon name="history" />
+              {t("agent.acpArchive")}
             </Button>
-          ) : null}
-        </div>
+            {active &&
+            active.lifecycle !== "closed" &&
+            active.lifecycle !== "failed" ? (
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
+                onClick={() => void closeSession()}
+                title={t("agent.acpCloseSession")}
+                aria-label={t("agent.acpCloseSession")}
+              >
+                <Icon name="trash" />
+              </Button>
+            ) : null}
+          </div>
+        </section>
       ) : null}
 
       <div
@@ -527,18 +610,13 @@ export default function AcpChatPanel({
           </AgentEmpty>
         ) : !active ? (
           <AgentEmpty>
-            <Icon name="user" />
             <strong>{t("agent.acpEmptyTitle")}</strong>
             <p>{t("agent.acpEmptyBody")}</p>
-            <Button
-              variant="primary"
-              disabled={starting}
-              onClick={() => void startSession()}
-            >
-              <Icon name="plus" />
-              {t("agent.acpStartCodex")}
-            </Button>
-            <small>{t("agent.acpLocalAuth")}</small>
+            <ul className="tw:m-0 tw:grid tw:gap-2 tw:p-0 tw:text-left tw:list-none">
+              <li>{t("agent.acpEmptyFeatureSql")}</li>
+              <li>{t("agent.acpEmptyFeatureInspect")}</li>
+              <li>{t("agent.acpEmptyFeatureApprove")}</li>
+            </ul>
           </AgentEmpty>
         ) : transcript.length === 0 ? (
           <AgentEmpty>
@@ -584,7 +662,7 @@ export default function AcpChatPanel({
       <ToolWindowComposerDock>
         {active &&
         (active.lifecycle === "closed" || active.lifecycle === "failed") ? (
-          <div className="tw:flex tw:min-h-20 tw:items-center tw:gap-3 tw:border-x tw:border-t tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2">
+          <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-3 tw:border-x tw:border-t tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2">
             <p className="tw:m-0 tw:min-w-0 tw:flex-1 tw:text-xs tw:leading-body tw:text-muted-foreground">
               {active.acpSessionId === null
                 ? t("agent.acpRestartBody")
@@ -610,96 +688,178 @@ export default function AcpChatPanel({
                 : t("agent.acpResume")}
             </Button>
           </div>
-        ) : (
-          <>
+        ) : null}
+        {includeEditorContext && contextLabels.length > 0 ? (
+          <div className="tw:flex tw:flex-wrap tw:gap-1 tw:border-x tw:border-t tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1">
+            {contextLabels.map((label) => (
+              <span
+                key={label.text}
+                className="tw:inline-flex tw:h-control-sm tw:max-w-full tw:items-center tw:gap-1 tw:rounded-xs tw:bg-muted tw:px-2 tw:text-xs tw:text-foreground"
+                title={label.text}
+              >
+                <Icon name={label.icon} />
+                <span className="tw:truncate">{label.text}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <ToolWindowComposer
+          aria-label={t("agent.acpComposer")}
+          onSubmit={sendPrompt}
+        >
+          <ToolWindowComposerInput
+            value={prompt}
+            maxLength={MAX_PROMPT_CHARS}
+            disabled={
+              starting ||
+              (active !== null &&
+                active.lifecycle !== "ready" &&
+                active.lifecycle !== "closed" &&
+                active.lifecycle !== "failed")
+            }
+            placeholder={t("agent.acpPrompt")}
+            aria-label={t("agent.acpPrompt")}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+          />
+          <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:px-2">
             {contextLabels.length > 0 ? (
-              <div className="tw:flex tw:flex-wrap tw:gap-1 tw:border-x tw:border-t tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1">
-                {contextLabels.map((label) => (
-                  <span
-                    key={label.text}
-                    className="tw:inline-flex tw:h-control-sm tw:max-w-full tw:items-center tw:gap-1 tw:rounded-xs tw:bg-muted tw:px-2 tw:text-xs tw:text-foreground"
-                    title={label.text}
-                  >
-                    <Icon name={label.icon} />
-                    <span className="tw:truncate">{label.text}</span>
-                  </span>
-                ))}
-              </div>
+              <Button
+                type="button"
+                iconOnly
+                size="compact"
+                variant="ghost"
+                aria-pressed={includeEditorContext}
+                onClick={() =>
+                  setIncludeEditorContext((current) => !current)
+                }
+                title={
+                  includeEditorContext
+                    ? t("agent.acpDetachContext")
+                    : t("agent.acpAttachContext")
+                }
+                aria-label={
+                  includeEditorContext
+                    ? t("agent.acpDetachContext")
+                    : t("agent.acpAttachContext")
+                }
+              >
+                <Icon name="plus" />
+              </Button>
             ) : null}
-            <ToolWindowComposer
-              aria-label={t("agent.acpComposer")}
-              onSubmit={sendPrompt}
-            >
-              <ToolWindowComposerInput
-                value={prompt}
-                maxLength={MAX_PROMPT_CHARS}
-                disabled={!active || active.lifecycle !== "ready"}
-                placeholder={t("agent.acpPrompt")}
-                aria-label={t("agent.acpPrompt")}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-              />
-              <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:px-2">
-                <Icon name="database" className="tw:text-muted-foreground" />
-                <span className="tw:min-w-0 tw:truncate tw:text-xs tw:text-muted-foreground">
-                  {t("agent.acpPinned", {
-                    name: connection.name || t("app.unnamed"),
-                  })}
-                </span>
-                <span className="tw:flex-1" />
-                {active?.lifecycle === "running" ||
-                active?.lifecycle === "waitingPermission" ? (
-                  <Button
-                    iconOnly
-                    size="compact"
-                    variant="ghost"
-                    onClick={() => void cancelTurn()}
-                    title={t("agent.acpCancel")}
-                    aria-label={t("agent.acpCancel")}
-                  >
-                    <Icon name="stop" />
-                  </Button>
-                ) : (
-                  <Button
-                    type="submit"
-                    iconOnly
-                    size="compact"
-                    variant="ghost"
-                    disabled={
-                      !active ||
-                      active.lifecycle !== "ready" ||
-                      !prompt.trim()
-                    }
-                    title={t("agent.acpSend")}
-                    aria-label={t("agent.acpSend")}
-                  >
-                    <Icon name="send" />
-                  </Button>
-                )}
-              </div>
-            </ToolWindowComposer>
-          </>
-        )}
+            <span className="tw:flex-1" />
+            {active?.lifecycle === "running" ||
+            active?.lifecycle === "waitingPermission" ? (
+              <Button
+                iconOnly
+                size="compact"
+                variant="ghost"
+                onClick={() => void cancelTurn()}
+                title={t("agent.acpCancel")}
+                aria-label={t("agent.acpCancel")}
+              >
+                <Icon name="stop" />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                iconOnly
+                size="compact"
+                variant="ghost"
+                disabled={
+                  starting ||
+                  (active !== null &&
+                    active.lifecycle !== "ready" &&
+                    active.lifecycle !== "closed" &&
+                    active.lifecycle !== "failed") ||
+                  !prompt.trim()
+                }
+                title={t("agent.acpSend")}
+                aria-label={t("agent.acpSend")}
+              >
+                <Icon name="send" />
+              </Button>
+            )}
+          </div>
+        </ToolWindowComposer>
         <ToolWindowComposerContext>
-          <span className="tw:text-xs tw:text-muted-foreground">
-            {t("agent.acpProtocol")}
-          </span>
+          <Icon name="user" className="tw:text-muted-foreground" />
+          <select
+            className="tw:h-control-sm tw:max-w-[9rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-xs tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+            value={selectedProvider}
+            disabled={starting}
+            onChange={(event) =>
+              void changeProvider(event.target.value as AgentProvider)
+            }
+            aria-label={t("agent.acpProvider")}
+            title={t("agent.acpLocalAuth")}
+          >
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+          </select>
+          {modelOption ? (
+            <ConfigSelect
+              option={modelOption}
+              changing={configChanging === modelOption.id}
+              onChange={(value) => void changeConfigOption(modelOption, value)}
+            />
+          ) : (
+            <span className="tw:text-xs tw:text-muted-foreground">
+              {t("agent.acpDefaultModel")}
+            </span>
+          )}
           <span className="tw:flex-1" />
-          <span className="tw:text-xs tw:text-muted-foreground">
-            {t("agent.acpNoToken")}
+          <span
+            className="tw:max-w-[40%] tw:truncate tw:text-xs tw:text-muted-foreground"
+            title={t("agent.acpPinned", {
+              name: connection.name || t("app.unnamed"),
+            })}
+          >
+            {connection.name || t("app.unnamed")}
           </span>
         </ToolWindowComposerContext>
       </ToolWindowComposerDock>
     </aside>
+  );
+}
+
+function ConfigSelect({
+  option,
+  changing,
+  onChange,
+}: {
+  option: AcpSessionConfigOption;
+  changing: boolean;
+  onChange: (value: string) => void;
+}) {
+  const options = flattenConfigSelectOptions(option);
+  if (typeof option.currentValue !== "string" || options.length === 0) {
+    return null;
+  }
+  return (
+    <select
+      className="tw:h-control-sm tw:max-w-[11rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-xs tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:disabled:cursor-wait tw:disabled:text-muted-foreground"
+      value={option.currentValue}
+      disabled={changing}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label={option.name}
+      title={option.description ?? option.name}
+    >
+      {options.map((entry) => (
+        <option key={entry.value} value={entry.value}>
+          {entry.name}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -985,6 +1145,29 @@ function projectTranscript(events: AcpSessionEvent[]): TranscriptItem[] {
     }
   }
   return items;
+}
+
+function latestConfigOptions(
+  events: AcpSessionEvent[],
+): AcpSessionConfigOption[] {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type === "sessionConfiguration") {
+      return event.configOptions;
+    }
+  }
+  return [];
+}
+
+function flattenConfigSelectOptions(option: AcpSessionConfigOption) {
+  if (!Array.isArray(option.options)) return [];
+  return option.options.flatMap((entry) =>
+    "options" in entry ? entry.options : [entry],
+  );
+}
+
+function providerLabel(provider: AgentProvider) {
+  return provider === "claude" ? "Claude" : "Codex";
 }
 
 function promptContext(

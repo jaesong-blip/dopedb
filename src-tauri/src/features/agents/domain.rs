@@ -113,6 +113,9 @@ pub(crate) enum AcpSessionEventPayload {
     SessionUpdate {
         update: serde_json::Value,
     },
+    SessionConfiguration {
+        config_options: Vec<serde_json::Value>,
+    },
     PermissionRequest {
         request_id: String,
         tool_call: serde_json::Value,

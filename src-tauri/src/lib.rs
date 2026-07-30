@@ -80,6 +80,7 @@ pub fn run() {
             features::agents::transport::cancel_agent_acp_session,
             features::agents::transport::respond_agent_acp_permission,
             features::agents::transport::close_agent_acp_session,
+            features::agents::transport::set_agent_acp_config_option,
             features::agents::transport::detect_agent_clis,
             features::agents::transport::list_retired_chat_archive_threads,
             features::agents::transport::get_retired_chat_archive_messages,

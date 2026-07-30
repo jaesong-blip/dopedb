@@ -9,6 +9,7 @@ import type {
   AcpSessionId,
   AcpSessionSummary,
   AgentCliInfo,
+  AgentProvider,
   RetiredChatThreadId,
   RetiredChatArchiveMessage,
   RetiredChatArchiveThread,
@@ -16,8 +17,9 @@ import type {
 
 export function startAgentAcpSession(
   connectionId: ConnectionId,
+  provider: AgentProvider,
 ): Promise<AcpSessionFocus> {
-  return invoke("start_agent_acp_session", { connectionId });
+  return invoke("start_agent_acp_session", { connectionId, provider });
 }
 
 export function resumeAgentAcpSession(
@@ -70,6 +72,18 @@ export function respondAgentAcpPermission(
 
 export function closeAgentAcpSession(id: AcpSessionId): Promise<void> {
   return invoke("close_agent_acp_session", { id });
+}
+
+export function setAgentAcpConfigOption(
+  id: AcpSessionId,
+  configId: string,
+  value: string,
+): Promise<void> {
+  return invoke("set_agent_acp_config_option", {
+    id,
+    configId,
+    value,
+  });
 }
 
 export function onAgentAcpChanged(

@@ -77,7 +77,7 @@ export type AcpSessionLifecycle =
 export interface AcpSessionSummary {
   id: AcpSessionId;
   connectionId: ConnectionId;
-  provider: "codex";
+  provider: AgentProvider;
   title: string;
   lifecycle: AcpSessionLifecycle;
   acpSessionId: string | null;
@@ -115,6 +115,10 @@ export type AcpSessionEvent = AcpEventBase &
         update: Record<string, unknown>;
       }
     | {
+        type: "sessionConfiguration";
+        configOptions: AcpSessionConfigOption[];
+      }
+    | {
         type: "permissionRequest";
         requestId: string;
         toolCall: Record<string, unknown>;
@@ -133,6 +137,28 @@ export type AcpSessionEvent = AcpEventBase &
         message: string;
       }
   );
+
+export interface AcpSessionConfigSelectOption {
+  value: string;
+  name: string;
+  description?: string;
+}
+
+export interface AcpSessionConfigSelectGroup {
+  group: string;
+  name: string;
+  options: AcpSessionConfigSelectOption[];
+}
+
+export interface AcpSessionConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: "mode" | "model" | "model_config" | "thought_level" | string;
+  type: "select" | "boolean" | string;
+  currentValue: string | boolean;
+  options?: Array<AcpSessionConfigSelectOption | AcpSessionConfigSelectGroup>;
+}
 
 export interface AcpSessionFocus {
   session: AcpSessionSummary;

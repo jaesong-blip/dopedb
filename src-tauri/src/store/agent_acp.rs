@@ -246,6 +246,7 @@ fn provider_str(provider: AgentProvider) -> &'static str {
 
 fn parse_provider(value: String) -> AppResult<AgentProvider> {
     match value.as_str() {
+        "claude" => Ok(AgentProvider::Claude),
         "codex" => Ok(AgentProvider::Codex),
         other => Err(AppError::Config(format!(
             "unknown persisted ACP provider '{other}'"
