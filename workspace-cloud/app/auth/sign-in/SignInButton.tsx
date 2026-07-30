@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import {
+  IdentityError,
+  IdentityPrimaryButton,
+} from "../../components/Identity";
 import { authClient } from "../../../lib/auth-client";
 
 export function SignInButton({ returnTo }: { returnTo: string }) {
@@ -23,12 +27,14 @@ export function SignInButton({ returnTo }: { returnTo: string }) {
 
   return (
     <>
-      <button className="google-button" type="button" onClick={signIn} disabled={pending}>
-        <span className="google-g">G</span>
+      <IdentityPrimaryButton onClick={signIn} disabled={pending}>
+        <span className="tw:grid tw:size-6 tw:place-items-center tw:rounded-full tw:bg-[var(--ds-white)] tw:font-[Arial] tw:text-[13px] tw:font-bold tw:text-[var(--ds-google-blue)]">
+          G
+        </span>
         <span>{pending ? "Google로 이동 중…" : "Google로 계속"}</span>
         <span aria-hidden="true">↗</span>
-      </button>
-      {error ? <div className="error-banner">{error}</div> : null}
+      </IdentityPrimaryButton>
+      {error ? <IdentityError>{error}</IdentityError> : null}
     </>
   );
 }

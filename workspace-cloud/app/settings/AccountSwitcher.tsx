@@ -110,35 +110,62 @@ export function AccountSwitcher({
   }
 
   return (
-    <div className="account-switcher" ref={rootRef}>
+    <div
+      className="tw:relative tw:mt-auto tw:w-full tw:max-[800px]:mt-0 tw:max-[800px]:w-[min(190px,55vw)]"
+      ref={rootRef}
+    >
       <button
-        className="account-switcher-trigger"
+        className="tw:grid tw:min-h-control-md tw:w-full tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)_auto] tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:p-0 tw:text-left tw:text-foreground"
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        <span>{(current?.user.name ?? currentUser.name).slice(0, 1).toUpperCase()}</span>
-        <strong>{current?.user.email ?? currentUser.email}</strong>
-        <i aria-hidden="true">⌃</i>
+        <span className="tw:grid tw:size-control-sm tw:place-items-center tw:rounded-full tw:bg-primary-emphasis tw:text-xs tw:font-extrabold tw:text-primary-foreground">
+          {(current?.user.name ?? currentUser.name).slice(0, 1).toUpperCase()}
+        </span>
+        <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground">
+          {current?.user.email ?? currentUser.email}
+        </strong>
+        <i className="tw:text-muted-foreground tw:not-italic" aria-hidden="true">
+          ⌃
+        </i>
       </button>
       {open ? (
-        <div className="account-switcher-menu" role="menu">
+        <div
+          className="tw:absolute tw:bottom-[calc(100%+var(--ds-space-3))] tw:left-0 tw:z-[var(--ds-z-popover)] tw:max-h-[min(var(--ds-popover-height),calc(100vh-80px))] tw:w-[min(var(--ds-popover-width),calc(100vw-40px))] tw:overflow-auto tw:border tw:border-border tw:bg-surface tw:p-1 tw:shadow-popover"
+          role="menu"
+        >
           {accounts.map((account) => (
-            <div className="account-switcher-row" key={account.user.id}>
+            <div
+              className="tw:grid tw:grid-cols-[minmax(0,1fr)_var(--ds-control-sm)]"
+              key={account.user.id}
+            >
               <button
+                className="tw:grid tw:min-h-control-md tw:min-w-0 tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)_var(--ds-icon-xs)] tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-left tw:text-foreground tw:hover:bg-surface-raised tw:disabled:cursor-wait tw:disabled:opacity-[var(--ds-disabled-opacity)]"
                 type="button"
                 role="menuitemradio"
                 aria-checked={account.user.id === currentUserId}
                 onClick={() => void activate(account.sessions[0].session.token, account.user.id)}
                 disabled={pending !== null}
               >
-                <span>{account.user.name.slice(0, 1).toUpperCase()}</span>
-                <div><strong>{account.user.name}</strong><small>{account.user.email}</small></div>
-                <i>{account.user.id === currentUserId ? "✓" : ""}</i>
+                <span className="tw:grid tw:size-control-sm tw:place-items-center tw:rounded-full tw:bg-primary-emphasis tw:text-xs tw:font-extrabold tw:text-primary-foreground">
+                  {account.user.name.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="tw:grid tw:min-w-0 tw:gap-0.5">
+                  <strong className="tw:overflow-hidden tw:text-sm tw:text-ellipsis tw:whitespace-nowrap">
+                    {account.user.name}
+                  </strong>
+                  <small className="tw:overflow-hidden tw:text-2xs tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground">
+                    {account.user.email}
+                  </small>
+                </div>
+                <i className="tw:text-primary tw:not-italic">
+                  {account.user.id === currentUserId ? "✓" : ""}
+                </i>
               </button>
               <button
-                className="account-revoke"
+                className="tw:min-h-control-md tw:w-control-sm tw:cursor-pointer tw:border-0 tw:bg-transparent tw:p-0 tw:text-muted-foreground tw:hover:bg-surface-raised tw:hover:text-foreground tw:disabled:cursor-wait tw:disabled:opacity-[var(--ds-disabled-opacity)]"
                 type="button"
                 role="menuitem"
                 onClick={() => void revokeAccount(account.user.id)}
@@ -149,13 +176,32 @@ export function AccountSwitcher({
               </button>
             </div>
           ))}
-          <a role="menuitem" href="/auth/sign-in?returnTo=%2Fsettings">＋ 다른 계정 추가</a>
+          <a
+            className="tw:flex tw:min-h-control-md tw:w-full tw:items-center tw:px-2 tw:text-xs tw:text-muted-foreground tw:hover:bg-surface-raised tw:hover:text-foreground"
+            role="menuitem"
+            href="/auth/sign-in?returnTo=%2Fsettings"
+          >
+            ＋ 다른 계정 추가
+          </a>
           {accounts.length > 1 ? (
-            <button className="account-signout-all" role="menuitem" type="button" onClick={() => void revokeAll()} disabled={pending !== null}>
+            <button
+              className="tw:flex tw:min-h-control-md tw:w-full tw:cursor-pointer tw:items-center tw:border-0 tw:bg-transparent tw:px-2 tw:text-left tw:text-xs tw:text-danger tw:hover:bg-surface-raised tw:disabled:cursor-wait tw:disabled:opacity-[var(--ds-disabled-opacity)]"
+              role="menuitem"
+              type="button"
+              onClick={() => void revokeAll()}
+              disabled={pending !== null}
+            >
               모든 계정에서 로그아웃
             </button>
           ) : null}
-          {error ? <p role="alert">{error}</p> : null}
+          {error ? (
+            <p
+              className="tw:m-2 tw:text-2xs tw:leading-body tw:text-danger"
+              role="alert"
+            >
+              {error}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

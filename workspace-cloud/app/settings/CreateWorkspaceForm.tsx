@@ -2,6 +2,10 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  ControlButton,
+  ControlInput,
+} from "../components/Controls";
 
 export function CreateWorkspaceForm() {
   const router = useRouter();
@@ -29,10 +33,34 @@ export function CreateWorkspaceForm() {
   }
 
   return (
-    <form className="create-form" onSubmit={submit}>
-      <label htmlFor="workspace-name">새 워크스페이스</label>
-      <div className="form-control-row ds-control-row"><input id="workspace-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} placeholder="예: Data Platform" required /><button type="submit" disabled={pending}>{pending ? "생성 중" : "만들기"}</button></div>
-      {error ? <small className="form-error">{error}</small> : null}
+    <form className="tw:mt-3 tw:grid tw:gap-2 tw:border tw:border-border tw:p-5" onSubmit={submit}>
+      <label
+        className="tw:font-mono tw:text-2xs tw:uppercase tw:tracking-[0.1em] tw:text-muted-foreground"
+        htmlFor="workspace-name"
+      >
+        새 워크스페이스
+      </label>
+      <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto]">
+        <ControlInput
+          id="workspace-name"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={120}
+          placeholder="예: Data Platform"
+          required
+        />
+        <ControlButton
+          type="submit"
+          tone="primary"
+          size="field"
+          disabled={pending}
+        >
+          {pending ? "생성 중" : "만들기"}
+        </ControlButton>
+      </div>
+      {error ? (
+        <small className="tw:text-2xs tw:text-danger">{error}</small>
+      ) : null}
     </form>
   );
 }

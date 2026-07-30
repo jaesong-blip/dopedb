@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ControlButton } from "../components/Controls";
 import { authClient } from "../../lib/auth-client";
 
 interface SessionItem {
@@ -69,39 +70,57 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
   }
 
   return (
-    <div className="device-table">
+    <div className="tw:grid tw:border-t tw:border-border">
       {sessions.map((item) => {
         const current = item.id === currentSessionId;
         return (
-          <div className="device-row" key={item.id}>
-            <span className="device-icon">{item.userAgent?.includes("Mozilla") ? "◎" : "▣"}</span>
-            <div>
-              <strong>{item.userAgent?.includes("Mozilla") ? "Web browser" : "DopeDB desktop"}</strong>
-              <small>{item.ipAddress ?? "protected session"}</small>
+          <div
+            className="tw:grid tw:grid-cols-[38px_minmax(0,1fr)_auto] tw:items-center tw:border-b tw:border-border tw:px-1 tw:py-4"
+            key={item.id}
+          >
+            <span className="tw:text-primary">
+              {item.userAgent?.includes("Mozilla") ? "◎" : "▣"}
+            </span>
+            <div className="tw:flex tw:flex-col tw:gap-1">
+              <strong className="tw:text-ui tw:text-foreground">
+                {item.userAgent?.includes("Mozilla")
+                  ? "Web browser"
+                  : "DopeDB desktop"}
+              </strong>
+              <small className="tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
+                {item.ipAddress ?? "protected session"}
+              </small>
             </div>
             {current ? (
-              <time>현재 세션</time>
+              <time className="tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
+                현재 세션
+              </time>
             ) : (
-              <button type="button" onClick={() => void revoke(item)} disabled={pending === item.id}>
+              <ControlButton
+                onClick={() => void revoke(item)}
+                disabled={pending === item.id}
+              >
                 {pending === item.id ? "종료 중…" : "세션 종료"}
-              </button>
+              </ControlButton>
             )}
           </div>
         );
       })}
-      {sessions.length === 0 && !error ? <p className="device-empty">활성 세션을 확인하고 있습니다…</p> : null}
+      {sessions.length === 0 && !error ? (
+        <p className="tw:m-0 tw:px-1 tw:py-5 tw:text-xs tw:text-muted-foreground">
+          활성 세션을 확인하고 있습니다…
+        </p>
+      ) : null}
       {error ? (
         <div className="tw:flex tw:min-h-control-field tw:items-center tw:justify-between tw:gap-3 tw:px-1 tw:py-4" role="alert">
           <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-danger">{error}</p>
           {needsReauthentication ? (
-            <button
-              className="tw:h-control-sm tw:flex-none tw:border tw:border-primary tw:bg-transparent tw:px-3 tw:text-2xs tw:font-bold tw:text-foreground tw:hover:bg-surface-raised tw:disabled:cursor-wait tw:disabled:opacity-[var(--ds-disabled-opacity)]"
-              type="button"
+            <ControlButton
               onClick={() => void reauthenticate()}
               disabled={pending !== null}
             >
               {pending === "reauthenticate" ? "로그아웃 중…" : "로그아웃 후 다시 로그인"}
-            </button>
+            </ControlButton>
           ) : null}
         </div>
       ) : null}

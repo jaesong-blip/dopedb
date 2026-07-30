@@ -8,6 +8,11 @@ import { db } from "../../lib/db";
 import { acceptPendingWorkspaceInvitations } from "../../lib/pending-invitations";
 import { member } from "../../lib/schema";
 import { Brand } from "../components/Brand";
+import {
+  ConsoleNotice,
+  ConsoleSectionHeading,
+} from "../components/Console";
+import { IdentityEyebrow } from "../components/Identity";
 import { CreateWorkspaceForm } from "./CreateWorkspaceForm";
 import { AccountSwitcher } from "./AccountSwitcher";
 import { ActiveSessions } from "./ActiveSessions";
@@ -79,10 +84,29 @@ export default async function SettingsPage({
     : workspaces;
 
   return (
-    <main className="console-shell">
-      <aside className="console-nav">
+    <main className="tw:grid tw:min-h-screen tw:grid-cols-[250px_minmax(0,1fr)] tw:max-[800px]:block">
+      <aside className="tw:sticky tw:top-0 tw:flex tw:min-h-screen tw:flex-col tw:border-r tw:border-border tw:bg-background/80 tw:p-7 tw:max-[800px]:static tw:max-[800px]:min-h-0 tw:max-[800px]:flex-row tw:max-[800px]:items-center tw:max-[800px]:justify-between tw:max-[800px]:border-r-0 tw:max-[800px]:border-b">
         <Brand />
-        <nav><a className="active" href="#workspaces"><span>01</span> Workspaces</a><a href="#devices"><span>02</span> Devices</a></nav>
+        <nav className="tw:mt-[100px] tw:grid tw:max-[800px]:hidden">
+          <a
+            className="tw:border-t tw:border-border tw:px-1 tw:py-4 tw:text-ui tw:text-foreground"
+            href="#workspaces"
+          >
+            <span className="tw:mr-3 tw:font-mono tw:text-2xs tw:text-primary">
+              01
+            </span>{" "}
+            Workspaces
+          </a>
+          <a
+            className="tw:border-y tw:border-border tw:px-1 tw:py-4 tw:text-ui tw:text-muted-foreground tw:hover:text-foreground"
+            href="#devices"
+          >
+            <span className="tw:mr-3 tw:font-mono tw:text-2xs tw:text-primary">
+              02
+            </span>{" "}
+            Devices
+          </a>
+        </nav>
         <AccountSwitcher
           currentSessionId={session.session.id}
           currentUser={{
@@ -92,37 +116,83 @@ export default async function SettingsPage({
           }}
         />
       </aside>
-      <div className="console-main">
-        <header className="console-header"><div><p className="eyebrow">BETTER AUTH / DRIZZLE</p><h1>워크스페이스 설정</h1></div><div className="user-chip"><span>{session.user.name.slice(0, 1).toUpperCase()}</span><div><strong>{session.user.name}</strong><small>{session.user.email}</small></div></div></header>
+      <div className="tw:w-full tw:max-w-[1320px] tw:px-[clamp(32px,6vw,90px)] tw:pt-[52px] tw:pb-[90px] tw:max-[800px]:px-[22px] tw:max-[800px]:pt-[38px] tw:max-[800px]:pb-[70px]">
+        <header className="tw:flex tw:items-end tw:justify-between tw:border-b tw:border-border tw:pb-10 tw:max-[800px]:items-start">
+          <div>
+            <IdentityEyebrow>BETTER AUTH / DRIZZLE</IdentityEyebrow>
+            <h1 className="tw:mt-3 tw:mb-0 tw:font-serif tw:text-[clamp(40px,5vw,68px)] tw:font-normal tw:tracking-[-0.055em]">
+              워크스페이스 설정
+            </h1>
+          </div>
+          <div className="tw:flex tw:items-center tw:gap-2.5">
+            <span className="tw:grid tw:size-9 tw:place-items-center tw:rounded-full tw:bg-primary-emphasis tw:font-extrabold tw:text-primary-foreground">
+              {session.user.name.slice(0, 1).toUpperCase()}
+            </span>
+            <div className="tw:flex tw:flex-col tw:gap-0.5 tw:max-[800px]:hidden">
+              <strong className="tw:text-ui tw:text-foreground">
+                {session.user.name}
+              </strong>
+              <small className="tw:text-xs tw:text-muted-foreground">
+                {session.user.email}
+              </small>
+            </div>
+          </div>
+        </header>
         {params.provider === "planetScale" && params.status === "connected" ? (
-          <p className="console-notice success">PlanetScale 계정이 연결되었습니다. 아래에서 DB와 브랜치를 선택하세요.</p>
+          <ConsoleNotice>
+            PlanetScale 계정이 연결되었습니다. 아래에서 DB와 브랜치를
+            선택하세요.
+          </ConsoleNotice>
         ) : null}
         {params.provider === "planetScale" && params.status === "failed" ? (
-          <p className="console-notice error" role="alert">PlanetScale 연결을 완료하지 못했습니다. 권한과 서버 설정을 확인한 뒤 다시 시도하세요.</p>
+          <ConsoleNotice tone="danger">
+            PlanetScale 연결을 완료하지 못했습니다. 권한과 서버 설정을 확인한
+            뒤 다시 시도하세요.
+          </ConsoleNotice>
         ) : null}
         {params.provider === "gcpCloudSql" && params.status === "authorised" ? (
-          <p className="console-notice success">Google 계정이 승인되었습니다. 아래에서 프로젝트와 Cloud SQL 인스턴스를 선택하세요.</p>
+          <ConsoleNotice>
+            Google 계정이 승인되었습니다. 아래에서 프로젝트와 Cloud SQL
+            인스턴스를 선택하세요.
+          </ConsoleNotice>
         ) : null}
         {params.provider === "gcpCloudSql" && params.status === "failed" ? (
-          <p className="console-notice error" role="alert">Google Cloud 승인을 완료하지 못했습니다. 계정과 OAuth 권한을 확인한 뒤 다시 시도하세요.</p>
+          <ConsoleNotice tone="danger">
+            Google Cloud 승인을 완료하지 못했습니다. 계정과 OAuth 권한을
+            확인한 뒤 다시 시도하세요.
+          </ConsoleNotice>
         ) : null}
-        <section id="workspaces" className="console-section">
-          <div className="section-heading"><div><span>01</span><h2>Workspaces</h2></div><p>Better Auth Organization 멤버십이 권한 경계를 관리합니다.</p></div>
-          <div className="workspace-grid">
+        <section
+          id="workspaces"
+          className="tw:scroll-mt-5 tw:pt-[58px]"
+        >
+          <ConsoleSectionHeading index="01" title="Workspaces">
+            Better Auth Organization 멤버십이 권한 경계를 관리합니다.
+          </ConsoleSectionHeading>
+          <div className="tw:grid tw:grid-cols-2 tw:gap-2.5 tw:max-[1100px]:grid-cols-1">
             {orderedWorkspaces.map((workspace) => (
               <article
-                className={`workspace-card-wrap${
-                  workspace.id === focusedWorkspaceId ? " focused" : ""
-                }`}
+                className="tw:scroll-mt-6 tw:border tw:border-border tw:bg-surface tw:transition-[border-color,box-shadow] tw:target:border-primary/60 tw:target:shadow-[0_0_0_1px_color-mix(in_srgb,var(--ds-accent)_18%,transparent)] tw:data-[focused=true]:border-primary/60 tw:data-[focused=true]:shadow-[0_0_0_1px_color-mix(in_srgb,var(--ds-accent)_18%,transparent)]"
+                data-focused={workspace.id === focusedWorkspaceId}
                 id={`workspace-${workspace.id}`}
                 key={workspace.id}
               >
-                <div className="workspace-card">
-                  <div className="workspace-monogram">
+                <div className="tw:grid tw:min-h-[126px] tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-[18px] tw:border-b tw:border-border tw:p-[22px]">
+                  <div className="tw:grid tw:size-12 tw:place-items-center tw:border tw:border-primary/45 tw:font-mono tw:text-sm tw:text-primary">
                     {workspace.name.slice(0, 2).toUpperCase()}
                   </div>
-                  <div><h3>{workspace.name}</h3><p>{workspace.slug}</p></div>
-                  <span className="status-dot">{workspaceRoles.get(workspace.id)}</span>
+                  <div>
+                    <h3 className="tw:mt-0 tw:mb-1 tw:text-[14px]">
+                      {workspace.name}
+                    </h3>
+                    <p className="tw:m-0 tw:font-mono tw:text-2xs tw:text-muted-foreground tw:uppercase">
+                      {workspace.slug}
+                    </p>
+                  </div>
+                  <span className="tw:flex tw:items-center tw:gap-1.5 tw:font-mono tw:text-2xs tw:text-primary">
+                    <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />
+                    {workspaceRoles.get(workspace.id)}
+                  </span>
                 </div>
                 {["admin", "owner"].includes(workspaceRoles.get(workspace.id) ?? "") ? (
                   <>
@@ -140,12 +210,18 @@ export default async function SettingsPage({
                 ) : null}
               </article>
             ))}
-            {workspaces.length === 0 ? <div className="empty-state">아직 연결된 워크스페이스가 없습니다.</div> : null}
+            {workspaces.length === 0 ? (
+              <div className="tw:col-span-full tw:border tw:border-dashed tw:border-border tw:px-6 tw:py-12 tw:text-center tw:text-ui tw:text-muted-foreground">
+                아직 연결된 워크스페이스가 없습니다.
+              </div>
+            ) : null}
           </div>
           <CreateWorkspaceForm />
         </section>
-        <section id="devices" className="console-section">
-          <div className="section-heading"><div><span>02</span><h2>Active sessions</h2></div><p>Better Auth가 관리하는 브라우저와 데스크톱 Bearer 세션입니다.</p></div>
+        <section id="devices" className="tw:scroll-mt-5 tw:pt-[58px]">
+          <ConsoleSectionHeading index="02" title="Active sessions">
+            Better Auth가 관리하는 브라우저와 데스크톱 Bearer 세션입니다.
+          </ConsoleSectionHeading>
           <ActiveSessions currentSessionId={session.session.id} />
         </section>
       </div>

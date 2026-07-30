@@ -3,6 +3,11 @@
 "use client";
 
 import { useState } from "react";
+import {
+  IdentityError,
+  IdentityPrimaryButton,
+  IdentitySecondaryLink,
+} from "../../components/Identity";
 import { authClient } from "../../../lib/auth-client";
 import { useDeviceAccounts } from "../../../lib/useDeviceAccounts";
 
@@ -42,24 +47,42 @@ export function AcceptInvitation({
 
   return (
     <>
-      <button className="primary-button" type="button" onClick={accept} disabled={pending}>
-        {pending ? "수락 중…" : "워크스페이스 참여"}<span>→</span>
-      </button>
+      <IdentityPrimaryButton onClick={accept} disabled={pending}>
+        {pending ? "수락 중…" : "워크스페이스 참여"}
+        <span>→</span>
+      </IdentityPrimaryButton>
       {accounts.length > 1 ? (
-        <div className="invitation-account-list">
-          <small>다른 계정으로 받은 초대인가요?</small>
+        <div className="tw:mt-4 tw:grid tw:border-t tw:border-border">
+          <small className="tw:px-0 tw:pt-3 tw:pb-2 tw:text-2xs tw:text-muted-foreground">
+            다른 계정으로 받은 초대인가요?
+          </small>
           {accounts.filter((account) => account.user.id !== currentUserId).map((account) => (
-            <button type="button" key={account.user.id} onClick={() => void switchAccount(account.sessions[0].session.token)} disabled={pending}>
-              <span>{account.user.name}</span><small>{account.user.email}</small>
+            <button
+              className="tw:flex tw:min-h-control-field tw:cursor-pointer tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-b tw:border-border tw:bg-transparent tw:px-2 tw:text-foreground tw:hover:bg-surface-raised tw:disabled:cursor-wait tw:disabled:opacity-[var(--ds-disabled-opacity)]"
+              type="button"
+              key={account.user.id}
+              onClick={() =>
+                void switchAccount(account.sessions[0].session.token)
+              }
+              disabled={pending}
+            >
+              <span>{account.user.name}</span>
+              <small className="tw:text-muted-foreground">
+                {account.user.email}
+              </small>
             </button>
           ))}
         </div>
       ) : null}
-      <a className="secondary-button invitation-add-account" href={`/auth/sign-in?returnTo=${encodeURIComponent(`/accept-invitation/${invitationId}`)}`}>
+      <IdentitySecondaryLink
+        href={`/auth/sign-in?returnTo=${encodeURIComponent(`/accept-invitation/${invitationId}`)}`}
+      >
         다른 Google 계정 추가
-      </a>
-      {error ? <div className="error-banner">{error}</div> : null}
-      {!error && accountError ? <div className="error-banner">{accountError}</div> : null}
+      </IdentitySecondaryLink>
+      {error ? <IdentityError>{error}</IdentityError> : null}
+      {!error && accountError ? (
+        <IdentityError>{accountError}</IdentityError>
+      ) : null}
     </>
   );
 }

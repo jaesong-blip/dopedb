@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  ControlButton,
+  ControlField,
+  ControlSelect,
+} from "../../app/components/Controls";
 import { selectableProviderResources } from "./domain";
 import type { ProviderAccessController } from "./useProviderAccess";
 
@@ -33,10 +38,9 @@ export function ProviderResourcePicker({
   } = controller;
 
   return (
-    <div className="managed-access-flow">
-      <label>
-        <span>1 · 전환할 공유 연결</span>
-        <select
+    <div className="tw:grid tw:grid-cols-1 tw:gap-3 tw:lg:grid-cols-2">
+      <ControlField label="1 · 전환할 공유 연결">
+        <ControlSelect
           value={selectedConnectionId}
           onChange={(event) => {
             setSelectedConnectionId(event.target.value);
@@ -55,11 +59,10 @@ export function ProviderResourcePicker({
                 : "개별 입력"}
             </option>
           ))}
-        </select>
-      </label>
-      <label>
-        <span>2 · 공급자 계정</span>
-        <select
+        </ControlSelect>
+      </ControlField>
+      <ControlField label="2 · 공급자 계정">
+        <ControlSelect
           value={selectedIntegrationId}
           onChange={(event) => {
             setSelectedIntegrationId(event.target.value);
@@ -82,12 +85,14 @@ export function ProviderResourcePicker({
                 : ""}
             </option>
           ))}
-        </select>
-      </label>
+        </ControlSelect>
+      </ControlField>
       <div
-        className={`managed-resource-row${
-          selectedProvider?.id === "gcpCloudSql" ? " gcp" : ""
-        }`}
+        className={
+          selectedProvider?.id === "gcpCloudSql"
+            ? "tw:col-span-full tw:grid tw:grid-cols-1 tw:gap-3 tw:sm:grid-cols-2 tw:xl:grid-cols-4"
+            : "tw:col-span-full tw:grid tw:grid-cols-1 tw:gap-3 tw:sm:grid-cols-2 tw:xl:grid-cols-3"
+        }
       >
         {selectedProvider?.resourceLevels.map((level, index) => {
           const isFinalLeaf =
@@ -101,14 +106,18 @@ export function ProviderResourcePicker({
             index === 0 ||
             Boolean(
               selection[selectedProvider.resourceLevels[index - 1].key],
-            );
+          );
           return (
-            <label key={level.key}>
-              <span>
+            <ControlField
+              key={level.key}
+              label={
+                <>
                 {index === 0 ? "3 · " : ""}
                 {level.label}
-              </span>
-              <select
+                </>
+              }
+            >
+              <ControlSelect
                 value={selection[level.key] ?? ""}
                 onChange={(event) =>
                   void selectResource(index, event.target.value)
@@ -127,16 +136,16 @@ export function ProviderResourcePicker({
                         ? " · classification pending"
                         : item.ready === false
                           ? " · not ready"
-                          : ""}
+                    : ""}
                   </option>
                 ))}
-              </select>
-            </label>
+              </ControlSelect>
+            </ControlField>
           );
         })}
       </div>
-      <div className="managed-access-actions ds-control-row">
-        <p>
+      <div className="tw:col-span-full tw:grid tw:gap-3 tw:border-t tw:border-border tw:pt-3 tw:xl:grid-cols-[minmax(0,1fr)_auto] tw:xl:items-center">
+        <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
           {!selectedIntegration
             ? "상단에서 GCP Cloud SQL, Neon 또는 PlanetScale 공급자 연결을 먼저 완료하세요. 이 선택기는 연결 주소 편집이 아니라 관리형 접근 전환에 사용됩니다."
             : currentResourceLabel
@@ -147,27 +156,24 @@ export function ProviderResourcePicker({
               ? "멤버 RBAC에 따라 읽기 또는 읽기·쓰기 권한을 발급합니다."
               : "이 연결은 모든 구성원에게 읽기 전용 자격증명만 발급합니다."}
         </p>
-        <div className="ds-control-row">
+        <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2">
           {mayUseLocalProviderCredential ? (
-            <div className="provider-local-handoff">
-              <small>
+            <div className="tw:grid tw:max-w-[36rem] tw:gap-2 tw:border tw:border-border tw:bg-surface-inset tw:p-3">
+              <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
                 이 가져온 공급자 대상만 구성원 로컬 자격증명으로 전환할 수
                 있습니다. 대상·읽기 전용 정책은 유지되며 자격증명은 이
                 기기에만 저장됩니다.
               </small>
-              <button
-                className="muted-button"
-                type="button"
+              <ControlButton
                 disabled={mutation !== ""}
                 onClick={() => void switchToMemberLocal()}
               >
                 로컬 Provider 자격증명 사용
-              </button>
+              </ControlButton>
             </div>
           ) : null}
-          <button
-            className="accent-button"
-            type="button"
+          <ControlButton
+            tone="primary"
             disabled={
               !selectedIntegration ||
               !resourceComplete ||
@@ -185,7 +191,7 @@ export function ProviderResourcePicker({
               : willReplaceConnection
                 ? "선택 연결을 관리형으로 전환"
                 : "읽기 전용 연결 가져오기"}
-          </button>
+          </ControlButton>
         </div>
       </div>
     </div>

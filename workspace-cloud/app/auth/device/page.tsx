@@ -2,6 +2,14 @@
 // server and requires an explicit approve or deny action from the signed-in user.
 import { headers } from "next/headers";
 import { Brand } from "../../components/Brand";
+import {
+  IdentityBody,
+  IdentityCard,
+  IdentityError,
+  IdentityEyebrow,
+  IdentitySingleShell,
+  IdentityTitle,
+} from "../../components/Identity";
 import { auth } from "../../../lib/auth";
 import { DeviceApproval } from "./DeviceApproval";
 import { DeviceAccountActions } from "./DeviceAccountActions";
@@ -29,26 +37,52 @@ export default async function DevicePage({
 
   const returnTo = `/auth/device?user_code=${encodeURIComponent(userCode)}`;
   return (
-    <main className="single-shell">
+    <IdentitySingleShell>
       <Brand />
-      <section className="device-card">
-        <div className="device-orbit"><span>↗</span></div>
-        <p className="eyebrow">BETTER AUTH / RFC 8628</p>
-        <h1>이 기기를 연결할까요?</h1>
-        <p>Better Auth의 표준 Device Authorization 흐름으로 데스크톱 앱에 별도 세션을 발급합니다.</p>
-        {!valid || verificationError ? (
-          <div className="error-banner">{verificationError || "올바른 승인 코드가 필요합니다."}</div>
-        ) : session ? (
-          <div>
-            <div className="signed-user"><span>{session.user.name.slice(0, 1).toUpperCase()}</span><div><strong>{session.user.name}</strong><small>{session.user.email}</small></div></div>
-            <DeviceAccountActions currentUserId={session.user.id} userCode={userCode} />
-            <DeviceApproval userCode={userCode} />
+      <div className="tw:m-auto tw:w-[min(540px,100%)]">
+        <IdentityCard>
+          <div className="tw:relative tw:mb-10 tw:grid tw:size-16 tw:place-items-center tw:rounded-full tw:border tw:border-border tw:after:absolute tw:after:inset-2 tw:after:rounded-full tw:after:border tw:after:border-dashed tw:after:border-primary/55 tw:after:content-['']">
+            <span className="tw:text-primary">↗</span>
           </div>
-        ) : (
-          <SignInButton returnTo={returnTo} />
-        )}
-        <small className="expiry-note">승인 코드는 생성 후 10분 동안만 유효합니다.</small>
-      </section>
-    </main>
+          <IdentityEyebrow>BETTER AUTH / RFC 8628</IdentityEyebrow>
+          <IdentityTitle>이 기기를 연결할까요?</IdentityTitle>
+          <IdentityBody>
+            Better Auth의 표준 Device Authorization 흐름으로 데스크톱 앱에
+            별도 세션을 발급합니다.
+          </IdentityBody>
+          {!valid || verificationError ? (
+            <IdentityError>
+              {verificationError || "올바른 승인 코드가 필요합니다."}
+            </IdentityError>
+          ) : session ? (
+            <div>
+              <div className="tw:mt-7 tw:flex tw:items-center tw:gap-3 tw:border tw:border-border tw:bg-surface-raised tw:p-3">
+                <span className="tw:grid tw:size-9 tw:place-items-center tw:rounded-full tw:bg-primary-emphasis tw:font-extrabold tw:text-primary-foreground">
+                  {session.user.name.slice(0, 1).toUpperCase()}
+                </span>
+                <div className="tw:flex tw:flex-col tw:gap-0.5">
+                  <strong className="tw:text-ui tw:text-foreground">
+                    {session.user.name}
+                  </strong>
+                  <small className="tw:text-xs tw:text-muted-foreground">
+                    {session.user.email}
+                  </small>
+                </div>
+              </div>
+              <DeviceAccountActions
+                currentUserId={session.user.id}
+                userCode={userCode}
+              />
+              <DeviceApproval userCode={userCode} />
+            </div>
+          ) : (
+            <SignInButton returnTo={returnTo} />
+          )}
+          <small className="tw:mt-4 tw:block tw:text-xs tw:text-muted-foreground">
+            승인 코드는 생성 후 10분 동안만 유효합니다.
+          </small>
+        </IdentityCard>
+      </div>
+    </IdentitySingleShell>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ProviderIntegrationList } from "../../features/providerAccess/ProviderIntegrationList";
 import { ProviderResourcePicker } from "../../features/providerAccess/ProviderResourcePicker";
 import { GcpCloudSetup } from "../../features/providerAccess/GcpCloudSetup";
@@ -20,6 +21,9 @@ export function ProviderAccessPanel({
 }) {
   const controller = useProviderAccess(workspaceId, gcpSetupId);
   const configuringGcp = Boolean(controller.gcpSetupId);
+  const [mobilePane, setMobilePane] = useState<"providers" | "connections">(
+    "providers",
+  );
 
   return (
     <section className="tw:grid tw:gap-4 tw:border-t tw:border-border tw:p-5">
@@ -44,15 +48,88 @@ export function ProviderAccessPanel({
           {configuringGcp ? (
             <GcpCloudSetup controller={controller} />
           ) : (
-            <>
-              <ProviderIntegrationList controller={controller} />
-              <ProviderResourcePicker controller={controller} />
-            </>
+            <div className="tw:grid tw:gap-3">
+              <div
+                className="tw:grid tw:grid-cols-2 tw:border tw:border-border tw:bg-surface-inset tw:p-0.5 tw:md:hidden"
+                role="tablist"
+                aria-label="관리형 DB 접근 설정"
+              >
+                <button
+                  id="provider-accounts-tab"
+                  className="tw:h-control-md tw:border-0 tw:bg-transparent tw:px-3 tw:text-2xs tw:font-semibold tw:text-muted-foreground tw:data-[selected=true]:bg-selection tw:data-[selected=true]:text-selection-foreground"
+                  type="button"
+                  role="tab"
+                  aria-selected={mobilePane === "providers"}
+                  aria-controls="provider-accounts-pane"
+                  data-selected={mobilePane === "providers"}
+                  onClick={() => setMobilePane("providers")}
+                >
+                  공급자 계정
+                </button>
+                <button
+                  id="managed-connection-tab"
+                  className="tw:h-control-md tw:border-0 tw:bg-transparent tw:px-3 tw:text-2xs tw:font-semibold tw:text-muted-foreground tw:data-[selected=true]:bg-selection tw:data-[selected=true]:text-selection-foreground"
+                  type="button"
+                  role="tab"
+                  aria-selected={mobilePane === "connections"}
+                  aria-controls="managed-connection-pane"
+                  data-selected={mobilePane === "connections"}
+                  onClick={() => setMobilePane("connections")}
+                >
+                  연결 설정
+                </button>
+              </div>
+
+              <div className="tw:grid tw:min-w-0 tw:gap-0 tw:md:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.35fr)] tw:md:border tw:md:border-border">
+                <section
+                  id="provider-accounts-pane"
+                  className={
+                    mobilePane === "providers"
+                      ? "tw:grid tw:min-w-0 tw:content-start tw:gap-3 tw:border tw:border-border tw:p-4 tw:md:border-0 tw:md:border-r tw:md:border-border"
+                      : "tw:hidden tw:min-w-0 tw:content-start tw:gap-3 tw:border tw:border-border tw:p-4 tw:md:grid tw:md:border-0 tw:md:border-r tw:md:border-border"
+                  }
+                  role="tabpanel"
+                  aria-labelledby="provider-accounts-tab"
+                >
+                  <div className="tw:grid tw:gap-1">
+                    <strong className="tw:text-xs tw:text-foreground">
+                      공급자 계정
+                    </strong>
+                    <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                      Google Cloud, Neon 등 연결 대상을 조회할 계정을 관리합니다.
+                    </small>
+                  </div>
+                  <ProviderIntegrationList controller={controller} />
+                </section>
+
+                <section
+                  id="managed-connection-pane"
+                  className={
+                    mobilePane === "connections"
+                      ? "tw:grid tw:min-w-0 tw:content-start tw:gap-3 tw:border tw:border-border tw:p-4 tw:md:border-0"
+                      : "tw:hidden tw:min-w-0 tw:content-start tw:gap-3 tw:border tw:border-border tw:p-4 tw:md:grid tw:md:border-0"
+                  }
+                  role="tabpanel"
+                  aria-labelledby="managed-connection-tab"
+                >
+                  <div className="tw:grid tw:gap-1">
+                    <strong className="tw:text-xs tw:text-foreground">
+                      공유 연결 설정
+                    </strong>
+                    <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                      공급자 리소스를 기존 공유 연결에 매핑하거나 새 연결로
+                      가져옵니다.
+                    </small>
+                  </div>
+                  <ProviderResourcePicker controller={controller} />
+                </section>
+              </div>
+            </div>
           )}
         </>
       )}
       {!configuringGcp && controller.error ? (
-        <small className="form-error" role="alert">
+        <small className="tw:text-2xs tw:text-danger" role="alert">
           {controller.error}
         </small>
       ) : null}

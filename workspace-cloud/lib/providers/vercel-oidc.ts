@@ -8,6 +8,8 @@ import { ProviderRequestError } from "./provider-types";
 
 type JsonObject = Record<string, unknown>;
 
+const MAX_VERCEL_TOKEN_LIFETIME_SECONDS = (12 * 60 * 60) + 60;
+
 export type VerifiedVercelOidc = {
   issuer: string;
   audience: string;
@@ -146,7 +148,8 @@ export async function verifyVercelOidcToken(
       || issuedAt > now + 60
       || notBefore > now + 60
       || expiresAt <= now + 30
-      || expiresAt > now + 3_700
+      || expiresAt <= issuedAt
+      || expiresAt - issuedAt > MAX_VERCEL_TOKEN_LIFETIME_SECONDS
     ) {
       throw new Error("invalid Vercel token lifetime");
     }

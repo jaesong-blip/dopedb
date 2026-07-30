@@ -1,6 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import {
+  IdentityError,
+  IdentityPrimaryButton,
+  IdentitySecondaryButton,
+} from "../../components/Identity";
 import { authClient } from "../../../lib/auth-client";
 
 export function DeviceApproval({ userCode }: { userCode: string }) {
@@ -32,11 +37,14 @@ export function DeviceApproval({ userCode }: { userCode: string }) {
 
   return (
     <>
-      <button className="primary-button" type="button" onClick={approve} disabled={pending}>
-        {pending ? "처리 중…" : "이 계정으로 기기 승인"}<span>→</span>
-      </button>
-      <button className="secondary-button" type="button" onClick={deny} disabled={pending}>거절</button>
-      {error ? <div className="error-banner">{error}</div> : null}
+      <IdentityPrimaryButton onClick={approve} disabled={pending}>
+        {pending ? "처리 중…" : "이 계정으로 기기 승인"}
+        <span>→</span>
+      </IdentityPrimaryButton>
+      <IdentitySecondaryButton onClick={deny} disabled={pending}>
+        거절
+      </IdentitySecondaryButton>
+      {error ? <IdentityError>{error}</IdentityError> : null}
     </>
   );
 }

@@ -31,21 +31,36 @@ export function DeviceAccountActions({
   }
 
   return (
-    <div className="device-account-actions ds-control-row">
+    <div className="tw:mt-2 tw:grid tw:border-t tw:border-border">
       {accounts.filter((account) => account.user.id !== currentUserId).map((account) => (
         <button
+          className="tw:flex tw:min-h-control-md tw:cursor-pointer tw:items-center tw:justify-between tw:gap-3 tw:border-0 tw:border-b tw:border-border tw:bg-transparent tw:px-3 tw:text-xs tw:text-foreground tw:hover:bg-surface-raised tw:disabled:cursor-wait tw:disabled:opacity-[var(--ds-disabled-opacity)]"
           type="button"
           key={account.user.id}
           onClick={() => void switchAccount(account.sessions[0].session.token)}
           disabled={pending}
         >
-          <span>{account.user.name}</span><small>{account.user.email}</small>
+          <span>{account.user.name}</span>
+          <small className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground">
+            {account.user.email}
+          </small>
         </button>
       ))}
-      <a href={`/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`}>＋ 다른 Google 계정으로 승인</a>
-      {error ? <small className="form-error" role="alert">{error}</small> : null}
+      <a
+        className="tw:flex tw:min-h-control-md tw:items-center tw:border-b tw:border-border tw:px-3 tw:text-xs tw:text-muted-foreground tw:hover:bg-surface-raised tw:hover:text-foreground"
+        href={`/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
+      >
+        ＋ 다른 Google 계정으로 승인
+      </a>
+      {error ? (
+        <small className="tw:mt-2 tw:text-2xs tw:text-danger" role="alert">
+          {error}
+        </small>
+      ) : null}
       {!error && accountError ? (
-        <small className="form-error" role="alert">{accountError}</small>
+        <small className="tw:mt-2 tw:text-2xs tw:text-danger" role="alert">
+          {accountError}
+        </small>
       ) : null}
     </div>
   );
