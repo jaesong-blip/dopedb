@@ -37,7 +37,7 @@ export type GcpOAuthInstance = {
 };
 
 function callbackUrl() {
-  return new URL("/api/v1/providers/gcp-cloud-sql/callback", env.appOrigin()).toString();
+  return new URL("/api/auth/callback/google", env.appOrigin()).toString();
 }
 
 export function gcpCloudAuthorizationUrl(state: string) {

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import adapterSource from "./tauriAdapter.ts?raw";
+import authRouteSource from "../../../workspace-cloud/app/api/auth/[...all]/route.ts?raw";
 import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
+import gcpOAuthSource from "../../../workspace-cloud/lib/providers/gcp-cloud-oauth.ts?raw";
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 
@@ -154,6 +156,8 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpSetupSource).not.toMatch(
       /workloadIdentityPoolId|workloadIdentityProviderId|readServiceAccountEmail/,
     );
+    expect(gcpOAuthSource).toContain('"/api/auth/callback/google"');
+    expect(authRouteSource).toContain("isGcpCloudSetupCallback");
     expect(gcpBootstrapSource).toContain("verifyVercelOidcToken");
     expect(gcpBootstrapSource).toContain("roles/iam.workloadIdentityUser");
     expect(gcpBootstrapSource).toContain("configureDatabasePrivileges");
