@@ -1,9 +1,39 @@
-//! Shared connection binding and catalog scope-isolation tests.
+//! Store migration, shared connection binding, and catalog scope-isolation tests.
 
 use super::fixtures::*;
 
+async fn assert_legacy_sql_document_database_scope_migrates() {
+    let legacy_pool = memory_pool().await;
+    sqlx::raw_sql(
+        "CREATE TABLE connections (
+             id TEXT PRIMARY KEY,
+             db_name TEXT NOT NULL
+         );
+         CREATE TABLE sql_documents (
+             id TEXT PRIMARY KEY,
+             connection_id TEXT NOT NULL REFERENCES connections(id)
+         );
+         INSERT INTO connections (id, db_name) VALUES ('connection-1', 'analytics');
+         INSERT INTO sql_documents (id, connection_id)
+         VALUES ('document-1', 'connection-1');",
+    )
+    .execute(&legacy_pool)
+    .await
+    .unwrap();
+    super::super::bootstrap::add_sql_document_database_scope(&legacy_pool)
+        .await
+        .unwrap();
+    let selected_database: String =
+        sqlx::query_scalar("SELECT selected_database FROM sql_documents WHERE id = 'document-1'")
+            .fetch_one(&legacy_pool)
+            .await
+            .unwrap();
+    assert_eq!(selected_database, "analytics");
+}
+
 #[tokio::test]
 async fn remote_template_sync_preserves_member_local_credential_binding() {
+    assert_legacy_sql_document_database_scope_migrates().await;
     let pool = memory_pool().await;
     sqlx::raw_sql(migrations::SCHEMA)
         .execute(&pool)

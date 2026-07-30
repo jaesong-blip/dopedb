@@ -2,6 +2,38 @@
 
 use super::*;
 
+/// Add the database scope selected by each SQL document and seed legacy rows from
+/// the connection column's persisted SQLite name. Rust exposes that value as
+/// `ConnectionProfile::database`, but the store schema has always called it
+/// `connections.db_name`.
+pub(super) async fn add_sql_document_database_scope(pool: &SqlitePool) -> AppResult<()> {
+    if let Err(error) = sqlx::query("ALTER TABLE sql_documents ADD COLUMN selected_database TEXT")
+        .execute(pool)
+        .await
+    {
+        let duplicate_column = matches!(
+            &error,
+            sqlx::Error::Database(database)
+                if database.message().contains("duplicate column name")
+        );
+        if !duplicate_column {
+            return Err(error.into());
+        }
+    }
+    sqlx::query(
+        "UPDATE sql_documents
+         SET selected_database = (
+           SELECT connections.db_name
+           FROM connections
+           WHERE connections.id = sql_documents.connection_id
+         )
+         WHERE selected_database IS NULL",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Add synchronizable resource columns to databases created before the workspace
 /// schema existed. SQLite lacks `ADD COLUMN IF NOT EXISTS`, so duplicate errors are
 /// expected and deliberately ignored after each independent statement.
