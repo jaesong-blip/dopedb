@@ -23,6 +23,11 @@
       "packageDigest": "cbed43911eba6b8ebe8c35d66b46bba2136b8ab7cd05507a31de8e7ae07c12f1"
     },
     {
+      "appVersion": "0.3.14",
+      "releaseRevision": 14,
+      "packageDigest": "10fefde2b9ae4783e23c3877a4f2525c11cc741ddaf26ad6f43059bd6accc18e"
+    },
+    {
       "appVersion": "0.3.3",
       "releaseRevision": 2,
       "packageDigest": "675f4f8ce34e31e2d934bc53d5d6e2e1cba81856b35fb67b3ff49e22eb8a5352"

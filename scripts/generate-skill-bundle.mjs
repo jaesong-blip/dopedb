@@ -11,7 +11,7 @@ const repositoryRoot = path.resolve(
 const skillName = "dopedb-cli";
 // Reusing a revision for different bytes would make a known snapshot ambiguous.
 // Bump this monotonically whenever the generated package changes after release.
-const releaseRevision = 13;
+const releaseRevision = 14;
 const sourceRoot = path.join(repositoryRoot, "skills", skillName);
 const resourceRoot = path.join(repositoryRoot, "src-tauri", "resources", "skills");
 const currentManifestPath = path.join(resourceRoot, "current-manifest.json");
