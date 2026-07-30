@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -8,10 +9,16 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { Icon } from "../../components/Icon";
+import ToolbarMenu, {
+  ToolbarMenuItem,
+} from "../../components/ToolbarMenu";
 import {
   AgentPermissionCard,
+  AgentProviderMark,
   AgentToolCallCard,
 } from "../../design-system/components/Agent";
 import { Button } from "../../design-system/components/Button";
@@ -29,13 +36,13 @@ import {
   ToolWindowHeader,
   ToolWindowHideButton,
 } from "../../design-system/components/ToolWindow";
-import { errMessage, type CatalogTable } from "../../ipc/types";
-import { useI18n } from "../../lib/i18n";
-import type { ConnectionProfile } from "../connections/domain";
 import {
-  clampTerminalDockWidth,
-  TERMINAL_DOCK_DEFAULT_WIDTH,
-} from "../terminals/layout";
+  errMessage,
+  type CatalogTable,
+} from "../../ipc/types";
+import { useI18n } from "../../lib/i18n";
+import { skillStatusQuery } from "../../lib/queries";
+import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import type {
   AcpPermissionOption,
@@ -45,9 +52,19 @@ import type {
   AcpSessionId,
   AcpSessionLifecycle,
   AcpSessionSummary,
+  AgentCliInfo,
   AgentProvider,
 } from "./domain";
+import {
+  AGENT_DOCK_DEFAULT_WIDTH,
+  clampAgentDockWidth,
+} from "./layout";
 import AcpStructuredResult from "./AcpStructuredResult";
+import { agentCliDetectionQuery } from "./queryOptions";
+import {
+  openAgentSetup,
+  useEnabledAgentProviders,
+} from "../skills/agentPreferences";
 import { useAgentSelection } from "./selectionContext";
 import {
   cancelAgentAcpSession,
@@ -65,6 +82,10 @@ import {
 // Four-byte Unicode remains within the Rust byte limits.
 const MAX_DOCUMENT_CONTEXT_CHARS = 16 * 1024;
 const MAX_PROMPT_CHARS = 8 * 1024;
+const AGENT_SETUP_URL: Record<AgentProvider, string> = {
+  claude: "https://docs.anthropic.com/en/docs/claude-code/getting-started",
+  codex: "https://help.openai.com/en/articles/11096431",
+};
 
 type TranscriptItem =
   | {
@@ -131,6 +152,7 @@ export default function AcpChatPanel({
 }) {
   const { t } = useI18n();
   const { selection } = useAgentSelection();
+  const enabledProviders = useEnabledAgentProviders();
   const [sessions, setSessions] = useState<AcpSessionSummary[]>([]);
   const [activeId, setActiveId] = useState<AcpSessionId | null>(null);
   const [eventsBySession, setEventsBySession] = useState<
@@ -140,22 +162,31 @@ export default function AcpChatPanel({
   const [starting, setStarting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] =
-    useState<AgentProvider>("codex");
-  const [includeEditorContext, setIncludeEditorContext] = useState(true);
+    useState<AgentProvider>("claude");
+  const [includeEditorContext, setIncludeEditorContext] = useState(false);
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const [configChanging, setConfigChanging] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [permissionSubmitting, setPermissionSubmitting] = useState<string | null>(
     null,
   );
+  const [copiedSetupCommand, setCopiedSetupCommand] =
+    useState<AgentProvider | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const cliStatusQuery = useQuery({
+    ...agentCliDetectionQuery(),
+    refetchOnWindowFocus: false,
+  });
+  const skillStatusObserver = useQuery(skillStatusQuery());
 
   const connectionSessions = useMemo(
     () =>
       sessions
         .filter((session) => session.connectionId === connection.id)
+        .filter((session) => enabledProviders.includes(session.provider))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [connection.id, sessions],
+    [connection.id, enabledProviders, sessions],
   );
   const active =
     connectionSessions.find((session) => session.id === activeId) ?? null;
@@ -190,7 +221,7 @@ export default function AcpChatPanel({
   const submittedContext = includeEditorContext
     ? context
     : {
-        database: context.database,
+        database: null,
         documentName: null,
         documentText: null,
         table: null,
@@ -202,6 +233,24 @@ export default function AcpChatPanel({
           .find((event) => event.type === "permissionRequest")
           ?.requestId ?? null
       : null;
+  const agentBusy =
+    starting ||
+    active?.lifecycle === "starting" ||
+    active?.lifecycle === "running" ||
+    active?.lifecycle === "waitingPermission";
+  const selectedCliStatus =
+    cliStatusQuery.data?.find((cli) => cli.id === selectedProvider) ?? null;
+  const selectedCliReady =
+    selectedCliStatus?.installed === true &&
+    selectedCliStatus.authenticated === true;
+  const selectedSkillStatus =
+    skillStatusObserver.data?.targets.find(
+      (target) => target.target === skillTarget(selectedProvider),
+    ) ?? null;
+  const selectedSkillReady =
+    selectedSkillStatus?.state === "managed_current" ||
+    selectedSkillStatus?.state === "newer_known";
+  const prerequisitesReady = selectedCliReady && selectedSkillReady;
   const dockLayout = compact ? "compact" : overlay ? "overlay" : "docked";
 
   const upsertSession = useCallback((session: AcpSessionSummary) => {
@@ -267,6 +316,7 @@ export default function AcpChatPanel({
         setSessions(loaded);
         const next = loaded
           .filter((session) => session.connectionId === connection.id)
+          .filter((session) => isLiveSession(session.lifecycle))
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
         setActiveId(next?.id ?? null);
       })
@@ -284,8 +334,14 @@ export default function AcpChatPanel({
   }, [connection.id, t, upsertSession]);
 
   useEffect(() => {
-    const next = connectionSessions[0]?.id ?? null;
-    if (!activeId || !connectionSessions.some((session) => session.id === activeId)) {
+    const next =
+      connectionSessions.find((session) =>
+        isLiveSession(session.lifecycle)
+      )?.id ?? null;
+    if (
+      activeId &&
+      !connectionSessions.some((session) => session.id === activeId)
+    ) {
       setActiveId(next);
     }
   }, [activeId, connectionSessions]);
@@ -293,6 +349,12 @@ export default function AcpChatPanel({
   useEffect(() => {
     if (active) setSelectedProvider(active.provider);
   }, [active]);
+
+  useEffect(() => {
+    if (enabledProviders.includes(selectedProvider)) return;
+    const next = enabledProviders[0];
+    if (next) void changeProvider(next);
+  }, [enabledProviders, selectedProvider]);
 
   useEffect(() => {
     if (!active || eventsBySession[active.id]) return;
@@ -310,7 +372,7 @@ export default function AcpChatPanel({
   }, [events.length, active?.id]);
 
   async function startSession(provider = selectedProvider) {
-    if (starting) return null;
+    if (starting || !prerequisitesReady) return null;
     setStarting(true);
     setError(null);
     try {
@@ -330,6 +392,16 @@ export default function AcpChatPanel({
     } finally {
       setStarting(false);
     }
+  }
+
+  function beginNewChat() {
+    if (starting) return;
+    setActiveId(null);
+    setHistoryOpen(false);
+    setPrompt("");
+    setError(null);
+    setComposerExpanded(false);
+    setIncludeEditorContext(false);
   }
 
   async function selectSession(id: AcpSessionId) {
@@ -353,6 +425,11 @@ export default function AcpChatPanel({
       applyFocus(await resumeAgentAcpSession(active.id));
     } catch (reason) {
       setError(t("agent.acpResumeFailed", { error: errMessage(reason) }));
+      try {
+        applyFocus(await focusAgentAcpSession(active.id));
+      } catch {
+        // Keep the actionable resume error when the persisted focus also vanished.
+      }
     } finally {
       setStarting(false);
     }
@@ -361,6 +438,7 @@ export default function AcpChatPanel({
   async function sendPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (starting || !prompt.trim()) return;
+    if (!prerequisitesReady) return;
     const submitted = prompt;
     setError(null);
     try {
@@ -384,8 +462,32 @@ export default function AcpChatPanel({
   async function changeProvider(provider: AgentProvider) {
     if (provider === selectedProvider && active?.provider === provider) return;
     setSelectedProvider(provider);
+    setCopiedSetupCommand(null);
     if (active && active.provider !== provider) {
-      await startSession(provider);
+      setActiveId(null);
+      setPrompt("");
+      setError(null);
+      setHistoryOpen(false);
+      setIncludeEditorContext(false);
+    }
+  }
+
+  async function openSetupGuide(provider: AgentProvider) {
+    setError(null);
+    try {
+      await openUrl(AGENT_SETUP_URL[provider]);
+    } catch (reason) {
+      setError(t("agent.acpSetupActionFailed", { error: errMessage(reason) }));
+    }
+  }
+
+  async function copyLoginCommand(provider: AgentProvider) {
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(loginCommand(provider));
+      setCopiedSetupCommand(provider);
+    } catch (reason) {
+      setError(t("agent.acpSetupActionFailed", { error: errMessage(reason) }));
     }
   }
 
@@ -453,7 +555,7 @@ export default function AcpChatPanel({
     const startWidth = width;
     const move = (next: MouseEvent) => {
       onWidthChange(
-        clampTerminalDockWidth(
+        clampAgentDockWidth(
           startWidth + startX - next.clientX,
           window.innerWidth,
         ),
@@ -482,17 +584,18 @@ export default function AcpChatPanel({
         aria-orientation="vertical"
         aria-label={t("app.dragResize")}
         onMouseDown={beginResize}
-        onDoubleClick={() => onWidthChange(TERMINAL_DOCK_DEFAULT_WIDTH)}
+        onDoubleClick={() => onWidthChange(AGENT_DOCK_DEFAULT_WIDTH)}
       />
       <ToolWindowHeader
         title={t("agent.acpTitle")}
+        divider={false}
         actions={
           <>
             <Button
               size="compact"
               variant="ghost"
               disabled={starting}
-              onClick={() => void startSession()}
+              onClick={beginNewChat}
               title={t("agent.acpNew")}
             >
               <Icon name="plus" />
@@ -509,6 +612,28 @@ export default function AcpChatPanel({
             >
               <Icon name="history" />
             </Button>
+            <ToolbarMenu
+              align="end"
+              icon="moreVertical"
+              label={t("agent.acpMore")}
+            >
+              <ToolbarMenuItem icon="gear" onClick={openAgentSetup}>
+                {t("agent.acpAgentSetup")}
+              </ToolbarMenuItem>
+              <ToolbarMenuItem icon="history" onClick={onOpenArchive}>
+                {t("agent.acpArchive")}
+              </ToolbarMenuItem>
+              {active &&
+              active.lifecycle !== "closed" &&
+              active.lifecycle !== "failed" ? (
+                <ToolbarMenuItem
+                  icon="trash"
+                  onClick={() => void closeSession()}
+                >
+                  {t("agent.acpCloseSession")}
+                </ToolbarMenuItem>
+              ) : null}
+            </ToolbarMenu>
             <ToolWindowHideButton
               label={t("common.close")}
               onClick={onClose}
@@ -516,6 +641,16 @@ export default function AcpChatPanel({
           </>
         }
       />
+
+      {agentBusy ? (
+        <div
+          className="tw:mx-6 tw:mt-2 tw:h-2 tw:shrink-0 tw:overflow-hidden tw:rounded-pill tw:bg-muted"
+          role="progressbar"
+          aria-label={t("agent.acpWorking")}
+        >
+          <span className="tw:block tw:h-full tw:w-full tw:animate-pulse tw:rounded-pill tw:bg-muted-foreground/30 tw:motion-reduce:animate-none" />
+        </div>
+      ) : null}
 
       {error ? (
         <InlineNotice
@@ -568,39 +703,18 @@ export default function AcpChatPanel({
               {t("agent.acpNoSessions")}
             </p>
           )}
-          <div className="tw:mt-1 tw:flex tw:items-center tw:justify-between tw:border-t tw:border-border-subtle tw:px-1 tw:pt-1">
-            <Button
-              size="compact"
-              variant="ghost"
-              onClick={onOpenArchive}
-            >
-              <Icon name="history" />
-              {t("agent.acpArchive")}
-            </Button>
-            {active &&
-            active.lifecycle !== "closed" &&
-            active.lifecycle !== "failed" ? (
-              <Button
-                iconOnly
-                size="xs"
-                variant="ghost"
-                onClick={() => void closeSession()}
-                title={t("agent.acpCloseSession")}
-                aria-label={t("agent.acpCloseSession")}
-              >
-                <Icon name="trash" />
-              </Button>
-            ) : null}
-          </div>
         </section>
       ) : null}
 
       <div
         ref={transcriptRef}
-        className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:overscroll-contain tw:bg-background tw:px-3 tw:py-4"
+        className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:overscroll-contain tw:bg-background tw:px-6 tw:pt-10 tw:pb-5"
         aria-live="polite"
       >
-        {loading || (active && !activeEventsLoaded) ? (
+        {loading ||
+        cliStatusQuery.isPending ||
+        skillStatusObserver.isPending ||
+        (active && !activeEventsLoaded) ? (
           <AgentEmpty>
             <LoadingLabel>{t("common.loading")}</LoadingLabel>
           </AgentEmpty>
@@ -608,6 +722,27 @@ export default function AcpChatPanel({
           <AgentEmpty>
             <LoadingLabel>{t("agent.acpStarting")}</LoadingLabel>
           </AgentEmpty>
+        ) : selectedSkillStatus && !selectedSkillReady ? (
+          <AgentEmpty>
+            <Icon name="shield" />
+            <strong>{t("agent.acpSkillRequiredTitle")}</strong>
+            <p>{t("agent.acpSkillRequiredBody")}</p>
+            <Button variant="primary" onClick={openAgentSetup}>
+              {t("agent.acpAgentSetup")}
+            </Button>
+          </AgentEmpty>
+        ) : selectedCliStatus && !selectedCliReady ? (
+          <AgentSetupGuidance
+            cli={selectedCliStatus}
+            copied={copiedSetupCommand === selectedProvider}
+            checking={cliStatusQuery.isFetching}
+            onPrimary={() =>
+              void (selectedCliStatus.installed
+                ? copyLoginCommand(selectedProvider)
+                : openSetupGuide(selectedProvider))
+            }
+            onCheck={() => void cliStatusQuery.refetch()}
+          />
         ) : !active ? (
           <AgentEmpty>
             <strong>{t("agent.acpEmptyTitle")}</strong>
@@ -637,17 +772,21 @@ export default function AcpChatPanel({
             )}
           </AgentEmpty>
         ) : (
-          <div className="tw:grid tw:gap-3">
-            {transcript.map((item) => (
-              <TranscriptItemView
-                key={item.key}
-                item={item}
-                pendingPermissionId={pendingPermissionId}
-                permissionSubmitting={permissionSubmitting}
-                onPermission={(requestId, optionId) =>
-                  void respondPermission(requestId, optionId)
-                }
-              />
+          <div className="tw:grid tw:gap-6">
+            {transcript.map((item, index) => (
+              <Fragment key={item.key}>
+                {showProviderHeading(transcript, index) ? (
+                  <ProviderHeading provider={active.provider} />
+                ) : null}
+                <TranscriptItemView
+                  item={item}
+                  pendingPermissionId={pendingPermissionId}
+                  permissionSubmitting={permissionSubmitting}
+                  onPermission={(requestId, optionId) =>
+                    void respondPermission(requestId, optionId)
+                  }
+                />
+              </Fragment>
             ))}
             {active.lifecycle === "running" ? (
               <div className="tw:flex tw:items-center tw:gap-2 tw:py-1 tw:text-xs tw:text-muted-foreground">
@@ -662,7 +801,7 @@ export default function AcpChatPanel({
       <ToolWindowComposerDock>
         {active &&
         (active.lifecycle === "closed" || active.lifecycle === "failed") ? (
-          <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-3 tw:border-x tw:border-t tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2">
+          <div className="tw:mb-2 tw:flex tw:min-h-control-lg tw:items-center tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:px-3 tw:py-2">
             <p className="tw:m-0 tw:min-w-0 tw:flex-1 tw:text-xs tw:leading-body tw:text-muted-foreground">
               {active.acpSessionId === null
                 ? t("agent.acpRestartBody")
@@ -671,7 +810,7 @@ export default function AcpChatPanel({
             <Button
               size="compact"
               variant="primary"
-              disabled={starting}
+              disabled={starting || !prerequisitesReady}
               onClick={() =>
                 void (active.acpSessionId === null
                   ? startSession()
@@ -689,35 +828,26 @@ export default function AcpChatPanel({
             </Button>
           </div>
         ) : null}
-        {includeEditorContext && contextLabels.length > 0 ? (
-          <div className="tw:flex tw:flex-wrap tw:gap-1 tw:border-x tw:border-t tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1">
-            {contextLabels.map((label) => (
-              <span
-                key={label.text}
-                className="tw:inline-flex tw:h-control-sm tw:max-w-full tw:items-center tw:gap-1 tw:rounded-xs tw:bg-muted tw:px-2 tw:text-xs tw:text-foreground"
-                title={label.text}
-              >
-                <Icon name={label.icon} />
-                <span className="tw:truncate">{label.text}</span>
-              </span>
-            ))}
-          </div>
-        ) : null}
         <ToolWindowComposer
           aria-label={t("agent.acpComposer")}
           onSubmit={sendPrompt}
+          expanded={composerExpanded}
+          busy={agentBusy}
         >
           <ToolWindowComposerInput
             value={prompt}
             maxLength={MAX_PROMPT_CHARS}
             disabled={
               starting ||
+              !prerequisitesReady ||
               (active !== null &&
                 active.lifecycle !== "ready" &&
                 active.lifecycle !== "closed" &&
                 active.lifecycle !== "failed")
             }
-            placeholder={t("agent.acpPrompt")}
+            placeholder={
+              agentBusy ? t("agent.acpWaiting") : t("agent.acpPrompt")
+            }
             aria-label={t("agent.acpPrompt")}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={(event) => {
@@ -731,12 +861,47 @@ export default function AcpChatPanel({
               }
             }}
           />
+          <span className="tw:absolute tw:top-1.5 tw:right-1.5">
+            <Button
+              type="button"
+              iconOnly
+              size="xs"
+              variant="ghost"
+              onClick={() => setComposerExpanded((current) => !current)}
+              title={
+                composerExpanded
+                  ? t("agent.acpCollapseComposer")
+                  : t("agent.acpExpandComposer")
+              }
+              aria-label={
+                composerExpanded
+                  ? t("agent.acpCollapseComposer")
+                  : t("agent.acpExpandComposer")
+              }
+            >
+              <Icon name={composerExpanded ? "minimize" : "maximize"} />
+            </Button>
+          </span>
+          {includeEditorContext && contextLabels.length > 0 ? (
+            <div className="tw:flex tw:flex-wrap tw:gap-1 tw:px-2 tw:pb-1">
+              {contextLabels.map((label) => (
+                <span
+                  key={label.text}
+                  className="tw:inline-flex tw:h-control-sm tw:max-w-full tw:items-center tw:gap-1 tw:rounded-xs tw:bg-muted tw:px-2 tw:text-xs tw:text-foreground"
+                  title={label.text}
+                >
+                  <Icon name={label.icon} />
+                  <span className="tw:truncate">{label.text}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
           <div className="tw:flex tw:min-h-control-lg tw:items-center tw:gap-1 tw:px-2">
             {contextLabels.length > 0 ? (
               <Button
                 type="button"
                 iconOnly
-                size="compact"
+                size="xs"
                 variant="ghost"
                 aria-pressed={includeEditorContext}
                 onClick={() =>
@@ -763,6 +928,7 @@ export default function AcpChatPanel({
                 iconOnly
                 size="compact"
                 variant="ghost"
+                tone="danger"
                 onClick={() => void cancelTurn()}
                 title={t("agent.acpCancel")}
                 aria-label={t("agent.acpCancel")}
@@ -777,6 +943,7 @@ export default function AcpChatPanel({
                 variant="ghost"
                 disabled={
                   starting ||
+                  !prerequisitesReady ||
                   (active !== null &&
                     active.lifecycle !== "ready" &&
                     active.lifecycle !== "closed" &&
@@ -792,9 +959,9 @@ export default function AcpChatPanel({
           </div>
         </ToolWindowComposer>
         <ToolWindowComposerContext>
-          <Icon name="user" className="tw:text-muted-foreground" />
+          <AgentProviderMark provider={selectedProvider} />
           <select
-            className="tw:h-control-sm tw:max-w-[9rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-xs tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+            className="tw:h-control-sm tw:max-w-[10rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-ui tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
             value={selectedProvider}
             disabled={starting}
             onChange={(event) =>
@@ -803,8 +970,12 @@ export default function AcpChatPanel({
             aria-label={t("agent.acpProvider")}
             title={t("agent.acpLocalAuth")}
           >
-            <option value="claude">Claude</option>
-            <option value="codex">Codex</option>
+            {enabledProviders.includes("claude") ? (
+              <option value="claude">Claude Agent</option>
+            ) : null}
+            {enabledProviders.includes("codex") ? (
+              <option value="codex">Codex</option>
+            ) : null}
           </select>
           {modelOption ? (
             <ConfigSelect
@@ -812,20 +983,7 @@ export default function AcpChatPanel({
               changing={configChanging === modelOption.id}
               onChange={(value) => void changeConfigOption(modelOption, value)}
             />
-          ) : (
-            <span className="tw:text-xs tw:text-muted-foreground">
-              {t("agent.acpDefaultModel")}
-            </span>
-          )}
-          <span className="tw:flex-1" />
-          <span
-            className="tw:max-w-[40%] tw:truncate tw:text-xs tw:text-muted-foreground"
-            title={t("agent.acpPinned", {
-              name: connection.name || t("app.unnamed"),
-            })}
-          >
-            {connection.name || t("app.unnamed")}
-          </span>
+          ) : null}
         </ToolWindowComposerContext>
       </ToolWindowComposerDock>
     </aside>
@@ -871,6 +1029,107 @@ function AgentEmpty({ children }: { children: ReactNode }) {
   );
 }
 
+function AgentSetupGuidance({
+  cli,
+  copied,
+  checking,
+  onPrimary,
+  onCheck,
+}: {
+  cli: AgentCliInfo;
+  copied: boolean;
+  checking: boolean;
+  onPrimary: () => void;
+  onCheck: () => void;
+}) {
+  const { t } = useI18n();
+  const provider = providerLabel(cli.id);
+  return (
+    <div className="tw:grid tw:gap-5">
+      <ProviderHeading provider={cli.id} />
+      <AgentPermissionCard
+        title={t("agent.acpSetupTitle", { provider })}
+        description={
+          cli.installed
+            ? t("agent.acpSetupLoginBody", {
+                provider,
+                command: loginCommand(cli.id),
+              })
+            : t("agent.acpSetupInstallBody", { provider })
+        }
+        pending
+        status={t("agent.acpSetupRequired")}
+        actions={
+          <div className="tw:flex tw:flex-wrap tw:gap-2">
+            <Button size="compact" variant="primary" onClick={onPrimary}>
+              {cli.installed
+                ? copied
+                  ? t("agent.acpSetupCopied")
+                  : t("agent.acpSetupCopyLogin")
+                : t("agent.acpSetupOpenGuide")}
+            </Button>
+            <Button
+              size="compact"
+              variant="ghost"
+              disabled={checking}
+              onClick={onCheck}
+            >
+              <Icon
+                name="refresh"
+                data-loading={checking || undefined}
+                className="tw:data-[loading=true]:animate-spin tw:motion-reduce:animate-none"
+              />
+              {t("agent.acpSetupCheckAgain")}
+            </Button>
+          </div>
+        }
+      />
+      <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
+        {t("agent.acpSetupPrivacy")}
+      </p>
+    </div>
+  );
+}
+
+function ProviderHeading({ provider }: { provider: AgentProvider }) {
+  return (
+    <div className="tw:flex tw:items-center tw:gap-2 tw:pt-1">
+      <AgentProviderMark provider={provider} />
+      <strong className="tw:text-sm tw:text-foreground">
+        {providerLabel(provider)}
+      </strong>
+    </div>
+  );
+}
+
+function showProviderHeading(items: TranscriptItem[], index: number) {
+  const item = items[index];
+  if (!item || item.kind === "user" || item.kind === "turnEnd") return false;
+  const previous = items[index - 1];
+  return (
+    previous === undefined ||
+    previous.kind === "user" ||
+    previous.kind === "turnEnd"
+  );
+}
+
+function loginCommand(provider: AgentProvider) {
+  return provider === "claude" ? "claude auth login" : "codex login";
+}
+
+function skillTarget(provider: AgentProvider) {
+  return provider === "claude" ? "claude-code" : "codex";
+}
+
+function isLiveSession(lifecycle: AcpSessionLifecycle) {
+  return (
+    lifecycle === "starting" ||
+    lifecycle === "ready" ||
+    lifecycle === "running" ||
+    lifecycle === "waitingPermission"
+  );
+}
+
 function TranscriptItemView({
   item,
   pendingPermissionId,
@@ -899,19 +1158,14 @@ function TranscriptItemView({
   }
   if (item.kind === "agent") {
     return (
-      <article className="tw:grid tw:grid-cols-[20px_minmax(0,1fr)] tw:gap-2">
-        <span className="tw:grid tw:size-5 tw:place-items-center tw:rounded-full tw:bg-primary tw:text-primary-foreground">
-          <Icon name="user" className="tw:size-3" />
-        </span>
-        <div className="tw:min-w-0 tw:text-sm tw:leading-body tw:whitespace-pre-wrap tw:text-foreground">
-          {item.text}
-        </div>
+      <article className="tw:min-w-0 tw:text-sm tw:leading-body tw:whitespace-pre-wrap tw:text-foreground">
+        {item.text}
       </article>
     );
   }
   if (item.kind === "thought") {
     return (
-      <details className="tw:ml-7 tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:text-xs">
+      <details className="tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:text-xs">
         <summary className="tw:cursor-pointer tw:text-muted-foreground">
           {t("agent.acpThought")}
         </summary>
@@ -928,12 +1182,20 @@ function TranscriptItemView({
     const pending = item.event.requestId === pendingPermissionId;
     return (
       <AgentPermissionCard
-        title={t("agent.acpPermission")}
-        description={
+        title={
           recordString(item.event.toolCall, "title") ??
-          t("agent.acpToolRequest")
+          t("agent.acpPermission")
+        }
+        description={
+          recordString(item.event.toolCall, "description") ??
+          t("agent.acpPermission")
         }
         pending={pending}
+        status={
+          pending
+            ? t("agent.acpPermissionWaiting")
+            : t("agent.acpPermissionResolved")
+        }
         actions={
           pending ? (
           <div className="tw:flex tw:flex-wrap tw:gap-2">
@@ -947,14 +1209,18 @@ function TranscriptItemView({
                 }
               />
             ))}
-            <Button
-              size="compact"
-              variant="ghost"
-              disabled={permissionSubmitting === item.event.requestId}
-              onClick={() => onPermission(item.event.requestId, null)}
-            >
-              {t("agent.acpCancel")}
-            </Button>
+            {item.event.options.some((option) =>
+              option.kind.startsWith("reject")
+            ) ? null : (
+              <Button
+                size="compact"
+                variant="ghost"
+                disabled={permissionSubmitting === item.event.requestId}
+                onClick={() => onPermission(item.event.requestId, null)}
+              >
+                {t("agent.acpCancel")}
+              </Button>
+            )}
           </div>
           ) : (
             <small className="tw:text-muted-foreground">
@@ -1153,7 +1419,7 @@ function latestConfigOptions(
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event?.type === "sessionConfiguration") {
-      return event.configOptions;
+      return Array.isArray(event.configOptions) ? event.configOptions : [];
     }
   }
   return [];
@@ -1167,7 +1433,7 @@ function flattenConfigSelectOptions(option: AcpSessionConfigOption) {
 }
 
 function providerLabel(provider: AgentProvider) {
-  return provider === "claude" ? "Claude" : "Codex";
+  return provider === "claude" ? "Claude Agent" : "Codex";
 }
 
 function promptContext(
@@ -1231,9 +1497,15 @@ function promptContext(
 
 function contextSummary(context: AcpPromptContext) {
   const labels: Array<{
-    icon: "file" | "table" | "columns";
+    icon: "database" | "file" | "table" | "columns";
     text: string;
   }> = [];
+  if (context.database !== null) {
+    labels.push({
+      icon: "database",
+      text: context.database,
+    });
+  }
   if (context.documentText !== null) {
     labels.push({
       icon: "file",

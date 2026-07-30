@@ -54,6 +54,7 @@ export const agentsCatalog = defineCatalog(
     "agent.acpCancelFailed": "Could not cancel the Agent turn: {error}",
     "agent.acpCloseFailed": "Could not close the Agent session: {error}",
     "agent.acpCloseSession": "Close Agent session",
+    "agent.acpCollapseComposer": "Restore composer size",
     "agent.acpComposer": "Agent task composer",
     "agent.acpConfigFailed": "Could not change {name}: {error}",
     "agent.acpDefaultModel": "Default model",
@@ -65,6 +66,7 @@ export const agentsCatalog = defineCatalog(
     "agent.acpEmptyFeatureInspect": "Inspect schemas, tables, and selected data",
     "agent.acpEmptyFeatureApprove": "Run changes only after explicit approval",
     "agent.acpEmptyTitle": "How can I help with this database?",
+    "agent.acpExpandComposer": "Expand composer",
     "agent.acpFailed": "Agent session failed",
     "agent.acpLifecycle.closed": "Closed",
     "agent.acpLifecycle.failed": "Failed",
@@ -76,12 +78,14 @@ export const agentsCatalog = defineCatalog(
     "agent.acpLocalAuth":
       "Authentication stays in your local Claude or Codex login. DopeDB never reads or stores its token.",
     "agent.acpNew": "New Chat",
+    "agent.acpMore": "More chat actions",
     "agent.acpNoSessions": "No conversations for this connection yet.",
     "agent.acpNoToken": "Local login · no app token",
     "agent.acpPermission": "Permission required",
     "agent.acpPermissionFailed":
       "Could not answer the permission request: {error}",
     "agent.acpPermissionResolved": "This permission request is no longer pending.",
+    "agent.acpPermissionWaiting": "Waiting for your response",
     "agent.acpPinned": "Pinned to {name}",
     "agent.acpPlan": "Plan",
     "agent.acpPrompt": "Describe the database task for the Agent…",
@@ -99,6 +103,24 @@ export const agentsCatalog = defineCatalog(
     "agent.acpSend": "Send task",
     "agent.acpSendFailed": "Could not send the Agent task: {error}",
     "agent.acpSessions": "Agent sessions",
+    "agent.acpAgentSetup": "Agent setup",
+    "agent.acpSkillRequiredBody":
+      "This Agent is disabled until its DopeDB Skill is selected and installed in the app-wide Agent setup.",
+    "agent.acpSkillRequiredTitle": "DopeDB Skill required",
+    "agent.acpSetupActionFailed":
+      "Could not open the Agent setup action: {error}",
+    "agent.acpSetupCheckAgain": "Check again",
+    "agent.acpSetupCopied": "Login command copied",
+    "agent.acpSetupCopyLogin": "Copy login command",
+    "agent.acpSetupInstallBody":
+      "{provider} is not installed. Install it from the provider's official guide, then check again.",
+    "agent.acpSetupLoginBody":
+      "{provider} is installed but not signed in. Run `{command}` in a local terminal, finish the provider login, then check again.",
+    "agent.acpSetupOpenGuide": "Open install guide",
+    "agent.acpSetupPrivacy":
+      "The provider processes prompts under its terms. Authentication remains in the local CLI; DopeDB never reads or stores its token.",
+    "agent.acpSetupRequired": "Waiting for local setup",
+    "agent.acpSetupTitle": "{provider} local access",
     "agent.acpStartCodex": "Start Agent",
     "agent.acpStartFailed": "Could not start {provider} through ACP: {error}",
     "agent.acpStarting": "Starting the official ACP adapter…",
@@ -110,8 +132,26 @@ export const agentsCatalog = defineCatalog(
     "agent.acpTurnComplete": "Turn complete",
     "agent.acpTurnLimited": "Turn stopped at its limit",
     "agent.acpTurnRefused": "Agent refused this turn",
+    "agent.acpWaiting": "Waiting…",
     "agent.acpWorking": "Agent is working",
     "agentTools.authenticated": "Signed in",
+    "agentTools.autoUpdateFailed":
+      "Could not automatically update {target}: {error}",
+    "agentTools.autoUpdated":
+      "{target} DopeDB Skill updated to revision {revision}.",
+    "agentTools.startupBody":
+      "Choose the local Agents you use. DopeDB checks their Skills at startup, installs the selected missing Skills together, and updates managed older revisions automatically.",
+    "agentTools.startupHeading": "Choose Agents for DopeDB",
+    "agentTools.startupInstallFailed":
+      "Could not finish Agent Skill setup: {error}",
+    "agentTools.startupInstallSelected": "Install selected Agents",
+    "agentTools.startupLater": "Later",
+    "agentTools.startupReviewRequired":
+      "Review the local Skill files for {targets} in Agent Tools before installation.",
+    "agentTools.startupSafety":
+      "Installation is local and credential-free. Only signed, version-matched DopeDB Skill files are written; unknown or user-modified files are never overwritten automatically.",
+    "agentTools.startupSelectOne": "Select at least one Agent.",
+    "agentTools.startupTitle": "DopeDB Agent setup",
     "agentTools.backupCreated": "Backup preserved at {path}",
     "agentTools.checkAgain": "Check again",
     "agentTools.cliMissing": "CLI not detected",
@@ -286,6 +326,7 @@ export const agentsCatalog = defineCatalog(
     "agent.acpCancelFailed": "Agent 작업을 취소하지 못했습니다: {error}",
     "agent.acpCloseFailed": "Agent 세션을 닫지 못했습니다: {error}",
     "agent.acpCloseSession": "Agent 세션 닫기",
+    "agent.acpCollapseComposer": "입력창 크기 복원",
     "agent.acpComposer": "Agent 작업 입력",
     "agent.acpConfigFailed": "{name} 설정을 바꾸지 못했습니다: {error}",
     "agent.acpDefaultModel": "기본 모델",
@@ -297,6 +338,7 @@ export const agentsCatalog = defineCatalog(
     "agent.acpEmptyFeatureInspect": "스키마·테이블·선택 데이터 탐색",
     "agent.acpEmptyFeatureApprove": "명시적 승인 뒤 변경 실행",
     "agent.acpEmptyTitle": "이 데이터베이스에서 무엇을 도와드릴까요?",
+    "agent.acpExpandComposer": "입력창 확대",
     "agent.acpFailed": "Agent 세션 실패",
     "agent.acpLifecycle.closed": "닫힘",
     "agent.acpLifecycle.failed": "실패",
@@ -308,11 +350,13 @@ export const agentsCatalog = defineCatalog(
     "agent.acpLocalAuth":
       "인증은 사용자의 로컬 Claude 또는 Codex 로그인이 소유합니다. DopeDB는 토큰을 읽거나 저장하지 않습니다.",
     "agent.acpNew": "새 채팅",
+    "agent.acpMore": "채팅 작업 더보기",
     "agent.acpNoSessions": "이 연결에는 아직 대화가 없습니다.",
     "agent.acpNoToken": "로컬 로그인 · 앱 토큰 없음",
     "agent.acpPermission": "권한 승인 필요",
     "agent.acpPermissionFailed": "권한 요청에 응답하지 못했습니다: {error}",
     "agent.acpPermissionResolved": "이 권한 요청은 더 이상 대기 중이 아닙니다.",
+    "agent.acpPermissionWaiting": "응답 대기 중",
     "agent.acpPinned": "{name}에 고정됨",
     "agent.acpPlan": "계획",
     "agent.acpPrompt": "Agent가 수행할 데이터베이스 작업을 입력하세요…",
@@ -330,6 +374,24 @@ export const agentsCatalog = defineCatalog(
     "agent.acpSend": "작업 보내기",
     "agent.acpSendFailed": "Agent 작업을 보내지 못했습니다: {error}",
     "agent.acpSessions": "Agent 세션",
+    "agent.acpAgentSetup": "Agent 설정",
+    "agent.acpSkillRequiredBody":
+      "앱 전역 Agent 설정에서 이 Agent를 선택하고 DopeDB Skill을 설치할 때까지 사용할 수 없습니다.",
+    "agent.acpSkillRequiredTitle": "DopeDB Skill 필요",
+    "agent.acpSetupActionFailed":
+      "Agent 설정 작업을 열지 못했습니다: {error}",
+    "agent.acpSetupCheckAgain": "다시 확인",
+    "agent.acpSetupCopied": "로그인 명령 복사됨",
+    "agent.acpSetupCopyLogin": "로그인 명령 복사",
+    "agent.acpSetupInstallBody":
+      "{provider}가 설치되어 있지 않습니다. 제공자의 공식 안내에서 설치한 뒤 다시 확인하세요.",
+    "agent.acpSetupLoginBody":
+      "{provider}가 설치되어 있지만 로그인되지 않았습니다. 로컬 터미널에서 `{command}`를 실행해 제공자 로그인을 마친 뒤 다시 확인하세요.",
+    "agent.acpSetupOpenGuide": "설치 안내 열기",
+    "agent.acpSetupPrivacy":
+      "프롬프트는 제공자 약관에 따라 처리됩니다. 인증은 로컬 CLI에 남으며 DopeDB는 토큰을 읽거나 저장하지 않습니다.",
+    "agent.acpSetupRequired": "로컬 설정 대기 중",
+    "agent.acpSetupTitle": "{provider} 로컬 접근",
     "agent.acpStartCodex": "Agent 시작",
     "agent.acpStartFailed": "ACP로 {provider}를 시작하지 못했습니다: {error}",
     "agent.acpStarting": "공식 ACP 어댑터를 시작하는 중…",
@@ -341,8 +403,26 @@ export const agentsCatalog = defineCatalog(
     "agent.acpTurnComplete": "작업 완료",
     "agent.acpTurnLimited": "한도에 도달해 작업 종료",
     "agent.acpTurnRefused": "Agent가 작업을 거절함",
+    "agent.acpWaiting": "기다리는 중…",
     "agent.acpWorking": "Agent가 작업 중입니다",
     "agentTools.authenticated": "로그인됨",
+    "agentTools.autoUpdateFailed":
+      "{target}을 자동 업데이트하지 못했습니다: {error}",
+    "agentTools.autoUpdated":
+      "{target} DopeDB Skill을 리비전 {revision}(으)로 업데이트했습니다.",
+    "agentTools.startupBody":
+      "사용하는 로컬 Agent를 선택하세요. DopeDB는 시작할 때 선택한 Agent의 Skill을 확인하고, 누락된 Skill을 한 번에 설치하며, 관리 중인 구버전은 자동 업데이트합니다.",
+    "agentTools.startupHeading": "DopeDB에서 사용할 Agent 선택",
+    "agentTools.startupInstallFailed":
+      "Agent Skill 설정을 완료하지 못했습니다: {error}",
+    "agentTools.startupInstallSelected": "선택한 Agent 설치",
+    "agentTools.startupLater": "나중에",
+    "agentTools.startupReviewRequired":
+      "{targets}의 로컬 Skill 파일을 설치 전에 Agent Tools에서 검토하세요.",
+    "agentTools.startupSafety":
+      "설치는 로컬에서 자격 증명 없이 진행됩니다. 서명된 현재 버전의 DopeDB Skill 파일만 쓰며, 알 수 없거나 사용자가 수정한 파일은 자동으로 덮어쓰지 않습니다.",
+    "agentTools.startupSelectOne": "Agent를 하나 이상 선택하세요.",
+    "agentTools.startupTitle": "DopeDB Agent 설정",
     "agentTools.backupCreated": "기존 파일을 {path}에 보존했습니다.",
     "agentTools.checkAgain": "다시 확인",
     "agentTools.cliMissing": "CLI를 찾지 못함",

@@ -22,7 +22,7 @@ import { tableKey } from "../../lib/tableRef";
 import { DatabaseExplorer } from "../../screens/Connections";
 import { DashboardSidebar } from "../../screens/Dashboards";
 import type { ConnectionLaunchPreset } from "../connections/presets";
-import { clampTerminalDockWidth } from "../terminals/layout";
+import { clampAgentDockWidth } from "../agents/layout";
 import type { EditingConnection } from "./WorkbenchContent";
 import { IdeStatusBar, IdeTopBar } from "./IdeChrome";
 import type { AppArea } from "./navigation";
@@ -175,7 +175,7 @@ function ShellLayoutContent(props: Props) {
     databaseExplorerVisible || localHistoryVisible;
   const servicesVisible = servicesOpen;
   const rightDockWidth = showTerminalDock && !terminalOverlay
-    ? clampTerminalDockWidth(
+    ? clampAgentDockWidth(
         terminalWidth,
         typeof window === "undefined" ? 1_280 : window.innerWidth,
       )

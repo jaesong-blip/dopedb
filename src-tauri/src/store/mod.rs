@@ -213,6 +213,7 @@ impl Store {
         migrate_audit_no_cascade(&pool).await?;
         add_local_scope_columns(&pool).await;
         add_connection_binding_scope_columns(&pool).await?;
+        migrate_agent_acp_providers(&pool).await?;
         migrate_schema_cache_scopes(&pool).await?;
         ensure_schema_cache_v2(&pool).await?;
         repair_active_scope_on_open(&pool).await?;

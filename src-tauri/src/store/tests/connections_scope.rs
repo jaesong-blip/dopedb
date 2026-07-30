@@ -31,9 +31,81 @@ async fn assert_legacy_sql_document_database_scope_migrates() {
     assert_eq!(selected_database, "analytics");
 }
 
+async fn assert_legacy_agent_acp_provider_migrates() {
+    let legacy_pool = memory_pool().await;
+    sqlx::raw_sql(
+        "CREATE TABLE agent_acp_sessions (
+             id TEXT PRIMARY KEY,
+             connection_id TEXT NOT NULL,
+             workspace_id TEXT NOT NULL,
+             account_scope TEXT NOT NULL,
+             provider TEXT NOT NULL CHECK(provider IN ('codex')),
+             title TEXT NOT NULL,
+             lifecycle TEXT NOT NULL,
+             acp_session_id TEXT,
+             error TEXT,
+             created_at TEXT NOT NULL,
+             updated_at TEXT NOT NULL
+         );
+         CREATE TABLE agent_acp_events (
+             session_id TEXT NOT NULL REFERENCES agent_acp_sessions(id) ON DELETE CASCADE,
+             sequence INTEGER NOT NULL CHECK(sequence > 0),
+             created_at TEXT NOT NULL,
+             payload TEXT NOT NULL,
+             PRIMARY KEY(session_id, sequence)
+         );
+         CREATE INDEX idx_agent_acp_sessions_scope
+             ON agent_acp_sessions(workspace_id, account_scope, updated_at DESC);
+         CREATE INDEX idx_agent_acp_events_session
+             ON agent_acp_events(session_id, sequence);
+         INSERT INTO agent_acp_sessions
+             (id, connection_id, workspace_id, account_scope, provider, title,
+              lifecycle, created_at, updated_at)
+         VALUES
+             ('codex-session', 'connection-1', 'workspace-1', 'personal',
+              'codex', 'Existing session', 'ready', '2026-07-30', '2026-07-30');
+         INSERT INTO agent_acp_events
+             (session_id, sequence, created_at, payload)
+         VALUES ('codex-session', 1, '2026-07-30', '{}');",
+    )
+    .execute(&legacy_pool)
+    .await
+    .unwrap();
+
+    super::super::bootstrap::migrate_agent_acp_providers(&legacy_pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO agent_acp_sessions
+             (id, connection_id, workspace_id, account_scope, provider, title,
+              lifecycle, created_at, updated_at)
+         VALUES
+             ('claude-session', 'connection-1', 'workspace-1', 'personal',
+              'claude', 'Claude session', 'starting', '2026-07-30', '2026-07-30')",
+    )
+    .execute(&legacy_pool)
+    .await
+    .unwrap();
+
+    let preserved_events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM agent_acp_events WHERE session_id = 'codex-session'",
+    )
+    .fetch_one(&legacy_pool)
+    .await
+    .unwrap();
+    assert_eq!(preserved_events, 1);
+    let event_parent: String =
+        sqlx::query_scalar("SELECT \"table\" FROM pragma_foreign_key_list('agent_acp_events')")
+            .fetch_one(&legacy_pool)
+            .await
+            .unwrap();
+    assert_eq!(event_parent, "agent_acp_sessions");
+}
+
 #[tokio::test]
 async fn remote_template_sync_preserves_member_local_credential_binding() {
     assert_legacy_sql_document_database_scope_migrates().await;
+    assert_legacy_agent_acp_provider_migrates().await;
     let pool = memory_pool().await;
     sqlx::raw_sql(migrations::SCHEMA)
         .execute(&pool)

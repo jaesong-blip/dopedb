@@ -711,7 +711,7 @@ CREATE TABLE IF NOT EXISTS agent_acp_sessions (
     connection_id  TEXT NOT NULL,
     workspace_id   TEXT NOT NULL,
     account_scope  TEXT NOT NULL,
-    provider       TEXT NOT NULL CHECK(provider IN ('codex')),
+    provider       TEXT NOT NULL CHECK(provider IN ('claude', 'codex')),
     title          TEXT NOT NULL,
     lifecycle      TEXT NOT NULL CHECK(lifecycle IN (
                        'starting', 'ready', 'running', 'waiting_permission',

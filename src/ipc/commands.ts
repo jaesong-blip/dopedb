@@ -46,6 +46,13 @@ export function skillStatus(target: SkillTargetSelection): Promise<SkillStatus> 
   return invoke("skill_status", { target });
 }
 
+export function installSkill(
+  target: SkillTargetSelection,
+  expected: SkillTargetExpectation[],
+): Promise<SkillMutationReceipt> {
+  return invoke("install_skill", { target, expected });
+}
+
 export function repairSkill(
   target: SkillTargetSelection,
   expected: SkillTargetExpectation[],

@@ -89,7 +89,7 @@
     },
     "src-tauri/src/store/tests/connections_scope.rs": {
       "tests": 4,
-      "protects": "Account isolation, credential binding, and scope ABA rejection"
+      "protects": "Account isolation, credential binding, scope ABA rejection, and ACP provider migration"
     },
     "tools/release-updater-verify/src/main.rs": {
       "tests": 4,

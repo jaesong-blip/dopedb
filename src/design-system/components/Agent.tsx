@@ -2,9 +2,32 @@
 // Protocol adapters provide semantic state and actions; these primitives own
 // repeated card geometry, spacing, and status treatment.
 import type { ReactNode } from "react";
+import ClaudeIcon from "@iconify-react/simple-icons/claude";
+import OpenAiIcon from "@iconify-react/simple-icons/openai";
 
 import { Icon } from "../../components/Icon";
 import { StatusDot, type StatusTone } from "./Status";
+
+export function AgentProviderMark({
+  provider,
+}: {
+  provider: "claude" | "codex";
+}) {
+  const ProviderIcon = provider === "claude" ? ClaudeIcon : OpenAiIcon;
+  return (
+    <span
+      className="tw:grid tw:size-4 tw:shrink-0 tw:place-items-center tw:text-foreground"
+      aria-hidden="true"
+    >
+      <ProviderIcon
+        width="1em"
+        height="1em"
+        className="tw:size-4"
+        focusable="false"
+      />
+    </span>
+  );
+}
 
 export function AgentToolCallCard({
   title,
@@ -20,7 +43,7 @@ export function AgentToolCallCard({
   details?: ReactNode;
 }) {
   return (
-    <section className="tw:ml-7 tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
+    <section className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
       <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
         <StatusDot tone={tone} />
         <strong className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-sm">
@@ -38,30 +61,37 @@ export function AgentPermissionCard({
   title,
   description,
   pending,
+  status,
   actions,
 }: {
   title: ReactNode;
   description: ReactNode;
   pending: boolean;
+  status?: ReactNode;
   actions: ReactNode;
 }) {
   return (
     <section
       data-pending={pending || undefined}
-      className="tw:grid tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3 tw:data-[pending=true]:border-warning"
+      className="tw:grid tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3"
     >
-      <div className="tw:flex tw:min-w-0 tw:items-start tw:gap-2">
+      <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
         <Icon
-          name={pending ? "alert" : "check"}
-          className="tw:mt-0.5 tw:shrink-0 tw:data-[pending=true]:text-warning"
+          name={pending ? "shield" : "check"}
+          className="tw:shrink-0 tw:data-[pending=true]:text-muted-foreground"
           data-pending={pending || undefined}
         />
-        <div className="tw:min-w-0">
-          <strong className="tw:block tw:text-sm">{title}</strong>
-          <span className="tw:block tw:text-xs tw:leading-body tw:text-muted-foreground">
-            {description}
+        <strong className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-sm">
+          {title}
+        </strong>
+        {status ? (
+          <span className="tw:shrink-0 tw:text-xs tw:text-muted-foreground">
+            {status}
           </span>
-        </div>
+        ) : null}
+      </div>
+      <div className="tw:text-sm tw:font-medium tw:leading-body">
+        {description}
       </div>
       {actions}
     </section>

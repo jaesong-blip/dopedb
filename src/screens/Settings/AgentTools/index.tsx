@@ -143,7 +143,7 @@ export default function AgentTools() {
       } else {
         receipt = await removeSkill(target, expected);
       }
-      queryClient.setQueryData(qk.skillStatus(), receipt.status);
+      await statusQ.refetch();
       for (const backup of receipt.backups) {
         toast(t("agentTools.backupCreated", { path: backup.path }));
       }

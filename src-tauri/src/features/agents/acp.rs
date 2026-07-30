@@ -564,6 +564,12 @@ impl AcpSession {
         summary.updated_at = Utc::now();
     }
 
+    fn clear_acp_session_id(&self) {
+        let mut summary = lock_unpoisoned(&self.summary);
+        summary.acp_session_id = None;
+        summary.updated_at = Utc::now();
+    }
+
     fn set_title_from_prompt(&self, prompt: &str) {
         let mut summary = lock_unpoisoned(&self.summary);
         if summary.title != "New Agent session" {
@@ -865,13 +871,22 @@ async fn run_session(
                     return Ok(());
                 }
                 let acp_session_id = SessionId::from(resume.acp_session_id);
-                let loaded = connection
+                let loaded = match connection
                     .send_request(LoadSessionRequest::new(
                         acp_session_id.clone(),
                         &launch.working_directory,
                     ))
                     .block_task()
-                    .await?;
+                    .await
+                {
+                    Ok(loaded) => loaded,
+                    Err(error) => {
+                        if resume_history_unavailable(&error.to_string()) {
+                            connection_session.clear_acp_session_id();
+                        }
+                        return Err(error);
+                    }
+                };
                 connection_session
                     .discard_replaced_history(resume.previous_last_sequence)
                     .await;
@@ -1409,6 +1424,12 @@ fn permission_kind(kind: PermissionOptionKind) -> &'static str {
 
 fn actionable_acp_error(provider: AgentProvider, message: &str) -> String {
     let lower = message.to_ascii_lowercase();
+    if resume_history_unavailable(&lower) {
+        return format!(
+            "This {} conversation is no longer available in the provider's local history. DopeDB kept the bounded transcript, but it cannot recreate the provider session. Start a new Agent session.",
+            provider_name(provider)
+        );
+    }
     if lower.contains("auth") || lower.contains("login") || lower.contains("unauthorized") {
         return match provider {
             AgentProvider::Claude => "Claude is not authenticated. Run `claude auth login` in a terminal, then start a new Agent session.".into(),
@@ -1420,6 +1441,17 @@ fn actionable_acp_error(provider: AgentProvider, message: &str) -> String {
             .into();
     }
     format!("{} ACP error: {message}", provider_name(provider))
+}
+
+fn resume_history_unavailable(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    let identifies_history =
+        lower.contains("rollout") || lower.contains("thread") || lower.contains("session");
+    let reports_missing = lower.contains("not found")
+        || lower.contains("no rollout found")
+        || lower.contains("does not exist")
+        || lower.contains("unknown session");
+    identifies_history && reports_missing
 }
 
 fn provider_name(provider: AgentProvider) -> &'static str {

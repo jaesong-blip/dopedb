@@ -234,7 +234,8 @@ Elevation은 세 단계만 허용한다.
   tree badge, grid header 밀도를 소유한다. feature가 trigger별 class map을
   만들거나 전역 `.btn`을 섞지 않는다.
 - `ToolWindowHeader`: Database Explorer, Agent, provider 패널의 고정 헤더와
-  우측 action 슬롯.
+  우측 action 슬롯. `divider={false}`는 DopeDB AI Chat처럼 header와 본문이
+  하나의 평면을 이루는 tool window에서만 하단 divider를 제거한다.
 - `ToolWindowSideSurface`: Explorer, Local History, Dashboard의 데스크톱
   left-anchor frame과 compact full-sheet/open state. feature CSS나 부모
   selector 없이 정적 Tailwind data variant로 같은 slide 동작을 공유한다.
@@ -245,7 +246,12 @@ Elevation은 세 단계만 허용한다.
   함께 소유한다. feature가 이미지 크기나 wrapper 크기를 다시 지정하지 않는다.
 - `ToolWindowComposer`, `ToolWindowComposerDock`, `ToolWindowComposerInput`,
   `ToolWindowComposerContext`: AI Chat의 multiline 입력면, 내부 context row와
-  외부 model/data-source row.
+  외부 Agent/model row. 입력면의 `expanded` 상태는 실제 확대·복원 action과
+  연결되고 `busy` 상태는 Agent가 응답·승인을 기다리는 동안 DopeDB의
+  활성 작업 경계를 유지한다. 화면별 textarea 크기 CSS를 만들지 않는다.
+- `AgentProviderMark`: AI Chat과 Agent 설치 흐름에서 Claude와 Codex를 구분하는
+  16px 단색 브랜드 마크. Iconify Simple Icons의 `claude`와 `openai` 정본을
+  로컬 번들로 사용하고 feature별 임시 SVG나 상태색 대용 브랜드색을 만들지 않는다.
 - `ToolbarMenu menuSize="scope"`: Explorer schema scope popover의 outer
   frame을 300px로 고정한다. feature child가 popover padding과 border를
   중복 계산하지 않는다.
@@ -333,6 +339,8 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
+  사용자 제공 `1385×918` AI Chat 상세 참조의 약 595px surface에 맞춰 desktop
+  선호 폭은 600px이고 `agentDockWidth`에 독립 저장한다.
   상태는 desktop 선호 폭을 소유하고 shell projection만 현재 viewport에 맞춰
   clamp한다. 따라서 compact viewport에서 처음 mount되거나 왕복해도 저장된
   desktop 폭과 다음 desktop projection은 변경되지 않는다.
@@ -349,7 +357,7 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   visible/filtered row count와 duration을 표시한다. DopeDB에 보인다는 이유만으로
   transaction, DDL, edit action을 handler 없이 추가하지 않는다.
 - AI Chat composer는 큰 multiline surface, 내부 context chip/action row,
-  외부 model/data-source context row의 세 층을 사용한다. 첨부 chip과 popup은
+  외부 Agent/model context row의 세 층을 사용한다. 첨부 chip과 popup은
   semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
   않는다. session 전용 tab action menu는 활성 session이 있을 때만 표시하며
   빈 AI Chat에 disabled kebab을 남기지 않는다.

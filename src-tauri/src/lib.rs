@@ -88,6 +88,7 @@ pub fn run() {
             commands::cli_installation_status,
             commands::install_cli,
             commands::skill_status,
+            commands::install_skill,
             commands::repair_skill,
             commands::remove_skill,
             commands::skill_self_test,

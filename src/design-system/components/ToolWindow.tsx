@@ -41,12 +41,17 @@ export function ToolWindowSideSurface({
 export function ToolWindowHeader({
   title,
   actions,
+  divider = true,
 }: {
   title: ReactNode;
   actions?: ReactNode;
+  divider?: boolean;
 }) {
   return (
-    <header className="tw:flex tw:h-[calc(var(--ds-tool-window-header-height)_-_1px)] tw:min-h-[calc(var(--ds-tool-window-header-height)_-_1px)] tw:shrink-0 tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-background tw:px-3 tw:text-ui">
+    <header
+      data-divider={divider || undefined}
+      className="tw:flex tw:h-[calc(var(--ds-tool-window-header-height)_-_1px)] tw:min-h-[calc(var(--ds-tool-window-header-height)_-_1px)] tw:shrink-0 tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:border-transparent tw:bg-background tw:px-3 tw:text-ui tw:data-[divider=true]:border-border-subtle"
+    >
       <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
         {title}
       </strong>
@@ -193,7 +198,7 @@ export function ToolWindowComposerDock({
   children: ReactNode;
 }) {
   return (
-    <div className="tw:mx-2 tw:flex tw:shrink-0 tw:flex-col">
+    <div className="tw:mx-3 tw:flex tw:shrink-0 tw:flex-col">
       {children}
     </div>
   );
@@ -201,11 +206,18 @@ export function ToolWindowComposerDock({
 
 export function ToolWindowComposer({
   children,
+  expanded = false,
+  busy = false,
   ...formProps
-}: FormHTMLAttributes<HTMLFormElement>) {
+}: FormHTMLAttributes<HTMLFormElement> & {
+  expanded?: boolean;
+  busy?: boolean;
+}) {
   return (
     <form
-      className="tw:relative tw:flex tw:min-h-[108px] tw:flex-col tw:rounded-md tw:border tw:border-input tw:bg-card tw:focus-within:border-ring"
+      data-expanded={expanded || undefined}
+      data-busy={busy || undefined}
+      className="tw:relative tw:flex tw:min-h-[108px] tw:flex-col tw:rounded-md tw:border tw:border-input tw:bg-background tw:focus-within:border-ring tw:data-[busy=true]:border-ring tw:data-[expanded=true]:min-h-[240px]"
       {...formProps}
     >
       {children}
@@ -218,7 +230,7 @@ export function ToolWindowComposerInput(
 ) {
   return (
     <textarea
-      className="tw:min-h-16 tw:w-full tw:flex-1 tw:resize-none tw:border-0 tw:bg-transparent tw:px-3 tw:py-2 tw:font-sans tw:text-sm tw:leading-body tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground"
+      className="tw:min-h-16 tw:w-full tw:flex-1 tw:resize-none tw:border-0 tw:bg-transparent tw:pt-3 tw:pr-10 tw:pb-2 tw:pl-3 tw:font-sans tw:text-sm tw:leading-body tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground"
       {...textareaProps}
     />
   );
@@ -230,7 +242,7 @@ export function ToolWindowComposerContext({
   children: ReactNode;
 }) {
   return (
-    <div className="tw:flex tw:h-control-md tw:shrink-0 tw:items-center tw:gap-1 tw:px-1">
+    <div className="tw:flex tw:h-control-md tw:shrink-0 tw:items-center tw:gap-1 tw:px-2">
       {children}
     </div>
   );

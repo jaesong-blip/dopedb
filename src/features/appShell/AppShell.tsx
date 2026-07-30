@@ -29,6 +29,7 @@ import {
 } from "../../features/connections/presets";
 import type { Dashboard } from "../../features/dashboards/domain";
 import { useQueryServices } from "../../features/queryServices/useQueryServices";
+import SkillStartupGate from "../../features/skills/SkillStartupGate";
 import type { SqlDocument } from "../../features/sqlDocuments/domain";
 import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
 import type { SqlResolveMode } from "../../features/queries/resolveMode";
@@ -1095,6 +1096,7 @@ function Shell() {
       onTerminalWidthChange={updateTerminalDockWidth}
       onCloseTerminal={closeTerminalDock}
       />
+      <SkillStartupGate />
       {searchEverywhereOpen ? (
         <SearchEverywhere
           items={searchEverywhereItems}

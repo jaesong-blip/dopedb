@@ -117,6 +117,80 @@ pub(super) async fn ensure_local_scope_indexes(pool: &SqlitePool) -> AppResult<(
     Ok(())
 }
 
+/// Expand the ACP session provider constraint introduced with the Codex-only
+/// preview. SQLite cannot alter a CHECK constraint in place, so rebuild the parent
+/// and its event child together while preserving both tables' rows and cascade.
+pub(super) async fn migrate_agent_acp_providers(pool: &SqlitePool) -> AppResult<()> {
+    let definition: Option<String> = sqlx::query_scalar(
+        "SELECT sql FROM sqlite_master
+         WHERE type = 'table' AND name = 'agent_acp_sessions'",
+    )
+    .fetch_optional(pool)
+    .await?;
+    if definition
+        .as_deref()
+        .is_some_and(|sql| sql.contains("'claude'"))
+    {
+        return Ok(());
+    }
+
+    let mut transaction = pool.begin().await?;
+    sqlx::raw_sql(
+        r#"
+        CREATE TABLE agent_acp_sessions_provider_migration (
+            id             TEXT PRIMARY KEY,
+            connection_id  TEXT NOT NULL,
+            workspace_id   TEXT NOT NULL,
+            account_scope  TEXT NOT NULL,
+            provider       TEXT NOT NULL CHECK(provider IN ('claude', 'codex')),
+            title          TEXT NOT NULL,
+            lifecycle      TEXT NOT NULL CHECK(lifecycle IN (
+                               'starting', 'ready', 'running', 'waiting_permission',
+                               'failed', 'closed'
+                           )),
+            acp_session_id TEXT,
+            error          TEXT,
+            created_at     TEXT NOT NULL,
+            updated_at     TEXT NOT NULL
+        );
+        INSERT INTO agent_acp_sessions_provider_migration
+            (id, connection_id, workspace_id, account_scope, provider, title,
+             lifecycle, acp_session_id, error, created_at, updated_at)
+        SELECT id, connection_id, workspace_id, account_scope, provider, title,
+               lifecycle, acp_session_id, error, created_at, updated_at
+        FROM agent_acp_sessions;
+
+        CREATE TABLE agent_acp_events_provider_migration (
+            session_id  TEXT NOT NULL
+                        REFERENCES agent_acp_sessions_provider_migration(id) ON DELETE CASCADE,
+            sequence    INTEGER NOT NULL CHECK(sequence > 0),
+            created_at  TEXT NOT NULL,
+            payload     TEXT NOT NULL CHECK(length(payload) <= 524288),
+            PRIMARY KEY(session_id, sequence)
+        );
+        INSERT INTO agent_acp_events_provider_migration
+            (session_id, sequence, created_at, payload)
+        SELECT session_id, sequence, created_at, payload
+        FROM agent_acp_events;
+
+        DROP TABLE agent_acp_events;
+        DROP TABLE agent_acp_sessions;
+        ALTER TABLE agent_acp_sessions_provider_migration
+            RENAME TO agent_acp_sessions;
+        ALTER TABLE agent_acp_events_provider_migration
+            RENAME TO agent_acp_events;
+        CREATE INDEX idx_agent_acp_sessions_scope
+            ON agent_acp_sessions(workspace_id, account_scope, updated_at DESC);
+        CREATE INDEX idx_agent_acp_events_session
+            ON agent_acp_events(session_id, sequence);
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(())
+}
+
 /// `schema_cache` used to have a connection-only primary key. Rebuild it once with
 /// a composite scope key so two accounts using the same shared template never reuse
 /// each other's catalog. No credential or remote payload is involved.
