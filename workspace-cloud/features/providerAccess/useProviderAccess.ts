@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
   canUseLocalProviderCredential,
-  emptyGcp,
   emptyNeon,
   providerImportDisplayName,
-  type GcpConfiguration,
+  type GcpSetupInstance,
+  type GcpSetupInventory,
   type Integration,
   type NeonConfiguration,
   type PendingProviderImport,
@@ -23,7 +23,10 @@ async function responseError(response: Response | null, fallback: string) {
   return typeof body?.error === "string" ? body.error : fallback;
 }
 
-export function useProviderAccess(workspaceId: string) {
+export function useProviderAccess(
+  workspaceId: string,
+  gcpSetupId: string | null = null,
+) {
   const [state, setField] = useProviderAccessState();
   const {
     providers,
@@ -36,7 +39,12 @@ export function useProviderAccess(workspaceId: string) {
     resourceOptions,
     setupProviderId,
     neonConfiguration,
-    gcpConfiguration,
+    gcpSetupInventory,
+    gcpSetupInstances,
+    selectedGcpProjectId,
+    selectedGcpInstanceId,
+    gcpProductionApproved,
+    gcpRestartApproved,
     loading,
     resourcePending,
     mutation,
@@ -52,12 +60,22 @@ export function useProviderAccess(workspaceId: string) {
   const setResourceOptions = setField("resourceOptions");
   const setSetupProviderId = setField("setupProviderId");
   const setNeonConfiguration = setField("neonConfiguration");
-  const setGcpConfiguration = setField("gcpConfiguration");
+  const setGcpSetupInventory = setField("gcpSetupInventory");
+  const setGcpSetupInstances = setField("gcpSetupInstances");
+  const setSelectedGcpProjectId = setField("selectedGcpProjectId");
+  const setSelectedGcpInstanceId = setField("selectedGcpInstanceId");
+  const setGcpProductionApproved = setField("gcpProductionApproved");
+  const setGcpRestartApproved = setField("gcpRestartApproved");
   const setLoading = setField("loading");
   const setResourcePending = setField("resourcePending");
   const setMutation = setField("mutation");
   const setError = setField("error");
   const pendingImportRef = useRef<PendingProviderImport | null>(null);
+  const pendingGcpTargetRef = useRef<{
+    integrationId: string;
+    projectId: string;
+    instanceId: string;
+  } | null>(null);
 
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
@@ -164,6 +182,189 @@ export function useProviderAccess(workspaceId: string) {
     return () => controller.abort();
   }, [load]);
 
+  useEffect(() => {
+    if (!gcpSetupId) {
+      setGcpSetupInventory(null);
+      setGcpSetupInstances([]);
+      return;
+    }
+    const controller = new AbortController();
+    setMutation("gcp:projects");
+    setError("");
+    void fetch(
+      `/api/v1/workspaces/${workspaceId}/provider-integrations/gcp-setup/${
+        gcpSetupId
+      }?kind=projects`,
+      { cache: "no-store", signal: controller.signal },
+    ).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(await responseError(
+          response,
+          "Google Cloud 프로젝트를 불러오지 못했습니다.",
+        ));
+      }
+      const body = await response.json().catch(() => null);
+      if (
+        typeof body?.account !== "string"
+        || typeof body?.expiresAt !== "string"
+        || !Array.isArray(body?.projects)
+      ) {
+        throw new Error("Google Cloud 프로젝트 응답 형식을 확인하지 못했습니다.");
+      }
+      setGcpSetupInventory(body as GcpSetupInventory);
+    }).catch((cause) => {
+      if (!controller.signal.aborted) {
+        setError(cause instanceof Error ? cause.message : "Google Cloud 연결을 시작하지 못했습니다.");
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setMutation("");
+    });
+    return () => controller.abort();
+  }, [gcpSetupId, workspaceId]);
+
+  async function selectGcpProject(projectId: string) {
+    if (!gcpSetupId || mutation) return;
+    setSelectedGcpProjectId(projectId);
+    setSelectedGcpInstanceId("");
+    setGcpSetupInstances([]);
+    setGcpProductionApproved(false);
+    setGcpRestartApproved(false);
+    if (!projectId) return;
+    setMutation("gcp:instances");
+    setError("");
+    try {
+      const query = new URLSearchParams({ kind: "instances", project: projectId });
+      const response = await fetch(
+        `/api/v1/workspaces/${workspaceId}/provider-integrations/gcp-setup/${
+          gcpSetupId
+        }?${query}`,
+        { cache: "no-store" },
+      ).catch(() => null);
+      if (!response?.ok) {
+        setError(await responseError(
+          response,
+          "Cloud SQL 인스턴스를 불러오지 못했습니다.",
+        ));
+        return;
+      }
+      const body = await response.json().catch(() => null);
+      if (!Array.isArray(body?.instances)) {
+        setError("Cloud SQL 인스턴스 응답 형식을 확인하지 못했습니다.");
+        return;
+      }
+      setGcpSetupInstances(body.instances as GcpSetupInstance[]);
+    } finally {
+      setMutation("");
+    }
+  }
+
+  function selectGcpInstance(instanceId: string) {
+    setSelectedGcpInstanceId(instanceId);
+    setGcpProductionApproved(false);
+    setGcpRestartApproved(false);
+  }
+
+  async function completeGcpSetup() {
+    if (!gcpSetupId || mutation || !gcpSetupInventory) return;
+    const project = gcpSetupInventory.projects.find(
+      (item) => item.id === selectedGcpProjectId,
+    );
+    const instance = gcpSetupInstances.find(
+      (item) => item.id === selectedGcpInstanceId,
+    );
+    if (
+      !project
+      || !instance
+      || !instance.ready
+      || instance.production === "unknown"
+      || (instance.production && !gcpProductionApproved)
+      || (!instance.iamAuthenticationEnabled && !gcpRestartApproved)
+    ) {
+      setError("Cloud SQL 대상과 필요한 승인을 확인하세요.");
+      return;
+    }
+    setMutation("gcp:bootstrap");
+    setError("");
+    try {
+      const bootstrapResponse = await fetch(
+        `/api/v1/workspaces/${workspaceId}/provider-integrations/gcp-setup/${
+          gcpSetupId
+        }`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: project.id,
+            projectNumber: project.number,
+            instanceId: instance.id,
+            approveProduction: gcpProductionApproved,
+            approveInstanceRestart: gcpRestartApproved,
+          }),
+        },
+      ).catch(() => null);
+      if (!bootstrapResponse?.ok) {
+        setError(await responseError(
+          bootstrapResponse,
+          "Google Cloud 자동 설정을 완료하지 못했습니다.",
+        ));
+        return;
+      }
+      const bootstrap = await bootstrapResponse.json().catch(() => null);
+      if (
+        typeof bootstrap?.bootstrapTicket !== "string"
+        || bootstrap.bootstrapTicket.length < 80
+      ) {
+        setError("Google Cloud 자동 설정 결과를 확인하지 못했습니다.");
+        return;
+      }
+      const integrationResponse = await fetch(
+        `/api/v1/workspaces/${workspaceId}/provider-integrations`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            provider: "gcpCloudSql",
+            setupId: gcpSetupId,
+            bootstrapTicket: bootstrap.bootstrapTicket,
+          }),
+        },
+      ).catch(() => null);
+      if (!integrationResponse?.ok) {
+        setError(await responseError(
+          integrationResponse,
+          "Google Cloud 연결을 저장하지 못했습니다.",
+        ));
+        return;
+      }
+      const integrationBody = await integrationResponse.json().catch(() => null);
+      const integrationId = typeof integrationBody?.integration?.id === "string"
+        ? integrationBody.integration.id
+        : "";
+      if (!integrationId) {
+        setError("저장된 Google Cloud 연결을 확인하지 못했습니다.");
+        return;
+      }
+      pendingGcpTargetRef.current = {
+        integrationId,
+        projectId: project.id,
+        instanceId: instance.id,
+      };
+      setGcpSetupInventory(null);
+      setGcpSetupInstances([]);
+      setSelectedGcpProjectId("");
+      setSelectedGcpInstanceId("");
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete("provider");
+      nextUrl.searchParams.delete("status");
+      nextUrl.searchParams.delete("gcpSetup");
+      window.history.replaceState({}, "", nextUrl);
+      await load();
+      setSelectedIntegrationId(integrationId);
+    } finally {
+      setMutation("");
+    }
+  }
+
   const discover = useCallback(async (
     level: ResourceLevel,
     integrationId: string,
@@ -201,8 +402,60 @@ export function useProviderAccess(workspaceId: string) {
     }
     const controller = new AbortController();
     resetResources();
-    void discover(first, selectedIntegrationId, {}, controller.signal).then((rows) => {
-      if (rows) setResourceOptions({ [first.key]: rows });
+    void discover(first, selectedIntegrationId, {}, controller.signal).then(async (rows) => {
+      if (!rows || controller.signal.aborted) return;
+      setResourceOptions({ [first.key]: rows });
+      const pending = pendingGcpTargetRef.current;
+      if (
+        selectedProvider.id !== "gcpCloudSql"
+        || pending?.integrationId !== selectedIntegrationId
+      ) {
+        return;
+      }
+      const project = rows.find((item) => item.value === pending.projectId);
+      const instanceLevel = selectedProvider.resourceLevels[1];
+      const databaseLevel = selectedProvider.resourceLevels[2];
+      if (!project) {
+        pendingGcpTargetRef.current = null;
+        return;
+      }
+      const projectSelection = { [first.key]: pending.projectId };
+      setSelection(projectSelection);
+      const instances = await discover(
+        instanceLevel,
+        selectedIntegrationId,
+        projectSelection,
+        controller.signal,
+      );
+      if (!instances || controller.signal.aborted) return;
+      setResourceOptions((current) => ({
+        ...current,
+        [instanceLevel.key]: instances,
+      }));
+      const instance = instances.find(
+        (item) => item.value === pending.instanceId,
+      );
+      if (!instance) {
+        pendingGcpTargetRef.current = null;
+        return;
+      }
+      const instanceSelection = {
+        ...projectSelection,
+        [instanceLevel.key]: pending.instanceId,
+      };
+      setSelection(instanceSelection);
+      const databases = await discover(
+        databaseLevel,
+        selectedIntegrationId,
+        instanceSelection,
+        controller.signal,
+      );
+      if (!databases || controller.signal.aborted) return;
+      setResourceOptions((current) => ({
+        ...current,
+        [databaseLevel.key]: databases,
+      }));
+      pendingGcpTargetRef.current = null;
     });
     return () => controller.abort();
   }, [
@@ -239,7 +492,6 @@ export function useProviderAccess(workspaceId: string) {
         return;
       }
       setNeonConfiguration(emptyNeon);
-      setGcpConfiguration(emptyGcp);
       setSetupProviderId("");
       resetResources();
       await load();
@@ -255,7 +507,6 @@ export function useProviderAccess(workspaceId: string) {
     }
     const next = setupProviderId === provider.id ? "" : provider.id;
     if (next !== "neon") setNeonConfiguration(emptyNeon);
-    if (next !== "gcpCloudSql") setGcpConfiguration(emptyGcp);
     setSetupProviderId(next);
     setError("");
   }
@@ -332,8 +583,7 @@ export function useProviderAccess(workspaceId: string) {
 
   async function importDiscoveredResource() {
     if (
-      !selectedConnection
-      || !selectedIntegration
+      !selectedIntegration
       || !selectedProvider
       || mutation
     ) return;
@@ -350,19 +600,21 @@ export function useProviderAccess(workspaceId: string) {
       || finalResource.ready !== true
     ) return;
     const productionApproved = finalResource.production === true;
-    const connectionId = selectedConnection.credentialMode === "member_local"
-      ? selectedConnection.id
-      : null;
-    const name = connectionId
-      ? selectedConnection.name
+    const replacementConnection =
+      selectedConnection?.credentialMode === "member_local"
+        ? selectedConnection
+        : null;
+    const connectionId = replacementConnection?.id ?? null;
+    const name = replacementConnection
+      ? replacementConnection.name
       : providerImportDisplayName(selectedProvider.name, finalResource.name);
     if (!name) return;
     const confirmation = productionApproved
       ? `경고: ${finalResource.name}은 운영 데이터베이스로 분류되었습니다. `
         + "실행 중인 쿼리는 실제 운영 데이터에 영향을 줄 수 있습니다. "
         + "관리형 읽기 전용 연결로 전환하고 이 승인을 감사 기록에 남길까요?"
-      : connectionId
-        ? `${selectedConnection.name} 연결을 ${finalResource.name} 관리형 대상으로 전환할까요? `
+      : replacementConnection
+        ? `${replacementConnection.name} 연결을 ${finalResource.name} 관리형 대상으로 전환할까요? `
           + "연결 ID와 대시보드 참조는 유지되고, 기존 구성원별 비밀번호는 더 이상 사용하지 않습니다."
         : null;
     if (confirmation && !window.confirm(confirmation)) return;
@@ -500,7 +752,13 @@ export function useProviderAccess(workspaceId: string) {
     resourceOptions,
     setupProvider,
     neonConfiguration,
-    gcpConfiguration,
+    gcpSetupId,
+    gcpSetupInventory,
+    gcpSetupInstances,
+    selectedGcpProjectId,
+    selectedGcpInstanceId,
+    gcpProductionApproved,
+    gcpRestartApproved,
     loading,
     resourcePending,
     mutation,
@@ -513,12 +771,16 @@ export function useProviderAccess(workspaceId: string) {
     mayUseLocalProviderCredential,
     willReplaceConnection,
     beginConnect,
+    completeGcpSetup,
     connect,
     disconnect,
     importDiscoveredResource,
     resetResources,
     selectResource,
-    setGcpConfiguration,
+    selectGcpInstance,
+    selectGcpProject,
+    setGcpProductionApproved,
+    setGcpRestartApproved,
     setNeonConfiguration,
     setSelectedConnectionId,
     setSelectedIntegrationId,

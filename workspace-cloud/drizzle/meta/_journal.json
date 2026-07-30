@@ -92,6 +92,13 @@
       "when": 1785124140088,
       "tag": "0012_jittery_hitman",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785422875490,
+      "tag": "0013_vengeful_talkback",
+      "breakpoints": true
     }
   ]
 }

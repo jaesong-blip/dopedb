@@ -1,7 +1,7 @@
 // Workspace provider integration inventory and OAuth initiation. Secret material is
 // omitted by explicit projection and OAuth state is single-use, hashed server data.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
 import {
@@ -40,16 +40,21 @@ import {
   validateGcpCloudSqlCredential,
   vercelOidcToken,
 } from "../../../../../../lib/providers/gcp-cloud-sql";
+import {
+  gcpCloudAuthorizationUrl,
+} from "../../../../../../lib/providers/gcp-cloud-oauth";
 import { ProviderRequestError } from "../../../../../../lib/providers/provider-types";
 import {
   type NeonCredential,
 } from "../../../../../../lib/providers/neon-core";
 import {
+  openProviderBootstrapTicket,
   openProviderCredential,
   sealProviderCredential,
 } from "../../../../../../lib/secret-envelope";
 import {
   providerOauthState,
+  providerSetupSession,
   workspaceConnection,
   workspaceProviderIntegration,
   workspaceProviderPrincipalClaim,
@@ -157,6 +162,8 @@ export async function POST(request: Request, context: RouteContext) {
   const body = (await request.json().catch(() => null)) as {
     provider?: unknown;
     configuration?: unknown;
+    setupId?: unknown;
+    bootstrapTicket?: unknown;
   } | null;
   if (
     body?.provider !== "planetScale"
@@ -167,7 +174,10 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    if (body.provider === "planetScale") {
+    if (
+      body.provider === "planetScale"
+      || (body.provider === "gcpCloudSql" && body.bootstrapTicket === undefined)
+    ) {
       const state = randomBytes(32).toString("base64url");
       const stateHash = createHash("sha256").update(state).digest("base64url");
       await db.delete(providerOauthState)
@@ -175,11 +185,15 @@ export async function POST(request: Request, context: RouteContext) {
       await db.insert(providerOauthState).values({
         organizationId: workspaceId,
         userId: authorization.session.user.id,
-        provider: "planetScale",
+        provider: body.provider,
         stateHash,
         expiresAt: new Date(Date.now() + 10 * 60 * 1_000),
       });
-      return privateJson({ authorizationUrl: planetScaleAuthorizationUrl(state) });
+      return privateJson({
+        authorizationUrl: body.provider === "planetScale"
+          ? planetScaleAuthorizationUrl(state)
+          : gcpCloudAuthorizationUrl(state),
+      });
     }
 
     let credential: NeonCredential | ReturnType<typeof parseGcpCloudSqlCredential>;
@@ -191,6 +205,7 @@ export async function POST(request: Request, context: RouteContext) {
       | ReturnType<typeof gcpCloudSqlIntegrationIdentity>
       | null = null;
     let localVerificationTarget: GcpLocalVerificationTarget | null = null;
+    let production: boolean | null = null;
     if (body.provider === "neon") {
       const configuration = body.configuration as Record<string, unknown> | null;
       const apiKey = typeof configuration?.apiKey === "string"
@@ -216,10 +231,43 @@ export async function POST(request: Request, context: RouteContext) {
       displayName = info.displayName;
       grantedScope = `projects:${info.projectCount}:${info.scopeFingerprint.slice(0, 16)}`;
     } else {
+      if (
+        typeof body.setupId !== "string"
+        || !isUuid(body.setupId)
+        || typeof body.bootstrapTicket !== "string"
+        || body.bootstrapTicket.length < 80
+        || body.bootstrapTicket.length > 8_192
+      ) {
+        return jsonError("A completed Google Cloud setup is required", 400);
+      }
+      const setup = await db.query.providerSetupSession.findFirst({
+        where: and(
+          eq(providerSetupSession.id, body.setupId),
+          eq(providerSetupSession.organizationId, workspaceId),
+          eq(providerSetupSession.userId, authorization.session.user.id),
+          eq(providerSetupSession.provider, "gcpCloudSql"),
+          gt(providerSetupSession.expiresAt, new Date()),
+          isNull(providerSetupSession.consumedAt),
+        ),
+        columns: { id: true },
+      });
+      if (!setup) {
+        return jsonError("Google Cloud setup session expired", 410);
+      }
       try {
-        credential = parseGcpCloudSqlCredential(body.configuration);
+        const ticket = openProviderBootstrapTicket<{
+          configuration?: unknown;
+          production?: unknown;
+        }>(body.setupId, body.bootstrapTicket);
+        credential = parseGcpCloudSqlCredential(
+          ticket.configuration,
+        );
+        if (typeof ticket.production !== "boolean") {
+          throw new Error("missing production classification");
+        }
+        production = ticket.production;
       } catch {
-        return jsonError("Invalid GCP trust configuration", 400);
+        return jsonError("Invalid Google Cloud setup ticket", 400);
       }
       const oidcToken = vercelOidcToken(request);
       if (!oidcToken) {
@@ -482,6 +530,7 @@ export async function POST(request: Request, context: RouteContext) {
       principalClaims: provider === "gcpCloudSql" && gcpIdentity
         ? gcpCloudSqlPrincipalClaims(gcpIdentity)
         : [],
+      production,
     }).catch(async (error) => {
       if (reconnectClaim) {
         await releaseRevocationGateClaim(reconnectClaim).catch(() => false);
@@ -498,6 +547,17 @@ export async function POST(request: Request, context: RouteContext) {
           : "Workspace access denied",
         existing ? 409 : 403,
       );
+    }
+    if (provider === "gcpCloudSql" && typeof body.setupId === "string") {
+      await db.update(providerSetupSession)
+        .set({ consumedAt: now })
+        .where(and(
+          eq(providerSetupSession.id, body.setupId),
+          eq(providerSetupSession.organizationId, workspaceId),
+          eq(providerSetupSession.userId, authorization.session.user.id),
+          isNull(providerSetupSession.consumedAt),
+        ))
+        .catch(() => undefined);
     }
     return privateJson({
       integration: {

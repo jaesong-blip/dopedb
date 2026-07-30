@@ -471,6 +471,36 @@ export const providerOauthState = workspaceControl.table(
   ],
 );
 
+// A provider setup token exists only long enough to discover and bootstrap one
+// cloud target. The OAuth access token is envelope-encrypted and never returned.
+export const providerSetupSession = workspaceControl.table(
+  "provider_setup_session",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    userId: text("user_id").notNull().references(() => user.id, {
+      onDelete: "cascade",
+    }),
+    provider: text("provider").notNull(),
+    encryptedCredential: text("encrypted_credential").notNull(),
+    accountLabel: text("account_label").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("provider_setup_session_scope_idx").on(
+      table.organizationId,
+      table.userId,
+      table.provider,
+    ),
+    index("provider_setup_session_expiry_idx").on(table.expiresAt),
+    check("provider_setup_session_provider", sql`${table.provider} = 'gcpCloudSql'`),
+  ],
+);
+
 // Shared connection rows are deliberately templates, not credentials. There is no
 // username, password, token, certificate, connection URL, or local secret reference
 // column in this table, so those values cannot be uploaded accidentally by the API.

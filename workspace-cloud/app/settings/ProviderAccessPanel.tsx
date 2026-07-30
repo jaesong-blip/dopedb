@@ -2,6 +2,7 @@
 
 import { ProviderIntegrationList } from "../../features/providerAccess/ProviderIntegrationList";
 import { ProviderResourcePicker } from "../../features/providerAccess/ProviderResourcePicker";
+import { GcpCloudSetup } from "../../features/providerAccess/GcpCloudSetup";
 import { useProviderAccess } from "../../features/providerAccess/useProviderAccess";
 
 export {
@@ -12,10 +13,12 @@ export {
 
 export function ProviderAccessPanel({
   workspaceId,
+  gcpSetupId = null,
 }: {
   workspaceId: string;
+  gcpSetupId?: string | null;
 }) {
-  const controller = useProviderAccess(workspaceId);
+  const controller = useProviderAccess(workspaceId, gcpSetupId);
 
   return (
     <section className="provider-access-panel">
@@ -32,6 +35,7 @@ export function ProviderAccessPanel({
       ) : (
         <>
           <ProviderIntegrationList controller={controller} />
+          <GcpCloudSetup controller={controller} />
           <ProviderResourcePicker controller={controller} />
         </>
       )}

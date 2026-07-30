@@ -57,6 +57,7 @@ export type PersistProviderIntegrationInput = {
   existing?: ProviderIntegrationGeneration;
   reconnectClaimId?: string;
   principalClaims: ProviderPrincipalClaim[];
+  production: boolean | null;
 };
 
 function validLocalVerificationTarget(
@@ -245,7 +246,10 @@ export async function persistProviderIntegration(
       SELECT mutation."organization_id", ${input.authority.userId},
              'provider.connect', 'provider_integration', mutation."id"::text,
              jsonb_build_object(
-               'provider', ${input.provider}, 'revokedLeases', ${input.revokedLeases}
+               'provider', ${input.provider},
+               'revokedLeases', ${input.revokedLeases},
+               'production', ${input.production},
+               'productionApproved', ${input.production === true}
              ), ${input.requestId}::uuid
       FROM mutation
       RETURNING "resource_id"

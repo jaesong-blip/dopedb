@@ -99,27 +99,26 @@ export type NeonConfiguration = {
   organizationId: string;
 };
 
-export type GcpConfiguration = {
-  projectId: string;
-  projectNumber: string;
-  workloadIdentityPoolId: string;
-  workloadIdentityProviderId: string;
-  instanceId: string;
-  readServiceAccountEmail: string;
-  writeServiceAccountEmail: string;
-  dedicatedServiceAccountsConfirmed: boolean;
-  instanceScopedIamConfirmed: boolean;
+export type GcpSetupProject = {
+  id: string;
+  number: string;
+  name: string;
+};
+
+export type GcpSetupInstance = {
+  id: string;
+  name: string;
+  engine: "postgres" | "mysql";
+  region: string;
+  ready: boolean;
+  production: boolean | "unknown";
+  iamAuthenticationEnabled: boolean;
+};
+
+export type GcpSetupInventory = {
+  account: string;
+  expiresAt: string;
+  projects: GcpSetupProject[];
 };
 
 export const emptyNeon: NeonConfiguration = { apiKey: "", organizationId: "" };
-export const emptyGcp: GcpConfiguration = {
-  projectId: "",
-  projectNumber: "",
-  workloadIdentityPoolId: "",
-  workloadIdentityProviderId: "",
-  instanceId: "",
-  readServiceAccountEmail: "",
-  writeServiceAccountEmail: "",
-  dedicatedServiceAccountsConfirmed: false,
-  instanceScopedIamConfirmed: false,
-};

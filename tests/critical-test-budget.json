@@ -15,7 +15,7 @@
     },
     "src/features/providers/tauriAdapter.test.ts": {
       "tests": 4,
-      "protects": "Provider authority receipts and legacy identity rejection"
+      "protects": "Provider authority receipts, legacy identity rejection, and keyless GCP bootstrap boundaries"
     },
     "src/features/queries/tauriAdapter.test.ts": {
       "tests": 13,

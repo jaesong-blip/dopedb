@@ -17,6 +17,14 @@ function context(integrationId: string) {
   return `dopedb:provider-integration:${integrationId}`;
 }
 
+function setupContext(setupSessionId: string) {
+  return `dopedb:provider-setup:${setupSessionId}`;
+}
+
+function bootstrapContext(setupSessionId: string) {
+  return `dopedb:provider-bootstrap:${setupSessionId}`;
+}
+
 export function sealProviderCredential(integrationId: string, value: unknown): string {
   return sealEnvelope(key(), JSON.stringify(value), context(integrationId));
 }
@@ -29,4 +37,31 @@ export function openProviderCredential<T>(integrationId: string, envelope: strin
     // JavaScript strings cannot be reliably zeroized. Keep the plaintext lifetime
     // inside this narrow function and never retain or log it outside typed callers.
   }
+}
+
+export function sealProviderSetupCredential(setupSessionId: string, value: unknown): string {
+  return sealEnvelope(key(), JSON.stringify(value), setupContext(setupSessionId));
+}
+
+export function openProviderSetupCredential<T>(
+  setupSessionId: string,
+  envelope: string,
+): T {
+  const plaintext = openEnvelope(key(), envelope, setupContext(setupSessionId));
+  return JSON.parse(plaintext) as T;
+}
+
+export function sealProviderBootstrapTicket(
+  setupSessionId: string,
+  value: unknown,
+): string {
+  return sealEnvelope(key(), JSON.stringify(value), bootstrapContext(setupSessionId));
+}
+
+export function openProviderBootstrapTicket<T>(
+  setupSessionId: string,
+  envelope: string,
+): T {
+  const plaintext = openEnvelope(key(), envelope, bootstrapContext(setupSessionId));
+  return JSON.parse(plaintext) as T;
 }

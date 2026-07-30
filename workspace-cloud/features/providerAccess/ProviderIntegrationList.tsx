@@ -12,12 +12,10 @@ export function ProviderIntegrationList({
     integrations,
     setupProvider,
     neonConfiguration,
-    gcpConfiguration,
     mutation,
     beginConnect,
     connect,
     disconnect,
-    setGcpConfiguration,
     setNeonConfiguration,
   } = controller;
 
@@ -111,122 +109,6 @@ export function ProviderIntegrationList({
           </label>
           <button type="submit" disabled={mutation !== ""}>
             검증 후 연결
-          </button>
-        </form>
-      ) : null}
-
-      {setupProvider?.id === "gcpCloudSql" ? (
-        <form
-          className="provider-setup-form gcp"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void connect(setupProvider, gcpConfiguration);
-          }}
-        >
-          <p className="provider-setup-note">
-            서비스 계정 키 대신{" "}
-            <a
-              href="https://vercel.com/docs/oidc/gcp"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Vercel OIDC·GCP WIF
-            </a>
-            를 먼저 설정하세요.
-          </p>
-          {(
-            [
-              ["projectId", "프로젝트 ID", "my-project-123"],
-              ["projectNumber", "프로젝트 번호", "123456789012"],
-              ["workloadIdentityPoolId", "WIF 풀 ID", "vercel-prod"],
-              [
-                "workloadIdentityProviderId",
-                "WIF 공급자 ID",
-                "dopedb-app",
-              ],
-              ["instanceId", "전용 Cloud SQL 인스턴스 ID", "prod-db"],
-              [
-                "readServiceAccountEmail",
-                "읽기 서비스 계정",
-                "dopedb-read@...",
-              ],
-              [
-                "writeServiceAccountEmail",
-                "쓰기 서비스 계정 · 선택",
-                "dopedb-write@...",
-              ],
-            ] as const
-          ).map(([key, label, placeholder]) => (
-            <label key={key}>
-              <span>{label}</span>
-              <input
-                type={key.includes("Email") ? "email" : "text"}
-                value={gcpConfiguration[key]}
-                onChange={(event) =>
-                  setGcpConfiguration({
-                    ...gcpConfiguration,
-                    [key]: event.target.value,
-                  })
-                }
-                placeholder={placeholder}
-                required={key !== "writeServiceAccountEmail"}
-              />
-            </label>
-          ))}
-          <p className="provider-setup-note">
-            두 서비스 계정의 <code>roles/cloudsql.instanceUser</code> 및{" "}
-            <code>roles/cloudsql.client</code>, 읽기 계정의{" "}
-            <code>roles/cloudsql.viewer</code> 바인딩은
-            <code>
-              resource.name == &apos;projects/
-              {gcpConfiguration.projectId || "PROJECT_ID"}/instances/
-              {gcpConfiguration.instanceId || "INSTANCE_ID"}&apos; &amp;&amp;
-              resource.service == &apos;sqladmin.googleapis.com&apos;
-            </code>{" "}
-            조건으로 제한하세요. DopeDB는 impersonation과 대상 인스턴스는
-            확인하지만 IAM 정책 조건식과 DB 내부 GRANT 전체를 대신 감사할
-            수는 없습니다.
-          </p>
-          <label className="provider-confirmation">
-            <input
-              type="checkbox"
-              checked={gcpConfiguration.dedicatedServiceAccountsConfirmed}
-              onChange={(event) =>
-                setGcpConfiguration({
-                  ...gcpConfiguration,
-                  dedicatedServiceAccountsConfirmed: event.target.checked,
-                })
-              }
-              required
-            />
-            <span>
-              인스턴스 전용 서비스 계정
-              <small>
-                이 계정들을 다른 Cloud SQL 인스턴스에서 재사용하지 않습니다.
-              </small>
-            </span>
-          </label>
-          <label className="provider-confirmation">
-            <input
-              type="checkbox"
-              checked={gcpConfiguration.instanceScopedIamConfirmed}
-              onChange={(event) =>
-                setGcpConfiguration({
-                  ...gcpConfiguration,
-                  instanceScopedIamConfirmed: event.target.checked,
-                })
-              }
-              required
-            />
-            <span>
-              인스턴스 범위 IAM Condition
-              <small>
-                위 조건을 관련 Instance User·Viewer 바인딩에 적용했습니다.
-              </small>
-            </span>
-          </label>
-          <button type="submit" disabled={mutation !== ""}>
-            설정 확인 후 연결
           </button>
         </form>
       ) : null}

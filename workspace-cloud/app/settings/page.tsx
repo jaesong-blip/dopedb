@@ -24,6 +24,7 @@ export default async function SettingsPage({
     workspace?: string | string[];
     provider?: string | string[];
     status?: string | string[];
+    gcpSetup?: string | string[];
   }>;
 }) {
   const params = await searchParams;
@@ -31,6 +32,12 @@ export default async function SettingsPage({
     typeof params.workspace === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.workspace)
       ? params.workspace
+      : null;
+  const requestedGcpSetupId =
+    typeof params.gcpSetup === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      .test(params.gcpSetup)
+      ? params.gcpSetup
       : null;
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
@@ -93,6 +100,12 @@ export default async function SettingsPage({
         {params.provider === "planetScale" && params.status === "failed" ? (
           <p className="console-notice error" role="alert">PlanetScale 연결을 완료하지 못했습니다. 권한과 서버 설정을 확인한 뒤 다시 시도하세요.</p>
         ) : null}
+        {params.provider === "gcpCloudSql" && params.status === "authorised" ? (
+          <p className="console-notice success">Google 계정이 승인되었습니다. 아래에서 프로젝트와 Cloud SQL 인스턴스를 선택하세요.</p>
+        ) : null}
+        {params.provider === "gcpCloudSql" && params.status === "failed" ? (
+          <p className="console-notice error" role="alert">Google Cloud 승인을 완료하지 못했습니다. 계정과 OAuth 권한을 확인한 뒤 다시 시도하세요.</p>
+        ) : null}
         <section id="workspaces" className="console-section">
           <div className="section-heading"><div><span>01</span><h2>Workspaces</h2></div><p>Better Auth Organization 멤버십이 권한 경계를 관리합니다.</p></div>
           <div className="workspace-grid">
@@ -115,7 +128,14 @@ export default async function SettingsPage({
                   <>
                     <WorkspaceAccessPanel workspaceId={workspace.id} />
                     <ConnectionAccessPanel workspaceId={workspace.id} />
-                    <ProviderAccessPanel workspaceId={workspace.id} />
+                    <ProviderAccessPanel
+                      workspaceId={workspace.id}
+                      gcpSetupId={
+                        workspace.id === focusedWorkspaceId
+                          ? requestedGcpSetupId
+                          : null
+                      }
+                    />
                   </>
                 ) : null}
               </article>

@@ -179,6 +179,7 @@ export async function GET(request: Request) {
       existing,
       reconnectClaimId: reconnectClaim?.claimId ?? supersededDisconnectClaimId,
       principalClaims: [],
+      production: null,
     }).catch(async (error) => {
       if (reconnectClaim) await releaseRevocationGateClaim(reconnectClaim).catch(() => false);
       throw error;

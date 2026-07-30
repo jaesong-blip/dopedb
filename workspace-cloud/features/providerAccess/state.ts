@@ -5,7 +5,8 @@ import {
 } from "react";
 
 import type {
-  GcpConfiguration,
+  GcpSetupInstance,
+  GcpSetupInventory,
   Integration,
   ManagedConnection,
   NeonConfiguration,
@@ -13,7 +14,7 @@ import type {
   Resource,
   SharedConnection,
 } from "./domain";
-import { emptyGcp, emptyNeon } from "./domain";
+import { emptyNeon } from "./domain";
 
 export type ProviderAccessState = {
   providers: Provider[];
@@ -26,7 +27,12 @@ export type ProviderAccessState = {
   resourceOptions: Record<string, Resource[]>;
   setupProviderId: string;
   neonConfiguration: NeonConfiguration;
-  gcpConfiguration: GcpConfiguration;
+  gcpSetupInventory: GcpSetupInventory | null;
+  gcpSetupInstances: GcpSetupInstance[];
+  selectedGcpProjectId: string;
+  selectedGcpInstanceId: string;
+  gcpProductionApproved: boolean;
+  gcpRestartApproved: boolean;
   loading: boolean;
   resourcePending: boolean;
   mutation: string;
@@ -52,7 +58,12 @@ export const initialProviderAccessState: ProviderAccessState = {
   resourceOptions: {},
   setupProviderId: "",
   neonConfiguration: emptyNeon,
-  gcpConfiguration: emptyGcp,
+  gcpSetupInventory: null,
+  gcpSetupInstances: [],
+  selectedGcpProjectId: "",
+  selectedGcpInstanceId: "",
+  gcpProductionApproved: false,
+  gcpRestartApproved: false,
   loading: true,
   resourcePending: false,
   mutation: "",

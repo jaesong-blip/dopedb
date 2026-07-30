@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import adapterSource from "./tauriAdapter.ts?raw";
+import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
+import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
+import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -130,7 +133,7 @@ describe("provider credential Tauri adapter", () => {
     await expect(listProviderCredentialBindings()).rejects.toThrow("Invalid provider binding state");
   });
 
-  it("uses the production payload builder to prohibit legacy begin identity fields", () => {
+  it("prohibits legacy provider identity and manual GCP trust input", () => {
     const payload = beginProviderCredentialBindingPayload({
       integrationId: providerIntegrationId(integrationId),
       credential: { type: "gcpAdc" },
@@ -143,5 +146,17 @@ describe("provider credential Tauri adapter", () => {
       adapterSource.indexOf("export async function listProviderIntegrations"),
     );
     expect(beginSource).not.toMatch(/\b(integrationGeneration|bindingId|kind)\b/);
+    expect(providerIntegrationRouteSource).toContain("openProviderBootstrapTicket");
+    expect(providerIntegrationRouteSource).not.toContain(
+      "parseGcpCloudSqlCredential(body.configuration)",
+    );
+    expect(gcpSetupSource).toContain("자동 설정하고 연결");
+    expect(gcpSetupSource).not.toMatch(
+      /workloadIdentityPoolId|workloadIdentityProviderId|readServiceAccountEmail/,
+    );
+    expect(gcpBootstrapSource).toContain("verifyVercelOidcToken");
+    expect(gcpBootstrapSource).toContain("roles/iam.workloadIdentityUser");
+    expect(gcpBootstrapSource).toContain("configureDatabasePrivileges");
+    expect(gcpBootstrapSource).toContain("Temporary Cloud SQL privilege bootstrap cleanup failed");
   });
 });

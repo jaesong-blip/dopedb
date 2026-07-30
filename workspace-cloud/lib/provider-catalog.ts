@@ -80,13 +80,13 @@ export const providerCatalog: readonly ProviderDescriptor[] = [
     leaseSeconds: 15 * 60,
     supportsReadOnly: true,
     supportsReadWrite: true,
-    setupKind: "cloudTrust",
+    setupKind: "oauth",
     resourceLevels: [
       { key: "project", kind: "projects", label: "프로젝트" },
       { key: "instance", kind: "instances", label: "인스턴스" },
       { key: "database", kind: "databases", label: "DB" },
     ],
-    note: "Vercel OIDC·Workload Identity Federation으로 15분 IAM 로그인을 발급합니다.",
+    note: "Google 로그인 후 프로젝트와 인스턴스만 선택하면 15분 IAM 접근을 자동 구성합니다.",
   },
   {
     id: "oracleOci",
