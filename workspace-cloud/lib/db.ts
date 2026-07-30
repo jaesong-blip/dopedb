@@ -17,8 +17,9 @@ function createDb() {
   return drizzle({ client: neonSql, schema });
 }
 
-// Neon HTTP supports a non-interactive multi-statement transaction.  Use it for
-// commands whose second statement must observe locks acquired by the first.
+// Neon HTTP batches are available, but drizzle-orm's callback transaction API is
+// unsupported by this driver. Atomic multi-statement flows must use the underlying
+// Neon transaction/batch API or one conditional SQL statement.
 export const neonSql = globalForDb.workspaceNeonSql ?? createNeonSql();
 if (process.env.NODE_ENV !== "production") globalForDb.workspaceNeonSql = neonSql;
 export const db = globalForDb.workspaceDb ?? createDb();

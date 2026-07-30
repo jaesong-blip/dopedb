@@ -4,7 +4,9 @@ import { NextResponse } from "next/server";
 export function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const isKorean =
-    request.nextUrl.pathname === "/ko" || request.nextUrl.searchParams.get("lang") === "ko";
+    request.nextUrl.pathname === "/ko"
+    || request.nextUrl.pathname.startsWith("/ko/")
+    || request.nextUrl.searchParams.get("lang") === "ko";
 
   requestHeaders.set("x-site-lang", isKorean ? "ko" : "en");
 
@@ -16,5 +18,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/ko"],
+  matcher: ["/", "/ko", "/privacy", "/ko/privacy", "/terms", "/ko/terms"],
 };

@@ -16,6 +16,7 @@ import {
 } from "../schema";
 import { authorizeWorkspace } from "../workspace-authorization";
 import { exchangeGcpCloudCode } from "./gcp-cloud-oauth";
+import { ProviderRequestError } from "./provider-types";
 
 function settingsUrl(workspaceId: string | null, setupId?: string) {
   const target = new URL("/settings", env.appOrigin());
@@ -76,6 +77,11 @@ export async function gcpCloudSetupCallbackResponse(request: Request) {
   if (!authorization.ok || authorization.session.user.id !== session.user.id) {
     return Response.redirect(settingsUrl(oauthState.organizationId));
   }
+  let stage:
+    | "token_exchange"
+    | "credential_sealing"
+    | "expired_session_cleanup"
+    | "setup_session_insert" = "token_exchange";
   try {
     const credential = await exchangeGcpCloudCode(code);
     const setupId = crypto.randomUUID();
@@ -83,23 +89,41 @@ export async function gcpCloudSetupCallbackResponse(request: Request) {
       Date.parse(credential.expiresAt),
       Date.now() + 10 * 60 * 1_000,
     ));
-    await db.transaction(async (tx) => {
-      await tx.delete(providerSetupSession).where(lt(
-        providerSetupSession.expiresAt,
-        new Date(),
-      ));
-      await tx.insert(providerSetupSession).values({
-        id: setupId,
-        organizationId: oauthState.organizationId,
-        userId: session.user.id,
-        provider: "gcpCloudSql",
-        encryptedCredential: sealProviderSetupCredential(setupId, credential),
-        accountLabel: credential.email,
-        expiresAt,
-      });
+    stage = "credential_sealing";
+    const encryptedCredential = sealProviderSetupCredential(setupId, credential);
+    // Expired rows cannot be consumed because every reader checks expiresAt. Cleanup
+    // is independent housekeeping and must not use the callback transaction API,
+    // which drizzle-orm's neon-http driver deliberately does not support.
+    stage = "expired_session_cleanup";
+    await db.delete(providerSetupSession).where(lt(
+      providerSetupSession.expiresAt,
+      new Date(),
+    ));
+    stage = "setup_session_insert";
+    await db.insert(providerSetupSession).values({
+      id: setupId,
+      organizationId: oauthState.organizationId,
+      userId: session.user.id,
+      provider: "gcpCloudSql",
+      encryptedCredential,
+      accountLabel: credential.email,
+      expiresAt,
     });
     return Response.redirect(settingsUrl(oauthState.organizationId, setupId));
-  } catch {
+  } catch (error) {
+    console.error("gcp_cloud_setup_callback_failed", {
+      stage,
+      error: error instanceof ProviderRequestError
+        ? {
+            name: error.name,
+            provider: error.provider,
+            status: error.status,
+            message: error.message,
+          }
+        : {
+            name: error instanceof Error ? error.name : "UnknownError",
+          },
+    });
     return Response.redirect(settingsUrl(oauthState.organizationId));
   }
 }

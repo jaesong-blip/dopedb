@@ -18,6 +18,14 @@ const nextConfig = {
         source: "/ko",
         destination: "/?lang=ko",
       },
+      {
+        source: "/ko/privacy",
+        destination: "/privacy?lang=ko",
+      },
+      {
+        source: "/ko/terms",
+        destination: "/terms?lang=ko",
+      },
     ];
   },
   async redirects() {

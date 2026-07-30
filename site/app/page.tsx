@@ -653,6 +653,20 @@ export default async function Home({ searchParams }: HomeProps) {
           })}
         </div>
       </section>
+      <footer className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-4 tw:border-t tw:border-line tw:bg-paper-raised tw:px-[clamp(18px,4vw,56px)] tw:py-6 tw:text-sm tw:text-muted">
+        <span>© 2026 DopeDB</span>
+        <nav
+          aria-label={lang === "ko" ? "법적 고지" : "Legal"}
+          className="tw:flex tw:flex-wrap tw:items-center tw:gap-5"
+        >
+          <a className="tw:font-semibold tw:text-ink-soft" href={lang === "ko" ? "/ko/privacy" : "/privacy"}>
+            {lang === "ko" ? "개인정보처리방침" : "Privacy"}
+          </a>
+          <a className="tw:font-semibold tw:text-ink-soft" href={lang === "ko" ? "/ko/terms" : "/terms"}>
+            {lang === "ko" ? "서비스 이용약관" : "Terms"}
+          </a>
+        </nav>
+      </footer>
     </main>
   );
 }
