@@ -99,7 +99,7 @@ export function discoveredProviderResource(input: {
   selection: Record<string, string>;
   item: ProviderResourceItem;
 }) {
-  if (!allowDiscoveryImport(input.item)) return null;
+  if (!allowDiscoveryImport(input.provider, input.item)) return null;
   const engine = input.item.kind ?? input.selection.engine;
   let resource: ManagedProviderResource;
   if (input.provider === "planetScale" && input.kind === "branches") {
@@ -123,6 +123,7 @@ export function discoveredProviderResource(input: {
       database: input.item.value,
       engine,
       networkMode: input.selection.networkMode || "PRIVATE_SERVICES_ACCESS",
+      production: input.item.production,
     });
   } else {
     return null;

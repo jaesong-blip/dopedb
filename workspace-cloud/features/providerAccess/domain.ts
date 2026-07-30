@@ -51,7 +51,10 @@ export function selectableProviderResources(
 ) {
   return items.filter((item) => (
     (!item.kind || supportedEngines.includes(item.kind))
-    && (!isFinalLeaf || (item.ready === true && item.production === false))
+    && (!isFinalLeaf || (
+      item.ready === true
+      && (item.production === false || item.production === true)
+    ))
   ));
 }
 
@@ -78,6 +81,7 @@ export function canUseLocalProviderCredential(
 
 export type PendingProviderImport = {
   integrationId: string;
+  connectionId: string | null;
   receipt: string;
   name: string;
   body: string;

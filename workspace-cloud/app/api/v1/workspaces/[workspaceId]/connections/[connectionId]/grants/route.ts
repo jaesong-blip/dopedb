@@ -1,6 +1,6 @@
 // Per-template grant administration. Workspace membership is necessary but never
 // sufficient for target-database access; every mutation rechecks the live grant.
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../../../../../../../../lib/db";
 import { env } from "../../../../../../../../lib/env";
 import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../../../lib/http";
@@ -12,7 +12,11 @@ import {
   renewRevocationGateClaim,
   revocationGateLockKey,
 } from "../../../../../../../../lib/revocation-gates";
-import { member } from "../../../../../../../../lib/schema";
+import {
+  member,
+  user,
+  workspaceConnectionGrant,
+} from "../../../../../../../../lib/schema";
 import { authorizeWorkspaceConnection } from "../../../../../../../../lib/workspace-authorization";
 
 type RouteContext = { params: Promise<{ workspaceId: string; connectionId: string }> };
@@ -35,6 +39,44 @@ function memberGateKey(workspaceId: string, userId: string, memberId: string) {
   });
 }
 
+export async function GET(request: Request, context: RouteContext) {
+  const { workspaceId, connectionId } = await context.params;
+  if (!isUuid(workspaceId) || !isUuid(connectionId)) {
+    return jsonError("Invalid workspace or connection id", 400);
+  }
+  const authorization = await liveManageGrant(request, workspaceId, connectionId);
+  if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const grants = await db.select({
+    memberId: member.id,
+    userId: member.userId,
+    name: user.name,
+    email: user.email,
+    role: member.role,
+    capability: workspaceConnectionGrant.capability,
+  }).from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .leftJoin(
+      workspaceConnectionGrant,
+      and(
+        eq(workspaceConnectionGrant.organizationId, member.organizationId),
+        eq(workspaceConnectionGrant.connectionId, connectionId),
+        eq(workspaceConnectionGrant.memberId, member.id),
+      ),
+    )
+    .where(and(
+      eq(member.organizationId, workspaceId),
+      isNull(member.revocationPendingAt),
+      isNull(member.revocationClaimId),
+    ))
+    .orderBy(asc(user.name), asc(user.email));
+  return privateJson({
+    workspaceId,
+    connectionId,
+    actorMemberId: authorization.membership.id,
+    grants,
+  });
+}
+
 export async function POST(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) return jsonError("Invalid request origin", 403);
   const { workspaceId, connectionId } = await context.params;
@@ -46,6 +88,12 @@ export async function POST(request: Request, context: RouteContext) {
   const authorization = await liveManageGrant(request, workspaceId, connectionId);
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const capability = body.capability as GrantCapability;
+  if (
+    body.memberId === authorization.membership.id
+    && capability !== "manage"
+  ) {
+    return jsonError("A manager cannot reduce their own connection grant", 409);
+  }
   const result = await db.execute<{ capability: GrantCapability }>(sql`
     WITH lock_keys AS MATERIALIZED (
       SELECT ${memberGateKey(

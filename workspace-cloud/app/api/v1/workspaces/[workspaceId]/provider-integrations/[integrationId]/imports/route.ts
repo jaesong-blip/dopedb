@@ -28,13 +28,22 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Workspace access denied", 403);
   }
   const body = await request.json().catch(() => null) as {
-    receipt?: unknown; idempotencyKey?: unknown; name?: unknown;
+    connectionId?: unknown;
+    receipt?: unknown;
+    idempotencyKey?: unknown;
+    name?: unknown;
+    productionApproved?: unknown;
   } | null;
   const name = importName(body?.name);
+  const connectionId = body?.connectionId === null || body?.connectionId === undefined
+    ? null
+    : body.connectionId;
   if (
     !body || typeof body.receipt !== "string" || !isUuid(body.receipt)
+    || (connectionId !== null && (typeof connectionId !== "string" || !isUuid(connectionId)))
     || typeof body.idempotencyKey !== "string"
     || !/^[A-Za-z0-9_-]{16,128}$/.test(body.idempotencyKey)
+    || typeof body.productionApproved !== "boolean"
     || !name
   ) {
     return jsonError("A discovery receipt, idempotency key, and valid name are required", 400);
@@ -44,7 +53,9 @@ export async function POST(request: Request, context: RouteContext) {
     integrationId,
     receiptId: body.receipt,
     idempotencyKey: body.idempotencyKey,
+    connectionId,
     name,
+    productionApproved: body.productionApproved,
     authority: {
       sessionId: authorization.session.session.id,
       userId: authorization.session.user.id,
@@ -63,5 +74,5 @@ export async function POST(request: Request, context: RouteContext) {
   }
   return privateJson({
     connection: publicConnection(result.connection, authorization.role, authorization.accessMode),
-  }, { status: 201 });
+  }, { status: connectionId ? 200 : 201 });
 }

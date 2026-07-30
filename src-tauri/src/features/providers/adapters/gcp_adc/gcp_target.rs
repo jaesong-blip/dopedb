@@ -26,6 +26,7 @@ pub(crate) struct GcpConnectSettings {
     pub(crate) port: u16,
     pub(crate) sslmode: String,
     pub(crate) server_ca_pem: String,
+    pub(crate) instance_connection_name: String,
 }
 
 fn blocked() -> AppError {
@@ -115,7 +116,9 @@ pub(crate) async fn resolve_connect_settings(
     {
         return Err(blocked());
     }
-    validate_cloud_sql_response(&target, &read_bounded_response(proof).await?)?;
+    let proof_body = read_bounded_response(proof).await?;
+    validate_cloud_sql_response(&target, &proof_body)?;
+    let instance_connection_name = instance_connection_name(&target, &proof_body)?;
     let response = client
         .get(url)
         .bearer_auth(std::str::from_utf8(token).map_err(|_| blocked())?)
@@ -133,6 +136,7 @@ pub(crate) async fn resolve_connect_settings(
         engine,
         network_mode,
         &read_bounded_response(response).await?,
+        instance_connection_name,
     )
 }
 
@@ -197,6 +201,7 @@ pub(super) fn parse_connect_settings(
     engine: Engine,
     network_mode: GcpCloudSqlNetworkMode,
     body: &[u8],
+    instance_connection_name: String,
 ) -> AppResult<GcpConnectSettings> {
     if body.len() > MAX_RESPONSE_BYTES || body.contains(&0) {
         return Err(blocked());
@@ -252,7 +257,40 @@ pub(super) fn parse_connect_settings(
             }
         },
         server_ca_pem: ca,
+        instance_connection_name,
     })
+}
+
+fn instance_connection_name(
+    target: &GcpCloudSqlVerificationTarget,
+    body: &[u8],
+) -> AppResult<String> {
+    let value: Value = serde_json::from_slice(body).map_err(|_| blocked())?;
+    let connection_name = value
+        .as_object()
+        .and_then(|object| object.get("connectionName"))
+        .and_then(Value::as_str)
+        .ok_or_else(blocked)?;
+    let mut segments = connection_name.split(':');
+    let (Some(project), Some(region), Some(instance), None) = (
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+    ) else {
+        return Err(blocked());
+    };
+    if project != target.project_id
+        || instance != target.instance_id
+        || region.is_empty()
+        || region.len() > 100
+        || !region
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err(blocked());
+    }
+    Ok(connection_name.to_owned())
 }
 
 fn matches_engine(value: Option<&str>, engine: Engine) -> bool {

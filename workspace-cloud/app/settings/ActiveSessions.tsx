@@ -17,13 +17,22 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [needsReauthentication, setNeedsReauthentication] = useState(false);
 
   async function refresh() {
     const result = await authClient.listSessions();
     if (result.error) {
-      setError(result.error.message ?? "세션을 불러오지 못했습니다.");
+      const sessionNotFresh =
+        result.error.code === "SESSION_NOT_FRESH"
+        || result.error.message === "Session is not fresh";
+      setNeedsReauthentication(sessionNotFresh);
+      setError(sessionNotFresh
+        ? "보안을 위해 활성 세션 목록은 다시 로그인한 뒤 확인할 수 있습니다. 워크스페이스와 연결 설정 저장에는 영향이 없습니다."
+        : result.error.message ?? "세션을 불러오지 못했습니다.");
       return;
     }
+    setNeedsReauthentication(false);
+    setError("");
     setSessions(result.data ?? []);
   }
 
@@ -43,6 +52,20 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
     }
     await refresh();
     setPending(null);
+  }
+
+  async function reauthenticate() {
+    if (pending) return;
+    setPending("reauthenticate");
+    setError("");
+    const returnTo = `${location.pathname}${location.search}`;
+    const result = await authClient.signOut();
+    if (result.error) {
+      setPending(null);
+      setError(result.error.message ?? "로그아웃하지 못했습니다.");
+      return;
+    }
+    location.assign(`/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
   return (
@@ -67,7 +90,21 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
         );
       })}
       {sessions.length === 0 && !error ? <p className="device-empty">활성 세션을 확인하고 있습니다…</p> : null}
-      {error ? <p className="device-error" role="alert">{error}</p> : null}
+      {error ? (
+        <div className="tw:flex tw:min-h-control-field tw:items-center tw:justify-between tw:gap-3 tw:px-1 tw:py-4" role="alert">
+          <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-danger">{error}</p>
+          {needsReauthentication ? (
+            <button
+              className="tw:h-control-sm tw:flex-none tw:border tw:border-primary tw:bg-transparent tw:px-3 tw:text-2xs tw:font-bold tw:text-foreground tw:hover:bg-surface-raised tw:disabled:cursor-wait tw:disabled:opacity-[var(--ds-disabled-opacity)]"
+              type="button"
+              onClick={() => void reauthenticate()}
+              disabled={pending !== null}
+            >
+              {pending === "reauthenticate" ? "로그아웃 중…" : "로그아웃 후 다시 로그인"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

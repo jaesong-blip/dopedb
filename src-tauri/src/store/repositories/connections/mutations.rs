@@ -236,6 +236,38 @@ impl Store {
         }
 
         for (profile, revision) in connections {
+            if profile.credential_mode == WorkspaceCredentialMode::Managed {
+                let secret_refs: Vec<String> = sqlx::query_scalar(
+                    "SELECT secret_ref FROM workspace_connection_bindings
+                     WHERE connection_id = ?1 AND secret_ref IS NOT NULL",
+                )
+                .bind(profile.id.to_string())
+                .fetch_all(&mut *tx)
+                .await?;
+                for secret_ref in secret_refs {
+                    match Uuid::parse_str(&secret_ref) {
+                        Ok(credential_id) => {
+                            removed_credential_ids.insert(credential_id);
+                        }
+                        Err(error) => tracing::warn!(
+                            connection_id = %profile.id,
+                            %error,
+                            "ignored an invalid shared credential reference during managed migration"
+                        ),
+                    }
+                }
+                sqlx::query(
+                    "UPDATE workspace_connection_bindings
+                     SET username = '', extra_params = '{}', secret_ref = NULL,
+                         revision = revision + 1, updated_at = ?2
+                     WHERE connection_id = ?1
+                       AND (username <> '' OR extra_params <> '{}' OR secret_ref IS NOT NULL)",
+                )
+                .bind(profile.id.to_string())
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
+            }
             sqlx::query(
                 r#"INSERT INTO connections
                     (id, name, engine, provider, driver_id, host, port, db_name, username,

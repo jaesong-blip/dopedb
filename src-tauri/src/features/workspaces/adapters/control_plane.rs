@@ -50,7 +50,7 @@ use provider_local_target::provider_local_target;
 const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
 const DESKTOP_CLIENT_ID: &str = "dopedb-desktop";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
-const MANAGED_LEASE_CONTRACT: &str = "access-v1";
+const MANAGED_LEASE_CONTRACT: &str = "access-v2";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -137,12 +137,12 @@ struct AuthorizedConnectionResponse {
     revision: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct ManagedLeaseResponse {
     lease: RemoteManagedLease,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RemoteManagedLease {
     id: String,
@@ -155,8 +155,18 @@ struct RemoteManagedLease {
     password: String,
     sslmode: String,
     tls_server_ca_pem: Option<String>,
+    connector: Option<RemoteManagedConnector>,
     access_mode: String,
     expires_at: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteManagedConnector {
+    kind: String,
+    instance_connection_name: String,
+    access_token: String,
+    network_mode: String,
 }
 
 pub(crate) struct ManagedConnectionLease {
@@ -164,6 +174,7 @@ pub(crate) struct ManagedConnectionLease {
     pub profile: ConnectionProfile,
     pub secret: Zeroizing<String>,
     pub valid_for: Duration,
+    pub cloud_sql_proxy: Option<crate::connection::CloudSqlProxyConfig>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -326,6 +337,7 @@ impl RemoteConnectionAuthorityPort for HostedWorkspaceControlPlane {
                 profile: lease.profile,
                 secret: lease.secret,
                 valid_for: lease.valid_for,
+                cloud_sql_proxy: lease.cloud_sql_proxy,
             })
         })
     }

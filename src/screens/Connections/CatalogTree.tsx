@@ -8,7 +8,10 @@ import type {
   CatalogOverview,
   CatalogTable,
 } from "../../ipc/types";
-import type { ConnectionProfile } from "../../features/connections/domain";
+import type {
+  ConnectionAccessIssue,
+  ConnectionProfile,
+} from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
 import { TreeSectionButton } from "../../design-system/components/TreeControls";
 import { LoadingLabel } from "../../design-system/components/Status";
@@ -36,6 +39,7 @@ import { filterCatalog } from "../../features/catalogExplorer/scopeFilter";
 
 type Props = {
   connection: ConnectionProfile;
+  accessIssue?: ConnectionAccessIssue;
   selected: boolean;
   selectedTableKey: string | null;
   overview?: CatalogOverview;
@@ -52,6 +56,7 @@ type Props = {
   onOpenTable: (table: CatalogTable) => void;
   onRequestDetails: () => void;
   onRetryOverview: () => void;
+  onResolveAccess?: () => void;
   onToggleRelationSection: (key: string) => void;
   onToggleObjectSection: (kind: string) => void;
   revealRequest: number;
@@ -73,6 +78,7 @@ export default function CatalogTree(props: Props) {
     useState<Set<string>>(() => new Set());
   const {
     connection,
+    accessIssue,
     selected,
     selectedTableKey,
     overview,
@@ -762,6 +768,29 @@ export default function CatalogTree(props: Props) {
       ref={treeRef}
       className="tw:flex tw:flex-col tw:gap-px tw:pt-1 tw:pr-0 tw:pb-2 tw:pl-3"
     >
+      {accessIssue ? (
+        <div className="tw:grid tw:gap-1 tw:px-2 tw:py-2 tw:text-sm">
+          <strong className="tw:text-foreground">
+            {accessIssue === "grant"
+              ? t("workspace.connectionUseRequired")
+              : t("workspace.credentialsRequiredTitle")}
+          </strong>
+          <span className="tw:text-xs tw:leading-body tw:text-muted-foreground">
+            {accessIssue === "grant"
+              ? t("workspace.connectionUseRequiredBody")
+              : t("workspace.credentialsRequiredBody")}
+          </span>
+          {accessIssue === "credentials" && props.onResolveAccess ? (
+            <button
+              type="button"
+              className="tw:mt-1 tw:w-fit tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:font-sans tw:text-xs tw:text-foreground tw:hover:border-ring"
+              onClick={props.onResolveAccess}
+            >
+              {t("workspace.bindCredentialsShort")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {error ? (
         <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-danger">
           <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
@@ -790,7 +819,7 @@ export default function CatalogTree(props: Props) {
           </button>
         </div>
       ) : null}
-      {!catalog && !error && (
+      {!catalog && !error && !accessIssue && (
         <div className="tw:px-2 tw:py-1 tw:text-sm">
           <LoadingLabel>{t("connections.loadingSchema")}</LoadingLabel>
         </div>

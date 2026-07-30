@@ -23,6 +23,7 @@ export function ProviderResourcePicker({
     resourceComplete,
     currentResourceLabel,
     mayUseLocalProviderCredential,
+    willReplaceConnection,
     importDiscoveredResource,
     resetResources,
     selectResource,
@@ -34,7 +35,7 @@ export function ProviderResourcePicker({
   return (
     <div className="managed-access-flow">
       <label>
-        <span>1 · 공유 연결</span>
+        <span>1 · 전환할 공유 연결</span>
         <select
           value={selectedConnectionId}
           onChange={(event) => {
@@ -136,8 +137,12 @@ export function ProviderResourcePicker({
       </div>
       <div className="managed-access-actions ds-control-row">
         <p>
-          {currentResourceLabel
+          {!selectedIntegration
+            ? "상단에서 GCP Cloud SQL, Neon 또는 PlanetScale 공급자 연결을 먼저 완료하세요. 이 선택기는 연결 주소 편집이 아니라 관리형 접근 전환에 사용됩니다."
+            : currentResourceLabel
             ? `현재 ${currentResourceLabel}에 자동 연결됩니다.`
+            : willReplaceConnection
+              ? "선택한 공유 연결의 ID와 대시보드는 유지하고, 구성원별 비밀번호를 단기 관리형 접근으로 교체합니다."
             : selectedConnection?.allowWrites
               ? "멤버 RBAC에 따라 읽기 또는 읽기·쓰기 권한을 발급합니다."
               : "이 연결은 모든 구성원에게 읽기 전용 자격증명만 발급합니다."}
@@ -172,8 +177,14 @@ export function ProviderResourcePicker({
             onClick={() => void importDiscoveredResource()}
           >
             {mutation.startsWith("import:")
-              ? "가져오는 중"
-              : "읽기 전용 연결 가져오기"}
+              ? willReplaceConnection
+                ? "전환하는 중"
+                : "가져오는 중"
+              : !selectedIntegration
+                ? "공급자 연결 필요"
+              : willReplaceConnection
+                ? "선택 연결을 관리형으로 전환"
+                : "읽기 전용 연결 가져오기"}
           </button>
         </div>
       </div>

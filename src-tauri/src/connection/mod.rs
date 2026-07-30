@@ -3,6 +3,7 @@
 //! tuning. Long-lived local credentials live only in the OS credential store; managed
 //! credentials are short-lived process-memory leases. The CLI sees connection ids only.
 
+mod cloud_sql_proxy;
 pub mod keychain;
 pub mod pool;
 mod provider_local;
@@ -11,6 +12,7 @@ mod remote_authority;
 mod runtime;
 pub(crate) mod ssh;
 
+pub(crate) use cloud_sql_proxy::CloudSqlProxyConfig;
 pub use keychain::{delete_secret, fetch_secret, store_secret};
 pub use pool::{DbPool, LiveConnection};
 pub(crate) use provider_local::{
@@ -78,12 +80,7 @@ pub fn fetch_profile_secret(profile: &ConnectionProfile) -> AppResult<String> {
         None if profile.workspace_access == WorkspaceConnectionAccess::Local => {
             return Ok(String::new())
         }
-        None => {
-            return Err(AppError::NotFound(format!(
-                "no credential binding for shared connection {}",
-                profile.id
-            )))
-        }
+        None => return Err(AppError::CredentialBindingRequired),
     };
     fetch_secret(&secret_id)
 }

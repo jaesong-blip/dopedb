@@ -339,21 +339,31 @@ pub(super) async fn issue_managed_connection_lease(
         .map_err(|error| request_error("reading managed database access", error))?
         .lease;
     let secret = Zeroizing::new(std::mem::take(&mut lease.password));
+    let connector = lease.connector.take();
     let lease_id = Uuid::parse_str(&lease.id)
         .map_err(|_| AppError::Network("managed database access returned an invalid id".into()))?;
     let provider = crate::store::parse_provider(lease.provider)?;
     let engine = crate::store::parse_engine(lease.engine)?;
     let valid_provider_tls = match provider {
         Provider::Neon | Provider::PlanetScale => {
-            lease.sslmode == "verify-full" && lease.tls_server_ca_pem.is_none()
+            lease.sslmode == "verify-full"
+                && lease.tls_server_ca_pem.is_none()
+                && connector.is_none()
         }
         Provider::GcpCloudSql => {
             matches!(lease.sslmode.as_str(), "verify-ca" | "verify-full")
-                && lease.tls_server_ca_pem.as_ref().is_some_and(|pem| {
-                    pem.len() <= 64 * 1024
-                        && pem.starts_with("-----BEGIN CERTIFICATE-----")
-                        && pem.trim_end().ends_with("-----END CERTIFICATE-----")
-                        && !pem.contains('\0')
+                && lease.tls_server_ca_pem.is_none()
+                && connector.as_ref().is_some_and(|connector| {
+                    connector.kind == "gcpCloudSqlAuthProxy"
+                        && !connector.instance_connection_name.is_empty()
+                        && connector.instance_connection_name.len() <= 300
+                        && !connector.access_token.is_empty()
+                        && connector.access_token.len() <= 64 * 1024
+                        && !connector.access_token.chars().any(char::is_whitespace)
+                        && matches!(
+                            connector.network_mode.as_str(),
+                            "PUBLIC" | "PRIVATE_SERVICES_ACCESS" | "PRIVATE_SERVICE_CONNECT"
+                        )
                 })
         }
         Provider::Auto | Provider::Generic => false,
@@ -404,6 +414,19 @@ pub(super) async fn issue_managed_connection_lease(
             .insert("sslrootcert_pem".into(), ca);
     }
     leased_profile.secret_ref = None;
+    let cloud_sql_proxy = connector.map(|mut connector| {
+        let network_mode = match connector.network_mode.as_str() {
+            "PUBLIC" => GcpCloudSqlNetworkMode::Public,
+            "PRIVATE_SERVICES_ACCESS" => GcpCloudSqlNetworkMode::PrivateServicesAccess,
+            "PRIVATE_SERVICE_CONNECT" => GcpCloudSqlNetworkMode::PrivateServiceConnect,
+            _ => unreachable!("managed connector network mode was validated"),
+        };
+        crate::connection::CloudSqlProxyConfig {
+            instance_connection_name: connector.instance_connection_name,
+            access_token: Zeroizing::new(std::mem::take(&mut connector.access_token)),
+            network_mode,
+        }
+    });
     tracing::debug!(
         connection_id = %profile.id,
         lease_id = %lease_id,
@@ -415,6 +438,7 @@ pub(super) async fn issue_managed_connection_lease(
         profile: leased_profile,
         secret,
         valid_for: Duration::from_secs(valid_seconds as u64),
+        cloud_sql_proxy,
     })
 }
 

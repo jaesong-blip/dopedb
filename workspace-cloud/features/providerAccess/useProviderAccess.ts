@@ -87,12 +87,17 @@ export function useProviderAccess(workspaceId: string) {
       pending
       && (
         pending.integrationId !== selectedIntegrationId
+        || pending.connectionId !== (
+          selectedConnection?.credentialMode === "member_local"
+            ? selectedConnection.id
+            : null
+        )
         || pending.receipt !== importReceipt
       )
     ) {
       pendingImportRef.current = null;
     }
-  }, [importReceipt, selectedIntegrationId]);
+  }, [importReceipt, selectedConnection, selectedIntegrationId]);
 
   const resetResources = useCallback(() => {
     pendingImportRef.current = null;
@@ -326,21 +331,41 @@ export function useProviderAccess(workspaceId: string) {
   }
 
   async function importDiscoveredResource() {
-    if (!selectedIntegration || !selectedProvider || mutation) return;
+    if (
+      !selectedConnection
+      || !selectedIntegration
+      || !selectedProvider
+      || mutation
+    ) return;
     const finalLevel = selectedProvider.resourceLevels.at(-1)!;
     const finalResource = resourceOptions[finalLevel.key]?.find(
       (item) => item.value === selection[finalLevel.key],
     );
     if (
       !finalResource?.selectionProof
-      || finalResource.production !== false
+      || (
+        finalResource.production !== false
+        && finalResource.production !== true
+      )
       || finalResource.ready !== true
     ) return;
-    const name = providerImportDisplayName(
-      selectedProvider.name,
-      finalResource.name,
-    );
+    const productionApproved = finalResource.production === true;
+    const connectionId = selectedConnection.credentialMode === "member_local"
+      ? selectedConnection.id
+      : null;
+    const name = connectionId
+      ? selectedConnection.name
+      : providerImportDisplayName(selectedProvider.name, finalResource.name);
     if (!name) return;
+    const confirmation = productionApproved
+      ? `경고: ${finalResource.name}은 운영 데이터베이스로 분류되었습니다. `
+        + "실행 중인 쿼리는 실제 운영 데이터에 영향을 줄 수 있습니다. "
+        + "관리형 읽기 전용 연결로 전환하고 이 승인을 감사 기록에 남길까요?"
+      : connectionId
+        ? `${selectedConnection.name} 연결을 ${finalResource.name} 관리형 대상으로 전환할까요? `
+          + "연결 ID와 대시보드 참조는 유지되고, 기존 구성원별 비밀번호는 더 이상 사용하지 않습니다."
+        : null;
+    if (confirmation && !window.confirm(confirmation)) return;
     setMutation(`import:${selectedIntegration.id}`);
     setError("");
     try {
@@ -395,18 +420,22 @@ export function useProviderAccess(workspaceId: string) {
       if (
         !pending
         || pending.integrationId !== selectedIntegration.id
+        || pending.connectionId !== connectionId
         || pending.receipt !== receipt
         || pending.name !== name
       ) {
         const idempotencyKey = crypto.randomUUID();
         pending = {
           integrationId: selectedIntegration.id,
+          connectionId,
           receipt,
           name,
           body: JSON.stringify({
+            connectionId,
             receipt,
             idempotencyKey,
             name,
+            productionApproved,
           }),
         };
         pendingImportRef.current = pending;
@@ -458,6 +487,8 @@ export function useProviderAccess(workspaceId: string) {
     selectedConnection,
     currentManagedConnection,
   );
+  const willReplaceConnection =
+    selectedConnection?.credentialMode === "member_local";
 
   return {
     providers,
@@ -480,6 +511,7 @@ export function useProviderAccess(workspaceId: string) {
     resourceComplete,
     currentResourceLabel,
     mayUseLocalProviderCredential,
+    willReplaceConnection,
     beginConnect,
     connect,
     disconnect,

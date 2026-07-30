@@ -41,8 +41,10 @@ function integrationLock(input: { organizationId: string; integrationId: string 
  */
 function lockAndRevalidate(tx: TransactionSql, input: {
   organizationId: string; integrationId: string; receiptId: string;
-  idempotencyKey: string; authority: ProviderImportAuthority;
+  idempotencyKey: string; connectionId: string | null;
+  authority: ProviderImportAuthority;
 }) {
+  const replacing = input.connectionId !== null;
   return tx`
     WITH member_lock AS MATERIALIZED (
       SELECT pg_advisory_xact_lock(hashtextextended(${memberLock(input)}, 0))
@@ -99,18 +101,70 @@ function lockAndRevalidate(tx: TransactionSql, input: {
         0
       ))
       FROM receipt_scope
+    ), target_scope AS MATERIALIZED (
+      -- Replacing a shared template preserves its UUID and every dashboard/grant
+      -- reference. The target is locked after the canonical provider resource so
+      -- concurrent imports and ordinary connection mutations have one order.
+      SELECT connection."id"
+      FROM "workspace_control"."workspace_connection" connection
+      JOIN "workspace_control"."workspace_connection_grant" grant
+        ON grant."organization_id" = connection."organization_id"
+       AND grant."connection_id" = connection."id"
+       AND grant."member_id" = ${input.authority.membershipId}
+       AND grant."capability" = 'manage'
+      JOIN receipt_scope ON TRUE
+      JOIN resource_lock ON TRUE
+      WHERE ${replacing}
+        AND connection."organization_id" = ${input.organizationId}
+        AND connection."id" = ${input.connectionId}::uuid
+        AND connection."credential_mode" = 'member_local'
+        AND connection."provider_integration_id" IS NULL
+        AND connection."provider_resource_id" IS NULL
+        AND connection."provider_resource" IS NULL
+        AND connection."readonly_default" = TRUE
+        AND connection."allow_writes" = FALSE
+        AND connection."engine" = (
+          SELECT resource."resource" ->> 'engine'
+          FROM "workspace_control"."workspace_provider_resource" resource
+          WHERE resource."organization_id" = ${input.organizationId}
+            AND resource."id" = receipt_scope."resourceId"
+        )
+        AND connection."database_name" = (
+          SELECT resource."resource" ->> 'database'
+          FROM "workspace_control"."workspace_provider_resource" resource
+          WHERE resource."organization_id" = ${input.organizationId}
+            AND resource."id" = receipt_scope."resourceId"
+        )
+        AND connection."deleted_at" IS NULL
+        AND connection."revocation_pending_at" IS NULL
+        AND connection."revocation_claim_id" IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "workspace_control"."workspace_credential_lease" lease
+          WHERE lease."organization_id" = connection."organization_id"
+            AND lease."connection_id" = connection."id"
+            AND lease."revoked_at" IS NULL
+        )
+      FOR UPDATE OF connection, grant
+    ), target_gate AS MATERIALIZED (
+      SELECT 1 AS "ready" FROM resource_lock WHERE NOT ${replacing}
+      UNION ALL
+      SELECT 1 AS "ready" FROM target_scope
     ), key_lock AS MATERIALIZED (
       SELECT pg_advisory_xact_lock(hashtextextended(${importLock(input)}, 0))
-      FROM resource_lock
+      FROM target_gate
     ) SELECT count(*)::int AS "locked" FROM key_lock
   `;
 }
 
 function mutateFreshSnapshot(tx: TransactionSql, input: {
   organizationId: string; integrationId: string; receiptId: string;
-  idempotencyKey: string; name: string; authority: ProviderImportAuthority;
+  idempotencyKey: string; connectionId: string | null;
+  name: string; productionApproved: boolean;
+  authority: ProviderImportAuthority;
 }) {
-  const connectionId = crypto.randomUUID();
+  const replacing = input.connectionId !== null;
+  const connectionId = input.connectionId ?? crypto.randomUUID();
   const requestId = crypto.randomUUID();
   return tx`
     WITH authority AS MATERIALIZED (
@@ -134,13 +188,20 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         resource."provider", resource."resource",
         resource."capability_manifest",
         encode(digest(
-          jsonb_build_object(
+          (
+            jsonb_build_object(
             'integrationGeneration', receipt."integration_generation"::text,
             'integrationId', ${input.integrationId}::text,
             'mode', 'managed',
             'name', ${input.name}::text,
             'organizationId', ${input.organizationId}::text,
+            'productionApproved', ${input.productionApproved},
             'resourceId', resource."id"::text
+            )
+            || CASE WHEN ${replacing}
+              THEN jsonb_build_object('connectionId', ${input.connectionId}::text)
+              ELSE '{}'::jsonb
+            END
           )::text,
           'sha256'
         ), 'hex') AS "requestHash"
@@ -167,11 +228,56 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         -- permission to outlive a later discovery which classifies the target
         -- as production or removes a read-only capability.
         AND resource."provider" = integration."provider"
-        AND resource."redacted_metadata" -> 'production' = 'false'::jsonb
+        AND (
+          resource."redacted_metadata" -> 'production' = 'false'::jsonb
+          OR (
+            resource."provider" = 'gcpCloudSql'
+            AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
+            AND ${input.productionApproved}
+          )
+        )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
         AND resource."capability_manifest" -> 'write' = 'false'::jsonb
         AND resource."capability_manifest" -> 'managedLease' = 'true'::jsonb
       FOR UPDATE OF receipt, integration, resource
+    ), target AS MATERIALIZED (
+      SELECT connection."id", connection."content_revision" AS "contentRevision",
+        parent."id" AS "parentVersionId"
+      FROM "workspace_control"."workspace_connection" connection
+      JOIN "workspace_control"."workspace_connection_grant" grant
+        ON grant."organization_id" = connection."organization_id"
+       AND grant."connection_id" = connection."id"
+       AND grant."member_id" = ${input.authority.membershipId}
+       AND grant."capability" = 'manage'
+      JOIN scope ON TRUE
+      JOIN "workspace_control"."workspace_resource_version" parent
+        ON parent."organization_id" = connection."organization_id"
+       AND parent."resource_type" = 'connection'
+       AND parent."resource_id" = connection."id"
+       AND parent."branch" = 'main'
+       AND parent."revision" = connection."content_revision"
+      WHERE ${replacing}
+        AND connection."organization_id" = ${input.organizationId}
+        AND connection."id" = ${input.connectionId}::uuid
+        AND connection."credential_mode" = 'member_local'
+        AND connection."provider_integration_id" IS NULL
+        AND connection."provider_resource_id" IS NULL
+        AND connection."provider_resource" IS NULL
+        AND connection."readonly_default" = TRUE
+        AND connection."allow_writes" = FALSE
+        AND connection."engine" = scope."resource" ->> 'engine'
+        AND connection."database_name" = scope."resource" ->> 'database'
+        AND connection."deleted_at" IS NULL
+        AND connection."revocation_pending_at" IS NULL
+        AND connection."revocation_claim_id" IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "workspace_control"."workspace_credential_lease" lease
+          WHERE lease."organization_id" = connection."organization_id"
+            AND lease."connection_id" = connection."id"
+            AND lease."revoked_at" IS NULL
+        )
+      FOR UPDATE OF connection, grant, parent
     ), prior_key AS MATERIALIZED (
       SELECT "request_hash", "resource_id", "connection_id"
       FROM "workspace_control"."workspace_provider_import_request"
@@ -190,6 +296,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
        AND scope."resourceId" = key."resource_id"
       JOIN "workspace_control"."workspace_connection" connection
         ON connection."organization_id" = ${input.organizationId} AND connection."id" = key."connection_id"
+       AND (NOT ${replacing} OR connection."id" = ${input.connectionId}::uuid)
        AND connection."credential_mode" IN ('managed', 'member_local')
        AND connection."provider_integration_id" = ${input.integrationId}::uuid
        AND connection."provider_resource_id" = scope."resourceId"
@@ -207,6 +314,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
     ), fresh AS MATERIALIZED (
       SELECT scope.* FROM scope
       WHERE NOT EXISTS (SELECT 1 FROM prior_key) AND NOT EXISTS (SELECT 1 FROM resource_conflict)
+        AND (NOT ${replacing} OR EXISTS (SELECT 1 FROM target))
         AND (SELECT "consumed_at" IS NULL AND "expires_at" > now()
              FROM "workspace_control"."workspace_provider_discovery_receipt" WHERE "id" = scope."receiptId")
         AND (scope."resource" ->> 'engine') IN ('postgres', 'mysql')
@@ -225,34 +333,109 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         source."resource" ->> 'database', 'verify-full', TRUE, FALSE, 'managed', ${input.integrationId}::uuid,
         source."resourceId", source."resource", 1, ${input.authority.userId} FROM fresh source
       JOIN claimed ON claimed."id" = source."receiptId"
+      WHERE NOT ${replacing}
       RETURNING "id", "name", "engine", "provider", "driver_id" AS "driverId", "host", "port",
         "database_name" AS "databaseName", "sslmode", "readonly_default" AS "readonlyDefault",
         "allow_writes" AS "allowWrites", "environment", "schema_group" AS "schemaGroup",
         "credential_mode" AS "credentialMode", "content_revision" AS "contentRevision", "updated_at" AS "updatedAt"
+    ), updated AS MATERIALIZED (
+      UPDATE "workspace_control"."workspace_connection" connection
+      SET "provider" = source."provider",
+        "driver_id" = NULL,
+        "host" = lower(source."provider") || '.managed.invalid',
+        "port" = CASE WHEN source."resource" ->> 'engine' = 'postgres' THEN 5432 ELSE 3306 END,
+        "database_name" = source."resource" ->> 'database',
+        "sslmode" = 'verify-full',
+        "readonly_default" = TRUE,
+        "allow_writes" = FALSE,
+        "credential_mode" = 'managed',
+        "provider_integration_id" = ${input.integrationId}::uuid,
+        "provider_resource_id" = source."resourceId",
+        "provider_resource" = source."resource",
+        "content_revision" = connection."content_revision" + 1,
+        "revision" = connection."revision" + 1,
+        "revocation_pending_at" = NULL,
+        "revocation_claimed_at" = NULL,
+        "revocation_claim_id" = NULL,
+        "updated_at" = now()
+      FROM fresh source
+      JOIN claimed ON claimed."id" = source."receiptId"
+      JOIN target ON TRUE
+      WHERE ${replacing}
+        AND connection."organization_id" = ${input.organizationId}
+        AND connection."id" = target."id"
+        AND connection."content_revision" = target."contentRevision"
+        AND connection."content_revision" < 9007199254740991
+        AND connection."revision" < 9007199254740991
+      RETURNING connection."id" AS "id", connection."name" AS "name",
+        connection."engine" AS "engine", connection."provider" AS "provider",
+        connection."driver_id" AS "driverId", connection."host" AS "host",
+        connection."port" AS "port", connection."database_name" AS "databaseName",
+        connection."sslmode" AS "sslmode",
+        connection."readonly_default" AS "readonlyDefault",
+        connection."allow_writes" AS "allowWrites",
+        connection."environment" AS "environment",
+        connection."schema_group" AS "schemaGroup",
+        connection."credential_mode" AS "credentialMode",
+        connection."content_revision" AS "contentRevision",
+        connection."updated_at" AS "updatedAt"
+    ), changed AS MATERIALIZED (
+      SELECT inserted.* FROM inserted
+      UNION ALL
+      SELECT updated.* FROM updated
     ), connection_grant AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_connection_grant" ("organization_id", "connection_id", "member_id", "capability")
       SELECT ${input.organizationId}, inserted."id", ${input.authority.membershipId}, 'manage' FROM inserted
       ON CONFLICT ("organization_id", "connection_id", "member_id") DO UPDATE SET "capability" = 'manage'
       RETURNING "connection_id"
-    ), payload AS MATERIALIZED (
-      SELECT inserted."id", fresh."resourceId", fresh."requestHash",
-        '{"allowWrites":false,"database":' || to_json(inserted."databaseName")::text
-        || ',"deleted":false,"driverId":null,"engine":' || to_json(inserted."engine")::text
-        || ',"env":null,"host":' || to_json(inserted."host")::text || ',"name":' || to_json(inserted."name")::text
-        || ',"port":' || inserted."port"::text || ',"provider":' || to_json(inserted."provider")::text
-        || ',"readonlyDefault":true,"schemaGroup":null,"sslmode":"verify-full"}' AS "text"
-      FROM inserted JOIN fresh ON TRUE
+    ), change_gate AS MATERIALIZED (
+      SELECT inserted."id" FROM inserted
       JOIN connection_grant ON connection_grant."connection_id" = inserted."id"
+      UNION ALL
+      SELECT updated."id" FROM updated
+    ), payload AS MATERIALIZED (
+      SELECT changed."id", fresh."resourceId", fresh."requestHash",
+        '{"allowWrites":false,"database":' || to_json(changed."databaseName")::text
+        || ',"deleted":false,"driverId":null,"engine":' || to_json(changed."engine")::text
+        || ',"env":' || COALESCE(to_json(changed."environment")::text, 'null')
+        || ',"host":' || to_json(changed."host")::text
+        || ',"name":' || to_json(changed."name")::text
+        || ',"port":' || changed."port"::text
+        || ',"provider":' || to_json(changed."provider")::text
+        || ',"readonlyDefault":true,"schemaGroup":'
+        || COALESCE(to_json(changed."schemaGroup")::text, 'null')
+        || ',"sslmode":"verify-full"}' AS "text"
+      FROM changed JOIN fresh ON TRUE
+      JOIN change_gate ON change_gate."id" = changed."id"
     ), version AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_resource_version"
         ("id", "organization_id", "resource_type", "resource_id", "revision", "base_revision", "parent_version_id", "branch", "operation", "payload", "payload_hash", "created_by_user_id")
-      SELECT gen_random_uuid(), ${input.organizationId}, 'connection', payload."id", 1, 0, NULL, 'main', 'create',
-        payload."text"::jsonb, encode(digest(payload."text", 'sha256'), 'hex'), ${input.authority.userId} FROM payload
+      SELECT gen_random_uuid(), ${input.organizationId}, 'connection', payload."id",
+        CASE WHEN target."id" IS NULL THEN 1 ELSE target."contentRevision" + 1 END,
+        CASE WHEN target."id" IS NULL THEN 0 ELSE target."contentRevision" END,
+        target."parentVersionId", 'main',
+        CASE WHEN target."id" IS NULL THEN 'create' ELSE 'update' END,
+        payload."text"::jsonb, encode(digest(payload."text", 'sha256'), 'hex'),
+        ${input.authority.userId}
+      FROM payload LEFT JOIN target ON target."id" = payload."id"
       RETURNING "resource_id"
     ), audit AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_audit_event" ("organization_id", "actor_user_id", "action", "resource_type", "resource_id", "redacted_summary", "request_id")
-      SELECT ${input.organizationId}, ${input.authority.userId}, 'connection.provider_import', 'connection', inserted."id"::text,
-        jsonb_build_object('provider', inserted."provider", 'mode', 'managed'), ${requestId}::uuid FROM inserted JOIN version ON version."resource_id" = inserted."id"
+      SELECT ${input.organizationId}, ${input.authority.userId},
+        CASE WHEN ${replacing}
+          THEN 'connection.provider_migrate'
+          ELSE 'connection.provider_import'
+        END,
+        'connection', changed."id"::text,
+        jsonb_build_object(
+          'provider', changed."provider",
+          'mode', 'managed',
+          'production', fresh."resource" -> 'production',
+          'productionApproved', ${input.productionApproved},
+          'preservedConnectionId', ${replacing}
+        ),
+        ${requestId}::uuid
+      FROM changed JOIN version ON version."resource_id" = changed."id"
       RETURNING "id"
     ), recorded AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_provider_import_request" ("organization_id", "idempotency_key", "request_hash", "resource_id", "connection_id")
@@ -261,6 +444,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
     ), outcome AS (
       SELECT 'imported'::text AS "kind", prior.* FROM prior
       UNION ALL SELECT 'imported'::text, inserted.* FROM inserted JOIN recorded ON recorded."connection_id" = inserted."id"
+      UNION ALL SELECT 'imported'::text, updated.* FROM updated JOIN recorded ON recorded."connection_id" = updated."id"
       UNION ALL SELECT 'idempotency_conflict'::text, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
         WHERE EXISTS (SELECT 1 FROM prior_key) AND EXISTS (SELECT 1 FROM scope)
           AND NOT EXISTS (SELECT 1 FROM prior)
@@ -276,7 +460,8 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
 
 export async function importProviderReceipt(input: {
   organizationId: string; integrationId: string; receiptId: string; idempotencyKey: string;
-  name: string; authority: ProviderImportAuthority;
+  connectionId: string | null; name: string; productionApproved: boolean;
+  authority: ProviderImportAuthority;
 }): Promise<ProviderImportResult> {
   const [, mutation] = await neonSql.transaction((tx) => [
     lockAndRevalidate(tx, input),

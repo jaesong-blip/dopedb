@@ -54,6 +54,11 @@ pub enum AppError {
     #[error("not found: {0}")]
     NotFound(String),
 
+    /// A secretless shared template is usable, but this member has not connected a
+    /// credential in the current device's OS store yet.
+    #[error("shared connection credentials are required on this device")]
+    CredentialBindingRequired,
+
     /// The safety gate blocked an action; `reason` is shown verbatim in the UI.
     #[error("blocked: {reason}")]
     Blocked { reason: String },
@@ -87,6 +92,7 @@ impl AppError {
             AppError::Serialization(_) => "serialization",
             AppError::Config(_) => "config",
             AppError::NotFound(_) => "notFound",
+            AppError::CredentialBindingRequired => "credentialBindingRequired",
             AppError::Blocked { .. } => "blocked",
             AppError::ProposalRequired => "proposalRequired",
             AppError::OutcomeUnknown(_) => "outcomeUnknown",

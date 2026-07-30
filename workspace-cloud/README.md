@@ -111,16 +111,18 @@ GCP uses keyless federation. Do not create or upload a JSON service-account key.
 2. For **each Cloud SQL instance**, create a dedicated read service account and,
    only when needed, a separate write service account. Grant the WIF principal
    `roles/iam.workloadIdentityUser` on only those accounts. The read account also needs
-   Cloud SQL Viewer, scoped to the same instance condition in the next step. No Cloud
-   SQL Admin or long-lived key is required.
+   Cloud SQL Viewer, scoped to the same instance condition in the next step. Each
+   database identity also needs Cloud SQL Client so the signed desktop connector can
+   authorize its transport. No Cloud SQL Admin or long-lived key is required.
 
    ```sh
    gcloud iam service-accounts add-iam-policy-binding SERVICE_ACCOUNT_EMAIL \
      --project=PROJECT_ID --role=roles/iam.workloadIdentityUser \
      --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/attribute.project_id/VERCEL_PROJECT_ID"
    ```
-3. Grant each database identity `roles/cloudsql.instanceUser`, and the read identity
-   `roles/cloudsql.viewer`, with this instance condition, replacing both placeholders:
+3. Grant each database identity `roles/cloudsql.instanceUser` and
+   `roles/cloudsql.client`, and grant the read identity `roles/cloudsql.viewer`, with
+   this instance condition, replacing both placeholders:
 
    ```text
    resource.name == 'projects/PROJECT_ID/instances/INSTANCE_ID'
@@ -137,6 +139,10 @@ GCP uses keyless federation. Do not create or upload a JSON service-account key.
      --member=serviceAccount:SERVICE_ACCOUNT_EMAIL \
      --role=roles/cloudsql.instanceUser \
      --condition="title=dopedb-INSTANCE_ID,expression=resource.name == 'projects/PROJECT_ID/instances/INSTANCE_ID' && resource.service == 'sqladmin.googleapis.com'"
+   gcloud projects add-iam-policy-binding PROJECT_ID \
+     --member=serviceAccount:SERVICE_ACCOUNT_EMAIL \
+     --role=roles/cloudsql.client \
+     --condition="title=dopedb-connect-INSTANCE_ID,expression=resource.name == 'projects/PROJECT_ID/instances/INSTANCE_ID' && resource.service == 'sqladmin.googleapis.com'"
    gcloud projects add-iam-policy-binding PROJECT_ID \
      --member=serviceAccount:READ_SERVICE_ACCOUNT_EMAIL \
      --role=roles/cloudsql.viewer \
@@ -161,25 +167,37 @@ GCP uses keyless federation. Do not create or upload a JSON service-account key.
    not allow DopeDB to prove every IAM Condition expression or inspect every database
    grant, so review those policies with the commands above before confirming them.
 
-At lease time Vercel OIDC is exchanged through GCP STS and IAM Credentials for a
-15-minute `sqlservice.login` token. Only that one-time token and the Cloud SQL server
-CA reach the desktop process; the native driver pins the CA, and MySQL cleartext auth
-is enabled only inside that verified TLS connection. The token is not revocable, so
-access changes wait for its bounded expiry and the desktop drops its pool 30 seconds
-early. Pool eviction prevents new app work but is not a protocol-level kill switch for
-an already checked-out connection; the database's own statement/session limits remain
-the final bound for a query already running.
+At lease time Vercel OIDC is exchanged through GCP STS and IAM Credentials for
+15-minute `sqlservice.login` and connector tokens. They reach only the native desktop
+process. The app starts the pinned Google Cloud SQL Auth Proxy from its signed bundle,
+binds it to a random loopback port for that pool, and gives the database driver the IAM
+login token. The connector owns instance authorization and TLS, so Public IP no longer
+requires each member machine to be added to Authorized Networks. Private services
+access and Private Service Connect still require an existing resolvable network path
+from that machine; the connector cannot create VPC reachability.
 
-DopeDB currently uses Cloud SQL's documented manual IAM connection path rather than
-proxying database traffic. Public IP must authorize the member machine's network;
-private services access and Private Service Connect must be resolvable and reachable
-from that machine. For the per-instance internal CA, Public and private-services-access
-IP connections use the unique instance CA; PSC uses hostname verification. Shared and
-customer-managed CA modes never fall back to IP: they require an instance-scoped DNS
-name and full hostname verification. Supported Cloud SQL names include `.sql.goog`,
-`.sql-psa.goog`, and `.sql-psc.goog`; configure the corresponding DNS zone before
-selecting a private path. Client-certificate-required instances are deliberately
-rejected because this direct IAM flow does not issue client certificates.
+When an admin selects an existing member-local shared connection during a receipt-bound
+provider import, the service converts that connection in place instead of creating a
+second template. Its connection UUID, grants, dashboards, and history references remain
+stable; the content and authority revisions advance atomically, and the next desktop
+sync removes obsolete member-local credential references from that device. Personal
+workspaces do not issue managed credentials. Local GCP ADC is created by Google tooling
+and can only verify member-local access for an existing team-workspace integration.
+
+Cloud SQL instances explicitly labeled `environment=prod` or
+`environment=production` may be imported only by a current workspace Admin/Owner after
+the production warning is accepted. The approval bit is bound to the idempotent import
+hash and recorded in the redacted audit event. Missing or unrecognized environment
+labels remain fail-closed and cannot be imported. Production approval does not widen
+the connection: the imported template remains read-only unless a separate workspace
+write policy and dedicated write identity are configured.
+
+The tokens are not revocable, so access changes wait for bounded expiry and the desktop
+drops both pool and connector 30 seconds early. Pool eviction prevents new app work but
+is not a protocol-level kill switch for an already checked-out connection; the
+database's own statement/session limits remain the final bound for a query already
+running. Client-certificate-required instances are supported through the connector
+rather than by issuing or storing a long-lived client certificate in DopeDB.
 
 Changing the WIF provider or dedicated service accounts for the same project and
 instance rotates that integration in place. The server first gates new leases, drains
@@ -213,7 +231,7 @@ guess a path for legacy records.
   returned once to an authenticated native Bearer client, and never inserted into the
   service database, audit stream, browser UI, or desktop store.
 - Managed lease POSTs must send
-  `x-dopedb-managed-lease-contract: access-v1` and an explicit `read` or `write`
+  `x-dopedb-managed-lease-contract: access-v2` and an explicit `read` or `write`
   access mode. The service returns HTTP 426 to legacy clients instead of guessing
   their authority. Deploy this control-plane change immediately before the matching
   desktop release; managed access is intentionally fail-closed during that window.

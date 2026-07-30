@@ -479,7 +479,7 @@ export async function validateGcpCloudSqlResource(
   if (
     gcpCloudSqlEngine(details.databaseVersion) !== resource.engine
     || details.state !== "RUNNABLE"
-    || gcpInstanceProduction(details) !== false
+    || gcpInstanceProduction(details) === "unknown"
   ) {
     throw new ProviderRequestError(
       "gcpCloudSql",
@@ -539,12 +539,18 @@ export async function issueGcpCloudSqlLease(input: {
       409,
     );
   }
-  const [loginToken, control] = await Promise.all([
+  const [loginToken, connectorToken, control] = await Promise.all([
     serviceAccountToken({
       credential: input.credential,
       oidcToken: input.oidcToken,
       serviceAccountEmail,
       scope: SQL_LOGIN_SCOPE,
+    }),
+    serviceAccountToken({
+      credential: input.credential,
+      oidcToken: input.oidcToken,
+      serviceAccountEmail,
+      scope: CLOUD_PLATFORM_SCOPE,
     }),
     controlPlaneToken(input.credential, input.oidcToken),
   ]);
@@ -576,7 +582,7 @@ export async function issueGcpCloudSqlLease(input: {
     actualEngine !== input.resource.engine
     || gcpCloudSqlEngine(details.databaseVersion) !== input.resource.engine
     || details.state !== "RUNNABLE"
-    || gcpInstanceProduction(details) !== false
+    || gcpInstanceProduction(details) === "unknown"
     || !databases.some((item) => item.value === input.resource.database)
   ) {
     throw new ProviderRequestError(
@@ -614,7 +620,12 @@ export async function issueGcpCloudSqlLease(input: {
     username: gcpDatabaseUsername(serviceAccountEmail, input.resource.engine),
     password: loginToken.accessToken,
     sslmode: target.sslmode,
-    tlsServerCaPem: target.tlsServerCaPem,
+    connector: {
+      kind: "gcpCloudSqlAuthProxy",
+      instanceConnectionName: target.instanceConnectionName,
+      accessToken: connectorToken.accessToken,
+      networkMode: input.resource.networkMode,
+    },
     expiresAt: loginToken.expiresAt,
   };
 }

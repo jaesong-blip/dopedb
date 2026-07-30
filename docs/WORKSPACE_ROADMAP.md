@@ -461,7 +461,10 @@ trees, and attach one database to a shared connection. The desktop then obtains 
 member-specific read or read/write credential without showing a password dialog.
 Reusable provider grants are encrypted at rest; GCP stores only trust coordinates;
 lease rows contain no plaintext credential; the desktop caches only a live pool until
-shortly before provider expiry.
+shortly before provider expiry. GCP Cloud SQL pools use the pinned official Auth Proxy
+as a loopback-only desktop transport, so Public IP does not require a separate
+Authorized Networks entry for every workspace member. The workspace service still
+never proxies database query traffic.
 
 This core deliberately shares endpoint templates plus one redacted provider resource
 selector. It does not yet satisfy the later per-connection grant,

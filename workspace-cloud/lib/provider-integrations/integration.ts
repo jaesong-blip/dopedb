@@ -327,7 +327,15 @@ export async function discoverProviderResources(input: {
       ) {
         const instances = await listGcpCloudSqlInstances(credential, oidcToken);
         const instance = instances.find((item) => item.value === selection.instance);
-        if (!instance || instance.ready !== true || instance.production !== false || !instance.kind) {
+        if (
+          !instance
+          || instance.ready !== true
+          || (
+            instance.production !== false
+            && instance.production !== true
+          )
+          || !instance.kind
+        ) {
           throw new ProviderRequestError("gcpCloudSql", "Cloud SQL instance is no longer importable", 409);
         }
         if (selection.engine && selection.engine !== instance.kind) {
@@ -338,7 +346,7 @@ export async function discoverProviderResources(input: {
           oidcToken,
           selection.instance,
           instance.kind,
-        )).map((item) => ({ ...item, production: false }));
+        )).map((item) => ({ ...item, production: instance.production }));
       }
       break;
     }

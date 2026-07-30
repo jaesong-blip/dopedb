@@ -11,6 +11,7 @@ import { Brand } from "../components/Brand";
 import { CreateWorkspaceForm } from "./CreateWorkspaceForm";
 import { AccountSwitcher } from "./AccountSwitcher";
 import { ActiveSessions } from "./ActiveSessions";
+import { ConnectionAccessPanel } from "./ConnectionAccessPanel";
 import { WorkspaceAccessPanel } from "./WorkspaceAccessPanel";
 import { ProviderAccessPanel } from "./ProviderAccessPanel";
 
@@ -113,6 +114,7 @@ export default async function SettingsPage({
                 {["admin", "owner"].includes(workspaceRoles.get(workspace.id) ?? "") ? (
                   <>
                     <WorkspaceAccessPanel workspaceId={workspace.id} />
+                    <ConnectionAccessPanel workspaceId={workspace.id} />
                     <ProviderAccessPanel workspaceId={workspace.id} />
                   </>
                 ) : null}

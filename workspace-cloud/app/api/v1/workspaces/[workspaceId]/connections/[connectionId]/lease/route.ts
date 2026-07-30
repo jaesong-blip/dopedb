@@ -61,7 +61,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId) || !isUuid(connectionId)) {
     return jsonError("Invalid workspace or connection id", 400);
   }
-  if (request.headers.get("x-dopedb-managed-lease-contract") !== "access-v1") {
+  if (request.headers.get("x-dopedb-managed-lease-contract") !== "access-v2") {
     return jsonError(
       "Update DopeDB to use managed database access safely",
       426,
@@ -247,6 +247,7 @@ export async function POST(request: Request, context: RouteContext) {
         ...(lease.tlsServerCaPem
           ? { tlsServerCaPem: lease.tlsServerCaPem }
           : {}),
+        ...(lease.connector ? { connector: lease.connector } : {}),
         accessMode,
         expiresAt: lease.expiresAt,
       },

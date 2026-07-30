@@ -673,6 +673,7 @@ impl ConnectionContext {
                     retire_at,
                     managed_lease,
                     ssh_tunnel,
+                    cloud_sql_proxy,
                 } = opened;
                 let entry = Arc::new(CacheEntry {
                     live,
@@ -680,6 +681,7 @@ impl ConnectionContext {
                     retire_at,
                     managed_lease: StdMutex::new(managed_lease),
                     ssh_tunnel: StdMutex::new(ssh_tunnel),
+                    cloud_sql_proxy: StdMutex::new(cloud_sql_proxy),
                     closed: AtomicBool::new(false),
                 });
                 state.entry = Some(Arc::clone(&entry));

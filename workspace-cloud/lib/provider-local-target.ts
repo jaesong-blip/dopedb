@@ -212,17 +212,26 @@ export async function loadProviderLocalTarget(input: {
         AND connection."provider" = integration."provider"
         AND connection."provider" = resource."provider"
         AND connection."provider_resource" = resource."resource"
-        AND imported."request_hash" = encode(digest(
-          jsonb_build_object(
+        AND imported."request_hash" IN (
+          encode(digest(jsonb_build_object(
             'integrationGeneration', integration."generation"::text,
             'integrationId', integration."id"::text,
             'mode', 'managed',
             'name', connection."name",
             'organizationId', connection."organization_id",
             'resourceId', resource."id"::text
-          )::text,
-          'sha256'
-        ), 'hex')
+          )::text, 'sha256'), 'hex'),
+          encode(digest(jsonb_build_object(
+            'integrationGeneration', integration."generation"::text,
+            'integrationId', integration."id"::text,
+            'mode', 'managed',
+            'name', connection."name",
+            'organizationId', connection."organization_id",
+            'productionApproved',
+              resource."redacted_metadata" -> 'production' = 'true'::jsonb,
+            'resourceId', resource."id"::text
+          )::text, 'sha256'), 'hex')
+        )
         AND integration."status" = 'active'
         AND integration."refresh_phase" = 'idle'
         AND integration."revoked_at" IS NULL
@@ -230,7 +239,13 @@ export async function loadProviderLocalTarget(input: {
         AND integration."revocation_claim_id" IS NULL
         AND resource."provider" = integration."provider"
         AND integration."provider" IN ('neon', 'gcpCloudSql')
-        AND resource."redacted_metadata" -> 'production' = 'false'::jsonb
+        AND (
+          resource."redacted_metadata" -> 'production' = 'false'::jsonb
+          OR (
+            resource."provider" = 'gcpCloudSql'
+            AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
+          )
+        )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
         AND resource."capability_manifest" -> 'write' = 'false'::jsonb
         AND resource."capability_manifest" -> 'managedLease' = 'true'::jsonb

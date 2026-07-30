@@ -18,9 +18,11 @@ DopeDB's feature list.
 
 **1. A workspace shares connections and dashboards.** The unit of the product
 is a team workspace, not one person's machine. Connection profiles and BI
-dashboards exist to be shared inside it, while secrets stay in each member's
-own credential store and never travel with the shared record. A feature that
-makes a connection or a dashboard shareable outranks a local-only convenience.
+dashboards exist to be shared inside it. Long-lived secrets never travel with
+the shared record: member-local access stays in each member's OS credential
+store, while managed access issues a least-privilege, member-specific short-lived
+credential into process memory. A feature that makes a connection or a dashboard
+shareable outranks a local-only convenience.
 
 **2. Connecting stays trivial.** Reaching a database is the first thing every
 user does and the place they give up. Prefer the fewest fields that can work,

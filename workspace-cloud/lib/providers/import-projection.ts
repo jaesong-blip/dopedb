@@ -59,7 +59,10 @@ function parseNeonImportResource(value: unknown): NeonResource {
 }
 
 function parseGcpImportResource(value: unknown): GcpCloudSqlResource {
-  const body = exactRecord(value, ["project", "instance", "database", "engine", "networkMode"]);
+  const body = exactRecord(
+    value,
+    ["project", "instance", "database", "engine", "networkMode", "production"],
+  );
   const normalized = parseGcpCloudSqlResource(body);
   return {
     project: normalized.project,
@@ -67,6 +70,7 @@ function parseGcpImportResource(value: unknown): GcpCloudSqlResource {
     database: normalized.database,
     engine: normalized.engine,
     networkMode: normalized.networkMode,
+    production: normalized.production,
   };
 }
 
@@ -121,7 +125,7 @@ export const providerImportAdapters: Record<
       const value = resource as GcpCloudSqlResource;
       return projection("gcpCloudSql", value, {
         project: value.project, instance: value.instance, database: value.database,
-        engine: value.engine, networkMode: value.networkMode, production: false,
+        engine: value.engine, networkMode: value.networkMode, production: value.production,
       }, value.database, value.engine, this.capabilities(value));
     },
   },
@@ -145,7 +149,14 @@ export function providerImportProjection(provider: ImportProvider, value: unknow
   return adapter.importProjection(resource);
 }
 
-export function allowDiscoveryImport(item: { ready?: boolean; production?: true | false | "unknown" }) {
+export function allowDiscoveryImport(
+  provider: string,
+  item: { ready?: boolean; production?: true | false | "unknown" },
+) {
   // Provider-wide token scopes never override DopeDB's narrow import policy.
-  return item.ready === true && item.production === false;
+  return item.ready === true
+    && (
+      item.production === false
+      || (provider === "gcpCloudSql" && item.production === true)
+    );
 }

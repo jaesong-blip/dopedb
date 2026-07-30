@@ -200,23 +200,38 @@ export async function PUT(request: Request, context: RouteContext) {
         -- The import request is a receipt-derived immutable proof. Rebuild its
         -- hash with the *current* integration generation so a reconnect or
         -- credential generation change cannot hand off a stale target.
-        AND imported."request_hash" = encode(digest(
-          jsonb_build_object(
+        AND imported."request_hash" IN (
+          encode(digest(jsonb_build_object(
             'integrationGeneration', integration."generation"::text,
             'integrationId', integration."id"::text,
             'mode', 'managed',
             'name', connection."name",
             'organizationId', connection."organization_id",
             'resourceId', resource."id"::text
-          )::text,
-          'sha256'
-        ), 'hex')
+          )::text, 'sha256'), 'hex'),
+          encode(digest(jsonb_build_object(
+            'integrationGeneration', integration."generation"::text,
+            'integrationId', integration."id"::text,
+            'mode', 'managed',
+            'name', connection."name",
+            'organizationId', connection."organization_id",
+            'productionApproved',
+              resource."redacted_metadata" -> 'production' = 'true'::jsonb,
+            'resourceId', resource."id"::text
+          )::text, 'sha256'), 'hex')
+        )
         AND integration."status" = 'active'
         AND integration."refresh_phase" = 'idle'
         AND integration."revoked_at" IS NULL
         AND integration."revocation_pending_at" IS NULL
         AND integration."revocation_claim_id" IS NULL
-        AND resource."redacted_metadata" -> 'production' = 'false'::jsonb
+        AND (
+          resource."redacted_metadata" -> 'production' = 'false'::jsonb
+          OR (
+            resource."provider" = 'gcpCloudSql'
+            AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
+          )
+        )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
         AND resource."capability_manifest" -> 'write' = 'false'::jsonb
         AND resource."capability_manifest" -> 'managedLease' = 'true'::jsonb

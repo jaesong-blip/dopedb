@@ -25,6 +25,12 @@ export type ManagedProviderLease = {
   password: string;
   sslmode: ManagedSslMode;
   tlsServerCaPem?: string;
+  connector?: {
+    kind: "gcpCloudSqlAuthProxy";
+    instanceConnectionName: string;
+    accessToken: string;
+    networkMode: "PUBLIC" | "PRIVATE_SERVICES_ACCESS" | "PRIVATE_SERVICE_CONNECT";
+  };
   expiresAt: string;
 };
 

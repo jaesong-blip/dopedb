@@ -19,6 +19,7 @@ use super::{
     release_managed_bounded, ConnectionAccess, Live, ManagedLeaseHandle, ProviderLocalBindingPin,
     ProviderLocalTarget, MANAGED_RELEASE_TIMEOUT,
 };
+use crate::connection::cloud_sql_proxy::CloudSqlProxy;
 use crate::connection::ssh::SshTunnel;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -78,6 +79,7 @@ pub(super) struct CacheEntry {
     pub(super) retire_at: Option<Instant>,
     pub(super) managed_lease: StdMutex<Option<ManagedLeaseHandle>>,
     pub(super) ssh_tunnel: StdMutex<Option<SshTunnel>>,
+    pub(super) cloud_sql_proxy: StdMutex<Option<CloudSqlProxy>>,
     pub(super) closed: AtomicBool,
 }
 
@@ -96,12 +98,25 @@ impl CacheEntry {
             .is_none_or(SshTunnel::is_running)
     }
 
+    fn take_cloud_sql_proxy(&self) -> Option<CloudSqlProxy> {
+        lock_unpoisoned(&self.cloud_sql_proxy).take()
+    }
+
+    fn cloud_sql_transport_is_running(&self) -> bool {
+        lock_unpoisoned(&self.cloud_sql_proxy)
+            .as_mut()
+            .is_none_or(CloudSqlProxy::is_running)
+    }
+
     async fn close_once(&self) {
         if !self.closed.swap(true, Ordering::AcqRel) {
             if let Some(tunnel) = self.take_ssh_tunnel() {
                 tunnel.close().await;
             }
             self.live.close().await;
+            if let Some(proxy) = self.take_cloud_sql_proxy() {
+                proxy.close().await;
+            }
         }
     }
 
@@ -120,6 +135,7 @@ impl Drop for CacheEntry {
         let should_close = !self.closed.swap(true, Ordering::AcqRel);
         let live = should_close.then(|| self.live.clone());
         let ssh_tunnel = self.take_ssh_tunnel();
+        let cloud_sql_proxy = self.take_cloud_sql_proxy();
         let managed_lease = self.take_managed_lease();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             if let Some(tunnel) = ssh_tunnel {
@@ -127,6 +143,9 @@ impl Drop for CacheEntry {
             }
             if let Some(live) = live {
                 runtime.spawn(async move { live.close().await });
+            }
+            if let Some(proxy) = cloud_sql_proxy {
+                runtime.spawn(proxy.close());
             }
             if let Some(managed_lease) = managed_lease {
                 runtime.spawn(release_managed_bounded(managed_lease));
@@ -169,6 +188,7 @@ pub(super) fn cache_entry_expired(entry: &CacheEntry) -> bool {
         .retire_at
         .is_some_and(|retire_at| retire_at <= Instant::now())
         || !entry.ssh_transport_is_running()
+        || !entry.cloud_sql_transport_is_running()
 }
 
 pub(super) async fn retire_entries(entries: Vec<Arc<CacheEntry>>) {

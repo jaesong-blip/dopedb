@@ -174,8 +174,9 @@ export function ProviderIntegrationList({
             </label>
           ))}
           <p className="provider-setup-note">
-            두 서비스 계정의 <code>roles/cloudsql.instanceUser</code>와
-            읽기 계정의 <code>roles/cloudsql.viewer</code> 바인딩은
+            두 서비스 계정의 <code>roles/cloudsql.instanceUser</code> 및{" "}
+            <code>roles/cloudsql.client</code>, 읽기 계정의{" "}
+            <code>roles/cloudsql.viewer</code> 바인딩은
             <code>
               resource.name == &apos;projects/
               {gcpConfiguration.projectId || "PROJECT_ID"}/instances/

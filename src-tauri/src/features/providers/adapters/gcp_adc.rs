@@ -3,8 +3,9 @@
 //! The adapter accepts only a deliberately small ADC/WIF subset.  It opens
 //! the selected credential as a no-follow regular file, then runs the fixed
 //! `gcloud auth application-default print-access-token` command in a scrubbed
-//! environment.  Neither the ADC contents nor the ephemeral bearer token can
-//! escape this module.
+//! environment. ADC contents never escape this module. A verified ephemeral
+//! bearer token may leave only through the non-serializable connector carrier
+//! consumed by the bundled Cloud SQL Auth Proxy.
 
 // Windows intentionally returns unavailable before reaching the Unix-like
 // fixed-argv gcloud path; keep those audited helpers available to shared tests

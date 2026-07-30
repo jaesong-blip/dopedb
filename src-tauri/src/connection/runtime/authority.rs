@@ -21,6 +21,7 @@ use super::{
     RemoteConnectionAuthorityPort,
 };
 use crate::connection::{
+    cloud_sql_proxy::{self, CloudSqlProxy},
     ssh::{self, SshTunnel},
     ProviderLocalPinRequest, ProviderLocalResolveRequest, ProviderLocalResource,
     ProviderLocalSecret,
@@ -38,6 +39,7 @@ pub(super) struct OpenedLive {
     pub(super) retire_at: Option<Instant>,
     pub(super) managed_lease: Option<ManagedLeaseHandle>,
     pub(super) ssh_tunnel: Option<SshTunnel>,
+    pub(super) cloud_sql_proxy: Option<CloudSqlProxy>,
 }
 
 pub(super) async fn retire_opened(mut opened: OpenedLive) {
@@ -45,6 +47,9 @@ pub(super) async fn retire_opened(mut opened: OpenedLive) {
         tunnel.close().await;
     }
     opened.live.close().await;
+    if let Some(proxy) = opened.cloud_sql_proxy.take() {
+        proxy.close().await;
+    }
     if let Some(managed_lease) = opened.managed_lease {
         release_managed_bounded(managed_lease).await;
     }
@@ -55,10 +60,37 @@ async fn open_live(
     target_profile: &ConnectionProfile,
     secret: &str,
     access: ConnectionAccess,
-) -> AppResult<(Live, Option<SshTunnel>)> {
+    cloud_sql_config: Option<cloud_sql_proxy::CloudSqlProxyConfig>,
+) -> AppResult<(Live, Option<SshTunnel>, Option<CloudSqlProxy>)> {
+    if let Some(config) = cloud_sql_config {
+        if alias_profile
+            .extra_params
+            .contains_key(ssh::SSH_ALIAS_PARAMETER)
+        {
+            return Err(AppError::Config(
+                "Cloud SQL secure connections cannot also use an SSH tunnel".into(),
+            ));
+        }
+        let opened = cloud_sql_proxy::open(target_profile, config).await?;
+        return match crate::driver::connect(&opened.profile, secret, access).await {
+            Ok(live) => Ok((live, None, Some(opened.proxy))),
+            Err(error) => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let detail = opened.proxy.failure_detail().await;
+                opened.proxy.close().await;
+                if detail.is_empty() {
+                    Err(error)
+                } else {
+                    Err(AppError::Network(format!(
+                        "Cloud SQL secure connector rejected the connection: {detail}"
+                    )))
+                }
+            }
+        };
+    }
     let transport = ssh::open(alias_profile, target_profile).await?;
     match crate::driver::connect(&transport.profile, secret, access).await {
-        Ok(live) => Ok((live, transport.tunnel)),
+        Ok(live) => Ok((live, transport.tunnel, None)),
         Err(error) => {
             if let Some(tunnel) = transport.tunnel {
                 tunnel.close().await;
@@ -264,19 +296,27 @@ pub(super) async fn connect_authorized(
             connection_id: profile.id.into(),
             lease_id: lease.lease_id,
         };
-        let (live, ssh_tunnel) =
-            match open_live(profile, &lease.profile, lease.secret.as_str(), access).await {
-                Ok(opened) => opened,
-                Err(error) => {
-                    release_managed_bounded(managed_lease).await;
-                    return Err(error);
-                }
-            };
+        let (live, ssh_tunnel, cloud_sql_proxy) = match open_live(
+            profile,
+            &lease.profile,
+            lease.secret.as_str(),
+            access,
+            lease.cloud_sql_proxy,
+        )
+        .await
+        {
+            Ok(opened) => opened,
+            Err(error) => {
+                release_managed_bounded(managed_lease).await;
+                return Err(error);
+            }
+        };
         return Ok(OpenedLive {
             live,
             retire_at: Some(retire_at),
             managed_lease: Some(managed_lease),
             ssh_tunnel,
+            cloud_sql_proxy,
         });
     }
     if let Some(target) = authorization.provider_local_target.as_ref() {
@@ -317,22 +357,31 @@ pub(super) async fn connect_authorized(
             ));
         }
         let retire_at = Instant::now() + target.cache_retire_after()?;
-        let (live, ssh_tunnel) =
-            open_live(profile, &resolved.profile, secret.as_str(), access).await?;
+        let (live, ssh_tunnel, cloud_sql_proxy) = open_live(
+            profile,
+            &resolved.profile,
+            secret.as_str(),
+            access,
+            resolved.cloud_sql_proxy,
+        )
+        .await?;
         return Ok(OpenedLive {
             live,
             retire_at: Some(retire_at),
             managed_lease: None,
             ssh_tunnel,
+            cloud_sql_proxy,
         });
     }
     let secret = Zeroizing::new(super::super::fetch_profile_secret(profile)?);
-    let (live, ssh_tunnel) = open_live(profile, profile, secret.as_str(), access).await?;
+    let (live, ssh_tunnel, cloud_sql_proxy) =
+        open_live(profile, profile, secret.as_str(), access, None).await?;
     Ok(OpenedLive {
         live,
         retire_at: None,
         managed_lease: None,
         ssh_tunnel,
+        cloud_sql_proxy,
     })
 }
 

@@ -138,9 +138,10 @@ pnpm build:sidecars
 cargo check --workspace
 ```
 
-The CLI sidecar must exist before Tauri validates `bundle.externalBin`.
-`pnpm build:sidecars` builds the host `dopedb` binary and stages its target-qualified
-artifact into `src-tauri/binaries/`.
+Both external binaries must exist before Tauri validates `bundle.externalBin`.
+`pnpm build:sidecars` builds the host `dopedb` binary and stages it together with the
+version- and SHA-256-pinned official Cloud SQL Auth Proxy in
+`src-tauri/binaries/`.
 
 ## Landing Site
 

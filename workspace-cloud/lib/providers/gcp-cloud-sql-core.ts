@@ -36,6 +36,7 @@ export type GcpCloudSqlResource = {
   database: string;
   engine: ManagedEngine;
   networkMode: GcpCloudSqlNetworkMode;
+  production: boolean;
 };
 
 export function gcpProjectId(value: unknown): value is string {
@@ -128,6 +129,8 @@ export function parseGcpCloudSqlResource(
     database: body.database,
     engine: body.engine,
     networkMode,
+    // Rows created before production approval existed were all non-production.
+    production: body.production === true,
   };
 }
 
@@ -336,27 +339,6 @@ function caMode(
   return [...normalized][0];
 }
 
-function assertSupportedSslMode(ipConfiguration: JsonObject) {
-  const sslMode = ipConfiguration.sslMode;
-  if (
-    sslMode === "TRUSTED_CLIENT_CERTIFICATE_REQUIRED"
-    || (
-      (sslMode == null || sslMode === "SSL_MODE_UNSPECIFIED")
-      && ipConfiguration.requireSsl === true
-    )
-  ) {
-    throw new Error("Cloud SQL requires a client certificate that DopeDB cannot issue");
-  }
-  if (
-    sslMode != null
-    && sslMode !== "SSL_MODE_UNSPECIFIED"
-    && sslMode !== "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
-    && sslMode !== "ENCRYPTED_ONLY"
-  ) {
-    throw new Error("Cloud SQL returned an unsupported SSL mode");
-  }
-}
-
 export function gcpConnectionTarget(input: {
   connectSettings: unknown;
   instanceDetails: unknown;
@@ -365,6 +347,7 @@ export function gcpConnectionTarget(input: {
   host: string;
   sslmode: ManagedSslMode;
   tlsServerCaPem: string;
+  instanceConnectionName: string;
 } {
   const connectSettings = object(input.connectSettings);
   const instanceDetails = object(input.instanceDetails);
@@ -373,8 +356,16 @@ export function gcpConnectionTarget(input: {
   if (!connectSettings || !instanceDetails || !ipConfiguration) {
     throw new Error("Cloud SQL connection settings are incomplete");
   }
-  assertSupportedSslMode(ipConfiguration);
   const selectedCaMode = caMode(connectSettings, ipConfiguration);
+  const instanceConnectionName = instanceDetails.connectionName;
+  if (
+    typeof instanceConnectionName !== "string"
+    || instanceConnectionName.length > 300
+    || !/^[a-z][a-z0-9:.-]{4,298}:[a-z0-9-]{1,100}:[A-Za-z0-9][A-Za-z0-9_.-]{0,98}$/
+      .test(instanceConnectionName)
+  ) {
+    throw new Error("Cloud SQL instance connection name is unavailable");
+  }
   const ca = object(connectSettings.serverCaCert)
     ?? object(instanceDetails.serverCaCert);
   const cert = ca?.cert;
@@ -435,7 +426,12 @@ export function gcpConnectionTarget(input: {
     ) {
       throw new Error("Cloud SQL custom DNS name is not present in the certificate SANs");
     }
-    return { host: dns, sslmode: "verify-full", tlsServerCaPem: cert };
+    return {
+      host: dns,
+      sslmode: "verify-full",
+      tlsServerCaPem: cert,
+      instanceConnectionName,
+    };
   }
 
   const addressType = selectedMode === "PUBLIC" ? "PRIMARY" : "PRIVATE";
@@ -449,6 +445,7 @@ export function gcpConnectionTarget(input: {
     host: address.ipAddress,
     sslmode: "verify-ca",
     tlsServerCaPem: cert,
+    instanceConnectionName,
   };
 }
 

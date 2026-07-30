@@ -46,7 +46,9 @@ export function safeReturnTo(value: string | null, fallback = "/settings"): stri
     const base = "https://return.dopedb.invalid";
     const target = new URL(value, base);
     if (target.origin !== base) return fallback;
-    return `${target.pathname}${target.search}${target.hash}`;
+    // OAuth callbacks are server requests, so browser-only fragments cannot be
+    // round-tripped and Better Auth rejects them as callback URLs.
+    return `${target.pathname}${target.search}`;
   } catch {
     return fallback;
   }

@@ -11,7 +11,10 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
-import type { ConnectionProfile } from "../../features/connections/domain";
+import {
+  connectionAccessIssue,
+  type ConnectionProfile,
+} from "../../features/connections/domain";
 import type { ConnectionLaunchPreset } from "../../features/connections/presets";
 import {
   deleteConnection,
@@ -175,6 +178,16 @@ export function DatabaseExplorer({
   }, [catalogScope.key]);
 
   const wantedIds = useMemo(() => [...wanted].sort(), [wanted]);
+  const readableWantedIds = useMemo(() => {
+    const byId = new Map<string, ConnectionProfile>(
+      connections.map((connection) => [connection.id, connection]),
+    );
+    return wantedIds.filter((id) => {
+      const connection = byId.get(id);
+      return connection !== undefined
+        && connectionAccessIssue(connection) === undefined;
+    });
+  }, [connections, wantedIds]);
   const {
     databasesByConnection,
     databaseOverviews,
@@ -187,7 +200,7 @@ export function DatabaseExplorer({
     detailErrs,
     requestDetails,
     forgetDetails,
-  } = useCatalogTree(wantedIds, catalogScope);
+  } = useCatalogTree(readableWantedIds, catalogScope);
   const errs = { ...overviewErrs, ...refreshErrs };
 
   // Expanding a node subscribes to its catalog; the query cache decides whether that is a

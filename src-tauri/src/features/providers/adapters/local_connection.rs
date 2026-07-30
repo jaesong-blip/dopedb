@@ -11,7 +11,7 @@ use reqwest::{redirect::Policy, Client, Response, StatusCode, Url};
 use serde_json::Value;
 
 use crate::connection::{
-    ProviderLocalBindingPin, ProviderLocalConnectionPort, ProviderLocalFuture,
+    CloudSqlProxyConfig, ProviderLocalBindingPin, ProviderLocalConnectionPort, ProviderLocalFuture,
     ProviderLocalPinRequest, ProviderLocalResolveRequest, ProviderLocalResource,
     ProviderLocalSecret, ResolvedProviderLocalConnection,
 };
@@ -152,6 +152,7 @@ impl ProviderLocalResolver {
             &row.integration_generation,
         );
         let mut profile = request.profile.clone();
+        let mut cloud_sql_proxy = None;
         match &request.authority.resource {
             ProviderLocalResource::Neon {
                 project,
@@ -195,6 +196,11 @@ impl ProviderLocalResolver {
                 profile
                     .extra_params
                     .insert("sslrootcert_pem".into(), settings.server_ca_pem);
+                cloud_sql_proxy = Some(CloudSqlProxyConfig {
+                    instance_connection_name: settings.instance_connection_name,
+                    access_token: settings.access_token,
+                    network_mode: *network_mode,
+                });
             }
         }
         Ok(ResolvedProviderLocalConnection {
@@ -202,6 +208,7 @@ impl ProviderLocalResolver {
             // The runtime retrieves the account-scoped database secret only
             // after this local/provider resolution has succeeded.
             secret: ProviderLocalSecret::ProfileSecret,
+            cloud_sql_proxy,
         })
     }
 

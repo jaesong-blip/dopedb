@@ -7,6 +7,7 @@ use std::time::Duration;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+use super::cloud_sql_proxy::CloudSqlProxyConfig;
 use super::ProviderLocalTarget;
 use crate::error::AppResult;
 use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
@@ -25,6 +26,7 @@ pub(crate) struct ManagedConnectionLease {
     pub(crate) profile: ConnectionProfile,
     pub(crate) secret: Zeroizing<String>,
     pub(crate) valid_for: Duration,
+    pub(crate) cloud_sql_proxy: Option<CloudSqlProxyConfig>,
 }
 
 /// Hosted authority required by shared connections.

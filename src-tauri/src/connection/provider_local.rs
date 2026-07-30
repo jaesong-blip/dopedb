@@ -12,6 +12,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use zeroize::Zeroizing;
 
+use super::cloud_sql_proxy::CloudSqlProxyConfig;
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{
     AccountId, ConnectionId, ProviderBindingId, ProviderIntegrationId, WorkspaceId,
@@ -148,6 +149,7 @@ pub(crate) enum ProviderLocalSecret {
 pub(crate) struct ResolvedProviderLocalConnection {
     pub(crate) profile: ConnectionProfile,
     pub(crate) secret: ProviderLocalSecret,
+    pub(crate) cloud_sql_proxy: Option<CloudSqlProxyConfig>,
 }
 
 /// A local provider authority snapshot.  It is returned by the provider feature

@@ -14,7 +14,10 @@ import {
   PopupMenuCheckbox,
   PopupMenuItem,
 } from "../../design-system/components/PopupMenu";
-import type { ConnectionProfile } from "../../features/connections/domain";
+import {
+  connectionAccessIssue,
+  type ConnectionProfile,
+} from "../../features/connections/domain";
 import { isDemoSqliteConnection } from "../../features/connections/presets";
 import type {
   Catalog,
@@ -105,6 +108,7 @@ export default function ConnectionNode(props: Props) {
     accessLabelBase && connection.credentialMode === "managed"
       ? `${accessLabelBase} · ${t("workspace.managedCredentials")}`
       : accessLabelBase;
+  const accessIssue = connectionAccessIssue(connection);
   const description = `${connection.engine} · ${connection.host}${
     connection.engine !== "sqlite" ? `:${connection.port}` : ""
   } · ${connection.database}`;
@@ -404,6 +408,7 @@ export default function ConnectionNode(props: Props) {
               <CatalogTree
                 key={key}
                 connection={{ ...connection, database: database.name }}
+                accessIssue={accessIssue}
                 selected={props.selected}
                 selectedTableKey={props.selectedTableKey}
                 overview={props.databaseOverviews[key]}
@@ -428,6 +433,11 @@ export default function ConnectionNode(props: Props) {
                 onRetryOverview={() =>
                   props.onRetryOverview(database.name)
                 }
+                onResolveAccess={
+                  accessIssue === "credentials"
+                    ? () => props.onWorkspaceDialog("credentials")
+                    : undefined
+                }
                 onToggleRelationSection={props.onToggleRelationSection}
                 onToggleObjectSection={props.onToggleObjectSection}
                 revealRequest={props.revealRequest}
@@ -439,6 +449,7 @@ export default function ConnectionNode(props: Props) {
         ) : (
           <CatalogTree
             connection={connection}
+            accessIssue={accessIssue}
             selected={props.selected}
             selectedTableKey={props.selectedTableKey}
             error={props.error}
@@ -454,6 +465,11 @@ export default function ConnectionNode(props: Props) {
             }
             onRetryOverview={() =>
               props.onRetryOverview(connection.database)
+            }
+            onResolveAccess={
+              accessIssue === "credentials"
+                ? () => props.onWorkspaceDialog("credentials")
+                : undefined
             }
             onToggleRelationSection={props.onToggleRelationSection}
             onToggleObjectSection={props.onToggleObjectSection}

@@ -77,8 +77,9 @@ control-plane client:
   share that workflow.
 - GCP Cloud SQL: SQLx PostgreSQL/MySQL data plane plus a provider adapter that exchanges
   Vercel OIDC through Workload Identity Federation for short-lived IAM DB login tokens.
-  The driver pins the instance CA; MySQL cleartext authentication is enabled only over
-  that verified TLS channel.
+  The version- and digest-pinned official Cloud SQL Auth Proxy owns instance
+  authorization and TLS on a per-pool loopback transport; MySQL cleartext
+  authentication is therefore confined to that local verified connector path.
 - MongoDB Atlas: the official MongoDB Rust driver for BSON/commands plus the Atlas Admin
   API for managed resources.
 - Neo4j Aura: a Bolt/Cypher adapter plus the Aura control plane. Graph results remain

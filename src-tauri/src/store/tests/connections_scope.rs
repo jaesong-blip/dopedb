@@ -217,11 +217,28 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
     let id = Uuid::new_v4();
     let mut template = sqlite_profile(id, "managed");
     template.workspace_access = crate::model::WorkspaceConnectionAccess::Manage;
-    template.credential_mode = crate::model::WorkspaceCredentialMode::Managed;
+    template.credential_mode = crate::model::WorkspaceCredentialMode::MemberLocal;
     store
-        .sync_remote_connections(workspace_id, &user.id, &[(template, 1)])
+        .sync_remote_connections(workspace_id, &user.id, &[(template.clone(), 1)])
         .await
         .unwrap();
+    let credential_id = Uuid::new_v4();
+    store
+        .bind_connection_credentials(
+            id,
+            &user.id,
+            "member-account",
+            &HashMap::new(),
+            Some(&credential_id.to_string()),
+        )
+        .await
+        .unwrap();
+    template.credential_mode = crate::model::WorkspaceCredentialMode::Managed;
+    let removed_credential_ids = store
+        .sync_remote_connections(workspace_id, &user.id, &[(template, 2)])
+        .await
+        .unwrap();
+    assert!(removed_credential_ids.contains(&credential_id));
     store
         .activate_workspace(workspace_id, Some(&user.id))
         .await
@@ -234,6 +251,17 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
     );
     assert!(loaded.username.is_empty());
     assert!(loaded.secret_ref.is_none());
+    let binding_material: (String, String, Option<String>) = sqlx::query_as(
+        "SELECT username, extra_params, secret_ref
+         FROM workspace_connection_bindings
+         WHERE connection_id = ?1 AND account_user_id = ?2",
+    )
+    .bind(id.to_string())
+    .bind(user.id.as_str())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(binding_material, ("".into(), "{}".into(), None));
     assert!(matches!(
         store
             .bind_connection_credentials(
@@ -288,6 +316,12 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
     let mut read_only_template = template.clone();
     read_only_template.workspace_access = crate::model::WorkspaceConnectionAccess::Read;
     read_only_template.allow_writes = false;
+    let missing_binding = crate::connection::fetch_profile_secret(&read_only_template).unwrap_err();
+    assert!(matches!(
+        &missing_binding,
+        AppError::CredentialBindingRequired
+    ));
+    assert_eq!(missing_binding.kind(), "credentialBindingRequired");
     store
         .sync_remote_connections(workspace_id, &user_a.id, &[(template, 1)])
         .await

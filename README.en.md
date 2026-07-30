@@ -58,7 +58,8 @@ pnpm build:sidecars
 cargo check --workspace
 ```
 
-`pnpm build:sidecars` stages only the Local Broker `dopedb` CLI. Settings -> Agent
+`pnpm build:sidecars` stages the Local Broker `dopedb` CLI and the pinned official
+Cloud SQL Auth Proxy. Settings -> Agent
 tools detects the official Codex and Claude Code user Skill locations and installs
 the small DopeDB discovery Skill after one explicit confirmation. The version-matched
 full guide remains embedded in the signed CLI and is available offline. Existing or

@@ -51,6 +51,26 @@ export interface ConnectionProfile {
   credentialMode: WorkspaceCredentialMode;
 }
 
+export type ConnectionAccessIssue = "grant" | "credentials";
+
+/** One authority-neutral projection shared by Explorer loading and recovery UI. */
+export function connectionAccessIssue(
+  connection: Pick<
+    ConnectionProfile,
+    "credentialMode" | "secretRef" | "workspaceAccess"
+  >,
+): ConnectionAccessIssue | undefined {
+  if (connection.workspaceAccess === "view") return "grant";
+  if (
+    connection.workspaceAccess !== "local"
+    && connection.credentialMode === "memberLocal"
+    && connection.secretRef === null
+  ) {
+    return "credentials";
+  }
+  return undefined;
+}
+
 type DriverInstallMode = "bundled" | "managed";
 type DriverInstallState = "installed" | "available" | "planned";
 

@@ -64,7 +64,8 @@ pnpm site:build
 pnpm build:sidecars
 ```
 
-`pnpm build:sidecars`는 Local Broker용 `dopedb` CLI만 staging합니다. 앱의
+`pnpm build:sidecars`는 Local Broker용 `dopedb` CLI와 SHA-256으로 고정한
+공식 Cloud SQL Auth Proxy를 staging합니다. 앱의
 설정 > 명령줄에서 사용자 전용 CLI 위치와 PATH 변경 내용을 확인한 뒤 명시적으로
 설치할 수 있습니다.
 

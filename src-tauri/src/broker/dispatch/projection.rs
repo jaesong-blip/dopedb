@@ -241,7 +241,9 @@ pub(super) fn map_query_execution_error(error: &AppError) -> ErrorCode {
 pub(super) fn map_target_error(error: AppError) -> ErrorCode {
     match error {
         AppError::Blocked { .. } => ErrorCode::ScopeDenied,
-        AppError::Config(_) | AppError::Parse(_) => ErrorCode::InvalidRequest,
+        AppError::CredentialBindingRequired | AppError::Config(_) | AppError::Parse(_) => {
+            ErrorCode::InvalidRequest
+        }
         AppError::Timeout(_) => ErrorCode::Timeout,
         AppError::Db(_) | AppError::Mongo(_) | AppError::Network(_) => {
             ErrorCode::TargetExecutionFailed
@@ -264,9 +266,10 @@ pub(super) fn map_application_error(error: AppError) -> ErrorCode {
         AppError::Blocked { .. } => ErrorCode::PolicyBlocked,
         AppError::ProposalRequired => ErrorCode::PolicyBlocked,
         AppError::Safety(_) => ErrorCode::PolicyBlocked,
-        AppError::NotFound(_) | AppError::Config(_) | AppError::Parse(_) => {
-            ErrorCode::InvalidRequest
-        }
+        AppError::CredentialBindingRequired
+        | AppError::NotFound(_)
+        | AppError::Config(_)
+        | AppError::Parse(_) => ErrorCode::InvalidRequest,
         AppError::Db(_) | AppError::Mongo(_) => ErrorCode::TargetExecutionFailed,
         AppError::Timeout(_) => ErrorCode::Timeout,
         AppError::OutcomeUnknown(_) => ErrorCode::OperationConflict,

@@ -1,9 +1,9 @@
 //! Hardened ADC token hand-off for one immediately bounded Cloud SQL request.
 //!
-//! This module owns the short-lived bearer token only inside its call frame;
-//! neither the connection runtime nor a provider binding can observe it.
+//! This module owns the short-lived bearer token while it verifies the exact
+//! target. It can then move that token into the non-serializable connector
+//! carrier; provider bindings and persistent profiles can never observe it.
 
-#[cfg(not(windows))]
 use zeroize::Zeroizing;
 
 use crate::connection::GcpCloudSqlNetworkMode;
@@ -17,6 +17,15 @@ use super::{
     spawn_gcloud, validate_adc, AdcSource, GcloudSnapshot,
 };
 
+pub(crate) struct ResolvedCloudSqlConnectSettings {
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) sslmode: String,
+    pub(crate) server_ca_pem: String,
+    pub(crate) instance_connection_name: String,
+    pub(crate) access_token: Zeroizing<String>,
+}
+
 /// Resolves narrow network metadata using the same ADC path as verification.
 pub(crate) async fn resolve_cloud_sql_connect_settings(
     project: &str,
@@ -24,7 +33,7 @@ pub(crate) async fn resolve_cloud_sql_connect_settings(
     database: &str,
     engine: Engine,
     network_mode: GcpCloudSqlNetworkMode,
-) -> AppResult<super::gcp_target::GcpConnectSettings> {
+) -> AppResult<ResolvedCloudSqlConnectSettings> {
     #[cfg(windows)]
     {
         let _ = (project, instance, database, engine, network_mode);
@@ -32,8 +41,8 @@ pub(crate) async fn resolve_cloud_sql_connect_settings(
     }
     #[cfg(not(windows))]
     {
-        let token = access_token().await?;
-        let result = super::gcp_target::resolve_connect_settings(
+        let mut token = access_token().await?;
+        let settings = super::gcp_target::resolve_connect_settings(
             project,
             instance,
             database,
@@ -41,9 +50,18 @@ pub(crate) async fn resolve_cloud_sql_connect_settings(
             network_mode,
             &token,
         )
-        .await;
-        drop(token);
-        result
+        .await?;
+        let access_token = String::from_utf8(std::mem::take(&mut *token))
+            .map(Zeroizing::new)
+            .map_err(|_| super::blocked("GCP ADC credential returned an invalid access token"))?;
+        Ok(ResolvedCloudSqlConnectSettings {
+            host: settings.host,
+            port: settings.port,
+            sslmode: settings.sslmode,
+            server_ca_pem: settings.server_ca_pem,
+            instance_connection_name: settings.instance_connection_name,
+            access_token,
+        })
     }
 }
 
