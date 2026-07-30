@@ -37,6 +37,10 @@ import type {
   SqlEditorStatus,
 } from "../../features/queries/editorStatus";
 import {
+  useWorkspaceManualTransactions,
+  type WorkspaceManualTransaction,
+} from "../../features/queries/useWorkspaceManualTransactions";
+import {
   queryDocument,
   stableDocument,
   tableDocument,
@@ -152,6 +156,7 @@ function Shell() {
     querySessions: queryServices.sessions,
     workspaceScopeKey: catalogScope.key,
   });
+  const manualTransactions = useWorkspaceManualTransactions(conns);
   const [selectedId, setSelectedId] = usePersistentSelectedConnection();
   const {
     safety,
@@ -191,6 +196,7 @@ function Shell() {
   >(undefined);
   const [sqlEditorStatus, setSqlEditorStatus] =
     useState<SqlEditorStatus | null>(null);
+  const [explorerRevealRequest, setExplorerRevealRequest] = useState(0);
   const handleSqlCursorChange = useCallback(
     (documentId: string, position: SqlCursorPosition) => {
       setSqlEditorStatus((current) =>
@@ -412,6 +418,35 @@ function Shell() {
     setMobileExplorerOpen(false);
     setArea(nextArea);
     focusMainAfterMobileSelection();
+  }
+
+  function openManualTransaction(
+    transaction: WorkspaceManualTransaction,
+  ) {
+    if (selectedId !== transaction.connectionId) {
+      selectConnection(transaction.connectionId, "workspace");
+      return;
+    }
+    setEditing(null);
+    setSettingsOpen(false);
+    setSchemaDiffGroupKey(null);
+    setArea("workspace");
+    focusMainAfterMobileSelection();
+  }
+
+  async function settleManualTransaction(
+    transaction: WorkspaceManualTransaction,
+    action: "commit" | "rollback",
+  ) {
+    try {
+      if (action === "commit") {
+        await manualTransactions.commit(transaction);
+      } else {
+        await manualTransactions.rollback(transaction);
+      }
+    } catch (error) {
+      toast(errMessage(error), "error");
+    }
   }
 
   function activateDocument(
@@ -895,8 +930,11 @@ function Shell() {
       activeQueryServiceSessionId={queryServices.activeSessionId}
       backgroundTasks={backgroundTasks.tasks}
       cancellingBackgroundTaskKeys={backgroundTasks.cancellingKeys}
+      manualTransactions={manualTransactions.transactions}
+      settlingManualTransactionIds={manualTransactions.settlingIds}
       workbenchDocuments={selectedDocuments}
       activeWorkbenchDocumentId={activeDocumentId}
+      explorerRevealRequest={explorerRevealRequest}
       sqlEditorStatus={sqlEditorStatus}
       unseenOperationCount={unseen}
       sidebarWidth={sidebarW}
@@ -969,6 +1007,25 @@ function Shell() {
       onActivateQueryServiceSession={queryServices.activateSession}
       onCancelBackgroundTask={cancelBackgroundTask}
       onOpenAgentTask={openAgentTask}
+      onOpenManualTransaction={openManualTransaction}
+      onCommitManualTransaction={(transaction) =>
+        settleManualTransaction(transaction, "commit")
+      }
+      onRollbackManualTransaction={(transaction) =>
+        settleManualTransaction(transaction, "rollback")
+      }
+      onRevealDatabaseContext={() => {
+        setSettingsOpen(false);
+        setSchemaDiffGroupKey(null);
+        setArea("workspace");
+        showDatabaseExplorer();
+        if (compactShell) {
+          closeServices();
+          closeTerminalDock();
+          setMobileExplorerOpen(true);
+        }
+        setExplorerRevealRequest((request) => request + 1);
+      }}
       onActivateWorkbenchDocument={workbench.activateId}
       onRestoreWorkbenchDocument={workbench.updateDraft}
       onStartServicesResize={startServicesResize}

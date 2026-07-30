@@ -81,7 +81,11 @@ export function StatusBarBreadcrumbs({
   items,
 }: {
   label: string;
-  items: ReadonlyArray<{ id: string; label: string }>;
+  items: ReadonlyArray<{
+    id: string;
+    label: string;
+    onSelect?: () => void;
+  }>;
 }) {
   return (
     <nav
@@ -99,14 +103,23 @@ export function StatusBarBreadcrumbs({
               className="tw:size-3 tw:shrink-0 tw:text-muted-foreground"
             />
           ) : null}
-          <span
-            data-current={
-              index === items.length - 1 || undefined
-            }
-            className="tw:truncate tw:data-[current=true]:text-foreground"
-          >
-            {item.label}
-          </span>
+          {item.onSelect ? (
+            <button
+              type="button"
+              data-current={index === items.length - 1 || undefined}
+              className="tw:min-w-0 tw:cursor-pointer tw:truncate tw:border-0 tw:bg-transparent tw:p-0 tw:font-sans tw:text-inherit tw:hover:text-foreground tw:focus-visible:text-foreground tw:focus-visible:outline-none tw:focus-visible:underline tw:data-[current=true]:text-foreground"
+              onClick={item.onSelect}
+            >
+              {item.label}
+            </button>
+          ) : (
+            <span
+              data-current={index === items.length - 1 || undefined}
+              className="tw:truncate tw:data-[current=true]:text-foreground"
+            >
+              {item.label}
+            </span>
+          )}
         </span>
       ))}
     </nav>

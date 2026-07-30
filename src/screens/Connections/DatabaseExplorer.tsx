@@ -80,6 +80,9 @@ export function DatabaseExplorer({
   creatingDemo = false,
   compact = false,
   compactOpen = false,
+  revealRequest: externalRevealRequest = 0,
+  revealDatabase = null,
+  revealNamespace = null,
 }: {
   connections: ConnectionProfile[];
   selectedId: string | null;
@@ -100,6 +103,9 @@ export function DatabaseExplorer({
   creatingDemo?: boolean;
   compact?: boolean;
   compactOpen?: boolean;
+  revealRequest?: number;
+  revealDatabase?: string | null;
+  revealNamespace?: string | null;
 }) {
   const { t } = useI18n();
   const toast = useToast();
@@ -109,7 +115,7 @@ export function DatabaseExplorer({
   const [globalFilter, setGlobalFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [savingScopeId, setSavingScopeId] = useState<string | null>(null);
-  const [revealRequest, setRevealRequest] = useState(0);
+  const [localRevealRequest, setLocalRevealRequest] = useState(0);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
     useState<ProviderKind | null>(null);
   const providerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -438,7 +444,9 @@ export function DatabaseExplorer({
         onToggleObjectSection={(kind) =>
           toggleObjectSection(connection.id, kind)
         }
-        revealRequest={revealRequest}
+        revealRequest={externalRevealRequest + localRevealRequest}
+        revealDatabase={revealDatabase}
+        revealNamespace={revealNamespace}
       />
     );
   }
@@ -556,7 +564,7 @@ export function DatabaseExplorer({
     setSearchOpen(false);
     commands.openConnection(selectedConnection.id);
     ensureGroupLoaded(selectedConnection.id);
-    setRevealRequest((request) => request + 1);
+    setLocalRevealRequest((request) => request + 1);
   }
 
   function renderLaunchButton(

@@ -84,6 +84,8 @@ type Props = {
   onToggleRelationSection: (key: string) => void;
   onToggleObjectSection: (kind: string) => void;
   revealRequest: number;
+  revealDatabase: string | null;
+  revealNamespace: string | null;
 };
 
 export default function ConnectionNode(props: Props) {
@@ -429,6 +431,8 @@ export default function ConnectionNode(props: Props) {
                 onToggleRelationSection={props.onToggleRelationSection}
                 onToggleObjectSection={props.onToggleObjectSection}
                 revealRequest={props.revealRequest}
+                revealDatabase={props.revealDatabase}
+                revealNamespace={props.revealNamespace}
               />
             );
           })
@@ -454,6 +458,8 @@ export default function ConnectionNode(props: Props) {
             onToggleRelationSection={props.onToggleRelationSection}
             onToggleObjectSection={props.onToggleObjectSection}
             revealRequest={props.revealRequest}
+            revealDatabase={props.revealDatabase}
+            revealNamespace={props.revealNamespace}
           />
         ))}
     </div>

@@ -9,6 +9,7 @@ import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import { defaultSqlNamespace } from "../queries/namespace";
 import type { SqlEditorStatus } from "../queries/editorStatus";
+import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
 import type { WorkbenchDocument } from "../workbench/domain";
 import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
 import LocalHistoryToolWindow from "../localHistory/LocalHistoryToolWindow";
@@ -53,8 +54,11 @@ type Props = {
   activeQueryServiceSessionId: string | null;
   backgroundTasks: BackgroundTask[];
   cancellingBackgroundTaskKeys: ReadonlySet<string>;
+  manualTransactions: WorkspaceManualTransaction[];
+  settlingManualTransactionIds: ReadonlySet<string>;
   workbenchDocuments: WorkbenchDocument[];
   activeWorkbenchDocumentId: string | null;
+  explorerRevealRequest: number;
   sqlEditorStatus: SqlEditorStatus | null;
   unseenOperationCount: number;
   sidebarWidth: number;
@@ -79,6 +83,16 @@ type Props = {
   onActivateQueryServiceSession: (id: string) => void;
   onCancelBackgroundTask: (task: BackgroundTask) => Promise<void>;
   onOpenAgentTask: (connectionId: string) => void;
+  onOpenManualTransaction: (
+    transaction: WorkspaceManualTransaction,
+  ) => void;
+  onCommitManualTransaction: (
+    transaction: WorkspaceManualTransaction,
+  ) => Promise<void>;
+  onRollbackManualTransaction: (
+    transaction: WorkspaceManualTransaction,
+  ) => Promise<void>;
+  onRevealDatabaseContext: () => void;
   onActivateWorkbenchDocument: (id: string) => void;
   onRestoreWorkbenchDocument: (id: string, content: string) => void;
   onStartServicesResize: (event: {
@@ -301,6 +315,9 @@ function ShellLayoutContent(props: Props) {
             creatingDemo={creatingDemo}
             compact={compact}
             compactOpen={mobileExplorerOpen}
+            revealRequest={props.explorerRevealRequest}
+            revealDatabase={selectedDatabase}
+            revealNamespace={selectedNamespace}
           />
         )}
       </div>
@@ -387,6 +404,10 @@ function ShellLayoutContent(props: Props) {
         cancellingBackgroundTaskKeys={
           props.cancellingBackgroundTaskKeys
         }
+        manualTransactions={props.manualTransactions}
+        settlingManualTransactionIds={
+          props.settlingManualTransactionIds
+        }
         editorStatus={activeSqlEditorStatus}
         writeEnabled={writeEnabled}
         unseenOperationCount={props.unseenOperationCount}
@@ -395,7 +416,11 @@ function ShellLayoutContent(props: Props) {
           if (!servicesVisible) props.onToggleServices();
         }}
         onOpenAgentTask={props.onOpenAgentTask}
+        onOpenManualTransaction={props.onOpenManualTransaction}
+        onCommitManualTransaction={props.onCommitManualTransaction}
+        onRollbackManualTransaction={props.onRollbackManualTransaction}
         onCancelBackgroundTask={props.onCancelBackgroundTask}
+        onRevealDatabaseContext={props.onRevealDatabaseContext}
         onOpenNotifications={props.onOpenNotifications}
         onSafetySettings={props.onSafetySettings}
       />

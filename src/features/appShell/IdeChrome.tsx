@@ -7,6 +7,8 @@ import BackgroundTasksMenu from "../backgroundTasks/BackgroundTasksMenu";
 import type { BackgroundTask } from "../backgroundTasks/domain";
 import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
+import ManualTransactionsMenu from "../queries/ManualTransactionsMenu";
+import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
 import {
   SQL_EDITOR_INDENT_SIZE,
   type SqlEditorStatus,
@@ -177,12 +179,18 @@ export function IdeStatusBar({
   activeDocument,
   backgroundTasks,
   cancellingBackgroundTaskKeys,
+  manualTransactions,
+  settlingManualTransactionIds,
   editorStatus,
   writeEnabled,
   unseenOperationCount,
   onOpenQueryTask,
   onOpenAgentTask,
+  onOpenManualTransaction,
+  onCommitManualTransaction,
+  onRollbackManualTransaction,
   onCancelBackgroundTask,
+  onRevealDatabaseContext,
   onOpenNotifications,
   onSafetySettings,
 }: {
@@ -193,34 +201,57 @@ export function IdeStatusBar({
   activeDocument: WorkbenchDocument | null;
   backgroundTasks: BackgroundTask[];
   cancellingBackgroundTaskKeys: ReadonlySet<string>;
+  manualTransactions: WorkspaceManualTransaction[];
+  settlingManualTransactionIds: ReadonlySet<string>;
   editorStatus: SqlEditorStatus | null;
   writeEnabled: boolean;
   unseenOperationCount: number;
   onOpenQueryTask: (sessionId: string) => void;
   onOpenAgentTask: (connectionId: string) => void;
+  onOpenManualTransaction: (
+    transaction: WorkspaceManualTransaction,
+  ) => void;
+  onCommitManualTransaction: (
+    transaction: WorkspaceManualTransaction,
+  ) => Promise<void>;
+  onRollbackManualTransaction: (
+    transaction: WorkspaceManualTransaction,
+  ) => Promise<void>;
   onCancelBackgroundTask: (task: BackgroundTask) => Promise<void>;
+  onRevealDatabaseContext: () => void;
   onOpenNotifications: () => void;
   onSafetySettings: () => void;
 }) {
   const { t } = useI18n();
-  const breadcrumbs: Array<{ id: string; label: string }> = [
-    { id: "database", label: t("ide.databaseRoot") },
+  const breadcrumbs: Array<{
+    id: string;
+    label: string;
+    onSelect?: () => void;
+  }> = [
+    {
+      id: "database",
+      label: t("ide.databaseRoot"),
+      onSelect: onRevealDatabaseContext,
+    },
   ];
   if (selected) {
     breadcrumbs.push({
       id: `connection:${selected.id}`,
       label: selected.name || t("app.unnamed"),
+      onSelect: onRevealDatabaseContext,
     });
     if (selectedDatabase) {
       breadcrumbs.push({
         id: `database:${selectedDatabase}`,
         label: selectedDatabase,
+        onSelect: onRevealDatabaseContext,
       });
     }
     if (selectedNamespace) {
       breadcrumbs.push({
         id: `namespace:${selectedNamespace}`,
         label: selectedNamespace,
+        onSelect: onRevealDatabaseContext,
       });
     }
     if (selectedTable) {
@@ -231,10 +262,15 @@ export function IdeStatusBar({
             ? t("ide.views")
             : t("ide.tables");
       breadcrumbs.push(
-        { id: `group:${relationGroup}`, label: relationGroup },
+        {
+          id: `group:${relationGroup}`,
+          label: relationGroup,
+          onSelect: onRevealDatabaseContext,
+        },
         {
           id: `relation:${selectedTable.name}`,
           label: tableLabel(selected.engine, selectedTable),
+          onSelect: onRevealDatabaseContext,
         },
       );
     } else if (activeDocument?.kind === "sql") {
@@ -264,6 +300,15 @@ export function IdeStatusBar({
         />
       }
     >
+      {manualTransactions.length > 0 ? (
+        <ManualTransactionsMenu
+          transactions={manualTransactions}
+          settlingIds={settlingManualTransactionIds}
+          onOpen={onOpenManualTransaction}
+          onCommit={onCommitManualTransaction}
+          onRollback={onRollbackManualTransaction}
+        />
+      ) : null}
       {backgroundTasks.length > 0 ? (
         <BackgroundTasksMenu
           tasks={backgroundTasks}

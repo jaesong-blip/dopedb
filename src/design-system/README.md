@@ -430,10 +430,15 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   `StatusBadge`의 tone은 `data-tone`과 정적 Tailwind variant가 소유하며 화면별
   `riskClass`/`badgeClass` style map을 만들지 않는다. 왼쪽 breadcrumb는
   `Database → data source → namespace → object group → object/document` 순서를
-  사용한다. 오른쪽은 실제 running/waiting session 수, CodeMirror가 보고한
-  `line:column`, line ending, encoding, 동일한 editor indent 설정, 실제
-  safety allow-write 상태와 unread operation만 표시한다. 완료 query 결과,
-  engine/schema 이름과 top toolbar의 Settings action을 하단에 중복하지 않는다.
+  사용하고 database/source/namespace/object 항목은 고정 Explorer의 같은 문맥을
+  reveal한다. 열린 document 항목은 현재 문서가 문맥을 소유하므로 정적으로
+  유지한다. 오른쪽은 workspace의 실제 manual transaction과
+  running/waiting session 수, CodeMirror가 보고한 `line:column`, line ending,
+  encoding, 동일한 editor indent 설정, 실제 safety allow-write 상태와 unread
+  operation만 표시한다. manual transaction popup은 active 상태에서
+  connection 이동·commit·rollback, failed 상태에서 이동·rollback만 제공한다.
+  완료 query 결과, engine/schema 이름과 top toolbar의 Settings action을 하단에
+  중복하지 않는다.
   잠금 action은 해당 data source의 Safety 설정을, bell action은 실제 Activity
   문서를 연다. 화면 전용 status CSS나 style map은 만들지 않는다.
 - `DiagnosticSummary`, `DiagnosticCount`: 설정·속성 편집기의 Problems 목록과
