@@ -246,10 +246,10 @@ export async function persistProviderIntegration(
       SELECT mutation."organization_id", ${input.authority.userId},
              'provider.connect', 'provider_integration', mutation."id"::text,
              jsonb_build_object(
-               'provider', ${input.provider},
-               'revokedLeases', ${input.revokedLeases},
-               'production', ${input.production},
-               'productionApproved', ${input.production === true}
+               'provider', ${input.provider}::text,
+               'revokedLeases', ${input.revokedLeases}::integer,
+               'production', ${input.production}::boolean,
+               'productionApproved', ${input.production === true}::boolean
              ), ${input.requestId}::uuid
       FROM mutation
       RETURNING "resource_id"
