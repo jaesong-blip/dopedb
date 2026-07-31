@@ -5,7 +5,7 @@ import type { AnchorHTMLAttributes, ReactNode } from "react";
 
 type TrackedLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
   children: ReactNode;
-  event: string;
+  event?: string;
   properties?: Record<string, string | number | boolean>;
 };
 
@@ -20,7 +20,9 @@ export function TrackedLink({
     <a
       {...props}
       onClick={(clickEvent) => {
-        track(event, properties);
+        if (event) {
+          track(event, properties);
+        }
         onClick?.(clickEvent);
       }}
     >

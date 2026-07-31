@@ -15,6 +15,7 @@ import {
   TerminalSquare,
   Waypoints,
 } from "lucide-react";
+import { MarketingButton } from "./MarketingButton";
 import { TrackedLink } from "./TrackedLink";
 
 const repoUrl = "https://github.com/json-choi/dopedb";
@@ -411,67 +412,98 @@ export default async function Home({ searchParams }: HomeProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label={c.nav.home}>
-          <span className="brand-mark" aria-hidden="true">
+      <header className="tw:sticky tw:top-0 tw:z-20 tw:grid tw:grid-cols-[1fr_auto_1fr] tw:items-center tw:gap-6 tw:border-b tw:border-ink/10 tw:bg-paper/90 tw:px-[clamp(18px,4vw,56px)] tw:py-4 tw:backdrop-blur-[18px] tw:max-[980px]:grid-cols-[1fr_auto] tw:max-[620px]:px-3.5 tw:max-[620px]:py-3">
+        <a
+          className="tw:inline-flex tw:items-center tw:justify-self-start tw:gap-2.5 tw:text-[15px] tw:font-[750]"
+          href="#top"
+          aria-label={c.nav.home}
+        >
+          <span
+            className="tw:inline-flex tw:size-[34px] tw:items-center tw:justify-center tw:rounded-md tw:border tw:border-ink/15 tw:bg-site-black tw:text-brand tw:max-[620px]:size-8"
+            aria-hidden="true"
+          >
             <Database size={18} />
           </span>
           <span>{lang === "ko" ? "DopeDB · 도프디비" : "DopeDB"}</span>
         </a>
-        <nav className="nav-links" aria-label="Primary navigation">
+        <nav
+          className="tw:inline-flex tw:items-center tw:justify-self-center tw:gap-2 tw:rounded-md tw:border tw:border-ink/10 tw:bg-site-white/70 tw:p-[5px] tw:max-[980px]:hidden tw:[&_a]:min-h-[34px] tw:[&_a]:rounded-sm tw:[&_a]:px-3 tw:[&_a]:py-2 tw:[&_a]:text-sm tw:[&_a]:font-[650] tw:[&_a]:text-ink-soft tw:[&_a]:hover:bg-ink/5 tw:[&_a]:hover:text-ink"
+          aria-label="Primary navigation"
+        >
           <a href="#why">{c.nav.why}</a>
           <a href="#safety">{c.nav.safety}</a>
           <a href="#download">{c.nav.download}</a>
           <a href="#docs">{c.nav.docs}</a>
         </nav>
-        <div className="topbar-actions">
+        <div className="tw:inline-flex tw:items-center tw:justify-self-end tw:gap-2">
           <a
-            className="language-link"
+            className="tw:inline-flex tw:min-h-[38px] tw:items-center tw:rounded-md tw:border tw:border-ink/15 tw:bg-site-white/75 tw:px-3 tw:py-2 tw:text-[13px] tw:font-[760] tw:text-ink-soft tw:hover:bg-site-white tw:hover:text-ink"
             href={otherLang === "ko" ? "/ko" : "/"}
             hrefLang={otherLang}
             aria-label={otherLang === "ko" ? "한국어로 보기" : "View in English"}
           >
             {otherLang === "ko" ? "한국어" : "English"}
           </a>
-          <a className="icon-link" href={repoUrl} aria-label={c.nav.github}>
+          <a
+            className="tw:inline-flex tw:size-[38px] tw:items-center tw:justify-center tw:rounded-md tw:border tw:border-ink/15 tw:bg-site-white/75 tw:hover:bg-site-white tw:hover:text-ink"
+            href={repoUrl}
+            aria-label={c.nav.github}
+          >
             <GitBranch size={20} />
           </a>
         </div>
       </header>
 
-      <section className="hero" id="top">
-        <div className="hero-copy">
-          <p className="eyebrow">
+      <section
+        className="tw:relative tw:grid tw:min-h-[min(780px,calc(100vh-72px))] tw:grid-cols-[minmax(0,0.88fr)_minmax(430px,1.12fr)] tw:items-center tw:gap-[clamp(30px,5vw,76px)] tw:overflow-hidden tw:border-b tw:border-line tw:bg-hero tw:bg-[length:46px_46px,46px_46px,auto,auto] tw:px-[clamp(18px,4vw,56px)] tw:pt-[clamp(50px,8vw,94px)] tw:pb-16 tw:max-[980px]:min-h-0 tw:max-[980px]:grid-cols-1 tw:max-[980px]:pt-12 tw:max-[620px]:px-3.5 tw:max-[620px]:pt-9 tw:max-[620px]:pb-12"
+        id="top"
+      >
+        <div className="tw:max-w-[690px] tw:max-[980px]:max-w-none">
+          <p className="tw:mb-4 tw:inline-flex tw:items-center tw:gap-2 tw:text-[13px] tw:font-extrabold tw:text-brand-emphasis tw:uppercase">
             <Sparkles size={15} />
             {c.hero.eyebrow}
           </p>
-          <h1>
+          <h1 className="tw:text-[clamp(72px,10vw,154px)] tw:leading-[0.86] tw:font-[860] tw:max-[620px]:text-[clamp(58px,20vw,86px)]">
             DopeDB
-            {lang === "ko" && <span className="hero-korean-name">도프디비</span>}
-            <span className="hero-title-tag">{c.hero.tag}</span>
+            {lang === "ko" && (
+              <span className="tw:ml-[0.35em] tw:inline-block tw:align-[0.42em] tw:text-[0.22em] tw:font-[780] tw:text-brand-emphasis">
+                도프디비
+              </span>
+            )}
+            <span className="tw:mt-5 tw:block tw:text-[clamp(20px,2.6vw,34px)] tw:leading-[1.15] tw:font-[720] tw:text-ink-soft">
+              {c.hero.tag}
+            </span>
           </h1>
-          <p className="hero-text">{c.hero.text}</p>
-          <div className="hero-actions" aria-label="Primary actions">
-            <TrackedLink
-              className="button primary"
+          <p className="tw:mt-7 tw:max-w-[650px] tw:text-[clamp(16px,1.7vw,20px)] tw:leading-relaxed tw:text-ink-soft">
+            {c.hero.text}
+          </p>
+          <div
+            className="tw:mt-8 tw:flex tw:flex-wrap tw:gap-3 tw:max-[620px]:grid tw:max-[620px]:grid-cols-1"
+            aria-label="Primary actions"
+          >
+            <MarketingButton
+              variant="primary"
               href={downloadUrls.windows}
               event="Download Clicked"
               properties={{ source: "hero", target: "windows_x64_installer" }}
             >
               <Download size={18} />
               {c.hero.windowsDownload}
-            </TrackedLink>
-            <TrackedLink
-              className="button secondary"
+            </MarketingButton>
+            <MarketingButton
+              variant="secondary"
               href={downloadUrls.macApple}
               event="Download Clicked"
               properties={{ source: "hero", target: "macos_arm64_dmg" }}
             >
               <Download size={18} />
               {c.hero.macDownload}
-            </TrackedLink>
+            </MarketingButton>
           </div>
-          <div className="signal-row" aria-label="Project highlights">
+          <div
+            className="tw:mt-[26px] tw:inline-flex tw:flex-wrap tw:items-center tw:gap-2.5 tw:[&_span]:inline-flex tw:[&_span]:min-h-[34px] tw:[&_span]:items-center tw:[&_span]:gap-[7px] tw:[&_span]:rounded-md tw:[&_span]:border tw:[&_span]:border-ink/10 tw:[&_span]:bg-site-white/70 tw:[&_span]:px-2.5 tw:[&_span]:py-[7px] tw:[&_span]:text-[13px] tw:[&_span]:font-[720] tw:[&_span]:text-ink-soft tw:[&_svg]:text-brand-emphasis tw:max-[620px]:[&_span]:w-full"
+            aria-label="Project highlights"
+          >
             {c.hero.signals.map((signal) => (
               <span key={signal}>
                 <CheckCircle2 size={16} />
@@ -481,8 +513,11 @@ export default async function Home({ searchParams }: HomeProps) {
           </div>
         </div>
 
-        <div className="hero-visual" aria-label="DopeDB product preview">
-          <div className="preview-shell">
+        <div
+          className="tw:relative tw:min-w-0 tw:max-[980px]:max-w-[820px]"
+          aria-label="DopeDB product preview"
+        >
+          <div className="tw:relative tw:rotate-[-1.2deg] tw:overflow-hidden tw:rounded-md tw:border tw:border-ink/15 tw:bg-site-black tw:shadow-floating tw:after:pointer-events-none tw:after:absolute tw:after:inset-0 tw:after:rounded-md tw:after:shadow-inset-highlight tw:max-[980px]:rotate-0 tw:[&_img]:block tw:[&_img]:h-auto tw:[&_img]:w-full">
             <Image
               src="/dopedb-dashboard.png"
               alt={c.hero.imageAlt}
@@ -494,161 +529,223 @@ export default async function Home({ searchParams }: HomeProps) {
         </div>
       </section>
 
-      <section className="positioning" id="why">
-        <div className="section-head">
-          <p className="eyebrow">
+      <section
+        className="tw:border-b tw:border-line tw:bg-site-white tw:px-[clamp(18px,4vw,56px)] tw:py-[clamp(64px,9vw,118px)]"
+        id="why"
+      >
+        <div className="tw:max-w-[940px]">
+          <p className="tw:mb-4 tw:inline-flex tw:items-center tw:gap-2 tw:text-[13px] tw:font-extrabold tw:text-brand-emphasis tw:uppercase">
             <Sparkles size={15} />
             {c.positioning.eyebrow}
           </p>
-          <h2>{c.positioning.title}</h2>
-          <p>{c.positioning.body}</p>
+          <h2 className="tw:max-w-[820px] tw:text-[clamp(34px,5vw,70px)] tw:leading-[0.98] tw:font-[820] tw:max-[620px]:text-[clamp(32px,11vw,46px)]">
+            {c.positioning.title}
+          </h2>
+          <p className="tw:mt-[22px] tw:max-w-[760px] tw:text-[clamp(16px,1.7vw,20px)] tw:leading-relaxed tw:text-ink-soft">
+            {c.positioning.body}
+          </p>
         </div>
-        <div className="positioning-grid">
+        <div className="tw:mt-[38px] tw:grid tw:grid-cols-3 tw:gap-px tw:overflow-hidden tw:rounded-md tw:border tw:border-line tw:bg-line tw:max-[980px]:grid-cols-1">
           {c.positioning.items.map((item) => (
-            <article className="positioning-item" key={item.title}>
-              <h3>{item.title}</h3>
-              <p>{item.body}</p>
+            <article
+              className="tw:min-h-[220px] tw:bg-paper tw:p-6 tw:max-[980px]:min-h-0"
+              key={item.title}
+            >
+              <h3 className="tw:max-w-[280px] tw:text-[19px] tw:font-[780]">
+                {item.title}
+              </h3>
+              <p className="tw:mt-3.5 tw:text-base tw:leading-relaxed tw:text-ink-soft">
+                {item.body}
+              </p>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="principles" id="safety">
-        <div className="section-head">
-          <p className="eyebrow">
+      <section
+        className="tw:bg-paper tw:px-[clamp(18px,4vw,56px)] tw:py-[clamp(64px,9vw,118px)] tw:max-[620px]:px-3.5 tw:max-[620px]:py-[58px]"
+        id="safety"
+      >
+        <div className="tw:max-w-[940px]">
+          <p className="tw:mb-4 tw:inline-flex tw:items-center tw:gap-2 tw:text-[13px] tw:font-extrabold tw:text-brand-emphasis tw:uppercase">
             <LockKeyhole size={15} />
             {c.principles.eyebrow}
           </p>
-          <h2>{c.principles.title}</h2>
-          <p>{c.principles.body}</p>
+          <h2 className="tw:max-w-[820px] tw:text-[clamp(34px,5vw,70px)] tw:leading-[0.98] tw:font-[820] tw:max-[620px]:text-[clamp(32px,11vw,46px)]">
+            {c.principles.title}
+          </h2>
+          <p className="tw:mt-[22px] tw:max-w-[760px] tw:text-[clamp(16px,1.7vw,20px)] tw:leading-relaxed tw:text-ink-soft">
+            {c.principles.body}
+          </p>
         </div>
-        <div className="feature-grid">
+        <div className="tw:mt-[38px] tw:grid tw:grid-cols-3 tw:gap-3.5 tw:max-[980px]:grid-cols-1">
           {c.principles.items.map((item) => (
-            <article className="feature-card" key={item.title}>
+            <article
+              className="tw:grid tw:min-h-[260px] tw:content-start tw:gap-4 tw:rounded-md tw:border tw:border-line tw:bg-paper tw:p-6 tw:max-[980px]:min-h-0 tw:[&_svg]:size-[42px] tw:[&_svg]:rounded-md tw:[&_svg]:bg-site-black tw:[&_svg]:p-[9px] tw:[&_svg]:text-brand"
+              key={item.title}
+            >
               <item.icon size={22} />
-              <h3>{item.title}</h3>
-              <p>{item.body}</p>
+              <h3 className="tw:text-[19px] tw:font-[780]">{item.title}</h3>
+              <p className="tw:text-base tw:leading-relaxed tw:text-ink-soft">
+                {item.body}
+              </p>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="workflow">
-        <div className="workflow-copy">
-          <p className="eyebrow">
+      <section className="tw:grid tw:grid-cols-[minmax(0,0.92fr)_minmax(360px,0.8fr)] tw:items-center tw:gap-[clamp(28px,6vw,80px)] tw:bg-site-black tw:px-[clamp(18px,4vw,56px)] tw:py-[clamp(64px,9vw,118px)] tw:text-site-white tw:max-[980px]:grid-cols-1 tw:max-[620px]:px-3.5 tw:max-[620px]:py-[58px]">
+        <div>
+          <p className="tw:mb-4 tw:inline-flex tw:items-center tw:gap-2 tw:text-[13px] tw:font-extrabold tw:text-brand tw:uppercase">
             <Waypoints size={15} />
             {c.workflow.eyebrow}
           </p>
-          <h2>{c.workflow.title}</h2>
-          <ol className="steps">
-            {c.workflow.steps.map((step) => (
-              <li key={step}>{step}</li>
+          <h2 className="tw:max-w-[820px] tw:text-[clamp(34px,5vw,70px)] tw:leading-[0.98] tw:font-[820] tw:max-[620px]:text-[clamp(32px,11vw,46px)]">
+            {c.workflow.title}
+          </h2>
+          <ol className="tw:mt-[30px] tw:grid tw:max-w-[720px] tw:list-none tw:gap-3.5 tw:p-0">
+            {c.workflow.steps.map((step, index) => (
+              <li
+                className="tw:grid tw:min-h-[52px] tw:grid-cols-[28px_1fr] tw:items-start tw:gap-4 tw:rounded-md tw:border tw:border-site-white/15 tw:bg-site-white/5 tw:px-3.5 tw:py-3 tw:text-base tw:leading-[1.45] tw:text-site-white/80"
+                key={step}
+              >
+                <span className="tw:grid tw:size-7 tw:place-items-center tw:rounded-md tw:bg-brand tw:text-[13px] tw:font-[850] tw:text-site-black">
+                  {index + 1}
+                </span>
+                <span className="tw:pt-[3px]">{step}</span>
+              </li>
             ))}
           </ol>
         </div>
-        <div className="terminal-panel" aria-label="Example agent output">
-          <div className="terminal-head">
-            <span />
-            <span />
-            <span />
+        <div
+          className="tw:overflow-hidden tw:rounded-md tw:border tw:border-site-white/15 tw:bg-terminal tw:shadow-terminal"
+          aria-label="Example agent output"
+        >
+          <div className="tw:flex tw:gap-[7px] tw:border-b tw:border-site-white/10 tw:px-4 tw:py-3.5">
+            <span className="tw:size-[11px] tw:rounded-full tw:bg-danger" />
+            <span className="tw:size-[11px] tw:rounded-full tw:bg-warning" />
+            <span className="tw:size-[11px] tw:rounded-full tw:bg-brand" />
           </div>
-          <pre>
-            <code>{c.workflow.terminal}</code>
+          <pre className="tw:m-0 tw:overflow-x-auto tw:p-[clamp(18px,3vw,30px)] tw:font-mono tw:text-[clamp(13px,1.6vw,16px)] tw:leading-[1.58] tw:text-site-white/90">
+            <code className="tw:font-mono">{c.workflow.terminal}</code>
           </pre>
         </div>
       </section>
 
-      <section className="download-band" id="download">
+      <section
+        className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-8 tw:border-b tw:border-line tw:bg-download tw:px-[clamp(18px,4vw,56px)] tw:py-[clamp(64px,9vw,118px)] tw:max-[980px]:grid-cols-1 tw:max-[620px]:px-3.5 tw:max-[620px]:py-[58px]"
+        id="download"
+      >
         <div>
-          <p className="eyebrow">
+          <p className="tw:mb-4 tw:inline-flex tw:items-center tw:gap-2 tw:text-[13px] tw:font-extrabold tw:text-brand-emphasis tw:uppercase">
             <Download size={15} />
             {c.download.eyebrow}
           </p>
-          <h2>{c.download.title}</h2>
-          <p>{c.download.body}</p>
-          <div className="gatekeeper-note">
-            <LockKeyhole size={18} />
+          <h2 className="tw:max-w-[820px] tw:text-[clamp(34px,5vw,70px)] tw:leading-[0.98] tw:font-[820] tw:max-[620px]:text-[clamp(32px,11vw,46px)]">
+            {c.download.title}
+          </h2>
+          <p className="tw:mt-[18px] tw:max-w-[720px] tw:text-[clamp(16px,1.7vw,20px)] tw:leading-relaxed tw:text-ink-soft">
+            {c.download.body}
+          </p>
+          <div className="tw:mt-[22px] tw:flex tw:max-w-[760px] tw:gap-3 tw:rounded-md tw:border tw:border-ink/15 tw:bg-site-white/65 tw:p-4">
+            <LockKeyhole
+              className="tw:mt-0.5 tw:shrink-0 tw:text-brand-emphasis"
+              size={18}
+            />
             <div>
-              <h3>{c.download.warningTitle}</h3>
-              <p>{c.download.warningBody}</p>
-              <p>
+              <h3 className="tw:text-base tw:font-[780]">{c.download.warningTitle}</h3>
+              <p className="tw:mt-1.5 tw:max-w-[720px] tw:text-[15px] tw:leading-relaxed tw:text-ink-soft">
+                {c.download.warningBody}
+              </p>
+              <p className="tw:mt-1.5 tw:max-w-[720px] tw:text-[15px] tw:leading-relaxed tw:text-ink-soft">
                 {c.download.terminalPrefix}{" "}
-                <code>sudo xattr -dr com.apple.quarantine /Applications/DopeDB.app</code>
+                <code className="tw:font-mono">
+                  sudo xattr -dr com.apple.quarantine /Applications/DopeDB.app
+                </code>
               </p>
             </div>
           </div>
         </div>
-        <div className="release-actions">
-          <TrackedLink
-            className="button primary"
+        <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-3 tw:max-[980px]:justify-start tw:max-[620px]:grid tw:max-[620px]:grid-cols-1">
+          <MarketingButton
+            variant="primary"
             href={downloadUrls.windows}
             event="Download Clicked"
             properties={{ source: "download_section", target: "windows_x64_installer" }}
           >
             <Download size={18} />
             {c.download.windows}
-          </TrackedLink>
-          <TrackedLink
-            className="button secondary"
+          </MarketingButton>
+          <MarketingButton
+            variant="secondary"
             href={downloadUrls.macApple}
             event="Download Clicked"
             properties={{ source: "download_section", target: "macos_arm64_dmg" }}
           >
             <Download size={18} />
             {c.download.macApple}
-          </TrackedLink>
-          <TrackedLink
-            className="button secondary"
+          </MarketingButton>
+          <MarketingButton
+            variant="secondary"
             href={downloadUrls.macIntel}
             event="Download Clicked"
             properties={{ source: "download_section", target: "macos_x64_dmg" }}
           >
             <Download size={18} />
             {c.download.macIntel}
-          </TrackedLink>
-          <a className="button secondary" href={`${repoUrl}/blob/main/docs/PROJECT.md#development`}>
+          </MarketingButton>
+          <MarketingButton
+            variant="secondary"
+            href={`${repoUrl}/blob/main/docs/PROJECT.md#development`}
+          >
             <TerminalSquare size={18} />
             {c.download.source}
-          </a>
+          </MarketingButton>
         </div>
       </section>
 
-      <section className="docs" id="docs">
-        <div className="section-head compact">
-          <p className="eyebrow">
+      <section
+        className="tw:bg-paper tw:px-[clamp(18px,4vw,56px)] tw:py-[clamp(64px,9vw,118px)] tw:max-[620px]:px-3.5 tw:max-[620px]:py-[58px]"
+        id="docs"
+      >
+        <div className="tw:max-w-[940px]">
+          <p className="tw:mb-4 tw:inline-flex tw:items-center tw:gap-2 tw:text-[13px] tw:font-extrabold tw:text-brand-emphasis tw:uppercase">
             <ExternalLink size={15} />
             {c.docs.eyebrow}
           </p>
-          <h2>{c.docs.title}</h2>
+          <h2 className="tw:max-w-[760px] tw:text-[clamp(34px,5vw,70px)] tw:leading-[0.98] tw:font-[820] tw:max-[620px]:text-[clamp(32px,11vw,46px)]">
+            {c.docs.title}
+          </h2>
         </div>
-        <div className="docs-grid">
+        <div className="tw:mt-[34px] tw:grid tw:grid-cols-3 tw:gap-3.5 tw:max-[980px]:grid-cols-1">
           {c.docs.items.map((doc) => {
             const content = (
               <>
-                <span>{doc.title}</span>
-                <p>{doc.body}</p>
-                <ArrowRight size={18} />
+                <span className="tw:text-[19px] tw:font-[790]">{doc.title}</span>
+                <p className="tw:max-w-[330px] tw:text-base tw:leading-relaxed tw:text-ink-soft">
+                  {doc.body}
+                </p>
+                <ArrowRight
+                  className="tw:absolute tw:right-[22px] tw:bottom-[22px] tw:text-brand-emphasis"
+                  size={18}
+                />
               </>
             );
 
-            if (doc.href === releasesUrl) {
-              return (
-                <TrackedLink
-                  className="doc-card"
-                  href={doc.href}
-                  key={doc.title}
-                  event="Download Clicked"
-                  properties={{ source: "docs_card", target: "github_releases_latest" }}
-                >
-                  {content}
-                </TrackedLink>
-              );
-            }
-
             return (
-              <a className="doc-card" href={doc.href} key={doc.title}>
+              <TrackedLink
+                className="tw:relative tw:grid tw:min-h-[210px] tw:gap-3.5 tw:rounded-md tw:border tw:border-line tw:bg-paper tw:p-6 tw:transition-[transform,border-color,background] tw:duration-150 tw:hover:-translate-y-0.5 tw:hover:border-brand-emphasis/40 tw:hover:bg-site-white tw:max-[980px]:min-h-0"
+                href={doc.href}
+                key={doc.title}
+                event={doc.href === releasesUrl ? "Download Clicked" : undefined}
+                properties={
+                  doc.href === releasesUrl
+                    ? { source: "docs_card", target: "github_releases_latest" }
+                    : undefined
+                }
+              >
                 {content}
-              </a>
+              </TrackedLink>
             );
           })}
         </div>
