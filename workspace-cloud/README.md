@@ -85,87 +85,35 @@ not treat password `VALID UNTIL` alone as a hard session-expiry boundary.
 
 ## GCP Cloud SQL managed access
 
-GCP uses keyless federation. Do not create or upload a JSON service-account key.
+GCP uses keyless federation. Do not create or upload a JSON service-account key, and
+do not copy a project number, WIF coordinate, or service-account identity into a
+browser form.
 
-1. Enable `sts.googleapis.com`, `iamcredentials.googleapis.com`, and
-   `sqladmin.googleapis.com`. Enable Vercel OIDC for this exact `workspace-cloud`
-   Vercel project and create a GCP Workload Identity Pool/provider. Map at least
-   `google.subject=assertion.sub`, `attribute.project_id=assertion.project_id`, and
-   `attribute.environment=assertion.environment`. Its attribute condition must require
-   both the exact Vercel `project_id` and `environment == 'production'`; do not trust
-   the whole pool or every deployment owned by the Vercel team.
+1. A workspace Admin or Owner chooses **Google Cloud 연결** and approves the Google
+   OAuth request. The short-lived setup grant is held only for this bootstrap session.
+2. DopeDB lists the approved account's projects and runnable Cloud SQL instances. The
+   admin selects one project and instance, classifies an unlabeled environment, and
+   explicitly approves production access or a required database restart.
+3. DopeDB checks the exact Google permissions needed for setup. If the account can
+   grant them, the UI shows the missing roles and requires one explicit approval before
+   applying them. Otherwise the UI reports the missing permissions without pretending
+   the connection is ready.
+4. The server enables the required APIs, creates the instance-scoped Workload Identity
+   Pool/provider and dedicated read service account, applies the narrow IAM bindings,
+   enables Cloud SQL IAM authentication when approved, creates the IAM database user,
+   and grants read-only database access. The current shared-connection path always sets
+   `writeAccess: false` and never creates a write service account.
+5. The completed integration stores only keyless trust coordinates and encrypted
+   Provider authorization needed for rotation. Google login tokens, service-account
+   keys, and database passwords are never copied into a shared connection or returned
+   to the browser.
 
-   ```sh
-   gcloud services enable sts.googleapis.com iamcredentials.googleapis.com \
-     sqladmin.googleapis.com --project=PROJECT_ID
-   gcloud iam workload-identity-pools providers create-oidc PROVIDER_ID \
-     --project=PROJECT_ID --location=global --workload-identity-pool=POOL_ID \
-     --issuer-uri=https://oidc.vercel.com/TEAM_SLUG \
-     --allowed-audiences=https://vercel.com/TEAM_SLUG \
-     --attribute-mapping="google.subject=assertion.sub,attribute.project_id=assertion.project_id,attribute.environment=assertion.environment" \
-     --attribute-condition="assertion.project_id == 'VERCEL_PROJECT_ID' && assertion.environment == 'production'"
-   ```
-
-   Use the global Vercel issuer instead when that is the issuer mode configured for
-   the project; issuer URI and audience must match the actual Vercel token exactly.
-2. For **each Cloud SQL instance**, create a dedicated read service account and,
-   only when needed, a separate write service account. Grant the WIF principal
-   `roles/iam.workloadIdentityUser` on only those accounts. The read account also needs
-   Cloud SQL Viewer, scoped to the same instance condition in the next step. Each
-   database identity also needs Cloud SQL Client so the signed desktop connector can
-   authorize its transport. No Cloud SQL Admin or long-lived key is required.
-
-   ```sh
-   gcloud iam service-accounts add-iam-policy-binding SERVICE_ACCOUNT_EMAIL \
-     --project=PROJECT_ID --role=roles/iam.workloadIdentityUser \
-     --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/attribute.project_id/VERCEL_PROJECT_ID"
-   ```
-3. Grant each database identity `roles/cloudsql.instanceUser` and
-   `roles/cloudsql.client`, and grant the read identity `roles/cloudsql.viewer`, with
-   this instance condition, replacing both placeholders:
-
-   ```text
-   resource.name == 'projects/PROJECT_ID/instances/INSTANCE_ID'
-     && resource.service == 'sqladmin.googleapis.com'
-   ```
-
-   A project-wide Instance User grant is not acceptable for managed access. The
-   15-minute OAuth token is scoped to the service-account identity, not to the selected
-   database; this IAM Condition and the database grants are the authorization boundary.
-   Do not reuse either service account for another Cloud SQL instance.
-
-   ```sh
-   gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member=serviceAccount:SERVICE_ACCOUNT_EMAIL \
-     --role=roles/cloudsql.instanceUser \
-     --condition="title=dopedb-INSTANCE_ID,expression=resource.name == 'projects/PROJECT_ID/instances/INSTANCE_ID' && resource.service == 'sqladmin.googleapis.com'"
-   gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member=serviceAccount:SERVICE_ACCOUNT_EMAIL \
-     --role=roles/cloudsql.client \
-     --condition="title=dopedb-connect-INSTANCE_ID,expression=resource.name == 'projects/PROJECT_ID/instances/INSTANCE_ID' && resource.service == 'sqladmin.googleapis.com'"
-   gcloud projects add-iam-policy-binding PROJECT_ID \
-     --member=serviceAccount:READ_SERVICE_ACCOUNT_EMAIL \
-     --role=roles/cloudsql.viewer \
-     --condition="title=dopedb-view-INSTANCE_ID,expression=resource.name == 'projects/PROJECT_ID/instances/INSTANCE_ID' && resource.service == 'sqladmin.googleapis.com'"
-   ```
-4. Enable IAM database authentication on the instance
-   (`cloudsql.iam_authentication` for PostgreSQL,
-   `cloudsql_iam_authentication` for MySQL), add both identities as
-   `CLOUD_IAM_SERVICE_ACCOUNT` database users, and grant the read identity only
-   database read privileges and the write identity only the intended DML privileges.
-   Remove default or inherited grants that would widen either role.
-5. In Workspace settings, enter the project, WIF provider, dedicated instance, and
-   service-account identities. Confirm the two security requirements and choose the
-   exact desktop network path: Public IP, private services access, or Private Service
-   Connect. DopeDB refuses to attach another instance to that integration and rejects a
-   service account already registered for a different instance.
-
-   The two confirmations are administrator attestations, not a complete IAM or
-   database-privilege audit. DopeDB verifies that federation and impersonation work,
-   the exact instance is runnable, IAM database users exist, and IAM database
-   authentication is enabled. The minimal control-plane permissions intentionally do
-   not allow DopeDB to prove every IAM Condition expression or inspect every database
-   grant, so review those policies with the commands above before confirming them.
+The OAuth account must be able to enumerate projects and Cloud SQL and, when one-click
+setup is requested, enable services, manage the dedicated service account and IAM
+policy, update the selected instance, and manage its IAM database user. The setup UI
+shows the permission diff before making those changes. Existing resources are
+revalidated and reused by deterministic identity; a partially completed setup can be
+retried without adding duplicate principals.
 
 At lease time Vercel OIDC is exchanged through GCP STS and IAM Credentials for
 15-minute `sqlservice.login` and connector tokens. They reach only the native desktop
@@ -189,8 +137,7 @@ Cloud SQL instances explicitly labeled `environment=prod` or
 the production warning is accepted. The approval bit is bound to the idempotent import
 hash and recorded in the redacted audit event. Missing or unrecognized environment
 labels remain fail-closed and cannot be imported. Production approval does not widen
-the connection: the imported template remains read-only unless a separate workspace
-write policy and dedicated write identity are configured.
+the connection: the imported template and current managed lease remain read-only.
 
 The tokens are not revocable, so access changes wait for bounded expiry and the desktop
 drops both pool and connector 30 seconds early. Pool eviction prevents new app work but
@@ -199,16 +146,16 @@ database's own statement/session limits remain the final bound for a query alrea
 running. Client-certificate-required instances are supported through the connector
 rather than by issuing or storing a long-lived client certificate in DopeDB.
 
-Changing the WIF provider or dedicated service accounts for the same project and
-instance rotates that integration in place. The server first gates new leases, drains
-existing credentials, then atomically replaces hash-only global principal claims so a
-service account cannot be reused by another integration. Selecting a different
-dedicated instance creates a separate integration; move its connections before
-disconnecting the old one.
+Reconnecting the same project and instance rotates the server-generated trust and
+dedicated service account in place. The server first gates new leases, drains existing
+credentials, then atomically replaces hash-only global principal claims so a service
+account cannot be reused by another integration. Selecting a different dedicated
+instance creates a separate integration; move its connections before disconnecting the
+old one.
 GCP managed connections saved before the explicit network-path field was introduced
-are intentionally not leased. A workspace admin must reapply managed access and select
-Public IP, private services access, or Private Service Connect; the server does not
-guess a path for legacy records.
+are intentionally not leased. A workspace admin must reconnect and re-import the
+instance so current discovery supplies the exact path; the server does not guess a path
+for legacy records.
 
 ## Trust boundary
 

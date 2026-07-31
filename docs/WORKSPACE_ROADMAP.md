@@ -30,9 +30,10 @@ Use a local-execution, hosted-control-plane architecture:
   member-specific, least-privilege, short-lived
   database credentials. Those one-time credentials are never persisted by the
   service or desktop and are dropped from process memory with the live pool.
-- Provider authentication is adapter-based. Pipedream Connect can later replace
-  direct provider OAuth for broad managed-auth coverage, but DopeDB remains responsible
-  for workspace RBAC, resource scope, audit, and short-lived DB credential issuance.
+- Provider authentication is adapter-based. DopeDB remains responsible for workspace
+  RBAC, resource scope, audit, and short-lived DB credential issuance. A third-party
+  authentication broker is not a runtime dependency and requires a separate product
+  decision before introduction.
 - Queries continue to run from the desktop app through the existing Rust safety,
   monitoring, audit, and read-only execution paths.
 - Query result rows are not synchronized by default. Publishing a bounded result
@@ -105,8 +106,9 @@ database work remains in the Tauri app.
 - Let a user create a workspace and invite teammates with clear roles.
 - Share connection definitions without sharing long-lived raw passwords.
 - Let each member bind their own database credential to a shared connection.
-- Let an admin optionally enable provider-backed automatic access that issues a
-  short-lived read or read/write credential from current workspace RBAC.
+- Let an admin optionally enable provider-backed automatic access. The current public
+  path issues only a short-lived read credential; a future write credential requires
+  the separate provisioning, database grant, and approval work owned by #99/#100.
 - Let each member bind a provider API credential to a workspace integration and
   import only resources that both the provider and workspace authorize.
 - Apply workspace roles, resource grants, provider-token scopes, environment policy,
@@ -168,12 +170,14 @@ must not imply production database access.
 | Invite, remove, and change member roles | no | no | no | yes | yes |
 | Transfer ownership or delete the workspace | no | no | no | no | yes |
 
-The initial implementation maps Analyst to read-only execution, Editor to read/write
-execution, and Admin/Owner to management. This is only DopeDB application authority:
-the target credential, database roles, local safety configuration, and explicit write
-approval remain narrowing layers. Per-connection grants such as `access_prod` remain a
-later refinement and default to deny until implemented. Existing local credentials and
-advanced connection parameters are never inherited by another member or device.
+The application authorization model maps Analyst to read-only execution, Editor to a
+potential write-capable role, and Admin/Owner to management. This does not make the
+current managed credential write-capable: its public lease route remains read-only.
+Any future write path must additionally satisfy target credentials, database roles,
+local safety configuration, explicit approval, and the #99/#100 provisioning contract.
+Per-connection grants such as `access_prod` remain a later refinement and default to
+deny until implemented. Existing local credentials and advanced connection parameters
+are never inherited by another member or device.
 
 Provider integrations add a separate resource hierarchy:
 
@@ -225,16 +229,16 @@ control-plane calls through the workspace service. PlanetScale uses OAuth and
 provider-native TTL roles/passwords. Neon uses an encrypted, preferably project-scoped
 API key to create a 15-minute SQL role whose grants are limited to current user schemas
 in the selected database. GCP Cloud SQL stores no service-account key: Vercel OIDC and
-Workload Identity Federation issue a 15-minute IAM database login token for separate
-read/write service accounts. The native client receives a credential once over HTTPS,
-pins provider-required TLS material, creates the pool in Rust, and evicts that pool
-before expiry.
+Workload Identity Federation issue a 15-minute IAM database login token for one
+dedicated read service account. The native client receives a credential once over
+HTTPS, pins provider-required TLS material, creates the pool in Rust, and evicts that
+pool before expiry. Write identities remain an inaccessible migration branch until
+#99/#100 provide an approved provisioning contract.
 
 The deployment key is separate from database ciphertext today. Production hardening
-still needs KMS-wrapped key versions and rotation. Pipedream Connect is a planned
-`ProviderAuthAdapter` option for wider OAuth/API-key coverage; it does not replace
-DopeDB authorization or the provider-specific credential issuer. Managed mode does not
-proxy database queries.
+still needs KMS-wrapped key versions and rotation. Managed mode does not proxy database
+queries, and current Provider authorization continues through the three implemented
+adapters until DQ-18 explicitly chooses another Provider or authentication boundary.
 
 ## Target Data Model
 
@@ -636,9 +640,8 @@ Every milestone must include:
 ## Remaining Product Decisions
 
 - Account recovery and the timing of non-Google identity providers.
-- Member-local provider credentials versus managed or Pipedream-assisted authorization
-  for each remaining provider and operation class; PlanetScale already uses its native
-  OAuth flow for the managed-access pilot.
+- Member-local versus managed authorization for any Provider selected by DQ-18;
+  PlanetScale already uses its native OAuth flow for the managed-access pilot.
 - Provider resource refresh intervals, rate-limit budgets, webhook availability, and
   behavior when an imported resource is deleted outside DopeDB.
 - The initial production and destructive-operation approval matrix.

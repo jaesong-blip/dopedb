@@ -2,11 +2,10 @@ export type ResourceLevel = { key: string; kind: string; label: string };
 export type Provider = {
   id: string;
   name: string;
-  availability: "available" | "planned";
   configured: boolean;
   note: string;
   leaseSeconds: number | null;
-  setupKind: "oauth" | "apiKey" | "cloudTrust" | "connector";
+  setupKind: "oauth" | "apiKey";
   supportedEngines: string[];
   resourceLevels: [ResourceLevel, ResourceLevel, ResourceLevel];
 };

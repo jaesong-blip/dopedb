@@ -7,6 +7,10 @@ import gcpOAuthSource from "../../../workspace-cloud/lib/providers/gcp-cloud-oau
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
+import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
+import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
+import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
+import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspace-versioning-store.ts?raw";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -157,15 +161,35 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpSetupSource).not.toMatch(
       /workloadIdentityPoolId|workloadIdentityProviderId|readServiceAccountEmail/,
     );
-    expect(providerIntegrationListSource).toContain(
-      'provider.availability === "available"',
+    expect(providerIntegrationListSource).not.toMatch(/availability|"준비 중"/);
+    expect(providerCatalogSource).not.toMatch(
+      /supportsReadWrite|availability|awsRds|oracleOci|mongodbAtlas/,
     );
-    expect(providerIntegrationListSource).not.toContain('"준비 중"');
+    expect(providerCatalogSource.match(/id: "(planetScale|gcpCloudSql|neon)"/g))
+      .toHaveLength(3);
+    expect(providerIntegrationRouteSource).toContain("id: provider.id");
+    expect(providerIntegrationRouteSource).not.toContain("...provider,");
     expect(gcpOAuthSource).toContain('"/api/auth/callback/google"');
     expect(authRouteSource).toContain("isGcpCloudSetupCallback");
     expect(gcpBootstrapSource).toContain("verifyVercelOidcToken");
     expect(gcpBootstrapSource).toContain("roles/iam.workloadIdentityUser");
     expect(gcpBootstrapSource).toContain("configureDatabasePrivileges");
     expect(gcpBootstrapSource).toContain("Temporary Cloud SQL privilege bootstrap cleanup failed");
+
+    const legacyBackup = JSON.parse(legacyProviderBackupSource);
+    expect(legacyBackup.connections).toEqual([
+      expect.objectContaining({
+        provider: "gcpCloudSql",
+        readonlyDefault: false,
+        allowWrites: true,
+      }),
+    ]);
+    expect(workspaceBackupCoreSource).toContain("parseBackupConnection(template)");
+    expect(workspaceBackupCoreSource).toContain("...parseBackupConnection(template)");
+    expect(workspaceVersioningStoreSource).toContain("readonlyDefault: true");
+    expect(workspaceVersioningStoreSource).toContain("allowWrites: false");
+    expect(JSON.stringify(legacyBackup)).not.toMatch(
+      /password|secret|token|credential|serviceAccount/i,
+    );
   });
 });

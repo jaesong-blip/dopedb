@@ -129,8 +129,16 @@ export async function GET(request: Request, context: RouteContext) {
     }
   });
   return privateJson({
+    // Explicit browser projection: internal adapter/provisioning fields must not
+    // become a public contract through object spreading.
     providers: providerCatalog.map((provider) => ({
-      ...provider,
+      id: provider.id,
+      name: provider.name,
+      supportedEngines: [...provider.supportedEngines],
+      leaseSeconds: provider.leaseSeconds,
+      setupKind: provider.setupKind,
+      resourceLevels: provider.resourceLevels.map((level) => ({ ...level })),
+      note: provider.note,
       configured: provider.id === "planetScale"
         ? isPlanetScaleConfigured()
         : provider.id === "neon"

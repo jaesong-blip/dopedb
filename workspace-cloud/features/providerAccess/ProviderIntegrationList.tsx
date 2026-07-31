@@ -24,10 +24,6 @@ export function ProviderIntegrationList({
     disconnect,
     setNeonConfiguration,
   } = controller;
-  const connectableProviders = providers.filter(
-    (provider) => provider.availability === "available",
-  );
-
   return (
     <div className="tw:grid tw:content-start tw:gap-7">
       <section className="tw:grid tw:gap-2">
@@ -109,7 +105,7 @@ export function ProviderIntegrationList({
           </small>
         </div>
         <div className="tw:grid tw:border-t tw:border-border">
-          {connectableProviders.map((provider) => {
+          {providers.map((provider) => {
             const connectedCount = integrations.filter(
               (item) => item.provider === provider.id,
             ).length;
