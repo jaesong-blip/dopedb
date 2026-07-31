@@ -49,6 +49,8 @@ export function useProviderAccess(
     gcpRestartApproved,
     gcpPermissionCheck,
     gcpIamRoleGrantApproved,
+    gcpSetupError,
+    gcpSetupReconnectRequired,
     loading,
     resourcePending,
     mutation,
@@ -73,6 +75,8 @@ export function useProviderAccess(
   const setGcpRestartApproved = setField("gcpRestartApproved");
   const setGcpPermissionCheck = setField("gcpPermissionCheck");
   const setGcpIamRoleGrantApproved = setField("gcpIamRoleGrantApproved");
+  const setGcpSetupError = setField("gcpSetupError");
+  const setGcpSetupReconnectRequired = setField("gcpSetupReconnectRequired");
   const setLoading = setField("loading");
   const setResourcePending = setField("resourcePending");
   const setMutation = setField("mutation");
@@ -196,11 +200,14 @@ export function useProviderAccess(
       setGcpEnvironmentClassification("");
       setGcpPermissionCheck(null);
       setGcpIamRoleGrantApproved(false);
+      setGcpSetupError("");
+      setGcpSetupReconnectRequired(false);
       return;
     }
     const controller = new AbortController();
     setMutation("gcp:projects");
-    setError("");
+    setGcpSetupError("");
+    setGcpSetupReconnectRequired(false);
     void fetch(
       `/api/v1/workspaces/${workspaceId}/provider-integrations/gcp-setup/${
         gcpSetupId
@@ -208,6 +215,12 @@ export function useProviderAccess(
       { cache: "no-store", signal: controller.signal },
     ).then(async (response) => {
       if (!response.ok) {
+        if (response.status === 401 || response.status === 410) {
+          setGcpSetupReconnectRequired(true);
+          throw new Error(
+            "Google Cloud 승인 세션이 만료되었습니다. 계정을 다시 연결해 계속하세요.",
+          );
+        }
         throw new Error(await responseError(
           response,
           "Google Cloud 프로젝트를 불러오지 못했습니다.",
@@ -222,9 +235,14 @@ export function useProviderAccess(
         throw new Error("Google Cloud 프로젝트 응답 형식을 확인하지 못했습니다.");
       }
       setGcpSetupInventory(body as GcpSetupInventory);
+      setGcpSetupReconnectRequired(false);
     }).catch((cause) => {
       if (!controller.signal.aborted) {
-        setError(cause instanceof Error ? cause.message : "Google Cloud 연결을 시작하지 못했습니다.");
+        setGcpSetupError(
+          cause instanceof Error
+            ? cause.message
+            : "Google Cloud 연결을 시작하지 못했습니다.",
+        );
       }
     }).finally(() => {
       if (!controller.signal.aborted) setMutation("");
@@ -244,7 +262,7 @@ export function useProviderAccess(
     setGcpIamRoleGrantApproved(false);
     if (!projectId) return;
     setMutation("gcp:instances");
-    setError("");
+    setGcpSetupError("");
     try {
       const query = new URLSearchParams({ kind: "instances", project: projectId });
       const permissionQuery = new URLSearchParams({
@@ -266,8 +284,16 @@ export function useProviderAccess(
         ).catch(() => null),
       ]);
       if (!response?.ok || !permissionResponse?.ok) {
-        setError(await responseError(
-          response?.ok ? permissionResponse : response,
+        const failedResponse = response?.ok ? permissionResponse : response;
+        if (failedResponse?.status === 401 || failedResponse?.status === 410) {
+          setGcpSetupReconnectRequired(true);
+          setGcpSetupError(
+            "Google Cloud 승인 세션이 만료되었습니다. 계정을 다시 연결해 계속하세요.",
+          );
+          return;
+        }
+        setGcpSetupError(await responseError(
+          failedResponse,
           response?.ok
             ? "Google Cloud 설정 권한을 확인하지 못했습니다."
             : "Cloud SQL 인스턴스를 불러오지 못했습니다.",
@@ -280,7 +306,7 @@ export function useProviderAccess(
         permissionBody?.permissions,
       );
       if (!Array.isArray(body?.instances) || !permissionCheck) {
-        setError("Google Cloud 설정 응답 형식을 확인하지 못했습니다.");
+        setGcpSetupError("Google Cloud 설정 응답 형식을 확인하지 못했습니다.");
         return;
       }
       setGcpSetupInstances(body.instances as GcpSetupInstance[]);
@@ -334,11 +360,11 @@ export function useProviderAccess(
         )
       )
     ) {
-      setError("Cloud SQL 대상과 필요한 승인을 확인하세요.");
+      setGcpSetupError("Cloud SQL 대상과 필요한 승인을 확인하세요.");
       return;
     }
     setMutation("gcp:bootstrap");
-    setError("");
+    setGcpSetupError("");
     try {
       const bootstrapResponse = await fetch(
         `/api/v1/workspaces/${workspaceId}/provider-integrations/gcp-setup/${
@@ -362,6 +388,16 @@ export function useProviderAccess(
       ).catch(() => null);
       if (!bootstrapResponse?.ok) {
         const failure = await bootstrapResponse?.json().catch(() => null);
+        if (
+          bootstrapResponse?.status === 401
+          || bootstrapResponse?.status === 410
+        ) {
+          setGcpSetupReconnectRequired(true);
+          setGcpSetupError(
+            "Google Cloud 승인 세션이 만료되었습니다. 계정을 다시 연결해 계속하세요.",
+          );
+          return;
+        }
         const permissionCheck = parseGcpSetupPermissionCheck(
           failure?.permissions,
         );
@@ -369,7 +405,7 @@ export function useProviderAccess(
           setGcpPermissionCheck(permissionCheck);
           setGcpIamRoleGrantApproved(false);
         }
-        setError(
+        setGcpSetupError(
           typeof failure?.error === "string"
             ? failure.error
             : "Google Cloud 자동 설정을 완료하지 못했습니다.",
@@ -381,7 +417,7 @@ export function useProviderAccess(
         typeof bootstrap?.bootstrapTicket !== "string"
         || bootstrap.bootstrapTicket.length < 80
       ) {
-        setError("Google Cloud 자동 설정 결과를 확인하지 못했습니다.");
+        setGcpSetupError("Google Cloud 자동 설정 결과를 확인하지 못했습니다.");
         return;
       }
       const integrationResponse = await fetch(
@@ -397,7 +433,7 @@ export function useProviderAccess(
         },
       ).catch(() => null);
       if (!integrationResponse?.ok) {
-        setError(await responseError(
+        setGcpSetupError(await responseError(
           integrationResponse,
           "Google Cloud 연결을 저장하지 못했습니다.",
         ));
@@ -408,7 +444,7 @@ export function useProviderAccess(
         ? integrationBody.integration.id
         : "";
       if (!integrationId) {
-        setError("저장된 Google Cloud 연결을 확인하지 못했습니다.");
+        setGcpSetupError("저장된 Google Cloud 연결을 확인하지 못했습니다.");
         return;
       }
       pendingGcpTargetRef.current = {
@@ -577,6 +613,18 @@ export function useProviderAccess(
     if (next !== "neon") setNeonConfiguration(emptyNeon);
     setSetupProviderId(next);
     setError("");
+  }
+
+  function reconnectGcpSetup() {
+    const provider = providers.find((item) => item.id === "gcpCloudSql");
+    if (!provider?.configured) {
+      setGcpSetupError(
+        "Google Cloud 연결을 다시 시작할 수 없습니다. 페이지를 새로고침해 주세요.",
+      );
+      return;
+    }
+    setGcpSetupError("");
+    void connect(provider);
   }
 
   async function disconnect(integration: Integration) {
@@ -830,6 +878,8 @@ export function useProviderAccess(
     gcpRestartApproved,
     gcpPermissionCheck,
     gcpIamRoleGrantApproved,
+    gcpSetupError,
+    gcpSetupReconnectRequired,
     loading,
     resourcePending,
     mutation,
@@ -847,6 +897,7 @@ export function useProviderAccess(
     disconnect,
     importDiscoveredResource,
     resetResources,
+    reconnectGcpSetup,
     selectResource,
     selectGcpInstance,
     selectGcpProject,

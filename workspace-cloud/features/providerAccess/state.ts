@@ -38,6 +38,8 @@ export type ProviderAccessState = {
   gcpRestartApproved: boolean;
   gcpPermissionCheck: GcpSetupPermissionCheck | null;
   gcpIamRoleGrantApproved: boolean;
+  gcpSetupError: string;
+  gcpSetupReconnectRequired: boolean;
   loading: boolean;
   resourcePending: boolean;
   mutation: string;
@@ -72,6 +74,8 @@ export const initialProviderAccessState: ProviderAccessState = {
   gcpRestartApproved: false,
   gcpPermissionCheck: null,
   gcpIamRoleGrantApproved: false,
+  gcpSetupError: "",
+  gcpSetupReconnectRequired: false,
   loading: true,
   resourcePending: false,
   mutation: "",

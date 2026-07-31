@@ -27,9 +27,12 @@ export function GcpCloudSetup({
     gcpRestartApproved,
     gcpPermissionCheck,
     gcpIamRoleGrantApproved,
+    gcpSetupError,
+    gcpSetupReconnectRequired,
     mutation,
     error,
     completeGcpSetup,
+    reconnectGcpSetup,
     selectGcpInstance,
     selectGcpProject,
     setGcpEnvironmentClassification,
@@ -74,7 +77,11 @@ export function GcpCloudSetup({
       )
     ),
   );
-  const busy = mutation.startsWith("gcp:");
+  const busy = mutation.startsWith("gcp:")
+    || mutation === "connect:gcpCloudSql";
+  const visibleError = gcpSetupReconnectRequired
+    ? ""
+    : gcpSetupError || error;
 
   return (
     <section className="tw:grid tw:gap-4 tw:border-y tw:border-border tw:bg-surface-inset tw:p-4">
@@ -84,13 +91,28 @@ export function GcpCloudSetup({
             Google Cloud 연결 설정
           </strong>
           <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-            {gcpSetupInventory
+            {gcpSetupReconnectRequired
+              ? "Google Cloud 승인 시간이 지나 다시 연결해야 합니다."
+              : gcpSetupInventory
               ? `${gcpSetupInventory.account} 계정에서 연결할 Cloud SQL을 선택하세요.`
               : "Google Cloud 프로젝트를 확인하고 있습니다."}
           </small>
         </div>
-        <span className="tw:whitespace-nowrap tw:text-2xs tw:font-semibold tw:text-success">
-          OAuth 승인됨
+        <span
+          className="tw:whitespace-nowrap tw:text-2xs tw:font-semibold tw:text-success tw:data-[state=expired]:text-danger tw:data-[state=loading]:text-muted-foreground"
+          data-state={
+            gcpSetupReconnectRequired
+              ? "expired"
+              : gcpSetupInventory
+                ? "ready"
+                : "loading"
+          }
+        >
+          {gcpSetupReconnectRequired
+            ? "OAuth 만료"
+            : gcpSetupInventory
+              ? "OAuth 승인됨"
+              : "확인 중"}
         </span>
       </header>
 
@@ -118,6 +140,31 @@ export function GcpCloudSetup({
           </strong>
         </li>
       </ol>
+
+      {gcpSetupReconnectRequired ? (
+        <div
+          className="tw:flex tw:flex-col tw:items-stretch tw:gap-3 tw:border tw:border-danger/40 tw:bg-danger/10 tw:p-3 tw:sm:flex-row tw:sm:items-center tw:sm:justify-between"
+          role="alert"
+        >
+          <div className="tw:grid tw:gap-1">
+            <strong className="tw:text-xs tw:font-semibold tw:text-danger">
+              Google 승인 세션이 만료되었습니다
+            </strong>
+            <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+              장기 토큰을 저장하지 않기 때문에 설정 시간이 지나면 Google 승인이
+              다시 필요합니다. 기존 Google Cloud 변경은 그대로 이어서 확인합니다.
+            </small>
+          </div>
+          <ControlButton
+            tone="primary"
+            size="field"
+            disabled={busy}
+            onClick={reconnectGcpSetup}
+          >
+            Google 계정 다시 연결
+          </ControlButton>
+        </div>
+      ) : null}
 
       <div className="tw:grid tw:gap-1">
         <strong className="tw:text-xs tw:font-semibold tw:text-foreground">
@@ -361,7 +408,7 @@ export function GcpCloudSetup({
       ) : null}
 
       <div className="tw:grid tw:gap-3 tw:border-t tw:border-border tw:pt-3">
-        {error ? (
+        {visibleError ? (
           <p
             className="tw:m-0 tw:border tw:border-danger/40 tw:bg-danger/10 tw:p-3 tw:text-2xs tw:leading-body tw:text-danger"
             role="alert"
@@ -369,7 +416,7 @@ export function GcpCloudSetup({
             <strong className="tw:mb-1 tw:block tw:text-xs">
               연결 설정을 완료하지 못했습니다
             </strong>
-            {error}
+            {visibleError}
           </p>
         ) : null}
         <div className="tw:flex tw:flex-col tw:items-stretch tw:gap-3 tw:sm:flex-row tw:sm:items-center tw:sm:justify-between">
