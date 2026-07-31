@@ -26,6 +26,7 @@ const SERVICE_USAGE_ORIGIN = "https://serviceusage.googleapis.com";
 const SQL_ADMIN_ORIGIN = "https://sqladmin.googleapis.com/sql/v1beta4";
 const REQUEST_TIMEOUT_MS = 30_000;
 const OPERATION_TIMEOUT_MS = 210_000;
+const TOKEN_CREATOR_PROPAGATION_TIMEOUT_MS = 180_000;
 const POOL_ID = "dopedb-vercel";
 const PROVIDER_ID = "dopedb-vercel";
 const REQUIRED_SERVICES = [
@@ -1407,8 +1408,8 @@ async function bootstrapAccessToken(
   credential: GcpSetupCredential,
   serviceAccountEmail: string,
 ) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  const startedAt = Date.now();
+  for (;;) {
     try {
       const body = (await googleRequest(
         credential,
@@ -1442,19 +1443,22 @@ async function bootstrapAccessToken(
         expiresAt: body.expireTime,
       } satisfies GcpSetupCredential;
     } catch (error) {
-      lastError = error;
       if (
         !(error instanceof ProviderRequestError)
         || ![403, 404, 502, 503].includes(error.status)
       ) {
         throw error;
       }
-      if (attempt < 19) {
-        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      if (Date.now() - startedAt >= TOKEN_CREATOR_PROPAGATION_TIMEOUT_MS) {
+        throw new ProviderRequestError(
+          "gcpCloudSql",
+          "Google Cloud IAM Credentials 권한 반영이 지연되고 있습니다. 잠시 뒤 다시 시도하세요.",
+          503,
+        );
       }
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
     }
   }
-  throw lastError;
 }
 
 function responseStatusFailed(value: unknown) {
