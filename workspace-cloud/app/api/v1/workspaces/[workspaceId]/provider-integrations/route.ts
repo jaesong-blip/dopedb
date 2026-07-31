@@ -63,6 +63,8 @@ import { authorizeWorkspace } from "../../../../../../lib/workspace-authorizatio
 
 type RouteContext = { params: Promise<{ workspaceId: string }> };
 
+export const maxDuration = 300;
+
 function sameSecret(left: string, right: string) {
   const leftBytes = Buffer.from(left, "utf8");
   const rightBytes = Buffer.from(right, "utf8");
@@ -173,6 +175,15 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Managed access for this provider is not available", 409);
   }
 
+  let stage:
+    | "provider_authorization"
+    | "gcp_setup_ticket"
+    | "gcp_credential_validation"
+    | "integration_lookup"
+    | "credential_sealing"
+    | "lease_revocation"
+    | "integration_persistence"
+    | "setup_consumption" = "provider_authorization";
   try {
     if (
       body.provider === "planetScale"
@@ -231,6 +242,7 @@ export async function POST(request: Request, context: RouteContext) {
       displayName = info.displayName;
       grantedScope = `projects:${info.projectCount}:${info.scopeFingerprint.slice(0, 16)}`;
     } else {
+      stage = "gcp_setup_ticket";
       if (
         typeof body.setupId !== "string"
         || !isUuid(body.setupId)
@@ -273,6 +285,7 @@ export async function POST(request: Request, context: RouteContext) {
       if (!oidcToken) {
         return jsonError("Vercel OIDC is not enabled for this deployment", 503);
       }
+      stage = "gcp_credential_validation";
       await validateGcpCloudSqlCredential(credential, oidcToken);
       gcpIdentity = gcpCloudSqlIntegrationIdentity(credential);
       localVerificationTarget = gcpLocalVerificationTarget(credential);
@@ -284,6 +297,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const provider = body.provider;
+    stage = "integration_lookup";
     type ExistingIntegration = {
       id: string;
       status: string;
@@ -468,11 +482,13 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
     const integrationId = existing?.id ?? crypto.randomUUID();
+    stage = "credential_sealing";
     const encryptedCredential = sealProviderCredential(integrationId, credential);
     const now = new Date();
     let reconnectClaim: RevocationGateClaim | null = null;
     let reconnectRevoked = 0;
     if (existing?.status === "active" && !existing.revokedAt) {
+      stage = "lease_revocation";
       reconnectClaim = await claimRevocationGate({
         kind: "integration",
         organizationId: workspaceId,
@@ -506,6 +522,7 @@ export async function POST(request: Request, context: RouteContext) {
     // is the sole durable create/reconnect boundary: a post-I/O revocation,
     // demotion or generation change yields no integration, claim, audit or
     // credential-refresh response.
+    stage = "integration_persistence";
     const persisted = await persistProviderIntegration({
       authority: {
         organizationId: workspaceId,
@@ -549,6 +566,7 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
     if (provider === "gcpCloudSql" && typeof body.setupId === "string") {
+      stage = "setup_consumption";
       await db.update(providerSetupSession)
         .set({ consumedAt: now })
         .where(and(
@@ -570,7 +588,14 @@ export async function POST(request: Request, context: RouteContext) {
     }, { status: existing ? 200 : 201 });
 
   } catch (error) {
-    if (body.provider === "gcpCloudSql" && postgresErrorCode(error) === "23505") {
+    const postgresCode = postgresErrorCode(error);
+    console.error("provider_connection_failed", {
+      provider: body.provider,
+      stage,
+      postgresCode,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+    if (body.provider === "gcpCloudSql" && postgresCode === "23505") {
       return jsonError(
         "Cloud SQL service accounts or target are already connected",
         409,
