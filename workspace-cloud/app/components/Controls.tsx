@@ -1,9 +1,30 @@
 import type {
+  AnchorHTMLAttributes,
   ButtonHTMLAttributes,
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
 } from "react";
+import { createElement } from "react";
+
+function ControlAction({
+  element,
+  children,
+  ...props
+}: {
+  element: "a" | "button";
+  children: ReactNode;
+} & Record<string, unknown>) {
+  return createElement(
+    element,
+    {
+      ...props,
+      className:
+        "tw:inline-flex tw:h-control-sm tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:border tw:border-border tw:bg-transparent tw:px-3 tw:text-2xs tw:font-semibold tw:text-foreground tw:no-underline tw:transition-colors tw:data-[size=field]:h-control-field tw:data-[size=field]:px-4 tw:data-[tone=danger]:text-danger tw:data-[tone=primary]:border-primary-emphasis tw:data-[tone=primary]:bg-primary-emphasis tw:data-[tone=primary]:font-extrabold tw:data-[tone=primary]:text-primary-foreground tw:hover:border-primary tw:hover:bg-surface-raised tw:data-[tone=primary]:hover:bg-primary tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring tw:active:translate-y-px tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]",
+    },
+    children,
+  );
+}
 
 export function ControlButton({
   tone = "neutral",
@@ -16,17 +37,27 @@ export function ControlButton({
   size?: "field" | "small";
   children: ReactNode;
 }) {
-  return (
-    <button
-      type={type}
-      data-tone={tone}
-      data-size={size}
-      className="tw:inline-flex tw:h-control-sm tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:border tw:border-border tw:bg-transparent tw:px-3 tw:text-2xs tw:font-semibold tw:text-foreground tw:transition-colors tw:data-[size=field]:h-control-field tw:data-[size=field]:px-4 tw:data-[tone=danger]:text-danger tw:data-[tone=primary]:border-primary-emphasis tw:data-[tone=primary]:bg-primary-emphasis tw:data-[tone=primary]:font-extrabold tw:data-[tone=primary]:text-primary-foreground tw:hover:border-primary tw:hover:bg-surface-raised tw:data-[tone=primary]:hover:bg-primary tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring tw:active:translate-y-px tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]"
-      {...props}
-    >
-      {children}
-    </button>
-  );
+  return createElement(ControlAction, {
+    ...props,
+    element: "button",
+    type,
+    "data-tone": tone,
+    "data-size": size,
+    children,
+  });
+}
+
+export function ControlLink({
+  children,
+  ...props
+}: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "className"> & {
+  children: ReactNode;
+}) {
+  return createElement(ControlAction, {
+    ...props,
+    element: "a",
+    children,
+  });
 }
 
 export function ControlField({

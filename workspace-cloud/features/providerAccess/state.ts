@@ -8,6 +8,7 @@ import type {
   GcpEnvironmentClassification,
   GcpSetupInstance,
   GcpSetupInventory,
+  GcpSetupPermissionCheck,
   Integration,
   ManagedConnection,
   NeonConfiguration,
@@ -35,6 +36,8 @@ export type ProviderAccessState = {
   gcpEnvironmentClassification: GcpEnvironmentClassification;
   gcpProductionApproved: boolean;
   gcpRestartApproved: boolean;
+  gcpPermissionCheck: GcpSetupPermissionCheck | null;
+  gcpIamRoleGrantApproved: boolean;
   loading: boolean;
   resourcePending: boolean;
   mutation: string;
@@ -67,6 +70,8 @@ export const initialProviderAccessState: ProviderAccessState = {
   gcpEnvironmentClassification: "",
   gcpProductionApproved: false,
   gcpRestartApproved: false,
+  gcpPermissionCheck: null,
+  gcpIamRoleGrantApproved: false,
   loading: true,
   resourcePending: false,
   mutation: "",

@@ -6,6 +6,7 @@
 import {
   ControlButton,
   ControlField,
+  ControlLink,
   ControlSelect,
 } from "../../app/components/Controls";
 import type { ProviderAccessController } from "./useProviderAccess";
@@ -24,12 +25,15 @@ export function GcpCloudSetup({
     gcpEnvironmentClassification,
     gcpProductionApproved,
     gcpRestartApproved,
+    gcpPermissionCheck,
+    gcpIamRoleGrantApproved,
     mutation,
     error,
     completeGcpSetup,
     selectGcpInstance,
     selectGcpProject,
     setGcpEnvironmentClassification,
+    setGcpIamRoleGrantApproved,
     setGcpProductionApproved,
     setGcpRestartApproved,
   } = controller;
@@ -60,7 +64,15 @@ export function GcpCloudSetup({
     && selectedInstance.ready
     && environmentClassified
     && (!effectiveProduction || gcpProductionApproved)
-    && (selectedInstance.iamAuthenticationEnabled || gcpRestartApproved),
+    && (selectedInstance.iamAuthenticationEnabled || gcpRestartApproved)
+    && gcpPermissionCheck
+    && (
+      gcpPermissionCheck.missing.length === 0
+      || (
+        gcpPermissionCheck.canAutoGrant
+        && gcpIamRoleGrantApproved
+      )
+    ),
   );
   const busy = mutation.startsWith("gcp:");
 
@@ -226,6 +238,84 @@ export function GcpCloudSetup({
               </ul>
             </div>
 
+            <div
+              data-state={
+                !gcpPermissionCheck
+                  ? "checking"
+                  : gcpPermissionCheck.missing.length === 0
+                    ? "ready"
+                    : "required"
+              }
+              className="tw:grid tw:gap-2 tw:border tw:border-border tw:bg-surface tw:p-3 tw:data-[state=ready]:border-success/40 tw:data-[state=ready]:bg-success/10 tw:data-[state=required]:border-warning/40 tw:data-[state=required]:bg-warning/10"
+            >
+              <strong className="tw:text-xs tw:font-semibold tw:text-foreground">
+                {!gcpPermissionCheck
+                  ? "Google Cloud 권한 확인 중"
+                  : gcpPermissionCheck.missing.length === 0
+                    ? "자동 구성 권한 확인됨"
+                    : `${gcpPermissionCheck.missing.length}개 설정 역할 필요`}
+              </strong>
+              {gcpPermissionCheck?.missing.length ? (
+                <>
+                  <ul className="tw:m-0 tw:grid tw:list-none tw:gap-1.5 tw:p-0">
+                    {gcpPermissionCheck.missing.map((requirement) => (
+                      <li
+                        className="tw:grid tw:gap-0.5 tw:text-2xs tw:leading-body"
+                        key={requirement.role}
+                      >
+                        <span className="tw:font-semibold tw:text-foreground">
+                          {requirement.label}
+                        </span>
+                        <span className="tw:text-muted-foreground">
+                          {requirement.purpose}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {gcpPermissionCheck.canAutoGrant ? (
+                    <label className="tw:grid tw:grid-cols-[16px_minmax(0,1fr)] tw:items-start tw:gap-2 tw:border-t tw:border-warning/30 tw:pt-2">
+                      <input
+                        className="tw:mt-0.5 tw:size-4 tw:accent-primary"
+                        type="checkbox"
+                        checked={gcpIamRoleGrantApproved}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setGcpIamRoleGrantApproved(event.target.checked)
+                        }
+                      />
+                      <span className="tw:grid tw:gap-1 tw:text-xs tw:text-foreground">
+                        필요한 역할을 임시 부여하고 계속
+                        <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                          이 계정에만 15분 만료 조건으로 부여하고, 연결 설정이
+                          끝나면 즉시 제거합니다.
+                        </small>
+                      </span>
+                    </label>
+                  ) : (
+                    <div className="tw:grid tw:gap-2 tw:border-t tw:border-warning/30 tw:pt-2">
+                      <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                        현재 계정은 프로젝트 IAM 정책을 변경할 수 없습니다.
+                        프로젝트 관리자가 위 역할을 부여해야 합니다.
+                      </small>
+                      <ControlLink
+                        href={`https://console.cloud.google.com/iam-admin/iam?project=${encodeURIComponent(selectedGcpProjectId)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Google Cloud IAM 열기
+                      </ControlLink>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                  {gcpPermissionCheck
+                    ? "현재 계정 권한으로 별도 역할 부여 없이 자동 구성할 수 있습니다."
+                    : "프로젝트의 설정 권한을 안전하게 확인하고 있습니다."}
+                </small>
+              )}
+            </div>
+
             {effectiveProduction ? (
               <label className="tw:grid tw:grid-cols-[16px_minmax(0,1fr)] tw:items-start tw:gap-2 tw:border tw:border-danger/40 tw:bg-danger/10 tw:p-3">
                 <input
@@ -296,6 +386,8 @@ export function GcpCloudSetup({
             >
                {mutation === "gcp:bootstrap"
                  ? "Google Cloud 구성 중"
+                 : gcpPermissionCheck?.missing.length
+                   ? "임시 권한 적용 후 자동 설정하고 연결"
                  : selectedInstance?.production === "unknown"
                    ? "환경 분류 추가 후 자동 설정하고 연결"
                    : "자동 설정하고 연결"}

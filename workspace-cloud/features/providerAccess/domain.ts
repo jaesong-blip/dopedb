@@ -123,4 +123,63 @@ export type GcpSetupInventory = {
   projects: GcpSetupProject[];
 };
 
+export type GcpSetupPermissionRequirement = {
+  role: string;
+  label: string;
+  purpose: string;
+  missingPermissions: string[];
+};
+
+export type GcpSetupPermissionCheck = {
+  account: string;
+  projectId: string;
+  canAutoGrant: boolean;
+  missing: GcpSetupPermissionRequirement[];
+};
+
+export function parseGcpSetupPermissionCheck(
+  value: unknown,
+): GcpSetupPermissionCheck | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.account !== "string"
+    || typeof row.projectId !== "string"
+    || typeof row.canAutoGrant !== "boolean"
+    || !Array.isArray(row.missing)
+    || row.missing.length > 5
+  ) {
+    return null;
+  }
+  const missing = row.missing.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const requirement = item as Record<string, unknown>;
+    if (
+      typeof requirement.role !== "string"
+      || typeof requirement.label !== "string"
+      || typeof requirement.purpose !== "string"
+      || !Array.isArray(requirement.missingPermissions)
+      || requirement.missingPermissions.length > 8
+      || !requirement.missingPermissions.every(
+        (permission) => typeof permission === "string",
+      )
+    ) {
+      return [];
+    }
+    return [{
+      role: requirement.role,
+      label: requirement.label,
+      purpose: requirement.purpose,
+      missingPermissions: requirement.missingPermissions as string[],
+    }];
+  });
+  if (missing.length !== row.missing.length) return null;
+  return {
+    account: row.account,
+    projectId: row.projectId,
+    canAutoGrant: row.canAutoGrant,
+    missing,
+  };
+}
+
 export const emptyNeon: NeonConfiguration = { apiKey: "", organizationId: "" };

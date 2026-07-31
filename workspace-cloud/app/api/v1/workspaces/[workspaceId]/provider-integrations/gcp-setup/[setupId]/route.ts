@@ -11,6 +11,10 @@ import {
 } from "../../../../../../../../lib/http";
 import {
   bootstrapGcpCloudSql,
+  checkGcpSetupPermissions,
+  grantTemporaryGcpSetupPermissions,
+  revokeTemporaryGcpSetupPermissions,
+  type GcpTemporaryPermissionGrant,
 } from "../../../../../../../../lib/providers/gcp-cloud-bootstrap";
 import {
   listGcpOAuthInstances,
@@ -95,6 +99,19 @@ export async function GET(request: Request, context: RouteContext) {
         instances,
       });
     }
+    if (kind === "permissions") {
+      const projectId = query.get("project") ?? "";
+      const projects = await listGcpOAuthProjects(setup.credential);
+      if (!projects.some((project) => project.id === projectId)) {
+        return jsonError("Google Cloud project is no longer available", 409);
+      }
+      return privateJson({
+        permissions: await checkGcpSetupPermissions(
+          setup.credential,
+          projectId,
+        ),
+      });
+    }
     return jsonError("Invalid Google Cloud setup query", 400);
   } catch (error) {
     if (error instanceof ProviderRequestError) {
@@ -133,6 +150,7 @@ export async function POST(request: Request, context: RouteContext) {
     )
     || typeof body.approveProduction !== "boolean"
     || typeof body.approveInstanceRestart !== "boolean"
+    || typeof body.approveIamRoleGrant !== "boolean"
   ) {
     return jsonError("Invalid Google Cloud setup request", 400);
   }
@@ -140,7 +158,32 @@ export async function POST(request: Request, context: RouteContext) {
   if (!oidcToken) {
     return jsonError("Vercel OIDC is not enabled for this deployment", 503);
   }
+  let temporaryGrant: GcpTemporaryPermissionGrant | null = null;
   try {
+    const projects = await listGcpOAuthProjects(setup.credential);
+    const project = projects.find((item) => item.id === body.projectId);
+    if (!project || project.number !== body.projectNumber) {
+      return jsonError("Google Cloud project identity changed during setup", 409);
+    }
+    const permissionCheck = await checkGcpSetupPermissions(
+      setup.credential,
+      body.projectId,
+    );
+    if (permissionCheck.missing.length > 0 && !body.approveIamRoleGrant) {
+      return privateJson({
+        error: "Google Cloud 자동 설정에 필요한 권한을 확인하세요.",
+        code: "gcp_setup_permissions_required",
+        permissions: permissionCheck,
+      }, { status: 409 });
+    }
+    if (permissionCheck.missing.length > 0) {
+      temporaryGrant = await grantTemporaryGcpSetupPermissions({
+        credential: setup.credential,
+        projectId: body.projectId,
+        setupId,
+        check: permissionCheck,
+      });
+    }
     const result = await bootstrapGcpCloudSql({
       credential: setup.credential,
       oidcToken,
@@ -156,6 +199,13 @@ export async function POST(request: Request, context: RouteContext) {
         approveInstanceRestart: body.approveInstanceRestart,
       },
     });
+    if (temporaryGrant) {
+      await revokeTemporaryGcpSetupPermissions(
+        setup.credential,
+        temporaryGrant,
+      );
+      temporaryGrant = null;
+    }
     return privateJson({
       bootstrapTicket: sealProviderBootstrapTicket(
         setupId,
@@ -170,6 +220,19 @@ export async function POST(request: Request, context: RouteContext) {
       databaseUsers: result.databaseUsers,
     });
   } catch (error) {
+    if (temporaryGrant) {
+      try {
+        await revokeTemporaryGcpSetupPermissions(
+          setup.credential,
+          temporaryGrant,
+        );
+      } catch {
+        return jsonError(
+          "임시 Google Cloud 설정 권한을 바로 제거하지 못했습니다. 해당 권한은 15분 뒤 자동 만료됩니다.",
+          409,
+        );
+      }
+    }
     if (error instanceof ProviderRequestError) {
       return jsonError(error.message, error.status);
     }

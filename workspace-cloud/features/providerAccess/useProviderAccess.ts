@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   canUseLocalProviderCredential,
   emptyNeon,
+  parseGcpSetupPermissionCheck,
   providerImportDisplayName,
   type GcpSetupInstance,
   type GcpSetupInventory,
@@ -46,6 +47,8 @@ export function useProviderAccess(
     gcpEnvironmentClassification,
     gcpProductionApproved,
     gcpRestartApproved,
+    gcpPermissionCheck,
+    gcpIamRoleGrantApproved,
     loading,
     resourcePending,
     mutation,
@@ -68,6 +71,8 @@ export function useProviderAccess(
   const setGcpEnvironmentClassification = setField("gcpEnvironmentClassification");
   const setGcpProductionApproved = setField("gcpProductionApproved");
   const setGcpRestartApproved = setField("gcpRestartApproved");
+  const setGcpPermissionCheck = setField("gcpPermissionCheck");
+  const setGcpIamRoleGrantApproved = setField("gcpIamRoleGrantApproved");
   const setLoading = setField("loading");
   const setResourcePending = setField("resourcePending");
   const setMutation = setField("mutation");
@@ -189,6 +194,8 @@ export function useProviderAccess(
       setGcpSetupInventory(null);
       setGcpSetupInstances([]);
       setGcpEnvironmentClassification("");
+      setGcpPermissionCheck(null);
+      setGcpIamRoleGrantApproved(false);
       return;
     }
     const controller = new AbortController();
@@ -233,30 +240,51 @@ export function useProviderAccess(
     setGcpEnvironmentClassification("");
     setGcpProductionApproved(false);
     setGcpRestartApproved(false);
+    setGcpPermissionCheck(null);
+    setGcpIamRoleGrantApproved(false);
     if (!projectId) return;
     setMutation("gcp:instances");
     setError("");
     try {
       const query = new URLSearchParams({ kind: "instances", project: projectId });
-      const response = await fetch(
-        `/api/v1/workspaces/${workspaceId}/provider-integrations/gcp-setup/${
-          gcpSetupId
-        }?${query}`,
-        { cache: "no-store" },
-      ).catch(() => null);
-      if (!response?.ok) {
+      const permissionQuery = new URLSearchParams({
+        kind: "permissions",
+        project: projectId,
+      });
+      const [response, permissionResponse] = await Promise.all([
+        fetch(
+          `/api/v1/workspaces/${workspaceId}/provider-integrations/gcp-setup/${
+            gcpSetupId
+          }?${query}`,
+          { cache: "no-store" },
+        ).catch(() => null),
+        fetch(
+          `/api/v1/workspaces/${workspaceId}/provider-integrations/gcp-setup/${
+            gcpSetupId
+          }?${permissionQuery}`,
+          { cache: "no-store" },
+        ).catch(() => null),
+      ]);
+      if (!response?.ok || !permissionResponse?.ok) {
         setError(await responseError(
-          response,
-          "Cloud SQL 인스턴스를 불러오지 못했습니다.",
+          response?.ok ? permissionResponse : response,
+          response?.ok
+            ? "Google Cloud 설정 권한을 확인하지 못했습니다."
+            : "Cloud SQL 인스턴스를 불러오지 못했습니다.",
         ));
         return;
       }
       const body = await response.json().catch(() => null);
-      if (!Array.isArray(body?.instances)) {
-        setError("Cloud SQL 인스턴스 응답 형식을 확인하지 못했습니다.");
+      const permissionBody = await permissionResponse.json().catch(() => null);
+      const permissionCheck = parseGcpSetupPermissionCheck(
+        permissionBody?.permissions,
+      );
+      if (!Array.isArray(body?.instances) || !permissionCheck) {
+        setError("Google Cloud 설정 응답 형식을 확인하지 못했습니다.");
         return;
       }
       setGcpSetupInstances(body.instances as GcpSetupInstance[]);
+      setGcpPermissionCheck(permissionCheck);
     } finally {
       setMutation("");
     }
@@ -267,6 +295,7 @@ export function useProviderAccess(
     setGcpEnvironmentClassification("");
     setGcpProductionApproved(false);
     setGcpRestartApproved(false);
+    setGcpIamRoleGrantApproved(false);
   }
 
   async function completeGcpSetup() {
@@ -296,6 +325,14 @@ export function useProviderAccess(
         && !gcpProductionApproved
       )
       || (!instance.iamAuthenticationEnabled && !gcpRestartApproved)
+      || !gcpPermissionCheck
+      || (
+        gcpPermissionCheck.missing.length > 0
+        && (
+          !gcpPermissionCheck.canAutoGrant
+          || !gcpIamRoleGrantApproved
+        )
+      )
     ) {
       setError("Cloud SQL 대상과 필요한 승인을 확인하세요.");
       return;
@@ -319,14 +356,24 @@ export function useProviderAccess(
               : null,
             approveProduction: gcpProductionApproved,
             approveInstanceRestart: gcpRestartApproved,
+            approveIamRoleGrant: gcpIamRoleGrantApproved,
           }),
         },
       ).catch(() => null);
       if (!bootstrapResponse?.ok) {
-        setError(await responseError(
-          bootstrapResponse,
-          "Google Cloud 자동 설정을 완료하지 못했습니다.",
-        ));
+        const failure = await bootstrapResponse?.json().catch(() => null);
+        const permissionCheck = parseGcpSetupPermissionCheck(
+          failure?.permissions,
+        );
+        if (permissionCheck) {
+          setGcpPermissionCheck(permissionCheck);
+          setGcpIamRoleGrantApproved(false);
+        }
+        setError(
+          typeof failure?.error === "string"
+            ? failure.error
+            : "Google Cloud 자동 설정을 완료하지 못했습니다.",
+        );
         return;
       }
       const bootstrap = await bootstrapResponse.json().catch(() => null);
@@ -374,6 +421,8 @@ export function useProviderAccess(
       setSelectedGcpProjectId("");
       setSelectedGcpInstanceId("");
       setGcpEnvironmentClassification("");
+      setGcpPermissionCheck(null);
+      setGcpIamRoleGrantApproved(false);
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.delete("provider");
       nextUrl.searchParams.delete("status");
@@ -779,6 +828,8 @@ export function useProviderAccess(
     gcpEnvironmentClassification,
     gcpProductionApproved,
     gcpRestartApproved,
+    gcpPermissionCheck,
+    gcpIamRoleGrantApproved,
     loading,
     resourcePending,
     mutation,
@@ -800,6 +851,7 @@ export function useProviderAccess(
     selectGcpInstance,
     selectGcpProject,
     setGcpEnvironmentClassification,
+    setGcpIamRoleGrantApproved,
     setGcpProductionApproved,
     setGcpRestartApproved,
     setNeonConfiguration,

@@ -37,6 +37,70 @@ const REQUIRED_SERVICES = [
 ] as const;
 type JsonObject = Record<string, unknown>;
 
+export type GcpSetupPermissionRequirement = {
+  role: string;
+  label: string;
+  purpose: string;
+  missingPermissions: string[];
+};
+
+export type GcpSetupPermissionCheck = {
+  account: string;
+  projectId: string;
+  canAutoGrant: boolean;
+  missing: GcpSetupPermissionRequirement[];
+};
+
+const GCP_SETUP_ROLE_REQUIREMENTS = [
+  {
+    role: "roles/serviceusage.serviceUsageAdmin",
+    label: "Service Usage Admin",
+    purpose: "필수 Google Cloud API 활성화",
+    permissions: ["serviceusage.services.enable"],
+  },
+  {
+    role: "roles/iam.workloadIdentityPoolAdmin",
+    label: "Workload Identity Pool Admin",
+    purpose: "키 없이 연결할 Workload Identity Pool과 Provider 구성",
+    permissions: [
+      "iam.workloadIdentityPools.create",
+      "iam.workloadIdentityPoolProviders.create",
+    ],
+  },
+  {
+    role: "roles/iam.serviceAccountAdmin",
+    label: "Service Account Admin",
+    purpose: "연결 전용 서비스 계정 생성과 IAM 정책 구성",
+    permissions: [
+      "iam.serviceAccounts.create",
+      "iam.serviceAccounts.delete",
+      "iam.serviceAccounts.getIamPolicy",
+      "iam.serviceAccounts.setIamPolicy",
+    ],
+  },
+  {
+    role: "roles/resourcemanager.projectIamAdmin",
+    label: "Project IAM Admin",
+    purpose: "Cloud SQL 인스턴스 범위의 최소 권한 부여",
+    permissions: [
+      "resourcemanager.projects.getIamPolicy",
+      "resourcemanager.projects.setIamPolicy",
+    ],
+  },
+  {
+    role: "roles/cloudsql.admin",
+    label: "Cloud SQL Admin",
+    purpose: "IAM DB 인증과 전용 데이터베이스 사용자 구성",
+    permissions: [
+      "cloudsql.instances.update",
+      "cloudsql.users.create",
+      "cloudsql.users.delete",
+      "cloudsql.users.list",
+      "cloudsql.users.update",
+    ],
+  },
+] as const;
+
 export type GcpCloudBootstrapInput = {
   workspaceId: string;
   projectId: string;
@@ -77,15 +141,60 @@ function safeSegment(value: string, pattern: RegExp, message: string) {
   return encodeURIComponent(value);
 }
 
-function upstreamMessage(status: number) {
-  if (status === 401) return "Google Cloud authorization expired. Connect the account again.";
-  if (status === 403) {
-    return "The Google account needs Project IAM Admin, Service Account Admin, Workload Identity Pool Admin, Service Usage Admin, and Cloud SQL Admin permissions.";
+function googleErrorReason(body: unknown) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "";
+  const error = (body as JsonObject).error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return "";
+  const details = Array.isArray((error as JsonObject).details)
+    ? (error as JsonObject).details as unknown[]
+    : [];
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object" || Array.isArray(detail)) continue;
+    const reason = (detail as JsonObject).reason;
+    if (typeof reason === "string" && /^[A-Z0-9_]{1,100}$/.test(reason)) {
+      return reason;
+    }
   }
-  if (status === 404) return "The selected Google Cloud resource was not found.";
-  if (status === 409) return "An existing Google Cloud resource conflicts with this DopeDB setup.";
-  if (status === 429) return "Google Cloud rate limited the setup. Retry in a moment.";
-  return "Google Cloud could not complete the setup.";
+  return "";
+}
+
+function upstreamMessage(status: number, url: string, body: unknown) {
+  if (status === 401) return "Google Cloud 승인이 만료되었습니다. 계정을 다시 연결하세요.";
+  if (status === 403) {
+    const reason = googleErrorReason(body);
+    if (reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT") {
+      return "Google 승인에 cloud-platform 권한이 포함되지 않았습니다. 계정을 다시 연결하고 Google Cloud 접근을 승인하세요.";
+    }
+    if (reason === "SERVICE_DISABLED") {
+      return "이 프로젝트에 필요한 Google Cloud API가 비활성화되어 있습니다.";
+    }
+    if (reason.includes("ORG_POLICY")) {
+      return "Google Cloud 조직 정책이 이 설정 작업을 차단했습니다.";
+    }
+    if (url.startsWith(SERVICE_USAGE_ORIGIN)) {
+      return "필수 API를 활성화할 수 없습니다. Service Usage Admin 권한이 필요합니다.";
+    }
+    if (url.startsWith(IAM_CREDENTIALS_ORIGIN)) {
+      return "임시 서비스 계정 자격 증명을 발급할 수 없습니다.";
+    }
+    if (url.startsWith(IAM_ORIGIN) && url.includes("workloadIdentityPool")) {
+      return "Workload Identity를 구성할 수 없습니다. Workload Identity Pool Admin 권한이 필요합니다.";
+    }
+    if (url.startsWith(IAM_ORIGIN) && url.includes("serviceAccounts")) {
+      return "서비스 계정을 구성할 수 없습니다. Service Account Admin 권한이 필요합니다.";
+    }
+    if (url.startsWith(RESOURCE_MANAGER_ORIGIN)) {
+      return "프로젝트 IAM 정책을 변경할 수 없습니다. Project IAM Admin 권한이 필요합니다.";
+    }
+    if (url.startsWith(SQL_ADMIN_ORIGIN)) {
+      return "Cloud SQL 설정을 변경할 수 없습니다. Cloud SQL Admin 권한이 필요합니다.";
+    }
+    return "Google Cloud에서 이 설정 작업을 거부했습니다.";
+  }
+  if (status === 404) return "선택한 Google Cloud 리소스를 찾지 못했습니다.";
+  if (status === 409) return "기존 Google Cloud 리소스가 이 DopeDB 설정과 충돌합니다.";
+  if (status === 429) return "Google Cloud 요청 한도에 도달했습니다. 잠시 뒤 다시 시도하세요.";
+  return "Google Cloud 설정을 완료하지 못했습니다.";
 }
 
 async function googleRequest(
@@ -115,7 +224,7 @@ async function googleRequest(
   if (!response.ok || !body) {
     throw new ProviderRequestError(
       "gcpCloudSql",
-      upstreamMessage(response.status),
+      upstreamMessage(response.status, url, body),
       response.status === 401 || response.status === 403 || response.status === 404
         ? response.status
         : response.status === 409
@@ -124,6 +233,57 @@ async function googleRequest(
     );
   }
   return object(body);
+}
+
+export async function checkGcpSetupPermissions(
+  credential: GcpSetupCredential,
+  projectId: string,
+): Promise<GcpSetupPermissionCheck> {
+  safeSegment(
+    projectId,
+    /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/,
+    "Invalid Google Cloud project",
+  );
+  const requested = GCP_SETUP_ROLE_REQUIREMENTS.flatMap(
+    (requirement) => [...requirement.permissions],
+  );
+  const body = (await googleRequest(
+    credential,
+    `${RESOURCE_MANAGER_ORIGIN}/v3/projects/${encodeURIComponent(projectId)
+    }:testIamPermissions`,
+    {
+      method: "POST",
+      body: JSON.stringify({ permissions: requested }),
+    },
+  ))!;
+  const granted = new Set(
+    Array.isArray(body.permissions)
+      ? body.permissions.filter(
+          (permission): permission is string => typeof permission === "string",
+        )
+      : [],
+  );
+  const missing = GCP_SETUP_ROLE_REQUIREMENTS.flatMap((requirement) => {
+    const missingPermissions = requirement.permissions.filter(
+      (permission) => !granted.has(permission),
+    );
+    return missingPermissions.length > 0
+      ? [{
+          role: requirement.role,
+          label: requirement.label,
+          purpose: requirement.purpose,
+          missingPermissions,
+        }]
+      : [];
+  });
+  return {
+    account: credential.email,
+    projectId,
+    canAutoGrant:
+      granted.has("resourcemanager.projects.getIamPolicy")
+      && granted.has("resourcemanager.projects.setIamPolicy"),
+    missing,
+  };
 }
 
 function operationName(value: JsonObject) {
@@ -421,6 +581,11 @@ type IamBinding = {
   condition?: { title?: string; description?: string; expression?: string };
 };
 
+export type GcpTemporaryPermissionGrant = {
+  projectId: string;
+  bindings: IamBinding[];
+};
+
 function policyBindings(policy: JsonObject): IamBinding[] {
   if (!Array.isArray(policy.bindings)) return [];
   return policy.bindings.flatMap((value) => {
@@ -574,6 +739,91 @@ async function removeIamPolicyBindings(
       }
     }
   }
+}
+
+export async function grantTemporaryGcpSetupPermissions(input: {
+  credential: GcpSetupCredential;
+  projectId: string;
+  setupId: string;
+  check: GcpSetupPermissionCheck;
+}): Promise<GcpTemporaryPermissionGrant | null> {
+  if (input.check.missing.length === 0) return null;
+  if (
+    input.check.account !== input.credential.email
+    || input.check.projectId !== input.projectId
+    || !input.check.canAutoGrant
+    || !/^[0-9a-f-]{36}$/i.test(input.setupId)
+  ) {
+    throw new ProviderRequestError(
+      "gcpCloudSql",
+      "Google Cloud 프로젝트 IAM 관리자가 누락된 설정 역할을 승인해야 합니다.",
+      403,
+    );
+  }
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1_000).toISOString();
+  const condition = {
+    title: `dopedb-setup-${input.setupId.slice(0, 8)}`,
+    description: "Temporary DopeDB managed connection bootstrap",
+    expression: `request.time < timestamp("${expiresAt}")`,
+  };
+  const member = `user:${input.credential.email}`;
+  const bindings = input.check.missing.map((requirement) => ({
+    role: requirement.role,
+    members: [member],
+    condition,
+  }));
+  const resourceUrl =
+    `${RESOURCE_MANAGER_ORIGIN}/v1/projects/${encodeURIComponent(input.projectId)}`;
+  let applied = false;
+  try {
+    await updateIamPolicy(input.credential, resourceUrl, bindings);
+    applied = true;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const confirmed = await checkGcpSetupPermissions(
+        input.credential,
+        input.projectId,
+      );
+      if (confirmed.missing.length === 0) {
+        return { projectId: input.projectId, bindings };
+      }
+      if (attempt < 11) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    }
+    throw new ProviderRequestError(
+      "gcpCloudSql",
+      "임시 Google Cloud 설정 권한이 제한 시간 안에 활성화되지 않았습니다.",
+      409,
+    );
+  } catch (error) {
+    if (applied) {
+      try {
+        await removeIamPolicyBindings(
+          input.credential,
+          resourceUrl,
+          bindings,
+        );
+      } catch {
+        throw new ProviderRequestError(
+          "gcpCloudSql",
+          "임시 Google Cloud 설정 권한을 바로 제거하지 못했습니다. 해당 권한은 15분 뒤 자동 만료됩니다.",
+          409,
+        );
+      }
+    }
+    throw error;
+  }
+}
+
+export async function revokeTemporaryGcpSetupPermissions(
+  credential: GcpSetupCredential,
+  grant: GcpTemporaryPermissionGrant,
+) {
+  await removeIamPolicyBindings(
+    credential,
+    `${RESOURCE_MANAGER_ORIGIN}/v1/projects/${encodeURIComponent(grant.projectId)}`,
+    grant.bindings,
+  );
 }
 
 async function grantWorkloadIdentity(
