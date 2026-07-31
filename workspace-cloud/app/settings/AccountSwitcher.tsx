@@ -133,7 +133,7 @@ export function AccountSwitcher({
       </button>
       {open ? (
         <div
-          className="tw:absolute tw:bottom-[calc(100%+var(--ds-space-3))] tw:left-0 tw:z-[var(--ds-z-popover)] tw:max-h-[min(var(--ds-popover-height),calc(100vh-80px))] tw:w-[min(var(--ds-popover-width),calc(100vw-40px))] tw:overflow-auto tw:border tw:border-border tw:bg-surface tw:p-1 tw:shadow-popover"
+          className="tw:absolute tw:bottom-[calc(100%+var(--ds-space-3))] tw:left-0 tw:z-[var(--ds-z-popover)] tw:max-h-[min(var(--ds-popover-height),calc(100vh-80px))] tw:w-[min(var(--ds-popover-width),calc(100vw-40px))] tw:overflow-auto tw:border tw:border-border tw:bg-surface tw:p-1 tw:shadow-popover tw:max-[800px]:top-[calc(100%+var(--ds-space-3))] tw:max-[800px]:right-0 tw:max-[800px]:bottom-auto tw:max-[800px]:left-auto"
           role="menu"
         >
           {accounts.map((account) => (
@@ -176,6 +176,13 @@ export function AccountSwitcher({
               </button>
             </div>
           ))}
+          <a
+            className="tw:flex tw:min-h-control-md tw:w-full tw:items-center tw:border-t tw:border-border tw:px-2 tw:text-xs tw:text-foreground tw:hover:bg-surface-raised"
+            role="menuitem"
+            href="/settings?section=account"
+          >
+            내 계정 관리
+          </a>
           <a
             className="tw:flex tw:min-h-control-md tw:w-full tw:items-center tw:px-2 tw:text-xs tw:text-muted-foreground tw:hover:bg-surface-raised tw:hover:text-foreground"
             role="menuitem"

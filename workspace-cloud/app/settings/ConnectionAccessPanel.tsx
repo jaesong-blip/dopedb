@@ -136,11 +136,11 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
   const selected = connections.find((item) => item.id === selectedId) ?? null;
 
   return (
-    <section className="tw:grid tw:gap-3 tw:border-t tw:border-border tw:px-4 tw:py-4">
+    <section className="tw:grid tw:gap-3 tw:px-5 tw:py-5">
       <header className="tw:flex tw:items-start tw:justify-between tw:gap-3">
         <div className="tw:grid tw:gap-1">
           <strong className="tw:text-ui tw:text-foreground">
-            연결별 접근 권한
+            DB별 접근 권한
           </strong>
           <small className="tw:text-xs tw:leading-body tw:text-muted-foreground">
             워크스페이스 멤버십과 별도로 DB마다 보기·사용·관리 권한을 부여합니다.

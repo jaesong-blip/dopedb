@@ -172,7 +172,9 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
   return (
     <section className="tw:grid tw:gap-3 tw:p-5">
       <header className="tw:flex tw:items-start tw:justify-between tw:gap-3">
-        <strong className="tw:text-sm tw:text-foreground">멤버 및 RBAC</strong>
+        <strong className="tw:text-sm tw:text-foreground">
+          워크스페이스 멤버
+        </strong>
         <small className="tw:text-right tw:text-2xs tw:leading-body tw:text-muted-foreground">
           권한은 모든 API 요청에서 서버가 다시 확인합니다.
         </small>

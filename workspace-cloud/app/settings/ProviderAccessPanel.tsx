@@ -26,12 +26,14 @@ export function ProviderAccessPanel({
   );
 
   return (
-    <section className="tw:grid tw:gap-4 tw:border-t tw:border-border tw:p-5">
+    <section className="tw:grid tw:gap-4 tw:p-5">
       <header className="tw:flex tw:items-start tw:justify-between tw:gap-3">
         <div className="tw:grid tw:gap-1">
-          <strong className="tw:text-sm tw:text-foreground">관리형 DB 접근</strong>
+          <strong className="tw:text-sm tw:text-foreground">
+            공급자와 데이터베이스
+          </strong>
           <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-            구성원별 최소 권한 자격증명을 15분 동안만 발급합니다.
+            공급자 계정을 먼저 연결한 뒤 공유할 데이터베이스를 선택합니다.
           </small>
         </div>
         <span className="tw:whitespace-nowrap tw:font-mono tw:text-2xs tw:uppercase tw:text-primary">
@@ -44,16 +46,14 @@ export function ProviderAccessPanel({
           공급자 설정을 확인하는 중입니다.
         </p>
       ) : (
-        <>
-          {configuringGcp ? (
-            <GcpCloudSetup controller={controller} />
-          ) : (
-            <div className="tw:grid tw:gap-3">
-              <div
-                className="tw:grid tw:grid-cols-2 tw:border tw:border-border tw:bg-surface-inset tw:p-0.5 tw:md:hidden"
-                role="tablist"
-                aria-label="관리형 DB 접근 설정"
-              >
+        <div className="tw:grid tw:gap-4">
+          {configuringGcp ? <GcpCloudSetup controller={controller} /> : null}
+          <div className="tw:grid tw:gap-3">
+            <div
+              className="tw:grid tw:grid-cols-2 tw:border tw:border-border tw:bg-surface-inset tw:p-0.5 tw:md:hidden"
+              role="tablist"
+              aria-label="공급자 및 데이터베이스 연결"
+            >
                 <button
                   id="provider-accounts-tab"
                   className="tw:h-control-md tw:border-0 tw:bg-transparent tw:px-3 tw:text-2xs tw:font-semibold tw:text-muted-foreground tw:data-[selected=true]:bg-selection tw:data-[selected=true]:text-selection-foreground"
@@ -64,7 +64,7 @@ export function ProviderAccessPanel({
                   data-selected={mobilePane === "providers"}
                   onClick={() => setMobilePane("providers")}
                 >
-                  공급자 계정
+                  공급자 연결
                 </button>
                 <button
                   id="managed-connection-tab"
@@ -76,11 +76,11 @@ export function ProviderAccessPanel({
                   data-selected={mobilePane === "connections"}
                   onClick={() => setMobilePane("connections")}
                 >
-                  연결 설정
+                  DB 연결
                 </button>
-              </div>
+            </div>
 
-              <div className="tw:grid tw:min-w-0 tw:gap-0 tw:md:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.35fr)] tw:md:border tw:md:border-border">
+            <div className="tw:grid tw:min-w-0 tw:gap-0 tw:md:grid-cols-[minmax(280px,0.82fr)_minmax(0,1.4fr)] tw:md:border tw:md:border-border">
                 <section
                   id="provider-accounts-pane"
                   className={
@@ -93,10 +93,10 @@ export function ProviderAccessPanel({
                 >
                   <div className="tw:grid tw:gap-1">
                     <strong className="tw:text-xs tw:text-foreground">
-                      공급자 계정
+                      연결 가능한 공급자
                     </strong>
                     <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                      Google Cloud, Neon 등 연결 대상을 조회할 계정을 관리합니다.
+                      현재 실제 연결을 지원하는 공급자만 표시합니다.
                     </small>
                   </div>
                   <ProviderIntegrationList controller={controller} />
@@ -114,19 +114,18 @@ export function ProviderAccessPanel({
                 >
                   <div className="tw:grid tw:gap-1">
                     <strong className="tw:text-xs tw:text-foreground">
-                      공유 연결 설정
+                      데이터베이스 연결
                     </strong>
                     <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                      공급자 리소스를 기존 공유 연결에 매핑하거나 새 연결로
-                      가져옵니다.
+                      연결한 공급자에서 DB를 선택해 새 공유 연결로 가져오거나
+                      기존 연결을 전환합니다.
                     </small>
                   </div>
                   <ProviderResourcePicker controller={controller} />
                 </section>
-              </div>
             </div>
-          )}
-        </>
+          </div>
+        </div>
       )}
       {!configuringGcp && controller.error ? (
         <small className="tw:text-2xs tw:text-danger" role="alert">

@@ -23,19 +23,21 @@ export function ProviderIntegrationList({
     disconnect,
     setNeonConfiguration,
   } = controller;
+  const connectableProviders = providers.filter(
+    (provider) => provider.availability === "available",
+  );
 
   return (
     <div className="tw:grid tw:content-start tw:gap-4">
       <div className="tw:grid tw:border-t tw:border-border">
-        {providers.map((provider) => {
+        {connectableProviders.map((provider) => {
           const connectedCount = integrations.filter(
             (item) => item.provider === provider.id,
           ).length;
-          const available =
-            provider.availability === "available" && provider.configured;
+          const available = provider.configured;
           return (
             <div
-              className="tw:grid tw:min-h-[58px] tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border tw:py-2"
+              className="tw:grid tw:min-h-[72px] tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border tw:py-2.5"
               key={provider.id}
             >
               <div className="tw:grid tw:gap-1">
@@ -45,6 +47,16 @@ export function ProviderIntegrationList({
                 <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
                   {provider.note}
                 </small>
+                <span className="tw:flex tw:flex-wrap tw:gap-1.5">
+                  {provider.supportedEngines.map((engine) => (
+                    <span
+                      className="tw:border tw:border-border tw:bg-surface-inset tw:px-1.5 tw:py-0.5 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground"
+                      key={engine}
+                    >
+                      {engine}
+                    </span>
+                  ))}
+                </span>
               </div>
               <div className="tw:flex tw:items-center tw:justify-end tw:gap-2">
                 {connectedCount > 0 ? (
@@ -56,13 +68,11 @@ export function ProviderIntegrationList({
                   disabled={!available || mutation !== ""}
                   onClick={() => beginConnect(provider)}
                 >
-                  {provider.availability === "planned"
-                    ? "준비 중"
-                    : provider.configured
-                      ? connectedCount > 0
-                        ? "추가"
-                        : "연결"
-                      : "서버 설정 필요"}
+                  {provider.configured
+                    ? connectedCount > 0
+                      ? "계정 추가"
+                      : "계정 연결"
+                    : "서버 설정 필요"}
                 </ControlButton>
               </div>
             </div>

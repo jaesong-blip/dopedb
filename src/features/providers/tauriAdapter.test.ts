@@ -6,6 +6,7 @@ import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud
 import gcpOAuthSource from "../../../workspace-cloud/lib/providers/gcp-cloud-oauth.ts?raw";
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
+import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -156,6 +157,10 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpSetupSource).not.toMatch(
       /workloadIdentityPoolId|workloadIdentityProviderId|readServiceAccountEmail/,
     );
+    expect(providerIntegrationListSource).toContain(
+      'provider.availability === "available"',
+    );
+    expect(providerIntegrationListSource).not.toContain('"준비 중"');
     expect(gcpOAuthSource).toContain('"/api/auth/callback/google"');
     expect(authRouteSource).toContain("isGcpCloudSetupCallback");
     expect(gcpBootstrapSource).toContain("verifyVercelOidcToken");
