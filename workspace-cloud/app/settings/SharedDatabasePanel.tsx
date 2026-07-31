@@ -134,12 +134,21 @@ export function SharedDatabasePanel({
       )}
 
       {controller.error ? (
-        <p
-          className="tw:m-0 tw:border tw:border-danger/40 tw:bg-danger/5 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-danger"
+        <div
+          className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border tw:border-danger/40 tw:bg-danger/5 tw:px-3 tw:py-2 tw:max-[640px]:grid"
           role="alert"
         >
-          {controller.error}
-        </p>
+          <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-danger">
+            {controller.error}
+          </p>
+          {controller.error.includes("다시 연결") ? (
+            <ControlLink
+              href={`/settings?workspace=${encodeURIComponent(workspaceId)}&section=cloud-accounts`}
+            >
+              클라우드 계정으로 이동
+            </ControlLink>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );
