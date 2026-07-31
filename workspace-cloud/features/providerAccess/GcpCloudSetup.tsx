@@ -3,6 +3,7 @@
 // OAuth-return setup surface. It exposes only target selection and approvals;
 // WIF coordinates, IAM policies, service accounts, and database IAM users are
 // generated and verified server-side instead of becoming browser form fields.
+import { useEffect, useState } from "react";
 import {
   ControlButton,
   ControlField,
@@ -40,6 +41,23 @@ export function GcpCloudSetup({
     setGcpProductionApproved,
     setGcpRestartApproved,
   } = controller;
+  const configuring = mutation === "gcp:bootstrap";
+  const [configurationElapsedSeconds, setConfigurationElapsedSeconds] =
+    useState(0);
+  useEffect(() => {
+    if (!configuring) {
+      setConfigurationElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    setConfigurationElapsedSeconds(0);
+    const timer = window.setInterval(() => {
+      setConfigurationElapsedSeconds(
+        Math.floor((Date.now() - startedAt) / 1_000),
+      );
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [configuring]);
   if (!gcpSetupId) return null;
 
   const selectedInstance = gcpSetupInstances.find(
@@ -408,6 +426,31 @@ export function GcpCloudSetup({
       ) : null}
 
       <div className="tw:grid tw:gap-3 tw:border-t tw:border-border tw:pt-3">
+        {configuring ? (
+          <div className="tw:grid tw:gap-2.5 tw:border tw:border-primary/40 tw:bg-primary/10 tw:p-3">
+            <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
+              <strong className="tw:text-xs tw:font-semibold tw:text-foreground">
+                Google Cloud 자동 구성 진행 중
+              </strong>
+              <span className="tw:shrink-0 tw:font-mono tw:text-2xs tw:text-primary">
+                {configurationElapsedSeconds}초 경과
+              </span>
+            </div>
+            <div
+              className="tw:h-2 tw:overflow-hidden tw:rounded-pill tw:bg-muted"
+              role="progressbar"
+              aria-label="Google Cloud 자동 구성 진행 중"
+              aria-valuetext={`${configurationElapsedSeconds}초 경과`}
+            >
+              <span className="tw:block tw:h-full tw:w-full tw:animate-pulse tw:rounded-pill tw:bg-primary/50 tw:motion-reduce:animate-none" />
+            </div>
+            <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+              {configurationElapsedSeconds < 30
+                ? "필수 API, 서비스 계정, Cloud SQL IAM 설정을 확인하고 있습니다."
+                : "Google IAM 권한이 전파되기를 기다리고 있습니다. 환경에 따라 최대 약 3분 걸릴 수 있습니다."}
+            </small>
+          </div>
+        ) : null}
         {visibleError ? (
           <p
             className="tw:m-0 tw:border tw:border-danger/40 tw:bg-danger/10 tw:p-3 tw:text-2xs tw:leading-body tw:text-danger"
