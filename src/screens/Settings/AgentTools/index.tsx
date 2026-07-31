@@ -1,10 +1,11 @@
 // Manages the bounded Codex/Claude Skill inventory through explicit install,
 // backup-and-repair, remove, and version-matched CLI self-test actions.
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentCliDetectionQuery } from "../../../features/agents/queryOptions";
 import {
   legacyMcpCleanupApply,
+  installSkill,
   removeSkill,
   repairSkill,
   skillSelfTest,
@@ -29,11 +30,7 @@ import {
   skillStatusQuery,
 } from "../../../lib/queries";
 import { useI18n, type I18nKey } from "../../../lib/i18n";
-import SkillSetupPanel from "../../../features/skills/SkillSetupPanel";
-import {
-  buildSkillSetupPlan,
-  type SkillSetupPlan,
-} from "../../../features/skills/setupPolicy";
+import { buildSkillSetupPlan } from "../../../features/skills/setupPolicy";
 import {
   StatusBadge,
   type StatusTone,
@@ -116,8 +113,6 @@ export default function AgentTools() {
     SkillTargetSelection | "self-test" | "legacy-cleanup" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
-  const [setupPlan, setSetupPlan] = useState<SkillSetupPlan | null>(null);
-  const setupTriggerRef = useRef<HTMLElement | null>(null);
   const status = statusQ.data ?? null;
 
   function expectations(target: SkillTargetSelection): SkillTargetExpectation[] {
@@ -159,6 +154,34 @@ export default function AgentTools() {
           }),
         );
       }
+    } catch (reason) {
+      const message = errMessage(reason);
+      setError(message);
+      toast(message, "error");
+      await statusQ.refetch();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runInstall(target: SkillTargetSelection) {
+    if (!status) return;
+    setBusy(target);
+    setError(null);
+    try {
+      const receipt = await installSkill(target, expectations(target));
+      await statusQ.refetch();
+      for (const backup of receipt.backups) {
+        toast(t("agentTools.backupCreated", { path: backup.path }));
+      }
+      const tested = await skillSelfTest();
+      toast(t("agentTools.updated"));
+      toast(
+        t("agentTools.selfTestPassed", {
+          revision: tested.releaseRevision,
+          bytes: tested.guideBytes,
+        }),
+      );
     } catch (reason) {
       const message = errMessage(reason);
       setError(message);
@@ -218,19 +241,6 @@ export default function AgentTools() {
     } finally {
       setBusy(null);
     }
-  }
-
-  function openSetup(plan: SkillSetupPlan, trigger: HTMLElement) {
-    if (!plan.command) return;
-    setupTriggerRef.current = trigger;
-    setSetupPlan(plan);
-  }
-
-  function closeSetup() {
-    setSetupPlan(null);
-    const trigger = setupTriggerRef.current;
-    setupTriggerRef.current = null;
-    window.requestAnimationFrame(() => trigger?.focus());
   }
 
   const combinedSetupPlan = status
@@ -389,13 +399,8 @@ export default function AgentTools() {
                     <div className="ds-control-row tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-[var(--ds-control-gap)]">
                       {canInstall && (
                         <Button
-                          disabled={busy !== null || setupPlan !== null}
-                          onClick={(event) =>
-                            openSetup(
-                              buildSkillSetupPlan([target]),
-                              event.currentTarget,
-                            )
-                          }
+                          disabled={busy !== null}
+                          onClick={() => void runInstall(target.target)}
                         >
                           {t(
                             target.state === "managed_older"
@@ -431,10 +436,6 @@ export default function AgentTools() {
             })}
           </div>
         )
-      )}
-
-      {setupPlan && (
-        <SkillSetupPanel plan={setupPlan} onClose={closeSetup} />
       )}
 
       <section className="tw:border-t tw:border-border-subtle tw:pt-5 tw:pb-2">
@@ -517,13 +518,11 @@ export default function AgentTools() {
       </section>
 
       <div className="ds-control-row tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-[var(--ds-control-gap)]">
-        {combinedSetupPlan?.command && !setupPlan && (
+        {combinedSetupPlan?.selection && (
           <Button
             variant="primary"
             disabled={busy !== null}
-            onClick={(event) =>
-              openSetup(combinedSetupPlan, event.currentTarget)
-            }
+            onClick={() => void runInstall(combinedSetupPlan.selection!)}
           >
             {t(
               combinedSetupPlan.action === "update"

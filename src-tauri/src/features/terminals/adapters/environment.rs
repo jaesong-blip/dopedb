@@ -49,11 +49,6 @@ pub(super) struct LaunchEnvironment<'a> {
     pub working_directory: &'a Path,
 }
 
-pub(super) struct SkillSetupLaunchEnvironment<'a> {
-    pub cli_directory: &'a Path,
-    pub working_directory: &'a Path,
-}
-
 pub(super) fn command_for_profile(
     profile: TerminalProfile,
     environment: LaunchEnvironment<'_>,
@@ -64,18 +59,6 @@ pub(super) fn command_for_profile(
         TerminalProfile::Claude => agent_command("claude", "Claude Code")?,
     };
     apply_environment(&mut command, environment)?;
-    Ok(command)
-}
-
-pub(super) fn command_for_skill_setup(
-    environment: SkillSetupLaunchEnvironment<'_>,
-) -> AppResult<CommandBuilder> {
-    let mut command = skill_setup_shell_command()?;
-    apply_base_environment(
-        &mut command,
-        environment.cli_directory,
-        environment.working_directory,
-    )?;
     Ok(command)
 }
 
@@ -152,35 +135,6 @@ fn shell_command() -> AppResult<CommandBuilder> {
             ));
         }
         Ok(CommandBuilder::new(program))
-    }
-}
-
-fn skill_setup_shell_command() -> AppResult<CommandBuilder> {
-    #[cfg(windows)]
-    {
-        let system_root = std::env::var_os("SystemRoot")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .ok_or_else(|| {
-                AppError::Config(
-                    "the Windows system directory is unavailable for Skill setup".into(),
-                )
-            })?;
-        let program = system_root
-            .join("System32")
-            .join("WindowsPowerShell")
-            .join("v1.0")
-            .join("powershell.exe");
-        let mut command = CommandBuilder::new(program);
-        command.args(["-NoLogo", "-NoProfile", "-NoExit"]);
-        Ok(command)
-    }
-    #[cfg(not(windows))]
-    {
-        let mut command = CommandBuilder::new("/bin/sh");
-        command.arg("-i");
-        Ok(command)
     }
 }
 

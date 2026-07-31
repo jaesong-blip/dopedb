@@ -1,12 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type {
-  SkillSetupTerminalCreateRequest,
-  SkillSetupCommandDraft,
-  SkillSetupTerminalExitEvent,
-  SkillSetupTerminalSessionSummary,
-  SkillSetupTerminalStateEvent,
   TerminalCreateRequest,
   TerminalFocusReceipt,
   TerminalOutputChunk,
@@ -78,58 +72,6 @@ export function terminalRename(
   name: string,
 ): Promise<TerminalSessionSummary> {
   return invoke("terminal_rename", { id, name });
-}
-
-export function skillSetupTerminalCreate(
-  request: SkillSetupTerminalCreateRequest,
-  onOutput: Channel<TerminalOutputChunk>,
-): Promise<SkillSetupTerminalSessionSummary> {
-  return invoke("skill_setup_terminal_create", { request, onOutput });
-}
-
-export function skillSetupTerminalWrite(
-  id: TerminalSessionId,
-  bytes: number[],
-): Promise<void> {
-  return invoke("skill_setup_terminal_write", { id, bytes });
-}
-
-export function skillSetupTerminalDraft(
-  id: TerminalSessionId,
-  text: SkillSetupCommandDraft,
-): Promise<void> {
-  return invoke("skill_setup_terminal_draft", { id, draft: { text } });
-}
-
-export function skillSetupTerminalResize(
-  id: TerminalSessionId,
-  size: TerminalSize,
-): Promise<void> {
-  return invoke("skill_setup_terminal_resize", { id, size });
-}
-
-export function skillSetupTerminalClose(
-  id: TerminalSessionId,
-): Promise<void> {
-  return invoke("skill_setup_terminal_close", { id });
-}
-
-export function onSkillSetupTerminalState(
-  handler: (event: SkillSetupTerminalStateEvent) => void,
-): Promise<UnlistenFn> {
-  return listen<SkillSetupTerminalStateEvent>(
-    "skill-setup-terminal:state",
-    ({ payload }) => handler(payload),
-  );
-}
-
-export function onSkillSetupTerminalExit(
-  handler: (event: SkillSetupTerminalExitEvent) => void,
-): Promise<UnlistenFn> {
-  return listen<SkillSetupTerminalExitEvent>(
-    "skill-setup-terminal:exit",
-    ({ payload }) => handler(payload),
-  );
 }
 
 export function terminalShutdownAll(): Promise<void> {

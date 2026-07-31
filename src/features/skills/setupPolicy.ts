@@ -2,10 +2,6 @@ import type {
   SkillInstallState,
   SkillTarget,
 } from "../../ipc/generated/protocol-contracts";
-import {
-  skillSetupCommandDraft,
-  type SkillSetupCommandDraft,
-} from "../terminals/domain";
 
 export type SkillSetupAction =
   | "install"
@@ -25,7 +21,6 @@ export interface SkillSetupTargetStatus {
 export interface SkillSetupPlan {
   action: SkillSetupAction;
   selection: SkillTarget | "all" | null;
-  command: SkillSetupCommandDraft | null;
   targets: SkillSetupTargetStatus[];
   attentionTargets: SkillSetupTargetStatus[];
 }
@@ -34,12 +29,6 @@ const actionableStates = new Set<SkillInstallState>([
   "missing",
   "managed_older",
 ]);
-
-function commandFor(selection: SkillTarget | "all"): SkillSetupCommandDraft {
-  return skillSetupCommandDraft(
-    `dopedb skill install --target ${selection}`,
-  );
-}
 
 export function buildSkillSetupPlan(
   targets: readonly SkillSetupTargetStatus[],
@@ -58,7 +47,6 @@ export function buildSkillSetupPlan(
     return {
       action: attentionTargets.length > 0 ? "attention" : "none",
       selection: null,
-      command: null,
       targets: [],
       attentionTargets,
     };
@@ -83,7 +71,6 @@ export function buildSkillSetupPlan(
   return {
     action,
     selection,
-    command: commandFor(selection),
     targets: actionable,
     attentionTargets,
   };

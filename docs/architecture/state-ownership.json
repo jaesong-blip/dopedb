@@ -138,17 +138,6 @@
       ]
     },
     {
-      "name": "skillSetupPtySessions",
-      "owner": "src-tauri/src/features/terminals/adapters/setup_runtime.rs",
-      "writerTokens": [
-        "setup_sessions: Arc<DashMap<TerminalSessionId, Arc<SkillSetupTerminalSession>>>,",
-        "create_lock: Arc<Mutex<()>>,",
-        "let _create_guard = lock_unpoisoned(&self.create_lock);",
-        "match self.setup_sessions.entry(context.id) {",
-        "self.setup_sessions.remove(&id);"
-      ]
-    },
-    {
       "name": "terminalCapabilityRegistry",
       "owner": "src-tauri/src/broker/session.rs",
       "writerTokens": [

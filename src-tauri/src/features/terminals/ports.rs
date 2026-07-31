@@ -7,8 +7,7 @@ use crate::error::AppResult;
 use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 
 use super::domain::{
-    SkillSetupTerminalCreateRequest, SkillSetupTerminalSessionSummary, TerminalCreateRequest,
-    TerminalFocusReceipt, TerminalSessionSummary, TerminalSize,
+    TerminalCreateRequest, TerminalFocusReceipt, TerminalSessionSummary, TerminalSize,
 };
 
 pub(crate) trait TerminalSessionPort: Clone + Send + Sync + 'static {
@@ -72,38 +71,6 @@ pub(crate) trait TerminalSessionPort: Clone + Send + Sync + 'static {
     fn stop_connection(&self, connection_id: ConnectionId, events: &Self::EventSink) -> usize;
 
     fn stop_all(&self, events: &Self::EventSink);
-
-    fn shutdown_all(&self, events: &Self::EventSink, timeout: Duration);
-}
-
-pub(crate) trait SkillSetupTerminalSessionPort: Clone + Send + Sync + 'static {
-    type OutputSink: Send + 'static;
-    type EventSink: Clone + Send + Sync + 'static;
-
-    fn create(
-        &self,
-        request: SkillSetupTerminalCreateRequest,
-        output: Self::OutputSink,
-        events: Self::EventSink,
-    ) -> impl Future<Output = AppResult<SkillSetupTerminalSessionSummary>> + Send;
-
-    fn write(
-        &self,
-        id: TerminalSessionId,
-        bytes: Vec<u8>,
-    ) -> impl Future<Output = AppResult<()>> + Send;
-
-    fn resize(
-        &self,
-        id: TerminalSessionId,
-        size: TerminalSize,
-    ) -> impl Future<Output = AppResult<()>> + Send;
-
-    fn close(
-        &self,
-        id: TerminalSessionId,
-        events: Self::EventSink,
-    ) -> impl Future<Output = AppResult<()>> + Send;
 
     fn shutdown_all(&self, events: &Self::EventSink, timeout: Duration);
 }

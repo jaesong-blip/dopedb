@@ -6,8 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::kernel::identity::{ConnectionId, TerminalSessionId, WorkspaceId};
 use crate::model::Engine;
 
-const MAX_SKILL_SETUP_DRAFT_BYTES: usize = 4 * 1024;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TerminalProfile {
@@ -95,34 +93,6 @@ pub struct TerminalCreateRequest {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SkillSetupTerminalCreateRequest {
-    #[serde(default)]
-    pub size: TerminalSize,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SkillSetupTerminalDraft {
-    pub text: String,
-}
-
-impl SkillSetupTerminalDraft {
-    pub(super) fn into_bytes(self) -> Result<Vec<u8>, &'static str> {
-        if self.text.is_empty() {
-            return Err("the Skill setup command draft is empty");
-        }
-        if self.text.len() > MAX_SKILL_SETUP_DRAFT_BYTES {
-            return Err("the Skill setup command draft is too large");
-        }
-        if self.text.chars().any(char::is_control) {
-            return Err("the Skill setup command draft contains an execution control character");
-        }
-        Ok(self.text.into_bytes())
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalConnectionPin {
@@ -163,17 +133,6 @@ pub struct TerminalSessionSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SkillSetupTerminalSessionSummary {
-    pub id: TerminalSessionId,
-    pub lifecycle: TerminalLifecycle,
-    pub size: TerminalSize,
-    pub created_at: DateTime<Utc>,
-    pub last_activity_at: DateTime<Utc>,
-    pub exit: Option<TerminalExit>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct TerminalOutputChunk {
     pub session_id: TerminalSessionId,
     pub sequence: u64,
@@ -199,19 +158,6 @@ pub struct TerminalStateEvent {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalExitEvent {
-    pub session_id: TerminalSessionId,
-    pub exit: TerminalExit,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillSetupTerminalStateEvent {
-    pub session: SkillSetupTerminalSessionSummary,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillSetupTerminalExitEvent {
     pub session_id: TerminalSessionId,
     pub exit: TerminalExit,
 }

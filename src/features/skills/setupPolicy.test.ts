@@ -48,7 +48,6 @@ describe("buildSkillSetupPlan", () => {
         );
 
         if (actionable.length === 0) {
-          expect(plan.command).toBeNull();
           expect(plan.selection).toBeNull();
           expect(plan.action).toBe(
             codex === "managed_current" && claude === "managed_current"
@@ -61,10 +60,6 @@ describe("buildSkillSetupPlan", () => {
         const expectedSelection =
           actionable.length === 2 ? "all" : actionable[0][0];
         expect(plan.selection).toBe(expectedSelection);
-        expect(plan.command).toBe(
-          `dopedb skill install --target ${expectedSelection}`,
-        );
-        expect(plan.command).not.toMatch(/[\r\n]/);
         expect(
           plan.targets.every(
             (item) =>
@@ -105,9 +100,6 @@ describe("buildSkillSetupPlan", () => {
     ]);
 
     expect(plan.selection).toBe("claude-code");
-    expect(plan.command).toBe(
-      "dopedb skill install --target claude-code",
-    );
     expect(plan.attentionTargets.map((item) => item.target)).toEqual([
       "codex",
     ]);

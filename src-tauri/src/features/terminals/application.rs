@@ -2,68 +2,17 @@
 
 use std::time::Duration;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::kernel::identity::{ConnectionId, TerminalSessionId};
 
 use super::domain::{
-    SkillSetupTerminalCreateRequest, SkillSetupTerminalDraft, SkillSetupTerminalSessionSummary,
     TerminalCreateRequest, TerminalFocusReceipt, TerminalSessionSummary, TerminalSize,
 };
-use super::ports::{SkillSetupTerminalSessionPort, TerminalSessionPort};
+use super::ports::TerminalSessionPort;
 
 #[derive(Clone)]
 pub(crate) struct TerminalUseCases<P> {
     sessions: P,
-}
-
-#[derive(Clone)]
-pub(crate) struct SkillSetupTerminalUseCases<P> {
-    sessions: P,
-}
-
-impl<P> SkillSetupTerminalUseCases<P>
-where
-    P: SkillSetupTerminalSessionPort,
-{
-    pub(crate) fn new(sessions: P) -> Self {
-        Self { sessions }
-    }
-
-    pub(crate) async fn create(
-        &self,
-        request: SkillSetupTerminalCreateRequest,
-        output: P::OutputSink,
-        events: P::EventSink,
-    ) -> AppResult<SkillSetupTerminalSessionSummary> {
-        self.sessions.create(request, output, events).await
-    }
-
-    pub(crate) async fn write(&self, id: TerminalSessionId, bytes: Vec<u8>) -> AppResult<()> {
-        self.sessions.write(id, bytes).await
-    }
-
-    pub(crate) async fn draft(
-        &self,
-        id: TerminalSessionId,
-        draft: SkillSetupTerminalDraft,
-    ) -> AppResult<()> {
-        let bytes = draft.into_bytes().map_err(|reason| AppError::Blocked {
-            reason: reason.into(),
-        })?;
-        self.sessions.write(id, bytes).await
-    }
-
-    pub(crate) async fn resize(&self, id: TerminalSessionId, size: TerminalSize) -> AppResult<()> {
-        self.sessions.resize(id, size).await
-    }
-
-    pub(crate) async fn close(&self, id: TerminalSessionId, events: P::EventSink) -> AppResult<()> {
-        self.sessions.close(id, events).await
-    }
-
-    pub(crate) fn shutdown_all(&self, events: &P::EventSink, timeout: Duration) {
-        self.sessions.shutdown_all(events, timeout);
-    }
 }
 
 impl<P> TerminalUseCases<P>
