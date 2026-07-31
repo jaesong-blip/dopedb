@@ -843,7 +843,14 @@ full guide는 실행 중인 CLI에 embed하여 `dopedb skills get`이 출력한�
 
 ### 7.2 manifest
 
-각 Skill revision에 다음을 기록한다.
+Skill revision은 앱 버전이 아니라 Skill 콘텐츠를 식별한다. `packageDigest`는
+`schemaVersion`, skill name, source path, source file records, install file records의
+canonical JSON으로 계산하며 `appVersion`과 `releaseRevision`은 digest 입력에서
+제외한다. 따라서 같은 Skill 패키지를 포함하는 여러 앱 버전은 같은 revision과
+digest를 재사용한다. source guide, reference, discovery stub 중 하나라도 바뀔 때만
+새로운 monotonic revision을 만든다.
+
+각 현재 manifest에 다음을 기록한다.
 
 - skill name
 - release revision
@@ -855,6 +862,10 @@ full guide는 실행 중인 CLI에 embed하여 `dopedb skills get`이 출력한�
 - executable 여부
 - exact SHA-256
 - normalized-text SHA-256
+
+`snapshot-registry.json`의 `appVersion`은 해당 콘텐츠 revision을 처음 도입한 앱
+버전이다. 앱과 Skill revision의 다대일 대응은 `release-mapping.json`이 소유하며,
+앱 버전 증가만으로 snapshot을 복제하거나 Skill revision을 올리지 않는다.
 
 ### 7.3 설치 상태
 

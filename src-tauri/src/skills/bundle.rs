@@ -60,6 +60,7 @@ struct SnapshotRegistry {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct SkillSnapshot {
     pub release_revision: u64,
+    /// The first app build that introduced this content revision.
     pub app_version: String,
     pub package_digest: String,
     pub files: Vec<ManifestFile>,
@@ -123,8 +124,7 @@ impl SkillBundle {
         for release in &releases.releases {
             if !mapped_versions.insert(&release.app_version)
                 || !registry.snapshots.iter().any(|snapshot| {
-                    snapshot.app_version == release.app_version
-                        && snapshot.release_revision == release.release_revision
+                    snapshot.release_revision == release.release_revision
                         && snapshot.package_digest == release.package_digest
                 })
             {
@@ -150,8 +150,7 @@ impl SkillBundle {
                 file
             })
             .collect::<Vec<_>>();
-        if current_snapshot.app_version != current.app_version
-            || current_snapshot.package_digest != current.package_digest
+        if current_snapshot.package_digest != current.package_digest
             || current_snapshot.files != expected_files
         {
             return Err(AppError::Config(
@@ -252,10 +251,12 @@ fn validate_current_manifest(manifest: &CurrentManifest) -> AppResult<()> {
         AppError::Config("the embedded current Skill manifest is not an object".into())
     })?;
     object.remove("packageDigest");
+    object.remove("appVersion");
+    object.remove("releaseRevision");
     let canonical = canonical_json(&raw)?;
     if sha256_hex(&canonical) != manifest.package_digest {
         return Err(AppError::Config(
-            "the embedded Skill package digest does not match its manifest".into(),
+            "the embedded Skill package digest does not match its content".into(),
         ));
     }
 

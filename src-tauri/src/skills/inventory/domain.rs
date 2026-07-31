@@ -116,6 +116,28 @@ pub(super) fn status_from_entries(
                     conflicts: Vec::new(),
                 };
             }
+
+            // An older app cannot know a future release's package digest. It can still
+            // recognize the installation as managed when the newer marker is valid and
+            // every installed byte matches a snapshot embedded in this app. This keeps
+            // unchanged discovery stubs forward-compatible without trusting modified
+            // or previously unseen files.
+            if marker.release_revision > current_revision
+                && bundle
+                    .snapshots
+                    .iter()
+                    .any(|snapshot| snapshot_matches(&entries, &snapshot.files))
+            {
+                return InventoryDecision {
+                    state: SkillInstallState::NewerKnown,
+                    repairable: true,
+                    installed_revision: Some(marker.release_revision),
+                    installed_package_digest: Some(marker.package_digest.clone()),
+                    inventory_fingerprint: fingerprint,
+                    reason: None,
+                    conflicts: Vec::new(),
+                };
+            }
         }
     }
 

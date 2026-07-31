@@ -9,9 +9,6 @@ const repositoryRoot = path.resolve(
   "..",
 );
 const skillName = "dopedb-cli";
-// Reusing a revision for different bytes would make a known snapshot ambiguous.
-// Bump this monotonically whenever the generated package changes after release.
-const releaseRevision = 17;
 const sourceRoot = path.join(repositoryRoot, "skills", skillName);
 const resourceRoot = path.join(repositoryRoot, "src-tauri", "resources", "skills");
 const currentManifestPath = path.join(resourceRoot, "current-manifest.json");
@@ -72,8 +69,8 @@ function stableJson(value) {
   return JSON.stringify(stable(value));
 }
 
-function packageDigest(manifestWithoutDigest) {
-  return sha256(Buffer.from(stableJson(manifestWithoutDigest), "utf8"));
+function contentDigest(contentManifest) {
+  return sha256(Buffer.from(stableJson(contentManifest), "utf8"));
 }
 
 function assertVersionsMatch() {
@@ -164,28 +161,56 @@ function writeOrCheck(file, value) {
 
 const appVersion = assertVersionsMatch();
 const installBytes = Buffer.from(discoveryStub, "utf8");
-const manifestBase = {
+const sourceFiles = sourceRecords();
+const installFiles = [
+  fileRecord(
+    "SKILL.md",
+    "generated:discovery-stub",
+    installBytes,
+    discoveryStub,
+  ),
+];
+const contentManifest = {
   schemaVersion: 1,
   skillName,
-  releaseRevision,
   sourcePath: path.posix.join("skills", skillName),
-  appVersion,
-  sourceFiles: sourceRecords(),
-  installFiles: [
-    fileRecord(
-      "SKILL.md",
-      "generated:discovery-stub",
-      installBytes,
-      discoveryStub,
-    ),
-  ],
+  sourceFiles,
+  installFiles,
 };
-const currentManifest = {
-  ...manifestBase,
-  packageDigest: packageDigest(manifestBase),
-};
+// App metadata is deliberately excluded: one exact Skill package can ship with
+// many app releases. Only a content change earns a new monotonic revision.
+const packageDigest = contentDigest(contentManifest);
 
 const registry = loadRegistry();
+const snapshotFiles = installFiles.map(({ content: _content, ...file }) => file);
+const digestMatches = registry.snapshots.filter(
+  (snapshot) => snapshot.packageDigest === packageDigest,
+);
+if (digestMatches.length > 1) {
+  throw new Error(`package digest ${packageDigest} names multiple Skill revisions`);
+}
+const reusableSnapshot = digestMatches[0];
+if (
+  reusableSnapshot &&
+  stableJson(reusableSnapshot.files) !== stableJson(snapshotFiles)
+) {
+  throw new Error(
+    `package digest ${packageDigest} names different installed Skill files`,
+  );
+}
+const releaseRevision =
+  reusableSnapshot?.releaseRevision ??
+  registry.snapshots.reduce(
+    (maximum, snapshot) => Math.max(maximum, snapshot.releaseRevision),
+    0,
+  ) + 1;
+const currentManifest = {
+  ...contentManifest,
+  releaseRevision,
+  appVersion,
+  packageDigest,
+};
+
 const existingSnapshot = registry.snapshots.find(
   (snapshot) => snapshot.releaseRevision === releaseRevision,
 );
@@ -201,12 +226,12 @@ const currentSnapshot = {
   releaseRevision,
   appVersion,
   packageDigest: currentManifest.packageDigest,
-  files: currentManifest.installFiles.map(({ content: _content, ...file }) => file),
+  files: snapshotFiles,
 };
-const snapshots = registry.snapshots
-  .filter((snapshot) => snapshot.releaseRevision !== releaseRevision)
-  .concat(currentSnapshot)
-  .sort((left, right) => left.releaseRevision - right.releaseRevision);
+const snapshots = (reusableSnapshot
+  ? registry.snapshots
+  : registry.snapshots.concat(currentSnapshot)
+).sort((left, right) => left.releaseRevision - right.releaseRevision);
 const snapshotRegistry = { schemaVersion: 1, skillName, snapshots };
 
 const mapping = loadReleaseMapping();
@@ -225,5 +250,5 @@ writeOrCheck(snapshotRegistryPath, snapshotRegistry);
 writeOrCheck(releaseMappingPath, releaseMapping);
 
 process.stdout.write(
-  `${checkOnly ? "verified" : "generated"} ${skillName} revision ${releaseRevision} for app ${appVersion}\n`,
+  `${checkOnly ? "verified" : "generated"} ${skillName} content revision ${releaseRevision} for app ${appVersion}\n`,
 );
