@@ -2,7 +2,6 @@
 // Customer service-account keys are never created, uploaded, or persisted.
 import "server-only";
 
-import { MAX_PROVIDER_RESULTS } from "./adapter-contract";
 import {
   GCP_LEASE_SECONDS,
   gcpCloudSqlEngine,
@@ -312,48 +311,34 @@ async function listGcpCloudSqlInstancesWithToken(
 
 export async function listGcpCloudSqlDatabases(
   credential: GcpCloudSqlCredential,
-  oidcToken: string,
+  _oidcToken: string,
   instance: string,
   engine: "postgres" | "mysql" | null,
 ): Promise<ProviderResourceItem[]> {
-  const token = await controlPlaneToken(credential, oidcToken);
-  return listGcpCloudSqlDatabasesWithToken(
-    credential,
-    token.accessToken,
-    instance,
-    engine,
-  );
+  return configuredGcpCloudSqlDatabases(credential, instance, engine);
 }
 
-async function listGcpCloudSqlDatabasesWithToken(
+function configuredGcpCloudSqlDatabases(
   credential: GcpCloudSqlCredential,
-  accessToken: string,
   instance: string,
   engine: "postgres" | "mysql" | null,
 ): Promise<ProviderResourceItem[]> {
   requireDedicatedInstance(credential, instance);
-  const body = await sqlAdminRequest(
-    accessToken,
-    `/projects/${pathSegment(credential.projectId)}/instances/${
-      pathSegment(instance)
-    }/databases?maxResults=${MAX_PROVIDER_RESULTS}`,
-  );
-  const databases = Array.isArray(body.items) ? body.items : [];
-  if (databases.length > MAX_PROVIDER_RESULTS || typeof body.nextPageToken === "string") {
-    throw new ProviderRequestError("gcpCloudSql", "GCP database scope is too large to import safely", 409);
+  if (credential.databaseNames.length === 0) {
+    throw new ProviderRequestError(
+      "gcpCloudSql",
+      "이 Cloud SQL 계정 연결은 고정 DB 목록을 저장하기 전 버전입니다. 클라우드 계정에서 다시 연결해 주세요.",
+      409,
+    );
   }
-  const rows = databases.map(object);
-  return rows.map((row) => {
-    const name = requiredString(row.name, "database name");
-    return {
+  return Promise.resolve(credential.databaseNames.map((name) => ({
       id: name,
       value: name,
       name,
       ...(engine ? { kind: engine } : {}),
       ready: true,
       production: "unknown" as const,
-    };
-  });
+  })));
 }
 
 function requireDedicatedInstance(
@@ -466,9 +451,8 @@ export async function validateGcpCloudSqlResource(
   requireDedicatedInstance(credential, resource.instance);
   const control = await controlPlaneToken(credential, oidcToken);
   const [databases, settings, details, users] = await Promise.all([
-    listGcpCloudSqlDatabasesWithToken(
+    configuredGcpCloudSqlDatabases(
       credential,
-      control.accessToken,
       resource.instance,
       resource.engine,
     ),
@@ -570,9 +554,8 @@ export async function issueGcpCloudSqlLease(input: {
       control.accessToken,
       input.resource.instance,
     ),
-    listGcpCloudSqlDatabasesWithToken(
+    configuredGcpCloudSqlDatabases(
       input.credential,
-      control.accessToken,
       input.resource.instance,
       input.resource.engine,
     ),

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   ControlButton,
   ControlField,
@@ -7,6 +8,15 @@ import {
 } from "../../app/components/Controls";
 import { selectableProviderResources } from "./domain";
 import type { ProviderAccessController } from "./useProviderAccess";
+
+type ImportIntent = "" | "create" | "replace";
+
+const steps = [
+  "계정",
+  "대상 DB",
+  "연결 방식",
+  "검토",
+] as const;
 
 export function ProviderResourcePicker({
   controller,
@@ -26,174 +36,341 @@ export function ProviderResourcePicker({
     selectedIntegration,
     selectedProvider,
     resourceComplete,
-    currentResourceLabel,
-    mayUseLocalProviderCredential,
-    willReplaceConnection,
     importDiscoveredResource,
     resetResources,
     selectResource,
     setSelectedConnectionId,
     setSelectedIntegrationId,
-    switchToMemberLocal,
   } = controller;
+  const [step, setStep] = useState(1);
+  const [intent, setIntent] = useState<ImportIntent>("");
+  const replaceableConnections = connections.filter(
+    (connection) => connection.credentialMode === "member_local",
+  );
+  const finalLevel = selectedProvider?.resourceLevels.at(-1);
+  const finalResource = finalLevel
+    ? resourceOptions[finalLevel.key]?.find(
+        (item) => item.value === selection[finalLevel.key],
+      )
+    : null;
+  const targetLabel = selectedProvider
+    ? selectedProvider.resourceLevels
+      .map((level) => selection[level.key])
+      .filter(Boolean)
+      .join(" / ")
+    : "";
+
+  function chooseIntegration(integrationId: string) {
+    setSelectedIntegrationId(integrationId);
+    setSelectedConnectionId("");
+    setIntent("");
+    resetResources();
+  }
+
+  function chooseIntent(nextIntent: Exclude<ImportIntent, "">) {
+    setIntent(nextIntent);
+    if (nextIntent === "create") {
+      setSelectedConnectionId("");
+    } else {
+      setSelectedConnectionId(replaceableConnections[0]?.id ?? "");
+    }
+  }
 
   return (
-    <div className="tw:grid tw:grid-cols-1 tw:gap-3 tw:lg:grid-cols-2">
-      <ControlField label="1 · 전환할 공유 연결">
-        <ControlSelect
-          value={selectedConnectionId}
-          onChange={(event) => {
-            setSelectedConnectionId(event.target.value);
-            resetResources();
-          }}
-          disabled={connections.length === 0}
+    <section className="tw:grid tw:border tw:border-border">
+      <header className="tw:grid tw:gap-3 tw:border-b tw:border-border tw:bg-surface-inset tw:px-4 tw:py-3">
+        <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
+          <div className="tw:grid tw:gap-1">
+            <strong className="tw:text-xs tw:text-foreground">
+              공유 DB 추가
+            </strong>
+            <small className="tw:text-2xs tw:text-muted-foreground">
+              인증 계정과 고정 DB 대상을 차례로 선택합니다.
+            </small>
+          </div>
+          <span className="tw:font-mono tw:text-2xs tw:uppercase tw:text-primary">
+            {step} / 4
+          </span>
+        </div>
+        <ol
+          className="tw:m-0 tw:grid tw:list-none tw:grid-cols-4 tw:gap-px tw:p-0"
+          aria-label="DB 추가 진행 단계"
         >
-          {connections.length === 0 ? (
-            <option value="">공유된 DB가 없습니다</option>
-          ) : null}
-          {connections.map((connection) => (
-            <option value={connection.id} key={connection.id}>
-              {connection.name} · {connection.engine} ·{" "}
-              {connection.credentialMode === "managed"
-                ? "자동 발급"
-                : "개별 입력"}
-            </option>
-          ))}
-        </ControlSelect>
-      </ControlField>
-      <ControlField label="2 · 공급자 계정">
-        <ControlSelect
-          value={selectedIntegrationId}
-          onChange={(event) => {
-            setSelectedIntegrationId(event.target.value);
-            resetResources();
-          }}
-          disabled={integrations.length === 0}
-        >
-          {integrations.length === 0 ? (
-            <option value="">먼저 공급자를 연결하세요</option>
-          ) : null}
-          {integrations.map((integration) => (
-            <option
-              value={integration.id}
-              key={integration.id}
-              disabled={integration.status !== "active"}
-            >
-              {integration.displayName}
-              {integration.status === "reconnect_required"
-                ? " · reconnect required"
-                : ""}
-            </option>
-          ))}
-        </ControlSelect>
-      </ControlField>
-      <div
-        className={
-          selectedProvider?.id === "gcpCloudSql"
-            ? "tw:col-span-full tw:grid tw:grid-cols-1 tw:gap-3 tw:sm:grid-cols-2 tw:xl:grid-cols-4"
-            : "tw:col-span-full tw:grid tw:grid-cols-1 tw:gap-3 tw:sm:grid-cols-2 tw:xl:grid-cols-3"
-        }
-      >
-        {selectedProvider?.resourceLevels.map((level, index) => {
-          const isFinalLeaf =
-            index === selectedProvider.resourceLevels.length - 1;
-          const options = selectableProviderResources(
-            resourceOptions[level.key] ?? [],
-            isFinalLeaf,
-            selectedProvider.supportedEngines,
-          );
-          const previous =
-            index === 0 ||
-            Boolean(
-              selection[selectedProvider.resourceLevels[index - 1].key],
-          );
-          return (
-            <ControlField
-              key={level.key}
-              label={
-                <>
-                {index === 0 ? "3 · " : ""}
-                {level.label}
-                </>
-              }
-            >
-              <ControlSelect
-                value={selection[level.key] ?? ""}
-                onChange={(event) =>
-                  void selectResource(index, event.target.value)
-                }
-                disabled={
-                  !selectedIntegration || !previous || resourcePending
-                }
+          {steps.map((label, index) => {
+            const itemStep = index + 1;
+            return (
+              <li
+                className="tw:grid tw:gap-1 tw:text-2xs tw:text-muted-foreground tw:data-[active=true]:text-foreground tw:data-[complete=true]:text-primary"
+                data-active={step === itemStep}
+                data-complete={step > itemStep}
+                key={label}
               >
-                <option value="">선택</option>
-                {options.map((item) => (
-                  <option value={item.value} key={item.id}>
-                    {item.name}
-                    {item.production === true
-                      ? " · production"
-                      : item.production === "unknown"
-                        ? " · classification pending"
-                        : item.ready === false
-                          ? " · not ready"
-                    : ""}
+                <span className="tw:h-0.5 tw:bg-border tw:data-[active=true]:bg-primary tw:data-[complete=true]:bg-primary" />
+                <span className="tw:max-[520px]:sr-only">{label}</span>
+              </li>
+            );
+          })}
+        </ol>
+      </header>
+
+      {resourcePending || mutation.startsWith("import:") ? (
+        <div
+          className="tw:h-1 tw:overflow-hidden tw:bg-surface-inset"
+          role="progressbar"
+          aria-label={
+            mutation.startsWith("import:")
+              ? "공유 DB를 등록하는 중"
+              : "공급자 리소스를 불러오는 중"
+          }
+        >
+          <span className="tw:block tw:h-full tw:w-1/2 tw:animate-pulse tw:bg-primary" />
+        </div>
+      ) : null}
+
+      <div className="tw:grid tw:min-h-[260px] tw:content-start tw:gap-5 tw:p-5">
+        {step === 1 ? (
+          <>
+            <div className="tw:grid tw:gap-1">
+              <strong className="tw:text-sm tw:text-foreground">
+                어떤 클라우드 계정에서 찾을까요?
+              </strong>
+              <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                이 선택은 인증에만 쓰입니다. 아직 팀 DB가 만들어지지는 않습니다.
+              </p>
+            </div>
+            <ControlField label="클라우드 계정">
+              <ControlSelect
+                value={selectedIntegrationId}
+                onChange={(event) => chooseIntegration(event.target.value)}
+              >
+                <option value="">계정 선택</option>
+                {integrations.map((integration) => (
+                  <option
+                    value={integration.id}
+                    key={integration.id}
+                    disabled={integration.status !== "active"}
+                  >
+                    {integration.displayName}
+                    {integration.status === "reconnect_required"
+                      ? " · 재연결 필요"
+                      : ""}
                   </option>
                 ))}
               </ControlSelect>
             </ControlField>
-          );
-        })}
-      </div>
-      <div className="tw:col-span-full tw:grid tw:gap-3 tw:border-t tw:border-border tw:pt-3 tw:xl:grid-cols-[minmax(0,1fr)_auto] tw:xl:items-center">
-        <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-          {!selectedIntegration
-            ? "상단에서 GCP Cloud SQL, Neon 또는 PlanetScale 공급자 연결을 먼저 완료하세요. 이 선택기는 연결 주소 편집이 아니라 관리형 접근 전환에 사용됩니다."
-            : currentResourceLabel
-            ? `현재 ${currentResourceLabel}에 자동 연결됩니다.`
-            : willReplaceConnection
-              ? "선택한 공유 연결의 ID와 대시보드는 유지하고, 구성원별 비밀번호를 단기 관리형 접근으로 교체합니다."
-            : selectedConnection?.allowWrites
-              ? "멤버 RBAC에 따라 읽기 또는 읽기·쓰기 권한을 발급합니다."
-              : "이 연결은 모든 구성원에게 읽기 전용 자격증명만 발급합니다."}
-        </p>
-        <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2">
-          {mayUseLocalProviderCredential ? (
-            <div className="tw:grid tw:max-w-[36rem] tw:gap-2 tw:border tw:border-border tw:bg-surface-inset tw:p-3">
-              <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                이 가져온 공급자 대상만 구성원 로컬 자격증명으로 전환할 수
-                있습니다. 대상·읽기 전용 정책은 유지되며 자격증명은 이
-                기기에만 저장됩니다.
-              </small>
-              <ControlButton
-                disabled={mutation !== ""}
-                onClick={() => void switchToMemberLocal()}
-              >
-                로컬 Provider 자격증명 사용
-              </ControlButton>
+          </>
+        ) : null}
+
+        {step === 2 ? (
+          <>
+            <div className="tw:grid tw:gap-1">
+              <strong className="tw:text-sm tw:text-foreground">
+                공유할 DB 하나를 선택하세요
+              </strong>
+              <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                선택한 프로젝트·인스턴스·DB만 이 워크스페이스 연결에 고정됩니다.
+              </p>
             </div>
-          ) : null}
+            <div className="tw:grid tw:grid-cols-1 tw:gap-3 tw:md:grid-cols-3">
+              {selectedProvider?.resourceLevels.map((level, index) => {
+                const isFinalLeaf =
+                  index === selectedProvider.resourceLevels.length - 1;
+                const options = selectableProviderResources(
+                  resourceOptions[level.key] ?? [],
+                  isFinalLeaf,
+                  selectedProvider.supportedEngines,
+                );
+                const previous =
+                  index === 0
+                  || Boolean(
+                    selection[selectedProvider.resourceLevels[index - 1].key],
+                  );
+                return (
+                  <ControlField key={level.key} label={level.label}>
+                    <ControlSelect
+                      value={selection[level.key] ?? ""}
+                      onChange={(event) =>
+                        void selectResource(index, event.target.value)
+                      }
+                      disabled={!previous || resourcePending}
+                    >
+                      <option value="">선택</option>
+                      {options.map((item) => (
+                        <option value={item.value} key={item.id}>
+                          {item.name}
+                          {item.production === true
+                            ? " · 운영"
+                            : item.ready === false
+                              ? " · 준비 안 됨"
+                              : ""}
+                        </option>
+                      ))}
+                    </ControlSelect>
+                  </ControlField>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+
+        {step === 3 ? (
+          <>
+            <div className="tw:grid tw:gap-1">
+              <strong className="tw:text-sm tw:text-foreground">
+                새 연결로 추가할까요?
+              </strong>
+              <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                기존 로컬 연결을 같은 DB의 관리형 연결로 바꿀 때만 교체를
+                선택하세요.
+              </p>
+            </div>
+            <div className="tw:grid tw:border-t tw:border-border">
+              <button
+                className="tw:grid tw:min-h-[64px] tw:grid-cols-[auto_minmax(0,1fr)] tw:items-start tw:gap-3 tw:border-0 tw:border-b tw:border-border tw:bg-transparent tw:px-2 tw:py-3 tw:text-left tw:text-foreground tw:hover:bg-surface-raised tw:data-[selected=true]:bg-selection"
+                type="button"
+                data-selected={intent === "create"}
+                onClick={() => chooseIntent("create")}
+              >
+                <span className="tw:mt-0.5 tw:grid tw:size-4 tw:place-items-center tw:rounded-full tw:border tw:border-border tw:data-[selected=true]:border-primary">
+                  <i
+                    className="tw:size-2 tw:rounded-full tw:bg-transparent tw:data-[selected=true]:bg-primary"
+                    data-selected={intent === "create"}
+                  />
+                </span>
+                <span className="tw:grid tw:gap-1">
+                  <strong className="tw:text-xs">새 공유 DB 만들기</strong>
+                  <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    공급자 이름과 DB 이름으로 새 팀 연결을 만듭니다.
+                  </small>
+                </span>
+              </button>
+              <button
+                className="tw:grid tw:min-h-[64px] tw:grid-cols-[auto_minmax(0,1fr)] tw:items-start tw:gap-3 tw:border-0 tw:border-b tw:border-border tw:bg-transparent tw:px-2 tw:py-3 tw:text-left tw:text-foreground tw:hover:bg-surface-raised tw:data-[selected=true]:bg-selection tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]"
+                type="button"
+                data-selected={intent === "replace"}
+                disabled={replaceableConnections.length === 0}
+                onClick={() => chooseIntent("replace")}
+              >
+                <span className="tw:mt-0.5 tw:grid tw:size-4 tw:place-items-center tw:rounded-full tw:border tw:border-border">
+                  <i
+                    className="tw:size-2 tw:rounded-full tw:bg-transparent tw:data-[selected=true]:bg-primary"
+                    data-selected={intent === "replace"}
+                  />
+                </span>
+                <span className="tw:grid tw:gap-1">
+                  <strong className="tw:text-xs">기존 로컬 연결 교체</strong>
+                  <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    연결 ID와 대시보드는 유지하고 자격증명 방식만 바꿉니다.
+                  </small>
+                </span>
+              </button>
+            </div>
+            {intent === "replace" ? (
+              <ControlField label="교체할 로컬 연결">
+                <ControlSelect
+                  value={selectedConnectionId}
+                  onChange={(event) =>
+                    setSelectedConnectionId(event.target.value)
+                  }
+                >
+                  {replaceableConnections.map((connection) => (
+                    <option value={connection.id} key={connection.id}>
+                      {connection.name} · {connection.engine}
+                    </option>
+                  ))}
+                </ControlSelect>
+              </ControlField>
+            ) : null}
+          </>
+        ) : null}
+
+        {step === 4 ? (
+          <>
+            <div className="tw:grid tw:gap-1">
+              <strong className="tw:text-sm tw:text-foreground">
+                등록 내용을 확인하세요
+              </strong>
+              <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                완료 후 DB별 접근 권한에서 사용할 멤버를 지정할 수 있습니다.
+              </p>
+            </div>
+            <dl className="tw:m-0 tw:grid tw:grid-cols-[130px_minmax(0,1fr)] tw:border-t tw:border-border tw:text-xs tw:max-[520px]:grid-cols-1">
+              <dt className="tw:border-b tw:border-border tw:py-2 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
+                인증 계정
+              </dt>
+              <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
+                {selectedIntegration?.displayName}
+              </dd>
+              <dt className="tw:border-b tw:border-border tw:py-2 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
+                대상
+              </dt>
+              <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
+                {targetLabel}
+              </dd>
+              <dt className="tw:border-b tw:border-border tw:py-2 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
+                연결 방식
+              </dt>
+              <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
+                {intent === "replace"
+                  ? `${selectedConnection?.name ?? "선택한 연결"} 교체`
+                  : "새 공유 DB"}
+              </dd>
+              <dt className="tw:border-b tw:border-border tw:py-2 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
+                자격증명
+              </dt>
+              <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
+                멤버별 15분 · 읽기 전용
+              </dd>
+            </dl>
+            {finalResource?.production === true ? (
+              <p className="tw:m-0 tw:border tw:border-danger/40 tw:bg-danger/5 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-danger">
+                운영 DB입니다. 완료 시 관리자 승인이 감사 기록에 남습니다.
+              </p>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+
+      <footer className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border-t tw:border-border tw:px-5 tw:py-3">
+        <ControlButton
+          onClick={() => setStep((current) => Math.max(1, current - 1))}
+          disabled={step === 1 || mutation !== ""}
+        >
+          이전
+        </ControlButton>
+        {step < 4 ? (
           <ControlButton
             tone="primary"
+            onClick={() => setStep((current) => Math.min(4, current + 1))}
             disabled={
-              !selectedIntegration ||
-              !resourceComplete ||
-              resourcePending ||
               mutation !== ""
+              || (step === 1 && !selectedIntegration)
+              || (step === 2 && !resourceComplete)
+              || (
+                step === 3
+                && (
+                  !intent
+                  || (intent === "replace" && !selectedConnectionId)
+                )
+              )
             }
+          >
+            계속
+          </ControlButton>
+        ) : (
+          <ControlButton
+            tone="primary"
+            disabled={!resourceComplete || mutation !== ""}
             onClick={() => void importDiscoveredResource()}
           >
             {mutation.startsWith("import:")
-              ? willReplaceConnection
-                ? "전환하는 중"
-                : "가져오는 중"
-              : !selectedIntegration
-                ? "공급자 연결 필요"
-              : willReplaceConnection
-                ? "선택 연결을 관리형으로 전환"
-                : "읽기 전용 연결 가져오기"}
+              ? "등록하는 중"
+              : intent === "replace"
+                ? "관리형 연결로 교체"
+                : "공유 DB 만들기"}
           </ControlButton>
-        </div>
-      </div>
-    </div>
+        )}
+      </footer>
+    </section>
   );
 }

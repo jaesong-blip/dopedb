@@ -1,10 +1,15 @@
 // Root settings navigation owns the active workspace concern. This component
 // renders only that concern's command surface and never creates nested settings.
 import { ConnectionAccessPanel } from "./ConnectionAccessPanel";
-import { ProviderAccessPanel } from "./ProviderAccessPanel";
+import { CloudAccountPanel } from "./CloudAccountPanel";
+import { SharedDatabasePanel } from "./SharedDatabasePanel";
 import { WorkspaceAccessPanel } from "./WorkspaceAccessPanel";
 
-export type WorkspaceManagementArea = "connections" | "database-access" | "members";
+export type WorkspaceManagementArea =
+  | "cloud-accounts"
+  | "databases"
+  | "database-access"
+  | "members";
 
 export const workspaceManagementAreas: Array<{
   id: WorkspaceManagementArea;
@@ -13,32 +18,40 @@ export const workspaceManagementAreas: Array<{
   description: string;
 }> = [
   {
-    id: "members",
+    id: "cloud-accounts",
     index: "02",
-    label: "멤버 관리",
-    description: "초대와 워크스페이스 역할",
+    label: "클라우드 계정",
+    description: "DB를 찾고 단기 자격증명을 발급할 공급자 인증",
+  },
+  {
+    id: "databases",
+    index: "03",
+    label: "공유 데이터베이스",
+    description: "워크스페이스에서 함께 사용하는 고정 DB 대상",
   },
   {
     id: "database-access",
-    index: "03",
+    index: "04",
     label: "DB별 접근 권한",
     description: "연결마다 보기·사용·관리 권한",
   },
   {
-    id: "connections",
-    index: "04",
-    label: "공급자 및 DB 연결",
-    description: "공급자 계정과 공유 연결",
+    id: "members",
+    index: "05",
+    label: "멤버 관리",
+    description: "초대와 워크스페이스 역할",
   },
 ];
 
 export function WorkspaceManagementPanel({
   workspaceId,
   gcpSetupId,
+  initialIntegrationId,
   area,
 }: {
   workspaceId: string;
   gcpSetupId: string | null;
+  initialIntegrationId: string | null;
   area: WorkspaceManagementArea;
 }) {
   const selected =
@@ -67,10 +80,16 @@ export function WorkspaceManagementPanel({
         {area === "database-access" ? (
           <ConnectionAccessPanel workspaceId={workspaceId} />
         ) : null}
-        {area === "connections" ? (
-          <ProviderAccessPanel
+        {area === "cloud-accounts" ? (
+          <CloudAccountPanel
             workspaceId={workspaceId}
             gcpSetupId={gcpSetupId}
+          />
+        ) : null}
+        {area === "databases" ? (
+          <SharedDatabasePanel
+            workspaceId={workspaceId}
+            initialIntegrationId={initialIntegrationId}
           />
         ) : null}
     </section>

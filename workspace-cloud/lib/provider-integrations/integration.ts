@@ -200,9 +200,11 @@ export function neonCredential(integration: ActiveProviderIntegration) {
 }
 
 export function gcpCredential(integration: ActiveProviderIntegration) {
-  return openProviderCredential<GcpCloudSqlCredential>(
-    integration.id,
-    integration.encryptedCredential,
+  return parseGcpCloudSqlCredential(
+    openProviderCredential<GcpCloudSqlCredential>(
+      integration.id,
+      integration.encryptedCredential,
+    ),
   );
 }
 

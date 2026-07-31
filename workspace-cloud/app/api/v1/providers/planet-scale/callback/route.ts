@@ -35,6 +35,7 @@ function settingsUrl(
   const target = new URL("/settings", env.appOrigin());
   target.searchParams.set("provider", "planetScale");
   target.searchParams.set("status", status);
+  target.searchParams.set("section", "cloud-accounts");
   if (workspaceId) {
     target.searchParams.set("workspace", workspaceId);
     target.hash = `workspace-${workspaceId}`;

@@ -248,7 +248,7 @@ export async function POST(request: Request, context: RouteContext) {
         || !isUuid(body.setupId)
         || typeof body.bootstrapTicket !== "string"
         || body.bootstrapTicket.length < 80
-        || body.bootstrapTicket.length > 8_192
+        || body.bootstrapTicket.length > 32_768
       ) {
         return jsonError("A completed Google Cloud setup is required", 400);
       }

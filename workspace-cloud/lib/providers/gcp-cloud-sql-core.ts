@@ -19,6 +19,7 @@ export type GcpCloudSqlCredential = {
   instanceId: string;
   readServiceAccountEmail: string;
   writeServiceAccountEmail: string | null;
+  databaseNames: string[];
   dedicatedServiceAccountsConfirmed: true;
   instanceScopedIamConfirmed: true;
 };
@@ -66,6 +67,9 @@ export function parseGcpCloudSqlCredential(
     || body.writeServiceAccountEmail == null
     ? null
     : body.writeServiceAccountEmail;
+  const databaseNames = body.databaseNames === undefined
+    ? []
+    : body.databaseNames;
   if (
     !gcpProjectId(body.projectId)
     || typeof body.projectNumber !== "string"
@@ -77,6 +81,10 @@ export function parseGcpCloudSqlCredential(
     || (writeServiceAccountEmail !== null
       && !gcpServiceAccountEmail(writeServiceAccountEmail))
     || writeServiceAccountEmail === body.readServiceAccountEmail
+    || !Array.isArray(databaseNames)
+    || databaseNames.length > 200
+    || !databaseNames.every((name) => gcpResourceName(name))
+    || new Set(databaseNames).size !== databaseNames.length
     || body.dedicatedServiceAccountsConfirmed !== true
     || body.instanceScopedIamConfirmed !== true
   ) {
@@ -90,6 +98,7 @@ export function parseGcpCloudSqlCredential(
     instanceId: body.instanceId,
     readServiceAccountEmail: body.readServiceAccountEmail,
     writeServiceAccountEmail,
+    databaseNames,
     dedicatedServiceAccountsConfirmed: true,
     instanceScopedIamConfirmed: true,
   };

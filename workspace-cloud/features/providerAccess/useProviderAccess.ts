@@ -27,6 +27,7 @@ async function responseError(response: Response | null, fallback: string) {
 export function useProviderAccess(
   workspaceId: string,
   gcpSetupId: string | null = null,
+  initialIntegrationId: string | null = null,
 ) {
   const [state, setField] = useProviderAccessState();
   const {
@@ -82,11 +83,6 @@ export function useProviderAccess(
   const setMutation = setField("mutation");
   const setError = setField("error");
   const pendingImportRef = useRef<PendingProviderImport | null>(null);
-  const pendingGcpTargetRef = useRef<{
-    integrationId: string;
-    projectId: string;
-    instanceId: string;
-  } | null>(null);
 
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
@@ -181,11 +177,13 @@ export function useProviderAccess(
     setSelectedIntegrationId((current) => (
       nextIntegrations.some((item) => item.id === current)
         ? current
-        : nextIntegrations[0]?.id ?? ""
+        : nextIntegrations.find((item) => item.id === initialIntegrationId)?.id
+          ?? nextIntegrations[0]?.id
+          ?? ""
     ));
     setError("");
     setLoading(false);
-  }, [workspaceId]);
+  }, [initialIntegrationId, workspaceId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -447,11 +445,6 @@ export function useProviderAccess(
         setGcpSetupError("저장된 Google Cloud 연결을 확인하지 못했습니다.");
         return;
       }
-      pendingGcpTargetRef.current = {
-        integrationId,
-        projectId: project.id,
-        instanceId: instance.id,
-      };
       setGcpSetupInventory(null);
       setGcpSetupInstances([]);
       setSelectedGcpProjectId("");
@@ -463,6 +456,8 @@ export function useProviderAccess(
       nextUrl.searchParams.delete("provider");
       nextUrl.searchParams.delete("status");
       nextUrl.searchParams.delete("gcpSetup");
+      nextUrl.searchParams.set("section", "databases");
+      nextUrl.searchParams.set("integration", integrationId);
       window.location.replace(nextUrl);
     } finally {
       setMutation("");
@@ -506,60 +501,9 @@ export function useProviderAccess(
     }
     const controller = new AbortController();
     resetResources();
-    void discover(first, selectedIntegrationId, {}, controller.signal).then(async (rows) => {
+    void discover(first, selectedIntegrationId, {}, controller.signal).then((rows) => {
       if (!rows || controller.signal.aborted) return;
       setResourceOptions({ [first.key]: rows });
-      const pending = pendingGcpTargetRef.current;
-      if (
-        selectedProvider.id !== "gcpCloudSql"
-        || pending?.integrationId !== selectedIntegrationId
-      ) {
-        return;
-      }
-      const project = rows.find((item) => item.value === pending.projectId);
-      const instanceLevel = selectedProvider.resourceLevels[1];
-      const databaseLevel = selectedProvider.resourceLevels[2];
-      if (!project) {
-        pendingGcpTargetRef.current = null;
-        return;
-      }
-      const projectSelection = { [first.key]: pending.projectId };
-      setSelection(projectSelection);
-      const instances = await discover(
-        instanceLevel,
-        selectedIntegrationId,
-        projectSelection,
-        controller.signal,
-      );
-      if (!instances || controller.signal.aborted) return;
-      setResourceOptions((current) => ({
-        ...current,
-        [instanceLevel.key]: instances,
-      }));
-      const instance = instances.find(
-        (item) => item.value === pending.instanceId,
-      );
-      if (!instance) {
-        pendingGcpTargetRef.current = null;
-        return;
-      }
-      const instanceSelection = {
-        ...projectSelection,
-        [instanceLevel.key]: pending.instanceId,
-      };
-      setSelection(instanceSelection);
-      const databases = await discover(
-        databaseLevel,
-        selectedIntegrationId,
-        instanceSelection,
-        controller.signal,
-      );
-      if (!databases || controller.signal.aborted) return;
-      setResourceOptions((current) => ({
-        ...current,
-        [databaseLevel.key]: databases,
-      }));
-      pendingGcpTargetRef.current = null;
     });
     return () => controller.abort();
   }, [
@@ -862,6 +806,7 @@ export function useProviderAccess(
     providers,
     integrations,
     connections,
+    managedConnections,
     selectedConnectionId,
     selectedIntegrationId,
     selection,

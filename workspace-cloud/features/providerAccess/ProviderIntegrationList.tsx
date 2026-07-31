@@ -15,6 +15,7 @@ export function ProviderIntegrationList({
   const {
     providers,
     integrations,
+    managedConnections,
     setupProvider,
     neonConfiguration,
     mutation,
@@ -28,61 +29,139 @@ export function ProviderIntegrationList({
   );
 
   return (
-    <div className="tw:grid tw:content-start tw:gap-4">
-      <div className="tw:grid tw:border-t tw:border-border">
-        {connectableProviders.map((provider) => {
-          const connectedCount = integrations.filter(
-            (item) => item.provider === provider.id,
-          ).length;
-          const available = provider.configured;
-          return (
-            <div
-              className="tw:grid tw:min-h-[72px] tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border tw:py-2.5"
-              key={provider.id}
-            >
-              <div className="tw:grid tw:gap-1">
-                <strong className="tw:text-sm tw:text-foreground">
-                  {provider.name}
-                </strong>
-                <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                  {provider.note}
-                </small>
-                <span className="tw:flex tw:flex-wrap tw:gap-1.5">
-                  {provider.supportedEngines.map((engine) => (
+    <div className="tw:grid tw:content-start tw:gap-7">
+      <section className="tw:grid tw:gap-2">
+        <div className="tw:grid tw:gap-1">
+          <strong className="tw:text-xs tw:text-foreground">
+            연결된 계정
+          </strong>
+          <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+            계정은 DB를 찾고 단기 자격증명을 발급하는 인증 경계입니다.
+          </small>
+        </div>
+        <div className="tw:grid tw:border-t tw:border-border">
+          {integrations.map((integration) => {
+            const provider = providers.find(
+              (item) => item.id === integration.provider,
+            );
+            const databaseCount = managedConnections.filter(
+              (item) => item.integrationId === integration.id,
+            ).length;
+            return (
+              <article
+                className="tw:grid tw:min-h-[72px] tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-4 tw:border-b tw:border-border tw:py-3 tw:max-[640px]:grid-cols-1"
+                key={integration.id}
+              >
+                <div className="tw:grid tw:min-w-0 tw:gap-1">
+                  <span className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                    <strong className="tw:text-sm tw:text-foreground">
+                      {integration.displayName}
+                    </strong>
                     <span
-                      className="tw:border tw:border-border tw:bg-surface-inset tw:px-1.5 tw:py-0.5 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground"
-                      key={engine}
+                      className="tw:font-mono tw:text-2xs tw:uppercase tw:data-[status=active]:text-success tw:data-[status=reconnect_required]:text-danger"
+                      data-status={integration.status}
                     >
-                      {engine}
+                      {integration.status === "active"
+                        ? "정상"
+                        : "재연결 필요"}
                     </span>
-                  ))}
-                </span>
-              </div>
-              <div className="tw:flex tw:items-center tw:justify-end tw:gap-2">
-                {connectedCount > 0 ? (
-                  <span className="tw:whitespace-nowrap tw:font-mono tw:text-2xs tw:uppercase tw:text-primary">
-                    연결 {connectedCount}
                   </span>
-                ) : null}
-                <ControlButton
-                  disabled={!available || mutation !== ""}
-                  onClick={() => beginConnect(provider)}
-                >
-                  {provider.configured
-                    ? connectedCount > 0
-                      ? "계정 추가"
-                      : "계정 연결"
-                    : "서버 설정 필요"}
-                </ControlButton>
+                  <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    공유 DB {databaseCount}개 · 마지막 확인{" "}
+                    {new Date(integration.updatedAt).toLocaleString("ko-KR")}
+                  </small>
+                </div>
+                <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-2 tw:max-[640px]:justify-start">
+                  {provider ? (
+                    <ControlButton
+                      disabled={!provider.configured || mutation !== ""}
+                      onClick={() => beginConnect(provider)}
+                    >
+                      다시 연결
+                    </ControlButton>
+                  ) : null}
+                  <ControlButton
+                    tone="danger"
+                    disabled={mutation !== ""}
+                    onClick={() => void disconnect(integration)}
+                  >
+                    연결 해제
+                  </ControlButton>
+                </div>
+              </article>
+            );
+          })}
+          {integrations.length === 0 ? (
+            <p className="tw:m-0 tw:border-b tw:border-border tw:py-6 tw:text-2xs tw:text-muted-foreground">
+              연결된 클라우드 계정이 없습니다.
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="tw:grid tw:gap-2">
+        <div className="tw:grid tw:gap-1">
+          <strong className="tw:text-xs tw:text-foreground">
+            계정 연결
+          </strong>
+          <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+            현재 실제 관리형 연결을 지원하는 공급자만 표시합니다.
+          </small>
+        </div>
+        <div className="tw:grid tw:border-t tw:border-border">
+          {connectableProviders.map((provider) => {
+            const connectedCount = integrations.filter(
+              (item) => item.provider === provider.id,
+            ).length;
+            return (
+              <div
+                className="tw:grid tw:min-h-[78px] tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-4 tw:border-b tw:border-border tw:py-3 tw:max-[640px]:grid-cols-1"
+                key={provider.id}
+              >
+                <div className="tw:grid tw:gap-1">
+                  <span className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                    <strong className="tw:text-sm tw:text-foreground">
+                      {provider.name}
+                    </strong>
+                    {provider.supportedEngines.map((engine) => (
+                      <span
+                        className="tw:border tw:border-border tw:bg-surface-inset tw:px-1.5 tw:py-0.5 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground"
+                        key={engine}
+                      >
+                        {engine}
+                      </span>
+                    ))}
+                  </span>
+                  <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    {provider.note}
+                  </small>
+                </div>
+                <div className="tw:flex tw:items-center tw:justify-end tw:gap-2 tw:max-[640px]:justify-start">
+                  {connectedCount > 0 ? (
+                    <span className="tw:font-mono tw:text-2xs tw:uppercase tw:text-primary">
+                      {connectedCount}개 연결됨
+                    </span>
+                  ) : null}
+                  <ControlButton
+                    disabled={!provider.configured || mutation !== ""}
+                    onClick={() => beginConnect(provider)}
+                  >
+                    {provider.configured
+                      ? connectedCount > 0
+                        ? "계정 추가"
+                        : "계정 연결"
+                      : "서버 설정 필요"}
+                  </ControlButton>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </section>
 
       {setupProvider?.id === "neon" ? (
         <form
-          className="tw:grid tw:grid-cols-1 tw:items-end tw:gap-3 tw:lg:grid-cols-2"
+          className="tw:grid tw:grid-cols-1 tw:items-end tw:gap-3 tw:border-y tw:border-border tw:py-4 tw:lg:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
             void connect(setupProvider, neonConfiguration);
@@ -138,34 +217,6 @@ export function ProviderIntegrationList({
             </ControlButton>
           </div>
         </form>
-      ) : null}
-
-      {integrations.length > 0 ? (
-        <div className="tw:grid tw:border-t tw:border-border">
-          {integrations.map((integration) => (
-            <div
-              className="tw:grid tw:min-h-[58px] tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border tw:py-2"
-              key={integration.id}
-            >
-              <div className="tw:grid tw:gap-1">
-                <strong className="tw:text-sm tw:text-foreground">
-                  {integration.displayName}
-                </strong>
-                <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                  관리형 서버 접근 · 마지막 확인{" "}
-                  {new Date(integration.updatedAt).toLocaleString("ko-KR")}
-                </small>
-              </div>
-              <ControlButton
-                tone="danger"
-                disabled={mutation !== ""}
-                onClick={() => void disconnect(integration)}
-              >
-                연결 해제
-              </ControlButton>
-            </div>
-          ))}
-        </div>
       ) : null}
     </div>
   );

@@ -17,7 +17,7 @@ import { CreateWorkspaceForm } from "./CreateWorkspaceForm";
 import { AccountSwitcher } from "./AccountSwitcher";
 import { AccountManagementPanel } from "./AccountManagementPanel";
 import {
-  isSettingsSection,
+  settingsSection,
   SettingsNavigation,
   type SettingsSection,
 } from "./SettingsNavigation";
@@ -37,13 +37,12 @@ export default async function SettingsPage({
     provider?: string | string[];
     status?: string | string[];
     gcpSetup?: string | string[];
+    integration?: string | string[];
     section?: string | string[];
   }>;
 }) {
   const params = await searchParams;
-  const requestedSection: SettingsSection = isSettingsSection(params.section)
-    ? params.section
-    : "workspaces";
+  const requestedSection: SettingsSection = settingsSection(params.section);
   const requestedWorkspaceId =
     typeof params.workspace === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.workspace)
@@ -54,6 +53,12 @@ export default async function SettingsPage({
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       .test(params.gcpSetup)
       ? params.gcpSetup
+      : null;
+  const requestedIntegrationId =
+    typeof params.integration === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      .test(params.integration)
+      ? params.integration
       : null;
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
@@ -98,12 +103,13 @@ export default async function SettingsPage({
     : workspaces;
   const activeSection: SettingsSection =
     requestedGcpSetupId || typeof params.provider === "string"
-      ? "connections"
+      ? "cloud-accounts"
       : requestedSection;
   const activeManagementArea: WorkspaceManagementArea | null =
     activeSection === "members"
     || activeSection === "database-access"
-    || activeSection === "connections"
+    || activeSection === "cloud-accounts"
+    || activeSection === "databases"
       ? activeSection
       : null;
   const canManageActiveWorkspace = Boolean(
@@ -155,15 +161,15 @@ export default async function SettingsPage({
             </div>
           </div>
         </header>
-        {activeSection === "connections"
+        {activeSection === "cloud-accounts"
         && params.provider === "planetScale"
         && params.status === "connected" ? (
           <ConsoleNotice>
-            PlanetScale 계정이 연결되었습니다. 아래에서 DB와 브랜치를
-            선택하세요.
+            PlanetScale 계정이 연결되었습니다. 공유 데이터베이스에서 DB와
+            브랜치를 선택할 수 있습니다.
           </ConsoleNotice>
         ) : null}
-        {activeSection === "connections"
+        {activeSection === "cloud-accounts"
         && params.provider === "planetScale"
         && params.status === "failed" ? (
           <ConsoleNotice tone="danger">
@@ -171,7 +177,7 @@ export default async function SettingsPage({
             뒤 다시 시도하세요.
           </ConsoleNotice>
         ) : null}
-        {activeSection === "connections"
+        {activeSection === "cloud-accounts"
         && params.provider === "gcpCloudSql"
         && params.status === "authorised" ? (
           <ConsoleNotice>
@@ -179,7 +185,7 @@ export default async function SettingsPage({
             인스턴스를 선택하세요.
           </ConsoleNotice>
         ) : null}
-        {activeSection === "connections"
+        {activeSection === "cloud-accounts"
         && params.provider === "gcpCloudSql"
         && params.status === "failed" ? (
           <ConsoleNotice tone="danger">
@@ -189,7 +195,7 @@ export default async function SettingsPage({
         ) : null}
         {activeSection === "account" ? (
           <section id="account" className="tw:scroll-mt-5 tw:pt-[58px]">
-            <ConsoleSectionHeading index="05" title="내 계정 관리">
+            <ConsoleSectionHeading index="06" title="내 계정 관리">
               로그인 계정과 인증된 기기는 어떤 워크스페이스에도 종속되지 않습니다.
             </ConsoleSectionHeading>
             <AccountManagementPanel
@@ -282,6 +288,7 @@ export default async function SettingsPage({
             <WorkspaceManagementPanel
               workspaceId={activeWorkspace.id}
               gcpSetupId={requestedGcpSetupId}
+              initialIntegrationId={requestedIntegrationId}
               area={activeManagementArea}
             />
           </section>

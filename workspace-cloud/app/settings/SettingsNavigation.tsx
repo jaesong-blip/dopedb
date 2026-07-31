@@ -11,14 +11,18 @@ const workspaceSections: Array<{
   label: string;
 }> = [
   { id: "workspaces", index: "01", label: "워크스페이스" },
-  { id: "members", index: "02", label: "멤버 관리" },
-  { id: "database-access", index: "03", label: "DB별 접근 권한" },
-  { id: "connections", index: "04", label: "공급자 및 DB 연결" },
+  { id: "cloud-accounts", index: "02", label: "클라우드 계정" },
+  { id: "databases", index: "03", label: "공유 데이터베이스" },
+  { id: "database-access", index: "04", label: "DB별 접근 권한" },
+  { id: "members", index: "05", label: "멤버 관리" },
 ];
 
-export function isSettingsSection(value: unknown): value is SettingsSection {
+export function settingsSection(value: unknown): SettingsSection {
+  if (value === "connections") return "databases";
   return typeof value === "string"
-    && [...workspaceSections.map((item) => item.id), "account"].includes(value);
+      && [...workspaceSections.map((item) => item.id), "account"].includes(value)
+    ? value as SettingsSection
+    : "workspaces";
 }
 
 export function SettingsNavigation({
@@ -46,7 +50,7 @@ export function SettingsNavigation({
       </span>
       {workspaceSections.map((item) => {
         if (item.id !== "workspaces" && !canManageWorkspace) return null;
-        const setupQuery = item.id === "connections" && gcpSetupId
+        const setupQuery = item.id === "cloud-accounts" && gcpSetupId
           ? `&gcpSetup=${encodeURIComponent(gcpSetupId)}`
           : "";
         return (
@@ -74,7 +78,7 @@ export function SettingsNavigation({
         aria-current={activeSection === "account" ? "page" : undefined}
       >
         <span className="tw:mr-3 tw:font-mono tw:text-2xs tw:text-primary">
-          05
+          06
         </span>
         내 계정
       </a>

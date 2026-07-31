@@ -1893,6 +1893,7 @@ async function configureDatabasePrivileges(input: {
     );
   }
   if (failure) throw failure;
+  return databases;
 }
 
 async function waitForFederation(
@@ -2096,7 +2097,7 @@ export async function bootstrapGcpCloudSql(input: {
       409,
     );
   }
-  await configureDatabasePrivileges({
+  const configuredDatabases = await configureDatabasePrivileges({
     credential,
     configuration,
     engine,
@@ -2113,6 +2114,7 @@ export async function bootstrapGcpCloudSql(input: {
     instanceId: configuration.instanceId,
     readServiceAccountEmail: readEmail,
     writeServiceAccountEmail: writeEmail,
+    databaseNames: configuredDatabases,
     dedicatedServiceAccountsConfirmed: true,
     instanceScopedIamConfirmed: true,
   });
