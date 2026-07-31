@@ -56,7 +56,10 @@ const GCP_SETUP_ROLE_REQUIREMENTS = [
     role: "roles/serviceusage.serviceUsageAdmin",
     label: "Service Usage Admin",
     purpose: "필수 Google Cloud API 활성화",
-    permissions: ["serviceusage.services.enable"],
+    permissions: [
+      "serviceusage.services.enable",
+      "serviceusage.services.use",
+    ],
   },
   {
     role: "roles/iam.workloadIdentityPoolAdmin",
@@ -141,32 +144,70 @@ function safeSegment(value: string, pattern: RegExp, message: string) {
   return encodeURIComponent(value);
 }
 
-function googleErrorReason(body: unknown) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return "";
+function quotaProjectCredential(
+  credential: GcpSetupCredential,
+  projectId: string,
+): GcpSetupCredential {
+  safeSegment(
+    projectId,
+    /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/,
+    "Invalid Google Cloud project",
+  );
+  return { ...credential, quotaProjectId: projectId };
+}
+
+type GoogleErrorInfo = {
+  reason: string;
+  service: string;
+  consumer: string;
+};
+
+function googleErrorInfo(body: unknown): GoogleErrorInfo {
+  const empty = { reason: "", service: "", consumer: "" };
+  if (!body || typeof body !== "object" || Array.isArray(body)) return empty;
   const error = (body as JsonObject).error;
-  if (!error || typeof error !== "object" || Array.isArray(error)) return "";
+  if (!error || typeof error !== "object" || Array.isArray(error)) return empty;
   const details = Array.isArray((error as JsonObject).details)
     ? (error as JsonObject).details as unknown[]
     : [];
   for (const detail of details) {
     if (!detail || typeof detail !== "object" || Array.isArray(detail)) continue;
-    const reason = (detail as JsonObject).reason;
+    const row = detail as JsonObject;
+    const reason = row.reason;
     if (typeof reason === "string" && /^[A-Z0-9_]{1,100}$/.test(reason)) {
-      return reason;
+      const metadata = row.metadata;
+      const values = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+        ? metadata as JsonObject
+        : {};
+      const service = typeof values.service === "string"
+        && /^[a-z0-9.-]{1,128}\.googleapis\.com$/.test(values.service)
+        ? values.service
+        : "";
+      const consumer = typeof values.consumer === "string"
+        && /^projects\/[A-Za-z0-9.-]{1,64}$/.test(values.consumer)
+        ? values.consumer
+        : "";
+      return { reason, service, consumer };
     }
   }
-  return "";
+  return empty;
 }
 
 function upstreamMessage(status: number, url: string, body: unknown) {
   if (status === 401) return "Google Cloud 승인이 만료되었습니다. 계정을 다시 연결하세요.";
   if (status === 403) {
-    const reason = googleErrorReason(body);
+    const { reason, service, consumer } = googleErrorInfo(body);
     if (reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT") {
       return "Google 승인에 cloud-platform 권한이 포함되지 않았습니다. 계정을 다시 연결하고 Google Cloud 접근을 승인하세요.";
     }
     if (reason === "SERVICE_DISABLED") {
-      return "이 프로젝트에 필요한 Google Cloud API가 비활성화되어 있습니다.";
+      if (service && consumer) {
+        return `Google Cloud API ${service}가 quota project ${consumer}에서 비활성화되어 있습니다.`;
+      }
+      if (service) {
+        return `Google Cloud API ${service}가 quota project에서 비활성화되어 있습니다.`;
+      }
+      return "quota project에 필요한 Google Cloud API가 비활성화되어 있습니다.";
     }
     if (reason.includes("ORG_POLICY")) {
       return "Google Cloud 조직 정책이 이 설정 작업을 차단했습니다.";
@@ -206,9 +247,12 @@ async function googleRequest(
   const response = await fetch(url, {
     ...init,
     headers: {
-      authorization: `Bearer ${credential.accessToken}`,
       ...(init.body ? { "content-type": "application/json" } : {}),
       ...init.headers,
+      authorization: `Bearer ${credential.accessToken}`,
+      ...(credential.quotaProjectId
+        ? { "x-goog-user-project": credential.quotaProjectId }
+        : {}),
     },
     cache: "no-store",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -239,16 +283,12 @@ export async function checkGcpSetupPermissions(
   credential: GcpSetupCredential,
   projectId: string,
 ): Promise<GcpSetupPermissionCheck> {
-  safeSegment(
-    projectId,
-    /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/,
-    "Invalid Google Cloud project",
-  );
+  const scopedCredential = quotaProjectCredential(credential, projectId);
   const requested = GCP_SETUP_ROLE_REQUIREMENTS.flatMap(
     (requirement) => [...requirement.permissions],
   );
   const body = (await googleRequest(
-    credential,
+    scopedCredential,
     `${RESOURCE_MANAGER_ORIGIN}/v3/projects/${encodeURIComponent(projectId)
     }:testIamPermissions`,
     {
@@ -774,13 +814,14 @@ export async function grantTemporaryGcpSetupPermissions(input: {
   }));
   const resourceUrl =
     `${RESOURCE_MANAGER_ORIGIN}/v1/projects/${encodeURIComponent(input.projectId)}`;
+  const credential = quotaProjectCredential(input.credential, input.projectId);
   let applied = false;
   try {
-    await updateIamPolicy(input.credential, resourceUrl, bindings);
+    await updateIamPolicy(credential, resourceUrl, bindings);
     applied = true;
     for (let attempt = 0; attempt < 12; attempt += 1) {
       const confirmed = await checkGcpSetupPermissions(
-        input.credential,
+        credential,
         input.projectId,
       );
       if (confirmed.missing.length === 0) {
@@ -799,7 +840,7 @@ export async function grantTemporaryGcpSetupPermissions(input: {
     if (applied) {
       try {
         await removeIamPolicyBindings(
-          input.credential,
+          credential,
           resourceUrl,
           bindings,
         );
@@ -819,8 +860,9 @@ export async function revokeTemporaryGcpSetupPermissions(
   credential: GcpSetupCredential,
   grant: GcpTemporaryPermissionGrant,
 ) {
+  const scopedCredential = quotaProjectCredential(credential, grant.projectId);
   await removeIamPolicyBindings(
-    credential,
+    scopedCredential,
     `${RESOURCE_MANAGER_ORIGIN}/v1/projects/${encodeURIComponent(grant.projectId)}`,
     grant.bindings,
   );
@@ -1850,14 +1892,18 @@ export async function bootstrapGcpCloudSql(input: {
     /^[A-Za-z0-9][A-Za-z0-9_.-]{0,97}$/,
     "Invalid Cloud SQL instance",
   );
+  const credential = quotaProjectCredential(
+    input.credential,
+    configuration.projectId,
+  );
   const identity = await verifyVercelOidcToken(input.oidcToken);
   await confirmProject(
-    input.credential,
+    credential,
     configuration.projectId,
     configuration.projectNumber,
   );
   const instances = await listGcpOAuthInstances(
-    input.credential,
+    credential,
     configuration.projectId,
   );
   const selected = instances.find((item) => item.id === configuration.instanceId);
@@ -1892,7 +1938,7 @@ export async function bootstrapGcpCloudSql(input: {
   }
   if (configuration.environmentClassification) {
     selectedProduction = await ensureEnvironmentClassification(
-      input.credential,
+      credential,
       configuration,
       configuration.environmentClassification,
     );
@@ -1904,13 +1950,13 @@ export async function bootstrapGcpCloudSql(input: {
       409,
     );
   }
-  await enableServices(input.credential, configuration.projectNumber);
-  await ensurePool(input.credential, configuration.projectNumber);
-  await ensureProvider(input.credential, configuration.projectNumber, identity);
+  await enableServices(credential, configuration.projectNumber);
+  await ensurePool(credential, configuration.projectNumber);
+  await ensureProvider(credential, configuration.projectNumber, identity);
   const fingerprint = setupFingerprint(configuration);
   const description = `dopedb-managed:v1:${fingerprint}:${configuration.instanceId}`;
   const readEmail = await ensureServiceAccount(
-    input.credential,
+    credential,
     configuration.projectId,
     serviceAccountId("read", fingerprint),
     description,
@@ -1918,7 +1964,7 @@ export async function bootstrapGcpCloudSql(input: {
   );
   const writeEmail = configuration.writeAccess
     ? await ensureServiceAccount(
-        input.credential,
+        credential,
         configuration.projectId,
         serviceAccountId("write", fingerprint),
         description,
@@ -1932,14 +1978,14 @@ export async function bootstrapGcpCloudSql(input: {
   }`;
   await Promise.all([
     grantWorkloadIdentity(
-      input.credential,
+      credential,
       configuration.projectId,
       readEmail,
       principal,
     ),
     ...(writeEmail ? [
       grantWorkloadIdentity(
-        input.credential,
+        credential,
         configuration.projectId,
         writeEmail,
         principal,
@@ -1947,14 +1993,14 @@ export async function bootstrapGcpCloudSql(input: {
     ] : []),
   ]);
   await grantCloudSqlRoles(
-    input.credential,
+    credential,
     configuration,
     readEmail,
     writeEmail,
     fingerprint,
   );
   const details = await instanceDetails(
-    input.credential,
+    credential,
     configuration.projectId,
     configuration.instanceId,
   );
@@ -1967,13 +2013,13 @@ export async function bootstrapGcpCloudSql(input: {
     );
   }
   const iamAuthenticationChanged = await enableIamAuthentication(
-    input.credential,
+    credential,
     configuration,
     engine,
     details,
   );
   const readDatabaseUser = await ensureDatabaseUser(
-    input.credential,
+    credential,
     configuration.projectId,
     configuration.instanceId,
     readEmail,
@@ -1982,7 +2028,7 @@ export async function bootstrapGcpCloudSql(input: {
   let writeDatabaseUser: JsonObject | null = null;
   if (writeEmail) {
     writeDatabaseUser = await ensureDatabaseUser(
-      input.credential,
+      credential,
       configuration.projectId,
       configuration.instanceId,
       writeEmail,
@@ -1997,7 +2043,7 @@ export async function bootstrapGcpCloudSql(input: {
     );
   }
   await configureDatabasePrivileges({
-    credential: input.credential,
+    credential,
     configuration,
     engine,
     databaseVersion: details.databaseVersion,

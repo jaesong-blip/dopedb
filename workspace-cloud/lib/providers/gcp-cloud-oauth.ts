@@ -18,6 +18,7 @@ export type GcpSetupCredential = {
   accessToken: string;
   expiresAt: string;
   email: string;
+  quotaProjectId?: string;
 };
 
 export type GcpOAuthProject = {
@@ -105,11 +106,17 @@ export async function exchangeGcpCloudCode(code: string): Promise<GcpSetupCreden
   };
 }
 
-function bearer(credential: GcpSetupCredential) {
+function bearer(
+  credential: GcpSetupCredential,
+  quotaProjectId = credential.quotaProjectId,
+) {
   if (Date.parse(credential.expiresAt) <= Date.now() + 30_000) {
     throw new ProviderRequestError("gcpCloudSql", "Google Cloud setup session expired", 401);
   }
-  return { authorization: `Bearer ${credential.accessToken}` };
+  return {
+    authorization: `Bearer ${credential.accessToken}`,
+    ...(quotaProjectId ? { "x-goog-user-project": quotaProjectId } : {}),
+  };
 }
 
 export function gcpCloudSqlProduction(
@@ -159,7 +166,7 @@ export async function listGcpOAuthInstances(
   }
   const body = await googleJson(
     `${SQL_ADMIN}/projects/${encodeURIComponent(projectId)}/instances`,
-    { headers: bearer(credential) },
+    { headers: bearer(credential, projectId) },
   );
   const rows = Array.isArray(body.items) ? body.items : [];
   return rows.flatMap((value) => {
