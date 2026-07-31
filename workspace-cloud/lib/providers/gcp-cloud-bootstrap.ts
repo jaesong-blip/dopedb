@@ -162,6 +162,17 @@ type GoogleErrorInfo = {
   consumer: string;
 };
 
+class GcpUpstreamRequestError extends ProviderRequestError {
+  constructor(
+    message: string,
+    status: number,
+    public readonly iamServiceAccountPropagationPending: boolean,
+  ) {
+    super("gcpCloudSql", message, status);
+    this.name = "GcpUpstreamRequestError";
+  }
+}
+
 function googleErrorInfo(body: unknown): GoogleErrorInfo {
   const empty = { reason: "", service: "", consumer: "" };
   if (!body || typeof body !== "object" || Array.isArray(body)) return empty;
@@ -191,6 +202,30 @@ function googleErrorInfo(body: unknown): GoogleErrorInfo {
     }
   }
   return empty;
+}
+
+function googleErrorMessage(body: unknown) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "";
+  const error = (body as JsonObject).error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return "";
+  const message = (error as JsonObject).message;
+  return typeof message === "string" && message.length <= 500 ? message : "";
+}
+
+function iamServiceAccountPropagationPending(
+  status: number,
+  url: string,
+  body: unknown,
+) {
+  if (
+    status !== 400
+    || !url.startsWith(RESOURCE_MANAGER_ORIGIN)
+    || !url.endsWith(":setIamPolicy")
+  ) {
+    return false;
+  }
+  return /^Service account [a-z][a-z0-9-]{4,29}@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com does not exist\.$/
+    .test(googleErrorMessage(body));
 }
 
 function upstreamMessage(status: number, url: string, body: unknown) {
@@ -266,14 +301,14 @@ async function googleRequest(
   if (allowNotFound && response.status === 404) return null;
   const body = await response.json().catch(() => null);
   if (!response.ok || !body) {
-    throw new ProviderRequestError(
-      "gcpCloudSql",
+    throw new GcpUpstreamRequestError(
       upstreamMessage(response.status, url, body),
       response.status === 401 || response.status === 403 || response.status === 404
         ? response.status
         : response.status === 409
           ? 409
           : 502,
+      iamServiceAccountPropagationPending(response.status, url, body),
     );
   }
   return object(body);
@@ -682,7 +717,7 @@ async function updateIamPolicy(
   resourceUrl: string,
   additions: IamBinding[],
 ) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
     const policy = (await googleRequest(
       credential,
       `${resourceUrl}:getIamPolicy`,
@@ -714,9 +749,24 @@ async function updateIamPolicy(
       );
       return;
     } catch (error) {
-      if (!(error instanceof ProviderRequestError) || error.status !== 409 || attempt === 2) {
-        throw error;
+      if (
+        error instanceof GcpUpstreamRequestError
+        && error.iamServiceAccountPropagationPending
+      ) {
+        if (attempt === 11) {
+          throw new ProviderRequestError(
+            "gcpCloudSql",
+            "새 Google Cloud 서비스 계정이 아직 IAM에 반영되지 않았습니다. 잠시 뒤 다시 시도하세요.",
+            503,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        continue;
       }
+      if (error instanceof ProviderRequestError && error.status === 409 && attempt < 2) {
+        continue;
+      }
+      throw error;
     }
   }
 }
