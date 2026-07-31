@@ -72,6 +72,7 @@ type Props = {
   terminalWidth: number;
   creatingDemo: boolean;
   onWorkspaceScopeChanged: () => Promise<void>;
+  onWorkspaceDataRefreshed: () => Promise<void>;
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
   onCreateDemoDatabase: () => void;
   onArea: (area: AppArea) => void;
@@ -248,6 +249,7 @@ function ShellLayoutContent(props: Props) {
             compact
             menuPlacement="topbar"
             onScopeChanged={props.onWorkspaceScopeChanged}
+            onWorkspaceDataRefreshed={props.onWorkspaceDataRefreshed}
           />
         }
         onNewQuery={props.onNewQuery}

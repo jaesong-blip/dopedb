@@ -13,6 +13,10 @@ const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
   "catalog",
   "catalogOverview",
   "catalogSnapshot",
+  "connectionDatabases",
+  "databaseCatalog",
+  "databaseCatalogOverview",
+  "databaseCatalogSnapshot",
   ...AGENT_WORKSPACE_QUERY_ROOTS,
   "history",
   "audit",
@@ -27,12 +31,50 @@ const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
   "jobs",
 ]);
 
+const CONNECTION_RESOURCE_QUERY_ROOTS = new Set([
+  "catalog",
+  "catalogOverview",
+  "catalogSnapshot",
+  "connectionDatabases",
+  "databaseCatalog",
+  "databaseCatalogOverview",
+  "databaseCatalogSnapshot",
+  "history",
+  "audit",
+  "monitoring",
+  "manualTransaction",
+  "dashboards",
+  "tableRows",
+  "documentRows",
+  "documentCount",
+  "erdLayouts",
+  "jobs",
+]);
+
 /** Clear only data tied to the previous workspace; identity and global catalogs stay warm. */
 export async function resetWorkspaceResourceQueries(queryClient: QueryClient) {
   const isWorkspaceResource = (query: { queryKey: readonly unknown[] }) =>
     WORKSPACE_RESOURCE_QUERY_ROOTS.has(String(query.queryKey[0]));
   await queryClient.cancelQueries({ predicate: isWorkspaceResource });
   queryClient.removeQueries({ predicate: isWorkspaceResource });
+}
+
+/** Drop stale database state when a synchronized shared connection changes authority. */
+export async function resetConnectionResourceQueries(
+  queryClient: QueryClient,
+  connectionIds: readonly string[],
+) {
+  if (connectionIds.length === 0) return;
+  const ids = new Set(connectionIds);
+  const isConnectionResource = (query: { queryKey: readonly unknown[] }) =>
+    CONNECTION_RESOURCE_QUERY_ROOTS.has(String(query.queryKey[0]))
+    && ids.has(String(query.queryKey[1]));
+  await queryClient.cancelQueries({ predicate: isConnectionResource });
+  queryClient.removeQueries({ predicate: isConnectionResource });
+  await queryClient.invalidateQueries({
+    predicate: isConnectionResource,
+    refetchType: "active",
+  });
 }
 
 function createQueryClient() {

@@ -153,6 +153,9 @@ SELECT datname
 FROM pg_database
 WHERE datallowconn
   AND NOT datistemplate
+  -- Cloud SQL exposes its provider-owned administration database through
+  -- pg_database even though customer sessions are always rejected by its HBA.
+  AND datname <> 'cloudsqladmin'
   AND has_database_privilege(oid, 'CONNECT')
 ORDER BY datname
 "#;

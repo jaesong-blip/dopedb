@@ -31,10 +31,12 @@ import { PopupMenuItem } from "../../../design-system/components/PopupMenu";
 
 export default function WorkspaceAccount({
   onScopeChanged,
+  onWorkspaceDataRefreshed,
   compact = false,
   menuPlacement = "rail",
 }: {
   onScopeChanged: () => void | Promise<void>;
+  onWorkspaceDataRefreshed: () => void | Promise<void>;
   compact?: boolean;
   menuPlacement?: "rail" | "topbar";
 }) {
@@ -60,6 +62,10 @@ export default function WorkspaceAccount({
   const providerCredentialAuthorityVersion = useRef<number | null>(null);
   const focusReturnHandler = useRef<() => void>(() => undefined);
   const membershipRefreshHandler = useRef<() => void>(() => undefined);
+  const workspaceDataRefreshHandler = useRef<() => void | Promise<void>>(
+    () => undefined,
+  );
+  workspaceDataRefreshHandler.current = onWorkspaceDataRefreshed;
 
   useEffect(() => {
     const onBlur = () => {
@@ -121,6 +127,7 @@ export default function WorkspaceAccount({
       .then(async (state) => {
         if (!active) return;
         replaceWorkspaceAuth(queryClient, state);
+        await workspaceDataRefreshHandler.current();
         await invalidateWorkspaceContext(queryClient);
       })
       .catch(() => undefined)
@@ -224,6 +231,7 @@ export default function WorkspaceAccount({
           .then(() => auth.refetch())
           .then(() => undefined)
     )
+      .then(() => workspaceDataRefreshHandler.current())
       .then(() => invalidateWorkspaceContext(queryClient))
       .catch(async () => {
         // A membership 401 also invalidates the hosted session. Confirm that state

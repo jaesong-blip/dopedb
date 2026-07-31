@@ -51,6 +51,7 @@ import { useWorkbenchDocuments } from "../../features/workbench/useWorkbenchDocu
 import { ToastProvider, useToast } from "../../components/Toast";
 import { hasCapability, isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
+import { resetConnectionResourceQueries } from "../../lib/queryClient";
 import {
   OperationActivityProvider,
   useOperationActivity,
@@ -72,7 +73,10 @@ import WorkbenchContent, {
 } from "./WorkbenchContent";
 import type { AppArea } from "./navigation";
 import { useAvailableUpdate } from "./useAvailableUpdate";
-import { useConnectionProfiles } from "./useConnectionProfiles";
+import {
+  changedConnectionRuntimeIds,
+  useConnectionProfiles,
+} from "./useConnectionProfiles";
 import { useOperationNudge } from "./useOperationNudge";
 import { useResponsiveShell } from "./useResponsiveShell";
 import { useSafetySettings } from "./useSafetySettings";
@@ -311,6 +315,14 @@ function Shell() {
     clearSafety();
     clearConnections();
     await refresh();
+  }
+
+  async function refreshWorkspaceData() {
+    const previous = conns;
+    const next = await refresh();
+    if (!next) return;
+    const changedIds = changedConnectionRuntimeIds(previous, next);
+    await resetConnectionResourceQueries(queryClient, changedIds);
   }
 
   const notifyOperation = useCallback(
@@ -949,6 +961,7 @@ function Shell() {
       terminalWidth={terminalDockWidth}
       creatingDemo={creatingDemo}
       onWorkspaceScopeChanged={reloadWorkspaceScope}
+      onWorkspaceDataRefreshed={refreshWorkspaceData}
       onNewConnection={startNewConnection}
       onCreateDemoDatabase={() => void createDemoDatabase()}
       onArea={(next) => {

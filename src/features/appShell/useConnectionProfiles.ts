@@ -5,12 +5,50 @@ import { listConnections } from "../connections/tauriAdapter";
 import { errMessage } from "../../ipc/types";
 import { isTransientDbError } from "../../lib/queries";
 
+function runtimeFingerprint(profile: ConnectionProfile): string {
+  return JSON.stringify([
+    profile.engine,
+    profile.provider,
+    profile.driverId,
+    profile.host,
+    profile.port,
+    profile.database,
+    profile.username,
+    profile.sslmode,
+    Object.entries(profile.extraParams).sort(([left], [right]) =>
+      left.localeCompare(right)
+    ),
+    profile.readonlyDefault,
+    profile.allowWrites,
+    profile.secretRef,
+    profile.env,
+    profile.workspaceAccess,
+    profile.credentialMode,
+  ]);
+}
+
+export function changedConnectionRuntimeIds(
+  previous: readonly ConnectionProfile[],
+  next: readonly ConnectionProfile[],
+): string[] {
+  const previousById = new Map(
+    previous.map((profile) => [profile.id, runtimeFingerprint(profile)]),
+  );
+  const nextById = new Map(
+    next.map((profile) => [profile.id, runtimeFingerprint(profile)]),
+  );
+  return [...new Set([...previousById.keys(), ...nextById.keys()])]
+    .filter((id) => previousById.get(id) !== nextById.get(id));
+}
+
 export function useConnectionProfiles() {
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(
-    async function refreshProfiles(attempt = 0): Promise<ConnectionProfile[]> {
+    async function refreshProfiles(
+      attempt = 0,
+    ): Promise<ConnectionProfile[] | null> {
       try {
         const profiles = await listConnections();
         setConnections(profiles);
@@ -24,7 +62,7 @@ export function useConnectionProfiles() {
           return refreshProfiles(attempt + 1);
         }
         setLoadError(errMessage(error));
-        return [];
+        return null;
       }
     },
     [],
