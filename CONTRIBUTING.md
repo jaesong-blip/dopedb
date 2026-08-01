@@ -60,3 +60,12 @@ UI 상태와 기능 상태를 각각 갱신한다. DopeDB 자체 baseline을 승
 모든 버전 소스를 같은 값으로 맞추고 `main`의 검증된 커밋에
 `app-vX.Y.Z` 태그를 만든다. 보호된 환경, tag 규칙, signing key를 우회하거나
 노출하지 않는다.
+
+## graphify
+
+`graphify-out/graph.json`이 있으면 코드베이스 질문은 원본 파일을 광범위하게
+검색하기 전에 `graphify query "<질문>"`으로 범위를 좁힌다. 관계는
+`graphify path "<A>" "<B>"`, 개별 개념은 `graphify explain "<개념>"`을
+사용하고, 넓은 아키텍처 검토에만 `graphify-out/GRAPH_REPORT.md`를 읽는다.
+코드를 바꾼 뒤에는 외부 API를 쓰지 않는 `graphify update .`로 AST 그래프를
+갱신한다.
