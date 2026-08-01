@@ -9,6 +9,7 @@ import { Button } from "../../../design-system/components/Button";
 import { SettingsGroup } from "../../../design-system/components/Settings";
 import { StatusBadge } from "../../../design-system/components/Status";
 import { useI18n, type I18nKey } from "../../../lib/i18n";
+import type { ConnectionProfile } from "../../../features/connections/domain";
 import MonitoringAccess from "./MonitoringAccess";
 
 const TOGGLES: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = [
@@ -22,8 +23,14 @@ const NUMBERS: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = 
   { key: "execPreviewRowLimit", label: "safety.execPreviewRowLimit", hint: "safety.execPreviewRowLimitHint" },
 ];
 
-export default function Safety({ connectionId }: { connectionId: string }) {
+export default function Safety({
+  connection,
+}: {
+  connection: Pick<ConnectionProfile, "id" | "credentialMode">;
+}) {
   const { t } = useI18n();
+  const connectionId = connection.id;
+  const sharedReadOnly = connection.credentialMode !== "local";
   const [settings, setSettings] = useState<SafetySettings | null>(null);
   const [msg, setMsg] = useState<string | null>(null); // load-failure only; save feedback goes through toast
   const [busy, setBusy] = useState(false);
@@ -35,7 +42,9 @@ export default function Safety({ connectionId }: { connectionId: string }) {
     setMsg(null);
     getSafety(connectionId)
       .then((s) => {
-        if (alive) setSettings(s);
+        if (alive) {
+          setSettings(sharedReadOnly ? { ...s, allowWrites: false } : s);
+        }
       })
       .catch((e) => {
         if (alive) setMsg(errMessage(e));
@@ -43,7 +52,7 @@ export default function Safety({ connectionId }: { connectionId: string }) {
     return () => {
       alive = false;
     };
-  }, [connectionId]);
+  }, [connectionId, sharedReadOnly]);
 
   if (!settings) {
     return (
@@ -83,7 +92,11 @@ export default function Safety({ connectionId }: { connectionId: string }) {
         <StatusBadge
           tone={settings.allowWrites ? "warning" : "success"}
         >
-          {settings.allowWrites ? t("safety.modeWrites") : t("safety.modeReadOnly")}
+          {sharedReadOnly
+            ? t("safety.modeSharedReadOnly")
+            : settings.allowWrites
+              ? t("safety.modeWrites")
+              : t("safety.modeReadOnly")}
         </StatusBadge>
       </div>
 
@@ -98,14 +111,26 @@ export default function Safety({ connectionId }: { connectionId: string }) {
                 className="tw:m-0"
                 type="checkbox"
                 checked={settings[item.key] as boolean}
+                disabled={sharedReadOnly && item.key === "allowWrites"}
                 onChange={(e) => set(item.key, e.target.checked as never)}
               />
               <span>
                 <strong>{t(item.label)}</strong>
               </span>
-              <InfoTip label={t(item.hint)} />
+              <InfoTip
+                label={t(
+                  sharedReadOnly && item.key === "allowWrites"
+                    ? "safety.sharedWritesHint"
+                    : item.hint,
+                )}
+              />
             </label>
           ))}
+          {sharedReadOnly ? (
+            <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
+              {t("safety.sharedWritesHint")}
+            </p>
+          ) : null}
         </SettingsGroup>
 
         <SettingsGroup title={t("safety.limits")}>

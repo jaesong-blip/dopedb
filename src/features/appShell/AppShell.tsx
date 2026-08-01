@@ -931,7 +931,9 @@ function Shell() {
       selectedId={selectedId}
       selectedTable={selectedTable}
       supportsSql={supportsSql}
-      writeEnabled={safety?.allowWrites ?? false}
+      writeEnabled={
+        selected?.credentialMode === "local" && (safety?.allowWrites ?? false)
+      }
       dashboardFocusId={dashboardFocusId}
       compact={compactShell}
       mobileExplorerOpen={mobileExplorerOpen}

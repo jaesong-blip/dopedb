@@ -88,10 +88,13 @@ export const sqlCatalog = defineCatalog(
     "sql.signalNoWhere": "No WHERE detected",
     "sql.signalReadCap": "Result cap: {count} rows",
     "sql.signalReadScript": "{count} reads run sequentially",
+    "sql.signalSharedReadOnly": "Shared connection: read-only",
     "sql.signalWriteScript": "Writes/DDL run in one transaction",
     "sql.signalWriteStatement": "Write/DDL runs directly",
     "sql.signalWritesDisabled": "Writes are off",
     "sql.statementCount": "{count} statements",
+    "sql.sharedWritesUnavailable":
+      "Workspace shared connections currently provide read-only database access. Use a separate local connection with your own target credentials for writes.",
     "sql.tx": "Tx:",
     "sql.txAuto": "Auto",
     "sql.txAutoHint":
@@ -202,10 +205,13 @@ export const sqlCatalog = defineCatalog(
     "sql.signalNoWhere": "WHERE 조건 없음",
     "sql.signalReadCap": "결과 제한: {count}행",
     "sql.signalReadScript": "{count}개 읽기를 순서대로 실행",
+    "sql.signalSharedReadOnly": "공유 연결: 읽기 전용",
     "sql.signalWriteScript": "쓰기/DDL은 하나의 트랜잭션으로 실행",
     "sql.signalWriteStatement": "쓰기/DDL 바로 실행",
     "sql.signalWritesDisabled": "쓰기 비활성화됨",
     "sql.statementCount": "{count}개 문장",
+    "sql.sharedWritesUnavailable":
+      "워크스페이스 공유 연결은 현재 데이터베이스 읽기만 지원합니다. 쓰기는 별도의 로컬 연결에 개인 대상 자격 증명을 설정해 사용하세요.",
     "sql.tx": "Tx:",
     "sql.txAuto": "자동",
     "sql.txAutoHint":

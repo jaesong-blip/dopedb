@@ -21,6 +21,7 @@ export const safetyCatalog = defineCatalog(
     "safety.maxRows": "Max rows",
     "safety.maxRowsHint": "Row cap applied to read result sets.",
     "safety.modeReadOnly": "Agent-safe read mode",
+    "safety.modeSharedReadOnly": "Workspace read-only",
     "safety.modeWrites": "Writes allowed",
     "safety.monitoringAdminHint":
       "This account may need a DBA to grant the role. You can still try or copy the fixed SQL.",
@@ -54,6 +55,8 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringUser": "Database user",
     "safety.monitoringWorking": "Applying...",
     "safety.saved": "Safety settings saved",
+    "safety.sharedWritesHint":
+      "Shared workspace connections are read-only. Write access cannot be enabled from local Safety settings.",
     "safety.title": "Safety settings",
   },
   {
@@ -74,6 +77,7 @@ export const safetyCatalog = defineCatalog(
     "safety.maxRows": "최대 행 수",
     "safety.maxRowsHint": "읽기 결과 집합에 적용되는 행 수 제한입니다.",
     "safety.modeReadOnly": "에이전트 안전 읽기 모드",
+    "safety.modeSharedReadOnly": "워크스페이스 읽기 전용",
     "safety.modeWrites": "쓰기 허용",
     "safety.monitoringAdminHint":
       "이 계정은 역할 부여에 DBA 권한이 필요할 수 있습니다. 버튼을 시도하거나 고정 SQL을 복사할 수 있습니다.",
@@ -107,6 +111,8 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringUser": "DB 사용자",
     "safety.monitoringWorking": "적용 중...",
     "safety.saved": "안전 설정이 저장되었습니다",
+    "safety.sharedWritesHint":
+      "워크스페이스 공유 연결은 읽기 전용이며 로컬 안전 설정에서 쓰기를 활성화할 수 없습니다.",
     "safety.title": "안전 설정",
   },
 );

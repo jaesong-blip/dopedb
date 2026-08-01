@@ -9,10 +9,12 @@ import type { ManualTransactionController } from "./useManualTransaction";
 export default function ManualTransactionControls({
   controller,
   writesEnabled,
+  writesDisabledHint,
   disabled = false,
 }: {
   controller: ManualTransactionController;
   writesEnabled: boolean;
+  writesDisabledHint?: string;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -37,7 +39,7 @@ export default function ManualTransactionControls({
         title={
           writesEnabled
             ? t("sql.txManualBeginHint")
-            : t("sql.txManualWritesRequired")
+            : writesDisabledHint ?? t("sql.txManualWritesRequired")
         }
       >
         <span>{t("sql.tx")}</span>

@@ -235,8 +235,14 @@ export default function Sql({
   const draftStatements = useMemo(() => splitStatements(draft), [draft]);
   const draftIsScript = draftStatements.length > 1;
   const draftSignal = useMemo(
-    () => buildRunSignal(draft, draftStatements, safety, t),
-    [draft, draftStatements, safety, t],
+    () => buildRunSignal(
+      draft,
+      draftStatements,
+      safety,
+      t,
+      connection.credentialMode,
+    ),
+    [connection.credentialMode, draft, draftStatements, safety, t],
   );
 
   const [resultKind, setResultKind] = useState<ResultKind | null>(null);
@@ -910,7 +916,14 @@ export default function Sql({
           ) : (
             <ManualTransactionControls
               controller={manualTransaction}
-              writesEnabled={safety.allowWrites}
+              writesEnabled={
+                safety.allowWrites && connection.credentialMode === "local"
+              }
+              writesDisabledHint={
+                connection.credentialMode === "local"
+                  ? undefined
+                  : t("sql.sharedWritesUnavailable")
+              }
               disabled={running}
             />
           )}

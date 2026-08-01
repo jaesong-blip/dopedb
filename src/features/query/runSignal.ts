@@ -3,6 +3,7 @@
 
 import type { SafetySettings } from "../../ipc/types";
 import type { I18nKey } from "../../lib/i18n";
+import type { WorkspaceCredentialMode } from "../connections/domain";
 
 export interface RunSignal {
   tone: "muted" | "warning" | "danger";
@@ -54,18 +55,28 @@ export function buildRunSignal(
   statements: string[],
   safety: SafetySettings,
   t: Translate,
+  credentialMode: WorkspaceCredentialMode = "local",
 ): RunSignal | null {
   if (!sql.trim()) return null;
   const effectiveStatements = statements.length > 0 ? statements : [sql];
   const writes = effectiveStatements.some(likelyMutates);
+  const sharedReadOnly = credentialMode !== "local";
 
   if (effectiveStatements.length > 1) {
-    if (writes && !safety.allowWrites) {
+    if (writes && (sharedReadOnly || !safety.allowWrites)) {
       return {
         tone: "danger",
         icon: "alert",
-        text: t("sql.signalWritesDisabled"),
-        title: t("sql.writesDisabledScript"),
+        text: t(
+          sharedReadOnly
+            ? "sql.signalSharedReadOnly"
+            : "sql.signalWritesDisabled",
+        ),
+        title: t(
+          sharedReadOnly
+            ? "sql.sharedWritesUnavailable"
+            : "sql.writesDisabledScript",
+        ),
       };
     }
     if (effectiveStatements.length >= 12) {
@@ -107,11 +118,18 @@ export function buildRunSignal(
     };
   }
   if (likelyMutates(statement)) {
-    if (!safety.allowWrites) {
+    if (sharedReadOnly || !safety.allowWrites) {
       return {
         tone: "danger",
         icon: "alert",
-        text: t("sql.signalWritesDisabled"),
+        text: t(
+          sharedReadOnly
+            ? "sql.signalSharedReadOnly"
+            : "sql.signalWritesDisabled",
+        ),
+        ...(sharedReadOnly
+          ? { title: t("sql.sharedWritesUnavailable") }
+          : {}),
       };
     }
     return {

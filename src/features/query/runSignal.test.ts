@@ -29,6 +29,20 @@ describe("SQL run guidance", () => {
       icon: "alert",
       text: "sql.signalWritesDisabled",
     });
+    expect(
+      buildRunSignal(
+        "UPDATE users SET active = 0 WHERE id = 1",
+        [],
+        safety,
+        t,
+        "managed",
+      ),
+    ).toEqual({
+      tone: "danger",
+      icon: "alert",
+      text: "sql.signalSharedReadOnly",
+      title: "sql.sharedWritesUnavailable",
+    });
   });
 
   it("describes a multi-statement read without granting execution", () => {

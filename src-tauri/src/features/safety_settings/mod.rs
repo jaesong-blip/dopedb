@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::connection::{ConnectionAccess, ConnectionManager};
 use crate::error::AppResult;
-use crate::model::SafetySettings;
+use crate::model::{SafetySettings, WorkspaceCredentialMode};
 use crate::store::Store;
 
 use application::SafetyUseCases;
@@ -63,7 +63,9 @@ impl SafetyPlatformAdapter {
         mut settings: SafetySettings,
     ) -> AppResult<()> {
         let profile = self.store.get_connection(connection_id).await?;
-        if !profile.workspace_access.can_write() {
+        if !profile.workspace_access.can_write()
+            || profile.credential_mode != WorkspaceCredentialMode::Local
+        {
             settings.allow_writes = false;
         }
         let _mutation = self

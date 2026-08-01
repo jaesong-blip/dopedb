@@ -293,7 +293,7 @@ export default function Settings({
                 )}
                 {section === "safety" &&
                   (connection ? (
-                    <Safety connectionId={connection.id} />
+                    <Safety connection={connection} />
                   ) : (
                     <div className="tw:text-muted-foreground">
                       {t("settings.selectConnection")}

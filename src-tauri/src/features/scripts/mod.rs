@@ -19,6 +19,7 @@ use uuid::Uuid;
 use crate::audit::{self, RecordArgs};
 use crate::connection::{
     ConnectionAccess, ConnectionLease, ConnectionManager, ConnectionOperationScope, DbPool,
+    SHARED_CONNECTION_WRITE_BLOCKED,
 };
 use crate::error::{AppError, AppResult};
 use crate::executor;
@@ -27,7 +28,9 @@ use crate::features::queries::{
     ManualExecutionTarget, ManualScriptRequest, ManualTransactionRuntime,
 };
 use crate::kernel::agent_policy::QUERY_PLAN_TTL;
-use crate::model::{HistoryEntry, QueryKind, ScriptOutcome, ScriptStatement};
+use crate::model::{
+    HistoryEntry, QueryKind, ScriptOutcome, ScriptStatement, WorkspaceCredentialMode,
+};
 use crate::operations::{
     actor_for_pin, capture_policy, ensure_operation_scope, required_confirmation, ClaimedOperation,
     ExecutionGrant, NewOperation, OperationKind, OperationPlanDisposition, OperationRiskLevel,
