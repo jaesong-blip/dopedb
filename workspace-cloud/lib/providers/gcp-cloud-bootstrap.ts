@@ -27,6 +27,9 @@ const SQL_ADMIN_ORIGIN = "https://sqladmin.googleapis.com/sql/v1beta4";
 const REQUEST_TIMEOUT_MS = 30_000;
 const OPERATION_TIMEOUT_MS = 210_000;
 const TOKEN_CREATOR_PROPAGATION_TIMEOUT_MS = 180_000;
+const CLOUD_SQL_IDENTITY_PROPAGATION_TIMEOUT_MS = 90_000;
+const DATA_API_PROPAGATION_TIMEOUT_MS = 30_000;
+const PROPAGATION_RETRY_INTERVAL_MS = 5_000;
 const POOL_ID = "dopedb-vercel";
 const PROVIDER_ID = "dopedb-vercel";
 const REQUIRED_SERVICES = [
@@ -167,6 +170,7 @@ class GcpUpstreamRequestError extends ProviderRequestError {
   constructor(
     message: string,
     status: number,
+    public readonly upstreamStatus: number,
     public readonly iamServiceAccountPropagationPending: boolean,
   ) {
     super("gcpCloudSql", message, status);
@@ -309,6 +313,7 @@ async function googleRequest(
         : response.status === 409
           ? 409
           : 502,
+      response.status,
       iamServiceAccountPropagationPending(response.status, url, body),
     );
   }
@@ -1216,7 +1221,7 @@ async function enableIamAuthentication(
   return true;
 }
 
-async function ensureDatabaseUser(
+async function ensureDatabaseUserOnce(
   credential: GcpSetupCredential,
   projectId: string,
   instanceId: string,
@@ -1282,6 +1287,54 @@ async function ensureDatabaseUser(
     );
   }
   return created as JsonObject;
+}
+
+function cloudSqlIdentityPropagationPending(error: unknown) {
+  if (error instanceof GcpUpstreamRequestError) {
+    return [400, 404, 409, 429, 500, 502, 503].includes(
+      error.upstreamStatus,
+    );
+  }
+  return error instanceof ProviderRequestError
+    && [502, 503].includes(error.status);
+}
+
+async function ensureDatabaseUser(
+  credential: GcpSetupCredential,
+  projectId: string,
+  instanceId: string,
+  email: string,
+  engine: "postgres" | "mysql",
+  databaseRoles: string[] = [],
+) {
+  const startedAt = Date.now();
+  for (;;) {
+    try {
+      return await ensureDatabaseUserOnce(
+        credential,
+        projectId,
+        instanceId,
+        email,
+        engine,
+        databaseRoles,
+      );
+    } catch (error) {
+      if (!cloudSqlIdentityPropagationPending(error)) throw error;
+      if (
+        Date.now() - startedAt
+        >= CLOUD_SQL_IDENTITY_PROPAGATION_TIMEOUT_MS
+      ) {
+        throw new ProviderRequestError(
+          "gcpCloudSql",
+          "새 Google Cloud 서비스 계정이 아직 Cloud SQL에 반영되지 않았습니다. 잠시 뒤 다시 시도하세요.",
+          503,
+        );
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, PROPAGATION_RETRY_INTERVAL_MS)
+      );
+    }
+  }
 }
 
 async function setDatabaseRoles(
@@ -1385,23 +1438,42 @@ async function setDataApiAccess(
 ) {
   const details = await instanceDetails(credential, projectId, instanceId);
   const state = dataApiState(details);
-  if (state.enabled === allow) return;
-  const operation = (await googleRequest(
-    credential,
-    `${SQL_ADMIN_ORIGIN}/projects/${encodeURIComponent(projectId)}/instances/${
-      encodeURIComponent(instanceId)
-    }`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        settings: {
-          settingsVersion: state.settingsVersion,
-          dataApiAccess: allow ? "ALLOW_DATA_API" : "DISALLOW_DATA_API",
-        },
-      }),
-    },
-  ))!;
-  await waitSqlOperation(credential, projectId, operation);
+  if (state.enabled !== allow) {
+    const operation = (await googleRequest(
+      credential,
+      `${SQL_ADMIN_ORIGIN}/projects/${encodeURIComponent(projectId)}/instances/${
+        encodeURIComponent(instanceId)
+      }`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          settings: {
+            settingsVersion: state.settingsVersion,
+            dataApiAccess: allow ? "ALLOW_DATA_API" : "DISALLOW_DATA_API",
+          },
+        }),
+      },
+    ))!;
+    await waitSqlOperation(credential, projectId, operation);
+  }
+
+  const startedAt = Date.now();
+  for (;;) {
+    const confirmed = dataApiState(
+      await instanceDetails(credential, projectId, instanceId),
+    );
+    if (confirmed.enabled === allow) return;
+    if (Date.now() - startedAt >= DATA_API_PROPAGATION_TIMEOUT_MS) {
+      throw new ProviderRequestError(
+        "gcpCloudSql",
+        "Cloud SQL Data API 설정 반영이 지연되고 있습니다. 잠시 뒤 다시 시도하세요.",
+        503,
+      );
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, PROPAGATION_RETRY_INTERVAL_MS)
+    );
+  }
 }
 
 async function bootstrapAccessToken(
@@ -1474,8 +1546,8 @@ async function executeSql(
   database: string,
   statement: string,
 ) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
+  const startedAt = Date.now();
+  for (;;) {
     try {
       const body = (await googleRequest(
         credential,
@@ -1513,18 +1585,28 @@ async function executeSql(
       }
       return;
     } catch (error) {
-      lastError = error;
+      const retryable = error instanceof GcpUpstreamRequestError
+        ? [400, 403, 409, 429, 500, 502, 503].includes(
+          error.upstreamStatus,
+        )
+        : error instanceof ProviderRequestError
+          && [502, 503].includes(error.status);
+      if (!retryable) throw error;
       if (
-        !(error instanceof ProviderRequestError)
-        || ![403, 409, 503].includes(error.status)
-        || attempt === 9
+        Date.now() - startedAt
+        >= CLOUD_SQL_IDENTITY_PROPAGATION_TIMEOUT_MS
       ) {
-        throw error;
+        throw new ProviderRequestError(
+          "gcpCloudSql",
+          "Cloud SQL IAM 데이터베이스 인증 반영이 지연되고 있습니다. 잠시 뒤 다시 시도하세요.",
+          503,
+        );
       }
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await new Promise((resolve) =>
+        setTimeout(resolve, PROPAGATION_RETRY_INTERVAL_MS)
+      );
     }
   }
-  throw lastError;
 }
 
 function pgIdentifier(value: string) {
