@@ -11,6 +11,7 @@ import {
   activeProviderIntegration,
   discoveredProviderResource,
   discoverProviderResources,
+  gcpCredential,
   recordProviderDiscoveryReceipt,
   revalidateProviderDiscoveryAuthority,
 } from "../../../../../../../../lib/provider-integrations";
@@ -91,6 +92,13 @@ function authorityFor(
   };
 }
 
+function providerWriteAvailable(
+  integration: Parameters<typeof gcpCredential>[0],
+) {
+  return integration.provider === "gcpCloudSql"
+    && gcpCredential(integration).writeServiceAccountEmail !== null;
+}
+
 export async function GET(request: Request, context: RouteContext) {
   const { workspaceId, integrationId } = await context.params;
   if (!isUuid(workspaceId) || !isUuid(integrationId)) {
@@ -105,6 +113,7 @@ export async function GET(request: Request, context: RouteContext) {
     return jsonError("Provider integration not found", 404);
   }
   const provider = integration.provider;
+  const writeAvailable = providerWriteAvailable(integration);
   const selection = canonicalProviderDiscoverySelection(
     provider,
     query.kind,
@@ -134,6 +143,7 @@ export async function GET(request: Request, context: RouteContext) {
           kind: query.kind,
           selection,
           item,
+          writeAvailable,
         });
         return {
           ...item,
@@ -208,6 +218,7 @@ export async function POST(request: Request, context: RouteContext) {
     integration,
     authorization,
   );
+  const writeAvailable = providerWriteAvailable(integration);
   try {
     // Never accept a raw external id from the browser. Re-run the exact sealed
     // query, then require the full sealed leaf to still appear unchanged.
@@ -235,6 +246,7 @@ export async function POST(request: Request, context: RouteContext) {
       kind: proof.kind,
       selection: proof.selection,
       item,
+      writeAvailable,
     });
     if (!projection) {
       return jsonError("Provider resource is no longer importable", 409);

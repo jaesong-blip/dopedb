@@ -9,6 +9,19 @@ type SharedConnection = {
   id: string;
   name: string;
   engine: string;
+  provider: string;
+  driverId: string | null;
+  host: string;
+  port: number;
+  database: string;
+  sslmode: string;
+  readonlyDefault: true;
+  allowWrites: boolean;
+  writeAvailable: boolean;
+  env: string | null;
+  schemaGroup: string | null;
+  revision: number;
+  accessMode: "view" | "read" | "write" | "manage";
   credentialMode: "managed" | "member_local";
 };
 type MemberGrant = {
@@ -134,6 +147,51 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
   }
 
   const selected = connections.find((item) => item.id === selectedId) ?? null;
+  const canManageWritePolicy = selected?.accessMode === "manage";
+
+  async function changeWritePolicy(allowWrites: boolean) {
+    if (
+      !selected
+      || !canManageWritePolicy
+      || mutatingId
+      || selected.credentialMode !== "managed"
+    ) return;
+    setMutatingId("write-policy");
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/v1/workspaces/${workspaceId}/connections/${selected.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+            "if-match": `"${selected.revision}"`,
+          },
+          body: JSON.stringify({
+            name: selected.name,
+            engine: selected.engine,
+            provider: selected.provider,
+            driverId: selected.driverId,
+            host: selected.host,
+            port: selected.port,
+            database: selected.database,
+            sslmode: selected.sslmode,
+            readonlyDefault: true,
+            allowWrites,
+            env: selected.env,
+            schemaGroup: selected.schemaGroup,
+          }),
+        },
+      ).catch(() => null);
+      if (!response?.ok) {
+        setError(await responseError(response, "쓰기 정책을 변경하지 못했습니다."));
+        return;
+      }
+      await loadConnections();
+    } finally {
+      setMutatingId("");
+    }
+  }
 
   return (
     <section className="tw:grid tw:gap-3 tw:px-5 tw:py-5">
@@ -175,9 +233,35 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
       {selected ? (
         <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
           {selected.credentialMode === "managed"
-            ? "사용 권한이 있는 멤버는 사용자별 15분 자격 증명을 자동 발급받습니다."
+            ? "역할과 DB 사용 권한은 관리자가 바꿀 때까지 유지되고, 단기 자격 증명만 앱이 자동 회전합니다."
             : "사용 권한이 있는 멤버는 자신의 기기에서 DB 자격 증명을 한 번 연결해야 합니다."}
         </p>
+      ) : null}
+
+      {selected?.credentialMode === "managed" ? (
+        <label className="tw:grid tw:grid-cols-[16px_minmax(0,1fr)] tw:items-start tw:gap-2 tw:border-y tw:border-border tw:bg-surface-inset tw:px-3 tw:py-3">
+          <input
+            className="tw:mt-0.5 tw:size-4 tw:accent-primary"
+            type="checkbox"
+            checked={selected.allowWrites}
+            disabled={
+              mutatingId !== ""
+              || !selected.writeAvailable
+              || !canManageWritePolicy
+            }
+            onChange={(event) => void changeWritePolicy(event.target.checked)}
+          />
+          <span className="tw:grid tw:gap-1 tw:text-xs tw:text-foreground">
+            역할 기반 쓰기 허용
+            <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+              {!selected.writeAvailable
+                ? "이 공급자 연결에는 별도 쓰기 계정이 없습니다. 클라우드 계정을 다시 연결해 쓰기 계정을 구성하세요."
+                : canManageWritePolicy
+                  ? "사용·관리 권한이 있는 에디터, 관리자, 소유자에게 읽기·쓰기 역할을 지속 적용합니다. 운영 여부는 이 정책을 자동으로 끄지 않습니다."
+                  : "현재 상태는 관리자가 정한 DB 정책입니다. 쓰기 허용 여부는 관리자 또는 소유자만 변경할 수 있습니다."}
+            </small>
+          </span>
+        </label>
       ) : null}
 
       <div className="tw:grid tw:divide-y tw:divide-border tw:border-y tw:border-border">
@@ -211,7 +295,7 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
                 <option value="view">보기 · 연결 정보만</option>
                 <option value="use">
                   {selected?.credentialMode === "managed"
-                    ? "사용 · 15분 자동 접근"
+                    ? "사용 · 역할 기반 자동 접근"
                     : "사용 · 로컬 자격 증명"}
                 </option>
                 <option value="manage">관리 · 권한과 설정 변경</option>

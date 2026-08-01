@@ -99,10 +99,11 @@ browser form.
    applying them. Otherwise the UI reports the missing permissions without pretending
    the connection is ready.
 4. The server enables the required APIs, creates the instance-scoped Workload Identity
-   Pool/provider and dedicated read service account, applies the narrow IAM bindings,
-   enables Cloud SQL IAM authentication when approved, creates the IAM database user,
-   and grants read-only database access. The current shared-connection path always sets
-   `writeAccess: false` and never creates a write service account.
+   Pool/provider plus separate dedicated read and write service accounts, applies the
+   narrow IAM bindings, enables Cloud SQL IAM authentication when approved, creates
+   both IAM database users, and grants each its database-side least privilege. Imported
+   connections still start with `allowWrites: false`; provisioning a dormant write
+   principal does not authorize any workspace member to use it.
 5. The completed integration stores only keyless trust coordinates and encrypted
    Provider authorization needed for rotation. Google login tokens, service-account
    keys, and database passwords are never copied into a shared connection or returned
@@ -136,8 +137,11 @@ Cloud SQL instances explicitly labeled `environment=prod` or
 `environment=production` may be imported only by a current workspace Admin/Owner after
 the production warning is accepted. The approval bit is bound to the idempotent import
 hash and recorded in the redacted audit event. Missing or unrecognized environment
-labels remain fail-closed and cannot be imported. Production approval does not widen
-the connection: the imported template and current managed lease remain read-only.
+labels remain fail-closed and cannot be imported. Production approval and write policy
+are independent: import never enables writes. A current Admin/Owner may later change
+the DB's durable `allowWrites` policy; only members whose current role is Editor,
+Admin, or Owner and whose connection grant is `use` or `manage` can receive a write
+lease. Analyst and Viewer access remains read-only in both production and non-production.
 
 The tokens are not revocable, so access changes wait for bounded expiry and the desktop
 drops both pool and connector 30 seconds early. Pool eviction prevents new app work but
@@ -176,7 +180,10 @@ for legacy records.
   separately in deployment configuration.
 - Managed target-database credentials are generated per member with a 15-minute TTL,
   returned once to an authenticated native Bearer client, and never inserted into the
-  service database, audit stream, browser UI, or desktop store.
+  service database, audit stream, browser UI, or desktop store. The TTL bounds leaked
+  credential value; it does not expire the durable role/grant/write policy. The desktop
+  retires the pool before expiry and automatically obtains a new credential while that
+  live authority remains unchanged.
 - Managed lease POSTs must send
   `x-dopedb-managed-lease-contract: access-v2` and an explicit `read` or `write`
   access mode. The service returns HTTP 426 to legacy clients instead of guessing
@@ -186,7 +193,7 @@ for legacy records.
   boundary for early provider revocation. Natural provider expiry and the durable
   cleanup worker remain the fallback when the desktop is offline.
 - Shared connection rows contain endpoint metadata, safety defaults, credential mode,
-  and a redacted provider-resource selector. Usernames,
+  the administrator-owned write policy, and a redacted provider-resource selector. Usernames,
   passwords, tokens, certificates, connection URLs, SQLite paths, advanced parameters,
   and desktop `secret_ref` values are rejected or absent from the hosted schema.
 - Workspace metadata backups are canonical secretless snapshots: they include workspace

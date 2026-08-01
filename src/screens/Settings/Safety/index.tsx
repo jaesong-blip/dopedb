@@ -30,7 +30,7 @@ export default function Safety({
 }) {
   const { t } = useI18n();
   const connectionId = connection.id;
-  const sharedReadOnly = connection.credentialMode !== "local";
+  const workspaceManaged = connection.credentialMode !== "local";
   const [settings, setSettings] = useState<SafetySettings | null>(null);
   const [msg, setMsg] = useState<string | null>(null); // load-failure only; save feedback goes through toast
   const [busy, setBusy] = useState(false);
@@ -43,7 +43,7 @@ export default function Safety({
     getSafety(connectionId)
       .then((s) => {
         if (alive) {
-          setSettings(sharedReadOnly ? { ...s, allowWrites: false } : s);
+          setSettings(s);
         }
       })
       .catch((e) => {
@@ -52,7 +52,7 @@ export default function Safety({
     return () => {
       alive = false;
     };
-  }, [connectionId, sharedReadOnly]);
+  }, [connectionId]);
 
   if (!settings) {
     return (
@@ -92,8 +92,10 @@ export default function Safety({
         <StatusBadge
           tone={settings.allowWrites ? "warning" : "success"}
         >
-          {sharedReadOnly
-            ? t("safety.modeSharedReadOnly")
+          {workspaceManaged
+            ? settings.allowWrites
+              ? t("safety.modeWorkspaceWrites")
+              : t("safety.modeSharedReadOnly")
             : settings.allowWrites
               ? t("safety.modeWrites")
               : t("safety.modeReadOnly")}
@@ -111,7 +113,7 @@ export default function Safety({
                 className="tw:m-0"
                 type="checkbox"
                 checked={settings[item.key] as boolean}
-                disabled={sharedReadOnly && item.key === "allowWrites"}
+                disabled={workspaceManaged && item.key === "allowWrites"}
                 onChange={(e) => set(item.key, e.target.checked as never)}
               />
               <span>
@@ -119,14 +121,14 @@ export default function Safety({
               </span>
               <InfoTip
                 label={t(
-                  sharedReadOnly && item.key === "allowWrites"
+                  workspaceManaged && item.key === "allowWrites"
                     ? "safety.sharedWritesHint"
                     : item.hint,
                 )}
               />
             </label>
           ))}
-          {sharedReadOnly ? (
+          {workspaceManaged ? (
             <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
               {t("safety.sharedWritesHint")}
             </p>

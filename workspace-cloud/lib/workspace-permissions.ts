@@ -8,6 +8,7 @@ const workspaceRoleNames = [
 
 export type WorkspaceRoleName = (typeof workspaceRoleNames)[number];
 export type WorkspaceCapability = "view" | "read" | "write" | "manage" | "delete";
+export type WorkspaceConnectionCapability = "view" | "use" | "manage";
 
 const roleRank: Record<WorkspaceRoleName, number> = {
   viewer: 0,
@@ -40,5 +41,22 @@ export function accessModeForRole(role: WorkspaceRoleName) {
   if (hasWorkspaceCapability(role, "manage")) return "manage" as const;
   if (hasWorkspaceCapability(role, "write")) return "write" as const;
   if (hasWorkspaceCapability(role, "read")) return "read" as const;
+  return "view" as const;
+}
+
+export function accessModeForConnectionGrant(
+  role: WorkspaceRoleName,
+  capability: WorkspaceConnectionCapability,
+) {
+  if (capability === "manage" && hasWorkspaceCapability(role, "manage")) {
+    return "manage" as const;
+  }
+  if (
+    (capability === "use" || capability === "manage")
+    && hasWorkspaceCapability(role, "write")
+  ) {
+    return "write" as const;
+  }
+  if (capability === "use" || capability === "manage") return "read" as const;
   return "view" as const;
 }

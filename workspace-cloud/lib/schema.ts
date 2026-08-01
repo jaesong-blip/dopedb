@@ -577,8 +577,9 @@ export const workspaceConnection = workspaceControl.table(
     ),
     check("workspace_connection_content_revision", sql`${table.contentRevision} >= 1 AND ${table.contentRevision} <= 9007199254740991`),
     check("workspace_connection_revision", sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`),
-    // A shared template is a member-local, secretless read template. Managed
-    // integrations remain a separately named provider-control-plane capability.
+    // Member-local templates are secretless and read-only. Managed integrations
+    // may carry an administrator write policy, but credentials and provider
+    // capability remain outside this row and are rechecked at lease issuance.
     check(
       "workspace_connection_member_local_read_only",
       sql`(${table.credentialMode} = 'member_local' AND ${table.readonlyDefault} = TRUE AND ${table.allowWrites} = FALSE)

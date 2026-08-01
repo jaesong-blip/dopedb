@@ -226,7 +226,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         AND integration."revocation_pending_at" IS NULL AND integration."revocation_claim_id" IS NULL
         -- Canonical resources are mutable provider facts.  A receipt is not a
         -- permission to outlive a later discovery which classifies the target
-        -- as production or removes a read-only capability.
+        -- as production or removes an import/lease capability.
         AND resource."provider" = integration."provider"
         AND (
           resource."redacted_metadata" -> 'production' = 'false'::jsonb
@@ -237,7 +237,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
           )
         )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
-        AND resource."capability_manifest" -> 'write' = 'false'::jsonb
+        AND jsonb_typeof(resource."capability_manifest" -> 'write') = 'boolean'
         AND resource."capability_manifest" -> 'managedLease' = 'true'::jsonb
       FOR UPDATE OF receipt, integration, resource
     ), target AS MATERIALIZED (
@@ -303,7 +303,6 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
        AND connection."provider" = scope."provider"
        AND connection."provider_resource" = scope."resource"
        AND connection."readonly_default" = TRUE
-       AND connection."allow_writes" = FALSE
        AND connection."deleted_at" IS NULL
     ), resource_conflict AS MATERIALIZED (
       SELECT connection."id" FROM "workspace_control"."workspace_connection" connection JOIN scope

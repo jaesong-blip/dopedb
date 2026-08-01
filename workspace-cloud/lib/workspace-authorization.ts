@@ -8,26 +8,21 @@ import { authoritativeSession } from "./authoritative-session";
 import { member, workspaceConnection, workspaceConnectionGrant } from "./schema";
 import {
   accessModeForRole,
+  accessModeForConnectionGrant,
   hasWorkspaceCapability,
   isWorkspaceRole,
   type WorkspaceCapability,
+  type WorkspaceConnectionCapability,
 } from "./workspace-permissions";
 
 export type { WorkspaceRoleName } from "./workspace-permissions";
-
-export type WorkspaceConnectionCapability = "view" | "use" | "manage";
+export type { WorkspaceConnectionCapability } from "./workspace-permissions";
 
 const connectionCapabilityRank: Record<WorkspaceConnectionCapability, number> = {
   view: 0,
   use: 1,
   manage: 2,
 };
-
-function connectionAccessMode(capability: WorkspaceConnectionCapability) {
-  if (capability === "manage") return "manage" as const;
-  if (capability === "use") return "read" as const;
-  return "view" as const;
-}
 
 export async function authorizeWorkspace(
   request: Request,
@@ -101,6 +96,6 @@ export async function authorizeWorkspaceConnection(
     ...workspace,
     ok: true as const,
     connectionCapability: capability,
-    accessMode: connectionAccessMode(capability),
+    accessMode: accessModeForConnectionGrant(workspace.role, capability),
   };
 }

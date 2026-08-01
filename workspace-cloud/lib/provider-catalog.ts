@@ -49,7 +49,7 @@ export const providerCatalog: readonly ProviderDescriptor[] = [
       { key: "instance", kind: "instances", label: "인스턴스" },
       { key: "database", kind: "databases", label: "DB" },
     ],
-    note: "Google 로그인 후 프로젝트와 인스턴스만 선택하면 15분 IAM 접근을 자동 구성합니다.",
+    note: "Google 로그인 후 프로젝트와 인스턴스만 선택하면 역할 기반 IAM 접근과 단기 자격증명 회전을 자동 구성합니다.",
   },
   {
     id: "neon",

@@ -29,6 +29,8 @@ type SharedConnectionInput = {
   schemaGroup: string | null;
 };
 
+type SharedConnectionCredentialMode = "member_local" | "managed";
+
 function text(value: unknown, max: number, required = false): string | null {
   if (value == null && !required) return null;
   if (typeof value !== "string") throw new Error("Expected text");
@@ -43,7 +45,18 @@ function text(value: unknown, max: number, required = false): string | null {
   return normalized || null;
 }
 
-export function parseSharedConnection(value: unknown): SharedConnectionInput {
+export function providerResourceSupportsWrite(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const manifest = value as Record<string, unknown>;
+  return manifest.importReadOnly === true
+    && manifest.managedLease === true
+    && manifest.write === true;
+}
+
+export function parseSharedConnection(
+  value: unknown,
+  options: { credentialMode?: SharedConnectionCredentialMode } = {},
+): SharedConnectionInput {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Connection template must be an object");
   }
@@ -57,13 +70,16 @@ export function parseSharedConnection(value: unknown): SharedConnectionInput {
   if (!Number.isInteger(body.port) || Number(body.port) < 1 || Number(body.port) > 65535) {
     throw new Error("Invalid port");
   }
-  // Shared templates never carry a target write capability. Accept the fixed values
-  // for backwards-compatible clients, but reject any attempt to weaken them.
-  if (
-    (body.readonlyDefault !== undefined && body.readonlyDefault !== true)
-    || (body.allowWrites !== undefined && body.allowWrites !== false)
-  ) {
-    throw new Error("Shared connections are read-only member-local templates");
+  const credentialMode = options.credentialMode ?? "member_local";
+  if (body.readonlyDefault !== undefined && body.readonlyDefault !== true) {
+    throw new Error("Shared connections must open read-only by default");
+  }
+  if (body.allowWrites !== undefined && typeof body.allowWrites !== "boolean") {
+    throw new Error("Invalid shared connection write policy");
+  }
+  const allowWrites = body.allowWrites === true;
+  if (credentialMode === "member_local" && allowWrites) {
+    throw new Error("Member-local shared connections cannot delegate write authority");
   }
   const host = text(body.host, 512, true)!;
   if (/[@/?#\s]/.test(host) || host.includes("://")) {
@@ -81,7 +97,7 @@ export function parseSharedConnection(value: unknown): SharedConnectionInput {
     database,
     sslmode: text(body.sslmode, 64, true)!,
     readonlyDefault: true,
-    allowWrites: false,
+    allowWrites,
     env: text(body.env, 32),
     schemaGroup: text(body.schemaGroup, 120),
   };
@@ -96,7 +112,13 @@ export function publicConnection(
   },
   role: WorkspaceRoleName,
   accessMode: "view" | "read" | "write" | "manage",
+  writeAvailable = false,
 ) {
+  const managed = row.credentialMode === "managed";
+  const effectiveWrite = managed
+    && writeAvailable
+    && row.allowWrites
+    && (accessMode === "write" || accessMode === "manage");
   return {
     id: row.id,
     name: row.name,
@@ -108,14 +130,15 @@ export function publicConnection(
     database: row.databaseName,
     sslmode: row.sslmode,
     readonlyDefault: true,
-    allowWrites: false,
+    allowWrites: effectiveWrite,
+    writeAvailable: managed && writeAvailable,
     env: row.environment,
     schemaGroup: row.schemaGroup,
     revision: row.contentRevision,
     updatedAt: row.updatedAt.toISOString(),
     role,
     accessMode,
-    credentialMode: row.credentialMode === "managed" ? "managed" : "member_local",
-    credentialsRequired: row.credentialMode !== "managed",
+    credentialMode: managed ? "managed" : "member_local",
+    credentialsRequired: !managed,
   };
 }

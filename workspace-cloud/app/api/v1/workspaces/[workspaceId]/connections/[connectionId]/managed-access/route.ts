@@ -77,7 +77,7 @@ export async function PUT(request: Request, context: RouteContext) {
     || connection.allowWrites !== false
     || (connection.credentialMode !== "managed" && connection.credentialMode !== "member_local")
   ) {
-    return jsonError("Connection is not an imported read-only provider target", 409);
+    return jsonError("Disable managed writes before switching this provider target to member-local", 409);
   }
 
   const claim = await claimRevocationGate({
@@ -233,7 +233,7 @@ export async function PUT(request: Request, context: RouteContext) {
           )
         )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
-        AND resource."capability_manifest" -> 'write' = 'false'::jsonb
+        AND jsonb_typeof(resource."capability_manifest" -> 'write') = 'boolean'
         AND resource."capability_manifest" -> 'managedLease' = 'true'::jsonb
       FOR UPDATE OF connection, integration, resource, imported
     ), updated AS MATERIALIZED (

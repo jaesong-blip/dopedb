@@ -3,14 +3,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import adapterSource from "./tauriAdapter.ts?raw";
 import authRouteSource from "../../../workspace-cloud/app/api/auth/[...all]/route.ts?raw";
 import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
+import gcpSetupRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/gcp-setup/[setupId]/route.ts?raw";
 import gcpOAuthSource from "../../../workspace-cloud/lib/providers/gcp-cloud-oauth.ts?raw";
+import managedLeaseRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/lease/route.ts?raw";
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
 import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
+import providerAdapterContractSource from "../../../workspace-cloud/lib/providers/adapter-contract.ts?raw";
+import providerImportProjectionSource from "../../../workspace-cloud/lib/providers/import-projection.ts?raw";
 import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
+import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
+import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-permissions.ts?raw";
+import workspaceRevocationGatesSource from "../../../workspace-cloud/lib/revocation-gates.ts?raw";
 import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspace-versioning-store.ts?raw";
+import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -174,7 +182,35 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpBootstrapSource).toContain("verifyVercelOidcToken");
     expect(gcpBootstrapSource).toContain("roles/iam.workloadIdentityUser");
     expect(gcpBootstrapSource).toContain("configureDatabasePrivileges");
+    expect(gcpBootstrapSource).toContain("pg_write_all_data");
     expect(gcpBootstrapSource).toContain("Temporary Cloud SQL privilege bootstrap cleanup failed");
+    expect(gcpSetupRouteSource).toContain("writeAccess: true");
+    expect(managedLeaseRouteSource).toContain('let requestedAccessMode: "read" | "write"');
+    expect(managedLeaseRouteSource).toContain("providerResourceSupportsWrite");
+    expect(workspaceRevocationGatesSource).toContain("workspaceProviderResource.capabilityManifest");
+    expect(desktopSharedConnectionSource).not.toContain("SHARED_CONNECTION_WRITE_BLOCKED");
+
+    expect(providerAdapterContractSource).toContain("write: boolean");
+    expect(providerImportProjectionSource).toContain(
+      'if (provider !== "gcpCloudSql")',
+    );
+    expect(providerImportProjectionSource).toContain(
+      "capabilities: { ...projected.capabilities, write: true }",
+    );
+    expect(workspaceConnectionsSource).toContain(
+      'credentialMode === "member_local" && allowWrites',
+    );
+    expect(workspaceConnectionsSource).toContain("allowWrites: effectiveWrite");
+    expect(workspacePermissionsSource).toContain(
+      'hasWorkspaceCapability(role, "write")',
+    );
+    expect(workspacePermissionsSource).toContain('return "write" as const');
+    expect(workspaceVersioningStoreSource).toContain(
+      '"connection.write_policy.update"',
+    );
+    expect(workspaceVersioningStoreSource).toContain(
+      `member."role" IN ('admin', 'owner')`,
+    );
 
     const legacyBackup = JSON.parse(legacyProviderBackupSource);
     expect(legacyBackup.connections).toEqual([

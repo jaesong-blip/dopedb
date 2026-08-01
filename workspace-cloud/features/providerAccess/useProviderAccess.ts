@@ -672,7 +672,8 @@ export function useProviderAccess(
     const confirmation = productionApproved
       ? `경고: ${finalResource.name}은 운영 데이터베이스로 분류되었습니다. `
         + "실행 중인 쿼리는 실제 운영 데이터에 영향을 줄 수 있습니다. "
-        + "관리형 읽기 전용 연결로 전환하고 이 승인을 감사 기록에 남길까요?"
+        + "기본 쓰기 꺼짐인 관리형 연결로 전환하고 이 승인을 감사 기록에 남길까요? "
+        + "쓰기 허용 여부는 이후 DB별 접근 권한에서 별도로 정합니다."
       : replacementConnection
         ? `${replacementConnection.name} 연결을 ${finalResource.name} 관리형 대상으로 전환할까요? `
           + "연결 ID와 대시보드 참조는 유지되고, 기존 구성원별 비밀번호는 더 이상 사용하지 않습니다."
@@ -761,7 +762,7 @@ export function useProviderAccess(
         },
       ).catch(() => null);
       if (!response?.ok) {
-        setError(await responseError(response, "읽기 전용 연결을 가져오지 못했습니다."));
+        setError(await responseError(response, "관리형 연결을 가져오지 못했습니다."));
         return;
       }
       pendingImportRef.current = null;

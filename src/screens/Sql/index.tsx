@@ -240,9 +240,8 @@ export default function Sql({
       draftStatements,
       safety,
       t,
-      connection.credentialMode,
     ),
-    [connection.credentialMode, draft, draftStatements, safety, t],
+    [draft, draftStatements, safety, t],
   );
 
   const [resultKind, setResultKind] = useState<ResultKind | null>(null);
@@ -916,14 +915,10 @@ export default function Sql({
           ) : (
             <ManualTransactionControls
               controller={manualTransaction}
-              writesEnabled={
-                safety.allowWrites && connection.credentialMode === "local"
-              }
-              writesDisabledHint={
-                connection.credentialMode === "local"
-                  ? undefined
-                  : t("sql.sharedWritesUnavailable")
-              }
+              writesEnabled={safety.allowWrites}
+              writesDisabledHint={safety.allowWrites
+                ? undefined
+                : t("sql.txManualWritesRequired")}
               disabled={running}
             />
           )}

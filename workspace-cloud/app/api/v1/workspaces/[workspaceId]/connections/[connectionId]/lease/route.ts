@@ -20,6 +20,8 @@ import {
   rateLimit,
 } from "../../../../../../../../lib/schema";
 import { authorizeWorkspaceConnection } from "../../../../../../../../lib/workspace-authorization";
+import { providerResourceSupportsWrite } from "../../../../../../../../lib/workspace-connections";
+import { hasWorkspaceCapability } from "../../../../../../../../lib/workspace-permissions";
 
 type RouteContext = {
   params: Promise<{ workspaceId: string; connectionId: string }>;
@@ -72,9 +74,9 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Managed access request is too large", 413);
   }
   if (!payloadText.trim()) {
-    return jsonError("Managed access mode must be read", 400);
+    return jsonError("Managed access mode must be read or write", 400);
   }
-  let requestedAccessMode: "read";
+  let requestedAccessMode: "read" | "write";
   try {
     const payload = JSON.parse(payloadText) as { accessMode?: unknown };
     if (
@@ -83,12 +85,9 @@ export async function POST(request: Request, context: RouteContext) {
       || typeof payload.accessMode !== "string"
       || !["read", "write"].includes(payload.accessMode)
     ) {
-      return jsonError("Managed access mode must be read", 400);
+      return jsonError("Managed access mode must be read or write", 400);
     }
-    if (payload.accessMode === "write") {
-      return jsonError("Managed write leases are not available through shared connections", 403);
-    }
-    requestedAccessMode = "read";
+    requestedAccessMode = payload.accessMode as "read" | "write";
   } catch {
     return jsonError("Managed access request must be valid JSON", 400);
   }
@@ -131,7 +130,7 @@ export async function POST(request: Request, context: RouteContext) {
       eq(workspaceProviderResource.organizationId, workspaceId),
       eq(workspaceProviderResource.provider, integration.provider),
     ),
-    columns: { resource: true },
+    columns: { resource: true, capabilityManifest: true },
   });
   if (!canonicalResource) {
     // A legacy JSON-only managed connection remains cleanup-capable, but never
@@ -149,6 +148,13 @@ export async function POST(request: Request, context: RouteContext) {
   }
   if (resource.engine !== connection.engine) {
     return jsonError("Managed database engine does not match the connection", 409);
+  }
+  if (requestedAccessMode === "write" && (
+    !connection.allowWrites
+    || !hasWorkspaceCapability(authorization.role, "write")
+    || !providerResourceSupportsWrite(canonicalResource.capabilityManifest)
+  )) {
+    return jsonError("Managed write access is not allowed for this member and connection", 403);
   }
   const [activeCount] = await db.select({ value: count() })
     .from(workspaceCredentialLease)

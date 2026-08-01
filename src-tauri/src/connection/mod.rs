@@ -34,9 +34,6 @@ pub(crate) use runtime::{
     ConnectionOperationScope, ConnectionSessionRevocationPort,
 };
 
-pub(crate) const SHARED_CONNECTION_WRITE_BLOCKED: &str =
-    "Workspace shared connections are read-only. Use a separate local connection with your own target credentials for writes.";
-
 /// The executor module refers to the engine-tagged pool enum as `Pool`; keep a
 /// single definition (`DbPool`) and expose this alias so both names resolve.
 pub use pool::DbPool as Pool;

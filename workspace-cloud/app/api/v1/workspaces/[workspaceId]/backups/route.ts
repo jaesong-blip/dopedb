@@ -148,14 +148,16 @@ export async function POST(request: Request, context: RouteContext) {
     connections: connections.map(({
       id,
       contentRevision,
-      credentialMode: _credentialMode,
+      credentialMode,
       providerIntegrationId: _providerIntegrationId,
       providerResource: _providerResource,
       ...connection
     }) => ({
       id,
       contentRevision,
-      ...parseSharedConnection(connection),
+      ...parseSharedConnection(connection, {
+        credentialMode: credentialMode === "managed" ? "managed" : "member_local",
+      }),
     })),
   };
   const backupId = crypto.randomUUID();

@@ -15,7 +15,7 @@
     },
     "src/features/providers/tauriAdapter.test.ts": {
       "tests": 4,
-      "protects": "Provider authority receipts, catalog capability projection, legacy backup compatibility, identity rejection, and keyless GCP bootstrap boundaries"
+      "protects": "Provider authority receipts, catalog capability projection, role-gated managed writes, legacy backup compatibility, identity rejection, and keyless GCP bootstrap boundaries"
     },
     "src/features/queries/tauriAdapter.test.ts": {
       "tests": 13,
@@ -89,7 +89,7 @@
     },
     "src-tauri/src/store/tests/connections_scope.rs": {
       "tests": 4,
-      "protects": "Account isolation, credential binding, scope ABA rejection, and ACP provider migration"
+      "protects": "Account isolation, credential binding, managed write projection, scope ABA rejection, and ACP provider migration"
     },
     "tools/release-updater-verify/src/main.rs": {
       "tests": 4,

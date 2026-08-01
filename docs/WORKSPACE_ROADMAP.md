@@ -35,7 +35,7 @@ Use a local-execution, hosted-control-plane architecture:
   authentication broker is not a runtime dependency and requires a separate product
   decision before introduction.
 - Queries continue to run from the desktop app through the existing Rust safety,
-  monitoring, audit, and read-only execution paths.
+  monitoring, audit, read path, and explicit write-approval path.
 - Query result rows are not synchronized by default. Publishing a bounded result
   snapshot is a separate, explicit action with masking and retention controls.
 - Workspace membership never grants target-database write access or `pg_monitor`.
@@ -171,10 +171,13 @@ must not imply production database access.
 | Transfer ownership or delete the workspace | no | no | no | no | yes |
 
 The application authorization model maps Analyst to read-only execution, Editor to a
-potential write-capable role, and Admin/Owner to management. This does not make the
-current managed credential write-capable: its public lease route remains read-only.
-Any future write path must additionally satisfy target credentials, database roles,
-local safety configuration, explicit approval, and the #99/#100 provisioning contract.
+write-capable role, and Admin/Owner to management. A managed write lease is available
+only when a current Admin/Owner has enabled that connection's durable `allowWrites`
+policy, the provider resource advertises a separately provisioned write credential,
+and the member has both an Editor/Admin/Owner role and a `use`/`manage` connection
+grant. It must still satisfy database roles, local safety configuration, explicit
+approval, and the #99/#100 provisioning contract. The provider credential TTL rotates
+automatically and does not shorten the lifetime of the durable role assignment.
 Per-connection grants such as `access_prod` remain a later refinement and default to
 deny until implemented. Existing local credentials and advanced connection parameters
 are never inherited by another member or device.
@@ -229,11 +232,12 @@ control-plane calls through the workspace service. PlanetScale uses OAuth and
 provider-native TTL roles/passwords. Neon uses an encrypted, preferably project-scoped
 API key to create a 15-minute SQL role whose grants are limited to current user schemas
 in the selected database. GCP Cloud SQL stores no service-account key: Vercel OIDC and
-Workload Identity Federation issue a 15-minute IAM database login token for one
-dedicated read service account. The native client receives a credential once over
-HTTPS, pins provider-required TLS material, creates the pool in Rust, and evicts that
-pool before expiry. Write identities remain an inaccessible migration branch until
-#99/#100 provide an approved provisioning contract.
+Workload Identity Federation issue 15-minute IAM database login tokens for separate
+dedicated read and write service accounts. The native client receives a credential once
+over HTTPS, pins provider-required TLS material, creates the pool in Rust, and evicts
+that pool before expiry. The control plane issues the write identity only after the
+live workspace role, connection grant, administrator write policy, canonical provider
+capability, and #99/#100 provisioning contract all pass in the final lease boundary.
 
 The deployment key is separate from database ciphertext today. Production hardening
 still needs KMS-wrapped key versions and rotation. Managed mode does not proxy database
@@ -428,7 +432,7 @@ Exit criteria:
 
 ## Milestone 2 — Shared Connections
 
-Implementation snapshot (2026-07-29): an Admin or Owner can copy a Personal
+Implementation snapshot (2026-08-01): an Admin or Owner can copy a Personal
 Workspace connection into a team workspace and manage the shared template lifecycle
 with optimistic revisions. The cloud API accepts a strict redacted
 template whose schema has no username, password, token, certificate, connection URL,
@@ -439,7 +443,8 @@ username/password locally. Template updates preserve that member-local overlay, 
 template deletion removes the synchronized local cache and its credential reference. Cached
 role authority is enforced in manual queries, scripts, previews, schema introspection,
 dashboards, monitoring grants, and Agent CLI reads. Analyst is read-only; Editor can enter the
-existing local write/approval path; Admin/Owner can manage membership. Credential references,
+existing write/approval path when an Admin/Owner has enabled the DB policy; Admin/Owner can
+manage membership and DB write policy. Credential references,
 RBAC snapshots, schema caches, query history, and Agent threads are keyed by the exact local
 account scope, so two accounts in the same workspace cannot reuse or overwrite one another's
 secrets or cached permissions. A failed copy removes its temporary credential item and rolls
@@ -492,14 +497,16 @@ Exit criteria:
   sharer's secret.
 - Sharing, editing, or deleting a connection never changes another member's local
   credential binding.
-- Analyst execution is read-only. Editor writes still require the target credential,
-  connection safety setting, and explicit local approval. Agent SQL reads remain
+- Analyst execution is read-only. Editor writes still require the administrator DB
+  policy, target credential, connection safety setting, and explicit local approval.
+  Agent SQL reads remain
   read-only and still require `query plan` before `query run`.
-- Workspace roles cannot grant target-database permissions.
+- Workspace roles cannot grant target-database permissions without the separate
+  provider/database privilege and per-connection policy gates.
 - Removing a connection invalidates future execution but preserves relevant audit
   history.
 
-## Milestone 3 — Read-only Provider Integrations
+## Milestone 3 — Provider Integrations
 
 Deliverables:
 
@@ -546,8 +553,8 @@ Exit criteria:
 - A dashboard cannot reference a connection outside its workspace.
 
 Milestones 0–2 form the workspace and shared-connection foundation. Milestones 0–4
-form the first team-product MVP with read-only provider discovery and shared
-dashboards.
+form the first team-product MVP with read-only provider discovery, role-gated managed
+database access, and shared dashboards.
 
 ## Milestone 5 — Saved Agent Analysis Reports
 

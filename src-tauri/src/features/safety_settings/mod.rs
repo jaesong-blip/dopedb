@@ -56,16 +56,17 @@ impl SafetyPlatformAdapter {
     }
 
     /// Normalize untrusted UI limits and persist them under an online connection
-    /// authorization guard. Read-only workspace roles can never enable writes.
+    /// authorization guard. Shared write policy is projected by the server rather
+    /// than widened by this member-local settings surface.
     pub(crate) async fn update(
         &self,
         connection_id: Uuid,
         mut settings: SafetySettings,
     ) -> AppResult<()> {
         let profile = self.store.get_connection(connection_id).await?;
-        if !profile.workspace_access.can_write()
-            || profile.credential_mode != WorkspaceCredentialMode::Local
-        {
+        if profile.credential_mode != WorkspaceCredentialMode::Local {
+            settings.allow_writes = profile.allow_writes && profile.workspace_access.can_write();
+        } else if !profile.workspace_access.can_write() {
             settings.allow_writes = false;
         }
         let _mutation = self

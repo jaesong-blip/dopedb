@@ -11,7 +11,7 @@ export type ProviderCapabilityManifest = Readonly<{
   discover: true;
   importReadOnly: true;
   managedLease: boolean;
-  write: false;
+  write: boolean;
 }>;
 
 export type ProviderImportProjection = Readonly<{
@@ -87,7 +87,7 @@ export function providerResourceFingerprint(provider: string, resource: Record<s
   return createHash("sha256").update(`${provider}\n${canonical(resource)}`, "utf8").digest("hex");
 }
 
-export function readOnlyProjection(input: Omit<ProviderImportProjection, "fingerprint"> & { provider: string }) {
+export function providerProjection(input: Omit<ProviderImportProjection, "fingerprint"> & { provider: string }) {
   if (!/^(neon|gcpCloudSql|planetScale)$/.test(input.provider)) throw new Error("Invalid provider");
   assertNoSecretKeys(input.resource);
   assertNoSecretKeys(input.metadata);

@@ -13,13 +13,15 @@ Provider discovery and connection provisioning are separate capabilities:
 
 - Discovery produces a server-reconstructed, redacted resource projection and an
   opaque, member/session-bound receipt.
-- Import consumes that receipt to create or replace one read-only shared
-  connection. Browser-supplied provider identifiers are not an import authority.
-- Managed access may issue one member-specific, short-lived read credential for
-  an imported connection. It is not a workspace write capability.
-- Future CLI provisioning owns provider-side IAM, role, and database-user changes.
-  Its capability result must not be added to the discovery manifest or inferred
-  from a catalog label.
+- Import consumes that receipt to create or replace one shared connection whose
+  administrator write policy starts disabled. Browser-supplied provider identifiers
+  are not an import authority.
+- Managed access issues one member-specific, short-lived credential. GCP Cloud SQL
+  may issue the separately provisioned write principal only when the current
+  Admin/Owner DB policy, member role, and connection grant all permit it.
+- The current GCP bootstrap owns provider-side IAM, read/write service accounts,
+  and database-user changes. Future CLI provisioning must preserve that capability
+  boundary rather than infer it from a catalog label.
 
 The persisted discovery manifest remains the compatibility schema:
 
@@ -28,25 +30,26 @@ The persisted discovery manifest remains the compatibility schema:
   "discover": true,
   "importReadOnly": true,
   "managedLease": true,
-  "write": false
+  "write": true
 }
 ```
 
-`write: false` is a fixed denial, not a feature flag. A later provisioning
-manifest needs a new versioned field and a data migration; it must not reinterpret
-existing rows.
+`write` records whether the exact provider resource has a separately provisioned
+write credential; it is not the administrator policy and cannot by itself authorize
+a write. GCP resources discovered through a newly completed bootstrap may set it to
+`true`; legacy GCP rows and other providers remain `false`.
 
 ## Entrypoint inventory
 
 | Layer | Entrypoint | Decision | Owner / removal condition |
 | --- | --- | --- | --- |
-| Web UI | `ProviderIntegrationList`, `GcpCloudSetup`, `ProviderResourcePicker`, `useProviderAccess` | keep | Current account connection, redacted discovery, read-only import, and GCP server bootstrap flow. Provider-specific setup is selected by the server catalog, not a planned UI placeholder. |
+| Web UI | `ProviderIntegrationList`, `GcpCloudSetup`, `ProviderResourcePicker`, `useProviderAccess` | keep | Current account connection, redacted discovery, safe-default import, GCP read/write bootstrap, and administrator DB write policy flow. Provider-specific setup is selected by the server catalog, not a planned UI placeholder. |
 | Catalog API | `GET /api/v1/workspaces/:id/provider-integrations` | keep, narrowed | Returns only the three working adapters and no write capability claim. DQ-18 must change before another descriptor is added. |
 | Integration mutation | `POST/DELETE /provider-integrations` and provider OAuth callbacks | keep | Current Neon, GCP Cloud SQL, and PlanetScale authorization boundary. Replacement is #99/#100, after equivalent CLI setup and rollback exist. |
 | Discovery | `GET /provider-integrations/:id/resources` | keep | Provider response is bounded, normalized server-side, and projected into opaque receipts. |
-| Import | `POST /provider-integrations/:id/imports` | keep | Receipt-only, idempotent, read-only shared connection import. This remains independently useful after provisioning changes. |
-| GCP setup | `gcp-setup/:setupId`, `gcp-cloud-sql/callback`, `gcp-cloud-bootstrap.ts` | migrate | Current keyless OAuth bootstrap replaces the removed seven-field manual form. #100 may move these changes behind CLI provisioning; do not expose WIF coordinates, service-account ids, or trust configuration to the browser. |
-| Managed lease | `POST /connections/:id/lease` and `/managed-access` | keep | Issues/revokes short-lived read credentials. Public write requests remain rejected. #99 owns the future CLI runner, not this connection lease contract. |
+| Import | `POST /provider-integrations/:id/imports` | keep | Receipt-only, idempotent shared connection import with `allowWrites: false`. A later administrator action owns the durable write policy. |
+| GCP setup | `gcp-setup/:setupId`, `gcp-cloud-sql/callback`, `gcp-cloud-bootstrap.ts` | migrate | Current keyless OAuth bootstrap creates separate least-privilege read/write principals and replaces the removed seven-field manual form. #100 may move these changes behind CLI provisioning; do not expose WIF coordinates, service-account ids, or trust configuration to the browser. |
+| Managed lease | `POST /connections/:id/lease` and `/managed-access` | keep | Issues/revokes short-lived read or role-gated GCP write credentials. Every write issuance rechecks the live role, connection grant, administrator policy, and canonical provider capability. #99 owns the future CLI runner, not this connection lease contract. |
 | Local target | `provider-local-target` web route and desktop `provider_local_target.rs` | keep | Revalidates the exact provider resource and TLS/connector material before the local pool opens. |
 | Desktop Provider authority | `src-tauri/src/features/providers` | keep | Authenticated inventory, OS credential binding, exact revalidation, and local GCP ADC boundary. |
 | Desktop connection runtime | `connection/runtime/authority.rs`, `remote_authority.rs`, `cloud_sql_proxy.rs` | keep | Obtains the one-time lease into process memory, owns proxy/pool lifetime, and releases the lease. |
@@ -79,8 +82,11 @@ key into a connection template, backup, log, analytics event, or browser respons
 - The catalog API returns exactly Neon, GCP Cloud SQL, and PlanetScale.
 - No catalog response contains `planned`, `supportsReadWrite`, or an equivalent
   optimistic write claim.
-- Discovery/import continues to require `importReadOnly: true`, `write: false`,
-  and a managed read lease.
+- Discovery/import continues to require `importReadOnly: true`, a boolean `write`
+  capability, and managed lease support. Import still persists `allowWrites: false`.
+- A GCP write lease requires the canonical resource's `write: true`, a live
+  Editor/Admin/Owner role, a `use`/`manage` connection grant, and the Admin/Owner
+  connection policy at both request and final issuance time.
 - Existing target-less GCP rows remain reconnect-only; an active row without an
   exact target remains invalid.
 - Workspace backups remain provider-secret-free and restore old connection

@@ -9,10 +9,9 @@ fn remote_connection(value: RemoteConnectionResponse) -> AppResult<(ConnectionPr
         || value.name.len() > 120
         || value.host.len() > 512
         || !value.readonly_default
-        || value.allow_writes
     {
         return Err(AppError::Network(
-            "shared connection returned an unsafe member-local template".into(),
+            "shared connection returned an unsafe template".into(),
         ));
     }
     let access = crate::store::parse_workspace_access(value.access_mode)?;
@@ -25,6 +24,13 @@ fn remote_connection(value: RemoteConnectionResponse) -> AppResult<(ConnectionPr
     if credential_mode == WorkspaceCredentialMode::Local {
         return Err(AppError::Network(
             "shared connection returned invalid credential mode".into(),
+        ));
+    }
+    if (credential_mode == WorkspaceCredentialMode::MemberLocal && value.allow_writes)
+        || (value.allow_writes && !access.can_write())
+    {
+        return Err(AppError::Network(
+            "shared connection returned invalid write authority".into(),
         ));
     }
     let revision = value.revision;
@@ -48,8 +54,9 @@ fn remote_connection(value: RemoteConnectionResponse) -> AppResult<(ConnectionPr
             sslmode: value.sslmode,
             extra_params: Default::default(),
             readonly_default: value.readonly_default,
-            // A shared member-local template never delegates target write authority.
-            allow_writes: false,
+            // Managed write authority is an effective server projection of the
+            // live role, per-connection grant, and administrator policy.
+            allow_writes: value.allow_writes && access.can_write(),
             secret_ref: None,
             env: value.env,
             schema_group: value.schema_group,
@@ -179,7 +186,8 @@ pub(super) async fn update_connection(
         database: &profile.database,
         sslmode: &profile.sslmode,
         readonly_default: true,
-        allow_writes: false,
+        allow_writes: profile.credential_mode == WorkspaceCredentialMode::Managed
+            && profile.allow_writes,
         env: &profile.env,
         schema_group: &profile.schema_group,
     };

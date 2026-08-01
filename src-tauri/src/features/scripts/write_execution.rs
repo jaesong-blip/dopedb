@@ -27,14 +27,6 @@ impl ScriptPlatformAdapter {
                 _scope: operation_scope,
             }));
         }
-        if operation_pin.profile.credential_mode != WorkspaceCredentialMode::Local {
-            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
-                error: AppError::Blocked {
-                    reason: SHARED_CONNECTION_WRITE_BLOCKED.into(),
-                },
-                _scope: operation_scope,
-            }));
-        }
         if !settings.allow_writes {
             let reason = "writing is disabled for this connection (writes are off by default). \
                           Enable writes in the connection's safety settings to run this script."

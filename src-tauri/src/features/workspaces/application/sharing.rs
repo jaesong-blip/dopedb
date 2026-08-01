@@ -195,7 +195,8 @@ where
         let account_user_id = mutation.selected_account_id()?;
         let workspace_id = self.repository.active_workspace_id().await?;
         profile.readonly_default = true;
-        profile.allow_writes = false;
+        profile.allow_writes =
+            current.credential_mode == WorkspaceCredentialMode::Managed && current.allow_writes;
         profile.workspace_access = current.workspace_access;
         profile.credential_mode = current.credential_mode;
 

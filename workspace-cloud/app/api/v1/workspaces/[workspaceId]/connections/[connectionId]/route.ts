@@ -10,9 +10,18 @@ import {
   clearRevocationGate,
   releaseRevocationGateClaim,
 } from "../../../../../../../lib/revocation-gates";
-import { workspaceConnection, workspaceProviderIntegration } from "../../../../../../../lib/schema";
+import {
+  workspaceConnection,
+  workspaceProviderIntegration,
+  workspaceProviderResource,
+} from "../../../../../../../lib/schema";
 import { authorizeWorkspaceConnection } from "../../../../../../../lib/workspace-authorization";
-import { parseSharedConnection, publicConnection } from "../../../../../../../lib/workspace-connections";
+import {
+  parseSharedConnection,
+  providerResourceSupportsWrite,
+  publicConnection,
+} from "../../../../../../../lib/workspace-connections";
+import { hasWorkspaceCapability } from "../../../../../../../lib/workspace-permissions";
 import {
   connectionVersionPayload,
   parseExpectedRevision,
@@ -51,12 +60,8 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Invalid workspace or connection id", 400);
   }
   const body = (await request.json().catch(() => null)) as { action?: unknown } | null;
-  if (body?.action === "write") {
-    // A member-local shared template never carries a target write capability.
-    return jsonError("Shared connections are read-only", 403);
-  }
-  if (body?.action !== "read") {
-    return jsonError("Action must be read", 400);
+  if (body?.action !== "read" && body?.action !== "write") {
+    return jsonError("Action must be read or write", 400);
   }
   const authorization = await authorizeWorkspaceConnection(
     request,
@@ -82,6 +87,7 @@ export async function POST(request: Request, context: RouteContext) {
       workspaceProviderIntegration.revocationPendingAt,
     integrationRevocationClaimId:
       workspaceProviderIntegration.revocationClaimId,
+    providerCapabilityManifest: workspaceProviderResource.capabilityManifest,
   }).from(workspaceConnection).leftJoin(
     workspaceProviderIntegration,
     and(
@@ -93,6 +99,16 @@ export async function POST(request: Request, context: RouteContext) {
         workspaceProviderIntegration.organizationId,
         workspaceConnection.organizationId,
       ),
+    ),
+  ).leftJoin(
+    workspaceProviderResource,
+    and(
+      eq(workspaceProviderResource.id, workspaceConnection.providerResourceId),
+      eq(
+        workspaceProviderResource.organizationId,
+        workspaceConnection.organizationId,
+      ),
+      eq(workspaceProviderResource.provider, workspaceConnection.provider),
     ),
   ).where(and(
     eq(workspaceConnection.id, connectionId),
@@ -120,6 +136,14 @@ export async function POST(request: Request, context: RouteContext) {
   }
   if (connection.credentialMode !== "member_local" && connection.credentialMode !== "managed") {
     return jsonError("Shared connection template is unsafe", 409);
+  }
+  if (body.action === "write" && (
+    connection.credentialMode !== "managed"
+    || !connection.allowWrites
+    || !hasWorkspaceCapability(authorization.role, "write")
+    || !providerResourceSupportsWrite(connection.providerCapabilityManifest)
+  )) {
+    return jsonError("Managed write access is not allowed for this member and connection", 403);
   }
   return privateJson({
     allowed: true,
@@ -159,6 +183,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       engine: true,
       provider: true,
       credentialMode: true,
+      allowWrites: true,
+      providerResourceId: true,
       revision: true,
       contentRevision: true,
     },
@@ -166,9 +192,40 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!existing) return jsonError("Connection not found", 404);
   let input;
   try {
-    input = parseSharedConnection(await request.json());
+    input = parseSharedConnection(await request.json(), {
+      credentialMode: existing.credentialMode === "managed" ? "managed" : "member_local",
+    });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Invalid connection template", 400);
+  }
+  if (existing.credentialMode === "managed" && input.engine !== existing.engine) {
+    return jsonError(
+      "Switch to member-local credentials before changing a managed database engine",
+      409,
+    );
+  }
+  if (
+    input.allowWrites !== existing.allowWrites
+    && !hasWorkspaceCapability(authorization.role, "manage")
+  ) {
+    return jsonError("Workspace administrator permission is required to change write access", 403);
+  }
+  const providerResource = existing.credentialMode === "managed"
+    && existing.providerResourceId
+    ? await db.query.workspaceProviderResource.findFirst({
+        where: and(
+          eq(workspaceProviderResource.id, existing.providerResourceId),
+          eq(workspaceProviderResource.organizationId, workspaceId),
+          eq(workspaceProviderResource.provider, existing.provider),
+        ),
+        columns: { capabilityManifest: true },
+      })
+    : null;
+  const writeAvailable = providerResourceSupportsWrite(
+    providerResource?.capabilityManifest,
+  );
+  if (input.allowWrites && !writeAvailable) {
+    return jsonError("This managed provider connection has no write credential", 409);
   }
   if (expectedRevision !== existing.contentRevision) {
     const conflictId = await conflictConnectionCandidate({
@@ -180,12 +237,6 @@ export async function PATCH(request: Request, context: RouteContext) {
     }).catch(() => null);
     if (!conflictId) return jsonError("Connection changed concurrently. Retry the update.", 409);
     return privateJson({ error: "Connection conflict", conflictId }, { status: 409 });
-  }
-  if (existing.credentialMode === "managed" && input.engine !== existing.engine) {
-    return jsonError(
-      "Switch to member-local credentials before changing a managed database engine",
-      409,
-    );
   }
   const claim = await claimRevocationGate({
     kind: "connection",
@@ -225,6 +276,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   const updated = await commitConnectionMutation({
     organizationId: workspaceId, connectionId, expectedContentRevision: existing.contentRevision,
     expectedAuthorityRevision: expectedClaimRevision, claimId: claim.claimId, authority,
+    requireWorkspaceManager: input.allowWrites !== existing.allowWrites,
     mutation: {
       kind: "update", payload: connectionVersionPayload(normalized), name: normalized.name,
       engine: normalized.engine, provider: normalized.provider, driverId: normalized.driverId,
@@ -241,7 +293,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     return jsonError("Connection access changed concurrently. Retry the update.", 409);
   }
   return privateJson({
-    connection: publicConnection(updated, authorization.role, authorization.accessMode),
+    connection: publicConnection(
+      updated,
+      authorization.role,
+      authorization.accessMode,
+      writeAvailable,
+    ),
   });
 }
 

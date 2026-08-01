@@ -3,12 +3,11 @@
 use chrono::{Duration as ChronoDuration, Utc};
 use uuid::Uuid;
 
-use crate::connection::SHARED_CONNECTION_WRITE_BLOCKED;
 use crate::error::AppError;
 use crate::kernel::agent_policy::QUERY_PLAN_TTL;
 use crate::kernel::identity::OperationId;
 use crate::kernel::TerminalAuthority;
-use crate::model::{QueryKind, WorkspaceCredentialMode};
+use crate::model::QueryKind;
 use crate::operations::{
     actor_for_pin, agent_actor_for_pin, required_confirmation, NewOperation,
     OperationPlanDisposition,
@@ -75,11 +74,6 @@ impl QueryPlatformAdapter {
         if is_write && !pin.profile.workspace_access.can_write() {
             return Err(inspection.into_error(AppError::Blocked {
                 reason: "your workspace role grants read-only database access".into(),
-            }));
-        }
-        if is_write && pin.profile.credential_mode != WorkspaceCredentialMode::Local {
-            return Err(inspection.into_error(AppError::Blocked {
-                reason: SHARED_CONNECTION_WRITE_BLOCKED.into(),
             }));
         }
         let settings = match inspection

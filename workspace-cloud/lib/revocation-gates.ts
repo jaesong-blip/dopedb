@@ -309,7 +309,8 @@ function integrationGateKey(input: ManagedLeaseAuthority) {
 function capabilityPredicate(input: ManagedLeaseAuthority) {
   return input.accessMode === "write"
     ? sql`${member.role} IN ('editor', 'admin', 'owner')
-        AND ${workspaceConnection.allowWrites} = TRUE`
+        AND ${workspaceConnection.allowWrites} = TRUE
+        AND ${workspaceProviderResource.capabilityManifest} -> 'write' = 'true'::jsonb`
     // Target-database access is granted separately from workspace roles. A live
     // workspace viewer with a `use` grant is therefore eligible for a read lease.
     : sql`${member.role} IN ('viewer', 'analyst', 'editor', 'admin', 'owner')`;

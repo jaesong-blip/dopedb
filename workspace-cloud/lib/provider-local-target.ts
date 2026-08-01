@@ -247,7 +247,7 @@ export async function loadProviderLocalTarget(input: {
           )
         )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
-        AND resource."capability_manifest" -> 'write' = 'false'::jsonb
+        AND jsonb_typeof(resource."capability_manifest" -> 'write') = 'boolean'
         AND resource."capability_manifest" -> 'managedLease' = 'true'::jsonb
       FOR UPDATE OF grant, connection, integration, resource, imported
     ) SELECT * FROM target

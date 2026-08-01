@@ -4,9 +4,23 @@ import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
 import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../lib/http";
-import { workspaceConnection, workspaceConnectionGrant } from "../../../../../../lib/schema";
-import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
-import { parseSharedConnection, publicConnection } from "../../../../../../lib/workspace-connections";
+import {
+  workspaceConnection,
+  workspaceConnectionGrant,
+  workspaceProviderResource,
+} from "../../../../../../lib/schema";
+import {
+  authorizeWorkspace,
+} from "../../../../../../lib/workspace-authorization";
+import {
+  accessModeForConnectionGrant,
+  type WorkspaceConnectionCapability,
+} from "../../../../../../lib/workspace-permissions";
+import {
+  parseSharedConnection,
+  providerResourceSupportsWrite,
+  publicConnection,
+} from "../../../../../../lib/workspace-connections";
 import {
   connectionVersionPayload,
   parseExpectedRevision,
@@ -28,13 +42,25 @@ export async function GET(request: Request, context: RouteContext) {
   const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
   const rows = await db
-    .select({ connection: workspaceConnection, capability: workspaceConnectionGrant.capability })
+    .select({
+      connection: workspaceConnection,
+      capability: workspaceConnectionGrant.capability,
+      capabilityManifest: workspaceProviderResource.capabilityManifest,
+    })
     .from(workspaceConnectionGrant)
     .innerJoin(
       workspaceConnection,
       and(
         eq(workspaceConnection.organizationId, workspaceConnectionGrant.organizationId),
         eq(workspaceConnection.id, workspaceConnectionGrant.connectionId),
+      ),
+    )
+    .leftJoin(
+      workspaceProviderResource,
+      and(
+        eq(workspaceProviderResource.organizationId, workspaceConnection.organizationId),
+        eq(workspaceProviderResource.id, workspaceConnection.providerResourceId),
+        eq(workspaceProviderResource.provider, workspaceConnection.provider),
       ),
     )
     .where(and(
@@ -56,11 +82,18 @@ export async function GET(request: Request, context: RouteContext) {
     workspaceId,
     role: authorization.role,
     accessMode: authorization.accessMode,
-    connections: rows.map(({ connection, capability }) => publicConnection(
-      connection,
-      authorization.role,
-      capability === "manage" ? "manage" : capability === "use" ? "read" : "view",
-    )),
+    connections: rows.map(({ connection, capability, capabilityManifest }) => {
+      const accessMode = accessModeForConnectionGrant(
+        authorization.role,
+        capability as WorkspaceConnectionCapability,
+      );
+      return publicConnection(
+        connection,
+        authorization.role,
+        accessMode,
+        providerResourceSupportsWrite(capabilityManifest),
+      );
+    }),
   });
 }
 

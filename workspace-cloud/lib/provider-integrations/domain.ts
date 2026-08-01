@@ -98,6 +98,7 @@ export function discoveredProviderResource(input: {
   kind: string;
   selection: Record<string, string>;
   item: ProviderResourceItem;
+  writeAvailable?: boolean;
 }) {
   if (!allowDiscoveryImport(input.provider, input.item)) return null;
   const engine = input.item.kind ?? input.selection.engine;
@@ -128,5 +129,9 @@ export function discoveredProviderResource(input: {
   } else {
     return null;
   }
-  return providerImportProjection(input.provider as "planetScale" | "neon" | "gcpCloudSql", resource);
+  return providerImportProjection(
+    input.provider as "planetScale" | "neon" | "gcpCloudSql",
+    resource,
+    { writeAvailable: input.writeAvailable === true },
+  );
 }

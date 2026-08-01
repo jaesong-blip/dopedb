@@ -30,8 +30,8 @@ export function SharedDatabasePanel({
             워크스페이스 DB
           </strong>
           <small className="tw:max-w-[44rem] tw:text-2xs tw:leading-body tw:text-muted-foreground">
-            한 번 등록한 DB는 팀에 공유되고, 허용된 멤버에게만 15분짜리
-            자격증명이 발급됩니다.
+            한 번 등록한 DB는 팀에 공유되고, 허용된 멤버의 역할에 맞는 단기
+            자격증명을 앱이 자동으로 회전합니다.
           </small>
         </div>
         <ControlButton
@@ -107,7 +107,7 @@ export function SharedDatabasePanel({
                 <div className="tw:grid tw:justify-items-end tw:gap-1 tw:max-[640px]:justify-items-start">
                   <strong className="tw:font-mono tw:text-2xs tw:uppercase tw:text-primary">
                     {connection.credentialMode === "managed"
-                      ? "15분 자동 자격증명"
+                      ? "역할 기반 자동 접근"
                       : "멤버 로컬"}
                   </strong>
                   <a

@@ -222,6 +222,7 @@ export async function commitConnectionMutation({
   expectedAuthorityRevision,
   claimId,
   authority,
+  requireWorkspaceManager = false,
   mutation,
 }: {
   organizationId: string;
@@ -230,6 +231,7 @@ export async function commitConnectionMutation({
   expectedAuthorityRevision: number;
   claimId: string;
   authority: MutationAuthority;
+  requireWorkspaceManager?: boolean;
   mutation: {
     kind: "update";
     payload: ConnectionVersionPayload;
@@ -253,7 +255,14 @@ export async function commitConnectionMutation({
     : sql`"deleted_at" = now(), "provider_integration_id" = NULL, "provider_resource" = NULL,
       "provider_resource_id" = NULL, "revocation_pending_at" = NULL, "revocation_claimed_at" = NULL,
       "revocation_claim_id" = NULL, "content_revision" = "content_revision" + 1, "updated_at" = now()`;
-  const action = mutation.kind === "update" ? "connection.update" : "connection.delete";
+  const action = mutation.kind === "update"
+    ? requireWorkspaceManager
+      ? "connection.write_policy.update"
+      : "connection.update"
+    : "connection.delete";
+  const workspaceManagerGuard = requireWorkspaceManager
+    ? sql`AND member."role" IN ('admin', 'owner')`
+    : sql``;
   const operation = mutation.kind;
   const result = await db.execute<RawConnectionRow>(sql`
     WITH authority_lock AS MATERIALIZED (
@@ -271,7 +280,9 @@ export async function commitConnectionMutation({
         AND grant."member_id" = member."id" AND grant."capability" = 'manage'
       JOIN authority_lock ON TRUE
       WHERE session."id" = ${authority.sessionId} AND session."user_id" = ${authority.userId}
-        AND session."expires_at" > now() AND member."revocation_pending_at" IS NULL
+        AND session."expires_at" > now() AND member."role" = ${authority.role}
+        ${workspaceManagerGuard}
+        AND member."revocation_pending_at" IS NULL
         AND member."revocation_claim_id" IS NULL
       FOR UPDATE OF session, member, grant
     ), parent AS MATERIALIZED (
@@ -308,7 +319,11 @@ export async function commitConnectionMutation({
         ("organization_id", "actor_user_id", "action", "resource_type", "resource_id",
          "redacted_summary", "request_id")
       SELECT ${organizationId}, ${authority.userId}, ${action}, 'connection', updated."id"::text,
-        jsonb_build_object('name', updated."name", 'revision', updated."content_revision"), ${requestId}::uuid
+        jsonb_build_object(
+          'name', updated."name",
+          'revision', updated."content_revision",
+          'allowWrites', updated."allowWrites"
+        ), ${requestId}::uuid
       FROM updated JOIN version ON TRUE
       RETURNING "id"
     ) SELECT updated.* FROM updated JOIN version ON TRUE JOIN audit ON TRUE

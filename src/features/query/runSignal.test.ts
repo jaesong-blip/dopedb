@@ -35,13 +35,21 @@ describe("SQL run guidance", () => {
         [],
         safety,
         t,
-        "managed",
       ),
     ).toEqual({
       tone: "danger",
       icon: "alert",
-      text: "sql.signalSharedReadOnly",
-      title: "sql.sharedWritesUnavailable",
+      text: "sql.signalWritesDisabled",
+    });
+    expect(buildRunSignal(
+      "UPDATE users SET active = 0 WHERE id = 1",
+      [],
+      { ...safety, allowWrites: true },
+      t,
+    )).toEqual({
+      tone: "warning",
+      icon: "alert",
+      text: "sql.signalWriteStatement",
     });
   });
 

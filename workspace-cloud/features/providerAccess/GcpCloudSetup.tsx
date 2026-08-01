@@ -286,8 +286,10 @@ export function GcpCloudSetup({
             ) : null}
 
             <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-              공유 연결에는 읽기 전용 15분 IAM 자격증명만 발급합니다. 장기 키와
-              Google 로그인 토큰은 저장하지 않습니다.
+              읽기·쓰기 전용 서비스 계정을 분리해 구성합니다. 관리자가 DB별
+              쓰기를 허용한 경우에만 역할에 맞는 계정을 사용하며, 단기 IAM
+              자격증명은 앱이 자동 회전합니다. 장기 키와 Google 로그인 토큰은
+              저장하지 않습니다.
             </p>
           </div>
 
@@ -298,8 +300,8 @@ export function GcpCloudSetup({
               </strong>
               <ul className="tw:m-0 tw:grid tw:list-none tw:gap-1.5 tw:p-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
                 <li>· 기존 라벨을 보존하고 환경 분류를 추가합니다.</li>
-                <li>· 전용 서비스 계정과 인스턴스 범위 IAM을 구성합니다.</li>
-                <li>· 구성원에게 읽기 전용 15분 자격증명만 발급합니다.</li>
+                <li>· 읽기·쓰기 전용 서비스 계정과 인스턴스 범위 IAM을 구성합니다.</li>
+                <li>· 관리자 DB 정책과 멤버 역할에 맞춰 단기 자격증명을 자동 회전합니다.</li>
               </ul>
             </div>
 
@@ -396,6 +398,7 @@ export function GcpCloudSetup({
                   운영 Cloud SQL 연결 승인
                   <small className="tw:text-2xs tw:leading-body">
                     이 선택과 관리자의 승인은 워크스페이스 감사 기록에 남습니다.
+                    쓰기 허용 여부는 연결 후 DB별 접근 권한에서 별도로 정합니다.
                   </small>
                 </span>
               </label>

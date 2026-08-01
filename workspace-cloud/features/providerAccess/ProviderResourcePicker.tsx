@@ -319,7 +319,7 @@ export function ProviderResourcePicker({
                 자격증명
               </dt>
               <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
-                멤버별 15분 · 읽기 전용
+                멤버별 자동 회전 · 기본 읽기 · 관리자 쓰기 정책
               </dd>
             </dl>
             {finalResource?.production === true ? (

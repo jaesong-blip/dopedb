@@ -234,6 +234,7 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
         .await
         .unwrap();
     template.credential_mode = crate::model::WorkspaceCredentialMode::Managed;
+    template.allow_writes = true;
     let removed_credential_ids = store
         .sync_remote_connections(workspace_id, &user.id, &[(template, 2)])
         .await
@@ -251,6 +252,8 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
     );
     assert!(loaded.username.is_empty());
     assert!(loaded.secret_ref.is_none());
+    assert!(loaded.allow_writes);
+    assert!(store.get_safety(id).await.unwrap().allow_writes);
     let binding_material: (String, String, Option<String>) = sqlx::query_as(
         "SELECT username, extra_params, secret_ref
          FROM workspace_connection_bindings

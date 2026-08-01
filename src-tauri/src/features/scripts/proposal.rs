@@ -101,14 +101,6 @@ impl ScriptPlatformAdapter {
                 _scope: operation_scope,
             }));
         }
-        if has_write && pin.profile.credential_mode != WorkspaceCredentialMode::Local {
-            return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
-                error: AppError::Blocked {
-                    reason: SHARED_CONNECTION_WRITE_BLOCKED.into(),
-                },
-                _scope: operation_scope,
-            }));
-        }
         if has_write && !settings.allow_writes {
             return Err(DesktopScriptRunError::Scoped(DesktopScriptScopedFailure {
                 error: AppError::Blocked {

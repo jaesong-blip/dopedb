@@ -1,7 +1,9 @@
 // Provider-specific resource reconstruction. Each adapter accepts only its exact
-// scalar shape, then produces the shared redacted read-only projection contract.
+// scalar shape, then produces the shared redacted projection contract. Imports
+// still start read-only; the capability only records whether an administrator may
+// later enable the separately gated managed write path.
 import {
-  readOnlyProjection,
+  providerProjection,
   type ProviderCapabilityManifest,
   type ProviderImportAdapter,
   type ProviderImportProjection,
@@ -86,7 +88,7 @@ function projection(
   engine: "postgres" | "mysql",
   capabilityManifest: ProviderCapabilityManifest,
 ) {
-  return readOnlyProjection({
+  return providerProjection({
     provider,
     resource: { ...resource },
     metadata,
@@ -143,10 +145,22 @@ export const providerImportAdapters: Record<
   },
 };
 
-export function providerImportProjection(provider: ImportProvider, value: unknown): ProviderImportProjection {
+export function providerImportProjection(
+  provider: ImportProvider,
+  value: unknown,
+  options: { writeAvailable?: boolean } = {},
+): ProviderImportProjection {
   const adapter = providerImportAdapters[provider];
   const resource = adapter.reconstruct(value);
-  return adapter.importProjection(resource);
+  const projected = adapter.importProjection(resource);
+  if (!options.writeAvailable) return projected;
+  if (provider !== "gcpCloudSql") {
+    throw new Error("Managed write capability is not available for this provider");
+  }
+  return {
+    ...projected,
+    capabilities: { ...projected.capabilities, write: true },
+  };
 }
 
 export function allowDiscoveryImport(

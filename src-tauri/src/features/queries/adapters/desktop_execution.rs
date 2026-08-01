@@ -1,12 +1,12 @@
 //! Desktop SQL execution, cancellation, audit, history, and outcome reconciliation.
 
 use crate::audit::{self, RecordArgs};
-use crate::connection::{ConnectionAccess, SHARED_CONNECTION_WRITE_BLOCKED};
+use crate::connection::ConnectionAccess;
 use crate::error::AppError;
 use crate::executor;
 use crate::features::queries::ManualExecutionTarget;
 use crate::kernel::identity::OperationId;
-use crate::model::{QueryKind, WorkspaceCredentialMode};
+use crate::model::QueryKind;
 use crate::operations::{capture_policy, ensure_operation_scope, OperationKind};
 use crate::safety;
 
@@ -94,13 +94,6 @@ impl QueryPlatformAdapter {
                 _scope: operation_scope,
             }));
         }
-        if is_write && operation_pin.profile.credential_mode != WorkspaceCredentialMode::Local {
-            return Err(DesktopSqlRunError::Blocked(DesktopSqlRunBlocked {
-                reason: SHARED_CONNECTION_WRITE_BLOCKED.into(),
-                _scope: operation_scope,
-            }));
-        }
-
         if let safety::GateDecision::Block { reason } = safety::decide(&settings, &classification) {
             record_desktop_run(
                 &self.store,

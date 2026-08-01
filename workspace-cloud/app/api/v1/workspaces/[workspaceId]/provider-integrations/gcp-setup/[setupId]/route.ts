@@ -193,8 +193,10 @@ export async function POST(request: Request, context: RouteContext) {
         projectNumber: body.projectNumber,
         instanceId: body.instanceId,
         environmentClassification: body.environmentClassification,
-        // Shared managed connections deliberately issue read-only leases.
-        writeAccess: false,
+        // Provision separate least-privilege principals up front. Durable
+        // workspace role/grant/connection policy still defaults every import to
+        // read-only and decides whether the write principal can ever be leased.
+        writeAccess: true,
         approveProduction: body.approveProduction,
         approveInstanceRestart: body.approveInstanceRestart,
       },
