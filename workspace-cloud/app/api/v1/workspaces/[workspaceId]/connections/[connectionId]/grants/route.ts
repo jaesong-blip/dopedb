@@ -115,14 +115,14 @@ export async function POST(request: Request, context: RouteContext) {
       JOIN "workspace_control"."member" member
         ON member."id" = ${authorization.membership.id} AND member."organization_id" = ${workspaceId}
         AND member."user_id" = ${authorization.session.user.id}
-      JOIN "workspace_control"."workspace_connection_grant" grant
-        ON grant."organization_id" = ${workspaceId} AND grant."connection_id" = ${connectionId}::uuid
-        AND grant."member_id" = member."id" AND grant."capability" = 'manage'
+      JOIN "workspace_control"."workspace_connection_grant" manager_grant
+        ON manager_grant."organization_id" = ${workspaceId} AND manager_grant."connection_id" = ${connectionId}::uuid
+        AND manager_grant."member_id" = member."id" AND manager_grant."capability" = 'manage'
       JOIN locks ON TRUE
       WHERE session."id" = ${authorization.session.session.id} AND session."user_id" = ${authorization.session.user.id}
         AND session."expires_at" > now() AND member."revocation_pending_at" IS NULL
         AND member."revocation_claim_id" IS NULL
-      FOR UPDATE OF session, member, grant
+      FOR UPDATE OF session, member, manager_grant
     ), target AS MATERIALIZED (
       SELECT member."id" FROM "workspace_control"."member" member
       JOIN actor ON TRUE
@@ -213,12 +213,12 @@ export async function DELETE(request: Request, context: RouteContext) {
       SELECT member."id" FROM "workspace_control"."session" session
       JOIN "workspace_control"."member" member ON member."id" = ${authorization.membership.id}
         AND member."organization_id" = ${workspaceId} AND member."user_id" = ${authorization.session.user.id}
-      JOIN "workspace_control"."workspace_connection_grant" grant ON grant."organization_id" = ${workspaceId}
-        AND grant."connection_id" = ${connectionId}::uuid AND grant."member_id" = member."id" AND grant."capability" = 'manage'
+      JOIN "workspace_control"."workspace_connection_grant" manager_grant ON manager_grant."organization_id" = ${workspaceId}
+        AND manager_grant."connection_id" = ${connectionId}::uuid AND manager_grant."member_id" = member."id" AND manager_grant."capability" = 'manage'
       JOIN locks ON TRUE
       WHERE session."id" = ${authorization.session.session.id} AND session."user_id" = ${authorization.session.user.id}
         AND session."expires_at" > now() AND member."revocation_pending_at" IS NULL AND member."revocation_claim_id" IS NULL
-      FOR UPDATE OF session, member, grant
+      FOR UPDATE OF session, member, manager_grant
     ), target AS MATERIALIZED (
       SELECT member."id" FROM "workspace_control"."member" member
       JOIN actor ON TRUE
@@ -227,11 +227,11 @@ export async function DELETE(request: Request, context: RouteContext) {
         AND member."revocation_claim_id" = ${claim.claimId}::uuid
       FOR UPDATE OF member
     ), revoked AS MATERIALIZED (
-      DELETE FROM "workspace_control"."workspace_connection_grant" grant
+      DELETE FROM "workspace_control"."workspace_connection_grant" target_grant
       USING actor, target
-      WHERE grant."organization_id" = ${workspaceId} AND grant."connection_id" = ${connectionId}::uuid
-        AND grant."member_id" = target."id"
-      RETURNING grant."member_id" AS "memberId"
+      WHERE target_grant."organization_id" = ${workspaceId} AND target_grant."connection_id" = ${connectionId}::uuid
+        AND target_grant."member_id" = target."id"
+      RETURNING target_grant."member_id" AS "memberId"
     ), audit AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_audit_event"
         ("organization_id", "actor_user_id", "action", "resource_type", "resource_id", "redacted_summary", "request_id")

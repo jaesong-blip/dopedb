@@ -107,11 +107,11 @@ function lockAndRevalidate(tx: TransactionSql, input: {
       -- concurrent imports and ordinary connection mutations have one order.
       SELECT connection."id"
       FROM "workspace_control"."workspace_connection" connection
-      JOIN "workspace_control"."workspace_connection_grant" grant
-        ON grant."organization_id" = connection."organization_id"
-       AND grant."connection_id" = connection."id"
-       AND grant."member_id" = ${input.authority.membershipId}
-       AND grant."capability" = 'manage'
+      JOIN "workspace_control"."workspace_connection_grant" manager_grant
+        ON manager_grant."organization_id" = connection."organization_id"
+       AND manager_grant."connection_id" = connection."id"
+       AND manager_grant."member_id" = ${input.authority.membershipId}
+       AND manager_grant."capability" = 'manage'
       JOIN receipt_scope ON TRUE
       JOIN resource_lock ON TRUE
       WHERE ${replacing}
@@ -145,7 +145,7 @@ function lockAndRevalidate(tx: TransactionSql, input: {
             AND lease."connection_id" = connection."id"
             AND lease."revoked_at" IS NULL
         )
-      FOR UPDATE OF connection, grant
+      FOR UPDATE OF connection, manager_grant
     ), target_gate AS MATERIALIZED (
       SELECT 1 AS "ready" FROM resource_lock WHERE NOT ${replacing}
       UNION ALL
@@ -244,11 +244,11 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
       SELECT connection."id", connection."content_revision" AS "contentRevision",
         parent."id" AS "parentVersionId"
       FROM "workspace_control"."workspace_connection" connection
-      JOIN "workspace_control"."workspace_connection_grant" grant
-        ON grant."organization_id" = connection."organization_id"
-       AND grant."connection_id" = connection."id"
-       AND grant."member_id" = ${input.authority.membershipId}
-       AND grant."capability" = 'manage'
+      JOIN "workspace_control"."workspace_connection_grant" manager_grant
+        ON manager_grant."organization_id" = connection."organization_id"
+       AND manager_grant."connection_id" = connection."id"
+       AND manager_grant."member_id" = ${input.authority.membershipId}
+       AND manager_grant."capability" = 'manage'
       JOIN scope ON TRUE
       JOIN "workspace_control"."workspace_resource_version" parent
         ON parent."organization_id" = connection."organization_id"
@@ -277,7 +277,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
             AND lease."connection_id" = connection."id"
             AND lease."revoked_at" IS NULL
         )
-      FOR UPDATE OF connection, grant, parent
+      FOR UPDATE OF connection, manager_grant, parent
     ), prior_key AS MATERIALIZED (
       SELECT "request_hash", "resource_id", "connection_id"
       FROM "workspace_control"."workspace_provider_import_request"

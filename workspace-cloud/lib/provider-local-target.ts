@@ -180,10 +180,10 @@ export async function loadProviderLocalTarget(input: {
         integration."provider" AS "provider",
         resource."resource_fingerprint" AS "resourceFingerprint",
         resource."resource" AS "resource"
-      FROM "workspace_control"."workspace_connection_grant" grant
+      FROM "workspace_control"."workspace_connection_grant" member_grant
       JOIN "workspace_control"."workspace_connection" connection
-        ON connection."organization_id" = grant."organization_id"
-       AND connection."id" = grant."connection_id"
+        ON connection."organization_id" = member_grant."organization_id"
+       AND connection."id" = member_grant."connection_id"
       JOIN "workspace_control"."workspace_provider_integration" integration
         ON integration."organization_id" = connection."organization_id"
        AND integration."id" = connection."provider_integration_id"
@@ -198,11 +198,11 @@ export async function loadProviderLocalTarget(input: {
         ON imported."organization_id" = connection."organization_id"
        AND imported."connection_id" = connection."id"
        AND imported."resource_id" = resource."id"
-      JOIN authority ON authority."id" = grant."member_id"
-      WHERE grant."organization_id" = ${input.organizationId}
-        AND grant."connection_id" = ${input.connectionId}::uuid
-        AND grant."member_id" = ${input.authority.membershipId}
-        AND grant."capability" IN ('use', 'manage')
+      JOIN authority ON authority."id" = member_grant."member_id"
+      WHERE member_grant."organization_id" = ${input.organizationId}
+        AND member_grant."connection_id" = ${input.connectionId}::uuid
+        AND member_grant."member_id" = ${input.authority.membershipId}
+        AND member_grant."capability" IN ('use', 'manage')
         AND connection."deleted_at" IS NULL
         AND connection."revocation_pending_at" IS NULL
         AND connection."revocation_claim_id" IS NULL
@@ -249,7 +249,7 @@ export async function loadProviderLocalTarget(input: {
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
         AND jsonb_typeof(resource."capability_manifest" -> 'write') = 'boolean'
         AND resource."capability_manifest" -> 'managedLease' = 'true'::jsonb
-      FOR UPDATE OF grant, connection, integration, resource, imported
+      FOR UPDATE OF member_grant, connection, integration, resource, imported
     ) SELECT * FROM target
   `);
   return parseProviderLocalTarget(result.rows[0], input.now);

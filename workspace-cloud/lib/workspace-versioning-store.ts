@@ -55,15 +55,15 @@ export async function conflictConnectionCandidate({
       JOIN "workspace_control"."member" member
         ON member."id" = ${authority.membershipId} AND member."organization_id" = ${organizationId}
         AND member."user_id" = ${authority.userId}
-      JOIN "workspace_control"."workspace_connection_grant" grant
-        ON grant."organization_id" = ${organizationId}
-        AND grant."connection_id" = ${connectionId}::uuid
-        AND grant."member_id" = member."id" AND grant."capability" = 'manage'
+      JOIN "workspace_control"."workspace_connection_grant" manager_grant
+        ON manager_grant."organization_id" = ${organizationId}
+        AND manager_grant."connection_id" = ${connectionId}::uuid
+        AND manager_grant."member_id" = member."id" AND manager_grant."capability" = 'manage'
       JOIN authority_lock ON TRUE
       WHERE session."id" = ${authority.sessionId} AND session."user_id" = ${authority.userId}
         AND session."expires_at" > now() AND member."revocation_pending_at" IS NULL
         AND member."revocation_claim_id" IS NULL
-      FOR UPDATE OF session, member, grant
+      FOR UPDATE OF session, member, manager_grant
     ), locked_connection AS MATERIALIZED (
       SELECT "content_revision" FROM ${workspaceConnection}
       WHERE "organization_id" = ${organizationId} AND "id" = ${connectionId}::uuid
@@ -274,17 +274,17 @@ export async function commitConnectionMutation({
       JOIN "workspace_control"."member" member
         ON member."id" = ${authority.membershipId} AND member."organization_id" = ${organizationId}
         AND member."user_id" = ${authority.userId}
-      JOIN "workspace_control"."workspace_connection_grant" grant
-        ON grant."organization_id" = ${organizationId}
-        AND grant."connection_id" = ${connectionId}::uuid
-        AND grant."member_id" = member."id" AND grant."capability" = 'manage'
+      JOIN "workspace_control"."workspace_connection_grant" manager_grant
+        ON manager_grant."organization_id" = ${organizationId}
+        AND manager_grant."connection_id" = ${connectionId}::uuid
+        AND manager_grant."member_id" = member."id" AND manager_grant."capability" = 'manage'
       JOIN authority_lock ON TRUE
       WHERE session."id" = ${authority.sessionId} AND session."user_id" = ${authority.userId}
         AND session."expires_at" > now() AND member."role" = ${authority.role}
         ${workspaceManagerGuard}
         AND member."revocation_pending_at" IS NULL
         AND member."revocation_claim_id" IS NULL
-      FOR UPDATE OF session, member, grant
+      FOR UPDATE OF session, member, manager_grant
     ), parent AS MATERIALIZED (
       SELECT version."id" FROM "workspace_control"."workspace_resource_version" version
       JOIN authority ON TRUE

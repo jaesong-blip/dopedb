@@ -6,6 +6,8 @@ import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud
 import gcpSetupRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/gcp-setup/[setupId]/route.ts?raw";
 import gcpOAuthSource from "../../../workspace-cloud/lib/providers/gcp-cloud-oauth.ts?raw";
 import managedLeaseRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/lease/route.ts?raw";
+import managedAccessRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/managed-access/route.ts?raw";
+import connectionGrantsRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/grants/route.ts?raw";
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
@@ -13,6 +15,8 @@ import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provid
 import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
 import providerAdapterContractSource from "../../../workspace-cloud/lib/providers/adapter-contract.ts?raw";
 import providerImportProjectionSource from "../../../workspace-cloud/lib/providers/import-projection.ts?raw";
+import providerImportStoreSource from "../../../workspace-cloud/lib/provider-import-store.ts?raw";
+import providerLocalTargetSource from "../../../workspace-cloud/lib/provider-local-target.ts?raw";
 import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
 import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-permissions.ts?raw";
@@ -211,6 +215,19 @@ describe("provider credential Tauri adapter", () => {
     expect(workspaceVersioningStoreSource).toContain(
       `member."role" IN ('admin', 'owner')`,
     );
+    const rawConnectionGrantSql = [
+      connectionGrantsRouteSource,
+      managedAccessRouteSource,
+      providerImportStoreSource,
+      providerLocalTargetSource,
+      workspaceVersioningStoreSource,
+    ];
+    for (const source of rawConnectionGrantSql) {
+      expect(source).not.toMatch(
+        /(?:workspace_connection_grant"|workspaceConnectionGrant\})\s+(?:AS\s+)?grant\b/,
+      );
+      expect(source).not.toMatch(/FOR UPDATE OF[^\n]*\bgrant\b/);
+    }
 
     const legacyBackup = JSON.parse(legacyProviderBackupSource);
     expect(legacyBackup.connections).toEqual([

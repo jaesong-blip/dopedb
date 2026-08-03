@@ -167,13 +167,13 @@ export async function PUT(request: Request, context: RouteContext) {
         AND member."revocation_claim_id" IS NULL
       FOR UPDATE OF session, member
     ), granted_target AS MATERIALIZED (
-      SELECT grant."connection_id"
-      FROM ${workspaceConnectionGrant} AS grant
-      JOIN authority ON authority."id" = grant."member_id"
-      WHERE grant."organization_id" = ${workspaceId}
-        AND grant."connection_id" = ${connectionId}::uuid
-        AND grant."capability" = 'manage'
-      FOR UPDATE OF grant
+      SELECT manager_grant."connection_id"
+      FROM ${workspaceConnectionGrant} AS manager_grant
+      JOIN authority ON authority."id" = manager_grant."member_id"
+      WHERE manager_grant."organization_id" = ${workspaceId}
+        AND manager_grant."connection_id" = ${connectionId}::uuid
+        AND manager_grant."capability" = 'manage'
+      FOR UPDATE OF manager_grant
     ), canonical_target AS MATERIALIZED (
       SELECT connection."id"
       FROM ${workspaceConnection} AS connection
