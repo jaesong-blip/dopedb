@@ -233,6 +233,12 @@ describe("provider credential Tauri adapter", () => {
       providerImportStoreSource.indexOf("), recorded AS MATERIALIZED ("),
     );
     expect(providerImportAuditSql).toContain("JOIN fresh ON TRUE");
+    expect(providerImportStoreSource.match(
+      /'productionApproved', \$\{input\.productionApproved\}::boolean/g,
+    )).toHaveLength(2);
+    expect(providerImportAuditSql).toContain(
+      "'preservedConnectionId', ${replacing}::boolean",
+    );
 
     const legacyBackup = JSON.parse(legacyProviderBackupSource);
     expect(legacyBackup.connections).toEqual([

@@ -195,7 +195,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
             'mode', 'managed',
             'name', ${input.name}::text,
             'organizationId', ${input.organizationId}::text,
-            'productionApproved', ${input.productionApproved},
+            'productionApproved', ${input.productionApproved}::boolean,
             'resourceId', resource."id"::text
             )
             || CASE WHEN ${replacing}
@@ -430,8 +430,8 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
           'provider', changed."provider",
           'mode', 'managed',
           'production', fresh."resource" -> 'production',
-          'productionApproved', ${input.productionApproved},
-          'preservedConnectionId', ${replacing}
+          'productionApproved', ${input.productionApproved}::boolean,
+          'preservedConnectionId', ${replacing}::boolean
         ),
         ${requestId}::uuid
       FROM changed
