@@ -31,8 +31,7 @@ type GcpRequestStage =
   | "federation"
   | "serviceAccount"
   | "cloudSqlAdmin.connectSettings"
-  | "cloudSqlAdmin.instance"
-  | "cloudSqlAdmin.users";
+  | "cloudSqlAdmin.instance";
 
 type GcpAccessToken = {
   accessToken: string;
@@ -433,27 +432,9 @@ async function instanceDetailsWithToken(
   );
 }
 
-async function iamDatabaseUsersWithToken(
-  credential: GcpCloudSqlCredential,
-  accessToken: string,
-  instance: string,
-) {
-  const body = await sqlAdminRequest(
-    credential,
-    accessToken,
-    "cloudSqlAdmin.users",
-    `/projects/${pathSegment(credential.projectId)}/instances/${
-      pathSegment(instance)
-    }/users`,
-  );
-  return Array.isArray(body.items) ? body.items.map(object) : [];
-}
-
 function requireIamDatabaseConfiguration(
   instance: JsonObject,
-  users: JsonObject[],
   engine: "postgres" | "mysql",
-  serviceAccountEmails: string[],
 ) {
   const settings = instance.settings;
   const flags = settings && typeof settings === "object" && !Array.isArray(settings)
@@ -474,21 +455,6 @@ function requireIamDatabaseConfiguration(
       409,
     );
   }
-  const configuredUsers = new Set(users.flatMap((user) => (
-    user.type === "CLOUD_IAM_SERVICE_ACCOUNT" && typeof user.name === "string"
-      ? [user.name.toLowerCase()]
-      : []
-  )));
-  if (!serviceAccountEmails.every((email) => (
-    configuredUsers.has(email.toLowerCase())
-    || configuredUsers.has(gcpDatabaseUsername(email, engine).toLowerCase())
-  ))) {
-    throw new ProviderRequestError(
-      "gcpCloudSql",
-      "Cloud SQL IAM database users are not configured for the service accounts",
-      409,
-    );
-  }
 }
 
 export async function validateGcpCloudSqlResource(
@@ -505,7 +471,7 @@ export async function validateGcpCloudSqlResource(
   }
   requireDedicatedInstance(credential, resource.instance);
   const control = await controlPlaneToken(credential, oidcToken);
-  const [databases, settings, details, users] = await Promise.all([
+  const [databases, settings, details] = await Promise.all([
     configuredGcpCloudSqlDatabases(
       credential,
       resource.instance,
@@ -513,7 +479,6 @@ export async function validateGcpCloudSqlResource(
     ),
     connectSettingsWithToken(credential, control.accessToken, resource.instance),
     instanceDetailsWithToken(credential, control.accessToken, resource.instance),
-    iamDatabaseUsersWithToken(credential, control.accessToken, resource.instance),
   ]);
   if (
     gcpCloudSqlEngine(details.databaseVersion) !== resource.engine
@@ -531,12 +496,7 @@ export async function validateGcpCloudSqlResource(
   }
   requireIamDatabaseConfiguration(
     details,
-    users,
     resource.engine,
-    [
-      credential.readServiceAccountEmail,
-      credential.writeServiceAccountEmail,
-    ].filter((value): value is string => Boolean(value)),
   );
   try {
     gcpConnectionTarget({
@@ -593,18 +553,13 @@ export async function issueGcpCloudSqlLease(input: {
     }),
     controlPlaneToken(input.credential, input.oidcToken),
   ]);
-  const [settings, details, users, databases] = await Promise.all([
+  const [settings, details, databases] = await Promise.all([
     connectSettingsWithToken(
       input.credential,
       control.accessToken,
       input.resource.instance,
     ),
     instanceDetailsWithToken(
-      input.credential,
-      control.accessToken,
-      input.resource.instance,
-    ),
-    iamDatabaseUsersWithToken(
       input.credential,
       control.accessToken,
       input.resource.instance,
@@ -631,9 +586,7 @@ export async function issueGcpCloudSqlLease(input: {
   }
   requireIamDatabaseConfiguration(
     details,
-    users,
     input.resource.engine,
-    [serviceAccountEmail],
   );
   let target;
   try {
