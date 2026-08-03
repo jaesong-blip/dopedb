@@ -969,6 +969,13 @@ async function grantCloudSqlRoles(
   };
   const additions: IamBinding[] = [
     {
+      role: "roles/serviceusage.serviceUsageConsumer",
+      members: [
+        `serviceAccount:${readEmail}`,
+        ...(writeEmail ? [`serviceAccount:${writeEmail}`] : []),
+      ],
+    },
+    {
       role: "roles/cloudsql.client",
       members: [`serviceAccount:${readEmail}`],
       condition,

@@ -282,6 +282,7 @@ async fn oauth_error(response: Response) -> AppError {
                 .error_description
                 .as_deref()
                 .or(value.message.as_deref())
+                .or(value.error.as_deref())
         })
         .unwrap_or("the control plane rejected the request");
     AppError::Network(format!(

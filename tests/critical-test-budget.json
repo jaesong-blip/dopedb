@@ -15,7 +15,7 @@
     },
     "src/features/providers/tauriAdapter.test.ts": {
       "tests": 4,
-      "protects": "Provider authority receipts, catalog capability projection, parseable managed-import SQL, role-gated managed writes, legacy backup compatibility, identity rejection, and keyless GCP bootstrap boundaries"
+      "protects": "Provider authority receipts, actionable control-plane errors, catalog capability projection, parseable managed-import SQL, role-gated managed writes, legacy backup compatibility, identity rejection, and keyless GCP bootstrap boundaries"
     },
     "src/features/queries/tauriAdapter.test.ts": {
       "tests": 13,

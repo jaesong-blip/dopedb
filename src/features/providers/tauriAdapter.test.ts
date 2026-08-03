@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import adapterSource from "./tauriAdapter.ts?raw";
 import authRouteSource from "../../../workspace-cloud/app/api/auth/[...all]/route.ts?raw";
 import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
+import gcpCloudSqlSource from "../../../workspace-cloud/lib/providers/gcp-cloud-sql.ts?raw";
 import gcpSetupRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/gcp-setup/[setupId]/route.ts?raw";
 import gcpOAuthSource from "../../../workspace-cloud/lib/providers/gcp-cloud-oauth.ts?raw";
 import managedLeaseRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/lease/route.ts?raw";
@@ -23,6 +24,7 @@ import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-p
 import workspaceRevocationGatesSource from "../../../workspace-cloud/lib/revocation-gates.ts?raw";
 import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspace-versioning-store.ts?raw";
 import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
+import desktopControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane.rs?raw";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -187,7 +189,11 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpBootstrapSource).toContain("roles/iam.workloadIdentityUser");
     expect(gcpBootstrapSource).toContain("configureDatabasePrivileges");
     expect(gcpBootstrapSource).toContain("pg_write_all_data");
+    expect(gcpBootstrapSource).toContain("roles/serviceusage.serviceUsageConsumer");
     expect(gcpBootstrapSource).toContain("Temporary Cloud SQL privilege bootstrap cleanup failed");
+    expect(gcpCloudSqlSource).toContain("GCP managed access upstream rejection");
+    expect(gcpCloudSqlSource).toContain("Cloud SQL Admin denied the managed access check");
+    expect(desktopControlPlaneSource).toContain(".or(value.error.as_deref())");
     expect(gcpSetupRouteSource).toContain("writeAccess: true");
     expect(managedLeaseRouteSource).toContain('let requestedAccessMode: "read" | "write"');
     expect(managedLeaseRouteSource).toContain("providerResourceSupportsWrite");

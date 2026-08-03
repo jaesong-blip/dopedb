@@ -108,6 +108,8 @@ export default function ConnectionNode(props: Props) {
     accessLabelBase && connection.credentialMode === "managed"
       ? `${accessLabelBase} · ${t("workspace.managedCredentials")}`
       : accessLabelBase;
+  const usesManagedCredentials =
+    Boolean(accessLabelBase) && connection.credentialMode === "managed";
   const accessIssue = connectionAccessIssue(connection);
   const description = `${connection.engine} · ${connection.host}${
     connection.engine !== "sqlite" ? `:${connection.port}` : ""
@@ -275,7 +277,16 @@ export default function ConnectionNode(props: Props) {
               className="tw:hidden tw:size-1.5 tw:rounded-full tw:bg-current tw:@max-[270px]:block"
               aria-hidden="true"
             />
-            <span className="tw:@max-[270px]:hidden">{accessLabel}</span>
+            <span className="tw:inline-flex tw:items-center tw:gap-1 tw:@max-[270px]:hidden">
+              {usesManagedCredentials ? (
+                <Icon
+                  name="key"
+                  className="tw:size-3 tw:shrink-0"
+                  aria-hidden="true"
+                />
+              ) : null}
+              {accessLabelBase}
+            </span>
           </span>
         )}
         {(!props.nested || !connection.env) && (

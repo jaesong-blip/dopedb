@@ -27,6 +27,7 @@ const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const SQL_LOGIN_SCOPE = "https://www.googleapis.com/auth/sqlservice.login";
 const REQUEST_TIMEOUT_MS = 15_000;
 type JsonObject = Record<string, unknown>;
+type GcpRequestStage = "federation" | "serviceAccount" | "cloudSqlAdmin";
 
 type GcpAccessToken = {
   accessToken: string;
@@ -61,6 +62,20 @@ function requiredString(value: unknown, field: string) {
   return value;
 }
 
+function googleErrorReason(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const details = (value as JsonObject).details;
+  if (!Array.isArray(details)) return null;
+  for (const detail of details) {
+    if (!detail || typeof detail !== "object" || Array.isArray(detail)) continue;
+    const reason = (detail as JsonObject).reason;
+    if (typeof reason === "string" && /^[A-Z0-9_]{1,128}$/.test(reason)) {
+      return reason;
+    }
+  }
+  return null;
+}
+
 function requestOidcToken(value: string | null) {
   if (
     !value
@@ -90,6 +105,7 @@ export function vercelOidcToken(request: Request): string | null {
 
 async function jsonRequest(
   provider: string,
+  stage: GcpRequestStage,
   url: string,
   init: RequestInit,
 ) {
@@ -103,7 +119,26 @@ async function jsonRequest(
   const body = await response.json().catch(() => null);
   if (!response.ok) {
     const status = normalizeGcpUpstreamStatus(response.status);
-    throw new ProviderRequestError(provider, "GCP rejected the request", status);
+    const googleError = body && typeof body === "object" && !Array.isArray(body)
+      ? (body as JsonObject).error
+      : null;
+    const googleStatus = googleError && typeof googleError === "object" && !Array.isArray(googleError)
+      && typeof (googleError as JsonObject).status === "string"
+      ? (googleError as JsonObject).status
+      : null;
+    const googleReason = googleErrorReason(googleError);
+    console.error("GCP managed access upstream rejection", {
+      stage,
+      upstreamStatus: response.status,
+      googleStatus,
+      googleReason,
+    });
+    const message = stage === "federation"
+      ? "GCP Workload Identity rejected the DopeDB deployment"
+      : stage === "serviceAccount"
+        ? "GCP service-account token issuance was denied"
+        : "Cloud SQL Admin denied the managed access check";
+    throw new ProviderRequestError(provider, message, status);
   }
   return object(body);
 }
@@ -112,7 +147,7 @@ async function federatedToken(
   credential: GcpCloudSqlCredential,
   oidcToken: string,
 ) {
-  const body = await jsonRequest("gcpCloudSql", STS_URL, {
+  const body = await jsonRequest("gcpCloudSql", "federation", STS_URL, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -137,6 +172,7 @@ async function serviceAccountToken(input: {
   const exchanged = await federatedToken(input.credential, input.oidcToken);
   const body = await jsonRequest(
     "gcpCloudSql",
+    "serviceAccount",
     `${IAM_CREDENTIALS_ORIGIN}/v1/projects/-/serviceAccounts/${
       encodeURIComponent(input.serviceAccountEmail)
     }:generateAccessToken`,
@@ -187,6 +223,7 @@ async function sqlAdminRequest(
 ): Promise<JsonObject> {
   return jsonRequest(
     "gcpCloudSql",
+    "cloudSqlAdmin",
     `${SQL_ADMIN_ORIGIN}${path}`,
     { headers: { authorization: `Bearer ${accessToken}` } },
   );
