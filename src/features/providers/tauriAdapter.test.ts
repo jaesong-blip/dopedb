@@ -10,6 +10,7 @@ import managedLeaseRouteSource from "../../../workspace-cloud/app/api/v1/workspa
 import managedAccessRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/managed-access/route.ts?raw";
 import connectionGrantsRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/grants/route.ts?raw";
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
+import providerIntegrationDomainSource from "../../../workspace-cloud/lib/provider-integrations/domain.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
@@ -195,6 +196,10 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpCloudSqlSource).toContain("Cloud SQL Admin denied the managed access check");
     expect(gcpCloudSqlSource).toContain('"x-goog-user-project": credential.projectId');
     expect(gcpCloudSqlSource).not.toContain("iamDatabaseUsersWithToken");
+    expect(providerIntegrationDomainSource).toContain('networkMode: "PUBLIC"');
+    expect(providerIntegrationDomainSource).not.toContain(
+      'networkMode: input.selection.networkMode || "PRIVATE_SERVICES_ACCESS"',
+    );
     expect(desktopControlPlaneSource).toContain(".or(value.error.as_deref())");
     expect(gcpSetupRouteSource).toContain("writeAccess: true");
     expect(managedLeaseRouteSource).toContain('let requestedAccessMode: "read" | "write"');

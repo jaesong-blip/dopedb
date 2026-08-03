@@ -123,7 +123,11 @@ export function discoveredProviderResource(input: {
       instance: input.selection.instance,
       database: input.item.value,
       engine,
-      networkMode: input.selection.networkMode || "PRIVATE_SERVICES_ACCESS",
+      // DopeDB Desktop runs on the member's machine, which is not ordinarily
+      // routed into the instance VPC. The official Auth Proxy uses the public
+      // endpoint securely by default; private IP remains an explicit adapter
+      // capability for a future, verified VPC-attached execution path.
+      networkMode: "PUBLIC",
       production: input.item.production,
     });
   } else {
