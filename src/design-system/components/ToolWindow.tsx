@@ -145,27 +145,6 @@ export function ToolWindowAction({
   );
 }
 
-export function ToolWindowRailAction({
-  selected,
-  children,
-  ...buttonProps
-}: {
-  selected?: boolean;
-  children: ReactNode;
-} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">) {
-  return (
-    <button
-      type="button"
-      data-active={selected || undefined}
-      aria-pressed={selected}
-      className="tw:grid tw:size-8 tw:cursor-pointer tw:place-items-center tw:rounded-sm tw:border-0 tw:bg-transparent tw:text-sm tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground"
-      {...buttonProps}
-    >
-      {children}
-    </button>
-  );
-}
-
 export function ToolWindowHideButton({
   label,
   buttonRef,

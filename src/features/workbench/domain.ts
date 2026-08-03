@@ -170,14 +170,3 @@ export function persistedQueryDocument(document: SqlDocument): QueryDocument {
         recovery.resolveMode !== document.resolveMode),
   };
 }
-
-export function supportsDocument(
-  document: WorkbenchDocument,
-  connectionId: string,
-  supportsSql: boolean,
-) {
-  return (
-    document.connectionId === connectionId &&
-    (supportsSql ? document.kind !== "documents" : document.kind !== "sql")
-  );
-}

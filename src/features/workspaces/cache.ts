@@ -9,11 +9,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { resetWorkspaceResourceQueries } from "../../lib/queryClient";
 import type { WorkspaceAuthState } from "./domain";
-import {
-  workspaceAuthStateQuery,
-  workspaceContextQuery,
-  workspaceQueryKeys,
-} from "./queries";
+import { workspaceContextQuery, workspaceQueryKeys } from "./queries";
 
 export function replaceWorkspaceAuth(
   queryClient: QueryClient,
@@ -53,8 +49,4 @@ export async function resetWorkspaceScope(
 ) {
   await resetWorkspaceResourceQueries(queryClient);
   await invalidateWorkspaceContext(queryClient, refetchType);
-}
-
-export async function recoverWorkspaceAuth(queryClient: QueryClient) {
-  return queryClient.fetchQuery(workspaceAuthStateQuery());
 }

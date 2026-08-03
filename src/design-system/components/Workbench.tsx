@@ -105,41 +105,6 @@ export function WorkbenchSelect({
   );
 }
 
-export function WorkbenchContextHeader({
-  icon,
-  title,
-  badge,
-  metadata,
-}: {
-  icon: IconName;
-  title: ReactNode;
-  badge?: ReactNode;
-  metadata?: ReactNode;
-}) {
-  return (
-    <header
-      data-workbench-context
-      className="tw:flex tw:min-h-control-lg tw:shrink-0 tw:items-center tw:justify-between tw:gap-3 tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:@max-[640px]:h-auto tw:@max-[640px]:flex-col tw:@max-[640px]:items-start tw:@max-[640px]:gap-1 tw:@max-[640px]:py-2"
-    >
-      <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
-        <Icon
-          name={icon}
-          className="tw:shrink-0 tw:text-ui tw:text-muted-foreground"
-        />
-        <strong className="tw:min-w-0 tw:overflow-hidden tw:text-ui tw:text-ellipsis tw:whitespace-nowrap">
-          {title}
-        </strong>
-        {badge ? <span className="ds-context-badge">{badge}</span> : null}
-      </div>
-      {metadata ? (
-        <div className="ds-meta-row tw:flex-nowrap tw:justify-end tw:overflow-hidden tw:whitespace-nowrap tw:@max-[640px]:w-full tw:@max-[640px]:justify-start">
-          {metadata}
-        </div>
-      ) : null}
-    </header>
-  );
-}
-
 export function MetadataDot() {
   return <span className="ds-meta-dot" aria-hidden="true" />;
 }

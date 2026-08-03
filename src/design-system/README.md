@@ -274,8 +274,6 @@ Elevation은 세 단계만 허용한다.
   일반 action list의 inset rounded row와 혼용하지 않는다. 단순히 상세 영역을
   바꾸는 catalog row는 navigation chevron을 표시하지 않고, 실제 status나
   command가 있을 때만 trailing slot을 예약한다.
-- `ToolWindowRailAction`: tool window·catalog의 좁은 세로 rail에서 쓰는
-  icon action과 pressed/selected 상태.
 - `Field`, `PropertyRow`, `TextInput`, `TextAreaInput`, `SelectInput`,
   `InlineSelect`, `CheckboxField`: label, focus, disabled 상태를 함께 소유하는 dense form
   control. `PropertyRow`는 Data Sources General처럼 100px label과 control을
@@ -312,7 +310,7 @@ Elevation은 세 단계만 허용한다.
   detail action bar, `Cancel/Apply/OK`는 `ModalFooter`에 두며 한 footer에
   섞지 않는다.
 - `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchSelect`,
-  `WorkbenchContextHeader`, `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터
+  `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터
   편집기·SQL·문서 화면의 평평한 IDE pane, command row, compact context select,
   object context, empty state 계약.
   중앙 workbench의 data source 문맥은 별도 대형 connection header를 만들지

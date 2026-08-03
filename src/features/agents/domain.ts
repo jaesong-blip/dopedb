@@ -16,21 +16,9 @@ export type RetiredChatMessageId = string & {
   readonly [retiredChatMessageIdBrand]: "RetiredChatMessageId";
 };
 
-export function retiredChatThreadId(value: string): RetiredChatThreadId {
-  return value as RetiredChatThreadId;
-}
-
-export function retiredChatMessageId(value: string): RetiredChatMessageId {
-  return value as RetiredChatMessageId;
-}
-
 export type AcpSessionId = string & {
   readonly [acpSessionIdBrand]: "AcpSessionId";
 };
-
-export function acpSessionId(value: string): AcpSessionId {
-  return value as AcpSessionId;
-}
 
 export type AgentProvider = "claude" | "codex";
 
