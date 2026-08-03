@@ -48,6 +48,11 @@
       "packageDigest": "9f66f289fe99ca856209398dab641e100d87997bdb01569d65871dab9714645e"
     },
     {
+      "appVersion": "0.3.19",
+      "releaseRevision": 18,
+      "packageDigest": "9f66f289fe99ca856209398dab641e100d87997bdb01569d65871dab9714645e"
+    },
+    {
       "appVersion": "0.3.3",
       "releaseRevision": 2,
       "packageDigest": "675f4f8ce34e31e2d934bc53d5d6e2e1cba81856b35fb67b3ff49e22eb8a5352"
