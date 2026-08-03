@@ -434,7 +434,9 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
           'preservedConnectionId', ${replacing}
         ),
         ${requestId}::uuid
-      FROM changed JOIN version ON version."resource_id" = changed."id"
+      FROM changed
+      JOIN version ON version."resource_id" = changed."id"
+      JOIN fresh ON TRUE
       RETURNING "id"
     ), recorded AS MATERIALIZED (
       INSERT INTO "workspace_control"."workspace_provider_import_request" ("organization_id", "idempotency_key", "request_hash", "resource_id", "connection_id")
