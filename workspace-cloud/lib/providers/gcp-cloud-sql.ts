@@ -27,7 +27,12 @@ const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 const SQL_LOGIN_SCOPE = "https://www.googleapis.com/auth/sqlservice.login";
 const REQUEST_TIMEOUT_MS = 15_000;
 type JsonObject = Record<string, unknown>;
-type GcpRequestStage = "federation" | "serviceAccount" | "cloudSqlAdmin";
+type GcpRequestStage =
+  | "federation"
+  | "serviceAccount"
+  | "cloudSqlAdmin.connectSettings"
+  | "cloudSqlAdmin.instance"
+  | "cloudSqlAdmin.users";
 
 type GcpAccessToken = {
   accessToken: string;
@@ -218,14 +223,21 @@ async function controlPlaneToken(
 }
 
 async function sqlAdminRequest(
+  credential: GcpCloudSqlCredential,
   accessToken: string,
+  stage: Extract<GcpRequestStage, `cloudSqlAdmin.${string}`>,
   path: string,
 ): Promise<JsonObject> {
   return jsonRequest(
     "gcpCloudSql",
-    "cloudSqlAdmin",
+    stage,
     `${SQL_ADMIN_ORIGIN}${path}`,
-    { headers: { authorization: `Bearer ${accessToken}` } },
+    {
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "x-goog-user-project": credential.projectId,
+      },
+    },
   );
 }
 
@@ -397,7 +409,9 @@ async function connectSettingsWithToken(
   instance: string,
 ) {
   return sqlAdminRequest(
+    credential,
     accessToken,
+    "cloudSqlAdmin.connectSettings",
     `/projects/${pathSegment(credential.projectId)}/instances/${
       pathSegment(instance)
     }/connectSettings`,
@@ -410,7 +424,9 @@ async function instanceDetailsWithToken(
   instance: string,
 ) {
   return sqlAdminRequest(
+    credential,
     accessToken,
+    "cloudSqlAdmin.instance",
     `/projects/${pathSegment(credential.projectId)}/instances/${
       pathSegment(instance)
     }`,
@@ -423,7 +439,9 @@ async function iamDatabaseUsersWithToken(
   instance: string,
 ) {
   const body = await sqlAdminRequest(
+    credential,
     accessToken,
+    "cloudSqlAdmin.users",
     `/projects/${pathSegment(credential.projectId)}/instances/${
       pathSegment(instance)
     }/users`,

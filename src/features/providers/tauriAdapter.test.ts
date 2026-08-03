@@ -193,6 +193,7 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpBootstrapSource).toContain("Temporary Cloud SQL privilege bootstrap cleanup failed");
     expect(gcpCloudSqlSource).toContain("GCP managed access upstream rejection");
     expect(gcpCloudSqlSource).toContain("Cloud SQL Admin denied the managed access check");
+    expect(gcpCloudSqlSource).toContain('"x-goog-user-project": credential.projectId');
     expect(desktopControlPlaneSource).toContain(".or(value.error.as_deref())");
     expect(gcpSetupRouteSource).toContain("writeAccess: true");
     expect(managedLeaseRouteSource).toContain('let requestedAccessMode: "read" | "write"');
