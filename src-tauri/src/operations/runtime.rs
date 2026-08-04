@@ -346,6 +346,14 @@ impl OperationRuntime {
     }
 
     #[cfg(test)]
+    pub(crate) async fn events(
+        &self,
+        operation_id: Uuid,
+    ) -> AppResult<Vec<super::model::OperationEventRecord>> {
+        self.repository.events(operation_id).await
+    }
+
+    #[cfg(test)]
     pub(crate) async fn verify_event_chain(&self, operation_id: Uuid) -> AppResult<bool> {
         self.repository.verify_event_chain(operation_id).await
     }

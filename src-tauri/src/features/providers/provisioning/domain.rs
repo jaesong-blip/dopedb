@@ -578,6 +578,10 @@ impl ProvisioningVerification {
     fn is_complete(&self) -> bool {
         self.provider_verified && self.database_verified && self.credential_smoke_tested
     }
+
+    pub(super) fn provider_audit_id(&self) -> Option<&str> {
+        self.provider_audit_id.as_deref()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

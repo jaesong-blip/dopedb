@@ -586,8 +586,13 @@ impl ProvisioningCoordinator {
         let cancellation = CancellationToken::new();
         let expected_revision = receipt.revision();
         match driver.inspect(&plan, &cancellation).await? {
-            ProvisioningInspection::Verified(verification) => {
+            ProvisioningInspection::Verified(verification)
+                if verification_matches_plan(&plan, &verification) =>
+            {
                 receipt.reconcile(verification, Utc::now())?;
+            }
+            ProvisioningInspection::Verified(_) => {
+                receipt.needs_repair(ProvisioningRepairReason::VerificationFailed, Utc::now())?;
             }
             ProvisioningInspection::Drift(reason)
                 if matches!(
@@ -822,7 +827,12 @@ impl ProvisioningCoordinator {
                 .operations
                 .mark_outcome_unknown(
                     operation_id,
-                    &serde_json::json!({"reason": "provisioning_coordinator_aborted"}),
+                    &serde_json::json!({
+                        "providerAuditId": plan.target().provider_audit_id(),
+                        "reason": "provisioning_coordinator_aborted",
+                        "receiptId": receipt_id,
+                        "totalSteps": plan.steps().len(),
+                    }),
                 )
                 .await;
         }
@@ -867,7 +877,7 @@ impl ProvisioningCoordinator {
                         .skip(usize::from(receipt.completed_steps()))
                     {
                         if cancellation.is_cancelled() {
-                            return self.cancel_execution(scope, receipt, record.id).await;
+                            return self.cancel_execution(scope, receipt, plan, record.id).await;
                         }
                         let permit = ProvisioningExecutionPermit::issue(
                             record.id,
@@ -883,6 +893,7 @@ impl ProvisioningCoordinator {
                                         .fail_execution(
                                             scope,
                                             receipt,
+                                            plan,
                                             record.id,
                                             ProvisioningRepairReason::ApplyOutcomeUnknown,
                                             "provider_apply_outcome_unknown",
@@ -909,15 +920,18 @@ impl ProvisioningCoordinator {
                     self.receipts.save(scope, &receipt, expected).await?;
                 }
                 if cancellation.is_cancelled() {
-                    return self.cancel_execution(scope, receipt, record.id).await;
+                    return self.cancel_execution(scope, receipt, plan, record.id).await;
                 }
                 let verification = match driver.verify(plan, cancellation).await {
-                    Ok(verification) => verification,
-                    Err(_) => {
+                    Ok(verification) if verification_matches_plan(plan, &verification) => {
+                        verification
+                    }
+                    Ok(_) | Err(_) => {
                         return self
                             .fail_execution(
                                 scope,
                                 receipt,
+                                plan,
                                 record.id,
                                 ProvisioningRepairReason::VerificationFailed,
                                 "provider_verification_failed",
@@ -939,7 +953,7 @@ impl ProvisioningCoordinator {
                     .skip(usize::from(receipt.completed_steps()))
                 {
                     if cancellation.is_cancelled() {
-                        return self.cancel_execution(scope, receipt, record.id).await;
+                        return self.cancel_execution(scope, receipt, plan, record.id).await;
                     }
                     let permit = ProvisioningExecutionPermit::issue(
                         record.id,
@@ -955,6 +969,7 @@ impl ProvisioningCoordinator {
                                     .fail_execution(
                                         scope,
                                         receipt,
+                                        plan,
                                         record.id,
                                         ProvisioningRepairReason::CleanupFailed,
                                         "provider_destroy_outcome_unknown",
@@ -975,9 +990,12 @@ impl ProvisioningCoordinator {
             .succeed(
                 record.id,
                 &serde_json::json!({
+                    "completedSteps": plan.steps().len(),
                     "phase": receipt.phase(),
+                    "providerAuditId": plan.target().provider_audit_id(),
                     "receiptId": receipt.id(),
                     "state": receipt.state(),
+                    "totalSteps": plan.steps().len(),
                 }),
             )
             .await?;
@@ -988,6 +1006,7 @@ impl ProvisioningCoordinator {
         &self,
         scope: &ActiveResourceScope,
         mut receipt: ProvisioningReceipt,
+        plan: &ProvisioningPlan,
         operation_id: Uuid,
     ) -> AppResult<ProvisioningReceipt> {
         self.mark_repair(scope, &mut receipt, ProvisioningRepairReason::UserCancelled)
@@ -995,7 +1014,13 @@ impl ProvisioningCoordinator {
         self.operations
             .confirm_cancelled(
                 operation_id,
-                &serde_json::json!({"reason": "user_cancelled"}),
+                &serde_json::json!({
+                    "completedSteps": receipt.completed_steps(),
+                    "providerAuditId": plan.target().provider_audit_id(),
+                    "reason": "user_cancelled",
+                    "receiptId": receipt.id(),
+                    "totalSteps": plan.steps().len(),
+                }),
             )
             .await?;
         Err(blocked("provider provisioning was cancelled"))
@@ -1005,6 +1030,7 @@ impl ProvisioningCoordinator {
         &self,
         scope: &ActiveResourceScope,
         mut receipt: ProvisioningReceipt,
+        plan: &ProvisioningPlan,
         operation_id: Uuid,
         repair_reason: ProvisioningRepairReason,
         operation_reason: &'static str,
@@ -1013,7 +1039,13 @@ impl ProvisioningCoordinator {
         self.operations
             .mark_outcome_unknown(
                 operation_id,
-                &serde_json::json!({"reason": operation_reason}),
+                &serde_json::json!({
+                    "completedSteps": receipt.completed_steps(),
+                    "providerAuditId": plan.target().provider_audit_id(),
+                    "reason": operation_reason,
+                    "receiptId": receipt.id(),
+                    "totalSteps": plan.steps().len(),
+                }),
             )
             .await?;
         Err(blocked("provider provisioning needs repair"))
@@ -1093,6 +1125,13 @@ fn validate_planned_target(
         ));
     }
     Ok(())
+}
+
+fn verification_matches_plan(
+    plan: &ProvisioningPlan,
+    verification: &ProvisioningVerification,
+) -> bool {
+    verification.provider_audit_id() == Some(plan.target().provider_audit_id())
 }
 
 fn projection(
@@ -1187,8 +1226,8 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     use dopedb_protocol::{OperationActorKind, OperationRiskLevel};
 
     use crate::operations::{
-        ExactApprovalRequest, NewOperation, OperationActor, OperationActorProvenance,
-        OperationApprover, OperationPlanDisposition,
+        ExactApprovalRequest, LocalApprovalAuthority, NewOperation, OperationActor,
+        OperationActorProvenance, OperationApprover, OperationPlanDisposition,
     };
 
     use super::domain::{
@@ -1202,7 +1241,9 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     };
 
     #[derive(Default)]
-    struct MockDriver;
+    struct MockDriver {
+        fail_sequence: Option<u16>,
+    }
 
     impl ProvisioningDriver for MockDriver {
         fn provider(&self) -> LocalProvider {
@@ -1304,12 +1345,15 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
 
         fn inspect<'a>(
             &'a self,
-            _plan: &'a ProvisioningPlan,
+            plan: &'a ProvisioningPlan,
             _cancellation: &'a CancellationToken,
         ) -> DriverFuture<'a, ProvisioningInspection> {
             Box::pin(async move {
                 Ok(ProvisioningInspection::Verified(
-                    ProvisioningVerification::complete(Some("mock-audit-1".into()), Utc::now())?,
+                    ProvisioningVerification::complete(
+                        Some(plan.target().provider_audit_id().into()),
+                        Utc::now(),
+                    )?,
                 ))
             })
         }
@@ -1325,22 +1369,86 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
                 if cancellation.is_cancelled() {
                     return Err(blocked("mock provider operation was cancelled"));
                 }
+                if self.fail_sequence == Some(step.sequence()) {
+                    return Err(blocked("mock provider step outcome is unknown"));
+                }
                 Ok(ProvisioningStepEvidence::exact(step))
             })
         }
 
         fn verify<'a>(
             &'a self,
-            _plan: &'a ProvisioningPlan,
+            plan: &'a ProvisioningPlan,
             cancellation: &'a CancellationToken,
         ) -> DriverFuture<'a, ProvisioningVerification> {
             Box::pin(async move {
                 if cancellation.is_cancelled() {
                     return Err(blocked("mock provider verification was cancelled"));
                 }
-                ProvisioningVerification::complete(Some("mock-audit-1".into()), Utc::now())
+                ProvisioningVerification::complete(
+                    Some(plan.target().provider_audit_id().into()),
+                    Utc::now(),
+                )
             })
         }
+    }
+
+    async fn approved_operation(
+        runtime: &OperationRuntime,
+        authority: &LocalApprovalAuthority,
+        scope: &ActiveResourceScope,
+        plan: &ProvisioningPlan,
+        operation_id: Uuid,
+    ) -> OperationRecord {
+        let operation = runtime
+            .plan(
+                NewOperation {
+                    id: operation_id,
+                    workspace_id: scope.workspace_id,
+                    account_scope: scope.account_scope.storage_key().into(),
+                    connection_id: Uuid::from(plan.target().connection_id()),
+                    connection_revision: plan.target().connection_revision(),
+                    terminal_session_id: None,
+                    actor: OperationActor {
+                        kind: OperationActorKind::LocalUser,
+                        id: "local-user".into(),
+                        provenance: OperationActorProvenance {
+                            origin_surface: "provider-provisioning-test".into(),
+                            ..OperationActorProvenance::default()
+                        },
+                    },
+                    kind: OperationKind::ProviderAction,
+                    payload_schema_version: 1,
+                    payload: plan.operation_payload().unwrap(),
+                    schema_fingerprint: None,
+                    risk_level: OperationRiskLevel::High,
+                    preview: serde_json::json!({"provider": "gcpCloudSql"}),
+                    policy_snapshot: serde_json::json!({"environment": "prod"}),
+                    policy_revision: "provider-policy-v1".into(),
+                    single_use: true,
+                    idempotency_key: plan.idempotency_key().into(),
+                    expires_at: Some(Utc::now() + ChronoDuration::minutes(5)),
+                },
+                OperationPlanDisposition::ApprovalRequired,
+            )
+            .await
+            .expect("plan provider operation");
+        runtime
+            .approve_exact(
+                authority,
+                ExactApprovalRequest {
+                    operation_id,
+                    expected_payload_hash: operation.payload_hash.clone(),
+                    approver: OperationApprover {
+                        kind: OperationActorKind::LocalUser,
+                        id: "local-user".into(),
+                    },
+                    current_policy_revision: operation.policy_revision.clone(),
+                    reason: Some("test exact target".into()),
+                },
+            )
+            .await
+            .expect("approve exact provider operation")
     }
 
     let store = Store::in_memory_for_test()
@@ -1358,57 +1466,13 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     );
     let operation_id = Uuid::from_u128(40);
     let connection_id = Uuid::from(plan.target().connection_id());
-    let connection_revision = plan.target().connection_revision();
+    assert!(!verification_matches_plan(
+        &plan,
+        &ProvisioningVerification::complete(Some("wrong-provider-audit".into()), Utc::now())
+            .expect("construct mismatched provider audit fixture"),
+    ));
     let (first_runtime, authority) = OperationRuntime::new(&store);
-    let operation = first_runtime
-        .plan(
-            NewOperation {
-                id: operation_id,
-                workspace_id: scope.workspace_id,
-                account_scope: scope.account_scope.storage_key().into(),
-                connection_id,
-                connection_revision,
-                terminal_session_id: None,
-                actor: OperationActor {
-                    kind: OperationActorKind::LocalUser,
-                    id: "local-user".into(),
-                    provenance: OperationActorProvenance {
-                        origin_surface: "provider-provisioning-test".into(),
-                        ..OperationActorProvenance::default()
-                    },
-                },
-                kind: OperationKind::ProviderAction,
-                payload_schema_version: 1,
-                payload: plan.operation_payload().unwrap(),
-                schema_fingerprint: None,
-                risk_level: OperationRiskLevel::High,
-                preview: serde_json::json!({"provider": "gcpCloudSql"}),
-                policy_snapshot: serde_json::json!({"environment": "prod"}),
-                policy_revision: "provider-policy-v1".into(),
-                single_use: true,
-                idempotency_key: plan.idempotency_key().into(),
-                expires_at: Some(Utc::now() + ChronoDuration::minutes(5)),
-            },
-            OperationPlanDisposition::ApprovalRequired,
-        )
-        .await
-        .expect("plan provider operation");
-    first_runtime
-        .approve_exact(
-            &authority,
-            ExactApprovalRequest {
-                operation_id,
-                expected_payload_hash: operation.payload_hash.clone(),
-                approver: OperationApprover {
-                    kind: OperationActorKind::LocalUser,
-                    id: "local-user".into(),
-                },
-                current_policy_revision: operation.policy_revision.clone(),
-                reason: Some("test exact target".into()),
-            },
-        )
-        .await
-        .expect("approve exact provider operation");
+    approved_operation(&first_runtime, &authority, &scope, &plan, operation_id).await;
     let receipt_repository = ProvisioningReceiptRepository::new(store.clone());
     let mut receipt = ProvisioningReceipt::ready_to_apply(
         WorkspaceId::from(scope.workspace_id),
@@ -1444,7 +1508,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         .await
         .expect("store first checkpoint");
 
-    let (second_runtime, _) = OperationRuntime::new(&store);
+    let (second_runtime, second_authority) = OperationRuntime::new(&store);
     let recovery = second_runtime
         .recover_previous_runtimes()
         .await
@@ -1457,7 +1521,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     let coordinator = ProvisioningCoordinator::new(
         store.clone(),
         second_runtime.clone(),
-        ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver)),
+        ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver::default())),
     );
     let resumed = coordinator
         .recover_previous_runtimes(&recovery.provisioning_checkpoint_validation_required)
@@ -1493,4 +1557,94 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     assert_eq!(status.state, ProvisioningState::Ready);
     assert_eq!(status.completed_steps, status.total_steps);
     assert!(status.can_destroy);
+
+    let success_events = second_runtime
+        .events(operation_id)
+        .await
+        .expect("load successful provider audit events");
+    assert_eq!(
+        success_events.last().unwrap().details["providerAuditId"],
+        plan.target().provider_audit_id()
+    );
+    assert_eq!(
+        success_events.last().unwrap().details["completedSteps"],
+        plan.steps().len()
+    );
+    assert!(second_runtime
+        .verify_event_chain(operation_id)
+        .await
+        .expect("verify successful provider audit chain"));
+
+    let destroy_plan = fixture_plan(
+        ProvisioningIntent::Destroy,
+        ProvisioningCapabilityManifest::new([
+            Detect, Discover, Plan, Apply, Verify, Issue, Reconcile, Destroy,
+        ]),
+    );
+    let destroy_operation_id = Uuid::from_u128(41);
+    approved_operation(
+        &second_runtime,
+        &second_authority,
+        &scope,
+        &destroy_plan,
+        destroy_operation_id,
+    )
+    .await;
+    let mut destroying = stored;
+    let expected = destroying.revision();
+    destroying
+        .begin_destroy(
+            &destroy_plan,
+            destroy_operation_id,
+            destroy_plan.ownership_marker(),
+            Utc::now(),
+        )
+        .expect("begin partial destroy fixture");
+    receipt_repository
+        .save(&scope, &destroying, expected)
+        .await
+        .expect("persist partial destroy fixture");
+    let failing_coordinator = ProvisioningCoordinator::new(
+        store,
+        second_runtime.clone(),
+        ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver {
+            fail_sequence: Some(2),
+        })),
+    );
+    assert!(failing_coordinator.execute(destroying.id()).await.is_err());
+    let failed = receipt_repository
+        .load(&scope, destroying.id())
+        .await
+        .expect("load deterministic partial destroy state");
+    assert_eq!(failed.state(), ProvisioningState::NeedsRepair);
+    assert_eq!(failed.completed_steps(), 1);
+    assert_eq!(
+        failed.repair_reason(),
+        Some(ProvisioningRepairReason::CleanupFailed)
+    );
+    assert!(!failed.can_issue());
+    assert_eq!(
+        second_runtime
+            .get(destroy_operation_id)
+            .await
+            .unwrap()
+            .state,
+        OperationState::OutcomeUnknown
+    );
+    let failure_events = second_runtime
+        .events(destroy_operation_id)
+        .await
+        .expect("load partial destroy audit events");
+    let failure = &failure_events.last().unwrap().details;
+    assert_eq!(
+        failure["providerAuditId"],
+        destroy_plan.target().provider_audit_id()
+    );
+    assert_eq!(failure["completedSteps"], 1);
+    assert_eq!(failure["reason"], "provider_destroy_outcome_unknown");
+    assert_eq!(failure["totalSteps"], destroy_plan.steps().len());
+    assert!(second_runtime
+        .verify_event_chain(destroy_operation_id)
+        .await
+        .expect("verify partial destroy audit chain"));
 }

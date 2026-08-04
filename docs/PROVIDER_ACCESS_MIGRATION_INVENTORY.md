@@ -180,10 +180,18 @@ increasing the 104-test budget:
 - JSON object, array, and JSON-lines modes reject duplicate keys at every nesting
   level, malformed/truncated data, output above the byte cap, an unapproved exit
   code, and data whose top-level schema does not match the command contract.
+- A Provider verification or reconcile result reaches Ready only when its live
+  Provider audit ID exactly matches the ID pinned in the approved target. Success,
+  cancellation, coordinator abort, and repair events preserve that ID, receipt ID,
+  and completed/total checkpoint counts in the hash-chained Operation ledger.
+- A deterministic second-step destroy failure preserves checkpoint 1, moves the
+  receipt to `NeedsRepair(CleanupFailed)`, moves the Operation to `OutcomeUnknown`,
+  blocks credential issuance, and verifies the complete audit hash chain.
 - The same six Provider authority tests run in the Windows CI job. The Unix fixture
   additionally executes a fixed binary and proves shell-looking argv remains
   literal; a Windows-native process-tree interruption fixture remains open in #102.
 
-Provider-account live E2E, deterministic partial-failure fixtures, bounded drift
-detection timing, audit-event reconciliation, and Windows-native process-tree
-cleanup evidence remain required before #102 can close.
+Provider-account live E2E, the remaining apply/provider-specific partial-failure
+matrix, bounded drift detection timing, workspace/provider-side audit reconciliation,
+and Windows-native process-tree cleanup evidence remain required before #102 can
+close.

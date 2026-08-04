@@ -61,7 +61,7 @@
     },
     "src-tauri/src/features/providers/adapters/authority_tests.rs": {
       "tests": 6,
-      "protects": "Provider inventory authority, duplicate-key-safe CLI JSON/exit status, literal fixed argv, Unicode/path/executable drift rejection, exact managed-target and connection-pinned receipts, cross-workspace/account scope CAS, and restart-safe lifecycle recovery"
+      "protects": "Provider inventory authority, duplicate-key-safe CLI JSON/exit status, literal fixed argv, Unicode/path/executable drift rejection, exact managed-target and connection-pinned receipts, cross-workspace/account scope CAS, restart-safe recovery, deterministic partial destroy repair, and Provider-audit hash-chain correlation"
     },
     "src-tauri/src/features/queries/domain_tests.rs": {
       "tests": 1,
