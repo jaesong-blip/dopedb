@@ -825,6 +825,9 @@ export const workspaceCredentialLease = workspaceControl.table(
     accessMode: text("access_mode").notNull(),
     externalCredentialId: text("external_credential_id").notNull(),
     externalCredentialKind: text("external_credential_kind").notNull(),
+    // Exact redacted resource identity returned by the live Provider proof.
+    // Nullable only for legacy and pre-verification pending reservations.
+    providerAuditId: text("provider_audit_id"),
     activeSlot: integer("active_slot"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -863,6 +866,10 @@ export const workspaceCredentialLease = workspaceControl.table(
     check(
       "credential_lease_live_slot_required",
       sql`${table.revokedAt} IS NOT NULL OR ${table.activeSlot} IS NOT NULL`,
+    ),
+    check(
+      "credential_lease_provider_audit_id_length",
+      sql`${table.providerAuditId} IS NULL OR char_length(${table.providerAuditId}) BETWEEN 1 AND 512`,
     ),
     index("credential_lease_cleanup_ready_idx")
       .on(table.cleanupAttempts, table.cleanupNextAttemptAt, table.expiresAt)

@@ -46,6 +46,22 @@ export class ProviderRequestError extends Error {
   }
 }
 
+export function verifiedProviderAuditId(provider: string, value: unknown) {
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || value.length > 512
+    || /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(value)
+  ) {
+    throw new ProviderRequestError(
+      provider,
+      "Provider returned an invalid audit identifier",
+      502,
+    );
+  }
+  return value;
+}
+
 // A managed lease request must never wait indefinitely for a stale provider
 // authority decision. Individual adapters keep their shorter per-request
 // deadlines; this bound covers the complete pre-issuance authority sequence.

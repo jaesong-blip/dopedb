@@ -451,6 +451,7 @@ export async function reserveManagedLeaseIfUnblocked(
 export async function finalizeManagedLeaseIfUnblocked(
   input: ManagedLeaseAuthority,
   lease: ManagedProviderLease,
+  providerAuditId: string,
 ) {
   const expiresAt = new Date(lease.expiresAt);
   if (Number.isNaN(expiresAt.valueOf())) return false;
@@ -461,6 +462,7 @@ export async function finalizeManagedLeaseIfUnblocked(
     UPDATE ${workspaceCredentialLease} AS lease
     SET "external_credential_id" = ${lease.externalCredentialId},
         "external_credential_kind" = ${lease.externalCredentialKind},
+        "provider_audit_id" = ${providerAuditId},
         "expires_at" = ${expiresAt}
     FROM authority
     WHERE lease."id" = ${input.leaseId}::uuid
@@ -483,6 +485,7 @@ export async function finalizeManagedLeaseIfUnblocked(
 export async function managedLeaseStillDeliverable(
   input: ManagedLeaseAuthority,
   lease: ManagedProviderLease,
+  providerAuditId: string,
 ) {
   const expiresAt = new Date(lease.expiresAt);
   if (Number.isNaN(expiresAt.valueOf())) return false;
@@ -502,6 +505,7 @@ export async function managedLeaseStillDeliverable(
       AND lease."external_credential_id" = ${lease.externalCredentialId}
       AND lease."external_credential_kind" = ${lease.externalCredentialKind}
       AND lease."external_credential_kind" <> 'pending'
+      AND lease."provider_audit_id" = ${providerAuditId}
       AND lease."expires_at" = ${expiresAt}
       AND lease."expires_at" > clock_timestamp()
       AND lease."revoked_at" IS NULL

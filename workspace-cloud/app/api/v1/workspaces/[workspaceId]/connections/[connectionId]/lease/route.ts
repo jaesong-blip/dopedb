@@ -226,6 +226,10 @@ export async function POST(request: Request, context: RouteContext) {
         resourceId: connectionId,
         redactedSummary: {
           provider: integration.provider,
+          providerAuditId: lease.providerAuditId,
+          leaseId: lease.leaseId,
+          externalCredentialId: lease.externalCredentialId,
+          externalCredentialKind: lease.externalCredentialKind,
           accessMode,
           expiresAt: lease.expiresAt,
         },
@@ -258,7 +262,7 @@ export async function POST(request: Request, context: RouteContext) {
       integrationGeneration: integration.generation,
       provider: integration.provider,
       accessMode,
-    }, lease);
+    }, lease, lease.providerAuditId);
     if (!deliverable) {
       await revokeActiveLeases({
         organizationId: workspaceId,
@@ -353,6 +357,7 @@ export async function DELETE(request: Request, context: RouteContext) {
       resourceType: "connection",
       resourceId: connectionId,
       redactedSummary: {
+        leaseId,
         released: release.revoked,
         deferred: release.deferred,
       },

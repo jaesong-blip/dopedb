@@ -193,6 +193,12 @@ increasing the 104-test budget:
   This is an issuance-time application bound after an uncached Provider response, not
   a claim about Provider-internal propagation or a periodic poll. Already delivered
   credentials retain their Provider-enforced maximum 15-minute expiry.
+- Every new finalized lease persists the validated Provider audit ID and requires the
+  same ID at the final one-time secret-delivery fence. Workspace issue, early revoke,
+  scheduled cleanup success, cleanup retry, and destroy-deferred events carry that ID,
+  the opaque DopeDB lease ID, and the non-secret external credential ID. Cleanup state
+  and its system-authored audit event commit atomically. Migration 0015 intentionally
+  leaves legacy rows null instead of fabricating Provider evidence.
 - The same six Provider authority tests run in the Windows CI job. The Unix fixture
   additionally executes a fixed binary and proves shell-looking argv remains
   literal. The Windows fixture starts an audited native process, cancels it while
@@ -200,5 +206,5 @@ increasing the 104-test budget:
   returning `Cancelled`.
 
 Provider-account live E2E, the remaining apply/provider-specific partial-failure
-matrix, workspace/provider-side audit reconciliation, and a Windows grandchild-process
-fixture with native CI evidence remain required before #102 can close.
+matrix, legacy rollback evidence, and a Windows grandchild-process fixture with native
+CI evidence remain required before #102 can close.

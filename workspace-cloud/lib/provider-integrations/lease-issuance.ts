@@ -27,6 +27,7 @@ import type { GcpCloudSqlResource } from "../providers/gcp-cloud-sql-core";
 import {
   issueAfterFreshProviderAuthority,
   ProviderRequestError,
+  verifiedProviderAuditId,
   type ManagedProviderLease,
 } from "../providers/provider-types";
 import {
@@ -96,7 +97,7 @@ export async function issueManagedLease(input: {
   integration: ActiveProviderIntegration;
   resource: ManagedProviderResource;
   oidcToken?: string | null;
-}): Promise<ManagedProviderLease & { leaseId: string }> {
+}): Promise<ManagedProviderLease & { leaseId: string; providerAuditId: string }> {
   const leaseId = crypto.randomUUID();
   const label = `dopedb-${input.userId.replace(/-/g, "").slice(0, 8)}-${
     leaseId.replace(/-/g, "").slice(0, 8)
@@ -129,6 +130,7 @@ export async function issueManagedLease(input: {
   }
 
   let planetScaleToken: string | undefined;
+  let providerAuditId: string | null = null;
   let lease: ManagedProviderLease;
   try {
     if (input.integration.provider === "neon") {
@@ -166,7 +168,7 @@ export async function issueManagedLease(input: {
             // Re-read the exact canonical branch immediately before the provider
             // creates a database role/password. Discovery-time safety is never a
             // substitute for this live production/readiness check.
-            await validatePlanetScaleResource(
+            const verification = await validatePlanetScaleResource(
               token,
               input.resource as PlanetScaleResource,
               {
@@ -174,12 +176,19 @@ export async function issueManagedLease(input: {
                 safeMigrations: input.safeMigrations,
               },
             );
-            return token;
-          },
-          async (token) => {
-            planetScaleToken = token;
-            return issuePlanetScaleLease(
+            return {
               token,
+              providerAuditId: verifiedProviderAuditId(
+                "planetScale",
+                verification.providerAuditId,
+              ),
+            };
+          },
+          async (proof) => {
+            planetScaleToken = proof.token;
+            providerAuditId = proof.providerAuditId;
+            return issuePlanetScaleLease(
+              proof.token,
               input.resource as PlanetScaleResource,
               input.accessMode,
               label,
@@ -192,21 +201,30 @@ export async function issueManagedLease(input: {
           "neon",
           async () => {
             const credential = await verifiedNeonCredential(input.integration);
-            await validateNeonResource(
+            const verification = await validateNeonResource(
               credential,
               input.resource as NeonResource,
               input.accessMode,
               input.production,
             );
-            return credential;
+            return {
+              credential,
+              providerAuditId: verifiedProviderAuditId(
+                "neon",
+                verification.providerAuditId,
+              ),
+            };
           },
-          (credential) => issueNeonLease({
-            credential,
-            resource: input.resource as NeonResource,
-            accessMode: input.accessMode,
-            production: input.production,
-            role: neonRoleForLease(input.userId, leaseId),
-          }),
+          (proof) => {
+            providerAuditId = proof.providerAuditId;
+            return issueNeonLease({
+              credential: proof.credential,
+              resource: input.resource as NeonResource,
+              accessMode: input.accessMode,
+              production: input.production,
+              role: neonRoleForLease(input.userId, leaseId),
+            });
+          },
         );
         break;
       }
@@ -216,25 +234,42 @@ export async function issueManagedLease(input: {
         lease = await issueAfterFreshProviderAuthority(
           "gcpCloudSql",
           async () => {
-            await validateGcpCloudSqlResource(
+            const verification = await validateGcpCloudSqlResource(
               credential,
               oidcToken,
               input.resource as GcpCloudSqlResource,
             );
-            return { credential, oidcToken };
+            return {
+              credential,
+              oidcToken,
+              providerAuditId: verifiedProviderAuditId(
+                "gcpCloudSql",
+                verification.providerAuditId,
+              ),
+            };
           },
-          (fresh) => issueGcpCloudSqlLease({
-            credential: fresh.credential,
-            oidcToken: fresh.oidcToken,
-            resource: input.resource as GcpCloudSqlResource,
-            accessMode: input.accessMode,
-            externalCredentialId: leaseId,
-          }),
+          (fresh) => {
+            providerAuditId = fresh.providerAuditId;
+            return issueGcpCloudSqlLease({
+              credential: fresh.credential,
+              oidcToken: fresh.oidcToken,
+              resource: input.resource as GcpCloudSqlResource,
+              accessMode: input.accessMode,
+              externalCredentialId: leaseId,
+            });
+          },
         );
         break;
       }
       default:
         throw new Error("Managed credential provider is not available");
+    }
+    if (providerAuditId === null) {
+      throw new ProviderRequestError(
+        input.integration.provider,
+        "Provider security validation omitted its audit identifier",
+        502,
+      );
     }
     // PlanetScale refresh rotates the durable integration generation before
     // credential creation. Finalization must bind to that exact new generation;
@@ -254,6 +289,7 @@ export async function issueManagedLease(input: {
           externalCredentialKind: error instanceof NeonLeaseCleanupRequiredError
             ? "role"
             : error.externalCredentialKind,
+          providerAuditId,
           expiresAt: new Date(),
         })
         .where(eq(workspaceCredentialLease.id, leaseId))
@@ -269,15 +305,19 @@ export async function issueManagedLease(input: {
     }
     await db.update(workspaceCredentialLease)
       .set(input.integration.provider === "neon"
-        ? { expiresAt: new Date() }
-        : { revokedAt: new Date() })
+        ? { expiresAt: new Date(), providerAuditId }
+        : { revokedAt: new Date(), providerAuditId })
       .where(eq(workspaceCredentialLease.id, leaseId))
       .catch(() => undefined);
     throw error;
   }
 
   try {
-    if (!await finalizeManagedLeaseIfUnblocked(authority, lease)) {
+    if (!await finalizeManagedLeaseIfUnblocked(
+      authority,
+      lease,
+      providerAuditId,
+    )) {
       throw new Error("Managed lease reservation is no longer active");
     }
   } catch (error) {
@@ -295,11 +335,11 @@ export async function issueManagedLease(input: {
     }
     await db.update(workspaceCredentialLease)
       .set(input.integration.provider === "neon" && !revoked
-        ? { expiresAt: new Date() }
-        : { revokedAt: new Date() })
+        ? { expiresAt: new Date(), providerAuditId }
+        : { revokedAt: new Date(), providerAuditId })
       .where(eq(workspaceCredentialLease.id, leaseId))
       .catch(() => undefined);
     throw error;
   }
-  return { ...lease, leaseId };
+  return { ...lease, leaseId, providerAuditId };
 }

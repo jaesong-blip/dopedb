@@ -5,13 +5,13 @@ import {
   asc,
   eq,
   inArray,
-  isNotNull,
   isNull,
   sql,
 } from "drizzle-orm";
 
 import { db } from "../db";
 import {
+  workspaceAuditEvent,
   workspaceConnection,
   workspaceCredentialLease,
   workspaceProviderIntegration,
@@ -42,6 +42,7 @@ import {
 type LeaseCleanupRow = {
   id: string;
   organizationId: string;
+  connectionId: string;
   connectionOrganizationId: string;
   connectionIntegrationId: string | null;
   integrationId: string;
@@ -49,6 +50,7 @@ type LeaseCleanupRow = {
   provider: string;
   credentialId: string;
   credentialKind: string;
+  providerAuditId: string | null;
   expiresAt: Date;
   providerResource: unknown;
   cleanupClaim?: {
@@ -72,13 +74,15 @@ export function managedLeaseAuthorityMatches(input: {
 }
 
 async function markLeaseRevoked(
-  id: string,
-  cleanupClaim?: LeaseCleanupRow["cleanupClaim"],
+  lease: LeaseCleanupRow,
 ) {
   const now = new Date();
-  const cleanupFence = cleanupClaim ? sql`
-      AND lease."cleanup_attempts" = ${cleanupClaim.attempt}
+  const cleanupFence = lease.cleanupClaim ? sql`
+      AND lease."cleanup_attempts" = ${lease.cleanupClaim.attempt}
       AND lease."cleanup_claimed_at" IS NOT NULL` : sql``;
+  const action = lease.cleanupClaim
+    ? "credential.lease.cleanup"
+    : "credential.lease.revoke";
   // Serializing by the same connection advisory key used by revocation gates
   // ensures the second statement gets a post-lock READ COMMITTED snapshot. Two
   // workers cleaning the last two legacy leases can no longer both observe the
@@ -90,17 +94,20 @@ async function markLeaseRevoked(
         0
       ))
       FROM ${workspaceCredentialLease} AS lease
-      WHERE lease."id" = ${id}::uuid
+      WHERE lease."id" = ${lease.id}::uuid
     `),
     db.execute<{ id: string }>(sql`
     WITH revoked AS (
       UPDATE ${workspaceCredentialLease} AS lease
       SET "revoked_at" = ${now}, "cleanup_claimed_at" = NULL,
           "cleanup_next_attempt_at" = NULL
-      WHERE lease."id" = ${id}::uuid
+      WHERE lease."id" = ${lease.id}::uuid
         AND lease."revoked_at" IS NULL
         ${cleanupFence}
-      RETURNING lease."id", lease."organization_id", lease."connection_id"
+      RETURNING lease."id", lease."organization_id", lease."connection_id",
+                lease."provider", lease."provider_audit_id",
+                lease."external_credential_id", lease."external_credential_kind",
+                lease."cleanup_attempts"
     ), demoted_legacy_connection AS (
       UPDATE ${workspaceConnection} AS connection
       SET "credential_mode" = 'member_local',
@@ -125,8 +132,26 @@ async function markLeaseRevoked(
             AND live_lease."revoked_at" IS NULL
         )
       RETURNING connection."id"
+    ), audited AS (
+      INSERT INTO ${workspaceAuditEvent}
+        ("organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id", "created_at")
+      SELECT revoked."organization_id", NULL, ${action}, 'credentialLease',
+             revoked."id"::text,
+             jsonb_strip_nulls(jsonb_build_object(
+               'connectionId', revoked."connection_id"::text,
+               'provider', revoked."provider",
+               'providerAuditId', revoked."provider_audit_id",
+               'externalCredentialId', revoked."external_credential_id",
+               'externalCredentialKind', revoked."external_credential_kind",
+               'cleanupAttempt', revoked."cleanup_attempts",
+               'outcome', 'revoked'
+             )),
+             gen_random_uuid(), ${now}
+      FROM revoked
+      RETURNING "id"
     )
-    SELECT revoked."id"::text AS "id" FROM revoked
+    SELECT revoked."id"::text AS "id" FROM revoked, audited
   `),
   ]);
   return result.rows.length === 1;
@@ -135,20 +160,65 @@ async function markLeaseRevoked(
 async function scheduleLeaseCleanupRetry(lease: LeaseCleanupRow) {
   const cleanupClaim = lease.cleanupClaim;
   if (!cleanupClaim) return false;
-  const rows = await db.update(workspaceCredentialLease)
-    .set({
-      cleanupClaimedAt: null,
-      cleanupNextAttemptAt: new Date(
-        Date.now() + managedLeaseCleanupRetryDelayMs(cleanupClaim.attempt),
-      ),
-    })
-    .where(and(
-      eq(workspaceCredentialLease.id, lease.id),
-      eq(workspaceCredentialLease.cleanupAttempts, cleanupClaim.attempt),
-      isNotNull(workspaceCredentialLease.cleanupClaimedAt),
-      isNull(workspaceCredentialLease.revokedAt),
-    ))
-    .returning({ id: workspaceCredentialLease.id });
+  const nextAttemptAt = new Date(
+    Date.now() + managedLeaseCleanupRetryDelayMs(cleanupClaim.attempt),
+  );
+  const result = await db.execute<{ id: string }>(sql`
+    WITH deferred AS (
+      UPDATE ${workspaceCredentialLease} AS lease
+      SET "cleanup_claimed_at" = NULL,
+          "cleanup_next_attempt_at" = ${nextAttemptAt}
+      WHERE lease."id" = ${lease.id}::uuid
+        AND lease."cleanup_attempts" = ${cleanupClaim.attempt}
+        AND lease."cleanup_claimed_at" IS NOT NULL
+        AND lease."revoked_at" IS NULL
+      RETURNING lease."id", lease."organization_id", lease."connection_id",
+                lease."provider", lease."provider_audit_id",
+                lease."external_credential_id", lease."external_credential_kind",
+                lease."cleanup_attempts"
+    ), audited AS (
+      INSERT INTO ${workspaceAuditEvent}
+        ("organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT deferred."organization_id", NULL,
+             'credential.lease.cleanup_deferred', 'credentialLease',
+             deferred."id"::text,
+             jsonb_strip_nulls(jsonb_build_object(
+               'connectionId', deferred."connection_id"::text,
+               'provider', deferred."provider",
+               'providerAuditId', deferred."provider_audit_id",
+               'externalCredentialId', deferred."external_credential_id",
+               'externalCredentialKind', deferred."external_credential_kind",
+               'cleanupAttempt', deferred."cleanup_attempts",
+               'nextAttemptAt', ${nextAttemptAt},
+               'outcome', 'deferred'
+             )),
+             gen_random_uuid()
+      FROM deferred
+      RETURNING "id"
+    )
+    SELECT deferred."id"::text AS "id" FROM deferred, audited
+  `);
+  return result.rows.length === 1;
+}
+
+async function recordLeaseRevocationDeferred(lease: LeaseCleanupRow) {
+  const rows = await db.insert(workspaceAuditEvent).values({
+    organizationId: lease.organizationId,
+    actorUserId: null,
+    action: "credential.lease.revoke_deferred",
+    resourceType: "credentialLease",
+    resourceId: lease.id,
+    redactedSummary: {
+      connectionId: lease.connectionId,
+      provider: lease.provider,
+      ...(lease.providerAuditId ? { providerAuditId: lease.providerAuditId } : {}),
+      externalCredentialId: lease.credentialId,
+      externalCredentialKind: lease.credentialKind,
+      outcome: "deferred",
+    },
+    requestId: crypto.randomUUID(),
+  }).returning({ id: workspaceAuditEvent.id });
   return rows.length === 1;
 }
 
@@ -198,12 +268,12 @@ async function revokeLeaseRows(
         // IAM login tokens have no revocation API. Once expired they are safe to
         // retire from the audit index; live tokens remain an explicit deferral.
         if (!expired) {
-          deferred += 1;
+          if (await recordLeaseRevocationDeferred(lease)) deferred += 1;
           continue;
         }
       } else if (lease.credentialKind === "pending") {
         if (!expired) {
-          deferred += 1;
+          if (await recordLeaseRevocationDeferred(lease)) deferred += 1;
           continue;
         }
         if (integration.provider === "neon") {
@@ -246,13 +316,16 @@ async function revokeLeaseRows(
           throw new Error("Lease provider is unavailable");
         }
       }
-      if (await markLeaseRevoked(lease.id, lease.cleanupClaim)) revoked += 1;
+      if (await markLeaseRevoked(lease)) revoked += 1;
     } catch (error) {
       if (error instanceof ProviderRequestError && error.status === 404) {
-        if (await markLeaseRevoked(lease.id, lease.cleanupClaim)) revoked += 1;
+        if (await markLeaseRevoked(lease)) revoked += 1;
         continue;
       }
-      if (!lease.cleanupClaim || await scheduleLeaseCleanupRetry(lease)) {
+      const recorded = lease.cleanupClaim
+        ? await scheduleLeaseCleanupRetry(lease)
+        : await recordLeaseRevocationDeferred(lease);
+      if (recorded) {
         deferred += 1;
       }
     }
@@ -280,6 +353,7 @@ export async function revokeActiveLeases(
   const leases = await db.select({
     id: workspaceCredentialLease.id,
     organizationId: workspaceCredentialLease.organizationId,
+    connectionId: workspaceCredentialLease.connectionId,
     connectionOrganizationId: workspaceConnection.organizationId,
     connectionIntegrationId: workspaceConnection.providerIntegrationId,
     integrationId: workspaceCredentialLease.integrationId,
@@ -287,6 +361,7 @@ export async function revokeActiveLeases(
     provider: workspaceCredentialLease.provider,
     credentialId: workspaceCredentialLease.externalCredentialId,
     credentialKind: workspaceCredentialLease.externalCredentialKind,
+    providerAuditId: workspaceCredentialLease.providerAuditId,
     expiresAt: workspaceCredentialLease.expiresAt,
     providerResource: workspaceConnection.providerResource,
   }).from(workspaceCredentialLease)
@@ -302,6 +377,7 @@ export async function revokeActiveLeases(
 type ClaimedLeaseRow = {
   id: string;
   organizationId: string;
+  connectionId: string;
   connectionOrganizationId: string;
   connectionIntegrationId: string | null;
   integrationId: string;
@@ -309,6 +385,7 @@ type ClaimedLeaseRow = {
   provider: string;
   credentialId: string;
   credentialKind: string;
+  providerAuditId: string | null;
   expiresAt: Date | string;
   providerResource: unknown;
   cleanupAttempt: number | string;
@@ -396,12 +473,14 @@ async function claimExpiredManagedLeases(input: {
                 lease."provider",
                 lease."external_credential_id",
                 lease."external_credential_kind",
+                lease."provider_audit_id",
                 lease."expires_at",
                 lease."connection_id",
                 lease."cleanup_attempts"
     )
     SELECT claimed."id" AS "id",
            claimed."organization_id" AS "organizationId",
+           claimed."connection_id"::text AS "connectionId",
            connection."organization_id" AS "connectionOrganizationId",
            connection."provider_integration_id"::text AS "connectionIntegrationId",
            claimed."integration_id" AS "integrationId",
@@ -409,6 +488,7 @@ async function claimExpiredManagedLeases(input: {
            claimed."provider" AS "provider",
            claimed."external_credential_id" AS "credentialId",
            claimed."external_credential_kind" AS "credentialKind",
+           claimed."provider_audit_id" AS "providerAuditId",
            claimed."expires_at" AS "expiresAt",
            connection."provider_resource" AS "providerResource",
            claimed."cleanup_attempts" AS "cleanupAttempt"
@@ -436,6 +516,7 @@ async function claimExpiredManagedLeases(input: {
     return {
       id: row.id,
       organizationId: row.organizationId,
+      connectionId: row.connectionId,
       connectionOrganizationId: row.connectionOrganizationId,
       connectionIntegrationId: row.connectionIntegrationId,
       integrationId: row.integrationId,
@@ -443,6 +524,7 @@ async function claimExpiredManagedLeases(input: {
       provider: row.provider,
       credentialId: row.credentialId,
       credentialKind: row.credentialKind,
+      providerAuditId: row.providerAuditId,
       expiresAt,
       providerResource: row.providerResource,
       cleanupClaim: { attempt: cleanupAttempt },

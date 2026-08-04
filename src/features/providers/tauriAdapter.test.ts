@@ -15,6 +15,7 @@ import managedAccessRouteSource from "../../../workspace-cloud/app/api/v1/worksp
 import connectionGrantsRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/grants/route.ts?raw";
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
 import providerIntegrationDomainSource from "../../../workspace-cloud/lib/provider-integrations/domain.ts?raw";
+import providerLeaseCleanupSource from "../../../workspace-cloud/lib/provider-integrations/lease-cleanup.ts?raw";
 import providerLeaseIssuanceSource from "../../../workspace-cloud/lib/provider-integrations/lease-issuance.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
@@ -27,6 +28,7 @@ import providerAdapterContractSource from "../../../workspace-cloud/lib/provider
 import {
   issueAfterFreshProviderAuthority,
   MANAGED_PROVIDER_AUTHORITY_TIMEOUT_MS,
+  verifiedProviderAuditId,
 } from "../../../workspace-cloud/lib/providers/provider-types";
 import providerImportProjectionSource from "../../../workspace-cloud/lib/providers/import-projection.ts?raw";
 import providerImportStoreSource from "../../../workspace-cloud/lib/provider-import-store.ts?raw";
@@ -38,6 +40,7 @@ import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-ba
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
 import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-permissions.ts?raw";
 import workspaceRevocationGatesSource from "../../../workspace-cloud/lib/revocation-gates.ts?raw";
+import workspaceSchemaSource from "../../../workspace-cloud/lib/schema.ts?raw";
 import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspace-versioning-store.ts?raw";
 import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
 import desktopControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane.rs?raw";
@@ -274,6 +277,13 @@ describe("provider credential Tauri adapter", () => {
       },
     )).resolves.toBe("lease");
     expect(order).toEqual(["revalidate", "issue:fresh-proof"]);
+    expect(verifiedProviderAuditId("neon", "branch-id:database-id"))
+      .toBe("branch-id:database-id");
+    for (const value of ["", "unsafe\nline", "unsafe\u202edirection", "x".repeat(513)]) {
+      expect(() => verifiedProviderAuditId("neon", value)).toThrow(
+        "Provider returned an invalid audit identifier",
+      );
+    }
 
     vi.useFakeTimers();
     let timedOutIssueCalled = false;
@@ -353,6 +363,27 @@ describe("provider credential Tauri adapter", () => {
     expect(providerLeaseIssuanceSource.match(
       /issueAfterFreshProviderAuthority\(/g,
     )).toHaveLength(3);
+    expect(providerLeaseIssuanceSource).toContain(
+      "providerAuditId: verifiedProviderAuditId",
+    );
+    expect(managedLeaseRouteSource).toContain(
+      "providerAuditId: lease.providerAuditId",
+    );
+    expect(workspaceRevocationGatesSource).toContain(
+      'lease."provider_audit_id" = ${providerAuditId}',
+    );
+    expect(workspaceSchemaSource).toContain(
+      'providerAuditId: text("provider_audit_id")',
+    );
+    expect(providerLeaseCleanupSource).toContain(
+      "'credential.lease.cleanup_deferred'",
+    );
+    expect(providerLeaseCleanupSource).toContain(
+      "'providerAuditId', deferred.\"provider_audit_id\"",
+    );
+    expect(managedAccessTargetRouteSource).toContain(
+      'action: "provider.provisioning.destroy_deferred"',
+    );
     expect(workspaceRevocationGatesSource).toContain("workspaceProviderResource.capabilityManifest");
     expect(desktopSharedConnectionSource).not.toContain("SHARED_CONNECTION_WRITE_BLOCKED");
     expect(managedAccessTargetRouteSource).toContain(

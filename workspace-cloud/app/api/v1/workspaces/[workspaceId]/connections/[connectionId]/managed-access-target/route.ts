@@ -344,6 +344,21 @@ export async function DELETE(request: Request, context: RouteContext) {
       connectionId,
     });
     if (result.deferred > 0) {
+      await db.insert(workspaceAuditEvent).values({
+        organizationId: workspaceId,
+        actorUserId: authorization.session.user.id,
+        action: "provider.provisioning.destroy_deferred",
+        resourceType: "connection",
+        resourceId: connectionId,
+        redactedSummary: {
+          provider: initial.provider,
+          providerAuditId: verification.providerAuditId,
+          ownershipMarker: pins.ownershipMarker,
+          revokedCredentials: result.revoked,
+          deferredCredentials: result.deferred,
+        },
+        requestId: crypto.randomUUID(),
+      });
       return jsonError("Managed Access credentials could not all be revoked", 503);
     }
     await db.insert(workspaceAuditEvent).values({

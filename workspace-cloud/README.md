@@ -219,6 +219,13 @@ for legacy records.
 - Desktop pool retirement calls the exact tenant/user/connection/lease DELETE
   boundary for early provider revocation. Natural provider expiry and the durable
   cleanup worker remain the fallback when the desktop is offline.
+- New lease rows retain the validated, redacted Provider resource audit id beside the
+  opaque DopeDB lease id. Issue, early revoke, scheduled cleanup, and deferred cleanup
+  events carry both identifiers plus the non-secret external credential id, so an
+  operator can reconcile Provider and workspace audit trails without opening a token
+  or password. Cleanup state changes and their system-authored audit events commit in
+  one database statement. Legacy rows keep a null Provider audit id rather than using
+  a guessed backfill.
 - Shared connection rows contain endpoint metadata, safety defaults, credential mode,
   the administrator-owned write policy, and a redacted provider-resource selector. Usernames,
   passwords, tokens, certificates, connection URLs, SQLite paths, advanced parameters,
