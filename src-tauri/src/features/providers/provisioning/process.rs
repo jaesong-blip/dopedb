@@ -119,6 +119,7 @@ pub(crate) enum ProvisioningCliEnvironment {
     CloudSdkLogHttpOff,
     XdgConfigHome(String),
     PlanetScaleConfig(String),
+    PlanetScaleNoUpdateNotifier,
     NeonConfig(String),
 }
 
@@ -135,6 +136,7 @@ impl ProvisioningCliEnvironment {
             Self::CloudSdkLogHttpOff => Ok(("CLOUDSDK_CORE_LOG_HTTP", "false")),
             Self::XdgConfigHome(path) => validate_environment_path("XDG_CONFIG_HOME", path),
             Self::PlanetScaleConfig(path) => validate_environment_path("PSCALE_CONFIG_DIR", path),
+            Self::PlanetScaleNoUpdateNotifier => Ok(("PSCALE_NO_UPDATE_NOTIFIER", "1")),
             Self::NeonConfig(path) => validate_environment_path("NEON_CONFIG_DIR", path),
         }
     }
@@ -157,6 +159,7 @@ pub(crate) struct ProvisioningCliCommand {
     argv: Vec<String>,
     environment: Vec<ProvisioningCliEnvironment>,
     output_schema: ProvisioningCliOutputSchema,
+    accepted_exit_codes: BTreeSet<i32>,
     timeout_ms: u64,
 }
 
@@ -175,11 +178,25 @@ impl ProvisioningCliCommand {
             argv,
             environment,
             output_schema,
+            accepted_exit_codes: BTreeSet::from([0]),
             timeout_ms: u64::try_from(timeout.as_millis())
                 .map_err(|_| ProvisioningProcessFailure::CommandRejected)?,
         };
         command.validate()?;
         Ok(command)
+    }
+
+    /// Accept a small, explicitly hashed set of documented machine-readable
+    /// exit codes. The default remains success-only; adapters must opt in for a
+    /// command such as `pscale auth check`, whose JSON action-required result is
+    /// intentionally emitted with exit code 1.
+    pub(crate) fn with_accepted_exit_codes(
+        mut self,
+        accepted_exit_codes: impl IntoIterator<Item = i32>,
+    ) -> Result<Self, ProvisioningProcessFailure> {
+        self.accepted_exit_codes = accepted_exit_codes.into_iter().collect();
+        self.validate()?;
+        Ok(self)
     }
 
     pub(crate) fn redacted_plan(&self) -> Value {
@@ -191,6 +208,7 @@ impl ProvisioningCliCommand {
                 value.key_and_value().ok().map(|(key, _)| key)
             }).collect::<Vec<_>>(),
             "outputSchema": self.output_schema,
+            "acceptedExitCodes": self.accepted_exit_codes,
             "timeoutMs": self.timeout_ms,
         })
     }
@@ -296,7 +314,10 @@ impl ProvisioningCliCommand {
         };
         let status = tree.terminate_and_reap(&mut child).await?;
         let output = result?;
-        if !status.success() {
+        if !status
+            .code()
+            .is_some_and(|code| self.accepted_exit_codes.contains(&code))
+        {
             return Err(ProvisioningProcessFailure::ExitStatusRejected);
         }
         parse_output(self.output_schema, output)
@@ -307,6 +328,12 @@ impl ProvisioningCliCommand {
         if self.provider != self.executable.provider
             || self.argv.is_empty()
             || self.argv.len() > MAX_ARGUMENTS
+            || self.accepted_exit_codes.is_empty()
+            || self.accepted_exit_codes.len() > 4
+            || self
+                .accepted_exit_codes
+                .iter()
+                .any(|code| !(0..=3).contains(code))
             || !(MIN_TIMEOUT..=MAX_TIMEOUT).contains(&timeout)
             || self.argv.iter().any(|argument| {
                 argument.is_empty()
@@ -584,6 +611,36 @@ pub(crate) async fn assert_process_boundary() {
                 .await,
             Err(ProvisioningProcessFailure::ExitStatusRejected)
         );
+        let accepted_action_required = ProvisioningCliCommand::new(
+            LocalProvider::GcpCloudSql,
+            ProvisioningExecutableIdentity::audit(
+                LocalProvider::GcpCloudSql,
+                Path::new("/usr/bin/false"),
+                &[PathBuf::from("/usr/bin")],
+                &["false"],
+            )
+            .await
+            .expect("audit a fixed action-required fixture"),
+            vec!["--".into()],
+            vec![ProvisioningCliEnvironment::SafePath],
+            ProvisioningCliOutputSchema::Empty,
+            Duration::from_secs(2),
+        )
+        .expect("construct action-required fixture")
+        .with_accepted_exit_codes([0, 1])
+        .expect("pin documented action-required exit code");
+        accepted_action_required
+            .run(
+                &ProvisioningExecutionPermit::issue(
+                    Uuid::from_u128(54),
+                    LocalProvider::GcpCloudSql,
+                    "ef".repeat(32),
+                    accepted_action_required.execution_sha256().unwrap(),
+                ),
+                &CancellationToken::new(),
+            )
+            .await
+            .expect("accept an explicitly hashed action-required exit code");
         assert!(ProvisioningCliCommand::new(
             LocalProvider::GcpCloudSql,
             executable.clone(),

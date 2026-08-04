@@ -197,28 +197,12 @@ export async function PUT(request: Request, context: RouteContext) {
         AND connection."provider" = integration."provider"
         AND connection."provider" = resource."provider"
         AND connection."provider_resource" = resource."resource"
-        -- The import request is a receipt-derived immutable proof. Rebuild its
-        -- hash with the *current* integration generation so a reconnect or
-        -- credential generation change cannot hand off a stale target.
-        AND imported."request_hash" IN (
-          encode(digest(jsonb_build_object(
-            'integrationGeneration', integration."generation"::text,
-            'integrationId', integration."id"::text,
-            'mode', 'managed',
-            'name', connection."name",
-            'organizationId', connection."organization_id",
-            'resourceId', resource."id"::text
-          )::text, 'sha256'), 'hex'),
-          encode(digest(jsonb_build_object(
-            'integrationGeneration', integration."generation"::text,
-            'integrationId', integration."id"::text,
-            'mode', 'managed',
-            'name', connection."name",
-            'organizationId', connection."organization_id",
-            'productionApproved',
-              resource."redacted_metadata" -> 'production' = 'true'::jsonb,
-            'resourceId', resource."id"::text
-          )::text, 'sha256'), 'hex')
+        -- The import row is the receipt-derived immutable witness. Production
+        -- approval is durable policy, while OAuth generation is revalidated by
+        -- the active integration and must not erase approval on token refresh.
+        AND (
+          resource."redacted_metadata" -> 'production' = 'false'::jsonb
+          OR imported."production_approved" = TRUE
         )
         AND integration."status" = 'active'
         AND integration."refresh_phase" = 'idle'
@@ -228,8 +212,13 @@ export async function PUT(request: Request, context: RouteContext) {
         AND (
           resource."redacted_metadata" -> 'production' = 'false'::jsonb
           OR (
-            resource."provider" = 'gcpCloudSql'
+            resource."provider" IN ('gcpCloudSql', 'planetScale')
             AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
+            AND (
+              resource."provider" <> 'planetScale'
+              OR resource."resource" ->> 'engine' = 'postgres'
+              OR resource."redacted_metadata" -> 'safeMigrations' = 'true'::jsonb
+            )
           )
         )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb

@@ -104,35 +104,53 @@ pub(crate) enum ProvisioningTargetSelector {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ProvisioningTarget {
     provider: LocalProvider,
+    connection_id: ConnectionId,
+    connection_revision: i64,
     integration_id: ProviderIntegrationId,
+    integration_generation: i64,
     resource_fingerprint: String,
     display_name: String,
     detail: String,
     selectors: BTreeMap<ProvisioningTargetSelector, String>,
     engine: Engine,
     production: bool,
+    safe_migrations: Option<bool>,
+    write_available: bool,
+    provider_audit_id: String,
 }
 
 impl ProvisioningTarget {
     pub(crate) fn new(
         provider: LocalProvider,
+        connection_id: ConnectionId,
+        connection_revision: i64,
         integration_id: ProviderIntegrationId,
+        integration_generation: i64,
         resource_fingerprint: String,
         display_name: String,
         detail: String,
         selectors: BTreeMap<ProvisioningTargetSelector, String>,
         engine: Engine,
         production: bool,
+        safe_migrations: Option<bool>,
+        write_available: bool,
+        provider_audit_id: String,
     ) -> AppResult<Self> {
         let target = Self {
             provider,
+            connection_id,
+            connection_revision,
             integration_id,
+            integration_generation,
             resource_fingerprint,
             display_name,
             detail,
             selectors,
             engine,
             production,
+            safe_migrations,
+            write_available,
+            provider_audit_id,
         };
         target.validate()?;
         Ok(target)
@@ -140,6 +158,22 @@ impl ProvisioningTarget {
 
     pub(crate) const fn provider(&self) -> LocalProvider {
         self.provider
+    }
+
+    pub(crate) const fn connection_id(&self) -> ConnectionId {
+        self.connection_id
+    }
+
+    pub(crate) const fn connection_revision(&self) -> i64 {
+        self.connection_revision
+    }
+
+    pub(crate) const fn integration_id(&self) -> ProviderIntegrationId {
+        self.integration_id
+    }
+
+    pub(crate) const fn integration_generation(&self) -> i64 {
+        self.integration_generation
     }
 
     pub(crate) fn resource_fingerprint(&self) -> &str {
@@ -162,10 +196,31 @@ impl ProvisioningTarget {
         self.production
     }
 
+    pub(crate) const fn write_available(&self) -> bool {
+        self.write_available
+    }
+
+    pub(crate) const fn safe_migrations(&self) -> Option<bool> {
+        self.safe_migrations
+    }
+
+    pub(crate) fn provider_audit_id(&self) -> &str {
+        &self.provider_audit_id
+    }
+
+    pub(crate) fn selector(&self, selector: ProvisioningTargetSelector) -> Option<&str> {
+        self.selectors.get(&selector).map(String::as_str)
+    }
+
     fn validate(&self) -> AppResult<()> {
-        if !is_sha256(&self.resource_fingerprint)
+        if Uuid::from(self.connection_id).is_nil()
+            || self.connection_revision < 1
+            || Uuid::from(self.integration_id).is_nil()
+            || self.integration_generation < 1
+            || !is_sha256(&self.resource_fingerprint)
             || !safe_target_label(&self.display_name)
             || !safe_target_label(&self.detail)
+            || !safe_audit_id(&self.provider_audit_id)
             || !matches!(self.engine, Engine::Postgres | Engine::Mysql)
             || self.selectors.keys().copied().collect::<BTreeSet<_>>()
                 != required_selectors(self.provider)
@@ -176,12 +231,28 @@ impl ProvisioningTarget {
         if self.provider == LocalProvider::Neon && self.engine != Engine::Postgres {
             return Err(blocked("provider provisioning target engine is invalid"));
         }
+        if !matches!(
+            (self.provider, self.engine, self.safe_migrations),
+            (LocalProvider::PlanetScale, Engine::Mysql, Some(_))
+                | (LocalProvider::PlanetScale, Engine::Postgres, None)
+                | (LocalProvider::GcpCloudSql, _, None)
+                | (LocalProvider::Neon, Engine::Postgres, None)
+        ) {
+            return Err(blocked("provider provisioning target policy is invalid"));
+        }
         Ok(())
     }
 }
 
 fn safe_target_label(value: &str) -> bool {
     !value.is_empty() && value.len() <= MAX_SELECTOR_BYTES && !value.chars().any(char::is_control)
+}
+
+fn safe_audit_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_AUDIT_ID_BYTES
+        && value.is_ascii()
+        && !value.chars().any(char::is_control)
 }
 
 fn required_selectors(provider: LocalProvider) -> BTreeSet<ProvisioningTargetSelector> {
@@ -280,6 +351,10 @@ impl ProvisioningPlanStep {
 
     pub(crate) const fn action(&self) -> ProvisioningAction {
         self.action
+    }
+
+    pub(crate) const fn access(&self) -> Option<ProvisioningAccessMode> {
+        self.access
     }
 
     pub(crate) fn execution_sha256(&self) -> &str {
@@ -1011,7 +1086,10 @@ pub(super) fn fixture_plan(
 
     let target = ProvisioningTarget::new(
         LocalProvider::GcpCloudSql,
+        ConnectionId::from(Uuid::from_u128(10)),
+        3,
         ProviderIntegrationId::from(Uuid::from_u128(20)),
+        4,
         "ab".repeat(32),
         "fixture-instance / app".into(),
         "sample-project-123 · asia-northeast3".into(),
@@ -1024,6 +1102,9 @@ pub(super) fn fixture_plan(
         ]),
         Engine::Postgres,
         true,
+        None,
+        true,
+        "instance-fixture-123".into(),
     )
     .unwrap();
     let (phase, actions) = match intent {

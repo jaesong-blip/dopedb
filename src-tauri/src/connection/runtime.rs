@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex as StdMutex, Weak};
 use std::time::Duration;
 
 use dashmap::DashMap;
+use sqlx::Row;
 use tokio::sync::{Mutex, OwnedMutexGuard, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 use tokio::time::Instant;
 use uuid::Uuid;
@@ -23,7 +24,7 @@ use crate::features::workspaces::{Workspace, WorkspaceAuthUser, WorkspaceRole};
 use crate::kernel::identity::{
     AccountId, ConnectionId, DashboardId, ProviderBindingId, WorkspaceId,
 };
-use crate::model::{ConnectionProfile, Engine, WorkspaceCredentialMode};
+use crate::model::{ConnectionProfile, Engine, Provider, WorkspaceCredentialMode};
 use crate::store::{PinnedConnection, PinnedDashboard, Store};
 
 use super::remote_authority::RemoteConnectionAuthorityPort;
@@ -768,10 +769,82 @@ impl ConnectionContext {
             retire_opened(opened).await;
             return Err(scope_changed());
         }
-        let result = opened.live.test().await;
+        let result = async {
+            opened.live.test().await?;
+            if self.access == ConnectionAccess::Write {
+                let live = opened.live.sql()?;
+                if !live.has_writable_pool {
+                    return Err(AppError::Blocked {
+                        reason: "managed write credential did not open a writable pool".into(),
+                    });
+                }
+                live.write_pool.ping().await?;
+            }
+            if self.pin.profile.provider == Provider::PlanetScale {
+                verify_planetscale_policy(&opened.live, self.pin.profile.engine, self.access)
+                    .await?;
+            }
+            Ok(())
+        }
+        .await;
         retire_opened(opened).await;
         result
     }
+}
+
+async fn verify_planetscale_policy(
+    live: &Live,
+    engine: Engine,
+    access: ConnectionAccess,
+) -> AppResult<()> {
+    if engine != Engine::Postgres {
+        // Vitess enforces the provider-created `reader`/`readwriter` password
+        // role. A live SELECT plus the server-side exact role request is the
+        // non-mutating proof; unlike PostgreSQL it exposes no stable catalog
+        // membership contract that can be checked without touching user data.
+        return Ok(());
+    }
+    let sql = live.sql()?;
+    let super::DbPool::Postgres(pool) = &sql.read_pool else {
+        return Err(AppError::Blocked {
+            reason: "PlanetScale PostgreSQL policy opened the wrong engine".into(),
+        });
+    };
+    let row = sqlx::query(
+        "SELECT \
+           pg_has_role(current_user, 'pg_read_all_data', 'member') AS can_read, \
+           pg_has_role(current_user, 'pg_write_all_data', 'member') AS can_write, \
+           EXISTS ( \
+             SELECT 1 FROM pg_catalog.pg_roles admin \
+             WHERE admin.rolname = 'postgres' \
+               AND pg_has_role(current_user, admin.oid, 'member') \
+           ) AS is_admin, \
+           role.rolsuper, role.rolcreaterole, role.rolcreatedb, \
+           role.rolreplication, role.rolbypassrls, \
+           has_schema_privilege(current_user, 'public', 'CREATE') AS can_create \
+         FROM pg_catalog.pg_roles role WHERE role.rolname = current_user",
+    )
+    .fetch_one(pool)
+    .await?;
+    let can_read: bool = row.try_get("can_read")?;
+    let can_write: bool = row.try_get("can_write")?;
+    let is_admin: bool = row.try_get("is_admin")?;
+    let elevated = [
+        row.try_get::<bool, _>("rolsuper")?,
+        row.try_get::<bool, _>("rolcreaterole")?,
+        row.try_get::<bool, _>("rolcreatedb")?,
+        row.try_get::<bool, _>("rolreplication")?,
+        row.try_get::<bool, _>("rolbypassrls")?,
+        row.try_get::<bool, _>("can_create")?,
+    ]
+    .into_iter()
+    .any(|value| value);
+    if !can_read || can_write != (access == ConnectionAccess::Write) || is_admin || elevated {
+        return Err(AppError::Blocked {
+            reason: "PlanetScale credential exceeded its approved database policy".into(),
+        });
+    }
+    Ok(())
 }
 
 impl ConnectionManager {
@@ -1084,6 +1157,62 @@ impl crate::features::providers::ports::ProviderBindingRevocationPort for Connec
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = AppResult<()>> + Send + 'a>> {
         Box::pin(async move {
             self.force_fence_provider_binding(binding_id).await;
+            Ok(())
+        })
+    }
+}
+
+impl crate::features::providers::ports::ProvisioningRuntimePort for ConnectionManager {
+    fn smoke<'a>(
+        &'a self,
+        connection_id: Uuid,
+        connection_revision: i64,
+        provider: crate::features::providers::LocalProvider,
+        engine: Engine,
+        access: crate::features::providers::ProvisioningAccessMode,
+    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let access = match access {
+                crate::features::providers::ProvisioningAccessMode::Read => ConnectionAccess::Read,
+                crate::features::providers::ProvisioningAccessMode::Write => {
+                    ConnectionAccess::Write
+                }
+            };
+            let context = self.pin(connection_id, access).await?;
+            let pin = context.pin();
+            let expected_provider = match provider {
+                crate::features::providers::LocalProvider::PlanetScale => Provider::PlanetScale,
+                crate::features::providers::LocalProvider::Neon => Provider::Neon,
+                crate::features::providers::LocalProvider::GcpCloudSql => Provider::GcpCloudSql,
+            };
+            if pin.connection_revision != connection_revision
+                || pin.profile.provider != expected_provider
+                || pin.profile.engine != engine
+                || pin.profile.credential_mode != WorkspaceCredentialMode::Managed
+            {
+                return Err(scope_changed());
+            }
+            context.test_fresh().await
+        })
+    }
+
+    fn force_fence<'a>(
+        &'a self,
+        connection_id: Uuid,
+    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let _session_gate = self.inner.session_gate.write().await;
+            self.revoke_sessions(Some(connection_id), "managed access provisioning destroyed")
+                .await;
+            let keys = self
+                .inner
+                .slots
+                .iter()
+                .filter(|entry| entry.key().connection_id == connection_id)
+                .map(|entry| entry.key().clone())
+                .collect::<Vec<_>>();
+            let retired = self.detach_keys(keys).await;
+            retire_entries(retired).await;
             Ok(())
         })
     }

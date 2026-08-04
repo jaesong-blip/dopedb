@@ -6,6 +6,7 @@ import { db } from "../db";
 import { workspaceCredentialLease } from "../schema";
 import {
   issuePlanetScaleLease,
+  PlanetScaleLeaseCleanupRequiredError,
   revokePlanetScaleLease,
   validatePlanetScaleResource,
   type PlanetScaleResource,
@@ -113,6 +114,8 @@ export async function issueManagedLease(input: {
   connectionRevision: number;
   providerResourceId: string;
   engine: "postgres" | "mysql";
+  production: boolean;
+  safeMigrations: boolean | null;
   accessMode: "read" | "write";
   integration: ActiveProviderIntegration;
   resource: ManagedProviderResource;
@@ -187,6 +190,10 @@ export async function issueManagedLease(input: {
         await validatePlanetScaleResource(
           planetScaleToken,
           input.resource as PlanetScaleResource,
+          {
+            production: input.production,
+            safeMigrations: input.safeMigrations,
+          },
         );
         lease = await issuePlanetScaleLease(
           planetScaleToken,
@@ -229,6 +236,24 @@ export async function issueManagedLease(input: {
     // any independent reconnect/revoke after this point still fails the CAS.
     authority.integrationGeneration = input.integration.generation;
   } catch (error) {
+    if (error instanceof PlanetScaleLeaseCleanupRequiredError) {
+      const queued = await db.update(workspaceCredentialLease)
+        .set({
+          externalCredentialId: error.externalCredentialId,
+          externalCredentialKind: error.externalCredentialKind,
+          expiresAt: new Date(),
+        })
+        .where(eq(workspaceCredentialLease.id, leaseId))
+        .returning({ id: workspaceCredentialLease.id });
+      if (queued.length !== 1) {
+        throw new ProviderRequestError(
+          "planetScale",
+          "PlanetScale credential cleanup could not be queued",
+          503,
+        );
+      }
+      throw error;
+    }
     await db.update(workspaceCredentialLease)
       .set(input.integration.provider === "neon"
         ? { expiresAt: new Date() }

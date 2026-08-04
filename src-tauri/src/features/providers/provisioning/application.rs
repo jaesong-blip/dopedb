@@ -29,7 +29,7 @@ use super::domain::{
 use super::repository::ProvisioningReceiptRepository;
 use super::{ProvisioningExecutionPermit, ProvisioningReadAuthority};
 
-type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
+pub(super) type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
 
 const DISCOVERY_TTL: ChronoDuration = ChronoDuration::minutes(5);
 const OPERATION_TTL: ChronoDuration = ChronoDuration::minutes(10);
@@ -169,7 +169,9 @@ pub(super) trait ProvisioningDriver: Send + Sync + 'static {
     fn plan_destroy<'a>(
         &'a self,
         receipt: &'a ProvisioningReceipt,
+        target: &'a ProvisioningTarget,
         connection: &'a PinnedConnection,
+        access: ProvisioningAccessMode,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, (ProvisioningPlan, String)>;
     fn plan_repair<'a>(
@@ -224,8 +226,7 @@ pub(crate) struct ProvisioningDriverRegistry {
 }
 
 impl ProvisioningDriverRegistry {
-    #[cfg(test)]
-    fn with_driver(driver: Arc<dyn ProvisioningDriver>) -> Self {
+    pub(super) fn with_driver(driver: Arc<dyn ProvisioningDriver>) -> Self {
         Self {
             drivers: Arc::new(vec![driver]),
         }
@@ -398,7 +399,10 @@ impl ProvisioningCoordinator {
             return Err(blocked("provider adapter changed after discovery"));
         }
         let connection = self.store.pin_connection_for_view(connection_id).await?;
-        if connection.scope != scope {
+        if connection.scope != scope
+            || Uuid::from(staged.target.connection_id()) != connection.connection_id
+            || staged.target.connection_revision() != connection.connection_revision
+        {
             return Err(blocked("provider connection scope changed"));
         }
         let cancellation = CancellationToken::new();
@@ -456,7 +460,13 @@ impl ProvisioningCoordinator {
         }
         let cancellation = CancellationToken::new();
         let (plan, observed_ownership_marker) = driver
-            .plan_destroy(&receipt, &connection, &cancellation)
+            .plan_destroy(
+                &receipt,
+                previous_plan.target(),
+                &connection,
+                previous_plan.access(),
+                &cancellation,
+            )
             .await?;
         validate_planned_target(
             &plan,
@@ -615,6 +625,12 @@ impl ProvisioningCoordinator {
         connection: &PinnedConnection,
         plan: &ProvisioningPlan,
     ) -> AppResult<OperationRecord> {
+        if Uuid::from(plan.target().connection_id()) != connection.connection_id
+            || (plan.intent() == ProvisioningIntent::Apply
+                && plan.target().connection_revision() != connection.connection_revision)
+        {
+            return Err(blocked("provider provisioning connection pin changed"));
+        }
         let safety = self.store.get_safety(connection.connection_id).await?;
         let policy = capture_policy(connection, &safety)?;
         self.operations
@@ -1008,7 +1024,10 @@ fn validate_execution(
         operation.payload.clone(),
         &operation.payload_hash,
     )?;
-    if plan.target().provider() != receipt.provider()
+    if operation.connection_id != Uuid::from(plan.target().connection_id())
+        || (plan.intent() == ProvisioningIntent::Apply
+            && operation.connection_revision != plan.target().connection_revision())
+        || plan.target().provider() != receipt.provider()
         || plan.target().resource_fingerprint() != receipt.target_fingerprint()
     {
         return Err(blocked("provider provisioning target changed"));
@@ -1057,6 +1076,9 @@ fn projection(
         || operation.workspace_id != Uuid::from(receipt.workspace_id())
         || operation.account_scope != receipt.account_scope()
         || operation.connection_id != Uuid::from(receipt.connection_id())
+        || operation.connection_id != Uuid::from(plan.target().connection_id())
+        || (plan.intent() == ProvisioningIntent::Apply
+            && operation.connection_revision != plan.target().connection_revision())
         || operation.payload_hash != receipt.plan_hash()
         || plan.target().provider() != receipt.provider()
         || plan.target().resource_fingerprint() != receipt.target_fingerprint()
@@ -1217,7 +1239,9 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         fn plan_destroy<'a>(
             &'a self,
             _receipt: &'a ProvisioningReceipt,
+            _target: &'a ProvisioningTarget,
             _connection: &'a PinnedConnection,
+            _access: ProvisioningAccessMode,
             _cancellation: &'a CancellationToken,
         ) -> DriverFuture<'a, (ProvisioningPlan, String)> {
             Box::pin(async move {
@@ -1302,7 +1326,8 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         ]),
     );
     let operation_id = Uuid::from_u128(40);
-    let connection_id = Uuid::from_u128(41);
+    let connection_id = Uuid::from(plan.target().connection_id());
+    let connection_revision = plan.target().connection_revision();
     let (first_runtime, authority) = OperationRuntime::new(&store);
     let operation = first_runtime
         .plan(
@@ -1311,7 +1336,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
                 workspace_id: scope.workspace_id,
                 account_scope: scope.account_scope.storage_key().into(),
                 connection_id,
-                connection_revision: 1,
+                connection_revision,
                 terminal_session_id: None,
                 actor: OperationActor {
                     kind: OperationActorKind::LocalUser,

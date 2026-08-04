@@ -39,6 +39,7 @@ export type ProviderProvisioningTarget = Readonly<{
   resource: Readonly<Record<string, unknown>>;
   capabilityManifest: CapabilityManifest;
   production: boolean;
+  safeMigrations: boolean | null;
   authorityExpiresAt: string;
 }>;
 
@@ -100,6 +101,15 @@ function productionClassification(value: unknown) {
   return row && typeof row.production === "boolean" ? row.production : null;
 }
 
+function safeMigrationsClassification(value: unknown) {
+  const row = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  return row && typeof row.safeMigrations === "boolean"
+    ? row.safeMigrations
+    : null;
+}
+
 function resourceEngine(value: Record<string, unknown>) {
   return value.engine === "postgres" || value.engine === "mysql" ? value.engine : null;
 }
@@ -134,7 +144,18 @@ export function projectProviderProvisioningTarget(
   const engine = resourceEngine(resource as unknown as Record<string, unknown>);
   const capabilities = parseCapabilities(row.capabilityManifest);
   const production = productionClassification(row.redactedMetadata);
-  if (!engine || engine !== row.connectionEngine || !capabilities || production === null) {
+  const safeMigrations = safeMigrationsClassification(row.redactedMetadata);
+  if (
+    !engine
+    || engine !== row.connectionEngine
+    || !capabilities
+    || production === null
+    || (
+      row.integrationProvider === "planetScale"
+      && engine === "mysql"
+      && safeMigrations === null
+    )
+  ) {
     throw new Error("Invalid provider provisioning target");
   }
   return {
@@ -149,6 +170,9 @@ export function projectProviderProvisioningTarget(
     resource: { ...resource },
     capabilityManifest: capabilities,
     production,
+    safeMigrations: row.integrationProvider === "planetScale" && engine === "mysql"
+      ? safeMigrations
+      : null,
     authorityExpiresAt: new Date(now.valueOf() + AUTHORITY_TTL_MS).toISOString(),
   };
 }
@@ -162,7 +186,26 @@ export async function loadProviderProvisioningTarget(input: {
   organizationId: string;
   connectionId: string;
   now?: Date;
+  cleanup?: boolean;
 }): Promise<ProviderProvisioningTarget | null> {
+  const productionPolicy = input.cleanup
+    ? sql`(
+        ${workspaceProviderResource.redactedMetadata}->'production' = 'false'::jsonb
+        OR ${workspaceProviderImportRequest.productionApproved} = TRUE
+      )`
+    : sql`(
+        ${workspaceProviderResource.redactedMetadata}->'production' = 'false'::jsonb
+        OR (
+          ${workspaceProviderResource.provider} IN ('gcpCloudSql', 'planetScale')
+          AND ${workspaceProviderResource.redactedMetadata}->'production' = 'true'::jsonb
+          AND (
+            ${workspaceProviderResource.provider} <> 'planetScale'
+            OR ${workspaceProviderResource.resource}->>'engine' = 'postgres'
+            OR ${workspaceProviderResource.redactedMetadata}->'safeMigrations' = 'true'::jsonb
+          )
+          AND ${workspaceProviderImportRequest.productionApproved} = TRUE
+        )
+      )`;
   const rows = await db.select({
     connectionId: workspaceConnection.id,
     connectionRevision: workspaceConnection.revision,
@@ -208,6 +251,7 @@ export async function loadProviderProvisioningTarget(input: {
       sql`${workspaceProviderResource.capabilityManifest}->'importReadOnly' = 'true'::jsonb`,
       sql`${workspaceProviderResource.capabilityManifest}->'managedLease' = 'true'::jsonb`,
       sql`jsonb_typeof(${workspaceProviderResource.capabilityManifest}->'write') = 'boolean'`,
+      productionPolicy,
     ))
     .limit(2);
   if (rows.length !== 1) return null;

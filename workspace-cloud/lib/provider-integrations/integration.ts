@@ -65,6 +65,7 @@ function boundedDiscoveryResults(items: ProviderResourceItem[]): ProviderResourc
         && typeof item.production !== "boolean"
         && item.production !== "unknown")
       || (item.ready !== undefined && typeof item.ready !== "boolean")
+      || (item.safeMigrations !== undefined && typeof item.safeMigrations !== "boolean")
     ) {
       throw new ProviderRequestError("provider", "Provider returned an invalid resource", 502);
     }
@@ -77,6 +78,9 @@ function boundedDiscoveryResults(items: ProviderResourceItem[]): ProviderResourc
       ...(item.kind !== undefined ? { kind: item.kind } : {}),
       ...(item.production !== undefined ? { production: item.production } : {}),
       ...(item.ready !== undefined ? { ready: item.ready } : {}),
+      ...(item.safeMigrations !== undefined
+        ? { safeMigrations: item.safeMigrations }
+        : {}),
     };
   });
 }
@@ -287,6 +291,7 @@ export async function discoverProviderResources(input: {
           token,
           selection.organization,
           selection.database,
+          database.kind,
         )).map((branch) => ({ ...branch, kind: database.kind })));
       }
       break;

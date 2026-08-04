@@ -148,13 +148,37 @@ export const providerImportAdapters: Record<
 export function providerImportProjection(
   provider: ImportProvider,
   value: unknown,
-  options: { writeAvailable?: boolean } = {},
+  options: {
+    writeAvailable?: boolean;
+    production?: boolean;
+    safeMigrations?: boolean;
+  } = {},
 ): ProviderImportProjection {
   const adapter = providerImportAdapters[provider];
   const resource = adapter.reconstruct(value);
-  const projected = adapter.importProjection(resource);
+  let projected = adapter.importProjection(resource);
+  if (provider === "planetScale") {
+    const planetScale = resource as PlanetScaleResource;
+    if (
+      typeof options.production !== "boolean"
+      || (planetScale.engine === "mysql" && typeof options.safeMigrations !== "boolean")
+      || (planetScale.engine === "postgres" && options.safeMigrations !== undefined)
+    ) {
+      throw new Error("PlanetScale branch policy is incomplete");
+    }
+    projected = {
+      ...projected,
+      metadata: {
+        ...projected.metadata,
+        production: options.production,
+        safeMigrations: planetScale.engine === "mysql"
+          ? options.safeMigrations!
+          : null,
+      },
+    };
+  }
   if (!options.writeAvailable) return projected;
-  if (provider !== "gcpCloudSql") {
+  if (provider !== "gcpCloudSql" && provider !== "planetScale") {
     throw new Error("Managed write capability is not available for this provider");
   }
   return {
@@ -165,12 +189,25 @@ export function providerImportProjection(
 
 export function allowDiscoveryImport(
   provider: string,
-  item: { ready?: boolean; production?: true | false | "unknown" },
+  item: {
+    ready?: boolean;
+    production?: true | false | "unknown";
+    kind?: "postgres" | "mysql";
+    safeMigrations?: boolean;
+  },
 ) {
   // Provider-wide token scopes never override DopeDB's narrow import policy.
   return item.ready === true
     && (
       item.production === false
       || (provider === "gcpCloudSql" && item.production === true)
+      || (
+        provider === "planetScale"
+        && item.production === true
+        && (
+          item.kind === "postgres"
+          || (item.kind === "mysql" && item.safeMigrations === true)
+        )
+      )
     );
 }

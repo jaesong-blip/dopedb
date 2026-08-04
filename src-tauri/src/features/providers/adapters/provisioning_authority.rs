@@ -16,6 +16,7 @@ use crate::model::{Engine, Provider, WorkspaceCredentialMode};
 use crate::store::PinnedConnection;
 
 use super::super::domain::LocalProvider;
+use super::super::provisioning::ProvisioningTarget;
 
 const MAX_TARGET_BODY_BYTES: usize = 64 * 1024;
 const MIN_AUTHORITY_SECONDS: i64 = 30;
@@ -57,6 +58,8 @@ pub(crate) struct AuthorizedProvisioningTarget {
     pub(crate) resource: AuthorizedProvisioningResource,
     pub(crate) write_available: bool,
     pub(crate) production: bool,
+    pub(crate) safe_migrations: Option<bool>,
+    pub(crate) provider_audit_id: String,
     pub(crate) expires_at: DateTime<Utc>,
 }
 
@@ -101,8 +104,10 @@ impl HostedProvisioningTargetAuthority {
             .map_err(|_| AppError::Config("Managed Access target URL is invalid".into()))?;
         let response = self
             .client
-            .get(url)
+            .post(url)
             .bearer_auth(token.as_str())
+            .header("x-dopedb-managed-provisioning-contract", "lifecycle-v1")
+            .json(&serde_json::json!({"action": "prepare"}))
             .send()
             .await
             .map_err(|_| AppError::Network("Managed Access target is unavailable".into()))?;
@@ -115,12 +120,92 @@ impl HostedProvisioningTargetAuthority {
         let body = read_bounded(response).await?;
         parse_target_response(&body, connection)
     }
+
+    pub(crate) async fn destroy(
+        &self,
+        connection: &PinnedConnection,
+        target: &ProvisioningTarget,
+        ownership_marker: &str,
+    ) -> AppResult<String> {
+        if connection.profile.credential_mode != WorkspaceCredentialMode::Managed
+            || target.provider() != LocalProvider::PlanetScale
+            || target.connection_id()
+                != crate::kernel::identity::ConnectionId::from(connection.connection_id)
+            || target.connection_revision() > connection.connection_revision
+        {
+            return Err(blocked("PlanetScale destroy target changed"));
+        }
+        let account_id = connection
+            .scope
+            .selected_account_id
+            .as_deref()
+            .ok_or_else(|| blocked("Managed Access requires an active workspace account"))?;
+        let token = fetch_workspace_session(account_id)?
+            .map(Zeroizing::new)
+            .ok_or_else(|| blocked("Managed Access requires an authenticated session"))?;
+        let origin = Url::parse(&validated_control_plane_origin()?)
+            .map_err(|_| AppError::Config("workspace control-plane origin is invalid".into()))?;
+        let url = origin
+            .join(&format!(
+                "api/v1/workspaces/{}/connections/{}/managed-access-target",
+                connection.scope.workspace_id, connection.connection_id
+            ))
+            .map_err(|_| AppError::Config("Managed Access target URL is invalid".into()))?;
+        let response = self
+            .client
+            .delete(url)
+            .bearer_auth(token.as_str())
+            .header("x-dopedb-managed-provisioning-contract", "lifecycle-v1")
+            .json(&serde_json::json!({
+                "action": "destroy",
+                "connectionRevision": target.connection_revision().to_string(),
+                "integrationId": Uuid::from(target.integration_id()),
+                "integrationGeneration": target.integration_generation().to_string(),
+                "resourceFingerprint": target.resource_fingerprint(),
+                "providerAuditId": target.provider_audit_id(),
+                "ownershipMarker": ownership_marker,
+            }))
+            .send()
+            .await
+            .map_err(|_| AppError::Network("Managed Access destroy is unavailable".into()))?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            delete_workspace_session(account_id)?;
+        }
+        if !response.status().is_success() {
+            return Err(blocked("Managed Access destroy is unavailable"));
+        }
+        let body = read_bounded(response).await?;
+        let response: DestroyResponse =
+            serde_json::from_slice(&body).map_err(|_| invalid_response())?;
+        if !response.destroyed
+            || response.revoked > 10_000
+            || response.provider_audit_id != target.provider_audit_id()
+        {
+            return Err(invalid_response());
+        }
+        Ok(response.provider_audit_id)
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TargetResponse {
     target: RemoteTarget,
+    verification: RemoteVerification,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RemoteVerification {
+    provider_audit_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DestroyResponse {
+    destroyed: bool,
+    revoked: u32,
+    provider_audit_id: String,
 }
 
 #[derive(Deserialize)]
@@ -137,6 +222,7 @@ struct RemoteTarget {
     resource: serde_json::Value,
     capability_manifest: RemoteCapabilityManifest,
     production: bool,
+    safe_migrations: Option<bool>,
     authority_expires_at: String,
 }
 
@@ -209,11 +295,16 @@ fn parse_target_response(
         return Err(invalid_response());
     }
     let response: TargetResponse = serde_json::from_slice(body).map_err(|_| invalid_response())?;
-    parse_target(response.target, connection)
+    parse_target(
+        response.target,
+        response.verification.provider_audit_id,
+        connection,
+    )
 }
 
 fn parse_target(
     target: RemoteTarget,
+    provider_audit_id: String,
     connection: &PinnedConnection,
 ) -> AppResult<AuthorizedProvisioningTarget> {
     let connection_id = Uuid::parse_str(&target.connection_id).map_err(|_| invalid_response())?;
@@ -236,6 +327,7 @@ fn parse_target(
         || !hash(&target.resource_fingerprint)
         || target.display_name != connection.profile.name
         || !safe_text(&target.display_name, 120)
+        || !safe_text(&provider_audit_id, 512)
         || !target.capability_manifest.discover
         || !target.capability_manifest.import_read_only
         || !target.capability_manifest.managed_lease
@@ -244,6 +336,37 @@ fn parse_target(
         return Err(invalid_response());
     }
     let resource = parse_resource(provider, target.resource, target.production)?;
+    let safe_migrations = match (&resource, target.safe_migrations) {
+        (
+            AuthorizedProvisioningResource::PlanetScale {
+                engine: Engine::Mysql,
+                ..
+            },
+            Some(value),
+        ) => Some(value),
+        (
+            AuthorizedProvisioningResource::PlanetScale {
+                engine: Engine::Postgres,
+                ..
+            },
+            None,
+        )
+        | (AuthorizedProvisioningResource::Neon { .. }, None)
+        | (AuthorizedProvisioningResource::GcpCloudSql { .. }, None) => None,
+        _ => return Err(invalid_response()),
+    };
+    if target.production
+        && matches!(
+            &resource,
+            AuthorizedProvisioningResource::PlanetScale {
+                engine: Engine::Mysql,
+                ..
+            }
+        )
+        && safe_migrations != Some(true)
+    {
+        return Err(invalid_response());
+    }
     if !resource_matches_profile(provider, &resource, connection) {
         return Err(invalid_response());
     }
@@ -259,6 +382,8 @@ fn parse_target(
         resource,
         write_available: target.capability_manifest.write,
         production: target.production,
+        safe_migrations,
+        provider_audit_id,
         expires_at,
     })
 }
@@ -319,7 +444,6 @@ fn parse_resource(
             if !segment(&value.organization, 128)
                 || !segment(&value.database, 128)
                 || !segment(&value.branch, 128)
-                || production
             {
                 return Err(invalid_response());
             }
@@ -489,8 +613,10 @@ pub(crate) fn assert_target_projection_contract() {
                 "write": false
             },
             "production": false,
+            "safeMigrations": null,
             "authorityExpiresAt": expires
-        }
+        },
+        "verification": {"providerAuditId": "br-main-12345678"}
     });
     let parsed = parse_target_response(&serde_json::to_vec(&body).unwrap(), &connection).unwrap();
     assert_eq!(parsed.provider, LocalProvider::Neon);
@@ -499,4 +625,52 @@ pub(crate) fn assert_target_projection_contract() {
     let mut spoofed = body;
     spoofed["target"]["resource"]["apiKey"] = serde_json::json!("must-not-project");
     assert!(parse_target_response(&serde_json::to_vec(&spoofed).unwrap(), &connection).is_err());
+
+    let mut planet_scale_connection = connection.clone();
+    planet_scale_connection.profile.name = "PlanetScale app".into();
+    planet_scale_connection.profile.engine = Engine::Mysql;
+    planet_scale_connection.profile.provider = Provider::PlanetScale;
+    planet_scale_connection.profile.database = "app".into();
+    let mut production_mysql = serde_json::json!({
+        "target": {
+            "connectionId": planet_scale_connection.connection_id,
+            "connectionRevision": planet_scale_connection.connection_revision.to_string(),
+            "integrationId": Uuid::from_u128(93),
+            "integrationGeneration": "5",
+            "provider": "planetScale",
+            "accountFingerprint": "ef".repeat(32),
+            "resourceFingerprint": "01".repeat(32),
+            "displayName": planet_scale_connection.profile.name,
+            "resource": {
+                "organization": "acme",
+                "database": planet_scale_connection.profile.database,
+                "branch": "production",
+                "engine": "mysql"
+            },
+            "capabilityManifest": {
+                "discover": true,
+                "importReadOnly": true,
+                "managedLease": true,
+                "write": true
+            },
+            "production": true,
+            "safeMigrations": true,
+            "authorityExpiresAt": (Utc::now() + chrono::Duration::minutes(5)).to_rfc3339()
+        },
+        "verification": {"providerAuditId": "br-production-123"}
+    });
+    let parsed = parse_target_response(
+        &serde_json::to_vec(&production_mysql).unwrap(),
+        &planet_scale_connection,
+    )
+    .unwrap();
+    assert_eq!(parsed.safe_migrations, Some(true));
+    assert!(parsed.production);
+
+    production_mysql["target"]["safeMigrations"] = serde_json::json!(false);
+    assert!(parse_target_response(
+        &serde_json::to_vec(&production_mysql).unwrap(),
+        &planet_scale_connection,
+    )
+    .is_err());
 }

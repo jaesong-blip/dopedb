@@ -11,16 +11,19 @@ use crate::operations::OperationRuntime;
 use crate::store::Store;
 
 use adapters::{
-    HostedProviderAuthority, HostedProviderVerifier, InMemoryProviderReceiptRegistry,
-    KeyringProviderCredentialVault, ProductionGcpAdcVerifier, ProviderLocalResolver,
-    SqliteProviderBindingRepository,
+    HostedProviderAuthority, HostedProviderVerifier, HostedProvisioningTargetAuthority,
+    InMemoryProviderReceiptRegistry, KeyringProviderCredentialVault, ProductionGcpAdcVerifier,
+    ProviderLocalResolver, SqliteProviderBindingRepository,
 };
 use application::ProviderUseCases;
-use ports::{ProviderBindingRevocationHandle, ProviderBindingRevocationPort};
-use provisioning::{ProvisioningCoordinator, ProvisioningDriverRegistry};
+use ports::{
+    ProviderBindingRevocationHandle, ProviderBindingRevocationPort, ProvisioningRuntimeHandle,
+    ProvisioningRuntimePort,
+};
+use provisioning::{planet_scale_registry, PlanetScaleProvisioningDriver, ProvisioningCoordinator};
 
 pub(crate) use domain::{
-    ProviderBindingStatus, ProviderCredentialMaterial, ProviderCredentialReceipt,
+    LocalProvider, ProviderBindingStatus, ProviderCredentialMaterial, ProviderCredentialReceipt,
     ProviderIntegrationSummary, RevokeProviderCredential, VerifyProviderCredential,
 };
 pub(crate) use provisioning::ProvisioningReceipt;
@@ -44,6 +47,7 @@ pub(crate) struct ProvidersFeature {
     application: ComposedProviderApplication,
     local_connection: ProviderLocalResolver,
     revocation: ProviderBindingRevocationHandle,
+    provisioning_runtime: ProvisioningRuntimeHandle,
     provisioning: ProvisioningCoordinator,
 }
 
@@ -53,6 +57,12 @@ pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFea
     let verifier = HostedProviderVerifier::new();
     let authority = HostedProviderAuthority::new();
     let revocation = ProviderBindingRevocationHandle::default();
+    let provisioning_runtime = ProvisioningRuntimeHandle::default();
+    let provisioning_driver = PlanetScaleProvisioningDriver::new(
+        store.clone(),
+        HostedProvisioningTargetAuthority::new(),
+        std::sync::Arc::new(provisioning_runtime.clone()),
+    );
     ProvidersFeature {
         application: ProviderUseCases::new(
             repository.clone(),
@@ -65,10 +75,11 @@ pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFea
         ),
         local_connection: ProviderLocalResolver::new(repository, vault),
         revocation,
+        provisioning_runtime,
         provisioning: ProvisioningCoordinator::new(
             store,
             operation,
-            ProvisioningDriverRegistry::default(),
+            planet_scale_registry(provisioning_driver),
         ),
     }
 }
@@ -92,6 +103,13 @@ impl ProvidersFeature {
         port: std::sync::Arc<dyn ProviderBindingRevocationPort>,
     ) -> crate::error::AppResult<()> {
         self.revocation.bind(port)
+    }
+
+    pub(crate) fn bind_provisioning_runtime(
+        &self,
+        port: std::sync::Arc<dyn ProvisioningRuntimePort>,
+    ) -> crate::error::AppResult<()> {
+        self.provisioning_runtime.bind(port)
     }
 
     pub(crate) async fn list_integrations(

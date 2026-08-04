@@ -130,7 +130,7 @@ export async function POST(request: Request, context: RouteContext) {
       eq(workspaceProviderResource.organizationId, workspaceId),
       eq(workspaceProviderResource.provider, integration.provider),
     ),
-    columns: { resource: true, capabilityManifest: true },
+    columns: { resource: true, redactedMetadata: true, capabilityManifest: true },
   });
   if (!canonicalResource) {
     // A legacy JSON-only managed connection remains cleanup-capable, but never
@@ -148,6 +148,29 @@ export async function POST(request: Request, context: RouteContext) {
   }
   if (resource.engine !== connection.engine) {
     return jsonError("Managed database engine does not match the connection", 409);
+  }
+  const metadata = canonicalResource.redactedMetadata
+    && typeof canonicalResource.redactedMetadata === "object"
+    && !Array.isArray(canonicalResource.redactedMetadata)
+    ? canonicalResource.redactedMetadata as Record<string, unknown>
+    : null;
+  const production = metadata?.production;
+  const safeMigrations = metadata?.safeMigrations;
+  if (
+    typeof production !== "boolean"
+    || (
+      integration.provider === "planetScale"
+      && resource.engine === "mysql"
+      && typeof safeMigrations !== "boolean"
+    )
+    || (
+      integration.provider === "planetScale"
+      && production
+      && resource.engine === "mysql"
+      && safeMigrations !== true
+    )
+  ) {
+    return jsonError("Managed database policy is invalid", 409);
   }
   if (requestedAccessMode === "write" && (
     !connection.allowWrites
@@ -183,6 +206,8 @@ export async function POST(request: Request, context: RouteContext) {
       connectionRevision: connection.revision,
       providerResourceId: connection.providerResourceId,
       engine: resource.engine,
+      production,
+      safeMigrations: typeof safeMigrations === "boolean" ? safeMigrations : null,
       accessMode,
       integration,
       resource,

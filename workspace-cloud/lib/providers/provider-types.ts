@@ -13,6 +13,7 @@ export type ProviderResourceItem = {
   kind?: ManagedEngine;
   production?: ProviderProductionClassification;
   ready?: boolean;
+  safeMigrations?: boolean;
 };
 
 export type ManagedProviderLease = {

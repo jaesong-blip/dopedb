@@ -639,6 +639,7 @@ export const workspaceProviderImportRequest = workspaceControl.table(
     }),
     idempotencyKey: text("idempotency_key").notNull(),
     requestHash: text("request_hash").notNull(),
+    productionApproved: boolean("production_approved").notNull().default(false),
     resourceId: uuid("resource_id").notNull(),
     connectionId: uuid("connection_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

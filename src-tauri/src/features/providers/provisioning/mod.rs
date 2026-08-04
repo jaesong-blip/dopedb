@@ -19,6 +19,12 @@ mod domain;
     reason = "the GCP CLI inventory is registered only after its complete #100 lifecycle lands"
 )]
 mod gcp_cli;
+mod planetscale;
+#[allow(
+    dead_code,
+    reason = "the PlanetScale CLI inventory is registered only after its complete #100 lifecycle lands"
+)]
+mod planetscale_cli;
 #[allow(
     dead_code,
     reason = "the fixed CLI runner is consumed by the concrete adapters landing in #100"
@@ -34,6 +40,13 @@ pub(super) use application::{ProvisioningCoordinator, ProvisioningDriverRegistry
 pub(crate) use application::{
     ProvisioningDriverStatus, ProvisioningPlanProjection, ProvisioningTargetSummary,
 };
+pub(super) use planetscale::PlanetScaleProvisioningDriver;
+
+pub(super) fn planet_scale_registry(
+    driver: PlanetScaleProvisioningDriver,
+) -> ProvisioningDriverRegistry {
+    ProvisioningDriverRegistry::with_driver(std::sync::Arc::new(driver))
+}
 
 /// Opaque one-step capability issued only while holding an executing Operation
 /// grant whose payload hash matches the durable provisioning plan.
@@ -102,6 +115,10 @@ pub(crate) use application::assert_restart_resume_lifecycle;
 pub(crate) use domain::assert_mock_provider_lifecycle;
 #[cfg(test)]
 pub(crate) use gcp_cli::{assert_gcloud_cli_contract, assert_live_gcloud_inventory};
+#[cfg(test)]
+pub(crate) use planetscale::assert_planetscale_driver_contract;
+#[cfg(test)]
+pub(crate) use planetscale_cli::assert_planetscale_cli_contract;
 #[cfg(test)]
 pub(crate) use process::assert_process_boundary;
 #[cfg(test)]

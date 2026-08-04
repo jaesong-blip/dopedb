@@ -41,6 +41,7 @@ impl AppState {
             providers.local_connection_port(),
         );
         providers.bind_revocation_port(Arc::new(connections.clone()))?;
+        providers.bind_provisioning_runtime(Arc::new(connections.clone()))?;
         let broker = BrokerRuntime::new(operation.runtime_id().into());
         let terminals = terminals::compose(store.clone(), broker.clone());
         let agents_acp = AcpRuntime::new(store.clone(), broker.clone());

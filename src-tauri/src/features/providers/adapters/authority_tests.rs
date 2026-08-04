@@ -122,6 +122,8 @@ async fn inventory_reader_enforces_content_length_and_streaming_caps() {
 #[test]
 fn inventory_parser_accepts_exact_boundary_and_rejects_truncated_unknown_or_foreign_scope() {
     crate::features::providers::provisioning::assert_gcloud_cli_contract();
+    crate::features::providers::provisioning::assert_planetscale_cli_contract();
+    crate::features::providers::provisioning::assert_planetscale_driver_contract();
     super::super::provisioning_authority::assert_target_projection_contract();
     let mut exact = br#"{"integrations":[]}"#.to_vec();
     exact.resize(MAX_INVENTORY_BODY_BYTES, b' ');

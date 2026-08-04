@@ -38,6 +38,7 @@ export type Resource = {
   // Server classification is tri-state; unknown must never look non-production.
   production?: boolean | "unknown";
   ready?: boolean;
+  safeMigrations?: boolean;
   selectionProof?: string;
   receipt?: string;
   receiptExpiresAt?: string;

@@ -53,6 +53,22 @@ export class PlanetScaleRequestError extends ProviderRequestError {
   }
 }
 
+/**
+ * A provider credential was created, its one-time response failed validation,
+ * and the immediate provider DELETE also failed. The identifier is not a
+ * secret; callers must persist it only in the existing cleanup queue and never
+ * attempt to deliver the malformed credential.
+ */
+export class PlanetScaleLeaseCleanupRequiredError extends PlanetScaleRequestError {
+  constructor(
+    readonly externalCredentialKind: "role" | "password",
+    readonly externalCredentialId: string,
+  ) {
+    super("PlanetScale credential cleanup is pending", 503);
+    this.name = "PlanetScaleLeaseCleanupRequiredError";
+  }
+}
+
 function credentials() {
   const clientId = env.planetScaleClientId();
   const clientSecret = env.planetScaleClientSecret();
@@ -93,11 +109,20 @@ function requiredString(value: unknown, field: string): string {
   return value;
 }
 
-function parseExpiresAt(value: unknown, fallbackSeconds: number): string {
-  const fallback = new Date(Date.now() + fallbackSeconds * 1_000);
-  if (typeof value !== "string") return fallback.toISOString();
+function parseExpiresAt(value: unknown, requestedSeconds: number): string {
+  if (typeof value !== "string") {
+    throw new PlanetScaleRequestError("PlanetScale omitted credential expiry", 502);
+  }
   const parsed = new Date(value);
-  return Number.isNaN(parsed.valueOf()) ? fallback.toISOString() : parsed.toISOString();
+  const remainingMs = parsed.valueOf() - Date.now();
+  if (
+    Number.isNaN(parsed.valueOf())
+    || remainingMs < 30_000
+    || remainingMs > (requestedSeconds + 60) * 1_000
+  ) {
+    throw new PlanetScaleRequestError("PlanetScale returned an invalid credential expiry", 502);
+  }
+  return parsed.toISOString();
 }
 
 async function responseJson(response: Response): Promise<unknown> {
@@ -243,7 +268,11 @@ async function paginated(
 
 function resourceItem(
   row: JsonObject,
-  options: { includeKind?: boolean; includeBranch?: boolean } = {},
+  options: {
+    includeKind?: boolean;
+    includeBranch?: boolean;
+    branchEngine?: "postgres" | "mysql";
+  } = {},
 ): ProviderResourceItem {
   const name = requiredString(row.name ?? row.slug, "resource name");
   const kind = options.includeKind ? planetScaleEngine(row.kind) ?? undefined : undefined;
@@ -258,10 +287,14 @@ function resourceItem(
         : row.production === false
           ? false
           : "unknown" as const,
-      // Missing state/schema readiness is never evidence that a target is safe
-      // to import. A branch that is merely listed can still be sleeping or mid
-      // migration, and the exact provider object must say all three are ready.
-      ready: row.state === "ready" && row.ready === true && row.schema_ready === true,
+      // PlanetScale's official MySQL branch model exposes `ready`; its
+      // PostgreSQL model additionally exposes `state`. Neither model exposes a
+      // `schema_ready` field, so requiring it would make every branch unusable.
+      ready: row.ready === true
+        && (options.branchEngine !== "postgres" || row.state === "ready"),
+      ...(typeof row.safe_migrations === "boolean"
+        ? { safeMigrations: row.safe_migrations }
+        : {}),
     } : {}),
   };
 }
@@ -286,12 +319,16 @@ export async function listPlanetScaleBranches(
   accessToken: string,
   organization: string,
   database: string,
+  engine: "postgres" | "mysql",
 ) {
   const rows = await paginated(
     accessToken,
     `/v1/organizations/${segment(organization)}/databases/${segment(database)}/branches`,
   );
-  return rows.map((row) => resourceItem(row, { includeBranch: true }));
+  return rows.map((row) => resourceItem(row, {
+    includeBranch: true,
+    branchEngine: engine,
+  }));
 }
 
 async function planetScaleBranch(
@@ -299,6 +336,7 @@ async function planetScaleBranch(
   organization: string,
   database: string,
   branch: string,
+  engine: "postgres" | "mysql",
 ) {
   const body = object(await apiRequest(
     accessToken,
@@ -307,16 +345,80 @@ async function planetScaleBranch(
   const row = body.data && typeof body.data === "object" && !Array.isArray(body.data)
     ? object(body.data)
     : body;
-  return resourceItem(row, { includeBranch: true });
+  return {
+    item: resourceItem(row, { includeBranch: true, branchEngine: engine }),
+    providerAuditId: requiredString(row.id, "branch id"),
+  };
+}
+
+async function planetScaleDatabase(
+  accessToken: string,
+  organization: string,
+  database: string,
+) {
+  const body = object(await apiRequest(
+    accessToken,
+    `/v1/organizations/${segment(organization)}/databases/${segment(database)}`,
+  ));
+  const row = body.data && typeof body.data === "object" && !Array.isArray(body.data)
+    ? object(body.data)
+    : body;
+  return {
+    name: requiredString(row.name, "database name"),
+    engine: planetScaleEngine(row.kind),
+    state: requiredString(row.state, "database state"),
+  };
 }
 
 export async function validatePlanetScaleResource(
   accessToken: string,
   resource: PlanetScaleResource,
+  policy: { production?: boolean; safeMigrations?: boolean | null } = {},
 ) {
-  const databases = await listPlanetScaleDatabases(accessToken, resource.organization);
-  const database = databases.find((item) => item.name === resource.database);
-  if (!database || database.kind !== resource.engine) {
+  const live = await inspectPlanetScaleResourceIdentity(accessToken, resource);
+  const expectedProduction = policy.production === true;
+  if (
+    live.databaseState !== "ready"
+    || live.branch.ready !== true
+    || live.branch.production !== expectedProduction
+    || (
+      expectedProduction
+      && resource.engine === "mysql"
+      && (
+        policy.safeMigrations !== true
+        || live.branch.safeMigrations !== true
+      )
+    )
+    || (
+      resource.engine === "mysql"
+      && policy.safeMigrations !== undefined
+      && policy.safeMigrations !== null
+      && live.branch.safeMigrations !== policy.safeMigrations
+    )
+  ) {
+    throw new PlanetScaleRequestError("PlanetScale branch does not match the approved readiness policy", 409);
+  }
+  return { providerAuditId: live.providerAuditId };
+}
+
+/**
+ * Cleanup must remain possible after readiness or Safe Migrations drift. This
+ * verifies only the exact provider-owned database/branch identity; callers may
+ * not use it as issuance or Ready evidence.
+ */
+export async function inspectPlanetScaleResourceIdentity(
+  accessToken: string,
+  resource: PlanetScaleResource,
+) {
+  const database = await planetScaleDatabase(
+    accessToken,
+    resource.organization,
+    resource.database,
+  );
+  if (
+    database.name !== resource.database
+    || database.engine !== resource.engine
+  ) {
     throw new PlanetScaleRequestError("PlanetScale database was not found", 404);
   }
   const branch = await planetScaleBranch(
@@ -324,14 +426,16 @@ export async function validatePlanetScaleResource(
     resource.organization,
     resource.database,
     resource.branch,
+    resource.engine,
   );
-  if (
-    branch.name !== resource.branch
-    || branch.ready !== true
-    || branch.production !== false
-  ) {
-    throw new PlanetScaleRequestError("PlanetScale branch is not an explicitly ready non-production target", 409);
+  if (branch.item.name !== resource.branch) {
+    throw new PlanetScaleRequestError("PlanetScale branch was not found", 404);
   }
+  return {
+    providerAuditId: branch.providerAuditId,
+    databaseState: database.state,
+    branch: branch.item,
+  };
 }
 
 function connectionParts(value: string, protocol: "postgresql" | "mysql") {
@@ -377,20 +481,35 @@ export async function issuePlanetScaleLease(
         require_where_on_update: "on",
       }),
     }));
-    const address = connectionParts(
-      requiredString(body.access_host_url, "access_host_url"),
-      "postgresql",
-    );
-    return {
-      externalCredentialId: requiredString(body.id, "role id"),
-      externalCredentialKind: "role",
-      ...address,
-      database: typeof body.database_name === "string" ? body.database_name : address.database,
-      username: requiredString(body.username, "username"),
-      password: requiredString(body.password, "password"),
-      sslmode: "verify-full",
-      expiresAt: parseExpiresAt(body.expires_at, PLANETSCALE_LEASE_SECONDS),
-    };
+    const externalCredentialId = requiredString(body.id, "role id");
+    try {
+      const address = connectionParts(
+        requiredString(body.access_host_url, "access_host_url"),
+        "postgresql",
+      );
+      return {
+        externalCredentialId,
+        externalCredentialKind: "role",
+        ...address,
+        database: typeof body.database_name === "string" ? body.database_name : address.database,
+        username: requiredString(body.username, "username"),
+        password: requiredString(body.password, "password"),
+        sslmode: "verify-full",
+        expiresAt: parseExpiresAt(body.expires_at, PLANETSCALE_LEASE_SECONDS),
+      };
+    } catch (error) {
+      try {
+        await revokePlanetScaleLease(
+          accessToken,
+          resource,
+          "role",
+          externalCredentialId,
+        );
+      } catch {
+        throw new PlanetScaleLeaseCleanupRequiredError("role", externalCredentialId);
+      }
+      throw error;
+    }
   }
 
   const body = object(await apiRequest(accessToken, `${base}/passwords`, {
@@ -401,20 +520,35 @@ export async function issuePlanetScaleLease(
       ttl: PLANETSCALE_LEASE_SECONDS,
     }),
   }));
-  const address = connectionParts(
-    requiredString(body.access_host_url, "access_host_url"),
-    "mysql",
-  );
-  return {
-    externalCredentialId: requiredString(body.id, "password id"),
-    externalCredentialKind: "password",
-    ...address,
-    database: resource.database,
-    username: requiredString(body.username, "username"),
-    password: requiredString(body.plain_text, "plain_text"),
-    sslmode: "verify-full",
-    expiresAt: parseExpiresAt(body.expires_at, PLANETSCALE_LEASE_SECONDS),
-  };
+  const externalCredentialId = requiredString(body.id, "password id");
+  try {
+    const address = connectionParts(
+      requiredString(body.access_host_url, "access_host_url"),
+      "mysql",
+    );
+    return {
+      externalCredentialId,
+      externalCredentialKind: "password",
+      ...address,
+      database: resource.database,
+      username: requiredString(body.username, "username"),
+      password: requiredString(body.plain_text, "plain_text"),
+      sslmode: "verify-full",
+      expiresAt: parseExpiresAt(body.expires_at, PLANETSCALE_LEASE_SECONDS),
+    };
+  } catch (error) {
+    try {
+      await revokePlanetScaleLease(
+        accessToken,
+        resource,
+        "password",
+        externalCredentialId,
+      );
+    } catch {
+      throw new PlanetScaleLeaseCleanupRequiredError("password", externalCredentialId);
+    }
+    throw error;
+  }
 }
 
 export async function revokePlanetScaleLease(

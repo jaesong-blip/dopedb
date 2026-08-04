@@ -136,6 +136,14 @@ export function discoveredProviderResource(input: {
   return providerImportProjection(
     input.provider as "planetScale" | "neon" | "gcpCloudSql",
     resource,
-    { writeAvailable: input.writeAvailable === true },
+    {
+      writeAvailable: input.writeAvailable === true,
+      ...(input.provider === "planetScale" ? {
+        production: input.item.production as boolean,
+        ...(engine === "mysql"
+          ? { safeMigrations: input.item.safeMigrations }
+          : {}),
+      } : {}),
+    },
   );
 }

@@ -11,6 +11,7 @@ use crate::error::AppResult;
 use crate::kernel::identity::{
     ProviderBindingId, ProviderCredentialReceiptId, ProviderIntegrationId,
 };
+use crate::model::Engine;
 
 use super::domain::{
     ProviderBindingScope, ProviderBindingStatus, ProviderCredentialCleanup,
@@ -150,6 +151,76 @@ impl ProviderBindingRevocationPort for ProviderBindingRevocationHandle {
                 reason: "provider binding revocation runtime is unavailable".into(),
             })?;
             target.force_fence(binding_id).await
+        })
+    }
+}
+
+/// Narrow connection-runtime boundary consumed by complete managed-access
+/// provisioners. It can open one exact uncached short lease or fence one
+/// connection, but cannot execute arbitrary SQL or inspect credential material.
+pub(crate) trait ProvisioningRuntimePort: Send + Sync + 'static {
+    fn smoke<'a>(
+        &'a self,
+        connection_id: uuid::Uuid,
+        connection_revision: i64,
+        provider: super::domain::LocalProvider,
+        engine: Engine,
+        access: super::provisioning::ProvisioningAccessMode,
+    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>>;
+
+    fn force_fence<'a>(
+        &'a self,
+        connection_id: uuid::Uuid,
+    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>>;
+}
+
+/// Late-bound holder that keeps provider composition independent of the
+/// concrete `ConnectionManager` type and fails closed in incomplete runtimes.
+#[derive(Clone, Default)]
+pub(crate) struct ProvisioningRuntimeHandle {
+    target: Arc<std::sync::OnceLock<Arc<dyn ProvisioningRuntimePort>>>,
+}
+
+impl ProvisioningRuntimeHandle {
+    pub(crate) fn bind(&self, target: Arc<dyn ProvisioningRuntimePort>) -> AppResult<()> {
+        self.target.set(target).map_err(|_| {
+            crate::error::AppError::Config(
+                "provider provisioning runtime was bound more than once".into(),
+            )
+        })
+    }
+}
+
+impl ProvisioningRuntimePort for ProvisioningRuntimeHandle {
+    fn smoke<'a>(
+        &'a self,
+        connection_id: uuid::Uuid,
+        connection_revision: i64,
+        provider: super::domain::LocalProvider,
+        engine: Engine,
+        access: super::provisioning::ProvisioningAccessMode,
+    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
+        let target = self.target.get().cloned();
+        Box::pin(async move {
+            let target = target.ok_or_else(|| crate::error::AppError::Blocked {
+                reason: "provider provisioning runtime is unavailable".into(),
+            })?;
+            target
+                .smoke(connection_id, connection_revision, provider, engine, access)
+                .await
+        })
+    }
+
+    fn force_fence<'a>(
+        &'a self,
+        connection_id: uuid::Uuid,
+    ) -> Pin<Box<dyn Future<Output = AppResult<()>> + Send + 'a>> {
+        let target = self.target.get().cloned();
+        Box::pin(async move {
+            let target = target.ok_or_else(|| crate::error::AppError::Blocked {
+                reason: "provider provisioning runtime is unavailable".into(),
+            })?;
+            target.force_fence(connection_id).await
         })
     }
 }

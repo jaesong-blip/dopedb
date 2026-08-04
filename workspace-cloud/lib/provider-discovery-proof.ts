@@ -131,7 +131,7 @@ export function canonicalProviderDiscoverySelection(
 
 function parseItem(value: unknown): ProviderResourceItem | null {
   const record = exactRecord(value, [
-    "id", "name", "value", "kind", "production", "ready",
+    "id", "name", "value", "kind", "production", "ready", "safeMigrations",
   ]);
   if (
     !record
@@ -144,6 +144,7 @@ function parseItem(value: unknown): ProviderResourceItem | null {
       && record.production !== false
       && record.production !== "unknown")
     || (record.ready !== undefined && typeof record.ready !== "boolean")
+    || (record.safeMigrations !== undefined && typeof record.safeMigrations !== "boolean")
   ) {
     return null;
   }
@@ -160,6 +161,9 @@ function parseItem(value: unknown): ProviderResourceItem | null {
       ? { production: record.production }
       : {}),
     ...(typeof record.ready === "boolean" ? { ready: record.ready } : {}),
+    ...(typeof record.safeMigrations === "boolean"
+      ? { safeMigrations: record.safeMigrations }
+      : {}),
   };
 }
 
@@ -316,5 +320,6 @@ export function sameProviderResourceItem(
     && left.value === right.value
     && left.kind === right.kind
     && left.production === right.production
-    && left.ready === right.ready;
+    && left.ready === right.ready
+    && left.safeMigrations === right.safeMigrations;
 }

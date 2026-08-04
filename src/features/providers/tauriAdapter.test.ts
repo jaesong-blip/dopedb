@@ -283,7 +283,10 @@ describe("provider credential Tauri adapter", () => {
 
     expect(providerAdapterContractSource).toContain("write: boolean");
     expect(providerImportProjectionSource).toContain(
-      'if (provider !== "gcpCloudSql")',
+      'if (provider !== "gcpCloudSql" && provider !== "planetScale")',
+    );
+    expect(providerImportProjectionSource).toContain(
+      'item.kind === "mysql" && item.safeMigrations === true',
     );
     expect(providerImportProjectionSource).toContain(
       "capabilities: { ...projected.capabilities, write: true }",

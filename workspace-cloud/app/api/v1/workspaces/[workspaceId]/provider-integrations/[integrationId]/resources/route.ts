@@ -95,6 +95,7 @@ function authorityFor(
 function providerWriteAvailable(
   integration: Parameters<typeof gcpCredential>[0],
 ) {
+  if (integration.provider === "planetScale") return true;
   return integration.provider === "gcpCloudSql"
     && gcpCredential(integration).writeServiceAccountEmail !== null;
 }

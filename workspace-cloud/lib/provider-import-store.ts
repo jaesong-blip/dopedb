@@ -231,9 +231,14 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         AND (
           resource."redacted_metadata" -> 'production' = 'false'::jsonb
           OR (
-            resource."provider" = 'gcpCloudSql'
+            resource."provider" IN ('gcpCloudSql', 'planetScale')
             AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
             AND ${input.productionApproved}
+            AND (
+              resource."provider" <> 'planetScale'
+              OR resource."resource" ->> 'engine' = 'postgres'
+              OR resource."redacted_metadata" -> 'safeMigrations' = 'true'::jsonb
+            )
           )
         )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb
@@ -439,8 +444,8 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
       JOIN fresh ON TRUE
       RETURNING "id"
     ), recorded AS MATERIALIZED (
-      INSERT INTO "workspace_control"."workspace_provider_import_request" ("organization_id", "idempotency_key", "request_hash", "resource_id", "connection_id")
-      SELECT ${input.organizationId}, ${input.idempotencyKey}, payload."requestHash", payload."resourceId", payload."id"
+      INSERT INTO "workspace_control"."workspace_provider_import_request" ("organization_id", "idempotency_key", "request_hash", "production_approved", "resource_id", "connection_id")
+      SELECT ${input.organizationId}, ${input.idempotencyKey}, payload."requestHash", ${input.productionApproved}, payload."resourceId", payload."id"
       FROM payload JOIN audit ON TRUE RETURNING "connection_id"
     ), outcome AS (
       SELECT 'imported'::text AS "kind", prior.* FROM prior
