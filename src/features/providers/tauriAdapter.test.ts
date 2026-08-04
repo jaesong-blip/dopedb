@@ -359,18 +359,25 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBootstrapSource).toContain("NEON_REVOKE_OTHER_DATABASE_PUBLIC_CONNECT");
     expect(neonBootstrapSource).toContain("NEON_PUBLIC_SECURITY_DEFINER");
     expect(neonBootstrapSource).toContain("NEON_LEASE_ROLE_DRIFT");
+    expect(neonBootstrapSource).toContain("NEON_READ_WRITE_SMOKE_PLANNED");
     expect(neonBootstrapSource).toContain("expectedPlanHash");
     expect(neonBootstrapSource).toContain("expectedReadyHash");
     expect(neonBootstrapSource).toContain('state: "preflight"');
     expect(neonBootstrapSource).toContain("publicAclApproved");
     expect(neonBootstrapSource).toContain("productionApproved");
     expect(neonBootstrapSource).toContain("negative write smoke failed");
+    expect(neonBootstrapSource).toContain("positive write smoke failed");
+    expect(neonBootstrapSource).toContain("negative DDL smoke failed");
+    expect(neonBootstrapSource).toContain("negative role management smoke failed");
+    expect(neonBootstrapSource).toContain("DROP TABLE ${qualifiedTable}");
     expect(neonBootstrapSource).toContain("rolled back");
     expect(neonBootstrapSource).toContain("NeonBootstrapRepairRequiredError");
     expect(neonBootstrapRouteSource).toContain("openProviderDiscoveryProof");
     expect(neonBootstrapRouteSource).toContain("sealNeonBootstrapPlan");
     expect(neonBootstrapRouteSource).toContain("openNeonBootstrapPlan");
     expect(neonBootstrapRouteSource).toContain("recordProviderDiscoveryReceipt");
+    expect(neonBootstrapRouteSource).toContain("writeAvailable: true");
+    expect(neonBootstrapRouteSource).toContain("temporaryObject");
     expect(neonBootstrapRouteSource).toContain("provider.neon.bootstrap_needs_repair");
     expect(neonBootstrapRouteSource).toContain("recordBootstrapAudit");
     expect(neonBootstrapRouteSource).toContain(

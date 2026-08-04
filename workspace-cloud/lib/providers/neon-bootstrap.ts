@@ -26,8 +26,11 @@ import { ProviderRequestError } from "./provider-types";
 const POLICY_VERSION = 1 as const;
 
 class NeonSmokeCleanupRequiredError extends Error {
-  constructor(readonly role: string) {
-    super("Neon smoke role cleanup failed");
+  constructor(
+    readonly role: string | null,
+    readonly objectName: string | null = null,
+  ) {
+    super("Neon smoke resource cleanup failed");
   }
 }
 
@@ -36,6 +39,7 @@ export class NeonBootstrapRepairRequiredError extends ProviderRequestError {
     readonly repairCode: string,
     readonly providerAuditId: string,
     readonly temporaryRole: string | null,
+    readonly temporaryObject: string | null,
   ) {
     super("neon", "Neon bootstrap needs manual repair", 503);
     this.name = "NeonBootstrapRepairRequiredError";
@@ -317,17 +321,18 @@ export async function inspectNeonBootstrap(input: {
 
   const schemaRows = await sql.query(
     "SELECT n.nspname AS schema_name, "
-      + "has_schema_privilege(n.oid, 'USAGE WITH GRANT OPTION') AS grantable "
+      + "has_schema_privilege(n.oid, 'USAGE WITH GRANT OPTION') AS grantable, "
+      + "has_schema_privilege(n.oid, 'CREATE') AS can_create_probe "
       + "FROM pg_namespace n WHERE n.nspname = ANY($1::text[]) ORDER BY n.nspname",
     [target.resource.schemas],
   );
   if (
     schemaRows.length !== target.resource.schemas.length
-    || schemaRows.some((row) => row.grantable !== true)
+    || schemaRows.some((row) => row.grantable !== true || row.can_create_probe !== true)
   ) {
     findings.push(blocker(
       "NEON_SCHEMA_NOT_GRANTABLE",
-      "허용 schema가 없거나 USAGE를 단기 role에 위임할 수 없습니다.",
+      "허용 schema가 없거나 단기 role 위임·쓰기 probe 생성 경계를 만족하지 않습니다.",
       target.resource.schemas.join(", "),
     ));
   }
@@ -433,14 +438,19 @@ export async function inspectNeonBootstrap(input: {
     "SELECT 1 AS unsafe FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
       + "WHERE n.nspname = ANY($1::text[]) AND ("
       + "(c.relkind IN ('r','p','v','m','f') "
-      + "AND NOT has_table_privilege(c.oid, 'SELECT WITH GRANT OPTION')) OR "
-      + "(c.relkind = 'S' AND NOT has_sequence_privilege(c.oid, 'SELECT WITH GRANT OPTION'))) LIMIT 1",
+      + "AND (NOT has_table_privilege(c.oid, 'SELECT WITH GRANT OPTION') "
+      + "OR NOT has_table_privilege(c.oid, 'INSERT WITH GRANT OPTION') "
+      + "OR NOT has_table_privilege(c.oid, 'UPDATE WITH GRANT OPTION') "
+      + "OR NOT has_table_privilege(c.oid, 'DELETE WITH GRANT OPTION'))) OR "
+      + "(c.relkind = 'S' AND (NOT has_sequence_privilege(c.oid, 'SELECT WITH GRANT OPTION') "
+      + "OR NOT has_sequence_privilege(c.oid, 'USAGE WITH GRANT OPTION') "
+      + "OR NOT has_sequence_privilege(c.oid, 'UPDATE WITH GRANT OPTION')))) LIMIT 1",
     [target.resource.schemas],
   );
   if (ungrantableRows.length > 0) {
     findings.push(blocker(
       "NEON_OBJECT_NOT_GRANTABLE",
-      "현재 객체의 읽기 권한을 최소권한 role에 위임할 수 없습니다.",
+      "현재 객체의 읽기·쓰기 권한을 최소권한 role에 위임할 수 없습니다.",
       target.resource.schemas.join(", "),
     ));
   }
@@ -526,6 +536,19 @@ export async function inspectNeonBootstrap(input: {
     ));
   }
 
+  if (!findings.some((item) => item.level === "blocker")) {
+    findings.push(finding({
+      code: "NEON_READ_WRITE_SMOKE_PLANNED",
+      level: "change",
+      description: "단기 read/write role을 실제 연결해 허용·거부 경계를 검증합니다.",
+      target: target.resource.schemas[0],
+      before: "실행 전 검증 없음",
+      after: "read 성공·write DML 성공·DDL/role 관리 거부·probe 제거",
+      requiresApproval: null,
+      rollbackAvailable: true,
+    }));
+  }
+
   if (!findings.some((item) => item.level === "blocker") && actions.length === 0) {
     findings.push(finding({
       code: "NEON_POLICY_ALREADY_READY",
@@ -549,6 +572,7 @@ export async function inspectNeonBootstrap(input: {
     production,
     databases: [...allDatabases].sort(),
     marker: marker.name,
+    managedAccess: ["read", "write"],
   };
   const hasBlocker = findings.some((item) => item.level === "blocker");
   const requiresPublicAclApproval = actions.some(
@@ -584,7 +608,9 @@ export async function inspectNeonBootstrap(input: {
       findings,
       requiresPublicAclApproval,
       requiresProductionApproval: production,
-      canRollback: actions.every((action) => action.finding.rollbackAvailable),
+      canRollback: findings
+        .filter((item) => item.level === "change")
+        .every((item) => item.rollbackAvailable),
     },
     readyHash,
     actions,
@@ -633,6 +659,116 @@ async function smokeReadCredential(input: {
       throw new NeonSmokeCleanupRequiredError(role);
     }
   }
+}
+
+async function smokeWriteCredential(input: {
+  credential: NeonCredential;
+  resource: NeonResource;
+  production: boolean;
+}) {
+  const target = await openNeonBootstrapTarget(input.credential, input.resource);
+  const schemaName = target.resource.schemas[0];
+  if (!schemaName || !neonSchemaName(schemaName)) {
+    throw new ProviderRequestError("neon", "Neon write smoke schema is invalid", 409);
+  }
+  const tableName = `dopedb_write_probe_${randomUUID().replaceAll("-", "")}`;
+  const qualifiedTable = `${identifier(schemaName)}.${identifier(tableName)}`;
+  const role = neonRoleForLease("bootstrap", randomUUID());
+  let probeCreated = false;
+  let leaseIssued = false;
+  let failure: unknown = null;
+
+  try {
+    await target.sql.query(
+      `CREATE TABLE ${qualifiedTable} (id integer PRIMARY KEY, value integer NOT NULL)`,
+    );
+    probeCreated = true;
+    const lease = await issueNeonLease({
+      credential: input.credential,
+      resource: target.resource,
+      accessMode: "write",
+      production: input.production,
+      role,
+    });
+    leaseIssued = true;
+    const url = new URL(`postgresql://${lease.host}`);
+    url.username = lease.username;
+    url.password = lease.password;
+    url.pathname = `/${encodeURIComponent(lease.database)}`;
+    url.searchParams.set("sslmode", "verify-full");
+    const client = neon(url.toString(), {
+      fetchOptions: { signal: AbortSignal.timeout(15_000) },
+    });
+    const inserted = await client.query(
+      `INSERT INTO ${qualifiedTable} (id, value) VALUES ($1, $2) RETURNING value`,
+      [1, 1],
+    );
+    const updated = await client.query(
+      `UPDATE ${qualifiedTable} SET value = $1 WHERE id = $2 RETURNING value`,
+      [2, 1],
+    );
+    const deleted = await client.query(
+      `DELETE FROM ${qualifiedTable} WHERE id = $1 RETURNING id`,
+      [1],
+    );
+    if (
+      inserted.length !== 1
+      || Number(inserted[0]?.value) !== 1
+      || updated.length !== 1
+      || Number(updated[0]?.value) !== 2
+      || deleted.length !== 1
+      || Number(deleted[0]?.id) !== 1
+    ) {
+      throw new Error("positive write smoke failed");
+    }
+
+    let ddlDenied = false;
+    try {
+      await client.query(`ALTER TABLE ${qualifiedTable} ADD COLUMN forbidden integer`);
+    } catch {
+      ddlDenied = true;
+    }
+    if (!ddlDenied) throw new Error("negative DDL smoke failed");
+
+    let roleManagementDenied = false;
+    try {
+      await client.query(`ALTER ROLE ${role} CREATEROLE`);
+    } catch {
+      roleManagementDenied = true;
+    }
+    if (!roleManagementDenied) {
+      throw new Error("negative role management smoke failed");
+    }
+  } catch (error) {
+    failure = error;
+  }
+
+  let roleCleanupFailed = false;
+  let objectCleanupFailed = false;
+  if (probeCreated) {
+    if (leaseIssued || failure instanceof NeonLeaseCleanupRequiredError) {
+      try {
+        await revokeNeonLease(input.credential, target.resource, role);
+      } catch {
+        roleCleanupFailed = true;
+      }
+    }
+    try {
+      await target.sql.query(`DROP TABLE ${qualifiedTable}`);
+    } catch {
+      objectCleanupFailed = true;
+    }
+  }
+  if (roleCleanupFailed || objectCleanupFailed) {
+    throw new NeonSmokeCleanupRequiredError(
+      roleCleanupFailed ? role : null,
+      objectCleanupFailed ? `${schemaName}.${tableName}` : null,
+    );
+  }
+  if (failure instanceof NeonLeaseCleanupRequiredError) {
+    throw new Error("write lease issuance failed after cleanup");
+  }
+  if (failure) throw failure;
 }
 
 export async function applyNeonBootstrap(input: {
@@ -710,7 +846,7 @@ export async function applyNeonBootstrap(input: {
     await validateNeonResource(
       inspection.credential,
       inspection.resource,
-      "read",
+      "write",
       inspection.report.production,
     );
     await smokeReadCredential({
@@ -718,14 +854,26 @@ export async function applyNeonBootstrap(input: {
       resource: inspection.resource,
       production: inspection.report.production,
     });
+    await smokeWriteCredential({
+      credential: inspection.credential,
+      resource: inspection.resource,
+      production: inspection.report.production,
+    });
   } catch (error) {
-    const roleCleanupRequired = error instanceof NeonSmokeCleanupRequiredError
-      || error instanceof NeonLeaseCleanupRequiredError;
+    const roleCleanupRequired = (
+      error instanceof NeonSmokeCleanupRequiredError && error.role !== null
+    ) || error instanceof NeonLeaseCleanupRequiredError;
+    const objectCleanupRequired = error instanceof NeonSmokeCleanupRequiredError
+      && error.objectName !== null;
+    const cleanupRequired = roleCleanupRequired || objectCleanupRequired;
     const temporaryRole = error instanceof NeonSmokeCleanupRequiredError
       ? error.role
       : error instanceof NeonLeaseCleanupRequiredError
         ? error.externalCredentialId
         : null;
+    const temporaryObject = error instanceof NeonSmokeCleanupRequiredError
+      ? error.objectName
+      : null;
     let rolledBack = !changesApplied;
     if (changesApplied) {
       try {
@@ -738,15 +886,23 @@ export async function applyNeonBootstrap(input: {
         rolledBack = false;
       }
     }
-    if (roleCleanupRequired || !rolledBack) {
+    if (cleanupRequired || !rolledBack) {
+      let repairCode = "NEON_POLICY_ROLLBACK_REQUIRED";
+      if (
+        (cleanupRequired && !rolledBack)
+        || (roleCleanupRequired && objectCleanupRequired)
+      ) {
+        repairCode = "NEON_BOOTSTRAP_MULTIPLE_REPAIRS_REQUIRED";
+      } else if (roleCleanupRequired) {
+        repairCode = "NEON_SMOKE_ROLE_CLEANUP_REQUIRED";
+      } else if (objectCleanupRequired) {
+        repairCode = "NEON_SMOKE_PROBE_CLEANUP_REQUIRED";
+      }
       throw new NeonBootstrapRepairRequiredError(
-        roleCleanupRequired && !rolledBack
-          ? "NEON_BOOTSTRAP_MULTIPLE_REPAIRS_REQUIRED"
-          : roleCleanupRequired
-            ? "NEON_SMOKE_ROLE_CLEANUP_REQUIRED"
-            : "NEON_POLICY_ROLLBACK_REQUIRED",
+        repairCode,
         inspection.report.providerAuditId,
         temporaryRole,
+        temporaryObject,
       );
     }
     throw new ProviderRequestError(

@@ -378,8 +378,8 @@ export function ProviderResourcePicker({
                   </strong>
                   <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
                     DB를 등록하기 전에 공개 권한과 소유권 경계를 점검합니다.
-                    필요한 변경만 보여주고, 승인 후 적용·읽기 검증·쓰기 차단
-                    검증을 한 번에 실행합니다.
+                    필요한 변경만 보여주고, 승인 후 read/write 단기 역할의
+                    허용·거부 경계를 실제 연결로 검증합니다.
                   </p>
                 </div>
 
@@ -414,8 +414,8 @@ export function ProviderResourcePicker({
                 {!neonBootstrap.report ? (
                   <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border tw:border-border tw:bg-surface-inset tw:p-3 tw:max-[520px]:grid">
                     <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                      아직 DB 권한을 변경하지 않습니다. 먼저 읽기 전용 점검 결과를
-                      확인하세요.
+                      아직 DB 권한을 변경하지 않습니다. 먼저 변경 없는 사전 점검
+                      결과를 확인하세요.
                     </p>
                     <ControlButton
                       tone="primary"
@@ -522,8 +522,9 @@ export function ProviderResourcePicker({
                         className="tw:m-0 tw:border tw:border-success/40 tw:bg-success/10 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-success"
                         role="status"
                       >
-                        설정과 검증을 완료했습니다. 읽기 연결은 성공했고 쓰기
-                        차단도 확인했습니다. 이제 공유 DB를 만들 수 있습니다.
+                        설정과 검증을 완료했습니다. read role의 쓰기 차단과 write
+                        role의 DML 허용·DDL/role 관리 거부를 확인했습니다. 공유 DB는
+                        쓰기 정책이 꺼진 상태로 생성됩니다.
                       </p>
                     ) : (
                       <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-2">

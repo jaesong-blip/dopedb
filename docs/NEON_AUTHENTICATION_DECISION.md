@@ -75,5 +75,8 @@ name retained only as display/connection metadata. A protected branch is always
 production; a default or otherwise unclassified branch requires an Admin/Owner
 classification. No final discovery leaf can be imported directly. It must pass
 the sealed Neon bootstrap plan, explicit PUBLIC/production approvals, independent
-ACL validation, and read-positive/write-negative credential smoke test before a
-short-lived import receipt is issued. The resulting capability remains read-only.
+ACL validation, and separate read/write credential smoke tests before a short-lived
+import receipt is issued. The read role must reject writes; the write role must allow
+only DML and reject DDL and role management. The connection still starts read-only,
+and only a later administrator policy plus member RBAC can request the verified write
+capability.

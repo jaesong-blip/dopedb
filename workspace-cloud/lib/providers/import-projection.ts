@@ -14,6 +14,7 @@ import type { PlanetScaleResource } from "./planetscale";
 
 export type DiscoverableProviderResource = PlanetScaleResource | NeonResource | GcpCloudSqlResource;
 export type ImportProvider = "neon" | "gcpCloudSql" | "planetScale";
+const writeCapableProviders = new Set<string>(["neon", "gcpCloudSql", "planetScale"]);
 
 function exactRecord(value: unknown, fields: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -198,10 +199,7 @@ export function providerImportProjection(
     };
   }
   if (!options.writeAvailable) return projected;
-  if (
-    provider !== "gcpCloudSql"
-    && provider !== "planetScale"
-  ) {
+  if (!writeCapableProviders.has(provider)) {
     throw new Error("Managed write capability is not available for this provider");
   }
   return {

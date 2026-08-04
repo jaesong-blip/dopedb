@@ -55,11 +55,13 @@ them through the unpooled URL with `pnpm workspace:migrate` from the repository 
    production target. DopeDB applies only the sealed plan hash. Approved statements
    run transactionally, their exact inverse is retained for rollback, and a changed
    target forces a new preflight instead of silently broadening the plan.
-5. DopeDB independently revalidates the Provider target and database boundary, creates
-   a temporary 15-minute read role, proves a read succeeds and a write fails, removes
-   that role, and only then issues the short-lived import receipt. A failed verification
-   rolls back approved ACL changes. Cleanup or rollback ambiguity becomes a redacted
-   `bootstrap_needs_repair` audit event rather than Ready.
+5. DopeDB independently revalidates the Provider target and database boundary. A
+   temporary read role must read successfully and fail to write. A separate temporary
+   write role operates only on an owner-created disposable probe table: INSERT, UPDATE,
+   and DELETE must succeed while DDL and role management must fail. DopeDB removes both
+   roles and the probe before it issues the short-lived import receipt. A failed
+   verification rolls back approved ACL changes. Cleanup or rollback ambiguity becomes
+   a redacted `bootstrap_needs_repair` audit event rather than Ready.
 
 The automatic plan may revoke database `CREATE`/`TEMPORARY`, allowed-schema
 `PUBLIC CREATE`, and other databases' `PUBLIC CONNECT`; these can affect existing
@@ -71,11 +73,14 @@ Reserved provider schemas (`neon`, `neon_auth`, `pg_*`, and
 `information_schema`) cannot be selected.
 
 Imported Neon connections always begin read-only, including explicitly approved
-production targets. Production approval authorizes preparation and read access only;
-it does not turn on a write capability. Database numeric ID and display name are
-stored separately, so a rename cannot silently redirect authority to a different
-database. Every new lease rechecks that stable ID, branch readiness, environment
-classification, owner boundary, current object ACL, and future/default privileges.
+production targets. Successful bootstrap records that a separately gated write
+credential was verified, but neither import nor production approval enables writes.
+A current Admin/Owner must later turn on the DB-specific write policy, and the member
+must still have the workspace write capability and connection grant. Database numeric
+ID and display name are stored separately, so a rename cannot silently redirect
+authority to a different database. Every new lease rechecks that stable ID, branch
+readiness, environment classification, owner boundary, current object ACL, and
+future/default privileges.
 
 DopeDB retrieves an owner connection only on the server and creates a unique login
 role with a 15-minute password validity. The role receives only `CONNECT` plus

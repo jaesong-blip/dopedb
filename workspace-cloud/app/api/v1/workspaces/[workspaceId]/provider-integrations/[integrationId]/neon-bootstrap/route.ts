@@ -359,6 +359,7 @@ export async function POST(request: Request, context: RouteContext) {
     const receiptExpiresAt = new Date(Date.now() + RECEIPT_TTL_MS);
     const projection = providerImportProjection("neon", applied.resource, {
       production: applied.report.production,
+      writeAvailable: true,
     });
     const receipt = await recordProviderDiscoveryReceipt({
       organizationId: workspaceId,
@@ -379,6 +380,7 @@ export async function POST(request: Request, context: RouteContext) {
       providerAuditId: applied.providerAuditId,
       planHash: plan.planHash,
       production: applied.report.production,
+      writeAvailable: true,
       productionApproved: body.productionApproved,
       publicAclApproved: body.publicAclApproved,
       findingCodes: plan.findingCodes,
@@ -411,9 +413,12 @@ export async function POST(request: Request, context: RouteContext) {
         findingCodes: repairContext.findingCodes,
         repairCode: error.repairCode,
         temporaryRole: error.temporaryRole,
+        temporaryObject: error.temporaryObject,
       };
       await recordBootstrapAudit({
-        kind: `repair:${error.repairCode}:${error.temporaryRole ?? "policy"}`,
+        kind: `repair:${error.repairCode}:${error.temporaryRole ?? "policy"}:${
+          error.temporaryObject ?? "object"
+        }`,
         organizationId: workspaceId,
         actorUserId: authorization.session.user.id,
         action: "provider.neon.bootstrap_needs_repair",
