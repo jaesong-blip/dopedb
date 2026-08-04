@@ -189,9 +189,11 @@ increasing the 104-test budget:
   blocks credential issuance, and verifies the complete audit hash chain.
 - The same six Provider authority tests run in the Windows CI job. The Unix fixture
   additionally executes a fixed binary and proves shell-looking argv remains
-  literal; a Windows-native process-tree interruption fixture remains open in #102.
+  literal. The Windows fixture starts an audited native process, cancels it while
+  running, and requires the Job Object boundary to terminate and reap it before
+  returning `Cancelled`.
 
 Provider-account live E2E, the remaining apply/provider-specific partial-failure
 matrix, bounded drift detection timing, workspace/provider-side audit reconciliation,
-and Windows-native process-tree cleanup evidence remain required before #102 can
-close.
+and a Windows grandchild-process fixture with native CI evidence remain required
+before #102 can close.
