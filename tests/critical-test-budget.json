@@ -45,7 +45,7 @@
   "rust": {
     "dopedb-cli/tests/terminal_session_e2e.rs": {
       "tests": 1,
-      "protects": "One complete authenticated terminal read journey"
+      "protects": "Typed ACP MCP direct-Broker catalog search and single-call plan/run journey without bearer or public CLI"
     },
     "dopedb-protocol/tests/golden.rs": {
       "tests": 8,

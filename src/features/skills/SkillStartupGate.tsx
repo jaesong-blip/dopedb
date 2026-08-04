@@ -12,18 +12,13 @@ import {
   ModalSurface,
   ModalTitleBar,
 } from "../../design-system/components/Modal";
-import {
-  StatusBadge,
-  type StatusTone,
-} from "../../design-system/components/Status";
 import { installSkill } from "../../ipc/commands";
 import {
   errMessage,
-  type SkillInstallState,
   type SkillTarget,
   type SkillTargetStatus,
 } from "../../ipc/types";
-import { useI18n, type I18nKey } from "../../lib/i18n";
+import { useI18n } from "../../lib/i18n";
 import { skillStatusQuery } from "../../lib/queries";
 import {
   hasSavedAgentTargets,
@@ -33,16 +28,6 @@ import {
   SUPPORTED_AGENT_TARGETS,
 } from "./agentPreferences";
 
-const stateLabel: Record<SkillInstallState, I18nKey> = {
-  missing: "agentTools.stateMissing",
-  managed_current: "agentTools.stateManagedCurrent",
-  managed_older: "agentTools.stateManagedOlder",
-  user_modified: "agentTools.stateUserModified",
-  newer_known: "agentTools.stateNewerKnown",
-  unknown_conflict: "agentTools.stateUnknownConflict",
-  invalid: "agentTools.stateInvalid",
-};
-
 export default function SkillStartupGate() {
   const { t } = useI18n();
   const toast = useToast();
@@ -50,9 +35,7 @@ export default function SkillStartupGate() {
   const refetchStatus = statusQuery.refetch;
   const [selected, setSelected] = useState<SkillTarget[]>(loadAgentTargets);
   const [open, setOpen] = useState(false);
-  const [installing, setInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const promptedInventories = useRef(new Set<string>());
   const automaticUpdates = useRef(new Set<string>());
 
   const statuses = statusQuery.data?.targets ?? [];
@@ -60,6 +43,10 @@ export default function SkillStartupGate() {
     const selectedSet = new Set(selected);
     return statuses.filter((status) => selectedSet.has(status.target));
   }, [selected, statuses]);
+
+  useEffect(() => {
+    if (!hasSavedAgentTargets()) setOpen(true);
+  }, []);
 
   useEffect(() => {
     const show = () => {
@@ -70,24 +57,6 @@ export default function SkillStartupGate() {
     window.addEventListener(OPEN_AGENT_SETUP_EVENT, show);
     return () => window.removeEventListener(OPEN_AGENT_SETUP_EVENT, show);
   }, []);
-
-  useEffect(() => {
-    if (!statusQuery.data) return;
-    const requiresChoice =
-      !hasSavedAgentTargets() ||
-      selectedStatuses.some((status) =>
-        ["missing", "user_modified", "unknown_conflict", "invalid"].includes(
-          status.state,
-        ),
-      );
-    if (!requiresChoice) return;
-    const fingerprint = selectedStatuses
-      .map((status) => `${status.target}:${status.inventoryFingerprint}`)
-      .join("|");
-    if (promptedInventories.current.has(fingerprint)) return;
-    promptedInventories.current.add(fingerprint);
-    setOpen(true);
-  }, [selectedStatuses, statusQuery.data]);
 
   useEffect(() => {
     const outdated = selectedStatuses.filter(
@@ -112,13 +81,13 @@ export default function SkillStartupGate() {
           }
         } catch (reason) {
           if (!disposed) {
-            setError(
+            toast(
               t("agentTools.autoUpdateFailed", {
                 target: status.displayName,
                 error: errMessage(reason),
               }),
+              "error",
             );
-            setOpen(true);
           }
         }
       }
@@ -138,62 +107,18 @@ export default function SkillStartupGate() {
     ]);
   }
 
-  async function installSelected() {
-    if (installing) return;
+  function saveSelected() {
     if (selected.length === 0) {
       setError(t("agentTools.startupSelectOne"));
       return;
     }
-    setInstalling(true);
     setError(null);
     saveAgentTargets(selected);
-    try {
-      const latest = await statusQuery.refetch();
-      const byTarget = new Map(
-        (latest.data?.targets ?? []).map((status) => [
-          status.target,
-          status,
-        ]),
-      );
-      const requiresReview: string[] = [];
-      for (const target of selected) {
-        const status = byTarget.get(target);
-        if (!status) continue;
-        if (status.state === "missing" || status.state === "managed_older") {
-          await installOne(status);
-        } else if (
-          status.state !== "managed_current" &&
-          status.state !== "newer_known"
-        ) {
-          requiresReview.push(status.displayName);
-        }
-      }
-      await statusQuery.refetch();
-      if (requiresReview.length > 0) {
-        setError(
-          t("agentTools.startupReviewRequired", {
-            targets: requiresReview.join(", "),
-          }),
-        );
-        return;
-      }
-      setOpen(false);
-    } catch (reason) {
-      setError(
-        t("agentTools.startupInstallFailed", { error: errMessage(reason) }),
-      );
-      await statusQuery.refetch();
-    } finally {
-      setInstalling(false);
-    }
+    setOpen(false);
   }
 
   function saveForLater() {
-    if (selected.length === 0) {
-      setError(t("agentTools.startupSelectOne"));
-      return;
-    }
-    saveAgentTargets(selected);
+    setError(null);
     setOpen(false);
   }
 
@@ -239,41 +164,26 @@ export default function SkillStartupGate() {
           </div>
 
           <div className="tw:mt-5 tw:divide-y tw:divide-border-subtle tw:rounded-md tw:border tw:border-border-subtle">
-            {SUPPORTED_AGENT_TARGETS.map((agent) => {
-              const status = statuses.find(
-                (candidate) => candidate.target === agent.target,
-              );
-              return (
-                <div
-                  key={agent.target}
-                  className="tw:flex tw:min-h-14 tw:items-center tw:gap-3 tw:px-3 tw:py-2"
-                >
-                  <CheckboxField
-                    checked={selected.includes(agent.target)}
-                    disabled={installing}
-                    onChange={(event) =>
-                      toggleTarget(agent.target, event.target.checked)
-                    }
-                    label={
-                      <span className="tw:flex tw:items-center tw:gap-2">
-                        <AgentProviderMark provider={agent.provider} />
-                        <strong>{agent.label}</strong>
-                      </span>
-                    }
-                  />
-                  <span className="tw:flex-1" />
-                  {status ? (
-                    <StatusBadge tone={skillStateTone(status.state)}>
-                      {t(stateLabel[status.state])}
-                    </StatusBadge>
-                  ) : (
-                    <StatusBadge tone="neutral">
-                      {t("common.loading")}
-                    </StatusBadge>
-                  )}
-                </div>
-              );
-            })}
+            {SUPPORTED_AGENT_TARGETS.map((agent) => (
+              <div
+                key={agent.target}
+                className="tw:flex tw:min-h-14 tw:items-center tw:gap-3 tw:px-3 tw:py-2"
+              >
+                <CheckboxField
+                  checked={selected.includes(agent.target)}
+                  onChange={(event) =>
+                    toggleTarget(agent.target, event.target.checked)
+                  }
+                  label={
+                    <span className="tw:flex tw:items-center tw:gap-2">
+                      <AgentProviderMark provider={agent.provider} />
+                      <strong>{agent.label}</strong>
+                    </span>
+                  }
+                />
+                <span className="tw:flex-1" />
+              </div>
+            ))}
           </div>
 
           <p className="tw:mt-4 tw:mb-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
@@ -289,38 +199,19 @@ export default function SkillStartupGate() {
           ) : null}
         </div>
         <ModalFooter>
-          <Button
-            variant="ghost"
-            disabled={installing}
-            onClick={saveForLater}
-          >
+          <Button variant="ghost" onClick={saveForLater}>
             {t("agentTools.startupLater")}
           </Button>
           <Button
             variant="primary"
-            disabled={
-              installing || statusQuery.isPending || selected.length === 0
-            }
-            onClick={() => void installSelected()}
+            disabled={selected.length === 0}
+            onClick={saveSelected}
           >
-            {installing ? (
-              <Icon
-                name="refresh"
-                className="tw:animate-spin tw:motion-reduce:animate-none"
-              />
-            ) : (
-              <Icon name="download" />
-            )}
+            <Icon name="check" />
             {t("agentTools.startupInstallSelected")}
           </Button>
         </ModalFooter>
       </ModalSurface>
     </ModalBackdrop>
   );
-}
-
-function skillStateTone(state: SkillInstallState): StatusTone {
-  if (state === "managed_current" || state === "newer_known") return "success";
-  if (state === "missing" || state === "managed_older") return "warning";
-  return "danger";
 }

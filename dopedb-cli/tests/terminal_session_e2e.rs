@@ -5,15 +5,19 @@ use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::thread;
+use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{Duration, Utc};
 use dopedb_protocol::{
-    decode_frame, encode_frame, parse_frame_length, CatalogArguments, CommandName,
-    ConnectionSelector, QueryHealth, QueryPlanArguments, QueryPlanResult, QueryResultPage,
-    QueryRunArguments, QueryRunResult, RequestEnvelope, ResponseEnvelope, RuntimeDiscovery,
-    SchemaListResult, SchemaSummary, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, PROTOCOL_MAX,
-    PROTOCOL_MIN,
+    decode_frame, encode_frame, parse_frame_length, CatalogArguments, CatalogContents,
+    CatalogSearchArguments, CatalogSearchMatch, CatalogSearchMatchType, CatalogSearchResult,
+    CatalogSnapshot, Column, CommandName, ConnectionSelector, DatabaseEngine, NormalizedTypeFamily,
+    ObjectKind, ObjectRef, QueryHealth, QueryPlanArguments, QueryPlanResult, QueryResultPage,
+    QueryRunArguments, QueryRunResult, Relation, RequestEnvelope, ResponseEnvelope,
+    RuntimeDiscovery, SchemaListResult, SchemaSummary, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES,
+    PROTOCOL_MAX, PROTOCOL_MIN,
 };
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -39,13 +43,14 @@ fn respond<T: serde::Serialize>(stream: &mut UnixStream, request: &RequestEnvelo
         .unwrap();
 }
 
-fn terminal_command(runtime_file: &std::path::Path, session_id: Uuid, token: &str) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_dopedb-cli"));
+fn process_bound_agent_command(runtime_file: &std::path::Path, session_id: Uuid) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_dopedb-agent-bridge"));
     command
         .env("DOPEDB_RUNTIME_FILE", runtime_file)
         .env("DOPEDB_TERMINAL_SESSION_ID", session_id.to_string())
         .env("DOPEDB_CONNECTION_SCOPE", Uuid::from_u128(7).to_string())
-        .env("DOPEDB_SESSION_TOKEN", token)
+        .env("DOPEDB_AGENT_PROCESS_BOUND", "1")
+        .env_remove("DOPEDB_SESSION_TOKEN")
         .env(
             "DATABASE_URL",
             "postgresql://fixture:must-never-escape@example.invalid/app",
@@ -53,8 +58,100 @@ fn terminal_command(runtime_file: &std::path::Path, session_id: Uuid, token: &st
     command
 }
 
+fn agent_bridge_messages(
+    runtime_file: &std::path::Path,
+    session_id: Uuid,
+    messages: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    let mut child = process_bound_agent_command(runtime_file, session_id)
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    for message in messages {
+        serde_json::to_writer(&mut input, message).unwrap();
+        input.write_all(b"\n").unwrap();
+    }
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn users_catalog(connection_id: Uuid) -> CatalogSnapshot {
+    CatalogSnapshot::capture(
+        connection_id,
+        DatabaseEngine::Postgres,
+        "app",
+        Utc::now(),
+        CatalogContents {
+            relations: vec![Relation {
+                object: ObjectRef {
+                    catalog: Some("app".into()),
+                    namespace: Some("public".into()),
+                    name: "users".into(),
+                    kind: ObjectKind::Table,
+                    native_id: None,
+                },
+                comment: Some("Application user accounts".into()),
+                row_estimate: Some(42),
+                partition_parent: None,
+                partition_children: Vec::new(),
+                columns: vec![
+                    Column {
+                        name: "id".into(),
+                        ordinal: 1,
+                        native_type: "bigint".into(),
+                        type_family: NormalizedTypeFamily::Integer,
+                        length: None,
+                        precision: None,
+                        scale: None,
+                        nullable: false,
+                        default_expression: None,
+                        generated_expression: None,
+                        identity: true,
+                        auto_increment: true,
+                        collation: None,
+                        comment: None,
+                        sensitivity: None,
+                    },
+                    Column {
+                        name: "deleted_at".into(),
+                        ordinal: 2,
+                        native_type: "timestamp with time zone".into(),
+                        type_family: NormalizedTypeFamily::Timestamp,
+                        length: None,
+                        precision: None,
+                        scale: None,
+                        nullable: true,
+                        default_expression: None,
+                        generated_expression: None,
+                        identity: false,
+                        auto_increment: false,
+                        collation: None,
+                        comment: Some("Soft deletion timestamp".into()),
+                        sensitivity: None,
+                    },
+                ],
+                constraints: Vec::new(),
+                indexes: Vec::new(),
+            }],
+            ..CatalogContents::default()
+        },
+    )
+    .unwrap()
+}
+
 #[test]
-fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
+fn typed_agent_bridge_searches_catalog_and_plans_then_runs_one_safe_query() {
     let temp = TempDir::new().unwrap();
     let runtime_directory = temp.path().join("runtime");
     fs::create_dir(&runtime_directory).unwrap();
@@ -82,11 +179,12 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
     let connection_id = Uuid::from_u128(7);
     let plan_id = Uuid::from_u128(8);
     let query_run_id = Uuid::from_u128(9);
-    let token = "a5".repeat(32);
-    let expected_token = token.clone();
+    let sql = "SELECT COUNT(*) AS total_users FROM public.users";
+    let (cancel_started_tx, cancel_started_rx) = mpsc::channel();
     let server = thread::spawn(move || {
         for expected in [
             CommandName::SchemaList,
+            CommandName::CatalogSearch,
             CommandName::QueryPlan,
             CommandName::QueryRun,
         ] {
@@ -95,13 +193,17 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
             assert_eq!(request.command, expected);
             let authentication = request.authentication.as_ref().unwrap();
             assert_eq!(authentication.terminal_session_id, session_id);
-            assert_eq!(authentication.token(), expected_token);
+            assert!(authentication.token().is_none());
+            assert!(serde_json::to_value(authentication)
+                .unwrap()
+                .get("token")
+                .is_none());
             match expected {
                 CommandName::SchemaList => {
                     let arguments: CatalogArguments =
                         serde_json::from_value(request.arguments.clone()).unwrap();
                     assert_eq!(arguments.connection, ConnectionSelector::Current);
-                    assert_eq!(arguments.database, None);
+                    assert_eq!(arguments.database.as_deref(), Some("app"));
                     respond(
                         &mut stream,
                         &request,
@@ -109,10 +211,40 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                             connection_id,
                             database: "app".into(),
                             schemas: vec![SchemaSummary {
-                                name: "main".into(),
+                                name: "public".into(),
                                 relation_count: 1,
                                 routine_count: 0,
                                 object_count: 1,
+                            }],
+                        },
+                    );
+                }
+                CommandName::CatalogSearch => {
+                    let arguments: CatalogSearchArguments =
+                        serde_json::from_value(request.arguments.clone()).unwrap();
+                    assert_eq!(arguments.connection, ConnectionSelector::Current);
+                    assert_eq!(arguments.database.as_deref(), Some("app"));
+                    assert_eq!(arguments.query, "user");
+                    assert_eq!(arguments.kinds, vec![ObjectKind::Table]);
+                    assert_eq!(arguments.limit, Some(20));
+                    let catalog = users_catalog(connection_id);
+                    respond(
+                        &mut stream,
+                        &request,
+                        &CatalogSearchResult {
+                            connection_id,
+                            engine: catalog.engine(),
+                            database: catalog.database().into(),
+                            captured_at: catalog.captured_at(),
+                            fingerprint: catalog.fingerprint().into(),
+                            query: arguments.query,
+                            total_matches: 1,
+                            truncated: false,
+                            matches: vec![CatalogSearchMatch {
+                                match_type: CatalogSearchMatchType::Relation,
+                                qualified_name: "app.public.users".into(),
+                                object: catalog.relations()[0].object.clone(),
+                                matched_fields: vec!["deleted_at".into()],
                             }],
                         },
                     );
@@ -121,8 +253,8 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                     let arguments: QueryPlanArguments =
                         serde_json::from_value(request.arguments.clone()).unwrap();
                     assert_eq!(arguments.connection, ConnectionSelector::Current);
-                    assert_eq!(arguments.database, None);
-                    assert_eq!(arguments.sql, "SELECT name FROM users ORDER BY name");
+                    assert_eq!(arguments.database.as_deref(), Some("app"));
+                    assert_eq!(arguments.sql, sql);
                     respond(
                         &mut stream,
                         &request,
@@ -132,10 +264,10 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                             database: "app".into(),
                             environment: Some("test".into()),
                             plan_id,
-                            decision: "allow".into(),
+                            decision: "ready".into(),
                             notices: Vec::new(),
                             suggestions: Vec::new(),
-                            estimated_rows: Some(2),
+                            estimated_rows: Some(1),
                             health: QueryHealth {
                                 level: "healthy".into(),
                                 coverage: "full".into(),
@@ -166,14 +298,11 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                             database: "app".into(),
                             plan_id,
                             query_run_id,
-                            planning_decision: "allow".into(),
+                            planning_decision: "ready".into(),
                             result: QueryResultPage {
-                                columns: vec!["name".into()],
-                                rows: vec![
-                                    vec![serde_json::json!("Ada")],
-                                    vec![serde_json::json!("Linus")],
-                                ],
-                                row_count: 2,
+                                columns: vec!["total_users".into()],
+                                rows: vec![vec![serde_json::json!(42)]],
+                                row_count: 1,
                                 truncated: false,
                                 duration_ms: 1,
                             },
@@ -183,58 +312,192 @@ fn terminal_session_can_read_schema_and_plan_then_run_a_safe_query() {
                 _ => unreachable!(),
             }
         }
+
+        let (mut stream, _) = listener.accept().unwrap();
+        let request = read_request(&mut stream);
+        assert_eq!(request.command, CommandName::CatalogSearch);
+        let arguments: CatalogSearchArguments =
+            serde_json::from_value(request.arguments.clone()).unwrap();
+        assert_eq!(arguments.connection, ConnectionSelector::Current);
+        assert_eq!(arguments.database.as_deref(), Some("app"));
+        assert_eq!(arguments.query, "users");
+        cancel_started_tx.send(()).unwrap();
+
+        let mut byte = [0u8; 1];
+        match stream.read(&mut byte) {
+            Ok(0) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::UnexpectedEof
+                ) => {}
+            result => panic!("cancelled Broker request remained open: {result:?}"),
+        }
     });
 
-    let schema = terminal_command(&runtime_file, session_id, &token)
-        .args(["schema", "list", "--connection", "current", "--json"])
-        .output()
-        .unwrap();
-    assert!(schema.status.success());
-    assert!(schema.stderr.is_empty());
-    let schema: SchemaListResult = serde_json::from_slice(&schema.stdout).unwrap();
-    assert_eq!(schema.database, "app");
-    assert_eq!(schema.schemas[0].name, "main");
+    let bridge = agent_bridge_messages(
+        &runtime_file,
+        session_id,
+        &[
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": { "protocolVersion": "2025-11-25" }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized"
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+                "params": {}
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": { "name": "schema_list", "arguments": { "database": "app" } }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "catalog_search",
+                    "arguments": { "database": "app", "query": "user", "kinds": ["table"] }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {
+                    "name": "query_read",
+                    "arguments": { "database": "app", "sql": sql }
+                }
+            }),
+        ],
+    );
+    assert_eq!(bridge.len(), 5);
+    assert_eq!(bridge[0]["result"]["serverInfo"]["name"], "dopedb");
+    let tools = bridge[1]["result"]["tools"].as_array().unwrap();
+    assert!(tools.iter().any(|tool| tool["name"] == "catalog_search"));
+    assert!(tools.iter().any(|tool| tool["name"] == "query_read"));
+    assert!(!tools.iter().any(|tool| tool["name"] == "run"));
 
-    let mut plan_child = terminal_command(&runtime_file, session_id, &token)
-        .args([
-            "query",
-            "plan",
-            "--connection",
-            "current",
-            "--file",
-            "-",
-            "--json",
-        ])
+    assert_eq!(bridge[2]["result"]["isError"], false);
+    assert_eq!(
+        bridge[2]["result"]["structuredContent"]["schemas"][0]["name"],
+        "public"
+    );
+    assert_eq!(bridge[3]["result"]["isError"], false);
+    assert_eq!(
+        bridge[3]["result"]["structuredContent"]["matches"][0]["qualifiedName"],
+        "app.public.users"
+    );
+    assert_eq!(
+        bridge[3]["result"]["structuredContent"]["matches"][0]["matchedFields"][0],
+        "deleted_at"
+    );
+    assert!(bridge[3]["result"]["structuredContent"]["matches"][0]
+        .get("relation")
+        .is_none());
+
+    assert_eq!(bridge[4]["result"]["isError"], false);
+    assert_eq!(
+        bridge[4]["result"]["structuredContent"]["plan"]["planId"],
+        plan_id.to_string()
+    );
+    assert_eq!(
+        bridge[4]["result"]["structuredContent"]["run"]["result"]["rows"][0][0],
+        42
+    );
+    let serialized = serde_json::to_string(&bridge).unwrap();
+    assert!(!serialized.contains("must-never-escape"));
+
+    let mut cancellable = process_bound_agent_command(&runtime_file, session_id)
+        .arg("mcp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    plan_child
-        .stdin
+    let mut input = cancellable.stdin.take().unwrap();
+    for message in [
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "initialize",
+            "params": { "protocolVersion": "2025-11-25" }
+        }),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {
+                "name": "catalog_search",
+                "arguments": { "database": "app", "query": "users" }
+            }
+        }),
+    ] {
+        serde_json::to_writer(&mut input, &message).unwrap();
+        input.write_all(b"\n").unwrap();
+    }
+    input.flush().unwrap();
+    cancel_started_rx
+        .recv_timeout(StdDuration::from_secs(3))
+        .expect("catalog search must reach the Broker before cancellation");
+    serde_json::to_writer(
+        &mut input,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": { "requestId": 11, "reason": "user cancelled" }
+        }),
+    )
+    .unwrap();
+    input.write_all(b"\n").unwrap();
+    input.flush().unwrap();
+    drop(input);
+
+    let deadline = Instant::now() + StdDuration::from_secs(3);
+    let status = loop {
+        if let Some(status) = cancellable.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            cancellable.kill().unwrap();
+            cancellable.wait().unwrap();
+            panic!("the MCP bridge did not stop after its active call was cancelled");
+        }
+        thread::sleep(StdDuration::from_millis(10));
+    };
+    assert!(status.success());
+    let mut stdout = String::new();
+    cancellable
+        .stdout
         .take()
         .unwrap()
-        .write_all(b"SELECT name FROM users ORDER BY name")
+        .read_to_string(&mut stdout)
         .unwrap();
-    let planned = plan_child.wait_with_output().unwrap();
-    assert!(planned.status.success());
-    assert!(planned.stderr.is_empty());
-    let planned: QueryPlanResult = serde_json::from_slice(&planned.stdout).unwrap();
-    assert_eq!(planned.database, "app");
-    assert_eq!(planned.plan_id, plan_id);
+    let mut stderr = String::new();
+    cancellable
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert!(stderr.is_empty());
+    let responses = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["id"], 10);
+    assert!(!stdout.contains("must-never-escape"));
 
-    let run = terminal_command(&runtime_file, session_id, &token)
-        .args(["query", "run", "--plan", &plan_id.to_string(), "--json"])
-        .output()
-        .unwrap();
     server.join().unwrap();
-    assert!(run.status.success());
-    assert!(run.stderr.is_empty());
-    let serialized = String::from_utf8(run.stdout).unwrap();
-    assert!(!serialized.contains(&token));
-    assert!(!serialized.contains("must-never-escape"));
-    let run: QueryRunResult = serde_json::from_str(&serialized).unwrap();
-    assert_eq!(run.database, "app");
-    assert_eq!(run.query_run_id, query_run_id);
-    assert_eq!(run.result.row_count, 2);
 }

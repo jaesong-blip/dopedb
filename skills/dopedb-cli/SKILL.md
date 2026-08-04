@@ -9,7 +9,18 @@ Use the `dopedb` CLI whenever a task concerns a database managed by DopeDB. The
 CLI talks only to the running DopeDB Desktop runtime. It never reads database
 credentials, opens a database driver, or approves its own mutation.
 
-## Start every task
+## Inside DopeDB AI Chat
+
+When the session supplies the `dopedb-desktop-session` MCP server, its typed
+tools and the session prompt are authoritative. Do not run the public `dopedb`
+CLI, fetch this guide, repeat version/status checks, or list connections before
+ordinary work. The connection is already pinned. Prefer `catalog_search` over a
+full catalog dump and use `query_read` for SQL reads; it preserves the exact
+Broker plan/run boundary in one tool call. Use `sql_propose` for mutations.
+
+The remaining instructions apply only outside the built-in ACP session.
+
+## Outside ACP: start every CLI task
 
 1. Run `dopedb version --json` and `dopedb status --json`.
 2. If the runtime is unavailable, ask the user to open DopeDB Desktop.
@@ -73,9 +84,10 @@ as you would for SQL results.
 
 ## Save a dashboard
 
-After a successful `dopedb query run`, ask whether the user wants to save that
-exact result as a dashboard. Only after explicit agreement, use the returned
-`queryRunId` from the same Terminal:
+Save a result only when the user asks for a shared/recurring dashboard or the
+request clearly includes preserving the result. Do not interrupt every read
+with a dashboard offer. After explicit agreement, use the returned `queryRunId`
+from the same Terminal:
 
 `dopedb dashboard create --query-run <query-run-id> --title '<title>' --kind auto --json`
 

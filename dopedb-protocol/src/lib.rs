@@ -23,9 +23,9 @@ pub mod version;
 pub use catalog::*;
 pub use catalog_command::*;
 pub use command::{
-    decode_arguments, AppOpenArguments, AppOpenCommand, AppOpenResult, AuthenticationRequirement,
-    CommandPayloadError, CommandSpec, EmptyArguments, StatusCommand, StatusResult, VersionCommand,
-    VersionResult,
+    decode_arguments, AgentSessionRegisterCommand, AppOpenArguments, AppOpenCommand, AppOpenResult,
+    AuthenticationRequirement, CommandPayloadError, CommandSpec, EmptyArguments, StatusCommand,
+    StatusResult, VersionCommand, VersionResult,
 };
 pub use connection::*;
 pub use dashboard_command::*;

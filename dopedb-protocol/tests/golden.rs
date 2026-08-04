@@ -1,13 +1,14 @@
 use dopedb_protocol::{
     catalog::CatalogSnapshot, decode_arguments, AppOpenCommand, AppOpenResult,
-    AuthenticationRequirement, CatalogShowCommand, CommandName, CommandSpec, ConnectionListCommand,
-    ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand, DatabaseListCommand,
-    DocumentRunCommand, ErrorCode, OperationCancelCommand, OperationShowCommand,
-    OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand,
-    RequestEnvelope, ResponseEnvelope, RuntimeDiscovery, SchemaListCommand, SkillInstallCommand,
-    SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand, SkillsGetCommand,
-    SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeCommand,
-    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
+    AuthenticationRequirement, CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec,
+    ConnectionListCommand, ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand,
+    DatabaseListCommand, DocumentRunCommand, ErrorCode, OperationCancelCommand,
+    OperationShowCommand, OperationWaitCommand, ProtocolError, QueryCancelCommand,
+    QueryPlanCommand, QueryRunCommand, RequestEnvelope, ResponseEnvelope, RuntimeDiscovery,
+    SchemaListCommand, SessionAuthentication, SkillInstallCommand, SkillRemoveCommand,
+    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand,
+    StatusCommand, StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
+    COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -183,7 +184,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v3_command_schema() {
+fn query_plan_request_matches_v4_command_schema() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -196,6 +197,14 @@ fn query_plan_request_matches_v3_command_schema() {
     let debug = format!("{request:?}");
     assert!(debug.contains("<redacted>"));
     assert!(!debug.contains("fixture-only-session-capability"));
+
+    let process_bound = SessionAuthentication::process_bound(uuid::Uuid::nil());
+    let serialized = serde_json::to_value(process_bound).unwrap();
+    assert_eq!(
+        serialized["terminalSessionId"],
+        uuid::Uuid::nil().to_string()
+    );
+    assert!(serialized.get("token").is_none());
 }
 
 #[test]
@@ -460,7 +469,7 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 
     let future: RequestEnvelope = serde_json::from_value(serde_json::json!({
         "protocolVersion": 1,
-        "commandSchemaVersion": 3,
+        "commandSchemaVersion": 4,
         "requestId": "018f1111-2222-7333-8444-555566667777",
         "command": "future.command",
         "arguments": {"approved": true}
@@ -470,14 +479,54 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v3_catalog() {
+fn command_names_match_the_v4_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v3.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v4.json")).unwrap();
     assert_eq!(actual, expected);
+
+    let request: RequestEnvelope = serde_json::from_value(json!({
+        "protocolVersion": PROTOCOL_MAX,
+        "commandSchemaVersion": COMMAND_SCHEMA_VERSION,
+        "requestId": "018f1111-2222-7333-8444-555566667777",
+        "authentication": {
+            "terminalSessionId": "018faaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee"
+        },
+        "command": "catalog.search",
+        "arguments": {
+            "connection": "current",
+            "database": "app",
+            "query": "user",
+            "kinds": ["table"],
+            "limit": 20
+        }
+    }))
+    .expect("catalog search request must decode");
+    let result = json!({
+        "connectionId": "00000000-0000-0000-0000-000000000001",
+        "engine": "postgres",
+        "database": "app",
+        "capturedAt": "2026-07-24T00:00:00Z",
+        "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "query": "user",
+        "totalMatches": 1,
+        "truncated": false,
+        "matches": [{
+            "matchType": "relation",
+            "qualifiedName": "app.public.users",
+            "object": {
+                "catalog": "app",
+                "namespace": "public",
+                "name": "users",
+                "kind": "table"
+            },
+            "matchedFields": ["deleted_at"]
+        }]
+    });
+    typed_cli_contract::<CatalogSearchCommand>(&request, &result);
 }
 
 #[test]

@@ -6,18 +6,18 @@
     {
       "path": "SKILL.md",
       "sourcePath": "skills/dopedb-cli/SKILL.md",
-      "size": 4773,
+      "size": 5424,
       "executable": false,
-      "sha256": "fb7dc69eb7e9f0ebb45c78efb9f6ceff3571c9248f74938db09a7c30f7119075",
-      "normalizedTextSha256": "fb7dc69eb7e9f0ebb45c78efb9f6ceff3571c9248f74938db09a7c30f7119075"
+      "sha256": "3d965c70ec5c1557e1896f99d38baa7d2417784fba61e2bf3cadef5f1a5fe7ae",
+      "normalizedTextSha256": "3d965c70ec5c1557e1896f99d38baa7d2417784fba61e2bf3cadef5f1a5fe7ae"
     },
     {
       "path": "references/dashboards.md",
       "sourcePath": "skills/dopedb-cli/references/dashboards.md",
-      "size": 928,
+      "size": 1039,
       "executable": false,
-      "sha256": "295f8c27d651246aa87da7267ac44b3dd232fa2f56011223d0103dd1b220c036",
-      "normalizedTextSha256": "295f8c27d651246aa87da7267ac44b3dd232fa2f56011223d0103dd1b220c036"
+      "sha256": "c63443b205b0afb881982f617087e6868127f0aa7c253319a0913f543d283840",
+      "normalizedTextSha256": "c63443b205b0afb881982f617087e6868127f0aa7c253319a0913f543d283840"
     },
     {
       "path": "references/documents.md",
@@ -38,10 +38,10 @@
     {
       "path": "references/queries.md",
       "sourcePath": "skills/dopedb-cli/references/queries.md",
-      "size": 2061,
+      "size": 2401,
       "executable": false,
-      "sha256": "5bda8631fab036628deebcbd56dfdcd97a4d871b9a9a1bcb78aa7fe01f8a5004",
-      "normalizedTextSha256": "5bda8631fab036628deebcbd56dfdcd97a4d871b9a9a1bcb78aa7fe01f8a5004"
+      "sha256": "52d94418a315f1225eebbd0bb6fd6ade97d7c3652f99723bf063c5a1d83c8519",
+      "normalizedTextSha256": "52d94418a315f1225eebbd0bb6fd6ade97d7c3652f99723bf063c5a1d83c8519"
     },
     {
       "path": "references/safety.md",
@@ -56,14 +56,14 @@
     {
       "path": "SKILL.md",
       "sourcePath": "generated:discovery-stub",
-      "size": 178,
+      "size": 337,
       "executable": false,
-      "sha256": "d77ac534592dea5f54db3a65a532e78bbbd75c6f01a419e93a182205613f967e",
-      "normalizedTextSha256": "d77ac534592dea5f54db3a65a532e78bbbd75c6f01a419e93a182205613f967e",
-      "content": "---\nname: dopedb-cli\ndescription: Use the local DopeDB Desktop runtime safely through the version-matched dopedb CLI.\n---\n\nBefore using DopeDB, run:\ndopedb skills get dopedb-cli\n"
+      "sha256": "7d710bc31d9701bfc1c1d3f196aa1ebfe6215daff27585c4aaec5e6e5d9a1f7c",
+      "normalizedTextSha256": "7d710bc31d9701bfc1c1d3f196aa1ebfe6215daff27585c4aaec5e6e5d9a1f7c",
+      "content": "---\nname: dopedb-cli\ndescription: Use the local DopeDB Desktop runtime safely through the version-matched dopedb CLI.\n---\n\nWhen DopeDB supplies the `dopedb-desktop-session` MCP server, use its typed tools and do not run the public CLI or fetch this guide.\n\nOutside DopeDB AI Chat, before using the CLI, run:\ndopedb skills get dopedb-cli\n"
     }
   ],
-  "releaseRevision": 18,
+  "releaseRevision": 19,
   "appVersion": "0.3.19",
-  "packageDigest": "9f66f289fe99ca856209398dab641e100d87997bdb01569d65871dab9714645e"
+  "packageDigest": "8eed00aca4aaab167cab4be9da971f8419fcf62660690b2aed133001fa6a7b29"
 }

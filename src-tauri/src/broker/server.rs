@@ -99,10 +99,13 @@ async fn platform_serve(
                     Ok(accepted) => accepted,
                     Err(error) => break Err(AppError::Io(error)),
                 };
-                if let Err(error) = peer::verify_unix_peer(&stream) {
-                    tracing::warn!(error_kind = ?error.kind(), "rejected local broker peer");
-                    continue;
-                }
+                let peer = match peer::verify_unix_peer(&stream) {
+                    Ok(peer) => peer,
+                    Err(error) => {
+                        tracing::warn!(error_kind = ?error.kind(), "rejected local broker peer");
+                        continue;
+                    }
+                };
                 let permit = match Arc::clone(&connection_slots).try_acquire_owned() {
                     Ok(permit) => permit,
                     Err(_) => {
@@ -110,7 +113,7 @@ async fn platform_serve(
                         continue;
                     }
                 };
-                let dispatcher = dispatcher.clone();
+                let dispatcher = dispatcher.for_peer(peer);
                 tasks.spawn(async move {
                     let _permit = permit;
                     if let Err(error) = handle_stream(stream, dispatcher).await {
@@ -164,10 +167,13 @@ async fn platform_serve(
                     Err(error) => break Err(AppError::Io(error)),
                 };
                 let connected = std::mem::replace(&mut server, next);
-                if let Err(error) = peer::verify_named_pipe_peer(&connected) {
-                    tracing::warn!(error_kind = ?error.kind(), "rejected local broker peer");
-                    continue;
-                }
+                let peer = match peer::verify_named_pipe_peer(&connected) {
+                    Ok(peer) => peer,
+                    Err(error) => {
+                        tracing::warn!(error_kind = ?error.kind(), "rejected local broker peer");
+                        continue;
+                    }
+                };
                 let permit = match Arc::clone(&connection_slots).try_acquire_owned() {
                     Ok(permit) => permit,
                     Err(_) => {
@@ -175,7 +181,7 @@ async fn platform_serve(
                         continue;
                     }
                 };
-                let dispatcher = dispatcher.clone();
+                let dispatcher = dispatcher.for_peer(peer);
                 tasks.spawn(async move {
                     let _permit = permit;
                     if let Err(error) = handle_stream(connected, dispatcher).await {

@@ -63,8 +63,11 @@ pub fn prompt_agent_acp_session(
 
 /// Cancel only the active ACP turn.
 #[tauri::command]
-pub fn cancel_agent_acp_session(state: State<'_, AppState>, id: AcpSessionId) -> AppResult<()> {
-    state.agents_acp.cancel(id)
+pub async fn cancel_agent_acp_session(
+    state: State<'_, AppState>,
+    id: AcpSessionId,
+) -> AppResult<()> {
+    state.agents_acp.cancel(id).await
 }
 
 /// Resolve an actual ACP permission request with one offered option or cancel it.

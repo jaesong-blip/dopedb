@@ -41,7 +41,6 @@ import {
   type CatalogTable,
 } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
-import { skillStatusQuery } from "../../lib/queries";
 import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import type {
@@ -178,7 +177,6 @@ export default function AcpChatPanel({
     ...agentCliDetectionQuery(),
     refetchOnWindowFocus: false,
   });
-  const skillStatusObserver = useQuery(skillStatusQuery());
 
   const connectionSessions = useMemo(
     () =>
@@ -243,14 +241,7 @@ export default function AcpChatPanel({
   const selectedCliReady =
     selectedCliStatus?.installed === true &&
     selectedCliStatus.authenticated === true;
-  const selectedSkillStatus =
-    skillStatusObserver.data?.targets.find(
-      (target) => target.target === skillTarget(selectedProvider),
-    ) ?? null;
-  const selectedSkillReady =
-    selectedSkillStatus?.state === "managed_current" ||
-    selectedSkillStatus?.state === "newer_known";
-  const prerequisitesReady = selectedCliReady && selectedSkillReady;
+  const prerequisitesReady = selectedCliReady;
   const dockLayout = compact ? "compact" : overlay ? "overlay" : "docked";
 
   const upsertSession = useCallback((session: AcpSessionSummary) => {
@@ -533,6 +524,7 @@ export default function AcpChatPanel({
     setError(null);
     try {
       await cancelAgentAcpSession(active.id);
+      applyFocus(await focusAgentAcpSession(active.id));
     } catch (reason) {
       setError(t("agent.acpCancelFailed", { error: errMessage(reason) }));
     }
@@ -713,7 +705,6 @@ export default function AcpChatPanel({
       >
         {loading ||
         cliStatusQuery.isPending ||
-        skillStatusObserver.isPending ||
         (active && !activeEventsLoaded) ? (
           <AgentEmpty>
             <LoadingLabel>{t("common.loading")}</LoadingLabel>
@@ -721,15 +712,6 @@ export default function AcpChatPanel({
         ) : starting && !active ? (
           <AgentEmpty>
             <LoadingLabel>{t("agent.acpStarting")}</LoadingLabel>
-          </AgentEmpty>
-        ) : selectedSkillStatus && !selectedSkillReady ? (
-          <AgentEmpty>
-            <Icon name="shield" />
-            <strong>{t("agent.acpSkillRequiredTitle")}</strong>
-            <p>{t("agent.acpSkillRequiredBody")}</p>
-            <Button variant="primary" onClick={openAgentSetup}>
-              {t("agent.acpAgentSetup")}
-            </Button>
           </AgentEmpty>
         ) : selectedCliStatus && !selectedCliReady ? (
           <AgentSetupGuidance
@@ -1115,10 +1097,6 @@ function showProviderHeading(items: TranscriptItem[], index: number) {
 
 function loginCommand(provider: AgentProvider) {
   return provider === "claude" ? "claude auth login" : "codex login";
-}
-
-function skillTarget(provider: AgentProvider) {
-  return provider === "claude" ? "claude-code" : "codex";
 }
 
 function isLiveSession(lifecycle: AcpSessionLifecycle) {

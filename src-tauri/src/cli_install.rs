@@ -57,12 +57,24 @@ pub struct CliInstallReceipt {
 }
 
 pub(crate) fn bundled_cli_binary() -> AppResult<PathBuf> {
-    bundled_cli_candidates()?
+    bundled_binary_candidates("dopedb-cli")?
         .into_iter()
         .find(|path| {
             fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
         })
         .ok_or_else(|| AppError::NotFound("the bundled DopeDB CLI sidecar".into()))
+}
+
+/// Resolves the immutable, app-only executable used to launch ACP adapters and
+/// serve their typed MCP tools. Unlike `bundled_cli_binary`, this bridge is
+/// never copied into a user PATH or exposed as the public `dopedb` command.
+pub(crate) fn bundled_agent_bridge_binary() -> AppResult<PathBuf> {
+    bundled_binary_candidates("dopedb-agent-bridge")?
+        .into_iter()
+        .find(|path| {
+            fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+        })
+        .ok_or_else(|| AppError::NotFound("the bundled DopeDB Agent bridge sidecar".into()))
 }
 
 /// Directory prepended to every in-app Terminal PATH. Tauri keeps the bundled
@@ -127,26 +139,26 @@ pub(crate) fn install(update_path: bool, replace_existing: bool) -> AppResult<Cl
     })
 }
 
-fn bundled_cli_candidates() -> AppResult<Vec<PathBuf>> {
+fn bundled_binary_candidates(binary_stem: &str) -> AppResult<Vec<PathBuf>> {
     let executable = std::env::current_exe()?;
     let executable_dir = executable
         .parent()
         .ok_or_else(|| AppError::Config("the app executable has no parent directory".into()))?;
     let binary_name = if cfg!(windows) {
-        "dopedb-cli.exe"
+        format!("{binary_stem}.exe")
     } else {
-        "dopedb-cli"
+        binary_stem.to_owned()
     };
     let mut candidates = vec![
-        executable_dir.join(binary_name),
-        executable_dir.join("resources").join(binary_name),
+        executable_dir.join(&binary_name),
+        executable_dir.join("resources").join(&binary_name),
     ];
     if executable_dir
         .file_name()
         .is_some_and(|component| component == "MacOS")
     {
         if let Some(contents) = executable_dir.parent() {
-            candidates.push(contents.join("Resources").join(binary_name));
+            candidates.push(contents.join("Resources").join(&binary_name));
         }
     }
 
@@ -155,7 +167,7 @@ fn bundled_cli_candidates() -> AppResult<Vec<PathBuf>> {
         candidates.push(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("binaries")
-                .join(format!("dopedb-cli-{triple}{extension}")),
+                .join(format!("{binary_stem}-{triple}{extension}")),
         );
     }
     candidates.dedup();

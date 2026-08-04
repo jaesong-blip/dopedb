@@ -109,6 +109,7 @@ fn response_timeout(command: dopedb_protocol::CommandName) -> Duration {
         CommandName::ConnectionTest
         | CommandName::DatabaseList
         | CommandName::CatalogShow
+        | CommandName::CatalogSearch
         | CommandName::SchemaList
         | CommandName::TableDescribe
         | CommandName::DocumentRun
@@ -337,12 +338,15 @@ fn session_authentication() -> Result<SessionAuthentication, ClientError> {
         .ok()
         .and_then(|value| Uuid::parse_str(&value).ok())
         .ok_or(ClientError::AuthenticationUnavailable)?;
-    let token = std::env::var("DOPEDB_SESSION_TOKEN")
-        .map_err(|_| ClientError::AuthenticationUnavailable)?;
-    if token.is_empty() {
-        return Err(ClientError::AuthenticationUnavailable);
+    if let Ok(token) = std::env::var("DOPEDB_SESSION_TOKEN") {
+        if !token.is_empty() {
+            return Ok(SessionAuthentication::new(session_id, token));
+        }
     }
-    Ok(SessionAuthentication::new(session_id, token))
+    if std::env::var("DOPEDB_AGENT_PROCESS_BOUND").as_deref() == Ok("1") {
+        return Ok(SessionAuthentication::process_bound(session_id));
+    }
+    Err(ClientError::AuthenticationUnavailable)
 }
 
 #[cfg(unix)]

@@ -14,6 +14,7 @@ pub(super) async fn handle(
         CommandName::ConnectionTest => BrokerCapability::ConnectionTest,
         CommandName::DatabaseList
         | CommandName::CatalogShow
+        | CommandName::CatalogSearch
         | CommandName::SchemaList
         | CommandName::TableDescribe => BrokerCapability::CatalogRead,
         _ => return failure(request_id, ErrorCode::InvalidRequest, false),
@@ -79,6 +80,18 @@ pub(super) async fn handle(
                 request_id,
                 dispatcher
                     .catalog(&session, &arguments, client_protocol_version)
+                    .await,
+            )
+        }
+        CommandName::CatalogSearch => {
+            let arguments = match decode_arguments::<CatalogSearchCommand>(request) {
+                Ok(arguments) => arguments,
+                Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            respond(
+                request_id,
+                dispatcher
+                    .catalog_search(&session, arguments, client_protocol_version)
                     .await,
             )
         }
@@ -241,6 +254,153 @@ impl BrokerDispatcher {
         })
     }
 
+    async fn catalog_search(
+        &self,
+        session: &AuthenticatedSession,
+        arguments: CatalogSearchArguments,
+        client_protocol_version: u16,
+    ) -> Result<CatalogSearchResult, ErrorCode> {
+        let query = arguments.query.trim();
+        let limit = arguments.limit.unwrap_or(20);
+        if query.is_empty()
+            || query.len() > MAX_CATALOG_SEARCH_QUERY_BYTES
+            || query.chars().any(char::is_control)
+            || arguments.kinds.len() > MAX_CATALOG_SEARCH_KINDS
+            || limit == 0
+            || limit > MAX_CATALOG_SEARCH_MATCHES
+        {
+            return Err(ErrorCode::InvalidRequest);
+        }
+
+        // Search while the canonical snapshot is still inside the Desktop runtime.
+        // Only compact object references cross the Broker frame, so schemas with many
+        // columns cannot turn a bounded Agent lookup into an oversized response.
+        let catalog = self
+            .catalog(
+                session,
+                &CatalogArguments {
+                    connection: arguments.connection,
+                    database: arguments.database,
+                },
+                client_protocol_version,
+            )
+            .await?;
+        let needle = query.to_lowercase();
+        let mut matches = Vec::<CatalogSearchCandidate>::new();
+
+        for relation in catalog.relations() {
+            if !kind_allowed(relation.object.kind, &arguments.kinds) {
+                continue;
+            }
+            let qualified_name = qualified_name(&relation.object);
+            let searchable = relation
+                .columns
+                .iter()
+                .map(|column| column.name.as_str())
+                .chain(relation.comment.as_deref())
+                .collect::<Vec<_>>();
+            if let Some(score) =
+                search_score(&needle, &relation.object.name, &qualified_name, &searchable)
+            {
+                matches.push(CatalogSearchCandidate {
+                    score,
+                    label: qualified_name.clone(),
+                    value: CatalogSearchMatch {
+                        match_type: CatalogSearchMatchType::Relation,
+                        qualified_name,
+                        object: relation.object.clone(),
+                        matched_fields: matching_fields(
+                            &needle,
+                            relation.columns.iter().map(|column| column.name.as_str()),
+                        ),
+                    },
+                });
+            }
+        }
+
+        for routine in catalog.routines() {
+            if !kind_allowed(routine.object.kind, &arguments.kinds) {
+                continue;
+            }
+            let qualified_name = qualified_name(&routine.object);
+            let searchable = routine
+                .arguments
+                .iter()
+                .map(String::as_str)
+                .chain(routine.comment.as_deref())
+                .chain(routine.detail.as_deref())
+                .collect::<Vec<_>>();
+            if let Some(score) =
+                search_score(&needle, &routine.object.name, &qualified_name, &searchable)
+            {
+                matches.push(CatalogSearchCandidate {
+                    score,
+                    label: qualified_name.clone(),
+                    value: CatalogSearchMatch {
+                        match_type: CatalogSearchMatchType::Routine,
+                        qualified_name,
+                        object: routine.object.clone(),
+                        matched_fields: matching_fields(
+                            &needle,
+                            routine.arguments.iter().map(String::as_str),
+                        ),
+                    },
+                });
+            }
+        }
+
+        for object in catalog.other_objects() {
+            if !kind_allowed(object.object.kind, &arguments.kinds) {
+                continue;
+            }
+            let qualified_name = qualified_name(&object.object);
+            let searchable = object
+                .comment
+                .as_deref()
+                .into_iter()
+                .chain(object.detail.as_deref())
+                .collect::<Vec<_>>();
+            if let Some(score) =
+                search_score(&needle, &object.object.name, &qualified_name, &searchable)
+            {
+                matches.push(CatalogSearchCandidate {
+                    score,
+                    label: qualified_name.clone(),
+                    value: CatalogSearchMatch {
+                        match_type: CatalogSearchMatchType::Object,
+                        qualified_name,
+                        object: object.object.clone(),
+                        matched_fields: Vec::new(),
+                    },
+                });
+            }
+        }
+
+        matches.sort_by(|left, right| {
+            left.score
+                .cmp(&right.score)
+                .then_with(|| left.label.cmp(&right.label))
+        });
+        let total_matches = u64::try_from(matches.len()).unwrap_or(u64::MAX);
+        let matches = matches
+            .into_iter()
+            .take(usize::try_from(limit).unwrap_or(usize::MAX))
+            .map(|candidate| candidate.value)
+            .collect::<Vec<_>>();
+
+        Ok(CatalogSearchResult {
+            connection_id: catalog.connection_id(),
+            engine: catalog.engine(),
+            database: catalog.database().to_owned(),
+            captured_at: catalog.captured_at(),
+            fingerprint: catalog.fingerprint().to_owned(),
+            query: arguments.query,
+            total_matches,
+            truncated: total_matches > u64::try_from(matches.len()).unwrap_or(u64::MAX),
+            matches,
+        })
+    }
+
     async fn schema_list(
         &self,
         session: &AuthenticatedSession,
@@ -333,4 +493,58 @@ impl BrokerDispatcher {
             relation,
         })
     }
+}
+
+struct CatalogSearchCandidate {
+    score: u8,
+    label: String,
+    value: CatalogSearchMatch,
+}
+
+fn kind_allowed(
+    kind: dopedb_protocol::ObjectKind,
+    allowed: &[dopedb_protocol::ObjectKind],
+) -> bool {
+    allowed.is_empty() || allowed.contains(&kind)
+}
+
+fn qualified_name(object: &dopedb_protocol::ObjectRef) -> String {
+    [
+        object.catalog.as_deref(),
+        object.namespace.as_deref(),
+        Some(&object.name),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(".")
+}
+
+fn search_score(needle: &str, name: &str, qualified: &str, extras: &[&str]) -> Option<u8> {
+    let name = name.to_lowercase();
+    let qualified = qualified.to_lowercase();
+    if name == needle || qualified == needle {
+        return Some(0);
+    }
+    if name.starts_with(needle) {
+        return Some(1);
+    }
+    if name.contains(needle) || qualified.contains(needle) {
+        return Some(2);
+    }
+    if extras.iter().any(|value| value.to_lowercase() == needle) {
+        return Some(3);
+    }
+    extras
+        .iter()
+        .any(|value| value.to_lowercase().contains(needle))
+        .then_some(4)
+}
+
+fn matching_fields<'a>(needle: &'a str, fields: impl Iterator<Item = &'a str>) -> Vec<String> {
+    fields
+        .filter(|field| field.to_lowercase().contains(needle))
+        .take(12)
+        .map(str::to_owned)
+        .collect()
 }

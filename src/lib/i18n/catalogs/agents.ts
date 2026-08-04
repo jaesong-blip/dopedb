@@ -140,16 +140,16 @@ export const agentsCatalog = defineCatalog(
     "agentTools.autoUpdated":
       "{target} DopeDB Skill updated to revision {revision}.",
     "agentTools.startupBody":
-      "Choose the local Agents you use. DopeDB checks their Skills at startup, installs the selected missing Skills together, and updates managed older revisions automatically.",
+      "Choose the official local Agents shown in AI Chat. DopeDB attaches its typed database tools to each ACP session automatically.",
     "agentTools.startupHeading": "Choose Agents for DopeDB",
     "agentTools.startupInstallFailed":
       "Could not finish Agent Skill setup: {error}",
-    "agentTools.startupInstallSelected": "Install selected Agents",
+    "agentTools.startupInstallSelected": "Save selection",
     "agentTools.startupLater": "Later",
     "agentTools.startupReviewRequired":
       "Review the local Skill files for {targets} in Agent Tools before installation.",
     "agentTools.startupSafety":
-      "Installation is local and credential-free. Only signed, version-matched DopeDB Skill files are written; unknown or user-modified files are never overwritten automatically.",
+      "Only the provider's local CLI and login are required for AI Chat. The public DopeDB CLI and discovery Skill are optional tools for work outside the built-in ACP session.",
     "agentTools.startupSelectOne": "Select at least one Agent.",
     "agentTools.startupTitle": "DopeDB Agent setup",
     "agentTools.backupCreated": "Backup preserved at {path}",
@@ -162,7 +162,7 @@ export const agentsCatalog = defineCatalog(
     "agentTools.conflicts": "{count} exact conflict(s)",
     "agentTools.currentRevision": "Current revision",
     "agentTools.description":
-      "Install the small DopeDB discovery Skill for Codex and Claude Code. The version-matched full guide stays inside the signed CLI.",
+      "Optional for agents working from an external terminal: install the small DopeDB discovery Skill for Codex and Claude Code. Built-in AI Chat uses its typed MCP tools directly.",
     "agentTools.detectError": "Could not detect agent tools: {error}",
     "agentTools.detected": "CLI detected",
     "agentTools.error": "Could not manage the DopeDB Skill: {error}",
@@ -394,16 +394,16 @@ export const agentsCatalog = defineCatalog(
     "agentTools.autoUpdated":
       "{target} DopeDB Skill을 리비전 {revision}(으)로 업데이트했습니다.",
     "agentTools.startupBody":
-      "사용하는 로컬 Agent를 선택하세요. DopeDB는 시작할 때 선택한 Agent의 Skill을 확인하고, 누락된 Skill을 한 번에 설치하며, 관리 중인 구버전은 자동 업데이트합니다.",
+      "AI Chat에서 사용할 공식 로컬 Agent를 선택하세요. DopeDB는 각 ACP 세션에 typed 데이터베이스 도구를 자동으로 연결합니다.",
     "agentTools.startupHeading": "DopeDB에서 사용할 Agent 선택",
     "agentTools.startupInstallFailed":
       "Agent Skill 설정을 완료하지 못했습니다: {error}",
-    "agentTools.startupInstallSelected": "선택한 Agent 설치",
+    "agentTools.startupInstallSelected": "선택 저장",
     "agentTools.startupLater": "나중에",
     "agentTools.startupReviewRequired":
       "{targets}의 로컬 Skill 파일을 설치 전에 Agent Tools에서 검토하세요.",
     "agentTools.startupSafety":
-      "설치는 로컬에서 자격 증명 없이 진행됩니다. 서명된 현재 버전의 DopeDB Skill 파일만 쓰며, 알 수 없거나 사용자가 수정한 파일은 자동으로 덮어쓰지 않습니다.",
+      "AI Chat에는 제공자의 로컬 CLI와 로그인만 필요합니다. 공개 DopeDB CLI와 탐색 Skill은 내장 ACP 세션 밖에서 작업할 때 쓰는 선택 도구입니다.",
     "agentTools.startupSelectOne": "Agent를 하나 이상 선택하세요.",
     "agentTools.startupTitle": "DopeDB Agent 설정",
     "agentTools.backupCreated": "기존 파일을 {path}에 보존했습니다.",
@@ -416,7 +416,7 @@ export const agentsCatalog = defineCatalog(
     "agentTools.conflicts": "정확한 충돌 {count}개",
     "agentTools.currentRevision": "현재 리비전",
     "agentTools.description":
-      "Codex와 Claude Code에 작은 DopeDB 탐색 스킬을 설치합니다. 버전에 맞는 전체 가이드는 서명된 CLI 안에 유지됩니다.",
+      "외부 터미널에서 작업하는 Agent를 위한 선택 기능입니다. Codex와 Claude Code에 작은 DopeDB 탐색 Skill을 설치하며, 내장 AI Chat은 typed MCP 도구를 직접 사용합니다.",
     "agentTools.detectError": "에이전트 도구를 확인하지 못했습니다: {error}",
     "agentTools.detected": "CLI 감지됨",
     "agentTools.error": "DopeDB 스킬을 관리하지 못했습니다: {error}",

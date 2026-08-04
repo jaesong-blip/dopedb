@@ -24,24 +24,27 @@ use crate::monitoring::HealthSnapshot;
 use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
 use dopedb_protocol::{
-    decode_arguments, encode_frame, AppOpenCommand, AppOpenResult, CatalogArguments,
-    CatalogShowCommand, CatalogSnapshot, CommandName, CommandSpec, ConnectionListCommand,
-    ConnectionListResult, ConnectionSelector, ConnectionSelectorArguments, ConnectionShowCommand,
-    ConnectionSummary, ConnectionTestCommand, ConnectionTestResult, DashboardCreateArguments,
-    DashboardCreateCommand, DashboardCreateResult, DashboardKind as ProtocolDashboardKind,
-    DashboardRecord, DashboardVisualization, DatabaseEngine, DatabaseListCommand,
-    DatabaseListResult, DatabaseSummary as ProtocolDatabaseSummary,
-    DocumentPage as ProtocolDocumentPage, DocumentQuery as ProtocolDocumentQuery,
-    DocumentRunArguments, DocumentRunCommand, DocumentRunResult, EmptyArguments, ErrorCode,
-    OperationCancelCommand, OperationShowCommand, OperationSummary, OperationWaitArguments,
-    OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryHealth, QueryPlanArguments,
-    QueryPlanCommand, QueryPlanResult, QueryResultPage, QueryRunArguments, QueryRunCommand,
-    QueryRunResult, RequestEnvelope, ResponseEnvelope, SchemaListCommand, SchemaListResult,
-    SchemaSummary, SkillInstallCommand, SkillMutationArguments, SkillRemoveCommand,
-    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand,
-    SqlProposeArguments, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeArguments,
-    TableDescribeCommand, TableDescribeResult, VersionCommand, VersionResult,
-    COMMAND_SCHEMA_VERSION, MAX_RESPONSE_BYTES, MAX_STRING_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
+    decode_arguments, encode_frame, AgentSessionRegisterCommand, AppOpenCommand, AppOpenResult,
+    CatalogArguments, CatalogSearchArguments, CatalogSearchCommand, CatalogSearchMatch,
+    CatalogSearchMatchType, CatalogSearchResult, CatalogShowCommand, CatalogSnapshot, CommandName,
+    CommandSpec, ConnectionListCommand, ConnectionListResult, ConnectionSelector,
+    ConnectionSelectorArguments, ConnectionShowCommand, ConnectionSummary, ConnectionTestCommand,
+    ConnectionTestResult, DashboardCreateArguments, DashboardCreateCommand, DashboardCreateResult,
+    DashboardKind as ProtocolDashboardKind, DashboardRecord, DashboardVisualization,
+    DatabaseEngine, DatabaseListCommand, DatabaseListResult,
+    DatabaseSummary as ProtocolDatabaseSummary, DocumentPage as ProtocolDocumentPage,
+    DocumentQuery as ProtocolDocumentQuery, DocumentRunArguments, DocumentRunCommand,
+    DocumentRunResult, EmptyArguments, ErrorCode, OperationCancelCommand, OperationShowCommand,
+    OperationSummary, OperationWaitArguments, OperationWaitCommand, ProtocolError,
+    QueryCancelCommand, QueryHealth, QueryPlanArguments, QueryPlanCommand, QueryPlanResult,
+    QueryResultPage, QueryRunArguments, QueryRunCommand, QueryRunResult, RequestEnvelope,
+    ResponseEnvelope, SchemaListCommand, SchemaListResult, SchemaSummary, SkillInstallCommand,
+    SkillMutationArguments, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
+    SkillsGetCommand, SkillsListCommand, SqlProposeArguments, SqlProposeCommand, StatusCommand,
+    StatusResult, TableDescribeArguments, TableDescribeCommand, TableDescribeResult,
+    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, MAX_CATALOG_SEARCH_KINDS,
+    MAX_CATALOG_SEARCH_MATCHES, MAX_CATALOG_SEARCH_QUERY_BYTES, MAX_RESPONSE_BYTES,
+    MAX_STRING_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -72,6 +75,7 @@ pub(crate) struct BrokerDispatcher {
     services: Option<ApplicationServices>,
     skills: Option<SkillManager>,
     app_handle: Option<tauri::AppHandle>,
+    peer: Option<super::peer::PeerProcessIdentity>,
 }
 
 impl BrokerDispatcher {
@@ -90,24 +94,34 @@ impl BrokerDispatcher {
             services,
             skills,
             app_handle,
+            peer: None,
         }
+    }
+
+    pub(crate) fn for_peer(&self, peer: super::peer::PeerProcessIdentity) -> Self {
+        let mut dispatcher = self.clone();
+        dispatcher.peer = Some(peer);
+        dispatcher
     }
 
     pub(crate) async fn dispatch(&self, request: RequestEnvelope) -> ResponseEnvelope {
         let requested_protocol = request.protocol_version;
-        let activity = request.authentication.as_ref().and_then(|authentication| {
-            self.sessions
-                .authenticate(authentication)
-                .ok()
-                .map(|session| {
-                    (
-                        request.request_id,
-                        session.terminal_session_id,
-                        session.connection_id,
-                        request.command,
-                    )
-                })
-        });
+        let activity = (request.command != CommandName::AgentSessionRegister)
+            .then_some(request.authentication.as_ref())
+            .flatten()
+            .and_then(|authentication| {
+                self.sessions
+                    .authenticate(authentication, self.peer.as_ref())
+                    .ok()
+                    .map(|session| {
+                        (
+                            request.request_id,
+                            session.terminal_session_id,
+                            session.connection_id,
+                            request.command,
+                        )
+                    })
+            });
         let response_protocol = if (PROTOCOL_MIN..=PROTOCOL_MAX).contains(&requested_protocol) {
             requested_protocol
         } else {
@@ -165,6 +179,7 @@ impl BrokerDispatcher {
         }
 
         match request.command {
+            CommandName::AgentSessionRegister => self.register_agent_session(&request),
             CommandName::Version
             | CommandName::Status
             | CommandName::AppOpen
@@ -179,6 +194,7 @@ impl BrokerDispatcher {
             | CommandName::ConnectionTest
             | CommandName::DatabaseList
             | CommandName::CatalogShow
+            | CommandName::CatalogSearch
             | CommandName::SchemaList
             | CommandName::TableDescribe => connection_catalog::handle(self, &request).await,
             CommandName::DocumentRun
@@ -194,6 +210,29 @@ impl BrokerDispatcher {
         }
     }
 
+    fn register_agent_session(&self, request: &RequestEnvelope) -> ResponseEnvelope {
+        let request_id = request.request_id;
+        if decode_arguments::<AgentSessionRegisterCommand>(request).is_err() {
+            return failure(request_id, ErrorCode::InvalidRequest, false);
+        }
+        let Some(authentication) = request.authentication.as_ref() else {
+            return failure(request_id, ErrorCode::AuthenticationDenied, false);
+        };
+        if authentication.token().is_none() {
+            return failure(request_id, ErrorCode::AuthenticationDenied, false);
+        }
+        let Some(peer) = self.peer else {
+            return failure(request_id, ErrorCode::AuthenticationDenied, false);
+        };
+        respond(
+            request_id,
+            self.sessions
+                .bind_agent_process(authentication, peer)
+                .map(|_| dopedb_protocol::EmptyArguments::default())
+                .map_err(|_| ErrorCode::AuthenticationDenied),
+        )
+    }
+
     pub(super) fn authenticate(
         &self,
         request: &RequestEnvelope,
@@ -205,7 +244,7 @@ impl BrokerDispatcher {
             .ok_or(ErrorCode::AuthenticationDenied)?;
         let session = self
             .sessions
-            .authenticate(authentication)
+            .authenticate(authentication, self.peer.as_ref())
             .map_err(|_| ErrorCode::AuthenticationDenied)?;
         session
             .require(capability)

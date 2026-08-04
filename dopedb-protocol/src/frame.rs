@@ -238,7 +238,9 @@ impl FramePayload for RequestEnvelope {
     fn validate_before_encode(&self) -> Result<(), FrameError> {
         validate_json_limits(&self.arguments)?;
         if let Some(authentication) = &self.authentication {
-            validate_string(authentication.token())?;
+            if let Some(token) = authentication.token() {
+                validate_string(token)?;
+            }
         }
         Ok(())
     }

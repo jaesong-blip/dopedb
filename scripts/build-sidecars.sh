@@ -17,6 +17,7 @@ cargo_args=(
   build
   --release
   --package dopedb-cli
+  --bins
 )
 target_root="${CARGO_TARGET_DIR:-target}"
 if [[ "$target_root" != /* ]]; then
@@ -59,6 +60,10 @@ stage_binary() {
 stage_binary \
   "$artifact_dir/dopedb-cli$bin_ext" \
   "src-tauri/binaries/dopedb-cli-$target_triple$bin_ext"
+
+stage_binary \
+  "$artifact_dir/dopedb-agent-bridge$bin_ext" \
+  "src-tauri/binaries/dopedb-agent-bridge-$target_triple$bin_ext"
 
 # Cloud SQL's official Auth Proxy is the supported desktop transport. Pin both
 # the release and each platform digest so a mutable PATH installation or a

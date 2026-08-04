@@ -40,7 +40,11 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": ["dmg", "app"],
-    "externalBin": ["binaries/dopedb-cli", "binaries/cloud-sql-proxy"],
+    "externalBin": [
+      "binaries/dopedb-cli",
+      "binaries/dopedb-agent-bridge",
+      "binaries/cloud-sql-proxy"
+    ],
     "resources": ["resources/skills/*.json", "resources/licenses/*.txt"],
     "icon": [
       "icons/32x32.png",

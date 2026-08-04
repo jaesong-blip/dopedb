@@ -21,7 +21,9 @@ name: dopedb-cli
 description: Use the local DopeDB Desktop runtime safely through the version-matched dopedb CLI.
 ---
 
-Before using DopeDB, run:
+When DopeDB supplies the \`dopedb-desktop-session\` MCP server, use its typed tools and do not run the public CLI or fetch this guide.
+
+Outside DopeDB AI Chat, before using the CLI, run:
 dopedb skills get dopedb-cli
 `;
 

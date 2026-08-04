@@ -19,6 +19,8 @@ use crate::kernel::identity::{
 };
 use crate::store::PinnedConnection;
 
+use super::peer::{process_is_descendant_or_same, PeerProcessIdentity};
+
 const SESSION_TOKEN_BYTES: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -78,6 +80,7 @@ impl AuthenticatedSession {
 struct SessionRecord {
     metadata: AuthenticatedSession,
     token: Zeroizing<[u8; SESSION_TOKEN_BYTES]>,
+    agent_process: Option<PeerProcessIdentity>,
 }
 
 impl fmt::Debug for SessionRecord {
@@ -86,6 +89,7 @@ impl fmt::Debug for SessionRecord {
             .debug_struct("SessionRecord")
             .field("metadata", &self.metadata)
             .field("token", &"<redacted>")
+            .field("agent_process", &self.agent_process)
             .finish()
     }
 }
@@ -163,6 +167,7 @@ impl BrokerSessionRegistry {
             SessionRecord {
                 metadata,
                 token: token.clone(),
+                agent_process: None,
             },
         );
         Ok(IssuedSessionCapability {
@@ -173,6 +178,57 @@ impl BrokerSessionRegistry {
     }
 
     pub(crate) fn authenticate(
+        &self,
+        authentication: &SessionAuthentication,
+        peer: Option<&PeerProcessIdentity>,
+    ) -> AppResult<AuthenticatedSession> {
+        if authentication.token().is_some() {
+            return self.authenticate_bearer(authentication);
+        }
+        let terminal_session_id = TerminalSessionId::from(authentication.terminal_session_id);
+        let Some(record) = self.sessions.get(&terminal_session_id) else {
+            return Err(authentication_denied());
+        };
+        if record.metadata.runtime_id != self.runtime_id || record.metadata.expires_at <= Utc::now()
+        {
+            drop(record);
+            self.sessions.remove(&terminal_session_id);
+            return Err(authentication_denied());
+        }
+        let Some(root) = record.agent_process else {
+            return Err(authentication_denied());
+        };
+        let Some(peer) = peer.copied() else {
+            return Err(authentication_denied());
+        };
+        if !process_is_descendant_or_same(peer, root) {
+            return Err(authentication_denied());
+        }
+        Ok(record.metadata.clone())
+    }
+
+    pub(crate) fn bind_agent_process(
+        &self,
+        authentication: &SessionAuthentication,
+        peer: PeerProcessIdentity,
+    ) -> AppResult<AuthenticatedSession> {
+        let authenticated = self.authenticate_bearer(authentication)?;
+        let terminal_session_id = authenticated.terminal_session_id;
+        let mut record = self
+            .sessions
+            .get_mut(&terminal_session_id)
+            .ok_or_else(authentication_denied)?;
+        if record
+            .agent_process
+            .is_some_and(|registered| registered != peer)
+        {
+            return Err(authentication_denied());
+        }
+        record.agent_process = Some(peer);
+        Ok(authenticated)
+    }
+
+    fn authenticate_bearer(
         &self,
         authentication: &SessionAuthentication,
     ) -> AppResult<AuthenticatedSession> {
@@ -186,8 +242,9 @@ impl BrokerSessionRegistry {
             self.sessions.remove(&terminal_session_id);
             return Err(authentication_denied());
         }
+        let token = authentication.token().ok_or_else(authentication_denied)?;
         let mut supplied = Zeroizing::new([0u8; SESSION_TOKEN_BYTES]);
-        if hex::decode_to_slice(authentication.token(), supplied.as_mut()).is_err()
+        if hex::decode_to_slice(token, supplied.as_mut()).is_err()
             || !bool::from(record.token.as_ref().ct_eq(supplied.as_ref()))
         {
             return Err(authentication_denied());
@@ -323,7 +380,7 @@ mod tests {
             issued.terminal_session_id.into(),
             issued.token().to_owned(),
         );
-        let authenticated = registry.authenticate(&authentication).unwrap();
+        let authenticated = registry.authenticate(&authentication, None).unwrap();
         assert_eq!(authenticated.terminal_session_id, terminal_session_id);
         assert_eq!(authenticated.runtime_id, runtime_id);
         assert_eq!(authenticated.connection_id, connection_id);
@@ -333,9 +390,19 @@ mod tests {
         assert!(authenticated.require(BrokerCapability::SqlPropose).is_err());
 
         let wrong = SessionAuthentication::new(issued.terminal_session_id.into(), "00".repeat(32));
-        assert!(registry.authenticate(&wrong).is_err());
+        assert!(registry.authenticate(&wrong, None).is_err());
+
+        let root = super::super::peer::current_process_identity_for_test().unwrap();
+        registry.bind_agent_process(&authentication, root).unwrap();
+        let process_bound = SessionAuthentication::process_bound(terminal_session_id.into());
+        assert!(registry.authenticate(&process_bound, Some(&root)).is_ok());
+        let unrelated =
+            super::super::peer::PeerProcessIdentity::for_test(root.pid().saturating_add(1), 0);
+        assert!(registry
+            .authenticate(&process_bound, Some(&unrelated))
+            .is_err());
         assert!(registry.revoke(terminal_session_id));
-        assert!(registry.authenticate(&authentication).is_err());
+        assert!(registry.authenticate(&authentication, None).is_err());
     }
 
     #[test]
@@ -379,7 +446,7 @@ mod tests {
             issued.token().to_owned(),
         );
         std::thread::sleep(Duration::from_millis(5));
-        assert!(registry.authenticate(&authentication).is_err());
+        assert!(registry.authenticate(&authentication, None).is_err());
         assert_eq!(registry.len(), 0);
     }
 }

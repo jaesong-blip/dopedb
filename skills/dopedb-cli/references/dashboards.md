@@ -1,9 +1,11 @@
 # Dashboard creation
 
-## Ask first
+## Save only when requested
 
-After a successful SQL query, ask whether the user wants to save that exact
-result as a dashboard. Do not create one merely because a `queryRunId` exists.
+Do not offer a dashboard after every successful SQL query. Save one only when
+the user asks to share or preserve a recurring result, then confirm the exact
+title and presentation before creation. Never create one merely because a
+`queryRunId` exists.
 
 ## Use exact provenance
 

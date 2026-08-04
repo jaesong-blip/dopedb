@@ -4,15 +4,16 @@ This is the single maintained project document for DopeDB. Keep the root README 
 
 ## Product
 
-DopeDB is a local-first desktop database client built with Tauri. It lets a user inspect and operate databases manually, and it runs AI tools in a connection-pinned Terminal that reaches the Desktop trust boundary through the local `dopedb` CLI without receiving raw credentials.
+DopeDB is a local-first desktop database client built with Tauri. It lets a user inspect and operate databases manually, and it runs official Claude/Codex ACP Agents in connection-pinned sessions that reach the Desktop trust boundary through an app-only typed Agent bridge without receiving raw credentials.
 
 Current scope:
 
 - Desktop app: Tauri v2, Rust core, React UI, Vite
 - Landing site: Next.js under `site/`, hosted at https://dopedb.dev
 - Databases: PostgreSQL, MySQL/MariaDB, SQLite, MongoDB
-- Agent runtime: connection-pinned Shell, Codex, and Claude PTY sessions
-- CLI: owner-local UDS/named-pipe Broker plus the bundled `dopedb` sidecar
+- Agent runtime: connection-pinned Claude/Codex ACP sessions plus an advanced Shell PTY path
+- Local tools: owner-local UDS/named-pipe Broker, the optional public `dopedb`
+  CLI, and a separately bundled app-only Agent bridge
 - Distribution: GitHub Releases and Tauri updater metadata
 
 Planned team collaboration, workspace-scoped provider integrations, shared
@@ -30,8 +31,11 @@ The Rust core owns the trust boundary:
 - `audit/`: query history and hash-chained audit records
 - `services/`: transport-neutral connection, catalog, query, dashboard, and operation behavior
 - `operations/`: immutable exact-payload plans, approvals, claims, and lifecycle receipts
+- `features/agents/acp.rs`: official ACP adapter lifecycle, bounded replay, permission handling,
+  and the session-local DopeDB tool attachment
 - `broker/`: owner-local, versioned UDS/named-pipe control messages for the CLI
-- `cli_install.rs`: bundled in-app resolver and explicit per-user CLI/PATH installation
+  and typed Agent bridge
+- `cli_install.rs`: immutable sidecar resolution plus explicit per-user CLI/PATH installation
 - `skills/`: bounded inventory plus atomic Codex/Claude Code Skill install, repair,
   backup, and removal
 - `terminal/`: connection-pinned PTY lifecycle, secret-free child environment, and process-tree cleanup
@@ -43,44 +47,73 @@ The frontend renders database state and approval decisions. It does not own the 
 Writes and DDL require an immutable Operation proposal, an exact stored approval, and
 `allow_writes = true`; transports cannot approve a replacement SQL payload.
 
-The Local Broker is the only Agent database path for the bundled `dopedb` CLI. Public
-`version`, `status`, and `app open` calls do not carry a reusable secret. Database
-commands require an ephemeral in-memory Terminal capability pinned to one
-workspace/account/connection revision. The global discovery file contains only
-runtime metadata. The app opens no Agent HTTP or TCP listener.
+The Local Broker is the only database path for both the public `dopedb` CLI and the
+app-only Agent bridge. Public `version`, `status`, and `app open` calls do not carry a
+reusable secret. Database commands require an ephemeral in-memory capability pinned to
+one workspace/account/connection revision. ACP `session/new` and `session/load` attach a
+session-local typed stdio MCP server implemented by the exact bundled Agent bridge. Each
+tool maps bounded JSON directly to a protocol `CommandSpec` and `BrokerClient`; it does
+not invoke a shell, public CLI parser, or another CLI process per tool call. `query_read`
+still performs the Broker's exact plan request followed by its single-use run request,
+but exposes that safety sequence as one MCP round trip. Catalog search is evaluated while
+the canonical snapshot remains inside Desktop and returns only a bounded compact match set,
+so a wide schema cannot overflow the local Broker frame.
 
-The repository-owned Skill source is `skills/dopedb-cli/`. Build verification records
+The ACP server description contains no capability or credential, and the MCP child never
+receives the bearer capability. The Agent bridge's launcher mode uses the capability once
+to bind its OS process id and start marker to the in-memory session, removes the capability
+from the adapter environment before starting the unmodified official adapter, and the
+Broker then accepts tokenless Agent requests only from that process or a verified
+descendant. The global discovery file contains only runtime metadata. The app opens no
+Agent HTTP or TCP listener.
+
+The stdio server continues reading MCP notifications while one serialized database tool
+is active. Cancelling a `query_read` aborts the tool future and sends `query.cancel` with
+the exact plan id when planning has completed. A persisted conversation whose adapter is
+no longer owned by the current Desktop runtime is projected as closed/resumable instead
+of exposing a stop control for a process that does not exist.
+
+The repository-owned, optional external-CLI Skill source is `skills/dopedb-cli/`. Build verification records
 exact and normalized hashes in versioned bundled manifests. The installed Skill is a
 small discovery stub; `dopedb skills get dopedb-cli --full` returns the exact guide and
-references embedded in that app version without contacting the network. Inventory scans
+references embedded in that app version without contacting the network. Built-in AI Chat
+does not load or require this Skill; its session prompt and typed MCP tools are authoritative.
+Inventory scans
 are bounded and reject symlinks/reparse points. Only a known, byte-exact managed snapshot
 may be updated or removed automatically; repair preserves every conflicting directory.
 
-## Agent Terminal and CLI Behavior
+## Agent Sessions, Terminal, and CLI Behavior
 
-Opening an Agent Terminal creates a PTY session pinned to the selected workspace,
-account, connection revision, and database policy. Shell, Codex, and Claude profiles
-share the same lifecycle. A connection, account, membership, or authority change
-revokes the session instead of silently retargeting it. The child environment excludes
-database URLs, provider secrets, API keys, and OS credential-store values.
+Opening an AI Chat starts the official Claude Agent or Codex ACP adapter and pins the
+session to the selected workspace, account, connection revision, and database policy.
+The advanced Shell Terminal uses the same authority boundary through a PTY. A connection,
+account, membership, or authority change revokes either session instead of silently
+retargeting it. Child environments exclude database URLs, provider secrets, API keys,
+and OS credential-store values. Provider authentication remains owned by the user's
+local `claude` or `codex` login.
 
-The signed `dopedb` CLI discovers an owner-only Unix socket or Windows named pipe.
+Outside built-in AI Chat, the signed `dopedb` CLI discovers an owner-only Unix socket or Windows named pipe.
 Database commands require an ephemeral Terminal-session capability that lives in
 process memory. The capability is never a database credential, never enters argv, and
-cannot be moved to another Terminal. The command surface covers secret-free connection
-summaries, canonical catalog/schema/table metadata, typed MongoDB reads, SQL read
-planning/execution, provenance-bound dashboard creation, immutable SQL proposals, and
-operation receipts.
+cannot be moved to another Terminal. ACP does not execute this public CLI. Registration
+consumes the same bearer shape only in the app-only Agent bridge launcher; stdio MCP
+settings and Agent descendants carry a session identifier,
+not the bearer, and the Broker revalidates their OS ancestry for every request. The command
+surface covers secret-free connection summaries, canonical catalog/schema/table metadata,
+typed MongoDB reads, SQL read planning/execution, provenance-bound dashboard creation,
+immutable SQL proposals, and operation receipts.
 
 The desktop Agent activity view keeps at most 200 in-memory completion records containing
 only command, request/session/connection identifiers, state, and a stable error code. It
 does not retain result rows, SQL text, Terminal output, session tokens, or credentials.
 
-Every SQL data read is a mandatory two-step operation. `dopedb query plan` validates
+Every SQL data read remains a mandatory two-step Broker operation. `dopedb query plan` validates
 one SELECT, runs non-executing EXPLAIN, gathers aggregate database-pressure signals, and
 returns an expiring single-use plan. `dopedb query run` accepts only that plan identifier,
 not replacement SQL or a connection. The database read-only session remains the
-authoritative guard. MongoDB uses `dopedb document run` with bounded `find`, `aggregate`,
+authoritative guard. The ACP bridge's typed `query_read` performs those two exact Broker
+commands internally so the model needs only one tool round trip. MongoDB uses the typed
+bridge or `dopedb document run` with bounded `find`, `aggregate`,
 or `count` JSON shapes; unknown fields and write stages such as `$out` or `$merge` fail
 closed.
 
@@ -98,12 +131,15 @@ PostgreSQL can grant or revoke `pg_monitor` from Safety settings through one fix
 explicitly confirmed and separately audited command. MySQL uses available Performance
 Schema aggregates; SQLite reports basic local coverage.
 
-Settings -> Agent tools installs the version-matched discovery Skill for Codex and
-Claude Code. It also offers a separate legacy cleanup flow: inspect exact retired DopeDB
+The app-start Agent selector only controls which official Claude/Codex provider appears in
+AI Chat; missing DopeDB Skills never block ACP. Settings -> Agent tools optionally installs
+the version-matched discovery Skill for agents operating from external terminals and keeps
+known managed older revisions updated without overwriting conflicts. It also offers a separate legacy cleanup flow: inspect exact retired DopeDB
 MCP client entries, show a redacted diff, require confirmation, preserve unrelated
 settings, and back up edited client files. Retired app-owned bearer metadata is erased
-without copying the secret into a backup. Existing chat history remains a read-only
-archive; there is no in-app live chat execution path.
+without copying the secret into a backup. The retired external MCP configuration remains
+unsupported; AI Chat instead supplies its bounded stdio tool only inside each official
+ACP session and stores a bounded local transcript for explicit history/resume.
 
 ## Safety Model
 
@@ -138,9 +174,9 @@ pnpm build:sidecars
 cargo check --workspace
 ```
 
-Both external binaries must exist before Tauri validates `bundle.externalBin`.
-`pnpm build:sidecars` builds the host `dopedb` binary and stages it together with the
-version- and SHA-256-pinned official Cloud SQL Auth Proxy in
+All three external binaries must exist before Tauri validates `bundle.externalBin`.
+`pnpm build:sidecars` builds the host public `dopedb` CLI and app-only Agent bridge,
+then stages them together with the version- and SHA-256-pinned official Cloud SQL Auth Proxy in
 `src-tauri/binaries/`.
 
 ## Landing Site

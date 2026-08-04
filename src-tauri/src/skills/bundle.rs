@@ -305,7 +305,10 @@ fn validate_current_manifest(manifest: &CurrentManifest) -> AppResult<()> {
         .ok_or_else(|| AppError::Config("the embedded Skill install stub has no content".into()))?;
     if stub.path != "SKILL.md"
         || stub.source_path != "generated:discovery-stub"
-        || !content.contains("Before using DopeDB, run:\ndopedb skills get dopedb-cli")
+        || !content.contains("dopedb-desktop-session")
+        || !content.contains(
+            "Outside DopeDB AI Chat, before using the CLI, run:\ndopedb skills get dopedb-cli",
+        )
     {
         return Err(AppError::Config(
             "the embedded Skill discovery stub is invalid".into(),

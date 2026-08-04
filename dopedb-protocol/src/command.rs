@@ -88,6 +88,18 @@ pub struct StatusResult {
 
 pub struct AppOpenCommand;
 
+/// Bind the token-bearing ACP launcher process to its in-memory Broker session.
+/// This command is intentionally absent from the public CLI surface.
+pub struct AgentSessionRegisterCommand;
+
+impl CommandSpec for AgentSessionRegisterCommand {
+    type Arguments = EmptyArguments;
+    type Result = EmptyArguments;
+
+    const NAME: CommandName = CommandName::AgentSessionRegister;
+    const AUTHENTICATION: AuthenticationRequirement = AuthenticationRequirement::TerminalSession;
+}
+
 impl CommandSpec for AppOpenCommand {
     type Arguments = AppOpenArguments;
     type Result = AppOpenResult;

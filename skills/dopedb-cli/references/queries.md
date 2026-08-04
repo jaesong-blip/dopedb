@@ -1,5 +1,12 @@
 # Query workflow
 
+Inside DopeDB AI Chat, use the typed `dopedb-desktop-session` MCP tools instead
+of the commands below. The session is already pinned: search metadata with
+`catalog_search` and execute a read with one `query_read` call. Do not perform
+CLI discovery/version/status handshakes inside ACP.
+
+The CLI workflow below is for an external terminal.
+
 ## Select a connection
 
 Use:

@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-3 command catalog. Any addition, removal, or meaning change requires a
+/// Version-4 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -29,6 +29,8 @@ pub enum CommandName {
     SkillRepair,
     #[serde(rename = "skill.remove")]
     SkillRemove,
+    #[serde(rename = "agent.session.register")]
+    AgentSessionRegister,
     #[serde(rename = "connection.list")]
     ConnectionList,
     #[serde(rename = "connection.show")]
@@ -39,6 +41,8 @@ pub enum CommandName {
     DatabaseList,
     #[serde(rename = "catalog.show")]
     CatalogShow,
+    #[serde(rename = "catalog.search")]
+    CatalogSearch,
     #[serde(rename = "schema.list")]
     SchemaList,
     #[serde(rename = "table.describe")]
@@ -68,7 +72,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 27] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -78,11 +82,13 @@ impl CommandName {
         Self::SkillInstall,
         Self::SkillRepair,
         Self::SkillRemove,
+        Self::AgentSessionRegister,
         Self::ConnectionList,
         Self::ConnectionShow,
         Self::ConnectionTest,
         Self::DatabaseList,
         Self::CatalogShow,
+        Self::CatalogSearch,
         Self::SchemaList,
         Self::TableDescribe,
         Self::DocumentRun,
@@ -107,11 +113,13 @@ impl CommandName {
             Self::SkillInstall => "skill.install",
             Self::SkillRepair => "skill.repair",
             Self::SkillRemove => "skill.remove",
+            Self::AgentSessionRegister => "agent.session.register",
             Self::ConnectionList => "connection.list",
             Self::ConnectionShow => "connection.show",
             Self::ConnectionTest => "connection.test",
             Self::DatabaseList => "database.list",
             Self::CatalogShow => "catalog.show",
+            Self::CatalogSearch => "catalog.search",
             Self::SchemaList => "schema.list",
             Self::TableDescribe => "table.describe",
             Self::DocumentRun => "document.run",
@@ -134,25 +142,35 @@ impl fmt::Display for CommandName {
     }
 }
 
-/// Terminal-scoped broker authentication. The token is an ephemeral local
-/// capability, not a database credential. Its Debug representation is always redacted.
+/// Terminal-scoped broker authentication. Normal Terminal requests carry an
+/// ephemeral bearer token. Agent MCP descendants instead omit the token and are
+/// authenticated against the OS process tree registered by the token-bearing ACP
+/// launcher. The Debug representation never reveals a bearer token.
 #[derive(PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SessionAuthentication {
     pub terminal_session_id: Uuid,
-    token: Zeroizing<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    token: Option<Zeroizing<String>>,
 }
 
 impl SessionAuthentication {
     pub fn new(terminal_session_id: Uuid, token: impl Into<String>) -> Self {
         Self {
             terminal_session_id,
-            token: Zeroizing::new(token.into()),
+            token: Some(Zeroizing::new(token.into())),
         }
     }
 
-    pub fn token(&self) -> &str {
-        &self.token
+    pub fn process_bound(terminal_session_id: Uuid) -> Self {
+        Self {
+            terminal_session_id,
+            token: None,
+        }
+    }
+
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref().map(String::as_str)
     }
 }
 
@@ -161,7 +179,14 @@ impl fmt::Debug for SessionAuthentication {
         formatter
             .debug_struct("SessionAuthentication")
             .field("terminal_session_id", &self.terminal_session_id)
-            .field("token", &"<redacted>")
+            .field(
+                "authentication_kind",
+                &if self.token.is_some() {
+                    "bearer"
+                } else {
+                    "process-bound"
+                },
+            )
             .finish()
     }
 }

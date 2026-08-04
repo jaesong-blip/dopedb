@@ -42,7 +42,7 @@ CLI는 파일을 신뢰하지 않고 `runtime_unavailable`로 종료한다.
 - `protocolVersion`: framing/envelope 의미
 - `commandSchemaVersion`: command arguments/result 의미
 - `requestId`: 응답 correlation용 UUID
-- `authentication`: terminal session id와 ephemeral capability
+- `authentication`: terminal session id와 선택적 ephemeral bearer capability
 - `command`: v1의 closed command enum
 - `arguments`: Phase 0 envelope에서는 구조 한도를 적용한 JSON value
 
@@ -79,3 +79,35 @@ redacted telemetry에만 남긴다.
 - 실제 broker에서 command를 활성화하기 전 해당 command의
   request/success/error golden fixture를 모두 추가한다.
 - CLI human renderer와 JSON serializer는 분리한다.
+
+## ACP process-bound authentication
+
+일반 Terminal 요청은 terminal session id와 ephemeral bearer를 함께 보낸다. ACP
+Agent의 stdio MCP 설정에는 bearer나 다른 credential을 넣지 않는다. 공개
+`dopedb` CLI도 ACP 실행 경로에 넣지 않는다. 대신 정확한 app-only Agent bridge의
+launcher mode가 내부 `agent.session.register` 명령으로 자신의 OS PID와 process
+start marker를 bearer 인증해 한 번 등록하고, bearer를 adapter child environment에서
+제외한 뒤 고정된 공식 ACP adapter를 수정 없이 실행한다.
+
+이후 같은 bridge의 typed MCP mode는 public CLI parser나 subprocess 없이
+`BrokerClient`로 protocol `CommandSpec`을 직접 보내며 terminal session id만
+인증 metadata로 사용한다. Broker는 owner-local IPC가
+보고한 peer PID와 start marker가 살아 있는지 확인하고, 등록된 adapter root와
+동일하거나 실제 descendant인 경우에만 session capability를 적용한다. 등록되지 않은
+process, unrelated process, PID 재사용, 만료·취소·authority 변경 session은 같은
+`authentication_denied` 경계에서 거부한다. process identity는 discovery나 SQLite에
+저장하지 않고 해당 Desktop runtime의 메모리에만 둔다.
+
+## Bounded Agent tools and cancellation
+
+Agent의 catalog 검색은 `catalog.show` 응답을 bridge로 옮긴 뒤 필터링하지 않는다.
+Desktop runtime이 canonical snapshot을 검색하고 최대 50개의 compact object
+reference와 일치 field만 `catalog.search`로 반환한다. 따라서 relation/column 수가
+많아도 검색 응답이 Broker frame 한도를 넘지 않는다.
+
+stdio MCP는 database tool을 한 번에 하나만 실행하되 stdin reader를 분리해 실행
+중에도 `notifications/cancelled`를 수신한다. 아직 대기 중인 tool은 queue에서
+제거하고, 실행 중인 tool future는 중단한다. `query_read`가 이미 plan을 발급받은
+경우에는 동일 operation id로 `query.cancel`을 Broker에 보내 실제 executor까지
+취소를 전파한다. 취소된 JSON-RPC request에는 adapter가 response handler를 이미
+폐기했으므로 별도 response를 쓰지 않는다.
