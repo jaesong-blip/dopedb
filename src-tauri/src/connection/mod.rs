@@ -10,6 +10,8 @@ mod provider_local;
 pub mod providers;
 mod remote_authority;
 mod runtime;
+#[cfg(test)]
+pub(crate) use runtime::assert_gcp_mysql_grant_contract;
 pub(crate) mod ssh;
 
 pub(crate) use cloud_sql_proxy::CloudSqlProxyConfig;

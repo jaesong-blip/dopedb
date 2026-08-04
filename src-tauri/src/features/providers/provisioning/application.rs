@@ -232,6 +232,14 @@ impl ProvisioningDriverRegistry {
         }
     }
 
+    pub(super) fn with_drivers(
+        drivers: impl IntoIterator<Item = Arc<dyn ProvisioningDriver>>,
+    ) -> Self {
+        Self {
+            drivers: Arc::new(drivers.into_iter().collect()),
+        }
+    }
+
     fn find(&self, provider: LocalProvider) -> Option<Arc<dyn ProvisioningDriver>> {
         self.drivers
             .iter()

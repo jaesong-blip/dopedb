@@ -14,6 +14,7 @@ mod application;
     reason = "the closed provisioning contracts are consumed by the concrete adapters landing in #100"
 )]
 mod domain;
+mod gcp;
 #[allow(
     dead_code,
     reason = "the GCP CLI inventory is registered only after its complete #100 lifecycle lands"
@@ -40,12 +41,17 @@ pub(super) use application::{ProvisioningCoordinator, ProvisioningDriverRegistry
 pub(crate) use application::{
     ProvisioningDriverStatus, ProvisioningPlanProjection, ProvisioningTargetSummary,
 };
+pub(super) use gcp::GcpCloudSqlProvisioningDriver;
 pub(super) use planetscale::PlanetScaleProvisioningDriver;
 
-pub(super) fn planet_scale_registry(
-    driver: PlanetScaleProvisioningDriver,
+pub(super) fn managed_provider_registry(
+    planet_scale: PlanetScaleProvisioningDriver,
+    gcp_cloud_sql: GcpCloudSqlProvisioningDriver,
 ) -> ProvisioningDriverRegistry {
-    ProvisioningDriverRegistry::with_driver(std::sync::Arc::new(driver))
+    ProvisioningDriverRegistry::with_drivers([
+        std::sync::Arc::new(planet_scale) as std::sync::Arc<dyn application::ProvisioningDriver>,
+        std::sync::Arc::new(gcp_cloud_sql) as std::sync::Arc<dyn application::ProvisioningDriver>,
+    ])
 }
 
 /// Opaque one-step capability issued only while holding an executing Operation
@@ -113,6 +119,8 @@ pub(crate) use process::{
 pub(crate) use application::assert_restart_resume_lifecycle;
 #[cfg(test)]
 pub(crate) use domain::assert_mock_provider_lifecycle;
+#[cfg(test)]
+pub(crate) use gcp::assert_gcp_driver_contract;
 #[cfg(test)]
 pub(crate) use gcp_cli::{assert_gcloud_cli_contract, assert_live_gcloud_inventory};
 #[cfg(test)]

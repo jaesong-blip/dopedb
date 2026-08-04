@@ -128,12 +128,21 @@ impl HostedProvisioningTargetAuthority {
         ownership_marker: &str,
     ) -> AppResult<String> {
         if connection.profile.credential_mode != WorkspaceCredentialMode::Managed
-            || target.provider() != LocalProvider::PlanetScale
+            || !matches!(
+                target.provider(),
+                LocalProvider::PlanetScale | LocalProvider::GcpCloudSql
+            )
             || target.connection_id()
                 != crate::kernel::identity::ConnectionId::from(connection.connection_id)
             || target.connection_revision() > connection.connection_revision
+            || ownership_marker
+                != format!(
+                    "dopedb:{}:{}",
+                    target.provider().storage_key(),
+                    connection.connection_id
+                )
         {
-            return Err(blocked("PlanetScale destroy target changed"));
+            return Err(blocked("Managed Access destroy target changed"));
         }
         let account_id = connection
             .scope

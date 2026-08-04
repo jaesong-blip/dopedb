@@ -24,7 +24,7 @@ use super::process::{
 use super::ProvisioningReadAuthority;
 
 pub(super) const GCP_MANIFEST_SHA256: &str =
-    "b045909b6d0e84dee423297fe0c11d906b5f546f52fc5cf38039bddc157293d3";
+    "22af4b301e8fc8ac93bc2ed511a73b64f7f15015d8b5128fa78e84f80bed2bff";
 const MINIMUM_GCLOUD_VERSION: &str = "500.0.0";
 const MAX_TARGETS: usize = 256;
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -40,6 +40,14 @@ pub(super) struct GcloudDatabaseTarget {
     pub(super) engine: Engine,
     pub(super) production: Option<bool>,
     pub(super) iam_authentication_enabled: bool,
+}
+
+pub(super) struct GcloudExactTarget<'a> {
+    pub(super) project: &'a str,
+    pub(super) instance: &'a str,
+    pub(super) database: &'a str,
+    pub(super) engine: Engine,
+    pub(super) production: bool,
 }
 
 #[derive(Clone)]
@@ -229,6 +237,41 @@ impl GcloudInventory {
             }
         }
         Ok(targets)
+    }
+
+    pub(super) async fn discover_exact(
+        &self,
+        authority: &ProvisioningReadAuthority,
+        expected: GcloudExactTarget<'_>,
+        cancellation: &CancellationToken,
+    ) -> AppResult<GcloudDatabaseTarget> {
+        let status = self
+            .detect_with_inventory(authority, None, cancellation)
+            .await?;
+        if status.readiness != ProvisioningCliReadiness::Ready {
+            return Err(blocked("Google Cloud CLI is not ready for discovery"));
+        }
+        let targets = self
+            .discover_current_project(authority, None, cancellation)
+            .await?;
+        let mut exact = targets.into_iter().filter(|target| {
+            target.project == expected.project
+                && target.instance == expected.instance
+                && target.database == expected.database
+                && target.engine == expected.engine
+        });
+        let target = exact
+            .next()
+            .ok_or_else(|| blocked("gcloud target does not match the workspace authority"))?;
+        if exact.next().is_some()
+            || target.production != Some(expected.production)
+            || !target.iam_authentication_enabled
+        {
+            return Err(blocked(
+                "gcloud target policy does not match the workspace authority",
+            ));
+        }
+        Ok(target)
     }
 
     async fn run(
@@ -455,8 +498,13 @@ fn parse_instances(value: &Value, expected_project: &str) -> AppResult<Vec<Parse
                 Some("development" | "dev" | "staging" | "stage" | "test") => Some(false),
                 _ => None,
             };
+            let iam_flag = match engine {
+                Engine::Postgres => "cloudsql.iam_authentication",
+                Engine::Mysql => "cloudsql_iam_authentication",
+                _ => return Err(blocked("gcloud instance engine is unsupported")),
+            };
             let iam_authentication_enabled = settings.database_flags.iter().any(|flag| {
-                flag.name == "cloudsql.iam_authentication"
+                flag.name == iam_flag
                     && matches!(
                         flag.value.to_ascii_lowercase().as_str(),
                         "on" | "true" | "1"
@@ -644,6 +692,25 @@ pub(crate) fn assert_gcloud_cli_contract() {
     assert_eq!(instances[0].engine, Engine::Postgres);
     assert_eq!(instances[0].production, Some(true));
     assert!(instances[0].iam_authentication_enabled);
+    let mysql = parse_instances(
+        &serde_json::json!([{
+            "connectionName": "sample-project-123:us-central1:mysql-db",
+            "databaseVersion": "MYSQL_8_0",
+            "name": "mysql-db",
+            "project": "sample-project-123",
+            "region": "us-central1",
+            "settings": {
+                "databaseFlags": [{"name": "cloudsql_iam_authentication", "value": "on"}],
+                "userLabels": {"environment": "development"}
+            },
+            "state": "RUNNABLE"
+        }]),
+        "sample-project-123",
+    )
+    .unwrap();
+    assert_eq!(mysql[0].engine, Engine::Mysql);
+    assert_eq!(mysql[0].production, Some(false));
+    assert!(mysql[0].iam_authentication_enabled);
 
     let databases = parse_databases(
         &serde_json::json!([

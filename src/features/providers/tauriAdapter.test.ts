@@ -255,6 +255,8 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpCloudSqlSource).toContain("GCP managed access upstream rejection");
     expect(gcpCloudSqlSource).toContain("Cloud SQL Admin denied the managed access check");
     expect(gcpCloudSqlSource).toContain('"x-goog-user-project": credential.projectId');
+    expect(gcpCloudSqlSource).toContain("Cloud SQL instance identity changed during verification");
+    expect(gcpCloudSqlSource).toContain("return { providerAuditId: connectionName }");
     expect(gcpCloudSqlSource).not.toContain("iamDatabaseUsersWithToken");
     expect(providerIntegrationDomainSource).toContain('networkMode: "PUBLIC"');
     expect(providerIntegrationDomainSource).not.toContain(
@@ -270,6 +272,8 @@ describe("provider credential Tauri adapter", () => {
       'authorizeWorkspaceConnection(\n    request,\n    workspaceId,\n    connectionId,\n    "manage",',
     );
     expect(managedAccessTargetRouteSource).toContain("loadProviderProvisioningTarget");
+    expect(managedAccessTargetRouteSource).toContain("validateGcpCloudSqlResource");
+    expect(managedAccessTargetRouteSource).toContain('ownershipMarker("gcpCloudSql", connectionId)');
     expect(providerProvisioningTargetSource).toContain(
       "workspaceProviderImportRequest.connectionId, workspaceConnection.id",
     );

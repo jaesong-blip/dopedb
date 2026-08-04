@@ -20,7 +20,10 @@ use ports::{
     ProviderBindingRevocationHandle, ProviderBindingRevocationPort, ProvisioningRuntimeHandle,
     ProvisioningRuntimePort,
 };
-use provisioning::{planet_scale_registry, PlanetScaleProvisioningDriver, ProvisioningCoordinator};
+use provisioning::{
+    managed_provider_registry, GcpCloudSqlProvisioningDriver, PlanetScaleProvisioningDriver,
+    ProvisioningCoordinator,
+};
 
 pub(crate) use domain::{
     LocalProvider, ProviderBindingStatus, ProviderCredentialMaterial, ProviderCredentialReceipt,
@@ -63,6 +66,11 @@ pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFea
         HostedProvisioningTargetAuthority::new(),
         std::sync::Arc::new(provisioning_runtime.clone()),
     );
+    let gcp_provisioning_driver = GcpCloudSqlProvisioningDriver::new(
+        store.clone(),
+        HostedProvisioningTargetAuthority::new(),
+        std::sync::Arc::new(provisioning_runtime.clone()),
+    );
     ProvidersFeature {
         application: ProviderUseCases::new(
             repository.clone(),
@@ -79,7 +87,7 @@ pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFea
         provisioning: ProvisioningCoordinator::new(
             store,
             operation,
-            planet_scale_registry(provisioning_driver),
+            managed_provider_registry(provisioning_driver, gcp_provisioning_driver),
         ),
     }
 }

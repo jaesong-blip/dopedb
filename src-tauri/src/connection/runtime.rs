@@ -7,6 +7,7 @@
 //! current adapters cannot switch scope and then write history/cache into a different
 //! account while their scoped-write APIs are being extracted.
 
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -783,6 +784,14 @@ impl ConnectionContext {
             if self.pin.profile.provider == Provider::PlanetScale {
                 verify_planetscale_policy(&opened.live, self.pin.profile.engine, self.access)
                     .await?;
+            } else if self.pin.profile.provider == Provider::GcpCloudSql {
+                verify_gcp_cloud_sql_policy(
+                    &opened.live,
+                    self.pin.profile.engine,
+                    self.access,
+                    &self.pin.profile.database,
+                )
+                .await?;
             }
             Ok(())
         }
@@ -845,6 +854,152 @@ async fn verify_planetscale_policy(
         });
     }
     Ok(())
+}
+
+async fn verify_gcp_cloud_sql_policy(
+    live: &Live,
+    engine: Engine,
+    access: ConnectionAccess,
+    database: &str,
+) -> AppResult<()> {
+    let sql = live.sql()?;
+    match (&sql.read_pool, engine) {
+        (super::DbPool::Postgres(pool), Engine::Postgres) => {
+            let row = sqlx::query(
+                "SELECT \
+                   EXISTS ( \
+                     SELECT 1 FROM pg_catalog.pg_roles granted \
+                     WHERE (granted.rolname = 'pg_read_all_data' \
+                            OR granted.rolname ~ '^dopedb_r_[0-9a-f]{14}$') \
+                       AND pg_has_role(current_user, granted.oid, 'USAGE') \
+                   ) AS can_read, \
+                   EXISTS ( \
+                     SELECT 1 FROM pg_catalog.pg_roles granted \
+                     WHERE (granted.rolname = 'pg_write_all_data' \
+                            OR granted.rolname ~ '^dopedb_w_[0-9a-f]{14}$') \
+                       AND pg_has_role(current_user, granted.oid, 'USAGE') \
+                   ) AS can_write, \
+                   EXISTS ( \
+                     SELECT 1 FROM pg_catalog.pg_roles admin \
+                     WHERE admin.rolname IN ('postgres', 'cloudsqlsuperuser') \
+                       AND pg_has_role(current_user, admin.oid, 'MEMBER') \
+                   ) AS is_admin, \
+                   role.rolsuper, role.rolcreaterole, role.rolcreatedb, \
+                   role.rolreplication, role.rolbypassrls, \
+                   has_database_privilege(current_user, current_database(), 'CREATE') \
+                     AS can_create_database, \
+                   has_schema_privilege(current_user, 'public', 'CREATE') AS can_create_schema \
+                 FROM pg_catalog.pg_roles role WHERE role.rolname = current_user",
+            )
+            .fetch_one(pool)
+            .await?;
+            let can_read: bool = row.try_get("can_read")?;
+            let can_write: bool = row.try_get("can_write")?;
+            let is_admin: bool = row.try_get("is_admin")?;
+            let elevated = [
+                row.try_get::<bool, _>("rolsuper")?,
+                row.try_get::<bool, _>("rolcreaterole")?,
+                row.try_get::<bool, _>("rolcreatedb")?,
+                row.try_get::<bool, _>("rolreplication")?,
+                row.try_get::<bool, _>("rolbypassrls")?,
+                row.try_get::<bool, _>("can_create_database")?,
+                row.try_get::<bool, _>("can_create_schema")?,
+            ]
+            .into_iter()
+            .any(|value| value);
+            if !can_read || can_write != (access == ConnectionAccess::Write) || is_admin || elevated
+            {
+                return Err(AppError::Blocked {
+                    reason: "GCP Cloud SQL credential exceeded its approved PostgreSQL policy"
+                        .into(),
+                });
+            }
+        }
+        (super::DbPool::Mysql(pool), Engine::Mysql) => {
+            let rows = sqlx::query("SHOW GRANTS FOR CURRENT_USER")
+                .fetch_all(pool)
+                .await?;
+            let grants = rows
+                .iter()
+                .map(|row| row.try_get::<String, _>(0))
+                .collect::<Result<Vec<_>, _>>()?;
+            if !mysql_grants_match_policy(&grants, database, access) {
+                return Err(AppError::Blocked {
+                    reason: "GCP Cloud SQL credential exceeded its approved MySQL policy".into(),
+                });
+            }
+        }
+        _ => {
+            return Err(AppError::Blocked {
+                reason: "GCP Cloud SQL policy opened the wrong engine".into(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn mysql_grants_match_policy(grants: &[String], database: &str, access: ConnectionAccess) -> bool {
+    if grants.is_empty() || database.is_empty() || database.contains('`') {
+        return false;
+    }
+    let expected_object = format!("`{database}`.*");
+    let expected_privileges = match access {
+        ConnectionAccess::Read => BTreeSet::from(["SELECT"]),
+        ConnectionAccess::Write => BTreeSet::from(["DELETE", "INSERT", "SELECT", "UPDATE"]),
+    };
+    let mut found_data_grant = false;
+    for grant in grants {
+        let upper = grant.to_ascii_uppercase();
+        if !upper.starts_with("GRANT ") || upper.contains("WITH GRANT OPTION") {
+            return false;
+        }
+        let Some(on_index) = upper.find(" ON ") else {
+            return false;
+        };
+        let privileges = upper[6..on_index]
+            .split(',')
+            .map(str::trim)
+            .collect::<BTreeSet<_>>();
+        let object_and_principal = &grant[on_index + 4..];
+        let object_and_principal_upper = &upper[on_index + 4..];
+        let Some(to_index) = object_and_principal_upper.find(" TO ") else {
+            return false;
+        };
+        let object = object_and_principal[..to_index].trim();
+        if object == "*.*" && privileges == BTreeSet::from(["USAGE"]) {
+            continue;
+        }
+        if object != expected_object || privileges != expected_privileges || found_data_grant {
+            return false;
+        }
+        found_data_grant = true;
+    }
+    found_data_grant
+}
+
+#[cfg(test)]
+pub(crate) fn assert_gcp_mysql_grant_contract() {
+    let usage = "GRANT USAGE ON *.* TO `dopedb-r`@`%` REQUIRE SSL".to_owned();
+    let read = "GRANT SELECT ON `app`.* TO `dopedb-r`@`%`".to_owned();
+    let write = "GRANT SELECT, INSERT, UPDATE, DELETE ON `app`.* TO `dopedb-w`@`%`".to_owned();
+    assert!(mysql_grants_match_policy(
+        &[usage.clone(), read],
+        "app",
+        ConnectionAccess::Read,
+    ));
+    assert!(mysql_grants_match_policy(
+        &[usage.clone(), write],
+        "app",
+        ConnectionAccess::Write,
+    ));
+    assert!(!mysql_grants_match_policy(
+        &[
+            usage,
+            "GRANT SELECT, CREATE ON `app`.* TO `dopedb-r`@`%`".into(),
+        ],
+        "app",
+        ConnectionAccess::Read,
+    ));
 }
 
 impl ConnectionManager {

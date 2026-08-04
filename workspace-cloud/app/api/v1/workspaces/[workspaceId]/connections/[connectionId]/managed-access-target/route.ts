@@ -4,11 +4,20 @@
 import { isUuid, jsonError, privateJson } from "../../../../../../../../lib/http";
 import {
   activeProviderIntegration,
+  gcpCredential,
   parseManagedProviderResource,
   providerAccessToken,
+  requiredOidcToken,
   revokeActiveLeases,
 } from "../../../../../../../../lib/provider-integrations";
 import { loadProviderProvisioningTarget } from "../../../../../../../../lib/provider-provisioning-target";
+import {
+  validateGcpCloudSqlResource,
+  vercelOidcToken,
+} from "../../../../../../../../lib/providers/gcp-cloud-sql";
+import type {
+  GcpCloudSqlResource,
+} from "../../../../../../../../lib/providers/gcp-cloud-sql-core";
 import {
   inspectPlanetScaleResourceIdentity,
   validatePlanetScaleResource,
@@ -22,6 +31,10 @@ import { authorizeWorkspaceConnection } from "../../../../../../../../lib/worksp
 type RouteContext = {
   params: Promise<{ workspaceId: string; connectionId: string }>;
 };
+
+function ownershipMarker(provider: "gcpCloudSql" | "planetScale", connectionId: string) {
+  return `dopedb:${provider === "gcpCloudSql" ? "gcp_cloud_sql" : "planetscale"}:${connectionId}`;
+}
 
 export async function GET(request: Request, context: RouteContext) {
   const { workspaceId, connectionId } = await context.params;
@@ -48,9 +61,9 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 /**
- * Native-client provisioning preparation. Unlike GET discovery, this may refresh
- * the workspace-owned PlanetScale OAuth credential, then returns a fresh target
- * whose integration generation is safe to pin into an approval plan.
+ * Native-client provisioning preparation. Unlike GET discovery, this verifies
+ * the live Provider identity (and may refresh workspace-owned PlanetScale OAuth),
+ * then returns a fresh target safe to pin into an approval plan.
  */
 export async function POST(request: Request, context: RouteContext) {
   if (!request.headers.get("authorization")?.startsWith("Bearer ")) {
@@ -93,45 +106,57 @@ export async function POST(request: Request, context: RouteContext) {
       organizationId: workspaceId,
       connectionId,
     });
-    if (!initial || initial.provider !== "planetScale") {
-      return jsonError("PlanetScale Managed Access target is unavailable", 409);
+    if (
+      !initial
+      || (initial.provider !== "planetScale" && initial.provider !== "gcpCloudSql")
+    ) {
+      return jsonError("Managed Access target is unavailable", 409);
     }
     const integration = await activeProviderIntegration(workspaceId, initial.integrationId);
     if (
       !integration
-      || integration.provider !== "planetScale"
+      || integration.provider !== initial.provider
       || integration.generation.toString() !== initial.integrationGeneration
     ) {
-      return jsonError("PlanetScale integration changed", 409);
+      return jsonError("Managed Access integration changed", 409);
     }
     const resource = parseManagedProviderResource(
       integration.provider,
       initial.resource,
-    ) as PlanetScaleResource;
-    const accessToken = await providerAccessToken(integration, {
-      organizationId: workspaceId,
-      membershipId: authorization.membership.id,
-      userId: authorization.session.user.id,
-      sessionId: authorization.session.session.id,
-      role: authorization.role,
-    });
-    const verification = await validatePlanetScaleResource(accessToken, resource, {
-      production: initial.production,
-      safeMigrations: initial.safeMigrations,
-    });
+    );
+    const verification = integration.provider === "planetScale"
+      ? await validatePlanetScaleResource(
+          await providerAccessToken(integration, {
+            organizationId: workspaceId,
+            membershipId: authorization.membership.id,
+            userId: authorization.session.user.id,
+            sessionId: authorization.session.session.id,
+            role: authorization.role,
+          }),
+          resource as PlanetScaleResource,
+          {
+            production: initial.production,
+            safeMigrations: initial.safeMigrations,
+          },
+        )
+      : await validateGcpCloudSqlResource(
+          gcpCredential(integration),
+          requiredOidcToken(vercelOidcToken(request)),
+          resource as GcpCloudSqlResource,
+        );
     const target = await loadProviderProvisioningTarget({
       organizationId: workspaceId,
       connectionId,
     });
     if (
       !target
-      || target.provider !== "planetScale"
+      || target.provider !== initial.provider
       || target.integrationId !== initial.integrationId
       || target.integrationGeneration !== integration.generation.toString()
       || target.connectionRevision !== initial.connectionRevision
       || target.resourceFingerprint !== initial.resourceFingerprint
     ) {
-      return jsonError("PlanetScale Managed Access target changed", 409);
+      return jsonError("Managed Access target changed", 409);
     }
     return privateJson({ target, verification }, {
       headers: {
@@ -144,7 +169,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (error instanceof ProviderRequestError) {
       return jsonError(error.message, error.status);
     }
-    return jsonError("PlanetScale Managed Access preparation failed", 502);
+    return jsonError("Managed Access preparation failed", 502);
   }
 }
 
@@ -200,7 +225,10 @@ export async function DELETE(request: Request, context: RouteContext) {
       || body.providerAuditId.length === 0
       || body.providerAuditId.length > 512
       || /[\u0000-\u001f\u007f]/.test(body.providerAuditId)
-      || body.ownershipMarker !== `dopedb:planetscale:${connectionId}`
+      || (
+        body.ownershipMarker !== ownershipMarker("planetScale", connectionId)
+        && body.ownershipMarker !== ownershipMarker("gcpCloudSql", connectionId)
+      )
     ) {
       return jsonError("Invalid managed provisioning destroy request", 400);
     }
@@ -231,36 +259,45 @@ export async function DELETE(request: Request, context: RouteContext) {
     });
     if (
       !initial
-      || initial.provider !== "planetScale"
+      || (initial.provider !== "planetScale" && initial.provider !== "gcpCloudSql")
       || initial.integrationId !== pins.integrationId
       || initial.resourceFingerprint !== pins.resourceFingerprint
       || BigInt(pins.connectionRevision) > BigInt(initial.connectionRevision)
       || BigInt(pins.integrationGeneration) > BigInt(initial.integrationGeneration)
+      || pins.ownershipMarker !== ownershipMarker(initial.provider, connectionId)
     ) {
-      return jsonError("PlanetScale Managed Access target changed", 409);
+      return jsonError("Managed Access target changed", 409);
     }
     const integration = await activeProviderIntegration(workspaceId, pins.integrationId);
     if (
       !integration
-      || integration.provider !== "planetScale"
+      || integration.provider !== initial.provider
       || integration.generation.toString() !== initial.integrationGeneration
     ) {
-      return jsonError("PlanetScale integration changed", 409);
+      return jsonError("Managed Access integration changed", 409);
     }
     const resource = parseManagedProviderResource(
       integration.provider,
       initial.resource,
-    ) as PlanetScaleResource;
-    const accessToken = await providerAccessToken(integration, {
-      organizationId: workspaceId,
-      membershipId: authorization.membership.id,
-      userId: authorization.session.user.id,
-      sessionId: authorization.session.session.id,
-      role: authorization.role,
-    });
-    const verification = await inspectPlanetScaleResourceIdentity(accessToken, resource);
+    );
+    const verification = integration.provider === "planetScale"
+      ? await inspectPlanetScaleResourceIdentity(
+          await providerAccessToken(integration, {
+            organizationId: workspaceId,
+            membershipId: authorization.membership.id,
+            userId: authorization.session.user.id,
+            sessionId: authorization.session.session.id,
+            role: authorization.role,
+          }),
+          resource as PlanetScaleResource,
+        )
+      : await validateGcpCloudSqlResource(
+          gcpCredential(integration),
+          requiredOidcToken(vercelOidcToken(request)),
+          resource as GcpCloudSqlResource,
+        );
     if (verification.providerAuditId !== pins.providerAuditId) {
-      return jsonError("PlanetScale branch identity changed", 409);
+      return jsonError("Managed Access provider identity changed", 409);
     }
     const fresh = await loadProviderProvisioningTarget({
       organizationId: workspaceId,
@@ -274,14 +311,14 @@ export async function DELETE(request: Request, context: RouteContext) {
       || fresh.connectionRevision !== initial.connectionRevision
       || fresh.resourceFingerprint !== initial.resourceFingerprint
     ) {
-      return jsonError("PlanetScale Managed Access target changed", 409);
+      return jsonError("Managed Access target changed", 409);
     }
     const result = await revokeActiveLeases({
       organizationId: workspaceId,
       connectionId,
     });
     if (result.deferred > 0) {
-      return jsonError("PlanetScale credentials could not all be revoked", 503);
+      return jsonError("Managed Access credentials could not all be revoked", 503);
     }
     await db.insert(workspaceAuditEvent).values({
       organizationId: workspaceId,
@@ -290,7 +327,7 @@ export async function DELETE(request: Request, context: RouteContext) {
       resourceType: "connection",
       resourceId: connectionId,
       redactedSummary: {
-        provider: "planetScale",
+        provider: initial.provider,
         providerAuditId: verification.providerAuditId,
         ownershipMarker: pins.ownershipMarker,
         revokedCredentials: result.revoked,
@@ -306,6 +343,6 @@ export async function DELETE(request: Request, context: RouteContext) {
     if (error instanceof ProviderRequestError) {
       return jsonError(error.message, error.status);
     }
-    return jsonError("PlanetScale Managed Access destroy failed", 502);
+    return jsonError("Managed Access destroy failed", 502);
   }
 }

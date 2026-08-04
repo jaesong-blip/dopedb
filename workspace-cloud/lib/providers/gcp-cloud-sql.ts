@@ -483,7 +483,7 @@ export async function validateGcpCloudSqlResource(
   if (
     gcpCloudSqlEngine(details.databaseVersion) !== resource.engine
     || details.state !== "RUNNABLE"
-    || gcpInstanceProduction(details) === "unknown"
+    || gcpInstanceProduction(details) !== resource.production
   ) {
     throw new ProviderRequestError(
       "gcpCloudSql",
@@ -511,6 +511,23 @@ export async function validateGcpCloudSqlResource(
       409,
     );
   }
+  const connectionName = details.connectionName;
+  const connectionParts = typeof connectionName === "string"
+    ? connectionName.split(":")
+    : [];
+  if (
+    connectionParts.length !== 3
+    || connectionParts[0] !== resource.project
+    || !/^[a-z][a-z0-9-]{0,62}$/.test(connectionParts[1] ?? "")
+    || connectionParts[2] !== resource.instance
+  ) {
+    throw new ProviderRequestError(
+      "gcpCloudSql",
+      "Cloud SQL instance identity changed during verification",
+      409,
+    );
+  }
+  return { providerAuditId: connectionName };
 }
 
 export async function issueGcpCloudSqlLease(input: {
