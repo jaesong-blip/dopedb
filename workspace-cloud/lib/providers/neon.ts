@@ -29,17 +29,23 @@ import {
   type ManagedProviderLease,
   type ProviderResourceItem,
 } from "./provider-types";
+import {
+  parseNeonBranchInventory,
+  type NeonBranchInventory,
+} from "./neon-branches";
 
 const API_ORIGIN = "https://console.neon.tech/api/v2";
 const REQUEST_TIMEOUT_MS = 15_000;
 const NEON_PAGE_LIMIT = 100;
 const MAX_NEON_PAGES = 16;
+const MAX_NEON_RESPONSE_BYTES = 2 * 1_024 * 1_024;
 type JsonObject = Record<string, unknown>;
 
 export type NeonAuthInfo = {
   displayName: string;
   externalAccountId: string;
   projectCount: number;
+  projectIds: readonly string[];
   scopeFingerprint: string;
   authMethod: "api_key_user" | "api_key_org";
   broadScope: boolean;
@@ -81,6 +87,52 @@ function apiSegment(value: string) {
   return encodeURIComponent(value);
 }
 
+async function boundedJson(response: Response): Promise<unknown> {
+  const lengthHeader = response.headers.get("content-length");
+  if (lengthHeader !== null) {
+    if (!/^\d+$/.test(lengthHeader)) {
+      throw new ProviderRequestError("neon", "Neon returned an invalid response", 502);
+    }
+    const contentLength = Number(lengthHeader);
+    if (
+      !Number.isSafeInteger(contentLength)
+      || contentLength > MAX_NEON_RESPONSE_BYTES
+    ) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new ProviderRequestError("neon", "Neon response is too large", 502);
+    }
+  }
+  if (!response.body) {
+    throw new ProviderRequestError("neon", "Neon returned an invalid response", 502);
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read().catch(() => {
+      throw new ProviderRequestError("neon", "Neon API is unavailable", 502);
+    });
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_NEON_RESPONSE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new ProviderRequestError("neon", "Neon response is too large", 502);
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new ProviderRequestError("neon", "Neon returned an invalid response", 502);
+  }
+}
+
 async function apiRequest(
   credential: NeonCredential,
   path: string,
@@ -99,10 +151,8 @@ async function apiRequest(
   }).catch(() => {
     throw new ProviderRequestError("neon", "Neon API is unavailable", 502);
   });
-  const body = response.status === 204
-    ? null
-    : await response.json().catch(() => null);
   if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
     // A revoked provider key is a failed integration dependency, not an expired
     // DopeDB session. Never let a provider 401 sign the desktop user out.
     const status = response.status === 401
@@ -112,7 +162,7 @@ async function apiRequest(
         : response.status;
     throw new ProviderRequestError("neon", "Neon rejected the request", status);
   }
-  return body;
+  return response.status === 204 ? null : boundedJson(response);
 }
 
 function nextCursor(body: JsonObject) {
@@ -263,6 +313,7 @@ export async function inspectNeonCredential(
       : `Neon · 프로젝트 ${projects.length}개`,
     externalAccountId: identity.externalAccountId,
     projectCount: projects.length,
+    projectIds: projects.map((project) => project.id),
     scopeFingerprint: identity.scopeFingerprint,
     authMethod,
     // An org_id query narrows this integration's discovery, but does not narrow
@@ -271,28 +322,31 @@ export async function inspectNeonCredential(
   };
 }
 
-export async function listNeonBranches(
+export async function listNeonBranchInventory(
   credential: NeonCredential,
   project: string,
-): Promise<ProviderResourceItem[]> {
+): Promise<NeonBranchInventory> {
   const rows = await listNeonCollection({
     credential,
     path: `/projects/${apiSegment(project)}/branches`,
     collection: "branches",
     scopeLabel: "branch",
   });
-  return rows.map((row) => {
-    const id = requiredString(row.id, "branch id");
+  return parseNeonBranchInventory(project, rows);
+}
+
+export async function listNeonBranches(
+  credential: NeonCredential,
+  project: string,
+): Promise<ProviderResourceItem[]> {
+  const inventory = await listNeonBranchInventory(credential, project);
+  return inventory.branches.map((branch) => {
     return {
-      id,
-      value: id,
-      name: requiredString(row.name, "branch name"),
-      production: row.protected === true
-        ? true
-        : row.default === false && row.protected === false
-          ? false
-          : "unknown",
-      ready: row.current_state === "ready",
+      id: branch.id,
+      value: branch.id,
+      name: branch.name,
+      production: branch.production,
+      ready: branch.ready,
     };
   });
 }

@@ -8,6 +8,9 @@ import {
   randomBytes,
 } from "node:crypto";
 import type { ManagedAccessMode } from "./provider-types";
+import { neonSegment } from "./neon-identifiers";
+
+export { neonSegment } from "./neon-identifiers";
 
 export const NEON_LEASE_SECONDS = 15 * 60;
 export const NEON_ROLE_CONNECTION_LIMIT = 4;
@@ -126,11 +129,6 @@ export type NeonIdentitySubject = {
   kind: "user" | "organization";
   id: string;
 };
-
-export function neonSegment(value: unknown): value is string {
-  return typeof value === "string"
-    && /^[a-z0-9][a-z0-9-]{0,59}$/.test(value);
-}
 
 export function neonDatabaseName(value: unknown): value is string {
   return typeof value === "string"

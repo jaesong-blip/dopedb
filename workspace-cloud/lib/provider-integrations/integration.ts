@@ -204,7 +204,7 @@ export function neonCredential(integration: ActiveProviderIntegration) {
   ));
 }
 
-export async function verifiedNeonCredential(
+async function verifiedNeonCredentialScope(
   integration: ActiveProviderIntegration,
 ) {
   if (integration.provider !== "neon") {
@@ -217,6 +217,28 @@ export async function verifiedNeonCredential(
       "neon",
       "Neon API key identity or project scope changed; reconnect the account",
       409,
+    );
+  }
+  return { credential, auth };
+}
+
+export async function verifiedNeonCredential(
+  integration: ActiveProviderIntegration,
+) {
+  const { credential } = await verifiedNeonCredentialScope(integration);
+  return credential;
+}
+
+export async function verifiedNeonProjectCredential(
+  integration: ActiveProviderIntegration,
+  projectId: string,
+) {
+  const { credential, auth } = await verifiedNeonCredentialScope(integration);
+  if (!auth.projectIds.includes(projectId)) {
+    throw new ProviderRequestError(
+      "neon",
+      "Neon project is outside this integration scope",
+      404,
     );
   }
   return credential;

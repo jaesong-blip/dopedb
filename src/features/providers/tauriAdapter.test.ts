@@ -5,6 +5,7 @@ import authRouteSource from "../../../workspace-cloud/app/api/auth/[...all]/rout
 import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
 import gcpCloudSqlSource from "../../../workspace-cloud/lib/providers/gcp-cloud-sql.ts?raw";
 import neonSource from "../../../workspace-cloud/lib/providers/neon.ts?raw";
+import neonBranchesSource from "../../../workspace-cloud/lib/providers/neon-branches.ts?raw";
 import neonCoreSource from "../../../workspace-cloud/lib/providers/neon-core.ts?raw";
 import neonBootstrapSource from "../../../workspace-cloud/lib/providers/neon-bootstrap.ts?raw";
 import neonBootstrapRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/neon-bootstrap/route.ts?raw";
@@ -35,6 +36,7 @@ import providerImportStoreSource from "../../../workspace-cloud/lib/provider-imp
 import providerLocalTargetSource from "../../../workspace-cloud/lib/provider-local-target.ts?raw";
 import providerProvisioningTargetSource from "../../../workspace-cloud/lib/provider-provisioning-target.ts?raw";
 import providerResourcesRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/resources/route.ts?raw";
+import neonBranchesRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/neon-branches/route.ts?raw";
 import managedAccessTargetRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/managed-access-target/route.ts?raw";
 import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
@@ -44,6 +46,7 @@ import workspaceSchemaSource from "../../../workspace-cloud/lib/schema.ts?raw";
 import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspace-versioning-store.ts?raw";
 import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
 import desktopControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane.rs?raw";
+import { parseNeonBranchInventory } from "../../../workspace-cloud/lib/providers/neon-branches";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -264,6 +267,88 @@ describe("provider credential Tauri adapter", () => {
   });
 
   it("prohibits legacy provider identity and manual GCP trust input", async () => {
+    const branchRow = {
+      project_id: "project-one",
+      current_state: "ready",
+      pending_state: null,
+      state_changed_at: "2026-08-05T01:00:00Z",
+      created_at: "2026-08-05T00:00:00Z",
+      updated_at: "2026-08-05T01:00:00Z",
+      creation_source: "api",
+      init_source: "parent-data",
+      default: false,
+      protected: false,
+    };
+    const branchInventory = parseNeonBranchInventory("project-one", [
+      {
+        ...branchRow,
+        id: "br-main",
+        name: "main",
+        default: true,
+        protected: true,
+      },
+      {
+        ...branchRow,
+        id: "br-child",
+        parent_id: "br-main",
+        parent_lsn: "0/1DE2850",
+        name: "agent-checkpoint",
+      },
+      {
+        ...branchRow,
+        id: "br-schema",
+        parent_id: "br-main",
+        parent_timestamp: "2026-08-05T00:30:00Z",
+        name: "schema-only",
+        current_state: "init",
+        pending_state: "provider-future-state",
+        init_source: "schema-only",
+        expires_at: "2026-08-06T00:00:00Z",
+        restricted_actions: [{ name: "restore", reason: "Restore is unavailable" }],
+      },
+    ]);
+    expect(branchInventory.rootIds).toEqual(["br-main", "br-schema"]);
+    expect(branchInventory.branches.map((branch) => branch.id)).toEqual([
+      "br-main",
+      "br-child",
+      "br-schema",
+    ]);
+    expect(branchInventory.branches[1]).toMatchObject({
+      parentId: "br-main",
+      treeParentId: "br-main",
+      sourceLsn: "0/1DE2850",
+      depth: 1,
+      production: false,
+      ready: true,
+    });
+    expect(branchInventory.branches[2]).toMatchObject({
+      parentId: "br-main",
+      treeParentId: null,
+      initSource: "schema-only",
+      pendingState: "unknown",
+      depth: 0,
+      ready: false,
+    });
+    expect(() => parseNeonBranchInventory("project-one", [{
+      ...branchRow,
+      id: "br-orphan",
+      parent_id: "br-missing",
+      name: "orphan",
+    }])).toThrow("Neon branch hierarchy is inconsistent");
+    expect(() => parseNeonBranchInventory("project-one", [
+      { ...branchRow, id: "br-cycle-a", parent_id: "br-cycle-b", name: "a" },
+      { ...branchRow, id: "br-cycle-b", parent_id: "br-cycle-a", name: "b" },
+    ])).toThrow("Neon branch hierarchy contains a cycle");
+    expect(() => parseNeonBranchInventory("project-one", [{
+      ...branchRow,
+      id: "br-duplicate-action",
+      name: "duplicate",
+      restricted_actions: [
+        { name: "restore", reason: "one" },
+        { name: "restore", reason: "two" },
+      ],
+    }])).toThrow("Neon returned an invalid branch inventory");
+
     const order: string[] = [];
     await expect(issueAfterFreshProviderAuthority(
       "neon",
@@ -420,10 +505,18 @@ describe("provider credential Tauri adapter", () => {
     expect(neonSource).toContain("Neon future-object privilege verification failed");
     expect(neonSource).toContain('apiRequest(credential, "/auth")');
     expect(neonSource).toContain("seenCursors.has(next)");
-    expect(neonSource).toContain('production: row.protected === true');
-    expect(neonSource).not.toContain(
-      "row.default === true || row.protected === true",
+    expect(neonSource).toContain("MAX_NEON_RESPONSE_BYTES");
+    expect(neonSource).toContain("response.body.getReader()");
+    expect(neonSource).toContain("listNeonBranchInventory");
+    expect(neonBranchesSource).toContain(
+      'treeParentId: branchInitSource === "schema-only" ? null : parentId',
     );
+    expect(neonBranchesSource).toContain("Neon branch hierarchy contains a cycle");
+    expect(neonBranchesRouteSource).toContain("verifiedNeonProjectCredential");
+    expect(neonBranchesRouteSource).toContain("revalidateProviderDiscoveryAuthority");
+    expect(neonBranchesRouteSource).toContain("missingTargets");
+    expect(neonBranchesRouteSource).toContain("export const maxDuration = 60");
+    expect(neonBranchesRouteSource).not.toContain("export async function POST");
     expect(providerIntegrationRouteSource).toContain('"api-key-v1"');
     expect(neonSource).toContain(
       "return { providerAuditId: `${branch.value}:${database.id}` }",
