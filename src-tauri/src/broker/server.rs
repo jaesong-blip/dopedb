@@ -28,7 +28,7 @@ pub(crate) async fn serve(
     skills: Option<SkillManager>,
     app_handle: tauri::AppHandle,
 ) -> AppResult<()> {
-    match discovery::default_runtime_file() {
+    match discovery::runtime_file_for_identifier(&app_handle.config().identifier) {
         Ok(runtime_file) => {
             serve_at(
                 runtime,

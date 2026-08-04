@@ -49,10 +49,12 @@ pnpm install
 pnpm tauri dev
 ```
 
-macOS의 `pnpm tauri dev`는 빌드마다 같은 개발용 코드 서명을 적용합니다. 이 경로를
-사용하면 Keychain이 DopeDB를 같은 앱으로 인식하므로 최초 허용 뒤 재빌드할 때마다
-암호를 다시 묻지 않습니다. DB 암호와 워크스페이스 세션은 OS 보안 저장소에 유지되고,
-실행 중에는 메모리 캐시에서 재사용되어 같은 세션 안에서 Keychain을 반복 호출하지 않습니다.
+`pnpm tauri dev`와 `pnpm tauri build --debug`는 `DopeDB Dev` /
+`dev.dopedb.desktop.dev`로 실행됩니다. 운영판과 Dock 등록 및 로컬 Broker runtime을
+공유하지 않으므로 개발 앱이 설치된 DopeDB를 가로채지 않습니다. macOS 개발 실행은
+빌드마다 같은 개발용 코드 서명을 적용해 최초 Keychain 허용 뒤 재빌드할 때마다 암호를
+다시 묻지 않습니다. DB 암호와 워크스페이스 세션은 OS 보안 저장소에 유지되고, 실행
+중에는 메모리 캐시에서 재사용됩니다.
 
 개별 검증:
 

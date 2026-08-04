@@ -49,6 +49,11 @@ pnpm install
 pnpm tauri dev
 ```
 
+`pnpm tauri dev` and `pnpm tauri build --debug` run as `DopeDB Dev` with the
+`dev.dopedb.desktop.dev` identifier. Development therefore cannot replace the
+installed DopeDB in the Dock or publish over its local Broker runtime. On macOS the
+development runner also keeps a stable development signing identity across rebuilds.
+
 Useful checks:
 
 ```sh

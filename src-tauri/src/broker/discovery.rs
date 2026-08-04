@@ -10,11 +10,23 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::RuntimeId;
 
-pub(crate) fn default_runtime_file() -> AppResult<PathBuf> {
+const PRODUCTION_APP_IDENTIFIER: &str = "dev.dopedb.desktop";
+const DEVELOPMENT_APP_IDENTIFIER: &str = "dev.dopedb.desktop.dev";
+
+pub(crate) fn runtime_file_for_identifier(app_identifier: &str) -> AppResult<PathBuf> {
+    let data_directory = match app_identifier {
+        PRODUCTION_APP_IDENTIFIER => "dopedb",
+        DEVELOPMENT_APP_IDENTIFIER => "dopedb-dev",
+        _ => {
+            return Err(AppError::Config(
+                "the app identifier has no Broker runtime namespace".into(),
+            ));
+        }
+    };
     let base = dirs::data_dir()
         .ok_or_else(|| AppError::Config("no OS data directory is available".into()))?;
     Ok(base
-        .join("dopedb")
+        .join(data_directory)
         .join(RUNTIME_DIRECTORY_NAME)
         .join(RUNTIME_FILE_NAME))
 }
