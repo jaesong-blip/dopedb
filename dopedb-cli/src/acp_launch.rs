@@ -1,68 +1,71 @@
 //! Token-bearing bootstrap for one unmodified official ACP adapter.
 //!
-//! The launcher registers its OS process identity with the Local Broker, removes
-//! the bearer capability from the child environment, and then replaces itself
-//! with the exact adapter command selected by DopeDB.
+//! The launcher accepts a closed adapter enum, verifies the exact app-selected
+//! launcher image, consumes its one-time Broker registration capability, and
+//! never forwards that capability to the official adapter process.
 
-use std::path::Path;
-use std::process::Command;
-
-use dopedb_protocol::{AgentSessionRegisterCommand, EmptyArguments};
+use dopedb_cli::agent_launch_policy::{
+    adapter_command, take_registration_authentication, validate_descriptor, verify_launcher,
+};
+use dopedb_protocol::{
+    AgentSessionRegisterArguments, AgentSessionRegisterCommand, EmptyArguments, OfficialAcpAdapter,
+};
 
 use crate::client::{BrokerClient, ClientError};
 
-const MAX_ADAPTER_ARGUMENTS: usize = 64;
-const MAX_ADAPTER_ARGUMENT_BYTES: usize = 16 * 1024;
+pub(crate) async fn run(
+    adapter: OfficialAcpAdapter,
+    launcher_executable: String,
+    launcher_resolved_executable: String,
+    launcher_sha256: String,
+) -> Result<(), ClientError> {
+    let registration = AgentSessionRegisterArguments {
+        adapter,
+        launcher_executable,
+        launcher_resolved_executable,
+        launcher_sha256,
+    };
+    validate_registration(&registration)?;
 
-pub(crate) async fn run(command: Vec<String>) -> Result<(), ClientError> {
-    validate_command(&command)?;
+    // Capture the bootstrap capability in a zeroizing allocation and scrub the
+    // inherited environment before filesystem I/O, Broker discovery, or an
+    // async suspension can extend its lifetime.
+    let authentication =
+        take_registration_authentication().map_err(|_| ClientError::AuthenticationUnavailable)?;
+    verify_launcher(&registration).map_err(|_| ClientError::InvalidArguments)?;
     let client = BrokerClient::discover()?;
     let _: EmptyArguments = client
-        .request::<AgentSessionRegisterCommand>(&EmptyArguments::default())
+        .request_with_authentication::<AgentSessionRegisterCommand>(
+            &registration,
+            Some(authentication),
+        )
         .await?;
-    launch(command)
+    launch(registration)
 }
 
-fn validate_command(command: &[String]) -> Result<(), ClientError> {
-    if command.is_empty() || command.len() > MAX_ADAPTER_ARGUMENTS {
-        return Err(ClientError::InvalidArguments);
-    }
-    let executable = Path::new(&command[0]);
-    if !executable.is_absolute() || command.iter().any(|argument| argument.contains('\0')) {
-        return Err(ClientError::InvalidArguments);
-    }
-    let total = command.iter().try_fold(0usize, |total, argument| {
-        total
-            .checked_add(argument.len())
-            .filter(|total| *total <= MAX_ADAPTER_ARGUMENT_BYTES)
-    });
-    if total.is_none() {
-        return Err(ClientError::InvalidArguments);
-    }
-    Ok(())
+fn validate_registration(registration: &AgentSessionRegisterArguments) -> Result<(), ClientError> {
+    validate_descriptor(registration).map_err(|_| ClientError::InvalidArguments)
 }
 
 #[cfg(unix)]
-fn launch(command: Vec<String>) -> Result<(), ClientError> {
+fn launch(registration: AgentSessionRegisterArguments) -> Result<(), ClientError> {
     use std::os::unix::process::CommandExt;
 
-    let mut arguments = command.into_iter();
-    let executable = arguments.next().ok_or(ClientError::InvalidArguments)?;
-    let error = Command::new(executable)
-        .args(arguments)
-        .env_remove("DOPEDB_SESSION_TOKEN")
+    // Re-hash immediately before exec so replacement after registration fails
+    // closed instead of starting an unapproved launcher image.
+    let error = adapter_command(&registration)
+        .map_err(|_| ClientError::InvalidArguments)?
         .exec();
     let _ = error;
     Err(ClientError::Internal)
 }
 
 #[cfg(windows)]
-fn launch(command: Vec<String>) -> Result<(), ClientError> {
-    let mut arguments = command.into_iter();
-    let executable = arguments.next().ok_or(ClientError::InvalidArguments)?;
-    let status = Command::new(executable)
-        .args(arguments)
-        .env_remove("DOPEDB_SESSION_TOKEN")
+fn launch(registration: AgentSessionRegisterArguments) -> Result<(), ClientError> {
+    // Windows keeps this bridge alive as the process-ancestry root. The
+    // bootstrap bearer was already consumed and scrubbed before this wait.
+    let status = adapter_command(&registration)
+        .map_err(|_| ClientError::InvalidArguments)?
         .status()
         .map_err(|_| ClientError::Internal)?;
     if status.success() {

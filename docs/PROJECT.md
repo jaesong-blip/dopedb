@@ -60,10 +60,17 @@ the canonical snapshot remains inside Desktop and returns only a bounded compact
 so a wide schema cannot overflow the local Broker frame.
 
 The ACP server description contains no capability or credential, and the MCP child never
-receives the bearer capability. The Agent bridge's launcher mode uses the capability once
-to bind its OS process id and start marker to the in-memory session, removes the capability
-from the adapter environment before starting the unmodified official adapter, and the
-Broker then accepts tokenless Agent requests only from that process or a verified
+receives the bearer capability. Desktop pins a closed Claude/Codex adapter descriptor,
+the launcher invocation path, its canonical resolved target, and the target SHA-256 when it
+issues an Agent bootstrap session. Keeping the invocation path preserves shim dispatch such
+as Volta's `npx`, while pinning the resolved target prevents a symlink swap.
+The Agent bridge scrubs the inherited bearer before its first await, re-verifies that
+descriptor, and uses the capability exactly once to bind its OS process id and start marker.
+The Broker atomically zeroizes the bootstrap token and changes the session to process-bound
+authentication. Package names and versions come from the protocol's fixed adapter mapping,
+not launcher arguments. Unix replaces the bridge with the adapter; Windows may retain the
+bridge as the ancestry root, but neither it nor the adapter environment retains a usable
+bearer. The Broker accepts tokenless Agent requests only from that process or a verified
 descendant. The global discovery file contains only runtime metadata. The app opens no
 Agent HTTP or TCP listener.
 
@@ -96,8 +103,8 @@ Outside built-in AI Chat, the signed `dopedb` CLI discovers an owner-only Unix s
 Database commands require an ephemeral Terminal-session capability that lives in
 process memory. The capability is never a database credential, never enters argv, and
 cannot be moved to another Terminal. ACP does not execute this public CLI. Registration
-consumes the same bearer shape only in the app-only Agent bridge launcher; stdio MCP
-settings and Agent descendants carry a session identifier,
+consumes the same bearer shape only as a one-time, descriptor-bound capability inside the
+app-only Agent bridge launcher; stdio MCP settings and Agent descendants carry a session identifier,
 not the bearer, and the Broker revalidates their OS ancestry for every request. The command
 surface covers secret-free connection summaries, canonical catalog/schema/table metadata,
 typed MongoDB reads, SQL read planning/execution, provenance-bound dashboard creation,

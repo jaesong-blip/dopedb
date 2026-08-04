@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-4 command catalog. Any addition, removal, or meaning change requires a
+/// Version-5 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -159,6 +159,15 @@ impl SessionAuthentication {
         Self {
             terminal_session_id,
             token: Some(Zeroizing::new(token.into())),
+        }
+    }
+
+    /// Construct authentication from an already protected allocation without
+    /// introducing a second ordinary heap copy of the bearer.
+    pub fn from_zeroizing_token(terminal_session_id: Uuid, token: Zeroizing<String>) -> Self {
+        Self {
+            terminal_session_id,
+            token: Some(token),
         }
     }
 

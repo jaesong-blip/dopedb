@@ -1,8 +1,10 @@
-#![cfg(unix)]
+#[cfg(unix)]
+#[rustfmt::skip]
+mod platform {
 
 use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{symlink, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -11,14 +13,16 @@ use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{Duration, Utc};
 use dopedb_protocol::{
-    decode_frame, encode_frame, parse_frame_length, CatalogArguments, CatalogContents,
-    CatalogSearchArguments, CatalogSearchMatch, CatalogSearchMatchType, CatalogSearchResult,
-    CatalogSnapshot, Column, CommandName, ConnectionSelector, DatabaseEngine, NormalizedTypeFamily,
-    ObjectKind, ObjectRef, QueryHealth, QueryPlanArguments, QueryPlanResult, QueryResultPage,
-    QueryRunArguments, QueryRunResult, Relation, RequestEnvelope, ResponseEnvelope,
-    RuntimeDiscovery, SchemaListResult, SchemaSummary, MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES,
-    PROTOCOL_MAX, PROTOCOL_MIN,
+    decode_frame, encode_frame, parse_frame_length, AgentSessionRegisterArguments,
+    CatalogArguments, CatalogContents, CatalogSearchArguments, CatalogSearchMatch,
+    CatalogSearchMatchType, CatalogSearchResult, CatalogSnapshot, Column, CommandName,
+    ConnectionSelector, DatabaseEngine, EmptyArguments, NormalizedTypeFamily, ObjectKind,
+    ObjectRef, OfficialAcpAdapter, QueryHealth, QueryPlanArguments, QueryPlanResult,
+    QueryResultPage, QueryRunArguments, QueryRunResult, Relation, RequestEnvelope,
+    ResponseEnvelope, RuntimeDiscovery, SchemaListResult, SchemaSummary, MAX_REQUEST_BYTES,
+    MAX_RESPONSE_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
 };
+use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -150,8 +154,7 @@ fn users_catalog(connection_id: Uuid) -> CatalogSnapshot {
     .unwrap()
 }
 
-#[test]
-fn typed_agent_bridge_searches_catalog_and_plans_then_runs_one_safe_query() {
+pub(super) fn run() {
     let temp = TempDir::new().unwrap();
     let runtime_directory = temp.path().join("runtime");
     fs::create_dir(&runtime_directory).unwrap();
@@ -500,4 +503,156 @@ fn typed_agent_bridge_searches_catalog_and_plans_then_runs_one_safe_query() {
     assert!(!stdout.contains("must-never-escape"));
 
     server.join().unwrap();
+
+    // Exercise the token-bearing launcher path in the same critical journey so
+    // the fixed test budget does not grow. The fake executable stands in for
+    // npx and records only its non-secret arguments and inherited environment.
+    fs::remove_file(&endpoint).unwrap();
+    let launcher_runtime_directory = runtime_directory;
+    let launcher_runtime_id = Uuid::from_u128(11);
+    let launcher_runtime_id_text = launcher_runtime_id.simple().to_string();
+    let launcher_endpoint =
+        launcher_runtime_directory.join(format!("broker-{}.sock", &launcher_runtime_id_text[..16]));
+    let launcher_listener = UnixListener::bind(&launcher_endpoint).unwrap();
+    fs::set_permissions(&launcher_endpoint, fs::Permissions::from_mode(0o600)).unwrap();
+    let launcher_runtime_file = launcher_runtime_directory.join("runtime.json");
+    let launcher_discovery = RuntimeDiscovery::new(
+        launcher_runtime_id,
+        std::process::id(),
+        env!("CARGO_PKG_VERSION"),
+        PROTOCOL_MIN,
+        PROTOCOL_MAX,
+        launcher_endpoint.to_string_lossy(),
+        Utc::now(),
+    )
+    .unwrap();
+    fs::write(
+        &launcher_runtime_file,
+        serde_json::to_vec(&launcher_discovery).unwrap(),
+    )
+    .unwrap();
+    fs::set_permissions(&launcher_runtime_file, fs::Permissions::from_mode(0o600)).unwrap();
+
+    let launcher_target = temp.path().join("verified-npx-target");
+    fs::write(
+        &launcher_target,
+        b"#!/bin/sh\nif env | grep -q '^DOPEDB_SESSION_TOKEN='; then exit 91; fi\nprintf '%s\\n%s\\n%s\\n' \"$1\" \"$2\" \"$DOPEDB_TERMINAL_SESSION_ID\" > \"$DOPEDB_TEST_LAUNCH_OUTPUT\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&launcher_target, fs::Permissions::from_mode(0o700)).unwrap();
+    let launcher = temp.path().join("verified-npx");
+    symlink(&launcher_target, &launcher).unwrap();
+    let launcher_resolved = fs::canonicalize(&launcher).unwrap();
+    let launcher_sha256 = hex::encode(Sha256::digest(fs::read(&launcher_resolved).unwrap()));
+    let launcher_output = temp.path().join("launcher-output.txt");
+    let launcher_session_id = Uuid::from_u128(12);
+    let expected_launcher = launcher.to_string_lossy().into_owned();
+    let expected_resolved_launcher = launcher_resolved.to_string_lossy().into_owned();
+    let expected_sha256 = launcher_sha256.clone();
+    let launcher_server = thread::spawn(move || {
+        let (mut stream, _) = launcher_listener.accept().unwrap();
+        let request = read_request(&mut stream);
+        assert_eq!(request.command, CommandName::AgentSessionRegister);
+        let authentication = request.authentication.as_ref().unwrap();
+        assert_eq!(authentication.terminal_session_id, launcher_session_id);
+        assert_eq!(authentication.token(), Some("cd".repeat(32).as_str()));
+        let arguments: AgentSessionRegisterArguments =
+            serde_json::from_value(request.arguments.clone()).unwrap();
+        assert_eq!(arguments.adapter, OfficialAcpAdapter::Codex);
+        assert_eq!(arguments.launcher_executable, expected_launcher);
+        assert_eq!(
+            arguments.launcher_resolved_executable,
+            expected_resolved_launcher
+        );
+        assert_eq!(arguments.launcher_sha256, expected_sha256);
+        respond(&mut stream, &request, &EmptyArguments::default());
+    });
+
+    let launcher_status = Command::new(env!("CARGO_BIN_EXE_dopedb-agent-bridge"))
+        .args([
+            "launch",
+            OfficialAcpAdapter::Codex.as_str(),
+            launcher.to_str().unwrap(),
+            launcher_resolved.to_str().unwrap(),
+            launcher_sha256.as_str(),
+        ])
+        .env("DOPEDB_RUNTIME_FILE", &launcher_runtime_file)
+        .env(
+            "DOPEDB_TERMINAL_SESSION_ID",
+            launcher_session_id.to_string(),
+        )
+        .env("DOPEDB_SESSION_TOKEN", "cd".repeat(32))
+        .env("DOPEDB_TEST_LAUNCH_OUTPUT", &launcher_output)
+        .status()
+        .unwrap();
+    assert!(launcher_status.success());
+    launcher_server.join().unwrap();
+    let inherited = fs::read_to_string(launcher_output).unwrap();
+    assert_eq!(
+        inherited.lines().collect::<Vec<_>>(),
+        [
+            "-y",
+            OfficialAcpAdapter::Codex.pinned_npm_package(),
+            launcher_session_id.to_string().as_str(),
+        ]
+    );
+}
+
+}
+
+#[cfg(windows)]
+mod platform {
+    use std::fs;
+
+    use dopedb_cli::agent_launch_policy::{adapter_command, take_registration_authentication};
+    use dopedb_protocol::{AgentSessionRegisterArguments, OfficialAcpAdapter};
+    use sha2::{Digest, Sha256};
+    use tempfile::TempDir;
+
+    pub(super) fn run() {
+        let session_id = uuid::Uuid::from_u128(12);
+        let bearer = "cd".repeat(32);
+        std::env::set_var("DOPEDB_TERMINAL_SESSION_ID", session_id.to_string());
+        std::env::set_var("DOPEDB_SESSION_TOKEN", &bearer);
+        let authentication = take_registration_authentication().unwrap();
+        assert_eq!(authentication.terminal_session_id, session_id);
+        assert_eq!(authentication.token(), Some(bearer.as_str()));
+        assert!(std::env::var_os("DOPEDB_SESSION_TOKEN").is_none());
+        std::env::remove_var("DOPEDB_TERMINAL_SESSION_ID");
+
+        let temp = TempDir::new().unwrap();
+        let launcher = temp.path().join("verified-npx.cmd");
+        fs::write(&launcher, b"@echo off\r\nexit /b 0\r\n").unwrap();
+        let launcher_resolved = fs::canonicalize(&launcher).unwrap();
+        let registration = AgentSessionRegisterArguments {
+            adapter: OfficialAcpAdapter::Claude,
+            launcher_executable: launcher.to_string_lossy().into_owned(),
+            launcher_resolved_executable: launcher_resolved.to_string_lossy().into_owned(),
+            launcher_sha256: hex::encode(Sha256::digest(fs::read(&launcher_resolved).unwrap())),
+        };
+        let command = adapter_command(&registration).unwrap();
+        assert_eq!(command.get_program(), launcher.as_os_str());
+        assert_eq!(
+            command
+                .get_args()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            [
+                "-y".to_owned(),
+                OfficialAcpAdapter::Claude.pinned_npm_package().to_owned(),
+            ]
+        );
+        assert!(command
+            .get_envs()
+            .any(|(name, value)| { name == "DOPEDB_SESSION_TOKEN" && value.is_none() }));
+
+        let mut changed = registration;
+        changed.launcher_sha256 = "00".repeat(32);
+        assert!(adapter_command(&changed).is_err());
+    }
+}
+
+#[test]
+fn typed_agent_bridge_searches_catalog_and_pins_the_launcher_security_boundary() {
+    platform::run();
 }

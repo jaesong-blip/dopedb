@@ -1571,13 +1571,16 @@ dependencies = [
  "clap_complete",
  "dirs",
  "dopedb-protocol",
+ "hex",
  "libc",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "tokio",
  "uuid",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

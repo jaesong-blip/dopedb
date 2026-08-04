@@ -87,7 +87,7 @@ jobs:
 
   windows-check:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -102,5 +102,8 @@ jobs:
             src-tauri -> src-tauri/target
           save-if: false
 
-      - name: Check Windows CLI and protocol
-        run: cargo check --package dopedb-cli --package dopedb-protocol
+      - name: Test Windows ACP launcher and Broker boundary
+        run: |
+          cargo test --package dopedb --lib broker::session::tests
+          cargo test --package dopedb-protocol --test golden
+          cargo test --package dopedb-cli --test terminal_session_e2e

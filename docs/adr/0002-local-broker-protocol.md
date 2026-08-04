@@ -86,15 +86,29 @@ redacted telemetry에만 남긴다.
 Agent의 stdio MCP 설정에는 bearer나 다른 credential을 넣지 않는다. 공개
 `dopedb` CLI도 ACP 실행 경로에 넣지 않는다. 대신 정확한 app-only Agent bridge의
 launcher mode가 내부 `agent.session.register` 명령으로 자신의 OS PID와 process
-start marker를 bearer 인증해 한 번 등록하고, bearer를 adapter child environment에서
-제외한 뒤 고정된 공식 ACP adapter를 수정 없이 실행한다.
+start marker를 bearer 인증해 한 번 등록한다. 등록 payload는 `claude`/`codex` closed
+enum, Desktop이 선택한 launcher 호출 absolute path, canonical resolved target,
+target SHA-256만 받는다. 호출 path는 Volta 같은 shim의 `npx` dispatch를 보존하고,
+resolved target과 digest는 symlink 교체를 거부한다. npm
+package와 version은 command schema가 소유하는 고정 mapping이며 caller가 package나
+추가 argument를 보낼 수 없다. Desktop은 session 발급 때 같은 descriptor를 Broker에
+먼저 고정하고 bridge는 launcher를 등록 전과 실행 직전에 다시 hash 검증한다.
+
+ACP bootstrap bearer는 일반 Terminal bearer와 달리 등록 전용이다. 다른 command를
+인증할 수 없으며 정확한 descriptor와 peer PID/start marker가 일치하는 첫 등록에서
+Broker가 token allocation을 원자적으로 zeroize하고 process-bound 상태로 바꾼다.
+bridge는 시작 직후 환경의 bearer를 zeroizing allocation으로 옮기고 원래 환경 값을
+덮어쓴 뒤 제거하며, token을 포함한 wire frame도 전송 후 zeroize한다. Unix는 bearer가
+제거된 환경으로 bridge를 공식 adapter로 `exec`한다. Windows는 ancestry root를
+유지하려고 child 종료까지 기다리지만 등록 완료 뒤 환경·일반 heap에는 유효 bearer가
+없고 adapter child에도 전달하지 않는다.
 
 이후 같은 bridge의 typed MCP mode는 public CLI parser나 subprocess 없이
 `BrokerClient`로 protocol `CommandSpec`을 직접 보내며 terminal session id만
 인증 metadata로 사용한다. Broker는 owner-local IPC가
 보고한 peer PID와 start marker가 살아 있는지 확인하고, 등록된 adapter root와
 동일하거나 실제 descendant인 경우에만 session capability를 적용한다. 등록되지 않은
-process, unrelated process, PID 재사용, 만료·취소·authority 변경 session은 같은
+process, 재등록, unrelated process, PID 재사용, 만료·취소·authority 변경 session은 같은
 `authentication_denied` 경계에서 거부한다. process identity는 discovery나 SQLite에
 저장하지 않고 해당 Desktop runtime의 메모리에만 둔다.
 

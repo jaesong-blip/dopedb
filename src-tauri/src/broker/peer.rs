@@ -18,6 +18,11 @@ impl PeerProcessIdentity {
     }
 
     #[cfg(test)]
+    pub(crate) fn started_at(self) -> u128 {
+        self.started_at
+    }
+
+    #[cfg(test)]
     pub(crate) fn for_test(pid: u32, started_at: u128) -> Self {
         Self { pid, started_at }
     }

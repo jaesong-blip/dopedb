@@ -1,14 +1,14 @@
 use dopedb_protocol::{
-    catalog::CatalogSnapshot, decode_arguments, AppOpenCommand, AppOpenResult,
-    AuthenticationRequirement, CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec,
-    ConnectionListCommand, ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand,
-    DatabaseListCommand, DocumentRunCommand, ErrorCode, OperationCancelCommand,
-    OperationShowCommand, OperationWaitCommand, ProtocolError, QueryCancelCommand,
-    QueryPlanCommand, QueryRunCommand, RequestEnvelope, ResponseEnvelope, RuntimeDiscovery,
-    SchemaListCommand, SessionAuthentication, SkillInstallCommand, SkillRemoveCommand,
-    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand,
-    StatusCommand, StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
-    COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
+    catalog::CatalogSnapshot, decode_arguments, AgentSessionRegisterArguments, AppOpenCommand,
+    AppOpenResult, AuthenticationRequirement, CatalogSearchCommand, CatalogShowCommand,
+    CommandName, CommandSpec, ConnectionListCommand, ConnectionShowCommand, ConnectionTestCommand,
+    DashboardCreateCommand, DatabaseListCommand, DocumentRunCommand, ErrorCode, OfficialAcpAdapter,
+    OperationCancelCommand, OperationShowCommand, OperationWaitCommand, ProtocolError,
+    QueryCancelCommand, QueryPlanCommand, QueryRunCommand, RequestEnvelope, ResponseEnvelope,
+    RuntimeDiscovery, SchemaListCommand, SessionAuthentication, SkillInstallCommand,
+    SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand, SkillsGetCommand,
+    SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeCommand,
+    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -184,7 +184,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v4_command_schema() {
+fn query_plan_request_matches_v5_command_schema_and_pinned_agent_registration() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -205,6 +205,33 @@ fn query_plan_request_matches_v4_command_schema() {
         uuid::Uuid::nil().to_string()
     );
     assert!(serialized.get("token").is_none());
+
+    let registration = AgentSessionRegisterArguments {
+        adapter: OfficialAcpAdapter::Claude,
+        launcher_executable: "/opt/homebrew/bin/npx".into(),
+        launcher_resolved_executable: "/opt/homebrew/bin/node".into(),
+        launcher_sha256: "ab".repeat(32),
+    };
+    assert!(registration.validate());
+    assert_eq!(
+        OfficialAcpAdapter::parse("claude"),
+        Some(registration.adapter)
+    );
+    assert_eq!(OfficialAcpAdapter::parse("shell"), None);
+    assert_eq!(
+        registration.adapter.pinned_npm_package(),
+        "@agentclientprotocol/claude-agent-acp@0.63.0"
+    );
+    assert_eq!(
+        OfficialAcpAdapter::Codex.pinned_npm_package(),
+        "@agentclientprotocol/codex-acp@1.1.7"
+    );
+    let mut registration_json = serde_json::to_value(&registration).unwrap();
+    registration_json["package"] = json!("attacker/package@latest");
+    assert!(serde_json::from_value::<AgentSessionRegisterArguments>(registration_json).is_err());
+    let mut invalid_digest = registration;
+    invalid_digest.launcher_sha256 = "AB".repeat(32);
+    assert!(!invalid_digest.validate());
 }
 
 #[test]
@@ -469,7 +496,7 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 
     let future: RequestEnvelope = serde_json::from_value(serde_json::json!({
         "protocolVersion": 1,
-        "commandSchemaVersion": 4,
+        "commandSchemaVersion": 5,
         "requestId": "018f1111-2222-7333-8444-555566667777",
         "command": "future.command",
         "arguments": {"approved": true}
@@ -479,13 +506,13 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v4_catalog() {
+fn command_names_match_the_v5_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v4.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v5.json")).unwrap();
     assert_eq!(actual, expected);
 
     let request: RequestEnvelope = serde_json::from_value(json!({

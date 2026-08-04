@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use dopedb_protocol::SessionAuthentication;
+use dopedb_protocol::{AgentSessionRegisterArguments, SessionAuthentication};
 use subtle::ConstantTimeEq;
 #[cfg(test)]
 use uuid::Uuid;
@@ -79,8 +79,16 @@ impl AuthenticatedSession {
 
 struct SessionRecord {
     metadata: AuthenticatedSession,
-    token: Zeroizing<[u8; SESSION_TOKEN_BYTES]>,
-    agent_process: Option<PeerProcessIdentity>,
+    authorization: SessionAuthorization,
+}
+
+enum SessionAuthorization {
+    Bearer(Zeroizing<[u8; SESSION_TOKEN_BYTES]>),
+    AgentBootstrap {
+        token: Zeroizing<[u8; SESSION_TOKEN_BYTES]>,
+        registration: AgentSessionRegisterArguments,
+    },
+    AgentProcess(PeerProcessIdentity),
 }
 
 impl fmt::Debug for SessionRecord {
@@ -88,8 +96,14 @@ impl fmt::Debug for SessionRecord {
         formatter
             .debug_struct("SessionRecord")
             .field("metadata", &self.metadata)
-            .field("token", &"<redacted>")
-            .field("agent_process", &self.agent_process)
+            .field(
+                "authorization",
+                &match &self.authorization {
+                    SessionAuthorization::Bearer(_) => "bearer:<redacted>",
+                    SessionAuthorization::AgentBootstrap { .. } => "agent_bootstrap:<redacted>",
+                    SessionAuthorization::AgentProcess(_) => "agent_process",
+                },
+            )
             .finish()
     }
 }
@@ -138,6 +152,41 @@ impl BrokerSessionRegistry {
         capabilities: impl IntoIterator<Item = BrokerCapability>,
         ttl: Duration,
     ) -> AppResult<IssuedSessionCapability> {
+        self.issue_with_authorization(terminal_session_id, pin, capabilities, ttl, None)
+    }
+
+    pub(crate) fn issue_agent(
+        &self,
+        terminal_session_id: TerminalSessionId,
+        pin: &PinnedConnection,
+        capabilities: impl IntoIterator<Item = BrokerCapability>,
+        ttl: Duration,
+        registration: AgentSessionRegisterArguments,
+    ) -> AppResult<IssuedSessionCapability> {
+        if !registration.validate()
+            || !std::path::Path::new(&registration.launcher_executable).is_absolute()
+        {
+            return Err(AppError::Config(
+                "the ACP launcher registration descriptor is invalid".into(),
+            ));
+        }
+        self.issue_with_authorization(
+            terminal_session_id,
+            pin,
+            capabilities,
+            ttl,
+            Some(registration),
+        )
+    }
+
+    fn issue_with_authorization(
+        &self,
+        terminal_session_id: TerminalSessionId,
+        pin: &PinnedConnection,
+        capabilities: impl IntoIterator<Item = BrokerCapability>,
+        ttl: Duration,
+        agent_registration: Option<AgentSessionRegisterArguments>,
+    ) -> AppResult<IssuedSessionCapability> {
         if ttl.is_zero() {
             return Err(AppError::Config(
                 "terminal session capability TTL must be positive".into(),
@@ -166,8 +215,13 @@ impl BrokerSessionRegistry {
             terminal_session_id,
             SessionRecord {
                 metadata,
-                token: token.clone(),
-                agent_process: None,
+                authorization: match agent_registration {
+                    Some(registration) => SessionAuthorization::AgentBootstrap {
+                        token: token.clone(),
+                        registration,
+                    },
+                    None => SessionAuthorization::Bearer(token.clone()),
+                },
             },
         );
         Ok(IssuedSessionCapability {
@@ -195,13 +249,13 @@ impl BrokerSessionRegistry {
             self.sessions.remove(&terminal_session_id);
             return Err(authentication_denied());
         }
-        let Some(root) = record.agent_process else {
+        let SessionAuthorization::AgentProcess(root) = &record.authorization else {
             return Err(authentication_denied());
         };
         let Some(peer) = peer.copied() else {
             return Err(authentication_denied());
         };
-        if !process_is_descendant_or_same(peer, root) {
+        if !process_is_descendant_or_same(peer, *root) {
             return Err(authentication_denied());
         }
         Ok(record.metadata.clone())
@@ -211,20 +265,47 @@ impl BrokerSessionRegistry {
         &self,
         authentication: &SessionAuthentication,
         peer: PeerProcessIdentity,
+        registration: &AgentSessionRegisterArguments,
     ) -> AppResult<AuthenticatedSession> {
-        let authenticated = self.authenticate_bearer(authentication)?;
-        let terminal_session_id = authenticated.terminal_session_id;
+        if !registration.validate()
+            || !std::path::Path::new(&registration.launcher_executable).is_absolute()
+        {
+            return Err(authentication_denied());
+        }
+        let terminal_session_id = TerminalSessionId::from(authentication.terminal_session_id);
         let mut record = self
             .sessions
             .get_mut(&terminal_session_id)
             .ok_or_else(authentication_denied)?;
-        if record
-            .agent_process
-            .is_some_and(|registered| registered != peer)
-        {
+        if record.metadata.runtime_id != self.runtime_id {
             return Err(authentication_denied());
         }
-        record.agent_process = Some(peer);
+        if record.metadata.expires_at <= Utc::now() {
+            drop(record);
+            self.sessions.remove(&terminal_session_id);
+            return Err(authentication_denied());
+        }
+        let supplied_token = authentication.token().ok_or_else(authentication_denied)?;
+        let mut supplied = Zeroizing::new([0u8; SESSION_TOKEN_BYTES]);
+        if hex::decode_to_slice(supplied_token, supplied.as_mut()).is_err() {
+            return Err(authentication_denied());
+        }
+        let authorized = matches!(
+            &record.authorization,
+            SessionAuthorization::AgentBootstrap {
+                token,
+                registration: expected,
+            } if expected == registration
+                && bool::from(token.as_ref().ct_eq(supplied.as_ref()))
+        );
+        if !authorized {
+            return Err(authentication_denied());
+        }
+        let authenticated = record.metadata.clone();
+        // Replacing the bootstrap state drops and zeroizes the only Broker-held
+        // bearer allocation while the map entry remains locked. A second
+        // registration therefore cannot race or reuse the capability.
+        record.authorization = SessionAuthorization::AgentProcess(peer);
         Ok(authenticated)
     }
 
@@ -242,10 +323,13 @@ impl BrokerSessionRegistry {
             self.sessions.remove(&terminal_session_id);
             return Err(authentication_denied());
         }
+        let SessionAuthorization::Bearer(expected) = &record.authorization else {
+            return Err(authentication_denied());
+        };
         let token = authentication.token().ok_or_else(authentication_denied)?;
         let mut supplied = Zeroizing::new([0u8; SESSION_TOKEN_BYTES]);
         if hex::decode_to_slice(token, supplied.as_mut()).is_err()
-            || !bool::from(record.token.as_ref().ct_eq(supplied.as_ref()))
+            || !bool::from(expected.as_ref().ct_eq(supplied.as_ref()))
         {
             return Err(authentication_denied());
         }
@@ -300,6 +384,23 @@ mod tests {
     use crate::store::{AccountScope, ActiveResourceScope, CatalogCachePolicy};
 
     use super::*;
+
+    fn registration(adapter: dopedb_protocol::OfficialAcpAdapter) -> AgentSessionRegisterArguments {
+        AgentSessionRegisterArguments {
+            adapter,
+            launcher_executable: if cfg!(windows) {
+                r"C:\Program Files\nodejs\npx.cmd".into()
+            } else {
+                "/usr/bin/npx".into()
+            },
+            launcher_resolved_executable: if cfg!(windows) {
+                r"C:\Program Files\nodejs\npx.cmd".into()
+            } else {
+                "/usr/bin/npx".into()
+            },
+            launcher_sha256: "ab".repeat(32),
+        }
+    }
 
     fn pin(connection_id: Uuid) -> PinnedConnection {
         PinnedConnection {
@@ -393,14 +494,57 @@ mod tests {
         assert!(registry.authenticate(&wrong, None).is_err());
 
         let root = super::super::peer::current_process_identity_for_test().unwrap();
-        registry.bind_agent_process(&authentication, root).unwrap();
-        let process_bound = SessionAuthentication::process_bound(terminal_session_id.into());
+        let descriptor = registration(dopedb_protocol::OfficialAcpAdapter::Claude);
+        assert!(registry
+            .bind_agent_process(&authentication, root, &descriptor)
+            .is_err());
+
+        let agent_session_id = TerminalSessionId::from(Uuid::new_v4());
+        let agent = registry
+            .issue_agent(
+                agent_session_id,
+                &pin(connection_id.into()),
+                [BrokerCapability::QueryPlan],
+                Duration::from_secs(60),
+                descriptor.clone(),
+            )
+            .unwrap();
+        let agent_authentication =
+            SessionAuthentication::new(agent.terminal_session_id.into(), agent.token().to_owned());
+        // Bootstrap capabilities are command-specific and cannot authorize a
+        // normal Broker command before registration.
+        assert!(registry.authenticate(&agent_authentication, None).is_err());
+        let mut wrong_descriptor = descriptor.clone();
+        wrong_descriptor.adapter = dopedb_protocol::OfficialAcpAdapter::Codex;
+        assert!(registry
+            .bind_agent_process(&agent_authentication, root, &wrong_descriptor)
+            .is_err());
+        registry
+            .bind_agent_process(&agent_authentication, root, &descriptor)
+            .unwrap();
+        // Registration consumes the bearer atomically; neither ordinary use
+        // nor a second registration may reuse it.
+        assert!(registry.authenticate(&agent_authentication, None).is_err());
+        assert!(registry
+            .bind_agent_process(&agent_authentication, root, &descriptor)
+            .is_err());
+
+        let process_bound = SessionAuthentication::process_bound(agent_session_id.into());
         assert!(registry.authenticate(&process_bound, Some(&root)).is_ok());
+        let reused_pid = super::super::peer::PeerProcessIdentity::for_test(
+            root.pid(),
+            root.started_at().saturating_add(1),
+        );
+        assert!(registry
+            .authenticate(&process_bound, Some(&reused_pid))
+            .is_err());
         let unrelated =
             super::super::peer::PeerProcessIdentity::for_test(root.pid().saturating_add(1), 0);
         assert!(registry
             .authenticate(&process_bound, Some(&unrelated))
             .is_err());
+        assert!(registry.revoke(agent_session_id));
+        assert!(registry.authenticate(&process_bound, Some(&root)).is_err());
         assert!(registry.revoke(terminal_session_id));
         assert!(registry.authenticate(&authentication, None).is_err());
     }

@@ -92,8 +92,69 @@ pub struct AppOpenCommand;
 /// This command is intentionally absent from the public CLI surface.
 pub struct AgentSessionRegisterCommand;
 
+/// Official ACP adapters that the app-only launcher may start. The exact npm
+/// package and version are part of the command-schema contract so a caller
+/// cannot replace them with an arbitrary executable payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OfficialAcpAdapter {
+    Claude,
+    Codex,
+}
+
+impl OfficialAcpAdapter {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+        }
+    }
+
+    pub const fn pinned_npm_package(self) -> &'static str {
+        match self {
+            Self::Claude => "@agentclientprotocol/claude-agent-acp@0.63.0",
+            Self::Codex => "@agentclientprotocol/codex-acp@1.1.7",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "claude" => Some(Self::Claude),
+            "codex" => Some(Self::Codex),
+            _ => None,
+        }
+    }
+}
+
+pub const MAX_AGENT_LAUNCHER_PATH_BYTES: usize = 16 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentSessionRegisterArguments {
+    pub adapter: OfficialAcpAdapter,
+    pub launcher_executable: String,
+    pub launcher_resolved_executable: String,
+    pub launcher_sha256: String,
+}
+
+impl AgentSessionRegisterArguments {
+    pub fn validate(&self) -> bool {
+        !self.launcher_executable.is_empty()
+            && self.launcher_executable.len() <= MAX_AGENT_LAUNCHER_PATH_BYTES
+            && !self.launcher_executable.contains('\0')
+            && !self.launcher_resolved_executable.is_empty()
+            && self.launcher_resolved_executable.len() <= MAX_AGENT_LAUNCHER_PATH_BYTES
+            && !self.launcher_resolved_executable.contains('\0')
+            && self.launcher_sha256.len() == 64
+            && self
+                .launcher_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    }
+}
+
 impl CommandSpec for AgentSessionRegisterCommand {
-    type Arguments = EmptyArguments;
+    type Arguments = AgentSessionRegisterArguments;
     type Result = EmptyArguments;
 
     const NAME: CommandName = CommandName::AgentSessionRegister;

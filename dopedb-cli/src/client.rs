@@ -14,6 +14,7 @@ use dopedb_protocol::{
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 const DISCOVERY_MAX_BYTES: u64 = 64 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -69,6 +70,25 @@ impl BrokerClient {
             AuthenticationRequirement::None => None,
             AuthenticationRequirement::TerminalSession => Some(session_authentication()?),
         };
+        self.request_with_authentication::<C>(arguments, authentication)
+            .await
+    }
+
+    pub(crate) async fn request_with_authentication<C>(
+        &self,
+        arguments: &C::Arguments,
+        authentication: Option<SessionAuthentication>,
+    ) -> Result<C::Result, ClientError>
+    where
+        C: CommandSpec,
+    {
+        if matches!(
+            C::AUTHENTICATION,
+            AuthenticationRequirement::TerminalSession
+        ) != authentication.is_some()
+        {
+            return Err(ClientError::AuthenticationUnavailable);
+        }
         let request = RequestEnvelope {
             protocol_version: self.protocol_version,
             command_schema_version: COMMAND_SCHEMA_VERSION,
@@ -613,8 +633,8 @@ async fn exchange_stream<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let frame = encode_request(request)?;
-    tokio::time::timeout(CONTROL_WRITE_TIMEOUT, stream.write_all(&frame))
+    let frame = Zeroizing::new(encode_request(request)?);
+    tokio::time::timeout(CONTROL_WRITE_TIMEOUT, stream.write_all(frame.as_slice()))
         .await
         .map_err(|_| ClientError::RuntimeUnavailable)?
         .map_err(|_| ClientError::RuntimeUnavailable)?;

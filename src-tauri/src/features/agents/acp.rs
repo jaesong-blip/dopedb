@@ -5,6 +5,7 @@
 //! offers a login flow.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,6 +22,8 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, ConnectionTo};
 use chrono::Utc;
 use dashmap::DashMap;
+use dopedb_protocol::{AgentSessionRegisterArguments, OfficialAcpAdapter};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Notify};
 use uuid::Uuid;
@@ -38,9 +41,8 @@ use super::domain::{
     AcpSessionEventPayload, AcpSessionFocus, AcpSessionLifecycle, AcpSessionSummary, AgentProvider,
 };
 
-const CLAUDE_ACP_PACKAGE: &str = "@agentclientprotocol/claude-agent-acp@0.63.0";
-const CODEX_ACP_PACKAGE: &str = "@agentclientprotocol/codex-acp@1.1.7";
 const DOPEDB_MCP_SERVER_NAME: &str = "dopedb-desktop-session";
+const MAX_ACP_LAUNCHER_BYTES: u64 = 32 * 1024 * 1024;
 const ACP_CAPABILITY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ACP_START_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_ACTIVE_SESSIONS: usize = 8;
@@ -235,6 +237,27 @@ impl AcpRuntime {
                     .into(),
             )
         })?;
+        let (npx, launcher_resolved, launcher_sha256) =
+            tokio::task::spawn_blocking(move || verified_acp_launcher(npx))
+                .await
+                .map_err(|_| {
+                    AppError::Config("the ACP launcher verifier stopped unexpectedly".into())
+                })??;
+        let adapter = official_acp_adapter(provider);
+        let registration = AgentSessionRegisterArguments {
+            adapter,
+            launcher_executable: npx
+                .to_str()
+                .ok_or_else(|| AppError::Config("the ACP launcher path is not valid UTF-8".into()))?
+                .to_owned(),
+            launcher_resolved_executable: launcher_resolved
+                .to_str()
+                .ok_or_else(|| {
+                    AppError::Config("the resolved ACP launcher path is not valid UTF-8".into())
+                })?
+                .to_owned(),
+            launcher_sha256: launcher_sha256.clone(),
+        };
         let agent_bridge =
             tokio::task::spawn_blocking(crate::cli_install::bundled_agent_bridge_binary)
                 .await
@@ -308,13 +331,15 @@ impl AcpRuntime {
             .checked_add(1)
             .ok_or_else(|| AppError::Config("the ACP event sequence was exhausted".into()))?;
         let broker_session_id = TerminalSessionId::from(Uuid::new_v4());
-        let issued = self.broker.sessions().issue(
+        let issued = self.broker.sessions().issue_agent(
             broker_session_id,
             &connection,
             BrokerCapability::ALL,
             ACP_CAPABILITY_TTL,
+            registration,
         )?;
         let token = Zeroizing::new(issued.token().to_owned());
+        drop(issued);
         if let Err(error) = self
             .store
             .persist_agent_acp_session(&connection.scope, &summary)
@@ -348,11 +373,14 @@ impl AcpRuntime {
         let broker = self.broker.clone();
         let connection_summary = connection_context(&connection.profile);
         let launch = LaunchContext {
+            adapter,
             npx,
+            launcher_resolved,
+            launcher_sha256,
             agent_bridge,
             working_directory,
             runtime_file: self.broker.runtime_file(),
-            token: token.to_string(),
+            token,
         };
         let worker_session = session.clone();
         tauri::async_runtime::spawn(async move {
@@ -785,11 +813,14 @@ impl PersistenceTracker {
 }
 
 struct LaunchContext {
+    adapter: OfficialAcpAdapter,
     npx: PathBuf,
+    launcher_resolved: PathBuf,
+    launcher_sha256: String,
     agent_bridge: PathBuf,
     working_directory: PathBuf,
     runtime_file: Option<PathBuf>,
-    token: String,
+    token: Zeroizing<String>,
 }
 
 struct ResumeSeed {
@@ -806,12 +837,12 @@ async fn run_session(
     session: Arc<AcpSession>,
     broker: BrokerRuntime,
     connection_context: String,
-    launch: LaunchContext,
+    mut launch: LaunchContext,
     resume: Option<ResumeContext>,
     mut commands: tokio::sync::mpsc::UnboundedReceiver<SessionCommand>,
     ready: Arc<Mutex<Option<oneshot::Sender<AppResult<()>>>>>,
 ) {
-    let config = agent_config(&session, &launch);
+    let config = agent_config(&session, &mut launch);
     let agent = AcpAgent::new(config);
     let notification_session = session.clone();
     let permission_session = session.clone();
@@ -1176,18 +1207,23 @@ fn collect_config_select_values(value: Option<&serde_json::Value>, values: &mut 
     }
 }
 
-fn agent_config(session: &AcpSession, launch: &LaunchContext) -> AcpAgentConfig {
-    let package = match session.summary().provider {
-        AgentProvider::Claude => CLAUDE_ACP_PACKAGE,
-        AgentProvider::Codex => CODEX_ACP_PACKAGE,
-    };
+fn agent_config(session: &AcpSession, launch: &mut LaunchContext) -> AcpAgentConfig {
+    let token = std::mem::take(&mut *launch.token);
     let mut config = AcpAgentConfig::new(launch.agent_bridge.clone())
         .args([
             "launch".to_owned(),
-            "--".to_owned(),
-            launch.npx.to_string_lossy().into_owned(),
-            "-y".to_owned(),
-            package.to_owned(),
+            launch.adapter.as_str().to_owned(),
+            launch
+                .npx
+                .to_str()
+                .expect("verified ACP launcher path remains UTF-8")
+                .to_owned(),
+            launch
+                .launcher_resolved
+                .to_str()
+                .expect("verified resolved ACP launcher path remains UTF-8")
+                .to_owned(),
+            launch.launcher_sha256.clone(),
         ])
         .env(
             "PATH",
@@ -1200,7 +1236,7 @@ fn agent_config(session: &AcpSession, launch: &LaunchContext) -> AcpAgentConfig 
             session.broker_session_id.to_string(),
         )
         .env("DOPEDB_CONNECTION_SCOPE", session.connection_id.to_string())
-        .env("DOPEDB_SESSION_TOKEN", launch.token.clone())
+        .env("DOPEDB_SESSION_TOKEN", token)
         .env("TERM_PROGRAM", "DopeDB")
         .env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
     if let Some(runtime_file) = &launch.runtime_file {
@@ -1531,6 +1567,54 @@ fn provider_name(provider: AgentProvider) -> &'static str {
         AgentProvider::Claude => "Claude",
         AgentProvider::Codex => "Codex",
     }
+}
+
+fn official_acp_adapter(provider: AgentProvider) -> OfficialAcpAdapter {
+    match provider {
+        AgentProvider::Claude => OfficialAcpAdapter::Claude,
+        AgentProvider::Codex => OfficialAcpAdapter::Codex,
+    }
+}
+
+fn verified_acp_launcher(path: PathBuf) -> AppResult<(PathBuf, PathBuf, String)> {
+    if !path.is_absolute() || path.to_str().is_none() {
+        return Err(AppError::Config(
+            "the ACP launcher must have an absolute UTF-8 path".into(),
+        ));
+    }
+    let resolved = std::fs::canonicalize(&path)?;
+    if !resolved.is_absolute() || resolved.to_str().is_none() {
+        return Err(AppError::Config(
+            "the resolved ACP launcher must have an absolute UTF-8 path".into(),
+        ));
+    }
+    let metadata = std::fs::metadata(&resolved)?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_ACP_LAUNCHER_BYTES {
+        return Err(AppError::Blocked {
+            reason: "the ACP launcher is not a bounded regular file".into(),
+        });
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        if metadata.permissions().mode() & 0o111 == 0 {
+            return Err(AppError::Blocked {
+                reason: "the ACP launcher is not executable".into(),
+            });
+        }
+    }
+    let mut file = std::fs::File::open(&resolved)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 16 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok((path, resolved, hex::encode(hasher.finalize())))
 }
 
 fn complete_ready(

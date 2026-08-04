@@ -23,9 +23,10 @@ pub mod version;
 pub use catalog::*;
 pub use catalog_command::*;
 pub use command::{
-    decode_arguments, AgentSessionRegisterCommand, AppOpenArguments, AppOpenCommand, AppOpenResult,
-    AuthenticationRequirement, CommandPayloadError, CommandSpec, EmptyArguments, StatusCommand,
-    StatusResult, VersionCommand, VersionResult,
+    decode_arguments, AgentSessionRegisterArguments, AgentSessionRegisterCommand, AppOpenArguments,
+    AppOpenCommand, AppOpenResult, AuthenticationRequirement, CommandPayloadError, CommandSpec,
+    EmptyArguments, OfficialAcpAdapter, StatusCommand, StatusResult, VersionCommand, VersionResult,
+    MAX_AGENT_LAUNCHER_PATH_BYTES,
 };
 pub use connection::*;
 pub use dashboard_command::*;

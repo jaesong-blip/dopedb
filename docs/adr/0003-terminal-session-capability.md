@@ -32,6 +32,16 @@ DOPEDB_SESSION_TOKEN
 token은 DB credential이 아니다. argv, shell profile, runtime discovery, CLI JSON, audit,
 terminal replay에 기록하지 않는다.
 
+ACP Agent는 이 PTY token 수명 모델을 그대로 상속하지 않는다. Desktop이 app-only
+bridge에 넣는 capability는 `agent.session.register` 한 번에만 쓸 수 있는 bootstrap
+bearer다. Broker는 발급 시 `claude`/`codex` adapter enum과 launcher 호출 path,
+canonical resolved target/target SHA-256을 고정하고, 정확한 peer PID/start marker가
+그 descriptor로 등록되면
+bearer를 즉시 zeroize해 process-bound authority로 교체한다. bridge는 등록 요청 전에
+상속 환경을 덮어쓰고 제거하며 공식 adapter와 MCP 후손에는 session id만 전달한다.
+따라서 Windows bridge가 process ancestry root로 계속 살아 있어도 재사용 가능한
+bearer는 남지 않는다.
+
 ## Revocation
 
 다음 사건에서 DB command보다 먼저 즉시 revoke한다.

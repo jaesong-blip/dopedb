@@ -212,9 +212,10 @@ impl BrokerDispatcher {
 
     fn register_agent_session(&self, request: &RequestEnvelope) -> ResponseEnvelope {
         let request_id = request.request_id;
-        if decode_arguments::<AgentSessionRegisterCommand>(request).is_err() {
-            return failure(request_id, ErrorCode::InvalidRequest, false);
-        }
+        let arguments = match decode_arguments::<AgentSessionRegisterCommand>(request) {
+            Ok(arguments) if arguments.validate() => arguments,
+            _ => return failure(request_id, ErrorCode::InvalidRequest, false),
+        };
         let Some(authentication) = request.authentication.as_ref() else {
             return failure(request_id, ErrorCode::AuthenticationDenied, false);
         };
@@ -227,7 +228,7 @@ impl BrokerDispatcher {
         respond(
             request_id,
             self.sessions
-                .bind_agent_process(authentication, peer)
+                .bind_agent_process(authentication, peer, &arguments)
                 .map(|_| dopedb_protocol::EmptyArguments::default())
                 .map_err(|_| ErrorCode::AuthenticationDenied),
         )

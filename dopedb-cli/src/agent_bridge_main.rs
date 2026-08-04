@@ -15,17 +15,43 @@ mod exit_code;
 use std::process::ExitCode;
 
 use client::ClientError;
+use dopedb_protocol::OfficialAcpAdapter;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let mut arguments = std::env::args().skip(1);
     let result = match arguments.next().as_deref() {
         Some("launch") => {
-            let mut command = arguments.collect::<Vec<_>>();
-            if command.first().is_some_and(|argument| argument == "--") {
-                command.remove(0);
+            let adapter = arguments
+                .next()
+                .as_deref()
+                .and_then(OfficialAcpAdapter::parse);
+            let launcher_executable = arguments.next();
+            let launcher_resolved_executable = arguments.next();
+            let launcher_sha256 = arguments.next();
+            if let (
+                Some(adapter),
+                Some(launcher_executable),
+                Some(launcher_resolved_executable),
+                Some(launcher_sha256),
+                None,
+            ) = (
+                adapter,
+                launcher_executable,
+                launcher_resolved_executable,
+                launcher_sha256,
+                arguments.next(),
+            ) {
+                acp_launch::run(
+                    adapter,
+                    launcher_executable,
+                    launcher_resolved_executable,
+                    launcher_sha256,
+                )
+                .await
+            } else {
+                Err(ClientError::InvalidArguments)
             }
-            acp_launch::run(command).await
         }
         Some("mcp") if arguments.next().is_none() => agent_mcp::serve().await,
         _ => Err(ClientError::InvalidArguments),
