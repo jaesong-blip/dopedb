@@ -68,8 +68,27 @@ export default async function SignInPage({
             </IdentityError>
           ) : null}
           <SignInButton returnTo={returnTo} />
-          <p className="tw:mt-4 tw:mb-0 tw:text-xs tw:text-muted-foreground">
-            계속하면 조직의 워크스페이스 정책과 감사 기록 적용에 동의합니다.
+          <p className="tw:mt-4 tw:mb-0 tw:text-xs tw:leading-relaxed tw:text-muted-foreground">
+            Google로 계속하면{" "}
+            <a
+              href="https://dopedb.dev/ko/terms"
+              target="_blank"
+              rel="noreferrer"
+              className="tw:font-semibold tw:text-foreground tw:underline tw:underline-offset-2 tw:hover:text-primary"
+            >
+              서비스 이용약관
+            </a>
+            에 동의하고{" "}
+            <a
+              href="https://dopedb.dev/ko/privacy"
+              target="_blank"
+              rel="noreferrer"
+              className="tw:font-semibold tw:text-foreground tw:underline tw:underline-offset-2 tw:hover:text-primary"
+            >
+              개인정보처리방침
+            </a>
+            을 확인한 것으로 봅니다. 조직의 워크스페이스 정책과 감사 기록도
+            적용됩니다.
           </p>
         </IdentityCard>
       </section>
