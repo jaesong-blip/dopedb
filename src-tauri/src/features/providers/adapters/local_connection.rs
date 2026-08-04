@@ -157,6 +157,7 @@ impl ProviderLocalResolver {
             ProviderLocalResource::Neon {
                 project,
                 branch,
+                database_id,
                 database,
                 ..
             } => {
@@ -164,10 +165,12 @@ impl ProviderLocalResolver {
                     return Err(blocked());
                 };
                 let key = self.vault.fetch(&binding, keyring_ref.into())?;
-                let endpoint = self.neon_endpoint(project, branch, database, &key).await?;
+                let (endpoint, live_database) = self
+                    .neon_endpoint(project, branch, database_id, database, &key)
+                    .await?;
                 profile.host = endpoint;
                 profile.port = 5432;
-                profile.database = database.clone();
+                profile.database = live_database;
                 profile.sslmode = "verify-full".into();
                 profile.extra_params.remove("sslrootcert_pem");
             }
@@ -216,17 +219,18 @@ impl ProviderLocalResolver {
         &self,
         project: &str,
         branch: &str,
+        database_id: &str,
         database: &str,
         key: &zeroize::Zeroizing<String>,
-    ) -> AppResult<String> {
+    ) -> AppResult<(String, String)> {
         let databases = self
             .get_neon_json(&neon_url(project, branch, "databases")?, key)
             .await?;
-        validate_neon_database(&databases, database)?;
+        let live_database = validate_neon_database(&databases, database_id, database)?;
         let endpoints = self
             .get_neon_json(&neon_url(project, branch, "endpoints")?, key)
             .await?;
-        parse_neon_read_endpoint(&endpoints)
+        Ok((parse_neon_read_endpoint(&endpoints)?, live_database))
     }
 
     async fn get_neon_json(&self, url: &Url, key: &zeroize::Zeroizing<String>) -> AppResult<Value> {
@@ -344,8 +348,12 @@ fn parse_json(body: Vec<u8>) -> AppResult<Value> {
     serde_json::from_slice(&body).map_err(|_| blocked())
 }
 
-fn validate_neon_database(value: &Value, database: &str) -> AppResult<()> {
-    if !valid_database_name(database) {
+fn validate_neon_database(value: &Value, database_id: &str, database: &str) -> AppResult<String> {
+    let numeric_id = !database_id.is_empty()
+        && database_id.len() <= 19
+        && database_id.bytes().all(|byte| byte.is_ascii_digit());
+    let legacy = database_id == database && !numeric_id;
+    if (!numeric_id && !legacy) || !valid_database_name(database) {
         return Err(blocked());
     }
     let databases = value
@@ -355,17 +363,31 @@ fn validate_neon_database(value: &Value, database: &str) -> AppResult<()> {
         .ok_or_else(blocked)?;
     let exact = databases
         .iter()
-        .filter(|item| {
-            item.as_object().is_some_and(|object| {
-                object.len() <= 8 && object.get("name").and_then(Value::as_str) == Some(database)
-            })
+        .filter_map(|item| {
+            let object = item.as_object()?;
+            let name = object.get("name").and_then(Value::as_str)?;
+            let id = object.get("id").and_then(|value| {
+                if let Some(id) = value.as_u64() {
+                    return Some(id.to_string());
+                }
+                value
+                    .as_str()
+                    .filter(|id| {
+                        !id.is_empty()
+                            && id.len() <= 19
+                            && id.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+                    .map(str::to_owned)
+            })?;
+            (object.len() <= 8
+                && valid_database_name(name)
+                && ((legacy && name == database) || (!legacy && id == database_id)))
+                .then(|| name.to_owned())
         })
-        .count();
-    if exact == 1 {
-        Ok(())
-    } else {
-        Err(blocked())
-    }
+        .collect::<Vec<_>>();
+    (exact.len() == 1)
+        .then(|| exact[0].clone())
+        .ok_or_else(blocked)
 }
 
 fn parse_neon_read_endpoint(value: &Value) -> AppResult<String> {

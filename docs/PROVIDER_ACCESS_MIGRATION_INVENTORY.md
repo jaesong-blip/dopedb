@@ -22,6 +22,10 @@ Provider discovery and connection provisioning are separate capabilities:
 - The current GCP bootstrap owns provider-side IAM, read/write service accounts,
   and database-user changes. Future CLI provisioning must preserve that capability
   boundary rather than infer it from a catalog label.
+- The current Neon bootstrap owns a sealed, approval-gated database ACL plan,
+  stable database-ID verification, read credential positive/negative smoke test,
+  exact rollback, and repair audit. It publishes only read capability; production
+  approval does not imply a write credential.
 
 The persisted discovery manifest remains the compatibility schema:
 
@@ -43,13 +47,14 @@ a write. GCP resources discovered through a newly completed bootstrap may set it
 
 | Layer | Entrypoint | Decision | Owner / removal condition |
 | --- | --- | --- | --- |
-| Web UI | `ProviderIntegrationList`, `GcpCloudSetup`, `ProviderResourcePicker`, `useProviderAccess` | keep | Current account connection, redacted discovery, safe-default import, GCP read/write bootstrap, and administrator DB write policy flow. Provider-specific setup is selected by the server catalog, not a planned UI placeholder. |
+| Web UI | `ProviderIntegrationList`, `GcpCloudSetup`, `ProviderResourcePicker`, `useProviderAccess` | keep | Current account connection, redacted discovery, safe-default import, GCP read/write bootstrap, Neon environment/preflight/approval/apply/verify flow, and administrator DB write policy. Provider-specific setup is selected by the server catalog, not a planned UI placeholder. |
 | Catalog API | `GET /api/v1/workspaces/:id/provider-integrations` | keep, narrowed | Returns only the three working adapters and no write capability claim. DQ-18 must change before another descriptor is added. |
 | Integration mutation | `POST/DELETE /provider-integrations` and provider OAuth callbacks | keep | Current Neon, GCP Cloud SQL, and PlanetScale authorization boundary. Replacement is #99/#100, after equivalent CLI setup and rollback exist. |
 | Discovery | `GET /provider-integrations/:id/resources` | keep | Provider response is bounded, normalized server-side, and projected into opaque receipts. |
 | Import | `POST /provider-integrations/:id/imports` | keep | Receipt-only, idempotent shared connection import with `allowWrites: false`. A later administrator action owns the durable write policy. |
 | GCP setup | `gcp-setup/:setupId`, `gcp-cloud-sql/callback`, `gcp-cloud-bootstrap.ts` | migrate | Current keyless OAuth bootstrap creates separate least-privilege read/write principals and replaces the removed seven-field manual form. #100 may move these changes behind CLI provisioning; do not expose WIF coordinates, service-account ids, or trust configuration to the browser. |
-| Managed lease | `POST /connections/:id/lease` and `/managed-access` | keep | Issues/revokes short-lived read or role-gated GCP write credentials. Every write issuance rechecks the live role, connection grant, administrator policy, and canonical provider capability. #99 owns the future CLI runner, not this connection lease contract. |
+| Neon setup | `provider-integrations/:id/neon-bootstrap`, `neon-bootstrap.ts` | keep, migrate after parity | Exchanges only a sealed final-leaf proof for a session-bound plan; applies explicitly approved PUBLIC ACL changes, verifies current/future read boundary and a denied write, and emits the import receipt only after cleanup. Raw SQL, owner credentials, and provider secrets do not cross the route. A future #100 replacement must preserve exact plan/ready hashes, rollback, repair audit, and production approval before this path is removed. |
+| Managed lease | `POST /connections/:id/lease` and `/managed-access` | keep | Issues/revokes short-lived Neon/PlanetScale read or capability-gated provider credentials and role-gated GCP write credentials. Every issuance rechecks stable Provider identity, environment, live role, connection grant, administrator policy, and canonical capability. #99 owns the future CLI runner, not this connection lease contract. |
 | Local target | `provider-local-target` web route and desktop `provider_local_target.rs` | keep | Revalidates the exact provider resource and TLS/connector material before the local pool opens. |
 | Desktop Provider authority | `src-tauri/src/features/providers` | keep | Authenticated inventory, OS credential binding, exact revalidation, and local GCP ADC boundary. |
 | Desktop connection runtime | `connection/runtime/authority.rs`, `remote_authority.rs`, `cloud_sql_proxy.rs` | keep | Obtains the one-time lease into process memory, owns proxy/pool lifetime, and releases the lease. |

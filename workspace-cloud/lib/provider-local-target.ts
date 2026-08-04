@@ -29,6 +29,7 @@ export type ProviderLocalTarget = Readonly<{
   target: Readonly<{
     project: string;
     branch: string;
+    databaseId: string;
     database: string;
     engine: "postgres";
     schemas: readonly string[];
@@ -69,11 +70,13 @@ function parseTarget(provider: "neon" | "gcpCloudSql", resource: unknown) {
   const normalized = providerImportAdapters[provider].reconstruct(resource);
   if (provider === "neon") {
     const value = normalized as {
-      project: string; branch: string; database: string; engine: "postgres"; schemas: string[];
+      project: string; branch: string; databaseId: string; database: string;
+      engine: "postgres"; schemas: string[];
     };
     return {
       project: value.project,
       branch: value.branch,
+      databaseId: value.databaseId,
       database: value.database,
       engine: "postgres" as const,
       schemas: [...value.schemas],
@@ -242,8 +245,9 @@ export async function loadProviderLocalTarget(input: {
         AND (
           resource."redacted_metadata" -> 'production' = 'false'::jsonb
           OR (
-            resource."provider" = 'gcpCloudSql'
+            resource."provider" IN ('gcpCloudSql', 'neon')
             AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
+            AND imported."production_approved" = TRUE
           )
         )
         AND resource."capability_manifest" -> 'importReadOnly' = 'true'::jsonb

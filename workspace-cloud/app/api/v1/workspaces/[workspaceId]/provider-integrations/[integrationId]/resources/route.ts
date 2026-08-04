@@ -95,7 +95,7 @@ function authorityFor(
 function providerWriteAvailable(
   integration: Parameters<typeof gcpCredential>[0],
 ) {
-  if (integration.provider === "planetScale" || integration.provider === "neon") {
+  if (integration.provider === "planetScale") {
     return true;
   }
   return integration.provider === "gcpCloudSql"
@@ -148,9 +148,17 @@ export async function GET(request: Request, context: RouteContext) {
           item,
           writeAvailable,
         });
+        const canBootstrapNeon = provider === "neon"
+          && query.kind === "databases"
+          && item.ready === true
+          && (
+            item.production === false
+            || item.production === true
+            || item.production === "unknown"
+          );
         return {
           ...item,
-          ...(projection ? {
+          ...(projection || canBootstrapNeon ? {
             selectionProof: sealProviderDiscoveryProof({
               organizationId: workspaceId,
               integrationId,

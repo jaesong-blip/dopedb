@@ -231,7 +231,7 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         AND (
           resource."redacted_metadata" -> 'production' = 'false'::jsonb
           OR (
-            resource."provider" IN ('gcpCloudSql', 'planetScale')
+            resource."provider" IN ('gcpCloudSql', 'planetScale', 'neon')
             AND resource."redacted_metadata" -> 'production' = 'true'::jsonb
             AND ${input.productionApproved}
             AND (

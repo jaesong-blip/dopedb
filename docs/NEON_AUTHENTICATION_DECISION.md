@@ -69,3 +69,11 @@ shared 200-resource and 16-page safety bounds. The database endpoint is currentl
 unpaginated; the collector accepts and follows a future cursor response while
 avoiding undocumented query parameters on the first request. Any repeated,
 invalid, or over-limit cursor fails closed instead of silently truncating.
+
+The final database selection is pinned by Neon database ID, with its current
+name retained only as display/connection metadata. A protected branch is always
+production; a default or otherwise unclassified branch requires an Admin/Owner
+classification. No final discovery leaf can be imported directly. It must pass
+the sealed Neon bootstrap plan, explicit PUBLIC/production approvals, independent
+ACL validation, and read-positive/write-negative credential smoke test before a
+short-lived import receipt is issued. The resulting capability remains read-only.

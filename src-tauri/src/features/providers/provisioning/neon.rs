@@ -229,13 +229,14 @@ impl ProvisioningDriver for NeonProvisioningDriver {
             let AuthorizedProvisioningResource::Neon {
                 project,
                 branch,
+                database_id: _,
                 database,
                 schemas,
             } = &authorized.resource
             else {
                 return Err(blocked("Neon target authority is invalid"));
             };
-            if authorized.production || schemas.is_empty() {
+            if schemas.is_empty() {
                 return Err(blocked("Neon target policy is invalid"));
             }
             let target = ProvisioningTarget::new(
@@ -257,7 +258,7 @@ impl ProvisioningDriver for NeonProvisioningDriver {
                     (ProvisioningTargetSelector::Database, database.clone()),
                 ]),
                 connection.profile.engine,
-                false,
+                authorized.production,
                 None,
                 authorized.write_available,
                 authorized.provider_audit_id,
@@ -616,6 +617,7 @@ fn target_matches_authority(
     let AuthorizedProvisioningResource::Neon {
         project,
         branch,
+        database_id: _,
         database,
         schemas,
     } = &authority.resource
@@ -634,9 +636,7 @@ fn target_matches_authority(
                 .unwrap_or_default()
         && authority.resource_fingerprint == target.resource_fingerprint()
         && authority.provider_audit_id == target.provider_audit_id()
-        && authority.provider_audit_id == *branch
-        && !authority.production
-        && !target.production()
+        && authority.production == target.production()
         && authority.safe_migrations.is_none()
         && authority.write_available == target.write_available()
         && authority.display_name.len() <= 120
@@ -698,7 +698,7 @@ pub(crate) fn assert_neon_driver_contract() {
         false,
         None,
         true,
-        "br-dev".into(),
+        "br-dev:834686".into(),
     )
     .unwrap();
     let authority = AuthorizedProvisioningTarget {
@@ -713,13 +713,14 @@ pub(crate) fn assert_neon_driver_contract() {
         resource: AuthorizedProvisioningResource::Neon {
             project: "quiet-sun".into(),
             branch: "br-dev".into(),
+            database_id: "834686".into(),
             database: "app".into(),
             schemas: vec!["public".into()],
         },
         write_available: true,
         production: false,
         safe_migrations: None,
-        provider_audit_id: "br-dev".into(),
+        provider_audit_id: "br-dev:834686".into(),
         expires_at: Utc::now() + chrono::Duration::minutes(5),
     };
     assert!(target_matches_authority(&target, &authority));

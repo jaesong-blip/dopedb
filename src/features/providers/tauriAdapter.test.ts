@@ -6,6 +6,8 @@ import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud
 import gcpCloudSqlSource from "../../../workspace-cloud/lib/providers/gcp-cloud-sql.ts?raw";
 import neonSource from "../../../workspace-cloud/lib/providers/neon.ts?raw";
 import neonCoreSource from "../../../workspace-cloud/lib/providers/neon-core.ts?raw";
+import neonBootstrapSource from "../../../workspace-cloud/lib/providers/neon-bootstrap.ts?raw";
+import neonBootstrapRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/neon-bootstrap/route.ts?raw";
 import gcpSetupRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/gcp-setup/[setupId]/route.ts?raw";
 import gcpOAuthSource from "../../../workspace-cloud/lib/providers/gcp-cloud-oauth.ts?raw";
 import managedLeaseRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/lease/route.ts?raw";
@@ -16,6 +18,9 @@ import providerIntegrationDomainSource from "../../../workspace-cloud/lib/provid
 import providerLeaseIssuanceSource from "../../../workspace-cloud/lib/provider-integrations/lease-issuance.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
+import providerResourcePickerSource from "../../../workspace-cloud/features/providerAccess/ProviderResourcePicker.tsx?raw";
+import providerAccessControllerSource from "../../../workspace-cloud/features/providerAccess/useProviderAccess.ts?raw";
+import providerAccessDomainSource from "../../../workspace-cloud/features/providerAccess/domain.ts?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
 import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
 import providerAdapterContractSource from "../../../workspace-cloud/lib/providers/adapter-contract.ts?raw";
@@ -326,8 +331,8 @@ describe("provider credential Tauri adapter", () => {
     expect(providerProvisioningTargetSource).toContain("AUTHORITY_TTL_MS = 5 * 60 * 1_000");
 
     expect(providerAdapterContractSource).toContain("write: boolean");
-    expect(providerImportProjectionSource).toContain('&& provider !== "neon"');
-    expect(providerResourcesRouteSource).toContain(
+    expect(providerResourcesRouteSource).toContain('integration.provider === "planetScale"');
+    expect(providerResourcesRouteSource).not.toContain(
       'integration.provider === "planetScale" || integration.provider === "neon"',
     );
     expect(neonCoreSource).toContain("ALTER DEFAULT PRIVILEGES FOR ROLE");
@@ -345,7 +350,44 @@ describe("provider credential Tauri adapter", () => {
       "row.default === true || row.protected === true",
     );
     expect(providerIntegrationRouteSource).toContain('"api-key-v1"');
-    expect(neonSource).toContain("return { providerAuditId: branch.value }");
+    expect(neonSource).toContain(
+      "return { providerAuditId: `${branch.value}:${database.id}` }",
+    );
+    expect(neonSource).toContain("item.id === resource.databaseId");
+    expect(neonCoreSource).toContain("databaseId: string");
+    expect(neonBootstrapSource).toContain("NEON_REVOKE_PUBLIC_DATABASE_");
+    expect(neonBootstrapSource).toContain("NEON_REVOKE_OTHER_DATABASE_PUBLIC_CONNECT");
+    expect(neonBootstrapSource).toContain("NEON_PUBLIC_SECURITY_DEFINER");
+    expect(neonBootstrapSource).toContain("NEON_LEASE_ROLE_DRIFT");
+    expect(neonBootstrapSource).toContain("expectedPlanHash");
+    expect(neonBootstrapSource).toContain("expectedReadyHash");
+    expect(neonBootstrapSource).toContain('state: "preflight"');
+    expect(neonBootstrapSource).toContain("publicAclApproved");
+    expect(neonBootstrapSource).toContain("productionApproved");
+    expect(neonBootstrapSource).toContain("negative write smoke failed");
+    expect(neonBootstrapSource).toContain("rolled back");
+    expect(neonBootstrapSource).toContain("NeonBootstrapRepairRequiredError");
+    expect(neonBootstrapRouteSource).toContain("openProviderDiscoveryProof");
+    expect(neonBootstrapRouteSource).toContain("sealNeonBootstrapPlan");
+    expect(neonBootstrapRouteSource).toContain("openNeonBootstrapPlan");
+    expect(neonBootstrapRouteSource).toContain("recordProviderDiscoveryReceipt");
+    expect(neonBootstrapRouteSource).toContain("provider.neon.bootstrap_needs_repair");
+    expect(neonBootstrapRouteSource).toContain("recordBootstrapAudit");
+    expect(neonBootstrapRouteSource).toContain(
+      'authorization.role !== "admin" && authorization.role !== "owner"',
+    );
+    expect(providerResourcesRouteSource).toContain("canBootstrapNeon");
+    expect(providerImportProjectionSource).toContain(
+      '(provider !== "neon" && item.production === false)',
+    );
+    expect(providerAccessDomainSource).toContain("parseNeonBootstrapPreflight");
+    expect(providerAccessDomainSource).toContain("parseNeonBootstrapApply");
+    expect(providerAccessControllerSource).toContain('action: "preflight"');
+    expect(providerAccessControllerSource).toContain('action: "apply"');
+    expect(providerAccessControllerSource).toContain("pendingNeonApplyRef");
+    expect(providerResourcePickerSource).toContain("Neon 최소권한 준비");
+    expect(providerResourcePickerSource).toContain("표시된 PUBLIC 권한 회수를 승인합니다");
+    expect(providerResourcePickerSource).not.toMatch(/setup terminal|SQL 입력/);
     expect(neonSource).toContain("NeonLeaseCleanupRequiredError");
     expect(providerLeaseIssuanceSource).toContain(
       "error instanceof NeonLeaseCleanupRequiredError",

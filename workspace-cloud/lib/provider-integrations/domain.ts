@@ -114,6 +114,7 @@ export function discoveredProviderResource(input: {
     resource = parseNeonResource({
       project: input.selection.project,
       branch: input.selection.branch,
+      databaseId: input.item.id,
       database: input.item.value,
       engine: "postgres",
     });

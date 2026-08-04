@@ -25,6 +25,10 @@ function bootstrapContext(setupSessionId: string) {
   return `dopedb:provider-bootstrap:${setupSessionId}`;
 }
 
+function neonBootstrapContext(integrationId: string) {
+  return `dopedb:neon-bootstrap-plan:${integrationId}`;
+}
+
 export function sealProviderCredential(integrationId: string, value: unknown): string {
   return sealEnvelope(key(), JSON.stringify(value), context(integrationId));
 }
@@ -63,5 +67,28 @@ export function openProviderBootstrapTicket<T>(
   envelope: string,
 ): T {
   const plaintext = openEnvelope(key(), envelope, bootstrapContext(setupSessionId));
+  return JSON.parse(plaintext) as T;
+}
+
+export function sealNeonBootstrapPlan(
+  integrationId: string,
+  value: unknown,
+): string {
+  return sealEnvelope(
+    key(),
+    JSON.stringify(value),
+    neonBootstrapContext(integrationId),
+  );
+}
+
+export function openNeonBootstrapPlan<T>(
+  integrationId: string,
+  envelope: string,
+): T {
+  const plaintext = openEnvelope(
+    key(),
+    envelope,
+    neonBootstrapContext(integrationId),
+  );
   return JSON.parse(plaintext) as T;
 }

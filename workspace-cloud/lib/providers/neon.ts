@@ -412,7 +412,7 @@ function sqlClient(connectionUri: string) {
   });
 }
 
-type NeonSqlClient = ReturnType<typeof sqlClient>;
+export type NeonSqlClient = ReturnType<typeof sqlClient>;
 
 class NeonBoundaryError extends Error {
   constructor(message: string) {
@@ -827,12 +827,43 @@ async function resolveNeonResourceIdentity(
     resource.project,
     resource.branch,
   );
-  if (!databases.some((item) => item.value === resource.database)) {
+  const legacyDatabaseAuthority = resource.databaseId === resource.database
+    && !/^[0-9]{1,19}$/.test(resource.databaseId);
+  const database = databases.find((item) => (
+    legacyDatabaseAuthority
+      ? item.value === resource.database
+      : item.id === resource.databaseId
+  ));
+  if (!database) {
     throw new ProviderRequestError("neon", "Neon database was not found", 404);
   }
+  const liveResource: NeonResource = {
+    ...resource,
+    databaseId: database.id,
+    database: database.name,
+  };
   return {
     branch,
-    connection: await ownerConnection(credential, resource),
+    database,
+    resource: liveResource,
+    connection: await ownerConnection(credential, liveResource),
+  };
+}
+
+/** Server-only owner session used by the approval-gated bootstrap executor. */
+export async function openNeonBootstrapTarget(
+  credential: NeonCredential,
+  resource: NeonResource,
+) {
+  const identity = await resolveNeonResourceIdentity(credential, resource);
+  return {
+    branch: identity.branch,
+    database: identity.database,
+    resource: identity.resource,
+    owner: identity.connection.owner,
+    endpointHost: identity.connection.endpoint.host,
+    sql: sqlClient(identity.connection.connectionUri),
+    providerAuditId: `${identity.branch.value}:${identity.database.id}`,
   };
 }
 
@@ -841,34 +872,38 @@ export async function inspectNeonResourceIdentity(
   resource: NeonResource,
 ) {
   const identity = await resolveNeonResourceIdentity(credential, resource);
-  return { providerAuditId: identity.branch.value };
+  return {
+    providerAuditId: `${identity.branch.value}:${identity.database.id}`,
+  };
 }
 
 export async function validateNeonResource(
   credential: NeonCredential,
   resource: NeonResource,
   accessMode: ManagedAccessMode = "read",
+  expectedProduction?: boolean,
 ) {
-  const { branch, connection } = await resolveNeonResourceIdentity(
-    credential,
-    resource,
-  );
+  const {
+    branch,
+    connection,
+    database,
+    resource: liveResource,
+  } = await resolveNeonResourceIdentity(credential, resource);
   if (
     branch.ready !== true
-    // Neon marks default/protected branches as sensitive. Unknown is not a
-    // development classification and must not create a database credential.
-    || branch.production !== false
+    || (branch.production === true && expectedProduction !== true)
+    || (branch.production === "unknown" && expectedProduction === undefined)
   ) {
     throw new ProviderRequestError(
       "neon",
-      "Neon branch is not an explicitly ready non-production target",
+      "Neon branch readiness or production classification changed",
       409,
     );
   }
   try {
     await assertNeonManagedBoundary(
       sqlClient(connection.connectionUri),
-      resource,
+      liveResource,
       accessMode,
       connection.owner,
     );
@@ -882,25 +917,40 @@ export async function validateNeonResource(
       502,
     );
   }
-  return { providerAuditId: branch.value };
+  return { providerAuditId: `${branch.value}:${database.id}` };
 }
 
 export async function issueNeonLease(input: {
   credential: NeonCredential;
   resource: NeonResource;
   accessMode: ManagedAccessMode;
+  production: boolean;
   role: string;
 }): Promise<ManagedProviderLease> {
   const password = randomBytes(32).toString("base64url");
   const passwordVerifier = createNeonScramVerifier(password);
   const expiresAt = new Date(Date.now() + NEON_LEASE_SECONDS * 1_000).toISOString();
-  const connection = await ownerConnection(input.credential, input.resource);
+  const {
+    branch,
+    connection,
+    resource,
+  } = await resolveNeonResourceIdentity(input.credential, input.resource);
+  if (
+    branch.ready !== true
+    || (branch.production === true && input.production !== true)
+  ) {
+    throw new ProviderRequestError(
+      "neon",
+      "Neon branch readiness or production classification changed",
+      409,
+    );
+  }
   const sql = sqlClient(connection.connectionUri);
   let roleCreated = false;
   try {
     await assertNeonManagedBoundary(
       sql,
-      input.resource,
+      resource,
       input.accessMode,
       connection.owner,
     );
@@ -910,8 +960,8 @@ export async function issueNeonLease(input: {
       passwordVerifier,
       expiresAt,
       accessMode: input.accessMode,
-      database: input.resource.database,
-      schemas: input.resource.schemas,
+      database: resource.database,
+      schemas: resource.schemas,
     });
     await sql.transaction(
       statements.map((statement) => sql.query(statement)),
@@ -920,7 +970,7 @@ export async function issueNeonLease(input: {
     await assertNeonRolePrivileges(
       sql,
       input.role,
-      input.resource,
+      resource,
       input.accessMode,
     );
   } catch (error) {
@@ -929,7 +979,7 @@ export async function issueNeonLease(input: {
         await revokeNeonRoleWithClient(
           sql,
           input.role,
-          input.resource,
+          resource,
           connection.owner,
         );
       } catch {
@@ -950,7 +1000,7 @@ export async function issueNeonLease(input: {
     externalCredentialKind: "role",
     host: connection.endpoint.host,
     port: 5432,
-    database: input.resource.database,
+    database: resource.database,
     username: input.role,
     password,
     sslmode: "verify-full",
@@ -966,13 +1016,13 @@ export async function revokeNeonLease(
   if (!/^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$/.test(role)) {
     throw new ProviderRequestError("neon", "Invalid Neon lease role", 400);
   }
-  const connection = await ownerConnection(credential, resource);
+  const identity = await resolveNeonResourceIdentity(credential, resource);
   try {
     await revokeNeonRoleWithClient(
-      sqlClient(connection.connectionUri),
+      sqlClient(identity.connection.connectionUri),
       role,
-      resource,
-      connection.owner,
+      identity.resource,
+      identity.connection.owner,
     );
   } catch {
     throw new ProviderRequestError("neon", "Neon database role could not be revoked", 502);

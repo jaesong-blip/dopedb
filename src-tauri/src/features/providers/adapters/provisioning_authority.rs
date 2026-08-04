@@ -27,6 +27,7 @@ pub(crate) enum AuthorizedProvisioningResource {
     Neon {
         project: String,
         branch: String,
+        database_id: String,
         database: String,
         schemas: Vec<String>,
     },
@@ -249,6 +250,8 @@ struct RemoteCapabilityManifest {
 struct NeonResource {
     project: String,
     branch: String,
+    #[serde(rename = "databaseId")]
+    database_id: String,
     database: String,
     engine: String,
     schemas: Vec<String>,
@@ -409,16 +412,17 @@ fn parse_resource(
             if value.engine != "postgres"
                 || !segment(&value.project, 128)
                 || !segment(&value.branch, 128)
+                || !database(&value.database_id)
                 || !database(&value.database)
                 || value.schemas.len() > 128
                 || value.schemas.iter().any(|schema| !database(schema))
-                || production
             {
                 return Err(invalid_response());
             }
             Ok(AuthorizedProvisioningResource::Neon {
                 project: value.project,
                 branch: value.branch,
+                database_id: value.database_id,
                 database: value.database,
                 schemas: value.schemas,
             })
@@ -611,6 +615,7 @@ pub(crate) fn assert_target_projection_contract() {
             "resource": {
                 "project": "quiet-sun-12345678",
                 "branch": "br-main-12345678",
+                "databaseId": "834686",
                 "database": connection.profile.database,
                 "engine": "postgres",
                 "schemas": ["public"]
@@ -625,7 +630,7 @@ pub(crate) fn assert_target_projection_contract() {
             "safeMigrations": null,
             "authorityExpiresAt": expires
         },
-        "verification": {"providerAuditId": "br-main-12345678"}
+        "verification": {"providerAuditId": "br-main-12345678:834686"}
     });
     let parsed = parse_target_response(&serde_json::to_vec(&body).unwrap(), &connection).unwrap();
     assert_eq!(parsed.provider, LocalProvider::Neon);

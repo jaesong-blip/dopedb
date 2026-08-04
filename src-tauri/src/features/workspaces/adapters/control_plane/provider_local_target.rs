@@ -148,7 +148,14 @@ pub(super) fn provider_local_target_response(
         "neon" => {
             let object = exact_object(
                 target.target,
-                &["project", "branch", "database", "engine", "schemas"],
+                &[
+                    "project",
+                    "branch",
+                    "databaseId",
+                    "database",
+                    "engine",
+                    "schemas",
+                ],
             )
             .ok_or_else(|| {
                 AppError::Network(
@@ -177,6 +184,16 @@ pub(super) fn provider_local_target_response(
                 .to_owned();
             let database = object
                 .get("database")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| target_component(value, 512))
+                .ok_or_else(|| {
+                    AppError::Network(
+                        "provider-local target authority returned invalid metadata".into(),
+                    )
+                })?
+                .to_owned();
+            let database_id = object
+                .get("databaseId")
                 .and_then(serde_json::Value::as_str)
                 .filter(|value| target_component(value, 512))
                 .ok_or_else(|| {
@@ -217,6 +234,7 @@ pub(super) fn provider_local_target_response(
                 ProviderLocalResource::Neon {
                     project,
                     branch,
+                    database_id,
                     database,
                     schemas,
                 },

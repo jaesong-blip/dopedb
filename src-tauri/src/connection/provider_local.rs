@@ -41,6 +41,7 @@ pub(crate) enum ProviderLocalResource {
     Neon {
         project: String,
         branch: String,
+        database_id: String,
         database: String,
         schemas: Vec<String>,
     },
@@ -98,12 +99,14 @@ impl ProviderLocalTarget {
             ProviderLocalResource::Neon {
                 project,
                 branch,
+                database_id,
                 database,
                 schemas,
             } => {
                 identity.push_str("neon;");
                 append(&mut identity, project);
                 append(&mut identity, branch);
+                append(&mut identity, database_id);
                 append(&mut identity, database);
                 for schema in schemas {
                     append(&mut identity, schema);

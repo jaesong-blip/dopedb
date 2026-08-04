@@ -36,11 +36,20 @@ export function ProviderResourcePicker({
     selectedIntegration,
     selectedProvider,
     resourceComplete,
+    neonEnvironmentClassification,
+    neonBootstrap,
+    neonPublicAclApproved,
+    neonProductionApproved,
+    applyNeonBootstrap,
+    classifyNeonEnvironment,
     importDiscoveredResource,
+    preflightNeonBootstrap,
     resetResources,
     selectResource,
     setSelectedConnectionId,
     setSelectedIntegrationId,
+    setNeonPublicAclApproved,
+    setNeonProductionApproved,
   } = controller;
   const [step, setStep] = useState(1);
   const [intent, setIntent] = useState<ImportIntent>("");
@@ -53,6 +62,28 @@ export function ProviderResourcePicker({
         (item) => item.value === selection[finalLevel.key],
       )
     : null;
+  const isNeon = selectedProvider?.id === "neon";
+  const branchLevel = isNeon
+    ? selectedProvider.resourceLevels.find((level) => level.kind === "branches")
+    : null;
+  const selectedBranch = branchLevel
+    ? resourceOptions[branchLevel.key]?.find(
+        (item) => item.value === selection[branchLevel.key],
+      )
+    : null;
+  const neonEnvironmentReady = !isNeon
+    || selectedBranch?.production === true
+    || selectedBranch?.production === false
+    || neonEnvironmentClassification !== "";
+  const neonBootstrapReady = Boolean(
+    !isNeon
+    || (
+      neonBootstrap.report
+      && neonBootstrap.receipt
+      && neonBootstrap.receiptExpiresAt
+      && Date.parse(neonBootstrap.receiptExpiresAt) > Date.now()
+    ),
+  );
   const targetLabel = selectedProvider
     ? selectedProvider.resourceLevels
       .map((level) => selection[level.key])
@@ -113,13 +144,19 @@ export function ProviderResourcePicker({
         </ol>
       </header>
 
-      {resourcePending || mutation.startsWith("import:") ? (
+      {resourcePending
+      || mutation.startsWith("import:")
+      || mutation.startsWith("neon:") ? (
         <div
           className="tw:h-1 tw:overflow-hidden tw:bg-surface-inset"
           role="progressbar"
           aria-label={
             mutation.startsWith("import:")
               ? "공유 DB를 등록하는 중"
+              : mutation === "neon:preflight"
+                ? "Neon 최소권한 사전 점검 중"
+                : mutation === "neon:apply"
+                  ? "Neon 최소권한 설정과 검증 중"
               : "공급자 리소스를 불러오는 중"
           }
         >
@@ -179,6 +216,7 @@ export function ProviderResourcePicker({
                   resourceOptions[level.key] ?? [],
                   isFinalLeaf,
                   selectedProvider.supportedEngines,
+                  selectedProvider.id === "neon",
                 );
                 const previous =
                   index === 0
@@ -200,6 +238,8 @@ export function ProviderResourcePicker({
                           {item.name}
                           {item.production === true
                             ? " · 운영"
+                            : item.production === "unknown" && isFinalLeaf
+                              ? " · 환경 확인 필요"
                             : item.ready === false
                               ? " · 준비 안 됨"
                               : ""}
@@ -322,10 +362,200 @@ export function ProviderResourcePicker({
                 멤버별 자동 회전 · 기본 읽기 · 관리자 쓰기 정책
               </dd>
             </dl>
-            {finalResource?.production === true ? (
+            {(isNeon
+              ? neonBootstrap.report?.production === true
+                || selectedBranch?.production === true
+              : finalResource?.production === true) ? (
               <p className="tw:m-0 tw:border tw:border-danger/40 tw:bg-danger/5 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-danger">
                 운영 DB입니다. 완료 시 관리자 승인이 감사 기록에 남습니다.
               </p>
+            ) : null}
+            {isNeon ? (
+              <div className="tw:grid tw:gap-3 tw:border-t tw:border-border tw:pt-4">
+                <div className="tw:grid tw:gap-1">
+                  <strong className="tw:text-xs tw:text-foreground">
+                    Neon 최소권한 준비
+                  </strong>
+                  <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    DB를 등록하기 전에 공개 권한과 소유권 경계를 점검합니다.
+                    필요한 변경만 보여주고, 승인 후 적용·읽기 검증·쓰기 차단
+                    검증을 한 번에 실행합니다.
+                  </p>
+                </div>
+
+                {selectedBranch?.production === "unknown"
+                || selectedBranch?.production === undefined ? (
+                  <ControlField label="브랜치 환경">
+                    <ControlSelect
+                      value={neonEnvironmentClassification}
+                      onChange={(event) => {
+                        classifyNeonEnvironment(
+                          event.target.value as "" | "development" | "production",
+                        );
+                      }}
+                      disabled={mutation !== ""}
+                    >
+                      <option value="">환경 선택</option>
+                      <option value="development">개발</option>
+                      <option value="production">운영</option>
+                    </ControlSelect>
+                  </ControlField>
+                ) : (
+                  <p
+                    className="tw:m-0 tw:border tw:border-border tw:bg-surface-inset tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-muted-foreground tw:data-[production=true]:border-danger/40 tw:data-[production=true]:bg-danger/5 tw:data-[production=true]:text-danger"
+                    data-production={selectedBranch.production === true}
+                  >
+                    {selectedBranch.production === true
+                      ? "Neon에서 보호된 운영 브랜치로 확인했습니다. 개발 환경으로 낮출 수 없습니다."
+                      : "Neon에서 비보호 개발 브랜치로 확인했습니다."}
+                  </p>
+                )}
+
+                {!neonBootstrap.report ? (
+                  <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border tw:border-border tw:bg-surface-inset tw:p-3 tw:max-[520px]:grid">
+                    <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                      아직 DB 권한을 변경하지 않습니다. 먼저 읽기 전용 점검 결과를
+                      확인하세요.
+                    </p>
+                    <ControlButton
+                      tone="primary"
+                      onClick={() => void preflightNeonBootstrap()}
+                      disabled={!neonEnvironmentReady || mutation !== ""}
+                    >
+                      {mutation === "neon:preflight" ? "점검 중" : "사전 점검"}
+                    </ControlButton>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      className="tw:grid tw:gap-1 tw:border tw:border-border tw:bg-surface-inset tw:p-3 tw:data-[status=blocked]:border-danger/40 tw:data-[status=blocked]:bg-danger/5 tw:data-[status=approvalRequired]:border-warning/40 tw:data-[status=approvalRequired]:bg-warning/10 tw:data-[status=readyToApply]:border-success/40 tw:data-[status=readyToApply]:bg-success/10"
+                      data-status={neonBootstrap.report.status}
+                    >
+                      <strong className="tw:text-xs tw:text-foreground">
+                        {neonBootstrap.report.status === "blocked"
+                          ? "자동 설정할 수 없는 항목이 있습니다"
+                          : neonBootstrap.report.status === "approvalRequired"
+                            ? "승인할 변경이 있습니다"
+                            : "최소권한 경계를 적용할 수 있습니다"}
+                      </strong>
+                      <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                        {neonBootstrap.report.canRollback
+                          ? "표시된 자동 변경은 검증 실패 시 원래 상태로 되돌립니다."
+                          : "자동 복구할 수 없는 변경이 있어 적용하지 않습니다."}
+                      </small>
+                    </div>
+
+                    <ul className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0">
+                      {neonBootstrap.report.findings.map((item, index) => (
+                        <li
+                          className="tw:grid tw:gap-2 tw:border tw:border-border tw:bg-surface tw:p-3 tw:data-[level=blocker]:border-danger/40 tw:data-[level=change]:border-warning/40 tw:data-[level=verified]:border-success/40"
+                          data-level={item.level}
+                          key={`${item.code}:${item.target}:${index}`}
+                        >
+                          <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[520px]:grid">
+                            <span className="tw:grid tw:gap-1">
+                              <strong className="tw:text-xs tw:text-foreground">
+                                {item.description}
+                              </strong>
+                              <small className="tw:text-2xs tw:text-muted-foreground">
+                                {item.target}
+                              </small>
+                            </span>
+                            <code className="tw:text-2xs tw:text-muted-foreground">
+                              {item.code}
+                            </code>
+                          </div>
+                          <span className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] tw:items-center tw:gap-2 tw:text-2xs tw:max-[520px]:grid-cols-1">
+                            <span className="tw:min-w-0 tw:break-words tw:text-muted-foreground">
+                              {item.before}
+                            </span>
+                            <span className="tw:text-primary tw:max-[520px]:hidden" aria-hidden="true">
+                              →
+                            </span>
+                            <span className="tw:min-w-0 tw:break-words tw:text-foreground">
+                              {item.after}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    {neonBootstrap.report.requiresPublicAclApproval ? (
+                      <label className="tw:grid tw:grid-cols-[16px_minmax(0,1fr)] tw:items-start tw:gap-2 tw:border tw:border-warning/40 tw:bg-warning/10 tw:p-3">
+                        <input
+                          className="tw:mt-0.5 tw:size-4 tw:accent-warning"
+                          type="checkbox"
+                          checked={neonPublicAclApproved}
+                          disabled={mutation !== "" || neonBootstrapReady}
+                          onChange={(event) => setNeonPublicAclApproved(event.target.checked)}
+                        />
+                        <span className="tw:grid tw:gap-1 tw:text-xs tw:text-foreground">
+                          <strong>표시된 PUBLIC 권한 회수를 승인합니다</strong>
+                          <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                            같은 브랜치의 다른 사용자 접근에 영향을 줄 수 있으며,
+                            검증 실패 시 표시된 역연산으로 복구합니다.
+                          </small>
+                        </span>
+                      </label>
+                    ) : null}
+
+                    {neonBootstrap.report.requiresProductionApproval ? (
+                      <label className="tw:grid tw:grid-cols-[16px_minmax(0,1fr)] tw:items-start tw:gap-2 tw:border tw:border-danger/40 tw:bg-danger/10 tw:p-3">
+                        <input
+                          className="tw:mt-0.5 tw:size-4 tw:accent-danger"
+                          type="checkbox"
+                          checked={neonProductionApproved}
+                          disabled={mutation !== "" || neonBootstrapReady}
+                          onChange={(event) => setNeonProductionApproved(event.target.checked)}
+                        />
+                        <span className="tw:grid tw:gap-1 tw:text-xs tw:text-danger">
+                          <strong>운영 DB의 권한 변경과 검증 실행을 승인합니다</strong>
+                          <small className="tw:text-2xs tw:leading-body">
+                            관리자 승인이 계획 해시와 함께 감사 기록에 남습니다.
+                          </small>
+                        </span>
+                      </label>
+                    ) : null}
+
+                    {neonBootstrapReady ? (
+                      <p
+                        className="tw:m-0 tw:border tw:border-success/40 tw:bg-success/10 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-success"
+                        role="status"
+                      >
+                        설정과 검증을 완료했습니다. 읽기 연결은 성공했고 쓰기
+                        차단도 확인했습니다. 이제 공유 DB를 만들 수 있습니다.
+                      </p>
+                    ) : (
+                      <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
+                        <ControlButton
+                          onClick={() => void preflightNeonBootstrap()}
+                          disabled={mutation !== ""}
+                        >
+                          다시 점검
+                        </ControlButton>
+                        <ControlButton
+                          tone="primary"
+                          onClick={() => void applyNeonBootstrap()}
+                          disabled={
+                            mutation !== ""
+                            || neonBootstrap.report.status === "blocked"
+                            || (
+                              neonBootstrap.report.requiresPublicAclApproval
+                              && !neonPublicAclApproved
+                            )
+                            || (
+                              neonBootstrap.report.requiresProductionApproval
+                              && !neonProductionApproved
+                            )
+                          }
+                        >
+                          {mutation === "neon:apply" ? "설정·검증 중" : "승인 후 설정·검증"}
+                        </ControlButton>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             ) : null}
           </>
         ) : null}
@@ -360,7 +590,11 @@ export function ProviderResourcePicker({
         ) : (
           <ControlButton
             tone="primary"
-            disabled={!resourceComplete || mutation !== ""}
+            disabled={
+              !resourceComplete
+              || !neonBootstrapReady
+              || mutation !== ""
+            }
             onClick={() => void importDiscoveredResource()}
           >
             {mutation.startsWith("import:")

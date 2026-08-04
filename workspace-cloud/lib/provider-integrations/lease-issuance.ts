@@ -49,6 +49,7 @@ import { cleanupExpiredManagedLeases } from "./lease-cleanup";
 export async function validateManagedProviderResource(input: {
   integration: ActiveProviderIntegration;
   resource: ManagedProviderResource;
+  production?: boolean;
   oidcToken?: string | null;
 }) {
   switch (input.integration.provider) {
@@ -61,6 +62,8 @@ export async function validateManagedProviderResource(input: {
       return validateNeonResource(
         await verifiedNeonCredential(input.integration),
         input.resource as NeonResource,
+        "read",
+        input.production,
       );
     case "gcpCloudSql":
       return validateGcpCloudSqlResource(
@@ -210,11 +213,13 @@ export async function issueManagedLease(input: {
           credential,
           input.resource as NeonResource,
           input.accessMode,
+          input.production,
         );
         lease = await issueNeonLease({
           credential,
           resource: input.resource as NeonResource,
           accessMode: input.accessMode,
+          production: input.production,
           role: neonRoleForLease(input.userId, leaseId),
         });
         break;

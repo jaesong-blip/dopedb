@@ -157,6 +157,7 @@ export async function POST(request: Request, context: RouteContext) {
             await verifiedNeonCredential(integration),
             resource as NeonResource,
             "write",
+            initial.production,
           )
         : await validateGcpCloudSqlResource(
           gcpCredential(integration),

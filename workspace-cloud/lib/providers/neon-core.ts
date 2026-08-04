@@ -116,6 +116,7 @@ export function parseNeonCredential(value: unknown): NeonCredential {
 export type NeonResource = {
   project: string;
   branch: string;
+  databaseId: string;
   database: string;
   engine: "postgres";
   schemas: string[];
@@ -180,10 +181,15 @@ export function parseNeonResource(value: unknown): NeonResource {
     throw new Error("Neon resource is required");
   }
   const body = value as Record<string, unknown>;
+  const legacyDatabaseId = body.databaseId === undefined;
   if (
     !neonSegment(body.project)
     || !neonSegment(body.branch)
     || !neonDatabaseName(body.database)
+    || (!legacyDatabaseId && (
+      typeof body.databaseId !== "string"
+      || !/^[0-9]{1,19}$/.test(body.databaseId)
+    ))
     || body.engine !== "postgres"
   ) {
     throw new Error("Invalid Neon resource");
@@ -191,6 +197,9 @@ export function parseNeonResource(value: unknown): NeonResource {
   return {
     project: body.project,
     branch: body.branch,
+    // Existing encrypted resources predate stable database IDs. They remain
+    // readable by their exact old name and are upgraded on the next import.
+    databaseId: legacyDatabaseId ? body.database : body.databaseId as string,
     database: body.database,
     engine: "postgres",
     schemas: neonSchemas(body.schemas),

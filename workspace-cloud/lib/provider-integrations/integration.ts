@@ -328,14 +328,14 @@ export async function discoverProviderResources(input: {
       ) {
         const branches = await listNeonBranches(credential, selection.project);
         const branch = branches.find((item) => item.value === selection.branch);
-        if (!branch || branch.production !== false || branch.ready !== true) {
-          throw new ProviderRequestError("neon", "Production provider resources cannot be imported", 409);
+        if (!branch || branch.ready !== true) {
+          throw new ProviderRequestError("neon", "Neon branch is not ready", 409);
         }
         return boundedDiscoveryResults(await listNeonDatabases(
           credential,
           selection.project,
           selection.branch,
-        )).map((item) => ({ ...item, production: false }));
+        )).map((item) => ({ ...item, production: branch.production }));
       }
       break;
     }

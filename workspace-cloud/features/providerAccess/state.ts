@@ -11,12 +11,14 @@ import type {
   GcpSetupPermissionCheck,
   Integration,
   ManagedConnection,
+  NeonBootstrapState,
   NeonConfiguration,
+  NeonEnvironmentClassification,
   Provider,
   Resource,
   SharedConnection,
 } from "./domain";
-import { emptyNeon } from "./domain";
+import { emptyNeon, emptyNeonBootstrap } from "./domain";
 
 export type ProviderAccessState = {
   providers: Provider[];
@@ -29,6 +31,10 @@ export type ProviderAccessState = {
   resourceOptions: Record<string, Resource[]>;
   setupProviderId: string;
   neonConfiguration: NeonConfiguration;
+  neonEnvironmentClassification: NeonEnvironmentClassification;
+  neonBootstrap: NeonBootstrapState;
+  neonPublicAclApproved: boolean;
+  neonProductionApproved: boolean;
   gcpSetupInventory: GcpSetupInventory | null;
   gcpSetupInstances: GcpSetupInstance[];
   selectedGcpProjectId: string;
@@ -65,6 +71,10 @@ export const initialProviderAccessState: ProviderAccessState = {
   resourceOptions: {},
   setupProviderId: "",
   neonConfiguration: emptyNeon,
+  neonEnvironmentClassification: "",
+  neonBootstrap: emptyNeonBootstrap,
+  neonPublicAclApproved: false,
+  neonProductionApproved: false,
   gcpSetupInventory: null,
   gcpSetupInstances: [],
   selectedGcpProjectId: "",

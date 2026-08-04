@@ -40,34 +40,48 @@ them through the unpooled URL with `pnpm workspace:migrate` from the repository 
 ## Neon managed access
 
 1. Create a **project-scoped organization API key** in Neon when the project belongs
-   to an organization. A personal key also works, but has a wider account blast radius.
+   to an organization. Neon does not currently publish a third-party OAuth client
+   registration contract for this use case. A personal key also works, but the UI
+   identifies its wider account blast radius and never calls this fallback one-click.
 2. In Workspace settings, choose Neon, enter the key and optional organization ID,
-   and select project → branch → database.
-3. DopeDB retrieves an owner connection only on the server, creates a unique login
-   role with a 15-minute password validity, and grants that role only `CONNECT` plus
-   current table/sequence privileges in an explicit schema allowlist (`public` by
-   default). It does not use the Neon API role endpoint because API-created roles
-   inherit `neon_superuser`.
+   and select project → branch → database. Protected branches are always production;
+   default or otherwise unclassified branches require an Admin/Owner classification.
+3. Run the read-only preflight. It returns redacted finding codes and exact before/after
+   descriptions for the selected database, other database `PUBLIC CONNECT`, allowed
+   schema creation, ownership, current/future object grants, public
+   `SECURITY DEFINER` functions, and DopeDB marker/lease-role drift. Raw ACL SQL and
+   owner credentials never reach the browser.
+4. Review and explicitly approve any `PUBLIC` ACL changes and, independently, any
+   production target. DopeDB applies only the sealed plan hash. Approved statements
+   run transactionally, their exact inverse is retained for rollback, and a changed
+   target forces a new preflight instead of silently broadening the plan.
+5. DopeDB independently revalidates the Provider target and database boundary, creates
+   a temporary 15-minute read role, proves a read succeeds and a write fails, removes
+   that role, and only then issues the short-lived import receipt. A failed verification
+   rolls back approved ACL changes. Cleanup or rollback ambiguity becomes a redacted
+   `bootstrap_needs_repair` audit event rather than Ready.
 
-Managed mode fails closed unless the selected database is the branch's only
-PUBLIC-connectable non-template database. Use an isolated branch, or revoke
-`PUBLIC CONNECT` on every other database first. PostgreSQL grants `TEMPORARY` on
-new databases to `PUBLIC` by default; remove both database-level object-creation
-paths on the selected database before enabling managed access:
+The automatic plan may revoke database `CREATE`/`TEMPORARY`, allowed-schema
+`PUBLIC CREATE`, and other databases' `PUBLIC CONNECT`; these can affect existing
+clients and therefore never run without the dedicated approval. Ownership conflicts,
+ungrantable objects, public access outside the schema allowlist, public object writes,
+and public `SECURITY DEFINER` functions remain blockers for a DBA or a dedicated
+development branch. The UI deliberately provides no arbitrary SQL/setup terminal.
+Reserved provider schemas (`neon`, `neon_auth`, `pg_*`, and
+`information_schema`) cannot be selected.
 
-```sql
-REVOKE CREATE, TEMPORARY ON DATABASE "DATABASE_NAME" FROM PUBLIC;
-```
+Imported Neon connections always begin read-only, including explicitly approved
+production targets. Production approval authorizes preparation and read access only;
+it does not turn on a write capability. Database numeric ID and display name are
+stored separately, so a rename cannot silently redirect authority to a different
+database. Every new lease rechecks that stable ID, branch readiness, environment
+classification, owner boundary, current object ACL, and future/default privileges.
 
-DopeDB verifies the effective ACL including PostgreSQL's implicit default when
-`datacl` is null. It rejects `PUBLIC CREATE` because that can create a schema
-outside the allowlist, and rejects `PUBLIC TEMPORARY` because even a read lease
-could otherwise perform unscoped temporary writes. Reserved provider schemas
-(`neon`, `neon_auth`, `pg_*`, and `information_schema`) cannot be selected. Every
-selected object must be grantable by the database owner, and selected schemas must not
-expose a `SECURITY DEFINER` function through `PUBLIC EXECUTE`. Managed mode also
-rejects PUBLIC schema/object privileges that would let the lease role escape the
-allowlist or exceed its read/write mode.
+DopeDB retrieves an owner connection only on the server and creates a unique login
+role with a 15-minute password validity. The role receives only `CONNECT` plus
+current/default table and sequence privileges in the explicit schema allowlist
+(`public` by default). It does not use the Neon API role endpoint because API-created
+roles inherit `neon_superuser`.
 
 The API key is envelope-encrypted at rest and never returned. Disconnecting DopeDB
 scrubs its encrypted copy; it intentionally does not delete a customer-owned Neon key

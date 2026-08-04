@@ -5,7 +5,10 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   canUseLocalProviderCredential,
   emptyNeon,
+  emptyNeonBootstrap,
   parseGcpSetupPermissionCheck,
+  parseNeonBootstrapApply,
+  parseNeonBootstrapPreflight,
   providerImportDisplayName,
   type GcpSetupInstance,
   type GcpSetupInventory,
@@ -41,6 +44,10 @@ export function useProviderAccess(
     resourceOptions,
     setupProviderId,
     neonConfiguration,
+    neonEnvironmentClassification,
+    neonBootstrap,
+    neonPublicAclApproved,
+    neonProductionApproved,
     gcpSetupInventory,
     gcpSetupInstances,
     selectedGcpProjectId,
@@ -67,6 +74,10 @@ export function useProviderAccess(
   const setResourceOptions = setField("resourceOptions");
   const setSetupProviderId = setField("setupProviderId");
   const setNeonConfiguration = setField("neonConfiguration");
+  const setNeonEnvironmentClassification = setField("neonEnvironmentClassification");
+  const setNeonBootstrap = setField("neonBootstrap");
+  const setNeonPublicAclApproved = setField("neonPublicAclApproved");
+  const setNeonProductionApproved = setField("neonProductionApproved");
   const setGcpSetupInventory = setField("gcpSetupInventory");
   const setGcpSetupInstances = setField("gcpSetupInstances");
   const setSelectedGcpProjectId = setField("selectedGcpProjectId");
@@ -83,6 +94,11 @@ export function useProviderAccess(
   const setMutation = setField("mutation");
   const setError = setField("error");
   const pendingImportRef = useRef<PendingProviderImport | null>(null);
+  const pendingNeonApplyRef = useRef<{
+    integrationId: string;
+    planHash: string;
+    body: string;
+  } | null>(null);
 
   const selectedConnection = useMemo(
     () => connections.find((item) => item.id === selectedConnectionId) ?? null,
@@ -99,12 +115,21 @@ export function useProviderAccess(
     (item) => item.connectionId === selectedConnectionId,
   ) ?? null;
   const importReceipt = useMemo(() => {
+    if (selectedProvider?.id === "neon") {
+      return neonBootstrap.receipt || null;
+    }
     const finalLevel = selectedProvider?.resourceLevels.at(-1);
     if (!finalLevel) return null;
     return resourceOptions[finalLevel.key]?.find(
       (item) => item.value === selection[finalLevel.key],
     )?.receipt ?? null;
-  }, [resourceOptions, selectedProvider?.resourceLevels, selection]);
+  }, [
+    neonBootstrap.receipt,
+    resourceOptions,
+    selectedProvider?.id,
+    selectedProvider?.resourceLevels,
+    selection,
+  ]);
 
   useEffect(() => {
     const pending = pendingImportRef.current;
@@ -124,10 +149,19 @@ export function useProviderAccess(
     }
   }, [importReceipt, selectedConnection, selectedIntegrationId]);
 
+  const resetNeonBootstrap = useCallback(() => {
+    pendingNeonApplyRef.current = null;
+    setNeonEnvironmentClassification("");
+    setNeonBootstrap(emptyNeonBootstrap);
+    setNeonPublicAclApproved(false);
+    setNeonProductionApproved(false);
+  }, []);
+
   const resetResources = useCallback(() => {
     pendingImportRef.current = null;
     setSelection({});
     setResourceOptions({});
+    resetNeonBootstrap();
   }, []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -595,6 +629,7 @@ export function useProviderAccess(
 
   async function selectResource(levelIndex: number, value: string) {
     if (!selectedProvider || !selectedIntegrationId) return;
+    resetNeonBootstrap();
     const levels = selectedProvider.resourceLevels;
     const level = levels[levelIndex];
     const nextSelection = Object.fromEntries(
@@ -613,6 +648,207 @@ export function useProviderAccess(
     const rows = await discover(nextLevel, selectedIntegrationId, nextSelection);
     if (rows) {
       setResourceOptions((current) => ({ ...current, [nextLevel.key]: rows }));
+    }
+  }
+
+  function selectedNeonEnvironment() {
+    if (selectedProvider?.id !== "neon") return null;
+    const branchLevel = selectedProvider.resourceLevels.find(
+      (level) => level.kind === "branches",
+    );
+    const branch = branchLevel
+      ? resourceOptions[branchLevel.key]?.find(
+          (item) => item.value === selection[branchLevel.key],
+        )
+      : null;
+    if (branch?.production === true) return "production" as const;
+    if (branch?.production === false) return "development" as const;
+    return neonEnvironmentClassification || null;
+  }
+
+  function classifyNeonEnvironment(
+    value: "" | "development" | "production",
+  ) {
+    pendingImportRef.current = null;
+    pendingNeonApplyRef.current = null;
+    setNeonEnvironmentClassification(value);
+    setNeonBootstrap(emptyNeonBootstrap);
+    setNeonPublicAclApproved(false);
+    setNeonProductionApproved(false);
+    setError("");
+  }
+
+  async function preflightNeonBootstrap() {
+    if (
+      selectedProvider?.id !== "neon"
+      || !selectedIntegration
+      || mutation
+    ) return;
+    const finalLevel = selectedProvider.resourceLevels.at(-1)!;
+    const finalResource = resourceOptions[finalLevel.key]?.find(
+      (item) => item.value === selection[finalLevel.key],
+    );
+    const environment = selectedNeonEnvironment();
+    if (!finalResource?.selectionProof || finalResource.ready !== true) {
+      setError("Neon 데이터베이스를 다시 선택해 주세요.");
+      return;
+    }
+    if (!environment) {
+      setError("Neon 브랜치가 개발용인지 운영용인지 먼저 선택해 주세요.");
+      return;
+    }
+    setMutation("neon:preflight");
+    setError("");
+    pendingNeonApplyRef.current = null;
+    setNeonBootstrap(emptyNeonBootstrap);
+    setNeonPublicAclApproved(false);
+    setNeonProductionApproved(false);
+    try {
+      const response = await fetch(
+        `/api/v1/workspaces/${workspaceId}/provider-integrations/${
+          selectedIntegration.id
+        }/neon-bootstrap`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "preflight",
+            selectionProof: finalResource.selectionProof,
+            environment,
+          }),
+        },
+      ).catch(() => null);
+      if (!response?.ok) {
+        setError(await responseError(
+          response,
+          "Neon 최소권한 사전 점검을 완료하지 못했습니다.",
+        ));
+        return;
+      }
+      const parsed = parseNeonBootstrapPreflight(
+        await response.json().catch(() => null),
+      );
+      const projectLevel = selectedProvider.resourceLevels.find(
+        (level) => level.kind === "projects",
+      );
+      const branchLevel = selectedProvider.resourceLevels.find(
+        (level) => level.kind === "branches",
+      );
+      if (
+        !parsed
+        || !projectLevel
+        || !branchLevel
+        || parsed.report.target.project !== selection[projectLevel.key]
+        || parsed.report.target.branch !== selection[branchLevel.key]
+        || parsed.report.target.databaseId !== finalResource.id
+      ) {
+        setError("Neon 사전 점검 응답 형식을 확인하지 못했습니다.");
+        return;
+      }
+      setNeonBootstrap({
+        ...parsed,
+        receipt: "",
+        receiptExpiresAt: "",
+      });
+    } finally {
+      setMutation("");
+    }
+  }
+
+  async function applyNeonBootstrap() {
+    if (
+      selectedProvider?.id !== "neon"
+      || !selectedIntegration
+      || !neonBootstrap.report
+      || !neonBootstrap.plan
+      || mutation
+    ) return;
+    if (Date.parse(neonBootstrap.planExpiresAt) <= Date.now()) {
+      setNeonBootstrap(emptyNeonBootstrap);
+      setNeonPublicAclApproved(false);
+      setNeonProductionApproved(false);
+      setError("Neon 사전 점검이 만료되었습니다. 다시 점검해 주세요.");
+      return;
+    }
+    if (neonBootstrap.report.status === "blocked") {
+      setError("차단 항목을 해결한 뒤 사전 점검을 다시 실행해 주세요.");
+      return;
+    }
+    if (
+      neonBootstrap.report.requiresPublicAclApproval
+      && !neonPublicAclApproved
+    ) {
+      setError("표시된 PUBLIC 권한 변경을 먼저 승인해 주세요.");
+      return;
+    }
+    if (
+      neonBootstrap.report.requiresProductionApproval
+      && !neonProductionApproved
+    ) {
+      setError("운영 데이터베이스 변경을 먼저 승인해 주세요.");
+      return;
+    }
+    setMutation("neon:apply");
+    setError("");
+    try {
+      let pending = pendingNeonApplyRef.current;
+      if (
+        !pending
+        || pending.integrationId !== selectedIntegration.id
+        || pending.planHash !== neonBootstrap.report.planHash
+      ) {
+        pending = {
+          integrationId: selectedIntegration.id,
+          planHash: neonBootstrap.report.planHash,
+          body: JSON.stringify({
+            action: "apply",
+            plan: neonBootstrap.plan,
+            idempotencyKey: crypto.randomUUID(),
+            publicAclApproved: neonPublicAclApproved,
+            productionApproved: neonProductionApproved,
+          }),
+        };
+        pendingNeonApplyRef.current = pending;
+      }
+      const response = await fetch(
+        `/api/v1/workspaces/${workspaceId}/provider-integrations/${
+          selectedIntegration.id
+        }/neon-bootstrap`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: pending.body,
+        },
+      ).catch(() => null);
+      if (!response?.ok) {
+        setError(await responseError(
+          response,
+          "Neon 최소권한 설정과 검증을 완료하지 못했습니다.",
+        ));
+        return;
+      }
+      const parsed = parseNeonBootstrapApply(
+        await response.json().catch(() => null),
+      );
+      if (
+        !parsed
+        || parsed.report.planHash !== neonBootstrap.report.planHash
+        || parsed.report.target.project !== neonBootstrap.report.target.project
+        || parsed.report.target.branch !== neonBootstrap.report.target.branch
+        || parsed.report.target.databaseId !== neonBootstrap.report.target.databaseId
+      ) {
+        setError("Neon 설정·검증 응답 형식을 확인하지 못했습니다.");
+        return;
+      }
+      setNeonBootstrap((current) => ({
+        ...current,
+        report: parsed.report,
+        receipt: parsed.receipt,
+        receiptExpiresAt: parsed.receiptExpiresAt,
+      }));
+      pendingNeonApplyRef.current = null;
+    } finally {
+      setMutation("");
     }
   }
 
@@ -651,15 +887,30 @@ export function useProviderAccess(
     const finalResource = resourceOptions[finalLevel.key]?.find(
       (item) => item.value === selection[finalLevel.key],
     );
+    const isNeon = selectedProvider.id === "neon";
     if (
       !finalResource?.selectionProof
-      || (
+      || (!isNeon && (
         finalResource.production !== false
         && finalResource.production !== true
-      )
+      ))
       || finalResource.ready !== true
     ) return;
-    const productionApproved = finalResource.production === true;
+    if (
+      isNeon
+      && (
+        !neonBootstrap.report
+        || !neonBootstrap.receipt
+        || !neonBootstrap.receiptExpiresAt
+        || Date.parse(neonBootstrap.receiptExpiresAt) <= Date.now()
+      )
+    ) {
+      setError("Neon 설정 검증이 만료되었습니다. 사전 점검부터 다시 실행해 주세요.");
+      return;
+    }
+    const productionApproved = isNeon
+      ? neonBootstrap.report?.production === true
+      : finalResource.production === true;
     const replacementConnection =
       selectedConnection?.credentialMode === "member_local"
         ? selectedConnection
@@ -684,9 +935,12 @@ export function useProviderAccess(
     try {
       let receipt = importReceipt;
       if (
-        !receipt
-        || !finalResource.receiptExpiresAt
-        || Date.parse(finalResource.receiptExpiresAt) <= Date.now()
+        !isNeon
+        && (
+          !receipt
+          || !finalResource.receiptExpiresAt
+          || Date.parse(finalResource.receiptExpiresAt) <= Date.now()
+        )
       ) {
         const proof = finalResource.selectionProof;
         const receiptResponse = await fetch(
@@ -780,7 +1034,13 @@ export function useProviderAccess(
       && resourceOptions[finalResourceLevel.key]?.some(
         (item) => (
           item.value === selection[finalResourceLevel.key]
+          && item.ready === true
           && typeof item.selectionProof === "string"
+          && (
+            selectedProvider.id === "neon"
+            || item.production === false
+            || item.production === true
+          )
         ),
       ),
   );
@@ -814,6 +1074,10 @@ export function useProviderAccess(
     resourceOptions,
     setupProvider,
     neonConfiguration,
+    neonEnvironmentClassification,
+    neonBootstrap,
+    neonPublicAclApproved,
+    neonProductionApproved,
     gcpSetupId,
     gcpSetupInventory,
     gcpSetupInstances,
@@ -837,11 +1101,14 @@ export function useProviderAccess(
     currentResourceLabel,
     mayUseLocalProviderCredential,
     willReplaceConnection,
+    applyNeonBootstrap,
     beginConnect,
+    classifyNeonEnvironment,
     completeGcpSetup,
     connect,
     disconnect,
     importDiscoveredResource,
+    preflightNeonBootstrap,
     resetResources,
     reconnectGcpSetup,
     selectResource,
@@ -851,6 +1118,9 @@ export function useProviderAccess(
     setGcpIamRoleGrantApproved,
     setGcpProductionApproved,
     setGcpRestartApproved,
+    setNeonEnvironmentClassification,
+    setNeonPublicAclApproved,
+    setNeonProductionApproved,
     setNeonConfiguration,
     setSelectedConnectionId,
     setSelectedIntegrationId,

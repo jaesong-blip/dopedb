@@ -196,7 +196,7 @@ export async function loadProviderProvisioningTarget(input: {
     : sql`(
         ${workspaceProviderResource.redactedMetadata}->'production' = 'false'::jsonb
         OR (
-          ${workspaceProviderResource.provider} IN ('gcpCloudSql', 'planetScale')
+          ${workspaceProviderResource.provider} IN ('gcpCloudSql', 'planetScale', 'neon')
           AND ${workspaceProviderResource.redactedMetadata}->'production' = 'true'::jsonb
           AND (
             ${workspaceProviderResource.provider} <> 'planetScale'

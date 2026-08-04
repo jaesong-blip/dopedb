@@ -49,11 +49,20 @@ function parsePlanetScaleImportResource(value: unknown): PlanetScaleResource {
 }
 
 function parseNeonImportResource(value: unknown): NeonResource {
-  const body = exactRecord(value, ["project", "branch", "database", "engine", "schemas"]);
+  const record = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  const body = exactRecord(
+    value,
+    record && Object.hasOwn(record, "databaseId")
+      ? ["project", "branch", "databaseId", "database", "engine", "schemas"]
+      : ["project", "branch", "database", "engine", "schemas"],
+  );
   const normalized = parseNeonResource(body);
   return {
     project: normalized.project,
     branch: normalized.branch,
+    databaseId: normalized.databaseId,
     database: normalized.database,
     engine: "postgres",
     schemas: [...normalized.schemas],
@@ -176,12 +185,22 @@ export function providerImportProjection(
           : null,
       },
     };
+  } else if (provider === "neon") {
+    if (typeof options.production !== "boolean") {
+      throw new Error("Neon bootstrap classification is incomplete");
+    }
+    projected = {
+      ...projected,
+      metadata: {
+        ...projected.metadata,
+        production: options.production,
+      },
+    };
   }
   if (!options.writeAvailable) return projected;
   if (
     provider !== "gcpCloudSql"
     && provider !== "planetScale"
-    && provider !== "neon"
   ) {
     throw new Error("Managed write capability is not available for this provider");
   }
@@ -203,7 +222,7 @@ export function allowDiscoveryImport(
   // Provider-wide token scopes never override DopeDB's narrow import policy.
   return item.ready === true
     && (
-      item.production === false
+      (provider !== "neon" && item.production === false)
       || (provider === "gcpCloudSql" && item.production === true)
       || (
         provider === "planetScale"
