@@ -55,6 +55,8 @@ impl ProvisioningProcessTree {
                 prove_group_absent(self.process_group).await?;
                 self.armed = false;
             }
+            #[cfg(windows)]
+            self.job.prove_empty().await?;
             return Ok(status);
         }
         #[cfg(unix)]
@@ -99,6 +101,8 @@ impl ProvisioningProcessTree {
             prove_group_absent(self.process_group).await?;
             self.armed = false;
         }
+        #[cfg(windows)]
+        self.job.prove_empty().await?;
         Ok(status)
     }
 }
@@ -220,6 +224,44 @@ impl WindowsJob {
             Err(ProvisioningProcessFailure::CleanupFailed)
         } else {
             Ok(())
+        }
+    }
+
+    async fn prove_empty(&self) -> Result<(), ProvisioningProcessFailure> {
+        for attempt in 0..40 {
+            if self.active_processes()? == 0 {
+                return Ok(());
+            }
+            if attempt < 39 {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+        Err(ProvisioningProcessFailure::CleanupFailed)
+    }
+
+    fn active_processes(&self) -> Result<u32, ProvisioningProcessFailure> {
+        use std::mem::size_of;
+
+        use windows_sys::Win32::System::JobObjects::{
+            JobObjectBasicAccountingInformation, QueryInformationJobObject,
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        };
+
+        let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        let queried = unsafe {
+            QueryInformationJobObject(
+                self.handle,
+                JobObjectBasicAccountingInformation,
+                std::ptr::from_mut(&mut accounting).cast(),
+                u32::try_from(size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>())
+                    .expect("job accounting structure fits in u32"),
+                std::ptr::null_mut(),
+            )
+        };
+        if queried == 0 {
+            Err(ProvisioningProcessFailure::CleanupFailed)
+        } else {
+            Ok(accounting.ActiveProcesses)
         }
     }
 }

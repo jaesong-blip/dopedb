@@ -711,23 +711,39 @@ pub(crate) async fn assert_process_boundary() {
     #[cfg(windows)]
     {
         let system_root = PathBuf::from(r"C:\Windows\System32");
+        let ping_path = system_root.join("ping.exe");
         let executable = ProvisioningExecutableIdentity::audit(
             LocalProvider::GcpCloudSql,
-            &system_root.join("ping.exe"),
+            &system_root.join("cmd.exe"),
             std::slice::from_ref(&system_root),
-            &["ping.exe"],
+            &["cmd.exe"],
         )
         .await
-        .expect("audit a fixed Windows process fixture");
+        .expect("audit the fixed Windows descendant fixture launcher");
+        let marker_path = std::env::temp_dir().join(format!(
+            "dopedb-provider-grandchild-{}.ready",
+            Uuid::new_v4()
+        ));
+        let marker = marker_path.to_string_lossy();
+        assert!(!marker.chars().any(|character| {
+            character.is_control()
+                || matches!(character, '"' | '&' | '|' | '<' | '>' | '^' | '%' | '!')
+        }));
+        let script = format!(
+            "start \"\" /B \"{}\" 127.0.0.1 -n 30 >NUL & echo ready>\"{}\" & \"{}\" 127.0.0.1 -n 30 >NUL",
+            ping_path.display(),
+            marker,
+            ping_path.display(),
+        );
         let command = ProvisioningCliCommand::new(
             LocalProvider::GcpCloudSql,
             executable,
-            vec!["127.0.0.1".into(), "-n".into(), "30".into()],
+            vec!["/D".into(), "/S".into(), "/C".into(), script],
             vec![ProvisioningCliEnvironment::SafePath],
             ProvisioningCliOutputSchema::Empty,
-            Duration::from_secs(5),
+            Duration::from_secs(10),
         )
-        .expect("construct Windows interruption fixture");
+        .expect("construct Windows grandchild interruption fixture");
         let permit = ProvisioningExecutionPermit::issue(
             Uuid::from_u128(55),
             LocalProvider::GcpCloudSql,
@@ -735,16 +751,26 @@ pub(crate) async fn assert_process_boundary() {
             command.execution_sha256().unwrap(),
         );
         let cancellation = CancellationToken::new();
-        let cancellation_trigger = cancellation.clone();
-        let trigger = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            cancellation_trigger.cancel();
-        });
-        assert_eq!(
-            command.run(&permit, &cancellation).await,
-            Err(ProvisioningProcessFailure::Cancelled)
+        let run_cancellation = cancellation.clone();
+        let execution = tokio::spawn(async move { command.run(&permit, &run_cancellation).await });
+        let mut descendant_started = false;
+        for _ in 0..100 {
+            if marker_path.is_file() {
+                descendant_started = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        cancellation.cancel();
+        let outcome = execution
+            .await
+            .expect("join Windows grandchild interruption fixture");
+        let _ = std::fs::remove_file(&marker_path);
+        assert!(
+            descendant_started,
+            "Windows grandchild fixture never started"
         );
-        trigger.await.expect("join Windows cancellation trigger");
+        assert_eq!(outcome, Err(ProvisioningProcessFailure::Cancelled));
     }
 
     #[cfg(unix)]

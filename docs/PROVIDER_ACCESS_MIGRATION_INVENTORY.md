@@ -208,10 +208,11 @@ increasing the 104-test budget:
   leaves legacy rows null instead of fabricating Provider evidence.
 - The same six Provider authority tests run in the Windows CI job. The Unix fixture
   additionally executes a fixed binary and proves shell-looking argv remains
-  literal. The Windows fixture starts an audited native process, cancels it while
-  running, and requires the Job Object boundary to terminate and reap it before
-  returning `Cancelled`.
+  literal. The Windows fixture starts an audited native launcher and a long-running
+  grandchild, waits for the descendant-start witness, then cancels the command. The
+  Job Object boundary must terminate the tree, reap the parent, and become empty
+  within two seconds before returning `Cancelled`; parent-only cleanup fails closed.
 
 Provider-account live E2E, Provider-specific failure injection beyond the common
-apply contract, legacy rollback evidence, and a Windows grandchild-process fixture
-with native CI evidence remain required before #102 can close.
+apply contract, legacy rollback evidence, and native Windows CI evidence remain
+required before #102 can close.
