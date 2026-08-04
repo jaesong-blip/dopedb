@@ -83,9 +83,10 @@ export async function listProviderProvisioningStatuses(): Promise<ProviderProvis
 
 export async function discoverProviderProvisioningTargets(
   provider: ProviderKind,
+  connectionId: string,
 ): Promise<ProviderProvisioningTarget[]> {
   return arrayResponse(
-    await invoke("discover_provider_provisioning_targets", { provider }),
+    await invoke("discover_provider_provisioning_targets", { provider, connectionId }),
     parseProviderProvisioningTarget,
   );
 }

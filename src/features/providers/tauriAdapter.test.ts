@@ -19,6 +19,8 @@ import providerAdapterContractSource from "../../../workspace-cloud/lib/provider
 import providerImportProjectionSource from "../../../workspace-cloud/lib/providers/import-projection.ts?raw";
 import providerImportStoreSource from "../../../workspace-cloud/lib/provider-import-store.ts?raw";
 import providerLocalTargetSource from "../../../workspace-cloud/lib/provider-local-target.ts?raw";
+import providerProvisioningTargetSource from "../../../workspace-cloud/lib/provider-provisioning-target.ts?raw";
+import managedAccessTargetRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/managed-access-target/route.ts?raw";
 import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
 import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-permissions.ts?raw";
@@ -40,6 +42,7 @@ import {
 import {
   beginProviderCredentialBinding,
   beginProviderCredentialBindingPayload,
+  discoverProviderProvisioningTargets,
   listProviderCredentialBindings,
   listProviderIntegrations,
   revokeProviderCredentialBinding,
@@ -49,6 +52,8 @@ import {
 const integrationId = "11111111-1111-4111-8111-111111111111";
 const bindingId = "22222222-2222-4222-8222-222222222222";
 const receiptId = "33333333-3333-4333-8333-333333333333";
+const connectionId = "55555555-5555-4555-8555-555555555555";
+const discoveryId = "66666666-6666-4666-8666-666666666666";
 const integration = {
   id: integrationId,
   provider: "neon",
@@ -76,6 +81,15 @@ describe("provider credential Tauri adapter", () => {
     invokeMock
       .mockResolvedValueOnce([integration])
       .mockResolvedValueOnce([binding])
+      .mockResolvedValueOnce([{
+        discoveryId,
+        provider: "neon",
+        displayName: "Neon app",
+        detail: "quiet-sun / main",
+        engine: "postgres",
+        production: false,
+        expiresAt: "2026-08-05T00:05:00.000Z",
+      }])
       .mockResolvedValueOnce({ receiptId, expiresAt: "2026-07-27T00:05:00.000Z" })
       .mockResolvedValueOnce(binding)
       .mockResolvedValueOnce(undefined);
@@ -85,6 +99,9 @@ describe("provider credential Tauri adapter", () => {
     ]);
     await expect(listProviderCredentialBindings()).resolves.toEqual([
       expect.objectContaining({ id: providerBindingId(bindingId) }),
+    ]);
+    await expect(discoverProviderProvisioningTargets("neon", connectionId)).resolves.toEqual([
+      expect.objectContaining({ discoveryId }),
     ]);
     await beginProviderCredentialBinding({
       integrationId: providerIntegrationId(integrationId),
@@ -97,14 +114,18 @@ describe("provider credential Tauri adapter", () => {
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, "list_provider_integrations");
     expect(invokeMock).toHaveBeenNthCalledWith(2, "list_provider_credential_bindings");
-    expect(invokeMock).toHaveBeenNthCalledWith(3, "begin_provider_credential_binding", {
+    expect(invokeMock).toHaveBeenNthCalledWith(3, "discover_provider_provisioning_targets", {
+      provider: "neon",
+      connectionId,
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(4, "begin_provider_credential_binding", {
       integrationId,
       credential: { type: "neonApiKey", apiKey: "one-shot-key" },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(4, "verify_provider_credential_binding", {
+    expect(invokeMock).toHaveBeenNthCalledWith(5, "verify_provider_credential_binding", {
       receiptId,
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(5, "revoke_provider_credential_binding", { id: bindingId });
+    expect(invokeMock).toHaveBeenNthCalledWith(6, "revoke_provider_credential_binding", { id: bindingId });
   });
 
   it("accepts only the exact receipt DTO including a valid expiry timestamp", async () => {
@@ -245,6 +266,20 @@ describe("provider credential Tauri adapter", () => {
     expect(managedLeaseRouteSource).toContain("providerResourceSupportsWrite");
     expect(workspaceRevocationGatesSource).toContain("workspaceProviderResource.capabilityManifest");
     expect(desktopSharedConnectionSource).not.toContain("SHARED_CONNECTION_WRITE_BLOCKED");
+    expect(managedAccessTargetRouteSource).toContain(
+      'authorizeWorkspaceConnection(\n    request,\n    workspaceId,\n    connectionId,\n    "manage",',
+    );
+    expect(managedAccessTargetRouteSource).toContain("loadProviderProvisioningTarget");
+    expect(providerProvisioningTargetSource).toContain(
+      "workspaceProviderImportRequest.connectionId, workspaceConnection.id",
+    );
+    expect(providerProvisioningTargetSource).toContain(
+      "workspaceConnection.providerResource} = ${workspaceProviderResource.resource}",
+    );
+    expect(providerProvisioningTargetSource).toContain(
+      "createHash(\"sha256\").update(row.externalAccountId).digest(\"hex\")",
+    );
+    expect(providerProvisioningTargetSource).toContain("AUTHORITY_TTL_MS = 5 * 60 * 1_000");
 
     expect(providerAdapterContractSource).toContain("write: boolean");
     expect(providerImportProjectionSource).toContain(

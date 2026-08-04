@@ -135,6 +135,17 @@ GCP migration has started behind the production registry boundary:
 - Non-zero CLI exit status is rejected even when stdout happens to contain valid
   JSON. Successful, failed, cancelled, and timed-out processes all retain the same
   process-tree cleanup proof.
+- Provisioning discovery is now bound to one saved connection id from the desktop
+  command through the staged discovery receipt. A receipt cannot be prepared for a
+  different connection even inside the same active workspace scope.
+- A manage-authorized, five-minute target authority joins the saved connection,
+  active integration generation, canonical resource, and completed import witness.
+  It returns only strict provider identifiers, capability booleans, environment
+  classification, and SHA-256 fingerprints; credentials and provider tokens are
+  never part of the desktop response.
+- The desktop independently rejects unknown response fields, mismatched connection
+  revisions, provider/engine/database mismatches, unsafe expiry, and non-canonical
+  resource shapes before a Provider driver can build a plan.
 
 This slice is intentionally not registered as an Available Provider. GCP remains on
 the legacy bootstrap until its apply, DB grant, independent verification, lease smoke

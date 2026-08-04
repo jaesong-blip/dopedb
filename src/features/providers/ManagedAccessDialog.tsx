@@ -254,7 +254,7 @@ export function ManagedAccessDialog({
     setPending("discover");
     setFailed(false);
     try {
-      const nextTargets = await discoverProviderProvisioningTargets(provider);
+      const nextTargets = await discoverProviderProvisioningTargets(provider, connectionId);
       setTargets(nextTargets);
       setTargetId(nextTargets[0]?.discoveryId ?? null);
     } catch {

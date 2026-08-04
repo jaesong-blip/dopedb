@@ -155,6 +155,7 @@ pub(super) trait ProvisioningDriver: Send + Sync + 'static {
     ) -> DriverFuture<'a, ProvisioningDriverStatus>;
     fn discover<'a>(
         &'a self,
+        connection_id: Uuid,
         authority: &'a ProvisioningReadAuthority,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, Vec<ProvisioningDiscoveredTarget>>;
@@ -245,6 +246,7 @@ impl ProvisioningDriverRegistry {
 #[derive(Clone)]
 struct StagedProvisioningTarget {
     scope: ActiveResourceScope,
+    connection_id: Uuid,
     adapter_manifest_sha256: String,
     target: ProvisioningTarget,
     expires_at: DateTime<Utc>,
@@ -302,7 +304,11 @@ impl ProvisioningCoordinator {
     pub(crate) async fn discover(
         &self,
         provider: LocalProvider,
+        connection_id: Uuid,
     ) -> AppResult<Vec<ProvisioningTargetSummary>> {
+        if connection_id.is_nil() {
+            return Err(blocked("provider provisioning connection is invalid"));
+        }
         let scope = self.store.active_resource_scope().await?;
         let driver = self
             .drivers
@@ -319,7 +325,9 @@ impl ProvisioningCoordinator {
         if status.readiness != ProvisioningCliReadiness::Ready {
             return Err(blocked("provider CLI is not ready"));
         }
-        let discovered = driver.discover(&authority, &cancellation).await?;
+        let discovered = driver
+            .discover(connection_id, &authority, &cancellation)
+            .await?;
         if discovered.len() > MAX_DISCOVERED_TARGETS {
             return Err(blocked("provider discovery returned too many targets"));
         }
@@ -349,6 +357,7 @@ impl ProvisioningCoordinator {
                 discovery_id,
                 StagedProvisioningTarget {
                     scope: scope.clone(),
+                    connection_id,
                     adapter_manifest_sha256: driver.manifest_sha256().to_owned(),
                     target: discovered.target,
                     expires_at,
@@ -373,7 +382,10 @@ impl ProvisioningCoordinator {
             .get(&discovery_id)
             .cloned()
             .ok_or_else(|| blocked("provider discovery receipt is unavailable"))?;
-        if staged.scope != scope || staged.expires_at <= Utc::now() {
+        if staged.scope != scope
+            || staged.connection_id != connection_id
+            || staged.expires_at <= Utc::now()
+        {
             return Err(blocked(
                 "provider discovery receipt expired or changed scope",
             ));
@@ -1168,6 +1180,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
 
         fn discover<'a>(
             &'a self,
+            _connection_id: Uuid,
             _authority: &'a ProvisioningReadAuthority,
             _cancellation: &'a CancellationToken,
         ) -> DriverFuture<'a, Vec<ProvisioningDiscoveredTarget>> {
@@ -1412,7 +1425,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
     assert_eq!(statuses.len(), 1);
     assert_eq!(statuses[0].readiness, ProvisioningCliReadiness::Ready);
     let targets = coordinator
-        .discover(LocalProvider::GcpCloudSql)
+        .discover(LocalProvider::GcpCloudSql, connection_id)
         .await
         .expect("stage a scope-bound provider target");
     assert_eq!(targets.len(), 1);

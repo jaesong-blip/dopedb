@@ -163,11 +163,12 @@ pub(crate) async fn list_provider_provisioning_statuses(
 pub(crate) async fn discover_provider_provisioning_targets(
     state: State<'_, AppState>,
     provider: LocalProvider,
+    connection_id: Uuid,
 ) -> AppResult<Vec<ProvisioningTargetSummary>> {
     state
         .services
         .providers
-        .discover_provisioning_targets(provider)
+        .discover_provisioning_targets(provider, connection_id)
         .await
 }
 

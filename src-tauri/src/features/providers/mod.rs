@@ -168,8 +168,9 @@ impl ProvidersFeature {
     pub(crate) async fn discover_provisioning_targets(
         &self,
         provider: domain::LocalProvider,
+        connection_id: uuid::Uuid,
     ) -> crate::error::AppResult<Vec<ProvisioningTargetSummary>> {
-        self.provisioning.discover(provider).await
+        self.provisioning.discover(provider, connection_id).await
     }
 
     pub(crate) async fn prepare_provisioning_apply(

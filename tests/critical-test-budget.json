@@ -15,7 +15,7 @@
     },
     "src/features/providers/tauriAdapter.test.ts": {
       "tests": 4,
-      "protects": "Provider authority receipts, actionable control-plane errors, catalog capability projection, parseable managed-import SQL, role-gated managed writes, legacy backup compatibility, identity rejection, and keyless GCP bootstrap boundaries"
+      "protects": "Provider authority receipts, connection-bound provisioning discovery, exact managed-target authority, actionable control-plane errors, catalog capability projection, parseable managed-import SQL, role-gated managed writes, legacy backup compatibility, identity rejection, and keyless GCP bootstrap boundaries"
     },
     "src/features/queries/tauriAdapter.test.ts": {
       "tests": 13,
@@ -61,7 +61,7 @@
     },
     "src-tauri/src/features/providers/adapters/authority_tests.rs": {
       "tests": 6,
-      "protects": "Provider inventory authority, strict GCP CLI JSON/exit status, exact receipts, fixed-argv process cleanup, provisioning scope CAS, and restart-safe lifecycle recovery"
+      "protects": "Provider inventory authority, strict GCP CLI JSON/exit status, exact managed-target projection, exact receipts, fixed-argv process cleanup, provisioning scope CAS, and restart-safe lifecycle recovery"
     },
     "src-tauri/src/features/queries/domain_tests.rs": {
       "tests": 1,
