@@ -27,6 +27,10 @@ type RouteContext = {
   params: Promise<{ workspaceId: string; connectionId: string }>;
 };
 
+// Leaves room for the 45-second provider-authority gate to fail closed and for
+// the pending reservation to be retired before the platform stops the request.
+export const maxDuration = 60;
+
 async function consumeRequestBudget(key: string, limit: number) {
   const now = Date.now();
   const windowStart = now - 60_000;

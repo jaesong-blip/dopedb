@@ -203,6 +203,14 @@ for legacy records.
   credential value; it does not expire the durable role/grant/write policy. The desktop
   retires the pool before expiry and automatically obtains a new credential while that
   live authority remains unchanged.
+- Every new managed lease enters a fresh Provider-authority gate before any database
+  credential creation call. The complete pre-issuance authority sequence has a
+  45-second fail-closed deadline, so there is no application-side periodic polling
+  window: once the Provider exposes unsafe drift to an uncached validation, the next
+  lease request is denied within that gate or times out without invoking credential
+  creation. Provider-internal propagation remains outside DopeDB's clock. Credentials
+  already delivered remain bounded by their actual Provider expiry of at most 15
+  minutes, while the desktop retires its pool earlier when workspace authority changes.
 - Managed lease POSTs must send
   `x-dopedb-managed-lease-contract: access-v2` and an explicit `read` or `write`
   access mode. The service returns HTTP 426 to legacy clients instead of guessing

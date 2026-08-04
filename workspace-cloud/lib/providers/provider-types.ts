@@ -45,3 +45,36 @@ export class ProviderRequestError extends Error {
     this.name = "ProviderRequestError";
   }
 }
+
+// A managed lease request must never wait indefinitely for a stale provider
+// authority decision. Individual adapters keep their shorter per-request
+// deadlines; this bound covers the complete pre-issuance authority sequence.
+export const MANAGED_PROVIDER_AUTHORITY_TIMEOUT_MS = 45_000;
+
+export async function issueAfterFreshProviderAuthority<TProof, TLease>(
+  provider: string,
+  revalidate: () => Promise<TProof>,
+  issue: (proof: TProof) => Promise<TLease>,
+): Promise<TLease> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      reject(new ProviderRequestError(
+        provider,
+        "Provider security validation timed out before database access was issued",
+        504,
+      ));
+    }, MANAGED_PROVIDER_AUTHORITY_TIMEOUT_MS);
+  });
+
+  let proof: TProof;
+  try {
+    proof = await Promise.race([
+      Promise.resolve().then(revalidate),
+      timedOut,
+    ]);
+  } finally {
+    if (timeout !== null) clearTimeout(timeout);
+  }
+  return issue(proof);
+}

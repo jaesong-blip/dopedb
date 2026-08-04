@@ -187,6 +187,12 @@ increasing the 104-test budget:
 - A deterministic second-step destroy failure preserves checkpoint 1, moves the
   receipt to `NeedsRepair(CleanupFailed)`, moves the Operation to `OutcomeUnknown`,
   blocks credential issuance, and verifies the complete audit hash chain.
+- Every managed credential creation callback is structurally downstream of a fresh
+  Provider-authority proof. The complete proof sequence has a 45-second fail-closed
+  deadline; timeout or unsafe drift cannot invoke the credential creation callback.
+  This is an issuance-time application bound after an uncached Provider response, not
+  a claim about Provider-internal propagation or a periodic poll. Already delivered
+  credentials retain their Provider-enforced maximum 15-minute expiry.
 - The same six Provider authority tests run in the Windows CI job. The Unix fixture
   additionally executes a fixed binary and proves shell-looking argv remains
   literal. The Windows fixture starts an audited native process, cancels it while
@@ -194,6 +200,5 @@ increasing the 104-test budget:
   returning `Cancelled`.
 
 Provider-account live E2E, the remaining apply/provider-specific partial-failure
-matrix, bounded drift detection timing, workspace/provider-side audit reconciliation,
-and a Windows grandchild-process fixture with native CI evidence remain required
-before #102 can close.
+matrix, workspace/provider-side audit reconciliation, and a Windows grandchild-process
+fixture with native CI evidence remain required before #102 can close.

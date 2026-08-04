@@ -25,6 +25,7 @@ import {
 } from "../providers/gcp-cloud-sql";
 import type { GcpCloudSqlResource } from "../providers/gcp-cloud-sql-core";
 import {
+  issueAfterFreshProviderAuthority,
   ProviderRequestError,
   type ManagedProviderLease,
 } from "../providers/provider-types";
@@ -45,36 +46,6 @@ import {
   verifiedNeonCredential,
 } from "./integration";
 import { cleanupExpiredManagedLeases } from "./lease-cleanup";
-
-export async function validateManagedProviderResource(input: {
-  integration: ActiveProviderIntegration;
-  resource: ManagedProviderResource;
-  production?: boolean;
-  oidcToken?: string | null;
-}) {
-  switch (input.integration.provider) {
-    case "planetScale":
-      return validatePlanetScaleResource(
-        currentPlanetScaleAccessToken(input.integration),
-        input.resource as PlanetScaleResource,
-      );
-    case "neon":
-      return validateNeonResource(
-        await verifiedNeonCredential(input.integration),
-        input.resource as NeonResource,
-        "read",
-        input.production,
-      );
-    case "gcpCloudSql":
-      return validateGcpCloudSqlResource(
-        gcpCredential(input.integration),
-        requiredOidcToken(input.oidcToken),
-        input.resource as GcpCloudSqlResource,
-      );
-    default:
-      throw new Error("Managed credential provider is not available");
-  }
-}
 
 async function bestEffortRevokeLease(input: {
   integration: ActiveProviderIntegration;
@@ -177,67 +148,91 @@ export async function issueManagedLease(input: {
     }
     switch (input.integration.provider) {
       case "planetScale":
-        planetScaleToken = await providerAccessToken(input.integration, {
-          organizationId: input.organizationId,
-          membershipId: input.memberId,
-          userId: input.userId,
-          sessionId: input.sessionId,
-          role: input.role,
-          lease: {
-            connectionId: input.connectionId,
-            connectionRevision: input.connectionRevision,
-            providerResourceId: input.providerResourceId,
+        lease = await issueAfterFreshProviderAuthority(
+          "planetScale",
+          async () => {
+            const token = await providerAccessToken(input.integration, {
+              organizationId: input.organizationId,
+              membershipId: input.memberId,
+              userId: input.userId,
+              sessionId: input.sessionId,
+              role: input.role,
+              lease: {
+                connectionId: input.connectionId,
+                connectionRevision: input.connectionRevision,
+                providerResourceId: input.providerResourceId,
+              },
+            });
+            // Re-read the exact canonical branch immediately before the provider
+            // creates a database role/password. Discovery-time safety is never a
+            // substitute for this live production/readiness check.
+            await validatePlanetScaleResource(
+              token,
+              input.resource as PlanetScaleResource,
+              {
+                production: input.production,
+                safeMigrations: input.safeMigrations,
+              },
+            );
+            return token;
           },
-        });
-        // Re-read the exact canonical branch immediately before the provider
-        // creates a database role/password. Discovery-time safety is never a
-        // substitute for this live production/readiness check.
-        await validatePlanetScaleResource(
-          planetScaleToken,
-          input.resource as PlanetScaleResource,
-          {
-            production: input.production,
-            safeMigrations: input.safeMigrations,
+          async (token) => {
+            planetScaleToken = token;
+            return issuePlanetScaleLease(
+              token,
+              input.resource as PlanetScaleResource,
+              input.accessMode,
+              label,
+            );
           },
-        );
-        lease = await issuePlanetScaleLease(
-          planetScaleToken,
-          input.resource as PlanetScaleResource,
-          input.accessMode,
-          label,
         );
         break;
       case "neon": {
-        const credential = await verifiedNeonCredential(input.integration);
-        await validateNeonResource(
-          credential,
-          input.resource as NeonResource,
-          input.accessMode,
-          input.production,
+        lease = await issueAfterFreshProviderAuthority(
+          "neon",
+          async () => {
+            const credential = await verifiedNeonCredential(input.integration);
+            await validateNeonResource(
+              credential,
+              input.resource as NeonResource,
+              input.accessMode,
+              input.production,
+            );
+            return credential;
+          },
+          (credential) => issueNeonLease({
+            credential,
+            resource: input.resource as NeonResource,
+            accessMode: input.accessMode,
+            production: input.production,
+            role: neonRoleForLease(input.userId, leaseId),
+          }),
         );
-        lease = await issueNeonLease({
-          credential,
-          resource: input.resource as NeonResource,
-          accessMode: input.accessMode,
-          production: input.production,
-          role: neonRoleForLease(input.userId, leaseId),
-        });
         break;
       }
-      case "gcpCloudSql":
-        await validateGcpCloudSqlResource(
-          gcpCredential(input.integration),
-          requiredOidcToken(input.oidcToken),
-          input.resource as GcpCloudSqlResource,
+      case "gcpCloudSql": {
+        const credential = gcpCredential(input.integration);
+        const oidcToken = requiredOidcToken(input.oidcToken);
+        lease = await issueAfterFreshProviderAuthority(
+          "gcpCloudSql",
+          async () => {
+            await validateGcpCloudSqlResource(
+              credential,
+              oidcToken,
+              input.resource as GcpCloudSqlResource,
+            );
+            return { credential, oidcToken };
+          },
+          (fresh) => issueGcpCloudSqlLease({
+            credential: fresh.credential,
+            oidcToken: fresh.oidcToken,
+            resource: input.resource as GcpCloudSqlResource,
+            accessMode: input.accessMode,
+            externalCredentialId: leaseId,
+          }),
         );
-        lease = await issueGcpCloudSqlLease({
-          credential: gcpCredential(input.integration),
-          oidcToken: requiredOidcToken(input.oidcToken),
-          resource: input.resource as GcpCloudSqlResource,
-          accessMode: input.accessMode,
-          externalCredentialId: leaseId,
-        });
         break;
+      }
       default:
         throw new Error("Managed credential provider is not available");
     }

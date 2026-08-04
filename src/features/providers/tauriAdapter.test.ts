@@ -24,6 +24,10 @@ import providerAccessDomainSource from "../../../workspace-cloud/features/provid
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
 import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
 import providerAdapterContractSource from "../../../workspace-cloud/lib/providers/adapter-contract.ts?raw";
+import {
+  issueAfterFreshProviderAuthority,
+  MANAGED_PROVIDER_AUTHORITY_TIMEOUT_MS,
+} from "../../../workspace-cloud/lib/providers/provider-types";
 import providerImportProjectionSource from "../../../workspace-cloud/lib/providers/import-projection.ts?raw";
 import providerImportStoreSource from "../../../workspace-cloud/lib/provider-import-store.ts?raw";
 import providerLocalTargetSource from "../../../workspace-cloud/lib/provider-local-target.ts?raw";
@@ -256,7 +260,43 @@ describe("provider credential Tauri adapter", () => {
     })).toThrow("Invalid provider provisioning hash");
   });
 
-  it("prohibits legacy provider identity and manual GCP trust input", () => {
+  it("prohibits legacy provider identity and manual GCP trust input", async () => {
+    const order: string[] = [];
+    await expect(issueAfterFreshProviderAuthority(
+      "neon",
+      async () => {
+        order.push("revalidate");
+        return "fresh-proof";
+      },
+      async (proof) => {
+        order.push(`issue:${proof}`);
+        return "lease";
+      },
+    )).resolves.toBe("lease");
+    expect(order).toEqual(["revalidate", "issue:fresh-proof"]);
+
+    vi.useFakeTimers();
+    let timedOutIssueCalled = false;
+    try {
+      const pending = issueAfterFreshProviderAuthority(
+        "neon",
+        () => new Promise<never>(() => undefined),
+        async () => {
+          timedOutIssueCalled = true;
+          return "unsafe-lease";
+        },
+      );
+      const rejection = expect(pending).rejects.toMatchObject({
+        provider: "neon",
+        status: 504,
+      });
+      await vi.advanceTimersByTimeAsync(MANAGED_PROVIDER_AUTHORITY_TIMEOUT_MS);
+      await rejection;
+      expect(timedOutIssueCalled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+
     const payload = beginProviderCredentialBindingPayload({
       integrationId: providerIntegrationId(integrationId),
       credential: { type: "gcpAdc" },
@@ -309,6 +349,10 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpSetupRouteSource).toContain("writeAccess: true");
     expect(managedLeaseRouteSource).toContain('let requestedAccessMode: "read" | "write"');
     expect(managedLeaseRouteSource).toContain("providerResourceSupportsWrite");
+    expect(managedLeaseRouteSource).toContain("export const maxDuration = 60");
+    expect(providerLeaseIssuanceSource.match(
+      /issueAfterFreshProviderAuthority\(/g,
+    )).toHaveLength(3);
     expect(workspaceRevocationGatesSource).toContain("workspaceProviderResource.capabilityManifest");
     expect(desktopSharedConnectionSource).not.toContain("SHARED_CONNECTION_WRITE_BLOCKED");
     expect(managedAccessTargetRouteSource).toContain(
