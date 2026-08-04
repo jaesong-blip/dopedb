@@ -43,17 +43,49 @@ export function AgentToolCallCard({
   details?: ReactNode;
 }) {
   return (
-    <section className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
+    <section className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-2 tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
       <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
         <StatusDot tone={tone} />
         <strong className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-sm">
           {title}
         </strong>
-        <span className="tw:text-xs tw:text-muted-foreground">{status}</span>
+        <span className="tw:shrink-0 tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground">
+          {status}
+        </span>
       </div>
-      {children}
-      {details}
+      {children ? (
+        <div className="tw:max-w-full tw:min-w-0 tw:overflow-hidden">
+          {children}
+        </div>
+      ) : null}
+      {details ? (
+        <div className="tw:max-w-full tw:min-w-0 tw:overflow-hidden">
+          {details}
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+export function AgentActivityLine({
+  label,
+  status,
+  tone = "neutral",
+}: {
+  label: string;
+  status?: ReactNode;
+  tone?: StatusTone;
+}) {
+  return (
+    <div className="tw:flex tw:max-w-full tw:min-w-0 tw:items-center tw:gap-2 tw:overflow-hidden tw:py-1 tw:text-xs tw:text-muted-foreground">
+      <StatusDot tone={tone} />
+      <span className="tw:min-w-0 tw:flex-1 tw:truncate" title={label}>
+        {label}
+      </span>
+      {status ? (
+        <span className="tw:shrink-0 tw:whitespace-nowrap">{status}</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -73,7 +105,7 @@ export function AgentPermissionCard({
   return (
     <section
       data-pending={pending || undefined}
-      className="tw:grid tw:gap-3 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3"
+      className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-3 tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3"
     >
       <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
         <Icon
@@ -90,7 +122,7 @@ export function AgentPermissionCard({
           </span>
         ) : null}
       </div>
-      <div className="tw:text-sm tw:font-medium tw:leading-body">
+      <div className="tw:min-w-0 tw:break-words tw:text-sm tw:font-medium tw:leading-body">
         {description}
       </div>
       {actions}

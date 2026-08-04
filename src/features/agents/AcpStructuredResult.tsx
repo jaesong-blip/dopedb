@@ -10,9 +10,9 @@ export default function AcpStructuredResult({ value }: { value: unknown }) {
   if (!result) return null;
   const chart = chartProjection(result);
   return (
-    <div className="tw:grid tw:min-w-0 tw:gap-2">
+    <div className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-2 tw:overflow-hidden">
       {chart ? <MiniBarChart {...chart} /> : null}
-      <div className="tw:max-h-52 tw:min-h-0 tw:overflow-auto tw:rounded-sm tw:border tw:border-border-subtle">
+      <div className="tw:max-h-52 tw:max-w-full tw:min-h-0 tw:min-w-0 tw:overflow-auto tw:rounded-sm tw:border tw:border-border-subtle">
         <DataGrid result={result} />
       </div>
     </div>

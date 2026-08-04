@@ -18,6 +18,7 @@ import {
 } from "../../design-system/components/Modal";
 import { TreeSearch } from "../../design-system/components/TreeControls";
 import { useI18n } from "../../lib/i18n";
+import AdvancedSettings from "./Advanced";
 import AgentTools from "./AgentTools";
 import CliSettings from "./Cli";
 import RetiredChatArchive from "./RetiredChatArchive";
@@ -26,6 +27,7 @@ import Updates from "./Updates";
 
 export type SettingsSection =
   | "agent-tools"
+  | "advanced"
   | "archive"
   | "cli"
   | "safety"
@@ -64,6 +66,14 @@ export default function Settings({
           scope: "application",
           disabled: false,
           keywords: "agent codex claude tools",
+        },
+        {
+          id: "advanced",
+          label: t("settings.advanced"),
+          scope: "application",
+          disabled: false,
+          keywords:
+            "advanced debug debugging diagnostics agent tool input result developer 디버깅 진단",
         },
         {
           id: "cli",
@@ -262,6 +272,7 @@ export default function Settings({
               </div>
               <div className="tw:min-h-0 tw:min-w-0 tw:flex-1 tw:overflow-auto tw:p-[var(--ds-pane-pad)] tw:[container-name:settings-body] tw:[container-type:inline-size] tw:@max-[700px]:p-3">
                 {section === "agent-tools" && <AgentTools />}
+                {section === "advanced" && <AdvancedSettings />}
                 {section === "cli" && <CliSettings />}
                 {section === "archive" && (
                   <RetiredChatArchive connection={connection} />

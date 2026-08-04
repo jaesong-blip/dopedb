@@ -17,10 +17,12 @@ import ToolbarMenu, {
   ToolbarMenuItem,
 } from "../../components/ToolbarMenu";
 import {
+  AgentActivityLine,
   AgentPermissionCard,
   AgentProviderMark,
   AgentToolCallCard,
 } from "../../design-system/components/Agent";
+import { AgentRichText } from "../../design-system/components/AgentRichText";
 import { Button } from "../../design-system/components/Button";
 import {
   InlineNotice,
@@ -65,6 +67,7 @@ import {
   useEnabledAgentProviders,
 } from "../skills/agentPreferences";
 import { useAgentSelection } from "./selectionContext";
+import { useAgentDebugDetails } from "./displayPreferences";
 import {
   cancelAgentAcpSession,
   closeAgentAcpSession,
@@ -151,6 +154,7 @@ export default function AcpChatPanel({
 }) {
   const { t } = useI18n();
   const { selection } = useAgentSelection();
+  const debugDetails = useAgentDebugDetails();
   const enabledProviders = useEnabledAgentProviders();
   const [sessions, setSessions] = useState<AcpSessionSummary[]>([]);
   const [activeId, setActiveId] = useState<AcpSessionId | null>(null);
@@ -700,7 +704,7 @@ export default function AcpChatPanel({
 
       <div
         ref={transcriptRef}
-        className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:overscroll-contain tw:bg-background tw:px-6 tw:pt-10 tw:pb-5"
+        className="tw:min-h-0 tw:min-w-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:overscroll-contain tw:bg-background tw:px-6 tw:pt-10 tw:pb-5"
         aria-live="polite"
       >
         {loading ||
@@ -754,7 +758,7 @@ export default function AcpChatPanel({
             )}
           </AgentEmpty>
         ) : (
-          <div className="tw:grid tw:gap-6">
+          <div className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-6 tw:overflow-hidden">
             {transcript.map((item, index) => (
               <Fragment key={item.key}>
                 {showProviderHeading(transcript, index) ? (
@@ -762,6 +766,12 @@ export default function AcpChatPanel({
                 ) : null}
                 <TranscriptItemView
                   item={item}
+                  debugDetails={debugDetails}
+                  streaming={
+                    active.lifecycle === "running" &&
+                    item.kind === "agent" &&
+                    index === transcript.length - 1
+                  }
                   pendingPermissionId={pendingPermissionId}
                   permissionSubmitting={permissionSubmitting}
                   onPermission={(requestId, optionId) =>
@@ -1099,6 +1109,10 @@ function loginCommand(provider: AgentProvider) {
   return provider === "claude" ? "claude auth login" : "codex login";
 }
 
+function openAgentMessageLink(href: string) {
+  void openUrl(href).catch(() => undefined);
+}
+
 function isLiveSession(lifecycle: AcpSessionLifecycle) {
   return (
     lifecycle === "starting" ||
@@ -1110,11 +1124,15 @@ function isLiveSession(lifecycle: AcpSessionLifecycle) {
 
 function TranscriptItemView({
   item,
+  debugDetails,
+  streaming,
   pendingPermissionId,
   permissionSubmitting,
   onPermission,
 }: {
   item: TranscriptItem;
+  debugDetails: boolean;
+  streaming: boolean;
   pendingPermissionId: string | null;
   permissionSubmitting: string | null;
   onPermission: (requestId: string, optionId: string | null) => void;
@@ -1122,12 +1140,12 @@ function TranscriptItemView({
   const { t } = useI18n();
   if (item.kind === "user") {
     return (
-      <article className="tw:ml-6 tw:grid tw:gap-1 tw:justify-items-end">
-        <div className="tw:max-w-[92%] tw:rounded-md tw:bg-selection tw:px-3 tw:py-2 tw:text-sm tw:leading-body tw:whitespace-pre-wrap tw:text-selection-foreground">
+      <article className="tw:ml-6 tw:grid tw:max-w-full tw:min-w-0 tw:gap-1 tw:overflow-hidden tw:justify-items-end">
+        <div className="tw:max-w-[92%] tw:min-w-0 tw:overflow-hidden tw:break-words tw:rounded-md tw:bg-selection tw:px-3 tw:py-2 tw:text-sm tw:leading-body tw:whitespace-pre-wrap tw:text-selection-foreground">
           {item.text}
         </div>
         {item.attachments.length > 0 ? (
-          <small className="tw:text-right tw:text-muted-foreground">
+          <small className="tw:max-w-full tw:break-all tw:text-right tw:text-muted-foreground">
             {item.attachments.join(" · ")}
           </small>
         ) : null}
@@ -1136,25 +1154,47 @@ function TranscriptItemView({
   }
   if (item.kind === "agent") {
     return (
-      <article className="tw:min-w-0 tw:text-sm tw:leading-body tw:whitespace-pre-wrap tw:text-foreground">
-        {item.text}
+      <article className="tw:max-w-full tw:min-w-0 tw:overflow-hidden">
+        <AgentRichText
+          labels={{
+            copied: t("agent.acpCopied"),
+            copyCode: t("agent.acpCopyCode"),
+            diagram: t("agent.acpDiagram"),
+            diagramError: t("agent.acpDiagramError"),
+            diagramLoading: t("agent.acpDiagramLoading"),
+            diagramSource: t("agent.acpDiagramSource"),
+            imageOmitted: t("agent.acpImageOmitted"),
+            openLink: t("agent.acpOpenLink"),
+          }}
+          onOpenLink={openAgentMessageLink}
+          streaming={streaming}
+          text={item.text}
+        />
       </article>
     );
   }
   if (item.kind === "thought") {
+    if (!debugDetails) {
+      return (
+        <AgentActivityLine
+          label={progressActivityLabel(item.text, t)}
+          tone="neutral"
+        />
+      );
+    }
     return (
-      <details className="tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:text-xs">
+      <details className="tw:max-w-full tw:min-w-0 tw:overflow-hidden tw:rounded-sm tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:text-xs">
         <summary className="tw:cursor-pointer tw:text-muted-foreground">
           {t("agent.acpThought")}
         </summary>
-        <div className="tw:pt-2 tw:leading-body tw:whitespace-pre-wrap tw:text-muted-foreground">
+        <div className="tw:max-h-48 tw:max-w-full tw:overflow-auto tw:break-words tw:pt-2 tw:leading-body tw:whitespace-pre-wrap tw:text-muted-foreground">
           {item.text}
         </div>
       </details>
     );
   }
   if (item.kind === "tool") {
-    return <ToolCallCard data={item.data} />;
+    return <ToolCallCard data={item.data} debugDetails={debugDetails} />;
   }
   if (item.kind === "permission") {
     const pending = item.event.requestId === pendingPermissionId;
@@ -1215,20 +1255,28 @@ function TranscriptItemView({
       : Array.isArray(item.data.plan)
         ? item.data.plan
         : [];
+    if (!debugDetails) {
+      return (
+        <AgentActivityLine
+          label={t("agent.acpActivityPlanning")}
+          tone="neutral"
+        />
+      );
+    }
     return (
-      <section className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
+      <section className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-2 tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-3">
         <strong className="tw:flex tw:items-center tw:gap-2 tw:text-sm">
           <Icon name="list" />
           {t("agent.acpPlan")}
         </strong>
         {entries.length > 0 ? (
-          <ol className="tw:m-0 tw:grid tw:gap-1 tw:pl-5 tw:text-xs tw:leading-body">
+          <ol className="tw:m-0 tw:grid tw:min-w-0 tw:gap-1 tw:pl-5 tw:text-xs tw:leading-body tw:[&>li]:break-words">
             {entries.map((entry, index) => (
               <li key={index}>{planEntryLabel(entry)}</li>
             ))}
           </ol>
         ) : (
-          <pre className="tw:m-0 tw:overflow-auto tw:text-xs tw:whitespace-pre-wrap">
+          <pre className="tw:m-0 tw:max-h-48 tw:max-w-full tw:overflow-auto tw:break-all tw:text-xs tw:whitespace-pre-wrap">
             {safeJson(item.data)}
           </pre>
         )}
@@ -1238,7 +1286,7 @@ function TranscriptItemView({
   if (item.kind === "error") {
     return (
       <div
-        className="tw:rounded-md tw:border tw:border-danger-border tw:bg-danger-muted tw:px-3 tw:py-2 tw:text-sm tw:leading-body tw:text-danger"
+        className="tw:max-w-full tw:min-w-0 tw:overflow-hidden tw:break-words tw:rounded-md tw:border tw:border-danger-border tw:bg-danger-muted tw:px-3 tw:py-2 tw:text-sm tw:leading-body tw:text-danger"
         role="alert"
       >
         {item.message}
@@ -1257,7 +1305,13 @@ function TranscriptItemView({
   return null;
 }
 
-function ToolCallCard({ data }: { data: Record<string, unknown> }) {
+function ToolCallCard({
+  data,
+  debugDetails,
+}: {
+  data: Record<string, unknown>;
+  debugDetails: boolean;
+}) {
   const { t } = useI18n();
   const status = recordString(data, "status") ?? "pending";
   const title =
@@ -1267,30 +1321,46 @@ function ToolCallCard({ data }: { data: Record<string, unknown> }) {
   const content = toolContentText(data.content);
   const rawOutput = data.rawOutput;
   const rawInput = data.rawInput;
+  if (!debugDetails) {
+    return (
+      <AgentActivityLine
+        label={toolActivityLabel(data, t)}
+        status={toolStatusLabel(status, t)}
+        tone={toolStatusTone(status)}
+      />
+    );
+  }
   return (
     <AgentToolCallCard
       title={title}
-      status={status.replace(/_/g, " ")}
+      status={toolStatusLabel(status, t)}
       tone={toolStatusTone(status)}
       details={
         rawInput !== undefined || rawOutput !== undefined ? (
-          <details className="tw:text-xs">
+          <details className="tw:max-w-full tw:min-w-0 tw:overflow-hidden tw:text-xs">
             <summary className="tw:cursor-pointer tw:text-muted-foreground">
               {t("agent.acpToolDetails")}
             </summary>
-            <pre className="tw:mt-2 tw:mb-0 tw:max-h-48 tw:overflow-auto tw:rounded-sm tw:bg-muted tw:p-2 tw:font-mono tw:text-2xs tw:leading-body tw:whitespace-pre-wrap">
+            <pre className="tw:mt-2 tw:mb-0 tw:max-h-48 tw:max-w-full tw:overflow-auto tw:break-all tw:rounded-sm tw:bg-muted tw:p-2 tw:font-mono tw:text-2xs tw:leading-body tw:whitespace-pre-wrap">
               {safeJson({ input: rawInput, output: rawOutput })}
             </pre>
           </details>
         ) : null
       }
     >
-      {content ? (
-        <div className="tw:text-xs tw:leading-body tw:whitespace-pre-wrap">
-          {content}
-        </div>
-      ) : null}
-      <AcpStructuredResult value={rawOutput ?? data.content} />
+      <div className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-2 tw:overflow-hidden">
+        {content ? (
+          <details className="tw:max-w-full tw:min-w-0 tw:overflow-hidden tw:text-xs">
+            <summary className="tw:cursor-pointer tw:text-muted-foreground">
+              {t("agent.acpToolOutput")}
+            </summary>
+            <pre className="tw:mt-2 tw:mb-0 tw:max-h-48 tw:max-w-full tw:overflow-auto tw:break-all tw:rounded-sm tw:bg-muted tw:p-2 tw:font-mono tw:text-2xs tw:leading-body tw:whitespace-pre-wrap">
+              {content}
+            </pre>
+          </details>
+        ) : null}
+        <AcpStructuredResult value={rawOutput ?? data.content} />
+      </div>
     </AgentToolCallCard>
   );
 }
@@ -1556,6 +1626,100 @@ function toolContentText(value: unknown): string | null {
     return [];
   });
   return text.length > 0 ? text.join("\n") : null;
+}
+
+function progressActivityLabel(
+  text: string,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  const normalized = text.toLocaleLowerCase();
+  if (/(dashboard|chart|visuali[sz]|대시보드|차트|시각화)/.test(normalized)) {
+    return t("agent.acpActivityDashboard");
+  }
+  if (/(connection|connect|database status|연결 상태|연결 확인)/.test(normalized)) {
+    return t("agent.acpActivityConnection");
+  }
+  if (
+    /(write|insert|update|delete|alter|create|drop|permission|approval|쓰기|추가|수정|삭제|변경|승인)/.test(
+      normalized,
+    )
+  ) {
+    return t("agent.acpActivityPrepareChange");
+  }
+  if (
+    /(schema|column|catalog|describe|introspect|relation|스키마|컬럼|구조)/.test(
+      normalized,
+    )
+  ) {
+    return t("agent.acpActivityInspectSchema");
+  }
+  if (
+    /(query|select|count|aggregate|row|result|sql|table|조회|쿼리|집계|결과|행|테이블)/.test(
+      normalized,
+    )
+  ) {
+    return t("agent.acpActivityQuery");
+  }
+  return t("agent.acpActivityReasoning");
+}
+
+function toolActivityLabel(
+  data: Record<string, unknown>,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  const identifier = [
+    recordString(data, "title"),
+    recordString(data, "kind"),
+    recordString(data, "name"),
+    recordString(data, "toolName"),
+    recordString(data, "tool_name"),
+  ]
+    .filter((value): value is string => value !== null)
+    .join(" ")
+    .toLocaleLowerCase();
+
+  if (/tool.?search/.test(identifier)) {
+    return t("agent.acpActivityToolSearch");
+  }
+  if (/dashboard|chart|visuali[sz]/.test(identifier)) {
+    return t("agent.acpActivityDashboard");
+  }
+  if (
+    /table_describe|catalog|schema|describe|introspect|column|relation/.test(
+      identifier,
+    )
+  ) {
+    return t("agent.acpActivityInspectSchema");
+  }
+  if (
+    /query_read|query|select|count|aggregate|execute|explain/.test(identifier)
+  ) {
+    return t("agent.acpActivityQuery");
+  }
+  if (/connection|database_list|status/.test(identifier)) {
+    return t("agent.acpActivityConnection");
+  }
+  if (
+    /propose|write|insert|update|delete|alter|create|drop/.test(identifier)
+  ) {
+    return t("agent.acpActivityPrepareChange");
+  }
+  return t("agent.acpActivityGeneric");
+}
+
+function toolStatusLabel(
+  status: string,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (status === "completed") return t("agent.acpToolStatusCompleted");
+  if (status === "failed" || status === "error") {
+    return t("agent.acpToolStatusFailed");
+  }
+  if (status === "in_progress" || status === "running") {
+    return t("agent.acpToolStatusRunning");
+  }
+  if (status === "cancelled") return t("agent.acpTurnCancelled");
+  return t("agent.acpToolStatusPending");
 }
 
 function safeJson(value: unknown): string {

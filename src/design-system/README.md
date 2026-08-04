@@ -472,12 +472,26 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 
 ACP처럼 protocol이 작업 상태를 소유하는 화면은
 [`src/design-system/components/Agent.tsx`](components/Agent.tsx)의
-`AgentToolCallCard`, `AgentPermissionCard`를 사용한다. 전자는 tool의 제목,
-진행 상태, 구조화 결과와 상세 입력/출력을 한 observation surface에 묶고,
-후자는 protocol이 실제로 제공한 선택지만 approval action으로 받는다. 화면별로
+`AgentActivityLine`, `AgentToolCallCard`, `AgentPermissionCard`를 사용한다.
+첫 번째는 일반 사용자에게 ACP 내부 작업을 의미 있는 한 줄 상태로 축약한다.
+두 번째는 디버깅 화면에서 tool의 제목, 진행 상태, 구조화 결과와 상세
+입력/출력을 한 observation surface에 묶고, 세 번째는 protocol이 실제로 제공한
+선택지만 approval action으로 받는다. 화면별로
 승인 card의 warning border, status dot, icon/본문/action grid를 복제하지 않는다.
 Agent provider나 model 선택은 이 primitive의 책임이 아니며, 지원 결정이 없는
 provider를 disabled option으로 노출하지 않는다.
+
+Agent의 최종 답변과 streaming 답변 본문은
+[`src/design-system/components/AgentRichText.tsx`](components/AgentRichText.tsx)의
+`AgentRichText`를 사용한다. `react-markdown` + `remark-gfm`을 공통 문법으로
+삼고, streaming 중에는 `remend`가 닫히지 않은 Markdown marker만 보정한다.
+raw HTML과 원격 image는 렌더링하지 않고, `rehype-sanitize`를 통과한 외부
+`http(s)`/`mailto` link만 시스템 browser로 연다. 완료된 code fence는
+fine-grained Shiki JavaScript engine과 요청된 grammar만 지연 로드하며 색상은
+기존 semantic/terminal role에 연결한다. Mermaid fence는 turn이 완료된 뒤에만
+지연 렌더링하고 크기를 제한한 source를 CSP가 있는 sandbox iframe 안에 표시한다.
+이 vendor integration을 위한 screen CSS나 별도 syntax palette는 만들지 않는다.
+database ERD는 이 renderer가 아니라 기존 React Flow + ELK surface가 소유한다.
 
 ### 버튼
 
