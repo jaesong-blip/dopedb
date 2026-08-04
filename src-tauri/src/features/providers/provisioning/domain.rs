@@ -1117,14 +1117,16 @@ pub(super) fn fixture_plan(
     let (phase, actions) = match intent {
         ProvisioningIntent::Apply => (
             ProvisioningPhase::Apply,
-            [
+            vec![
                 ProvisioningAction::CreateProviderIdentity,
+                ProvisioningAction::CreateDatabasePrincipal,
                 ProvisioningAction::GrantExistingObjects,
+                ProvisioningAction::GrantFutureObjects,
             ],
         ),
         ProvisioningIntent::Destroy => (
             ProvisioningPhase::Destroy,
-            [
+            vec![
                 ProvisioningAction::RevokeIssuedCredentials,
                 ProvisioningAction::RemoveOwnedProviderIdentity,
             ],
@@ -1222,6 +1224,8 @@ pub(crate) fn assert_mock_provider_lifecycle() {
     receipt.checkpoint(&apply, 1, started).unwrap();
     assert!(receipt.checkpoint(&apply, 1, started).is_err());
     receipt.checkpoint(&apply, 2, started).unwrap();
+    receipt.checkpoint(&apply, 3, started).unwrap();
+    receipt.checkpoint(&apply, 4, started).unwrap();
     receipt.begin_verification(&apply, started).unwrap();
     receipt
         .complete_verification(
@@ -1269,7 +1273,7 @@ pub(crate) fn assert_mock_provider_lifecycle() {
         .begin_apply(&incomplete_plan, Uuid::from_u128(26), started)
         .unwrap();
     incomplete_receipt
-        .checkpoint(&incomplete_plan, 2, started)
+        .checkpoint(&incomplete_plan, 4, started)
         .unwrap();
     incomplete_receipt
         .begin_verification(&incomplete_plan, started)

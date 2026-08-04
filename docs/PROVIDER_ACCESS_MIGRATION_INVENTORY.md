@@ -187,6 +187,13 @@ increasing the 104-test budget:
 - A deterministic second-step destroy failure preserves checkpoint 1, moves the
   receipt to `NeedsRepair(CleanupFailed)`, moves the Operation to `OutcomeUnknown`,
   blocks credential issuance, and verifies the complete audit hash chain.
+- The provider-neutral apply contract injects failures before Provider identity,
+  database principal, existing-object grants, future-object grants, and final
+  verification. Each case preserves the exact last durable checkpoint, records
+  `ApplyOutcomeUnknown` or `VerificationFailed`, blocks issuance, and requires a
+  newly approved repair Operation. Repair replays idempotent steps to convergence
+  without duplicating logical Provider resources; replaying the completed Operation
+  cannot enter the driver again.
 - Every managed credential creation callback is structurally downstream of a fresh
   Provider-authority proof. The complete proof sequence has a 45-second fail-closed
   deadline; timeout or unsafe drift cannot invoke the credential creation callback.
@@ -205,6 +212,6 @@ increasing the 104-test budget:
   running, and requires the Job Object boundary to terminate and reap it before
   returning `Cancelled`.
 
-Provider-account live E2E, the remaining apply/provider-specific partial-failure
-matrix, legacy rollback evidence, and a Windows grandchild-process fixture with native
-CI evidence remain required before #102 can close.
+Provider-account live E2E, Provider-specific failure injection beyond the common
+apply contract, legacy rollback evidence, and a Windows grandchild-process fixture
+with native CI evidence remain required before #102 can close.

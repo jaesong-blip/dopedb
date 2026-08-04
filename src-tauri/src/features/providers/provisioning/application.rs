@@ -1240,9 +1240,17 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         Apply, Destroy, Detect, Discover, Issue, Plan, Reconcile, Verify,
     };
 
+    #[derive(Debug, Default)]
+    struct MockProviderEffects {
+        attempted_sequences: Vec<u16>,
+        applied_actions: Vec<ProvisioningAction>,
+    }
+
     #[derive(Default)]
     struct MockDriver {
         fail_sequence: Option<u16>,
+        fail_verification: bool,
+        effects: Arc<Mutex<MockProviderEffects>>,
     }
 
     impl ProvisioningDriver for MockDriver {
@@ -1369,8 +1377,13 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
                 if cancellation.is_cancelled() {
                     return Err(blocked("mock provider operation was cancelled"));
                 }
+                let mut effects = self.effects.lock().await;
+                effects.attempted_sequences.push(step.sequence());
                 if self.fail_sequence == Some(step.sequence()) {
                     return Err(blocked("mock provider step outcome is unknown"));
+                }
+                if !effects.applied_actions.contains(&step.action()) {
+                    effects.applied_actions.push(step.action());
                 }
                 Ok(ProvisioningStepEvidence::exact(step))
             })
@@ -1384,6 +1397,9 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
             Box::pin(async move {
                 if cancellation.is_cancelled() {
                     return Err(blocked("mock provider verification was cancelled"));
+                }
+                if self.fail_verification {
+                    return Err(blocked("mock provider verification failed"));
                 }
                 ProvisioningVerification::complete(
                     Some(plan.target().provider_audit_id().into()),
@@ -1450,6 +1466,243 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
             .await
             .expect("approve exact provider operation")
     }
+
+    async fn approve_planned_operation(
+        runtime: &OperationRuntime,
+        authority: &LocalApprovalAuthority,
+        operation_id: Uuid,
+    ) -> OperationRecord {
+        let operation = runtime
+            .get(operation_id)
+            .await
+            .expect("load planned provider operation");
+        runtime
+            .approve_exact(
+                authority,
+                ExactApprovalRequest {
+                    operation_id,
+                    expected_payload_hash: operation.payload_hash.clone(),
+                    approver: OperationApprover {
+                        kind: OperationActorKind::LocalUser,
+                        id: "local-user".into(),
+                    },
+                    current_policy_revision: operation.policy_revision.clone(),
+                    reason: Some("repair exact provider target".into()),
+                },
+            )
+            .await
+            .expect("approve planned provider operation")
+    }
+
+    async fn assert_apply_failure_repair(
+        fail_sequence: Option<u16>,
+        fail_verification: bool,
+        expected_completed_steps: u16,
+        expected_repair_reason: ProvisioningRepairReason,
+        expected_operation_reason: &'static str,
+    ) {
+        let store = Store::in_memory_for_test()
+            .await
+            .expect("open partial apply recovery store");
+        let scope = store
+            .active_resource_scope()
+            .await
+            .expect("resolve partial apply test scope");
+        let plan = fixture_plan(
+            ProvisioningIntent::Apply,
+            ProvisioningCapabilityManifest::new([
+                Detect, Discover, Plan, Apply, Verify, Issue, Reconcile, Destroy,
+            ]),
+        );
+        let connection = crate::model::ConnectionProfile {
+            id: Uuid::from(plan.target().connection_id()),
+            name: "fixture-instance / app".into(),
+            engine: Engine::Postgres,
+            provider: crate::model::Provider::GcpCloudSql,
+            driver_id: None,
+            host: "127.0.0.1".into(),
+            port: 5432,
+            database: "app".into(),
+            username: "fixture".into(),
+            sslmode: "disable".into(),
+            extra_params: HashMap::new(),
+            readonly_default: true,
+            allow_writes: false,
+            secret_ref: None,
+            env: Some("dev".into()),
+            schema_group: None,
+            workspace_access: crate::model::WorkspaceConnectionAccess::Local,
+            credential_mode: crate::model::WorkspaceCredentialMode::Local,
+        };
+        for expected_revision in 1..=plan.target().connection_revision() {
+            store
+                .upsert_connection(&connection)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!("seed fixture connection revision {expected_revision}: {error}")
+                });
+        }
+        let operation_id = Uuid::from_u128(50);
+        let (runtime, authority) = OperationRuntime::new(&store);
+        approved_operation(&runtime, &authority, &scope, &plan, operation_id).await;
+
+        let receipt_repository = ProvisioningReceiptRepository::new(store.clone());
+        let receipt = ProvisioningReceipt::ready_to_apply(
+            WorkspaceId::from(scope.workspace_id),
+            scope.account_scope.storage_key().into(),
+            plan.target().connection_id(),
+            operation_id,
+            &plan,
+            Utc::now(),
+        )
+        .expect("create partial apply receipt");
+        receipt_repository
+            .create(&scope, &receipt)
+            .await
+            .expect("store partial apply receipt");
+
+        let effects = Arc::new(Mutex::new(MockProviderEffects::default()));
+        let failing_coordinator = ProvisioningCoordinator::new(
+            store.clone(),
+            runtime.clone(),
+            ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver {
+                fail_sequence,
+                fail_verification,
+                effects: effects.clone(),
+            })),
+        );
+        assert!(failing_coordinator.execute(receipt.id()).await.is_err());
+
+        let failed = receipt_repository
+            .load(&scope, receipt.id())
+            .await
+            .expect("load deterministic partial apply state");
+        assert_eq!(failed.state(), ProvisioningState::NeedsRepair);
+        assert_eq!(failed.completed_steps(), expected_completed_steps);
+        assert_eq!(failed.repair_reason(), Some(expected_repair_reason));
+        assert!(!failed.can_issue());
+        assert_eq!(
+            runtime.get(operation_id).await.unwrap().state,
+            OperationState::OutcomeUnknown
+        );
+        let failure_events = runtime
+            .events(operation_id)
+            .await
+            .expect("load partial apply audit events");
+        let failure = &failure_events.last().unwrap().details;
+        assert_eq!(
+            failure["providerAuditId"],
+            plan.target().provider_audit_id()
+        );
+        assert_eq!(failure["completedSteps"], expected_completed_steps);
+        assert_eq!(failure["reason"], expected_operation_reason);
+        assert_eq!(failure["totalSteps"], plan.steps().len());
+        assert!(runtime
+            .verify_event_chain(operation_id)
+            .await
+            .expect("verify partial apply audit chain"));
+
+        let expected_partial_actions = plan
+            .steps()
+            .iter()
+            .take(usize::from(expected_completed_steps))
+            .map(ProvisioningPlanStep::action)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            effects.lock().await.applied_actions,
+            expected_partial_actions
+        );
+
+        let repair_coordinator = ProvisioningCoordinator::new(
+            store,
+            runtime.clone(),
+            ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver {
+                effects: effects.clone(),
+                ..MockDriver::default()
+            })),
+        );
+        let repair = repair_coordinator
+            .prepare_repair(receipt.id())
+            .await
+            .expect("prepare exact partial apply repair");
+        assert_eq!(repair.state, ProvisioningState::ReadyToApply);
+        assert_eq!(repair.completed_steps, 0);
+        assert_eq!(repair.actions.len(), plan.steps().len());
+        approve_planned_operation(&runtime, &authority, repair.operation_id).await;
+
+        let repaired = repair_coordinator
+            .execute(receipt.id())
+            .await
+            .expect("execute convergent partial apply repair");
+        assert_eq!(repaired.state(), ProvisioningState::Ready);
+        assert_eq!(usize::from(repaired.completed_steps()), plan.steps().len());
+        assert!(repaired.can_issue());
+        assert_eq!(
+            runtime.get(repair.operation_id).await.unwrap().state,
+            OperationState::Succeeded
+        );
+
+        let expected_actions = plan
+            .steps()
+            .iter()
+            .map(ProvisioningPlanStep::action)
+            .collect::<Vec<_>>();
+        let attempts_before_replay = {
+            let effects = effects.lock().await;
+            assert_eq!(effects.applied_actions, expected_actions);
+            effects.attempted_sequences.len()
+        };
+        assert!(repair_coordinator.execute(receipt.id()).await.is_err());
+        assert_eq!(
+            effects.lock().await.attempted_sequences.len(),
+            attempts_before_replay
+        );
+        assert!(runtime
+            .verify_event_chain(repair.operation_id)
+            .await
+            .expect("verify repaired apply audit chain"));
+    }
+
+    assert_apply_failure_repair(
+        Some(1),
+        false,
+        0,
+        ProvisioningRepairReason::ApplyOutcomeUnknown,
+        "provider_apply_outcome_unknown",
+    )
+    .await;
+    assert_apply_failure_repair(
+        Some(2),
+        false,
+        1,
+        ProvisioningRepairReason::ApplyOutcomeUnknown,
+        "provider_apply_outcome_unknown",
+    )
+    .await;
+    assert_apply_failure_repair(
+        Some(3),
+        false,
+        2,
+        ProvisioningRepairReason::ApplyOutcomeUnknown,
+        "provider_apply_outcome_unknown",
+    )
+    .await;
+    assert_apply_failure_repair(
+        Some(4),
+        false,
+        3,
+        ProvisioningRepairReason::ApplyOutcomeUnknown,
+        "provider_apply_outcome_unknown",
+    )
+    .await;
+    assert_apply_failure_repair(
+        None,
+        true,
+        4,
+        ProvisioningRepairReason::VerificationFailed,
+        "provider_verification_failed",
+    )
+    .await;
 
     let store = Store::in_memory_for_test()
         .await
@@ -1609,6 +1862,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         second_runtime.clone(),
         ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver {
             fail_sequence: Some(2),
+            ..MockDriver::default()
         })),
     );
     assert!(failing_coordinator.execute(destroying.id()).await.is_err());
