@@ -110,6 +110,13 @@ export function neonSchemaName(value: unknown): value is string {
     && !normalized.startsWith("pg_");
 }
 
+export function neonOwnerRoleName(value: unknown): value is string {
+  return typeof value === "string"
+    && Buffer.byteLength(value, "utf8") > 0
+    && Buffer.byteLength(value, "utf8") <= 63
+    && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
 function neonSchemas(value: unknown): string[] {
   const schemas = value === undefined ? [...DEFAULT_SCHEMAS] : value;
   if (
@@ -222,6 +229,7 @@ export function neonLeaseRole(userId: string, leaseId: string) {
 
 export function neonRoleStatements(input: {
   role: string;
+  owner: string;
   passwordVerifier: string;
   expiresAt: string;
   accessMode: ManagedAccessMode;
@@ -230,6 +238,7 @@ export function neonRoleStatements(input: {
 }) {
   if (
     !/^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$/.test(input.role)
+    || !neonOwnerRoleName(input.owner)
     || !/^SCRAM-SHA-256\$4096:[A-Za-z0-9+/]{22}==\$[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=$/
       .test(input.passwordVerifier)
   ) {
@@ -254,6 +263,7 @@ export function neonRoleStatements(input: {
   }
   const validUntil = expiry.toISOString();
   const identifier = (value: string) => `"${value.replaceAll("\"", "\"\"")}"`;
+  const owner = identifier(input.owner);
   const database = identifier(input.database);
   const scopedGrants = input.schemas.flatMap((schemaName) => {
     const schema = identifier(schemaName);
@@ -264,11 +274,19 @@ export function neonRoleStatements(input: {
           + `TO ${input.role}`,
         `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA ${schema} `
           + `TO ${input.role}`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+          + `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${input.role}`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+          + `GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO ${input.role}`,
       ]
       : [
         `GRANT USAGE ON SCHEMA ${schema} TO ${input.role}`,
         `GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${input.role}`,
         `GRANT SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${input.role}`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+          + `GRANT SELECT ON TABLES TO ${input.role}`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+          + `GRANT SELECT ON SEQUENCES TO ${input.role}`,
       ];
   });
   return [
@@ -282,6 +300,44 @@ export function neonRoleStatements(input: {
     ...(input.accessMode === "read"
       ? [`ALTER ROLE ${input.role} SET default_transaction_read_only = on`]
       : []),
+  ];
+}
+
+export function neonRoleRevokeStatements(input: {
+  role: string;
+  owner: string;
+  database: string;
+  schemas: string[];
+}) {
+  if (
+    !/^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$/.test(input.role)
+    || !neonOwnerRoleName(input.owner)
+    || !neonDatabaseName(input.database)
+    || input.schemas.length > 32
+    || input.schemas.some((schema) => !neonSchemaName(schema))
+    || new Set(input.schemas).size !== input.schemas.length
+  ) {
+    throw new Error("Invalid Neon cleanup scope");
+  }
+  const identifier = (value: string) => `"${value.replaceAll("\"", "\"\"")}"`;
+  const owner = identifier(input.owner);
+  const database = identifier(input.database);
+  const scopedRevokes = input.schemas.flatMap((schemaName) => {
+    const schema = identifier(schemaName);
+    return [
+      `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+        + `REVOKE ALL PRIVILEGES ON TABLES FROM ${input.role}`,
+      `ALTER DEFAULT PRIVILEGES FOR ROLE ${owner} IN SCHEMA ${schema} `
+        + `REVOKE ALL PRIVILEGES ON SEQUENCES FROM ${input.role}`,
+      `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} FROM ${input.role}`,
+      `REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schema} FROM ${input.role}`,
+      `REVOKE ALL PRIVILEGES ON SCHEMA ${schema} FROM ${input.role}`,
+    ];
+  });
+  return [
+    `REVOKE ALL PRIVILEGES ON DATABASE ${database} FROM ${input.role}`,
+    ...scopedRevokes,
+    `DROP ROLE ${input.role}`,
   ];
 }
 

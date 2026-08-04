@@ -20,6 +20,7 @@ mod gcp;
     reason = "the GCP CLI inventory is registered only after its complete #100 lifecycle lands"
 )]
 mod gcp_cli;
+mod neon;
 mod planetscale;
 #[allow(
     dead_code,
@@ -42,15 +43,18 @@ pub(crate) use application::{
     ProvisioningDriverStatus, ProvisioningPlanProjection, ProvisioningTargetSummary,
 };
 pub(super) use gcp::GcpCloudSqlProvisioningDriver;
+pub(super) use neon::NeonProvisioningDriver;
 pub(super) use planetscale::PlanetScaleProvisioningDriver;
 
 pub(super) fn managed_provider_registry(
     planet_scale: PlanetScaleProvisioningDriver,
     gcp_cloud_sql: GcpCloudSqlProvisioningDriver,
+    neon: NeonProvisioningDriver,
 ) -> ProvisioningDriverRegistry {
     ProvisioningDriverRegistry::with_drivers([
         std::sync::Arc::new(planet_scale) as std::sync::Arc<dyn application::ProvisioningDriver>,
         std::sync::Arc::new(gcp_cloud_sql) as std::sync::Arc<dyn application::ProvisioningDriver>,
+        std::sync::Arc::new(neon) as std::sync::Arc<dyn application::ProvisioningDriver>,
     ])
 }
 
@@ -123,6 +127,8 @@ pub(crate) use domain::assert_mock_provider_lifecycle;
 pub(crate) use gcp::assert_gcp_driver_contract;
 #[cfg(test)]
 pub(crate) use gcp_cli::{assert_gcloud_cli_contract, assert_live_gcloud_inventory};
+#[cfg(test)]
+pub(crate) use neon::assert_neon_driver_contract;
 #[cfg(test)]
 pub(crate) use planetscale::assert_planetscale_driver_contract;
 #[cfg(test)]

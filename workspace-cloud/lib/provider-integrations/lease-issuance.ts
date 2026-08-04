@@ -13,6 +13,7 @@ import {
 } from "../providers/planetscale";
 import {
   issueNeonLease,
+  NeonLeaseCleanupRequiredError,
   neonRoleForLease,
   revokeNeonLease,
   validateNeonResource,
@@ -206,6 +207,7 @@ export async function issueManagedLease(input: {
         await validateNeonResource(
           neonCredential(input.integration),
           input.resource as NeonResource,
+          input.accessMode,
         );
         lease = await issueNeonLease({
           credential: neonCredential(input.integration),
@@ -236,19 +238,27 @@ export async function issueManagedLease(input: {
     // any independent reconnect/revoke after this point still fails the CAS.
     authority.integrationGeneration = input.integration.generation;
   } catch (error) {
-    if (error instanceof PlanetScaleLeaseCleanupRequiredError) {
+    if (
+      error instanceof PlanetScaleLeaseCleanupRequiredError
+      || error instanceof NeonLeaseCleanupRequiredError
+    ) {
+      const provider = error instanceof NeonLeaseCleanupRequiredError
+        ? "neon"
+        : "planetScale";
       const queued = await db.update(workspaceCredentialLease)
         .set({
           externalCredentialId: error.externalCredentialId,
-          externalCredentialKind: error.externalCredentialKind,
+          externalCredentialKind: error instanceof NeonLeaseCleanupRequiredError
+            ? "role"
+            : error.externalCredentialKind,
           expiresAt: new Date(),
         })
         .where(eq(workspaceCredentialLease.id, leaseId))
         .returning({ id: workspaceCredentialLease.id });
       if (queued.length !== 1) {
         throw new ProviderRequestError(
-          "planetScale",
-          "PlanetScale credential cleanup could not be queued",
+          provider,
+          `${provider === "neon" ? "Neon" : "PlanetScale"} credential cleanup could not be queued`,
           503,
         );
       }

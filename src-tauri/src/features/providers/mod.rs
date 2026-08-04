@@ -21,8 +21,8 @@ use ports::{
     ProvisioningRuntimePort,
 };
 use provisioning::{
-    managed_provider_registry, GcpCloudSqlProvisioningDriver, PlanetScaleProvisioningDriver,
-    ProvisioningCoordinator,
+    managed_provider_registry, GcpCloudSqlProvisioningDriver, NeonProvisioningDriver,
+    PlanetScaleProvisioningDriver, ProvisioningCoordinator,
 };
 
 pub(crate) use domain::{
@@ -71,6 +71,11 @@ pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFea
         HostedProvisioningTargetAuthority::new(),
         std::sync::Arc::new(provisioning_runtime.clone()),
     );
+    let neon_provisioning_driver = NeonProvisioningDriver::new(
+        store.clone(),
+        HostedProvisioningTargetAuthority::new(),
+        std::sync::Arc::new(provisioning_runtime.clone()),
+    );
     ProvidersFeature {
         application: ProviderUseCases::new(
             repository.clone(),
@@ -87,7 +92,11 @@ pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFea
         provisioning: ProvisioningCoordinator::new(
             store,
             operation,
-            managed_provider_registry(provisioning_driver, gcp_provisioning_driver),
+            managed_provider_registry(
+                provisioning_driver,
+                gcp_provisioning_driver,
+                neon_provisioning_driver,
+            ),
         ),
     }
 }

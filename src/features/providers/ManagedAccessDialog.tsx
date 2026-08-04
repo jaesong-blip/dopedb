@@ -26,7 +26,7 @@ import type {
   ProviderProvisioningTarget,
   ProvisioningAccessMode,
   ProvisioningAction,
-  ProvisioningCliReadiness,
+  ProvisioningReadiness,
   ProvisioningState,
 } from "./domain";
 import {
@@ -76,7 +76,7 @@ const stateKey: Record<ProvisioningState, I18nKey> = {
   verifying: "managedAccess.state.verifying",
 };
 
-const readinessKey: Record<ProvisioningCliReadiness, I18nKey> = {
+const readinessKey: Record<ProvisioningReadiness, I18nKey> = {
   loggedOut: "managedAccess.readiness.loggedOut",
   missing: "managedAccess.readiness.missing",
   outdated: "managedAccess.readiness.outdated",
@@ -374,15 +374,19 @@ export function ManagedAccessDialog({
   }
 
   const readinessMessage = selectedStatus
-    ? selectedStatus.readiness === "ready"
-      ? t("managedAccess.login.ready", {
-          cli: selectedStatus.cliName,
-          account: selectedStatus.activeAccount ?? "—",
+    ? selectedStatus.prerequisiteKind === "workspaceIntegration"
+      ? t("managedAccess.integration.ready", {
+          provider: providerLabel(selectedStatus.provider),
         })
-      : t(`managedAccess.login.${selectedStatus.readiness}` as I18nKey, {
-          cli: selectedStatus.cliName,
-          version: selectedStatus.minimumVersion,
-        })
+      : selectedStatus.readiness === "ready"
+        ? t("managedAccess.login.ready", {
+            cli: selectedStatus.prerequisiteName,
+            account: selectedStatus.activeIdentity ?? "—",
+          })
+        : t(`managedAccess.login.${selectedStatus.readiness}` as I18nKey, {
+            cli: selectedStatus.prerequisiteName,
+            version: selectedStatus.minimumVersion ?? "—",
+          })
     : null;
   const confirmationReady = !plan?.confirmationPhrase
     || confirmation === plan.confirmationPhrase;
@@ -472,7 +476,7 @@ export function ManagedAccessDialog({
                 <section className="tw:grid tw:gap-3" aria-labelledby="managed-access-login">
                   <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:pb-2">
                     <h3 id="managed-access-login" className="tw:m-0 tw:min-w-0 tw:flex-1 tw:text-sm tw:font-semibold">
-                      {providerLabel(selectedStatus.provider)} · {selectedStatus.cliName}
+                      {providerLabel(selectedStatus.provider)} · {selectedStatus.prerequisiteName}
                     </h3>
                     <StatusBadge tone={readinessTone(selectedStatus)}>
                       {t(readinessKey[selectedStatus.readiness])}

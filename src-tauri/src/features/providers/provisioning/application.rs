@@ -38,7 +38,14 @@ const MAX_PROJECTION_TEXT_BYTES: usize = 255;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ProvisioningCliReadiness {
+pub(crate) enum ProvisioningPrerequisiteKind {
+    OfficialCli,
+    WorkspaceIntegration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ProvisioningReadiness {
     Missing,
     Outdated,
     LoggedOut,
@@ -50,41 +57,56 @@ pub(crate) enum ProvisioningCliReadiness {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ProvisioningDriverStatus {
     pub(crate) provider: LocalProvider,
-    pub(crate) cli_name: String,
-    pub(crate) minimum_version: String,
+    pub(crate) prerequisite_kind: ProvisioningPrerequisiteKind,
+    pub(crate) prerequisite_name: String,
+    pub(crate) minimum_version: Option<String>,
     pub(crate) installed_version: Option<String>,
-    pub(crate) active_account: Option<String>,
-    pub(crate) readiness: ProvisioningCliReadiness,
+    pub(crate) active_identity: Option<String>,
+    pub(crate) readiness: ProvisioningReadiness,
 }
 
 impl ProvisioningDriverStatus {
     fn validate(&self, expected_provider: LocalProvider) -> AppResult<()> {
-        let readiness_shape = match self.readiness {
-            ProvisioningCliReadiness::Missing => {
-                self.installed_version.is_none() && self.active_account.is_none()
+        let readiness_shape = match (self.prerequisite_kind, self.readiness) {
+            (ProvisioningPrerequisiteKind::OfficialCli, ProvisioningReadiness::Missing) => {
+                self.installed_version.is_none() && self.active_identity.is_none()
             }
-            ProvisioningCliReadiness::Outdated => self.installed_version.is_some(),
-            ProvisioningCliReadiness::LoggedOut => {
-                self.installed_version.is_some() && self.active_account.is_none()
+            (ProvisioningPrerequisiteKind::OfficialCli, ProvisioningReadiness::Outdated) => {
+                self.installed_version.is_some()
             }
-            ProvisioningCliReadiness::WrongAccount | ProvisioningCliReadiness::Ready => {
-                self.installed_version.is_some() && self.active_account.is_some()
+            (ProvisioningPrerequisiteKind::OfficialCli, ProvisioningReadiness::LoggedOut) => {
+                self.installed_version.is_some() && self.active_identity.is_none()
             }
+            (
+                ProvisioningPrerequisiteKind::OfficialCli,
+                ProvisioningReadiness::WrongAccount | ProvisioningReadiness::Ready,
+            ) => self.installed_version.is_some() && self.active_identity.is_some(),
+            (ProvisioningPrerequisiteKind::WorkspaceIntegration, ProvisioningReadiness::Ready) => {
+                self.minimum_version.is_none()
+                    && self.installed_version.is_none()
+                    && self.active_identity.is_none()
+            }
+            (ProvisioningPrerequisiteKind::WorkspaceIntegration, _) => false,
         };
         if self.provider != expected_provider
             || !readiness_shape
-            || !safe_projection_text(&self.cli_name)
-            || !safe_projection_text(&self.minimum_version)
+            || (self.prerequisite_kind == ProvisioningPrerequisiteKind::OfficialCli
+                && self.minimum_version.is_none())
+            || !safe_projection_text(&self.prerequisite_name)
+            || self
+                .minimum_version
+                .as_deref()
+                .is_some_and(|value| !safe_projection_text(value))
             || self
                 .installed_version
                 .as_deref()
                 .is_some_and(|value| !safe_projection_text(value))
             || self
-                .active_account
+                .active_identity
                 .as_deref()
                 .is_some_and(|value| !safe_projection_text(value))
         {
-            return Err(blocked("provider CLI status is invalid"));
+            return Err(blocked("provider prerequisite status is invalid"));
         }
         Ok(())
     }
@@ -331,8 +353,8 @@ impl ProvisioningCoordinator {
         );
         let status = driver.detect(&authority, &cancellation).await?;
         status.validate(provider)?;
-        if status.readiness != ProvisioningCliReadiness::Ready {
-            return Err(blocked("provider CLI is not ready"));
+        if status.readiness != ProvisioningReadiness::Ready {
+            return Err(blocked("provider prerequisite is not ready"));
         }
         let discovered = driver
             .discover(connection_id, &authority, &cancellation)
@@ -1199,11 +1221,12 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
             Box::pin(async move {
                 Ok(ProvisioningDriverStatus {
                     provider: LocalProvider::GcpCloudSql,
-                    cli_name: "mock-gcloud".into(),
-                    minimum_version: "1.0.0".into(),
+                    prerequisite_kind: ProvisioningPrerequisiteKind::OfficialCli,
+                    prerequisite_name: "mock-gcloud".into(),
+                    minimum_version: Some("1.0.0".into()),
                     installed_version: Some("1.0.0".into()),
-                    active_account: Some("owner@example.com".into()),
-                    readiness: ProvisioningCliReadiness::Ready,
+                    active_identity: Some("owner@example.com".into()),
+                    readiness: ProvisioningReadiness::Ready,
                 })
             })
         }
@@ -1456,7 +1479,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         .await
         .expect("inspect the closed mock driver");
     assert_eq!(statuses.len(), 1);
-    assert_eq!(statuses[0].readiness, ProvisioningCliReadiness::Ready);
+    assert_eq!(statuses[0].readiness, ProvisioningReadiness::Ready);
     let targets = coordinator
         .discover(LocalProvider::GcpCloudSql, connection_id)
         .await

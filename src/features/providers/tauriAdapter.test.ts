@@ -4,6 +4,8 @@ import adapterSource from "./tauriAdapter.ts?raw";
 import authRouteSource from "../../../workspace-cloud/app/api/auth/[...all]/route.ts?raw";
 import gcpBootstrapSource from "../../../workspace-cloud/lib/providers/gcp-cloud-bootstrap.ts?raw";
 import gcpCloudSqlSource from "../../../workspace-cloud/lib/providers/gcp-cloud-sql.ts?raw";
+import neonSource from "../../../workspace-cloud/lib/providers/neon.ts?raw";
+import neonCoreSource from "../../../workspace-cloud/lib/providers/neon-core.ts?raw";
 import gcpSetupRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/gcp-setup/[setupId]/route.ts?raw";
 import gcpOAuthSource from "../../../workspace-cloud/lib/providers/gcp-cloud-oauth.ts?raw";
 import managedLeaseRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/lease/route.ts?raw";
@@ -11,6 +13,7 @@ import managedAccessRouteSource from "../../../workspace-cloud/app/api/v1/worksp
 import connectionGrantsRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/grants/route.ts?raw";
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
 import providerIntegrationDomainSource from "../../../workspace-cloud/lib/provider-integrations/domain.ts?raw";
+import providerLeaseIssuanceSource from "../../../workspace-cloud/lib/provider-integrations/lease-issuance.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
@@ -20,6 +23,7 @@ import providerImportProjectionSource from "../../../workspace-cloud/lib/provide
 import providerImportStoreSource from "../../../workspace-cloud/lib/provider-import-store.ts?raw";
 import providerLocalTargetSource from "../../../workspace-cloud/lib/provider-local-target.ts?raw";
 import providerProvisioningTargetSource from "../../../workspace-cloud/lib/provider-provisioning-target.ts?raw";
+import providerResourcesRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/resources/route.ts?raw";
 import managedAccessTargetRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/managed-access-target/route.ts?raw";
 import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
@@ -35,6 +39,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import {
   parseProviderProvisioningPlan,
+  parseProviderProvisioningDriverStatus,
   providerBindingId,
   providerCredentialReceiptId,
   providerIntegrationId,
@@ -157,6 +162,37 @@ describe("provider credential Tauri adapter", () => {
   });
 
   it("rejects extra or missing integration and binding fields before a query cache can hold them", async () => {
+    expect(parseProviderProvisioningDriverStatus({
+      provider: "neon",
+      prerequisiteKind: "workspaceIntegration",
+      prerequisiteName: "Workspace integration",
+      minimumVersion: null,
+      installedVersion: null,
+      activeIdentity: null,
+      readiness: "ready",
+    })).toEqual(expect.objectContaining({
+      provider: "neon",
+      prerequisiteKind: "workspaceIntegration",
+      readiness: "ready",
+    }));
+    expect(() => parseProviderProvisioningDriverStatus({
+      provider: "neon",
+      cliName: "Neon CLI",
+      minimumVersion: "1.0.0",
+      installedVersion: "1.0.0",
+      activeAccount: "owner",
+      readiness: "ready",
+    })).toThrow("Invalid provider provisioning status");
+    expect(() => parseProviderProvisioningDriverStatus({
+      provider: "neon",
+      prerequisiteKind: "workspaceIntegration",
+      prerequisiteName: "Workspace integration",
+      minimumVersion: null,
+      installedVersion: null,
+      activeIdentity: null,
+      readiness: "loggedOut",
+    })).toThrow("Invalid provider prerequisite status");
+
     invokeMock.mockResolvedValueOnce([{ ...integration, token: "must-not-pass" }]);
     await expect(listProviderIntegrations()).rejects.toThrow("Invalid provider integration summary");
 
@@ -274,6 +310,8 @@ describe("provider credential Tauri adapter", () => {
     expect(managedAccessTargetRouteSource).toContain("loadProviderProvisioningTarget");
     expect(managedAccessTargetRouteSource).toContain("validateGcpCloudSqlResource");
     expect(managedAccessTargetRouteSource).toContain('ownershipMarker("gcpCloudSql", connectionId)');
+    expect(managedAccessTargetRouteSource).toContain("validateNeonResource");
+    expect(managedAccessTargetRouteSource).toContain('ownershipMarker("neon", connectionId)');
     expect(providerProvisioningTargetSource).toContain(
       "workspaceProviderImportRequest.connectionId, workspaceConnection.id",
     );
@@ -286,9 +324,22 @@ describe("provider credential Tauri adapter", () => {
     expect(providerProvisioningTargetSource).toContain("AUTHORITY_TTL_MS = 5 * 60 * 1_000");
 
     expect(providerAdapterContractSource).toContain("write: boolean");
-    expect(providerImportProjectionSource).toContain(
-      'if (provider !== "gcpCloudSql" && provider !== "planetScale")',
+    expect(providerImportProjectionSource).toContain('&& provider !== "neon"');
+    expect(providerResourcesRouteSource).toContain(
+      'integration.provider === "planetScale" || integration.provider === "neon"',
     );
+    expect(neonCoreSource).toContain("ALTER DEFAULT PRIVILEGES FOR ROLE");
+    expect(neonCoreSource).toContain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES");
+    expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON TABLES");
+    expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA");
+    expect(neonSource).toContain("FROM pg_default_acl d");
+    expect(neonSource).toContain("Neon future-object privilege verification failed");
+    expect(neonSource).toContain("return { providerAuditId: branch.value }");
+    expect(neonSource).toContain("NeonLeaseCleanupRequiredError");
+    expect(providerLeaseIssuanceSource).toContain(
+      "error instanceof NeonLeaseCleanupRequiredError",
+    );
+    expect(managedAccessTargetRouteSource).toContain("inspectNeonResourceIdentity");
     expect(providerImportProjectionSource).toContain(
       'item.kind === "mysql" && item.safeMigrations === true',
     );

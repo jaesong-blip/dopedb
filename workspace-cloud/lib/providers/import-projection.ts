@@ -178,7 +178,11 @@ export function providerImportProjection(
     };
   }
   if (!options.writeAvailable) return projected;
-  if (provider !== "gcpCloudSql" && provider !== "planetScale") {
+  if (
+    provider !== "gcpCloudSql"
+    && provider !== "planetScale"
+    && provider !== "neon"
+  ) {
     throw new Error("Managed write capability is not available for this provider");
   }
   return {

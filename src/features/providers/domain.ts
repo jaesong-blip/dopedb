@@ -81,7 +81,9 @@ export type ProviderCredential =
   | Readonly<{ type: "neonApiKey"; apiKey: string }>
   | Readonly<{ type: "gcpAdc" }>;
 
-export type ProvisioningCliReadiness =
+export type ProvisioningPrerequisiteKind = "officialCli" | "workspaceIntegration";
+
+export type ProvisioningReadiness =
   | "missing"
   | "outdated"
   | "loggedOut"
@@ -139,11 +141,12 @@ export type ProvisioningRepairReason =
 
 export type ProviderProvisioningDriverStatus = Readonly<{
   provider: ProviderKind;
-  cliName: string;
-  minimumVersion: string;
+  prerequisiteKind: ProvisioningPrerequisiteKind;
+  prerequisiteName: string;
+  minimumVersion: string | null;
   installedVersion: string | null;
-  activeAccount: string | null;
-  readiness: ProvisioningCliReadiness;
+  activeIdentity: string | null;
+  readiness: ProvisioningReadiness;
 }>;
 
 export type ProviderProvisioningTarget = Readonly<{
@@ -463,17 +466,65 @@ export function parseProviderProvisioningDriverStatus(
   if (!row || typeof row !== "object") throw new Error("Invalid provider provisioning status");
   exactFields(
     row,
-    ["activeAccount", "cliName", "installedVersion", "minimumVersion", "provider", "readiness"],
+    [
+      "activeIdentity",
+      "installedVersion",
+      "minimumVersion",
+      "prerequisiteKind",
+      "prerequisiteName",
+      "provider",
+      "readiness",
+    ],
     "provider provisioning status",
   );
-  return {
+  const parsed: ProviderProvisioningDriverStatus = {
     provider: providerKind(row.provider),
-    cliName: safeProvisioningText(row.cliName, "provider CLI name"),
-    minimumVersion: safeProvisioningText(row.minimumVersion, "provider CLI minimum version"),
-    installedVersion: nullableProvisioningText(row.installedVersion, "provider CLI version"),
-    activeAccount: nullableProvisioningText(row.activeAccount, "provider CLI account"),
-    readiness: oneOf(row.readiness, provisioningReadinessValues, "provider CLI readiness"),
+    prerequisiteKind: oneOf(
+      row.prerequisiteKind,
+      ["officialCli", "workspaceIntegration"] as const,
+      "provider prerequisite kind",
+    ),
+    prerequisiteName: safeProvisioningText(
+      row.prerequisiteName,
+      "provider prerequisite name",
+    ),
+    minimumVersion: nullableProvisioningText(
+      row.minimumVersion,
+      "provider prerequisite minimum version",
+    ),
+    installedVersion: nullableProvisioningText(
+      row.installedVersion,
+      "provider prerequisite version",
+    ),
+    activeIdentity: nullableProvisioningText(
+      row.activeIdentity,
+      "provider prerequisite identity",
+    ),
+    readiness: oneOf(row.readiness, provisioningReadinessValues, "provider readiness"),
   };
+  const validOfficialCli = parsed.prerequisiteKind === "officialCli"
+    && parsed.minimumVersion !== null
+    && (
+      (parsed.readiness === "missing"
+        && parsed.installedVersion === null
+        && parsed.activeIdentity === null)
+      || (parsed.readiness === "outdated" && parsed.installedVersion !== null)
+      || (parsed.readiness === "loggedOut"
+        && parsed.installedVersion !== null
+        && parsed.activeIdentity === null)
+      || ((parsed.readiness === "wrongAccount" || parsed.readiness === "ready")
+        && parsed.installedVersion !== null
+        && parsed.activeIdentity !== null)
+    );
+  const validWorkspaceIntegration = parsed.prerequisiteKind === "workspaceIntegration"
+    && parsed.readiness === "ready"
+    && parsed.minimumVersion === null
+    && parsed.installedVersion === null
+    && parsed.activeIdentity === null;
+  if (!validOfficialCli && !validWorkspaceIntegration) {
+    throw new Error("Invalid provider prerequisite status");
+  }
+  return parsed;
 }
 
 export function parseProviderProvisioningTarget(value: unknown): ProviderProvisioningTarget {

@@ -10,10 +10,13 @@ import {
   NEON_PUBLIC_DATABASE_ESCAPE_SQL,
   NEON_PUBLIC_SCHEMA_CREATE_SQL,
   NEON_PUBLIC_SCHEMA_ESCAPE_SQL,
+  NEON_ROLE_CONNECTION_LIMIT,
   createNeonScramVerifier,
   neonIntegrationIdentity,
   neonLeaseRole,
+  neonOwnerRoleName,
   neonPublicDatabaseBoundaryError,
+  neonRoleRevokeStatements,
   neonRoleStatements,
   neonSegment,
   parseNeonConnectionUri,
@@ -37,6 +40,13 @@ export type NeonAuthInfo = {
   projectCount: number;
   scopeFingerprint: string;
 };
+
+export class NeonLeaseCleanupRequiredError extends ProviderRequestError {
+  constructor(readonly externalCredentialId: string) {
+    super("neon", "Neon database role cleanup is pending", 503);
+    this.name = "NeonLeaseCleanupRequiredError";
+  }
+}
 
 function object(value: unknown): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -371,7 +381,23 @@ async function assertNeonManagedBoundary(
   sql: NeonSqlClient,
   resource: NeonResource,
   accessMode: ManagedAccessMode,
+  expectedOwner: string,
 ) {
+  const identityRows = await sql.query(
+    "SELECT current_user AS current_user, "
+      + "pg_get_userbyid(d.datdba) = current_user AS owns_database "
+      + "FROM pg_database d WHERE d.datname = current_database()",
+  );
+  if (
+    !neonOwnerRoleName(expectedOwner)
+    || identityRows.length !== 1
+    || identityRows[0]?.current_user !== expectedOwner
+    || identityRows[0]?.owns_database !== true
+  ) {
+    throw new NeonBoundaryError(
+      "Neon owner credential identity does not match the database owner",
+    );
+  }
   const databaseRows = await sql.query(
     "SELECT has_database_privilege("
       + "current_database(), 'CONNECT WITH GRANT OPTION') AS grantable",
@@ -402,6 +428,38 @@ async function assertNeonManagedBoundary(
   ) {
     throw new NeonBoundaryError(
       "Neon schema allowlist is missing or cannot be granted by the database owner",
+    );
+  }
+
+  // ALTER DEFAULT PRIVILEGES affects only objects created by its target role.
+  // A single schema owner and no delegated CREATE capability make that future
+  // object boundary both complete and independently auditable.
+  const unsafeSchemaCreators = await sql.query(
+    "SELECT n.nspname AS schema_name FROM pg_namespace n "
+      + "WHERE n.nspname = ANY($1::text[]) AND ("
+      + "(n.nspowner <> current_user::regrole AND NOT EXISTS ("
+      + "SELECT 1 FROM pg_roles owner_role WHERE owner_role.oid = n.nspowner "
+      + "AND owner_role.rolname = 'pg_database_owner')) OR EXISTS ("
+      + "SELECT 1 FROM aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) acl "
+      + "WHERE acl.privilege_type = 'CREATE' "
+      + "AND acl.grantee <> current_user::regrole::oid "
+      + "AND NOT EXISTS (SELECT 1 FROM pg_roles creator_role "
+      + "WHERE creator_role.oid = acl.grantee "
+      + "AND creator_role.rolname = 'pg_database_owner'))) LIMIT 1",
+    [resource.schemas],
+  );
+  const foreignOwnedObjects = await sql.query(
+    "SELECT n.nspname AS schema_name, c.relname AS object_name "
+      + "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+      + "WHERE n.nspname = ANY($1::text[]) "
+      + "AND c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S') "
+      + "AND c.relowner <> current_user::regrole LIMIT 1",
+    [resource.schemas],
+  );
+  if (unsafeSchemaCreators.length > 0 || foreignOwnedObjects.length > 0) {
+    throw new NeonBoundaryError(
+      "Neon managed access requires the database owner to exclusively create "
+        + "and own objects in every managed schema",
     );
   }
 
@@ -536,6 +594,36 @@ async function assertNeonRolePrivileges(
   resource: NeonResource,
   accessMode: ManagedAccessMode,
 ) {
+  const roleRows = await sql.query(
+    "SELECT r.rolcanlogin AS can_login, r.rolsuper AS superuser, "
+      + "r.rolinherit AS inherits, r.rolcreaterole AS create_role, "
+      + "r.rolcreatedb AS create_database, r.rolreplication AS replication, "
+      + "r.rolbypassrls AS bypass_rls, r.rolconnlimit AS connection_limit, "
+      + "r.rolvaliduntil > now() AND "
+      + "r.rolvaliduntil <= now() + interval '20 minutes' AS bounded_expiry, "
+      + "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) "
+      + "AS no_memberships, "
+      + "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = r.oid) "
+      + "AS no_members FROM pg_roles r WHERE r.rolname = $1",
+    [role],
+  );
+  const roleRow = roleRows[0];
+  if (
+    roleRows.length !== 1
+    || roleRow?.can_login !== true
+    || roleRow?.superuser !== false
+    || roleRow?.inherits !== true
+    || roleRow?.create_role !== false
+    || roleRow?.create_database !== false
+    || roleRow?.replication !== false
+    || roleRow?.bypass_rls !== false
+    || roleRow?.connection_limit !== NEON_ROLE_CONNECTION_LIMIT
+    || roleRow?.bounded_expiry !== true
+    || roleRow?.no_memberships !== true
+    || roleRow?.no_members !== true
+  ) {
+    throw new NeonBoundaryError("Neon role safety attributes are invalid");
+  }
   const rows = await sql.query(
     "SELECT "
       + "NOT has_database_privilege($1::name, current_database(), 'CONNECT') "
@@ -567,6 +655,48 @@ async function assertNeonRolePrivileges(
   ) {
     throw new NeonBoundaryError("Neon role privilege verification failed");
   }
+
+  const defaultAclRows = await sql.query(
+    "SELECT n.nspname AS schema_name, d.defaclobjtype AS object_type, "
+      + "acl.privilege_type AS privilege_type, acl.is_grantable AS is_grantable "
+      + "FROM pg_default_acl d "
+      + "JOIN pg_namespace n ON n.oid = d.defaclnamespace "
+      + "CROSS JOIN LATERAL aclexplode(d.defaclacl) acl "
+      + "JOIN pg_roles grantee ON grantee.oid = acl.grantee "
+      + "WHERE d.defaclrole = current_user::regrole "
+      + "AND grantee.rolname = $1 AND n.nspname = ANY($2::text[]) "
+      + "AND d.defaclobjtype IN ('r', 'S') "
+      + "ORDER BY n.nspname, d.defaclobjtype, acl.privilege_type",
+    [role, resource.schemas],
+  );
+  const expected = accessMode === "write"
+    ? {
+      r: ["DELETE", "INSERT", "SELECT", "UPDATE"],
+      S: ["SELECT", "UPDATE", "USAGE"],
+    }
+    : { r: ["SELECT"], S: ["SELECT"] };
+  for (const schema of resource.schemas) {
+    for (const [objectType, privileges] of Object.entries(expected)) {
+      const actual = defaultAclRows
+        .filter((row) => (
+          row.schema_name === schema && row.object_type === objectType
+        ))
+        .map((row) => row.privilege_type);
+      if (
+        actual.length !== privileges.length
+        || actual.some((privilege, index) => privilege !== privileges[index])
+        || defaultAclRows.some((row) => (
+          row.schema_name === schema
+          && row.object_type === objectType
+          && row.is_grantable !== false
+        ))
+      ) {
+        throw new NeonBoundaryError(
+          "Neon future-object privilege verification failed",
+        );
+      }
+    }
+  }
 }
 
 function postgresErrorCode(error: unknown): string | null {
@@ -580,7 +710,12 @@ function postgresErrorCode(error: unknown): string | null {
   return null;
 }
 
-async function revokeNeonRoleWithClient(sql: NeonSqlClient, role: string) {
+async function revokeNeonRoleWithClient(
+  sql: NeonSqlClient,
+  role: string,
+  resource: NeonResource,
+  owner: string,
+) {
   try {
     // Commit the safety latch independently so later cleanup failures cannot roll
     // LOGIN back on. Missing roles are the idempotent success case.
@@ -594,18 +729,28 @@ async function revokeNeonRoleWithClient(sql: NeonSqlClient, role: string) {
       + "WHERE usename = $1 AND pid <> pg_backend_pid()",
     [role],
   );
+  const schemaRows = await sql.query(
+    "SELECT n.nspname AS schema_name FROM pg_namespace n "
+      + "WHERE n.nspname = ANY($1::text[]) ORDER BY n.nspname",
+    [resource.schemas],
+  );
+  const statements = neonRoleRevokeStatements({
+    role,
+    owner,
+    database: resource.database,
+    schemas: schemaRows.map((row) => row.schema_name),
+  });
   try {
-    await sql.transaction((tx) => [
-      tx.query(`DROP OWNED BY ${role}`),
-      tx.query(`DROP ROLE ${role}`),
-    ]);
+    await sql.transaction(
+      statements.map((statement) => sql.query(statement)),
+    );
   } catch (error) {
     if (postgresErrorCode(error) === "42704") return;
     throw error;
   }
 }
 
-export async function validateNeonResource(
+async function resolveNeonResourceIdentity(
   credential: NeonCredential,
   resource: NeonResource,
 ) {
@@ -614,18 +759,9 @@ export async function validateNeonResource(
     throw new ProviderRequestError("neon", "Neon project was not found", 404);
   }
   const branches = await listNeonBranches(credential, resource.project);
-  if (!branches.some((item) => (
-    item.value === resource.branch
-    && item.ready === true
-    // Neon marks default/protected branches as sensitive. Unknown is not a
-    // development classification and must not create a database credential.
-    && item.production === false
-  ))) {
-    throw new ProviderRequestError(
-      "neon",
-      "Neon branch is not an explicitly ready non-production target",
-      409,
-    );
+  const branch = branches.find((item) => item.value === resource.branch);
+  if (!branch) {
+    throw new ProviderRequestError("neon", "Neon branch was not found", 404);
   }
   const databases = await listNeonDatabases(
     credential,
@@ -635,9 +771,48 @@ export async function validateNeonResource(
   if (!databases.some((item) => item.value === resource.database)) {
     throw new ProviderRequestError("neon", "Neon database was not found", 404);
   }
-  const connection = await ownerConnection(credential, resource);
+  return {
+    branch,
+    connection: await ownerConnection(credential, resource),
+  };
+}
+
+export async function inspectNeonResourceIdentity(
+  credential: NeonCredential,
+  resource: NeonResource,
+) {
+  const identity = await resolveNeonResourceIdentity(credential, resource);
+  return { providerAuditId: identity.branch.value };
+}
+
+export async function validateNeonResource(
+  credential: NeonCredential,
+  resource: NeonResource,
+  accessMode: ManagedAccessMode = "read",
+) {
+  const { branch, connection } = await resolveNeonResourceIdentity(
+    credential,
+    resource,
+  );
+  if (
+    branch.ready !== true
+    // Neon marks default/protected branches as sensitive. Unknown is not a
+    // development classification and must not create a database credential.
+    || branch.production !== false
+  ) {
+    throw new ProviderRequestError(
+      "neon",
+      "Neon branch is not an explicitly ready non-production target",
+      409,
+    );
+  }
   try {
-    await assertNeonManagedBoundary(sqlClient(connection.connectionUri), resource, "read");
+    await assertNeonManagedBoundary(
+      sqlClient(connection.connectionUri),
+      resource,
+      accessMode,
+      connection.owner,
+    );
   } catch (error) {
     if (error instanceof NeonBoundaryError) {
       throw new ProviderRequestError("neon", error.message, 409);
@@ -648,6 +823,7 @@ export async function validateNeonResource(
       502,
     );
   }
+  return { providerAuditId: branch.value };
 }
 
 export async function issueNeonLease(input: {
@@ -663,9 +839,15 @@ export async function issueNeonLease(input: {
   const sql = sqlClient(connection.connectionUri);
   let roleCreated = false;
   try {
-    await assertNeonManagedBoundary(sql, input.resource, input.accessMode);
+    await assertNeonManagedBoundary(
+      sql,
+      input.resource,
+      input.accessMode,
+      connection.owner,
+    );
     const statements = neonRoleStatements({
       role: input.role,
+      owner: connection.owner,
       passwordVerifier,
       expiresAt,
       accessMode: input.accessMode,
@@ -684,7 +866,16 @@ export async function issueNeonLease(input: {
     );
   } catch (error) {
     if (roleCreated) {
-      await revokeNeonRoleWithClient(sql, input.role).catch(() => undefined);
+      try {
+        await revokeNeonRoleWithClient(
+          sql,
+          input.role,
+          input.resource,
+          connection.owner,
+        );
+      } catch {
+        throw new NeonLeaseCleanupRequiredError(input.role);
+      }
     }
     if (error instanceof NeonBoundaryError) {
       throw new ProviderRequestError("neon", error.message, 409);
@@ -718,7 +909,12 @@ export async function revokeNeonLease(
   }
   const connection = await ownerConnection(credential, resource);
   try {
-    await revokeNeonRoleWithClient(sqlClient(connection.connectionUri), role);
+    await revokeNeonRoleWithClient(
+      sqlClient(connection.connectionUri),
+      role,
+      resource,
+      connection.owner,
+    );
   } catch {
     throw new ProviderRequestError("neon", "Neon database role could not be revoked", 502);
   }

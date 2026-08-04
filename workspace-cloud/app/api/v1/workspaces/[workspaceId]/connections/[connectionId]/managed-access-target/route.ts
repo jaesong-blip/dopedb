@@ -5,6 +5,7 @@ import { isUuid, jsonError, privateJson } from "../../../../../../../../lib/http
 import {
   activeProviderIntegration,
   gcpCredential,
+  neonCredential,
   parseManagedProviderResource,
   providerAccessToken,
   requiredOidcToken,
@@ -19,6 +20,13 @@ import type {
   GcpCloudSqlResource,
 } from "../../../../../../../../lib/providers/gcp-cloud-sql-core";
 import {
+  inspectNeonResourceIdentity,
+  validateNeonResource,
+} from "../../../../../../../../lib/providers/neon";
+import type {
+  NeonResource,
+} from "../../../../../../../../lib/providers/neon-core";
+import {
   inspectPlanetScaleResourceIdentity,
   validatePlanetScaleResource,
   type PlanetScaleResource,
@@ -32,8 +40,12 @@ type RouteContext = {
   params: Promise<{ workspaceId: string; connectionId: string }>;
 };
 
-function ownershipMarker(provider: "gcpCloudSql" | "planetScale", connectionId: string) {
-  return `dopedb:${provider === "gcpCloudSql" ? "gcp_cloud_sql" : "planetscale"}:${connectionId}`;
+function ownershipMarker(
+  provider: "gcpCloudSql" | "neon" | "planetScale",
+  connectionId: string,
+) {
+  const key = provider === "gcpCloudSql" ? "gcp_cloud_sql" : provider.toLowerCase();
+  return `dopedb:${key}:${connectionId}`;
 }
 
 export async function GET(request: Request, context: RouteContext) {
@@ -108,7 +120,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
     if (
       !initial
-      || (initial.provider !== "planetScale" && initial.provider !== "gcpCloudSql")
+      || !["planetScale", "neon", "gcpCloudSql"].includes(initial.provider)
     ) {
       return jsonError("Managed Access target is unavailable", 409);
     }
@@ -139,7 +151,13 @@ export async function POST(request: Request, context: RouteContext) {
             safeMigrations: initial.safeMigrations,
           },
         )
-      : await validateGcpCloudSqlResource(
+      : integration.provider === "neon"
+        ? await validateNeonResource(
+            neonCredential(integration),
+            resource as NeonResource,
+            "write",
+          )
+        : await validateGcpCloudSqlResource(
           gcpCredential(integration),
           requiredOidcToken(vercelOidcToken(request)),
           resource as GcpCloudSqlResource,
@@ -227,6 +245,7 @@ export async function DELETE(request: Request, context: RouteContext) {
       || /[\u0000-\u001f\u007f]/.test(body.providerAuditId)
       || (
         body.ownershipMarker !== ownershipMarker("planetScale", connectionId)
+        && body.ownershipMarker !== ownershipMarker("neon", connectionId)
         && body.ownershipMarker !== ownershipMarker("gcpCloudSql", connectionId)
       )
     ) {
@@ -259,7 +278,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     });
     if (
       !initial
-      || (initial.provider !== "planetScale" && initial.provider !== "gcpCloudSql")
+      || !["planetScale", "neon", "gcpCloudSql"].includes(initial.provider)
       || initial.integrationId !== pins.integrationId
       || initial.resourceFingerprint !== pins.resourceFingerprint
       || BigInt(pins.connectionRevision) > BigInt(initial.connectionRevision)
@@ -291,7 +310,12 @@ export async function DELETE(request: Request, context: RouteContext) {
           }),
           resource as PlanetScaleResource,
         )
-      : await validateGcpCloudSqlResource(
+      : integration.provider === "neon"
+        ? await inspectNeonResourceIdentity(
+            neonCredential(integration),
+            resource as NeonResource,
+          )
+        : await validateGcpCloudSqlResource(
           gcpCredential(integration),
           requiredOidcToken(vercelOidcToken(request)),
           resource as GcpCloudSqlResource,

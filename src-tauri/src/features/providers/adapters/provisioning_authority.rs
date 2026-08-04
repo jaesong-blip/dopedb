@@ -130,7 +130,7 @@ impl HostedProvisioningTargetAuthority {
         if connection.profile.credential_mode != WorkspaceCredentialMode::Managed
             || !matches!(
                 target.provider(),
-                LocalProvider::PlanetScale | LocalProvider::GcpCloudSql
+                LocalProvider::PlanetScale | LocalProvider::Neon | LocalProvider::GcpCloudSql
             )
             || target.connection_id()
                 != crate::kernel::identity::ConnectionId::from(connection.connection_id)

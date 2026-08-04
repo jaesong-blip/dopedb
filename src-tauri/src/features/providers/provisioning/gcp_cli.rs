@@ -16,7 +16,9 @@ use crate::error::{AppError, AppResult};
 use crate::model::Engine;
 
 use super::super::domain::LocalProvider;
-use super::application::{ProvisioningCliReadiness, ProvisioningDriverStatus};
+use super::application::{
+    ProvisioningDriverStatus, ProvisioningPrerequisiteKind, ProvisioningReadiness,
+};
 use super::process::{
     ProvisioningCliCommand, ProvisioningCliEnvironment, ProvisioningCliOutputSchema,
     ProvisioningExecutableIdentity, ProvisioningProcessFailure,
@@ -94,7 +96,7 @@ impl GcloudInventory {
         cancellation: &CancellationToken,
     ) -> AppResult<ProvisioningDriverStatus> {
         let Some(inventory) = Self::locate().await.map_err(process_error)? else {
-            return Ok(status(None, None, ProvisioningCliReadiness::Missing));
+            return Ok(status(None, None, ProvisioningReadiness::Missing));
         };
         inventory
             .detect_with_inventory(authority, expected_account, cancellation)
@@ -118,11 +120,7 @@ impl GcloudInventory {
             .await?;
         let version = parse_version(version.value())?;
         if compare_versions(&version, MINIMUM_GCLOUD_VERSION)? == std::cmp::Ordering::Less {
-            return Ok(status(
-                Some(version),
-                None,
-                ProvisioningCliReadiness::Outdated,
-            ));
+            return Ok(status(Some(version), None, ProvisioningReadiness::Outdated));
         }
         let config = self
             .run(
@@ -142,13 +140,13 @@ impl GcloudInventory {
             return Ok(status(
                 Some(version),
                 None,
-                ProvisioningCliReadiness::LoggedOut,
+                ProvisioningReadiness::LoggedOut,
             ));
         };
         let readiness = if expected_account.is_some_and(|expected| expected != account) {
-            ProvisioningCliReadiness::WrongAccount
+            ProvisioningReadiness::WrongAccount
         } else {
-            ProvisioningCliReadiness::Ready
+            ProvisioningReadiness::Ready
         };
         Ok(status(Some(version), Some(account), readiness))
     }
@@ -248,7 +246,7 @@ impl GcloudInventory {
         let status = self
             .detect_with_inventory(authority, None, cancellation)
             .await?;
-        if status.readiness != ProvisioningCliReadiness::Ready {
+        if status.readiness != ProvisioningReadiness::Ready {
             return Err(blocked("Google Cloud CLI is not ready for discovery"));
         }
         let targets = self
@@ -300,14 +298,15 @@ impl GcloudInventory {
 fn status(
     installed_version: Option<String>,
     active_account: Option<String>,
-    readiness: ProvisioningCliReadiness,
+    readiness: ProvisioningReadiness,
 ) -> ProvisioningDriverStatus {
     ProvisioningDriverStatus {
         provider: LocalProvider::GcpCloudSql,
-        cli_name: "Google Cloud CLI".into(),
-        minimum_version: MINIMUM_GCLOUD_VERSION.into(),
+        prerequisite_kind: ProvisioningPrerequisiteKind::OfficialCli,
+        prerequisite_name: "Google Cloud CLI".into(),
+        minimum_version: Some(MINIMUM_GCLOUD_VERSION.into()),
         installed_version,
-        active_account,
+        active_identity: active_account,
         readiness,
     }
 }
@@ -750,10 +749,10 @@ pub(crate) async fn assert_live_gcloud_inventory() {
         .detect_with_inventory(&authority, None, &cancellation)
         .await
         .expect("detect local gcloud account");
-    assert_eq!(status.readiness, ProvisioningCliReadiness::Ready);
-    assert!(status.active_account.is_some());
+    assert_eq!(status.readiness, ProvisioningReadiness::Ready);
+    assert!(status.active_identity.is_some());
     let targets = inventory
-        .discover_current_project(&authority, status.active_account.as_deref(), &cancellation)
+        .discover_current_project(&authority, status.active_identity.as_deref(), &cancellation)
         .await
         .expect("discover strict local Cloud SQL inventory");
     assert!(!targets.is_empty());

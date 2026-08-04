@@ -15,7 +15,9 @@ use crate::error::{AppError, AppResult};
 use crate::model::Engine;
 
 use super::super::domain::LocalProvider;
-use super::application::{ProvisioningCliReadiness, ProvisioningDriverStatus};
+use super::application::{
+    ProvisioningDriverStatus, ProvisioningPrerequisiteKind, ProvisioningReadiness,
+};
 use super::process::{
     ProvisioningCliCommand, ProvisioningCliEnvironment, ProvisioningCliOutput,
     ProvisioningCliOutputSchema, ProvisioningExecutableIdentity, ProvisioningProcessFailure,
@@ -90,7 +92,7 @@ impl PlanetScaleInventory {
         cancellation: &CancellationToken,
     ) -> AppResult<ProvisioningDriverStatus> {
         let Some(inventory) = Self::locate().await.map_err(process_error)? else {
-            return Ok(status(None, None, ProvisioningCliReadiness::Missing));
+            return Ok(status(None, None, ProvisioningReadiness::Missing));
         };
         inventory
             .detect_with_inventory(authority, cancellation)
@@ -114,11 +116,7 @@ impl PlanetScaleInventory {
             .await?;
         let version = parse_version(version.value())?;
         if compare_versions(&version, MINIMUM_PSCALE_VERSION)? == std::cmp::Ordering::Less {
-            return Ok(status(
-                Some(version),
-                None,
-                ProvisioningCliReadiness::Outdated,
-            ));
+            return Ok(status(Some(version), None, ProvisioningReadiness::Outdated));
         }
 
         let auth = self
@@ -135,14 +133,14 @@ impl PlanetScaleInventory {
             return Ok(status(
                 Some(version),
                 None,
-                ProvisioningCliReadiness::LoggedOut,
+                ProvisioningReadiness::LoggedOut,
             ));
         }
         if auth.auth_method != "oauth" {
             return Ok(status(
                 Some(version),
                 Some("PlanetScale service token".into()),
-                ProvisioningCliReadiness::WrongAccount,
+                ProvisioningReadiness::WrongAccount,
             ));
         }
         Ok(status(
@@ -151,7 +149,7 @@ impl PlanetScaleInventory {
                 auth.organization
                     .unwrap_or_else(|| "PlanetScale OAuth".into()),
             ),
-            ProvisioningCliReadiness::Ready,
+            ProvisioningReadiness::Ready,
         ))
     }
 
@@ -328,14 +326,15 @@ impl PlanetScaleInventory {
 fn status(
     installed_version: Option<String>,
     active_account: Option<String>,
-    readiness: ProvisioningCliReadiness,
+    readiness: ProvisioningReadiness,
 ) -> ProvisioningDriverStatus {
     ProvisioningDriverStatus {
         provider: LocalProvider::PlanetScale,
-        cli_name: "PlanetScale CLI".into(),
-        minimum_version: MINIMUM_PSCALE_VERSION.into(),
+        prerequisite_kind: ProvisioningPrerequisiteKind::OfficialCli,
+        prerequisite_name: "PlanetScale CLI".into(),
+        minimum_version: Some(MINIMUM_PSCALE_VERSION.into()),
         installed_version,
-        active_account,
+        active_identity: active_account,
         readiness,
     }
 }

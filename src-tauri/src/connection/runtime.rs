@@ -784,6 +784,8 @@ impl ConnectionContext {
             if self.pin.profile.provider == Provider::PlanetScale {
                 verify_planetscale_policy(&opened.live, self.pin.profile.engine, self.access)
                     .await?;
+            } else if self.pin.profile.provider == Provider::Neon {
+                verify_neon_policy(&opened.live, self.pin.profile.engine, self.access).await?;
             } else if self.pin.profile.provider == Provider::GcpCloudSql {
                 verify_gcp_cloud_sql_policy(
                     &opened.live,
@@ -799,6 +801,175 @@ impl ConnectionContext {
         retire_opened(opened).await;
         result
     }
+}
+
+async fn verify_neon_policy(
+    live: &Live,
+    engine: Engine,
+    access: ConnectionAccess,
+) -> AppResult<()> {
+    if engine != Engine::Postgres {
+        return Err(AppError::Blocked {
+            reason: "Neon policy opened the wrong engine".into(),
+        });
+    }
+    let sql = live.sql()?;
+    let super::DbPool::Postgres(pool) = &sql.read_pool else {
+        return Err(AppError::Blocked {
+            reason: "Neon policy opened the wrong engine".into(),
+        });
+    };
+    let role = sqlx::query(
+        "SELECT \
+           current_user::text ~ '^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$' AS owned_name, \
+           role.rolcanlogin, role.rolsuper, role.rolcreaterole, role.rolcreatedb, \
+           role.rolreplication, role.rolbypassrls, \
+           role.rolconnlimit = 4 AS bounded_connections, \
+           role.rolvaliduntil > now() \
+             AND role.rolvaliduntil <= now() + interval '20 minutes' AS bounded_expiry, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members membership \
+             WHERE membership.member = role.oid) AS no_memberships, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members membership \
+             WHERE membership.roleid = role.oid) AS no_members, \
+           NOT has_database_privilege(current_user, current_database(), 'CREATE') \
+             AS no_database_create, \
+           NOT has_database_privilege( \
+             current_user, current_database(), 'CONNECT WITH GRANT OPTION') \
+             AS no_connect_grant, \
+           NOT has_database_privilege(current_user, current_database(), 'TEMPORARY') \
+             AS no_temporary, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace schema \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'CREATE')) \
+             AS no_schema_create, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace schema \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege( \
+                 current_user, schema.oid, 'USAGE WITH GRANT OPTION')) \
+             AS no_schema_grant, \
+           current_setting('statement_timeout') = '5min' AS bounded_statement, \
+           current_setting('idle_in_transaction_session_timeout') = '1min' \
+             AS bounded_transaction_idle, \
+           current_setting('idle_session_timeout') = '5min' AS bounded_session_idle, \
+           current_setting('default_transaction_read_only') = $1 AS read_only_default \
+         FROM pg_catalog.pg_roles role WHERE role.rolname = current_user",
+    )
+    .bind(if access == ConnectionAccess::Read {
+        "on"
+    } else {
+        "off"
+    })
+    .fetch_one(pool)
+    .await?;
+    let safe_role = [
+        role.try_get::<bool, _>("owned_name")?,
+        role.try_get::<bool, _>("rolcanlogin")?,
+        !role.try_get::<bool, _>("rolsuper")?,
+        !role.try_get::<bool, _>("rolcreaterole")?,
+        !role.try_get::<bool, _>("rolcreatedb")?,
+        !role.try_get::<bool, _>("rolreplication")?,
+        !role.try_get::<bool, _>("rolbypassrls")?,
+        role.try_get::<bool, _>("bounded_connections")?,
+        role.try_get::<bool, _>("bounded_expiry")?,
+        role.try_get::<bool, _>("no_memberships")?,
+        role.try_get::<bool, _>("no_members")?,
+        role.try_get::<bool, _>("no_database_create")?,
+        role.try_get::<bool, _>("no_connect_grant")?,
+        role.try_get::<bool, _>("no_temporary")?,
+        role.try_get::<bool, _>("no_schema_create")?,
+        role.try_get::<bool, _>("no_schema_grant")?,
+        role.try_get::<bool, _>("bounded_statement")?,
+        role.try_get::<bool, _>("bounded_transaction_idle")?,
+        role.try_get::<bool, _>("bounded_session_idle")?,
+        role.try_get::<bool, _>("read_only_default")?,
+    ]
+    .into_iter()
+    .all(|value| value);
+
+    let write = access == ConnectionAccess::Write;
+    let privileges = sqlx::query(
+        "SELECT \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind IN ('r', 'p', 'v', 'm', 'f') \
+               AND NOT has_table_privilege(current_user, object.oid, 'SELECT')) AS all_read, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind IN ('r', 'p', 'v', 'm', 'f') \
+               AND CASE WHEN $1 THEN \
+                 NOT has_table_privilege(current_user, object.oid, 'INSERT') \
+                 OR NOT has_table_privilege(current_user, object.oid, 'UPDATE') \
+                 OR NOT has_table_privilege(current_user, object.oid, 'DELETE') \
+               ELSE \
+                 has_table_privilege(current_user, object.oid, 'INSERT') \
+                 OR has_table_privilege(current_user, object.oid, 'UPDATE') \
+                 OR has_table_privilege(current_user, object.oid, 'DELETE') \
+               END) AS exact_table_mode, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind = 'S' \
+               AND (NOT has_sequence_privilege(current_user, object.oid, 'SELECT') \
+                 OR CASE WHEN $1 THEN \
+                   NOT has_sequence_privilege(current_user, object.oid, 'USAGE') \
+                   OR NOT has_sequence_privilege(current_user, object.oid, 'UPDATE') \
+                 ELSE \
+                   has_sequence_privilege(current_user, object.oid, 'USAGE') \
+                   OR has_sequence_privilege(current_user, object.oid, 'UPDATE') \
+                 END)) AS exact_sequence_mode, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind IN ('r', 'p', 'v', 'm', 'f') \
+               AND (has_table_privilege(current_user, object.oid, 'TRUNCATE') \
+                 OR has_table_privilege(current_user, object.oid, 'REFERENCES') \
+                 OR has_table_privilege(current_user, object.oid, 'TRIGGER') \
+                 OR has_table_privilege(current_user, object.oid, 'SELECT WITH GRANT OPTION') \
+                 OR has_table_privilege(current_user, object.oid, 'INSERT WITH GRANT OPTION') \
+                 OR has_table_privilege(current_user, object.oid, 'UPDATE WITH GRANT OPTION') \
+                 OR has_table_privilege(current_user, object.oid, 'DELETE WITH GRANT OPTION'))) \
+             AS no_table_escalation, \
+           NOT EXISTS (SELECT 1 FROM pg_catalog.pg_class object \
+             JOIN pg_catalog.pg_namespace schema ON schema.oid = object.relnamespace \
+             WHERE schema.nspname <> 'information_schema' \
+               AND schema.nspname !~ '^pg_' \
+               AND has_schema_privilege(current_user, schema.oid, 'USAGE') \
+               AND object.relkind = 'S' \
+               AND (has_sequence_privilege(current_user, object.oid, 'SELECT WITH GRANT OPTION') \
+                 OR has_sequence_privilege(current_user, object.oid, 'USAGE WITH GRANT OPTION') \
+                 OR has_sequence_privilege(current_user, object.oid, 'UPDATE WITH GRANT OPTION'))) \
+             AS no_sequence_escalation",
+    )
+    .bind(write)
+    .fetch_one(pool)
+    .await?;
+    let safe_privileges = [
+        privileges.try_get::<bool, _>("all_read")?,
+        privileges.try_get::<bool, _>("exact_table_mode")?,
+        privileges.try_get::<bool, _>("exact_sequence_mode")?,
+        privileges.try_get::<bool, _>("no_table_escalation")?,
+        privileges.try_get::<bool, _>("no_sequence_escalation")?,
+    ]
+    .into_iter()
+    .all(|value| value);
+    if !safe_role || !safe_privileges {
+        return Err(AppError::Blocked {
+            reason: "Neon credential exceeded its approved database policy".into(),
+        });
+    }
+    Ok(())
 }
 
 async fn verify_planetscale_policy(
