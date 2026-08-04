@@ -102,8 +102,9 @@ jobs:
             src-tauri -> src-tauri/target
           save-if: false
 
-      - name: Test Windows ACP launcher and Broker boundary
+      - name: Test Windows ACP, Broker, and Provider boundaries
         run: |
           cargo test --package dopedb --lib broker::session::tests
+          cargo test --package dopedb --lib features::providers::adapters::authority::tests
           cargo test --package dopedb-protocol --test golden
           cargo test --package dopedb-cli --test terminal_session_e2e

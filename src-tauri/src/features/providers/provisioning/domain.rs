@@ -627,7 +627,10 @@ impl ProvisioningReceipt {
         now: DateTime<Utc>,
     ) -> AppResult<Self> {
         plan.validate()?;
-        if plan.intent() != ProvisioningIntent::Apply || !safe_account_scope(&account_scope) {
+        if plan.intent() != ProvisioningIntent::Apply
+            || !safe_account_scope(&account_scope)
+            || connection_id != plan.target().connection_id()
+        {
             return Err(blocked("provider provisioning receipt is invalid"));
         }
         Ok(Self {
@@ -1189,10 +1192,19 @@ pub(crate) fn assert_mock_provider_lifecycle() {
     let apply = fixture_plan(ProvisioningIntent::Apply, full.clone());
     let operation_id = Uuid::from_u128(22);
     let started = Utc::now();
+    assert!(ProvisioningReceipt::ready_to_apply(
+        WorkspaceId::from(Uuid::from_u128(1)),
+        "fixture-account".into(),
+        ConnectionId::from(Uuid::from_u128(999)),
+        operation_id,
+        &apply,
+        started,
+    )
+    .is_err());
     let mut receipt = ProvisioningReceipt::ready_to_apply(
         WorkspaceId::from(Uuid::from_u128(1)),
         "fixture-account".into(),
-        ConnectionId::from(Uuid::from_u128(23)),
+        apply.target().connection_id(),
         operation_id,
         &apply,
         started,
@@ -1243,7 +1255,7 @@ pub(crate) fn assert_mock_provider_lifecycle() {
     let mut incomplete_receipt = ProvisioningReceipt::ready_to_apply(
         WorkspaceId::from(Uuid::from_u128(1)),
         "fixture-account".into(),
-        ConnectionId::from(Uuid::from_u128(25)),
+        incomplete_plan.target().connection_id(),
         Uuid::from_u128(26),
         &incomplete_plan,
         started,

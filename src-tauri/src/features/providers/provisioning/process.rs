@@ -8,12 +8,14 @@
 mod process_tree;
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::fmt;
+use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
@@ -81,7 +83,7 @@ impl ProvisioningExecutableIdentity {
         let (sha256, byte_length) = hash_regular_file(&canonical_path).await?;
         let canonical_path = canonical_path
             .to_str()
-            .filter(|value| !value.chars().any(char::is_control))
+            .filter(|value| !value.chars().any(unsafe_command_text_char))
             .ok_or(ProvisioningProcessFailure::ExecutableRejected)?
             .to_owned();
         Ok(Self {
@@ -338,9 +340,7 @@ impl ProvisioningCliCommand {
             || self.argv.iter().any(|argument| {
                 argument.is_empty()
                     || argument.len() > MAX_ARGUMENT_BYTES
-                    || argument
-                        .chars()
-                        .any(|value| value == '\0' || value.is_control())
+                    || argument.chars().any(unsafe_command_text_char)
             })
         {
             return Err(ProvisioningProcessFailure::CommandRejected);
@@ -464,35 +464,124 @@ fn parse_output(
         ProvisioningCliOutputSchema::Empty => {
             return Err(ProvisioningProcessFailure::OutputRejected)
         }
-        ProvisioningCliOutputSchema::JsonObject => serde_json::from_slice(&output)
+        ProvisioningCliOutputSchema::JsonObject => strict_json(&output)
             .ok()
             .filter(Value::is_object)
             .ok_or(ProvisioningProcessFailure::OutputRejected)?,
-        ProvisioningCliOutputSchema::JsonArray => serde_json::from_slice(&output)
+        ProvisioningCliOutputSchema::JsonArray => strict_json(&output)
             .ok()
             .filter(Value::is_array)
             .ok_or(ProvisioningProcessFailure::OutputRejected)?,
         ProvisioningCliOutputSchema::JsonLines => {
             let mut values = Vec::new();
             for line in output.split(|byte| *byte == b'\n') {
-                let line = line
-                    .strip_suffix(b"\r")
-                    .unwrap_or(line)
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>();
+                let line = line.strip_suffix(b"\r").unwrap_or(line);
                 if line.iter().all(u8::is_ascii_whitespace) {
                     continue;
                 }
-                values.push(
-                    serde_json::from_slice(&line)
-                        .map_err(|_| ProvisioningProcessFailure::OutputRejected)?,
-                );
+                values.push(strict_json(line)?);
             }
             Value::Array(values)
         }
     };
     Ok(ProvisioningCliOutput { value })
+}
+
+struct StrictJsonValue(Value);
+
+impl<'de> Deserialize<'de> for StrictJsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(StrictJsonVisitor)
+    }
+}
+
+struct StrictJsonVisitor;
+
+impl<'de> Visitor<'de> for StrictJsonVisitor {
+    type Value = StrictJsonValue;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("JSON without duplicate object keys")
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(StrictJsonValue(Value::Bool(value)))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(StrictJsonValue(Value::Number(Number::from(value))))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(StrictJsonValue(Value::Number(Number::from(value))))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Number::from_f64(value)
+            .map(|number| StrictJsonValue(Value::Number(number)))
+            .ok_or_else(|| E::custom("invalid JSON number"))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(StrictJsonValue(Value::String(value.to_owned())))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
+        Ok(StrictJsonValue(Value::String(value)))
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E> {
+        Ok(StrictJsonValue(Value::Null))
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(StrictJsonValue(Value::Null))
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        StrictJsonValue::deserialize(deserializer)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut values = Vec::new();
+        while let Some(StrictJsonValue(value)) = sequence.next_element()? {
+            values.push(value);
+        }
+        Ok(StrictJsonValue(Value::Array(values)))
+    }
+
+    fn visit_map<A>(self, mut object: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut values = Map::new();
+        while let Some(key) = object.next_key::<String>()? {
+            if values.contains_key(&key) {
+                return Err(de::Error::custom("duplicate JSON object key"));
+            }
+            let StrictJsonValue(value) = object.next_value()?;
+            values.insert(key, value);
+        }
+        Ok(StrictJsonValue(Value::Object(values)))
+    }
+}
+
+fn strict_json(input: &[u8]) -> Result<Value, ProvisioningProcessFailure> {
+    serde_json::from_slice::<StrictJsonValue>(input)
+        .map(|value| value.0)
+        .map_err(|_| ProvisioningProcessFailure::OutputRejected)
 }
 
 fn validate_environment_path<'a>(
@@ -503,11 +592,27 @@ fn validate_environment_path<'a>(
     if !path.is_absolute()
         || value.is_empty()
         || value.len() > MAX_ARGUMENT_BYTES
-        || value.chars().any(char::is_control)
+        || value.chars().any(unsafe_command_text_char)
+        || path
+            .components()
+            .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
     {
         return Err(ProvisioningProcessFailure::CommandRejected);
     }
     Ok((key, value))
+}
+
+fn unsafe_command_text_char(value: char) -> bool {
+    value.is_control()
+        || matches!(
+            value,
+            '\u{061c}'
+                | '\u{200e}'
+                | '\u{200f}'
+                | '\u{202a}'..='\u{202e}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{feff}'
+        )
 }
 
 fn safe_path() -> &'static str {
@@ -532,6 +637,77 @@ fn lower_hex(bytes: &[u8]) -> String {
 pub(crate) async fn assert_process_boundary() {
     use uuid::Uuid;
 
+    let fixture_path = if cfg!(windows) {
+        r"C:\Windows\System32\fixture.exe"
+    } else {
+        "/usr/bin/fixture"
+    };
+    let fixture_executable = ProvisioningExecutableIdentity {
+        provider: LocalProvider::GcpCloudSql,
+        canonical_path: fixture_path.into(),
+        sha256: "ab".repeat(32),
+        byte_length: 1,
+    };
+    assert!(ProvisioningCliCommand::new(
+        LocalProvider::GcpCloudSql,
+        fixture_executable.clone(),
+        vec!["unsafe\u{202e}argument".into()],
+        vec![],
+        ProvisioningCliOutputSchema::Empty,
+        Duration::from_secs(2),
+    )
+    .is_err());
+    let traversal = if cfg!(windows) {
+        r"C:\Windows\System32\..\Temp"
+    } else {
+        "/tmp/../provider"
+    };
+    assert!(ProvisioningCliCommand::new(
+        LocalProvider::GcpCloudSql,
+        fixture_executable,
+        vec!["status".into()],
+        vec![ProvisioningCliEnvironment::Home(traversal.into())],
+        ProvisioningCliOutputSchema::Empty,
+        Duration::from_secs(2),
+    )
+    .is_err());
+
+    for (schema, output) in [
+        (
+            ProvisioningCliOutputSchema::JsonObject,
+            br#"{"ready":true,"ready":false}"#.as_slice(),
+        ),
+        (
+            ProvisioningCliOutputSchema::JsonObject,
+            br#"{"target":{"id":"one","id":"two"}}"#.as_slice(),
+        ),
+        (
+            ProvisioningCliOutputSchema::JsonArray,
+            br#"[{"id":"one","id":"two"}]"#.as_slice(),
+        ),
+        (
+            ProvisioningCliOutputSchema::JsonLines,
+            b"{\"ready\":true,\"ready\":false}\n".as_slice(),
+        ),
+        (
+            ProvisioningCliOutputSchema::JsonObject,
+            b"\x1b[32m{\"ready\":true}\x1b[0m".as_slice(),
+        ),
+        (
+            ProvisioningCliOutputSchema::JsonObject,
+            b"progress\n{\"ready\":true}".as_slice(),
+        ),
+        (
+            ProvisioningCliOutputSchema::JsonObject,
+            b"{\"ready\":true".as_slice(),
+        ),
+    ] {
+        assert_eq!(
+            parse_output(schema, Zeroizing::new(output.to_vec())),
+            Err(ProvisioningProcessFailure::OutputRejected),
+        );
+    }
+
     #[cfg(unix)]
     {
         let executable = ProvisioningExecutableIdentity::audit(
@@ -545,7 +721,7 @@ pub(crate) async fn assert_process_boundary() {
         let command = ProvisioningCliCommand::new(
             LocalProvider::GcpCloudSql,
             executable.clone(),
-            vec![r#"{"target":"exact"}"#.into()],
+            vec![r#"{"target":"$(echo injected); | & ../../escape ' quoted"}"#.into()],
             vec![ProvisioningCliEnvironment::SafePath],
             ProvisioningCliOutputSchema::JsonObject,
             Duration::from_secs(2),
@@ -563,7 +739,10 @@ pub(crate) async fn assert_process_boundary() {
             )
             .await
             .expect("execute fixed argv fixture");
-        assert_eq!(output.value()["target"], "exact");
+        assert_eq!(
+            output.value()["target"],
+            "$(echo injected); | & ../../escape ' quoted"
+        );
         assert_eq!(command.execution_sha256().unwrap().len(), 64);
         assert!(!command
             .redacted_plan()
@@ -679,5 +858,38 @@ pub(crate) async fn assert_process_boundary() {
                 .await,
             Err(ProvisioningProcessFailure::Cancelled)
         );
+
+        let drift_directory = std::env::temp_dir().join(format!(
+            "dopedb-provisioning-executable-drift-{}",
+            Uuid::new_v4()
+        ));
+        tokio::fs::create_dir(&drift_directory)
+            .await
+            .expect("create executable drift fixture directory");
+        let drift_path = drift_directory.join("fixture-cli");
+        tokio::fs::write(&drift_path, b"first")
+            .await
+            .expect("write executable drift fixture");
+        let drift_identity = ProvisioningExecutableIdentity::audit(
+            LocalProvider::GcpCloudSql,
+            &drift_path,
+            std::slice::from_ref(&drift_directory),
+            &["fixture-cli"],
+        )
+        .await
+        .expect("audit executable drift fixture");
+        tokio::fs::write(&drift_path, b"other")
+            .await
+            .expect("replace executable drift fixture");
+        assert_eq!(
+            drift_identity.revalidate().await,
+            Err(ProvisioningProcessFailure::ExecutableChanged)
+        );
+        tokio::fs::remove_file(&drift_path)
+            .await
+            .expect("remove executable drift fixture");
+        tokio::fs::remove_dir(&drift_directory)
+            .await
+            .expect("remove executable drift fixture directory");
     }
 }

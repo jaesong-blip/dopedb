@@ -101,6 +101,9 @@ setup path is removed:
 - The shared process runner executes a previously audited binary directly with
   fixed argv, an allowlisted environment, bounded schema-checked stdout, timeout,
   cancellation, and process-tree cleanup. Shell and `eval` paths do not exist.
+  Recursive JSON decoding rejects duplicate object keys instead of accepting a
+  spoofed last value. Bidirectional Unicode controls and parent-directory
+  traversal are rejected before argv/environment execution.
 - Interrupted apply/destroy Operations resume only after the receipt, target,
   adapter manifest, payload hash, and last checkpoint all validate. Otherwise the
   receipt becomes `Needs repair` and the Operation becomes `Outcome unknown`.
@@ -127,12 +130,13 @@ setup path is removed:
 
 ## #100 migration status
 
-GCP migration has started behind the production registry boundary:
+The provider-neutral lifecycle is registered for GCP Cloud SQL, PlanetScale, and
+Neon; provider discovery and setup still preserve these shared boundaries:
 
 - The shared process runner now has a process-local read authority distinct from
   an approved mutation permit. `detect` and `discover` therefore cannot be replayed
   as an apply/destroy checkpoint.
-- The unregistered GCP inventory audits the exact `gcloud` wrapper, pins its digest,
+- The GCP inventory adapter audits the exact `gcloud` wrapper, pins its digest,
   clears ambient environment variables, and accepts only bounded JSON for version,
   active account/project, Cloud SQL instances, and databases.
 - Missing, outdated, logged-out, wrong-account, and ready states remain distinct.
@@ -153,6 +157,33 @@ GCP migration has started behind the production registry boundary:
   revisions, provider/engine/database mismatches, unsafe expiry, and non-canonical
   resource shapes before a Provider driver can build a plan.
 
-This slice is intentionally not registered as an Available Provider. GCP remains on
-the legacy bootstrap until its apply, DB grant, independent verification, lease smoke
-test, drift repair, and ownership-scoped destroy paths all use the #99 lifecycle.
+GCP Cloud SQL, PlanetScale, and Neon now register only their completed lifecycle
+drivers. The legacy setup routes remain migration inputs until live provider and
+desktop lease E2E evidence is complete; they are not permission shortcuts around
+the receipt, verification, or managed-lease contracts.
+
+## #102 security regression status
+
+The fixed critical suite currently proves these provider-neutral boundaries without
+increasing the 104-test budget:
+
+- A provisioning receipt can be created only for the exact connection pinned in
+  the approved plan. Repository reads and writes additionally fence workspace,
+  account scope, active-scope generation, receipt revision, target fingerprint,
+  and ownership marker.
+- Shell metacharacters and path-like text remain one literal argv value because
+  the audited executable is spawned directly. Newlines, NUL/control characters,
+  bidirectional Unicode controls, and parent-directory environment paths fail
+  before spawn.
+- Executable canonical path, byte length, and SHA-256 are revalidated immediately
+  before execution. A changed executable cannot consume the approved permit.
+- JSON object, array, and JSON-lines modes reject duplicate keys at every nesting
+  level, malformed/truncated data, output above the byte cap, an unapproved exit
+  code, and data whose top-level schema does not match the command contract.
+- The same six Provider authority tests run in the Windows CI job. The Unix fixture
+  additionally executes a fixed binary and proves shell-looking argv remains
+  literal; a Windows-native process-tree interruption fixture remains open in #102.
+
+Provider-account live E2E, deterministic partial-failure fixtures, bounded drift
+detection timing, audit-event reconciliation, and Windows-native process-tree
+cleanup evidence remain required before #102 can close.

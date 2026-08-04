@@ -343,7 +343,6 @@ pub(crate) async fn assert_repository_fences() {
         fixture_plan, ManagedAccessCapability, ProvisioningCapabilityManifest, ProvisioningIntent,
     };
     use crate::features::workspaces::WorkspaceKind;
-    use crate::kernel::identity::ConnectionId;
     use crate::store::AccountScope;
 
     use ManagedAccessCapability::{
@@ -372,7 +371,7 @@ pub(crate) async fn assert_repository_fences() {
     let mut receipt = ProvisioningReceipt::ready_to_apply(
         WorkspaceId::from(workspace_id),
         AccountScope::Personal.storage_key().into(),
-        ConnectionId::from(Uuid::from_u128(31)),
+        plan.target().connection_id(),
         operation_id,
         &plan,
         now,
@@ -384,6 +383,38 @@ pub(crate) async fn assert_repository_fences() {
         .await
         .expect("persist provisioning receipt");
     assert_eq!(created, receipt);
+
+    let foreign_scope = ActiveResourceScope {
+        workspace_id: Uuid::from_u128(2),
+        ..scope.clone()
+    };
+    assert!(repository.load(&foreign_scope, receipt.id()).await.is_err());
+    let foreign_workspace_receipt = ProvisioningReceipt::ready_to_apply(
+        WorkspaceId::from(Uuid::from_u128(2)),
+        AccountScope::Personal.storage_key().into(),
+        plan.target().connection_id(),
+        Uuid::from_u128(32),
+        &plan,
+        now,
+    )
+    .expect("construct a foreign workspace fixture");
+    assert!(repository
+        .create(&scope, &foreign_workspace_receipt)
+        .await
+        .is_err());
+    let foreign_account_receipt = ProvisioningReceipt::ready_to_apply(
+        WorkspaceId::from(workspace_id),
+        "foreign-account".into(),
+        plan.target().connection_id(),
+        Uuid::from_u128(33),
+        &plan,
+        now,
+    )
+    .expect("construct a foreign account fixture");
+    assert!(repository
+        .create(&scope, &foreign_account_receipt)
+        .await
+        .is_err());
 
     receipt
         .begin_apply(&plan, operation_id, now)
