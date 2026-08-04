@@ -17,6 +17,7 @@ export type ActiveProviderIntegration = {
   id: string;
   organizationId: string;
   provider: string;
+  externalAccountId: string;
   encryptedCredential: string;
   credentialExpiresAt: Date | null;
   generation: bigint;

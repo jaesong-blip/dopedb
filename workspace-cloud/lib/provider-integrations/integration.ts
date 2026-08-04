@@ -19,11 +19,12 @@ import {
 } from "../providers/planetscale";
 import { missingPlanetScaleManagedScopes } from "../providers/planetscale-core";
 import {
+  inspectNeonCredential,
   listNeonBranches,
   listNeonDatabases,
   listNeonProjects,
 } from "../providers/neon";
-import type { NeonCredential } from "../providers/neon-core";
+import { parseNeonCredential } from "../providers/neon-core";
 import {
   listGcpCloudSqlDatabases,
   listGcpCloudSqlInstances,
@@ -197,10 +198,28 @@ export function currentPlanetScaleAccessToken(integration: ActiveProviderIntegra
 }
 
 export function neonCredential(integration: ActiveProviderIntegration) {
-  return openProviderCredential<NeonCredential>(
+  return parseNeonCredential(openProviderCredential<unknown>(
     integration.id,
     integration.encryptedCredential,
-  );
+  ));
+}
+
+export async function verifiedNeonCredential(
+  integration: ActiveProviderIntegration,
+) {
+  if (integration.provider !== "neon") {
+    throw new Error("Neon credential requested for another provider");
+  }
+  const credential = neonCredential(integration);
+  const auth = await inspectNeonCredential(credential);
+  if (auth.externalAccountId !== integration.externalAccountId) {
+    throw new ProviderRequestError(
+      "neon",
+      "Neon API key identity or project scope changed; reconnect the account",
+      409,
+    );
+  }
+  return credential;
 }
 
 export function gcpCredential(integration: ActiveProviderIntegration) {
@@ -297,7 +316,7 @@ export async function discoverProviderResources(input: {
       break;
     }
     case "neon": {
-      const credential = neonCredential(integration);
+      const credential = await verifiedNeonCredential(integration);
       if (kind === "projects") return boundedDiscoveryResults(await listNeonProjects(credential));
       if (kind === "branches" && isSegment(selection.project)) {
         return boundedDiscoveryResults(await listNeonBranches(credential, selection.project));

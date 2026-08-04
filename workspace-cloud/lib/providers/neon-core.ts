@@ -64,10 +64,54 @@ export function neonPublicDatabaseBoundaryError(
   return null;
 }
 
+export const NEON_CREDENTIAL_SCHEMA_VERSION = 1 as const;
+
 export type NeonCredential = {
+  kind: "apiKey";
+  schemaVersion: typeof NEON_CREDENTIAL_SCHEMA_VERSION;
   apiKey: string;
   organizationId: string | null;
 };
+
+/**
+ * Opens both the original unversioned API-key envelope and the current
+ * schema-versioned envelope. Callers always receive the current shape so no
+ * provider operation can accidentally treat a future credential kind as an
+ * API key.
+ */
+export function parseNeonCredential(value: unknown): NeonCredential {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid Neon credential");
+  }
+  const row = value as Record<string, unknown>;
+  const fields = Object.keys(row).sort();
+  const legacy = fields.join(",") === "apiKey,organizationId";
+  const current = fields.join(",")
+    === "apiKey,kind,organizationId,schemaVersion";
+  if (
+    (!legacy && !current)
+    || (current && (
+      row.kind !== "apiKey"
+      || row.schemaVersion !== NEON_CREDENTIAL_SCHEMA_VERSION
+    ))
+    || typeof row.apiKey !== "string"
+    || row.apiKey.length < 20
+    || row.apiKey.length > 512
+    || /\s/.test(row.apiKey)
+    || (row.organizationId !== null && (
+      typeof row.organizationId !== "string"
+      || !neonSegment(row.organizationId)
+    ))
+  ) {
+    throw new Error("Invalid Neon credential");
+  }
+  return {
+    kind: "apiKey",
+    schemaVersion: NEON_CREDENTIAL_SCHEMA_VERSION,
+    apiKey: row.apiKey,
+    organizationId: row.organizationId as string | null,
+  };
+}
 
 export type NeonResource = {
   project: string;

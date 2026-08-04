@@ -32,6 +32,8 @@ import {
 
 const API_ORIGIN = "https://console.neon.tech/api/v2";
 const REQUEST_TIMEOUT_MS = 15_000;
+const NEON_PAGE_LIMIT = 100;
+const MAX_NEON_PAGES = 16;
 type JsonObject = Record<string, unknown>;
 
 export type NeonAuthInfo = {
@@ -39,6 +41,8 @@ export type NeonAuthInfo = {
   externalAccountId: string;
   projectCount: number;
   scopeFingerprint: string;
+  authMethod: "api_key_user" | "api_key_org";
+  broadScope: boolean;
 };
 
 export class NeonLeaseCleanupRequiredError extends ProviderRequestError {
@@ -60,6 +64,14 @@ function requiredString(value: unknown, field: string) {
     throw new ProviderRequestError("neon", `Neon response omitted ${field}`, 502);
   }
   return value;
+}
+
+function requiredResourceId(value: unknown, field: string) {
+  if (typeof value === "string") return requiredString(value, field);
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+    return String(value);
+  }
+  throw new ProviderRequestError("neon", `Neon response omitted ${field}`, 502);
 }
 
 function apiSegment(value: string) {
@@ -105,33 +117,102 @@ async function apiRequest(
 
 function nextCursor(body: JsonObject) {
   const pagination = body.pagination;
-  if (!pagination || typeof pagination !== "object" || Array.isArray(pagination)) {
+  if (pagination === undefined || pagination === null) {
     return null;
+  }
+  if (typeof pagination !== "object" || Array.isArray(pagination)) {
+    throw new ProviderRequestError("neon", "Neon returned invalid pagination", 502);
   }
   const page = pagination as JsonObject;
   const value = page.next ?? page.cursor;
-  return typeof value === "string" && value.length <= 2_048 ? value : null;
+  if (value === undefined || value === null || value === "") return null;
+  if (
+    typeof value !== "string"
+    || value.length > 2_048
+    || /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new ProviderRequestError("neon", "Neon returned invalid pagination", 502);
+  }
+  return value;
+}
+
+async function listNeonCollection(input: {
+  credential: NeonCredential;
+  path: string;
+  collection: string;
+  query?: URLSearchParams;
+  requestPageLimit?: boolean;
+  scopeLabel: string;
+}) {
+  const rows: JsonObject[] = [];
+  const seenCursors = new Set<string>();
+  const seenIds = new Set<string>();
+  let cursor: string | null = null;
+  for (let page = 0; page < MAX_NEON_PAGES; page += 1) {
+    const query = new URLSearchParams(input.query);
+    if (input.requestPageLimit !== false) {
+      query.set("limit", String(NEON_PAGE_LIMIT));
+    }
+    if (cursor) query.set("cursor", cursor);
+    const suffix = query.size > 0 ? `?${query}` : "";
+    const body = object(await apiRequest(
+      input.credential,
+      `${input.path}${suffix}`,
+    ));
+    const collection = body[input.collection];
+    const pageRows = Array.isArray(collection)
+      ? collection.map(object)
+      : [];
+    if (pageRows.length > MAX_PROVIDER_RESULTS - rows.length) {
+      throw new ProviderRequestError(
+        "neon",
+        `Neon ${input.scopeLabel} scope is too large to import safely`,
+        409,
+      );
+    }
+    for (const row of pageRows) {
+      const id = requiredResourceId(row.id, `${input.scopeLabel} id`);
+      if (seenIds.has(id)) {
+        throw new ProviderRequestError(
+          "neon",
+          `Neon ${input.scopeLabel} pagination returned duplicate resources`,
+          502,
+        );
+      }
+      seenIds.add(id);
+    }
+    rows.push(...pageRows);
+    const next = nextCursor(body);
+    if (!next) return rows;
+    if (rows.length >= MAX_PROVIDER_RESULTS || seenCursors.has(next)) {
+      throw new ProviderRequestError(
+        "neon",
+        `Neon ${input.scopeLabel} pagination could not be completed safely`,
+        409,
+      );
+    }
+    seenCursors.add(next);
+    cursor = next;
+  }
+  throw new ProviderRequestError(
+    "neon",
+    `Neon ${input.scopeLabel} pagination exceeded its safety limit`,
+    409,
+  );
 }
 
 export async function listNeonProjects(
   credential: NeonCredential,
 ): Promise<ProviderResourceItem[]> {
-  const rows: JsonObject[] = [];
-  const query = new URLSearchParams({ limit: String(MAX_PROVIDER_RESULTS), timeout: "15000" });
+  const query = new URLSearchParams({ timeout: "15000" });
   if (credential.organizationId) query.set("org_id", credential.organizationId);
-  const body = object(await apiRequest(credential, `/projects?${query}`));
-  const projects = Array.isArray(body.projects) ? body.projects : [];
-  if (projects.length > MAX_PROVIDER_RESULTS) {
-    throw new ProviderRequestError("neon", "Neon project scope is too large to fingerprint safely", 409);
-  }
-  rows.push(...projects.map(object));
-  if (nextCursor(body)) {
-    throw new ProviderRequestError(
-      "neon",
-      "Neon project scope is too large to fingerprint safely",
-      409,
-    );
-  }
+  const rows = await listNeonCollection({
+    credential,
+    path: "/projects",
+    collection: "projects",
+    query,
+    scopeLabel: "project",
+  });
   return rows.map((row) => {
     const id = requiredString(row.id, "project id");
     return {
@@ -148,56 +229,32 @@ export async function listNeonProjects(
 export async function inspectNeonCredential(
   credential: NeonCredential,
 ): Promise<NeonAuthInfo> {
-  // Project-scoped organization keys intentionally cannot call account-level
-  // endpoints. Project discovery proves the key first; /users/me is then optional,
-  // while /users/me/organizations is documented for every API-key type.
-  const projects = await listNeonProjects(credential);
+  // /auth works for personal, organization, and project-scoped organization
+  // keys. Pairing that identity with the complete project set detects both
+  // principal replacement and scope drift without requiring account-level APIs.
+  const [projects, authBody] = await Promise.all([
+    listNeonProjects(credential),
+    apiRequest(credential, "/auth").then(object),
+  ]);
   if (projects.length === 0) {
     throw new ProviderRequestError("neon", "Neon API key cannot access a project", 403);
   }
-  const [userId, organizationsBody] = await Promise.all([
-    apiRequest(credential, "/users/me")
-      .then((body) => requiredString(object(body).id, "user id"))
-      .catch((error) => {
-        if (
-          error instanceof ProviderRequestError
-          && [403, 404, 424].includes(error.status)
-        ) {
-          return null;
-        }
-        throw error;
-      }),
-    apiRequest(credential, "/users/me/organizations").then(object),
-  ]);
-  const organizations = Array.isArray(organizationsBody.organizations)
-    ? organizationsBody.organizations.map(object)
-    : [];
-  const organizationIds = organizations.map((organization) => (
-    requiredString(organization.id, "organization id")
-  ));
+  const accountId = requiredString(authBody.account_id, "authenticated account id");
+  const authMethod = authBody.auth_method;
   if (
-    credential.organizationId
-    && !organizationIds.includes(credential.organizationId)
+    authMethod !== "api_key_user"
+    && authMethod !== "api_key_org"
   ) {
     throw new ProviderRequestError(
       "neon",
-      "Neon API key does not belong to the selected organization",
-      403,
-    );
-  }
-  const organizationId = credential.organizationId
-    ?? (organizationIds.length === 1 ? organizationIds[0] : null);
-  if (!userId && !organizationId) {
-    throw new ProviderRequestError(
-      "neon",
-      "Neon API key identity could not be resolved",
+      "Neon credential is not an API key",
       409,
     );
   }
   const identity = neonIntegrationIdentity(
-    credential.organizationId || !userId
-      ? { kind: "organization", id: organizationId! }
-      : { kind: "user", id: userId },
+    authMethod === "api_key_org"
+      ? { kind: "organization", id: accountId }
+      : { kind: "user", id: accountId },
     projects.map((project) => project.value),
   );
   return {
@@ -207,6 +264,10 @@ export async function inspectNeonCredential(
     externalAccountId: identity.externalAccountId,
     projectCount: projects.length,
     scopeFingerprint: identity.scopeFingerprint,
+    authMethod,
+    // An org_id query narrows this integration's discovery, but does not narrow
+    // the authority carried by a personal key itself.
+    broadScope: authMethod === "api_key_user",
   };
 }
 
@@ -214,22 +275,19 @@ export async function listNeonBranches(
   credential: NeonCredential,
   project: string,
 ): Promise<ProviderResourceItem[]> {
-  const body = object(await apiRequest(
+  const rows = await listNeonCollection({
     credential,
-    `/projects/${apiSegment(project)}/branches?limit=${MAX_PROVIDER_RESULTS}`,
-  ));
-  const branches = Array.isArray(body.branches) ? body.branches : [];
-  if (branches.length > MAX_PROVIDER_RESULTS) {
-    throw new ProviderRequestError("neon", "Neon branch scope is too large to import safely", 409);
-  }
-  const rows = branches.map(object);
+    path: `/projects/${apiSegment(project)}/branches`,
+    collection: "branches",
+    scopeLabel: "branch",
+  });
   return rows.map((row) => {
     const id = requiredString(row.id, "branch id");
     return {
       id,
       value: id,
       name: requiredString(row.name, "branch name"),
-      production: row.default === true || row.protected === true
+      production: row.protected === true
         ? true
         : row.default === false && row.protected === false
           ? false
@@ -244,19 +302,20 @@ export async function listNeonDatabases(
   project: string,
   branch: string,
 ): Promise<ProviderResourceItem[]> {
-  const body = object(await apiRequest(
+  // The current Neon database endpoint is unpaginated. The generic collector
+  // still follows a future cursor response, but does not send undocumented
+  // pagination parameters on the first request.
+  const rows = await listNeonCollection({
     credential,
-    `/projects/${apiSegment(project)}/branches/${apiSegment(branch)}/databases?limit=${MAX_PROVIDER_RESULTS}`,
-  ));
-  const databases = Array.isArray(body.databases) ? body.databases : [];
-  if (databases.length > MAX_PROVIDER_RESULTS) {
-    throw new ProviderRequestError("neon", "Neon database scope is too large to import safely", 409);
-  }
-  const rows = databases.map(object);
+    path: `/projects/${apiSegment(project)}/branches/${apiSegment(branch)}/databases`,
+    collection: "databases",
+    requestPageLimit: false,
+    scopeLabel: "database",
+  });
   return rows.map((row) => {
     const name = requiredString(row.name, "database name");
     return {
-      id: String(row.id ?? name),
+      id: requiredResourceId(row.id, "database id"),
       value: name,
       name,
       kind: "postgres",

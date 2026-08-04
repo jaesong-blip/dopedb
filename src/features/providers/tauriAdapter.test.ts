@@ -273,6 +273,8 @@ describe("provider credential Tauri adapter", () => {
       /workloadIdentityPoolId|workloadIdentityProviderId|readServiceAccountEmail/,
     );
     expect(providerIntegrationListSource).not.toMatch(/availability|"준비 중"/);
+    expect(providerIntegrationListSource).toContain("원클릭 연결이 아니며");
+    expect(providerIntegrationListSource).toContain(":personal:broad:");
     expect(providerCatalogSource).not.toMatch(
       /supportsReadWrite|availability|awsRds|oracleOci|mongodbAtlas/,
     );
@@ -329,11 +331,20 @@ describe("provider credential Tauri adapter", () => {
       'integration.provider === "planetScale" || integration.provider === "neon"',
     );
     expect(neonCoreSource).toContain("ALTER DEFAULT PRIVILEGES FOR ROLE");
+    expect(neonCoreSource).toContain("NEON_CREDENTIAL_SCHEMA_VERSION = 1");
+    expect(neonCoreSource).toContain("parseNeonCredential");
     expect(neonCoreSource).toContain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES");
     expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON TABLES");
     expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA");
     expect(neonSource).toContain("FROM pg_default_acl d");
     expect(neonSource).toContain("Neon future-object privilege verification failed");
+    expect(neonSource).toContain('apiRequest(credential, "/auth")');
+    expect(neonSource).toContain("seenCursors.has(next)");
+    expect(neonSource).toContain('production: row.protected === true');
+    expect(neonSource).not.toContain(
+      "row.default === true || row.protected === true",
+    );
+    expect(providerIntegrationRouteSource).toContain('"api-key-v1"');
     expect(neonSource).toContain("return { providerAuditId: branch.value }");
     expect(neonSource).toContain("NeonLeaseCleanupRequiredError");
     expect(providerLeaseIssuanceSource).toContain(

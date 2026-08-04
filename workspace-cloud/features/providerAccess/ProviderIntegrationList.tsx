@@ -66,6 +66,13 @@ export function ProviderIntegrationList({
                     공유 DB {databaseCount}개 · 마지막 확인{" "}
                     {new Date(integration.updatedAt).toLocaleString("ko-KR")}
                   </small>
+                  {integration.provider === "neon"
+                    && integration.grantedScope?.includes(":personal:broad:") ? (
+                      <small className="tw:text-2xs tw:leading-body tw:text-danger">
+                        개인 API 키는 계정 전체 권한을 가질 수 있습니다. 프로젝트
+                        범위 조직 키로 다시 연결하는 것을 권장합니다.
+                      </small>
+                    ) : null}
                 </div>
                 <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-2 tw:max-[640px]:justify-start">
                   {provider ? (
@@ -164,7 +171,8 @@ export function ProviderIntegrationList({
           }}
         >
           <p className="tw:col-span-full tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-            가능하면{" "}
+            Neon은 제3자 앱용 공개 OAuth 등록을 제공하지 않아 API 키로
+            연결합니다. 원클릭 연결이 아니며, 가능하면{" "}
             <a
               className="tw:text-primary"
               href="https://neon.com/docs/manage/api-keys"
@@ -173,7 +181,8 @@ export function ProviderIntegrationList({
             >
               프로젝트 범위 조직 API 키
             </a>
-            를 사용하세요.
+            를 만들어 사용하세요. 키는 서버에서 암호화되며 공유 DB에는
+            저장되지 않습니다.
           </p>
           <ControlField label="Neon API 키">
             <ControlInput

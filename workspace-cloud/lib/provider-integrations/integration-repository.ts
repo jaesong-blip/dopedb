@@ -39,6 +39,7 @@ async function providerIntegration(
       id: true,
       organizationId: true,
       provider: true,
+      externalAccountId: true,
       encryptedCredential: true,
       credentialExpiresAt: true,
       generation: true,

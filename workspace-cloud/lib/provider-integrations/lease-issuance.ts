@@ -42,6 +42,7 @@ import {
   neonCredential,
   providerAccessToken,
   requiredOidcToken,
+  verifiedNeonCredential,
 } from "./integration";
 import { cleanupExpiredManagedLeases } from "./lease-cleanup";
 
@@ -58,7 +59,7 @@ export async function validateManagedProviderResource(input: {
       );
     case "neon":
       return validateNeonResource(
-        neonCredential(input.integration),
+        await verifiedNeonCredential(input.integration),
         input.resource as NeonResource,
       );
     case "gcpCloudSql":
@@ -203,19 +204,21 @@ export async function issueManagedLease(input: {
           label,
         );
         break;
-      case "neon":
+      case "neon": {
+        const credential = await verifiedNeonCredential(input.integration);
         await validateNeonResource(
-          neonCredential(input.integration),
+          credential,
           input.resource as NeonResource,
           input.accessMode,
         );
         lease = await issueNeonLease({
-          credential: neonCredential(input.integration),
+          credential,
           resource: input.resource as NeonResource,
           accessMode: input.accessMode,
           role: neonRoleForLease(input.userId, leaseId),
         });
         break;
+      }
       case "gcpCloudSql":
         await validateGcpCloudSqlResource(
           gcpCredential(input.integration),

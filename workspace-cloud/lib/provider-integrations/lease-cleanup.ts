@@ -161,6 +161,7 @@ async function revokeLeaseRows(
     id: workspaceProviderIntegration.id,
     organizationId: workspaceProviderIntegration.organizationId,
     provider: workspaceProviderIntegration.provider,
+    externalAccountId: workspaceProviderIntegration.externalAccountId,
     encryptedCredential: workspaceProviderIntegration.encryptedCredential,
     credentialExpiresAt: workspaceProviderIntegration.credentialExpiresAt,
     generation: workspaceProviderIntegration.generation,

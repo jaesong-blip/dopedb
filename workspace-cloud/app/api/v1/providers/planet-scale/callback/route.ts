@@ -101,6 +101,7 @@ export async function GET(request: Request) {
         id: true,
         organizationId: true,
         provider: true,
+        externalAccountId: true,
         encryptedCredential: true,
         credentialExpiresAt: true,
         status: true,

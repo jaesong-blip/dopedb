@@ -45,6 +45,7 @@ import {
 } from "../../../../../../lib/providers/gcp-cloud-oauth";
 import { ProviderRequestError } from "../../../../../../lib/providers/provider-types";
 import {
+  parseNeonCredential,
   type NeonCredential,
 } from "../../../../../../lib/providers/neon-core";
 import {
@@ -243,12 +244,23 @@ export async function POST(request: Request, context: RouteContext) {
       ) {
         return jsonError("Invalid Neon API key configuration", 400);
       }
-      credential = { apiKey, organizationId };
+      credential = parseNeonCredential({
+        kind: "apiKey",
+        schemaVersion: 1,
+        apiKey,
+        organizationId,
+      });
       neonConfigurationCredential = credential;
       const info = await inspectNeonCredential(credential);
       externalAccountId = info.externalAccountId;
       displayName = info.displayName;
-      grantedScope = `projects:${info.projectCount}:${info.scopeFingerprint.slice(0, 16)}`;
+      grantedScope = [
+        "api-key-v1",
+        info.authMethod === "api_key_user" ? "personal" : "organization",
+        info.broadScope ? "broad" : "scoped",
+        `projects:${info.projectCount}`,
+        info.scopeFingerprint.slice(0, 16),
+      ].join(":");
     } else {
       stage = "gcp_setup_ticket";
       if (
@@ -477,10 +489,10 @@ export async function POST(request: Request, context: RouteContext) {
         existing = legacyRows.find((row) => {
           if (row.externalAccountId.startsWith("neon:v2:")) return false;
           try {
-            const stored = openProviderCredential<NeonCredential>(
+            const stored = parseNeonCredential(openProviderCredential<unknown>(
               row.id,
               row.encryptedCredential,
-            );
+            ));
             return neonConfigurationCredential !== null
               && sameSecret(stored.apiKey, neonConfigurationCredential.apiKey);
           } catch {

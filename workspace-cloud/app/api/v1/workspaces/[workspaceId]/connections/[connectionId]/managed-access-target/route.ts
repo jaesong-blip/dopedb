@@ -10,6 +10,7 @@ import {
   providerAccessToken,
   requiredOidcToken,
   revokeActiveLeases,
+  verifiedNeonCredential,
 } from "../../../../../../../../lib/provider-integrations";
 import { loadProviderProvisioningTarget } from "../../../../../../../../lib/provider-provisioning-target";
 import {
@@ -153,7 +154,7 @@ export async function POST(request: Request, context: RouteContext) {
         )
       : integration.provider === "neon"
         ? await validateNeonResource(
-            neonCredential(integration),
+            await verifiedNeonCredential(integration),
             resource as NeonResource,
             "write",
           )
