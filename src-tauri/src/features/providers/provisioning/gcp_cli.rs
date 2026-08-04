@@ -629,8 +629,25 @@ fn system_database(value: &str) -> bool {
     )
 }
 
-fn process_error(_: ProvisioningProcessFailure) -> AppError {
-    blocked("gcloud command failed its audited execution boundary")
+fn process_error(error: ProvisioningProcessFailure) -> AppError {
+    match error {
+        ProvisioningProcessFailure::AuthenticationRequired => {
+            blocked("Google Cloud CLI authentication is required")
+        }
+        ProvisioningProcessFailure::MultiFactorRequired => {
+            blocked("Google Cloud CLI requires multi-factor authentication")
+        }
+        ProvisioningProcessFailure::PermissionDenied => {
+            blocked("Google Cloud CLI permission was denied")
+        }
+        ProvisioningProcessFailure::RateLimited => {
+            blocked("Google Cloud CLI rate limit was reached")
+        }
+        ProvisioningProcessFailure::NetworkUnavailable | ProvisioningProcessFailure::TimedOut => {
+            AppError::Network("Google Cloud CLI network is unavailable".into())
+        }
+        _ => blocked("gcloud command failed its audited execution boundary"),
+    }
 }
 
 fn blocked(reason: &'static str) -> AppError {
@@ -641,6 +658,21 @@ fn blocked(reason: &'static str) -> AppError {
 
 #[cfg(test)]
 pub(crate) fn assert_gcloud_cli_contract() {
+    let classified = [
+        ProvisioningProcessFailure::AuthenticationRequired,
+        ProvisioningProcessFailure::MultiFactorRequired,
+        ProvisioningProcessFailure::PermissionDenied,
+        ProvisioningProcessFailure::RateLimited,
+        ProvisioningProcessFailure::NetworkUnavailable,
+    ]
+    .map(|failure| process_error(failure).to_string());
+    assert_eq!(
+        classified
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        classified.len()
+    );
     let version = serde_json::json!({
         "Google Cloud SDK": "562.0.0",
         "core": "2026.03.23"

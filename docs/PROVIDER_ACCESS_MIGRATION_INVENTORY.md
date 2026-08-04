@@ -230,6 +230,15 @@ increasing the 104-test budget:
   before authority use, connection fencing must precede cleanup, and both fence and
   hosted cleanup failures remain retryable errors. A retry uses the same ownership
   marker and exact Provider audit ID.
+- Provider CLI stderr is read concurrently under the same one-megabyte cap as
+  stdout, kept in a zeroizing process-local buffer, and discarded without reaching
+  logs, receipts, Operations, or the renderer. On non-zero exit, only the closed
+  classification `AuthenticationRequired`, `MultiFactorRequired`,
+  `PermissionDenied`, `RateLimited`, `NetworkUnavailable`, or generic rejected exit
+  survives. GCP and PlanetScale map each class to a distinct secret-free failure;
+  the local live GCP fixture now identifies the current expired session as
+  `Google Cloud CLI authentication is required` instead of a generic audited-boundary
+  failure.
 - Native Windows run
   [`30958001621`](https://github.com/json-choi/dopedb/actions/runs/30958001621)
   passed the complete `windows-check`, including the running grandchild Job Object

@@ -658,8 +658,25 @@ fn parse_version_parts(value: &str) -> AppResult<[u32; 3]> {
     Ok(parsed.map(Option::unwrap))
 }
 
-fn process_error(_: ProvisioningProcessFailure) -> AppError {
-    blocked("PlanetScale command failed its audited execution boundary")
+fn process_error(error: ProvisioningProcessFailure) -> AppError {
+    match error {
+        ProvisioningProcessFailure::AuthenticationRequired => {
+            blocked("PlanetScale CLI authentication is required")
+        }
+        ProvisioningProcessFailure::MultiFactorRequired => {
+            blocked("PlanetScale CLI requires multi-factor authentication")
+        }
+        ProvisioningProcessFailure::PermissionDenied => {
+            blocked("PlanetScale CLI permission was denied")
+        }
+        ProvisioningProcessFailure::RateLimited => {
+            blocked("PlanetScale CLI rate limit was reached")
+        }
+        ProvisioningProcessFailure::NetworkUnavailable | ProvisioningProcessFailure::TimedOut => {
+            AppError::Network("PlanetScale CLI network is unavailable".into())
+        }
+        _ => blocked("PlanetScale command failed its audited execution boundary"),
+    }
 }
 
 fn blocked(reason: &'static str) -> AppError {
@@ -670,6 +687,21 @@ fn blocked(reason: &'static str) -> AppError {
 
 #[cfg(test)]
 pub(crate) fn assert_planetscale_cli_contract() {
+    let classified = [
+        ProvisioningProcessFailure::AuthenticationRequired,
+        ProvisioningProcessFailure::MultiFactorRequired,
+        ProvisioningProcessFailure::PermissionDenied,
+        ProvisioningProcessFailure::RateLimited,
+        ProvisioningProcessFailure::NetworkUnavailable,
+    ]
+    .map(|failure| process_error(failure).to_string());
+    assert_eq!(
+        classified
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        classified.len()
+    );
     assert_eq!(
         parse_version(&serde_json::json!({
             "version": "v0.308.0",

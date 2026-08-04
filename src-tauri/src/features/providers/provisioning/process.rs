@@ -18,7 +18,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Number, Value};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
@@ -277,7 +277,7 @@ impl ProvisioningCliCommand {
             .kill_on_drop(true)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         for environment in &self.environment {
             let (key, value) = environment.key_and_value()?;
             command.env(key, value);
@@ -304,7 +304,11 @@ impl ProvisioningCliCommand {
             .stdout
             .take()
             .ok_or(ProvisioningProcessFailure::OutputRejected)?;
-        let read = read_bounded(stdout);
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or(ProvisioningProcessFailure::OutputRejected)?;
+        let read = async move { tokio::try_join!(read_bounded(stdout), read_bounded(stderr)) };
         let timeout = Duration::from_millis(self.timeout_ms);
         let result = tokio::select! {
             biased;
@@ -315,12 +319,12 @@ impl ProvisioningCliCommand {
             },
         };
         let status = tree.terminate_and_reap(&mut child).await?;
-        let output = result?;
+        let (output, stderr) = result?;
         if !status
             .code()
             .is_some_and(|code| self.accepted_exit_codes.contains(&code))
         {
-            return Err(ProvisioningProcessFailure::ExitStatusRejected);
+            return Err(classify_exit_failure(&stderr));
         }
         parse_output(self.output_schema, output)
     }
@@ -387,6 +391,16 @@ pub(crate) enum ProvisioningProcessFailure {
     TimedOut,
     #[error("provider CLI output was rejected")]
     OutputRejected,
+    #[error("provider CLI authentication is required")]
+    AuthenticationRequired,
+    #[error("provider CLI requires multi-factor authentication")]
+    MultiFactorRequired,
+    #[error("provider CLI permission was denied")]
+    PermissionDenied,
+    #[error("provider CLI rate limit was reached")]
+    RateLimited,
+    #[error("provider CLI network is unavailable")]
+    NetworkUnavailable,
     #[error("provider CLI exited unsuccessfully")]
     ExitStatusRejected,
     #[error("provider CLI process cleanup failed")]
@@ -433,13 +447,14 @@ async fn hash_regular_file(path: &Path) -> Result<(String, u64), ProvisioningPro
     Ok((lower_hex(&digest.finalize()), observed))
 }
 
-async fn read_bounded(
-    mut stdout: tokio::process::ChildStdout,
-) -> Result<Zeroizing<Vec<u8>>, ProvisioningProcessFailure> {
+async fn read_bounded<R>(mut stream: R) -> Result<Zeroizing<Vec<u8>>, ProvisioningProcessFailure>
+where
+    R: AsyncRead + Unpin,
+{
     let mut output = Zeroizing::new(Vec::with_capacity(4096));
     let mut buffer = [0_u8; 8192];
     loop {
-        let read = stdout
+        let read = stream
             .read(&mut buffer)
             .await
             .map_err(|_| ProvisioningProcessFailure::OutputRejected)?;
@@ -451,6 +466,89 @@ async fn read_bounded(
         }
         output.extend_from_slice(&buffer[..read]);
     }
+}
+
+fn classify_exit_failure(stderr: &[u8]) -> ProvisioningProcessFailure {
+    if contains_any_ascii_case_insensitive(
+        stderr,
+        &[
+            b"mfa required",
+            b"multi-factor authentication",
+            b"multifactor authentication",
+            b"two-factor authentication",
+            b"2fa required",
+        ],
+    ) {
+        ProvisioningProcessFailure::MultiFactorRequired
+    } else if contains_any_ascii_case_insensitive(
+        stderr,
+        &[
+            b"reauthentication failed",
+            b"authentication required",
+            b"not authenticated",
+            b"not logged in",
+            b"login required",
+            b"please log in",
+            b"please run: gcloud auth login",
+            b"gcloud auth login",
+            b"invalid_grant",
+            b"unauthenticated",
+            b"credentials have been revoked",
+            b"401 unauthorized",
+        ],
+    ) {
+        ProvisioningProcessFailure::AuthenticationRequired
+    } else if contains_any_ascii_case_insensitive(
+        stderr,
+        &[
+            b"rate limit",
+            b"rate_limit",
+            b"quota exceeded",
+            b"resource_exhausted",
+            b"too many requests",
+            b"status 429",
+            b"http 429",
+        ],
+    ) {
+        ProvisioningProcessFailure::RateLimited
+    } else if contains_any_ascii_case_insensitive(
+        stderr,
+        &[
+            b"permission denied",
+            b"permission_denied",
+            b"does not have permission",
+            b"access denied",
+            b"status 403",
+            b"http 403",
+            b"403 forbidden",
+        ],
+    ) {
+        ProvisioningProcessFailure::PermissionDenied
+    } else if contains_any_ascii_case_insensitive(
+        stderr,
+        &[
+            b"connection timed out",
+            b"connection refused",
+            b"network is unreachable",
+            b"temporary failure in name resolution",
+            b"name or service not known",
+            b"unable to connect",
+            b"could not resolve host",
+            b"tls handshake",
+        ],
+    ) {
+        ProvisioningProcessFailure::NetworkUnavailable
+    } else {
+        ProvisioningProcessFailure::ExitStatusRejected
+    }
+}
+
+fn contains_any_ascii_case_insensitive(haystack: &[u8], needles: &[&[u8]]) -> bool {
+    needles.iter().any(|needle| {
+        haystack
+            .windows(needle.len())
+            .any(|window| window.eq_ignore_ascii_case(needle))
+    })
 }
 
 fn parse_output(
@@ -707,6 +805,36 @@ pub(crate) async fn assert_process_boundary() {
             Err(ProvisioningProcessFailure::OutputRejected),
         );
     }
+
+    let secret = "provider-secret-must-not-escape";
+    let authentication =
+        format!("Reauthentication failed. Please run: gcloud auth login. {secret}");
+    let authentication_failure = classify_exit_failure(authentication.as_bytes());
+    assert_eq!(
+        authentication_failure,
+        ProvisioningProcessFailure::AuthenticationRequired
+    );
+    assert!(!authentication_failure.to_string().contains(secret));
+    assert_eq!(
+        classify_exit_failure(b"MFA required; authentication required"),
+        ProvisioningProcessFailure::MultiFactorRequired
+    );
+    assert_eq!(
+        classify_exit_failure(b"RESOURCE_EXHAUSTED: quota exceeded"),
+        ProvisioningProcessFailure::RateLimited
+    );
+    assert_eq!(
+        classify_exit_failure(b"403 Forbidden: permission denied"),
+        ProvisioningProcessFailure::PermissionDenied
+    );
+    assert_eq!(
+        classify_exit_failure(b"connection refused: network is unreachable"),
+        ProvisioningProcessFailure::NetworkUnavailable
+    );
+    assert_eq!(
+        classify_exit_failure(b"unclassified Provider failure"),
+        ProvisioningProcessFailure::ExitStatusRejected
+    );
 
     #[cfg(windows)]
     {
