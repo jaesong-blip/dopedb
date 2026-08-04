@@ -1,8 +1,8 @@
 //! Strict, read-only Google Cloud CLI inventory for the GCP provisioner.
 //!
-//! This module intentionally does not implement [`super::application::ProvisioningDriver`]
-//! yet. A partial adapter must not enter the production registry: #100 registers GCP
-//! only after apply, verify, issue, reconcile, and owned destroy are all available.
+//! The complete GCP driver consumes this read authority for detect/discover only;
+//! apply, verify, issue, reconcile, and owned destroy remain behind the separately
+//! approved provisioning plan and hosted target authority.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

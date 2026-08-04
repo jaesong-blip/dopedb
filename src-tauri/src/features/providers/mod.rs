@@ -61,19 +61,21 @@ pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFea
     let authority = HostedProviderAuthority::new();
     let revocation = ProviderBindingRevocationHandle::default();
     let provisioning_runtime = ProvisioningRuntimeHandle::default();
+    let provisioning_target_authority =
+        std::sync::Arc::new(HostedProvisioningTargetAuthority::new());
     let provisioning_driver = PlanetScaleProvisioningDriver::new(
         store.clone(),
-        HostedProvisioningTargetAuthority::new(),
+        provisioning_target_authority.clone(),
         std::sync::Arc::new(provisioning_runtime.clone()),
     );
     let gcp_provisioning_driver = GcpCloudSqlProvisioningDriver::new(
         store.clone(),
-        HostedProvisioningTargetAuthority::new(),
+        provisioning_target_authority.clone(),
         std::sync::Arc::new(provisioning_runtime.clone()),
     );
     let neon_provisioning_driver = NeonProvisioningDriver::new(
         store.clone(),
-        HostedProvisioningTargetAuthority::new(),
+        provisioning_target_authority,
         std::sync::Arc::new(provisioning_runtime.clone()),
     );
     ProvidersFeature {

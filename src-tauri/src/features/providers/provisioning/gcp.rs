@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::features::providers::adapters::{
-    AuthorizedProvisioningResource, AuthorizedProvisioningTarget, HostedProvisioningTargetAuthority,
+    AuthorizedProvisioningResource, AuthorizedProvisioningTarget, ProvisioningTargetAuthorityPort,
 };
 use crate::features::providers::ports::ProvisioningRuntimePort;
 use crate::kernel::identity::ConnectionId;
@@ -45,14 +45,14 @@ use super::{ProvisioningExecutionPermit, ProvisioningReadAuthority};
 #[derive(Clone)]
 pub(crate) struct GcpCloudSqlProvisioningDriver {
     store: Store,
-    target_authority: HostedProvisioningTargetAuthority,
+    target_authority: Arc<dyn ProvisioningTargetAuthorityPort>,
     runtime: Arc<dyn ProvisioningRuntimePort>,
 }
 
 impl GcpCloudSqlProvisioningDriver {
     pub(crate) fn new(
         store: Store,
-        target_authority: HostedProvisioningTargetAuthority,
+        target_authority: Arc<dyn ProvisioningTargetAuthorityPort>,
         runtime: Arc<dyn ProvisioningRuntimePort>,
     ) -> Self {
         Self {
@@ -80,10 +80,19 @@ impl GcpCloudSqlProvisioningDriver {
         Ok(connection)
     }
 
-    async fn revalidate_target(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
+    async fn target_status(
+        &self,
+        target: &ProvisioningTarget,
+    ) -> AppResult<(PinnedConnection, bool)> {
         let connection = self.pinned_connection(target).await?;
         let authorized = self.target_authority.target(&connection).await?;
-        if !target_matches_authority(target, &authorized) {
+        let current = target_matches_authority(target, &authorized);
+        Ok((connection, current))
+    }
+
+    async fn revalidate_target(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
+        let (connection, current) = self.target_status(target).await?;
+        if !current {
             return Err(blocked("GCP Cloud SQL managed target changed"));
         }
         Ok(connection)
@@ -195,7 +204,12 @@ impl ProvisioningDriver for GcpCloudSqlProvisioningDriver {
         authority: &'a ProvisioningReadAuthority,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningDriverStatus> {
-        Box::pin(async move { GcloudInventory::detect(authority, None, cancellation).await })
+        Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("GCP Cloud SQL detection was cancelled"));
+            }
+            GcloudInventory::detect(authority, None, cancellation).await
+        })
     }
 
     fn discover<'a>(
@@ -205,6 +219,9 @@ impl ProvisioningDriver for GcpCloudSqlProvisioningDriver {
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, Vec<ProvisioningDiscoveredTarget>> {
         Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("GCP Cloud SQL discovery was cancelled"));
+            }
             let connection = self.store.pin_connection_for_view(connection_id).await?;
             if connection.profile.provider != Provider::GcpCloudSql
                 || connection.profile.credential_mode != WorkspaceCredentialMode::Managed
@@ -278,9 +295,12 @@ impl ProvisioningDriver for GcpCloudSqlProvisioningDriver {
         target: &'a ProvisioningTarget,
         connection: &'a PinnedConnection,
         access: ProvisioningAccessMode,
-        _cancellation: &'a CancellationToken,
+        cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningPlan> {
         Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("GCP Cloud SQL planning was cancelled"));
+            }
             validate_connection(target, connection)?;
             let authorized = self.target_authority.target(connection).await?;
             if !target_matches_authority(target, &authorized) {
@@ -299,9 +319,12 @@ impl ProvisioningDriver for GcpCloudSqlProvisioningDriver {
         target: &'a ProvisioningTarget,
         connection: &'a PinnedConnection,
         access: ProvisioningAccessMode,
-        _cancellation: &'a CancellationToken,
+        cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, (ProvisioningPlan, String)> {
         Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("GCP Cloud SQL destroy planning was cancelled"));
+            }
             validate_cleanup_connection(target, connection)?;
             if receipt.provider() != LocalProvider::GcpCloudSql
                 || receipt.connection_id() != target.connection_id()
@@ -323,9 +346,12 @@ impl ProvisioningDriver for GcpCloudSqlProvisioningDriver {
         target: &'a ProvisioningTarget,
         connection: &'a PinnedConnection,
         access: ProvisioningAccessMode,
-        _cancellation: &'a CancellationToken,
+        cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningPlan> {
         Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("GCP Cloud SQL repair planning was cancelled"));
+            }
             validate_connection(target, connection)?;
             if receipt.provider() != LocalProvider::GcpCloudSql
                 || receipt.ownership_marker() != ownership_marker(target)
@@ -349,7 +375,8 @@ impl ProvisioningDriver for GcpCloudSqlProvisioningDriver {
             if cancellation.is_cancelled() {
                 return Err(blocked("GCP Cloud SQL inspection was cancelled"));
             }
-            if self.revalidate_target(plan.target()).await.is_err() {
+            let (_, current) = self.target_status(plan.target()).await?;
+            if !current {
                 return Ok(ProvisioningInspection::Drift(
                     ProvisioningRepairReason::ProviderDrift,
                 ));
@@ -652,17 +679,30 @@ fn target_matches_authority(
 }
 
 fn has_complete_smoke_plan(plan: &ProvisioningPlan) -> bool {
-    let actions = plan.steps().iter().map(ProvisioningPlanStep::action);
-    let has_provider = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::VerifyProviderTarget);
-    let has_read = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::SmokeTestReadCredential);
-    let has_write = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::SmokeTestWriteCredential);
-    has_provider && has_read && (plan.access() == ProvisioningAccessMode::Read || has_write)
+    let expected = match plan.access() {
+        ProvisioningAccessMode::Read => vec![
+            (ProvisioningAction::VerifyProviderTarget, None),
+            (
+                ProvisioningAction::SmokeTestReadCredential,
+                Some(ProvisioningAccessMode::Read),
+            ),
+        ],
+        ProvisioningAccessMode::Write => vec![
+            (ProvisioningAction::VerifyProviderTarget, None),
+            (
+                ProvisioningAction::SmokeTestReadCredential,
+                Some(ProvisioningAccessMode::Read),
+            ),
+            (
+                ProvisioningAction::SmokeTestWriteCredential,
+                Some(ProvisioningAccessMode::Write),
+            ),
+        ],
+    };
+    plan.steps()
+        .iter()
+        .map(|step| (step.action(), step.access()))
+        .eq(expected)
 }
 
 fn blocked(reason: &'static str) -> AppError {
@@ -758,4 +798,71 @@ pub(crate) fn assert_gcp_driver_contract() {
     assert!(has_complete_smoke_plan(&plan));
     assert_eq!(plan.target().connection_revision(), 5);
     assert_eq!(plan.target().integration_generation(), 9);
+}
+
+#[cfg(test)]
+pub(crate) async fn assert_gcp_driver_failure_contract() {
+    use super::test_support::{
+        assert_driver_failure_contract, fixture_connection, FixtureProvisioningRuntime,
+        FixtureTargetAuthority,
+    };
+
+    let connection_id = Uuid::from_u128(901);
+    let integration_id = Uuid::from_u128(902);
+    let target = ProvisioningTarget::new(
+        LocalProvider::GcpCloudSql,
+        ConnectionId::from(connection_id),
+        5,
+        ProviderIntegrationId::from(integration_id),
+        9,
+        "ab".repeat(32),
+        "app-db / app".into(),
+        "sample-project-123 · asia-northeast3".into(),
+        BTreeMap::from([
+            (ProvisioningTargetSelector::Account, "cd".repeat(32)),
+            (
+                ProvisioningTargetSelector::Project,
+                "sample-project-123".into(),
+            ),
+            (ProvisioningTargetSelector::Region, "asia-northeast3".into()),
+            (ProvisioningTargetSelector::Instance, "app-db".into()),
+            (ProvisioningTargetSelector::Database, "app".into()),
+        ]),
+        Engine::Postgres,
+        false,
+        None,
+        true,
+        "sample-project-123:asia-northeast3:app-db".into(),
+    )
+    .unwrap();
+    let authorized = AuthorizedProvisioningTarget {
+        connection_id,
+        connection_revision: 5,
+        integration_id: ProviderIntegrationId::from(integration_id),
+        integration_generation: 9,
+        provider: LocalProvider::GcpCloudSql,
+        account_fingerprint: "cd".repeat(32),
+        resource_fingerprint: "ab".repeat(32),
+        display_name: "Workspace app".into(),
+        resource: AuthorizedProvisioningResource::GcpCloudSql {
+            project: "sample-project-123".into(),
+            instance: "app-db".into(),
+            database: "app".into(),
+            engine: Engine::Postgres,
+            network_mode: "PUBLIC".into(),
+        },
+        write_available: true,
+        production: false,
+        safe_migrations: None,
+        provider_audit_id: "sample-project-123:asia-northeast3:app-db".into(),
+        expires_at: Utc::now() + chrono::Duration::minutes(5),
+    };
+    let store = Store::in_memory_for_test()
+        .await
+        .expect("open GCP driver contract store");
+    let connection = fixture_connection(&store, &target, Provider::GcpCloudSql).await;
+    let authority = Arc::new(FixtureTargetAuthority::new(authorized));
+    let runtime = Arc::new(FixtureProvisioningRuntime::new(&target));
+    let driver = GcpCloudSqlProvisioningDriver::new(store, authority.clone(), runtime.clone());
+    assert_driver_failure_contract(&driver, &target, &connection, authority, runtime).await;
 }

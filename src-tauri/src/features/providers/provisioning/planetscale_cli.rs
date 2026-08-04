@@ -2,7 +2,8 @@
 //!
 //! Runtime credentials are never issued through this boundary. The official
 //! `pscale` CLI is used only to prove that the user's local OAuth session can see
-//! the exact hosted-authority target. Provider API mutations remain server-owned.
+//! the exact hosted-authority target. Apply, cleanup, and credential issuance stay
+//! behind the approved plan and server-owned Provider authority.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

@@ -24,7 +24,8 @@ pub(crate) use local_connection::ProviderLocalResolver;
     reason = "the exact managed target port is consumed when #100 registers its first complete driver"
 )]
 pub(crate) use provisioning_authority::{
-    AuthorizedProvisioningResource, AuthorizedProvisioningTarget, HostedProvisioningTargetAuthority,
+    AuthorizedProvisioningResource, AuthorizedProvisioningTarget,
+    HostedProvisioningTargetAuthority, ProvisioningTargetAuthorityPort,
 };
 pub(crate) use receipt_registry::InMemoryProviderReceiptRegistry;
 pub(crate) use sqlite_repository::SqliteProviderBindingRepository;

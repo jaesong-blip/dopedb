@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::features::providers::adapters::{
-    AuthorizedProvisioningResource, AuthorizedProvisioningTarget, HostedProvisioningTargetAuthority,
+    AuthorizedProvisioningResource, AuthorizedProvisioningTarget, ProvisioningTargetAuthorityPort,
 };
 use crate::features::providers::ports::ProvisioningRuntimePort;
 use crate::kernel::identity::ConnectionId;
@@ -47,14 +47,14 @@ pub(super) const NEON_MANIFEST_SHA256: &str =
 #[derive(Clone)]
 pub(crate) struct NeonProvisioningDriver {
     store: Store,
-    target_authority: HostedProvisioningTargetAuthority,
+    target_authority: Arc<dyn ProvisioningTargetAuthorityPort>,
     runtime: Arc<dyn ProvisioningRuntimePort>,
 }
 
 impl NeonProvisioningDriver {
     pub(crate) fn new(
         store: Store,
-        target_authority: HostedProvisioningTargetAuthority,
+        target_authority: Arc<dyn ProvisioningTargetAuthorityPort>,
         runtime: Arc<dyn ProvisioningRuntimePort>,
     ) -> Self {
         Self {
@@ -82,10 +82,19 @@ impl NeonProvisioningDriver {
         Ok(connection)
     }
 
-    async fn revalidate_target(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
+    async fn target_status(
+        &self,
+        target: &ProvisioningTarget,
+    ) -> AppResult<(PinnedConnection, bool)> {
         let connection = self.pinned_connection(target).await?;
         let authorized = self.target_authority.target(&connection).await?;
-        if !target_matches_authority(target, &authorized) {
+        let current = target_matches_authority(target, &authorized);
+        Ok((connection, current))
+    }
+
+    async fn revalidate_target(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
+        let (connection, current) = self.target_status(target).await?;
+        if !current {
             return Err(blocked("Neon managed target changed"));
         }
         Ok(connection)
@@ -355,7 +364,8 @@ impl ProvisioningDriver for NeonProvisioningDriver {
             if cancellation.is_cancelled() {
                 return Err(blocked("Neon inspection was cancelled"));
             }
-            if self.revalidate_target(plan.target()).await.is_err() {
+            let (_, current) = self.target_status(plan.target()).await?;
+            if !current {
                 return Ok(ProvisioningInspection::Drift(
                     ProvisioningRepairReason::ProviderDrift,
                 ));
@@ -656,17 +666,30 @@ fn target_matches_authority(
 }
 
 fn has_complete_smoke_plan(plan: &ProvisioningPlan) -> bool {
-    let actions = plan.steps().iter().map(ProvisioningPlanStep::action);
-    let has_provider = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::VerifyProviderTarget);
-    let has_read = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::SmokeTestReadCredential);
-    let has_write = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::SmokeTestWriteCredential);
-    has_provider && has_read && (plan.access() == ProvisioningAccessMode::Read || has_write)
+    let expected = match plan.access() {
+        ProvisioningAccessMode::Read => vec![
+            (ProvisioningAction::VerifyProviderTarget, None),
+            (
+                ProvisioningAction::SmokeTestReadCredential,
+                Some(ProvisioningAccessMode::Read),
+            ),
+        ],
+        ProvisioningAccessMode::Write => vec![
+            (ProvisioningAction::VerifyProviderTarget, None),
+            (
+                ProvisioningAction::SmokeTestReadCredential,
+                Some(ProvisioningAccessMode::Read),
+            ),
+            (
+                ProvisioningAction::SmokeTestWriteCredential,
+                Some(ProvisioningAccessMode::Write),
+            ),
+        ],
+    };
+    plan.steps()
+        .iter()
+        .map(|step| (step.action(), step.access()))
+        .eq(expected)
 }
 
 fn blocked(reason: &'static str) -> AppError {
@@ -778,4 +801,67 @@ pub(crate) fn assert_neon_driver_contract() {
         )
         .unwrap(),
     );
+}
+
+#[cfg(test)]
+pub(crate) async fn assert_neon_driver_failure_contract() {
+    use super::test_support::{
+        assert_driver_failure_contract, fixture_connection, FixtureProvisioningRuntime,
+        FixtureTargetAuthority,
+    };
+
+    let connection_id = Uuid::from_u128(1_001);
+    let integration_id = Uuid::from_u128(1_002);
+    let target = ProvisioningTarget::new(
+        LocalProvider::Neon,
+        ConnectionId::from(connection_id),
+        13,
+        ProviderIntegrationId::from(integration_id),
+        17,
+        "ab".repeat(32),
+        "br-dev / app".into(),
+        "quiet-sun · Neon".into(),
+        BTreeMap::from([
+            (ProvisioningTargetSelector::Account, "cd".repeat(32)),
+            (ProvisioningTargetSelector::Project, "quiet-sun".into()),
+            (ProvisioningTargetSelector::Branch, "br-dev".into()),
+            (ProvisioningTargetSelector::Database, "app".into()),
+        ]),
+        Engine::Postgres,
+        false,
+        None,
+        true,
+        "br-dev:834686".into(),
+    )
+    .unwrap();
+    let authorized = AuthorizedProvisioningTarget {
+        connection_id,
+        connection_revision: 13,
+        integration_id: ProviderIntegrationId::from(integration_id),
+        integration_generation: 17,
+        provider: LocalProvider::Neon,
+        account_fingerprint: "cd".repeat(32),
+        resource_fingerprint: "ab".repeat(32),
+        display_name: "Workspace app".into(),
+        resource: AuthorizedProvisioningResource::Neon {
+            project: "quiet-sun".into(),
+            branch: "br-dev".into(),
+            database_id: "834686".into(),
+            database: "app".into(),
+            schemas: vec!["public".into()],
+        },
+        write_available: true,
+        production: false,
+        safe_migrations: None,
+        provider_audit_id: "br-dev:834686".into(),
+        expires_at: Utc::now() + chrono::Duration::minutes(5),
+    };
+    let store = Store::in_memory_for_test()
+        .await
+        .expect("open Neon driver contract store");
+    let connection = fixture_connection(&store, &target, Provider::Neon).await;
+    let authority = Arc::new(FixtureTargetAuthority::new(authorized));
+    let runtime = Arc::new(FixtureProvisioningRuntime::new(&target));
+    let driver = NeonProvisioningDriver::new(store, authority.clone(), runtime.clone());
+    assert_driver_failure_contract(&driver, &target, &connection, authority, runtime).await;
 }

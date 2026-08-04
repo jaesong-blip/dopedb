@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::features::providers::adapters::{
-    AuthorizedProvisioningResource, AuthorizedProvisioningTarget, HostedProvisioningTargetAuthority,
+    AuthorizedProvisioningResource, AuthorizedProvisioningTarget, ProvisioningTargetAuthorityPort,
 };
 use crate::features::providers::ports::ProvisioningRuntimePort;
 use crate::kernel::identity::ConnectionId;
@@ -42,14 +42,14 @@ use super::{ProvisioningExecutionPermit, ProvisioningReadAuthority};
 #[derive(Clone)]
 pub(crate) struct PlanetScaleProvisioningDriver {
     store: Store,
-    target_authority: HostedProvisioningTargetAuthority,
+    target_authority: Arc<dyn ProvisioningTargetAuthorityPort>,
     runtime: Arc<dyn ProvisioningRuntimePort>,
 }
 
 impl PlanetScaleProvisioningDriver {
     pub(crate) fn new(
         store: Store,
-        target_authority: HostedProvisioningTargetAuthority,
+        target_authority: Arc<dyn ProvisioningTargetAuthorityPort>,
         runtime: Arc<dyn ProvisioningRuntimePort>,
     ) -> Self {
         Self {
@@ -73,10 +73,19 @@ impl PlanetScaleProvisioningDriver {
         Ok(connection)
     }
 
-    async fn revalidate_target(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
+    async fn target_status(
+        &self,
+        target: &ProvisioningTarget,
+    ) -> AppResult<(PinnedConnection, bool)> {
         let connection = self.pinned_connection(target).await?;
         let authorized = self.target_authority.target(&connection).await?;
-        if !target_matches_authority(target, &authorized) {
+        let current = target_matches_authority(target, &authorized);
+        Ok((connection, current))
+    }
+
+    async fn revalidate_target(&self, target: &ProvisioningTarget) -> AppResult<PinnedConnection> {
+        let (connection, current) = self.target_status(target).await?;
+        if !current {
             return Err(blocked("PlanetScale managed target changed"));
         }
         Ok(connection)
@@ -188,7 +197,12 @@ impl ProvisioningDriver for PlanetScaleProvisioningDriver {
         authority: &'a ProvisioningReadAuthority,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningDriverStatus> {
-        Box::pin(async move { PlanetScaleInventory::detect(authority, cancellation).await })
+        Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("PlanetScale detection was cancelled"));
+            }
+            PlanetScaleInventory::detect(authority, cancellation).await
+        })
     }
 
     fn discover<'a>(
@@ -198,6 +212,9 @@ impl ProvisioningDriver for PlanetScaleProvisioningDriver {
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, Vec<ProvisioningDiscoveredTarget>> {
         Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("PlanetScale discovery was cancelled"));
+            }
             let connection = self.store.pin_connection_for_view(connection_id).await?;
             if connection.profile.provider != Provider::PlanetScale
                 || connection.profile.credential_mode != WorkspaceCredentialMode::Managed
@@ -275,9 +292,12 @@ impl ProvisioningDriver for PlanetScaleProvisioningDriver {
         target: &'a ProvisioningTarget,
         connection: &'a PinnedConnection,
         access: ProvisioningAccessMode,
-        _cancellation: &'a CancellationToken,
+        cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningPlan> {
         Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("PlanetScale planning was cancelled"));
+            }
             validate_connection(target, connection)?;
             let authorized = self.target_authority.target(connection).await?;
             if !target_matches_authority(target, &authorized) {
@@ -298,9 +318,12 @@ impl ProvisioningDriver for PlanetScaleProvisioningDriver {
         target: &'a ProvisioningTarget,
         connection: &'a PinnedConnection,
         access: ProvisioningAccessMode,
-        _cancellation: &'a CancellationToken,
+        cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, (ProvisioningPlan, String)> {
         Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("PlanetScale destroy planning was cancelled"));
+            }
             validate_cleanup_connection(target, connection)?;
             if receipt.provider() != LocalProvider::PlanetScale
                 || receipt.connection_id() != target.connection_id()
@@ -322,9 +345,12 @@ impl ProvisioningDriver for PlanetScaleProvisioningDriver {
         target: &'a ProvisioningTarget,
         connection: &'a PinnedConnection,
         access: ProvisioningAccessMode,
-        _cancellation: &'a CancellationToken,
+        cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningPlan> {
         Box::pin(async move {
+            if cancellation.is_cancelled() {
+                return Err(blocked("PlanetScale repair planning was cancelled"));
+            }
             validate_connection(target, connection)?;
             if receipt.provider() != LocalProvider::PlanetScale
                 || receipt.ownership_marker() != ownership_marker(target)
@@ -350,7 +376,8 @@ impl ProvisioningDriver for PlanetScaleProvisioningDriver {
             if cancellation.is_cancelled() {
                 return Err(blocked("PlanetScale inspection was cancelled"));
             }
-            if self.revalidate_target(plan.target()).await.is_err() {
+            let (_, current) = self.target_status(plan.target()).await?;
+            if !current {
                 return Ok(ProvisioningInspection::Drift(
                     ProvisioningRepairReason::ProviderDrift,
                 ));
@@ -649,17 +676,30 @@ fn target_matches_authority(
 }
 
 fn has_complete_smoke_plan(plan: &ProvisioningPlan) -> bool {
-    let actions = plan.steps().iter().map(ProvisioningPlanStep::action);
-    let has_provider = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::VerifyProviderTarget);
-    let has_read = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::SmokeTestReadCredential);
-    let has_write = actions
-        .clone()
-        .any(|action| action == ProvisioningAction::SmokeTestWriteCredential);
-    has_provider && has_read && (plan.access() == ProvisioningAccessMode::Read || has_write)
+    let expected = match plan.access() {
+        ProvisioningAccessMode::Read => vec![
+            (ProvisioningAction::VerifyProviderTarget, None),
+            (
+                ProvisioningAction::SmokeTestReadCredential,
+                Some(ProvisioningAccessMode::Read),
+            ),
+        ],
+        ProvisioningAccessMode::Write => vec![
+            (ProvisioningAction::VerifyProviderTarget, None),
+            (
+                ProvisioningAction::SmokeTestReadCredential,
+                Some(ProvisioningAccessMode::Read),
+            ),
+            (
+                ProvisioningAction::SmokeTestWriteCredential,
+                Some(ProvisioningAccessMode::Write),
+            ),
+        ],
+    };
+    plan.steps()
+        .iter()
+        .map(|step| (step.action(), step.access()))
+        .eq(expected)
 }
 
 fn blocked(reason: &'static str) -> AppError {
@@ -770,4 +810,66 @@ pub(crate) fn assert_planetscale_driver_contract() {
         )
         .unwrap(),
     );
+}
+
+#[cfg(test)]
+pub(crate) async fn assert_planetscale_driver_failure_contract() {
+    use super::test_support::{
+        assert_driver_failure_contract, fixture_connection, FixtureProvisioningRuntime,
+        FixtureTargetAuthority,
+    };
+
+    let connection_id = Uuid::from_u128(801);
+    let integration_id = Uuid::from_u128(802);
+    let target = ProvisioningTarget::new(
+        LocalProvider::PlanetScale,
+        ConnectionId::from(connection_id),
+        7,
+        ProviderIntegrationId::from(integration_id),
+        11,
+        "ab".repeat(32),
+        "app / main".into(),
+        "acme · PlanetScale".into(),
+        BTreeMap::from([
+            (ProvisioningTargetSelector::Account, "cd".repeat(32)),
+            (ProvisioningTargetSelector::Organization, "acme".into()),
+            (ProvisioningTargetSelector::Database, "app".into()),
+            (ProvisioningTargetSelector::Branch, "main".into()),
+        ]),
+        Engine::Postgres,
+        false,
+        None,
+        true,
+        "br-main-123".into(),
+    )
+    .unwrap();
+    let authorized = AuthorizedProvisioningTarget {
+        connection_id,
+        connection_revision: 7,
+        integration_id: ProviderIntegrationId::from(integration_id),
+        integration_generation: 11,
+        provider: LocalProvider::PlanetScale,
+        account_fingerprint: "cd".repeat(32),
+        resource_fingerprint: "ab".repeat(32),
+        display_name: "Workspace app".into(),
+        resource: AuthorizedProvisioningResource::PlanetScale {
+            organization: "acme".into(),
+            database: "app".into(),
+            branch: "main".into(),
+            engine: Engine::Postgres,
+        },
+        write_available: true,
+        production: false,
+        safe_migrations: None,
+        provider_audit_id: "br-main-123".into(),
+        expires_at: Utc::now() + chrono::Duration::minutes(5),
+    };
+    let store = Store::in_memory_for_test()
+        .await
+        .expect("open PlanetScale driver contract store");
+    let connection = fixture_connection(&store, &target, Provider::PlanetScale).await;
+    let authority = Arc::new(FixtureTargetAuthority::new(authorized));
+    let runtime = Arc::new(FixtureProvisioningRuntime::new(&target));
+    let driver = PlanetScaleProvisioningDriver::new(store, authority.clone(), runtime.clone());
+    assert_driver_failure_contract(&driver, &target, &connection, authority, runtime).await;
 }

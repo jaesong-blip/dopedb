@@ -1,5 +1,7 @@
 //! Authenticated, secret-free target authority for Managed Access planning.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -69,6 +71,20 @@ pub(crate) struct HostedProvisioningTargetAuthority {
     client: Client,
 }
 
+pub(crate) trait ProvisioningTargetAuthorityPort: Send + Sync + 'static {
+    fn target<'a>(
+        &'a self,
+        connection: &'a PinnedConnection,
+    ) -> Pin<Box<dyn Future<Output = AppResult<AuthorizedProvisioningTarget>> + Send + 'a>>;
+
+    fn destroy<'a>(
+        &'a self,
+        connection: &'a PinnedConnection,
+        target: &'a ProvisioningTarget,
+        ownership_marker: &'a str,
+    ) -> Pin<Box<dyn Future<Output = AppResult<String>> + Send + 'a>>;
+}
+
 impl HostedProvisioningTargetAuthority {
     pub(crate) fn new() -> Self {
         Self {
@@ -80,7 +96,7 @@ impl HostedProvisioningTargetAuthority {
         }
     }
 
-    pub(crate) async fn target(
+    async fn fetch_target(
         &self,
         connection: &PinnedConnection,
     ) -> AppResult<AuthorizedProvisioningTarget> {
@@ -122,7 +138,7 @@ impl HostedProvisioningTargetAuthority {
         parse_target_response(&body, connection)
     }
 
-    pub(crate) async fn destroy(
+    async fn destroy_target(
         &self,
         connection: &PinnedConnection,
         target: &ProvisioningTarget,
@@ -194,6 +210,27 @@ impl HostedProvisioningTargetAuthority {
             return Err(invalid_response());
         }
         Ok(response.provider_audit_id)
+    }
+}
+
+impl ProvisioningTargetAuthorityPort for HostedProvisioningTargetAuthority {
+    fn target<'a>(
+        &'a self,
+        connection: &'a PinnedConnection,
+    ) -> Pin<Box<dyn Future<Output = AppResult<AuthorizedProvisioningTarget>> + Send + 'a>> {
+        Box::pin(async move { self.fetch_target(connection).await })
+    }
+
+    fn destroy<'a>(
+        &'a self,
+        connection: &'a PinnedConnection,
+        target: &'a ProvisioningTarget,
+        ownership_marker: &'a str,
+    ) -> Pin<Box<dyn Future<Output = AppResult<String>> + Send + 'a>> {
+        Box::pin(async move {
+            self.destroy_target(connection, target, ownership_marker)
+                .await
+        })
     }
 }
 

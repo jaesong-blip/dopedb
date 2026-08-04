@@ -78,6 +78,12 @@ async fn inventory_reader_enforces_content_length_and_streaming_caps() {
     Box::pin(crate::features::providers::provisioning::assert_process_boundary()).await;
     Box::pin(crate::features::providers::provisioning::assert_restart_resume_lifecycle()).await;
     Box::pin(crate::features::providers::provisioning::assert_live_gcloud_inventory()).await;
+    Box::pin(crate::features::providers::provisioning::assert_gcp_driver_failure_contract()).await;
+    Box::pin(
+        crate::features::providers::provisioning::assert_planetscale_driver_failure_contract(),
+    )
+    .await;
+    Box::pin(crate::features::providers::provisioning::assert_neon_driver_failure_contract()).await;
 
     let declared_oversize = local_response(
         format!(

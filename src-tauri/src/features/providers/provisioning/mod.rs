@@ -37,6 +37,8 @@ mod process;
     reason = "plan creation and target lookup are consumed by the concrete adapters landing in #100"
 )]
 mod repository;
+#[cfg(test)]
+mod test_support;
 
 pub(super) use application::{ProvisioningCoordinator, ProvisioningDriverRegistry};
 pub(crate) use application::{
@@ -126,11 +128,17 @@ pub(crate) use domain::assert_mock_provider_lifecycle;
 #[cfg(test)]
 pub(crate) use gcp::assert_gcp_driver_contract;
 #[cfg(test)]
+pub(crate) use gcp::assert_gcp_driver_failure_contract;
+#[cfg(test)]
 pub(crate) use gcp_cli::{assert_gcloud_cli_contract, assert_live_gcloud_inventory};
 #[cfg(test)]
 pub(crate) use neon::assert_neon_driver_contract;
 #[cfg(test)]
+pub(crate) use neon::assert_neon_driver_failure_contract;
+#[cfg(test)]
 pub(crate) use planetscale::assert_planetscale_driver_contract;
+#[cfg(test)]
+pub(crate) use planetscale::assert_planetscale_driver_failure_contract;
 #[cfg(test)]
 pub(crate) use planetscale_cli::assert_planetscale_cli_contract;
 #[cfg(test)]

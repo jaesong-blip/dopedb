@@ -219,6 +219,57 @@ increasing the 104-test budget:
   grandchild, waits for the descendant-start witness, then cancels the command. The
   Job Object boundary must terminate the tree, reap the parent, and become empty
   within two seconds before returning `Cancelled`; parent-only cleanup fails closed.
+- The GCP Cloud SQL, PlanetScale, and Neon production drivers now share an isolated
+  failure contract through injectable target-authority and connection-runtime ports.
+  A pre-cancelled detect, discover, plan, execute, verify, inspect, repair, or destroy
+  cannot reach the Provider CLI, hosted authority, database smoke runtime, or cleanup
+  call. Exact Provider drift is distinct from an unavailable authority: only a
+  successfully reconstructed mismatched target becomes `ProviderDrift`; network or
+  authentication failure propagates without inventing drift. Read/write smoke
+  failures become `CredentialSmokeFailed`, an invalid execution permit is rejected
+  before authority use, connection fencing must precede cleanup, and both fence and
+  hosted cleanup failures remain retryable errors. A retry uses the same ownership
+  marker and exact Provider audit ID.
+- Native Windows run
+  [`30958001621`](https://github.com/json-choi/dopedb/actions/runs/30958001621)
+  passed the complete `windows-check`, including the running grandchild Job Object
+  fixture. This is the native evidence for commit `585e9598`, not a cross-compiled
+  inference from macOS.
 
-Provider-account live E2E, Provider-specific failure injection beyond the common
-apply contract, and native CI evidence remain required before #102 can close.
+### Threat model and operator recovery
+
+The protected assets are the member's local CLI session, the workspace integration,
+the exact Provider resource, short-lived database credentials, the approved plan,
+and the Provider/DopeDB audit correlation. Browser text, CLI stdout/stderr, cached
+discovery, another workspace, and a previous integration generation are untrusted.
+No one of them can independently authorize a mutation or credential issue.
+
+| Observation | Fail-closed state | Operator action |
+| --- | --- | --- |
+| CLI missing, outdated, logged out, or wrong account | No plan is staged and no mutation permit exists. | Install/update the official CLI or complete its local login, then run detect again. The app never imports its token. |
+| Hosted authority unavailable or authentication expired | The current receipt and last checkpoint remain unchanged; this is not recorded as resource drift. | Restore workspace authentication/network access and retry inspection. Rediscovery is unnecessary unless the reconstructed target changes. |
+| Exact account/project/instance/database/branch fingerprint differs | New issue is blocked and the receipt reports `ProviderDrift`. | Rediscover the target, review the new projection, and approve a new exact plan. Never edit the old receipt. |
+| Read or write credential smoke fails | New issue is blocked and the receipt reports `CredentialSmokeFailed`. | Inspect Provider/DB grants, repair through a newly approved plan, then require both positive and negative privilege probes to pass. |
+| Apply result is unknown after a checkpoint | Receipt is `NeedsRepair(ApplyOutcomeUnknown)` and the Operation is `OutcomeUnknown`. | Use the displayed completed-step count and ownership marker; approve repair, which replays idempotent actions from a clean plan. |
+| Fence or hosted cleanup fails | Destroy remains incomplete and its correlated audit event is a failure/deferred outcome. | Do not claim success. Retry cleanup with the same receipt, ownership marker, lease ID, and Provider audit ID; escalate only after the short credential expiry is confirmed. |
+| Process-tree cleanup cannot be proven | The CLI command fails even if its parent exited successfully. | Stop Provider work, retain the audit event, and investigate the runner/OS boundary before retrying. |
+
+### Official CLI compatibility
+
+| Provider | Local prerequisite | Minimum | Authentication owner | App use |
+| --- | --- | --- | --- | --- |
+| GCP Cloud SQL | Google Cloud CLI `gcloud` | `500.0.0` | The user's local Google Cloud CLI configuration | Read-only version, active account/project, exact Cloud SQL instance and database inventory. Mutations and credentials never cross this CLI boundary. |
+| PlanetScale | Official `pscale` CLI | `0.308.0` | The user's local PlanetScale OAuth CLI session | Read-only auth, organization, database, and branch identity including production/safe-migrations state. Provider mutations stay server-owned. |
+| Neon | Workspace integration; no local Provider CLI | N/A | Workspace-held encrypted project-scoped integration | The desktop receives only a short-lived, secret-free target authority; bootstrap and credential issuance remain approval-gated server operations. |
+
+DopeDB audits the canonical executable, allowed root, filename, byte length, and
+SHA-256 immediately before every CLI execution. It does not auto-update or wrap a
+Provider login. A lower version is reported as `Outdated`; a new version remains
+accepted only if its strict machine-readable output continues to satisfy the pinned
+schema and executable boundary. Changes to minimum versions or output schemas must
+update the adapter manifest hash and this table in the same change.
+
+Provider-account live E2E remains required before #102 can close. The non-destructive
+GCP inventory fixture is opt-in through `DOPEDB_LIVE_GCLOUD_INVENTORY=1`; PlanetScale,
+Neon, and database privilege E2E require isolated test accounts/resources and must
+never target a production resource.
