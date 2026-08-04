@@ -69,10 +69,45 @@ jobs:
           cargo test --package dopedb-protocol --test golden
           cargo test --package dopedb-cli --test terminal_session_e2e
 
+  provider_migration:
+    name: provider-migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Ensure PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client
+          fi
+
+      - name: Test Provider legacy migration and rollback
+        run: bash scripts/test-provider-legacy-migration.sh
+
   build:
     needs:
       - frontend_smoke
       - rust_smoke
+      - provider_migration
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -81,9 +116,11 @@ jobs:
         env:
           FRONTEND_RESULT: ${{ needs.frontend_smoke.result }}
           RUST_RESULT: ${{ needs.rust_smoke.result }}
+          PROVIDER_MIGRATION_RESULT: ${{ needs.provider_migration.result }}
         run: |
           test "$FRONTEND_RESULT" = success
           test "$RUST_RESULT" = success
+          test "$PROVIDER_MIGRATION_RESULT" = success
 
   windows-check:
     runs-on: windows-latest

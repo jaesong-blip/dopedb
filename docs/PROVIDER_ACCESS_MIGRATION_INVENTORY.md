@@ -206,6 +206,13 @@ increasing the 104-test budget:
   the opaque DopeDB lease ID, and the non-secret external credential ID. Cleanup state
   and its system-authored audit event commit atomically. Migration 0015 intentionally
   leaves legacy rows null instead of fabricating Provider evidence.
+- The PostgreSQL 18 legacy fixture seeds pre-0010 managed GCP connections both with
+  and without a live lease. It first applies 0010 inside an explicit rollback and
+  proves that its schema and rows return byte-for-field to the legacy state. The
+  committed path then demotes only the lease-free connection, preserves cleanup
+  authority for the live lease, moves the targetless GCP integration to
+  `reconnect_required`, rejects a mixed-version active/null-target rewrite, and
+  verifies that migration 0015 leaves the historical lease audit ID null.
 - The same six Provider authority tests run in the Windows CI job. The Unix fixture
   additionally executes a fixed binary and proves shell-looking argv remains
   literal. The Windows fixture starts an audited native launcher and a long-running
@@ -214,5 +221,4 @@ increasing the 104-test budget:
   within two seconds before returning `Cancelled`; parent-only cleanup fails closed.
 
 Provider-account live E2E, Provider-specific failure injection beyond the common
-apply contract, legacy rollback evidence, and native Windows CI evidence remain
-required before #102 can close.
+apply contract, and native CI evidence remain required before #102 can close.
