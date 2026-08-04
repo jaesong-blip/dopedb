@@ -118,3 +118,24 @@ setup path is removed:
 - Workspace backups remain provider-secret-free and restore old connection
   metadata into the current read-only policy.
 - TypeScript, Rust, and workspace-cloud builds pass before #98 is closed.
+
+## #100 migration status
+
+GCP migration has started behind the production registry boundary:
+
+- The shared process runner now has a process-local read authority distinct from
+  an approved mutation permit. `detect` and `discover` therefore cannot be replayed
+  as an apply/destroy checkpoint.
+- The unregistered GCP inventory audits the exact `gcloud` wrapper, pins its digest,
+  clears ambient environment variables, and accepts only bounded JSON for version,
+  active account/project, Cloud SQL instances, and databases.
+- Missing, outdated, logged-out, wrong-account, and ready states remain distinct.
+  Unknown environment classification remains unknown; it is never folded into a
+  non-production target.
+- Non-zero CLI exit status is rejected even when stdout happens to contain valid
+  JSON. Successful, failed, cancelled, and timed-out processes all retain the same
+  process-tree cleanup proof.
+
+This slice is intentionally not registered as an Available Provider. GCP remains on
+the legacy bootstrap until its apply, DB grant, independent verification, lease smoke
+test, drift repair, and ownership-scoped destroy paths all use the #99 lifecycle.

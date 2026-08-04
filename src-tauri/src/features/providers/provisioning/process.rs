@@ -25,7 +25,7 @@ use crate::error::AppResult;
 use crate::operations::canonical_hash;
 
 use super::super::domain::LocalProvider;
-use super::ProvisioningExecutionPermit;
+use super::{ProvisioningExecutionPermit, ProvisioningReadAuthority};
 use process_tree::ProvisioningProcessTree;
 
 const MAX_EXECUTABLE_BYTES: u64 = 512 * 1024 * 1024;
@@ -114,6 +114,9 @@ pub(crate) enum ProvisioningCliEnvironment {
     SafePath,
     Home(String),
     CloudSdkConfig(String),
+    CloudSdkDisablePrompts,
+    CloudSdkDisableUsageReporting,
+    CloudSdkLogHttpOff,
     XdgConfigHome(String),
     PlanetScaleConfig(String),
     NeonConfig(String),
@@ -125,6 +128,11 @@ impl ProvisioningCliEnvironment {
             Self::SafePath => Ok(("PATH", safe_path())),
             Self::Home(path) => validate_environment_path("HOME", path),
             Self::CloudSdkConfig(path) => validate_environment_path("CLOUDSDK_CONFIG", path),
+            Self::CloudSdkDisablePrompts => Ok(("CLOUDSDK_CORE_DISABLE_PROMPTS", "1")),
+            Self::CloudSdkDisableUsageReporting => {
+                Ok(("CLOUDSDK_CORE_DISABLE_USAGE_REPORTING", "true"))
+            }
+            Self::CloudSdkLogHttpOff => Ok(("CLOUDSDK_CORE_LOG_HTTP", "false")),
             Self::XdgConfigHome(path) => validate_environment_path("XDG_CONFIG_HOME", path),
             Self::PlanetScaleConfig(path) => validate_environment_path("PSCALE_CONFIG_DIR", path),
             Self::NeonConfig(path) => validate_environment_path("NEON_CONFIG_DIR", path),
@@ -210,6 +218,34 @@ impl ProvisioningCliCommand {
         {
             return Err(ProvisioningProcessFailure::CommandRejected);
         }
+        self.run_process(cancellation).await
+    }
+
+    /// Run a non-mutating detect/discover command under a Provider adapter
+    /// authority. This path cannot consume or synthesize an Operation execution
+    /// permit and therefore cannot be reused for apply/destroy checkpoints.
+    pub(super) async fn run_read_only(
+        &self,
+        authority: &ProvisioningReadAuthority,
+        cancellation: &CancellationToken,
+    ) -> Result<ProvisioningCliOutput, ProvisioningProcessFailure> {
+        if authority.provider != self.provider
+            || authority.manifest_sha256.len() != 64
+            || !authority
+                .manifest_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(ProvisioningProcessFailure::CommandRejected);
+        }
+        self.run_process(cancellation).await
+    }
+
+    async fn run_process(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<ProvisioningCliOutput, ProvisioningProcessFailure> {
+        self.validate()?;
         if cancellation.is_cancelled() {
             return Err(ProvisioningProcessFailure::Cancelled);
         }
@@ -258,11 +294,11 @@ impl ProvisioningCliCommand {
                 Err(_) => Err(ProvisioningProcessFailure::TimedOut),
             },
         };
-        let cleanup = tree.terminate_and_reap(&mut child).await;
-        if cleanup.is_err() {
-            return Err(ProvisioningProcessFailure::CleanupFailed);
-        }
+        let status = tree.terminate_and_reap(&mut child).await?;
         let output = result?;
+        if !status.success() {
+            return Err(ProvisioningProcessFailure::ExitStatusRejected);
+        }
         parse_output(self.output_schema, output)
     }
 
@@ -324,6 +360,8 @@ pub(crate) enum ProvisioningProcessFailure {
     TimedOut,
     #[error("provider CLI output was rejected")]
     OutputRejected,
+    #[error("provider CLI exited unsuccessfully")]
+    ExitStatusRejected,
     #[error("provider CLI process cleanup failed")]
     CleanupFailed,
 }
@@ -514,6 +552,38 @@ pub(crate) async fn assert_process_boundary() {
             Duration::from_secs(2),
         )
         .is_err());
+
+        let failing_executable = ProvisioningExecutableIdentity::audit(
+            LocalProvider::GcpCloudSql,
+            Path::new("/usr/bin/false"),
+            &[PathBuf::from("/usr/bin")],
+            &["false"],
+        )
+        .await
+        .expect("audit a fixed failing fixture executable");
+        let failing_command = ProvisioningCliCommand::new(
+            LocalProvider::GcpCloudSql,
+            failing_executable,
+            vec!["--".into()],
+            vec![ProvisioningCliEnvironment::SafePath],
+            ProvisioningCliOutputSchema::Empty,
+            Duration::from_secs(2),
+        )
+        .expect("construct fixed failing fixture");
+        assert_eq!(
+            failing_command
+                .run(
+                    &ProvisioningExecutionPermit::issue(
+                        Uuid::from_u128(53),
+                        LocalProvider::GcpCloudSql,
+                        "ef".repeat(32),
+                        failing_command.execution_sha256().unwrap(),
+                    ),
+                    &CancellationToken::new(),
+                )
+                .await,
+            Err(ProvisioningProcessFailure::ExitStatusRejected)
+        );
         assert!(ProvisioningCliCommand::new(
             LocalProvider::GcpCloudSql,
             executable.clone(),

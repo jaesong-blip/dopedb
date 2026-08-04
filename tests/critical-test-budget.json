@@ -61,7 +61,7 @@
     },
     "src-tauri/src/features/providers/adapters/authority_tests.rs": {
       "tests": 6,
-      "protects": "Provider inventory authority, bounds, exact receipts, fixed-argv process cleanup, provisioning scope CAS, and restart-safe lifecycle recovery"
+      "protects": "Provider inventory authority, strict GCP CLI JSON/exit status, exact receipts, fixed-argv process cleanup, provisioning scope CAS, and restart-safe lifecycle recovery"
     },
     "src-tauri/src/features/queries/domain_tests.rs": {
       "tests": 1,

@@ -1,6 +1,7 @@
 //! Cross-platform cleanup for one fixed-argv provisioner process.
 
 use std::io;
+use std::process::ExitStatus;
 
 use tokio::process::Child;
 
@@ -44,20 +45,20 @@ impl ProvisioningProcessTree {
     pub(super) async fn terminate_and_reap(
         &mut self,
         child: &mut Child,
-    ) -> Result<(), ProvisioningProcessFailure> {
+    ) -> Result<ExitStatus, ProvisioningProcessFailure> {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|_| ProvisioningProcessFailure::CleanupFailed)?
+        {
+            #[cfg(unix)]
+            {
+                prove_group_absent(self.process_group).await?;
+                self.armed = false;
+            }
+            return Ok(status);
+        }
         #[cfg(unix)]
         {
-            if child
-                .try_wait()
-                .map_err(|_| ProvisioningProcessFailure::CleanupFailed)?
-                .is_some()
-            {
-                let result = prove_group_absent(self.process_group).await;
-                if result.is_ok() {
-                    self.armed = false;
-                }
-                return result;
-            }
             match signal_group(self.process_group, libc::SIGTERM)? {
                 GroupSignal::Delivered | GroupSignal::Absent => {}
                 GroupSignal::PermissionDenied => {
@@ -66,11 +67,13 @@ impl ProvisioningProcessTree {
                         .map_err(|_| ProvisioningProcessFailure::CleanupFailed)?
                         .is_some()
                     {
-                        let result = prove_group_absent(self.process_group).await;
-                        if result.is_ok() {
-                            self.armed = false;
-                        }
-                        return result;
+                        let status = child
+                            .wait()
+                            .await
+                            .map_err(|_| ProvisioningProcessFailure::CleanupFailed)?;
+                        prove_group_absent(self.process_group).await?;
+                        self.armed = false;
+                        return Ok(status);
                     }
                     return Err(ProvisioningProcessFailure::CleanupFailed);
                 }
@@ -86,19 +89,17 @@ impl ProvisioningProcessTree {
         #[cfg(windows)]
         self.job.terminate(137)?;
 
-        child
+        let status = child
             .wait()
             .await
             .map_err(|_| ProvisioningProcessFailure::CleanupFailed)?;
 
         #[cfg(unix)]
-        let result = prove_group_absent(self.process_group).await;
-        if result.is_ok() {
+        {
+            prove_group_absent(self.process_group).await?;
             self.armed = false;
         }
-        return result;
-        #[cfg(windows)]
-        Ok(())
+        Ok(status)
     }
 }
 

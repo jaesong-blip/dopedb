@@ -16,6 +16,11 @@ mod application;
 mod domain;
 #[allow(
     dead_code,
+    reason = "the GCP CLI inventory is registered only after its complete #100 lifecycle lands"
+)]
+mod gcp_cli;
+#[allow(
+    dead_code,
     reason = "the fixed CLI runner is consumed by the concrete adapters landing in #100"
 )]
 mod process;
@@ -37,6 +42,24 @@ struct ProvisioningExecutionPermit {
     provider: super::domain::LocalProvider,
     plan_sha256: String,
     execution_sha256: String,
+}
+
+/// Process-local authority for Provider discovery commands. It is deliberately
+/// distinct from [`ProvisioningExecutionPermit`]: discovery can observe only
+/// machine-readable Provider inventory and can never authorize an apply/destroy
+/// mutation or resume a durable Operation.
+struct ProvisioningReadAuthority {
+    provider: super::domain::LocalProvider,
+    manifest_sha256: String,
+}
+
+impl ProvisioningReadAuthority {
+    fn issue(provider: super::domain::LocalProvider, manifest_sha256: String) -> Self {
+        Self {
+            provider,
+            manifest_sha256,
+        }
+    }
 }
 
 impl ProvisioningExecutionPermit {
@@ -77,6 +100,8 @@ pub(crate) use process::{
 pub(crate) use application::assert_restart_resume_lifecycle;
 #[cfg(test)]
 pub(crate) use domain::assert_mock_provider_lifecycle;
+#[cfg(test)]
+pub(crate) use gcp_cli::{assert_gcloud_cli_contract, assert_live_gcloud_inventory};
 #[cfg(test)]
 pub(crate) use process::assert_process_boundary;
 #[cfg(test)]

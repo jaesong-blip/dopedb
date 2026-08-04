@@ -27,7 +27,7 @@ use super::domain::{
     ProvisioningState, ProvisioningTarget, ProvisioningVerification,
 };
 use super::repository::ProvisioningReceiptRepository;
-use super::ProvisioningExecutionPermit;
+use super::{ProvisioningExecutionPermit, ProvisioningReadAuthority};
 
 type DriverFuture<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
 
@@ -150,10 +150,12 @@ pub(super) trait ProvisioningDriver: Send + Sync + 'static {
     fn manifest_sha256(&self) -> &str;
     fn detect<'a>(
         &'a self,
+        authority: &'a ProvisioningReadAuthority,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, ProvisioningDriverStatus>;
     fn discover<'a>(
         &'a self,
+        authority: &'a ProvisioningReadAuthority,
         cancellation: &'a CancellationToken,
     ) -> DriverFuture<'a, Vec<ProvisioningDiscoveredTarget>>;
     fn plan_apply<'a>(
@@ -285,7 +287,11 @@ impl ProvisioningCoordinator {
         let mut statuses = Vec::new();
         for driver in self.drivers.all() {
             ensure_sha256(driver.manifest_sha256(), "provider adapter manifest")?;
-            let status = driver.detect(&cancellation).await?;
+            let authority = ProvisioningReadAuthority::issue(
+                driver.provider(),
+                driver.manifest_sha256().to_owned(),
+            );
+            let status = driver.detect(&authority, &cancellation).await?;
             status.validate(driver.provider())?;
             statuses.push(status);
         }
@@ -304,12 +310,16 @@ impl ProvisioningCoordinator {
             .ok_or_else(|| blocked("provider provisioning driver is unavailable"))?;
         ensure_sha256(driver.manifest_sha256(), "provider adapter manifest")?;
         let cancellation = CancellationToken::new();
-        let status = driver.detect(&cancellation).await?;
+        let authority = ProvisioningReadAuthority::issue(
+            driver.provider(),
+            driver.manifest_sha256().to_owned(),
+        );
+        let status = driver.detect(&authority, &cancellation).await?;
         status.validate(provider)?;
         if status.readiness != ProvisioningCliReadiness::Ready {
             return Err(blocked("provider CLI is not ready"));
         }
-        let discovered = driver.discover(&cancellation).await?;
+        let discovered = driver.discover(&authority, &cancellation).await?;
         if discovered.len() > MAX_DISCOVERED_TARGETS {
             return Err(blocked("provider discovery returned too many targets"));
         }
@@ -1141,6 +1151,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
 
         fn detect<'a>(
             &'a self,
+            _authority: &'a ProvisioningReadAuthority,
             _cancellation: &'a CancellationToken,
         ) -> DriverFuture<'a, ProvisioningDriverStatus> {
             Box::pin(async move {
@@ -1157,6 +1168,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
 
         fn discover<'a>(
             &'a self,
+            _authority: &'a ProvisioningReadAuthority,
             _cancellation: &'a CancellationToken,
         ) -> DriverFuture<'a, Vec<ProvisioningDiscoveredTarget>> {
             Box::pin(async move {

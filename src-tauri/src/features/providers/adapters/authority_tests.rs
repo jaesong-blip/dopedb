@@ -77,6 +77,7 @@ async fn inventory_reader_enforces_content_length_and_streaming_caps() {
     crate::features::providers::provisioning::assert_repository_fences().await;
     crate::features::providers::provisioning::assert_process_boundary().await;
     crate::features::providers::provisioning::assert_restart_resume_lifecycle().await;
+    crate::features::providers::provisioning::assert_live_gcloud_inventory().await;
 
     let declared_oversize = local_response(
         format!(
@@ -120,6 +121,7 @@ async fn inventory_reader_enforces_content_length_and_streaming_caps() {
 
 #[test]
 fn inventory_parser_accepts_exact_boundary_and_rejects_truncated_unknown_or_foreign_scope() {
+    crate::features::providers::provisioning::assert_gcloud_cli_contract();
     let mut exact = br#"{"integrations":[]}"#.to_vec();
     exact.resize(MAX_INVENTORY_BODY_BYTES, b' ');
     assert!(parse_inventory_body(&exact).is_ok());
