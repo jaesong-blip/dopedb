@@ -77,6 +77,32 @@ Rollback always restores the preceding adapter selection. It never copies a
 Provider token, short-lived database password, WIF coordinate, or service-account
 key into a connection template, backup, log, analytics event, or browser response.
 
+## #99 provider-neutral lifecycle
+
+The desktop now owns one provider-neutral, secret-free lifecycle before any legacy
+setup path is removed:
+
+- `detect → discover → plan → approve → apply → verify → issue → reconcile → destroy`
+  is represented by closed enums and a revision-fenced receipt in the active
+  workspace/account scope.
+- Every mutating plan is persisted as a hash-pinned `ProviderAction` Operation and
+  uses the existing exact local approval boundary. Production targets are critical
+  operations and require the exact confirmation phrase.
+- Discovery ids are short-lived and process-local. Durable plans retain only a
+  validated display projection, target selectors, fingerprints, action enums, and
+  the adapter manifest hash; credentials, raw Provider output, CLI stderr, and
+  command output are absent from the renderer and receipt table.
+- The shared process runner executes a previously audited binary directly with
+  fixed argv, an allowlisted environment, bounded schema-checked stdout, timeout,
+  cancellation, and process-tree cleanup. Shell and `eval` paths do not exist.
+- Interrupted apply/destroy Operations resume only after the receipt, target,
+  adapter manifest, payload hash, and last checkpoint all validate. Otherwise the
+  receipt becomes `Needs repair` and the Operation becomes `Outcome unknown`.
+- The Tailwind v4 managed-access Wizard renders only Providers registered with the
+  complete lifecycle. With no concrete #100 driver, no label, icon, button, or
+  disabled placeholder is shown. This keeps the current legacy setup path active
+  until each Provider can apply, verify, repair, and destroy safely.
+
 ## Verification gates
 
 - The catalog API returns exactly Neon, GCP Cloud SQL, and PlanetScale.

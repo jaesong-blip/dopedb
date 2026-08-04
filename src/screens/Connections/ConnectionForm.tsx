@@ -87,6 +87,7 @@ import {
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
 import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
+import { ManagedAccessLauncher } from "../../features/providers/ManagedAccessDialog";
 import type { ProviderKind } from "../../features/providers/domain";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import {
@@ -2955,7 +2956,7 @@ export function ConnectionForm({
                         {t("connections.cloudCatalogDescription")}
                       </p>
                     </div>
-                    <div>
+                    <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
                       <Button
                         variant="primary"
                         onClick={(event) =>
@@ -2968,6 +2969,12 @@ export function ConnectionForm({
                         <Icon name="key" />
                         {t("connections.cloudCredentialDescription")}
                       </Button>
+                      {!isNew ? (
+                        <ManagedAccessLauncher
+                          connectionId={form.id}
+                          provider={catalogCloudProvider}
+                        />
+                      ) : null}
                     </div>
                   </section>
                 </div>

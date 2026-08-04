@@ -5,6 +5,8 @@ declare const providerIntegrationIdBrand: unique symbol;
 declare const providerBindingIdBrand: unique symbol;
 declare const providerCredentialReceiptIdBrand: unique symbol;
 declare const integrationGenerationBrand: unique symbol;
+declare const provisioningDiscoveryIdBrand: unique symbol;
+declare const provisioningReceiptIdBrand: unique symbol;
 
 export type ProviderIntegrationId = string & {
   readonly [providerIntegrationIdBrand]: "ProviderIntegrationId";
@@ -21,6 +23,14 @@ export type ProviderCredentialReceiptId = string & {
 /** Decimal text avoids unsafe JavaScript coercion of the Rust authority epoch. */
 export type IntegrationGeneration = string & {
   readonly [integrationGenerationBrand]: "IntegrationGeneration";
+};
+
+export type ProvisioningDiscoveryId = string & {
+  readonly [provisioningDiscoveryIdBrand]: "ProvisioningDiscoveryId";
+};
+
+export type ProvisioningReceiptId = string & {
+  readonly [provisioningReceiptIdBrand]: "ProvisioningReceiptId";
 };
 
 export type ProviderKind = "neon" | "gcpCloudSql" | "planetScale";
@@ -70,6 +80,117 @@ export type ProviderCredentialReceipt = Readonly<{
 export type ProviderCredential =
   | Readonly<{ type: "neonApiKey"; apiKey: string }>
   | Readonly<{ type: "gcpAdc" }>;
+
+export type ProvisioningCliReadiness =
+  | "missing"
+  | "outdated"
+  | "loggedOut"
+  | "wrongAccount"
+  | "ready";
+
+export type ProvisioningAccessMode = "read" | "write";
+export type ProvisioningIntent = "apply" | "destroy";
+export type ProvisioningState =
+  | "needsSetup"
+  | "readyToApply"
+  | "applying"
+  | "verifying"
+  | "ready"
+  | "needsRepair"
+  | "destroying";
+export type ProvisioningPhase =
+  | "detect"
+  | "discover"
+  | "plan"
+  | "approve"
+  | "apply"
+  | "verify"
+  | "issue"
+  | "reconcile"
+  | "destroy";
+export type ProvisioningAction =
+  | "enableProviderService"
+  | "createProviderIdentity"
+  | "bindProviderRole"
+  | "configureDatabaseAuthentication"
+  | "createDatabasePrincipal"
+  | "createReadRole"
+  | "createWriteRole"
+  | "grantExistingObjects"
+  | "grantFutureObjects"
+  | "verifyProviderTarget"
+  | "verifyDatabasePolicy"
+  | "smokeTestReadCredential"
+  | "smokeTestWriteCredential"
+  | "reconcileProviderPolicy"
+  | "reconcileDatabasePolicy"
+  | "revokeIssuedCredentials"
+  | "removeOwnedDatabasePrincipal"
+  | "removeOwnedProviderIdentity";
+export type ProvisioningRepairReason =
+  | "applyFailed"
+  | "applyOutcomeUnknown"
+  | "verificationFailed"
+  | "providerDrift"
+  | "databaseDrift"
+  | "credentialSmokeFailed"
+  | "cleanupFailed"
+  | "userCancelled";
+
+export type ProviderProvisioningDriverStatus = Readonly<{
+  provider: ProviderKind;
+  cliName: string;
+  minimumVersion: string;
+  installedVersion: string | null;
+  activeAccount: string | null;
+  readiness: ProvisioningCliReadiness;
+}>;
+
+export type ProviderProvisioningTarget = Readonly<{
+  discoveryId: ProvisioningDiscoveryId;
+  provider: ProviderKind;
+  displayName: string;
+  detail: string;
+  engine: "postgres" | "mysql";
+  production: boolean;
+  expiresAt: string;
+}>;
+
+export type ProviderProvisioningPlan = Readonly<{
+  receiptId: ProvisioningReceiptId;
+  operationId: string;
+  connectionId: string;
+  provider: ProviderKind;
+  targetDisplayName: string;
+  targetDetail: string;
+  engine: "postgres" | "mysql";
+  intent: ProvisioningIntent;
+  access: ProvisioningAccessMode;
+  production: boolean;
+  state: ProvisioningState;
+  phase: ProvisioningPhase;
+  operationState:
+    | "planned"
+    | "pendingApproval"
+    | "ready"
+    | "approved"
+    | "rejected"
+    | "expired"
+    | "cancelled"
+    | "executing"
+    | "succeeded"
+    | "failed"
+    | "outcomeUnknown";
+  payloadHash: string;
+  confirmationPhrase: string | null;
+  completedSteps: number;
+  totalSteps: number;
+  actions: ProvisioningAction[];
+  repairReason: ProvisioningRepairReason | null;
+  canExecute: boolean;
+  canCancel: boolean;
+  canDestroy: boolean;
+}>;
 
 export type BeginProviderCredentialBindingRequest = Readonly<{
   integrationId: ProviderIntegrationId;
@@ -224,5 +345,208 @@ export function parseProviderCredentialReceipt(value: unknown): ProviderCredenti
   return {
     receiptId: providerCredentialReceiptId(row.receiptId),
     expiresAt: safeTimestamp(row.expiresAt, "provider credential receipt expiry"),
+  };
+}
+
+function safeProvisioningText(value: unknown, label: string): string {
+  if (
+    typeof value !== "string" ||
+    !value ||
+    value.length > 255 ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return value;
+}
+
+function nullableProvisioningText(value: unknown, label: string): string | null {
+  return value === null ? null : safeProvisioningText(value, label);
+}
+
+function provisioningUuid(value: unknown, label: string): string {
+  return brandedUuid(value, label) as string;
+}
+
+function provisioningInteger(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > 64) {
+    throw new Error(`Invalid ${label}`);
+  }
+  return value as number;
+}
+
+function provisioningBoolean(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`Invalid ${label}`);
+  return value;
+}
+
+function oneOf<T extends string>(value: unknown, values: readonly T[], label: string): T {
+  if (typeof value === "string" && values.includes(value as T)) return value as T;
+  throw new Error(`Invalid ${label}`);
+}
+
+const provisioningReadinessValues = [
+  "missing",
+  "outdated",
+  "loggedOut",
+  "wrongAccount",
+  "ready",
+] as const;
+const provisioningStateValues = [
+  "needsSetup",
+  "readyToApply",
+  "applying",
+  "verifying",
+  "ready",
+  "needsRepair",
+  "destroying",
+] as const;
+const provisioningPhaseValues = [
+  "detect",
+  "discover",
+  "plan",
+  "approve",
+  "apply",
+  "verify",
+  "issue",
+  "reconcile",
+  "destroy",
+] as const;
+const provisioningActionValues = [
+  "enableProviderService",
+  "createProviderIdentity",
+  "bindProviderRole",
+  "configureDatabaseAuthentication",
+  "createDatabasePrincipal",
+  "createReadRole",
+  "createWriteRole",
+  "grantExistingObjects",
+  "grantFutureObjects",
+  "verifyProviderTarget",
+  "verifyDatabasePolicy",
+  "smokeTestReadCredential",
+  "smokeTestWriteCredential",
+  "reconcileProviderPolicy",
+  "reconcileDatabasePolicy",
+  "revokeIssuedCredentials",
+  "removeOwnedDatabasePrincipal",
+  "removeOwnedProviderIdentity",
+] as const;
+const provisioningRepairValues = [
+  "applyFailed",
+  "applyOutcomeUnknown",
+  "verificationFailed",
+  "providerDrift",
+  "databaseDrift",
+  "credentialSmokeFailed",
+  "cleanupFailed",
+  "userCancelled",
+] as const;
+const operationStateValues = [
+  "planned",
+  "pendingApproval",
+  "ready",
+  "approved",
+  "rejected",
+  "expired",
+  "cancelled",
+  "executing",
+  "succeeded",
+  "failed",
+  "outcomeUnknown",
+] as const;
+
+export function parseProviderProvisioningDriverStatus(
+  value: unknown,
+): ProviderProvisioningDriverStatus {
+  const row = value as Record<string, unknown> | null;
+  if (!row || typeof row !== "object") throw new Error("Invalid provider provisioning status");
+  exactFields(
+    row,
+    ["activeAccount", "cliName", "installedVersion", "minimumVersion", "provider", "readiness"],
+    "provider provisioning status",
+  );
+  return {
+    provider: providerKind(row.provider),
+    cliName: safeProvisioningText(row.cliName, "provider CLI name"),
+    minimumVersion: safeProvisioningText(row.minimumVersion, "provider CLI minimum version"),
+    installedVersion: nullableProvisioningText(row.installedVersion, "provider CLI version"),
+    activeAccount: nullableProvisioningText(row.activeAccount, "provider CLI account"),
+    readiness: oneOf(row.readiness, provisioningReadinessValues, "provider CLI readiness"),
+  };
+}
+
+export function parseProviderProvisioningTarget(value: unknown): ProviderProvisioningTarget {
+  const row = value as Record<string, unknown> | null;
+  if (!row || typeof row !== "object") throw new Error("Invalid provider provisioning target");
+  exactFields(
+    row,
+    ["detail", "discoveryId", "displayName", "engine", "expiresAt", "production", "provider"],
+    "provider provisioning target",
+  );
+  return {
+    discoveryId: provisioningUuid(row.discoveryId, "provider discovery id") as ProvisioningDiscoveryId,
+    provider: providerKind(row.provider),
+    displayName: safeProvisioningText(row.displayName, "provider target name"),
+    detail: safeProvisioningText(row.detail, "provider target detail"),
+    engine: oneOf(row.engine, ["postgres", "mysql"] as const, "provider target engine"),
+    production: provisioningBoolean(row.production, "provider target environment"),
+    expiresAt: safeTimestamp(row.expiresAt, "provider discovery expiry"),
+  };
+}
+
+export function parseProviderProvisioningPlan(value: unknown): ProviderProvisioningPlan {
+  const row = value as Record<string, unknown> | null;
+  if (!row || typeof row !== "object") throw new Error("Invalid provider provisioning plan");
+  exactFields(
+    row,
+    [
+      "access", "actions", "canCancel", "canDestroy", "canExecute", "completedSteps",
+      "confirmationPhrase", "connectionId", "engine", "intent", "operationId",
+      "operationState", "payloadHash", "phase", "production", "provider", "receiptId",
+      "repairReason", "state", "targetDetail", "targetDisplayName", "totalSteps",
+    ],
+    "provider provisioning plan",
+  );
+  if (!Array.isArray(row.actions) || row.actions.length > 64) {
+    throw new Error("Invalid provider provisioning actions");
+  }
+  const payloadHash = safeProvisioningText(row.payloadHash, "provider provisioning hash");
+  if (!/^[0-9a-f]{64}$/.test(payloadHash)) {
+    throw new Error("Invalid provider provisioning hash");
+  }
+  const repairReason = row.repairReason === null
+    ? null
+    : oneOf(row.repairReason, provisioningRepairValues, "provider repair reason");
+  return {
+    receiptId: provisioningUuid(row.receiptId, "provider provisioning receipt id") as ProvisioningReceiptId,
+    operationId: provisioningUuid(row.operationId, "provider operation id"),
+    connectionId: provisioningUuid(row.connectionId, "provider connection id"),
+    provider: providerKind(row.provider),
+    targetDisplayName: safeProvisioningText(row.targetDisplayName, "provider target name"),
+    targetDetail: safeProvisioningText(row.targetDetail, "provider target detail"),
+    engine: oneOf(row.engine, ["postgres", "mysql"] as const, "provider target engine"),
+    intent: oneOf(row.intent, ["apply", "destroy"] as const, "provider provisioning intent"),
+    access: oneOf(row.access, ["read", "write"] as const, "provider provisioning access"),
+    production: provisioningBoolean(row.production, "provider target environment"),
+    state: oneOf(row.state, provisioningStateValues, "provider provisioning state"),
+    phase: oneOf(row.phase, provisioningPhaseValues, "provider provisioning phase"),
+    operationState: oneOf(row.operationState, operationStateValues, "provider operation state"),
+    payloadHash,
+    confirmationPhrase: nullableProvisioningText(
+      row.confirmationPhrase,
+      "provider confirmation phrase",
+    ),
+    completedSteps: provisioningInteger(row.completedSteps, "provider completed steps"),
+    totalSteps: provisioningInteger(row.totalSteps, "provider total steps"),
+    actions: row.actions.map((action) => oneOf(
+      action,
+      provisioningActionValues,
+      "provider provisioning action",
+    )),
+    repairReason,
+    canExecute: provisioningBoolean(row.canExecute, "provider execution state"),
+    canCancel: provisioningBoolean(row.canCancel, "provider cancellation state"),
+    canDestroy: provisioningBoolean(row.canDestroy, "provider cleanup state"),
   };
 }

@@ -162,6 +162,116 @@ impl OperationRepository {
         Ok(rebound)
     }
 
+    /// Rebind an executing provider action only after the provider provisioning
+    /// repository validated its secret-free receipt and exact checkpoint. This
+    /// path is deliberately separate from resumable jobs so neither owner can
+    /// reclaim the other's operation kind.
+    pub(crate) async fn rebind_provider_execution(
+        &self,
+        operation_id: Uuid,
+        runtime_id: Uuid,
+        expected_payload_hash: &str,
+    ) -> AppResult<OperationRecord> {
+        let _guard = self.write_lock.lock().await;
+        let mut tx = self.pool.begin().await?;
+        let current = fetch_operation_tx(&mut tx, operation_id).await?;
+        if current.state != OperationState::Executing
+            || current.kind != dopedb_protocol::OperationKind::ProviderAction
+        {
+            return Err(operation_conflict(
+                "only an executing provider action can reclaim its operation",
+            ));
+        }
+        if current.payload_hash != expected_payload_hash {
+            return Err(operation_conflict(
+                "the provider action payload hash changed before reclaim",
+            ));
+        }
+        let previous_runtime_id = current.runtime_id;
+        let now = Utc::now();
+        let update = sqlx::query(
+            "UPDATE operations SET runtime_id = ?1, updated_at = ?2
+             WHERE id = ?3 AND state = 'executing' AND operation_kind = 'provider_action'
+               AND payload_hash = ?4",
+        )
+        .bind(runtime_id.to_string())
+        .bind(timestamp(now))
+        .bind(operation_id.to_string())
+        .bind(expected_payload_hash)
+        .execute(&mut *tx)
+        .await?;
+        if update.rows_affected() != 1 {
+            return Err(operation_conflict(
+                "provider action changed during checkpoint reclaim",
+            ));
+        }
+        self.append_event_tx(
+            &mut tx,
+            operation_id,
+            OperationEventKind::Progress,
+            OperationState::Executing,
+            &json!({
+                "provisioningCheckpointValidated": true,
+                "previousRuntimeId": previous_runtime_id,
+                "runtimeId": runtime_id,
+            }),
+            now,
+        )
+        .await?;
+        let rebound = fetch_operation_tx(&mut tx, operation_id).await?;
+        tx.commit().await?;
+        Ok(rebound)
+    }
+
+    pub(crate) async fn quarantine_provider_execution(
+        &self,
+        operation_id: Uuid,
+        runtime_id: Uuid,
+        expected_payload_hash: &str,
+        reason: &'static str,
+    ) -> AppResult<OperationRecord> {
+        let _guard = self.write_lock.lock().await;
+        let mut tx = self.pool.begin().await?;
+        let current = fetch_operation_tx(&mut tx, operation_id).await?;
+        if current.state != OperationState::Executing
+            || current.kind != dopedb_protocol::OperationKind::ProviderAction
+            || current.payload_hash != expected_payload_hash
+        {
+            return Err(operation_conflict(
+                "only the exact interrupted provider action can be quarantined",
+            ));
+        }
+        let now = Utc::now();
+        let update = sqlx::query(
+            "UPDATE operations SET runtime_id = ?1, updated_at = ?2
+             WHERE id = ?3 AND state = 'executing' AND operation_kind = 'provider_action'
+               AND payload_hash = ?4",
+        )
+        .bind(runtime_id.to_string())
+        .bind(timestamp(now))
+        .bind(operation_id.to_string())
+        .bind(expected_payload_hash)
+        .execute(&mut *tx)
+        .await?;
+        if update.rows_affected() != 1 {
+            return Err(operation_conflict(
+                "provider action changed during quarantine",
+            ));
+        }
+        let rebound = fetch_operation_tx(&mut tx, operation_id).await?;
+        let quarantined = self
+            .transition_tx(
+                &mut tx,
+                &rebound,
+                OperationState::OutcomeUnknown,
+                &json!({"reason": reason}),
+                now,
+            )
+            .await?;
+        tx.commit().await?;
+        Ok(quarantined)
+    }
+
     /// Rebind a persisted import/export plan that never started. Its immutable
     /// payload hash and approval remain unchanged; only the process-local runtime
     /// owner changes so a queued job survives an app restart.

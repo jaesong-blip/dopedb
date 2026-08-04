@@ -74,6 +74,10 @@ fn inventory_body_cap_rejects_declared_or_streamed_oversize_without_trusting_hea
 
 #[tokio::test]
 async fn inventory_reader_enforces_content_length_and_streaming_caps() {
+    crate::features::providers::provisioning::assert_repository_fences().await;
+    crate::features::providers::provisioning::assert_process_boundary().await;
+    crate::features::providers::provisioning::assert_restart_resume_lifecycle().await;
+
     let declared_oversize = local_response(
         format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -162,6 +166,8 @@ fn rejects_untyped_or_non_decimal_remote_inventory() {
 
 #[test]
 fn accepts_only_the_exact_gcp_target_receipt() {
+    crate::features::providers::provisioning::assert_mock_provider_lifecycle();
+
     let base = || RemoteIntegration {
         id: uuid::Uuid::new_v4().to_string(),
         provider: "gcpCloudSql".into(),

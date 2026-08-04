@@ -38,6 +38,7 @@ pub use dopedb_protocol::{
 pub(crate) use execute::ExecutionGrant;
 pub(crate) use model::{
     NewOperation, OperationActor, OperationActorProvenance, OperationApprover, OperationRecord,
+    RestartRecoveryReport,
 };
 pub(crate) use runtime::{
     ClaimedOperation, ExactApprovalRequest, LocalApprovalAuthority, OperationPlanDisposition,

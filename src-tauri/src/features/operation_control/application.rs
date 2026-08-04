@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::error::AppResult;
 use crate::kernel::TerminalAuthority;
-use crate::operations::LocalApprovalAuthority;
+use crate::operations::{LocalApprovalAuthority, RestartRecoveryReport};
 
 use super::ports::OperationControlPort;
 use super::{OperationDecisionReceipt, OperationDecisionRequest};
@@ -25,7 +25,7 @@ where
         Self { port }
     }
 
-    pub(crate) async fn recover_previous_runtimes(&self) -> AppResult<()> {
+    pub(crate) async fn recover_previous_runtimes(&self) -> AppResult<RestartRecoveryReport> {
         self.port.recover_previous_runtimes().await
     }
 

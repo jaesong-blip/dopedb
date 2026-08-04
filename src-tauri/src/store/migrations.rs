@@ -781,4 +781,59 @@ CREATE TABLE IF NOT EXISTS workspace_provider_credential_cleanup (
 );
 CREATE INDEX IF NOT EXISTS idx_workspace_provider_credential_cleanup_scope
     ON workspace_provider_credential_cleanup(workspace_id, account_user_id, created_at);
+
+-- Secret-free checkpoint for the provider-neutral Managed Access provisioning
+-- lifecycle. Provider tokens, database passwords, CLI stdout/stderr, and raw
+-- Provider responses have no representable column. Immutable target ownership is
+-- separated from the mutable operation/plan used for an explicitly approved
+-- apply, repair, or destroy attempt.
+CREATE TABLE IF NOT EXISTS provider_provisioning_receipts (
+    receipt_id          TEXT PRIMARY KEY,
+    workspace_id        TEXT NOT NULL,
+    account_scope       TEXT NOT NULL CHECK(account_scope <> ''),
+    connection_id       TEXT NOT NULL,
+    operation_id        TEXT NOT NULL,
+    provider            TEXT NOT NULL CHECK(provider IN ('neon', 'gcp_cloud_sql', 'planetscale')),
+    target_fingerprint  TEXT NOT NULL
+                        CHECK(length(target_fingerprint) = 64
+                          AND target_fingerprint NOT GLOB '*[^0-9a-f]*'),
+    plan_hash           TEXT NOT NULL
+                        CHECK(length(plan_hash) = 64
+                          AND plan_hash NOT GLOB '*[^0-9a-f]*'),
+    idempotency_key     TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 16 AND 128),
+    ownership_marker    TEXT NOT NULL CHECK(ownership_marker <> ''),
+    state               TEXT NOT NULL CHECK(state IN (
+                            'needs_setup', 'ready_to_apply', 'applying', 'verifying',
+                            'ready', 'needs_repair', 'destroying'
+                        )),
+    phase               TEXT NOT NULL CHECK(phase IN (
+                            'detect', 'discover', 'plan', 'approve', 'apply',
+                            'verify', 'issue', 'reconcile', 'destroy'
+                        )),
+    completed_steps     INTEGER NOT NULL CHECK(completed_steps BETWEEN 0 AND 64),
+    revision            INTEGER NOT NULL CHECK(revision > 0),
+    snapshot_json       TEXT NOT NULL
+                        CHECK(json_valid(snapshot_json) AND length(snapshot_json) <= 65536),
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    UNIQUE(workspace_id, account_scope, provider, target_fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_provider_provisioning_scope_updated
+    ON provider_provisioning_receipts(workspace_id, account_scope, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_provider_provisioning_state
+    ON provider_provisioning_receipts(state, updated_at);
+
+DROP TRIGGER IF EXISTS provider_provisioning_reject_target_rewrite;
+CREATE TRIGGER provider_provisioning_reject_target_rewrite
+BEFORE UPDATE ON provider_provisioning_receipts
+WHEN OLD.workspace_id IS NOT NEW.workspace_id
+  OR OLD.account_scope IS NOT NEW.account_scope
+  OR OLD.connection_id IS NOT NEW.connection_id
+  OR OLD.provider IS NOT NEW.provider
+  OR OLD.target_fingerprint IS NOT NEW.target_fingerprint
+  OR OLD.ownership_marker IS NOT NEW.ownership_marker
+  OR OLD.created_at IS NOT NEW.created_at
+BEGIN
+    SELECT RAISE(ABORT, 'provider provisioning target ownership cannot be changed');
+END;
 "#;

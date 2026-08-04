@@ -8,12 +8,14 @@ use uuid::Uuid;
 
 use crate::error::AppResult;
 use crate::kernel::TerminalAuthority;
-use crate::operations::LocalApprovalAuthority;
+use crate::operations::{LocalApprovalAuthority, RestartRecoveryReport};
 
 use super::{OperationDecisionReceipt, OperationDecisionRequest};
 
 pub(crate) trait OperationControlPort: Clone + Send + Sync + 'static {
-    fn recover_previous_runtimes(&self) -> impl Future<Output = AppResult<()>> + Send;
+    fn recover_previous_runtimes(
+        &self,
+    ) -> impl Future<Output = AppResult<RestartRecoveryReport>> + Send;
 
     fn approve_local<'a>(
         &'a self,

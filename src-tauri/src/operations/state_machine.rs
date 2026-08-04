@@ -17,6 +17,7 @@ pub enum RestartRecovery {
     MarkFailed,
     OutcomeUnknown,
     ValidateJobCheckpoint,
+    ValidateProvisioningCheckpoint,
 }
 
 /// Validate a lifecycle transition. Persistence uses compare-and-swap after this
@@ -63,6 +64,8 @@ pub const fn restart_recovery(kind: OperationKind, state: OperationState) -> Res
         RestartRecovery::Expire
     } else if matches!(kind, OperationKind::Export) {
         RestartRecovery::ValidateJobCheckpoint
+    } else if matches!(kind, OperationKind::ProviderAction) {
+        RestartRecovery::ValidateProvisioningCheckpoint
     } else if kind.may_mutate_target() {
         RestartRecovery::OutcomeUnknown
     } else {
@@ -156,6 +159,10 @@ mod tests {
         assert_eq!(
             restart_recovery(OperationKind::Export, OperationState::Executing),
             RestartRecovery::ValidateJobCheckpoint
+        );
+        assert_eq!(
+            restart_recovery(OperationKind::ProviderAction, OperationState::Executing),
+            RestartRecovery::ValidateProvisioningCheckpoint
         );
         assert_eq!(
             restart_recovery(OperationKind::Import, OperationState::Executing),

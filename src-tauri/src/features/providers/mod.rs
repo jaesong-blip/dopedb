@@ -4,8 +4,10 @@ mod adapters;
 mod application;
 mod domain;
 pub(crate) mod ports;
+pub(crate) mod provisioning;
 pub(crate) mod transport;
 
+use crate::operations::OperationRuntime;
 use crate::store::Store;
 
 use adapters::{
@@ -15,10 +17,16 @@ use adapters::{
 };
 use application::ProviderUseCases;
 use ports::{ProviderBindingRevocationHandle, ProviderBindingRevocationPort};
+use provisioning::{ProvisioningCoordinator, ProvisioningDriverRegistry};
 
 pub(crate) use domain::{
     ProviderBindingStatus, ProviderCredentialMaterial, ProviderCredentialReceipt,
     ProviderIntegrationSummary, RevokeProviderCredential, VerifyProviderCredential,
+};
+pub(crate) use provisioning::ProvisioningReceipt;
+pub(crate) use provisioning::{
+    ProvisioningAccessMode, ProvisioningDriverStatus, ProvisioningPlanProjection,
+    ProvisioningTargetSummary,
 };
 
 type ComposedProviderApplication = ProviderUseCases<
@@ -36,10 +44,11 @@ pub(crate) struct ProvidersFeature {
     application: ComposedProviderApplication,
     local_connection: ProviderLocalResolver,
     revocation: ProviderBindingRevocationHandle,
+    provisioning: ProvisioningCoordinator,
 }
 
-pub(crate) fn compose(store: Store) -> ProvidersFeature {
-    let repository = SqliteProviderBindingRepository::new(store);
+pub(crate) fn compose(store: Store, operation: OperationRuntime) -> ProvidersFeature {
+    let repository = SqliteProviderBindingRepository::new(store.clone());
     let vault = KeyringProviderCredentialVault::default();
     let verifier = HostedProviderVerifier::new();
     let authority = HostedProviderAuthority::new();
@@ -56,6 +65,11 @@ pub(crate) fn compose(store: Store) -> ProvidersFeature {
         ),
         local_connection: ProviderLocalResolver::new(repository, vault),
         revocation,
+        provisioning: ProvisioningCoordinator::new(
+            store,
+            operation,
+            ProvisioningDriverRegistry::default(),
+        ),
     }
 }
 
@@ -136,5 +150,88 @@ impl ProvidersFeature {
     /// Scope switches/sign-out clear memory capabilities and staged credentials.
     pub(crate) async fn invalidate_scope(&self) -> crate::error::AppResult<()> {
         self.application.invalidate_scope().await
+    }
+
+    pub(crate) async fn execute_provisioning(
+        &self,
+        receipt_id: uuid::Uuid,
+    ) -> crate::error::AppResult<ProvisioningReceipt> {
+        self.provisioning.execute(receipt_id).await
+    }
+
+    pub(crate) async fn provisioning_driver_statuses(
+        &self,
+    ) -> crate::error::AppResult<Vec<ProvisioningDriverStatus>> {
+        self.provisioning.driver_statuses().await
+    }
+
+    pub(crate) async fn discover_provisioning_targets(
+        &self,
+        provider: domain::LocalProvider,
+    ) -> crate::error::AppResult<Vec<ProvisioningTargetSummary>> {
+        self.provisioning.discover(provider).await
+    }
+
+    pub(crate) async fn prepare_provisioning_apply(
+        &self,
+        discovery_id: uuid::Uuid,
+        connection_id: uuid::Uuid,
+        access: ProvisioningAccessMode,
+    ) -> crate::error::AppResult<ProvisioningPlanProjection> {
+        self.provisioning
+            .prepare_apply(discovery_id, connection_id, access)
+            .await
+    }
+
+    pub(crate) async fn provisioning_status(
+        &self,
+        receipt_id: uuid::Uuid,
+    ) -> crate::error::AppResult<ProvisioningPlanProjection> {
+        self.provisioning.status(receipt_id).await
+    }
+
+    pub(crate) async fn list_provisioning_for_connection(
+        &self,
+        connection_id: uuid::Uuid,
+    ) -> crate::error::AppResult<Vec<ProvisioningPlanProjection>> {
+        self.provisioning.list_for_connection(connection_id).await
+    }
+
+    pub(crate) async fn prepare_provisioning_destroy(
+        &self,
+        receipt_id: uuid::Uuid,
+    ) -> crate::error::AppResult<ProvisioningPlanProjection> {
+        self.provisioning.prepare_destroy(receipt_id).await
+    }
+
+    pub(crate) async fn prepare_provisioning_repair(
+        &self,
+        receipt_id: uuid::Uuid,
+    ) -> crate::error::AppResult<ProvisioningPlanProjection> {
+        self.provisioning.prepare_repair(receipt_id).await
+    }
+
+    pub(crate) async fn reconcile_provisioning(
+        &self,
+        receipt_id: uuid::Uuid,
+    ) -> crate::error::AppResult<ProvisioningPlanProjection> {
+        self.provisioning.reconcile(receipt_id).await
+    }
+
+    pub(crate) async fn cancel_provisioning(
+        &self,
+        receipt_id: uuid::Uuid,
+    ) -> crate::error::AppResult<()> {
+        self.provisioning.cancel(receipt_id).await
+    }
+
+    pub(crate) async fn recover_provisioning(
+        &self,
+        operation_ids: &[uuid::Uuid],
+    ) -> crate::error::AppResult<()> {
+        self.provisioning
+            .recover_previous_runtimes(operation_ids)
+            .await
+            .map(|_| ())
     }
 }

@@ -65,6 +65,11 @@ impl OperationRepository {
                 RestartRecovery::ValidateJobCheckpoint => {
                     report.checkpoint_validation_required.push(operation.id);
                 }
+                RestartRecovery::ValidateProvisioningCheckpoint => {
+                    report
+                        .provisioning_checkpoint_validation_required
+                        .push(operation.id);
+                }
             }
         }
         tx.commit().await?;

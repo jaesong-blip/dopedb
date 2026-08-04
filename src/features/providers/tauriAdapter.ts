@@ -6,11 +6,21 @@ import {
   parseProviderCredentialBindingSummary,
   parseProviderCredentialReceipt,
   parseProviderIntegrationSummary,
+  parseProviderProvisioningDriverStatus,
+  parseProviderProvisioningPlan,
+  parseProviderProvisioningTarget,
   type BeginProviderCredentialBindingRequest,
   type ProviderBindingId,
   type ProviderCredentialBindingSummary,
   type ProviderCredentialReceipt,
   type ProviderIntegrationSummary,
+  type ProviderKind,
+  type ProviderProvisioningDriverStatus,
+  type ProviderProvisioningPlan,
+  type ProviderProvisioningTarget,
+  type ProvisioningAccessMode,
+  type ProvisioningDiscoveryId,
+  type ProvisioningReceiptId,
   type VerifyProviderCredentialBindingRequest,
 } from "./domain";
 
@@ -62,4 +72,87 @@ export async function verifyProviderCredentialBinding(
 
 export async function revokeProviderCredentialBinding(id: ProviderBindingId): Promise<void> {
   await invoke("revoke_provider_credential_binding", { id });
+}
+
+export async function listProviderProvisioningStatuses(): Promise<ProviderProvisioningDriverStatus[]> {
+  return arrayResponse(
+    await invoke("list_provider_provisioning_statuses"),
+    parseProviderProvisioningDriverStatus,
+  );
+}
+
+export async function discoverProviderProvisioningTargets(
+  provider: ProviderKind,
+): Promise<ProviderProvisioningTarget[]> {
+  return arrayResponse(
+    await invoke("discover_provider_provisioning_targets", { provider }),
+    parseProviderProvisioningTarget,
+  );
+}
+
+export async function prepareProviderProvisioning(
+  discoveryId: ProvisioningDiscoveryId,
+  connectionId: string,
+  access: ProvisioningAccessMode,
+): Promise<ProviderProvisioningPlan> {
+  return parseProviderProvisioningPlan(await invoke("prepare_provider_provisioning", {
+    discoveryId,
+    connectionId,
+    access,
+  }));
+}
+
+export async function getProviderProvisioningStatus(
+  receiptId: ProvisioningReceiptId,
+): Promise<ProviderProvisioningPlan> {
+  return parseProviderProvisioningPlan(await invoke("get_provider_provisioning_status", {
+    receiptId,
+  }));
+}
+
+export async function listProviderProvisioningForConnection(
+  connectionId: string,
+): Promise<ProviderProvisioningPlan[]> {
+  return arrayResponse(
+    await invoke("list_provider_provisioning_for_connection", { connectionId }),
+    parseProviderProvisioningPlan,
+  );
+}
+
+export async function prepareProviderProvisioningDestroy(
+  receiptId: ProvisioningReceiptId,
+): Promise<ProviderProvisioningPlan> {
+  return parseProviderProvisioningPlan(await invoke("prepare_provider_provisioning_destroy", {
+    receiptId,
+  }));
+}
+
+export async function prepareProviderProvisioningRepair(
+  receiptId: ProvisioningReceiptId,
+): Promise<ProviderProvisioningPlan> {
+  return parseProviderProvisioningPlan(await invoke("prepare_provider_provisioning_repair", {
+    receiptId,
+  }));
+}
+
+export async function reconcileProviderProvisioning(
+  receiptId: ProvisioningReceiptId,
+): Promise<ProviderProvisioningPlan> {
+  return parseProviderProvisioningPlan(await invoke("reconcile_provider_provisioning", {
+    receiptId,
+  }));
+}
+
+export async function executeProviderProvisioning(
+  receiptId: ProvisioningReceiptId,
+): Promise<ProviderProvisioningPlan> {
+  return parseProviderProvisioningPlan(await invoke("execute_provider_provisioning", {
+    receiptId,
+  }));
+}
+
+export async function cancelProviderProvisioning(
+  receiptId: ProvisioningReceiptId,
+): Promise<void> {
+  await invoke("cancel_provider_provisioning", { receiptId });
 }

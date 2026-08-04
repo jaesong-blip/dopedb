@@ -14,9 +14,12 @@ use crate::kernel::identity::{
 };
 use crate::state::AppState;
 
+use super::domain::LocalProvider;
 use super::{
     ProviderBindingStatus, ProviderCredentialMaterial, ProviderCredentialReceipt,
-    ProviderIntegrationSummary, RevokeProviderCredential, VerifyProviderCredential,
+    ProviderIntegrationSummary, ProvisioningAccessMode, ProvisioningDriverStatus,
+    ProvisioningPlanProjection, ProvisioningTargetSummary, RevokeProviderCredential,
+    VerifyProviderCredential,
 };
 
 /// Only the Neon secret-bearing variant crosses this boundary. GCP is an
@@ -113,5 +116,131 @@ pub(crate) async fn revoke_provider_credential_binding(
         .revoke(RevokeProviderCredential {
             binding_id: ProviderBindingId::from(id),
         })
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn execute_provider_provisioning(
+    state: State<'_, AppState>,
+    receipt_id: Uuid,
+) -> AppResult<ProvisioningPlanProjection> {
+    state
+        .services
+        .providers
+        .execute_provisioning(receipt_id)
+        .await?;
+    state
+        .services
+        .providers
+        .provisioning_status(receipt_id)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn cancel_provider_provisioning(
+    state: State<'_, AppState>,
+    receipt_id: Uuid,
+) -> AppResult<()> {
+    state
+        .services
+        .providers
+        .cancel_provisioning(receipt_id)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn list_provider_provisioning_statuses(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<ProvisioningDriverStatus>> {
+    state
+        .services
+        .providers
+        .provisioning_driver_statuses()
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn discover_provider_provisioning_targets(
+    state: State<'_, AppState>,
+    provider: LocalProvider,
+) -> AppResult<Vec<ProvisioningTargetSummary>> {
+    state
+        .services
+        .providers
+        .discover_provisioning_targets(provider)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn prepare_provider_provisioning(
+    state: State<'_, AppState>,
+    discovery_id: Uuid,
+    connection_id: Uuid,
+    access: ProvisioningAccessMode,
+) -> AppResult<ProvisioningPlanProjection> {
+    state
+        .services
+        .providers
+        .prepare_provisioning_apply(discovery_id, connection_id, access)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn get_provider_provisioning_status(
+    state: State<'_, AppState>,
+    receipt_id: Uuid,
+) -> AppResult<ProvisioningPlanProjection> {
+    state
+        .services
+        .providers
+        .provisioning_status(receipt_id)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn list_provider_provisioning_for_connection(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+) -> AppResult<Vec<ProvisioningPlanProjection>> {
+    state
+        .services
+        .providers
+        .list_provisioning_for_connection(connection_id)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn prepare_provider_provisioning_destroy(
+    state: State<'_, AppState>,
+    receipt_id: Uuid,
+) -> AppResult<ProvisioningPlanProjection> {
+    state
+        .services
+        .providers
+        .prepare_provisioning_destroy(receipt_id)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn prepare_provider_provisioning_repair(
+    state: State<'_, AppState>,
+    receipt_id: Uuid,
+) -> AppResult<ProvisioningPlanProjection> {
+    state
+        .services
+        .providers
+        .prepare_provisioning_repair(receipt_id)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn reconcile_provider_provisioning(
+    state: State<'_, AppState>,
+    receipt_id: Uuid,
+) -> AppResult<ProvisioningPlanProjection> {
+    state
+        .services
+        .providers
+        .reconcile_provisioning(receipt_id)
         .await
 }

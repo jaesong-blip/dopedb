@@ -196,6 +196,41 @@ impl OperationRuntime {
         Ok(ClaimedOperation { record, grant })
     }
 
+    /// Reissue an execution capability for one provider action only after the
+    /// provisioning owner has independently validated its durable receipt,
+    /// exact target, plan hash, and last completed checkpoint.
+    pub(crate) async fn resume_provider_claim(
+        &self,
+        operation_id: Uuid,
+        expected_payload_hash: &str,
+    ) -> AppResult<ClaimedOperation> {
+        let record = self
+            .repository
+            .rebind_provider_execution(operation_id, self.runtime_id, expected_payload_hash)
+            .await?;
+        let grant = execute::issue(&record)?;
+        Ok(ClaimedOperation { record, grant })
+    }
+
+    /// Close an interrupted provider action whose durable provisioning receipt
+    /// cannot be validated. No execution grant is issued and the operation is
+    /// atomically rebound only to record the fail-closed outcome.
+    pub(crate) async fn quarantine_provider_execution(
+        &self,
+        operation_id: Uuid,
+        expected_payload_hash: &str,
+        reason: &'static str,
+    ) -> AppResult<OperationRecord> {
+        self.repository
+            .quarantine_provider_execution(
+                operation_id,
+                self.runtime_id,
+                expected_payload_hash,
+                reason,
+            )
+            .await
+    }
+
     pub(crate) async fn rebind_pending_job(
         &self,
         operation_id: Uuid,

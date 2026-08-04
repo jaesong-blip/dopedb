@@ -3,6 +3,8 @@ import { queryOptions } from "@tanstack/react-query";
 import {
   listProviderCredentialBindings,
   listProviderIntegrations,
+  listProviderProvisioningForConnection,
+  listProviderProvisioningStatuses,
 } from "./tauriAdapter";
 
 const PROVIDER_INVENTORY_TIMEOUT_MS = 8_000;
@@ -27,6 +29,8 @@ async function withProviderInventoryTimeout<T>(
 export const providerCredentialQueryKeys = {
   bindings: () => ["providerCredentials", "bindings"] as const,
   integrations: () => ["providerCredentials", "integrations"] as const,
+  provisioning: (connectionId: string) => ["providerProvisioning", connectionId] as const,
+  provisioners: () => ["providerProvisioning", "drivers"] as const,
 };
 
 export function providerIntegrationsQuery() {
@@ -48,5 +52,25 @@ export function providerCredentialBindingsQuery() {
       withProviderInventoryTimeout(
         listProviderCredentialBindings(),
       ),
+  });
+}
+
+export function providerProvisioningStatusesQuery() {
+  return queryOptions({
+    queryKey: providerCredentialQueryKeys.provisioners(),
+    staleTime: 30_000,
+    retry: false,
+    queryFn: () => withProviderInventoryTimeout(listProviderProvisioningStatuses()),
+  });
+}
+
+export function providerProvisioningForConnectionQuery(connectionId: string) {
+  return queryOptions({
+    queryKey: providerCredentialQueryKeys.provisioning(connectionId),
+    staleTime: 5_000,
+    retry: false,
+    queryFn: () => withProviderInventoryTimeout(
+      listProviderProvisioningForConnection(connectionId),
+    ),
   });
 }

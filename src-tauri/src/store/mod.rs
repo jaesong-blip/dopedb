@@ -243,4 +243,19 @@ impl Store {
             audit_lock: Arc::new(Mutex::new(())),
         }
     }
+
+    /// Open the production schema in an isolated, single-connection SQLite store.
+    /// Cross-feature security tests use this instead of duplicating migration SQL.
+    #[cfg(test)]
+    pub(crate) async fn in_memory_for_test() -> AppResult<Store> {
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")?
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await?;
+        sqlx::raw_sql(migrations::SCHEMA).execute(&pool).await?;
+        Ok(Self::from_pool_for_test(pool))
+    }
 }

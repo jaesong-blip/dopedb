@@ -31,7 +31,12 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 import { invoke } from "@tauri-apps/api/core";
 
-import { providerBindingId, providerCredentialReceiptId, providerIntegrationId } from "./domain";
+import {
+  parseProviderProvisioningPlan,
+  providerBindingId,
+  providerCredentialReceiptId,
+  providerIntegrationId,
+} from "./domain";
 import {
   beginProviderCredentialBinding,
   beginProviderCredentialBindingPayload,
@@ -153,6 +158,40 @@ describe("provider credential Tauri adapter", () => {
 
     invokeMock.mockResolvedValueOnce([{ ...binding, state: "credentialsRequired" }]);
     await expect(listProviderCredentialBindings()).rejects.toThrow("Invalid provider binding state");
+
+    const provisioningPlan = {
+      receiptId,
+      operationId: "44444444-4444-4444-8444-444444444444",
+      connectionId: "55555555-5555-4555-8555-555555555555",
+      provider: "gcpCloudSql",
+      targetDisplayName: "mirai-db-dev / app",
+      targetDetail: "campfire-460003 · asia-northeast3",
+      engine: "postgres",
+      intent: "apply",
+      access: "read",
+      production: false,
+      state: "readyToApply",
+      phase: "approve",
+      operationState: "pendingApproval",
+      payloadHash: "ab".repeat(32),
+      confirmationPhrase: null,
+      completedSteps: 0,
+      totalSteps: 2,
+      actions: ["createProviderIdentity", "grantExistingObjects"],
+      repairReason: null,
+      canExecute: false,
+      canCancel: false,
+      canDestroy: false,
+    };
+    expect(parseProviderProvisioningPlan(provisioningPlan)).toEqual(provisioningPlan);
+    expect(() => parseProviderProvisioningPlan({
+      ...provisioningPlan,
+      cliArgv: ["projects", "add-iam-policy-binding"],
+    })).toThrow("Invalid provider provisioning plan");
+    expect(() => parseProviderProvisioningPlan({
+      ...provisioningPlan,
+      payloadHash: "not-a-hash",
+    })).toThrow("Invalid provider provisioning hash");
   });
 
   it("prohibits legacy provider identity and manual GCP trust input", () => {

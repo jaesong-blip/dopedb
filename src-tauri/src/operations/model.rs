@@ -148,6 +148,7 @@ pub(crate) struct RestartRecoveryReport {
     pub failed: Vec<Uuid>,
     pub outcome_unknown: Vec<Uuid>,
     pub checkpoint_validation_required: Vec<Uuid>,
+    pub provisioning_checkpoint_validation_required: Vec<Uuid>,
 }
 
 pub(super) const fn actor_kind_str(value: OperationActorKind) -> &'static str {

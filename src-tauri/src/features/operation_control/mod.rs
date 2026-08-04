@@ -18,6 +18,7 @@ use crate::kernel::TerminalAuthority;
 use crate::operations::{
     approver_for_pin, capture_policy, ensure_operation_scope, required_confirmation,
     ExactApprovalRequest, LocalApprovalAuthority, OperationRecord, OperationRuntime,
+    RestartRecoveryReport,
 };
 use crate::store::Store;
 
@@ -55,7 +56,7 @@ pub(crate) struct OperationControlFeature {
 }
 
 impl OperationControlFeature {
-    pub(crate) async fn recover_previous_runtimes(&self) -> AppResult<()> {
+    pub(crate) async fn recover_previous_runtimes(&self) -> AppResult<RestartRecoveryReport> {
         self.application.recover_previous_runtimes().await
     }
 
@@ -126,8 +127,8 @@ impl OperationPlatformAdapter {
         }
     }
 
-    pub(crate) async fn recover_previous_runtimes(&self) -> AppResult<()> {
-        self.runtime.recover_previous_runtimes().await.map(|_| ())
+    pub(crate) async fn recover_previous_runtimes(&self) -> AppResult<RestartRecoveryReport> {
+        self.runtime.recover_previous_runtimes().await
     }
 
     pub(crate) async fn approve_local(
@@ -251,7 +252,9 @@ impl OperationPlatformAdapter {
 }
 
 impl OperationControlPort for OperationPlatformAdapter {
-    fn recover_previous_runtimes(&self) -> impl std::future::Future<Output = AppResult<()>> + Send {
+    fn recover_previous_runtimes(
+        &self,
+    ) -> impl std::future::Future<Output = AppResult<RestartRecoveryReport>> + Send {
         OperationPlatformAdapter::recover_previous_runtimes(self)
     }
 
