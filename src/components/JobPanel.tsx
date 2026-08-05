@@ -279,7 +279,9 @@ export default function JobPanel({
       } else {
         await startJob(scopedConnectionId, proposed.job.id);
         setCapability(null);
-        await queryClient.invalidateQueries({ queryKey: qk.jobs(connectionId) });
+        await queryClient.invalidateQueries({
+          queryKey: qk.jobs(connectionId),
+        });
       }
     } catch (cause) {
       setError(errMessage(cause));
@@ -374,7 +376,7 @@ export default function JobPanel({
 
   return (
     <aside
-      className="grid-panel tw:flex tw:w-[clamp(320px,32vw,480px)] tw:max-w-[44%] tw:shrink-0 tw:flex-col tw:gap-3 tw:overflow-auto tw:rounded-none tw:border-0 tw:border-l tw:border-border-subtle tw:bg-card tw:p-3 tw:shadow-none tw:@max-[920px]:max-h-[42vh] tw:@max-[920px]:w-auto tw:@max-[920px]:max-w-none tw:@max-[760px]:max-h-[min(360px,44dvh)]"
+      className="grid-panel tw:flex tw:w-[clamp(320px,32vw,480px)] tw:max-w-[44%] tw:shrink-0 tw:flex-col tw:gap-3 tw:overflow-auto tw:overscroll-contain tw:rounded-none tw:border-0 tw:border-l tw:border-border-subtle tw:bg-card tw:p-3 tw:shadow-none tw:@max-[920px]:max-h-[42%] tw:@max-[920px]:w-auto tw:@max-[920px]:max-w-none tw:@max-[760px]:max-h-[44%]"
       aria-label={t("jobs.title")}
     >
       <InspectorHeader
@@ -386,16 +388,20 @@ export default function JobPanel({
         }
         actions={
           <button
-          className="btn small icon-only icon-xs"
-          onClick={onClose}
-          aria-label={t("common.close")}
-        >
-          <Icon name="close" />
+            className="btn small icon-only icon-xs"
+            onClick={onClose}
+            aria-label={t("common.close")}
+          >
+            <Icon name="close" />
           </button>
         }
       />
 
-      <div className="tw:grid tw:grid-cols-2 tw:gap-1" role="group" aria-label={t("jobs.kind")}>
+      <div
+        className="tw:grid tw:grid-cols-2 tw:gap-1"
+        role="group"
+        aria-label={t("jobs.kind")}
+      >
         <button
           className="btn small tw:justify-center"
           aria-pressed={kind === "export"}
@@ -459,7 +465,11 @@ export default function JobPanel({
               </small>
             )}
           </div>
-          <button className="btn small" disabled={busy} onClick={() => void chooseFile()}>
+          <button
+            className="btn small"
+            disabled={busy}
+            onClick={() => void chooseFile()}
+          >
             <Icon name="folder" />
             {t("jobs.chooseFile")}
           </button>
@@ -593,7 +603,10 @@ export default function JobPanel({
                 value={maxErrors}
                 onChange={(event) =>
                   setMaxErrors(
-                    Math.max(1, Math.min(1_000_000, Number(event.target.value))),
+                    Math.max(
+                      1,
+                      Math.min(1_000_000, Number(event.target.value)),
+                    ),
                   )
                 }
               />
@@ -616,13 +629,12 @@ export default function JobPanel({
             {t("jobs.warningNotResumable")}
           </p>
         )}
-        {inspection &&
-          (format === "sql" || format === "sql_gzip") && (
-            <p className="tw:col-span-full tw:m-0 tw:flex tw:items-start tw:gap-2 tw:text-xs tw:leading-[1.45] tw:text-warning tw:[&_.icon]:mt-0.5 tw:[&_.icon]:shrink-0 tw:@max-[760px]:col-span-1">
-              <Icon name="alert" />
-              {t("jobs.warningSqlCritical")}
-            </p>
-          )}
+        {inspection && (format === "sql" || format === "sql_gzip") && (
+          <p className="tw:col-span-full tw:m-0 tw:flex tw:items-start tw:gap-2 tw:text-xs tw:leading-[1.45] tw:text-warning tw:[&_.icon]:mt-0.5 tw:[&_.icon]:shrink-0 tw:@max-[760px]:col-span-1">
+            <Icon name="alert" />
+            {t("jobs.warningSqlCritical")}
+          </p>
+        )}
 
         <button
           className="btn primary tw:col-span-full tw:justify-center tw:@max-[760px]:col-span-1"
@@ -666,8 +678,8 @@ export default function JobPanel({
             <Field
               label={
                 <span>
-                {t("approval.confirmationPrompt")}{" "}
-                <code>{approval.confirmationPhrase}</code>
+                  {t("approval.confirmationPrompt")}{" "}
+                  <code>{approval.confirmationPhrase}</code>
                 </span>
               }
             >
@@ -711,14 +723,14 @@ export default function JobPanel({
         <InspectorHeader
           title={t("jobs.history")}
           actions={
-          <button
-            className="btn small icon-only"
-            disabled={jobs.isFetching}
-            onClick={() => void jobs.refetch()}
-            aria-label={t("common.refresh")}
-          >
-            <Icon name="refresh" />
-          </button>
+            <button
+              className="btn small icon-only"
+              disabled={jobs.isFetching}
+              onClick={() => void jobs.refetch()}
+              aria-label={t("common.refresh")}
+            >
+              <Icon name="refresh" />
+            </button>
           }
         />
         {jobs.isPending ? (
@@ -735,7 +747,10 @@ export default function JobPanel({
               const percent = progress(job);
               const jobBusy = busyJobId === job.id;
               return (
-                <div className="tw:grid tw:min-w-0 tw:gap-1 tw:border-t tw:border-border-subtle tw:py-2" key={job.id}>
+                <div
+                  className="tw:grid tw:min-w-0 tw:gap-1 tw:border-t tw:border-border-subtle tw:py-2"
+                  key={job.id}
+                >
                   <button
                     className="tw:flex tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:p-0 tw:text-left tw:text-inherit tw:active:translate-y-px tw:disabled:cursor-default tw:disabled:opacity-50"
                     disabled={jobBusy}
@@ -752,7 +767,8 @@ export default function JobPanel({
                         {job.kind === "export"
                           ? t("jobs.export")
                           : t("jobs.import")}{" "}
-                        · {job.format.toUpperCase()} · {t(JOB_STATE_KEYS[job.state])}
+                        · {job.format.toUpperCase()} ·{" "}
+                        {t(JOB_STATE_KEYS[job.state])}
                       </small>
                     </span>
                     <span className="tw:font-mono tw:text-xs tw:text-muted-foreground">
@@ -827,13 +843,13 @@ export default function JobPanel({
           <InspectorHeader
             title={t("jobs.details")}
             actions={
-            <button
-              className="btn small icon-only icon-xs"
-              onClick={() => setDetail(null)}
-              aria-label={t("common.close")}
-            >
-              <Icon name="close" />
-            </button>
+              <button
+                className="btn small icon-only icon-xs"
+                onClick={() => setDetail(null)}
+                aria-label={t("common.close")}
+              >
+                <Icon name="close" />
+              </button>
             }
           />
           <JobFacts>
@@ -861,8 +877,8 @@ export default function JobPanel({
               className="btn small tw:w-full tw:justify-start tw:[&>small]:text-muted-foreground tw:[&>span]:min-w-0 tw:[&>span]:flex-1 tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis tw:[&>span]:whitespace-nowrap"
               key={artifact.id}
               onClick={() =>
-                void revealJobArtifact(scopedConnectionId, artifact.id).catch((cause) =>
-                  setError(errMessage(cause)),
+                void revealJobArtifact(scopedConnectionId, artifact.id).catch(
+                  (cause) => setError(errMessage(cause)),
                 )
               }
             >

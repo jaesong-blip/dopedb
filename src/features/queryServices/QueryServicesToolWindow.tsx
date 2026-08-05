@@ -11,13 +11,14 @@ import {
   IdeToolTabStrip,
 } from "../../design-system/components/IdeTabs";
 import { TreeSectionButton } from "../../design-system/components/TreeControls";
+import {
+  WorkbenchContainedBody,
+  WorkbenchScrollBody,
+} from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import { useI18n } from "../../lib/i18n";
-import type {
-  QueryServiceSession,
-  QueryServiceStatus,
-} from "./domain";
+import type { QueryServiceSession, QueryServiceStatus } from "./domain";
 import QueryServiceResult from "./QueryServiceResult";
 
 type ServicesTab = "output" | `result:${number}`;
@@ -47,10 +48,7 @@ export default function QueryServicesToolWindow({
   onActivate: (id: string) => void;
   onActivateDocument: (id: string) => void;
   onClose: () => void;
-  onStartResize: (event: {
-    preventDefault(): void;
-    clientY: number;
-  }) => void;
+  onStartResize: (event: { preventDefault(): void; clientY: number }) => void;
   onResetHeight: () => void;
   compact?: boolean;
 }) {
@@ -125,10 +123,7 @@ export default function QueryServicesToolWindow({
       <ToolWindowHeader
         title={t("services.title")}
         actions={
-          <ToolWindowHideButton
-            label={t("common.close")}
-            onClick={onClose}
-          />
+          <ToolWindowHideButton label={t("common.close")} onClick={onClose} />
         }
       />
 
@@ -158,11 +153,11 @@ export default function QueryServicesToolWindow({
                     role="group"
                   >
                     {serviceConnections.map((connection) => {
-                      const connectionOpen =
-                        !collapsedConnections.has(connection.id);
+                      const connectionOpen = !collapsedConnections.has(
+                        connection.id,
+                      );
                       const connectionDocuments = serviceDocuments.filter(
-                        (document) =>
-                          document.connectionId === connection.id,
+                        (document) => document.connectionId === connection.id,
                       );
                       const documentIds = new Set(
                         connectionDocuments.map((document) => document.id),
@@ -228,7 +223,7 @@ export default function QueryServicesToolWindow({
           </div>
         </aside>
 
-        <div className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col">
+        <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col">
           <IdeToolTabStrip
             label={t("services.tabs")}
             density="compact"
@@ -266,7 +261,7 @@ export default function QueryServicesToolWindow({
             ))}
           </IdeToolTabStrip>
 
-          <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-hidden">
+          <WorkbenchContainedBody>
             {!active ? (
               <div className="tw:m-auto tw:grid tw:justify-items-center tw:gap-2 tw:p-6 tw:text-center tw:text-sm tw:text-muted-foreground">
                 <Icon name="list" className="tw:text-xl" />
@@ -281,7 +276,7 @@ export default function QueryServicesToolWindow({
                 scriptStatementIndex={activeResultTab?.statementIndex}
               />
             )}
-          </div>
+          </WorkbenchContainedBody>
         </div>
       </div>
     </section>
@@ -341,10 +336,7 @@ function ServiceDocumentNode({
         {latest ? <StatusDot tone={statusTone(latest.status)} /> : null}
       </button>
       {sessions.length > 0 && (
-        <div
-          className="tw:flex tw:flex-col tw:gap-px tw:pl-3"
-          role="group"
-        >
+        <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3" role="group">
           {sessions.map((session) => (
             <ServiceSessionRow
               key={session.id}
@@ -407,9 +399,11 @@ function ServiceOutput({ session }: { session: QueryServiceSession }) {
   );
 
   return (
-    <pre className="tw:m-0 tw:min-h-full tw:overflow-auto tw:p-3 tw:font-mono tw:text-xs tw:leading-body tw:whitespace-pre-wrap tw:text-foreground">
-      {lines.join("\n")}
-    </pre>
+    <WorkbenchScrollBody>
+      <pre className="tw:m-0 tw:min-h-full tw:p-3 tw:font-mono tw:text-xs tw:leading-body tw:whitespace-pre-wrap tw:text-foreground">
+        {lines.join("\n")}
+      </pre>
+    </WorkbenchScrollBody>
   );
 }
 
@@ -465,8 +459,7 @@ function sessionResultLabel(
     session.result.kind === "stream";
   if (!tabular) return null;
   return (
-    sqlResultLabel(session, session.sql, connection) ??
-    session.consoleTitle
+    sqlResultLabel(session, session.sql, connection) ?? session.consoleTitle
   );
 }
 
@@ -476,9 +469,8 @@ function sessionResultTabs(
   t: ReturnType<typeof useI18n>["t"],
 ) {
   if (session.result.kind === "script") {
-    const resultLabels = session.result.outcome.statements.map(
-      (statement) =>
-        sqlResultLabel(session, statement.sql, connection),
+    const resultLabels = session.result.outcome.statements.map((statement) =>
+      sqlResultLabel(session, statement.sql, connection),
     );
     const duplicateLabels = new Set(
       resultLabels.filter(
@@ -499,8 +491,7 @@ function sessionResultTabs(
   return [
     {
       id: "result",
-      label:
-        sessionResultLabel(session, connection) ?? t("services.resultTab"),
+      label: sessionResultLabel(session, connection) ?? t("services.resultTab"),
       statementIndex: undefined,
     },
   ];
@@ -512,9 +503,7 @@ function sqlResultLabel(
   connection: ConnectionProfile | null,
 ) {
   const source =
-    /\bfrom\s+([A-Za-z_][\w$]*)(?:\s*\.\s*([A-Za-z_][\w$]*))?/i.exec(
-      sql,
-    );
+    /\bfrom\s+([A-Za-z_][\w$]*)(?:\s*\.\s*([A-Za-z_][\w$]*))?/i.exec(sql);
   if (!source) return null;
   if (source[2]) return `${source[1]}.${source[2]}`;
   const target = [session.database, session.namespace]

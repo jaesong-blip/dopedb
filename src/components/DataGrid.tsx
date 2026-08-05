@@ -22,6 +22,10 @@ import {
   DATA_GRID_DEFAULT_COLUMN_WIDTH,
   DATA_GRID_ROW_NUMBER_WIDTH,
 } from "../design-system/dataGridGeometry";
+import {
+  DataGridViewport,
+  type DataGridSurface,
+} from "../design-system/components/DataGridViewport";
 import { Icon } from "./Icon";
 import DataGridColumnFilterMenu from "./DataGridColumnFilterMenu";
 import DataGridVirtual from "./DataGridVirtual";
@@ -71,18 +75,16 @@ type DataGridProps = {
   /** A chunked streaming source; rows are never flattened for the grid. */
   rowSource?: SqlStreamRowSource;
   /** Flush workbench grids fill their pane without a card border or radius. */
-  surface?: "panel" | "workbench";
+  surface?: DataGridSurface;
+  /** Reserve scrollable room beneath a floating workbench status footer. */
+  footerInset?: boolean;
 };
 
 export function shouldVirtualizeDataGrid(
   result: QueryResult,
   rowSource?: SqlStreamRowSource,
 ) {
-  return (
-    !!rowSource
-    || result.rows.length > 200
-    || result.columns.length > 18
-  );
+  return !!rowSource || result.rows.length > 200 || result.columns.length > 18;
 }
 
 export default function DataGrid(props: DataGridProps) {
@@ -107,6 +109,7 @@ export default function DataGrid(props: DataGridProps) {
         columnMeta={props.columnMeta}
         rowSource={props.rowSource}
         surface={props.surface}
+        footerInset={props.footerInset}
       />
     );
   }
@@ -126,6 +129,7 @@ function DataGridTable({
   columnMeta,
   rowSource: _rowSource,
   surface,
+  footerInset,
 }: DataGridProps) {
   const { t } = useI18n();
   const interactive = !!onSelectRow || !!onCellClick;
@@ -252,10 +256,9 @@ function DataGridTable({
     ) {
       e.preventDefault();
       const cur = sel?.focus ?? { row: 0, col: 0 };
-      const row =
-        !sel
-          ? 0
-          : e.key === "ArrowUp"
+      const row = !sel
+        ? 0
+        : e.key === "ArrowUp"
           ? Math.max(0, cur.row - 1)
           : e.key === "ArrowDown"
             ? Math.min(result.rows.length - 1, cur.row + 1)
@@ -271,11 +274,11 @@ function DataGridTable({
           ? extendGridSelection(sel, row, col)
           : singleGridCell(row, col),
       );
-      tableRef.current
-        ?.querySelector<HTMLTableCellElement>(
-          `tbody tr:nth-child(${row + 1}) td:nth-child(${col + 2})`,
-        )
-        ?.focus();
+      const nextCell = tableRef.current?.querySelector<HTMLTableCellElement>(
+        `tbody tr:nth-child(${row + 1}) td:nth-child(${col + 2})`,
+      );
+      nextCell?.focus({ preventScroll: true });
+      nextCell?.scrollIntoView({ block: "nearest", inline: "nearest" });
       return;
     }
     if (e.key === "Enter" && sel) {
@@ -284,10 +287,9 @@ function DataGridTable({
   }
 
   return (
-    <div
-      data-data-grid-scroll
-      className="tw:max-h-[60vh] tw:overflow-auto tw:rounded-lg tw:border tw:border-border-subtle tw:bg-background tw:shadow-panel tw:[&::-webkit-scrollbar]:size-[11px] tw:[&::-webkit-scrollbar-corner]:bg-transparent tw:[&::-webkit-scrollbar-thumb]:rounded-full tw:[&::-webkit-scrollbar-thumb]:border-[var(--ds-border-width-bold)] tw:[&::-webkit-scrollbar-thumb]:border-transparent tw:[&::-webkit-scrollbar-thumb]:bg-muted-foreground tw:[&::-webkit-scrollbar-thumb]:bg-clip-padding tw:[&::-webkit-scrollbar-thumb:hover]:bg-foreground tw:[&::-webkit-scrollbar-track]:bg-transparent tw:data-[surface=workbench]:min-h-0 tw:data-[surface=workbench]:flex-1 tw:data-[surface=workbench]:rounded-none tw:data-[surface=workbench]:border-0 tw:data-[surface=workbench]:shadow-none"
-      data-surface={surface ?? "panel"}
+    <DataGridViewport
+      surface={surface}
+      footerInset={footerInset}
       tabIndex={0}
       onKeyDown={onKeyDown}
     >
@@ -339,9 +341,7 @@ function DataGridTable({
                       </span>
                       {sort?.col === c ? (
                         <Icon
-                          name={
-                            sort.dir === "asc" ? "caretUp" : "caretDown"
-                          }
+                          name={sort.dir === "asc" ? "caretUp" : "caretDown"}
                           className="tw:shrink-0 tw:text-2xs tw:text-primary"
                         />
                       ) : null}
@@ -414,8 +414,7 @@ function DataGridTable({
               {row.map((v, j) => {
                 const text = cell(v);
                 const isSel = gridSelectionIncludes(sel, i, j);
-                const isFocus =
-                  sel?.focus.row === i && sel.focus.col === j;
+                const isFocus = sel?.focus.row === i && sel.focus.col === j;
                 return (
                   <td
                     key={j}
@@ -447,6 +446,6 @@ function DataGridTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </DataGridViewport>
   );
 }

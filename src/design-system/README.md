@@ -319,10 +319,18 @@ Elevation은 세 단계만 허용한다.
   소유한다. Data Sources의 `Problems`는 catalog 하단, `Test Connection`은
   detail action bar, `Cancel/Apply/OK`는 `ModalFooter`에 두며 한 footer에
   섞지 않는다.
-- `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchSelect`,
+- `WorkbenchPane`, `WorkbenchContainedBody`, `WorkbenchScrollBody`,
+  `WorkbenchToolbar`, `WorkbenchSelect`,
   `WorkbenchDivider`, `WorkbenchEmptyState`: 데이터
   편집기·SQL·문서 화면의 평평한 IDE pane, command row, compact context select,
   object context, empty state 계약.
+  `WorkbenchPane`은 edge-to-edge document의 바깥 clip boundary만 소유한다.
+  고정 toolbar/tab/footer 다음에는 정확히 하나의 body를 둔다. CodeMirror나
+  DataGrid처럼 내부 viewport가 스크롤하는 문서는 `WorkbenchContainedBody`를,
+  Schema/error/output처럼 문서 전체가 길어지는 경우는
+  `WorkbenchScrollBody`를 사용한다. 두 body 모두 `min-h-0`, 실제 pane 크기의
+  size container와 overscroll 경계를 제공하며 화면에서 `vh`로 가용 높이를
+  다시 추측하지 않는다.
   중앙 workbench의 data source 문맥은 별도 대형 connection header를 만들지
   않고 document tab, context toolbar, status bar에 나눠 표시한다. SQL 문서
   제목은 tab을 더블 클릭해 편집한다. SQL schema selector는 catalog에서 발견한
@@ -403,11 +411,18 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   command row에 SQL snippet을 반복하지 않는다. `ResultWorkbenchFooter`는
   `DataGridStatusPill`을 합성하고, 부분
   stream은 평탄화하지 않고 완료된 결과에만 검색을 적용한다.
-- 일반·가상 `DataGrid`는 `data-data-grid-scroll` surface 계약을 공유한다.
+- 일반·가상 `DataGrid`는 공용 `DataGridViewport`와
+  `data-data-grid-scroll` surface 계약을 공유한다.
   sticky header, filter, hover/selection, resize handle, scrollbar는
   컴포넌트의 정적 Tailwind v4 utility와 semantic token으로만 구성한다.
   grid 전용 CSS 파일이나 class selector를 다시 만들지 않는다. 주변 pane이
   compact/busy 상태를 투영할 때도 이 data attribute를 사용한다.
+  `panel`은 독립 surface, `workbench`는 `WorkbenchContainedBody`의 남은 높이,
+  `embedded`는 `WorkbenchScrollBody` 안에서 현재 size container 높이에 묶인
+  nested result를 뜻한다. virtual/non-virtual renderer가 동일한 surface와
+  scrollbar 계약을 사용하며 floating status footer가 있는 grid는 scroll
+  bottom inset을 명시해 마지막 행과 keyboard focus가 footer 아래에 가리지 않게
+  한다.
   `dataGridGeometry.ts`가 clean-room 기준의 28px header/row, 28px row-number
   column, 144px default data column을 소유하며 일반·가상 renderer는 이 값을
   중복 선언하지 않는다. identifier/value/row number는 `font-mono`를 사용하고

@@ -7,6 +7,7 @@ import Skeleton from "../../components/Skeleton";
 import {
   DataGridStatusPill,
   WorkbenchButton,
+  WorkbenchContainedBody,
   WorkbenchEmptyState,
   WorkbenchPane,
   WorkbenchToolbar,
@@ -18,10 +19,7 @@ import type { CatalogTable, QueryResult } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import { documentsToGrid } from "../../lib/documentGrid";
 import { useI18n } from "../../lib/i18n";
-import {
-  documentCountQuery,
-  documentRowsQuery,
-} from "../../lib/queries";
+import { documentCountQuery, documentRowsQuery } from "../../lib/queries";
 import { tableKey } from "../../lib/tableRef";
 import Pager from "./Pager";
 
@@ -104,63 +102,66 @@ export default function MongoTableData({
         />
       </WorkbenchToolbar>
 
-      {error && (
-        <div className="tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
-          {error}
-        </div>
-      )}
-      <div
-        data-busy={busy && Boolean(documentPage)}
-        className="tw:relative tw:flex tw:min-h-0 tw:flex-1 tw:data-[busy=true]:pointer-events-none tw:data-[busy=true]:opacity-50"
-      >
-        {documentPage ? (
-          <>
-            <DataGrid
-              result={result}
-              surface="workbench"
-              startIndex={page * pageSize}
-              onCellClick={(_value, rowIndex, column) => {
-                agentSelection.select({
-                  connectionId: connection.id,
-                  database: table.database ?? connection.database,
-                  schema: table.schema ?? null,
-                  table: table.name,
-                  column,
-                  rowIndex: page * pageSize + rowIndex,
-                  row: Object.fromEntries(
-                    result.columns.map((name, index) => [
-                      name,
-                      result.rows[rowIndex]?.[index] ?? null,
-                    ]),
-                  ),
-                });
-              }}
-              columnMeta={Object.fromEntries(
-                table.columns.map((column) => [
-                  column.name,
-                  { dataType: column.dataType, pk: column.pk },
-                ]),
-              )}
-            />
-            {rows === 0 && !busy && (
-              <div className="tw:pointer-events-none tw:absolute tw:inset-x-0 tw:top-control-md tw:bottom-0 tw:flex tw:items-center tw:justify-center tw:bg-background/90 tw:text-ui tw:text-muted-foreground">
-                {t("tables.tableEmpty")}
-              </div>
-            )}
-          </>
-        ) : (
-          !error &&
-          (busy ? (
-            <div className="tw:flex-1 tw:p-3">
-              <Skeleton lines={8} />
-            </div>
-          ) : (
-            <WorkbenchEmptyState icon="table">
-              {t("tables.noRows")}
-            </WorkbenchEmptyState>
-          ))
+      <WorkbenchContainedBody>
+        {error && (
+          <div className="tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+            {error}
+          </div>
         )}
-      </div>
+        <div
+          data-busy={busy && Boolean(documentPage)}
+          className="tw:relative tw:flex tw:min-h-0 tw:flex-1 tw:data-[busy=true]:pointer-events-none tw:data-[busy=true]:opacity-50"
+        >
+          {documentPage ? (
+            <>
+              <DataGrid
+                result={result}
+                surface="workbench"
+                footerInset
+                startIndex={page * pageSize}
+                onCellClick={(_value, rowIndex, column) => {
+                  agentSelection.select({
+                    connectionId: connection.id,
+                    database: table.database ?? connection.database,
+                    schema: table.schema ?? null,
+                    table: table.name,
+                    column,
+                    rowIndex: page * pageSize + rowIndex,
+                    row: Object.fromEntries(
+                      result.columns.map((name, index) => [
+                        name,
+                        result.rows[rowIndex]?.[index] ?? null,
+                      ]),
+                    ),
+                  });
+                }}
+                columnMeta={Object.fromEntries(
+                  table.columns.map((column) => [
+                    column.name,
+                    { dataType: column.dataType, pk: column.pk },
+                  ]),
+                )}
+              />
+              {rows === 0 && !busy && (
+                <div className="tw:pointer-events-none tw:absolute tw:inset-x-0 tw:top-control-md tw:bottom-0 tw:flex tw:items-center tw:justify-center tw:bg-background/90 tw:text-ui tw:text-muted-foreground">
+                  {t("tables.tableEmpty")}
+                </div>
+              )}
+            </>
+          ) : (
+            !error &&
+            (busy ? (
+              <div className="tw:flex-1 tw:p-3">
+                <Skeleton lines={8} />
+              </div>
+            ) : (
+              <WorkbenchEmptyState icon="table">
+                {t("tables.noRows")}
+              </WorkbenchEmptyState>
+            ))
+          )}
+        </div>
+      </WorkbenchContainedBody>
       {documentPage ? (
         <DataGridStatusPill
           title={[

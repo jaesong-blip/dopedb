@@ -73,6 +73,7 @@ import { Icon } from "../../components/Icon";
 import LazySqlViewer from "../../components/LazySqlViewer";
 import {
   WorkbenchButton,
+  WorkbenchContainedBody,
   WorkbenchDivider,
   WorkbenchPane,
   WorkbenchSelect,
@@ -257,16 +258,13 @@ export default function Sql({
     safety,
   });
   const analysisCurrent = draftAnalysis.version === draftVersion;
-  const draftIsScript =
-    analysisCurrent && draftAnalysis.statementCount > 1;
+  const draftIsScript = analysisCurrent && draftAnalysis.statementCount > 1;
   const draftParameterCount = analysisCurrent
     ? draftAnalysis.parameterCount
     : 0;
   const draftSignal = useMemo(
     () =>
-      analysisCurrent
-        ? localizeRunSignal(draftAnalysis.runSignal, t)
-        : null,
+      analysisCurrent ? localizeRunSignal(draftAnalysis.runSignal, t) : null,
     [analysisCurrent, draftAnalysis.runSignal, t],
   );
 
@@ -321,17 +319,13 @@ export default function Sql({
   }, [connection.database, databasesQuery.data, selectedDatabase]);
   const effectiveDatabase = databaseOptions.includes(selectedDatabase)
     ? selectedDatabase
-    : databaseOptions[0] ?? connection.database;
+    : (databaseOptions[0] ?? connection.database);
   const targetConnection = useMemo(
     () => ({ ...connection, database: effectiveDatabase }),
     [connection, effectiveDatabase],
   );
   const catalogQueryResult = useQuery(
-    databaseCatalogQuery(
-      connection.id,
-      effectiveDatabase,
-      catalogScope,
-    ),
+    databaseCatalogQuery(connection.id, effectiveDatabase, catalogScope),
   );
   const catalog = catalogQueryResult.data;
   const namespaceOptions = useMemo(
@@ -340,11 +334,7 @@ export default function Sql({
   );
   const effectiveNamespace = useMemo(
     () =>
-      effectiveSqlNamespace(
-        targetConnection,
-        selectedSchema,
-        namespaceOptions,
-      ),
+      effectiveSqlNamespace(targetConnection, selectedSchema, namespaceOptions),
     [namespaceOptions, selectedSchema, targetConnection],
   );
   const manualTransaction = useManualTransaction(
@@ -408,16 +398,11 @@ export default function Sql({
     flushDraftSnapshot();
     flushRecovery();
   });
-  const handleCursorChange = useEventCallback(
-    (position: SqlCursorPosition) => {
-      publishSqlEditorCursor(documentId, position);
-    },
-  );
+  const handleCursorChange = useEventCallback((position: SqlCursorPosition) => {
+    publishSqlEditorCursor(documentId, position);
+  });
 
-  useEffect(
-    () => () => clearSqlEditorCursor(documentId),
-    [documentId],
-  );
+  useEffect(() => () => clearSqlEditorCursor(documentId), [documentId]);
 
   async function formatDraft() {
     if (!draft.trim() || formatting) return;
@@ -448,9 +433,7 @@ export default function Sql({
   async function runSql(sql: string, source: SqlRunSource) {
     if (!sql || running || !safetyReady) return;
     flushEditorState();
-    globalThis.performance?.clearMarks?.(
-      "desktop_query_interaction_start",
-    );
+    globalThis.performance?.clearMarks?.("desktop_query_interaction_start");
     globalThis.performance?.mark?.("desktop_query_interaction_start");
 
     const statements = splitStatements(sql);
@@ -737,12 +720,19 @@ export default function Sql({
             error: runErr,
           })
         : "",
-    [connection, effectiveDatabase, effectiveNamespace, lastAttempt?.sql, runErr],
+    [
+      connection,
+      effectiveDatabase,
+      effectiveNamespace,
+      lastAttempt?.sql,
+      runErr,
+    ],
   );
   const editorExecutionStatus = useMemo<SqlExecutionStatus | null>(() => {
     const attempt = lastAttempt;
     const sql = attempt?.sql.trim();
-    if (!attempt || !sql || attempt.documentVersion !== draftVersion) return null;
+    if (!attempt || !sql || attempt.documentVersion !== draftVersion)
+      return null;
     if (runErr) {
       return {
         source: attempt.source,
@@ -777,11 +767,7 @@ export default function Sql({
     }
     const durationMs =
       stream.durationMs ?? run?.outcome.result?.durationMs ?? null;
-    if (
-      scriptOut ||
-      run ||
-      stream.phase === "complete"
-    ) {
+    if (scriptOut || run || stream.phase === "complete") {
       return {
         source: attempt.source,
         state: "completed",
@@ -925,7 +911,9 @@ export default function Sql({
               running ||
               !safetyReady
             }
-            title={draftIsScript ? t("sql.explainSingle") : t("sql.explainTitle")}
+            title={
+              draftIsScript ? t("sql.explainSingle") : t("sql.explainTitle")
+            }
             aria-label={t("sql.explain")}
             onClick={explain}
           >
@@ -946,23 +934,18 @@ export default function Sql({
               type="button"
               className="badge tw:cursor-pointer tw:border-warning tw:bg-transparent tw:text-warning"
               onClick={onRetrySafety}
-              title={
-                safetyLoadError ??
-                t("sql.safetyLoading")
-              }
+              title={safetyLoadError ?? t("sql.safetyLoading")}
             >
               <Icon name={safetyLoadError ? "alert" : "refresh"} />
-              {safetyLoadError
-                ? t("sql.retrySafety")
-                : t("sql.safetyLoading")}
+              {safetyLoadError ? t("sql.retrySafety") : t("sql.safetyLoading")}
             </button>
           ) : (
             <ManualTransactionControls
               controller={manualTransaction}
               writesEnabled={safety.allowWrites}
-              writesDisabledHint={safety.allowWrites
-                ? undefined
-                : t("sql.txManualWritesRequired")}
+              writesDisabledHint={
+                safety.allowWrites ? undefined : t("sql.txManualWritesRequired")
+              }
               disabled={running}
             />
           )}
@@ -1072,176 +1055,183 @@ export default function Sql({
           </span>
         ) : null}
       </WorkbenchToolbar>
-      <div className="tw:min-h-[180px] tw:flex-1 tw:overflow-hidden tw:bg-background tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0">
-        <LazySqlViewer
-          value={draft}
-          editable
-          onChange={setDraft}
-          onRun={executeSqlFromEditor}
-          catalog={catalog}
-          engine={connection.engine}
-          resolveMode={resolveMode}
-          defaultSchema={effectiveNamespace}
-          namespaceOptions={namespaceOptions}
-          minHeight="180px"
-          onCursorChange={handleCursorChange}
-          onBlur={flushEditorState}
-          executionStatus={editorExecutionStatus}
-        />
-      </div>
-
-      <div className="tw:max-h-[50%] tw:shrink-0 tw:overflow-auto tw:bg-background">
-        {documentConflict && (
-          <div
-            className="tw:mx-3 tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:gap-3 tw:border-y tw:border-warning tw:py-2 tw:text-sm tw:text-warning tw:max-[760px]:flex-col tw:max-[760px]:items-start"
-            role="alert"
-          >
-            <span>{t("sql.saveConflictBody")}</span>
-            <div className="ds-control-row">
-              <WorkbenchButton
-                variant="default"
-                onClick={loadSavedConflictVersion}
-              >
-                {t("sql.loadSaved")}
-              </WorkbenchButton>
-              <WorkbenchButton
-                variant="default"
-                onClick={keepLocalConflictVersion}
-              >
-                {t("sql.keepMine")}
-              </WorkbenchButton>
-            </div>
-          </div>
-        )}
-        {documentSaveError && documentSaveState === "error" && (
-          <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
-            {t("sql.saveFailed")}: {documentSaveError}
-          </div>
-        )}
-        {planErr && (
-          <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
-            {planErr}
-          </div>
-        )}
-        {plan && (
-          <details
-            open
-            className="tw:my-2 tw:border-y tw:border-border-subtle tw:bg-background"
-          >
-            <summary className="tw:flex tw:min-h-workbench-toolbar tw:cursor-pointer tw:items-center tw:gap-2 tw:px-3 tw:py-1 tw:font-semibold">
-              {t("sql.queryPlan")}
-              <span className="tw:ml-auto">
-                <WorkbenchButton
-                  iconOnly
-                  size="xs"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setPlan(null);
-                  }}
-                  title={t("common.close")}
-                  aria-label={t("common.close")}
-                >
-                  <Icon name="close" />
-                </WorkbenchButton>
-              </span>
-            </summary>
-            {plan.plan ? (
-              <pre className="tw:m-0 tw:overflow-x-auto tw:border-t tw:border-border-subtle tw:bg-background tw:p-3 tw:font-mono tw:text-sm tw:whitespace-pre">
-                {plan.plan}
-              </pre>
-            ) : (
-              <div className="tw:border-t tw:border-border-subtle tw:px-3 tw:py-2 tw:text-muted-foreground">
-                {t("sql.noPlan", { mode: plan.mode })}
-              </div>
-            )}
-          </details>
-        )}
-
-        {pendingApproval && (
-          <ApprovalCard
-            key={pendingApproval.proposal.operationId}
-            connectionId={connection.id}
+      <WorkbenchContainedBody>
+        <div className="tw:min-h-0 tw:flex-1 tw:overflow-hidden tw:bg-background tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0">
+          <LazySqlViewer
+            value={draft}
+            editable
+            onChange={setDraft}
+            onRun={executeSqlFromEditor}
+            catalog={catalog}
             engine={connection.engine}
-            sql={pendingApproval.sql}
-            safety={safety}
-            initialProposal={pendingApproval.proposal}
-            onExecuted={(outcome) => {
-              setResultKind("single");
-              setRun({
-                sql: pendingApproval.sql,
-                outcome,
-                at: new Date().toLocaleTimeString(),
-              });
-              setPendingApproval(null);
-            }}
-            onReject={() => {
-              setApprovalRejected(true);
-              setPendingApproval(null);
-            }}
+            resolveMode={resolveMode}
+            defaultSchema={effectiveNamespace}
+            namespaceOptions={namespaceOptions}
+            minHeight="0px"
+            onCursorChange={handleCursorChange}
+            onBlur={flushEditorState}
+            executionStatus={editorExecutionStatus}
           />
-        )}
+        </div>
 
-        {pendingScriptApproval && (
-          <section className="tw:my-2 tw:grid tw:gap-3 tw:border-y tw:border-warning tw:bg-background tw:p-3">
-            <div className="ds-title-line">
-              <strong>{t("approval.review")}</strong>
-              <StatusBadge tone="warning">
-                {t("sql.statementCount", {
-                  count: pendingScriptApproval.proposal.statementCount,
-                })}
-              </StatusBadge>
+        <div
+          data-workbench-scroll-owner="document-details"
+          className="scrollbar-sleek tw:max-h-[50%] tw:min-h-0 tw:shrink-0 tw:overflow-auto tw:overscroll-contain tw:bg-background"
+        >
+          {documentConflict && (
+            <div
+              className="tw:mx-3 tw:flex tw:min-h-control-lg tw:items-center tw:justify-between tw:gap-3 tw:border-y tw:border-warning tw:py-2 tw:text-sm tw:text-warning tw:max-[760px]:flex-col tw:max-[760px]:items-start"
+              role="alert"
+            >
+              <span>{t("sql.saveConflictBody")}</span>
+              <div className="ds-control-row">
+                <WorkbenchButton
+                  variant="default"
+                  onClick={loadSavedConflictVersion}
+                >
+                  {t("sql.loadSaved")}
+                </WorkbenchButton>
+                <WorkbenchButton
+                  variant="default"
+                  onClick={keepLocalConflictVersion}
+                >
+                  {t("sql.keepMine")}
+                </WorkbenchButton>
+              </div>
             </div>
-            <LazySqlViewer value={pendingScriptApproval.sql} minHeight="96px" />
-            <div className="tw:text-sm tw:text-muted-foreground tw:[&_code]:font-mono tw:[&_code]:text-xs tw:[&_code]:[overflow-wrap:anywhere]">
-              {t("approval.payloadHash")}{" "}
-              <code>{pendingScriptApproval.proposal.payloadHash}</code>
+          )}
+          {documentSaveError && documentSaveState === "error" && (
+            <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
+              {t("sql.saveFailed")}: {documentSaveError}
             </div>
-            {pendingScriptApproval.proposal.confirmationPhrase && (
-              <label className="tw:grid tw:gap-2 tw:text-sm tw:[&_input]:w-[min(100%,320px)] tw:[&_input]:font-mono">
-                <span>
-                  {t("approval.confirmationPrompt")}{" "}
-                  <code>
-                    {pendingScriptApproval.proposal.confirmationPhrase}
-                  </code>
+          )}
+          {planErr && (
+            <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
+              {planErr}
+            </div>
+          )}
+          {plan && (
+            <details
+              open
+              className="tw:my-2 tw:border-y tw:border-border-subtle tw:bg-background"
+            >
+              <summary className="tw:flex tw:min-h-workbench-toolbar tw:cursor-pointer tw:items-center tw:gap-2 tw:px-3 tw:py-1 tw:font-semibold">
+                {t("sql.queryPlan")}
+                <span className="tw:ml-auto">
+                  <WorkbenchButton
+                    iconOnly
+                    size="xs"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setPlan(null);
+                    }}
+                    title={t("common.close")}
+                    aria-label={t("common.close")}
+                  >
+                    <Icon name="close" />
+                  </WorkbenchButton>
                 </span>
-                <input
-                  value={scriptConfirmation}
-                  onChange={(event) =>
-                    setScriptConfirmation(event.target.value)
-                  }
-                  placeholder={
-                    pendingScriptApproval.proposal.confirmationPhrase
-                  }
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
-            )}
-            <div className="ds-action-row ds-control-row">
-              <WorkbenchButton
-                variant="primary"
-                disabled={
-                  running ||
-                  (!!pendingScriptApproval.proposal.confirmationPhrase &&
-                    scriptConfirmation !==
-                      pendingScriptApproval.proposal.confirmationPhrase)
-                }
-                onClick={() => void approvePendingScript()}
-              >
-                {t("approval.approveAndRunWrite")}
-              </WorkbenchButton>
-              <WorkbenchButton
-                variant="default"
-                disabled={running}
-                onClick={() => void rejectPendingScript()}
-              >
-                {t("approval.reject")}
-              </WorkbenchButton>
-            </div>
-          </section>
-        )}
+              </summary>
+              {plan.plan ? (
+                <pre className="tw:m-0 tw:overflow-x-auto tw:border-t tw:border-border-subtle tw:bg-background tw:p-3 tw:font-mono tw:text-sm tw:whitespace-pre">
+                  {plan.plan}
+                </pre>
+              ) : (
+                <div className="tw:border-t tw:border-border-subtle tw:px-3 tw:py-2 tw:text-muted-foreground">
+                  {t("sql.noPlan", { mode: plan.mode })}
+                </div>
+              )}
+            </details>
+          )}
 
-      </div>
+          {pendingApproval && (
+            <ApprovalCard
+              key={pendingApproval.proposal.operationId}
+              connectionId={connection.id}
+              engine={connection.engine}
+              sql={pendingApproval.sql}
+              safety={safety}
+              initialProposal={pendingApproval.proposal}
+              onExecuted={(outcome) => {
+                setResultKind("single");
+                setRun({
+                  sql: pendingApproval.sql,
+                  outcome,
+                  at: new Date().toLocaleTimeString(),
+                });
+                setPendingApproval(null);
+              }}
+              onReject={() => {
+                setApprovalRejected(true);
+                setPendingApproval(null);
+              }}
+            />
+          )}
+
+          {pendingScriptApproval && (
+            <section className="tw:my-2 tw:grid tw:gap-3 tw:border-y tw:border-warning tw:bg-background tw:p-3">
+              <div className="ds-title-line">
+                <strong>{t("approval.review")}</strong>
+                <StatusBadge tone="warning">
+                  {t("sql.statementCount", {
+                    count: pendingScriptApproval.proposal.statementCount,
+                  })}
+                </StatusBadge>
+              </div>
+              <LazySqlViewer
+                value={pendingScriptApproval.sql}
+                minHeight="96px"
+              />
+              <div className="tw:text-sm tw:text-muted-foreground tw:[&_code]:font-mono tw:[&_code]:text-xs tw:[&_code]:[overflow-wrap:anywhere]">
+                {t("approval.payloadHash")}{" "}
+                <code>{pendingScriptApproval.proposal.payloadHash}</code>
+              </div>
+              {pendingScriptApproval.proposal.confirmationPhrase && (
+                <label className="tw:grid tw:gap-2 tw:text-sm tw:[&_input]:w-[min(100%,320px)] tw:[&_input]:font-mono">
+                  <span>
+                    {t("approval.confirmationPrompt")}{" "}
+                    <code>
+                      {pendingScriptApproval.proposal.confirmationPhrase}
+                    </code>
+                  </span>
+                  <input
+                    value={scriptConfirmation}
+                    onChange={(event) =>
+                      setScriptConfirmation(event.target.value)
+                    }
+                    placeholder={
+                      pendingScriptApproval.proposal.confirmationPhrase
+                    }
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </label>
+              )}
+              <div className="ds-action-row ds-control-row">
+                <WorkbenchButton
+                  variant="primary"
+                  disabled={
+                    running ||
+                    (!!pendingScriptApproval.proposal.confirmationPhrase &&
+                      scriptConfirmation !==
+                        pendingScriptApproval.proposal.confirmationPhrase)
+                  }
+                  onClick={() => void approvePendingScript()}
+                >
+                  {t("approval.approveAndRunWrite")}
+                </WorkbenchButton>
+                <WorkbenchButton
+                  variant="default"
+                  disabled={running}
+                  onClick={() => void rejectPendingScript()}
+                >
+                  {t("approval.reject")}
+                </WorkbenchButton>
+              </div>
+            </section>
+          )}
+        </div>
+      </WorkbenchContainedBody>
       {parameterDialog ? (
         <SqlParameterDialog
           parameters={parameterDialog.parameters}

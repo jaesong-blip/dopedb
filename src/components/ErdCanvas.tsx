@@ -22,10 +22,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type {
-  CatalogRelationV2,
-  CatalogSnapshot,
-} from "../ipc/types";
+import type { CatalogRelationV2, CatalogSnapshot } from "../ipc/types";
 import { errMessage } from "../ipc/types";
 import { connectionId } from "../features/connections/domain";
 import {
@@ -37,9 +34,7 @@ import {
   type ErdVirtualRelation,
 } from "../features/erd/domain";
 import { saveErdLayout } from "../features/erd/tauriAdapter";
-import ErdRelationNode, {
-  type ErdFlowNode,
-} from "./ErdRelationNode";
+import ErdRelationNode, { type ErdFlowNode } from "./ErdRelationNode";
 import ErdToolbar from "./ErdToolbar";
 import { Icon } from "./Icon";
 import { InlineNotice } from "../design-system/components/Status";
@@ -120,7 +115,9 @@ export default function ErdCanvas({
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const layoutsQuery = useQuery(erdLayoutsQuery(snapshot.connectionId));
-  const [activeLayoutId, setActiveLayoutId] = useState<ErdLayoutId | null>(null);
+  const [activeLayoutId, setActiveLayoutId] = useState<ErdLayoutId | null>(
+    null,
+  );
   const [revision, setRevision] = useState<number | null>(null);
   const [name, setName] = useState(t("schema.erdDefaultName"));
   const [mode, setMode] = useState<ErdLayoutMode>("physical");
@@ -252,9 +249,7 @@ export default function ErdCanvas({
         controller.signal,
       );
       setPositions((current) => ({ ...current, ...result.positions }));
-      setLayoutWarning(
-        result.fallback ? t("schema.erdLayoutFallback") : null,
-      );
+      setLayoutWarning(result.fallback ? t("schema.erdLayoutFallback") : null);
       setDirty(true);
       window.requestAnimationFrame(() => {
         void flowRef.current?.fitView({ padding: 0.12, duration: 240 });
@@ -469,9 +464,7 @@ export default function ErdCanvas({
     );
   }
 
-  async function exportGraph(
-    format: "svg" | "png" | "pdf" | "json" | "copy",
-  ) {
+  async function exportGraph(format: "svg" | "png" | "pdf" | "json" | "copy") {
     setError(null);
     try {
       if (format === "svg") {
@@ -612,9 +605,7 @@ export default function ErdCanvas({
       )}
 
       {error && (
-        <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">
-          {error}
-        </div>
+        <div className="tw:mx-3 tw:mt-2 tw:text-ui tw:text-danger">{error}</div>
       )}
       {layoutWarning && (
         <InlineNotice
@@ -641,7 +632,7 @@ export default function ErdCanvas({
           {errMessage(layoutsQuery.error)}
         </div>
       )}
-      <div className="erd-flow tw:min-h-[480px] tw:min-w-0 tw:flex-1">
+      <div className="erd-flow tw:min-h-[320px] tw:min-w-0 tw:flex-1">
         <ReactFlow<ErdFlowNode, Edge>
           nodes={flowNodes}
           edges={flowEdges}
@@ -664,11 +655,7 @@ export default function ErdCanvas({
           proOptions={{ hideAttribution: true }}
         >
           {viewport.zoom >= BACKGROUND_MIN_ZOOM && (
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={32}
-              size={1}
-            />
+            <Background variant={BackgroundVariant.Dots} gap={32} size={1} />
           )}
           <Controls showInteractive={false} />
           {flowNodes.length <= MINIMAP_THRESHOLD && (

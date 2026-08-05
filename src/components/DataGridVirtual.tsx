@@ -9,9 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { QueryResult } from "../ipc/types";
-import {
-  type SqlStreamRowSource,
-} from "../features/queries/domain";
+import { type SqlStreamRowSource } from "../features/queries/domain";
 import { sqlResultRowAt } from "../features/queries/resultPageCache";
 import { useSqlResultPages } from "../features/queries/useSqlResultPages";
 import type { GridSort } from "../lib/sqlBuild";
@@ -31,6 +29,10 @@ import {
   DATA_GRID_ROW_HEIGHT,
   DATA_GRID_ROW_NUMBER_WIDTH,
 } from "../design-system/dataGridGeometry";
+import {
+  DataGridViewport,
+  type DataGridSurface,
+} from "../design-system/components/DataGridViewport";
 
 const OVERSCAN = 4;
 
@@ -46,7 +48,8 @@ type Props = {
   onSelectRow?: (i: number) => void;
   onCellClick?: (value: unknown, rowIndex: number, col: string) => void;
   columnMeta?: Record<string, { dataType: string; pk: boolean }>;
-  surface?: "panel" | "workbench";
+  surface?: DataGridSurface;
+  footerInset?: boolean;
 };
 
 export function virtualGridWindow(
@@ -123,8 +126,7 @@ export default function DataGridVirtual(props: Props) {
     for (const width of columnWidths) next.push(next[next.length - 1] + width);
     return next;
   }, [columnWidths]);
-  const totalWidth =
-    offsets[offsets.length - 1] ?? DATA_GRID_ROW_NUMBER_WIDTH;
+  const totalWidth = offsets[offsets.length - 1] ?? DATA_GRID_ROW_NUMBER_WIDTH;
   const { startRow, endRow, visibleColumns } = virtualGridWindow(
     rowCount,
     props.result.columns.length,
@@ -177,7 +179,8 @@ export default function DataGridVirtual(props: Props) {
     const cell = scrollRef.current?.querySelector<HTMLElement>(
       `[data-grid-cell="${selection.focus.row}:${selection.focus.col}"]`,
     );
-    cell?.focus();
+    cell?.focus({ preventScroll: true });
+    cell?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [selection, startRow, endRow, visibleColumns.join(",")]);
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") return setSelection(null);
@@ -201,10 +204,9 @@ export default function DataGridVirtual(props: Props) {
     if (!/^Arrow(Up|Down|Left|Right)$/.test(event.key) || !rowCount) return;
     event.preventDefault();
     const current = selection?.focus ?? { row: 0, col: 0 };
-    const row =
-      !selection
-        ? 0
-        : event.key === "ArrowUp"
+    const row = !selection
+      ? 0
+      : event.key === "ArrowUp"
         ? Math.max(0, current.row - 1)
         : event.key === "ArrowDown"
           ? Math.min(rowCount - 1, current.row + 1)
@@ -217,10 +219,7 @@ export default function DataGridVirtual(props: Props) {
           : current.col;
     select(row, col, event.shiftKey);
     scrollRef.current?.scrollTo({
-      top: Math.max(
-        0,
-        row * DATA_GRID_ROW_HEIGHT - DATA_GRID_ROW_HEIGHT,
-      ),
+      top: Math.max(0, row * DATA_GRID_ROW_HEIGHT - DATA_GRID_ROW_HEIGHT),
       left: Math.max(0, offsets[col] - DATA_GRID_ROW_NUMBER_WIDTH),
     });
   };
@@ -246,11 +245,11 @@ export default function DataGridVirtual(props: Props) {
   };
 
   return (
-    <div
+    <DataGridViewport
       ref={scrollRef}
-      data-data-grid-scroll
-      className="tw:relative tw:max-h-[60vh] tw:min-h-[180px] tw:overflow-auto tw:rounded-lg tw:border tw:border-border-subtle tw:bg-background tw:shadow-panel tw:[contain:strict] tw:[&::-webkit-scrollbar]:size-[11px] tw:[&::-webkit-scrollbar-corner]:bg-transparent tw:[&::-webkit-scrollbar-thumb]:rounded-full tw:[&::-webkit-scrollbar-thumb]:border-[var(--ds-border-width-bold)] tw:[&::-webkit-scrollbar-thumb]:border-transparent tw:[&::-webkit-scrollbar-thumb]:bg-muted-foreground tw:[&::-webkit-scrollbar-thumb]:bg-clip-padding tw:[&::-webkit-scrollbar-thumb:hover]:bg-foreground tw:[&::-webkit-scrollbar-track]:bg-transparent tw:data-[surface=workbench]:min-h-0 tw:data-[surface=workbench]:flex-1 tw:data-[surface=workbench]:rounded-none tw:data-[surface=workbench]:border-0 tw:data-[surface=workbench]:shadow-none"
-      data-surface={props.surface ?? "panel"}
+      surface={props.surface}
+      virtual
+      footerInset={props.footerInset}
       role="grid"
       aria-rowcount={rowCount + 1}
       aria-colcount={props.result.columns.length + 1}
@@ -277,8 +276,7 @@ export default function DataGridVirtual(props: Props) {
         className="tw:relative tw:min-w-full tw:font-mono tw:[&_[data-grid-box]]:absolute tw:[&_[data-grid-box]]:box-border tw:[&_[data-grid-box]]:h-control-sm tw:[&_[data-grid-box]]:overflow-hidden tw:[&_[data-grid-box]]:border-r tw:[&_[data-grid-box]]:border-b tw:[&_[data-grid-box]]:border-border-subtle tw:[&_[data-grid-box]]:bg-background tw:[&_[data-grid-box]]:px-2 tw:[&_[data-grid-box]]:py-1 tw:[&_[data-grid-box]]:leading-ui tw:[&_[data-grid-box]]:text-ellipsis tw:[&_[data-grid-box]]:whitespace-nowrap"
         style={{
           width: totalWidth,
-          height:
-            DATA_GRID_HEADER_HEIGHT + rowCount * DATA_GRID_ROW_HEIGHT,
+          height: DATA_GRID_HEADER_HEIGHT + rowCount * DATA_GRID_ROW_HEIGHT,
         }}
       >
         <div
@@ -339,7 +337,9 @@ export default function DataGridVirtual(props: Props) {
                     <span>{name}</span>
                     {props.sort?.col === name ? (
                       <Icon
-                        name={props.sort.dir === "asc" ? "caretUp" : "caretDown"}
+                        name={
+                          props.sort.dir === "asc" ? "caretUp" : "caretDown"
+                        }
                         className="tw:text-2xs tw:text-primary"
                       />
                     ) : null}
@@ -444,6 +444,6 @@ export default function DataGridVirtual(props: Props) {
           </div>
         ))}
       </div>
-    </div>
+    </DataGridViewport>
   );
 }

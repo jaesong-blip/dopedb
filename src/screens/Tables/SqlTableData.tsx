@@ -31,6 +31,7 @@ import { useToast } from "../../components/Toast";
 import DdlModal from "../Connections/DdlModal";
 import {
   DataGridStatusPill,
+  WorkbenchContainedBody,
   WorkbenchEmptyState,
   WorkbenchPane,
 } from "../../design-system/components/Workbench";
@@ -74,10 +75,7 @@ export default function SqlTableData({
     catalogEnabled,
   );
 
-  const pageSize = Math.min(
-    TABLE_PAGE_SIZE,
-    safety.maxRows || TABLE_PAGE_SIZE,
-  );
+  const pageSize = Math.min(TABLE_PAGE_SIZE, safety.maxRows || TABLE_PAGE_SIZE);
   const key = tableKey(table);
   const {
     state: {
@@ -120,7 +118,8 @@ export default function SqlTableData({
     // Paging and filtering repaint the previous page (dimmed) instead of blanking the grid.
     placeholderData: keepPreviousData,
   });
-  const pageReady = rowsQuery.data !== undefined && !rowsQuery.isPlaceholderData;
+  const pageReady =
+    rowsQuery.data !== undefined && !rowsQuery.isPlaceholderData;
   const countQuery = useQuery({
     ...tableCountQuery({
       connectionId: connection.id,
@@ -138,7 +137,8 @@ export default function SqlTableData({
   const total = countQuery.data ?? null;
   const hasMore = rowsQuery.data?.hasMore ?? false;
   const busy = rowsQuery.isFetching;
-  const err = writeErr ?? (rowsQuery.error ? errMessage(rowsQuery.error) : null);
+  const err =
+    writeErr ?? (rowsQuery.error ? errMessage(rowsQuery.error) : null);
   const catalogRelation = snapshotQuery.data?.relations.find(
     (candidate) =>
       candidate.object.name === table.name &&
@@ -278,12 +278,20 @@ export default function SqlTableData({
     if (!selRow || !result) return;
     const text = asJson
       ? JSON.stringify(
-          Object.fromEntries(result.columns.map((c, i) => [c, selRow[i] ?? null])),
+          Object.fromEntries(
+            result.columns.map((c, i) => [c, selRow[i] ?? null]),
+          ),
           null,
           2,
         )
       : selRow
-          .map((v) => (v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v)))
+          .map((v) =>
+            v == null
+              ? ""
+              : typeof v === "object"
+                ? JSON.stringify(v)
+                : String(v),
+          )
           .join("\t");
     void navigator.clipboard.writeText(text);
     toast(t("tables.copyRow"));
@@ -444,9 +452,7 @@ export default function SqlTableData({
             selectedCell: null,
           })
         }
-        onToggleStructure={() =>
-          commands.patch({ structureOpen: !structure })
-        }
+        onToggleStructure={() => commands.patch({ structureOpen: !structure })}
         onCopyRow={copyRow}
       />
 
@@ -456,9 +462,7 @@ export default function SqlTableData({
         orderByExpression={orderByExpression}
         appliedOrderByExpression={appliedOrderByExpression}
         busy={busy}
-        onWhereChange={(value) =>
-          commands.patch({ whereExpression: value })
-        }
+        onWhereChange={(value) => commands.patch({ whereExpression: value })}
         onOrderByChange={(value) =>
           commands.patch({ orderByExpression: value })
         }
@@ -466,125 +470,132 @@ export default function SqlTableData({
         onApplyOrderBy={applyOrderByExpression}
       />
 
-      {structure && <TableStructure table={table} />}
+      <WorkbenchContainedBody>
+        {structure && <TableStructure table={table} />}
 
-      {err && (
-        <div className="tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
-          {err}
-        </div>
-      )}
-
-      {/* Dim (not blank) the stale grid while paging/sorting/filtering re-queries. */}
-      <div
-        data-busy={busy && Boolean(result)}
-        className="tw:flex tw:min-h-0 tw:flex-1 tw:data-[busy=true]:[&_[data-data-grid-scroll]]:pointer-events-none tw:data-[busy=true]:[&_[data-data-grid-scroll]]:opacity-50 tw:@max-[920px]:flex-col"
-      >
-        {result ? (
-          result.rows.length ? (
-            <DataGrid
-              result={result}
-              surface="workbench"
-              startIndex={page * pageSize}
-              sort={sort}
-              onSort={cycleSort}
-              filters={filters}
-              onFilter={commands.filter}
-              selectedRow={selected}
-              onSelectRow={(selectedRow) => commands.patch({ selectedRow })}
-              onCellClick={(value, i, column) => {
-                commands.patch({
-                  selectedRow: i,
-                  selectedCell: { value, column },
-                  jobsOpen: false,
-                });
-                agentSelection.select({
-                  connectionId: connection.id,
-                  database: table.database ?? connection.database,
-                  schema: table.schema ?? null,
-                  table: table.name,
-                  column,
-                  rowIndex: page * pageSize + i,
-                  row: Object.fromEntries(
-                    result.columns.map((name, index) => [
-                      name,
-                      result.rows[i]?.[index] ?? null,
-                    ]),
-                  ),
-                });
-              }}
-              columnMeta={Object.fromEntries(
-                table.columns.map((column) => [
-                  column.name,
-                  { dataType: column.dataType, pk: column.pk },
-                ]),
-              )}
-            />
-          ) : busy ? (
-            // Reloading (filter cleared / table switched) — the stale zero-row result would
-            // otherwise flash a wrong "Table is empty." against the now-live filter state.
-            <WorkbenchEmptyState>{t("tables.loadingRows")}</WorkbenchEmptyState>
-          ) : (
-            // Loaded but zero rows: distinguish an empty table from a filter that matched nothing.
-            <WorkbenchEmptyState icon="table">
-              {activeFilters > 0 ? t("tables.noRowsFilter") : t("tables.tableEmpty")}
-            </WorkbenchEmptyState>
-          )
-        ) : (
-          // No cached page for this table yet — the only place a cold load is visible.
-          !err &&
-          (busy ? (
-            <div className="tw:flex-1 tw:p-3">
-              <Skeleton lines={8} />
-            </div>
-          ) : (
-            <WorkbenchEmptyState icon="table">
-              {t("tables.noRows")}
-            </WorkbenchEmptyState>
-          ))
+        {err && (
+          <div className="tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+            {err}
+          </div>
         )}
 
-        {jobsOpen && catalogRelation ? (
-          <JobPanel
-            connectionId={connection.id}
-            relation={catalogRelation}
-            onClose={() => commands.patch({ jobsOpen: false })}
-          />
-        ) : panelOpen ? (
-          <TableSidePanel
-            engine={engine}
-            table={table}
-            selected={selected}
-            editor={editor}
-            pendingDelete={pendingDelete}
-            reviewing={reviewing}
-            staged={staged}
-            proposal={stagedProposal}
-            confirmation={stagedConfirmation}
-            running={stagedRunning}
-            catalogPending={snapshotQuery.isPending}
-            selectedCell={cellSel}
-            onSubmit={stageWrite}
-            onCloseEditor={() => commands.patch({ editor: null })}
-            onCloseDelete={() => commands.patch({ pendingDelete: null })}
-            onArmDelete={armDelete}
-            onCloseReview={() =>
-              commands.patch({
-                reviewing: false,
-                proposal: null,
-                confirmation: "",
-              })
-            }
-            onRemoveStaged={commands.removeStaged}
-            onConfirmation={(confirmation) =>
-              commands.patch({ confirmation })
-            }
-            onPrepare={() => void prepareStagedChanges()}
-            onApprove={() => void approveStagedChanges()}
-            onReject={() => void rejectStagedChanges()}
-            onCloseCell={() => commands.patch({ selectedCell: null })}
-          />
-        ) : null}
-      </div>
+        {/* Dim (not blank) the stale grid while paging/sorting/filtering re-queries. */}
+        <div
+          data-busy={busy && Boolean(result)}
+          className="tw:flex tw:min-h-0 tw:flex-1 tw:data-[busy=true]:[&_[data-data-grid-scroll]]:pointer-events-none tw:data-[busy=true]:[&_[data-data-grid-scroll]]:opacity-50 tw:@max-[920px]:flex-col"
+        >
+          {result ? (
+            result.rows.length ? (
+              <DataGrid
+                result={result}
+                surface="workbench"
+                footerInset
+                startIndex={page * pageSize}
+                sort={sort}
+                onSort={cycleSort}
+                filters={filters}
+                onFilter={commands.filter}
+                selectedRow={selected}
+                onSelectRow={(selectedRow) => commands.patch({ selectedRow })}
+                onCellClick={(value, i, column) => {
+                  commands.patch({
+                    selectedRow: i,
+                    selectedCell: { value, column },
+                    jobsOpen: false,
+                  });
+                  agentSelection.select({
+                    connectionId: connection.id,
+                    database: table.database ?? connection.database,
+                    schema: table.schema ?? null,
+                    table: table.name,
+                    column,
+                    rowIndex: page * pageSize + i,
+                    row: Object.fromEntries(
+                      result.columns.map((name, index) => [
+                        name,
+                        result.rows[i]?.[index] ?? null,
+                      ]),
+                    ),
+                  });
+                }}
+                columnMeta={Object.fromEntries(
+                  table.columns.map((column) => [
+                    column.name,
+                    { dataType: column.dataType, pk: column.pk },
+                  ]),
+                )}
+              />
+            ) : busy ? (
+              // Reloading (filter cleared / table switched) — the stale zero-row result would
+              // otherwise flash a wrong "Table is empty." against the now-live filter state.
+              <WorkbenchEmptyState>
+                {t("tables.loadingRows")}
+              </WorkbenchEmptyState>
+            ) : (
+              // Loaded but zero rows: distinguish an empty table from a filter that matched nothing.
+              <WorkbenchEmptyState icon="table">
+                {activeFilters > 0
+                  ? t("tables.noRowsFilter")
+                  : t("tables.tableEmpty")}
+              </WorkbenchEmptyState>
+            )
+          ) : (
+            // No cached page for this table yet — the only place a cold load is visible.
+            !err &&
+            (busy ? (
+              <div className="tw:flex-1 tw:p-3">
+                <Skeleton lines={8} />
+              </div>
+            ) : (
+              <WorkbenchEmptyState icon="table">
+                {t("tables.noRows")}
+              </WorkbenchEmptyState>
+            ))
+          )}
+
+          {jobsOpen && catalogRelation ? (
+            <JobPanel
+              connectionId={connection.id}
+              relation={catalogRelation}
+              onClose={() => commands.patch({ jobsOpen: false })}
+            />
+          ) : panelOpen ? (
+            <TableSidePanel
+              engine={engine}
+              table={table}
+              selected={selected}
+              editor={editor}
+              pendingDelete={pendingDelete}
+              reviewing={reviewing}
+              staged={staged}
+              proposal={stagedProposal}
+              confirmation={stagedConfirmation}
+              running={stagedRunning}
+              catalogPending={snapshotQuery.isPending}
+              selectedCell={cellSel}
+              onSubmit={stageWrite}
+              onCloseEditor={() => commands.patch({ editor: null })}
+              onCloseDelete={() => commands.patch({ pendingDelete: null })}
+              onArmDelete={armDelete}
+              onCloseReview={() =>
+                commands.patch({
+                  reviewing: false,
+                  proposal: null,
+                  confirmation: "",
+                })
+              }
+              onRemoveStaged={commands.removeStaged}
+              onConfirmation={(confirmation) =>
+                commands.patch({ confirmation })
+              }
+              onPrepare={() => void prepareStagedChanges()}
+              onApprove={() => void approveStagedChanges()}
+              onReject={() => void rejectStagedChanges()}
+              onCloseCell={() => commands.patch({ selectedCell: null })}
+            />
+          ) : null}
+        </div>
+      </WorkbenchContainedBody>
 
       {result ? (
         <DataGridStatusPill

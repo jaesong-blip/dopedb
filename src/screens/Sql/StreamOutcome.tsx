@@ -2,9 +2,7 @@
 // chunk source directly; this component never flattens a partial result.
 import { useMemo, useState } from "react";
 
-import {
-  type SqlStreamViewState,
-} from "../../features/queries/domain";
+import { type SqlStreamViewState } from "../../features/queries/domain";
 import {
   collectCachedSqlResultRows,
   SQL_RESULT_CACHE_MAX_PAGES,
@@ -19,6 +17,7 @@ import {
 import {
   ResultMeta,
   SqlSnippet,
+  WorkbenchContainedBody,
 } from "../../design-system/components/Workbench";
 import type { JsonValue } from "../../ipc/types";
 import { stamp } from "../../lib/export";
@@ -34,13 +33,11 @@ export default function StreamOutcome({
   maxRows: number;
 }) {
   const { t } = useI18n();
-  const running =
-    stream.phase === "connecting" || stream.phase === "streaming";
+  const running = stream.phase === "connecting" || stream.phase === "streaming";
   const partial = stream.phase !== "complete";
   const [filterOpen, setFilterOpen] = useState(false);
   const [filter, setFilter] = useState("");
-  const filterRowLimit =
-    stream.rowSource.pageRows * SQL_RESULT_CACHE_MAX_PAGES;
+  const filterRowLimit = stream.rowSource.pageRows * SQL_RESULT_CACHE_MAX_PAGES;
   useSqlResultPages(
     stream.rowSource,
     0,
@@ -60,9 +57,7 @@ export default function StreamOutcome({
     for (const row of filterableRows) {
       if (
         row.some((value) =>
-          resultCellText(value)
-            .toLocaleLowerCase()
-            .includes(normalizedFilter),
+          resultCellText(value).toLocaleLowerCase().includes(normalizedFilter),
         )
       ) {
         rows.push([...row] as JsonValue[]);
@@ -80,10 +75,7 @@ export default function StreamOutcome({
           : t("sql.running");
 
   return (
-    <div
-      className="tw:relative tw:flex tw:min-h-0 tw:flex-1 tw:flex-col"
-      aria-live="polite"
-    >
+    <WorkbenchContainedBody aria-live="polite">
       {stream.columns.length === 0 ? (
         <ResultMeta>
           <SqlSnippet>{sql}</SqlSnippet>
@@ -117,6 +109,7 @@ export default function StreamOutcome({
             }}
             rowSource={filteredRows === null ? stream.rowSource : undefined}
             surface="workbench"
+            footerInset
           />
           <ResultWorkbenchFooter
             visible={filteredRows?.length ?? stream.rowCount}
@@ -128,6 +121,6 @@ export default function StreamOutcome({
           />
         </>
       )}
-    </div>
+    </WorkbenchContainedBody>
   );
 }

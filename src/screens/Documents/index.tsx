@@ -4,7 +4,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { proposeDocumentQuery, runDocumentQuery } from "../../ipc/commands";
-import type { DocumentPage, DocumentQuery, JsonValue, QueryResult } from "../../ipc/types";
+import type {
+  DocumentPage,
+  DocumentQuery,
+  JsonValue,
+  QueryResult,
+} from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import DataGrid from "../../components/DataGrid";
@@ -12,6 +17,7 @@ import { Icon } from "../../components/Icon";
 import ResultToolbar from "../../components/ResultToolbar";
 import {
   WorkbenchDivider,
+  WorkbenchContainedBody,
   ResultMeta,
   WorkbenchEmptyState,
   WorkbenchPane,
@@ -94,21 +100,42 @@ export default function Documents({
     setCollection(parsed.collection);
     setOp(parsed.op);
     if (parsed.op === "find") {
-      setFilterText(parsed.filter !== undefined ? JSON.stringify(parsed.filter, null, 2) : "");
-      setProjectionText(
-        parsed.projection !== undefined ? JSON.stringify(parsed.projection, null, 2) : "",
+      setFilterText(
+        parsed.filter !== undefined
+          ? JSON.stringify(parsed.filter, null, 2)
+          : "",
       );
-      setSortText(parsed.sort !== undefined ? JSON.stringify(parsed.sort, null, 2) : "");
+      setProjectionText(
+        parsed.projection !== undefined
+          ? JSON.stringify(parsed.projection, null, 2)
+          : "",
+      );
+      setSortText(
+        parsed.sort !== undefined ? JSON.stringify(parsed.sort, null, 2) : "",
+      );
       if (typeof parsed.limit === "number") setLimit(parsed.limit);
     } else if (parsed.op === "aggregate") {
       setPipelineText(JSON.stringify(parsed.pipeline, null, 2));
     } else if (parsed.op === "count") {
-      setCountFilterText(parsed.filter !== undefined ? JSON.stringify(parsed.filter, null, 2) : "");
+      setCountFilterText(
+        parsed.filter !== undefined
+          ? JSON.stringify(parsed.filter, null, 2)
+          : "",
+      );
     }
   }, [draft]);
 
-  const { running, cancelled, execute: runQuery, cancel, track } = useQueryRun();
-  const [result, setResult] = useState<{ page: DocumentPage; at: string } | null>(null);
+  const {
+    running,
+    cancelled,
+    execute: runQuery,
+    cancel,
+    track,
+  } = useQueryRun();
+  const [result, setResult] = useState<{
+    page: DocumentPage;
+    at: string;
+  } | null>(null);
   const [parseErr, setParseErr] = useState<string | null>(null);
   const [runErr, setRunErr] = useState<string | null>(null);
 
@@ -125,11 +152,16 @@ export default function Documents({
         };
       }
       if (op === "aggregate") {
-        const pipeline = parseJsonField(pipelineText, t("documents.pipeline")) ?? [];
+        const pipeline =
+          parseJsonField(pipelineText, t("documents.pipeline")) ?? [];
         if (!Array.isArray(pipeline)) throw new Error(t("documents.pipeline"));
         return { op: "aggregate", collection, pipeline };
       }
-      return { op: "count", collection, filter: parseJsonField(countFilterText, t("documents.filter")) };
+      return {
+        op: "count",
+        collection,
+        filter: parseJsonField(countFilterText, t("documents.filter")),
+      };
     } catch (e) {
       setParseErr(errMessage(e));
       return null;
@@ -145,7 +177,11 @@ export default function Documents({
 
     try {
       await runQuery(async () => {
-        const proposal = await proposeDocumentQuery(connection.id, query, "manual");
+        const proposal = await proposeDocumentQuery(
+          connection.id,
+          query,
+          "manual",
+        );
         track(proposal.operationId);
         const page = await runDocumentQuery(proposal.operationId);
         setResult({ page, at: new Date().toLocaleTimeString() });
@@ -221,99 +257,115 @@ export default function Documents({
         </WorkbenchSelect>
       </WorkbenchToolbar>
 
-      {op === "find" && (
-        <div className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] tw:gap-3 tw:border-b tw:border-border-subtle tw:p-3 tw:@max-[760px]:grid-cols-1">
-          <Field label={t("documents.filter")}>
-            <TextAreaInput
-              rows={3}
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              placeholder="{}"
-            />
-          </Field>
-          <Field label={t("documents.projection")}>
-            <TextAreaInput
-              rows={3}
-              value={projectionText}
-              onChange={(e) => setProjectionText(e.target.value)}
-              placeholder="{}"
-            />
-          </Field>
-          <Field label={t("documents.sort")}>
-            <TextAreaInput
-              rows={3}
-              value={sortText}
-              onChange={(e) => setSortText(e.target.value)}
-              placeholder="{}"
-            />
-          </Field>
-          <div className="tw:w-[120px]">
-            <Field label={t("documents.limit")}>
-              <TextInput
-                type="number"
-                min={1}
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value) || 100)}
-              />
-            </Field>
-          </div>
-        </div>
-      )}
-      {op === "aggregate" && (
-        <div className="tw:shrink-0 tw:border-b tw:border-border-subtle tw:p-3">
-          <Field label={t("documents.pipeline")}>
-            <TextAreaInput
-              rows={8}
-              value={pipelineText}
-              onChange={(e) => setPipelineText(e.target.value)}
-              placeholder="[]"
-            />
-          </Field>
-        </div>
-      )}
-      {op === "count" && (
-        <div className="tw:shrink-0 tw:border-b tw:border-border-subtle tw:p-3">
-          <Field label={t("documents.filter")}>
-            <TextAreaInput
-              rows={4}
-              value={countFilterText}
-              onChange={(e) => setCountFilterText(e.target.value)}
-              placeholder="{}"
-            />
-          </Field>
-        </div>
-      )}
+      <WorkbenchContainedBody>
+        <div
+          data-result={Boolean(result)}
+          data-workbench-scroll-owner="document-controls"
+          className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:overscroll-contain tw:data-[result=true]:max-h-[45%] tw:data-[result=true]:flex-none"
+        >
+          {op === "find" && (
+            <div className="tw:grid tw:shrink-0 tw:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] tw:gap-3 tw:border-b tw:border-border-subtle tw:p-3 tw:@max-[760px]:grid-cols-1">
+              <Field label={t("documents.filter")}>
+                <TextAreaInput
+                  rows={3}
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                  placeholder="{}"
+                />
+              </Field>
+              <Field label={t("documents.projection")}>
+                <TextAreaInput
+                  rows={3}
+                  value={projectionText}
+                  onChange={(e) => setProjectionText(e.target.value)}
+                  placeholder="{}"
+                />
+              </Field>
+              <Field label={t("documents.sort")}>
+                <TextAreaInput
+                  rows={3}
+                  value={sortText}
+                  onChange={(e) => setSortText(e.target.value)}
+                  placeholder="{}"
+                />
+              </Field>
+              <div className="tw:w-[120px]">
+                <Field label={t("documents.limit")}>
+                  <TextInput
+                    type="number"
+                    min={1}
+                    value={limit}
+                    onChange={(e) => setLimit(Number(e.target.value) || 100)}
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
+          {op === "aggregate" && (
+            <div className="tw:shrink-0 tw:border-b tw:border-border-subtle tw:p-3">
+              <Field label={t("documents.pipeline")}>
+                <TextAreaInput
+                  rows={8}
+                  value={pipelineText}
+                  onChange={(e) => setPipelineText(e.target.value)}
+                  placeholder="[]"
+                />
+              </Field>
+            </div>
+          )}
+          {op === "count" && (
+            <div className="tw:shrink-0 tw:border-b tw:border-border-subtle tw:p-3">
+              <Field label={t("documents.filter")}>
+                <TextAreaInput
+                  rows={4}
+                  value={countFilterText}
+                  onChange={(e) => setCountFilterText(e.target.value)}
+                  placeholder="{}"
+                />
+              </Field>
+            </div>
+          )}
 
-      {parseErr && <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">{parseErr}</div>}
-      {runErr && <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">{runErr}</div>}
-      {cancelled && (
-        <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-muted-foreground">
-          {t("documents.cancelled")}
-        </div>
-      )}
-
-      {result && (
-        <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
-          <ResultMeta>
-            {t("documents.docCount", { count: result.page.docCount })}
-            {result.page.truncated && ` - ${t("documents.truncated")}`} · {result.page.durationMs} ms ·{" "}
-            {result.at}
-            {" · "}
-            <ResultToolbar
-              columns={gridResult.columns}
-              rows={gridResult.rows}
-              filenameBase={`documents-${collection}-${stamp()}`}
-            />
-          </ResultMeta>
-          {gridResult.columns.length > 0 ? (
-            <DataGrid result={gridResult} surface="workbench" />
-          ) : (
-            <WorkbenchEmptyState icon="table">
-              {t("documents.noDocuments")}
-            </WorkbenchEmptyState>
+          {parseErr && (
+            <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+              {parseErr}
+            </div>
+          )}
+          {runErr && (
+            <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-danger">
+              {runErr}
+            </div>
+          )}
+          {cancelled && (
+            <div className="tw:px-3 tw:py-2 tw:text-ui tw:text-muted-foreground">
+              {t("documents.cancelled")}
+            </div>
           )}
         </div>
-      )}
+
+        {result && (
+          <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
+            <ResultMeta>
+              {t("documents.docCount", { count: result.page.docCount })}
+              {result.page.truncated && ` - ${t("documents.truncated")}`} ·{" "}
+              {result.page.durationMs} ms · {result.at}
+              {" · "}
+              <ResultToolbar
+                columns={gridResult.columns}
+                rows={gridResult.rows}
+                filenameBase={`documents-${collection}-${stamp()}`}
+              />
+            </ResultMeta>
+            {gridResult.columns.length > 0 ? (
+              <DataGrid result={gridResult} surface="workbench" />
+            ) : (
+              <WorkbenchEmptyState icon="table">
+                {t("documents.noDocuments")}
+              </WorkbenchEmptyState>
+            )}
+          </div>
+        )}
+      </WorkbenchContainedBody>
     </WorkbenchPane>
   );
 }

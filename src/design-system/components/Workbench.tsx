@@ -1,6 +1,6 @@
 // Canonical workbench primitives for editor, data, and result panes. These own
 // the dense IDE spacing shared by table data, SQL, and document surfaces.
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 import { Icon, type IconName } from "../../components/Icon";
 import { Button, type ButtonProps } from "./Button";
@@ -13,6 +13,37 @@ export function WorkbenchPane({ children }: { children: ReactNode }) {
     >
       {children}
     </section>
+  );
+}
+
+export function WorkbenchContainedBody({
+  children,
+  ...props
+}: Omit<ComponentPropsWithoutRef<"div">, "className">) {
+  return (
+    <div
+      {...props}
+      data-workbench-body="contained"
+      className="tw:relative tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-hidden tw:[container-type:size]"
+    >
+      {children}
+    </div>
+  );
+}
+
+export function WorkbenchScrollBody({
+  children,
+  ...props
+}: Omit<ComponentPropsWithoutRef<"div">, "className">) {
+  return (
+    <div
+      {...props}
+      data-workbench-body="scroll"
+      data-workbench-scroll-owner="document"
+      className="scrollbar-sleek tw:relative tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-auto tw:overscroll-contain tw:[container-type:size]"
+    >
+      {children}
+    </div>
   );
 }
 
@@ -86,10 +117,7 @@ export function WorkbenchSelect({
       title={title}
     >
       {icon ? (
-        <Icon
-          name={icon}
-          className="tw:shrink-0 tw:text-muted-foreground"
-        />
+        <Icon name={icon} className="tw:shrink-0 tw:text-muted-foreground" />
       ) : null}
       <span className="tw:sr-only">{label}</span>
       <select

@@ -8,10 +8,7 @@ import {
   InspectorFooter,
   InspectorHeader,
 } from "../../design-system/components/Workbench";
-import type {
-  CatalogTable,
-  ScriptOperationProposal,
-} from "../../ipc/types";
+import type { CatalogTable, ScriptOperationProposal } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import type { Engine } from "../../ipc/types";
 import type {
@@ -65,7 +62,7 @@ export default function TableSidePanel(props: Props) {
   } = props;
 
   return (
-    <aside className="tw:w-[clamp(320px,32vw,480px)] tw:max-w-[44%] tw:shrink-0 tw:overflow-auto tw:border-l tw:border-border-subtle tw:bg-card tw:p-3 tw:@max-[920px]:max-h-[42vh] tw:@max-[920px]:w-auto tw:@max-[920px]:max-w-none tw:@max-[760px]:max-h-[min(360px,44dvh)]">
+    <aside className="tw:w-[clamp(320px,32vw,480px)] tw:max-w-[44%] tw:shrink-0 tw:overflow-auto tw:overscroll-contain tw:border-l tw:border-border-subtle tw:bg-card tw:p-3 tw:@max-[920px]:max-h-[42%] tw:@max-[920px]:w-auto tw:@max-[920px]:max-w-none tw:@max-[760px]:max-h-[44%]">
       {editor && !reviewing && (
         <RowEditor
           key={`${editor.mode}-${selected}`}
@@ -82,15 +79,15 @@ export default function TableSidePanel(props: Props) {
           <InspectorHeader
             title={t("tables.deleteRow")}
             actions={
-            <Button
-              iconOnly
-              size="xs"
-              variant="ghost"
-              aria-label={t("common.cancel")}
-              onClick={props.onCloseDelete}
-            >
-              <Icon name="close" />
-            </Button>
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
+                aria-label={t("common.cancel")}
+                onClick={props.onCloseDelete}
+              >
+                <Icon name="close" />
+              </Button>
             }
           />
           <div className="tw:mb-3 tw:flex tw:flex-col tw:gap-2">
@@ -110,9 +107,7 @@ export default function TableSidePanel(props: Props) {
             <Button variant="primary" onClick={props.onArmDelete}>
               {t("tables.reviewDelete")}
             </Button>
-            <Button onClick={props.onCloseDelete}>
-              {t("common.cancel")}
-            </Button>
+            <Button onClick={props.onCloseDelete}>{t("common.cancel")}</Button>
           </InspectorFooter>
         </div>
       )}
@@ -126,15 +121,15 @@ export default function TableSidePanel(props: Props) {
               </span>
             }
             actions={
-            <Button
-              iconOnly
-              size="xs"
-              variant="ghost"
-              aria-label={t("common.close")}
-              onClick={props.onCloseReview}
-            >
-              <Icon name="close" />
-            </Button>
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
+                aria-label={t("common.close")}
+                onClick={props.onCloseReview}
+              >
+                <Icon name="close" />
+              </Button>
             }
           />
           <ol className="tw:m-0 tw:grid tw:list-none tw:gap-0 tw:p-0 tw:[&_li]:flex tw:[&_li]:items-start tw:[&_li]:justify-between tw:[&_li]:gap-2 tw:[&_li]:border-t tw:[&_li]:border-border-subtle tw:[&_li]:py-2 tw:[&_li>div]:min-w-0 tw:[&_strong]:block tw:[&_code]:mt-1 tw:[&_code]:block tw:[&_code]:[overflow-wrap:anywhere] tw:[&_code]:text-xs tw:[&_code]:text-muted-foreground">
@@ -199,10 +194,7 @@ export default function TableSidePanel(props: Props) {
                     ? t("common.saving")
                     : t("approval.approveAndRunWrite")}
                 </Button>
-                <Button
-                  disabled={running}
-                  onClick={props.onReject}
-                >
+                <Button disabled={running} onClick={props.onReject}>
                   {t("approval.reject")}
                 </Button>
               </>

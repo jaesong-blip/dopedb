@@ -9,10 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type {
-  CatalogRelationV2,
-  CatalogTable,
-} from "../../ipc/types";
+import type { CatalogRelationV2, CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
@@ -21,6 +18,7 @@ import Skeleton from "../../components/Skeleton";
 import {
   WorkbenchEmptyState,
   WorkbenchPane,
+  WorkbenchScrollBody,
 } from "../../design-system/components/Workbench";
 import {
   catalogOverviewQuery,
@@ -28,10 +26,7 @@ import {
   catalogSnapshotQuery,
   useCatalogScope,
 } from "../../lib/queries";
-import {
-  erdRelationKey,
-  relationDisplayName,
-} from "../../lib/erdGraph";
+import { erdRelationKey, relationDisplayName } from "../../lib/erdGraph";
 import { useI18n } from "../../lib/i18n";
 import { schemaDetailsEnabled } from "./detailLifecycle";
 import {
@@ -45,17 +40,16 @@ const ErdCanvas = lazy(() => import("../../components/ErdCanvas"));
 function SchemaFrame({ children }: { children: ReactNode }) {
   return (
     <WorkbenchPane>
-      <div className="tw:flex tw:min-h-full tw:flex-1 tw:flex-col tw:gap-3 tw:p-3 tw:[container-name:schema-pane] tw:[container-type:inline-size]">
-        {children}
-      </div>
+      <WorkbenchScrollBody>
+        <div className="tw:flex tw:min-h-full tw:min-w-0 tw:flex-col tw:gap-3 tw:p-3 tw:[container-name:schema-pane] tw:[container-type:inline-size]">
+          {children}
+        </div>
+      </WorkbenchScrollBody>
     </WorkbenchPane>
   );
 }
 
-function legacyTableFor(
-  tables: CatalogTable[],
-  relation: CatalogRelationV2,
-) {
+function legacyTableFor(tables: CatalogTable[], relation: CatalogRelationV2) {
   return (
     tables.find(
       (table) =>
@@ -282,7 +276,7 @@ export default function SchemaExplorer({
       ) : (
         <div
           data-inspector={inspectorOpen}
-          className="tw:grid tw:min-h-[520px] tw:min-w-0 tw:flex-1 tw:grid-cols-[minmax(0,1fr)] tw:data-[inspector=true]:grid-cols-[minmax(0,1fr)_320px] tw:@max-[1100px]:data-[inspector=true]:grid-cols-[minmax(0,1fr)] tw:@max-[760px]:min-h-[min(480px,60dvh)]"
+          className="tw:grid tw:min-h-[320px] tw:min-w-0 tw:flex-1 tw:grid-cols-[minmax(0,1fr)] tw:data-[inspector=true]:grid-cols-[minmax(0,1fr)_320px] tw:@max-[1100px]:data-[inspector=true]:grid-cols-[minmax(0,1fr)]"
         >
           <Suspense fallback={<Skeleton lines={8} />}>
             <ErdCanvas
@@ -361,13 +355,10 @@ export default function SchemaExplorer({
                   ) ? (
                     <ul className="tw:mt-2 tw:grid tw:list-none tw:gap-2 tw:p-0 tw:text-sm tw:leading-[1.45] tw:text-muted-foreground">
                       {selected.constraints
-                        .filter(
-                          (constraint) => constraint.kind === "foreign",
-                        )
+                        .filter((constraint) => constraint.kind === "foreign")
                         .map((constraint) => (
                           <li key={constraint.name}>
-                            {constraint.name}:{" "}
-                            {constraint.columns.join(", ")}
+                            {constraint.name}: {constraint.columns.join(", ")}
                             {" → "}
                             {constraint.referencedRelation
                               ? relationDisplayName(
@@ -390,10 +381,7 @@ export default function SchemaExplorer({
                         <li key={index.name}>
                           {index.name}:{" "}
                           {index.keys
-                            .map(
-                              (key) =>
-                                key.column ?? key.expression ?? "?",
-                            )
+                            .map((key) => key.column ?? key.expression ?? "?")
                             .join(", ")}
                         </li>
                       ))}

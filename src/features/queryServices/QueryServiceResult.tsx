@@ -10,7 +10,9 @@ import {
 import {
   ResultMeta,
   SqlSnippet,
+  WorkbenchContainedBody,
   WorkbenchEmptyState,
+  WorkbenchScrollBody,
 } from "../../design-system/components/Workbench";
 import { Icon } from "../../components/Icon";
 import { stamp } from "../../lib/export";
@@ -90,10 +92,7 @@ function MaterializedResult({
   outcome,
   at,
   maxRows,
-}: Omit<
-  Extract<QueryServiceResultModel, { kind: "materialized" }>,
-  "kind"
->) {
+}: Omit<Extract<QueryServiceResultModel, { kind: "materialized" }>, "kind">) {
   const { t } = useI18n();
   const [limit, setLimit] = useState(PAGE_STEP);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -111,7 +110,7 @@ function MaterializedResult({
   const visibleRows = filteredRows.slice(0, limit);
 
   return (
-    <div className="tw:relative tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
+    <WorkbenchContainedBody>
       {result ? (
         <>
           <ResultWorkbenchToolbar
@@ -136,6 +135,7 @@ function MaterializedResult({
               rowCount: filteredRows.length,
             }}
             surface="workbench"
+            footerInset
           />
           <ResultWorkbenchFooter
             visible={visibleRows.length}
@@ -169,7 +169,7 @@ function MaterializedResult({
           · {at}
         </ResultMeta>
       )}
-    </div>
+    </WorkbenchContainedBody>
   );
 }
 
@@ -192,10 +192,16 @@ function ScriptResults({
     statementIndex === undefined
       ? outcome.statements.map((statement, index) => ({ statement, index }))
       : outcome.statements[statementIndex]
-        ? [{ statement: outcome.statements[statementIndex], index: statementIndex }]
+        ? [
+            {
+              statement: outcome.statements[statementIndex],
+              index: statementIndex,
+            },
+          ]
         : [];
-  return (
-    <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
+  const fillsResultPane = statementIndex !== undefined;
+  const content = (
+    <>
       <ResultMeta>
         {summary} ·{" "}
         {t("sql.statementCount", { count: outcome.statements.length })} · {at}
@@ -203,7 +209,8 @@ function ScriptResults({
       {statements.map(({ statement, index }) => (
         <section
           key={`${index}:${statement.sql}`}
-          className="tw:border-t tw:border-border-subtle tw:pt-2"
+          data-fill={fillsResultPane}
+          className="tw:flex tw:min-h-0 tw:flex-col tw:border-t tw:border-border-subtle tw:pt-2 tw:data-[fill=true]:flex-1"
         >
           <ResultMeta>
             <span className="tw:inline-block tw:min-w-4 tw:font-semibold">
@@ -232,7 +239,10 @@ function ScriptResults({
                   filenameBase={`script-stmt${index + 1}-${stamp()}`}
                 />
               </div>
-              <DataGrid result={statement.result} surface="workbench" />
+              <DataGrid
+                result={statement.result}
+                surface={fillsResultPane ? "workbench" : "embedded"}
+              />
             </>
           ) : (
             <div className="tw:px-3 tw:py-2 tw:text-sm tw:text-muted-foreground">
@@ -241,7 +251,12 @@ function ScriptResults({
           )}
         </section>
       ))}
-    </div>
+    </>
+  );
+  return fillsResultPane ? (
+    <WorkbenchContainedBody>{content}</WorkbenchContainedBody>
+  ) : (
+    <WorkbenchScrollBody>{content}</WorkbenchScrollBody>
   );
 }
 
@@ -253,7 +268,8 @@ function errorPosition(sql: string, position: number) {
   const lineEnd = codePoints.indexOf("\n", index);
   const column = index - lineStart;
   return {
-    line: codePoints.slice(0, index).filter((value) => value === "\n").length + 1,
+    line:
+      codePoints.slice(0, index).filter((value) => value === "\n").length + 1,
     column: column + 1,
     snippet:
       codePoints
@@ -277,7 +293,8 @@ function SqlErrorCard({
     error.position !== null ? errorPosition(error.sql, error.position) : null;
   return (
     <div
-      className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-auto tw:text-foreground"
+      data-workbench-scroll-owner="document"
+      className="scrollbar-sleek tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-auto tw:overscroll-contain tw:text-foreground"
       role="alert"
     >
       <ResultMeta>
