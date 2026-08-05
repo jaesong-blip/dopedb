@@ -46,7 +46,12 @@ export function providerOperationOwnershipMarker(input: {
   planHash: string;
 }) {
   if (
-    input.integrationGeneration < 1n
+    input.organizationId.length < 1
+    || input.organizationId.length > 512
+    || /[\u0000-\u001f\u007f]/.test(input.organizationId)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(input.integrationId)
+    || input.integrationGeneration < 1n
     || !/^[0-9a-f]{64}$/.test(input.planHash)
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       .test(input.operationId)

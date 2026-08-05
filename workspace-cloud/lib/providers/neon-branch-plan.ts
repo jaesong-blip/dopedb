@@ -38,13 +38,21 @@ export type NeonBranchCreatePlan = Readonly<{
   source: Readonly<{
     projectId: string;
     branchId: string;
+    parentId: string | null;
+    treeParentId: string | null;
     name: string;
     currentState: NeonBranchInventoryItem["currentState"];
     pendingState: NeonBranchInventoryItem["pendingState"];
     stateChangedAt: string;
+    createdAt: string;
     updatedAt: string;
+    creationSource: string;
+    initSource: NeonBranchInventoryItem["initSource"];
+    sourceLsn: string | null;
+    sourceTimestamp: string | null;
     default: boolean;
     protected: boolean;
+    expiresAt: string | null;
     environment: "development" | "production";
     point: NeonBranchSourcePoint;
     restrictedActions: NeonBranchInventoryItem["restrictedActions"];
@@ -68,6 +76,15 @@ export class NeonBranchPlanError extends Error {
     super(message);
     this.name = "NeonBranchPlanError";
   }
+}
+
+function sameRestrictedActions(
+  left: NeonBranchInventoryItem["restrictedActions"],
+  right: NeonBranchInventoryItem["restrictedActions"],
+) {
+  return left.length === right.length && left.every((item, index) => (
+    item.name === right[index]?.name && item.reason === right[index]?.reason
+  ));
 }
 
 function invalid(message: string, status: 400 | 409 | 500 = 400): never {
@@ -242,13 +259,21 @@ export function buildNeonBranchCreatePlan(input: {
     source: {
       projectId: source.projectId,
       branchId: source.id,
+      parentId: source.parentId,
+      treeParentId: source.treeParentId,
       name: source.name,
       currentState: source.currentState,
       pendingState: source.pendingState,
       stateChangedAt: source.stateChangedAt,
+      createdAt: source.createdAt,
       updatedAt: source.updatedAt,
+      creationSource: source.creationSource,
+      initSource: source.initSource,
+      sourceLsn: source.sourceLsn,
+      sourceTimestamp: source.sourceTimestamp,
       default: source.default,
       protected: source.protected,
+      expiresAt: source.expiresAt,
       environment: input.request.sourceEnvironment,
       point: input.request.sourcePoint,
       restrictedActions: source.restrictedActions.map((action) => ({ ...action })),
@@ -266,4 +291,85 @@ export function buildNeonBranchCreatePlan(input: {
     approvalPolicy: productionData ? "separate_admin" : "single_admin",
     warningCodes,
   };
+}
+
+/**
+ * Rechecks an immutable, authenticated plan against one fresh complete
+ * inventory. Any source snapshot drift or newly occupied target invalidates
+ * approval; execution calls the same boundary again before its remote fence.
+ */
+export function revalidateNeonBranchCreatePlan(input: {
+  plan: NeonBranchCreatePlan;
+  inventory: NeonBranchInventory;
+  workspaceProductionReference: boolean;
+  now: Date;
+}) {
+  const issuedAt = Date.parse(input.plan.issuedAt);
+  const expiresAt = Date.parse(input.plan.expiresAt);
+  if (
+    Number.isNaN(input.now.valueOf())
+    || Number.isNaN(issuedAt)
+    || Number.isNaN(expiresAt)
+    || expiresAt - issuedAt !== NEON_BRANCH_PLAN_TTL_MS
+    || input.now.valueOf() >= expiresAt
+  ) {
+    return invalid("Neon branch create plan expired", 409);
+  }
+  if (input.inventory.projectId !== input.plan.source.projectId) {
+    return invalid("Neon branch create plan project changed", 409);
+  }
+  const sources = input.inventory.branches.filter(
+    (branch) => branch.id === input.plan.source.branchId,
+  );
+  const source = sources.length === 1 ? sources[0] : null;
+  if (
+    !source
+    || source.currentState !== "ready"
+    || source.pendingState !== null
+    || !source.ready
+    || source.projectId !== input.plan.source.projectId
+    || source.parentId !== input.plan.source.parentId
+    || source.treeParentId !== input.plan.source.treeParentId
+    || source.name !== input.plan.source.name
+    || source.currentState !== input.plan.source.currentState
+    || source.pendingState !== input.plan.source.pendingState
+    || source.stateChangedAt !== input.plan.source.stateChangedAt
+    || source.createdAt !== input.plan.source.createdAt
+    || source.updatedAt !== input.plan.source.updatedAt
+    || source.creationSource !== input.plan.source.creationSource
+    || source.initSource !== input.plan.source.initSource
+    || source.sourceLsn !== input.plan.source.sourceLsn
+    || source.sourceTimestamp !== input.plan.source.sourceTimestamp
+    || source.default !== input.plan.source.default
+    || source.protected !== input.plan.source.protected
+    || source.expiresAt !== input.plan.source.expiresAt
+    || !sameRestrictedActions(source.restrictedActions, input.plan.source.restrictedActions)
+  ) {
+    return invalid("Neon source branch changed after planning", 409);
+  }
+  if (
+    source.expiresAt !== null
+    && Date.parse(source.expiresAt) <= input.now.valueOf()
+  ) {
+    return invalid("Neon source branch expired", 409);
+  }
+  if (input.inventory.branches.some((branch) => branch.name === input.plan.target.name)) {
+    return invalid("Neon target branch name is already in use", 409);
+  }
+  if (
+    (source.protected || input.workspaceProductionReference)
+    && input.plan.source.environment !== "production"
+  ) {
+    return invalid("Neon production source cannot be downgraded", 409);
+  }
+  if (input.plan.source.point.kind === "timestamp") {
+    const timestamp = Date.parse(input.plan.source.point.value);
+    if (
+      timestamp < Date.parse(source.createdAt)
+      || timestamp > input.now.valueOf() + 30_000
+    ) {
+      return invalid("Neon source timestamp is outside the branch lifetime", 409);
+    }
+  }
+  return input.plan;
 }

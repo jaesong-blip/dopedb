@@ -54,6 +54,7 @@ import { parseNeonBranchInventory } from "../../../workspace-cloud/lib/providers
 import {
   buildNeonBranchCreatePlan,
   parseNeonBranchCreatePlanRequest,
+  revalidateNeonBranchCreatePlan,
 } from "../../../workspace-cloud/lib/providers/neon-branch-plan";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -391,6 +392,31 @@ describe("provider credential Tauri adapter", () => {
       "NEON_ENDPOINT_CREATES_COMPUTE",
       "NEON_HEAD_RESOLVED_AT_EXECUTION",
     ]);
+    expect(revalidateNeonBranchCreatePlan({
+      plan: productionPlan,
+      inventory: branchInventory,
+      workspaceProductionReference: true,
+      now: new Date("2026-08-05T02:01:00Z"),
+    })).toBe(productionPlan);
+    expect(() => revalidateNeonBranchCreatePlan({
+      plan: productionPlan,
+      inventory: {
+        ...branchInventory,
+        branches: branchInventory.branches.map((branch) => (
+          branch.id === productionPlan.source.branchId
+            ? { ...branch, updatedAt: "2026-08-05T02:00:30Z" }
+            : branch
+        )),
+      },
+      workspaceProductionReference: true,
+      now: new Date("2026-08-05T02:01:00Z"),
+    })).toThrow("Neon source branch changed after planning");
+    expect(() => revalidateNeonBranchCreatePlan({
+      plan: productionPlan,
+      inventory: branchInventory,
+      workspaceProductionReference: true,
+      now: new Date("2026-08-05T02:10:00Z"),
+    })).toThrow("Neon branch create plan expired");
     expect(() => buildNeonBranchCreatePlan({
       request: { ...productionPlanRequest, sourceEnvironment: "development" },
       inventory: branchInventory,
@@ -424,6 +450,12 @@ describe("provider credential Tauri adapter", () => {
       target: { copiesData: false, createsCompute: false },
     });
     expect(schemaOnlyPlan.warningCodes).toEqual(["NEON_SCHEMA_ONLY_HAS_NO_DATA"]);
+    expect(() => revalidateNeonBranchCreatePlan({
+      plan: schemaOnlyPlan,
+      inventory: branchInventory,
+      workspaceProductionReference: true,
+      now: new Date("2026-08-05T02:01:00Z"),
+    })).toThrow("Neon production source cannot be downgraded");
     expect(() => parseNeonBranchCreatePlanRequest({
       ...productionPlanRequest,
       sourcePoint: { kind: "lsn", value: "not-an-lsn" },
@@ -603,12 +635,22 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchesRouteSource).not.toContain("export async function POST");
     expect(neonBranchOperationsRouteSource).toContain("boundedJsonBody");
     expect(neonBranchOperationsRouteSource).toContain("recordProviderOperationPlan");
+    expect(neonBranchOperationsRouteSource).toContain("revalidateNeonBranchCreatePlan");
+    expect(neonBranchOperationsRouteSource).toContain("decideProviderOperation");
     expect(neonBranchOperationsRouteSource).not.toContain("createNeonBranch");
     expect(providerOperationStoreSource).toContain("providerMutationAuthoritySql");
     expect(providerOperationStoreSource).toContain(
       'PROVIDER_OPERATION_DURABLE_MUTATION_ENTRYPOINTS = Object.freeze([',
     );
     expect(providerOperationStoreSource).toContain('"recordProviderOperationPlan"');
+    expect(providerOperationStoreSource).toContain('"decideProviderOperation"');
+    expect(providerOperationStoreSource).toContain("requester_session");
+    expect(providerOperationStoreSource).toContain(
+      'operation."approval_policy" <> \'separate_admin\'',
+    );
+    expect(providerOperationStoreSource).toContain(
+      'operation."plan_expires_at" > now()',
+    );
     expect(providerOperationStoreSource).toContain(
       'ON CONFLICT ("organization_id", "idempotency_key") DO UPDATE',
     );
