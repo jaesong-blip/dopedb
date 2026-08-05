@@ -227,12 +227,16 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (input.allowWrites && !writeAvailable) {
     return jsonError("This managed provider connection has no write credential", 409);
   }
+  const normalized = {
+    ...input,
+    provider: (existing.credentialMode === "managed" ? existing.provider : input.provider) as typeof input.provider,
+  };
   if (expectedRevision !== existing.contentRevision) {
     const conflictId = await conflictConnectionCandidate({
       organizationId: workspaceId,
       connectionId,
       expectedRevision,
-      payload: connectionVersionPayload(input),
+      payload: connectionVersionPayload(normalized),
       authority,
     }).catch(() => null);
     if (!conflictId) return jsonError("Connection changed concurrently. Retry the update.", 409);
@@ -269,10 +273,6 @@ export async function PATCH(request: Request, context: RouteContext) {
     await abandonClaim(claim);
     return jsonError("Active database access could not be revoked. Retry the update.", 409);
   }
-  const normalized = {
-    ...input,
-    provider: (existing.credentialMode === "managed" ? existing.provider : input.provider) as typeof input.provider,
-  };
   const updated = await commitConnectionMutation({
     organizationId: workspaceId, connectionId, expectedContentRevision: existing.contentRevision,
     expectedAuthorityRevision: expectedClaimRevision, claimId: claim.claimId, authority,

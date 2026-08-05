@@ -1,8 +1,8 @@
 # Workspace Collaboration Roadmap
 
 Status: Milestone 0 implemented; Milestone 1 identity/RBAC slice implemented;
-Milestone 2 shared-connection core plus PlanetScale, Neon, and GCP Cloud SQL
-managed-access adapters implemented; Milestone 4 shared-dashboard definition sync and
+Milestone 2 shared-connection core, explicit conflict recovery, plus PlanetScale, Neon,
+and GCP Cloud SQL managed-access adapters implemented; Milestone 4 shared-dashboard definition sync and
 revision core implemented, with packaged two-member verification still open. General
 provider inventory, full sync, KMS wrapping, backup, workspace-deletion, and
 per-connection-grant exit criteria stay open below.
@@ -425,8 +425,9 @@ before device approval and invitation acceptance so an already active browser id
 silently approve the wrong account.
 
 This snapshot is the shipped identity and administration slice, not completion of every
-Milestone 1 exit criterion. Durable bidirectional resource sync, optimistic conflict UI,
-per-workspace envelope encryption, backup/restore, and workspace deletion remain future work.
+Milestone 1 exit criterion. Durable bidirectional resource sync, per-workspace envelope
+encryption, backup/restore, and workspace deletion remain future work. Shared-connection
+optimistic conflicts now have an explicit recovery surface under Milestone 2.
 
 Deliverables:
 
@@ -496,6 +497,16 @@ shortly before provider expiry. GCP Cloud SQL pools use the pinned official Auth
 as a loopback-only desktop transport, so Public IP does not require a separate
 Authorized Networks entry for every workspace member. The workspace service still
 never proxies database query traffic.
+
+A stale connection mutation preserves both the exact server revision and the candidate
+revision as immutable secret-free records. Members with the connection's explicit manage
+grant review the current and candidate templates side by side in the web console and either
+retain the current revision or apply the candidate. Candidate application goes through the
+ordinary revision-fenced update/delete path, including managed-lease revocation and provider
+safety checks, before an append-only resolution fact is recorded. Replaying a lost response
+recognizes the already selected revision rather than executing the mutation twice. An
+isolated PostgreSQL harness verifies tenant isolation, both decisions, replay idempotency,
+and resolution immutability.
 
 This core deliberately shares endpoint templates plus one redacted provider resource
 selector. It does not yet satisfy the later per-connection grant,

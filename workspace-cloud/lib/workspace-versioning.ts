@@ -2,7 +2,10 @@
 // parsing. Route handlers persist these immutable values; this module never touches DB.
 import { createHash } from "node:crypto";
 
-import type { parseSharedConnection } from "./workspace-connections";
+import {
+  parseSharedConnection,
+  type SharedConnectionCredentialMode,
+} from "./workspace-connections";
 
 type ConnectionInput = ReturnType<typeof parseSharedConnection>;
 
@@ -33,6 +36,23 @@ export function connectionVersionPayload(
   deleted = false,
 ): ConnectionVersionPayload {
   return { ...connection, deleted };
+}
+
+export function parseConnectionVersionPayload(
+  value: unknown,
+  options: { credentialMode: SharedConnectionCredentialMode },
+): ConnectionVersionPayload {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Connection version must be an object");
+  }
+  const { deleted, ...connection } = value as Record<string, unknown>;
+  if (typeof deleted !== "boolean") {
+    throw new Error("Connection version deletion state is invalid");
+  }
+  return connectionVersionPayload(
+    parseSharedConnection(connection, options),
+    deleted,
+  );
 }
 
 export function persistedConnectionVersionPayload(

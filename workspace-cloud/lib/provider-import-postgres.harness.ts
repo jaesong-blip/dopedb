@@ -46,6 +46,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         to_regclass('workspace_control.workspace_provider_discovery_receipt') IS NOT NULL
         AND to_regclass('workspace_control.workspace_provider_import_request') IS NOT NULL
         AND to_regclass('workspace_control.workspace_provider_resource') IS NOT NULL
+        AND to_regclass('workspace_control.workspace_resource_conflict_resolution') IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema = 'workspace_control'
@@ -776,6 +777,194 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           process.env.WORKSPACE_CREDENTIAL_KEY = previousCredentialKey;
         }
       }
+
+      const [versionStore, versionContract] = await Promise.all([
+        import("./workspace-versioning-store"),
+        import("./workspace-versioning"),
+      ]);
+      const currentRows = await sql<{
+        name: string;
+        engine: "postgres";
+        provider: "neon";
+        driverId: string | null;
+        host: string;
+        port: number;
+        database: string;
+        sslmode: string;
+        readonlyDefault: boolean;
+        allowWrites: boolean;
+        env: string | null;
+        schemaGroup: string | null;
+        contentRevision: number;
+      }[]>`
+        SELECT "name", "engine", "provider", "driver_id" AS "driverId",
+          "host", "port", "database_name" AS "database", "sslmode",
+          "readonly_default" AS "readonlyDefault", "allow_writes" AS "allowWrites",
+          "environment" AS "env", "schema_group" AS "schemaGroup",
+          "content_revision"::int AS "contentRevision"
+        FROM "workspace_control"."workspace_connection"
+        WHERE "organization_id" = ${organizationId}
+          AND "id" = ${left.connection.id}::uuid
+      `;
+      const currentConnection = currentRows[0];
+      if (!currentConnection || currentConnection.contentRevision !== 2) {
+        throw new Error("Conflict harness requires the switched connection revision");
+      }
+      const { contentRevision: _contentRevision, ...currentTemplate } = currentConnection;
+      const keptCandidate = versionContract.connectionVersionPayload({
+        ...currentTemplate,
+        name: "Harness stale candidate",
+      });
+      const keptConflictId = await versionStore.conflictConnectionCandidate({
+        organizationId,
+        connectionId: left.connection.id,
+        expectedRevision: 1,
+        payload: keptCandidate,
+        authority,
+      });
+      const openKept = await versionStore.listConnectionConflicts({
+        organizationId,
+        membershipId: memberId,
+      });
+      expect(openKept).toHaveLength(1);
+      expect(openKept[0]).toMatchObject({
+        id: keptConflictId,
+        connectionId: left.connection.id,
+        currentMatchesServer: true,
+        currentMatchesCandidate: false,
+        current: { revision: 2 },
+        server: { revision: 2 },
+        candidate: { revision: 1, payload: { name: "Harness stale candidate" } },
+      });
+      await expect(versionStore.listConnectionConflicts({
+        organizationId: otherOrganizationId,
+        membershipId: memberId,
+      })).resolves.toEqual([]);
+      await expect(versionStore.resolveConnectionConflict({
+        organizationId,
+        conflictId: keptConflictId,
+        resolution: "server",
+        authority,
+      })).resolves.toEqual({ resolution: "server", created: true });
+      await expect(versionStore.resolveConnectionConflict({
+        organizationId,
+        conflictId: keptConflictId,
+        resolution: "server",
+        authority,
+      })).resolves.toEqual({ resolution: "server", created: false });
+
+      const appliedCandidate = versionContract.connectionVersionPayload({
+        ...currentTemplate,
+        name: "Harness applied candidate",
+      });
+      const appliedConflictId = await versionStore.conflictConnectionCandidate({
+        organizationId,
+        connectionId: left.connection.id,
+        expectedRevision: 1,
+        payload: appliedCandidate,
+        authority,
+      });
+      const appliedHash = versionContract.canonicalHash(appliedCandidate);
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE "workspace_control"."workspace_connection"
+          SET "name" = ${appliedCandidate.name}, "content_revision" = 3,
+              "updated_at" = now()
+          WHERE "organization_id" = ${organizationId}
+            AND "id" = ${left.connection.id}::uuid
+            AND "content_revision" = 2
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_resource_version"
+            ("organization_id", "resource_type", "resource_id", "revision",
+             "base_revision", "parent_version_id", "branch", "operation",
+             "payload", "payload_hash", "created_by_user_id")
+          SELECT ${organizationId}, 'connection', ${left.connection.id}::uuid, 3, 2,
+            parent."id", 'main', 'update', ${JSON.stringify(appliedCandidate)}::jsonb,
+            ${appliedHash}, ${userId}
+          FROM "workspace_control"."workspace_resource_version" parent
+          WHERE parent."organization_id" = ${organizationId}
+            AND parent."resource_type" = 'connection'
+            AND parent."resource_id" = ${left.connection.id}::uuid
+            AND parent."branch" = 'main' AND parent."revision" = 2
+        `;
+      });
+      await expect(versionStore.resolveConnectionConflict({
+        organizationId,
+        conflictId: appliedConflictId,
+        resolution: "candidate",
+        authority,
+      })).resolves.toEqual({ resolution: "candidate", created: true });
+      await expect(versionStore.resolveConnectionConflict({
+        organizationId,
+        conflictId: appliedConflictId,
+        resolution: "server",
+        authority,
+      })).resolves.toEqual({ resolution: "candidate", created: false });
+
+      const deleteCandidate = versionContract.connectionVersionPayload({
+        ...currentTemplate,
+        name: "Harness applied candidate",
+      }, true);
+      const deleteConflictId = await versionStore.conflictConnectionCandidate({
+        organizationId,
+        connectionId: left.connection.id,
+        expectedRevision: 2,
+        payload: deleteCandidate,
+        authority,
+        operation: "delete",
+      });
+      const deleteHash = versionContract.canonicalHash(deleteCandidate);
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE "workspace_control"."workspace_connection"
+          SET "deleted_at" = now(), "content_revision" = 4, "updated_at" = now()
+          WHERE "organization_id" = ${organizationId}
+            AND "id" = ${left.connection.id}::uuid
+            AND "content_revision" = 3
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_resource_version"
+            ("organization_id", "resource_type", "resource_id", "revision",
+             "base_revision", "parent_version_id", "branch", "operation",
+             "payload", "payload_hash", "created_by_user_id")
+          SELECT ${organizationId}, 'connection', ${left.connection.id}::uuid, 4, 3,
+            parent."id", 'main', 'delete', ${JSON.stringify(deleteCandidate)}::jsonb,
+            ${deleteHash}, ${userId}
+          FROM "workspace_control"."workspace_resource_version" parent
+          WHERE parent."organization_id" = ${organizationId}
+            AND parent."resource_type" = 'connection'
+            AND parent."resource_id" = ${left.connection.id}::uuid
+            AND parent."branch" = 'main' AND parent."revision" = 3
+        `;
+      });
+      const deleteReview = await versionStore.listConnectionConflicts({
+        organizationId,
+        membershipId: memberId,
+      });
+      expect(deleteReview).toHaveLength(1);
+      expect(deleteReview[0]).toMatchObject({
+        id: deleteConflictId,
+        currentMatchesCandidate: true,
+        current: { revision: 4, operation: "delete" },
+        candidate: { operation: "delete", payload: { deleted: true } },
+      });
+      await expect(versionStore.resolveConnectionConflict({
+        organizationId,
+        conflictId: deleteConflictId,
+        resolution: "candidate",
+        authority,
+      })).resolves.toEqual({ resolution: "candidate", created: true });
+      await expect(versionStore.listConnectionConflicts({
+        organizationId,
+        membershipId: memberId,
+      })).resolves.toEqual([]);
+      await expect(sql`
+        UPDATE "workspace_control"."workspace_resource_conflict_resolution"
+        SET "resolution" = 'dismissed'
+        WHERE "organization_id" = ${organizationId}
+          AND "conflict_id" = ${appliedConflictId}::uuid
+      `).rejects.toThrow(/append-only/);
 
       const leaked = await sql<{ leaked: boolean }[]>`
         SELECT EXISTS (

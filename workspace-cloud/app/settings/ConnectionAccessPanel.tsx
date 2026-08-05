@@ -3,6 +3,7 @@
 // Connection grants are intentionally separate from workspace roles: membership
 // makes a template visible only when a manager grants view, use, or manage.
 import { useCallback, useEffect, useState } from "react";
+import { ControlButton } from "../components/Controls";
 import { useWorkspaceLocale } from "../components/WorkspaceLocale";
 import type { WorkspaceLocale } from "../../lib/workspace-locale";
 import { workspaceMessages } from "../../lib/workspace-messages";
@@ -36,6 +37,108 @@ type MemberGrant = {
   role: string;
   capability: ConnectionCapability | null;
 };
+type ConflictPayload = {
+  name: string;
+  engine: string;
+  provider: string;
+  driverId: string | null;
+  host: string;
+  port: number;
+  database: string;
+  sslmode: string;
+  readonlyDefault: true;
+  allowWrites: boolean;
+  env: string | null;
+  schemaGroup: string | null;
+  deleted: boolean;
+};
+type ConflictVersion = {
+  id: string;
+  revision: number;
+  operation: "create" | "update" | "delete" | "restore";
+  payload: ConflictPayload;
+};
+type ConnectionConflict = {
+  id: string;
+  connectionId: string;
+  connectionName: string;
+  expectedRevision: number;
+  createdAt: string;
+  current: ConflictVersion;
+  server: ConflictVersion;
+  candidate: ConflictVersion;
+  currentMatchesServer: boolean;
+  currentMatchesCandidate: boolean;
+};
+
+function ConflictVersionCard({
+  title,
+  version,
+  comparison,
+  copy,
+}: {
+  title: string;
+  version: ConflictVersion;
+  comparison: ConflictVersion;
+  copy: typeof workspaceMessages.en.connectionAccess;
+}) {
+  const fields: Array<{
+    key: keyof ConflictPayload;
+    label: string;
+    value: (payload: ConflictPayload) => string;
+  }> = [
+    { key: "name", label: copy.conflictFieldName, value: (payload) => payload.name },
+    { key: "engine", label: copy.conflictFieldEngine, value: (payload) => payload.engine },
+    { key: "provider", label: copy.conflictFieldProvider, value: (payload) => payload.provider },
+    { key: "driverId", label: copy.conflictFieldDriver, value: (payload) => payload.driverId || "—" },
+    { key: "host", label: copy.conflictFieldHost, value: (payload) => payload.host },
+    { key: "port", label: copy.conflictFieldPort, value: (payload) => String(payload.port) },
+    { key: "database", label: copy.conflictFieldDatabase, value: (payload) => payload.database || "—" },
+    { key: "sslmode", label: copy.conflictFieldSsl, value: (payload) => payload.sslmode },
+    { key: "env", label: copy.conflictFieldEnvironment, value: (payload) => payload.env || "—" },
+    { key: "schemaGroup", label: copy.conflictFieldSchema, value: (payload) => payload.schemaGroup || "—" },
+    {
+      key: "allowWrites",
+      label: copy.conflictFieldWrites,
+      value: (payload) => payload.allowWrites ? copy.conflictEnabled : copy.conflictDisabled,
+    },
+    {
+      key: "deleted",
+      label: copy.conflictFieldState,
+      value: (payload) => payload.deleted ? copy.conflictDeleted : copy.conflictActive,
+    },
+  ];
+  return (
+    <section className="tw:min-w-0 tw:rounded-surface tw:border tw:border-border tw:bg-surface tw:p-3">
+      <header className="tw:mb-2 tw:flex tw:items-center tw:justify-between tw:gap-3">
+        <strong className="tw:text-xs tw:text-foreground">{title}</strong>
+        <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground">
+          r{version.revision}
+        </span>
+      </header>
+      <dl className="tw:grid tw:gap-px tw:overflow-hidden tw:rounded-control tw:border tw:border-border tw:bg-border">
+        {fields.map((field) => {
+          const value = field.value(version.payload);
+          const changed = value !== field.value(comparison.payload);
+          return (
+            <div
+              className="tw:grid tw:grid-cols-[minmax(84px,0.34fr)_minmax(0,1fr)] tw:gap-2 tw:bg-surface-inset tw:px-2.5 tw:py-1.5"
+              key={field.key}
+            >
+              <dt className="tw:text-2xs tw:text-muted-foreground">{field.label}</dt>
+              <dd
+                className="tw:m-0 tw:min-w-0 tw:break-words tw:font-mono tw:text-2xs tw:text-foreground tw:data-[changed=true]:font-semibold tw:data-[changed=true]:text-primary"
+                data-changed={changed}
+              >
+                {value}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </section>
+  );
+}
 
 async function responseError(
   response: Response | null,
@@ -53,12 +156,32 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
   const copy = workspaceMessages[locale].connectionAccess;
   const common = workspaceMessages[locale].common;
   const [connections, setConnections] = useState<SharedConnection[]>([]);
+  const [conflicts, setConflicts] = useState<ConnectionConflict[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [grants, setGrants] = useState<MemberGrant[]>([]);
   const [actorMemberId, setActorMemberId] = useState("");
   const [loading, setLoading] = useState(true);
   const [mutatingId, setMutatingId] = useState("");
   const [error, setError] = useState("");
+
+  const loadConflicts = useCallback(async (signal?: AbortSignal) => {
+    const response = await fetch(
+      `/api/v1/workspaces/${workspaceId}/connections/conflicts`,
+      { cache: "no-store", signal },
+    ).catch(() => null);
+    if (signal?.aborted) return;
+    if (!response?.ok) {
+      setError(await responseError(response, copy.loadConflictsError, locale));
+      return;
+    }
+    const body = await response.json().catch(() => null);
+    if (!Array.isArray(body?.conflicts)) {
+      setError(copy.conflictsShapeError);
+      return;
+    }
+    setConflicts(body.conflicts as ConnectionConflict[]);
+    setError("");
+  }, [copy, locale, workspaceId]);
 
   const loadConnections = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -122,6 +245,12 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
     void loadConnections(controller.signal);
     return () => controller.abort();
   }, [loadConnections]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadConflicts(controller.signal);
+    return () => controller.abort();
+  }, [loadConflicts]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -198,9 +327,88 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
       ).catch(() => null);
       if (!response?.ok) {
         setError(await responseError(response, copy.changeWriteError, locale));
+        await loadConflicts();
         return;
       }
-      await loadConnections();
+      await Promise.all([loadConnections(), loadConflicts()]);
+    } finally {
+      setMutatingId("");
+    }
+  }
+
+  async function postConflictResolution(
+    conflictId: string,
+    resolution: "server" | "candidate" | "dismissed",
+  ) {
+    return fetch(
+      `/api/v1/workspaces/${workspaceId}/connections/conflicts/${conflictId}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ resolution }),
+      },
+    ).catch(() => null);
+  }
+
+  async function keepCurrentConflict(conflict: ConnectionConflict) {
+    if (mutatingId) return;
+    setMutatingId(`conflict:${conflict.id}`);
+    setError("");
+    try {
+      const response = await postConflictResolution(
+        conflict.id,
+        conflict.currentMatchesServer ? "server" : "dismissed",
+      );
+      if (!response?.ok) {
+        setError(await responseError(response, copy.resolveConflictError, locale));
+        return;
+      }
+      await loadConflicts();
+    } finally {
+      setMutatingId("");
+    }
+  }
+
+  async function applyConflictCandidate(conflict: ConnectionConflict) {
+    if (mutatingId) return;
+    if (
+      conflict.candidate.payload.deleted
+      && !window.confirm(copy.applyDeleteConfirmation)
+    ) return;
+    setMutatingId(`conflict:${conflict.id}`);
+    setError("");
+    try {
+      if (!conflict.currentMatchesCandidate) {
+        const { deleted, ...payload } = conflict.candidate.payload;
+        const mutation = await fetch(
+          `/api/v1/workspaces/${workspaceId}/connections/${conflict.connectionId}`,
+          deleted
+            ? {
+                method: "DELETE",
+                headers: { "if-match": `"${conflict.current.revision}"` },
+              }
+            : {
+                method: "PATCH",
+                headers: {
+                  "content-type": "application/json",
+                  "if-match": `"${conflict.current.revision}"`,
+                },
+                body: JSON.stringify(payload),
+              },
+        ).catch(() => null);
+        if (!mutation?.ok) {
+          setError(await responseError(mutation, copy.applyConflictError, locale));
+          await loadConflicts();
+          return;
+        }
+      }
+      const resolution = await postConflictResolution(conflict.id, "candidate");
+      if (!resolution?.ok) {
+        setError(await responseError(resolution, copy.resolveConflictError, locale));
+        await loadConflicts();
+        return;
+      }
+      await Promise.all([loadConnections(), loadConflicts()]);
     } finally {
       setMutatingId("");
     }
@@ -221,6 +429,88 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
           {copy.proof}
         </span>
       </header>
+
+      {conflicts.length > 0 ? (
+        <section className="tw:grid tw:gap-3 tw:rounded-surface tw:border tw:border-warning/45 tw:bg-warning/5 tw:p-3.5">
+          <header className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[640px]:grid tw:max-[640px]:justify-stretch">
+            <div className="tw:grid tw:gap-1">
+              <strong className="tw:text-ui tw:text-foreground">
+                {copy.conflictsTitle}
+              </strong>
+              <small className="tw:text-xs tw:leading-body tw:text-muted-foreground">
+                {copy.conflictsDescription}
+              </small>
+            </div>
+            <span className="tw:shrink-0 tw:rounded-full tw:border tw:border-warning/45 tw:px-2 tw:py-1 tw:font-mono tw:text-2xs tw:text-warning">
+              {conflicts.length} {copy.conflictsOpen}
+            </span>
+          </header>
+          <div className="tw:grid tw:gap-3">
+            {conflicts.map((conflict) => {
+              const busy = mutatingId === `conflict:${conflict.id}`;
+              return (
+                <article
+                  className="tw:grid tw:gap-3 tw:rounded-surface tw:border tw:border-border tw:bg-surface-inset tw:p-3.5"
+                  key={conflict.id}
+                >
+                  <header className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[640px]:grid">
+                    <div className="tw:grid tw:min-w-0 tw:gap-0.5">
+                      <strong className="tw:truncate tw:text-xs tw:text-foreground">
+                        {conflict.connectionName}
+                      </strong>
+                      <small className="tw:font-mono tw:text-2xs tw:text-muted-foreground">
+                        {copy.conflictExpected} r{conflict.expectedRevision}
+                        {" · "}{copy.conflictServerAtDetection} r{conflict.server.revision}
+                        {" · "}<time dateTime={conflict.createdAt}>
+                          {conflict.createdAt.slice(0, 16).replace("T", " ")} UTC
+                        </time>
+                      </small>
+                    </div>
+                    {!conflict.currentMatchesServer ? (
+                      <span className="tw:rounded-full tw:border tw:border-warning/45 tw:bg-warning/10 tw:px-2 tw:py-1 tw:text-2xs tw:font-medium tw:text-warning">
+                        {copy.conflictChangedAgain}
+                      </span>
+                    ) : null}
+                  </header>
+                  <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:max-[760px]:grid-cols-1">
+                    <ConflictVersionCard
+                      title={copy.conflictCurrentVersion}
+                      version={conflict.current}
+                      comparison={conflict.candidate}
+                      copy={copy}
+                    />
+                    <ConflictVersionCard
+                      title={copy.conflictCandidateVersion}
+                      version={conflict.candidate}
+                      comparison={conflict.current}
+                      copy={copy}
+                    />
+                  </div>
+                  <footer className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2">
+                    <ControlButton
+                      disabled={mutatingId !== ""}
+                      onClick={() => void keepCurrentConflict(conflict)}
+                    >
+                      {busy ? copy.resolvingConflict : copy.keepCurrentVersion}
+                    </ControlButton>
+                    <ControlButton
+                      disabled={mutatingId !== ""}
+                      onClick={() => void applyConflictCandidate(conflict)}
+                      tone="primary"
+                    >
+                      {busy
+                        ? copy.resolvingConflict
+                        : conflict.candidate.payload.deleted
+                          ? copy.applyCandidateDelete
+                          : copy.applyCandidateVersion}
+                    </ControlButton>
+                  </footer>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <label className="tw:grid tw:gap-1">
         <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground tw:uppercase">

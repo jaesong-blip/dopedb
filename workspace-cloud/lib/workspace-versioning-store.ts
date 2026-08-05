@@ -11,11 +11,13 @@ import {
   workspaceConnection,
   workspaceConnectionGrant,
   workspaceResourceConflict,
+  workspaceResourceConflictResolution,
   workspaceResourceVersion,
 } from "./schema";
 import {
   canonicalHash,
   connectionVersionPayload,
+  parseConnectionVersionPayload,
   type ConnectionVersionPayload,
 } from "./workspace-versioning";
 import type { WorkspaceMetadataSnapshot } from "./workspace-backup-core";
@@ -107,7 +109,7 @@ export async function conflictConnectionCandidate({
          "redacted_summary", "request_id")
       SELECT ${organizationId}, ${authority.userId}, 'connection.conflict.recorded',
         'connection_conflict', conflict."id"::text,
-        jsonb_build_object('expectedRevision', ${expectedRevision},
+        jsonb_build_object('expectedRevision', ${expectedRevision}::bigint,
           'serverRevision', server_version."revision"), ${crypto.randomUUID()}::uuid
       FROM conflict JOIN server_version ON TRUE
     ) SELECT conflict."id"::text AS "conflictId" FROM conflict
@@ -116,6 +118,283 @@ export async function conflictConnectionCandidate({
     throw new Error("Missing immutable connection version");
   }
   return conflictId;
+}
+
+export type ConnectionConflictVersion = {
+  id: string;
+  revision: number;
+  operation: "create" | "update" | "delete" | "restore";
+  payload: ConnectionVersionPayload;
+};
+
+export type ConnectionConflictReview = {
+  id: string;
+  connectionId: string;
+  connectionName: string;
+  expectedRevision: number;
+  createdAt: string;
+  current: ConnectionConflictVersion;
+  server: ConnectionConflictVersion;
+  candidate: ConnectionConflictVersion;
+  currentMatchesServer: boolean;
+  currentMatchesCandidate: boolean;
+};
+
+type RawConflictReview = Record<string, unknown>;
+
+function conflictVersion(
+  row: RawConflictReview,
+  prefix: "current" | "server" | "candidate",
+  credentialMode: "managed" | "member_local",
+): ConnectionConflictVersion {
+  const id = row[`${prefix}Id`];
+  const revision = safeNumber(row[`${prefix}Revision`]);
+  const operation = row[`${prefix}Operation`];
+  const payload = parseConnectionVersionPayload(row[`${prefix}Payload`], {
+    credentialMode,
+  });
+  const payloadHash = row[`${prefix}PayloadHash`];
+  if (
+    typeof id !== "string"
+    || revision === null
+    || !["create", "update", "delete", "restore"].includes(String(operation))
+    || typeof payloadHash !== "string"
+    || canonicalHash(payload) !== payloadHash
+  ) {
+    throw new Error("Invalid immutable connection conflict version");
+  }
+  return {
+    id,
+    revision,
+    operation: operation as ConnectionConflictVersion["operation"],
+    payload,
+  };
+}
+
+export async function listConnectionConflicts({
+  organizationId,
+  membershipId,
+}: {
+  organizationId: string;
+  membershipId: string;
+}): Promise<ConnectionConflictReview[]> {
+  const result = await db.execute<RawConflictReview>(sql`
+    SELECT conflict."id"::text AS "id",
+      conflict."resource_id"::text AS "connectionId",
+      conflict."expected_revision" AS "expectedRevision",
+      conflict."created_at" AS "createdAt",
+      connection."name" AS "connectionName",
+      connection."credential_mode" AS "credentialMode",
+      current_version."id"::text AS "currentId",
+      current_version."revision" AS "currentRevision",
+      current_version."operation" AS "currentOperation",
+      current_version."payload" AS "currentPayload",
+      current_version."payload_hash" AS "currentPayloadHash",
+      server_version."id"::text AS "serverId",
+      server_version."revision" AS "serverRevision",
+      server_version."operation" AS "serverOperation",
+      server_version."payload" AS "serverPayload",
+      server_version."payload_hash" AS "serverPayloadHash",
+      candidate_version."id"::text AS "candidateId",
+      candidate_version."revision" AS "candidateRevision",
+      candidate_version."operation" AS "candidateOperation",
+      candidate_version."payload" AS "candidatePayload",
+      candidate_version."payload_hash" AS "candidatePayloadHash"
+    FROM ${workspaceResourceConflict} conflict
+    JOIN ${workspaceConnection} connection
+      ON connection."organization_id" = conflict."organization_id"
+      AND connection."id" = conflict."resource_id"
+    JOIN ${workspaceConnectionGrant} manager_grant
+      ON manager_grant."organization_id" = conflict."organization_id"
+      AND manager_grant."connection_id" = conflict."resource_id"
+      AND manager_grant."member_id" = ${membershipId}
+      AND manager_grant."capability" = 'manage'
+    JOIN ${workspaceResourceVersion} current_version
+      ON current_version."organization_id" = conflict."organization_id"
+      AND current_version."resource_type" = 'connection'
+      AND current_version."resource_id" = conflict."resource_id"
+      AND current_version."branch" = 'main'
+      AND current_version."revision" = connection."content_revision"
+    JOIN ${workspaceResourceVersion} server_version
+      ON server_version."organization_id" = conflict."organization_id"
+      AND server_version."id" = conflict."server_version_id"
+    JOIN ${workspaceResourceVersion} candidate_version
+      ON candidate_version."organization_id" = conflict."organization_id"
+      AND candidate_version."id" = conflict."candidate_version_id"
+    LEFT JOIN ${workspaceResourceConflictResolution} resolution
+      ON resolution."organization_id" = conflict."organization_id"
+      AND resolution."conflict_id" = conflict."id"
+    WHERE conflict."organization_id" = ${organizationId}
+      AND conflict."resource_type" = 'connection'
+      AND resolution."id" IS NULL
+    ORDER BY conflict."created_at" DESC, conflict."id" DESC
+    LIMIT 100
+  `);
+  return result.rows.map((row) => {
+    const id = row.id;
+    const connectionId = row.connectionId;
+    const connectionName = row.connectionName;
+    const expectedRevision = safeNumber(row.expectedRevision);
+    const credentialMode = row.credentialMode;
+    const createdAt = row.createdAt instanceof Date
+      ? row.createdAt
+      : new Date(String(row.createdAt));
+    if (
+      typeof id !== "string"
+      || typeof connectionId !== "string"
+      || typeof connectionName !== "string"
+      || expectedRevision === null
+      || (credentialMode !== "managed" && credentialMode !== "member_local")
+      || Number.isNaN(createdAt.valueOf())
+    ) {
+      throw new Error("Invalid immutable connection conflict");
+    }
+    const current = conflictVersion(row, "current", credentialMode);
+    const server = conflictVersion(row, "server", credentialMode);
+    const candidate = conflictVersion(row, "candidate", credentialMode);
+    return {
+      id,
+      connectionId,
+      connectionName,
+      expectedRevision,
+      createdAt: createdAt.toISOString(),
+      current,
+      server,
+      candidate,
+      currentMatchesServer: current.id === server.id,
+      currentMatchesCandidate: (
+        current.operation === "delete" && candidate.operation === "delete"
+      ) || canonicalHash(current.payload) === canonicalHash(candidate.payload),
+    };
+  });
+}
+
+export type ConnectionConflictResolution = "server" | "candidate" | "dismissed";
+
+export async function resolveConnectionConflict({
+  organizationId,
+  conflictId,
+  resolution,
+  authority,
+}: {
+  organizationId: string;
+  conflictId: string;
+  resolution: ConnectionConflictResolution;
+  authority: MutationAuthority;
+}): Promise<{ resolution: ConnectionConflictResolution; created: boolean } | null> {
+  const resolutionId = crypto.randomUUID();
+  const requestId = crypto.randomUUID();
+  const result = await db.execute<{ resolution: string; created: boolean }>(sql`
+    WITH authority_lock AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtextextended(${revocationGateLockKey({
+        kind: "member", organizationId, memberId: authority.membershipId, userId: authority.userId,
+      })}, 0))
+    ), authority AS MATERIALIZED (
+      SELECT member."id" FROM "workspace_control"."session" session
+      JOIN "workspace_control"."member" member
+        ON member."id" = ${authority.membershipId}
+        AND member."organization_id" = ${organizationId}
+        AND member."user_id" = ${authority.userId}
+      JOIN authority_lock ON TRUE
+      WHERE session."id" = ${authority.sessionId}
+        AND session."user_id" = ${authority.userId}
+        AND session."expires_at" > now()
+        AND member."role" = ${authority.role}
+        AND member."revocation_pending_at" IS NULL
+        AND member."revocation_claim_id" IS NULL
+      FOR UPDATE OF session, member
+    ), conflict_row AS MATERIALIZED (
+      SELECT conflict."id", conflict."resource_id", conflict."server_version_id",
+        conflict."candidate_version_id"
+      FROM ${workspaceResourceConflict} conflict
+      JOIN ${workspaceConnectionGrant} manager_grant
+        ON manager_grant."organization_id" = conflict."organization_id"
+        AND manager_grant."connection_id" = conflict."resource_id"
+        AND manager_grant."member_id" = ${authority.membershipId}
+        AND manager_grant."capability" = 'manage'
+      JOIN authority ON TRUE
+      WHERE conflict."organization_id" = ${organizationId}
+        AND conflict."id" = ${conflictId}::uuid
+        AND conflict."resource_type" = 'connection'
+      FOR UPDATE OF conflict, manager_grant
+    ), versions AS MATERIALIZED (
+      SELECT conflict_row."id" AS "conflict_id", current_version."id" AS "current_id",
+        current_version."revision" AS "current_revision",
+        current_version."payload_hash" AS "current_hash",
+        current_version."operation" AS "current_operation",
+        server_version."id" AS "server_id", server_version."revision" AS "server_revision",
+        candidate_version."payload_hash" AS "candidate_hash",
+        candidate_version."operation" AS "candidate_operation"
+      FROM conflict_row
+      JOIN ${workspaceConnection} connection
+        ON connection."organization_id" = ${organizationId}
+        AND connection."id" = conflict_row."resource_id"
+      JOIN ${workspaceResourceVersion} current_version
+        ON current_version."organization_id" = ${organizationId}
+        AND current_version."resource_type" = 'connection'
+        AND current_version."resource_id" = connection."id"
+        AND current_version."branch" = 'main'
+        AND current_version."revision" = connection."content_revision"
+      JOIN ${workspaceResourceVersion} server_version
+        ON server_version."organization_id" = ${organizationId}
+        AND server_version."id" = conflict_row."server_version_id"
+      JOIN ${workspaceResourceVersion} candidate_version
+        ON candidate_version."organization_id" = ${organizationId}
+        AND candidate_version."id" = conflict_row."candidate_version_id"
+    ), eligible AS MATERIALIZED (
+      SELECT versions.* FROM versions
+      WHERE CASE ${resolution}::text
+        WHEN 'server' THEN versions."current_id" = versions."server_id"
+        WHEN 'candidate' THEN versions."current_id" <> versions."server_id"
+          AND ((versions."candidate_operation" = 'delete'
+              AND versions."current_operation" = 'delete')
+            OR versions."current_hash" = versions."candidate_hash")
+        WHEN 'dismissed' THEN versions."current_id" <> versions."server_id"
+          AND versions."current_hash" <> versions."candidate_hash"
+        ELSE FALSE
+      END
+    ), existing AS MATERIALIZED (
+      SELECT stored."resolution", stored."resulting_version_id"
+      FROM ${workspaceResourceConflictResolution} stored
+      JOIN conflict_row ON conflict_row."id" = stored."conflict_id"
+      WHERE stored."organization_id" = ${organizationId}
+    ), inserted AS MATERIALIZED (
+      INSERT INTO ${workspaceResourceConflictResolution}
+        ("id", "organization_id", "conflict_id", "resolution",
+         "resulting_version_id", "resolved_by_user_id")
+      SELECT ${resolutionId}::uuid, ${organizationId}, eligible."conflict_id", ${resolution},
+        eligible."current_id", ${authority.userId}
+      FROM eligible
+      WHERE NOT EXISTS (SELECT 1 FROM existing)
+      ON CONFLICT ("organization_id", "conflict_id") DO NOTHING
+      RETURNING "resolution", "resulting_version_id"
+    ), audit AS MATERIALIZED (
+      INSERT INTO ${workspaceAuditEvent}
+        ("organization_id", "actor_user_id", "action", "resource_type", "resource_id",
+         "redacted_summary", "request_id")
+      SELECT ${organizationId}, ${authority.userId}, 'connection.conflict.resolved',
+        'connection_conflict', eligible."conflict_id"::text,
+        jsonb_build_object('resolution', inserted."resolution",
+          'resultingRevision', eligible."current_revision"), ${requestId}::uuid
+      FROM inserted JOIN eligible ON TRUE
+      RETURNING "id"
+    )
+    SELECT inserted."resolution", TRUE AS "created" FROM inserted JOIN audit ON TRUE
+    UNION ALL
+    SELECT existing."resolution", FALSE AS "created" FROM existing
+    WHERE NOT EXISTS (SELECT 1 FROM inserted)
+    LIMIT 1
+  `);
+  const row = result.rows[0];
+  if (
+    !row
+    || !["server", "candidate", "dismissed"].includes(row.resolution)
+    || typeof row.created !== "boolean"
+  ) return null;
+  return {
+    resolution: row.resolution as ConnectionConflictResolution,
+    created: row.created,
+  };
 }
 
 export type StoredConnection = Pick<typeof workspaceConnection.$inferSelect,

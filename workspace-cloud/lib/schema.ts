@@ -1316,6 +1316,46 @@ export const workspaceResourceConflict = workspaceControl.table(
   ],
 );
 
+// Conflict decisions are append-only audit facts. The chosen resulting version
+// is retained alongside the decision so a later main-line change cannot rewrite
+// what the reviewer actually approved.
+export const workspaceResourceConflictResolution = workspaceControl.table(
+  "workspace_resource_conflict_resolution",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    conflictId: uuid("conflict_id").notNull(),
+    resolution: text("resolution").notNull(),
+    resultingVersionId: uuid("resulting_version_id").notNull(),
+    resolvedByUserId: text("resolved_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_resource_conflict_resolution_org_id_idx")
+      .on(table.organizationId, table.id),
+    uniqueIndex("workspace_resource_conflict_resolution_org_conflict_idx")
+      .on(table.organizationId, table.conflictId),
+    foreignKey({
+      columns: [table.organizationId, table.conflictId],
+      foreignColumns: [workspaceResourceConflict.organizationId, workspaceResourceConflict.id],
+      name: "workspace_resource_conflict_resolution_org_conflict_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.resultingVersionId],
+      foreignColumns: [workspaceResourceVersion.organizationId, workspaceResourceVersion.id],
+      name: "workspace_resource_conflict_resolution_org_version_fk",
+    }).onDelete("restrict"),
+    check(
+      "workspace_resource_conflict_resolution_value",
+      sql`${table.resolution} IN ('server', 'candidate', 'dismissed')`,
+    ),
+  ],
+);
+
 // Backup payloads are ciphertext only. Metadata snapshots are immutable after
 // creation; deletion is a retention tombstone and never exposes the envelope.
 export const workspaceMetadataBackup = workspaceControl.table(

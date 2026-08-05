@@ -15,7 +15,7 @@ const forbiddenKeys = new Set([
   "url", "username", "extraParams", "certificate", "privateKey",
 ]);
 
-type SharedConnectionInput = {
+export type SharedConnectionInput = {
   name: string;
   engine: (typeof engines)[number];
   provider: (typeof providers)[number];
@@ -30,7 +30,7 @@ type SharedConnectionInput = {
   schemaGroup: string | null;
 };
 
-type SharedConnectionCredentialMode = "member_local" | "managed";
+export type SharedConnectionCredentialMode = "member_local" | "managed";
 
 function text(value: unknown, max: number, required = false): string | null {
   if (value == null && !required) return null;
