@@ -16,6 +16,7 @@ export interface SkillSetupTargetStatus {
   state: SkillInstallState;
   currentRevision: number;
   installedRevision: number | null;
+  inventoryFingerprint: string;
 }
 
 export interface SkillSetupPlan {
@@ -23,6 +24,18 @@ export interface SkillSetupPlan {
   selection: SkillTarget | "all" | null;
   targets: SkillSetupTargetStatus[];
   attentionTargets: SkillSetupTargetStatus[];
+}
+
+export interface SkillSetupInventorySnapshot {
+  skill: {
+    releaseRevision: number;
+    packageDigest: string;
+  };
+  targets: ReadonlyArray<
+    SkillSetupTargetStatus & {
+      installedPackageDigest: string | null;
+    }
+  >;
 }
 
 const actionableStates = new Set<SkillInstallState>([
@@ -74,4 +87,26 @@ export function buildSkillSetupPlan(
     targets: actionable,
     attentionTargets,
   };
+}
+
+export function hasVerifiedSkillInstallation(
+  status: SkillSetupInventorySnapshot,
+  expectedTargets: readonly SkillTarget[],
+): boolean {
+  const expected = new Set(expectedTargets);
+  if (expected.size !== expectedTargets.length) return false;
+
+  const installed = status.targets.filter((target) =>
+    expected.has(target.target),
+  );
+  return (
+    installed.length === expected.size &&
+    installed.every(
+      (target) =>
+        target.state === "managed_current" &&
+        target.currentRevision === status.skill.releaseRevision &&
+        target.installedRevision === status.skill.releaseRevision &&
+        target.installedPackageDigest === status.skill.packageDigest,
+    )
+  );
 }

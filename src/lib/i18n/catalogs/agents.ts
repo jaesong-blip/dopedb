@@ -169,14 +169,19 @@ export const agentsCatalog = defineCatalog(
     "agentTools.startupHeading": "Choose Agents for DopeDB",
     "agentTools.startupInstallFailed":
       "Could not finish Agent Skill setup: {error}",
-    "agentTools.startupInstallSelected": "Save selection",
+    "agentTools.startupInstallSelected": "Install and continue",
+    "agentTools.startupInstallingSelected": "Installing and verifying…",
     "agentTools.startupLater": "Later",
     "agentTools.startupReviewRequired":
-      "Review the local Skill files for {targets} in Agent Tools before installation.",
+      "Review {targets} in Settings > Agent Tools. DopeDB did not overwrite those local Skill files.",
     "agentTools.startupSafety":
       "Only the provider's local CLI and login are required for AI Chat. The public DopeDB CLI and discovery Skill are optional tools for work outside the built-in ACP session.",
+    "agentTools.startupSaveSelected": "Save selection",
     "agentTools.startupSelectOne": "Select at least one Agent.",
+    "agentTools.startupStatusUnavailable": "Skill status is unavailable",
     "agentTools.startupTitle": "DopeDB Agent setup",
+    "agentTools.startupVerificationFailed":
+      "The installed Skill revision and package digest did not match the current bundle.",
     "agentTools.backupCreated": "Backup preserved at {path}",
     "agentTools.checkAgain": "Check again",
     "agentTools.cliMissing": "CLI not detected",
@@ -448,14 +453,19 @@ export const agentsCatalog = defineCatalog(
     "agentTools.startupHeading": "DopeDB에서 사용할 Agent 선택",
     "agentTools.startupInstallFailed":
       "Agent Skill 설정을 완료하지 못했습니다: {error}",
-    "agentTools.startupInstallSelected": "선택 저장",
+    "agentTools.startupInstallSelected": "설치하고 계속",
+    "agentTools.startupInstallingSelected": "설치 후 검증 중…",
     "agentTools.startupLater": "나중에",
     "agentTools.startupReviewRequired":
-      "{targets}의 로컬 Skill 파일을 설치 전에 Agent Tools에서 검토하세요.",
+      "설정 > 에이전트 도구에서 {targets}을 검토하세요. DopeDB는 해당 로컬 Skill 파일을 덮어쓰지 않았습니다.",
     "agentTools.startupSafety":
       "AI Chat에는 제공자의 로컬 CLI와 로그인만 필요합니다. 공개 DopeDB CLI와 탐색 Skill은 내장 ACP 세션 밖에서 작업할 때 쓰는 선택 도구입니다.",
+    "agentTools.startupSaveSelected": "선택 저장",
     "agentTools.startupSelectOne": "Agent를 하나 이상 선택하세요.",
+    "agentTools.startupStatusUnavailable": "Skill 상태를 확인할 수 없음",
     "agentTools.startupTitle": "DopeDB Agent 설정",
+    "agentTools.startupVerificationFailed":
+      "설치된 Skill 리비전과 패키지 다이제스트가 현재 번들과 일치하지 않습니다.",
     "agentTools.backupCreated": "기존 파일을 {path}에 보존했습니다.",
     "agentTools.checkAgain": "다시 확인",
     "agentTools.cliMissing": "CLI를 찾지 못함",

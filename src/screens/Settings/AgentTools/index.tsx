@@ -13,7 +13,6 @@ import {
 import {
   errMessage,
   type SkillConflictKind,
-  type SkillInstallState,
   type SkillMutationReceipt,
   type SkillStatusReason,
   type SkillTargetExpectation,
@@ -32,21 +31,12 @@ import {
 import { useI18n, type I18nKey } from "../../../lib/i18n";
 import { buildSkillSetupPlan } from "../../../features/skills/setupPolicy";
 import {
-  StatusBadge,
-  type StatusTone,
-} from "../../../design-system/components/Status";
+  skillStateLabel,
+  skillStateTone,
+} from "../../../features/skills/presentation";
+import { StatusBadge } from "../../../design-system/components/Status";
 
 type Mutation = "repair" | "remove";
-
-const stateLabel: Record<SkillInstallState, I18nKey> = {
-  missing: "agentTools.stateMissing",
-  managed_current: "agentTools.stateManagedCurrent",
-  managed_older: "agentTools.stateManagedOlder",
-  user_modified: "agentTools.stateUserModified",
-  newer_known: "agentTools.stateNewerKnown",
-  unknown_conflict: "agentTools.stateUnknownConflict",
-  invalid: "agentTools.stateInvalid",
-};
 
 const conflictLabel: Record<SkillConflictKind, I18nKey> = {
   invalid_provenance: "agentTools.conflictInvalidProvenance",
@@ -89,14 +79,6 @@ const reasonLabel: Record<SkillStatusReason, I18nKey> = {
   unmanaged_files: "agentTools.reasonUnmanagedFiles",
   unsafe_path_component: "agentTools.reasonUnsafePathComponent",
 };
-
-function skillStateTone(state: SkillInstallState): StatusTone {
-  if (state === "managed_current") return "success";
-  if (state === "missing" || state === "managed_older") {
-    return "warning";
-  }
-  return "danger";
-}
 
 export default function AgentTools() {
   const { t } = useI18n();
@@ -314,7 +296,7 @@ export default function AgentTools() {
                         {target.displayName}
                       </h3>
                       <StatusBadge tone={skillStateTone(target.state)}>
-                        {t(stateLabel[target.state])}
+                        {t(skillStateLabel[target.state])}
                       </StatusBadge>
                     </div>
                     <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:text-ui tw:text-muted-foreground tw:@max-[520px]:justify-start">

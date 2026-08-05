@@ -6,6 +6,7 @@ import type {
 } from "../../ipc/generated/protocol-contracts";
 import {
   buildSkillSetupPlan,
+  hasVerifiedSkillInstallation,
   type SkillSetupTargetStatus,
 } from "./setupPolicy";
 
@@ -29,6 +30,7 @@ function target(
     state,
     currentRevision: 12,
     installedRevision: state === "missing" ? null : 11,
+    inventoryFingerprint: `${id}:${state}`,
   };
 }
 
@@ -103,5 +105,37 @@ describe("buildSkillSetupPlan", () => {
     expect(plan.attentionTargets.map((item) => item.target)).toEqual([
       "codex",
     ]);
+
+    const verified = {
+      skill: { releaseRevision: 12, packageDigest: "sha256:current" },
+      targets: [
+        {
+          ...target("codex", "managed_current"),
+          installedRevision: 12,
+          installedPackageDigest: "sha256:current",
+        },
+        {
+          ...target("claude-code", "managed_current"),
+          installedRevision: 12,
+          installedPackageDigest: "sha256:current",
+        },
+      ],
+    };
+    expect(
+      hasVerifiedSkillInstallation(verified, ["codex", "claude-code"]),
+    ).toBe(true);
+    expect(
+      hasVerifiedSkillInstallation(
+        {
+          ...verified,
+          targets: verified.targets.map((item) =>
+            item.target === "codex"
+              ? { ...item, installedPackageDigest: "sha256:changed" }
+              : item,
+          ),
+        },
+        ["codex", "claude-code"],
+      ),
+    ).toBe(false);
   });
 });
