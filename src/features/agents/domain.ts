@@ -113,6 +113,11 @@ export type AcpSessionEvent = AcpEventBase &
         options: AcpPermissionOption[];
       }
     | {
+        type: "permissionResponse";
+        requestId: string;
+        optionId: string | null;
+      }
+    | {
         type: "turnEnd";
         stopReason: string;
       }

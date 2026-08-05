@@ -162,6 +162,10 @@ settings, and back up edited client files. Retired app-owned bearer metadata is 
 without copying the secret into a backup. The retired external MCP configuration remains
 unsupported; AI Chat instead supplies its bounded stdio tool only inside each official
 ACP session and stores a bounded local transcript for explicit history/resume.
+Live message chunks are projected once per animation frame and persisted by an ordered
+session worker in bounded batches. Permission decisions, errors, and turn boundaries close
+the current batch immediately. Both in-memory and SQLite replay are capped by event count
+and aggregate bytes, so reconnect cannot grow the renderer or local database without bound.
 
 ## Safety Model
 

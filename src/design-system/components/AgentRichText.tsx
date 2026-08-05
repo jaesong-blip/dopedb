@@ -1,11 +1,13 @@
-// Canonical ACP message renderer. Markdown parsing stays synchronous during a
-// stream, while heavyweight syntax and diagram renderers load only for complete
-// fenced blocks. Remote images and raw HTML never enter the Agent transcript.
+// Canonical ACP message renderer. Incomplete streams append escaped text nodes;
+// Markdown, syntax, and diagram parsing runs once after a durable turn boundary.
+// Remote images and raw HTML never enter the Agent transcript.
 import {
   Fragment,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type MouseEvent,
   type ReactNode,
@@ -16,7 +18,6 @@ import ReactMarkdown, {
 } from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
-import remend from "remend";
 
 import { Icon } from "../../components/Icon";
 import {
@@ -44,23 +45,14 @@ export type AgentRichTextLabels = {
 export function AgentRichText({
   labels,
   onOpenLink,
-  streaming = false,
   text,
 }: {
   labels: AgentRichTextLabels;
   onOpenLink?: (href: string) => void;
-  streaming?: boolean;
   text: string;
 }) {
-  const markdown = useMemo(
-    () =>
-      streaming
-        ? remend(text, { images: false, inlineKatex: false, katex: false })
-        : text,
-    [streaming, text],
-  );
   const components = useMemo(
-    () => createMarkdownComponents(labels, streaming, onOpenLink),
+    () => createMarkdownComponents(labels, false, onOpenLink),
     [
       labels.copied,
       labels.copyCode,
@@ -71,7 +63,6 @@ export function AgentRichText({
       labels.imageOmitted,
       labels.openLink,
       onOpenLink,
-      streaming,
     ],
   );
 
@@ -84,8 +75,51 @@ export function AgentRichText({
         skipHtml
         urlTransform={safeAgentUrl}
       >
-        {markdown}
+        {text}
       </ReactMarkdown>
+    </div>
+  );
+}
+
+/** Append-only renderer for an incomplete ACP response.
+ *
+ * Markdown is parsed once after the response reaches a boundary. While tokens
+ * are arriving, only the new text nodes are appended to the existing DOM.
+ */
+export function AgentStreamingText({
+  chunks,
+  revision,
+}: {
+  chunks: string[];
+  revision: number;
+}) {
+  const paragraphRef = useRef<HTMLParagraphElement>(null);
+  const chunksRef = useRef(chunks);
+  const renderedChunksRef = useRef(0);
+
+  useLayoutEffect(() => {
+    const paragraph = paragraphRef.current;
+    if (!paragraph) return;
+    if (chunksRef.current !== chunks) {
+      paragraph.textContent = "";
+      chunksRef.current = chunks;
+      renderedChunksRef.current = 0;
+    }
+    let appended = "";
+    for (
+      let index = renderedChunksRef.current;
+      index < chunks.length;
+      index += 1
+    ) {
+      appended += chunks[index] ?? "";
+    }
+    if (appended) paragraph.append(document.createTextNode(appended));
+    renderedChunksRef.current = chunks.length;
+  }, [chunks, revision]);
+
+  return (
+    <div className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-3 tw:break-words tw:text-sm tw:leading-body tw:text-foreground">
+      <p ref={paragraphRef} className="tw:m-0 tw:min-w-0 tw:whitespace-pre-wrap" />
     </div>
   );
 }

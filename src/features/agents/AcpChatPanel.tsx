@@ -1,5 +1,6 @@
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -22,7 +23,10 @@ import {
   AgentProviderMark,
   AgentToolCallCard,
 } from "../../design-system/components/Agent";
-import { AgentRichText } from "../../design-system/components/AgentRichText";
+import {
+  AgentRichText,
+  AgentStreamingText,
+} from "../../design-system/components/AgentRichText";
 import { Button } from "../../design-system/components/Button";
 import {
   InlineNotice,
@@ -81,6 +85,13 @@ import {
   setAgentAcpConfigOption,
   startAgentAcpSession,
 } from "./tauriAdapter";
+import {
+  appendAcpConversationEvents,
+  mergeAcpConversationFocus,
+  visibleAcpTranscriptItems,
+  type AcpConversationProjection,
+  type AcpTranscriptItem,
+} from "./transcript";
 
 // Four-byte Unicode remains within the Rust byte limits.
 const MAX_DOCUMENT_CONTEXT_CHARS = 16 * 1024;
@@ -89,46 +100,12 @@ const AGENT_SETUP_URL: Record<AgentProvider, string> = {
   claude: "https://docs.anthropic.com/en/docs/claude-code/getting-started",
   codex: "https://help.openai.com/en/articles/11096431",
 };
+const AUTO_SCROLL_THRESHOLD_PX = 96;
 
-type TranscriptItem =
-  | {
-      kind: "user";
-      key: string;
-      text: string;
-      attachments: string[];
-    }
-  | {
-      kind: "agent" | "thought";
-      key: string;
-      messageId: string | null;
-      text: string;
-    }
-  | {
-      kind: "tool";
-      key: string;
-      toolCallId: string;
-      data: Record<string, unknown>;
-    }
-  | {
-      kind: "permission";
-      key: string;
-      event: Extract<AcpSessionEvent, { type: "permissionRequest" }>;
-    }
-  | {
-      kind: "plan";
-      key: string;
-      data: Record<string, unknown>;
-    }
-  | {
-      kind: "error";
-      key: string;
-      message: string;
-    }
-  | {
-      kind: "turnEnd";
-      key: string;
-      stopReason: string;
-    };
+type PendingAcpSessionChange = {
+  session: AcpSessionSummary;
+  events: AcpSessionEvent[];
+};
 
 export default function AcpChatPanel({
   connection,
@@ -159,9 +136,13 @@ export default function AcpChatPanel({
   const enabledProviders = useEnabledAgentProviders();
   const [sessions, setSessions] = useState<AcpSessionSummary[]>([]);
   const [activeId, setActiveId] = useState<AcpSessionId | null>(null);
-  const [eventsBySession, setEventsBySession] = useState<
-    Record<string, AcpSessionEvent[]>
-  >({});
+  const projectionsRef = useRef(new Map<string, AcpConversationProjection>());
+  const [projectionRevision, setProjectionRevision] = useState(0);
+  const pendingChangesRef = useRef(
+    new Map<string, PendingAcpSessionChange>(),
+  );
+  const pendingChangeFrameRef = useRef<number | null>(null);
+  const pendingChangeTimerRef = useRef<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -178,6 +159,9 @@ export default function AcpChatPanel({
   const [copiedSetupCommand, setCopiedSetupCommand] =
     useState<AgentProvider | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const autoScrollFrameRef = useRef<number | null>(null);
+  const stickToBottomRef = useRef(true);
+  const previousActiveIdRef = useRef<AcpSessionId | null>(null);
   const cliStatusQuery = useQuery({
     ...agentCliDetectionQuery(),
     refetchOnWindowFocus: false,
@@ -195,13 +179,15 @@ export default function AcpChatPanel({
     connectionSessions.find((session) => session.id === activeId) ?? null;
   const activeEventsLoaded =
     active !== null &&
-    Object.prototype.hasOwnProperty.call(eventsBySession, active.id);
-  const events = active ? eventsBySession[active.id] ?? [] : [];
-  const transcript = useMemo(() => projectTranscript(events), [events]);
-  const configOptions = useMemo(
-    () => latestConfigOptions(events),
-    [events],
+    projectionsRef.current.has(active.id);
+  const activeProjection = active
+    ? projectionsRef.current.get(active.id)
+    : undefined;
+  const transcript = useMemo(
+    () => visibleAcpTranscriptItems(activeProjection),
+    [active?.id, projectionRevision],
   );
+  const configOptions = activeProjection?.configOptions ?? [];
   const modelOption = configOptions.find(
     (option) =>
       option.category === "model" &&
@@ -223,10 +209,7 @@ export default function AcpChatPanel({
   const contextLabels = useMemo(() => contextSummary(context), [context]);
   const pendingPermissionId =
     active?.lifecycle === "waitingPermission"
-      ? [...events]
-          .reverse()
-          .find((event) => event.type === "permissionRequest")
-          ?.requestId ?? null
+      ? activeProjection?.pendingPermissionId ?? null
       : null;
   const agentBusy =
     starting ||
@@ -241,14 +224,18 @@ export default function AcpChatPanel({
   const prerequisitesReady = selectedCliReady;
   const dockLayout = compact ? "compact" : overlay ? "overlay" : "docked";
 
-  const upsertSession = useCallback((session: AcpSessionSummary) => {
+  const upsertSessions = useCallback((updates: AcpSessionSummary[]) => {
+    if (updates.length === 0) return;
     setSessions((current) => {
-      const exists = current.some((candidate) => candidate.id === session.id);
-      return exists
-        ? current.map((candidate) =>
-            candidate.id === session.id ? session : candidate
-          )
-        : [...current, session];
+      const byId = new Map(current.map((session) => [session.id, session]));
+      let changed = false;
+      for (const update of updates) {
+        const previous = byId.get(update.id);
+        if (previous && previous.updatedAt > update.updatedAt) continue;
+        if (previous !== update) changed = true;
+        byId.set(update.id, update);
+      }
+      return changed ? [...byId.values()] : current;
     });
   }, []);
 
@@ -256,15 +243,76 @@ export default function AcpChatPanel({
     (focus: {
       session: AcpSessionSummary;
       events: AcpSessionEvent[];
+      replayTruncated: boolean;
     }) => {
-      upsertSession(focus.session);
-      setEventsBySession((current) => ({
-        ...current,
-        [focus.session.id]: dedupeEvents(focus.events),
-      }));
+      upsertSessions([focus.session]);
+      const current = projectionsRef.current.get(focus.session.id);
+      projectionsRef.current.set(
+        focus.session.id,
+        mergeAcpConversationFocus(
+          current,
+          focus.events,
+          focus.replayTruncated,
+        ),
+      );
+      setProjectionRevision((revision) => revision + 1);
       setActiveId(focus.session.id);
     },
-    [upsertSession],
+    [upsertSessions],
+  );
+
+  const flushPendingChanges = useCallback(() => {
+    if (pendingChangeFrameRef.current !== null) {
+      window.cancelAnimationFrame(pendingChangeFrameRef.current);
+    }
+    if (pendingChangeTimerRef.current !== null) {
+      window.clearTimeout(pendingChangeTimerRef.current);
+    }
+    pendingChangeFrameRef.current = null;
+    pendingChangeTimerRef.current = null;
+    const pending = pendingChangesRef.current;
+    pendingChangesRef.current = new Map();
+    if (pending.size === 0) return;
+    upsertSessions([...pending.values()].map((change) => change.session));
+    let projectionChanged = false;
+    for (const [sessionId, change] of pending) {
+      if (change.events.length === 0) continue;
+      const result = appendAcpConversationEvents(
+        projectionsRef.current.get(sessionId),
+        change.events,
+      );
+      projectionsRef.current.set(sessionId, result.projection);
+      projectionChanged ||= result.changed;
+    }
+    if (projectionChanged) {
+      setProjectionRevision((revision) => revision + 1);
+    }
+  }, [upsertSessions]);
+
+  const queueSessionChange = useCallback(
+    (session: AcpSessionSummary, event: AcpSessionEvent | null) => {
+      const pending = pendingChangesRef.current.get(session.id);
+      if (pending) {
+        pending.session = session;
+        if (event) pending.events.push(event);
+      } else {
+        pendingChangesRef.current.set(session.id, {
+          session,
+          events: event ? [event] : [],
+        });
+      }
+      if (pendingChangeFrameRef.current === null) {
+        pendingChangeFrameRef.current = window.requestAnimationFrame(
+          flushPendingChanges,
+        );
+        pendingChangeTimerRef.current = window.setTimeout(
+          flushPendingChanges,
+          50,
+        );
+      }
+      if (uiProjectionBoundary(event)) flushPendingChanges();
+    },
+    [flushPendingChanges],
   );
 
   useEffect(() => {
@@ -277,16 +325,7 @@ export default function AcpChatPanel({
       listAgentAcpSessions(),
       onAgentAcpChanged((change) => {
         if (disposed) return;
-        upsertSession(change.session);
-        if (change.event) {
-          setEventsBySession((current) => ({
-            ...current,
-            [change.session.id]: appendEvent(
-              current[change.session.id] ?? [],
-              change.event!,
-            ),
-          }));
-        }
+        queueSessionChange(change.session, change.event);
         if (
           change.session.connectionId === connection.id &&
           change.session.lifecycle === "starting"
@@ -301,7 +340,7 @@ export default function AcpChatPanel({
           return;
         }
         unlisten = stopListening;
-        setSessions(loaded);
+        upsertSessions(loaded);
         const next = loaded
           .filter((session) => session.connectionId === connection.id)
           .filter((session) => isLiveSession(session.lifecycle))
@@ -317,9 +356,18 @@ export default function AcpChatPanel({
 
     return () => {
       disposed = true;
+      if (pendingChangeFrameRef.current !== null) {
+        window.cancelAnimationFrame(pendingChangeFrameRef.current);
+        pendingChangeFrameRef.current = null;
+      }
+      if (pendingChangeTimerRef.current !== null) {
+        window.clearTimeout(pendingChangeTimerRef.current);
+        pendingChangeTimerRef.current = null;
+      }
+      pendingChangesRef.current.clear();
       unlisten?.();
     };
-  }, [connection.id, t, upsertSession]);
+  }, [connection.id, queueSessionChange, t, upsertSessions]);
 
   useEffect(() => {
     const next =
@@ -345,19 +393,44 @@ export default function AcpChatPanel({
   }, [enabledProviders, selectedProvider]);
 
   useEffect(() => {
-    if (!active || eventsBySession[active.id]) return;
+    if (!active || activeEventsLoaded) return;
     void focusAgentAcpSession(active.id)
       .then(applyFocus)
       .catch((reason) =>
         setError(t("agent.acpLoadFailed", { error: errMessage(reason) }))
       );
-  }, [active, applyFocus, eventsBySession, t]);
+  }, [active?.id, activeEventsLoaded, applyFocus, t]);
 
   useEffect(() => {
+    if (previousActiveIdRef.current !== active?.id) {
+      previousActiveIdRef.current = active?.id ?? null;
+      stickToBottomRef.current = true;
+    }
+    if (!stickToBottomRef.current || autoScrollFrameRef.current !== null) return;
+    autoScrollFrameRef.current = window.requestAnimationFrame(() => {
+      autoScrollFrameRef.current = null;
+      const element = transcriptRef.current;
+      if (!element || !stickToBottomRef.current) return;
+      element.scrollTop = element.scrollHeight;
+    });
+  }, [active?.id, projectionRevision]);
+
+  useEffect(
+    () => () => {
+      if (autoScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(autoScrollFrameRef.current);
+      }
+    },
+    [],
+  );
+
+  const updateAutoScroll = useCallback(() => {
     const element = transcriptRef.current;
     if (!element) return;
-    element.scrollTop = element.scrollHeight;
-  }, [events.length, active?.id]);
+    stickToBottomRef.current =
+      element.scrollHeight - element.clientHeight - element.scrollTop <=
+      AUTO_SCROLL_THRESHOLD_PX;
+  }, []);
 
   async function startSession(provider = selectedProvider) {
     if (starting || !prerequisitesReady) return null;
@@ -513,21 +586,21 @@ export default function AcpChatPanel({
     }
   }
 
-  async function respondPermission(
-    requestId: string,
-    optionId: string | null,
-  ) {
-    if (!active || permissionSubmitting) return;
-    setPermissionSubmitting(requestId);
-    setError(null);
-    try {
-      await respondAgentAcpPermission(active.id, requestId, optionId);
-    } catch (reason) {
-      setError(t("agent.acpPermissionFailed", { error: errMessage(reason) }));
-    } finally {
-      setPermissionSubmitting(null);
-    }
-  }
+  const respondPermission = useCallback(
+    async (requestId: string, optionId: string | null) => {
+      if (!activeId || permissionSubmitting) return;
+      setPermissionSubmitting(requestId);
+      setError(null);
+      try {
+        await respondAgentAcpPermission(activeId, requestId, optionId);
+      } catch (reason) {
+        setError(t("agent.acpPermissionFailed", { error: errMessage(reason) }));
+      } finally {
+        setPermissionSubmitting(null);
+      }
+    },
+    [activeId, permissionSubmitting, t],
+  );
 
   async function cancelTurn() {
     if (!active) return;
@@ -712,6 +785,7 @@ export default function AcpChatPanel({
         ref={transcriptRef}
         className="tw:min-h-0 tw:min-w-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:overscroll-contain tw:bg-background tw:px-6 tw:pt-10 tw:pb-5"
         aria-live="polite"
+        onScroll={updateAutoScroll}
       >
         {loading ||
         cliStatusQuery.isPending ||
@@ -765,6 +839,12 @@ export default function AcpChatPanel({
           </AgentEmpty>
         ) : (
           <div className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-6 tw:overflow-hidden">
+            {activeProjection?.replayTruncated ? (
+              <div className="tw:flex tw:items-center tw:gap-2 tw:text-xs tw:leading-body tw:text-muted-foreground">
+                <Icon name="history" />
+                <span>{t("agent.acpReplayTruncated")}</span>
+              </div>
+            ) : null}
             {transcript.map((item, index) => (
               <Fragment key={item.key}>
                 {showProviderHeading(transcript, index) ? (
@@ -772,6 +852,7 @@ export default function AcpChatPanel({
                 ) : null}
                 <TranscriptItemView
                   item={item}
+                  revision={item.revision}
                   debugDetails={debugDetails}
                   streaming={
                     active.lifecycle === "running" &&
@@ -780,9 +861,7 @@ export default function AcpChatPanel({
                   }
                   pendingPermissionId={pendingPermissionId}
                   permissionSubmitting={permissionSubmitting}
-                  onPermission={(requestId, optionId) =>
-                    void respondPermission(requestId, optionId)
-                  }
+                  onPermission={respondPermission}
                 />
               </Fragment>
             ))}
@@ -1100,7 +1179,7 @@ function ProviderHeading({ provider }: { provider: AgentProvider }) {
   );
 }
 
-function showProviderHeading(items: TranscriptItem[], index: number) {
+function showProviderHeading(items: AcpTranscriptItem[], index: number) {
   const item = items[index];
   if (!item || item.kind === "user" || item.kind === "turnEnd") return false;
   const previous = items[index - 1];
@@ -1128,7 +1207,7 @@ function isLiveSession(lifecycle: AcpSessionLifecycle) {
   );
 }
 
-function TranscriptItemView({
+const TranscriptItemView = memo(function TranscriptItemView({
   item,
   debugDetails,
   streaming,
@@ -1136,7 +1215,8 @@ function TranscriptItemView({
   permissionSubmitting,
   onPermission,
 }: {
-  item: TranscriptItem;
+  item: AcpTranscriptItem;
+  revision: number;
   debugDetails: boolean;
   streaming: boolean;
   pendingPermissionId: string | null;
@@ -1161,21 +1241,27 @@ function TranscriptItemView({
   if (item.kind === "agent") {
     return (
       <article className="tw:max-w-full tw:min-w-0 tw:overflow-hidden">
-        <AgentRichText
-          labels={{
-            copied: t("agent.acpCopied"),
-            copyCode: t("agent.acpCopyCode"),
-            diagram: t("agent.acpDiagram"),
-            diagramError: t("agent.acpDiagramError"),
-            diagramLoading: t("agent.acpDiagramLoading"),
-            diagramSource: t("agent.acpDiagramSource"),
-            imageOmitted: t("agent.acpImageOmitted"),
-            openLink: t("agent.acpOpenLink"),
-          }}
-          onOpenLink={openAgentMessageLink}
-          streaming={streaming}
-          text={item.text}
-        />
+        {streaming ? (
+          <AgentStreamingText
+            chunks={item.chunks}
+            revision={item.revision}
+          />
+        ) : (
+          <AgentRichText
+            labels={{
+              copied: t("agent.acpCopied"),
+              copyCode: t("agent.acpCopyCode"),
+              diagram: t("agent.acpDiagram"),
+              diagramError: t("agent.acpDiagramError"),
+              diagramLoading: t("agent.acpDiagramLoading"),
+              diagramSource: t("agent.acpDiagramSource"),
+              imageOmitted: t("agent.acpImageOmitted"),
+              openLink: t("agent.acpOpenLink"),
+            }}
+            onOpenLink={openAgentMessageLink}
+            text={item.chunks.join("")}
+          />
+        )}
       </article>
     );
   }
@@ -1183,7 +1269,7 @@ function TranscriptItemView({
     if (!debugDetails) {
       return (
         <AgentActivityLine
-          label={progressActivityLabel(item.text, t)}
+          label={progressActivityLabel(item.activityText, t)}
           tone="neutral"
         />
       );
@@ -1194,7 +1280,7 @@ function TranscriptItemView({
           {t("agent.acpThought")}
         </summary>
         <div className="tw:max-h-48 tw:max-w-full tw:overflow-auto tw:break-words tw:pt-2 tw:leading-body tw:whitespace-pre-wrap tw:text-muted-foreground">
-          {item.text}
+          {item.chunks.join("")}
         </div>
       </details>
     );
@@ -1309,7 +1395,7 @@ function TranscriptItemView({
     );
   }
   return null;
-}
+});
 
 function ToolCallCard({
   data,
@@ -1391,92 +1477,6 @@ function PermissionButton({
       {option.name}
     </Button>
   );
-}
-
-function projectTranscript(events: AcpSessionEvent[]): TranscriptItem[] {
-  const items: TranscriptItem[] = [];
-  const toolIndex = new Map<string, number>();
-  for (const event of events) {
-    const key = `${event.sessionId}:${event.sequence}`;
-    if (event.type === "userMessage") {
-      items.push({
-        kind: "user",
-        key,
-        text: event.text,
-        attachments: event.attachments,
-      });
-      continue;
-    }
-    if (event.type === "permissionRequest") {
-      items.push({ kind: "permission", key, event });
-      continue;
-    }
-    if (event.type === "error") {
-      items.push({ kind: "error", key, message: event.message });
-      continue;
-    }
-    if (event.type === "turnEnd") {
-      items.push({ kind: "turnEnd", key, stopReason: event.stopReason });
-      continue;
-    }
-    if (event.type !== "sessionUpdate") continue;
-    const update = event.update;
-    const kind = recordString(update, "sessionUpdate");
-    if (kind === "agent_message_chunk" || kind === "agent_thought_chunk") {
-      const text = contentText(update.content);
-      if (!text) continue;
-      const itemKind = kind === "agent_message_chunk" ? "agent" : "thought";
-      const messageId = recordString(update, "messageId");
-      const previous = items[items.length - 1];
-      if (
-        previous &&
-        previous.kind === itemKind &&
-        (messageId === null || previous.messageId === messageId)
-      ) {
-        previous.text += text;
-      } else {
-        items.push({ kind: itemKind, key, messageId, text });
-      }
-      continue;
-    }
-    if (kind === "tool_call") {
-      const toolCallId = recordString(update, "toolCallId") ?? key;
-      toolIndex.set(toolCallId, items.length);
-      items.push({ kind: "tool", key, toolCallId, data: update });
-      continue;
-    }
-    if (kind === "tool_call_update") {
-      const toolCallId = recordString(update, "toolCallId") ?? key;
-      const index = toolIndex.get(toolCallId);
-      if (index !== undefined && items[index]?.kind === "tool") {
-        const previous = items[index] as Extract<TranscriptItem, { kind: "tool" }>;
-        items[index] = {
-          ...previous,
-          data: { ...previous.data, ...update },
-        };
-      } else {
-        toolIndex.set(toolCallId, items.length);
-        items.push({ kind: "tool", key, toolCallId, data: update });
-      }
-      continue;
-    }
-    if (kind === "plan") {
-      items.push({ kind: "plan", key, data: update });
-    }
-  }
-  return items;
-}
-
-function latestConfigOptions(
-  events: AcpSessionEvent[],
-): AcpSessionConfigOption[] {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.type === "sessionConfiguration") {
-      return Array.isArray(event.configOptions) ? event.configOptions : [];
-    }
-  }
-  return [];
 }
 
 function flattenConfigSelectOptions(option: AcpSessionConfigOption) {
@@ -1592,21 +1592,6 @@ function contextSummary(context: AcpPromptContext) {
   return labels;
 }
 
-function dedupeEvents(events: AcpSessionEvent[]) {
-  return [...new Map(events.map((event) => [event.sequence, event])).values()]
-    .sort((a, b) => a.sequence - b.sequence);
-}
-
-function appendEvent(
-  events: AcpSessionEvent[],
-  event: AcpSessionEvent,
-): AcpSessionEvent[] {
-  if (events.some((candidate) => candidate.sequence === event.sequence)) {
-    return events;
-  }
-  return [...events, event].sort((a, b) => a.sequence - b.sequence);
-}
-
 function recordString(
   value: Record<string, unknown>,
   key: string,
@@ -1620,6 +1605,15 @@ function contentText(value: unknown): string | null {
   return block.type === "text" && typeof block.text === "string"
     ? block.text
     : null;
+}
+
+function uiProjectionBoundary(event: AcpSessionEvent | null) {
+  if (!event) return false;
+  if (event.type !== "sessionUpdate") return true;
+  return ![
+    "agent_message_chunk",
+    "agent_thought_chunk",
+  ].includes(recordString(event.update, "sessionUpdate") ?? "");
 }
 
 function toolContentText(value: unknown): string | null {

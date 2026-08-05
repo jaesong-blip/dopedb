@@ -493,8 +493,9 @@ provider를 disabled option으로 노출하지 않는다.
 
 Agent의 최종 답변과 streaming 답변 본문은
 [`src/design-system/components/AgentRichText.tsx`](components/AgentRichText.tsx)의
-`AgentRichText`를 사용한다. `react-markdown` + `remark-gfm`을 공통 문법으로
-삼고, streaming 중에는 `remend`가 닫히지 않은 Markdown marker만 보정한다.
+`AgentRichText`, `AgentStreamingText`를 사용한다. streaming 중에는 기존 DOM을
+다시 파싱하지 않고 새 chunk만 escaped text node로 append하며, turn boundary 뒤
+`react-markdown` + `remark-gfm`으로 최종 본문을 한 번 렌더링한다.
 raw HTML과 원격 image는 렌더링하지 않고, `rehype-sanitize`를 통과한 외부
 `http(s)`/`mailto` link만 시스템 browser로 연다. 완료된 code fence는
 fine-grained Shiki JavaScript engine과 요청된 grammar만 지연 로드하며 색상은

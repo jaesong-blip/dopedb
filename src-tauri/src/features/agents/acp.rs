@@ -47,6 +47,7 @@ const ACP_CAPABILITY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ACP_START_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_ACTIVE_SESSIONS: usize = 8;
 const MAX_REPLAY_EVENTS: usize = 512;
+const MAX_REPLAY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_EVENT_BYTES: usize = 512 * 1024;
 const MAX_PROMPT_BYTES: usize = 32 * 1024;
 const MAX_DOCUMENT_BYTES: usize = 64 * 1024;
@@ -58,6 +59,9 @@ const MAX_CONFIG_OPTIONS: usize = 64;
 const MAX_CONFIG_OPTION_ID_BYTES: usize = 256;
 const MAX_CONFIG_OPTION_VALUE_BYTES: usize = 1024;
 const EVENT_NAME: &str = "agent-acp:changed";
+const PERSIST_BATCH_DELAY: Duration = Duration::from_millis(40);
+const MAX_PERSIST_BATCH_EVENTS: usize = 64;
+const MAX_PERSIST_BATCH_BYTES: usize = 256 * 1024;
 
 #[derive(Clone)]
 pub(crate) struct AcpRuntime {
@@ -75,7 +79,10 @@ struct AcpSession {
     store: Store,
     persistence: Arc<PersistenceTracker>,
     summary: Mutex<AcpSessionSummary>,
-    events: Mutex<VecDeque<AcpSessionEvent>>,
+    events: Mutex<ReplayBuffer>,
+    persistence_queue: tokio::sync::mpsc::UnboundedSender<PersistenceCommand>,
+    push_order: Mutex<()>,
+    accepting_events: AtomicBool,
     next_sequence: AtomicU64,
     busy: AtomicBool,
     command: Mutex<Option<tokio::sync::mpsc::UnboundedSender<SessionCommand>>>,
@@ -87,6 +94,28 @@ struct AcpSession {
 struct PendingPermission {
     allowed: HashSet<String>,
     response: oneshot::Sender<Option<String>>,
+}
+
+struct ReplayBuffer {
+    events: VecDeque<ReplayEvent>,
+    bytes: usize,
+}
+
+struct ReplayEvent {
+    event: AcpSessionEvent,
+    bytes: usize,
+}
+
+struct PersistenceRequest {
+    summary: AcpSessionSummary,
+    event: AcpSessionEvent,
+    bytes: usize,
+    immediate: bool,
+}
+
+enum PersistenceCommand {
+    Event(PersistenceRequest),
+    Shutdown,
 }
 
 #[derive(Default)]
@@ -348,6 +377,8 @@ impl AcpRuntime {
             self.broker.sessions().revoke(broker_session_id);
             return Err(error);
         }
+        let (persistence_queue, persistence_requests) = tokio::sync::mpsc::unbounded_channel();
+        let replay = ReplayBuffer::from_events(events);
         let session = Arc::new(AcpSession {
             id,
             connection_id,
@@ -356,7 +387,10 @@ impl AcpRuntime {
             store: self.store.clone(),
             persistence: self.persistence.clone(),
             summary: Mutex::new(summary),
-            events: Mutex::new(events),
+            events: Mutex::new(replay),
+            persistence_queue,
+            push_order: Mutex::new(()),
+            accepting_events: AtomicBool::new(true),
             next_sequence: AtomicU64::new(next_sequence),
             busy: AtomicBool::new(false),
             command: Mutex::new(None),
@@ -365,6 +399,17 @@ impl AcpRuntime {
             app,
         });
         self.sessions.insert(id, session.clone());
+
+        let persistence_store = self.store.clone();
+        let persistence_scope = connection.scope.clone();
+        let persistence_tracker = self.persistence.clone();
+        tauri::async_runtime::spawn(run_persistence_worker(
+            id,
+            persistence_store,
+            persistence_scope,
+            persistence_tracker,
+            persistence_requests,
+        ));
 
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         *lock_unpoisoned(&session.command) = Some(command_tx);
@@ -483,6 +528,9 @@ impl AcpRuntime {
 
     pub(crate) fn close(&self, id: AcpSessionId) -> AppResult<()> {
         let session = self.session(id)?;
+        if session.summary().lifecycle == AcpSessionLifecycle::Closed {
+            return Ok(());
+        }
         session.cancel_pending_permissions();
         if let Ok(sender) = session.sender() {
             let _ = sender.send(SessionCommand::Close);
@@ -610,16 +658,17 @@ impl AcpSession {
 
     fn focus(&self, after_sequence: Option<u64>) -> AppResult<AcpSessionFocus> {
         let events = lock_unpoisoned(&self.events);
-        let earliest = events.front().map(|event| event.sequence);
+        let earliest = events.events.front().map(|entry| entry.event.sequence);
         let replay_truncated = after_sequence
             .zip(earliest)
             .is_some_and(|(after, first)| after.saturating_add(1) < first);
         Ok(AcpSessionFocus {
             session: self.summary(),
             events: events
+                .events
                 .iter()
-                .filter(|event| after_sequence.is_none_or(|after| event.sequence > after))
-                .cloned()
+                .filter(|entry| after_sequence.is_none_or(|after| entry.event.sequence > after))
+                .map(|entry| entry.event.clone())
                 .collect(),
             replay_truncated,
         })
@@ -648,55 +697,72 @@ impl AcpSession {
     }
 
     fn set_lifecycle(&self, lifecycle: AcpSessionLifecycle, error: Option<String>) {
+        let _push_order = lock_unpoisoned(&self.push_order);
+        if !self.accepting_events.load(Ordering::SeqCst) {
+            return;
+        }
         {
             let mut summary = lock_unpoisoned(&self.summary);
             summary.lifecycle = lifecycle;
             summary.error = error;
             summary.updated_at = Utc::now();
         }
-        self.push(AcpSessionEventPayload::Status { lifecycle });
+        self.push_unlocked(AcpSessionEventPayload::Status { lifecycle });
+        if matches!(
+            lifecycle,
+            AcpSessionLifecycle::Closed | AcpSessionLifecycle::Failed
+        ) {
+            self.accepting_events.store(false, Ordering::SeqCst);
+            let _ = self.persistence_queue.send(PersistenceCommand::Shutdown);
+        }
     }
 
-    fn push(&self, payload: AcpSessionEventPayload) -> AcpSessionEvent {
+    fn push(&self, payload: AcpSessionEventPayload) {
+        let _push_order = lock_unpoisoned(&self.push_order);
+        if self.accepting_events.load(Ordering::SeqCst) {
+            self.push_unlocked(payload);
+        }
+    }
+
+    fn push_unlocked(&self, payload: AcpSessionEventPayload) {
         let event = AcpSessionEvent {
             session_id: self.id,
             sequence: self.next_sequence.fetch_add(1, Ordering::SeqCst),
             created_at: Utc::now(),
             payload,
         };
+        let event_bytes = replay_event_bytes(&event);
         {
             let mut events = lock_unpoisoned(&self.events);
-            events.push_back(event.clone());
-            while events.len() > MAX_REPLAY_EVENTS {
-                events.pop_front();
-            }
+            events.push(event.clone(), event_bytes);
         }
         {
             let mut summary = lock_unpoisoned(&self.summary);
             summary.updated_at = event.created_at;
         }
-        let store = self.store.clone();
-        let scope = self.storage_scope.clone();
         let summary = self.summary();
-        let persisted_event = event.clone();
         self.persistence.begin();
-        let persistence = self.persistence.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Err(error) = store
-                .persist_agent_acp_event(&scope, &summary, &persisted_event)
-                .await
-            {
-                tracing::warn!(
-                    session_id = %persisted_event.session_id,
-                    sequence = persisted_event.sequence,
-                    %error,
-                    "could not persist ACP session event"
-                );
-            }
-            persistence.finish();
-        });
+        let request = PersistenceRequest {
+            summary,
+            event: event.clone(),
+            bytes: event_bytes,
+            immediate: persistence_boundary(&event.payload),
+        };
+        if let Err(error) = self
+            .persistence_queue
+            .send(PersistenceCommand::Event(request))
+        {
+            self.persistence.finish();
+            let PersistenceCommand::Event(request) = error.0 else {
+                unreachable!("only ACP event commands increment persistence tracking")
+            };
+            tracing::warn!(
+                session_id = %request.event.session_id,
+                sequence = request.event.sequence,
+                "could not queue ACP session event persistence"
+            );
+        }
         self.emit(Some(event.clone()));
-        event
     }
 
     fn emit(&self, event: Option<AcpSessionEvent>) {
@@ -717,12 +783,7 @@ impl AcpSession {
         {
             Ok(()) => {
                 let mut events = lock_unpoisoned(&self.events);
-                while events
-                    .front()
-                    .is_some_and(|event| event.sequence <= sequence)
-                {
-                    events.pop_front();
-                }
+                events.discard_through(sequence);
             }
             Err(error) => {
                 tracing::warn!(
@@ -764,22 +825,32 @@ impl AcpSession {
             .remove(request_id)
             .expect("pending permission was checked while holding the same lock");
         drop(permissions);
+        let persisted_option = option_id.clone();
+        let _push_order = lock_unpoisoned(&self.push_order);
         pending
             .response
             .send(option_id)
-            .map_err(|_| AppError::Agent("the Agent no longer accepts this permission".into()))
+            .map_err(|_| AppError::Agent("the Agent no longer accepts this permission".into()))?;
+        self.push_unlocked(AcpSessionEventPayload::PermissionResponse {
+            request_id: request_id.to_owned(),
+            option_id: persisted_option,
+        });
+        Ok(())
     }
 
     fn cancel_pending_permissions(&self) {
         let pending = {
             let mut permissions = lock_unpoisoned(&self.permissions);
-            permissions
-                .drain()
-                .map(|(_, value)| value)
-                .collect::<Vec<_>>()
+            permissions.drain().collect::<Vec<_>>()
         };
-        for permission in pending {
-            let _ = permission.response.send(None);
+        for (request_id, permission) in pending {
+            let _push_order = lock_unpoisoned(&self.push_order);
+            if permission.response.send(None).is_ok() {
+                self.push_unlocked(AcpSessionEventPayload::PermissionResponse {
+                    request_id,
+                    option_id: None,
+                });
+            }
         }
     }
 
@@ -796,7 +867,12 @@ impl PersistenceTracker {
     }
 
     fn finish(&self) {
-        if self.pending.fetch_sub(1, Ordering::SeqCst) == 1 {
+        self.finish_many(1);
+    }
+
+    fn finish_many(&self, count: usize) {
+        debug_assert!(count > 0);
+        if self.pending.fetch_sub(count, Ordering::SeqCst) == count {
             self.idle.notify_waiters();
         }
     }
@@ -810,6 +886,135 @@ impl PersistenceTracker {
             notified.await;
         }
     }
+}
+
+impl ReplayBuffer {
+    fn from_events(events: VecDeque<AcpSessionEvent>) -> Self {
+        let mut replay = Self {
+            events: VecDeque::with_capacity(events.len().min(MAX_REPLAY_EVENTS)),
+            bytes: 0,
+        };
+        for event in events {
+            let bytes = replay_event_bytes(&event);
+            replay.push(event, bytes);
+        }
+        replay
+    }
+
+    fn push(&mut self, event: AcpSessionEvent, bytes: usize) {
+        self.bytes = self.bytes.saturating_add(bytes);
+        self.events.push_back(ReplayEvent { event, bytes });
+        while self.events.len() > MAX_REPLAY_EVENTS || self.bytes > MAX_REPLAY_BYTES {
+            let Some(removed) = self.events.pop_front() else {
+                self.bytes = 0;
+                break;
+            };
+            self.bytes = self.bytes.saturating_sub(removed.bytes);
+        }
+    }
+
+    fn discard_through(&mut self, sequence: u64) {
+        while self
+            .events
+            .front()
+            .is_some_and(|entry| entry.event.sequence <= sequence)
+        {
+            if let Some(removed) = self.events.pop_front() {
+                self.bytes = self.bytes.saturating_sub(removed.bytes);
+            }
+        }
+    }
+}
+
+async fn run_persistence_worker(
+    session_id: AcpSessionId,
+    store: Store,
+    scope: ActiveResourceScope,
+    persistence: Arc<PersistenceTracker>,
+    mut requests: tokio::sync::mpsc::UnboundedReceiver<PersistenceCommand>,
+) {
+    let mut closed = false;
+    while !closed {
+        let first = match requests.recv().await {
+            Some(PersistenceCommand::Event(request)) => request,
+            Some(PersistenceCommand::Shutdown) | None => break,
+        };
+        let mut events = Vec::with_capacity(MAX_PERSIST_BATCH_EVENTS);
+        let mut bytes = first.bytes;
+        let mut summary = first.summary;
+        let mut immediate = first.immediate;
+        events.push(first.event);
+        let deadline = tokio::time::Instant::now() + PERSIST_BATCH_DELAY;
+
+        while !immediate
+            && events.len() < MAX_PERSIST_BATCH_EVENTS
+            && bytes < MAX_PERSIST_BATCH_BYTES
+        {
+            match tokio::time::timeout_at(deadline, requests.recv()).await {
+                Ok(Some(PersistenceCommand::Event(request))) => {
+                    bytes = bytes.saturating_add(request.bytes);
+                    summary = request.summary;
+                    immediate = request.immediate;
+                    events.push(request.event);
+                }
+                Ok(Some(PersistenceCommand::Shutdown)) | Ok(None) => {
+                    closed = true;
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+
+        let first_sequence = events
+            .first()
+            .map(|event| event.sequence)
+            .unwrap_or_default();
+        let last_sequence = events
+            .last()
+            .map(|event| event.sequence)
+            .unwrap_or_default();
+        let event_count = events.len();
+        if let Err(error) = store
+            .persist_agent_acp_events(&scope, &summary, &events)
+            .await
+        {
+            tracing::warn!(
+                %session_id,
+                first_sequence,
+                last_sequence,
+                event_count,
+                %error,
+                "could not persist ACP session event batch"
+            );
+        } else {
+            tracing::trace!(
+                %session_id,
+                first_sequence,
+                last_sequence,
+                event_count,
+                immediate,
+                "persisted ACP session event batch"
+            );
+        }
+        persistence.finish_many(event_count);
+    }
+}
+
+fn persistence_boundary(payload: &AcpSessionEventPayload) -> bool {
+    !matches!(
+        payload,
+        AcpSessionEventPayload::SessionUpdate { update }
+            if matches!(
+                update.get("sessionUpdate").and_then(serde_json::Value::as_str),
+                Some("agent_message_chunk" | "agent_thought_chunk")
+            )
+    )
+}
+
+fn replay_event_bytes(event: &AcpSessionEvent) -> usize {
+    serde_json::to_vec(event)
+        .map(|encoded| encoded.len())
+        .unwrap_or(MAX_EVENT_BYTES)
 }
 
 struct LaunchContext {

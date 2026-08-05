@@ -88,6 +88,8 @@ export const agentsCatalog = defineCatalog(
     "agent.acpNew": "New Chat",
     "agent.acpMore": "More chat actions",
     "agent.acpNoSessions": "No conversations for this connection yet.",
+    "agent.acpReplayTruncated":
+      "Earlier local transcript events were removed by the replay limit.",
     "agent.acpNoToken": "Local login · no app token",
     "agent.acpOpenLink": "Open link in the system browser",
     "agent.acpPermission": "Permission required",
@@ -366,6 +368,8 @@ export const agentsCatalog = defineCatalog(
     "agent.acpNew": "새 채팅",
     "agent.acpMore": "채팅 작업 더보기",
     "agent.acpNoSessions": "이 연결에는 아직 대화가 없습니다.",
+    "agent.acpReplayTruncated":
+      "로컬 재생 한도를 넘은 이전 대화 기록은 정리되었습니다.",
     "agent.acpNoToken": "로컬 로그인 · 앱 토큰 없음",
     "agent.acpOpenLink": "시스템 브라우저에서 링크 열기",
     "agent.acpPermission": "권한 승인 필요",

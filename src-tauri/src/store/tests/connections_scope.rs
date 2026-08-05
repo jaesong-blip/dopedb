@@ -102,6 +102,104 @@ async fn assert_legacy_agent_acp_provider_migrates() {
     assert_eq!(event_parent, "agent_acp_sessions");
 }
 
+async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: Uuid) {
+    use crate::features::agents::domain::{
+        AcpSessionEvent, AcpSessionEventPayload, AcpSessionLifecycle, AcpSessionSummary,
+        AgentProvider,
+    };
+    use crate::kernel::identity::{AcpSessionId, ConnectionId};
+
+    let scope = store.active_resource_scope().await.unwrap();
+    let now = Utc::now();
+    let session_id = AcpSessionId::from(Uuid::new_v4());
+    let summary = AcpSessionSummary {
+        id: session_id,
+        connection_id: ConnectionId::from(connection_id),
+        provider: AgentProvider::Codex,
+        title: "Bounded replay".into(),
+        lifecycle: AcpSessionLifecycle::Ready,
+        acp_session_id: Some("official-adapter-session".into()),
+        error: None,
+        created_at: now,
+        updated_at: now,
+    };
+    let small_events = (1..=513)
+        .map(|sequence| AcpSessionEvent {
+            session_id,
+            sequence,
+            created_at: now,
+            payload: AcpSessionEventPayload::SessionUpdate {
+                update: serde_json::json!({
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": { "type": "text", "text": "x" }
+                }),
+            },
+        })
+        .collect::<Vec<_>>();
+    store
+        .persist_agent_acp_events(&scope, &summary, &small_events)
+        .await
+        .unwrap();
+    store
+        .persist_agent_acp_events(&scope, &summary, &small_events)
+        .await
+        .unwrap();
+    let event_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM agent_acp_events WHERE session_id = ?1")
+            .bind(session_id.to_string())
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(event_count, 512);
+
+    let large_text = "z".repeat(480_000);
+    let mut boundary_events = (600..609)
+        .map(|sequence| AcpSessionEvent {
+            session_id,
+            sequence,
+            created_at: now,
+            payload: AcpSessionEventPayload::SessionUpdate {
+                update: serde_json::json!({
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": { "type": "text", "text": large_text.as_str() }
+                }),
+            },
+        })
+        .collect::<Vec<_>>();
+    boundary_events.push(AcpSessionEvent {
+        session_id,
+        sequence: 609,
+        created_at: now,
+        payload: AcpSessionEventPayload::TurnEnd {
+            stop_reason: "end_turn".into(),
+        },
+    });
+    store
+        .persist_agent_acp_events(&scope, &summary, &boundary_events)
+        .await
+        .unwrap();
+    let persisted_bytes: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(length(CAST(payload AS BLOB))), 0)
+         FROM agent_acp_events WHERE session_id = ?1",
+    )
+    .bind(session_id.to_string())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert!(persisted_bytes <= 4 * 1024 * 1024);
+
+    let focus = store
+        .focus_agent_acp_session(session_id, Some(0))
+        .await
+        .unwrap();
+    assert!(focus.replay_truncated);
+    assert!(focus
+        .events
+        .windows(2)
+        .all(|events| events[0].sequence < events[1].sequence));
+    assert_eq!(focus.events.last().map(|event| event.sequence), Some(609));
+}
+
 #[tokio::test]
 async fn remote_template_sync_preserves_member_local_credential_binding() {
     assert_legacy_sql_document_database_scope_migrates().await;
@@ -180,6 +278,8 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         crate::model::WorkspaceConnectionAccess::Read
     );
     assert!(!loaded.allow_writes);
+
+    assert_agent_acp_batch_replay_is_bounded(&store, id).await;
 
     let removed_credential_ids = store
         .sync_remote_connections(workspace_id, &user.id, &[])

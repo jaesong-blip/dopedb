@@ -121,6 +121,10 @@ pub(crate) enum AcpSessionEventPayload {
         tool_call: serde_json::Value,
         options: Vec<AcpPermissionOption>,
     },
+    PermissionResponse {
+        request_id: String,
+        option_id: Option<String>,
+    },
     TurnEnd {
         stop_reason: String,
     },

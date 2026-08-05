@@ -17,6 +17,8 @@ use crate::kernel::identity::{AcpSessionId, ConnectionId};
 use super::{parse_uuid, ActiveResourceScope, Store};
 
 const MAX_PERSISTED_EVENTS: i64 = 512;
+const MAX_PERSISTED_BYTES: i64 = 4 * 1024 * 1024;
+const MAX_EVENT_BYTES: usize = 512 * 1024;
 
 impl Store {
     pub(crate) async fn recover_interrupted_agent_acp_sessions(&self) -> AppResult<()> {
@@ -124,35 +126,51 @@ impl Store {
         Ok(())
     }
 
-    pub(crate) async fn persist_agent_acp_event(
+    pub(crate) async fn persist_agent_acp_events(
         &self,
         scope: &ActiveResourceScope,
         summary: &AcpSessionSummary,
-        event: &AcpSessionEvent,
+        events: &[AcpSessionEvent],
     ) -> AppResult<()> {
-        let payload = serde_json::to_string(&event.payload)?;
-        if payload.len() > 512 * 1024 {
-            return Err(AppError::Blocked {
-                reason: "the ACP event exceeded the local replay limit".into(),
-            });
+        if events.is_empty() {
+            return Ok(());
+        }
+        let mut rows = Vec::with_capacity(events.len());
+        for event in events {
+            if event.session_id != summary.id {
+                return Err(AppError::Config(
+                    "an ACP persistence batch crossed session boundaries".into(),
+                ));
+            }
+            let payload = serde_json::to_string(&event.payload)?;
+            if payload.len() > MAX_EVENT_BYTES {
+                return Err(AppError::Blocked {
+                    reason: "the ACP event exceeded the local replay limit".into(),
+                });
+            }
+            rows.push((
+                i64::try_from(event.sequence).map_err(|_| {
+                    AppError::Config("the ACP event sequence exceeded SQLite range".into())
+                })?,
+                event.created_at,
+                payload,
+            ));
         }
         let mut transaction = self.pool.begin().await?;
         upsert_session(&mut *transaction, scope, summary).await?;
-        sqlx::query(
-            "INSERT OR IGNORE INTO agent_acp_events(
-                 session_id, sequence, created_at, payload
-             ) VALUES (?1, ?2, ?3, ?4)",
-        )
-        .bind(event.session_id.to_string())
-        .bind(
-            i64::try_from(event.sequence).map_err(|_| {
-                AppError::Config("the ACP event sequence exceeded SQLite range".into())
-            })?,
-        )
-        .bind(event.created_at)
-        .bind(payload)
-        .execute(&mut *transaction)
-        .await?;
+        for (sequence, created_at, payload) in rows {
+            sqlx::query(
+                "INSERT OR IGNORE INTO agent_acp_events(
+                     session_id, sequence, created_at, payload
+                 ) VALUES (?1, ?2, ?3, ?4)",
+            )
+            .bind(summary.id.to_string())
+            .bind(sequence)
+            .bind(created_at)
+            .bind(payload)
+            .execute(&mut *transaction)
+            .await?;
+        }
         sqlx::query(
             "DELETE FROM agent_acp_events
              WHERE session_id = ?1
@@ -165,6 +183,26 @@ impl Store {
         )
         .bind(event.session_id.to_string())
         .bind(MAX_PERSISTED_EVENTS)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            "DELETE FROM agent_acp_events
+             WHERE session_id = ?1
+               AND sequence IN (
+                   SELECT sequence FROM (
+                       SELECT sequence,
+                              SUM(length(CAST(payload AS BLOB))) OVER (
+                                  ORDER BY sequence DESC
+                                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                              ) AS retained_bytes
+                       FROM agent_acp_events
+                       WHERE session_id = ?1
+                   )
+                   WHERE retained_bytes > ?2
+               )",
+        )
+        .bind(summary.id.to_string())
+        .bind(MAX_PERSISTED_BYTES)
         .execute(&mut *transaction)
         .await?;
         transaction.commit().await?;
