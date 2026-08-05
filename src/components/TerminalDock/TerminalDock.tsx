@@ -82,6 +82,7 @@ import TerminalTabs, {
   type TerminalPopup,
 } from "./TerminalTabs";
 import { useI18n } from "../../lib/i18n";
+import { createFrameCoalescer } from "../../lib/frameCoalescer";
 
 const OUTPUT_REPLAY_BYTES = 512 * 1024;
 const ACTIVE_SESSION_STORAGE = "terminalActiveSessionByScope";
@@ -777,12 +778,18 @@ export default function TerminalDock({
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = width;
-    const move = (next: MouseEvent) => {
-      onWidthChange(
-        clampTerminalDockWidth(startWidth + startX - next.clientX, window.innerWidth),
+    const widthAt = (clientX: number) =>
+      clampTerminalDockWidth(
+        startWidth + startX - clientX,
+        window.innerWidth,
       );
+    const coalescer = createFrameCoalescer<number>(onWidthChange);
+    const move = (next: MouseEvent) => {
+      coalescer.push(widthAt(next.clientX));
     };
-    const up = () => {
+    const up = (next: MouseEvent) => {
+      coalescer.push(widthAt(next.clientX));
+      coalescer.flush();
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
     };

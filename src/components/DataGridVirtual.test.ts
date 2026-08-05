@@ -18,6 +18,7 @@ import {
   DATA_GRID_ROW_NUMBER_WIDTH,
 } from "../design-system/dataGridGeometry";
 import type { SqlStreamRowSource } from "../features/queries/domain";
+import { createFrameCoalescer } from "../lib/frameCoalescer";
 import {
   clearSqlResultPageCache,
   SQL_RESULT_CACHE_MAX_PAGES,
@@ -46,6 +47,32 @@ describe("DataGridVirtual window", () => {
     expect(window.endRow).toBeLessThan(1_000_000);
     expect(window.visibleColumns.length).toBeLessThan(15);
     expect(cellCount).toBeLessThan(400);
+
+    const scheduled: { frame: FrameRequestCallback | null } = { frame: null };
+    let frameRequests = 0;
+    const commits: number[] = [];
+    const coalescer = createFrameCoalescer<number>(
+      (value) => commits.push(value),
+      (callback) => {
+        frameRequests += 1;
+        scheduled.frame = callback;
+        return frameRequests;
+      },
+      () => {
+        scheduled.frame = null;
+      },
+    );
+    coalescer.push(1);
+    coalescer.push(2);
+    coalescer.push(3);
+    expect(frameRequests).toBe(1);
+    expect(commits).toEqual([]);
+    expect(scheduled.frame).not.toBeNull();
+    scheduled.frame?.(16);
+    expect(commits).toEqual([3]);
+    coalescer.push(4);
+    coalescer.flush();
+    expect(commits).toEqual([3, 4]);
   });
 
   it("keeps boundary coordinates and rectangular selection deterministic", () => {

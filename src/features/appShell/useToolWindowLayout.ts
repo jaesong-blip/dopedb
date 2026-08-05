@@ -1,5 +1,7 @@
 import { useCallback, useState } from "react";
 
+import { createFrameCoalescer } from "../../lib/frameCoalescer";
+
 const STORAGE_KEY = "dopedb:tool-window-layout:v1";
 
 type LeftToolWindow = "databaseExplorer" | "localHistory";
@@ -186,23 +188,25 @@ export function useToolWindowLayout() {
       event.preventDefault();
       const startY = event.clientY;
       const startHeight = layout.servicesHeight;
+      const heightAt = (clientY: number) =>
+        clampServicesHeight(startHeight + startY - clientY);
+      let persist = false;
+      const coalescer = createFrameCoalescer<number>((height) => {
+        setLayout((current) => {
+          const next = { ...current, servicesHeight: height };
+          if (persist) storeLayout(next);
+          return next;
+        });
+      });
       const move = (next: MouseEvent) => {
-        const height = clampServicesHeight(
-          startHeight + startY - next.clientY,
-        );
-        setLayout((current) => ({ ...current, servicesHeight: height }));
+        coalescer.push(heightAt(next.clientY));
       };
       const up = (next: MouseEvent) => {
         document.removeEventListener("mousemove", move);
         document.removeEventListener("mouseup", up);
-        const height = clampServicesHeight(
-          startHeight + startY - next.clientY,
-        );
-        setLayout((current) => {
-          const updated = { ...current, servicesHeight: height };
-          storeLayout(updated);
-          return updated;
-        });
+        persist = true;
+        coalescer.push(heightAt(next.clientY));
+        coalescer.flush();
       };
       document.addEventListener("mousemove", move);
       document.addEventListener("mouseup", up);

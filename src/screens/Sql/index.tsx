@@ -818,7 +818,12 @@ export default function Sql({
         at: run.at,
         maxRows: safety.maxRows,
       };
-    } else if (resultKind === "single" && stream.phase === "complete") {
+    } else if (
+      resultKind === "single" &&
+      (stream.phase === "connecting" ||
+        stream.phase === "streaming" ||
+        stream.phase === "complete")
+    ) {
       result = {
         kind: "stream",
         sql: lastAttempt?.sql ?? session.sql,

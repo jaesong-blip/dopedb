@@ -17,7 +17,6 @@ import {
   MiniMap,
   ReactFlow,
   type Edge,
-  type NodeChange,
   type ReactFlowInstance,
   type Viewport,
 } from "@xyflow/react";
@@ -331,6 +330,13 @@ export default function ErdCanvas({
     setPositions((current) => mergePositions(graphRelations, current));
   }, [graphRelations]);
 
+  // React Flow owns pointer-frequency node movement internally. Re-project the
+  // complete collection only for graph/layout/selection changes or after a drag
+  // has committed its final position below.
+  useEffect(() => {
+    flowRef.current?.setNodes(flowNodes);
+  }, [flowNodes]);
+
   useEffect(() => {
     if (deferredFilter.trim()) setNeighborhood(false);
   }, [deferredFilter]);
@@ -359,20 +365,16 @@ export default function ErdCanvas({
     if (layout) applyLayout(layout);
   }
 
-  function handleNodeChanges(changes: NodeChange<ErdFlowNode>[]) {
-    const moved = changes.filter(
-      (
-        change,
-      ): change is Extract<NodeChange<ErdFlowNode>, { type: "position" }> =>
-        change.type === "position" && Boolean(change.position),
-    );
-    if (moved.length === 0) return;
+  function commitDraggedNode(node: ErdFlowNode) {
     setPositions((current) => {
-      const next = { ...current };
-      for (const change of moved) {
-        if (change.position) next[change.id] = change.position;
+      const previous = current[node.id];
+      if (
+        previous?.x === node.position.x &&
+        previous?.y === node.position.y
+      ) {
+        return current;
       }
-      return next;
+      return { ...current, [node.id]: node.position };
     });
     setDirty(true);
   }
@@ -634,13 +636,13 @@ export default function ErdCanvas({
       )}
       <div className="erd-flow tw:min-h-[320px] tw:min-w-0 tw:flex-1">
         <ReactFlow<ErdFlowNode, Edge>
-          nodes={flowNodes}
+          defaultNodes={flowNodes}
           edges={flowEdges}
           nodeTypes={nodeTypes}
           onInit={(instance) => {
             flowRef.current = instance;
           }}
-          onNodesChange={handleNodeChanges}
+          onNodeDragStop={(_, node) => commitDraggedNode(node)}
           onNodeClick={(_, node) => onSelect(node.data.relation)}
           onNodeDoubleClick={(_, node) => onOpen(node.data.relation)}
           onMoveEnd={(_, next) => {

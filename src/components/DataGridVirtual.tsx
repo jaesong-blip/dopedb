@@ -33,8 +33,19 @@ import {
   DataGridViewport,
   type DataGridSurface,
 } from "../design-system/components/DataGridViewport";
+import {
+  createFrameCoalescer,
+  type FrameCoalescer,
+} from "../lib/frameCoalescer";
 
 const OVERSCAN = 4;
+
+type VirtualScroll = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+};
 
 type Props = {
   result: QueryResult;
@@ -100,7 +111,8 @@ function copy(value: unknown) {
 export default function DataGridVirtual(props: Props) {
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [scroll, setScroll] = useState({
+  const scrollCoalescerRef = useRef<FrameCoalescer<VirtualScroll> | null>(null);
+  const [scroll, setScroll] = useState<VirtualScroll>({
     top: 0,
     left: 0,
     width: 720,
@@ -143,8 +155,10 @@ export default function DataGridVirtual(props: Props) {
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
+    const coalescer = createFrameCoalescer<VirtualScroll>(setScroll);
+    scrollCoalescerRef.current = coalescer;
     const update = () =>
-      setScroll({
+      coalescer.push({
         top: element.scrollTop,
         left: element.scrollLeft,
         width: element.clientWidth,
@@ -154,7 +168,13 @@ export default function DataGridVirtual(props: Props) {
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
     observer?.observe(element);
-    return () => observer?.disconnect();
+    return () => {
+      observer?.disconnect();
+      coalescer.cancel();
+      if (scrollCoalescerRef.current === coalescer) {
+        scrollCoalescerRef.current = null;
+      }
+    };
   }, []);
   useEffect(() => setSelection(null), [props.result.columns.join("\u0000")]);
 
@@ -228,15 +248,20 @@ export default function DataGridVirtual(props: Props) {
     event.stopPropagation();
     const startX = event.clientX;
     const initial = columnWidths[index];
-    const onMove = (moveEvent: MouseEvent) =>
+    const widthAt = (clientX: number) =>
+      Math.max(72, Math.min(1200, initial + clientX - startX));
+    const coalescer = createFrameCoalescer<number>((width) =>
       setWidths((current) => ({
         ...current,
-        [index]: Math.max(
-          72,
-          Math.min(1200, initial + moveEvent.clientX - startX),
-        ),
-      }));
-    const onUp = () => {
+        [index]: width,
+      })),
+    );
+    const onMove = (moveEvent: MouseEvent) => {
+      coalescer.push(widthAt(moveEvent.clientX));
+    };
+    const onUp = (upEvent: MouseEvent) => {
+      coalescer.push(widthAt(upEvent.clientX));
+      coalescer.flush();
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
     };
@@ -256,7 +281,7 @@ export default function DataGridVirtual(props: Props) {
       tabIndex={0}
       onKeyDown={move}
       onScroll={(event) =>
-        setScroll({
+        scrollCoalescerRef.current?.push({
           top: event.currentTarget.scrollTop,
           left: event.currentTarget.scrollLeft,
           width: event.currentTarget.clientWidth,

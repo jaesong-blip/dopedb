@@ -158,7 +158,7 @@ function Shell() {
   );
   const backgroundTasks = useBackgroundTasks({
     connections: conns,
-    querySessions: queryServices.sessions,
+    queryServiceStore: queryServices.store,
     workspaceScopeKey: catalogScope.key,
   });
   const manualTransactions = useWorkspaceManualTransactions(conns);
@@ -941,8 +941,7 @@ function Shell() {
       localHistoryOpen={localHistoryOpen}
       servicesOpen={servicesOpen}
       servicesHeight={servicesHeight}
-      queryServiceSessions={queryServices.sessions}
-      activeQueryServiceSessionId={queryServices.activeSessionId}
+      queryServiceStore={queryServices.store}
       backgroundTasks={backgroundTasks.tasks}
       cancellingBackgroundTaskKeys={backgroundTasks.cancellingKeys}
       manualTransactions={manualTransactions.transactions}
@@ -1019,7 +1018,6 @@ function Shell() {
         toggleServices();
       }}
       onCloseServices={closeServices}
-      onActivateQueryServiceSession={queryServices.activateSession}
       onCancelBackgroundTask={cancelBackgroundTask}
       onOpenAgentTask={openAgentTask}
       onOpenManualTransaction={openManualTransaction}

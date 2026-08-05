@@ -47,6 +47,7 @@ import {
   type CatalogTable,
 } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
+import { createFrameCoalescer } from "../../lib/frameCoalescer";
 import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import { readWorkbenchDraft } from "../workbench/draftStore";
@@ -628,15 +629,18 @@ export default function AcpChatPanel({
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = width;
-    const move = (next: MouseEvent) => {
-      onWidthChange(
-        clampAgentDockWidth(
-          startWidth + startX - next.clientX,
-          window.innerWidth,
-        ),
+    const widthAt = (clientX: number) =>
+      clampAgentDockWidth(
+        startWidth + startX - clientX,
+        window.innerWidth,
       );
+    const coalescer = createFrameCoalescer<number>(onWidthChange);
+    const move = (next: MouseEvent) => {
+      coalescer.push(widthAt(next.clientX));
     };
-    const up = () => {
+    const up = (next: MouseEvent) => {
+      coalescer.push(widthAt(next.clientX));
+      coalescer.flush();
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
     };

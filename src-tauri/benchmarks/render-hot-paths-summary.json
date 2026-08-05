@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-05T14:26:47.292Z",
+  "fixture": {
+    "displayHz": 60,
+    "streamRows": 50000,
+    "streamBatchRows": 256,
+    "streamBatchIntervalMs": 4,
+    "pointerEvents": 1000,
+    "erdNodes": 1000
+  },
+  "stream": {
+    "batchCount": 196,
+    "durationMs": 784,
+    "servicesNotifications": 5,
+    "shellActivityNotifications": 2,
+    "runningPublishCount": 4,
+    "runningPublishTimesMs": [
+      0,
+      252,
+      504,
+      756
+    ],
+    "minimumRunningPublishGapMs": 252,
+    "terminalStatus": "completed",
+    "terminalRowCount": 50000
+  },
+  "pointer": {
+    "inputEvents": 1001,
+    "requestedFrames": 2,
+    "cancelledFrames": 1,
+    "commits": 2,
+    "committedValues": [
+      999,
+      1000
+    ],
+    "maximumCommitsPerFrame": 1
+  },
+  "source": {
+    "erdUsesInternalDragState": true,
+    "erdPersistedPositionCommitsPerDrag": 1,
+    "ackWaitsForLocalCommit": true,
+    "staleRunHasIndependentPendingSet": true
+  },
+  "scope": "Deterministic renderer-boundary fixture. It measures production store/scheduler/frame-coalescer code with a fake clock and verifies the ERD/ACK source boundary. It does not claim packaged WebView dropped-frame, long-task, GPU, or provider/network measurements; those remain a release-candidate Instruments checkpoint."
+}

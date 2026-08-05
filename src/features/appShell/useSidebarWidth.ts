@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { createFrameCoalescer } from "../../lib/frameCoalescer";
+
 const EXPLORER_STORAGE_KEY = "sidebarW";
 const LOCAL_HISTORY_STORAGE_KEY = "localHistorySidebarW";
 const EXPLORER_MIN = 180;
@@ -51,9 +53,13 @@ export function useSidebarWidth(kind: SidebarKind) {
   }));
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   useEffect(() => {
-    const sync = () => setViewportWidth(window.innerWidth);
+    const coalescer = createFrameCoalescer<number>(setViewportWidth);
+    const sync = () => coalescer.push(window.innerWidth);
     window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
+    return () => {
+      window.removeEventListener("resize", sync);
+      coalescer.cancel();
+    };
   }, []);
   const viewportMaximum = Math.max(
     minimum(kind),
@@ -66,25 +72,24 @@ export function useSidebarWidth(kind: SidebarKind) {
       event.preventDefault();
       const startX = event.clientX;
       const startWidth = width;
+      const widthAt = (clientX: number) =>
+        clamp(kind, startWidth + clientX - startX);
+      const coalescer = createFrameCoalescer<number>((nextWidth) =>
+        setWidths((current) => ({ ...current, [kind]: nextWidth })),
+      );
       const move = (next: MouseEvent) => {
-        const nextWidth = clamp(
-          kind,
-          startWidth + next.clientX - startX,
-        );
-        setWidths((current) => ({ ...current, [kind]: nextWidth }));
+        coalescer.push(widthAt(next.clientX));
       };
       const up = (next: MouseEvent) => {
         document.removeEventListener("mousemove", move);
         document.removeEventListener("mouseup", up);
-        const nextWidth = clamp(
-          kind,
-          startWidth + next.clientX - startX,
-        );
+        const nextWidth = widthAt(next.clientX);
+        coalescer.push(nextWidth);
+        coalescer.flush();
         localStorage.setItem(
           storageKey(kind),
           String(nextWidth),
         );
-        setWidths((current) => ({ ...current, [kind]: nextWidth }));
       };
       document.addEventListener("mousemove", move);
       document.addEventListener("mouseup", up);

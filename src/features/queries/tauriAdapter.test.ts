@@ -16,6 +16,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 import { invoke } from "@tauri-apps/api/core";
 
 import type { QueryServiceSession } from "../queryServices/domain";
+import { RunningQueryUpdateScheduler } from "../queryServices/runningUpdateScheduler";
+import { QueryServiceStore } from "../queryServices/store";
 import {
   listQueryServiceSessions,
   saveQueryServiceSession,
@@ -188,6 +190,73 @@ describe("query Tauri adapter", () => {
         result: { kind: "none" },
       }),
     ]);
+
+    const serviceStore = new QueryServiceStore("workspace:account-1");
+    let fullNotifications = 0;
+    let activityNotifications = 0;
+    serviceStore.subscribe(() => {
+      fullNotifications += 1;
+    });
+    serviceStore.subscribeActivity(() => {
+      activityNotifications += 1;
+    });
+    const runningSession: QueryServiceSession = {
+      ...serviceSession,
+      updatedAt: 2,
+      status: "running",
+      result: { kind: "none" },
+    };
+    serviceStore.merge([runningSession]);
+    serviceStore.merge([{ ...runningSession, updatedAt: 3 }]);
+    expect(fullNotifications).toBe(2);
+    expect(activityNotifications).toBe(1);
+    serviceStore.merge([{ ...serviceSession, updatedAt: 4 }]);
+    expect(activityNotifications).toBe(2);
+    expect(serviceStore.getActivitySnapshot()).toEqual([]);
+
+    let clock = 0;
+    let nextTimer = 0;
+    const timers = new Map<
+      number,
+      { at: number; callback: () => void }
+    >();
+    const published: QueryServiceSession[] = [];
+    const runningUpdates = new RunningQueryUpdateScheduler(
+      250,
+      (session: QueryServiceSession) => published.push(session),
+      (scopeKey) => scopeKey === "workspace:account-1",
+      () => clock,
+      (callback, delay) => {
+        nextTimer += 1;
+        timers.set(nextTimer, { at: clock + delay, callback });
+        return nextTimer;
+      },
+      (handle) => timers.delete(handle as number),
+    );
+    runningUpdates.publishNow("workspace:account-1", runningSession);
+    for (let updatedAt = 3; updatedAt <= 100; updatedAt += 1) {
+      clock += 1;
+      runningUpdates.push("workspace:account-1", {
+        ...runningSession,
+        updatedAt,
+      });
+    }
+    expect(published.map((session) => session.updatedAt)).toEqual([2]);
+    clock = 250;
+    for (const [id, timer] of [...timers]) {
+      if (timer.at > clock) continue;
+      timers.delete(id);
+      timer.callback();
+    }
+    expect(published.map((session) => session.updatedAt)).toEqual([2, 100]);
+    runningUpdates.push("workspace:account-1", {
+      ...runningSession,
+      updatedAt: 101,
+    });
+    runningUpdates.cancel(runningSession.id);
+    clock = 1_000;
+    for (const timer of timers.values()) timer.callback();
+    expect(published.map((session) => session.updatedAt)).toEqual([2, 100]);
   });
 
   it("collects a bounded table page through one atomic read stream", async () => {

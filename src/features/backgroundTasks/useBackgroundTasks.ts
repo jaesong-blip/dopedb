@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 
 import type { ConnectionProfile } from "../connections/domain";
-import type { QueryServiceSession } from "../queryServices/domain";
+import {
+  type QueryServiceStore,
+  useQueryServiceActivities,
+} from "../queryServices/store";
 import type { AcpSessionSummary } from "../agents/domain";
 import {
   cancelAgentAcpSession,
@@ -69,15 +72,16 @@ function agentStatus(
 
 export function useBackgroundTasks({
   connections,
-  querySessions,
+  queryServiceStore,
   workspaceScopeKey,
 }: {
   connections: ConnectionProfile[];
-  querySessions: QueryServiceSession[];
+  queryServiceStore: QueryServiceStore;
   workspaceScopeKey: string;
 }) {
   const queryClient = useQueryClient();
   const postPaintReady = usePostPaintReady();
+  const querySessions = useQueryServiceActivities(queryServiceStore);
   const [agentSessions, setAgentSessions] = useState<AcpSessionSummary[]>([]);
   const [cancellingKeys, setCancellingKeys] = useState<ReadonlySet<string>>(
     () => new Set(),

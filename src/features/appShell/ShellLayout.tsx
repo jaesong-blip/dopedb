@@ -6,7 +6,7 @@ import AcpChatPanel from "../agents/AcpChatPanel";
 import { AgentSelectionProvider } from "../agents/selectionContext";
 import type { BackgroundTask } from "../backgroundTasks/domain";
 import type { ConnectionProfile } from "../connections/domain";
-import type { QueryServiceSession } from "../queryServices/domain";
+import type { QueryServiceStore } from "../queryServices/store";
 import { defaultSqlNamespace } from "../queries/namespace";
 import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
 import type { WorkbenchDocument } from "../workbench/domain";
@@ -49,8 +49,7 @@ type Props = {
   localHistoryOpen: boolean;
   servicesOpen: boolean;
   servicesHeight: number;
-  queryServiceSessions: QueryServiceSession[];
-  activeQueryServiceSessionId: string | null;
+  queryServiceStore: QueryServiceStore;
   backgroundTasks: BackgroundTask[];
   cancellingBackgroundTaskKeys: ReadonlySet<string>;
   manualTransactions: WorkspaceManualTransaction[];
@@ -79,7 +78,6 @@ type Props = {
   onCloseLocalHistory: () => void;
   onToggleServices: () => void;
   onCloseServices: () => void;
-  onActivateQueryServiceSession: (id: string) => void;
   onCancelBackgroundTask: (task: BackgroundTask) => Promise<void>;
   onOpenAgentTask: (connectionId: string) => void;
   onOpenManualTransaction: (
@@ -154,8 +152,7 @@ function ShellLayoutContent(props: Props) {
     localHistoryOpen,
     servicesOpen,
     servicesHeight,
-    queryServiceSessions,
-    activeQueryServiceSessionId,
+    queryServiceStore,
     workbenchDocuments,
     activeWorkbenchDocumentId,
     sidebarWidth,
@@ -374,12 +371,10 @@ function ShellLayoutContent(props: Props) {
 
       {servicesVisible && (
         <QueryServicesToolWindow
-          sessions={queryServiceSessions}
-          activeSessionId={activeQueryServiceSessionId}
+          store={queryServiceStore}
           connections={connections}
           documents={workbenchDocuments}
           activeDocumentId={activeWorkbenchDocumentId}
-          onActivate={props.onActivateQueryServiceSession}
           onActivateDocument={props.onActivateWorkbenchDocument}
           onClose={props.onCloseServices}
           onStartResize={props.onStartServicesResize}
@@ -405,7 +400,7 @@ function ShellLayoutContent(props: Props) {
         writeEnabled={writeEnabled}
         unseenOperationCount={props.unseenOperationCount}
         onOpenQueryTask={(sessionId) => {
-          props.onActivateQueryServiceSession(sessionId);
+          queryServiceStore.activate(sessionId);
           if (!servicesVisible) props.onToggleServices();
         }}
         onOpenAgentTask={props.onOpenAgentTask}

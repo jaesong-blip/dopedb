@@ -20,6 +20,10 @@ import type { WorkbenchDocument } from "../workbench/domain";
 import { useI18n } from "../../lib/i18n";
 import type { QueryServiceSession, QueryServiceStatus } from "./domain";
 import QueryServiceResult from "./QueryServiceResult";
+import {
+  type QueryServiceStore,
+  useQueryServiceSnapshot,
+} from "./store";
 
 type ServicesTab = "output" | `result:${number}`;
 type ServiceDocument = Extract<
@@ -28,24 +32,20 @@ type ServiceDocument = Extract<
 >;
 
 export default function QueryServicesToolWindow({
-  sessions,
-  activeSessionId,
+  store,
   connections,
   documents,
   activeDocumentId,
-  onActivate,
   onActivateDocument,
   onClose,
   onStartResize,
   onResetHeight,
   compact = false,
 }: {
-  sessions: QueryServiceSession[];
-  activeSessionId: string | null;
+  store: QueryServiceStore;
   connections: ConnectionProfile[];
   documents: WorkbenchDocument[];
   activeDocumentId: string | null;
-  onActivate: (id: string) => void;
   onActivateDocument: (id: string) => void;
   onClose: () => void;
   onStartResize: (event: { preventDefault(): void; clientY: number }) => void;
@@ -53,6 +53,7 @@ export default function QueryServicesToolWindow({
   compact?: boolean;
 }) {
   const { t } = useI18n();
+  const { sessions, activeSessionId } = useQueryServiceSnapshot(store);
   const [tab, setTab] = useState<ServicesTab>("result:0");
   const [databaseOpen, setDatabaseOpen] = useState(true);
   const [collapsedConnections, setCollapsedConnections] = useState<Set<string>>(
@@ -68,8 +69,8 @@ export default function QueryServicesToolWindow({
     null;
 
   useEffect(() => {
-    if (!activeSessionId && sessions[0]) onActivate(sessions[0].id);
-  }, [activeSessionId, onActivate, sessions]);
+    if (!activeSessionId && sessions[0]) store.activate(sessions[0].id);
+  }, [activeSessionId, sessions, store]);
 
   const serviceConnections = useMemo(() => {
     const byId = new Map<string, ConnectionProfile>(
@@ -200,7 +201,7 @@ export default function QueryServicesToolWindow({
                                   )}
                                   activeSessionId={active?.id ?? null}
                                   onActivateDocument={onActivateDocument}
-                                  onActivateSession={onActivate}
+                                  onActivateSession={store.activate}
                                 />
                               ))}
                               {detachedSessions.map((session) => (
@@ -208,7 +209,7 @@ export default function QueryServicesToolWindow({
                                   key={session.id}
                                   session={session}
                                   active={session.id === active?.id}
-                                  onActivate={onActivate}
+                                  onActivate={store.activate}
                                 />
                               ))}
                             </div>
