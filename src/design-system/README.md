@@ -295,8 +295,11 @@ Elevation은 세 단계만 허용한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.
 - `EnvironmentBadge`: dev/staging/prod 의미색과 대문자 표기를 한곳에서 소유.
-- `TreeSectionButton`, `TreeSearch`: DopeDB 객체 트리의 일반 문장형
-  hierarchy row, keyboard toggle과 dense object search. 데이터베이스·스키마·
+- `TreeSectionButton`, `TreeSearch`, `VirtualTreeRows`: DopeDB 객체 트리의
+  일반 문장형 hierarchy row, keyboard toggle, dense object search와 대형 leaf
+  row windowing. `VirtualTreeRows`의 inline height/translate는 TanStack React
+  Virtual이 측정한 viewport geometry를 적용하는 vendor integration 예외이며,
+  색상·간격·row 외형은 계속 semantic utility가 소유한다. 데이터베이스·스키마·
   객체 폴더 이름을 uppercase category heading처럼 바꾸지 않는다.
 - `PopupMenu`, `PopupMenuItem`, `PopupMenuCheckbox`: 평평한 popover menu
   surface와 keyboard-focus 가능한 command/check row.

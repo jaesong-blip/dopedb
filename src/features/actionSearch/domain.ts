@@ -20,10 +20,31 @@ function normalized(value: string) {
   return value.trim().toLocaleLowerCase().normalize("NFKC");
 }
 
-function score(item: SearchEverywhereItem, query: string) {
-  const label = normalized(item.label);
-  const detail = normalized(item.detail ?? "");
-  const keywords = normalized(item.keywords?.join(" ") ?? "");
+export type SearchEverywhereIndex = ReadonlyArray<
+  Readonly<{
+    item: SearchEverywhereItem;
+    label: string;
+    detail: string;
+    keywords: string;
+  }>
+>;
+
+export function indexSearchEverywhereItems(
+  items: readonly SearchEverywhereItem[],
+): SearchEverywhereIndex {
+  return items.map((item) => ({
+    item,
+    label: normalized(item.label),
+    detail: normalized(item.detail ?? ""),
+    keywords: normalized(item.keywords?.join(" ") ?? ""),
+  }));
+}
+
+function score(
+  item: SearchEverywhereIndex[number],
+  query: string,
+) {
+  const { label, detail, keywords } = item;
   if (!query) return 0;
   if (label === query) return 0;
   if (label.startsWith(query)) return 1;
@@ -34,22 +55,19 @@ function score(item: SearchEverywhereItem, query: string) {
 }
 
 export function searchEverywhereItems(
-  items: readonly SearchEverywhereItem[],
+  index: SearchEverywhereIndex,
   rawQuery: string,
   limit = 40,
 ) {
   const query = normalized(rawQuery);
-  return items
-    .map((item, index) => ({
-      item,
-      index,
-      score: score(item, query),
-    }))
-    .filter(({ score: itemScore }) => Number.isFinite(itemScore))
-    .sort(
-      (left, right) =>
-        left.score - right.score || left.index - right.index,
-    )
-    .slice(0, limit)
-    .map(({ item }) => item);
+  const buckets: Array<SearchEverywhereItem[]> = [[], [], [], [], []];
+  for (const entry of index) {
+    const itemScore = score(entry, query);
+    if (!Number.isFinite(itemScore)) continue;
+    const bucket = buckets[itemScore];
+    // Keeping at most the result limit in each score bucket makes memory and
+    // final merging bounded without discarding a later, higher-ranked match.
+    if (bucket.length < limit) bucket.push(entry.item);
+  }
+  return buckets.flatMap((bucket) => bucket).slice(0, limit);
 }

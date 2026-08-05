@@ -47,7 +47,17 @@ export function useCatalogTree(
 ) {
   const queryClient = useQueryClient();
   const [detailTargets, setDetailTargets] = useState<Set<string>>(new Set());
-  useEffect(() => setDetailTargets(new Set()), [scope.key]);
+  const [overviewTargets, setOverviewTargets] = useState<Set<string>>(
+    new Set(),
+  );
+  const [suppressedDefaultTargets, setSuppressedDefaultTargets] = useState<
+    Set<string>
+  >(new Set());
+  useEffect(() => {
+    setDetailTargets(new Set());
+    setOverviewTargets(new Set());
+    setSuppressedDefaultTargets(new Set());
+  }, [scope.key]);
 
   const { databasesByConnection, databaseErrs } = useQueries({
     queries: connectionIds.map((id) => connectionDatabasesQuery(id, scope)),
@@ -80,6 +90,15 @@ export function useCatalogTree(
   const requestDetails = useCallback(
     (connectionId: string, database: string) => {
       const key = databaseCatalogKey(connectionId, database);
+      setOverviewTargets((targets) =>
+        targets.has(key) ? targets : new Set(targets).add(key),
+      );
+      setSuppressedDefaultTargets((targets) => {
+        if (!targets.has(key)) return targets;
+        const next = new Set(targets);
+        next.delete(key);
+        return next;
+      });
       setDetailTargets((targets) =>
         targets.has(key) ? targets : new Set(targets).add(key)
       );
@@ -97,25 +116,116 @@ export function useCatalogTree(
     [queryClient, scope.key],
   );
 
-  const forgetDetails = useCallback((connectionId: string) => {
-    setDetailTargets((targets) => {
-      const next = new Set(
-        [...targets].filter(
-          (target) => !target.startsWith(`${connectionId}\u0000`),
-        ),
+  const requestOverview = useCallback(
+    (connectionId: string, database: string) => {
+      const key = databaseCatalogKey(connectionId, database);
+      setSuppressedDefaultTargets((targets) => {
+        if (!targets.has(key)) return targets;
+        const next = new Set(targets);
+        next.delete(key);
+        return next;
+      });
+      setOverviewTargets((targets) =>
+        targets.has(key) ? targets : new Set(targets).add(key),
       );
-      return next.size === targets.size ? targets : next;
-    });
-  }, []);
+      if (
+        queryClient.getQueryState(
+          qk.databaseCatalogOverview(connectionId, database, scope.key),
+        )?.status === "error"
+      ) {
+        void queryClient.refetchQueries({
+          queryKey: qk.databaseCatalogOverview(
+            connectionId,
+            database,
+            scope.key,
+          ),
+          exact: true,
+          type: "all",
+        });
+      }
+    },
+    [queryClient, scope.key],
+  );
+
+  const forgetOverview = useCallback(
+    (connectionId: string, database: string) => {
+      const key = databaseCatalogKey(connectionId, database);
+      setOverviewTargets((targets) => {
+        if (!targets.has(key)) return targets;
+        const next = new Set(targets);
+        next.delete(key);
+        return next;
+      });
+      setDetailTargets((targets) => {
+        if (!targets.has(key)) return targets;
+        const next = new Set(targets);
+        next.delete(key);
+        return next;
+      });
+      setSuppressedDefaultTargets((targets) =>
+        targets.has(key) ? targets : new Set(targets).add(key),
+      );
+      void queryClient.cancelQueries({
+        queryKey: qk.databaseCatalogOverview(
+          connectionId,
+          database,
+          scope.key,
+        ),
+        exact: true,
+      });
+      void queryClient.cancelQueries({
+        queryKey: qk.databaseCatalog(connectionId, database, scope.key),
+        exact: true,
+      });
+    },
+    [queryClient, scope.key],
+  );
+
+  const forgetConnection = useCallback(
+    (connectionId: string) => {
+      const belongsToConnection = (target: string) =>
+        target.startsWith(`${connectionId}\u0000`);
+      const withoutConnection = (targets: Set<string>) => {
+        const next = new Set(
+          [...targets].filter((target) => !belongsToConnection(target)),
+        );
+        return next.size === targets.size ? targets : next;
+      };
+      setOverviewTargets(withoutConnection);
+      setDetailTargets(withoutConnection);
+      setSuppressedDefaultTargets(withoutConnection);
+      void queryClient.cancelQueries({
+        queryKey: qk.connectionDatabases(connectionId, scope.key),
+        exact: true,
+      });
+      void queryClient.cancelQueries({
+        queryKey: ["databaseCatalogOverview", connectionId],
+      });
+      void queryClient.cancelQueries({
+        queryKey: ["databaseCatalog", connectionId],
+      });
+    },
+    [queryClient, scope.key],
+  );
 
   const { databaseOverviews, overviewErrsByDatabase } = useQueries({
-    queries: targets.map((target) =>
-      databaseCatalogOverviewQuery(
+    queries: targets.map((target) => {
+      const key = databaseCatalogKey(
         target.connectionId,
         target.database,
-        scope,
-      )
-    ),
+      );
+      return {
+        ...databaseCatalogOverviewQuery(
+          target.connectionId,
+          target.database,
+          scope,
+        ),
+        enabled:
+          scope.ready &&
+          ((target.isDefault && !suppressedDefaultTargets.has(key)) ||
+            overviewTargets.has(key)),
+      };
+    }),
     combine: (results) => {
       const databaseOverviews: Record<string, CatalogOverview> = {};
       const overviewErrsByDatabase: Record<string, string> = {};
@@ -204,7 +314,9 @@ export function useCatalogTree(
     overviewErrs,
     catalogs,
     detailErrs,
+    requestOverview,
     requestDetails,
-    forgetDetails,
+    forgetOverview,
+    forgetConnection,
   };
 }

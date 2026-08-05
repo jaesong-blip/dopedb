@@ -117,6 +117,8 @@ export function DatabaseExplorer({
   const catalogScopeKeyRef = useRef(catalogScope.key);
   const [globalFilter, setGlobalFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [treeScrollElement, setTreeScrollElement] =
+    useState<HTMLDivElement | null>(null);
   const [savingScopeId, setSavingScopeId] = useState<string | null>(null);
   const [localRevealRequest, setLocalRevealRequest] = useState(0);
   const [providerCredentialsOpen, setProviderCredentialsOpen] =
@@ -198,8 +200,10 @@ export function DatabaseExplorer({
     overviewErrs,
     catalogs,
     detailErrs,
+    requestOverview,
     requestDetails,
-    forgetDetails,
+    forgetOverview,
+    forgetConnection,
   } = useCatalogTree(readableWantedIds, catalogScope);
   const errs = { ...overviewErrs, ...refreshErrs };
 
@@ -231,7 +235,12 @@ export function DatabaseExplorer({
   function toggleOpen(id: string) {
     const willOpen = !open.has(id);
     commands.toggleConnection(id);
-    if (willOpen) ensureGroupLoaded(id);
+    if (willOpen) {
+      ensureGroupLoaded(id);
+      return;
+    }
+    commands.forget(id);
+    forgetConnection(id);
   }
 
   function expandAllConnections() {
@@ -244,19 +253,15 @@ export function DatabaseExplorer({
   }
 
   function collapseAllConnections() {
+    for (const id of readableWantedIds) forgetConnection(id);
     commands.patch({
       openConnections: new Set(),
+      wanted: new Set(),
       objectSectionsOpen: new Set(),
     });
   }
 
   function updateGlobalFilter(value: string) {
-    if (!globalFilter.trim() && value.trim()) {
-      for (const connection of connections) {
-        commands.openConnection(connection.id);
-        ensureGroupLoaded(connection.id);
-      }
-    }
     setGlobalFilter(value);
   }
 
@@ -311,7 +316,7 @@ export function DatabaseExplorer({
         await deleteConnection(conn.id);
       }
       commands.forget(conn.id);
-      forgetDetails(conn.id);
+      forgetConnection(conn.id);
       queryClient.removeQueries({ queryKey: qk.catalog(conn.id, catalogScope.key) });
       queryClient.removeQueries({
         queryKey: qk.catalogOverview(conn.id, catalogScope.key),
@@ -419,6 +424,7 @@ export function DatabaseExplorer({
         databaseCatalogs={databaseCatalogs}
         overviewErrorsByDatabase={overviewErrsByDatabase}
         detailErrorsByDatabase={detailErrsByDatabase}
+        treeScrollElement={treeScrollElement}
         filter={globalFilter}
         groupByConnectionId={groupByConnectionId}
         catalogs={catalogs}
@@ -439,6 +445,12 @@ export function DatabaseExplorer({
         onOpenTable={(table) => onOpenTable(connection, table)}
         onRequestDetails={(database) =>
           requestDetails(connection.id, database)
+        }
+        onRequestOverview={(database) =>
+          requestOverview(connection.id, database)
+        }
+        onForgetOverview={(database) =>
+          forgetOverview(connection.id, database)
         }
         onRetryOverview={(database) => {
           commands.clearRefreshError(connection.id);
@@ -790,7 +802,11 @@ export function DatabaseExplorer({
         </ToolWindowSearchRow>
       ) : null}
 
-      <div className="tw:min-h-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:p-1 tw:[container-name:db-sidebar] tw:[container-type:inline-size]">
+      <div
+        ref={setTreeScrollElement}
+        data-catalog-tree-scroll
+        className="tw:min-h-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:p-1 tw:[container-name:db-sidebar] tw:[container-type:inline-size]"
+      >
         {connections.length === 0 ? (
           <div className="tw:grid tw:gap-5 tw:p-3">
             <ToolWindowSection title={t("connections.createDataSource")}>

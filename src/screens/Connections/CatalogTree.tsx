@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   Catalog,
   CatalogConstraint,
@@ -14,6 +14,10 @@ import type {
 } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
 import { TreeSectionButton } from "../../design-system/components/TreeControls";
+import {
+  VirtualTreeRows,
+  type VirtualTreeRow,
+} from "../../design-system/components/VirtualTreeRows";
 import { LoadingLabel } from "../../design-system/components/Status";
 import { isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
@@ -47,6 +51,8 @@ type Props = {
   error?: string;
   detailError?: string;
   applySchemaScope?: boolean;
+  initiallyOpen?: boolean;
+  scrollElement: HTMLDivElement | null;
   filter: string;
   showRowCounts: boolean;
   groupByConnectionId: Map<string, SchemaConnectionGroup>;
@@ -54,6 +60,8 @@ type Props = {
   collapsedSections: Set<string>;
   objectSectionsOpen: Set<string>;
   onOpenTable: (table: CatalogTable) => void;
+  onRequestOverview: () => void;
+  onForgetOverview: () => void;
   onRequestDetails: () => void;
   onRetryOverview: () => void;
   onResolveAccess?: () => void;
@@ -62,6 +70,12 @@ type Props = {
   revealRequest: number;
   revealDatabase: string | null;
   revealNamespace: string | null;
+};
+
+type SchemaContents = {
+  tables: CatalogTable[];
+  views: CatalogTable[];
+  objectsByKind: Map<string, CatalogObject[]>;
 };
 
 export default function CatalogTree(props: Props) {
@@ -73,7 +87,9 @@ export default function CatalogTree(props: Props) {
   const [collapsedSchemas, setCollapsedSchemas] = useState<Set<string>>(
     () => new Set(),
   );
-  const [databaseOpen, setDatabaseOpen] = useState(true);
+  const [databaseOpen, setDatabaseOpen] = useState(
+    props.initiallyOpen ?? true,
+  );
   const [collapsedMetadataSections, setCollapsedMetadataSections] =
     useState<Set<string>>(() => new Set());
   const {
@@ -92,50 +108,114 @@ export default function CatalogTree(props: Props) {
     collapsedSections,
     objectSectionsOpen,
   } = props;
-  const unfilteredCatalog = overview
-    ? catalogFromOverview(overview, fullCatalog)
-    : fullCatalog;
-  const catalog = unfilteredCatalog
-    ? props.applySchemaScope === false
-      ? unfilteredCatalog
-      : filterCatalog(connection, unfilteredCatalog)
-    : undefined;
-  const diff = schemaDiffForConnection(
-    connection,
-    groupByConnectionId,
+  const {
+    unfilteredCatalog,
+    catalog,
+    diff,
+    normalizedFilter,
+    filteredObjects,
+    ordered,
+    missingTables,
+    tables,
+    objectSections,
+    schemaGroups,
+  } = useMemo(() => {
+    const nextUnfilteredCatalog = overview
+      ? catalogFromOverview(overview, fullCatalog)
+      : fullCatalog;
+    const nextCatalog = nextUnfilteredCatalog
+      ? props.applySchemaScope === false
+        ? nextUnfilteredCatalog
+        : filterCatalog(connection, nextUnfilteredCatalog)
+      : undefined;
+    const nextDiff = schemaDiffForConnection(
+      connection,
+      groupByConnectionId,
+      catalogs,
+    );
+    const nextNormalizedFilter = filter.trim().toLocaleLowerCase();
+    const nextFilteredTables = nextCatalog
+      ? nextNormalizedFilter
+        ? nextCatalog.tables.filter((table) =>
+            tableMatchesFilter(table, nextNormalizedFilter),
+          )
+        : nextCatalog.tables
+      : [];
+    const nextFilteredObjects = nextCatalog
+      ? nextNormalizedFilter
+        ? (nextCatalog.objects ?? []).filter((object) =>
+            objectMatchesFilter(object, nextNormalizedFilter),
+          )
+        : (nextCatalog.objects ?? [])
+      : [];
+    const nextOrdered = orderTablesBySchemaDiff(
+      nextFilteredTables,
+      nextDiff,
+    );
+    const nextMissingTables = nextDiff
+      ? nextNormalizedFilter
+        ? nextDiff.missingTables.filter((table) =>
+            tableMatchesFilter(table, nextNormalizedFilter),
+          )
+        : nextDiff.missingTables
+      : [];
+    const nextTables = nextOrdered.filter((table) => table.kind !== "view");
+    const supportedKinds = supportedObjectKinds(connection.engine);
+    const nextObjectSections = SQL_OBJECT_SECTIONS.filter(
+      (section) =>
+        supportedKinds.has(section.kind) ||
+        nextFilteredObjects.some((object) => object.kind === section.kind),
+    );
+    const groups = new Map<string, SchemaContents>();
+    const contentsFor = (schema: string) => {
+      const existing = groups.get(schema);
+      if (existing) return existing;
+      const created: SchemaContents = {
+        tables: [],
+        views: [],
+        objectsByKind: new Map(),
+      };
+      groups.set(schema, created);
+      return created;
+    };
+    for (const table of nextOrdered) {
+      const contents = contentsFor(table.schema ?? "");
+      if (table.kind === "view") contents.views.push(table);
+      else contents.tables.push(table);
+    }
+    for (const object of nextFilteredObjects) {
+      const objectsByKind = contentsFor(object.schema ?? "").objectsByKind;
+      const objects = objectsByKind.get(object.kind) ?? [];
+      objects.push(object);
+      objectsByKind.set(object.kind, objects);
+    }
+    const nextSchemaGroups = [...groups.entries()].sort(
+      ([left], [right]) => left.localeCompare(right),
+    );
+    return {
+      unfilteredCatalog: nextUnfilteredCatalog,
+      catalog: nextCatalog,
+      diff: nextDiff,
+      normalizedFilter: nextNormalizedFilter,
+      filteredObjects: nextFilteredObjects,
+      ordered: nextOrdered,
+      missingTables: nextMissingTables,
+      tables: nextTables,
+      objectSections: nextObjectSections,
+      schemaGroups: nextSchemaGroups,
+    };
+  }, [
     catalogs,
-  );
-  const normalizedFilter = filter.trim().toLowerCase();
-  const filteredTables = catalog
-    ? normalizedFilter
-      ? catalog.tables.filter((table) =>
-          tableMatchesFilter(table, normalizedFilter),
-        )
-      : catalog.tables
-    : [];
-  const filteredObjects = catalog
-    ? normalizedFilter
-      ? (catalog.objects ?? []).filter((object) =>
-          objectMatchesFilter(object, normalizedFilter),
-        )
-      : (catalog.objects ?? [])
-    : [];
-  const ordered = orderTablesBySchemaDiff(filteredTables, diff);
-  const missingTables = diff
-    ? normalizedFilter
-      ? diff.missingTables.filter((table) =>
-          tableMatchesFilter(table, normalizedFilter),
-        )
-      : diff.missingTables
-    : [];
-  const tables = ordered.filter((table) => table.kind !== "view");
-  const views = ordered.filter((table) => table.kind === "view");
-  const supportedKinds = supportedObjectKinds(connection.engine);
-  const objectSections = SQL_OBJECT_SECTIONS.filter(
-    (section) =>
-      supportedKinds.has(section.kind) ||
-      filteredObjects.some((object) => object.kind === section.kind),
-  );
+    connection.database,
+    connection.engine,
+    connection.extraParams,
+    connection.id,
+    filter,
+    fullCatalog,
+    groupByConnectionId,
+    overview,
+    props.applySchemaScope,
+  ]);
   const databaseSectionKey = (section: string) =>
     `${connection.database}\u0000${section}`;
 
@@ -160,6 +240,7 @@ export default function CatalogTree(props: Props) {
       : undefined;
 
     setDatabaseOpen(true);
+    props.onRequestOverview();
     const namespace = table?.schema ?? props.revealNamespace;
     const schemaKey = namespace == null
       ? null
@@ -582,145 +663,197 @@ export default function CatalogTree(props: Props) {
     );
   }
 
-  const schemaGroups = Array.from(
-    [...tables, ...views].reduce((groups, table) => {
-      const schema = table.schema ?? "";
-      const current = groups.get(schema) ?? {
-        relations: [],
-        objects: [],
-      };
-      current.relations.push(table);
-      groups.set(schema, current);
-      return groups;
-    }, new Map<string, {
-      relations: CatalogTable[];
-      objects: CatalogObject[];
-    }>()),
-  ).sort(([left], [right]) => left.localeCompare(right));
-
-  for (const object of filteredObjects) {
-    const schema = object.schema ?? "";
-    const existing = schemaGroups.find(([name]) => name === schema);
-    if (existing) {
-      existing[1].objects.push(object);
-    } else {
-      schemaGroups.push([
-        schema,
-        { relations: [], objects: [object] },
-      ]);
-    }
-  }
-  schemaGroups.sort(([left], [right]) => left.localeCompare(right));
-
   function schemaStateKey(schema: string) {
     return schema || "__default__";
   }
 
-  function renderSchema(
-    schema: string,
-    contents: {
-      relations: CatalogTable[];
-      objects: CatalogObject[];
-    },
-  ) {
-    const schemaKey = schemaStateKey(schema);
-    const schemaOpen =
-      Boolean(normalizedFilter) || !collapsedSchemas.has(schemaKey);
-    const schemaTables = contents.relations.filter(
-      (table) => table.kind !== "view",
-    );
-    const schemaViews = contents.relations.filter(
-      (table) => table.kind === "view",
-    );
-    const tableSectionKey = databaseSectionKey(`${schemaKey}:table`);
-    const viewSectionKey = databaseSectionKey(`${schemaKey}:view`);
-    const tablesOpen =
-      Boolean(normalizedFilter) ||
-      !collapsedSections.has(`${connection.id}:${tableSectionKey}`);
-    const viewsOpen =
-      Boolean(normalizedFilter) ||
-      !collapsedSections.has(`${connection.id}:${viewSectionKey}`);
-    return (
-      <div
-        className="tw:flex tw:flex-col tw:gap-px"
-        data-schema-key={schemaKey}
-        key={`schema:${schema}`}
-      >
-        <TreeSectionButton
-          expanded={schemaOpen}
-          icon="folder"
-          onToggle={() => toggleSchema(schemaKey)}
-        >
-          {schema || t("connections.defaultSchema")}
-        </TreeSectionButton>
-        {schemaOpen && (
-          <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">
-            {schemaTables.length > 0 && (
-              <>
-                <TreeSectionButton
-                  expanded={tablesOpen}
-                  icon="table"
-                  onToggle={() =>
-                    props.onToggleRelationSection(tableSectionKey)
-                  }
-                >
-                  {t("connections.tables", { count: schemaTables.length })}
-                </TreeSectionButton>
-                {tablesOpen && schemaTables.map(renderTable)}
-              </>
-            )}
-            {schemaViews.length > 0 && (
-              <>
-                <TreeSectionButton
-                  expanded={viewsOpen}
-                  icon="view"
-                  onToggle={() =>
-                    props.onToggleRelationSection(viewSectionKey)
-                  }
-                >
-                  {t("connections.views", { count: schemaViews.length })}
-                </TreeSectionButton>
-                {viewsOpen && schemaViews.map(renderTable)}
-              </>
-            )}
-            {objectSections.map((section) => {
-              const objects = contents.objects.filter(
-                (object) => object.kind === section.kind,
-              );
-              if (normalizedFilter && objects.length === 0) return null;
-              const objectSectionKey = databaseSectionKey(
-                `${schemaKey}:${section.kind}`,
-              );
-              const expanded =
-                Boolean(normalizedFilter) ||
-                objectSectionsOpen.has(
-                  `${connection.id}:${objectSectionKey}`,
-                );
-              return (
-                <div
-                  className="tw:flex tw:flex-col tw:gap-px"
-                  key={section.kind}
-                >
-                  <TreeSectionButton
-                    expanded={expanded}
-                    icon={section.icon}
-                    onToggle={() =>
-                      props.onToggleObjectSection(objectSectionKey)
-                    }
-                  >
-                    {t(section.label, { count: objects.length })}
-                  </TreeSectionButton>
-                  {expanded &&
-                    objects.map((object, index) =>
-                      renderObject(object, section.icon, index, true),
-                    )}
-                </div>
-              );
+  function row(
+    key: string,
+    depth: 0 | 1,
+    render: () => ReactNode,
+  ): VirtualTreeRow {
+    return {
+      key,
+      render: () =>
+        depth === 1 ? <div className="tw:pl-3">{render()}</div> : render(),
+    };
+  }
+
+  function tableRowKey(table: CatalogTable) {
+    return `${connection.database}:table:${tableKey(table)}`;
+  }
+
+  function objectRowKey(object: CatalogObject, index: number) {
+    return `${connection.database}:object:${object.schema ?? ""}:${object.kind}:${object.name}:${object.detail ?? index}`;
+  }
+
+  function buildDatabaseRows(): VirtualTreeRow[] {
+    const rows: VirtualTreeRow[] = [];
+    if (isDocumentEngine(connection.engine)) {
+      const collectionSectionKey = databaseSectionKey("collections");
+      const collectionsOpen =
+        Boolean(normalizedFilter) ||
+        !collapsedSections.has(
+          `${connection.id}:${collectionSectionKey}`,
+        );
+      if (tables.length > 0 || (!normalizedFilter && catalog)) {
+        rows.push(row(
+          `${connection.database}:section:collections`,
+          0,
+          () => (
+            <TreeSectionButton
+              expanded={collectionsOpen}
+              icon="collection"
+              onToggle={() =>
+                props.onToggleRelationSection(collectionSectionKey)
+              }
+            >
+              {t("connections.collections", { count: tables.length })}
+            </TreeSectionButton>
+          ),
+        ));
+        if (collectionsOpen) {
+          for (const table of tables) {
+            rows.push(row(tableRowKey(table), 1, () => renderTable(table)));
+          }
+        }
+      }
+    } else {
+      for (const [schema, contents] of schemaGroups) {
+        const schemaKey = schemaStateKey(schema);
+        const schemaOpen =
+          Boolean(normalizedFilter) || !collapsedSchemas.has(schemaKey);
+        rows.push(row(
+          `${connection.database}:schema:${schemaKey}`,
+          0,
+          () => (
+            <div data-schema-key={schemaKey}>
+              <TreeSectionButton
+                expanded={schemaOpen}
+                icon="folder"
+                onToggle={() => toggleSchema(schemaKey)}
+              >
+                {schema || t("connections.defaultSchema")}
+              </TreeSectionButton>
+            </div>
+          ),
+        ));
+        if (!schemaOpen) continue;
+
+        const tableSectionKey = databaseSectionKey(`${schemaKey}:table`);
+        const tablesOpen =
+          Boolean(normalizedFilter) ||
+          !collapsedSections.has(`${connection.id}:${tableSectionKey}`);
+        if (contents.tables.length > 0) {
+          rows.push(row(
+            `${connection.database}:schema:${schemaKey}:section:table`,
+            1,
+            () => (
+              <TreeSectionButton
+                expanded={tablesOpen}
+                icon="table"
+                onToggle={() =>
+                  props.onToggleRelationSection(tableSectionKey)
+                }
+              >
+                {t("connections.tables", { count: contents.tables.length })}
+              </TreeSectionButton>
+            ),
+          ));
+          if (tablesOpen) {
+            for (const table of contents.tables) {
+              rows.push(row(tableRowKey(table), 1, () => renderTable(table)));
+            }
+          }
+        }
+
+        const viewSectionKey = databaseSectionKey(`${schemaKey}:view`);
+        const viewsOpen =
+          Boolean(normalizedFilter) ||
+          !collapsedSections.has(`${connection.id}:${viewSectionKey}`);
+        if (contents.views.length > 0) {
+          rows.push(row(
+            `${connection.database}:schema:${schemaKey}:section:view`,
+            1,
+            () => (
+              <TreeSectionButton
+                expanded={viewsOpen}
+                icon="view"
+                onToggle={() =>
+                  props.onToggleRelationSection(viewSectionKey)
+                }
+              >
+                {t("connections.views", { count: contents.views.length })}
+              </TreeSectionButton>
+            ),
+          ));
+          if (viewsOpen) {
+            for (const view of contents.views) {
+              rows.push(row(tableRowKey(view), 1, () => renderTable(view)));
+            }
+          }
+        }
+
+        for (const section of objectSections) {
+          const objects = contents.objectsByKind.get(section.kind) ?? [];
+          if (normalizedFilter && objects.length === 0) continue;
+          const objectSectionKey = databaseSectionKey(
+            `${schemaKey}:${section.kind}`,
+          );
+          const expanded =
+            Boolean(normalizedFilter) ||
+            objectSectionsOpen.has(
+              `${connection.id}:${objectSectionKey}`,
+            );
+          rows.push(row(
+            `${connection.database}:schema:${schemaKey}:section:${section.kind}`,
+            1,
+            () => (
+              <TreeSectionButton
+                expanded={expanded}
+                icon={section.icon}
+                onToggle={() =>
+                  props.onToggleObjectSection(objectSectionKey)
+                }
+              >
+                {t(section.label, { count: objects.length })}
+              </TreeSectionButton>
+            ),
+          ));
+          if (expanded) {
+            objects.forEach((object, index) => {
+              rows.push(row(
+                objectRowKey(object, index),
+                1,
+                () => renderObject(object, section.icon, index, true),
+              ));
+            });
+          }
+        }
+      }
+    }
+
+    if (missingTables.length > 0) {
+      rows.push(row(
+        `${connection.database}:section:missing`,
+        0,
+        () => (
+          <div className="tw:mt-1 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:tracking-[0.04em] tw:text-danger tw:uppercase">
+            {t("connections.schemaDiffMissingSection", {
+              count: missingTables.length,
             })}
           </div>
-        )}
-      </div>
-    );
+        ),
+      ));
+      for (const table of missingTables) {
+        rows.push(row(
+          `${connection.database}:missing:${tableKey(table)}`,
+          0,
+          () => renderMissingTable(table),
+        ));
+      }
+    }
+    return rows;
   }
 
   function databaseDisplayName() {
@@ -731,143 +864,117 @@ export default function CatalogTree(props: Props) {
     return segments[segments.length - 1] ?? value;
   }
 
-  function renderDatabaseContents() {
-    if (isDocumentEngine(connection.engine)) {
-      const collectionSectionKey = databaseSectionKey("collections");
-      const tablesOpen =
-        Boolean(normalizedFilter) ||
-        !collapsedSections.has(
-          `${connection.id}:${collectionSectionKey}`,
-        );
-      return (
-        <>
-          {(tables.length > 0 || (!normalizedFilter && catalog)) && (
-            <>
-              <TreeSectionButton
-                expanded={tablesOpen}
-                icon="collection"
-                onToggle={() =>
-                  props.onToggleRelationSection(collectionSectionKey)
-                }
-              >
-                {t("connections.collections", { count: tables.length })}
-              </TreeSectionButton>
-              {tablesOpen && tables.map(renderTable)}
-            </>
-          )}
-        </>
-      );
-    }
-    return schemaGroups.map(([schema, contents]) =>
-      renderSchema(schema, contents),
-    );
+  function toggleDatabase() {
+    const next = !databaseOpen;
+    setDatabaseOpen(next);
+    if (next) props.onRequestOverview();
+    else props.onForgetOverview();
   }
+
+  const databaseVisible =
+    databaseOpen || (Boolean(normalizedFilter) && Boolean(catalog));
+  const databaseRows = databaseVisible ? buildDatabaseRows() : [];
 
   return (
     <div
       ref={treeRef}
       className="tw:flex tw:flex-col tw:gap-px tw:pt-1 tw:pr-0 tw:pb-2 tw:pl-3"
     >
-      {accessIssue ? (
-        <div className="tw:grid tw:gap-1 tw:px-2 tw:py-2 tw:text-sm">
-          <strong className="tw:text-foreground">
-            {accessIssue === "grant"
-              ? t("workspace.connectionUseRequired")
-              : t("workspace.credentialsRequiredTitle")}
-          </strong>
-          <span className="tw:text-xs tw:leading-body tw:text-muted-foreground">
-            {accessIssue === "grant"
-              ? t("workspace.connectionUseRequiredBody")
-              : t("workspace.credentialsRequiredBody")}
-          </span>
-          {accessIssue === "credentials" && props.onResolveAccess ? (
-            <button
-              type="button"
-              className="tw:mt-1 tw:w-fit tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:font-sans tw:text-xs tw:text-foreground tw:hover:border-ring"
-              onClick={props.onResolveAccess}
-            >
-              {t("workspace.bindCredentialsShort")}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {error ? (
-        <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-danger">
-          <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
-            {error}
-          </span>
-          <button
-            type="button"
-            className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
-            onClick={props.onRetryOverview}
-          >
-            {t("common.refresh")}
-          </button>
-        </div>
-      ) : null}
-      {detailError ? (
-        <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
-          <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
-            {detailError}
-          </span>
-          <button
-            type="button"
-            className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
-            onClick={props.onRequestDetails}
-          >
-            {t("common.refresh")}
-          </button>
-        </div>
-      ) : null}
-      {!catalog && !error && !accessIssue && (
-        <div className="tw:px-2 tw:py-1 tw:text-sm">
-          <LoadingLabel>{t("connections.loadingSchema")}</LoadingLabel>
-        </div>
-      )}
-      {catalog &&
-        ordered.length === 0 &&
-        filteredObjects.length === 0 &&
-        missingTables.length === 0 && (
-          <div className="tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
-            {normalizedFilter
-              ? t("connections.noTablesMatch", {
-                  filter: normalizedFilter,
-                })
-              : t("connections.noObjects")}
-          </div>
-        )}
-      {catalog &&
-        (ordered.length > 0 ||
-          filteredObjects.length > 0 ||
-          (!normalizedFilter && catalog)) && (
-          <div
-            className="tw:flex tw:flex-col tw:gap-px"
-            data-database-root
-          >
-            <TreeSectionButton
-              expanded={Boolean(normalizedFilter) || databaseOpen}
-              icon="database"
-              onToggle={() => setDatabaseOpen((open) => !open)}
-            >
-              {databaseDisplayName()}
-            </TreeSectionButton>
-            {(Boolean(normalizedFilter) || databaseOpen) && (
-              <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">
-                {renderDatabaseContents()}
+      <div
+        className="tw:flex tw:flex-col tw:gap-px"
+        data-database-root
+      >
+        <TreeSectionButton
+          expanded={databaseVisible}
+          icon="database"
+          onToggle={toggleDatabase}
+        >
+          {databaseDisplayName()}
+        </TreeSectionButton>
+        {databaseVisible ? (
+          <div className="tw:flex tw:flex-col tw:gap-px tw:pl-3">
+            {accessIssue ? (
+              <div className="tw:grid tw:gap-1 tw:px-2 tw:py-2 tw:text-sm">
+                <strong className="tw:text-foreground">
+                  {accessIssue === "grant"
+                    ? t("workspace.connectionUseRequired")
+                    : t("workspace.credentialsRequiredTitle")}
+                </strong>
+                <span className="tw:text-xs tw:leading-body tw:text-muted-foreground">
+                  {accessIssue === "grant"
+                    ? t("workspace.connectionUseRequiredBody")
+                    : t("workspace.credentialsRequiredBody")}
+                </span>
+                {accessIssue === "credentials" && props.onResolveAccess ? (
+                  <button
+                    type="button"
+                    className="tw:mt-1 tw:w-fit tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-2 tw:py-1 tw:font-sans tw:text-xs tw:text-foreground tw:hover:border-ring"
+                    onClick={props.onResolveAccess}
+                  >
+                    {t("workspace.bindCredentialsShort")}
+                  </button>
+                ) : null}
               </div>
-            )}
+            ) : null}
+            {error ? (
+              <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-danger">
+                <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
+                  {error}
+                </span>
+                <button
+                  type="button"
+                  className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
+                  onClick={props.onRetryOverview}
+                >
+                  {t("common.refresh")}
+                </button>
+              </div>
+            ) : null}
+            {detailError ? (
+              <div className="tw:flex tw:items-start tw:gap-2 tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
+                <span className="tw:min-w-0 tw:flex-1 tw:wrap-break-word">
+                  {detailError}
+                </span>
+                <button
+                  type="button"
+                  className="tw:shrink-0 tw:cursor-pointer tw:rounded-xs tw:border tw:border-border-subtle tw:bg-card tw:px-1.5 tw:py-px tw:font-sans tw:text-2xs tw:text-foreground tw:hover:border-ring"
+                  onClick={props.onRequestDetails}
+                >
+                  {t("common.refresh")}
+                </button>
+              </div>
+            ) : null}
+            {!catalog && !error && !accessIssue ? (
+              <div className="tw:px-2 tw:py-1 tw:text-sm">
+                <LoadingLabel>{t("connections.loadingSchema")}</LoadingLabel>
+              </div>
+            ) : null}
+            {catalog &&
+            ordered.length === 0 &&
+            filteredObjects.length === 0 &&
+            missingTables.length === 0 ? (
+              <div className="tw:px-2 tw:py-1 tw:text-sm tw:text-muted-foreground">
+                {normalizedFilter
+                  ? t("connections.noTablesMatch", {
+                      filter: normalizedFilter,
+                    })
+                  : t("connections.noObjects")}
+              </div>
+            ) : null}
+            {databaseRows.length > 0 ? (
+              <VirtualTreeRows
+                rows={databaseRows}
+                scrollElement={props.scrollElement}
+                pinnedKey={
+                  selectedTableKey
+                    ? `${connection.database}:table:${selectedTableKey}`
+                    : null
+                }
+              />
+            ) : null}
           </div>
-        )}
-      {missingTables.length > 0 && (
-        <>
-          <div className="tw:mt-1 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:tracking-[0.04em] tw:text-danger tw:uppercase">
-            {t("connections.schemaDiffMissingSection", {
-              count: missingTables.length,
-            })}
-          </div>
-          {missingTables.map(renderMissingTable)}
-        </>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }

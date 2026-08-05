@@ -8,17 +8,17 @@ import {
   useState,
 } from "react";
 import {
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { CatalogOverview, CatalogTable } from "../../ipc/types";
+import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import type { BackgroundTask } from "../../features/backgroundTasks/domain";
 import { useBackgroundTasks } from "../../features/backgroundTasks/useBackgroundTasks";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import SearchEverywhere from "../../features/actionSearch/SearchEverywhere";
 import type { SearchEverywhereItem } from "../../features/actionSearch/domain";
+import { useCachedCatalogOverviews } from "../../features/actionSearch/catalogCache";
 import {
   createDemoSqlite,
   upsertConnection,
@@ -54,8 +54,7 @@ import {
   useOperationActivity,
 } from "../../lib/operationActivity";
 import {
-  catalogOverviewQuery,
-  catalogQuery,
+  databaseCatalogQuery,
   driversQuery,
   qk,
   skillStatusQuery,
@@ -213,14 +212,12 @@ function Shell() {
   } = useDashboardCreation(openDashboard);
 
   const selected = conns.find((c) => c.id === selectedId) ?? null;
-  const searchCatalogQueries = useQueries({
-    queries: conns.map((connection) => ({
-      ...catalogOverviewQuery(connection.id, catalogScope),
-      enabled: searchEverywhereOpen && catalogScope.ready,
-      select: (overview: CatalogOverview) =>
-        filterCatalogOverview(connection, overview),
-    })),
-  });
+  const searchCatalogTargets = useCachedCatalogOverviews(
+    queryClient,
+    conns,
+    catalogScope.key,
+    searchEverywhereOpen && catalogScope.ready,
+  );
   const showTerminalDock =
     terminalDockOpen && !!selected && editing === null;
   useEffect(() => {
@@ -696,31 +693,45 @@ function Shell() {
         };
       });
 
+    const connectionById = new Map(
+      conns.map((connection) => [connection.id, connection]),
+    );
     const databaseObjects: SearchEverywhereItem[] =
-      searchCatalogQueries.flatMap((query, queryIndex) => {
-        const connection = conns[queryIndex];
-        if (!connection || !query.data) return [];
-        return query.data.relations.map((relation) => ({
-          id: `object:${connection.id}:${relation.schema ?? ""}:${relation.name}:${relation.kind}`,
+      searchCatalogTargets.flatMap((target) => {
+        const connection = connectionById.get(target.connectionId);
+        if (!connection) return [];
+        const overview = filterCatalogOverview(
+          { ...connection, database: target.database },
+          target.overview,
+        );
+        return overview.relations.map((relation) => ({
+          id: `object:${connection.id}:${target.database}:${relation.schema ?? ""}:${relation.name}:${relation.kind}`,
           kind: "databaseObject" as const,
           label: [relation.schema, relation.name]
             .filter(Boolean)
             .join("."),
           detail: [
             connection.name || connection.database,
+            target.database !== connection.database
+              ? target.database
+              : null,
             relation.kind,
           ]
             .filter(Boolean)
             .join(" · "),
           keywords: [
             connection.engine,
-            connection.database,
+            target.database,
             relation.comment ?? "",
           ],
           run: async () => {
             try {
               const catalog = await queryClient.fetchQuery(
-                catalogQuery(connection.id, catalogScope),
+                databaseCatalogQuery(
+                  connection.id,
+                  target.database,
+                  catalogScope,
+                ),
               );
               const table = catalog.tables.find(
                 (candidate) =>
@@ -779,7 +790,7 @@ function Shell() {
     compactShell,
     conns,
     queryClient,
-    searchCatalogQueries,
+    searchCatalogTargets,
     selected,
     selectedDocuments,
     showDatabaseExplorer,
@@ -790,12 +801,6 @@ function Shell() {
     toggleDatabaseExplorer,
     toggleServices,
   ]);
-  const searchObjectsLoading =
-    searchEverywhereOpen &&
-    searchCatalogQueries.some(
-      (query) => query.isPending || query.isFetching,
-    );
-
   async function handleDeletedConnection(id: string) {
     await refresh();
     if (selectedId === id) {
@@ -1096,7 +1101,6 @@ function Shell() {
       {searchEverywhereOpen ? (
         <SearchEverywhere
           items={searchEverywhereItems}
-          loadingObjects={searchObjectsLoading}
           onClose={() => setSearchEverywhereOpen(false)}
         />
       ) : null}

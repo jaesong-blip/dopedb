@@ -38,6 +38,9 @@ import {
 } from "../../features/catalogExplorer/scopeFilter";
 import { databaseCatalogKey } from "./useCatalogTree";
 
+const EMPTY_SCHEMA_GROUPS = new Map<string, SchemaConnectionGroup>();
+const EMPTY_CATALOGS: Record<string, Catalog> = {};
+
 type Props = {
   connection: ConnectionProfile;
   nested: boolean;
@@ -64,6 +67,7 @@ type Props = {
   databaseCatalogs: Record<string, Catalog>;
   overviewErrorsByDatabase: Record<string, string>;
   detailErrorsByDatabase: Record<string, string>;
+  treeScrollElement: HTMLDivElement | null;
   filter: string;
   groupByConnectionId: Map<string, SchemaConnectionGroup>;
   catalogs: Record<string, Catalog>;
@@ -83,6 +87,8 @@ type Props = {
   onRefresh: () => void;
   onDelete: () => void;
   onOpenTable: (table: CatalogTable) => void;
+  onRequestOverview: (database: string) => void;
+  onForgetOverview: (database: string) => void;
   onRequestDetails: (database: string) => void;
   onRetryOverview: (database: string) => void;
   onToggleRelationSection: (key: string) => void;
@@ -433,17 +439,27 @@ export default function ConnectionNode(props: Props) {
                 error={props.overviewErrorsByDatabase[key]}
                 detailError={props.detailErrorsByDatabase[key]}
                 applySchemaScope={database.isDefault}
+                initiallyOpen={database.isDefault}
+                scrollElement={props.treeScrollElement}
                 filter={props.filter}
                 showRowCounts={props.showRowCounts}
                 groupByConnectionId={
                   database.isDefault
                     ? props.groupByConnectionId
-                    : new Map()
+                    : EMPTY_SCHEMA_GROUPS
                 }
-                catalogs={database.isDefault ? props.catalogs : {}}
+                catalogs={
+                  database.isDefault ? props.catalogs : EMPTY_CATALOGS
+                }
                 collapsedSections={props.collapsedSections}
                 objectSectionsOpen={props.objectSectionsOpen}
                 onOpenTable={props.onOpenTable}
+                onRequestOverview={() =>
+                  props.onRequestOverview(database.name)
+                }
+                onForgetOverview={() =>
+                  props.onForgetOverview(database.name)
+                }
                 onRequestDetails={() =>
                   props.onRequestDetails(database.name)
                 }
@@ -470,6 +486,8 @@ export default function ConnectionNode(props: Props) {
             selected={props.selected}
             selectedTableKey={props.selectedTableKey}
             error={props.error}
+            initiallyOpen
+            scrollElement={props.treeScrollElement}
             filter={props.filter}
             showRowCounts={props.showRowCounts}
             groupByConnectionId={props.groupByConnectionId}
@@ -477,6 +495,12 @@ export default function ConnectionNode(props: Props) {
             collapsedSections={props.collapsedSections}
             objectSectionsOpen={props.objectSectionsOpen}
             onOpenTable={props.onOpenTable}
+            onRequestOverview={() =>
+              props.onRequestOverview(connection.database)
+            }
+            onForgetOverview={() =>
+              props.onForgetOverview(connection.database)
+            }
             onRequestDetails={() =>
               props.onRequestDetails(connection.database)
             }

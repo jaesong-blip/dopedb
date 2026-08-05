@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { Icon, type IconName } from "../../components/Icon";
 import { useI18n } from "../../lib/i18n";
 import {
+  indexSearchEverywhereItems,
   searchEverywhereItems,
   type SearchEverywhereItem,
   type SearchEverywhereKind,
@@ -39,11 +40,9 @@ const kindLabelKey: Record<
 
 export default function SearchEverywhere({
   items,
-  loadingObjects,
   onClose,
 }: {
   items: readonly SearchEverywhereItem[];
-  loadingObjects: boolean;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -55,9 +54,13 @@ export default function SearchEverywhere({
       ? document.activeElement
       : null,
   );
+  const index = useMemo(
+    () => indexSearchEverywhereItems(items),
+    [items],
+  );
   const visibleItems = useMemo(
-    () => searchEverywhereItems(items, query),
-    [items, query],
+    () => searchEverywhereItems(index, query),
+    [index, query],
   );
 
   useEffect(() => {
@@ -183,18 +186,13 @@ export default function SearchEverywhere({
           ))}
           {visibleItems.length === 0 ? (
             <div className="tw:grid tw:min-h-32 tw:place-items-center tw:p-6 tw:text-sm tw:text-muted-foreground">
-              {loadingObjects
-                ? t("ide.search.loadingObjects")
-                : t("ide.search.empty")}
+              {t("ide.search.empty")}
             </div>
           ) : null}
         </div>
 
         <footer className="tw:flex tw:min-h-8 tw:shrink-0 tw:items-center tw:justify-between tw:gap-3 tw:border-t tw:border-border-subtle tw:px-3 tw:text-2xs tw:text-muted-foreground">
           <span>{t("ide.search.hint")}</span>
-          {loadingObjects ? (
-            <span role="status">{t("ide.search.loadingObjects")}</span>
-          ) : null}
         </footer>
       </section>
     </div>,

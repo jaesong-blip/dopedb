@@ -6,7 +6,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use dopedb_protocol::catalog::CatalogSnapshot;
-use tokio::sync::{Mutex, OwnedMutexGuard};
+use tokio::sync::{Mutex, OwnedMutexGuard, OwnedSemaphorePermit, Semaphore};
 
 use crate::connection::{ensure_terminal_pin, ConnectionAccess, ConnectionManager};
 use crate::error::{AppError, AppResult};
@@ -22,6 +22,10 @@ use super::super::ports::CatalogGatewayPort;
 const CATALOG_OVERVIEW_TIMEOUT: Duration = Duration::from_secs(20);
 const CATALOG_DETAIL_TIMEOUT: Duration = Duration::from_secs(60);
 const CATALOG_DDL_TIMEOUT: Duration = Duration::from_secs(30);
+/// One logical server connection may run one foreground overview alongside one
+/// detail scan. Further catalog reads wait inside the request deadline instead
+/// of exhausting a small driver pool or a remote database connection quota.
+const MAX_CONCURRENT_CATALOG_READS_PER_CONNECTION: usize = 2;
 
 fn database_bound_authority(pin: &crate::store::PinnedConnection) -> bool {
     let profile = &pin.profile;
@@ -70,6 +74,7 @@ pub(crate) struct ScopedCatalogGateway {
     store: Store,
     connections: ConnectionManager,
     loads: CatalogLoadCoordinator,
+    reads: CatalogReadCoordinator,
 }
 
 /// Serializes cache misses and refreshes per connection. The bounded and full
@@ -97,12 +102,39 @@ impl CatalogLoadCoordinator {
     }
 }
 
+/// Applies the documented per-server catalog read cap to overview, detail,
+/// database discovery, snapshot and DDL introspection paths.
+#[derive(Clone, Default)]
+struct CatalogReadCoordinator {
+    gates: Arc<Mutex<HashMap<ConnectionId, Weak<Semaphore>>>>,
+}
+
+impl CatalogReadCoordinator {
+    async fn acquire(&self, connection_id: ConnectionId) -> AppResult<OwnedSemaphorePermit> {
+        let gate = {
+            let mut gates = self.gates.lock().await;
+            gates.retain(|_, gate| gate.strong_count() > 0);
+            if let Some(gate) = gates.get(&connection_id).and_then(Weak::upgrade) {
+                gate
+            } else {
+                let gate = Arc::new(Semaphore::new(MAX_CONCURRENT_CATALOG_READS_PER_CONNECTION));
+                gates.insert(connection_id, Arc::downgrade(&gate));
+                gate
+            }
+        };
+        gate.acquire_owned().await.map_err(|_| {
+            AppError::Config("catalog read coordinator closed unexpectedly".to_owned())
+        })
+    }
+}
+
 impl ScopedCatalogGateway {
     pub(crate) fn new(store: Store, connections: ConnectionManager) -> Self {
         Self {
             store,
             connections,
             loads: CatalogLoadCoordinator::default(),
+            reads: CatalogReadCoordinator::default(),
         }
     }
 }
@@ -120,6 +152,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .await?;
             let database = context.pin().profile.database.clone();
             let _load = self.loads.acquire(connection_id).await;
+            let _read = self.reads.acquire(connection_id).await?;
             introspect::load_catalog_in_context(&self.store, context, policy.into())
                 .await
                 .map(|catalog| scope_catalog(catalog, &database))
@@ -138,6 +171,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .pin(connection_id.into(), ConnectionAccess::Read)
                 .await?;
             let _load = self.loads.acquire(connection_id).await;
+            let _read = self.reads.acquire(connection_id).await?;
             introspect::load_catalog_snapshot_in_context(&self.store, context, policy.into()).await
         })
         .await
@@ -153,6 +187,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .pin(connection_id.into(), ConnectionAccess::Read)
                 .await?;
             let database = context.pin().profile.database.clone();
+            let _read = self.reads.acquire(connection_id).await?;
             let lease = context.connect().await?;
             introspect::overview(lease.live())
                 .await
@@ -174,6 +209,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                     is_default: true,
                 }]);
             }
+            let _read = self.reads.acquire(connection_id).await?;
             let lease = context.connect().await?;
             introspect::databases(lease.live(), &configured).await
         })
@@ -193,6 +229,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                     .connections
                     .pin(connection_id.into(), ConnectionAccess::Read)
                     .await?;
+                let _read = self.reads.acquire(connection_id).await?;
                 let lease = context.connect_to_database(Some(database.clone())).await?;
                 introspect::introspect(lease.live())
                     .await
@@ -215,6 +252,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                     .connections
                     .pin(connection_id.into(), ConnectionAccess::Read)
                     .await?;
+                let _read = self.reads.acquire(connection_id).await?;
                 let lease = context.connect_to_database(Some(database.clone())).await?;
                 let catalog = introspect::introspect(lease.live()).await?;
                 let mut profile = lease.pin().profile.clone();
@@ -238,6 +276,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                     .connections
                     .pin(connection_id.into(), ConnectionAccess::Read)
                     .await?;
+                let _read = self.reads.acquire(connection_id).await?;
                 let lease = context.connect_to_database(Some(database.clone())).await?;
                 introspect::overview(lease.live())
                     .await
@@ -259,6 +298,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .await?;
             ensure_terminal_pin(authority, authority_context.pin())?;
             let _load = self.loads.acquire(authority.connection_id).await;
+            let _read = self.reads.acquire(authority.connection_id).await?;
             introspect::load_catalog_snapshot_in_context(
                 &self.store,
                 authority_context,
@@ -289,6 +329,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                         is_default: true,
                     }]);
                 }
+                let _read = self.reads.acquire(authority.connection_id).await?;
                 let lease = context.connect().await?;
                 introspect::databases(lease.live(), &configured).await
             },
@@ -310,6 +351,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                     .pin(authority.connection_id.into(), ConnectionAccess::Read)
                     .await?;
                 ensure_terminal_pin(authority, context.pin())?;
+                let _read = self.reads.acquire(authority.connection_id).await?;
                 let lease = context.connect_to_database(Some(database.clone())).await?;
                 let catalog = introspect::introspect(lease.live()).await?;
                 let mut profile = lease.pin().profile.clone();
@@ -332,6 +374,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .pin(connection_id.into(), ConnectionAccess::Read)
                 .await?;
             let _load = self.loads.acquire(connection_id).await;
+            let _read = self.reads.acquire(connection_id).await?;
             let lease = context.connect().await?;
             introspect::table_ddl(lease.live(), schema, table).await
         })
@@ -350,6 +393,7 @@ impl CatalogGatewayPort for ScopedCatalogGateway {
                 .connections
                 .pin(connection_id.into(), ConnectionAccess::Read)
                 .await?;
+            let _read = self.reads.acquire(connection_id).await?;
             let lease = context.connect_to_database(Some(database)).await?;
             introspect::table_ddl(lease.live(), schema, table).await
         })
