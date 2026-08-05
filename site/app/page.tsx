@@ -36,102 +36,112 @@ type HomeProps = {
 const copy = {
   en: {
     nav: {
-      why: "Why DopeDB",
-      safety: "Safety",
+      why: "Shared access",
+      safety: "Control boundary",
       download: "Download",
       docs: "Docs",
       github: "Open GitHub repository",
       home: "DopeDB home",
     },
     hero: {
-      eyebrow: "Connection-pinned Agent Terminal",
-      tag: "Let your agent query data without handing over the keys",
+      eyebrow: "Shared access for teams and AI agents",
+      tag: "Share database access. Keep credentials personal.",
       text:
-        "DopeDB gives Codex and Claude Code a guarded path into Postgres, MySQL, SQLite, and MongoDB through a connection-pinned Terminal and local CLI. Credentials, read-only enforcement, write approvals, rollback previews, and audit logs stay inside a native desktop app.",
-      download: "Download for macOS or Windows",
+        "DopeDB is an open-source database workspace where a team shares a secretless connection and policy. Each member keeps credentials local or receives a short-lived managed lease, while Codex or Claude works inside one exact connection grant enforced by Desktop.",
+      download: "Download the alpha for macOS or Windows",
       github: "View on GitHub",
-      signals: ["Agent-ready", "Credentials stay local", "Writes stay gated"],
+      signals: [
+        "Secretless shared connections",
+        "Member-specific access",
+        "Connection-pinned Agents",
+      ],
       imageAlt:
-        "DopeDB desktop app showing a SQL result, safety gate, and audit timeline",
+        "DopeDB desktop workspace showing a database result, approval boundary, and audit timeline",
       windowsDownload: "Download for Windows",
       macDownload: "Download for macOS",
     },
     positioning: {
-      eyebrow: "The gap DopeDB fills",
-      title: "Your agent needs database context. It does not need your database keys.",
+      eyebrow: "The product boundary",
+      title: "The workspace owns access. Members keep their own credentials.",
       body:
-        "Database clients help humans operate data. Text-to-SQL tools help generate queries. DopeDB sits between them: a local authorization boundary that lets agents inspect and query databases without raw credentials or silent write access.",
+        "DopeDB is not another universal database client or an always-on MCP server. The hosted workspace coordinates connection identity, membership, and policy; the native app keeps database traffic, credentials, execution, and recovery local.",
       items: [
         {
-          title: "Use the agent you already trust",
+          title: "Share definitions, not passwords",
           body:
-            "Run Codex or Claude Code in a Terminal pinned to the database you selected. The version-matched Skill teaches it the local DopeDB CLI.",
+            "A revisioned workspace record carries the provider resource, environment, and policy. Long-lived database secrets never travel with it.",
         },
         {
-          title: "Expose context, not credentials",
+          title: "Issue access per member",
           body:
-            "Connections and secrets stay in the local app boundary while the agent gets a narrow, auditable CLI surface with no listening port.",
+            "Use a credential in each member's OS store or a least-privilege, short-lived lease for PlanetScale, Neon, or GCP Cloud SQL.",
         },
         {
-          title: "Keep risky actions visible",
+          title: "Pin every Agent session",
           body:
-            "Read queries can flow. Writes and DDL stay behind policy, approval, rollback preview, and audit history.",
+            "Official Codex and Claude sessions are bound to the selected workspace, account, connection revision, process, and local policy.",
         },
       ],
     },
     principles: {
-      eyebrow: "Safety boundary",
-      title: "The agent can suggest. The app enforces.",
+      eyebrow: "Enforced access",
+      title: "Safety is an operation boundary, not an Agent setting.",
       body:
-        "DopeDB is built for the uncomfortable middle ground: powerful agent workflows, production database caution, and a human who still needs the final say.",
+        "A prompt can be ignored and a general tool server can expose too much. DopeDB binds authority outside the Agent, then preserves the controls a human needs when autonomous work reaches a real database.",
       items: [
         {
           icon: ShieldCheck,
-          title: "Read-only first",
+          title: "Exact authority",
           body:
-            "Agent-written SQL is treated as a proposal until DopeDB parses, classifies, and enforces the safety policy.",
+            "Workspace role, connection grant, database privilege, connection revision, and local policy must agree before an operation runs.",
         },
         {
           icon: KeyRound,
-          title: "Credentials stay local",
+          title: "Human recovery",
           body:
-            "Connections and secrets live in the native app boundary instead of being handed directly to the spawned agent.",
+            "See active work, stop a runaway execution, and roll back a supported manual transaction from the Desktop app.",
         },
         {
           icon: FileClock,
-          title: "Auditable by design",
+          title: "Verifiable history",
           body:
-            "Queries, approvals, previews, and execution results are recorded so every database action has a trail.",
+            "Immutable proposals, exact approvals, run claims, results, and receipts leave a reviewable operation trail.",
         },
       ],
     },
     workflow: {
-      eyebrow: "Agent-ready flow",
-      title: "Open your database to an agent without opening the floodgates.",
+      eyebrow: "Shared-access flow",
+      title: "From one team-owned connection to one bounded Agent session.",
       steps: [
-        "Connect a local, staging, or production database profile.",
-        "Open a Codex or Claude Agent Terminal pinned to that connection.",
-        "Ask it to inspect schemas, draft SQL, or explain a result.",
-        "Let DopeDB enforce read/write policy before anything runs.",
-        "Review writes only after rollback preview and risk classification.",
+        "Create or import a secretless workspace connection.",
+        "Bind your own local credential or receive a member-specific managed lease.",
+        "Launch the official Codex or Claude adapter against that exact revision.",
+        "Inspect the real schema and run allowed reads through the local boundary.",
+        "Approve an exact risky payload, then stop, roll back, or audit the run when needed.",
       ],
-      terminal: `agent -> proposed write
+      terminal: `workspace: team / production
+connection: billing@revision-12
+member access: use + write
+agent: codex / connection-pinned
+
+operation -> proposed write
 
 UPDATE customers
 SET plan = 'pro'
 WHERE id = 1842;
 
-DopeDB safety:
+DopeDB boundary:
+  authority: exact revision
   classification: write
   rows estimated: 1
-  preview: rollback transaction ready
-  approval: required`,
+  approval: exact payload required
+  recovery: manual transaction rollback`,
     },
     download: {
-      eyebrow: "Download",
-      title: "Install the latest macOS or Windows build from GitHub Releases.",
+      eyebrow: "Open-source alpha",
+      title: "Try the current macOS or Windows alpha from GitHub Releases.",
       body:
-        "The public release channel ships through GitHub Releases. The app checks the signed release feed and enables updates from Settings when a newer version is available.",
+        "Start in Personal Workspace without an account. Sign in only when you want team sharing or managed provider access. The release is an alpha, so expect rough edges and verify the scope before using production data.",
       warningTitle: "macOS may show a developer warning.",
       warningBody:
         "Until DopeDB is notarized with an Apple Developer ID, approve it from System Settings, Privacy & Security, Open Anyway after confirming the file came from GitHub Releases.",
@@ -143,23 +153,23 @@ DopeDB safety:
       source: "Build from source",
     },
     docs: {
-      eyebrow: "Project docs",
-      title: "Open the internals, not just the binary.",
+      eyebrow: "Product evidence",
+      title: "Read the boundary before trusting the binary.",
       items: [
+        {
+          title: "Product direction",
+          href: `${repoUrl}/blob/main/docs/PRODUCT_POSITIONING.md`,
+          body: "The audience, competitive boundary, public promise, and open gaps.",
+        },
         {
           title: "Project guide",
           href: `${repoUrl}/blob/main/docs/PROJECT.md`,
           body: "Architecture, release flow, safety model, and maintainer notes.",
         },
         {
-          title: "AI-readable overview",
-          href: `${siteUrl}/llms.txt`,
-          body: "A concise, plain-text project summary for AI agents and crawlers.",
-        },
-        {
-          title: "Korean README",
-          href: `${repoUrl}/blob/main/README.md`,
-          body: "Install, develop, release, and update details in Korean.",
+          title: "Workspace architecture",
+          href: `${repoUrl}/blob/main/docs/WORKSPACE_ROADMAP.md`,
+          body: "Shipped milestones, managed-provider decisions, and remaining exit criteria.",
         },
         {
           title: "Releases",
@@ -169,106 +179,112 @@ DopeDB safety:
       ],
     },
     jsonDescription:
-      "DopeDB is a free local-first database client with connection-pinned Agent Terminals. Agents can inspect schemas and run guarded queries while credentials, write approvals, rollback previews, and audit logs stay in a native desktop app.",
+      "DopeDB is an open-source database workspace where teams share access without sharing database credentials, and Codex or Claude works through one connection-pinned, locally enforced session.",
   },
   ko: {
     nav: {
-      why: "왜 DopeDB인가",
-      safety: "안전",
+      why: "공유 접근",
+      safety: "통제 경계",
       download: "다운로드",
       docs: "문서",
       github: "GitHub 저장소 열기",
       home: "DopeDB 홈",
     },
     hero: {
-      eyebrow: "데이터베이스에 고정된 Agent 터미널",
-      tag: "키를 넘기지 않고 에이전트에게 데이터 통로를 열어주세요",
+      eyebrow: "팀과 AI Agent를 위한 공유 DB 접근",
+      tag: "DB 접근은 함께, 인증정보는 각자 보관하세요.",
       text:
-        "DopeDB(도프디비)는 선택한 데이터베이스에 고정된 터미널과 로컬 CLI를 통해 Codex와 Claude Code가 Postgres, MySQL, SQLite, MongoDB를 안전하게 읽고 이해할 수 있게 합니다. 인증 정보, 읽기 전용 실행, 쓰기 승인, 롤백 미리보기, 감사 로그는 네이티브 데스크톱 앱 안에 둡니다.",
-      download: "macOS/Windows 다운로드",
+        "DopeDB(도프디비)는 팀이 비밀값 없는 연결과 정책을 공유하는 오픈소스 데이터베이스 워크스페이스입니다. 구성원은 자격 증명을 로컬에 보관하거나 단기 managed credential을 받고, Codex와 Claude는 Desktop이 집행하는 정확한 connection grant 안에서 일합니다.",
+      download: "macOS/Windows alpha 다운로드",
       github: "GitHub에서 보기",
-      signals: ["에이전트 준비 완료", "인증 정보는 로컬에", "쓰기는 승인 뒤에"],
+      signals: ["비밀값 없는 공유 연결", "구성원별 접근", "연결에 고정된 Agent"],
       imageAlt:
-        "SQL 결과, 안전 게이트, 감사 타임라인을 보여주는 DopeDB 데스크톱 앱",
+        "데이터베이스 결과, 승인 경계, 감사 타임라인을 보여주는 DopeDB 데스크톱 워크스페이스",
       windowsDownload: "Windows 다운로드",
       macDownload: "macOS 다운로드",
     },
     positioning: {
-      eyebrow: "DopeDB가 메우는 빈틈",
-      title: "에이전트에게 필요한 건 DB 맥락이지, DB 키가 아닙니다.",
+      eyebrow: "제품 경계",
+      title: "workspace는 접근을 소유하고, 구성원은 자신의 인증정보를 지킵니다.",
       body:
-        "데이터베이스 클라이언트는 사람이 데이터를 다루게 해주고, text-to-SQL 도구는 쿼리를 만들어줍니다. DopeDB는 그 사이에 있습니다. 에이전트가 데이터베이스를 읽고 쿼리할 수 있게 하되, 원본 인증 정보와 조용한 쓰기 권한은 넘기지 않는 로컬 권한 경계입니다.",
+        "DopeDB는 또 하나의 범용 DB 클라이언트나 상시 MCP server가 아닙니다. hosted workspace는 연결 정체성, membership, policy를 조정하고, native app은 DB traffic, 자격 증명, 실행, 복구를 로컬에 둡니다.",
       items: [
         {
-          title: "이미 믿는 에이전트를 그대로",
+          title: "password 대신 정의를 공유",
           body:
-            "Codex나 Claude Code를 선택한 데이터베이스에 고정된 터미널에서 실행합니다. 버전이 맞는 Skill이 로컬 DopeDB CLI 사용법을 알려줍니다.",
+            "revision이 있는 workspace record에는 provider resource, environment, policy만 담고 장기 DB 비밀값은 넣지 않습니다.",
         },
         {
-          title: "인증 정보가 아닌 맥락만 노출",
+          title: "구성원별로 접근 발급",
           body:
-            "연결과 비밀값은 로컬 앱 경계 안에 두고, 에이전트에는 수신 포트가 없는 좁고 감사 가능한 CLI 표면만 제공합니다.",
+            "각자의 OS 저장소를 사용하거나 PlanetScale, Neon, GCP Cloud SQL에서 최소 권한의 단기 credential을 받습니다.",
         },
         {
-          title: "위험한 동작은 보이는 곳에",
+          title: "모든 Agent session을 고정",
           body:
-            "읽기 쿼리는 자연스럽게 흐르게 두고, 쓰기와 DDL은 정책, 승인, 롤백 미리보기, 감사 기록 뒤에 둡니다.",
+            "공식 Codex와 Claude session을 선택한 workspace, account, connection revision, process, local policy에 묶습니다.",
         },
       ],
     },
     principles: {
-      eyebrow: "안전 경계",
-      title: "에이전트는 제안하고, 앱은 집행합니다.",
+      eyebrow: "집행되는 접근",
+      title: "안전은 Agent 설정이 아니라 operation 경계입니다.",
       body:
-        "DopeDB는 강력한 에이전트 워크플로우, 프로덕션 데이터베이스에 대한 조심스러움, 그리고 최종 결정을 내려야 하는 사람 사이의 불편하지만 중요한 지점을 위해 만들어졌습니다.",
+        "prompt는 무시될 수 있고 범용 tool server는 너무 많은 연결을 노출할 수 있습니다. DopeDB는 Agent 밖에서 권한을 묶고, 자율 작업이 실제 DB에 닿을 때 필요한 사람의 통제 수단을 보존합니다.",
       items: [
         {
           icon: ShieldCheck,
-          title: "읽기 전용 우선",
+          title: "정확한 권한",
           body:
-            "에이전트가 작성한 SQL은 DopeDB가 파싱하고 분류하고 안전 정책을 적용하기 전까지 제안으로 취급됩니다.",
+            "workspace role, connection grant, DB privilege, connection revision, local policy가 모두 맞아야 실행됩니다.",
         },
         {
           icon: KeyRound,
-          title: "인증 정보는 로컬에",
+          title: "사람의 복구 수단",
           body:
-            "연결 정보와 비밀값은 생성된 에이전트에 직접 넘기지 않고 네이티브 앱 경계 안에 둡니다.",
+            "진행 중인 작업을 보고, 폭주한 실행을 멈추고, 지원되는 manual transaction을 Desktop에서 rollback합니다.",
         },
         {
           icon: FileClock,
-          title: "감사 가능한 설계",
+          title: "검증 가능한 기록",
           body:
-            "쿼리, 승인, 미리보기, 실행 결과를 기록해 모든 데이터베이스 작업에 추적 가능한 흔적을 남깁니다.",
+            "불변 proposal, exact approval, run claim, result, receipt가 검토 가능한 operation trail을 남깁니다.",
         },
       ],
     },
     workflow: {
-      eyebrow: "에이전트 준비 흐름",
-      title: "데이터베이스를 에이전트에게 열되, 수문까지 열지는 않습니다.",
+      eyebrow: "공유 접근 흐름",
+      title: "팀이 소유한 연결 하나에서 경계가 있는 Agent session 하나로.",
       steps: [
-        "로컬, 스테이징, 프로덕션 데이터베이스 프로필을 연결합니다.",
-        "해당 연결에 고정된 Codex 또는 Claude Agent 터미널을 엽니다.",
-        "스키마 확인, SQL 초안 작성, 결과 설명을 요청합니다.",
-        "무엇이든 실행되기 전에 DopeDB가 읽기/쓰기 정책을 적용합니다.",
-        "롤백 미리보기와 위험 분류를 확인한 뒤에만 쓰기를 검토합니다.",
+        "비밀값 없는 workspace connection을 만들거나 가져옵니다.",
+        "자신의 로컬 credential을 연결하거나 구성원별 managed lease를 받습니다.",
+        "정확한 revision을 대상으로 공식 Codex 또는 Claude adapter를 시작합니다.",
+        "실제 schema를 확인하고 로컬 경계를 통해 허용된 read를 실행합니다.",
+        "위험한 exact payload를 승인하고 필요할 때 실행 중단, rollback, 감사를 수행합니다.",
       ],
-      terminal: `agent -> proposed write
+      terminal: `workspace: team / production
+connection: billing@revision-12
+member access: use + write
+agent: codex / connection-pinned
+
+operation -> proposed write
 
 UPDATE customers
 SET plan = 'pro'
 WHERE id = 1842;
 
-DopeDB safety:
+DopeDB boundary:
+  authority: exact revision
   classification: write
   rows estimated: 1
-  preview: rollback transaction ready
-  approval: required`,
+  approval: exact payload required
+  recovery: manual transaction rollback`,
     },
     download: {
-      eyebrow: "다운로드",
-      title: "최신 macOS 또는 Windows 빌드를 GitHub Releases에서 설치하세요.",
+      eyebrow: "오픈소스 alpha",
+      title: "현재 macOS 또는 Windows alpha를 GitHub Releases에서 사용해보세요.",
       body:
-        "공개 릴리스 채널은 GitHub Releases입니다. 앱은 서명된 릴리스 피드를 확인하고, 새 버전이 있으면 Settings에서 업데이트할 수 있게 합니다.",
+        "계정 없이 Personal Workspace로 시작할 수 있습니다. 팀 공유나 managed provider access가 필요할 때만 로그인하세요. 아직 alpha이므로 거친 부분이 있으며 production data에 사용하기 전에 지원 범위를 확인하세요.",
       warningTitle: "macOS 개발자 확인 경고가 표시될 수 있습니다.",
       warningBody:
         "Apple Developer ID로 공증되기 전까지는 GitHub Releases에서 받은 파일인지 확인한 뒤 System Settings, Privacy & Security, Open Anyway에서 실행을 허용하세요.",
@@ -280,23 +296,23 @@ DopeDB safety:
       source: "소스에서 빌드",
     },
     docs: {
-      eyebrow: "프로젝트 문서",
-      title: "바이너리뿐 아니라 내부 구조까지 열어둡니다.",
+      eyebrow: "제품 근거",
+      title: "바이너리를 신뢰하기 전에 경계를 확인하세요.",
       items: [
+        {
+          title: "제품 방향",
+          href: `${repoUrl}/blob/main/docs/PRODUCT_POSITIONING.md`,
+          body: "대상 사용자, 경쟁 경계, 공개 약속, 아직 열린 범위.",
+        },
         {
           title: "프로젝트 가이드",
           href: `${repoUrl}/blob/main/docs/PROJECT.md`,
           body: "아키텍처, 릴리스 흐름, 안전 모델, 메인테이너 노트.",
         },
         {
-          title: "AI용 프로젝트 개요",
-          href: `${siteUrl}/llms.txt`,
-          body: "AI 에이전트와 크롤러를 위한 간결한 일반 텍스트 프로젝트 요약.",
-        },
-        {
-          title: "English README",
-          href: `${repoUrl}/blob/main/README.en.md`,
-          body: "설치, 개발, 릴리스, 업데이트 정보를 영어로 확인합니다.",
+          title: "Workspace 아키텍처",
+          href: `${repoUrl}/blob/main/docs/WORKSPACE_ROADMAP.md`,
+          body: "구현된 milestone, managed provider 결정, 남은 exit criteria.",
         },
         {
           title: "릴리스",
@@ -306,7 +322,7 @@ DopeDB safety:
       ],
     },
     jsonDescription:
-      "DopeDB는 데이터베이스에 고정된 Agent 터미널을 제공하는 무료 로컬 우선 데이터베이스 클라이언트입니다. 에이전트는 스키마를 확인하고 보호된 쿼리를 실행할 수 있고, 인증 정보, 쓰기 승인, 롤백 미리보기, 감사 로그는 네이티브 데스크톱 앱에 남습니다.",
+      "DopeDB는 팀이 DB 인증정보 대신 연결과 정책을 공유하고, Codex와 Claude가 정확한 연결에 고정된 로컬 권한 경계 안에서 일하게 하는 오픈소스 데이터베이스 워크스페이스입니다.",
   },
 };
 
@@ -329,9 +345,9 @@ export async function generateMetadata({ searchParams }: HomeProps): Promise<Met
   };
 
   if (lang === "ko") {
-    const title = "DopeDB(도프디비) - 안전한 AI 데이터베이스 클라이언트";
+    const title = "DopeDB(도프디비) - 팀과 AI Agent를 위한 DB 접근 워크스페이스";
     const description =
-      "DopeDB(도프디비)는 AI 에이전트가 PostgreSQL, MySQL, SQLite, MongoDB를 안전하게 조회하도록 돕는 무료 오픈소스 데이터베이스 클라이언트입니다.";
+      "팀은 DB 인증정보 대신 연결과 정책을 공유하고, Codex와 Claude는 정확한 연결에 고정된 로컬 권한 경계 안에서 일합니다.";
 
     return {
       title: { absolute: title },
@@ -339,9 +355,11 @@ export async function generateMetadata({ searchParams }: HomeProps): Promise<Met
       keywords: [
         "도프디비",
         "DopeDB",
-        "AI 데이터베이스 클라이언트",
-        "Agent 데이터베이스 터미널",
-        "무료 DB 클라이언트",
+        "팀 데이터베이스 워크스페이스",
+        "공유 데이터베이스 접근",
+        "AI Agent 데이터베이스 접근",
+        "Neon 데이터베이스 접근",
+        "비밀값 없는 연결",
       ],
       alternates: {
         canonical: "/ko",

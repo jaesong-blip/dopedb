@@ -24,15 +24,24 @@ integration, reset, token, 정본 primitive뿐이다. 변경한 화면은 직접
 
 ## 제품 방향
 
-DopeDB에는 세 개의 제품 축이 있다. 기능을 넣을지는 DopeDB의 기능 목록이
-아니라 이 축으로 판단한다.
+DopeDB는 팀과 AI Agent를 위한 공유 DB 접근 workspace다. workspace가 연결의
+정체성, 정책, 협업 상태를 소유하고, 각 구성원은 자신의 로컬 자격 증명을
+보관하거나 최소 권한의 단기 managed 자격 증명을 받으며, 모든 Agent는 정확히
+하나의 grant 안에서 일한다. 범용 desktop DB client, text-to-SQL 제품, 범용 MCP
+server로 포지셔닝하지 않는다. Rust desktop shell, keychain 저장, read-only 검사,
+승인, 감사, 넓은 driver 지원은 필요한 기본기이지 차별점이 아니다. 시장 약속과
+공개 claim의 정본은 `docs/PRODUCT_POSITIONING.md`가 소유한다.
 
-**1. workspace가 연결과 대시보드를 공유한다.** 제품의 단위는 한 사람의
-컴퓨터가 아니라 팀 workspace다. 연결 프로필과 BI 대시보드는 그 안에서 공유되기
-위해 존재한다. 장기 비밀값은 공유 레코드를 따라가지 않는다. member-local 접근은
-각자의 OS credential store에 남고, managed 접근은 최소 권한의 구성원별 단기
-자격 증명을 프로세스 메모리에만 발급한다. 연결이나 대시보드를 공유 가능하게
-만드는 기능은 로컬 편의 기능보다 우선한다.
+DopeDB에는 세 개의 제품 축이 있다. 기능을 넣을지는 DopeDB이나 경쟁 제품의
+기능 목록이 아니라 이 축으로 판단한다.
+
+**1. workspace가 공유 접근을 소유하고 구성원이 자격 증명을 소유한다.** 제품의
+단위는 한 사람의 컴퓨터가 아니라 팀 workspace다. 연결 정체성, provider resource,
+environment 정책, grant, 대시보드, report는 그 안에서 공유되기 위해 존재한다.
+장기 비밀값은 공유 레코드를 따라가지 않는다. member-local 접근은 각자의 OS
+credential store에 남고, managed 접근은 최소 권한의 구성원별 단기 자격 증명을
+프로세스 메모리에만 발급한다. 접근을 안전하게 공유 가능하게 만드는 기능은 로컬
+편의 기능보다 우선한다.
 
 **2. 연결은 간단하게 유지한다.** 데이터베이스에 닿는 일은 모든 사용자가 처음
 하는 일이고 포기하는 지점이다. 동작하는 최소 입력, 실제 기본값, engine별로
@@ -42,8 +51,11 @@ DopeDB에는 세 개의 제품 축이 있다. 기능을 넣을지는 DopeDB의 �
 터널은 `~/.ssh/config`의 Host 별칭만 받고 시스템 `ssh`를 띄우므로 키,
 passphrase, agent, ProxyJump는 앱 밖에 남는다.
 
-**3. Agent가 일하고 화면은 관찰·승인·복구한다.** 데이터베이스 작업의 대부분은
-연결에 고정된 Agent가 수행한다. 기능을 넣을지는 다음 순서로 묻는다.
+**3. Agent는 정확한 grant 안에서 일하고 화면은 관찰·승인·복구한다.**
+데이터베이스 작업의 대부분은 연결에 고정된 Agent가 수행한다. 권한은 저장된
+연결이나 범용 tool server에서 상속하지 않고 현재 workspace, account, connection
+revision, process ancestry, local policy에 묶는다. 기능을 넣을지는 다음 순서로
+묻는다.
 
 1. Agent가 대신할 수 없는 일인가. 자격 증명 입력, 쓰기 승인, 결과 확인,
    감사 열람, 스키마 검증은 사람만 할 수 있으므로 화면이 소유한다.
@@ -59,6 +71,10 @@ Agent는 ACP(Agent Client Protocol) 클라이언트로 붙인다. Anthropic과 O
 않는다. 이 경계를 지켜야 구독 사용자가 그대로 쓸 수 있고, 한 공급자의 정책이
 바뀌어도 그 어댑터만 빠진다. 자체 채팅 프로토콜이나 provider별 통합을 따로
 만들지 않는다.
+
+저장된 연결을 상시 실행되는 범용 MCP database server로 노출하지 않는다. typed
+MCP-compatible bridge는 Desktop이 정확한 연결에 고정해 시작하고 Broker가 process
+identity와 권한을 검증하는 ACP session 안에서만 존재할 수 있다.
 
 공급자 API를 앱이 직접 호출하지 않는다. 모든 공급자 트래픽은 공식 CLI
 바이너리를 거쳐야 하며 구독 사용량 표시 같은 부가 기능도 예외가 아니다.

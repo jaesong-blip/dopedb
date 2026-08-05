@@ -13,16 +13,27 @@ tokens and shared primitives are authoritative.
 
 ## Product direction
 
-DopeDB has three product axes. Judge every feature against them, not against
-DopeDB's feature list.
+DopeDB is the shared database access workspace for teams and AI agents. The
+workspace owns connection identity, policy, and collaboration state; each member
+keeps a local credential or receives a least-privilege, short-lived managed one;
+and every Agent works inside one exact grant. It is not a universal desktop
+database client, a text-to-SQL product, or a general-purpose MCP server. Features
+such as a Rust desktop shell, keychain storage, read-only checks, approvals,
+auditing, and broad driver support are category baseline, not differentiators.
+[`docs/PRODUCT_POSITIONING.md`](docs/PRODUCT_POSITIONING.md) owns the canonical
+market promise and public claim boundary.
 
-**1. A workspace shares connections and dashboards.** The unit of the product
-is a team workspace, not one person's machine. Connection profiles and BI
-dashboards exist to be shared inside it. Long-lived secrets never travel with
-the shared record: member-local access stays in each member's OS credential
-store, while managed access issues a least-privilege, member-specific short-lived
-credential into process memory. A feature that makes a connection or a dashboard
-shareable outranks a local-only convenience.
+DopeDB has three product axes. Judge every feature against them, not against
+DopeDB's or a competitor's feature list.
+
+**1. A workspace owns shared access; members own credentials.** The unit of the
+product is a team workspace, not one person's machine. Connection identity,
+provider resource, environment policy, grants, dashboards, and reports exist to
+be shared inside it. Long-lived secrets never travel with the shared record:
+member-local access stays in each member's OS credential store, while managed
+access issues a least-privilege, member-specific short-lived credential into
+process memory. A feature that makes access safely shareable outranks a local-only
+convenience.
 
 **2. Connecting stays trivial.** Reaching a database is the first thing every
 user does and the place they give up. Prefer the fewest fields that can work,
@@ -33,8 +44,12 @@ mechanism, delegate to it rather than rebuilding it in a form: SSH tunnelling
 takes a `~/.ssh/config` host alias and spawns the system `ssh`, so keys,
 passphrases, agents, and ProxyJump stay outside the app.
 
-**3. The Agent does the work; the screen watches, approves, and undoes.** A
-connection-pinned Agent does most of the database work by hand-free command.
+**3. The Agent works inside an exact grant; the screen watches, approves, and
+recovers.** A connection-pinned Agent does most database work by hand-free
+command. Its authority is bound to the current workspace, account, connection
+revision, process ancestry, and local policy rather than inherited from a saved
+connection or a general tool server.
+
 When deciding whether a feature belongs, ask in order:
 
 1. Can the Agent not do this? Credential entry, write approval, result
@@ -52,6 +67,10 @@ Anthropic and OpenAI publish, unmodified, and let the user's local `claude` /
 never offers a login. Holding that line is what keeps subscription users
 working, and it means a policy change at one provider drops only that adapter.
 Do not build a bespoke chat protocol or a per-provider integration.
+Do not expose saved connections through an always-on general MCP database server.
+A typed MCP-compatible bridge may exist only inside the exact Desktop-launched,
+connection-pinned ACP session whose process identity and authority the Broker
+verifies.
 
 Never call a provider's API from the app. All provider traffic goes through the
 official CLI binary, and side features are not exempt — showing subscription

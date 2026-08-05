@@ -1,37 +1,54 @@
 # DopeDB
 
-DopeDB is a **free, open-source desktop app that gives AI agents a safe path to your databases**. Run Codex or Claude Code in an Agent Terminal pinned to one selected database, then use the version-matched DopeDB Skill and local CLI to inspect schemas and run queries. Raw credentials, read-only enforcement, write approvals, rollback previews, and audit logs stay under the Desktop app's control.
+DopeDB is a **free, open-source database workspace where teams and AI agents
+share access without sharing database credentials**. A team shares a secretless
+connection and policy. Each member uses a local credential or receives a
+least-privilege, short-lived managed credential. Codex and Claude work inside a
+session pinned to the exact workspace, account, connection revision, and local
+policy, while database traffic, approval, stop, recovery, and audit stay at the
+Desktop boundary. The public build is currently an alpha.
 
-- Website: https://dopedb.dev (Korean: https://dopedb.dev/?lang=ko)
+- Website: https://dopedb.dev (Korean: https://dopedb.dev/ko)
 - Download: [Windows x64](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-windows-x64-setup.exe) · [macOS Apple Silicon](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-macos-arm64.dmg) · [macOS Intel](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-macos-x64.dmg)
 - Korean: [README.md](./README.md)
 - Project docs: [docs/PROJECT.md](./docs/PROJECT.md)
+- Product direction: [docs/PRODUCT_POSITIONING.md](./docs/PRODUCT_POSITIONING.md)
 
 ## Features
 
-- PostgreSQL, MySQL/MariaDB, SQLite, and MongoDB connection management
-- Connection-pinned Shell, Codex, and Claude Agent Terminals with version-matched Skills
+- Personal and team workspaces, device sign-in, invitations, membership, and roles
+- Secretless shared connection templates with per-member local credential binding
+- Member-specific short-lived managed access for PlanetScale, Neon, and GCP Cloud SQL
+- PostgreSQL, MySQL/MariaDB, SQLite, and MongoDB connections and schema introspection
+- Official Codex and Claude ACP sessions pinned to exact connection authority, plus an advanced Shell Terminal
 - Local `dopedb` CLI Broker with no listening port or separate server
-- Read-only defaults and SQL classification
-- Approval card plus `allow_writes` gate for writes and DDL
-- Query history and hash-chained audit log
+- Read-only defaults, SQL classification, immutable write proposals, and exact approval
+- Cancellation, manual transaction rollback, durable results, and hash-chained audit
 - Live in-app view of agent query results
 - Korean/English support across the marketing site, desktop client UI, and GitHub README
 - macOS/Windows downloads and Tauri updater metadata through GitHub Releases
 
 ## Why DopeDB
 
-There are great free database clients, and there are plenty of AI SQL generators. DopeDB closes the risky gap between them.
+There are already excellent database clients, AI SQL generators, and general MCP
+servers. DopeDB does not compete on their feature count. It focuses on letting a
+team share one database access path without creating a shared password or broad
+Agent authority.
 
-- It is not an AI feature bolted onto a SQL editor. It is a **local database authorization boundary your existing agent can use through a dedicated Terminal and CLI**.
-- The agent does not receive raw database credentials; the local app owns connections and secrets.
-- SQL reads use a two-step `query plan` and single-use `query run` flow, returning EXPLAIN and aggregate database-health cautions before execution. MongoDB uses typed document commands that reject write stages.
-- Writes and DDL become immutable proposals that the CLI cannot approve; a human must approve the exact change in Desktop.
-- The context your agent saw, the queries it ran, the results, approvals, and audit logs land in a UI humans can review.
+- The workspace shares connection identity, provider resource, environment policy,
+  grants, and revisions, but never puts a long-lived secret in the shared record.
+- A member uses their OS credential store or a provider-issued, member-specific
+  short-lived credential held only in process memory.
+- An official Codex or Claude ACP session sees the exact Desktop-selected authority,
+  not every saved connection through an always-on general MCP server.
+- SQL reads use `query plan` and single-use `query run`; writes and DDL become
+  immutable proposals that only a human can approve for the exact payload.
+- The screen can stop execution, roll back a manual transaction, and preserve the
+  result, approval, and receipt trail for review.
 
 ## Language Support
 
-- Website: use the top-right language switcher or `?lang=ko` / `?lang=en`
+- Website: [English](https://dopedb.dev/) / [Korean](https://dopedb.dev/ko)
 - Desktop client: choose Korean or English from Settings -> Language
 - GitHub README: [Korean](./README.md) / [English](./README.en.md)
 

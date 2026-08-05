@@ -3,10 +3,14 @@
 AI 작업자는 변경 전에 `AGENTS.md`와 `CLAUDE.md`를 읽는다. 협업 또는 릴리스
 정책을 바꾸면 세 파일을 같은 변경에서 갱신한다.
 
-기능을 넣을지는 두 파일의 제품 방향으로 판단한다. DopeDB의 축은 workspace가
-연결과 대시보드를 공유하되 장기 비밀값은 공유 레코드를 따라가지 않고
-member-local OS 저장 또는 구성원별 단기 managed 자격 증명을 사용하는 것,
-연결을 간단하게 유지하는 것, Agent가 일하고 화면이 관찰·승인·복구하는 것이다.
+기능을 넣을지는 두 파일의 제품 방향과
+[`docs/PRODUCT_POSITIONING.md`](docs/PRODUCT_POSITIONING.md)로 판단한다. DopeDB는
+팀과 AI Agent를 위한 공유 DB 접근 workspace다. workspace가 연결 정체성·정책·협업
+상태를 공유하되 장기 비밀값은 공유 레코드를 따라가지 않고, 구성원은 member-local
+OS 저장 또는 구성원별 단기 managed 자격 증명을 사용한다. 연결은 간단해야 하며,
+Agent는 정확한 workspace/account/connection revision과 local policy에 고정된
+grant 안에서 일하고 화면은 관찰·승인·중단·복구한다. 범용 DB client 기능 수,
+text-to-SQL, 상시 범용 MCP server, driver 개수는 제품 방향이 아니다.
 개별 기능의 결정 상태는
 [`docs/DopeDB_VISUAL_REFERENCE_SPEC.md`](docs/DopeDB_VISUAL_REFERENCE_SPEC.md)의
 기능 범위 결정 표가 소유한다.

@@ -4,21 +4,36 @@ This is the single maintained project document for DopeDB. Keep the root README 
 
 ## Product
 
-DopeDB is a local-first desktop database client built with Tauri. It lets a user inspect and operate databases manually, and it runs official Claude/Codex ACP Agents in connection-pinned sessions that reach the Desktop trust boundary through an app-only typed Agent bridge without receiving raw credentials.
+DopeDB is an open-source shared database access workspace for teams and AI
+agents. The hosted workspace owns secretless connection identity, membership,
+policy, provider resources, revisions, and collaboration audit. The Tauri
+desktop app is the local execution and approval console: database traffic stays
+on the member's machine, credentials stay member-local or arrive as
+least-privilege short-lived leases, and official Claude/Codex ACP Agents run in
+connection-pinned sessions through an app-only typed bridge without receiving raw
+credentials. The canonical market promise and public claim boundary live in
+[Product Positioning](./PRODUCT_POSITIONING.md).
 
 Current scope:
 
 - Desktop app: Tauri v2, Rust core, React UI, Vite
 - Landing site: Next.js under `site/`, hosted at https://dopedb.dev
+- Workspace control plane: Next.js under `workspace-cloud/`, hosted separately at
+  `app.dopedb.dev`
 - Databases: PostgreSQL, MySQL/MariaDB, SQLite, MongoDB
 - Agent runtime: connection-pinned Claude/Codex ACP sessions plus an advanced Shell PTY path
+- Shared access: team workspaces, roles, invitations, secretless connection
+  templates, member-local bindings, and managed PlanetScale, Neon, and GCP Cloud
+  SQL credential issuance
 - Local tools: owner-local UDS/named-pipe Broker, the optional public `dopedb`
   CLI, and a separately bundled app-only Agent bridge
 - Distribution: GitHub Releases and Tauri updater metadata
 
-Planned team collaboration, workspace-scoped provider integrations, shared
-connections, dashboards, and saved agent analysis are specified in the
-[Workspace Collaboration Roadmap](./WORKSPACE_ROADMAP.md).
+The shipped workspace core and the remaining grant administration, provider
+lifecycle, sync, recovery, shared-dashboard, and Agent-report work are tracked in
+the [Workspace Collaboration Roadmap](./WORKSPACE_ROADMAP.md). The app is still
+an alpha; that roadmap, not landing copy, determines what may be described as
+complete.
 
 ## Architecture
 
@@ -191,6 +206,8 @@ then stages them together with the version- and SHA-256-pinned official Cloud SQ
 The site lives in `site/`.
 
 - Canonical domain: https://dopedb.dev
+- Market category, audience, promise, and claim limits:
+  [`docs/PRODUCT_POSITIONING.md`](./PRODUCT_POSITIONING.md)
 - Framework: Next.js app router
 - SEO files: `site/app/robots.ts`, `site/app/sitemap.ts`
 - Product preview image: `site/public/dopedb-dashboard.png`

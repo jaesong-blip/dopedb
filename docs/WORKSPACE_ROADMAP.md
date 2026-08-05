@@ -5,9 +5,29 @@ Milestone 2 shared-connection core plus PlanetScale, Neon, and GCP Cloud SQL
 managed-access adapters implemented. General provider inventory, full sync, KMS wrapping, backup,
 workspace-deletion, and per-connection-grant exit criteria stay open below.
 
-This roadmap defines how DopeDB can add team workspaces without turning the
-workspace service into a database proxy or weakening the local safety boundary.
-Milestones are ordered by dependency and exit criteria rather than calendar date.
+This roadmap owns how DopeDB completes and hardens its team workspace without
+turning the workspace service into a database proxy or weakening the local
+safety boundary. Milestones are ordered by dependency and exit criteria rather
+than calendar date.
+
+## Product Outcome
+
+DopeDB is the shared database access workspace for teams and AI agents. The
+hosted service is the control plane for identity, secretless connection records,
+policy, provider resources, revisions, and collaboration audit. The desktop app
+remains the local execution, approval, stop, and recovery boundary. This roadmap
+implements the promise in [Product Positioning](./PRODUCT_POSITIONING.md); it does
+not turn DopeDB into a hosted query proxy, a universal local database client, or
+an always-on general MCP server.
+
+Prioritize the workspace in this order:
+
+1. Reliably share one connection and give each member individual access.
+2. Complete provider discovery, issuance, expiry, revoke, and drift handling.
+3. Enforce and recover every connection-pinned Agent operation at exact authority.
+4. Add shared dashboards and durable Agent reports on top of that boundary.
+
+Driver breadth and general client convenience are not workspace exit criteria.
 
 ## Product Decision
 

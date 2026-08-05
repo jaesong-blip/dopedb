@@ -9,19 +9,20 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: "DopeDB",
   title: {
-    default: "DopeDB - Local-first AI database client",
+    default: "DopeDB - Shared database access for teams and AI agents",
     template: "%s - DopeDB",
   },
   description:
-    "An open-source desktop database client where AI agents can help with SQL while credentials, approvals, and audit logs stay local.",
+    "An open-source database workspace where teams share access without sharing credentials, and Codex or Claude works inside one connection-pinned local boundary.",
   keywords: [
     "DopeDB",
     "도프디비",
-    "AI database client",
-    "Agent database terminal",
-    "Tauri database client",
-    "local-first database client",
-    "SQL safety",
+    "shared database workspace",
+    "team database access",
+    "AI agent database access",
+    "managed database credentials",
+    "secretless connections",
+    "connection-pinned agent",
   ],
   authors: [{ name: "Jaesong Choi", url: "https://github.com/json-choi" }],
   creator: "Jaesong Choi",
@@ -53,9 +54,9 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "DopeDB",
+    title: "DopeDB - Share database access without sharing credentials",
     description:
-      "Talk to your database through an AI agent. Keep credentials, approvals, and audit logs local.",
+      "A shared database access workspace with member-specific credentials and connection-pinned Codex or Claude sessions.",
     url: siteUrl,
     siteName: "DopeDB",
     type: "website",
@@ -71,9 +72,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "DopeDB",
+    title: "DopeDB - Shared database access",
     description:
-      "A local-first AI database client with read-only defaults, approval gates, and audit logs.",
+      "Share a database connection and policy while credentials stay personal and every Agent stays pinned to exact authority.",
     images: ["/dopedb-dashboard.png"],
   },
 };

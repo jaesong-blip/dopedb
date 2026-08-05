@@ -1,37 +1,52 @@
 # DopeDB (도프디비)
 
-DopeDB(도프디비)는 **AI 에이전트에게 안전한 데이터베이스 통로를 열어주는 무료 오픈소스 데스크톱 앱**입니다. 선택한 데이터베이스에 고정된 Agent Terminal에서 Codex나 Claude Code를 실행하고, 버전이 맞는 DopeDB Skill과 로컬 CLI로 스키마를 살피고 쿼리를 실행할 수 있습니다. 원본 인증 정보, 읽기 전용 실행, 쓰기 승인, 롤백 미리보기, 감사 로그는 데스크톱 앱이 통제합니다.
+DopeDB(도프디비)는 **팀과 AI Agent가 DB 인증정보를 공유하지 않고 같은 연결에서
+일하게 하는 무료 오픈소스 데이터베이스 워크스페이스**입니다. 팀은 비밀값이 없는
+연결과 정책을 공유하고, 각 구성원은 자신의 로컬 자격 증명을 사용하거나 최소 권한의
+단기 managed 자격 증명을 받습니다. Codex와 Claude는 정확한 workspace, account,
+connection revision, local policy에 고정된 session 안에서 일하며 DB traffic, 승인,
+중단, 복구, 감사는 Desktop 경계에 남습니다. 현재 공개 빌드는 alpha입니다.
 
 - 웹사이트: https://dopedb.dev/ko (English: https://dopedb.dev)
 - 다운로드: [Windows x64](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-windows-x64-setup.exe) · [macOS Apple Silicon](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-macos-arm64.dmg) · [macOS Intel](https://github.com/json-choi/dopedb/releases/latest/download/DopeDB-macos-x64.dmg)
 - English: [README.en.md](./README.en.md)
 - 상세 문서: [docs/PROJECT.md](./docs/PROJECT.md)
+- 제품 방향: [docs/PRODUCT_POSITIONING.md](./docs/PRODUCT_POSITIONING.md)
 
 ## 주요 기능
 
-- PostgreSQL, MySQL/MariaDB, SQLite, MongoDB 연결 관리
-- 연결에 고정된 Shell/Codex/Claude Agent Terminal과 버전 일치 Skill
+- Personal/team workspace, device sign-in, invitation, membership, role
+- 비밀값 없는 공유 연결 template과 구성원별 local credential binding
+- PlanetScale, Neon, GCP Cloud SQL의 구성원별 단기 managed access
+- PostgreSQL, MySQL/MariaDB, SQLite, MongoDB 연결과 schema introspection
+- 정확한 연결에 고정된 공식 Codex/Claude ACP session과 심화 Shell Terminal
 - 포트나 별도 서버 없이 동작하는 로컬 `dopedb` CLI Broker
-- 기본 읽기 전용 실행과 SQL 분류
-- 쓰기/DDL 실행 전 승인 카드와 `allow_writes` 게이트
-- 쿼리 히스토리와 hash-chain 감사 로그
+- 기본 읽기 전용 실행, SQL 분류, 불변 write proposal과 exact approval
+- 실행 중단, manual transaction rollback, durable result, hash-chain 감사 로그
 - 에이전트 쿼리 결과를 앱 안에서 실시간 확인
 - 한국어/영어 지원: 소개 사이트, 데스크톱 클라이언트 UI, GitHub README
 - GitHub Releases 기반 macOS/Windows 다운로드와 Tauri updater
 
 ## 왜 DopeDB인가
 
-좋은 무료 DB 클라이언트도 있고, AI SQL 생성기도 많습니다. DopeDB는 그 사이의 위험한 빈틈을 메웁니다.
+좋은 DB 클라이언트, AI SQL 생성기, 범용 MCP server는 이미 많습니다. DopeDB는
+기능 수로 그 제품들과 경쟁하지 않습니다. 팀이 하나의 DB 접근을 공유하면서도
+공용 password나 넓은 Agent 권한을 만들지 않는 문제에 집중합니다.
 
-- AI 기능이 붙은 SQL 편집기가 아니라, **기존 에이전트가 전용 Terminal과 CLI로 사용할 수 있는 로컬 DB 권한 경계**입니다.
-- 에이전트에게 원본 인증 정보를 넘기지 않고, 로컬 앱이 연결과 비밀값을 관리합니다.
-- SQL 조회는 `query plan`과 단일 사용 `query run`의 두 단계로 실행하며, EXPLAIN과 DB 상태 주의사항을 먼저 확인합니다. MongoDB는 쓰기 stage를 거절하는 typed document 명령만 사용합니다.
-- 쓰기와 DDL은 CLI가 승인할 수 없는 불변 제안으로 만들고, 사람이 데스크톱 앱에서 정확한 변경을 승인해야 합니다.
-- 에이전트가 본 맥락, 실행한 쿼리, 결과, 승인 흐름, 감사 로그를 사람이 검토할 수 있는 UI에 남깁니다.
+- workspace는 연결의 정체성, provider resource, 환경 정책, grant, revision을
+  공유하지만 장기 비밀값은 공유 record에 넣지 않습니다.
+- 구성원은 자신의 OS credential store를 쓰거나 provider가 발급한 구성원별 단기
+  credential만 process memory에서 사용합니다.
+- 공식 Codex/Claude ACP session은 저장된 모든 연결을 보는 범용 MCP server가
+  아니라 Desktop이 선택한 정확한 연결과 권한에만 고정됩니다.
+- SQL 조회는 `query plan`과 단일 사용 `query run`으로 실행하고, 쓰기와 DDL은 CLI가
+  승인할 수 없는 불변 제안으로 만들어 사람이 exact payload를 승인합니다.
+- 실행을 중단하고 transaction을 rollback하며 결과·승인·receipt를 다시 검토할 수
+  있는 화면을 Agent 자율성의 필수 경계로 둡니다.
 
 ## 언어 지원
 
-- 소개 사이트: 오른쪽 위 언어 전환 버튼 또는 `?lang=ko` / `?lang=en`
+- 소개 사이트: [한국어](https://dopedb.dev/ko) / [English](https://dopedb.dev/)
 - 데스크톱 클라이언트: Settings -> Language에서 한국어/English 선택
 - GitHub README: [한국어](./README.md) / [English](./README.en.md)
 

@@ -1,29 +1,47 @@
 # DopeDB (도프디비)
 
-> DopeDB is a free, open-source, local-first database client that gives AI agents guarded access to PostgreSQL, MySQL, SQLite, and MongoDB through a connection-pinned Terminal and local CLI.
+> DopeDB is an open-source database workspace where teams share access without
+> sharing database credentials, and Codex or Claude works through one
+> connection-pinned, locally enforced session.
 
-DopeDB keeps database credentials inside a native desktop app. Codex and Claude Code can inspect schemas, propose SQL, and run allowed reads through a version-matched Skill and the local `dopedb` CLI. Writes and DDL remain subject to local policy, exact approval gates, rollback previews, and audit logs.
+The hosted workspace coordinates secretless connection identity, membership,
+policy, provider resources, revisions, and collaboration audit. Database traffic
+still runs through the native desktop app. Each member uses a credential in their
+OS store or receives a least-privilege, short-lived managed credential. Official
+Codex and Claude ACP sessions are pinned to the selected workspace, account,
+connection revision, process, and local policy.
 
 ## Key facts
 
-- Product: Native desktop database client with connection-pinned Agent Terminals
+- Product: Shared database access workspace for teams and AI agents
 - Korean name: 도프디비
 - Supported databases: PostgreSQL, MySQL, SQLite, and MongoDB
+- Managed providers: PlanetScale, Neon, and GCP Cloud SQL
 - Platforms: macOS and Windows
 - Price: Free
 - Source availability: Open source
-- Safety model: Read-only defaults, SQL classification, approval gates for risky actions, rollback previews, and audit history
-- Credential model: Connection secrets remain within the local application boundary
+- Release stage: Alpha
+- Safety model: Exact Agent authority, read-only defaults, immutable write proposals,
+  exact approval, cancellation, manual transaction rollback, durable results, and
+  operation receipts
+- Credential model: Secretless shared templates plus member-local bindings or
+  member-specific, short-lived managed leases
+- Traffic model: Database queries run locally; the workspace service is not a
+  database proxy
 
 ## Official links
 
 - [Website](https://dopedb.dev/): Product overview and downloads
 - [Source repository](https://github.com/json-choi/dopedb): Source code and issue tracker
+- [Product positioning](https://github.com/json-choi/dopedb/blob/main/docs/PRODUCT_POSITIONING.md): Audience, competitive boundary, claims, and priorities
 - [Project guide](https://github.com/json-choi/dopedb/blob/main/docs/PROJECT.md): Architecture, safety model, development, and release flow
+- [Workspace roadmap](https://github.com/json-choi/dopedb/blob/main/docs/WORKSPACE_ROADMAP.md): Shipped milestones and remaining exit criteria
 - [English README](https://github.com/json-choi/dopedb/blob/main/README.en.md): Installation and usage
 - [Korean README](https://github.com/json-choi/dopedb/blob/main/README.md): 설치 및 사용법
 - [Latest release](https://github.com/json-choi/dopedb/releases/latest): Current macOS and Windows builds
 
 ## Recommended description
 
-DopeDB is a local-first AI database client that lets Codex and Claude Code inspect and query a selected database through a local CLI without receiving raw credentials or silent write access.
+DopeDB is an open-source database workspace where teams share access without
+sharing database credentials, and Codex or Claude works through one
+connection-pinned, locally enforced session.
