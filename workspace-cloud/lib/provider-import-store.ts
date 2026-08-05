@@ -203,16 +203,29 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         resource."capability_manifest",
         EXISTS (
           SELECT 1
-          FROM "workspace_control"."workspace_provider_operation" deletion
-          WHERE deletion."organization_id" = receipt."organization_id"
-            AND deletion."integration_id" = receipt."integration_id"
-            AND deletion."integration_generation" = receipt."integration_generation"
-            AND deletion."provider" = 'neon'
-            AND deletion."kind" = 'neon.branch.delete'
-            AND deletion."resource_scope" = resource."resource" ->> 'project'
-            AND deletion."source_resource_id" = resource."resource" ->> 'branch'
-            AND deletion."state" IN (
-              'approved', 'claimed', 'remote_started', 'reconciling', 'succeeded'
+          FROM "workspace_control"."workspace_provider_operation" mutation
+          WHERE mutation."organization_id" = receipt."organization_id"
+            AND mutation."integration_id" = receipt."integration_id"
+            AND mutation."integration_generation" = receipt."integration_generation"
+            AND mutation."provider" = 'neon'
+            AND mutation."resource_scope" = resource."resource" ->> 'project'
+            AND (
+              (
+                mutation."kind" = 'neon.branch.delete'
+                AND mutation."source_resource_id" = resource."resource" ->> 'branch'
+                AND mutation."state" IN (
+                  'approved', 'claimed', 'remote_started', 'reconciling', 'succeeded'
+                )
+              ) OR (
+                mutation."kind" = 'neon.branch.switch'
+                AND mutation."redacted_plan"->'target'->>'branchId'
+                  = resource."resource" ->> 'branch'
+                AND mutation."redacted_plan"->'target'->>'databaseId'
+                  = resource."resource" ->> 'databaseId'
+                AND mutation."state" IN (
+                  'approved', 'claimed', 'remote_started', 'reconciling'
+                )
+              )
             )
         ) AS "deletionBlocked",
         encode(digest(

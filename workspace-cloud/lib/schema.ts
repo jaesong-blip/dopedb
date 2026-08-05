@@ -405,7 +405,9 @@ export const workspaceProviderOperation = workspaceControl.table(
     check("provider_operation_provider", sql`${table.provider} = 'neon'`),
     check(
       "provider_operation_kind",
-      sql`${table.kind} IN ('neon.branch.create', 'neon.branch.delete')`,
+      sql`${table.kind} IN (
+        'neon.branch.create', 'neon.branch.delete', 'neon.branch.switch'
+      )`,
     ),
     check(
       "provider_operation_state",

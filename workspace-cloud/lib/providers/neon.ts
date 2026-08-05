@@ -1758,7 +1758,10 @@ export async function validateNeonResource(
       502,
     );
   }
-  return { providerAuditId: `${branch.value}:${database.id}` };
+  return {
+    providerAuditId: `${branch.value}:${database.id}`,
+    endpointId: connection.endpoint.id,
+  };
 }
 
 export async function issueNeonLease(input: {

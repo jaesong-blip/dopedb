@@ -115,7 +115,46 @@ export type NeonBranchDeletePlan = Readonly<{
   warningCodes: readonly string[];
 }>;
 
-export type NeonBranchPlan = NeonBranchCreatePlan | NeonBranchDeletePlan;
+export type NeonBranchSwitchPlan = Readonly<{
+  version: 1;
+  kind: "neon.branch.switch";
+  operationId: string;
+  integrationId: string;
+  integrationGeneration: string;
+  issuedAt: string;
+  expiresAt: string;
+  source: Readonly<{
+    projectId: string;
+    branchId: string;
+    name: string;
+    connectionId: string;
+    connectionName: string;
+    database: string;
+    environment: "development" | "production";
+    activeLeaseCount: number;
+  }>;
+  target: Readonly<{
+    projectId: string;
+    branchId: string;
+    name: string;
+    database: string;
+    environment: "development" | "production";
+  }>;
+  impact: Readonly<{
+    activeLeaseCount: number;
+    closesExistingSessions: true;
+    createsConnectionRevision: true;
+    reintrospectionRequired: true;
+  }>;
+  risk: "standard" | "production_data";
+  approvalPolicy: "single_admin" | "separate_admin";
+  warningCodes: readonly string[];
+}>;
+
+export type NeonBranchPlan =
+  | NeonBranchCreatePlan
+  | NeonBranchDeletePlan
+  | NeonBranchSwitchPlan;
 
 export type NeonBranchOperationState =
   | "awaiting_approval"
@@ -405,10 +444,94 @@ function parseDeletePlan(value: unknown): NeonBranchDeletePlan | null {
   };
 }
 
+function parseSwitchPlan(value: unknown): NeonBranchSwitchPlan | null {
+  const row = record(value);
+  const source = record(row?.source);
+  const target = record(row?.target);
+  const impact = exact(row?.impact, [
+    "activeLeaseCount",
+    "closesExistingSessions",
+    "createsConnectionRevision",
+    "reintrospectionRequired",
+  ]);
+  if (
+    !row
+    || row.version !== 1
+    || row.kind !== "neon.branch.switch"
+    || !uuid(row.operationId)
+    || !uuid(row.integrationId)
+    || typeof row.integrationGeneration !== "string"
+    || !/^\d+$/.test(row.integrationGeneration)
+    || !instant(row.issuedAt)
+    || !instant(row.expiresAt)
+    || !source
+    || !segment(source.projectId)
+    || !segment(source.branchId)
+    || !safeText(source.name, 256)
+    || !uuid(source.connectionId)
+    || !safeText(source.connectionName, 120)
+    || !safeText(source.database, 256)
+    || (source.environment !== "development" && source.environment !== "production")
+    || !integer(source.activeLeaseCount, 10_000)
+    || !target
+    || !segment(target.projectId)
+    || !segment(target.branchId)
+    || !safeText(target.name, 256)
+    || !safeText(target.database, 256)
+    || (target.environment !== "development" && target.environment !== "production")
+    || !impact
+    || !integer(impact.activeLeaseCount, 10_000)
+    || impact.activeLeaseCount !== source.activeLeaseCount
+    || impact.closesExistingSessions !== true
+    || impact.createsConnectionRevision !== true
+    || impact.reintrospectionRequired !== true
+    || (row.risk !== "standard" && row.risk !== "production_data")
+    || (row.approvalPolicy !== "single_admin" && row.approvalPolicy !== "separate_admin")
+    || !Array.isArray(row.warningCodes)
+    || row.warningCodes.length > 16
+    || !row.warningCodes.every((code) => (
+      typeof code === "string" && /^NEON_[A-Z0-9_]{1,95}$/.test(code)
+    ))
+  ) {
+    return null;
+  }
+  return {
+    version: 1,
+    kind: "neon.branch.switch",
+    operationId: row.operationId,
+    integrationId: row.integrationId,
+    integrationGeneration: row.integrationGeneration,
+    issuedAt: row.issuedAt,
+    expiresAt: row.expiresAt,
+    source: {
+      projectId: source.projectId,
+      branchId: source.branchId,
+      name: source.name,
+      connectionId: source.connectionId,
+      connectionName: source.connectionName,
+      database: source.database,
+      environment: source.environment,
+      activeLeaseCount: source.activeLeaseCount,
+    },
+    target: {
+      projectId: target.projectId,
+      branchId: target.branchId,
+      name: target.name,
+      database: target.database,
+      environment: target.environment,
+    },
+    impact: impact as NeonBranchSwitchPlan["impact"],
+    risk: row.risk,
+    approvalPolicy: row.approvalPolicy,
+    warningCodes: row.warningCodes as string[],
+  };
+}
+
 function parsePlan(value: unknown): NeonBranchPlan | null {
   const row = record(value);
   if (row?.kind === "neon.branch.create") return parseCreatePlan(value);
   if (row?.kind === "neon.branch.delete") return parseDeletePlan(value);
+  if (row?.kind === "neon.branch.switch") return parseSwitchPlan(value);
   return null;
 }
 

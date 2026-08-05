@@ -66,11 +66,13 @@ function operationLabel(operation: NeonBranchOperation) {
   if (state === "awaiting_approval") return "승인 대기";
   if (state === "approved") return "실행 준비";
   if (state === "claimed" || state === "remote_started") {
-    return operation.plan.kind === "neon.branch.delete" ? "폐기 시작" : "생성 시작";
+    if (operation.plan.kind === "neon.branch.delete") return "폐기 시작";
+    return operation.plan.kind === "neon.branch.switch" ? "전환 시작" : "생성 시작";
   }
   if (state === "reconciling") return "Provider 확인 중";
   if (state === "succeeded") {
-    return operation.plan.kind === "neon.branch.delete" ? "폐기 확인됨" : "생성 완료";
+    if (operation.plan.kind === "neon.branch.delete") return "폐기 확인됨";
+    return operation.plan.kind === "neon.branch.switch" ? "전환 완료" : "생성 완료";
   }
   if (state === "needs_repair") return "복구 필요";
   if (state === "failed") return "실패";
@@ -100,6 +102,15 @@ function warningLabel(code: string) {
   }
   if (code === "NEON_SOFT_DELETE_RECOVERY_NOT_GUARANTEED") {
     return "복구 가능 기간은 Neon 계정 capability에 따라 달라지며 DopeDB가 보장하지 않습니다";
+  }
+  if (code === "NEON_CONNECTION_TARGET_CHANGES") {
+    return "공유 연결은 대상 브랜치에 고정된 새 revision으로 바뀝니다";
+  }
+  if (code === "NEON_ACTIVE_ACCESS_REVOKED") {
+    return "기존 lease와 실행 세션을 종료한 뒤 대상 브랜치로 전환합니다";
+  }
+  if (code === "NEON_PRODUCTION_TARGET_SWITCH") {
+    return "운영 데이터가 포함된 전환은 요청자와 다른 관리자의 승인이 필요합니다";
   }
   return code;
 }
@@ -159,6 +170,8 @@ export function NeonBranchManager({
   const [sourcePointValue, setSourcePointValue] = useState("");
   const [endpoint, setEndpoint] = useState<"none" | "read_write">("read_write");
   const [environment, setEnvironment] = useState<"" | "development" | "production">("");
+  const [switchConnectionId, setSwitchConnectionId] = useState("");
+  const [switchEnvironment, setSwitchEnvironment] = useState<"" | "development" | "production">("");
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mutation, setMutation] = useState("");
@@ -172,6 +185,18 @@ export function NeonBranchManager({
   ) ?? null;
   const knownEnvironment = branchEnvironment(selectedBranch);
   const effectiveEnvironment = knownEnvironment || environment;
+  const switchConnections = useMemo(() => (
+    inventory?.branches.flatMap((branch) => branch.connections.map((connection) => ({
+      ...connection,
+      branchId: branch.id,
+      branchName: branch.name,
+    }))) ?? []
+  ), [inventory?.branches]);
+  const selectedSwitchConnection = switchConnections.find(
+    (connection) => connection.connectionId === switchConnectionId,
+  ) ?? switchConnections[0] ?? null;
+  const switchKnownEnvironment = branchEnvironment(selectedBranch);
+  const effectiveSwitchEnvironment = switchKnownEnvironment || switchEnvironment;
 
   useEffect(() => {
     if (!targets.length) {
@@ -240,6 +265,8 @@ export function NeonBranchManager({
     setOperations([]);
     setSourceBranchId("");
     setEnvironment("");
+    setSwitchConnectionId("");
+    setSwitchEnvironment("");
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
@@ -247,7 +274,16 @@ export function NeonBranchManager({
 
   useEffect(() => {
     setEnvironment(branchEnvironment(selectedBranch));
+    setSwitchEnvironment(branchEnvironment(selectedBranch));
   }, [selectedBranch]);
+
+  useEffect(() => {
+    setSwitchConnectionId((current) => (
+      switchConnections.some((connection) => connection.connectionId === current)
+        ? current
+        : switchConnections[0]?.connectionId ?? ""
+    ));
+  }, [switchConnections]);
 
   const visibleBranches = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("ko");
@@ -379,6 +415,64 @@ export function NeonBranchManager({
     setMutation("");
   }
 
+  async function planSwitch() {
+    if (
+      !selectedTarget
+      || !selectedBranch
+      || !selectedSwitchConnection
+      || selectedSwitchConnection.branchId === selectedBranch.id
+      || (selectedBranch.managedAccess !== null && (
+        selectedBranch.managedAccess.state !== "succeeded"
+        || selectedBranch.managedAccess.status !== "ready"
+      ))
+      || !effectiveSwitchEnvironment
+      || mutation
+    ) {
+      return;
+    }
+    setMutation("switch-plan");
+    setError("");
+    const response = await fetch(
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`
+      + `/provider-integrations/${encodeURIComponent(selectedTarget.integration.id)}`
+      + "/neon-branches/operations",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "planSwitch",
+          request: {
+            idempotencyKey: crypto.randomUUID(),
+            projectId: selectedTarget.projectId,
+            connectionId: selectedSwitchConnection.connectionId,
+            targetBranchId: selectedBranch.id,
+            targetEnvironment: effectiveSwitchEnvironment,
+          },
+        }),
+      },
+    ).catch(() => null);
+    if (!response?.ok) {
+      setError(await responseError(response, "Neon 브랜치 전환 계획을 만들지 못했습니다."));
+      setMutation("");
+      return;
+    }
+    const operation = parseNeonBranchPlanResponse(await response.json().catch(() => null));
+    if (
+      !operation
+      || operation.plan.kind !== "neon.branch.switch"
+      || operation.plan.integrationId !== selectedTarget.integration.id
+    ) {
+      setError("Neon 브랜치 전환 계획 응답이 올바르지 않습니다.");
+      setMutation("");
+      return;
+    }
+    setOperations((current) => [
+      operation,
+      ...current.filter((item) => item.id !== operation.id),
+    ]);
+    setMutation("");
+  }
+
   const mutateOperation = useCallback(async (
     operation: NeonBranchOperation,
     action: "approve" | "reject" | "execute",
@@ -387,14 +481,23 @@ export function NeonBranchManager({
     setMutation(`${action}:${operation.id}`);
     setError("");
     const deleting = operation.plan.kind === "neon.branch.delete";
+    const switching = operation.plan.kind === "neon.branch.switch";
     const body = action === "execute"
       ? {
-        action: deleting ? "executeDelete" : "executeCreate",
+        action: deleting
+          ? "executeDelete"
+          : switching
+            ? "executeSwitch"
+            : "executeCreate",
         operationId: operation.id,
         planHash: operation.planHash,
       }
       : {
-        action: deleting ? "decideDelete" : "decideCreate",
+        action: deleting
+          ? "decideDelete"
+          : switching
+            ? "decideSwitch"
+            : "decideCreate",
         operationId: operation.id,
         planHash: operation.planHash,
         decision: action === "approve" ? "approved" : "rejected",
@@ -432,6 +535,30 @@ export function NeonBranchManager({
     }, delay);
     return () => window.clearTimeout(timer);
   }, [error, mutateOperation, mutation, operations, selectedTarget]);
+
+  const switchTargetConflict = Boolean(
+    selectedBranch
+    && selectedSwitchConnection
+    && selectedBranch.connections.some((connection) => (
+      connection.connectionId !== selectedSwitchConnection.connectionId
+      && connection.database === selectedSwitchConnection.database
+    )),
+  );
+  const switchTargetReady = Boolean(selectedBranch) && (
+    selectedBranch?.managedAccess === null
+    || (
+      selectedBranch?.managedAccess?.state === "succeeded"
+      && selectedBranch.managedAccess.status === "ready"
+    )
+  );
+  const canPlanSwitch = Boolean(
+    selectedBranch
+    && selectedSwitchConnection
+    && selectedSwitchConnection.branchId !== selectedBranch.id
+    && switchTargetReady
+    && !switchTargetConflict
+    && effectiveSwitchEnvironment,
+  );
 
   if (targets.length === 0) return null;
 
@@ -535,6 +662,83 @@ export function NeonBranchManager({
         </aside>
 
         <main className="tw:grid tw:min-w-0 tw:content-start tw:gap-4 tw:p-4">
+          {selectedBranch && switchConnections.length > 0 ? (
+            <section className="tw:grid tw:gap-3 tw:border-b tw:border-border tw:pb-4" aria-labelledby="neon-switch-title">
+              <div className="tw:grid tw:gap-1">
+                <strong id="neon-switch-title" className="tw:text-xs tw:text-foreground">
+                  공유 연결 대상 전환
+                </strong>
+                <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                  연결 UUID와 권한은 유지하고, 기존 lease를 폐기한 뒤 새 branch-bound revision을 만듭니다.
+                </small>
+              </div>
+              <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:max-[560px]:grid-cols-1">
+                <ControlField label="전환할 공유 연결">
+                  <ControlSelect
+                    value={selectedSwitchConnection?.connectionId ?? ""}
+                    onChange={(event) => setSwitchConnectionId(event.target.value)}
+                    disabled={Boolean(mutation)}
+                  >
+                    {switchConnections.map((connection) => (
+                      <option key={connection.connectionId} value={connection.connectionId}>
+                        {connection.connectionName} · {connection.branchName}
+                      </option>
+                    ))}
+                  </ControlSelect>
+                </ControlField>
+                <div className="tw:grid tw:content-start tw:gap-2">
+                  <span className="tw:font-mono tw:text-2xs tw:font-semibold tw:uppercase tw:text-muted-foreground">
+                    대상 브랜치
+                  </span>
+                  <span className="tw:flex tw:h-control-field tw:min-w-0 tw:items-center tw:border tw:border-border tw:bg-surface-inset tw:px-3 tw:text-xs tw:text-foreground">
+                    <span className="tw:truncate">{selectedBranch.name}</span>
+                  </span>
+                </div>
+                {!switchKnownEnvironment ? (
+                  <ControlField label="대상 환경">
+                    <ControlSelect
+                      value={switchEnvironment}
+                      onChange={(event) => setSwitchEnvironment(event.target.value as typeof switchEnvironment)}
+                      disabled={Boolean(mutation)}
+                    >
+                      <option value="">환경 선택</option>
+                      <option value="development">개발</option>
+                      <option value="production">운영</option>
+                    </ControlSelect>
+                  </ControlField>
+                ) : null}
+              </div>
+              {selectedSwitchConnection?.branchId === selectedBranch.id ? (
+                <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                  현재 연결이 이 브랜치를 사용 중입니다. 왼쪽에서 다른 대상 브랜치를 선택하세요.
+                </p>
+              ) : !switchTargetReady ? (
+                <p className="tw:m-0 tw:border tw:border-warning/40 tw:bg-warning/10 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-warning">
+                  이 브랜치의 최소권한 준비와 DB 검증을 먼저 완료해야 연결 대상으로 사용할 수 있습니다.
+                </p>
+              ) : switchTargetConflict ? (
+                <p className="tw:m-0 tw:border tw:border-warning/40 tw:bg-warning/10 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-warning">
+                  같은 대상 DB를 사용하는 다른 공유 연결이 이미 있습니다.
+                </p>
+              ) : (
+                <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:max-[560px]:grid">
+                  <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    활성 lease {selectedSwitchConnection?.activeLeaseCount ?? 0}개를 폐기하며 기존 쿼리와 Agent 세션은 새 대상으로 이동하지 않고 종료됩니다.
+                  </small>
+                  {canPlanSwitch ? (
+                    <ControlButton
+                      tone="primary"
+                      onClick={() => void planSwitch()}
+                      disabled={Boolean(mutation)}
+                    >
+                      {mutation === "switch-plan" ? "계획 만드는 중" : "전환 계획 만들기"}
+                    </ControlButton>
+                  ) : null}
+                </div>
+              )}
+            </section>
+          ) : null}
+
           {selectedBranch?.deletion ? (
             <section className="tw:grid tw:gap-3 tw:border-b tw:border-border tw:pb-4" aria-labelledby="neon-delete-title">
               <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[560px]:grid">
@@ -700,11 +904,15 @@ export function NeonBranchManager({
                       <strong className="tw:truncate tw:text-xs tw:text-foreground">
                         {operation.plan.kind === "neon.branch.delete"
                           ? `${operation.plan.target.name} 폐기`
+                          : operation.plan.kind === "neon.branch.switch"
+                            ? `${operation.plan.source.connectionName} · ${operation.plan.source.name} → ${operation.plan.target.name}`
                           : `${operation.plan.source.name} → ${operation.plan.target.name}`}
                       </strong>
                       <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
                         {operation.plan.kind === "neon.branch.delete"
                           ? `soft delete · endpoint ${operation.plan.references.endpointIds.length}개 · 연결 0개 · lease 0개`
+                          : operation.plan.kind === "neon.branch.switch"
+                            ? `${operation.plan.source.database} · lease ${operation.plan.impact.activeLeaseCount}개 폐기 · 새 connection revision`
                           : <>
                             {operation.plan.target.initSource === "schema-only" ? "스키마만" : "데이터 + 스키마"}
                             {operation.plan.target.endpoint === "read_write" ? " · endpoint 포함" : " · checkpoint"}
@@ -769,6 +977,10 @@ export function NeonBranchManager({
                             ? operationBusy(operation)
                               ? "폐기 상태 다시 확인"
                               : "브랜치 폐기 실행"
+                            : operation.plan.kind === "neon.branch.switch"
+                              ? operationBusy(operation)
+                                ? "전환 다시 시도"
+                                : "연결 대상 전환"
                             : operation.needsCredentialFenceRecovery
                             ? "자격증명 경계 복구"
                             : operationBusy(operation)

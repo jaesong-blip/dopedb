@@ -226,11 +226,48 @@ psql_fixture --quiet \
   --command='ROLLBACK'
 psql_fixture --quiet --file="$migration_0017"
 
+migration_0018="$fixture_root/workspace-cloud/drizzle/0018_lowly_magneto.sql"
+psql_fixture --quiet \
+  --command='BEGIN' \
+  --file="$migration_0018" \
+  --command='ROLLBACK'
+
+psql_fixture --quiet <<'SQL'
+DO $fixture$
+DECLARE
+  operation_kind_constraint text;
+BEGIN
+  SELECT string_agg(pg_get_constraintdef(oid), E'\n')
+  INTO operation_kind_constraint
+  FROM pg_constraint
+  WHERE conrelid = 'workspace_control.workspace_provider_operation'::regclass
+    AND contype = 'c';
+  IF operation_kind_constraint IS NULL
+     OR operation_kind_constraint LIKE '%neon.branch.switch%' THEN
+    RAISE EXCEPTION 'rolled-back switch operation kind survived';
+  END IF;
+END
+$fixture$;
+SQL
+
+psql_fixture --quiet --file="$migration_0018"
+
 psql_fixture --quiet <<'SQL'
 DO $fixture$
 DECLARE
   integration "workspace_control"."workspace_provider_integration"%ROWTYPE;
+  operation_kind_constraint text;
 BEGIN
+  SELECT string_agg(pg_get_constraintdef(oid), E'\n')
+  INTO operation_kind_constraint
+  FROM pg_constraint
+  WHERE conrelid = 'workspace_control.workspace_provider_operation'::regclass
+    AND contype = 'c';
+  IF operation_kind_constraint IS NULL
+     OR operation_kind_constraint NOT LIKE '%neon.branch.switch%' THEN
+    RAISE EXCEPTION 'switch operation kind was not installed';
+  END IF;
+
   SELECT * INTO STRICT integration
   FROM "workspace_control"."workspace_provider_integration"
   WHERE "id" = '10000000-0000-4000-8000-000000000001';

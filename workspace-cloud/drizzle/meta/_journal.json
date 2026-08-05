@@ -127,6 +127,13 @@
       "when": 1785905630765,
       "tag": "0017_lying_hex",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785909219190,
+      "tag": "0018_lowly_magneto",
+      "breakpoints": true
     }
   ]
 }
