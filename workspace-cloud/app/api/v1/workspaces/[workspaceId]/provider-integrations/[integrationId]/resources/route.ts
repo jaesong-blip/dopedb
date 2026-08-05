@@ -16,7 +16,12 @@ import {
   revalidateProviderDiscoveryAuthority,
 } from "../../../../../../../../lib/provider-integrations";
 import { vercelOidcToken } from "../../../../../../../../lib/providers/gcp-cloud-sql";
+import { parseNeonResource } from "../../../../../../../../lib/providers/neon-core";
 import { ProviderRequestError } from "../../../../../../../../lib/providers/provider-types";
+import {
+  neonBranchManagedAccessBoundaryFor,
+  requireNeonBranchManagedAccessReady,
+} from "../../../../../../../../lib/provider-operation-store";
 import {
   isUuid,
   jsonError,
@@ -136,6 +141,18 @@ export async function GET(request: Request, context: RouteContext) {
       selection,
       oidcToken: vercelOidcToken(request),
     });
+    const branchBoundary = provider === "neon"
+      && query.kind === "databases"
+      && typeof selection.project === "string"
+      && typeof selection.branch === "string"
+      ? await neonBranchManagedAccessBoundaryFor({
+        organizationId: workspaceId,
+        integrationId,
+        integrationGeneration: integration.generation,
+        projectId: selection.project,
+        branchId: selection.branch,
+      })
+      : null;
     if (!await revalidateProviderDiscoveryAuthority(authority)) {
       return jsonError("Workspace access denied", 403);
     }
@@ -158,6 +175,13 @@ export async function GET(request: Request, context: RouteContext) {
           );
         return {
           ...item,
+          ...(branchBoundary ? {
+            managedAccess: {
+              operationId: branchBoundary.operationId,
+              state: branchBoundary.state,
+              status: branchBoundary.managedAccessState,
+            },
+          } : {}),
           ...(projection || canBootstrapNeon ? {
             selectionProof: sealProviderDiscoveryProof({
               organizationId: workspaceId,
@@ -261,6 +285,16 @@ export async function POST(request: Request, context: RouteContext) {
     });
     if (!projection) {
       return jsonError("Provider resource is no longer importable", 409);
+    }
+    if (integration.provider === "neon") {
+      const resource = parseNeonResource(projection.resource);
+      await requireNeonBranchManagedAccessReady({
+        organizationId: workspaceId,
+        integrationId,
+        integrationGeneration: integration.generation,
+        projectId: resource.project,
+        branchId: resource.branch,
+      });
     }
     const receipt = await recordProviderDiscoveryReceipt({
       organizationId: workspaceId,

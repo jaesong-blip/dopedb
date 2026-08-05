@@ -35,6 +35,7 @@ import {
   reserveManagedLeaseIfUnblocked,
   type ManagedLeaseAuthority,
 } from "../revocation-gates";
+import { requireNeonBranchManagedAccessReady } from "../provider-operation-store";
 import type { WorkspaceRoleName } from "../workspace-permissions";
 import type { ActiveProviderIntegration } from "./authority";
 import type { ManagedProviderResource } from "./domain";
@@ -118,6 +119,16 @@ export async function issueManagedLease(input: {
     engine: input.engine,
     accessMode: input.accessMode,
   };
+  if (input.integration.provider === "neon") {
+    const resource = input.resource as NeonResource;
+    await requireNeonBranchManagedAccessReady({
+      organizationId: input.organizationId,
+      integrationId: input.integration.id,
+      integrationGeneration: input.integration.generation,
+      projectId: resource.project,
+      branchId: resource.branch,
+    });
+  }
   const reservation = await reserveManagedLeaseIfUnblocked(authority);
   if (reservation !== "reserved") {
     throw new ProviderRequestError(

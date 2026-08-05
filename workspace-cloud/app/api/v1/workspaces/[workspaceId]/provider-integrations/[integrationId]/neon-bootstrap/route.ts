@@ -22,11 +22,19 @@ import {
   sameProviderResourceItem,
 } from "../../../../../../../../lib/provider-discovery-proof";
 import {
+  completeProviderOperationBootstrap,
+  neonBranchManagedAccessBoundaryFor,
+  type NeonBranchManagedAccessBoundary,
+} from "../../../../../../../../lib/provider-operation-store";
+import {
   applyNeonBootstrap,
   inspectNeonBootstrap,
   NeonBootstrapRepairRequiredError,
   type NeonEnvironmentClassification,
 } from "../../../../../../../../lib/providers/neon-bootstrap";
+import {
+  neonBranchDatabaseFingerprint,
+} from "../../../../../../../../lib/providers/neon";
 import { parseNeonResource } from "../../../../../../../../lib/providers/neon-core";
 import { providerImportProjection } from "../../../../../../../../lib/providers/import-projection";
 import { ProviderRequestError } from "../../../../../../../../lib/providers/provider-types";
@@ -59,9 +67,95 @@ type PlanPayload = {
   planHash: string;
   readyHash: string;
   findingCodes: string[];
+  branchOperation: BranchOperationPayload | null;
   issuedAt: number;
   expiresAt: number;
 };
+
+type BranchOperationPayload = Readonly<{
+  operationId: string;
+  planHash: string;
+  ownershipMarker: string;
+  branchId: string;
+  databaseFingerprint: string;
+  credentialFenceFingerprint: string;
+}>;
+
+function branchOperationPayload(
+  boundary: NeonBranchManagedAccessBoundary | null,
+  databaseFingerprint: string,
+): BranchOperationPayload | null {
+  if (!boundary) return null;
+  if (
+    boundary.state !== "succeeded"
+    || (boundary.managedAccessState !== "bootstrap_required"
+      && boundary.managedAccessState !== "ready")
+    || boundary.databaseFingerprint === null
+    || boundary.credentialFenceFingerprint === null
+    || boundary.databaseFingerprint !== databaseFingerprint
+  ) {
+    throw new ProviderRequestError(
+      "neon",
+      "Neon branch managed access needs repair before bootstrap",
+      409,
+    );
+  }
+  return {
+    operationId: boundary.operationId,
+    planHash: boundary.planHash,
+    ownershipMarker: boundary.ownershipMarker,
+    branchId: boundary.branchId,
+    databaseFingerprint: boundary.databaseFingerprint,
+    credentialFenceFingerprint: boundary.credentialFenceFingerprint,
+  };
+}
+
+function parsedBranchOperation(
+  value: unknown,
+  branchId: string,
+): BranchOperationPayload | null | undefined {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const operation = value as Record<string, unknown>;
+  const fields = [
+    "operationId", "planHash", "ownershipMarker", "branchId",
+    "databaseFingerprint", "credentialFenceFingerprint",
+  ];
+  if (
+    Object.keys(operation).length !== fields.length
+    || fields.some((field) => !Object.hasOwn(operation, field))
+    || typeof operation.operationId !== "string"
+    || !isUuid(operation.operationId)
+    || typeof operation.planHash !== "string"
+    || !/^[0-9a-f]{64}$/.test(operation.planHash)
+    || typeof operation.ownershipMarker !== "string"
+    || !/^v1\.[A-Za-z0-9_-]{43}$/.test(operation.ownershipMarker)
+    || operation.branchId !== branchId
+    || typeof operation.databaseFingerprint !== "string"
+    || !/^[0-9a-f]{64}$/.test(operation.databaseFingerprint)
+    || typeof operation.credentialFenceFingerprint !== "string"
+    || !/^[0-9a-f]{64}$/.test(operation.credentialFenceFingerprint)
+  ) {
+    return undefined;
+  }
+  return operation as BranchOperationPayload;
+}
+
+function sameBranchOperation(
+  expected: BranchOperationPayload,
+  current: NeonBranchManagedAccessBoundary | null,
+) {
+  return current !== null
+    && current.state === "succeeded"
+    && (current.managedAccessState === "bootstrap_required"
+      || current.managedAccessState === "ready")
+    && current.operationId === expected.operationId
+    && current.planHash === expected.planHash
+    && current.ownershipMarker === expected.ownershipMarker
+    && current.branchId === expected.branchId
+    && current.databaseFingerprint === expected.databaseFingerprint
+    && current.credentialFenceFingerprint === expected.credentialFenceFingerprint;
+}
 
 function environment(value: unknown): NeonEnvironmentClassification | null | undefined {
   if (value === null || value === "") return null;
@@ -144,7 +238,7 @@ function parsePlan(
     const fields = [
       "version", "organizationId", "integrationId", "integrationGeneration",
       "memberId", "userId", "sessionId", "resource", "environment", "planHash",
-      "readyHash", "findingCodes", "issuedAt", "expiresAt",
+      "readyHash", "findingCodes", "branchOperation", "issuedAt", "expiresAt",
     ];
     if (
       !plan
@@ -179,8 +273,9 @@ function parsePlan(
     ) {
       return null;
     }
-    parseNeonResource(plan.resource);
-    return plan;
+    const resource = parseNeonResource(plan.resource);
+    const operation = parsedBranchOperation(plan.branchOperation, resource.branch);
+    return operation === undefined ? null : { ...plan, branchOperation: operation };
   } catch {
     return null;
   }
@@ -267,6 +362,16 @@ export async function POST(request: Request, context: RouteContext) {
         database: matching[0].value,
         engine: "postgres",
       });
+      const branchOperation = branchOperationPayload(
+        await neonBranchManagedAccessBoundaryFor({
+          organizationId: workspaceId,
+          integrationId,
+          integrationGeneration: integration.generation,
+          projectId: resource.project,
+          branchId: resource.branch,
+        }),
+        neonBranchDatabaseFingerprint(resources),
+      );
       const credential = await verifiedNeonCredential(integration);
       const inspection = await inspectNeonBootstrap({
         credential,
@@ -290,6 +395,7 @@ export async function POST(request: Request, context: RouteContext) {
         planHash: inspection.report.planHash,
         readyHash: inspection.readyHash,
         findingCodes: inspection.report.findings.map((item) => item.code),
+        branchOperation,
         issuedAt,
         expiresAt: issuedAt + PLAN_TTL_MS,
       };
@@ -328,25 +434,82 @@ export async function POST(request: Request, context: RouteContext) {
       publicAclApproved: body.publicAclApproved,
       productionApproved: body.productionApproved,
     };
+    const plannedResource = parseNeonResource(plan.resource);
+    if (plan.branchOperation) {
+      const current = await neonBranchManagedAccessBoundaryFor({
+        organizationId: workspaceId,
+        integrationId,
+        integrationGeneration: integration.generation,
+        projectId: plannedResource.project,
+        branchId: plannedResource.branch,
+      });
+      if (!sameBranchOperation(plan.branchOperation, current)) {
+        return jsonError("Neon branch bootstrap authority changed", 409);
+      }
+    }
     const credential = await verifiedNeonCredential(integration);
     const applied = await applyNeonBootstrap({
       credential,
-      resource: parseNeonResource(plan.resource),
+      resource: plannedResource,
       environment: plan.environment,
       expectedPlanHash: plan.planHash,
       expectedReadyHash: plan.readyHash,
       publicAclApproved: body.publicAclApproved,
       productionApproved: body.productionApproved,
     });
+    if (plan.branchOperation) {
+      const databases = await discoverProviderResources({
+        integration,
+        kind: "databases",
+        selection: {
+          project: applied.resource.project,
+          branch: applied.resource.branch,
+        },
+      });
+      if (
+        neonBranchDatabaseFingerprint(databases)
+          !== plan.branchOperation.databaseFingerprint
+      ) {
+        return jsonError("Neon branch database inventory changed during bootstrap", 409);
+      }
+    }
     if (!await revalidateProviderDiscoveryAuthority(authority)) {
       return jsonError("Workspace access denied", 403);
     }
-    const receiptId = crypto.randomUUID();
-    const receiptExpiresAt = new Date(Date.now() + RECEIPT_TTL_MS);
     const projection = providerImportProjection("neon", applied.resource, {
       production: applied.report.production,
       writeAvailable: true,
     });
+    let branchOperation = null;
+    if (plan.branchOperation) {
+      branchOperation = await completeProviderOperationBootstrap({
+        authority: {
+          organizationId: workspaceId,
+          membershipId: authorization.membership.id,
+          userId: authorization.session.user.id,
+          sessionId: authorization.session.session.id,
+          role: authorization.role,
+        },
+        integrationId,
+        integrationGeneration: integration.generation,
+        operationId: plan.branchOperation.operationId,
+        planHash: plan.branchOperation.planHash,
+        ownershipMarker: plan.branchOperation.ownershipMarker,
+        projectId: applied.resource.project,
+        branchId: applied.resource.branch,
+        databaseFingerprint: plan.branchOperation.databaseFingerprint,
+        credentialFenceFingerprint: plan.branchOperation.credentialFenceFingerprint,
+        providerAuditId: applied.providerAuditId,
+        resourceFingerprint: projection.fingerprint,
+        bootstrapPlanHash: plan.planHash,
+        now: new Date(),
+      });
+      if (!branchOperation) {
+        return jsonError("Neon branch bootstrap authority changed", 409);
+      }
+    }
+    const receiptId = crypto.randomUUID();
+    const receiptExpiresAt = new Date(Date.now() + RECEIPT_TTL_MS);
     const receipt = await recordProviderDiscoveryReceipt({
       organizationId: workspaceId,
       integrationId,
@@ -370,6 +533,10 @@ export async function POST(request: Request, context: RouteContext) {
       productionApproved: body.productionApproved,
       publicAclApproved: body.publicAclApproved,
       findingCodes: plan.findingCodes,
+      ...(branchOperation ? {
+        operationId: branchOperation.operationId,
+        managedAccessState: branchOperation.managedAccessState,
+      } : {}),
     };
     const audited = await recordBootstrapAudit({
       kind: "success",

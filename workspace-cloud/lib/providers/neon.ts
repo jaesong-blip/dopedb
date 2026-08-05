@@ -77,6 +77,19 @@ export type NeonBranchReconciliation = Readonly<{
   failureCode: string | null;
 }>;
 
+export function neonBranchDatabaseFingerprint(
+  databases: readonly Pick<ProviderResourceItem, "id" | "name">[],
+) {
+  return createHash("sha256")
+    .update(JSON.stringify(databases.map((database) => ({
+      id: database.id,
+      name: database.name,
+    })).sort((left, right) => (
+      left.id < right.id ? -1 : left.id === right.id ? 0 : 1
+    ))), "utf8")
+    .digest("hex");
+}
+
 export class NeonBranchMutationRequestError extends ProviderRequestError {
   constructor(
     message: string,
@@ -660,14 +673,9 @@ export async function reconcileNeonBranchCreate(input: {
       owned.branchId,
     ),
   ]);
-  const databaseFingerprint = databases === null ? null : createHash("sha256")
-    .update(JSON.stringify(databases.map((database) => ({
-      id: database.id,
-      name: database.name,
-    })).sort((left, right) => (
-      left.id < right.id ? -1 : left.id === right.id ? 0 : 1
-    ))), "utf8")
-    .digest("hex");
+  const databaseFingerprint = databases === null
+    ? null
+    : neonBranchDatabaseFingerprint(databases);
   if (operation && operation.branchId !== owned.branchId) {
     return {
       status: "conflict",

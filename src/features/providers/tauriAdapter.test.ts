@@ -746,6 +746,38 @@ describe("provider credential Tauri adapter", () => {
     expect(providerOperationStoreSource).toContain('"cancelExpiredProviderOperationExecution"');
     expect(providerOperationStoreSource).toContain('"markProviderOperationRemoteStarted"');
     expect(providerOperationStoreSource).toContain('"applyProviderOperationReconciliation"');
+    expect(providerOperationStoreSource).toContain('"completeProviderOperationBootstrap"');
+    expect(providerOperationStoreSource).toContain(
+      'key === "credentialFenceFingerprint"',
+    );
+    expect(providerOperationStoreSource).toContain(
+      'operation."redacted_result"->>\'managedAccessState\'',
+    );
+    expect(providerOperationStoreSource).toContain(
+      "IN ('bootstrap_required', 'ready')",
+    );
+    const bootstrapCompletionStart = providerOperationStoreSource.indexOf(
+      "export async function completeProviderOperationBootstrap",
+    );
+    const bootstrapAuditStart = providerOperationStoreSource.indexOf(
+      "), audited AS (",
+      bootstrapCompletionStart,
+    );
+    const bootstrapUpdateStart = providerOperationStoreSource.indexOf(
+      "), updated AS MATERIALIZED (",
+      bootstrapCompletionStart,
+    );
+    expect(bootstrapCompletionStart).toBeGreaterThanOrEqual(0);
+    expect(bootstrapAuditStart).toBeGreaterThan(bootstrapCompletionStart);
+    expect(bootstrapUpdateStart).toBeGreaterThan(bootstrapAuditStart);
+    expect(neonBootstrapRouteSource).toContain("completeProviderOperationBootstrap");
+    expect(neonBootstrapRouteSource).toContain("neonBranchDatabaseFingerprint");
+    expect(providerResourcesRouteSource).toContain(
+      "requireNeonBranchManagedAccessReady",
+    );
+    expect(providerLeaseIssuanceSource).toContain(
+      "requireNeonBranchManagedAccessReady",
+    );
     expect(providerOperationStoreSource).toContain("requester_session");
     expect(providerOperationStoreSource).toContain(
       'operation."approval_policy" <> \'separate_admin\'',

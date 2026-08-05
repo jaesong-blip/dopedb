@@ -26,6 +26,9 @@ import {
 import { MAX_PROVIDER_RESULTS } from "../../../../../../../../lib/providers/adapter-contract";
 import { ProviderRequestError } from "../../../../../../../../lib/providers/provider-types";
 import {
+  listNeonBranchManagedAccessBoundaries,
+} from "../../../../../../../../lib/provider-operation-store";
+import {
   workspaceConnection,
   workspaceCredentialLease,
 } from "../../../../../../../../lib/schema";
@@ -96,7 +99,7 @@ export async function GET(request: Request, context: RouteContext) {
     const credential = await verifiedNeonProjectCredential(integration, projectId);
     const inventory = await listNeonBranchInventory(credential, projectId);
     const now = new Date();
-    const [connectionRows, activeLeaseRows] = await Promise.all([
+    const [connectionRows, activeLeaseRows, branchBoundaries] = await Promise.all([
       db.select({
         id: workspaceConnection.id,
         name: workspaceConnection.name,
@@ -121,6 +124,12 @@ export async function GET(request: Request, context: RouteContext) {
         isNull(workspaceCredentialLease.revokedAt),
         gt(workspaceCredentialLease.expiresAt, now),
       )).groupBy(workspaceCredentialLease.connectionId),
+      listNeonBranchManagedAccessBoundaries({
+        organizationId: workspaceId,
+        integrationId,
+        integrationGeneration: integration.generation,
+        projectId,
+      }),
     ]);
     if (connectionRows.length > MAX_PROVIDER_RESULTS) {
       throw new ProviderRequestError(
@@ -132,6 +141,13 @@ export async function GET(request: Request, context: RouteContext) {
 
     const activeLeases = new Map(
       activeLeaseRows.map((row) => [row.connectionId, row.activeLeaseCount]),
+    );
+    const managedAccessByBranch = new Map(
+      branchBoundaries.map((boundary) => [boundary.branchId, {
+        operationId: boundary.operationId,
+        state: boundary.state,
+        status: boundary.managedAccessState,
+      }]),
     );
     const referencesByBranch = new Map<string, Array<{
       connectionId: string;
@@ -225,6 +241,9 @@ export async function GET(request: Request, context: RouteContext) {
       rootIds: inventory.rootIds,
       branches: inventory.branches.map((branch) => ({
         ...branch,
+        ...(managedAccessByBranch.has(branch.id)
+          ? { managedAccess: managedAccessByBranch.get(branch.id) }
+          : {}),
         connections: referencesByBranch.get(branch.id) ?? [],
       })),
       missingTargets,
