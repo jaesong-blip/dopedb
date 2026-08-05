@@ -2,8 +2,10 @@
 
 Status: Milestone 0 implemented; Milestone 1 identity/RBAC slice implemented;
 Milestone 2 shared-connection core plus PlanetScale, Neon, and GCP Cloud SQL
-managed-access adapters implemented. General provider inventory, full sync, KMS wrapping, backup,
-workspace-deletion, and per-connection-grant exit criteria stay open below.
+managed-access adapters implemented; Milestone 4 shared-dashboard definition sync and
+revision core implemented, with packaged two-member verification still open. General
+provider inventory, full sync, KMS wrapping, backup, workspace-deletion, and
+per-connection-grant exit criteria stay open below.
 
 This roadmap owns how DopeDB completes and hardens its team workspace without
 turning the workspace service into a database proxy or weakening the local
@@ -554,6 +556,25 @@ Exit criteria:
   workspace connection and local credential bindings.
 
 ## Milestone 4 — Shared Dashboards
+
+Implementation snapshot (2026-08-06): team-workspace dashboard definitions synchronize
+through an explicit outbox and hosted projection while Personal Workspace dashboards
+remain local. The sync contract contains title, description, SQL, visualization, state,
+owner/updater, and revision only; query result rows, parameter values, credentials, and
+local execution history have no hosted field. Hosted create/update/delete mutations
+recheck the live session, membership, connection grant, exact connection tenant, and
+optimistic revision in the same PostgreSQL statement that writes immutable revision and
+redacted audit records. A stale content edit becomes a separate conflict-copy draft,
+while publish, archive, restore, transfer, and deletion fail closed on stale authority.
+
+Desktop pulls the authoritative definition after connection sync, retains dirty or
+conflicted local work, and runs a shared dashboard only through the existing local
+read-only dashboard runner using that member's connection binding or managed lease.
+Archived definitions cannot execute. Workspace settings exposes definition metadata,
+history, restore, publish/archive, and ownership transfer without exposing result rows.
+The remaining exit check is a packaged two-member/two-device run proving that both
+members obtain current results through independent credentials and that offline
+conflict recovery remains understandable in the shipped UI.
 
 Deliverables:
 

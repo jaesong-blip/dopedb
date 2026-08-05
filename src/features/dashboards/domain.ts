@@ -30,6 +30,9 @@ export interface DashboardVisualization {
   yColumns: string[];
 }
 
+export type DashboardState = "draft" | "published" | "archived";
+export type DashboardSyncStatus = "local" | "dirty" | "synced" | "conflict";
+
 export interface Dashboard {
   id: DashboardId;
   connectionId: ConnectionId;
@@ -37,6 +40,12 @@ export interface Dashboard {
   description: string;
   sql: string;
   visualization: DashboardVisualization;
+  state: DashboardState;
+  syncStatus: DashboardSyncStatus;
+  ownerMemberId: string | null;
+  updatedByMemberId: string | null;
+  revision: number;
+  remoteRevision: number | null;
   createdAt: string;
   updatedAt: string;
 }

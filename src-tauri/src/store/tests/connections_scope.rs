@@ -336,6 +336,136 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     );
     assert!(!loaded.allow_writes);
 
+    let dashboard_pin = store.pin_connection_for_dashboard(id).await.unwrap();
+    let saved_dashboard = store
+        .save_dashboard_if_current(
+            &dashboard_pin,
+            &crate::features::dashboards::DashboardDraft {
+                connection_id: id.into(),
+                title: "Current users".into(),
+                description: "Shared definition, local result".into(),
+                sql: "SELECT count(*) AS users FROM users".into(),
+                visualization: crate::features::dashboards::DashboardVisualization {
+                    version: 1,
+                    kind: crate::features::dashboards::DashboardKind::Metric,
+                    x_column: None,
+                    y_columns: vec!["users".into()],
+                },
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        saved_dashboard.sync_status,
+        crate::features::dashboards::DashboardSyncStatus::Dirty
+    );
+    let outbox_projection: (Option<String>, String, i64) = sqlx::query_as(
+        "SELECT payload_json, operation, revision FROM sync_outbox
+         WHERE workspace_id = ?1 AND resource_type = 'dashboard' AND resource_id = ?2",
+    )
+    .bind(workspace_id.to_string())
+    .bind(saved_dashboard.id.to_string())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(outbox_projection, (None, "upsert".into(), 1));
+    let pending = store
+        .pending_dashboard_mutations(workspace_id)
+        .await
+        .unwrap();
+    assert_eq!(pending.len(), 1);
+    let now = Utc::now();
+    let mut remote_dashboard = crate::features::workspaces::RemoteDashboard {
+        id: saved_dashboard.id.into(),
+        connection_id: id,
+        title: saved_dashboard.title.clone(),
+        description: saved_dashboard.description.clone(),
+        sql: saved_dashboard.sql.clone(),
+        visualization_json: serde_json::to_string(&saved_dashboard.visualization).unwrap(),
+        state: crate::features::workspaces::WorkspaceDashboardState::Published,
+        owner_member_id: "31313131-3131-4131-8131-313131313131".into(),
+        updated_by_member_id: "31313131-3131-4131-8131-313131313131".into(),
+        revision: 1,
+        created_at: now,
+        updated_at: now,
+    };
+    store
+        .acknowledge_dashboard_mutation(workspace_id, &pending[0], Some(&remote_dashboard))
+        .await
+        .unwrap();
+    let shared = store
+        .list_dashboards_if_current(&dashboard_pin)
+        .await
+        .unwrap();
+    assert_eq!(shared.len(), 1);
+    assert_eq!(
+        shared[0].state,
+        crate::features::dashboards::DashboardState::Published
+    );
+    assert_eq!(
+        shared[0].sync_status,
+        crate::features::dashboards::DashboardSyncStatus::Synced
+    );
+    assert_eq!(shared[0].remote_revision, Some(1));
+
+    remote_dashboard.title = "Remote revision".into();
+    remote_dashboard.revision = 2;
+    remote_dashboard.updated_at = Utc::now();
+    store
+        .sync_remote_dashboards(workspace_id, &[remote_dashboard.clone()])
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .list_dashboards_if_current(&dashboard_pin)
+            .await
+            .unwrap()[0]
+            .title,
+        "Remote revision"
+    );
+    let dashboard_delete_pin = store
+        .pin_dashboard_for_view(saved_dashboard.id)
+        .await
+        .unwrap();
+    store
+        .delete_dashboard_if_current(&dashboard_delete_pin)
+        .await
+        .unwrap();
+    let pending_delete = store
+        .pending_dashboard_mutations(workspace_id)
+        .await
+        .unwrap();
+    assert_eq!(pending_delete.len(), 1);
+    assert_eq!(
+        pending_delete[0].operation,
+        crate::features::workspaces::DashboardOutboxOperation::Delete
+    );
+    store
+        .mark_dashboard_conflict(workspace_id, &pending_delete[0])
+        .await
+        .unwrap();
+    store
+        .sync_remote_dashboards(workspace_id, &[remote_dashboard])
+        .await
+        .unwrap();
+    let preserved_conflict: (String, String, i64) = sqlx::query_as(
+        "SELECT title, sync_status, revision FROM dashboards WHERE id = ?1",
+    )
+    .bind(saved_dashboard.id.to_string())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(preserved_conflict, ("Remote revision".into(), "conflict".into(), 3));
+    let dashboard_outbox_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM sync_outbox
+         WHERE workspace_id = ?1 AND resource_type = 'dashboard'",
+    )
+    .bind(workspace_id.to_string())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(dashboard_outbox_count, 0);
+
     assert_agent_acp_batch_replay_is_bounded(&store, id).await;
 
     let removed_credential_ids = store

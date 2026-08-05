@@ -14,7 +14,7 @@ use crate::model::{HistoryEntry, QueryKind, QueryResult};
 use crate::safety::{self, PoolRef};
 use crate::store::{PinnedConnection, Store};
 
-use super::super::domain::{DashboardDraft, DashboardKind, DashboardRunRequest};
+use super::super::domain::{DashboardDraft, DashboardKind, DashboardRunRequest, DashboardState};
 use super::super::ports::DashboardRunPort;
 use super::super::validation;
 
@@ -123,6 +123,14 @@ impl DashboardRunner {
                 }))
             }
         };
+        if dashboard.state == DashboardState::Archived {
+            return Err(DashboardRunError::Scoped(DashboardRunScopedFailure {
+                error: AppError::Blocked {
+                    reason: "archived dashboards must be restored before execution".into(),
+                },
+                _scope: operation_scope,
+            }));
+        }
         let operation_pin = match operation_scope
             .pin_connection(dashboard.connection_id.into())
             .await

@@ -124,6 +124,12 @@ pub(super) fn row_to_dashboard(r: &sqlx::sqlite::SqliteRow) -> AppResult<Dashboa
         description: r.try_get("description")?,
         sql: r.try_get("sql")?,
         visualization,
+        state: DashboardState::parse(r.try_get("state")?)?,
+        sync_status: DashboardSyncStatus::parse(r.try_get("sync_status")?)?,
+        owner_member_id: r.try_get("owner_member_id")?,
+        updated_by_member_id: r.try_get("updated_by_member_id")?,
+        revision: r.try_get("revision")?,
+        remote_revision: r.try_get("remote_revision")?,
         created_at: r.try_get("created_at")?,
         updated_at: r.try_get("updated_at")?,
     })

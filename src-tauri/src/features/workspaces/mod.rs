@@ -21,10 +21,11 @@ pub(crate) use application::{
     WorkspaceCredentialBindingRequest, WorkspaceUseCases,
 };
 pub(crate) use domain::{
-    RemoteWorkspace, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount,
-    WorkspaceAuthState, WorkspaceAuthUser, WorkspaceAuthorityFingerprint,
-    WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceKind, WorkspaceLifecycleState,
-    WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspaceRole,
+    DashboardOutboxOperation, DashboardPushResult, PendingDashboardMutation, RemoteDashboard,
+    RemoteWorkspace, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthState,
+    WorkspaceAuthUser, WorkspaceAuthorityFingerprint, WorkspaceDashboardState,
+    WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceKind,
+    WorkspaceLifecycleState, WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspaceRole,
 };
 
 pub(crate) type WorkspacesFeature = WorkspaceUseCases<

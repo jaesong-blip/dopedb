@@ -423,14 +423,22 @@ CREATE TABLE IF NOT EXISTS dashboards (
     workspace_id       TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
                        REFERENCES workspaces(id),
     remote_id          TEXT,
+    remote_revision    INTEGER,
     revision           INTEGER NOT NULL DEFAULT 1,
     sync_status        TEXT NOT NULL DEFAULT 'local',
+    state              TEXT NOT NULL DEFAULT 'draft'
+                       CHECK(state IN ('draft', 'published', 'archived')),
+    owner_member_id    TEXT,
+    updated_by_member_id TEXT,
     deleted_at         TEXT,
     created_at         TEXT NOT NULL,
-    updated_at         TEXT NOT NULL
+    updated_at         TEXT NOT NULL,
+    CHECK(remote_revision IS NULL OR remote_revision > 0)
 );
 CREATE INDEX IF NOT EXISTS idx_dashboards_conn_updated
     ON dashboards(connection_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dashboards_workspace_sync
+    ON dashboards(workspace_id, sync_status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS sync_outbox (
     id            TEXT PRIMARY KEY,

@@ -134,6 +134,13 @@
       "when": 1785909219190,
       "tag": "0018_lowly_magneto",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785944326154,
+      "tag": "0019_curious_inhumans",
+      "breakpoints": true
     }
   ]
 }

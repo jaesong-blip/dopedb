@@ -1,11 +1,13 @@
-// Connection-scoped dashboard canvas. Every saved Agent query becomes one live tile,
-// mirroring Chat2DB's at-a-glance report surface while retaining DopeDB's read-only
-// execution boundary and explicit per-tile refresh/delete controls.
+// Connection-scoped dashboard canvas. Every saved Agent query becomes one live tile;
+// definitions can synchronize through a Team workspace while result rows stay local
+// behind DopeDB's read-only execution boundary.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Dashboard,
   DashboardKind,
+  DashboardState,
+  DashboardSyncStatus,
 } from "../../features/dashboards/domain";
 import { deleteDashboard } from "../../features/dashboards/tauriAdapter";
 import type { QueryResult } from "../../ipc/types";
@@ -16,6 +18,7 @@ import DashboardVisualizationView from "../../components/DashboardVisualization"
 import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { StatusBadge, type StatusTone } from "../../design-system/components/Status";
 import {
   MetadataDot,
   WorkbenchEmptyState,
@@ -36,6 +39,30 @@ const KIND_LABELS: Record<DashboardKind, I18nKey> = {
   line: "dashboard.kindLine",
   metric: "dashboard.kindMetric",
   table: "dashboard.kindTable",
+};
+
+const STATE_LABELS: Record<DashboardState, I18nKey> = {
+  archived: "dashboard.stateArchived",
+  draft: "dashboard.stateDraft",
+  published: "dashboard.statePublished",
+};
+
+const STATE_TONES: Record<DashboardState, StatusTone> = {
+  archived: "neutral",
+  draft: "warning",
+  published: "success",
+};
+
+const SYNC_LABELS: Record<Exclude<DashboardSyncStatus, "synced">, I18nKey> = {
+  conflict: "dashboard.syncConflict",
+  dirty: "dashboard.syncDirty",
+  local: "dashboard.syncLocal",
+};
+
+const SYNC_TONES: Record<Exclude<DashboardSyncStatus, "synced">, StatusTone> = {
+  conflict: "danger",
+  dirty: "warning",
+  local: "neutral",
 };
 
 const DASHBOARD_RESULT_CACHE_LIMIT = 4;
@@ -150,7 +177,7 @@ export function DashboardSidebar({
                     {dashboard.title}
                   </strong>
                   <small className="tw:overflow-hidden tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
-                    {t(KIND_LABELS[dashboard.visualization.kind])}
+                    {t(KIND_LABELS[dashboard.visualization.kind])} · {t(STATE_LABELS[dashboard.state])}
                   </small>
                 </span>
               </button>
@@ -204,9 +231,17 @@ function DashboardTile({
             <strong className="tw:min-w-0 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
               {dashboard.title}
             </strong>
-            <span className="badge kind">
+            <StatusBadge density="compact">
               {t(KIND_LABELS[dashboard.visualization.kind])}
-            </span>
+            </StatusBadge>
+            <StatusBadge density="compact" tone={STATE_TONES[dashboard.state]}>
+              {t(STATE_LABELS[dashboard.state])}
+            </StatusBadge>
+            {dashboard.syncStatus !== "synced" ? (
+              <StatusBadge density="compact" tone={SYNC_TONES[dashboard.syncStatus]}>
+                {t(SYNC_LABELS[dashboard.syncStatus])}
+              </StatusBadge>
+            ) : null}
           </div>
           {dashboard.description && (
             <p className="tw:m-0 tw:line-clamp-2 tw:text-sm tw:leading-ui tw:text-muted-foreground">
@@ -218,7 +253,7 @@ function DashboardTile({
           <button
             type="button"
             className="btn small icon-only"
-            disabled={running || deleting}
+            disabled={running || deleting || dashboard.state === "archived"}
             onClick={onRefresh}
             title={t(selected ? "dashboard.refresh" : "dashboard.clickToRun")}
             aria-label={t(selected ? "dashboard.refresh" : "dashboard.clickToRun")}

@@ -55,6 +55,14 @@ import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-p
 import workspaceRevocationGatesSource from "../../../workspace-cloud/lib/revocation-gates.ts?raw";
 import workspaceSchemaSource from "../../../workspace-cloud/lib/schema.ts?raw";
 import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspace-versioning-store.ts?raw";
+import workspaceDashboardStoreSource from "../../../workspace-cloud/lib/workspace-dashboard-store.ts?raw";
+import workspaceDashboardMigrationSource from "../../../workspace-cloud/drizzle/0019_curious_inhumans.sql?raw";
+import workspaceDashboardCollectionSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/dashboards/route.ts?raw";
+import workspaceDashboardItemSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/dashboards/[dashboardId]/route.ts?raw";
+import workspaceDashboardOwnersSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/dashboards/owners/route.ts?raw";
+import desktopDashboardStoreSource from "../../../src-tauri/src/store/repositories/dashboards.rs?raw";
+import desktopDashboardControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/dashboards.rs?raw";
+import desktopStoreBootstrapSource from "../../../src-tauri/src/store/bootstrap.rs?raw";
 import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
 import desktopControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane.rs?raw";
 import { parseNeonBranchInventory } from "../../../workspace-cloud/lib/providers/neon-branches";
@@ -85,6 +93,11 @@ import {
   parseNeonBranchInventory as parseNeonBranchInventoryResponse,
   parseNeonBranchOperations,
 } from "../../../workspace-cloud/features/providerAccess/neonBranches";
+import {
+  dashboardVersionPayload,
+  parseDashboardVersionPayload,
+  parseSharedDashboardCreate,
+} from "../../../workspace-cloud/lib/workspace-dashboards";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -1673,5 +1686,71 @@ describe("provider credential Tauri adapter", () => {
     expect(JSON.stringify(legacyBackup)).not.toMatch(
       /password|secret|token|credential|serviceAccount/i,
     );
+
+    const dashboardDefinition = parseSharedDashboardCreate({
+      id: "31313131-3131-4131-8131-313131313131",
+      connectionId,
+      title: "Current users",
+      description: "One locally executed metric",
+      sql: "SELECT count(*) AS users FROM users",
+      visualization: {
+        version: 1,
+        kind: "metric",
+        xColumn: null,
+        yColumns: ["users"],
+      },
+    });
+    const dashboardVersion = dashboardVersionPayload({
+      connectionId,
+      definition: dashboardDefinition,
+      state: "published",
+      ownerMemberId: "32323232-3232-4232-8232-323232323232",
+    });
+    expect(parseDashboardVersionPayload(dashboardVersion)).toEqual(
+      expect.objectContaining({
+        connectionId,
+        state: "published",
+        deleted: false,
+      }),
+    );
+    expect(() => parseSharedDashboardCreate({
+      ...dashboardDefinition,
+      resultRows: [{ users: 12 }],
+    })).toThrow("Invalid dashboard identity");
+    expect(() => parseSharedDashboardCreate({
+      ...dashboardDefinition,
+      credential: "must-not-cross-workspace-boundary",
+    })).toThrow("Invalid dashboard identity");
+    expect(workspaceDashboardMigrationSource).toContain(
+      'CREATE TABLE "workspace_control"."workspace_dashboard"',
+    );
+    expect(workspaceDashboardMigrationSource).toContain(
+      'CREATE TABLE "workspace_control"."workspace_dashboard_revision"',
+    );
+    const dashboardTableSql = workspaceDashboardMigrationSource.slice(
+      workspaceDashboardMigrationSource.indexOf('CREATE TABLE "workspace_control"."workspace_dashboard"'),
+      workspaceDashboardMigrationSource.indexOf('--> statement-breakpoint'),
+    );
+    expect(dashboardTableSql).not.toMatch(/result|password|credential|token/i);
+    expect(workspaceDashboardStoreSource).toContain("dashboard.conflict.duplicated");
+    expect(workspaceDashboardStoreSource).toContain(
+      `owner."role" IN ('editor', 'admin', 'owner')`,
+    );
+    expect(workspaceDashboardCollectionSource).toContain(
+      'eq(workspaceDashboard.state, "published")',
+    );
+    expect(workspaceDashboardItemSource).toContain("sameDashboardOutcome");
+    expect(workspaceDashboardItemSource).toContain("dashboard.deletedAt");
+    expect(workspaceDashboardOwnersSource).toContain(
+      'authorizeWorkspace(request, workspaceId, "write")',
+    );
+    expect(desktopDashboardControlPlaneSource).toContain("deny_unknown_fields");
+    expect(desktopDashboardControlPlaneSource).toContain(
+      "shared dashboard collection changed workspace identity",
+    );
+    expect(desktopStoreBootstrapSource).toContain(
+      "VALUES (?1,?2,?3,?4,?5,?6,NULL,?7)",
+    );
+    expect(desktopDashboardStoreSource).not.toContain("result_rows");
   });
 });

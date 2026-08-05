@@ -13,6 +13,7 @@ pub async fn list_dashboards(
     state: State<'_, AppState>,
     connection_id: ConnectionId,
 ) -> AppResult<Vec<Dashboard>> {
+    state.services.workspace.refresh_dashboards().await?;
     state.services.dashboard.list(connection_id).await
 }
 

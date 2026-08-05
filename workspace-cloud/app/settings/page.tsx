@@ -120,17 +120,22 @@ export default async function SettingsPage({
     || activeSection === "database-access"
     || activeSection === "cloud-accounts"
     || activeSection === "databases"
+    || activeSection === "dashboards"
       ? activeSection
       : null;
   const canManageActiveWorkspace = Boolean(
     activeWorkspace
     && ["admin", "owner"].includes(workspaceRoles.get(activeWorkspace.id) ?? ""),
   );
+  const canEditActiveWorkspace = Boolean(
+    activeWorkspace
+    && ["editor", "admin", "owner"].includes(workspaceRoles.get(activeWorkspace.id) ?? ""),
+  );
   const activeManagementDetails = activeManagementArea
     ? workspaceManagementAreas.find((item) => item.id === activeManagementArea)
     : null;
   const pageIndex = activeSection === "account"
-    ? "06"
+    ? "07"
     : activeSection === "workspaces"
       ? "01"
       : activeManagementDetails?.index ?? "01";
@@ -178,6 +183,7 @@ export default async function SettingsPage({
           workspaceId={activeWorkspaceId}
           gcpSetupId={requestedGcpSetupId}
           canManageWorkspace={canManageActiveWorkspace}
+          canEditWorkspace={canEditActiveWorkspace}
           locale={locale}
         />
       </header>
@@ -239,7 +245,7 @@ export default async function SettingsPage({
         ) : null}
         {activeSection === "account" ? (
           <section id="account" className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]">
-            <ConsoleSectionHeading index="06" title={copy.settings.accountManagementTitle}>
+            <ConsoleSectionHeading index="07" title={copy.settings.accountManagementTitle}>
               {copy.settings.accountManagementDescription}
             </ConsoleSectionHeading>
             <AccountManagementPanel
@@ -266,7 +272,13 @@ export default async function SettingsPage({
                     <a
                       className="tw:grid tw:min-h-[106px] tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-4 tw:px-5 tw:py-4 tw:transition-colors tw:hover:bg-surface-raised tw:focus-visible:outline-2 tw:focus-visible:outline-offset-[-3px] tw:focus-visible:outline-ring tw:max-[560px]:grid-cols-[auto_minmax(0,1fr)]"
                       href={localizedWorkspacePath(
-                        `/settings?workspace=${encodeURIComponent(workspace.id)}&section=members`,
+                        `/settings?workspace=${encodeURIComponent(workspace.id)}&section=${
+                          ["admin", "owner"].includes(workspaceRoles.get(workspace.id) ?? "")
+                            ? "members"
+                            : workspaceRoles.get(workspace.id) === "editor"
+                              ? "dashboards"
+                              : "workspaces"
+                        }`,
                         locale,
                       )}
                       aria-current={
@@ -313,7 +325,9 @@ export default async function SettingsPage({
         {activeManagementArea
         && activeManagementDetails
         && activeWorkspace
-        && canManageActiveWorkspace ? (
+        && (activeManagementArea === "dashboards"
+          ? canEditActiveWorkspace
+          : canManageActiveWorkspace) ? (
           <section
             className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]"
             id="workspace-settings"

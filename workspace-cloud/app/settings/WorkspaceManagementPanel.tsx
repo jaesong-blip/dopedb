@@ -2,6 +2,7 @@
 // renders only that concern's command surface and never creates nested settings.
 import { ConnectionAccessPanel } from "./ConnectionAccessPanel";
 import { CloudAccountPanel } from "./CloudAccountPanel";
+import { DashboardManagementPanel } from "./DashboardManagementPanel";
 import { SharedDatabasePanel } from "./SharedDatabasePanel";
 import { WorkspaceAccessPanel } from "./WorkspaceAccessPanel";
 import { localizedWorkspacePath, type WorkspaceLocale } from "../../lib/workspace-locale";
@@ -11,6 +12,7 @@ export type WorkspaceManagementArea =
   | "cloud-accounts"
   | "databases"
   | "database-access"
+  | "dashboards"
   | "members";
 
 export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Array<{
@@ -24,7 +26,8 @@ export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Arra
     { id: "cloud-accounts", index: "02", ...areas.cloudAccounts },
     { id: "databases", index: "03", ...areas.databases },
     { id: "database-access", index: "04", ...areas.databaseAccess },
-    { id: "members", index: "05", ...areas.members },
+    { id: "dashboards", index: "05", ...areas.dashboards },
+    { id: "members", index: "06", ...areas.members },
   ];
 }
 
@@ -95,6 +98,9 @@ export function WorkspaceManagementPanel({
             workspaceId={workspaceId}
             initialIntegrationId={initialIntegrationId}
           />
+        ) : null}
+        {area === "dashboards" ? (
+          <DashboardManagementPanel workspaceId={workspaceId} />
         ) : null}
     </section>
   );

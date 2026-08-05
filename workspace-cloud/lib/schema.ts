@@ -862,6 +862,127 @@ export const workspaceConnectionGrant = workspaceControl.table(
   ],
 );
 
+// Shared dashboards contain only a reusable, read-only definition. Query result
+// rows, credentials, runtime parameters, and local execution history have no
+// column in this projection and therefore cannot enter workspace sync by accident.
+export const workspaceDashboard = workspaceControl.table(
+  "workspace_dashboard",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    connectionId: uuid("connection_id").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    sql: text("sql").notNull(),
+    visualization: jsonb("visualization").notNull(),
+    state: text("state").notNull().default("draft"),
+    // Membership ids are immutable attribution values. They deliberately do not
+    // carry a foreign key: member removal must not erase dashboard history, while
+    // every live assignment is tenant-checked in the atomic mutation statement.
+    ownerMemberId: text("owner_member_id").notNull(),
+    updatedByMemberId: text("updated_by_member_id").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workspace_dashboard_org_id_idx").on(table.organizationId, table.id),
+    index("workspace_dashboard_org_updated_idx").on(
+      table.organizationId,
+      table.updatedAt,
+    ),
+    index("workspace_dashboard_org_connection_idx").on(
+      table.organizationId,
+      table.connectionId,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.connectionId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "workspace_dashboard_org_connection_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_dashboard_title_length",
+      sql`char_length(btrim(${table.title})) BETWEEN 1 AND 120`,
+    ),
+    check(
+      "workspace_dashboard_description_length",
+      sql`char_length(${table.description}) <= 2000`,
+    ),
+    check(
+      "workspace_dashboard_sql_length",
+      sql`octet_length(${table.sql}) BETWEEN 1 AND 100000`,
+    ),
+    check(
+      "workspace_dashboard_state",
+      sql`${table.state} IN ('draft', 'published', 'archived')`,
+    ),
+    check(
+      "workspace_dashboard_revision",
+      sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`,
+    ),
+  ],
+);
+
+// Revisions are immutable and contain the complete declarative definition needed
+// for history and restore. A stale update is materialized as a separate dashboard,
+// never as a conflict branch that can silently replace the current definition.
+export const workspaceDashboardRevision = workspaceControl.table(
+  "workspace_dashboard_revision",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    dashboardId: uuid("dashboard_id").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull(),
+    baseRevision: bigint("base_revision", { mode: "number" }),
+    operation: text("operation").notNull(),
+    payload: jsonb("payload").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdByMemberId: text("created_by_member_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_dashboard_revision_org_dashboard_revision_idx").on(
+      table.organizationId,
+      table.dashboardId,
+      table.revision,
+    ),
+    index("workspace_dashboard_revision_org_dashboard_created_idx").on(
+      table.organizationId,
+      table.dashboardId,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.dashboardId],
+      foreignColumns: [workspaceDashboard.organizationId, workspaceDashboard.id],
+      name: "workspace_dashboard_revision_org_dashboard_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_dashboard_revision_number",
+      sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`,
+    ),
+    check(
+      "workspace_dashboard_revision_base",
+      sql`${table.baseRevision} IS NULL OR (${table.baseRevision} >= 0 AND ${table.baseRevision} <= 9007199254740991)`,
+    ),
+    check(
+      "workspace_dashboard_revision_operation",
+      sql`${table.operation} IN ('create', 'update', 'publish', 'archive', 'restore', 'transfer', 'delete', 'conflict_copy')`,
+    ),
+    check(
+      "workspace_dashboard_revision_payload_hash",
+      sql`${table.payloadHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
 // Import idempotency is scoped to the tenant and binds the opaque receipt's
 // canonical resource plus the sanitized request representation. The final import
 // command writes this row only after it has created the projection, grant, immutable

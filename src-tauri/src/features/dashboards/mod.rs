@@ -20,11 +20,10 @@ use crate::features::queries::{QueryRunAuthorizationError, QueryRunAuthorization
 use adapters::{DashboardMetadataAdapter, DashboardRunner, TerminalDashboardCreator};
 pub(crate) use adapters::{DashboardRunError, DashboardRunReceipt};
 use application::DashboardUseCases;
-#[cfg(test)]
-pub(crate) use domain::DashboardVisualization;
 pub(crate) use domain::{
     AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardDraft,
-    DashboardKind, DashboardRunRequest,
+    DashboardKind, DashboardRunRequest, DashboardState, DashboardSyncStatus,
+    DashboardVisualization,
 };
 pub(crate) use validation::validate_visualization;
 

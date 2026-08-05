@@ -13,6 +13,24 @@ const MAX_SQL_BYTES: usize = 100_000;
 const MAX_COLUMN_NAME_CHARS: usize = 256;
 const MAX_Y_COLUMNS: usize = 4;
 
+fn has_unsafe_display_character(value: &str) -> bool {
+    value.chars().any(|character| {
+        (character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
+            || matches!(
+                character,
+                '\u{202a}'
+                    | '\u{202b}'
+                    | '\u{202c}'
+                    | '\u{202d}'
+                    | '\u{202e}'
+                    | '\u{2066}'
+                    | '\u{2067}'
+                    | '\u{2068}'
+                    | '\u{2069}'
+            )
+    })
+}
+
 pub(crate) fn validate_visualization(visualization: &DashboardVisualization) -> AppResult<()> {
     if visualization.version != VISUALIZATION_VERSION {
         return Err(AppError::Config(format!(
@@ -50,6 +68,11 @@ fn validate_column_name(column: &str, label: &str) -> AppResult<()> {
             "dashboard {label} cannot exceed {MAX_COLUMN_NAME_CHARS} characters"
         )));
     }
+    if has_unsafe_display_character(column) {
+        return Err(AppError::Config(format!(
+            "dashboard {label} contains unsafe display characters"
+        )));
+    }
     Ok(())
 }
 
@@ -63,10 +86,20 @@ pub(super) fn validate_draft(draft: &DashboardDraft, engine: Engine) -> AppResul
             "dashboard title cannot exceed {MAX_TITLE_CHARS} characters"
         )));
     }
+    if has_unsafe_display_character(&draft.title) {
+        return Err(AppError::Config(
+            "dashboard title contains unsafe display characters".into(),
+        ));
+    }
     if draft.description.chars().count() > MAX_DESCRIPTION_CHARS {
         return Err(AppError::Config(format!(
             "dashboard description cannot exceed {MAX_DESCRIPTION_CHARS} characters"
         )));
+    }
+    if has_unsafe_display_character(&draft.description) {
+        return Err(AppError::Config(
+            "dashboard description contains unsafe display characters".into(),
+        ));
     }
     if draft.sql.trim().is_empty() {
         return Err(AppError::Config("dashboard SQL cannot be empty".into()));
@@ -75,6 +108,9 @@ pub(super) fn validate_draft(draft: &DashboardDraft, engine: Engine) -> AppResul
         return Err(AppError::Config(format!(
             "dashboard SQL cannot exceed {MAX_SQL_BYTES} bytes"
         )));
+    }
+    if draft.sql.contains('\0') {
+        return Err(AppError::Config("dashboard SQL contains a null byte".into()));
     }
     validate_visualization(&draft.visualization)?;
     let classification = safety::classify(&draft.sql, engine)?;
@@ -127,6 +163,18 @@ mod tests {
         assert!(matches!(
             validate_draft(&draft("SELECT 1; SELECT 2"), Engine::Postgres),
             Err(AppError::Blocked { .. })
+        ));
+        let mut unsafe_title = draft("SELECT 1");
+        unsafe_title.title = "safe\u{202e}hidden".into();
+        assert!(matches!(
+            validate_draft(&unsafe_title, Engine::Postgres),
+            Err(AppError::Config(_))
+        ));
+        let mut null_sql = draft("SELECT 1");
+        null_sql.sql.push('\0');
+        assert!(matches!(
+            validate_draft(&null_sql, Engine::Postgres),
+            Err(AppError::Config(_))
         ));
 
         assert_eq!(dashboard_result_limits(DashboardKind::Metric, 100_000).0, 1);

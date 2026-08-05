@@ -33,6 +33,48 @@ pub(crate) struct DashboardVisualization {
     pub(crate) y_columns: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum DashboardState {
+    Draft,
+    Published,
+    Archived,
+}
+
+impl DashboardState {
+    pub(crate) fn parse(value: &str) -> Result<Self, AppError> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "published" => Ok(Self::Published),
+            "archived" => Ok(Self::Archived),
+            _ => Err(AppError::Config("dashboard has an invalid state".into())),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum DashboardSyncStatus {
+    Local,
+    Dirty,
+    Synced,
+    Conflict,
+}
+
+impl DashboardSyncStatus {
+    pub(crate) fn parse(value: &str) -> Result<Self, AppError> {
+        match value {
+            "local" => Ok(Self::Local),
+            "dirty" => Ok(Self::Dirty),
+            "synced" => Ok(Self::Synced),
+            "conflict" => Ok(Self::Conflict),
+            _ => Err(AppError::Config(
+                "dashboard has an invalid sync status".into(),
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Dashboard {
@@ -42,6 +84,12 @@ pub(crate) struct Dashboard {
     pub(crate) description: String,
     pub(crate) sql: String,
     pub(crate) visualization: DashboardVisualization,
+    pub(crate) state: DashboardState,
+    pub(crate) sync_status: DashboardSyncStatus,
+    pub(crate) owner_member_id: Option<String>,
+    pub(crate) updated_by_member_id: Option<String>,
+    pub(crate) revision: i64,
+    pub(crate) remote_revision: Option<i64>,
     pub(crate) created_at: DateTime<Utc>,
     pub(crate) updated_at: DateTime<Utc>,
 }

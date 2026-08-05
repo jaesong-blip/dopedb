@@ -6,6 +6,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::kernel::identity::{AccountId, WorkspaceId};
@@ -116,6 +117,83 @@ pub(crate) struct RemoteWorkspace {
     pub(crate) id: WorkspaceId,
     pub(crate) name: String,
     pub(crate) role: WorkspaceRole,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WorkspaceDashboardState {
+    Draft,
+    Published,
+    Archived,
+}
+
+impl WorkspaceDashboardState {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Draft => "draft",
+            Self::Published => "published",
+            Self::Archived => "archived",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> AppResult<Self> {
+        match value {
+            "draft" => Ok(Self::Draft),
+            "published" => Ok(Self::Published),
+            "archived" => Ok(Self::Archived),
+            _ => Err(AppError::Network(
+                "shared dashboard returned an invalid state".into(),
+            )),
+        }
+    }
+}
+
+/// Secret-free dashboard projection received from the workspace service. The
+/// visualization remains canonical JSON until the dashboard feature validates it;
+/// result rows and credential material cannot be represented here.
+#[derive(Debug, Clone)]
+pub(crate) struct RemoteDashboard {
+    pub(crate) id: Uuid,
+    pub(crate) connection_id: Uuid,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) sql: String,
+    pub(crate) visualization_json: String,
+    pub(crate) state: WorkspaceDashboardState,
+    pub(crate) owner_member_id: String,
+    pub(crate) updated_by_member_id: String,
+    pub(crate) revision: i64,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DashboardOutboxOperation {
+    Upsert,
+    Delete,
+}
+
+/// One durable local dashboard mutation. Only its declarative definition is read
+/// from SQLite; query results and local run history stay outside the outbox.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingDashboardMutation {
+    pub(crate) outbox_id: Uuid,
+    pub(crate) dashboard_id: Uuid,
+    pub(crate) connection_id: Uuid,
+    pub(crate) operation: DashboardOutboxOperation,
+    pub(crate) local_revision: i64,
+    pub(crate) remote_id: Option<Uuid>,
+    pub(crate) remote_revision: Option<i64>,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) sql: String,
+    pub(crate) visualization_json: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum DashboardPushResult {
+    Applied(RemoteDashboard),
+    Deleted(i64),
+    Conflict,
 }
 
 /// Complete snapshot of the authority that can keep process-local Terminal sessions

@@ -15,7 +15,8 @@ const workspaceSections: Array<{
   { id: "cloud-accounts", index: "02" },
   { id: "databases", index: "03" },
   { id: "database-access", index: "04" },
-  { id: "members", index: "05" },
+  { id: "dashboards", index: "05" },
+  { id: "members", index: "06" },
 ];
 
 export function settingsSection(value: unknown): SettingsSection {
@@ -31,12 +32,14 @@ export function SettingsNavigation({
   workspaceId,
   gcpSetupId,
   canManageWorkspace,
+  canEditWorkspace,
   locale,
 }: {
   activeSection: SettingsSection;
   workspaceId: string | null;
   gcpSetupId: string | null;
   canManageWorkspace: boolean;
+  canEditWorkspace: boolean;
   locale: WorkspaceLocale;
 }) {
   const copy = workspaceMessages[locale];
@@ -50,7 +53,10 @@ export function SettingsNavigation({
       aria-label={copy.common.settings}
     >
       {workspaceSections.map((item) => {
-        if (item.id !== "workspaces" && !canManageWorkspace) return null;
+        if (item.id === "dashboards" && !canEditWorkspace) return null;
+        if (item.id !== "workspaces" && item.id !== "dashboards" && !canManageWorkspace) {
+          return null;
+        }
         const setupQuery = item.id === "cloud-accounts" && gcpSetupId
           ? `&gcpSetup=${encodeURIComponent(gcpSetupId)}`
           : "";
@@ -62,7 +68,9 @@ export function SettingsNavigation({
               ? copy.settings.areas.databases.label
               : item.id === "database-access"
                 ? copy.settings.areas.databaseAccess.label
-                : copy.settings.areas.members.label;
+                : item.id === "dashboards"
+                  ? copy.settings.areas.dashboards.label
+                  : copy.settings.areas.members.label;
         return (
           <a
             className="tw:flex tw:min-h-[48px] tw:min-w-max tw:items-center tw:border-b-2 tw:border-transparent tw:px-3 tw:text-xs tw:font-medium tw:text-chrome-muted tw:transition-colors tw:hover:bg-chrome-foreground/5 tw:hover:text-chrome-foreground tw:data-[active=true]:border-signal tw:data-[active=true]:text-chrome-foreground"
@@ -88,7 +96,7 @@ export function SettingsNavigation({
         aria-current={activeSection === "account" ? "page" : undefined}
       >
         <span className="tw:mr-2.5 tw:font-mono tw:text-2xs tw:text-signal">
-          06
+          07
         </span>
         {copy.settings.accountTitle}
       </a>

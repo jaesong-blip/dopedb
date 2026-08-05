@@ -9,8 +9,9 @@ use crate::kernel::identity::{AccountId, ConnectionId, WorkspaceId};
 use crate::model::ConnectionProfile;
 
 use super::domain::{
-    RemoteWorkspace, Workspace, WorkspaceAuthAccount, WorkspaceAuthUser,
-    WorkspaceAuthorityFingerprint, WorkspaceDeviceAuthorization, WorkspaceLoginPoll, WorkspaceRole,
+    DashboardPushResult, PendingDashboardMutation, RemoteDashboard, RemoteWorkspace, Workspace,
+    WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceAuthorityFingerprint,
+    WorkspaceDeviceAuthorization, WorkspaceLoginPoll, WorkspaceRole,
 };
 
 pub(crate) trait WorkspaceRepositoryPort: Clone + Send + Sync + 'static {
@@ -51,6 +52,30 @@ pub(crate) trait WorkspaceRepositoryPort: Clone + Send + Sync + 'static {
         &self,
         workspace_id: WorkspaceId,
         connection_id: ConnectionId,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn pending_dashboard_mutations(
+        &self,
+        workspace_id: WorkspaceId,
+    ) -> impl Future<Output = AppResult<Vec<PendingDashboardMutation>>> + Send;
+
+    fn acknowledge_dashboard_mutation(
+        &self,
+        workspace_id: WorkspaceId,
+        mutation: &PendingDashboardMutation,
+        remote: Option<&RemoteDashboard>,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn mark_dashboard_conflict(
+        &self,
+        workspace_id: WorkspaceId,
+        mutation: &PendingDashboardMutation,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn sync_remote_dashboards(
+        &self,
+        workspace_id: WorkspaceId,
+        dashboards: &[RemoteDashboard],
     ) -> impl Future<Output = AppResult<()>> + Send;
 }
 
@@ -147,6 +172,26 @@ pub(crate) trait WorkspaceControlPlanePort: Clone + Send + Sync + 'static {
         connection_id: ConnectionId,
         expected_revision: i64,
     ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn remote_dashboards(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+    ) -> impl Future<Output = AppResult<Option<Vec<RemoteDashboard>>>> + Send;
+
+    fn upsert_dashboard(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+        mutation: &PendingDashboardMutation,
+    ) -> impl Future<Output = AppResult<DashboardPushResult>> + Send;
+
+    fn delete_dashboard(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+        mutation: &PendingDashboardMutation,
+    ) -> impl Future<Output = AppResult<DashboardPushResult>> + Send;
 
     fn console_url(&self, workspace_id: Option<WorkspaceId>) -> AppResult<String>;
 }

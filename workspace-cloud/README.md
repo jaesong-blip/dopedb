@@ -180,6 +180,32 @@ are intentionally not leased. A workspace admin must reconnect and re-import the
 instance so current discovery supplies the exact path; the server does not guess a path
 for legacy records.
 
+## Shared dashboard definitions
+
+Team-workspace dashboards synchronize as secret-free definitions. The hosted contract
+contains the workspace connection id, title, description, SQL, visualization, lifecycle
+state, owner/updater membership ids, and an optimistic revision. It intentionally has
+no result-row, parameter-value, credential, connection URL, or local query-history
+field. Results are always obtained by DopeDB Desktop through the member's current local
+credential binding or short-lived managed lease and stay on that device.
+
+The collection endpoint is
+`/api/v1/workspaces/:workspaceId/dashboards`; item and immutable revision endpoints are
+under `/:dashboardId` and `/:dashboardId/revisions`. Creates require `If-Match: "0"`;
+updates, publish/archive, restore, ownership transfer, and deletion require the exact
+quoted current revision. Every mutation atomically rechecks the live session,
+membership role, source-connection grant, tenant boundary, and revision before writing
+the current projection, an immutable history row, and a redacted audit event. A stale
+definition update creates a separately owned conflict-copy draft instead of overwriting
+either version. Infrastructure failures remain server errors and are never reported as
+ordinary revision conflicts.
+
+The web management surface can inspect definitions and history, publish or archive,
+restore a previous definition as a new draft revision, and transfer ownership to a
+current Editor/Admin/Owner. It does not execute SQL. Desktop synchronizes connections
+before dashboards, keeps local dirty/conflict state, refuses to run archived
+definitions, and reuses the existing read-only dashboard safety boundary for execution.
+
 ## Trust boundary
 
 - Better Auth owns Google login, sessions, organizations, invitations, rate limits, and

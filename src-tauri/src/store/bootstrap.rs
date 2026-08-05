@@ -3,8 +3,11 @@
 use super::*;
 
 /// Version 1 introduced ordered local migrations. Version 2 adds bounded Activity
-/// paging indexes without returning to per-startup schema DDL.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 2;
+/// paging indexes; version 3 adds the server revision and publication metadata
+/// needed to synchronize dashboard definitions without synchronizing result rows.
+/// Version 4 makes Personal dashboards explicitly local and removes historical
+/// outbox rows that could never have a hosted destination.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 4;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -44,7 +47,69 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 2).await?;
         migrated = true;
     }
+    if version < 3 {
+        add_dashboard_sync_columns(pool).await?;
+        set_local_schema_version(pool, 3).await?;
+        migrated = true;
+    }
+    if version < 4 {
+        normalize_personal_dashboard_sync(pool).await?;
+        set_local_schema_version(pool, 4).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+async fn normalize_personal_dashboard_sync(pool: &SqlitePool) -> AppResult<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "DELETE FROM sync_outbox
+         WHERE resource_type = 'dashboard'
+           AND workspace_id IN (SELECT id FROM workspaces WHERE kind = 'personal')",
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE dashboards
+         SET remote_id = NULL, remote_revision = NULL, sync_status = 'local',
+             owner_member_id = NULL, updated_by_member_id = NULL
+         WHERE workspace_id IN (SELECT id FROM workspaces WHERE kind = 'personal')",
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn add_dashboard_sync_columns(pool: &SqlitePool) -> AppResult<()> {
+    let columns = [
+        (
+            "remote_revision",
+            "ALTER TABLE dashboards ADD COLUMN remote_revision INTEGER CHECK(remote_revision IS NULL OR remote_revision > 0)",
+        ),
+        (
+            "state",
+            "ALTER TABLE dashboards ADD COLUMN state TEXT NOT NULL DEFAULT 'draft' CHECK(state IN ('draft', 'published', 'archived'))",
+        ),
+        (
+            "owner_member_id",
+            "ALTER TABLE dashboards ADD COLUMN owner_member_id TEXT",
+        ),
+        (
+            "updated_by_member_id",
+            "ALTER TABLE dashboards ADD COLUMN updated_by_member_id TEXT",
+        ),
+    ];
+    for (column, statement) in columns {
+        add_column_if_missing(pool, "dashboards", column, statement).await?;
+    }
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_dashboards_workspace_sync
+         ON dashboards(workspace_id, sync_status, updated_at DESC)",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 async fn set_local_schema_version(pool: &SqlitePool, version: i64) -> AppResult<()> {

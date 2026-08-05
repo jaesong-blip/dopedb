@@ -4,6 +4,7 @@
 
 mod authentication;
 mod connections;
+mod dashboards;
 mod provider_local_target;
 
 use std::net::IpAddr;
@@ -29,8 +30,9 @@ use crate::connection::{
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{
     domain::{parse_workspace_role, valid_device_code},
-    RemoteWorkspace, WorkspaceAuthUser, WorkspaceDeviceAuthorization, WorkspaceLoginPoll,
-    WorkspaceLoginPollStatus,
+    DashboardPushResult, PendingDashboardMutation, RemoteDashboard, RemoteWorkspace,
+    WorkspaceAuthUser, WorkspaceDashboardState, WorkspaceDeviceAuthorization,
+    WorkspaceLoginPoll, WorkspaceLoginPollStatus,
 };
 use crate::kernel::identity::{AccountId, ConnectionId, ProviderIntegrationId, WorkspaceId};
 use crate::model::{
@@ -46,6 +48,7 @@ use connections::{
     authorize_connection, delete_connection, issue_managed_connection_lease,
     release_managed_connection_lease, remote_connections, share_connection, update_connection,
 };
+use dashboards::{delete_dashboard, remote_dashboards, upsert_dashboard};
 use provider_local_target::provider_local_target;
 
 const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
@@ -447,6 +450,32 @@ impl WorkspaceControlPlanePort for HostedWorkspaceControlPlane {
             expected_revision,
         )
         .await
+    }
+
+    async fn remote_dashboards(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+    ) -> AppResult<Option<Vec<RemoteDashboard>>> {
+        remote_dashboards(account_id.as_str(), workspace_id.into()).await
+    }
+
+    async fn upsert_dashboard(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+        mutation: &PendingDashboardMutation,
+    ) -> AppResult<DashboardPushResult> {
+        upsert_dashboard(account_id.as_str(), workspace_id.into(), mutation).await
+    }
+
+    async fn delete_dashboard(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+        mutation: &PendingDashboardMutation,
+    ) -> AppResult<DashboardPushResult> {
+        delete_dashboard(account_id.as_str(), workspace_id.into(), mutation).await
     }
 
     fn console_url(&self, workspace_id: Option<WorkspaceId>) -> AppResult<String> {

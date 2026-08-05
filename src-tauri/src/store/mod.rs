@@ -48,9 +48,12 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::features::dashboards::{validate_visualization, Dashboard, DashboardDraft};
+use crate::features::dashboards::{
+    validate_visualization, Dashboard, DashboardDraft, DashboardState, DashboardSyncStatus,
+};
 use crate::features::workspaces::{
-    Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceKind,
+    DashboardOutboxOperation, PendingDashboardMutation, RemoteDashboard, Workspace,
+    WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceKind,
     WorkspaceRole,
 };
 use crate::kernel::identity::{AccountId, ConnectionId, DashboardId, WorkspaceId};

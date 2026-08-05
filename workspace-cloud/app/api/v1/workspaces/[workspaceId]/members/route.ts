@@ -1,6 +1,6 @@
 // Admin-only membership management. Better Auth remains the source of truth for
 // invitation acceptance and role changes; this route adds strict role choices and audit.
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { auth } from "../../../../../../lib/auth";
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
@@ -17,7 +17,13 @@ import {
   revocationGateLockKey,
   renewRevocationGateClaim,
 } from "../../../../../../lib/revocation-gates";
-import { invitation, member, user, workspaceAuditEvent } from "../../../../../../lib/schema";
+import {
+  invitation,
+  member,
+  user,
+  workspaceAuditEvent,
+  workspaceDashboard,
+} from "../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
 
 type RouteContext = { params: Promise<{ workspaceId: string }> };
@@ -168,6 +174,24 @@ export async function PATCH(request: Request, context: RouteContext) {
     ).catch(() => false);
     return jsonError("Owner role cannot be changed here", 403);
   }
+  const canOwnDashboard = body.role === "editor" || body.role === "admin";
+  if (!canOwnDashboard) {
+    const ownedDashboard = await db.query.workspaceDashboard.findFirst({
+      where: and(
+        eq(workspaceDashboard.organizationId, workspaceId),
+        eq(workspaceDashboard.ownerMemberId, existing.id),
+        isNull(workspaceDashboard.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (ownedDashboard) {
+      await abandonMemberClaim(claim);
+      return jsonError(
+        "Transfer this member's active dashboards before changing their role",
+        409,
+      );
+    }
+  }
   let revocation = { revoked: 0, deferred: 0 };
   try {
     if (claim.memberRole !== body.role || !claim.firstPending) {
@@ -245,6 +269,15 @@ export async function PATCH(request: Request, context: RouteContext) {
         AND target."role" = ${renewedClaim.memberRole}
         AND target."role" <> 'owner'
         AND target."revocation_claim_id" = ${renewedClaim.claimId}::uuid
+        AND (
+          ${canOwnDashboard}
+          OR NOT EXISTS (
+            SELECT 1 FROM ${workspaceDashboard} AS owned_dashboard
+            WHERE owned_dashboard."organization_id" = target."organization_id"
+              AND owned_dashboard."owner_member_id" = target."id"
+              AND owned_dashboard."deleted_at" IS NULL
+          )
+        )
       RETURNING target."id", target."organization_id", target."user_id",
                 target."role", target."created_at"
     ),
@@ -350,6 +383,21 @@ export async function DELETE(request: Request, context: RouteContext) {
       ).catch(() => false);
       return jsonError("Owner cannot be removed", 403);
     }
+    const ownedDashboard = await db.query.workspaceDashboard.findFirst({
+      where: and(
+        eq(workspaceDashboard.organizationId, workspaceId),
+        eq(workspaceDashboard.ownerMemberId, existing.id),
+        isNull(workspaceDashboard.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (ownedDashboard) {
+      await abandonMemberClaim(claim);
+      return jsonError(
+        "Transfer this member's active dashboards before removing them",
+        409,
+      );
+    }
     let revocation;
     try {
       revocation = await revokeActiveLeases({
@@ -415,6 +463,12 @@ export async function DELETE(request: Request, context: RouteContext) {
           AND target."role" = ${renewedClaim.memberRole}
           AND target."role" <> 'owner'
           AND target."revocation_claim_id" = ${renewedClaim.claimId}::uuid
+          AND NOT EXISTS (
+            SELECT 1 FROM ${workspaceDashboard} AS owned_dashboard
+            WHERE owned_dashboard."organization_id" = target."organization_id"
+              AND owned_dashboard."owner_member_id" = target."id"
+              AND owned_dashboard."deleted_at" IS NULL
+          )
         RETURNING target."id", target."organization_id", target."role"
       ),
       audit_event AS (
