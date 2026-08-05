@@ -93,6 +93,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.17.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: workspace-cloud/pnpm-lock.yaml
+
+      - name: Install workspace cloud dependencies
+        run: pnpm --dir workspace-cloud install --frozen-lockfile
+
       - name: Ensure PostgreSQL client
         run: |
           if ! command -v psql >/dev/null; then
@@ -102,6 +118,14 @@ jobs:
 
       - name: Test Provider legacy migration and rollback
         run: bash scripts/test-provider-legacy-migration.sh
+
+      - name: Test Provider import harness guard
+        run: pnpm --dir workspace-cloud test:postgres-harness-guard
+
+      - name: Test Provider import concurrency
+        env:
+          PROVIDER_IMPORT_POSTGRES_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+        run: bash scripts/test-provider-import-postgres.sh
 
   build:
     needs:
