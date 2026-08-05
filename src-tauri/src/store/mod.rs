@@ -189,6 +189,9 @@ impl Store {
         )
         .execute(&pool)
         .await;
+        let _ = sqlx::query("ALTER TABLE connections ADD COLUMN provider_target TEXT")
+            .execute(&pool)
+            .await;
         let _ = sqlx::query("ALTER TABLE agent_chat_threads ADD COLUMN connection_id TEXT")
             .execute(&pool)
             .await;

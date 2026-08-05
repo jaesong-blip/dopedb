@@ -2,6 +2,52 @@
 
 use super::*;
 
+fn safe_neon_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+}
+
+fn safe_provider_display_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().count() <= 256
+        && !value.chars().any(|character| {
+            character.is_control()
+                || matches!(
+                    character,
+                    '\u{202a}'
+                        | '\u{202b}'
+                        | '\u{202c}'
+                        | '\u{202d}'
+                        | '\u{202e}'
+                        | '\u{2066}'
+                        | '\u{2067}'
+                        | '\u{2068}'
+                        | '\u{2069}'
+                )
+        })
+}
+
+fn valid_provider_target(provider: &str, target: &ConnectionProviderTarget) -> bool {
+    match target {
+        ConnectionProviderTarget::Neon {
+            project_id,
+            branch_id,
+            branch_name,
+            ..
+        } => {
+            provider == "neon"
+                && safe_neon_segment(project_id)
+                && safe_neon_segment(branch_id)
+                && branch_name
+                    .as_deref()
+                    .is_none_or(safe_provider_display_name)
+        }
+    }
+}
+
 fn remote_connection(value: RemoteConnectionResponse) -> AppResult<(ConnectionProfile, i64)> {
     let id = Uuid::parse_str(&value.id)
         .map_err(|_| AppError::Network("shared connection returned an invalid id".into()))?;
@@ -33,6 +79,14 @@ fn remote_connection(value: RemoteConnectionResponse) -> AppResult<(ConnectionPr
             "shared connection returned invalid write authority".into(),
         ));
     }
+    if value.provider_target.as_ref().is_some_and(|target| {
+        credential_mode != WorkspaceCredentialMode::Managed
+            || !valid_provider_target(&value.provider, target)
+    }) {
+        return Err(AppError::Network(
+            "shared connection returned an invalid provider target".into(),
+        ));
+    }
     let revision = value.revision;
     if revision < 1 {
         return Err(AppError::Network(
@@ -62,6 +116,7 @@ fn remote_connection(value: RemoteConnectionResponse) -> AppResult<(ConnectionPr
             schema_group: value.schema_group,
             workspace_access: access,
             credential_mode,
+            provider_target: value.provider_target,
         },
         revision,
     ))

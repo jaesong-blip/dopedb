@@ -312,6 +312,7 @@ pub(super) async fn fixture_connection(
         schema_group: None,
         workspace_access: WorkspaceConnectionAccess::Manage,
         credential_mode: WorkspaceCredentialMode::Managed,
+        provider_target: None,
     };
     store
         .sync_remote_connections(

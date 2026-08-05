@@ -20,6 +20,7 @@ import {
 import { missingPlanetScaleManagedScopes } from "../providers/planetscale-core";
 import {
   inspectNeonCredential,
+  listNeonBranchInventory,
   listNeonBranches,
   listNeonDatabases,
   listNeonProjects,
@@ -47,6 +48,7 @@ import {
 import { isSegment } from "./domain";
 
 function boundedDiscoveryResults(items: ProviderResourceItem[]): ProviderResourceItem[] {
+  const neonStates = new Set(["init", "resetting", "ready", "archived", "unknown"]);
   if (items.length > MAX_PROVIDER_RESULTS) {
     throw new ProviderRequestError("provider", "Provider discovery result is too large", 409);
   }
@@ -67,6 +69,19 @@ function boundedDiscoveryResults(items: ProviderResourceItem[]): ProviderResourc
         && item.production !== "unknown")
       || (item.ready !== undefined && typeof item.ready !== "boolean")
       || (item.safeMigrations !== undefined && typeof item.safeMigrations !== "boolean")
+      || (item.providerTarget !== undefined && (
+        item.providerTarget.provider !== "neon"
+        || !isSegment(item.providerTarget.projectId)
+        || !isSegment(item.providerTarget.branchId)
+        || item.providerTarget.name.length === 0
+        || item.providerTarget.name.length > 256
+        || /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(item.providerTarget.name)
+        || !neonStates.has(item.providerTarget.currentState)
+        || (item.providerTarget.pendingState !== null
+          && !neonStates.has(item.providerTarget.pendingState))
+        || typeof item.providerTarget.default !== "boolean"
+        || typeof item.providerTarget.protected !== "boolean"
+      ))
     ) {
       throw new ProviderRequestError("provider", "Provider returned an invalid resource", 502);
     }
@@ -348,8 +363,8 @@ export async function discoverProviderResources(input: {
         && isSegment(selection.project)
         && isSegment(selection.branch)
       ) {
-        const branches = await listNeonBranches(credential, selection.project);
-        const branch = branches.find((item) => item.value === selection.branch);
+        const inventory = await listNeonBranchInventory(credential, selection.project);
+        const branch = inventory.branches.find((item) => item.id === selection.branch);
         if (!branch || branch.ready !== true) {
           throw new ProviderRequestError("neon", "Neon branch is not ready", 409);
         }
@@ -357,7 +372,20 @@ export async function discoverProviderResources(input: {
           credential,
           selection.project,
           selection.branch,
-        )).map((item) => ({ ...item, production: branch.production }));
+        )).map((item) => ({
+          ...item,
+          production: branch.production,
+          providerTarget: {
+            provider: "neon" as const,
+            projectId: branch.projectId,
+            branchId: branch.id,
+            name: branch.name,
+            currentState: branch.currentState,
+            pendingState: branch.pendingState,
+            default: branch.default,
+            protected: branch.protected,
+          },
+        }));
       }
       break;
     }

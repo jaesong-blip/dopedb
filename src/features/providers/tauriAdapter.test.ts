@@ -16,6 +16,8 @@ import managedAccessRouteSource from "../../../workspace-cloud/app/api/v1/worksp
 import connectionGrantsRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/grants/route.ts?raw";
 import providerIntegrationRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/route.ts?raw";
 import providerIntegrationDomainSource from "../../../workspace-cloud/lib/provider-integrations/domain.ts?raw";
+import providerIntegrationSource from "../../../workspace-cloud/lib/provider-integrations/integration.ts?raw";
+import providerDiscoveryProofSource from "../../../workspace-cloud/lib/provider-discovery-proof.ts?raw";
 import providerLeaseCleanupSource from "../../../workspace-cloud/lib/provider-integrations/lease-cleanup.ts?raw";
 import providerLeaseIssuanceSource from "../../../workspace-cloud/lib/provider-integrations/lease-issuance.ts?raw";
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
@@ -951,6 +953,12 @@ describe("provider credential Tauri adapter", () => {
       'credentialMode === "member_local" && allowWrites',
     );
     expect(workspaceConnectionsSource).toContain("allowWrites: effectiveWrite");
+    expect(providerIntegrationSource).toContain("providerTarget: {");
+    expect(providerDiscoveryProofSource).toContain('"providerTarget"');
+    expect(neonBootstrapRouteSource).toContain("neonBranchTarget: plan.providerTarget");
+    expect(workspaceConnectionsSource).toContain("providerTarget: publicProviderTarget(row)");
+    expect(desktopControlPlaneSource).toContain("provider_target: Option<ConnectionProviderTarget>");
+    expect(desktopSharedConnectionSource).toContain("valid_provider_target");
     expect(workspacePermissionsSource).toContain(
       'hasWorkspaceCapability(role, "write")',
     );

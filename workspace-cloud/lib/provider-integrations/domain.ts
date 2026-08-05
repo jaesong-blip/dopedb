@@ -139,6 +139,9 @@ export function discoveredProviderResource(input: {
     resource,
     {
       writeAvailable: input.writeAvailable === true,
+      ...(input.provider === "neon" && input.item.providerTarget
+        ? { neonBranchTarget: input.item.providerTarget }
+        : {}),
       ...(input.provider === "planetScale" ? {
         production: input.item.production as boolean,
         ...(engine === "mysql"

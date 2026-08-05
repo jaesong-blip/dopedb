@@ -37,7 +37,10 @@ import {
 } from "../../../../../../../../lib/providers/neon";
 import { parseNeonResource } from "../../../../../../../../lib/providers/neon-core";
 import { providerImportProjection } from "../../../../../../../../lib/providers/import-projection";
-import { ProviderRequestError } from "../../../../../../../../lib/providers/provider-types";
+import {
+  ProviderRequestError,
+  type NeonProviderResourceTarget,
+} from "../../../../../../../../lib/providers/provider-types";
 import {
   openNeonBootstrapPlan,
   sealNeonBootstrapPlan,
@@ -63,6 +66,7 @@ type PlanPayload = {
   userId: string;
   sessionId: string;
   resource: unknown;
+  providerTarget: NeonProviderResourceTarget;
   environment: NeonEnvironmentClassification | null;
   planHash: string;
   readyHash: string;
@@ -71,6 +75,39 @@ type PlanPayload = {
   issuedAt: number;
   expiresAt: number;
 };
+
+const branchStates = ["init", "resetting", "ready", "archived", "unknown"] as const;
+
+function parsedProviderTarget(
+  value: unknown,
+  resource: { project: string; branch: string },
+): NeonProviderResourceTarget | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const target = value as Record<string, unknown>;
+  const fields = [
+    "provider", "projectId", "branchId", "name", "currentState", "pendingState",
+    "default", "protected",
+  ];
+  if (
+    Object.keys(target).length !== fields.length
+    || fields.some((field) => !Object.hasOwn(target, field))
+    || target.provider !== "neon"
+    || target.projectId !== resource.project
+    || target.branchId !== resource.branch
+    || typeof target.name !== "string"
+    || target.name.length === 0
+    || target.name.length > 256
+    || /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(target.name)
+    || !branchStates.includes(target.currentState as typeof branchStates[number])
+    || (target.pendingState !== null
+      && !branchStates.includes(target.pendingState as typeof branchStates[number]))
+    || typeof target.default !== "boolean"
+    || typeof target.protected !== "boolean"
+  ) {
+    return null;
+  }
+  return target as NeonProviderResourceTarget;
+}
 
 type BranchOperationPayload = Readonly<{
   operationId: string;
@@ -237,7 +274,7 @@ function parsePlan(
     const plan = openNeonBootstrapPlan<PlanPayload>(integrationId, token);
     const fields = [
       "version", "organizationId", "integrationId", "integrationGeneration",
-      "memberId", "userId", "sessionId", "resource", "environment", "planHash",
+      "memberId", "userId", "sessionId", "resource", "providerTarget", "environment", "planHash",
       "readyHash", "findingCodes", "branchOperation", "issuedAt", "expiresAt",
     ];
     if (
@@ -274,8 +311,11 @@ function parsePlan(
       return null;
     }
     const resource = parseNeonResource(plan.resource);
+    const providerTarget = parsedProviderTarget(plan.providerTarget, resource);
     const operation = parsedBranchOperation(plan.branchOperation, resource.branch);
-    return operation === undefined ? null : { ...plan, branchOperation: operation };
+    return operation === undefined || providerTarget === null
+      ? null
+      : { ...plan, providerTarget, branchOperation: operation };
   } catch {
     return null;
   }
@@ -362,6 +402,10 @@ export async function POST(request: Request, context: RouteContext) {
         database: matching[0].value,
         engine: "postgres",
       });
+      const providerTarget = matching[0].providerTarget;
+      if (!providerTarget || !parsedProviderTarget(providerTarget, resource)) {
+        return jsonError("Neon branch identity is no longer selectable", 409);
+      }
       const branchOperation = branchOperationPayload(
         await neonBranchManagedAccessBoundaryFor({
           organizationId: workspaceId,
@@ -391,6 +435,7 @@ export async function POST(request: Request, context: RouteContext) {
         userId: authorization.session.user.id,
         sessionId: authorization.session.session.id,
         resource: inspection.resource,
+        providerTarget,
         environment: selectedEnvironment,
         planHash: inspection.report.planHash,
         readyHash: inspection.readyHash,
@@ -479,6 +524,7 @@ export async function POST(request: Request, context: RouteContext) {
     const projection = providerImportProjection("neon", applied.resource, {
       production: applied.report.production,
       writeAvailable: true,
+      neonBranchTarget: plan.providerTarget,
     });
     let branchOperation = null;
     if (plan.branchOperation) {

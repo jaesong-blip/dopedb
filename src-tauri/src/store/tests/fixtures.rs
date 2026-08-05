@@ -44,6 +44,7 @@ pub(super) fn sqlite_profile(id: Uuid, name: &str) -> ConnectionProfile {
         schema_group: None,
         workspace_access: crate::model::WorkspaceConnectionAccess::Local,
         credential_mode: crate::model::WorkspaceCredentialMode::Local,
+        provider_target: None,
     }
 }
 

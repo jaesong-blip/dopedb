@@ -13,6 +13,8 @@ export type Engine = "postgres" | "mysql" | "sqlite" | "mongodb";
 export type Provider = "auto" | "generic" | "neon" | "planetScale" | "gcpCloudSql";
 export type WorkspaceConnectionAccess = "view" | "read" | "write" | "manage" | "local";
 export type WorkspaceCredentialMode = "local" | "memberLocal" | "managed";
+export type NeonBranchState = "init" | "resetting" | "ready" | "archived" | "unknown";
+export type ConnectionProviderTarget = { provider: "neon", projectId: string, branchId: string, branchName: string | null, currentState: NeonBranchState | null, pendingState: NeonBranchState | null, default: boolean | null, protected: boolean | null };
 export type ConnectionProfile = { id: string, name: string, engine: Engine,
 /**
  * Provider overlay selected by the user; `Auto` resolves from the endpoint.
@@ -50,7 +52,12 @@ workspaceAccess: WorkspaceConnectionAccess,
 /**
  * Personal, member-local OS credential, or server-brokered in-memory lease.
  */
-credentialMode: WorkspaceCredentialMode, };
+credentialMode: WorkspaceCredentialMode,
+/**
+ * Provider-owned target identity cached from the authenticated workspace.
+ * Local connections never populate this field.
+ */
+providerTarget: ConnectionProviderTarget | null, };
 export type SafetySettings = {
 /**
  * Legacy persisted compatibility field. Exact Operation approval is always

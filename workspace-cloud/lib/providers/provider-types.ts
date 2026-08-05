@@ -6,6 +6,17 @@ export type ManagedAccessMode = "read" | "write";
 export type ManagedSslMode = "verify-ca" | "verify-full";
 export type ProviderProductionClassification = true | false | "unknown";
 
+export type NeonProviderResourceTarget = {
+  provider: "neon";
+  projectId: string;
+  branchId: string;
+  name: string;
+  currentState: "init" | "resetting" | "ready" | "archived" | "unknown";
+  pendingState: "init" | "resetting" | "ready" | "archived" | "unknown" | null;
+  default: boolean;
+  protected: boolean;
+};
+
 export type ProviderResourceItem = {
   id: string;
   name: string;
@@ -14,6 +25,7 @@ export type ProviderResourceItem = {
   production?: ProviderProductionClassification;
   ready?: boolean;
   safeMigrations?: boolean;
+  providerTarget?: NeonProviderResourceTarget;
 };
 
 export type ManagedProviderLease = {

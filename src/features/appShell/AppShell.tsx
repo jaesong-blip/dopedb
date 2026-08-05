@@ -668,6 +668,8 @@ function Shell() {
         label: connection.name || t("app.unnamed"),
         detail: [
           connection.engine,
+          connection.providerTarget?.branchName
+            ?? connection.providerTarget?.branchId,
           connection.host,
           connection.database,
         ]
@@ -675,6 +677,8 @@ function Shell() {
           .join(" · "),
         keywords: [
           connection.provider,
+          connection.providerTarget?.branchId ?? "",
+          connection.providerTarget?.branchName ?? "",
           connection.env ?? "",
           connection.username,
         ],

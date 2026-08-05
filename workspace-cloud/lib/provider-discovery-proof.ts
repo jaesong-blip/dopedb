@@ -86,6 +86,42 @@ function safeScalar(value: unknown, maxLength = 512): value is string {
     && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
+const NEON_BRANCH_STATES = ["init", "resetting", "ready", "archived", "unknown"] as const;
+
+function parseProviderTarget(
+  value: unknown,
+): ProviderResourceItem["providerTarget"] | null | undefined {
+  if (value === undefined) return undefined;
+  const record = exactRecord(value, [
+    "provider", "projectId", "branchId", "name", "currentState", "pendingState",
+    "default", "protected",
+  ]);
+  if (
+    !record
+    || record.provider !== "neon"
+    || !safeScalar(record.projectId, 128)
+    || !safeScalar(record.branchId, 128)
+    || !safeScalar(record.name, 256)
+    || !NEON_BRANCH_STATES.includes(record.currentState as typeof NEON_BRANCH_STATES[number])
+    || (record.pendingState !== null
+      && !NEON_BRANCH_STATES.includes(record.pendingState as typeof NEON_BRANCH_STATES[number]))
+    || typeof record.default !== "boolean"
+    || typeof record.protected !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    provider: "neon",
+    projectId: record.projectId,
+    branchId: record.branchId,
+    name: record.name,
+    currentState: record.currentState as typeof NEON_BRANCH_STATES[number],
+    pendingState: record.pendingState as typeof NEON_BRANCH_STATES[number] | null,
+    default: record.default,
+    protected: record.protected,
+  };
+}
+
 function expectedSelectionKeys(provider: Provider, kind: DiscoveryKind) {
   if (provider === "planetScale") {
     if (kind === "organizations") return [] as const;
@@ -132,7 +168,9 @@ export function canonicalProviderDiscoverySelection(
 function parseItem(value: unknown): ProviderResourceItem | null {
   const record = exactRecord(value, [
     "id", "name", "value", "kind", "production", "ready", "safeMigrations",
+    "providerTarget",
   ]);
+  const providerTarget = parseProviderTarget(record?.providerTarget);
   if (
     !record
     || !safeScalar(record.id)
@@ -145,6 +183,7 @@ function parseItem(value: unknown): ProviderResourceItem | null {
       && record.production !== "unknown")
     || (record.ready !== undefined && typeof record.ready !== "boolean")
     || (record.safeMigrations !== undefined && typeof record.safeMigrations !== "boolean")
+    || providerTarget === null
   ) {
     return null;
   }
@@ -164,6 +203,7 @@ function parseItem(value: unknown): ProviderResourceItem | null {
     ...(typeof record.safeMigrations === "boolean"
       ? { safeMigrations: record.safeMigrations }
       : {}),
+    ...(providerTarget ? { providerTarget } : {}),
   };
 }
 
@@ -226,6 +266,17 @@ function parsePayload(
   );
   const item = parseItem(record.item);
   if (!selection || !item) return null;
+  const neonDatabaseTarget = record.provider === "neon" && record.kind === "databases";
+  if (
+    neonDatabaseTarget !== (item.providerTarget !== undefined)
+    || (item.providerTarget
+      && (
+        item.providerTarget.projectId !== selection.project
+        || item.providerTarget.branchId !== selection.branch
+      ))
+  ) {
+    return null;
+  }
   return {
     version: PROOF_VERSION,
     organizationId: expected.organizationId,
@@ -315,11 +366,28 @@ export function sameProviderResourceItem(
   left: ProviderResourceItem,
   right: ProviderResourceItem,
 ) {
+  const leftTarget = left.providerTarget;
+  const rightTarget = right.providerTarget;
+  const sameTarget = (
+    leftTarget === undefined && rightTarget === undefined
+  ) || (
+    leftTarget !== undefined
+    && rightTarget !== undefined
+    && leftTarget.provider === rightTarget.provider
+    && leftTarget.projectId === rightTarget.projectId
+    && leftTarget.branchId === rightTarget.branchId
+    && leftTarget.name === rightTarget.name
+    && leftTarget.currentState === rightTarget.currentState
+    && leftTarget.pendingState === rightTarget.pendingState
+    && leftTarget.default === rightTarget.default
+    && leftTarget.protected === rightTarget.protected
+  );
   return left.id === right.id
     && left.name === right.name
     && left.value === right.value
     && left.kind === right.kind
     && left.production === right.production
     && left.ready === right.ready
-    && left.safeMigrations === right.safeMigrations;
+    && left.safeMigrations === right.safeMigrations
+    && sameTarget;
 }

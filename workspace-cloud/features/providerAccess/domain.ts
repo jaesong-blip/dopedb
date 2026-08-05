@@ -39,6 +39,16 @@ export type Resource = {
   production?: boolean | "unknown";
   ready?: boolean;
   safeMigrations?: boolean;
+  providerTarget?: {
+    provider: "neon";
+    projectId: string;
+    branchId: string;
+    name: string;
+    currentState: "init" | "resetting" | "ready" | "archived" | "unknown";
+    pendingState: "init" | "resetting" | "ready" | "archived" | "unknown" | null;
+    default: boolean;
+    protected: boolean;
+  };
   selectionProof?: string;
   receipt?: string;
   receiptExpiresAt?: string;

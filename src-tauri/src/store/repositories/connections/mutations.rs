@@ -38,6 +38,11 @@ impl Store {
                 "local connections must use local credential mode".into(),
             ));
         }
+        if p.provider_target.is_some() {
+            return Err(AppError::Config(
+                "local connections cannot set a managed provider target".into(),
+            ));
+        }
         let now = Utc::now();
         let extra = serde_json::to_string(&p.extra_params)?;
         let mut tx = self.pool.begin().await?;
@@ -236,6 +241,11 @@ impl Store {
         }
 
         for (profile, revision) in connections {
+            let provider_target = profile
+                .provider_target
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?;
             if profile.credential_mode == WorkspaceCredentialMode::Managed {
                 let secret_refs: Vec<String> = sqlx::query_scalar(
                     "SELECT secret_ref FROM workspace_connection_bindings
@@ -274,15 +284,15 @@ impl Store {
                      sslmode, extra_params, secret_ref, readonly_default, allow_writes,
                      created_at, updated_at, env, schema_group, workspace_id, remote_id,
                      account_user_id, revision, sync_status, workspace_access,
-                     credential_mode, deleted_at)
+                     credential_mode, provider_target, deleted_at)
                    VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?15,
-                           ?16,?17,?18,?1,NULL,?19,'synced',?20,?21,NULL)
+                           ?16,?17,?18,?1,NULL,?19,'synced',?20,?21,?22,NULL)
                    ON CONFLICT(id) DO UPDATE SET
                      name=?2, engine=?3, provider=?4, driver_id=?5, host=?6, port=?7,
                      db_name=?8, sslmode=?10, readonly_default=?13, allow_writes=?14,
                      updated_at=?15, env=?16, schema_group=?17, remote_id=?1, revision=?19,
                      sync_status='synced', workspace_access=?20, credential_mode=?21,
-                     deleted_at=NULL
+                     provider_target=?22, deleted_at=NULL
                    WHERE connections.workspace_id=?18"#,
             )
             .bind(profile.id.to_string())
@@ -306,6 +316,7 @@ impl Store {
             .bind(*revision)
             .bind(workspace_access_str(profile.workspace_access))
             .bind(credential_mode_str(profile.credential_mode))
+            .bind(provider_target)
             .execute(&mut *tx)
             .await?;
             sync_safety_allow_writes(

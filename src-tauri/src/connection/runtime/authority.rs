@@ -424,7 +424,8 @@ pub(super) fn validate_resolved_provider_local_profile(
         && resolved.secret_ref == original.secret_ref
         && resolved.username == original.username
         && resolved.env == original.env
-        && resolved.schema_group == original.schema_group;
+        && resolved.schema_group == original.schema_group
+        && resolved.provider_target == original.provider_target;
     if !unchanged_identity
         || resolved.database != target.target_database()
         || resolved.database != original.database

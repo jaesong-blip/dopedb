@@ -79,6 +79,37 @@ pub enum WorkspaceCredentialMode {
     Managed,
 }
 
+/// Redacted provider identity pinned to a managed connection. Provider credentials,
+/// connection URIs, and database passwords are deliberately not representable here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NeonBranchState {
+    Init,
+    Resetting,
+    Ready,
+    Archived,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "provider",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ConnectionProviderTarget {
+    #[serde(rename = "neon")]
+    Neon {
+        project_id: String,
+        branch_id: String,
+        branch_name: Option<String>,
+        current_state: Option<NeonBranchState>,
+        pending_state: Option<NeonBranchState>,
+        default: Option<bool>,
+        protected: Option<bool>,
+    },
+}
+
 /// A saved connection. Plaintext secrets never live here. `secretRef` points at an OS
 /// credential item; managed profiles instead obtain a short-lived in-memory lease.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +150,10 @@ pub struct ConnectionProfile {
     /// Personal, member-local OS credential, or server-brokered in-memory lease.
     #[serde(default)]
     pub credential_mode: WorkspaceCredentialMode,
+    /// Provider-owned target identity cached from the authenticated workspace.
+    /// Local connections never populate this field.
+    #[serde(default)]
+    pub provider_target: Option<ConnectionProviderTarget>,
 }
 
 /// Per-connection safety configuration (mirrors `connection_safety` in app.db).

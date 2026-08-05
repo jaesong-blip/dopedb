@@ -34,7 +34,8 @@ use crate::features::workspaces::{
 };
 use crate::kernel::identity::{AccountId, ConnectionId, ProviderIntegrationId, WorkspaceId};
 use crate::model::{
-    ConnectionProfile, Provider, WorkspaceConnectionAccess, WorkspaceCredentialMode,
+    ConnectionProfile, ConnectionProviderTarget, Provider, WorkspaceConnectionAccess,
+    WorkspaceCredentialMode,
 };
 
 use super::super::ports::WorkspaceControlPlanePort;
@@ -115,6 +116,8 @@ struct RemoteConnectionResponse {
     access_mode: String,
     #[serde(default = "default_remote_credential_mode")]
     credential_mode: String,
+    #[serde(default)]
+    provider_target: Option<ConnectionProviderTarget>,
 }
 
 #[derive(Debug, Deserialize)]

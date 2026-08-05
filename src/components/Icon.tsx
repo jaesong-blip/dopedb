@@ -70,6 +70,14 @@ const glyphs = {
       <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
     </>
   ),
+  branch: (
+    <>
+      <circle cx="6" cy="5" r="2" />
+      <circle cx="18" cy="7" r="2" />
+      <circle cx="6" cy="19" r="2" />
+      <path d="M6 7v10M8 9c5 0 5-2 8-2" />
+    </>
+  ),
   table: (
     <>
       <rect x="3" y="3" width="18" height="18" rx="2" />

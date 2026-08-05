@@ -31,6 +31,7 @@ fn query_guidance_and_namespace_contracts_stay_fail_closed() {
         schema_group: None,
         workspace_access: WorkspaceConnectionAccess::Local,
         credential_mode: WorkspaceCredentialMode::Local,
+        provider_target: None,
     };
     let health = HealthSnapshot {
         level: "normal".into(),

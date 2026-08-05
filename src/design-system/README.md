@@ -239,6 +239,10 @@ Elevation은 세 단계만 허용한다.
 - `ManualTransactionControls`: query/data toolbar가 공유하는 feature composition.
   `WorkbenchButton`만 합성해 Auto/Manual/failed 상태와 commit/rollback command를
   같은 밀도로 표시하며 화면별 Tx utility나 style map을 만들지 않는다.
+- `ProviderTargetLabel`: Explorer, connection picker, workbench가 공유하는
+  provider target feature composition. 현재는 DQ-28의 Neon branch identity만
+  허용하며, 긴 ID는 mono ellipsis와 tooltip으로 보존하고 provider state는
+  semantic status dot으로 표시한다. 화면마다 별도 branch badge를 만들지 않는다.
 - `ToolbarMenu` trigger도 `custom`/`variant` data contract가 label, icon,
   tree badge, grid header 밀도를 소유한다. feature가 trigger별 class map을
   만들거나 전역 `.btn`을 섞지 않는다.

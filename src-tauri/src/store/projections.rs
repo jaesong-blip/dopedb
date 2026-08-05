@@ -32,6 +32,11 @@ pub(super) fn row_to_connection(r: &sqlx::sqlite::SqliteRow) -> AppResult<Connec
     let extra_raw: String = r.try_get("extra_params")?;
     let extra_params: HashMap<String, String> =
         serde_json::from_str(&extra_raw).unwrap_or_default();
+    let provider_target = r
+        .try_get::<Option<String>, _>("provider_target")
+        .unwrap_or(None)
+        .map(|value| serde_json::from_str(&value))
+        .transpose()?;
     Ok(ConnectionProfile {
         id: parse_uuid(r.try_get("id")?)?,
         name: r.try_get("name")?,
@@ -57,6 +62,7 @@ pub(super) fn row_to_connection(r: &sqlx::sqlite::SqliteRow) -> AppResult<Connec
             r.try_get("credential_mode")
                 .unwrap_or_else(|_| "local".to_string()),
         )?,
+        provider_target,
     })
 }
 

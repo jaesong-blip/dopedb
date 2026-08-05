@@ -4,6 +4,7 @@ import EngineMark from "../../components/EngineMark";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import { Icon } from "../../components/Icon";
 import type { ConnectionProfile } from "../connections/domain";
+import { ProviderTargetLabel } from "../connections/ProviderTargetLabel";
 import { useI18n } from "../../lib/i18n";
 import {
   buildConnectionSections,
@@ -55,6 +56,12 @@ export default function ConnectionPicker({
         </span>
         <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:text-sm tw:text-muted-foreground tw:[&>span:not(.ds-meta-dot)]:min-w-0 tw:[&>span:not(.ds-meta-dot)]:overflow-hidden tw:[&>span:not(.ds-meta-dot)]:text-ellipsis tw:[&>span:not(.ds-meta-dot)]:whitespace-nowrap">
           <span>{connection.database || t("common.unknown")}</span>
+          {connection.providerTarget ? (
+            <>
+              <span className="ds-meta-dot tw:shrink-0" />
+              <ProviderTargetLabel target={connection.providerTarget} showState />
+            </>
+          ) : null}
           <span className="ds-meta-dot tw:shrink-0" />
           <span>{connectionEndpoint(connection)}</span>
         </span>

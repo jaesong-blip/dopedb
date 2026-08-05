@@ -1,6 +1,7 @@
 // Strict parsing and public serialization for shared connection templates. Secret-
 // bearing fields are rejected rather than silently discarded to surface client bugs.
 import type { WorkspaceRoleName } from "./workspace-permissions";
+import { parseNeonResource } from "./providers/neon-core";
 
 // SQLite paths identify files on one machine and are not meaningful team endpoints.
 const engines = ["postgres", "mysql", "mongodb"] as const;
@@ -51,6 +52,60 @@ export function providerResourceSupportsWrite(value: unknown): boolean {
   return manifest.importReadOnly === true
     && manifest.managedLease === true
     && manifest.write === true;
+}
+
+const neonBranchStates = ["init", "resetting", "ready", "archived", "unknown"] as const;
+
+function safeProviderTargetText(value: unknown, maxLength: number) {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maxLength
+    && !/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(value)
+    ? value
+    : null;
+}
+
+function publicProviderTarget(row: {
+  provider: string;
+  providerResource?: unknown;
+  providerMetadata?: unknown;
+}) {
+  if (row.provider !== "neon" || row.providerResource === undefined) return null;
+  let resource;
+  try {
+    resource = parseNeonResource(row.providerResource);
+  } catch {
+    return null;
+  }
+  const metadata = row.providerMetadata
+    && typeof row.providerMetadata === "object"
+    && !Array.isArray(row.providerMetadata)
+    ? row.providerMetadata as Record<string, unknown>
+    : {};
+  const currentState = neonBranchStates.includes(
+    metadata.branchState as typeof neonBranchStates[number],
+  ) ? metadata.branchState as typeof neonBranchStates[number] : null;
+  const pendingState = metadata.branchPendingState === null
+    ? null
+    : neonBranchStates.includes(
+      metadata.branchPendingState as typeof neonBranchStates[number],
+    )
+      ? metadata.branchPendingState as typeof neonBranchStates[number]
+      : null;
+  return {
+    provider: "neon" as const,
+    projectId: resource.project,
+    branchId: resource.branch,
+    branchName: safeProviderTargetText(metadata.branchName, 256),
+    currentState,
+    pendingState,
+    default: typeof metadata.branchDefault === "boolean"
+      ? metadata.branchDefault
+      : null,
+    protected: typeof metadata.branchProtected === "boolean"
+      ? metadata.branchProtected
+      : null,
+  };
 }
 
 export function parseSharedConnection(
@@ -109,6 +164,7 @@ export function publicConnection(
     host: string; port: number; databaseName: string; sslmode: string;
     readonlyDefault: boolean; allowWrites: boolean; environment: string | null;
     schemaGroup: string | null; credentialMode: string; contentRevision: number; updatedAt: Date;
+    providerResource?: unknown; providerMetadata?: unknown;
   },
   role: WorkspaceRoleName,
   accessMode: "view" | "read" | "write" | "manage",
@@ -140,5 +196,6 @@ export function publicConnection(
     accessMode,
     credentialMode: managed ? "managed" : "member_local",
     credentialsRequired: !managed,
+    providerTarget: publicProviderTarget(row),
   };
 }

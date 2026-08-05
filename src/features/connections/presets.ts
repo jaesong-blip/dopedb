@@ -57,6 +57,7 @@ export function blankConnection(
     schemaGroup: null,
     workspaceAccess: "local",
     credentialMode: "local",
+    providerTarget: null,
   };
 }
 

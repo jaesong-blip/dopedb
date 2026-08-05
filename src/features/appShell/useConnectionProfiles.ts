@@ -24,6 +24,7 @@ function runtimeFingerprint(profile: ConnectionProfile): string {
     profile.env,
     profile.workspaceAccess,
     profile.credentialMode,
+    profile.providerTarget,
   ]);
 }
 

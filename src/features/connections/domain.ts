@@ -30,6 +30,24 @@ export type WorkspaceConnectionAccess =
   | "local";
 export type WorkspaceCredentialMode = "local" | "memberLocal" | "managed";
 
+export type NeonBranchState =
+  | "init"
+  | "resetting"
+  | "ready"
+  | "archived"
+  | "unknown";
+
+export type ConnectionProviderTarget = {
+  provider: "neon";
+  projectId: string;
+  branchId: string;
+  branchName: string | null;
+  currentState: NeonBranchState | null;
+  pendingState: NeonBranchState | null;
+  default: boolean | null;
+  protected: boolean | null;
+};
+
 export interface ConnectionProfile {
   id: ConnectionId;
   name: string;
@@ -49,6 +67,7 @@ export interface ConnectionProfile {
   schemaGroup: string | null;
   workspaceAccess: WorkspaceConnectionAccess;
   credentialMode: WorkspaceCredentialMode;
+  providerTarget: ConnectionProviderTarget | null;
 }
 
 export type ConnectionAccessIssue = "grant" | "credentials";

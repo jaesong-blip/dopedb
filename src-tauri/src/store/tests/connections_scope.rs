@@ -235,6 +235,16 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
         .unwrap();
     template.credential_mode = crate::model::WorkspaceCredentialMode::Managed;
     template.allow_writes = true;
+    let provider_target = crate::model::ConnectionProviderTarget::Neon {
+        project_id: "project-main".into(),
+        branch_id: "br-development".into(),
+        branch_name: Some("development".into()),
+        current_state: Some(crate::model::NeonBranchState::Ready),
+        pending_state: None,
+        default: Some(false),
+        protected: Some(false),
+    };
+    template.provider_target = Some(provider_target.clone());
     let removed_credential_ids = store
         .sync_remote_connections(workspace_id, &user.id, &[(template, 2)])
         .await
@@ -253,6 +263,7 @@ async fn managed_remote_template_never_reads_or_accepts_a_local_binding() {
     assert!(loaded.username.is_empty());
     assert!(loaded.secret_ref.is_none());
     assert!(loaded.allow_writes);
+    assert_eq!(loaded.provider_target, Some(provider_target));
     assert!(store.get_safety(id).await.unwrap().allow_writes);
     let binding_material: (String, String, Option<String>) = sqlx::query_as(
         "SELECT username, extra_params, secret_ref

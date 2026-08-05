@@ -11,6 +11,7 @@ import {
 import { parseGcpCloudSqlResource, type GcpCloudSqlResource } from "./gcp-cloud-sql-core";
 import { parseNeonResource, type NeonResource } from "./neon-core";
 import type { PlanetScaleResource } from "./planetscale";
+import type { NeonProviderResourceTarget } from "./provider-types";
 
 export type DiscoverableProviderResource = PlanetScaleResource | NeonResource | GcpCloudSqlResource;
 export type ImportProvider = "neon" | "gcpCloudSql" | "planetScale";
@@ -162,6 +163,7 @@ export function providerImportProjection(
     writeAvailable?: boolean;
     production?: boolean;
     safeMigrations?: boolean;
+    neonBranchTarget?: NeonProviderResourceTarget;
   } = {},
 ): ProviderImportProjection {
   const adapter = providerImportAdapters[provider];
@@ -190,11 +192,29 @@ export function providerImportProjection(
     if (typeof options.production !== "boolean") {
       throw new Error("Neon bootstrap classification is incomplete");
     }
+    const neon = resource as NeonResource;
+    const target = options.neonBranchTarget;
+    if (
+      target
+      && (
+        target.projectId !== neon.project
+        || target.branchId !== neon.branch
+      )
+    ) {
+      throw new Error("Neon branch target does not match the imported resource");
+    }
     projected = {
       ...projected,
       metadata: {
         ...projected.metadata,
         production: options.production,
+        ...(target ? {
+          branchName: target.name,
+          branchState: target.currentState,
+          branchPendingState: target.pendingState,
+          branchDefault: target.default,
+          branchProtected: target.protected,
+        } : {}),
       },
     };
   }

@@ -46,6 +46,7 @@ export async function GET(request: Request, context: RouteContext) {
       connection: workspaceConnection,
       capability: workspaceConnectionGrant.capability,
       capabilityManifest: workspaceProviderResource.capabilityManifest,
+      providerMetadata: workspaceProviderResource.redactedMetadata,
     })
     .from(workspaceConnectionGrant)
     .innerJoin(
@@ -82,13 +83,13 @@ export async function GET(request: Request, context: RouteContext) {
     workspaceId,
     role: authorization.role,
     accessMode: authorization.accessMode,
-    connections: rows.map(({ connection, capability, capabilityManifest }) => {
+    connections: rows.map(({ connection, capability, capabilityManifest, providerMetadata }) => {
       const accessMode = accessModeForConnectionGrant(
         authorization.role,
         capability as WorkspaceConnectionCapability,
       );
       return publicConnection(
-        connection,
+        { ...connection, providerMetadata },
         authorization.role,
         accessMode,
         providerResourceSupportsWrite(capabilityManifest),

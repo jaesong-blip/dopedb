@@ -7,6 +7,7 @@ import type { OperationState as GeneratedOperationState } from "./generated/prot
 
 export type {
   AuditEntry,
+  ConnectionProviderTarget,
   ConnectionProfile,
   DocumentPage,
   Engine,
@@ -14,6 +15,7 @@ export type {
   HistoryEntry,
   JsonValue,
   MonitoringStatus,
+  NeonBranchState,
   Provider,
   QueryKind,
   QueryResult,

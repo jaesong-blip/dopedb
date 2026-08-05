@@ -6,6 +6,7 @@ import type { CatalogTable } from "../../ipc/types";
 import BackgroundTasksMenu from "../backgroundTasks/BackgroundTasksMenu";
 import type { BackgroundTask } from "../backgroundTasks/domain";
 import type { ConnectionProfile } from "../connections/domain";
+import { providerTargetDisplayName } from "../connections/ProviderTargetLabel";
 import type { WorkbenchDocument } from "../workbench/domain";
 import ManualTransactionsMenu from "../queries/ManualTransactionsMenu";
 import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
@@ -240,6 +241,17 @@ export function IdeStatusBar({
       label: selected.name || t("app.unnamed"),
       onSelect: onRevealDatabaseContext,
     });
+    if (selected.providerTarget) {
+      const target = selected.providerTarget;
+      const state = target.pendingState ?? target.currentState;
+      breadcrumbs.push({
+        id: `provider-target:${target.branchId}`,
+        label: state
+          ? `${providerTargetDisplayName(target)} · ${state}`
+          : providerTargetDisplayName(target),
+        onSelect: onRevealDatabaseContext,
+      });
+    }
     if (selectedDatabase) {
       breadcrumbs.push({
         id: `database:${selectedDatabase}`,

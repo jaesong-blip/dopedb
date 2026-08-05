@@ -1071,6 +1071,7 @@ export function ConnectionForm({
         secretRef: null,
         workspaceAccess: "local",
         credentialMode: "local",
+        providerTarget: null,
       };
     });
     setIsNew(true);

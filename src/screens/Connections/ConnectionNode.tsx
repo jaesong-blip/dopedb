@@ -18,6 +18,7 @@ import {
   connectionAccessIssue,
   type ConnectionProfile,
 } from "../../features/connections/domain";
+import { ProviderTargetLabel } from "../../features/connections/ProviderTargetLabel";
 import { isDemoSqliteConnection } from "../../features/connections/presets";
 import type {
   Catalog,
@@ -184,8 +185,13 @@ export default function ConnectionNode(props: Props) {
         {!props.nested && (
           <EngineMark engine={connection.engine} size="tree" />
         )}
-        <span className="tw:min-w-0 tw:flex-1 tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-          {connection.name || t("app.unnamed")}
+        <span className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-px">
+          <span className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
+            {connection.name || t("app.unnamed")}
+          </span>
+          {connection.providerTarget ? (
+            <ProviderTargetLabel target={connection.providerTarget} />
+          ) : null}
         </span>
         {connection.workspaceAccess === "local" &&
         connection.engine !== "mongodb" &&

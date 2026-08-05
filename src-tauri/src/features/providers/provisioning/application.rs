@@ -1533,6 +1533,7 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
             schema_group: None,
             workspace_access: crate::model::WorkspaceConnectionAccess::Local,
             credential_mode: crate::model::WorkspaceCredentialMode::Local,
+            provider_target: None,
         };
         for expected_revision in 1..=plan.target().connection_revision() {
             store

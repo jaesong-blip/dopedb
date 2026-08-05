@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS connections (
     sync_status       TEXT NOT NULL DEFAULT 'local', -- local|dirty|synced|conflict
     workspace_access  TEXT NOT NULL DEFAULT 'local', -- view|read|write|manage|local
     credential_mode   TEXT NOT NULL DEFAULT 'local', -- local|member_local|managed
+    provider_target   TEXT,                          -- redacted provider target JSON
     deleted_at        TEXT,
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
