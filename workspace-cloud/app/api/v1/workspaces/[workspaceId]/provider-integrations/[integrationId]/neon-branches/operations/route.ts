@@ -19,10 +19,17 @@ import {
 } from "../../../../../../../../../lib/provider-integrations";
 import { providerOperationOwnershipMarker } from "../../../../../../../../../lib/provider-operation-marker";
 import {
+  applyProviderOperationReconciliation,
+  cancelExpiredProviderOperationExecution,
+  claimProviderOperationExecution,
   decideProviderOperation,
+  loadProviderOperationExecution,
   loadProviderOperationPlan,
+  markProviderOperationRemoteStarted,
   recordProviderOperationPlan,
   type ProviderOperationDecision,
+  type ProviderOperationExecutionRecord,
+  type ProviderOperationReconciliationInput,
 } from "../../../../../../../../../lib/provider-operation-store";
 import { MAX_PROVIDER_RESULTS } from "../../../../../../../../../lib/providers/adapter-contract";
 import {
@@ -31,7 +38,12 @@ import {
   parseNeonBranchCreatePlanRequest,
   revalidateNeonBranchCreatePlan,
 } from "../../../../../../../../../lib/providers/neon-branch-plan";
-import { listNeonBranchInventory } from "../../../../../../../../../lib/providers/neon";
+import {
+  createNeonBranch,
+  listNeonBranchInventory,
+  NeonBranchMutationRequestError,
+  reconcileNeonBranchCreate,
+} from "../../../../../../../../../lib/providers/neon";
 import { parseNeonResource } from "../../../../../../../../../lib/providers/neon-core";
 import { ProviderRequestError } from "../../../../../../../../../lib/providers/provider-types";
 import { workspaceConnection } from "../../../../../../../../../lib/schema";
@@ -49,6 +61,11 @@ type OperationBody =
     operationId: string;
     planHash: string;
     decision: ProviderOperationDecision;
+  }>
+  | Readonly<{
+    action: "executeCreate";
+    operationId: string;
+    planHash: string;
   }>;
 
 export const maxDuration = 60;
@@ -80,6 +97,22 @@ function exactOperationBody(value: unknown): OperationBody | null {
       operationId: body.operationId,
       planHash: body.planHash,
       decision: body.decision,
+    };
+  }
+  if (
+    body.action === "executeCreate"
+    && Object.keys(body).length === 3
+    && Object.prototype.hasOwnProperty.call(body, "operationId")
+    && Object.prototype.hasOwnProperty.call(body, "planHash")
+    && typeof body.operationId === "string"
+    && isUuid(body.operationId)
+    && typeof body.planHash === "string"
+    && /^[0-9a-f]{64}$/.test(body.planHash)
+  ) {
+    return {
+      action: "executeCreate",
+      operationId: body.operationId,
+      planHash: body.planHash,
     };
   }
   return null;
@@ -136,7 +169,27 @@ async function livePlanContext(input: {
       workspaceProductionReference = true;
     }
   }
-  return { inventory, workspaceProductionReference };
+  return { credential, inventory, workspaceProductionReference };
+}
+
+function executionResponse(operation: ProviderOperationExecutionRecord | {
+  id: string;
+  state: string;
+  providerOperationId: string | null;
+  providerResourceId: string | null;
+  reconcileAfter: Date | null;
+  failureCode: string | null;
+}) {
+  return {
+    operation: {
+      id: operation.id,
+      state: operation.state,
+      providerOperationId: operation.providerOperationId,
+      branchId: operation.providerResourceId,
+      reconcileAfter: operation.reconcileAfter?.toISOString() ?? null,
+      failureCode: operation.failureCode,
+    },
+  };
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -169,6 +222,185 @@ export async function POST(request: Request, context: RouteContext) {
   };
 
   try {
+    if (body.action === "executeCreate") {
+      const operation = await loadProviderOperationExecution({
+        organizationId: workspaceId,
+        integrationId,
+        integrationGeneration: integration.generation,
+        operationId: body.operationId,
+      });
+      if (!operation || operation.planHash !== body.planHash) {
+        return jsonError("Neon branch operation plan changed or is unavailable", 409);
+      }
+      if (["succeeded", "failed", "needs_repair", "cancelled"].includes(operation.state)) {
+        return privateJson(executionResponse(operation));
+      }
+      if (operation.state === "awaiting_approval") {
+        return jsonError("Neon branch operation is awaiting approval", 409);
+      }
+      const identity = {
+        authority,
+        integrationId,
+        integrationGeneration: integration.generation,
+        operationId: operation.id,
+        planHash: operation.planHash,
+        ownershipMarker: operation.ownershipMarker,
+      };
+      if (
+        (operation.state === "approved" || operation.state === "claimed")
+        && operation.planExpiresAt.valueOf() <= Date.now()
+      ) {
+        const cancelled = await cancelExpiredProviderOperationExecution({
+          ...identity,
+          now: new Date(),
+        });
+        if (!cancelled) {
+          return jsonError("Neon branch expiration authority or operation changed", 409);
+        }
+        return privateJson(executionResponse(cancelled));
+      }
+      if (
+        operation.state === "reconciling"
+        && operation.reconcileAfter
+        && operation.reconcileAfter.valueOf() > Date.now()
+      ) {
+        return privateJson(executionResponse(operation), { status: 202 });
+      }
+
+      let credential;
+      let claimId = operation.claimId;
+      let startedNow = false;
+      if (operation.state === "approved" || operation.state === "claimed") {
+        const live = await livePlanContext({
+          workspaceId,
+          integrationId,
+          integration,
+          projectId: operation.plan.source.projectId,
+          sourceBranchId: operation.plan.source.branchId,
+        });
+        revalidateNeonBranchCreatePlan({
+          plan: operation.plan,
+          inventory: live.inventory,
+          workspaceProductionReference: live.workspaceProductionReference,
+          now: new Date(),
+        });
+        credential = live.credential;
+        const claim = await claimProviderOperationExecution({
+          ...identity,
+          now: new Date(),
+        });
+        if (!claim) {
+          return jsonError("Neon branch execution authority or operation changed", 409);
+        }
+        const remoteStart = await markProviderOperationRemoteStarted({
+          ...identity,
+          claimId: claim.claimId,
+          now: new Date(),
+        });
+        if (!remoteStart) {
+          return jsonError("Neon branch remote-start fence changed", 409);
+        }
+        if (remoteStart.state === "cancelled") {
+          return privateJson(executionResponse({
+            id: remoteStart.id,
+            state: remoteStart.state,
+            providerOperationId: null,
+            providerResourceId: null,
+            reconcileAfter: null,
+            failureCode: null,
+          }));
+        }
+        claimId = claim.claimId;
+        startedNow = remoteStart.startedNow;
+      } else {
+        credential = await verifiedNeonProjectCredential(
+          integration,
+          operation.plan.source.projectId,
+        );
+      }
+      if (!claimId) {
+        return jsonError("Neon branch execution claim is unavailable", 409);
+      }
+
+      let providerOperationId = operation.providerOperationId;
+      if (startedNow) {
+        let observation: ProviderOperationReconciliationInput;
+        try {
+          const receipt = await createNeonBranch({
+            credential,
+            plan: operation.plan,
+            planHash: operation.planHash,
+            ownershipMarker: operation.ownershipMarker,
+          });
+          providerOperationId = receipt.providerOperationId;
+          observation = {
+            status: "pending",
+            branchId: receipt.branchId,
+            providerOperationId: receipt.providerOperationId,
+            providerOperationStatus: receipt.providerOperationStatus,
+            endpointId: receipt.endpointId,
+            failureCode: null,
+          };
+        } catch (error) {
+          observation = error instanceof NeonBranchMutationRequestError
+            && error.explicitlyRetrySafe
+            ? {
+              status: "failed",
+              branchId: null,
+              providerOperationId: null,
+              providerOperationStatus: null,
+              endpointId: null,
+              failureCode: "NEON_RETRY_SAFE_REJECTED",
+            }
+            : {
+              status: "missing",
+              branchId: null,
+              providerOperationId: null,
+              providerOperationStatus: null,
+              endpointId: null,
+              failureCode: null,
+            };
+        }
+        const recorded = await applyProviderOperationReconciliation({
+          ...identity,
+          claimId,
+          result: observation,
+          now: new Date(),
+        });
+        if (!recorded) {
+          return jsonError("Neon branch creation receipt could not be recorded", 409);
+        }
+        if (recorded.state !== "reconciling") {
+          return privateJson(executionResponse(recorded));
+        }
+        if (observation.status === "missing") {
+          return privateJson(executionResponse(recorded), { status: 202 });
+        }
+        providerOperationId = recorded.providerOperationId;
+      }
+
+      const reconciled = await reconcileNeonBranchCreate({
+        credential,
+        plan: operation.plan,
+        planHash: operation.planHash,
+        ownershipMarker: operation.ownershipMarker,
+        providerOperationId,
+      });
+      const recorded = await applyProviderOperationReconciliation({
+        ...identity,
+        claimId,
+        result: reconciled,
+        now: new Date(),
+      });
+      if (!recorded) {
+        return jsonError("Neon branch reconciliation authority changed", 409);
+      }
+      return privateJson(
+        executionResponse(recorded),
+        recorded.state === "reconciling" ? { status: 202 } : undefined,
+      );
+    }
+
     if (body.action === "decideCreate") {
       const operation = await loadProviderOperationPlan({
         organizationId: workspaceId,

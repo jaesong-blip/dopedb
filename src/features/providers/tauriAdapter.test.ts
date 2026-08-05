@@ -56,6 +56,10 @@ import {
   parseNeonBranchCreatePlanRequest,
   revalidateNeonBranchCreatePlan,
 } from "../../../workspace-cloud/lib/providers/neon-branch-plan";
+import {
+  neonBranchMutationBody,
+  parseNeonBranchCreateReceipt,
+} from "../../../workspace-cloud/lib/providers/neon-branch-mutation";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -392,6 +396,54 @@ describe("provider credential Tauri adapter", () => {
       "NEON_ENDPOINT_CREATES_COMPUTE",
       "NEON_HEAD_RESOLVED_AT_EXECUTION",
     ]);
+    const mutationPlanHash = "a".repeat(64);
+    const mutationOwnership = `v1.${"B".repeat(43)}`;
+    expect(neonBranchMutationBody({
+      plan: productionPlan,
+      planHash: mutationPlanHash,
+      ownershipMarker: mutationOwnership,
+    })).toEqual({
+      branch: {
+        parent_id: "br-main",
+        name: "safe-production-checkpoint",
+        init_source: "parent-data",
+        protected: false,
+      },
+      endpoints: [{ type: "read_write" }],
+      annotation_value: {
+        "dopedb-operation-id": productionPlan.operationId,
+        "dopedb-plan-hash": mutationPlanHash,
+        "dopedb-ownership": mutationOwnership,
+      },
+    });
+    const redactedReceipt = parseNeonBranchCreateReceipt({
+      branch: {
+        id: "br-created",
+        project_id: "project-one",
+        name: "safe-production-checkpoint",
+      },
+      operations: [{
+        id: "12345678-1234-4234-8234-123456789012",
+        project_id: "project-one",
+        branch_id: "br-created",
+        action: "create_timeline",
+        status: "running",
+      }],
+      endpoints: [{
+        id: "ep-created",
+        branch_id: "br-created",
+        type: "read_write",
+      }],
+      roles: [{ name: "owner", password: "must-not-survive" }],
+      connection_uris: [{ connection_uri: "postgres://must-not-survive" }],
+    }, productionPlan);
+    expect(redactedReceipt).toEqual({
+      branchId: "br-created",
+      providerOperationId: "12345678-1234-4234-8234-123456789012",
+      providerOperationStatus: "running",
+      endpointId: "ep-created",
+    });
+    expect(JSON.stringify(redactedReceipt)).not.toContain("must-not-survive");
     expect(revalidateNeonBranchCreatePlan({
       plan: productionPlan,
       inventory: branchInventory,
@@ -637,13 +689,25 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchOperationsRouteSource).toContain("recordProviderOperationPlan");
     expect(neonBranchOperationsRouteSource).toContain("revalidateNeonBranchCreatePlan");
     expect(neonBranchOperationsRouteSource).toContain("decideProviderOperation");
-    expect(neonBranchOperationsRouteSource).not.toContain("createNeonBranch");
+    expect(neonBranchOperationsRouteSource).toContain("claimProviderOperationExecution");
+    expect(neonBranchOperationsRouteSource).toContain("cancelExpiredProviderOperationExecution");
+    expect(neonBranchOperationsRouteSource).toContain("markProviderOperationRemoteStarted");
+    expect(neonBranchOperationsRouteSource).toContain("reconcileNeonBranchCreate");
+    expect(neonBranchOperationsRouteSource.indexOf(
+      "const remoteStart = await markProviderOperationRemoteStarted",
+    )).toBeLessThan(neonBranchOperationsRouteSource.indexOf(
+      "const receipt = await createNeonBranch",
+    ));
     expect(providerOperationStoreSource).toContain("providerMutationAuthoritySql");
     expect(providerOperationStoreSource).toContain(
       'PROVIDER_OPERATION_DURABLE_MUTATION_ENTRYPOINTS = Object.freeze([',
     );
     expect(providerOperationStoreSource).toContain('"recordProviderOperationPlan"');
     expect(providerOperationStoreSource).toContain('"decideProviderOperation"');
+    expect(providerOperationStoreSource).toContain('"claimProviderOperationExecution"');
+    expect(providerOperationStoreSource).toContain('"cancelExpiredProviderOperationExecution"');
+    expect(providerOperationStoreSource).toContain('"markProviderOperationRemoteStarted"');
+    expect(providerOperationStoreSource).toContain('"applyProviderOperationReconciliation"');
     expect(providerOperationStoreSource).toContain("requester_session");
     expect(providerOperationStoreSource).toContain(
       'operation."approval_policy" <> \'separate_admin\'',
@@ -658,6 +722,9 @@ describe("provider credential Tauri adapter", () => {
     expect(providerOperationStoreSource).toContain("canonicalHash(input.plan)");
     expect(providerOperationMarkerSource).toContain("hkdfSync");
     expect(providerOperationMarkerSource).toContain("timingSafeEqual");
+    expect(neonSource).toContain('"x-request-id": input.plan.operationId');
+    expect(neonSource).toContain("response.status === 423 || response.status === 503");
+    expect(neonSource).toContain("reconcileNeonBranchCreate");
     expect(providerOperationMigrationSource).toContain(
       '"approval_policy" text NOT NULL',
     );

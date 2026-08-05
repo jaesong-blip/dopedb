@@ -22,6 +22,7 @@ import {
 import { workspaceAuditEventId } from "./workspace-audit-id";
 import { canonicalHash, canonicalJson } from "./workspace-versioning";
 import type { NeonBranchCreatePlan } from "./providers/neon-branch-plan";
+import { NEON_OPERATION_STATUSES } from "./providers/neon-branch-mutation";
 
 const MAX_REDACTED_PLAN_BYTES = 32 * 1_024;
 const operationStates = [
@@ -44,6 +45,10 @@ export type ProviderOperationState = typeof operationStates[number];
 export const PROVIDER_OPERATION_DURABLE_MUTATION_ENTRYPOINTS = Object.freeze([
   "recordProviderOperationPlan",
   "decideProviderOperation",
+  "claimProviderOperationExecution",
+  "cancelExpiredProviderOperationExecution",
+  "markProviderOperationRemoteStarted",
+  "applyProviderOperationReconciliation",
 ] as const);
 
 export type ProviderOperationPlanRecord = Readonly<{
@@ -68,6 +73,57 @@ export type ProviderOperationDecisionRecord = Readonly<{
   replayed: boolean;
 }>;
 
+export type ProviderOperationExecutionClaim = Readonly<{
+  id: string;
+  state: ProviderOperationState;
+  claimId: string;
+  claimedNow: boolean;
+}>;
+
+export type ProviderOperationRemoteStart = Readonly<{
+  id: string;
+  state: "remote_started" | "reconciling" | "cancelled";
+  claimId: string;
+  startedNow: boolean;
+}>;
+
+export type ProviderOperationCancellationRecord = Readonly<{
+  id: string;
+  state: "cancelled";
+  providerOperationId: null;
+  providerResourceId: null;
+  reconcileAfter: null;
+  failureCode: null;
+}>;
+
+export type ProviderOperationExecutionRecord = ProviderOperationPlanRecord & Readonly<{
+  claimId: string | null;
+  remoteStartedAt: Date | null;
+  providerOperationId: string | null;
+  providerResourceId: string | null;
+  reconcileAfter: Date | null;
+  failureCode: string | null;
+}>;
+
+export type ProviderOperationReconciliationInput = Readonly<{
+  status: "missing" | "pending" | "ready" | "conflict" | "failed";
+  branchId: string | null;
+  providerOperationId: string | null;
+  providerOperationStatus: string | null;
+  endpointId: string | null;
+  failureCode: string | null;
+}>;
+
+export type ProviderOperationReconciliationRecord = Readonly<{
+  id: string;
+  state: ProviderOperationState;
+  claimId: string;
+  providerOperationId: string | null;
+  providerResourceId: string | null;
+  reconcileAfter: Date | null;
+  failureCode: string | null;
+}>;
+
 type ProviderOperationPlanRow = {
   id: string;
   state: string;
@@ -77,6 +133,15 @@ type ProviderOperationPlanRow = {
   approvalPolicy: string;
   redactedPlan: unknown;
   ownershipMarker: string;
+};
+
+type ProviderOperationExecutionRow = ProviderOperationPlanRow & {
+  claimId: string | null;
+  remoteStartedAt: Date | string | null;
+  providerOperationId: string | null;
+  providerResourceId: string | null;
+  reconcileAfter: Date | string | null;
+  failureCode: string | null;
 };
 
 function safeRedactedValue(value: unknown, depth = 0): void {
@@ -239,6 +304,159 @@ export async function loadProviderOperationPlan(input: {
     integrationGeneration: input.integrationGeneration,
     operationId: input.operationId,
   });
+}
+
+function optionalDate(value: Date | string | null): Date | null {
+  if (value === null) return null;
+  const date = planDate(value);
+  if (!date) throw new Error("Invalid provider operation execution state");
+  return date;
+}
+
+export async function loadProviderOperationExecution(input: {
+  organizationId: string;
+  integrationId: string;
+  integrationGeneration: bigint;
+  operationId: string;
+}): Promise<ProviderOperationExecutionRecord | null> {
+  const result = await db.execute<ProviderOperationExecutionRow>(sql`
+    SELECT operation."id"::text AS "id", operation."state" AS "state",
+      operation."plan_hash" AS "planHash",
+      operation."plan_expires_at" AS "planExpiresAt",
+      operation."risk" AS "risk",
+      operation."approval_policy" AS "approvalPolicy",
+      operation."redacted_plan" AS "redactedPlan",
+      operation."ownership_marker" AS "ownershipMarker",
+      operation."claim_id"::text AS "claimId",
+      operation."remote_started_at" AS "remoteStartedAt",
+      operation."provider_operation_id" AS "providerOperationId",
+      operation."provider_resource_id" AS "providerResourceId",
+      operation."reconcile_after" AS "reconcileAfter",
+      operation."failure_code" AS "failureCode"
+    FROM ${workspaceProviderOperation} AS operation
+    WHERE operation."id" = ${input.operationId}::uuid
+      AND operation."organization_id" = ${input.organizationId}
+      AND operation."integration_id" = ${input.integrationId}::uuid
+      AND operation."provider" = 'neon'
+      AND operation."kind" = 'neon.branch.create'
+      AND operation."integration_generation" = ${input.integrationGeneration}
+    LIMIT 1
+  `);
+  const row = result.rows[0];
+  const plan = planRecord(row, {
+    organizationId: input.organizationId,
+    integrationId: input.integrationId,
+    integrationGeneration: input.integrationGeneration,
+    operationId: input.operationId,
+  });
+  if (
+    !row
+    || !plan
+    || (row.claimId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(row.claimId))
+    || (row.providerOperationId !== null
+      && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        .test(row.providerOperationId))
+    || (row.providerResourceId !== null
+      && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(row.providerResourceId))
+    || (row.failureCode !== null
+      && !/^[A-Z][A-Z0-9_]{0,95}$/.test(row.failureCode))
+  ) {
+    return null;
+  }
+  return {
+    ...plan,
+    claimId: row.claimId,
+    remoteStartedAt: optionalDate(row.remoteStartedAt),
+    providerOperationId: row.providerOperationId,
+    providerResourceId: row.providerResourceId,
+    reconcileAfter: optionalDate(row.reconcileAfter),
+    failureCode: row.failureCode,
+  };
+}
+
+type ProviderOperationExecutionIdentity = {
+  authority: ProviderMutationAuthority;
+  integrationId: string;
+  integrationGeneration: bigint;
+  operationId: string;
+  planHash: string;
+  ownershipMarker: string;
+};
+
+function assertExecutionIdentity(input: ProviderOperationExecutionIdentity) {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(input.integrationId)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(input.operationId)
+    || !/^[0-9a-f]{64}$/.test(input.planHash)
+    || input.integrationGeneration < 1n
+    || !verifyProviderOperationOwnershipMarker({
+      organizationId: input.authority.organizationId,
+      integrationId: input.integrationId,
+      integrationGeneration: input.integrationGeneration,
+      operationId: input.operationId,
+      planHash: input.planHash,
+      marker: input.ownershipMarker,
+    })
+  ) {
+    throw new Error("Invalid provider operation execution identity");
+  }
+}
+
+function currentExecutionAuthoritySql(input: ProviderOperationExecutionIdentity) {
+  const actor = providerMutationAuthoritySql({
+    ...input.authority,
+    requireManager: true,
+    integration: {
+      id: input.integrationId,
+      provider: "neon",
+      generation: input.integrationGeneration,
+      claimId: null,
+    },
+  });
+  return sql`${actor} AND EXISTS (
+    SELECT 1
+    FROM ${workspaceProviderOperationApproval} AS operation_approval
+    JOIN ${session} AS requester_session
+      ON requester_session."id" = operation."requested_by_session_id"
+     AND requester_session."user_id" = operation."requested_by_user_id"
+     AND requester_session."expires_at" > now()
+    JOIN ${member} AS requester_member
+      ON requester_member."id" = operation."requested_by_member_id"
+     AND requester_member."organization_id" = operation."organization_id"
+     AND requester_member."user_id" = operation."requested_by_user_id"
+     AND requester_member."role" = operation."requested_by_role"
+     AND requester_member."role" IN ('admin', 'owner')
+     AND requester_member."revocation_pending_at" IS NULL
+     AND requester_member."revocation_claim_id" IS NULL
+    JOIN ${session} AS approver_session
+      ON approver_session."id" = operation_approval."actor_session_id"
+     AND approver_session."user_id" = operation_approval."actor_user_id"
+     AND approver_session."expires_at" > now()
+    JOIN ${member} AS approver_member
+      ON approver_member."id" = operation_approval."actor_member_id"
+     AND approver_member."organization_id" = operation_approval."organization_id"
+     AND approver_member."user_id" = operation_approval."actor_user_id"
+     AND approver_member."role" = operation_approval."actor_role"
+     AND approver_member."role" IN ('admin', 'owner')
+     AND approver_member."revocation_pending_at" IS NULL
+     AND approver_member."revocation_claim_id" IS NULL
+    WHERE operation_approval."organization_id" = operation."organization_id"
+      AND operation_approval."operation_id" = operation."id"
+      AND operation_approval."plan_hash" = operation."plan_hash"
+      AND operation_approval."decision" = 'approved'
+      AND (
+        operation."approval_policy" <> 'separate_admin'
+        OR (
+          operation_approval."actor_member_id" <> operation."requested_by_member_id"
+          AND operation_approval."actor_user_id" <> operation."requested_by_user_id"
+        )
+      )
+    FOR UPDATE OF operation_approval, requester_session, requester_member,
+      approver_session, approver_member
+  )`;
 }
 
 export async function recordProviderOperationPlan(input: {
@@ -598,5 +816,651 @@ export async function decideProviderOperation(input: {
     decision: row.decision,
     approvalId: row.approvalId,
     replayed: row.approvalId !== approvalId,
+  };
+}
+
+type ProviderOperationClaimRow = {
+  id: string;
+  state: string;
+  claimId: string;
+  previousState: string;
+};
+
+type ProviderOperationCancellationRow = {
+  id: string;
+  state: string;
+  providerOperationId: string | null;
+  providerResourceId: string | null;
+  reconcileAfter: Date | string | null;
+  failureCode: string | null;
+};
+
+// A plan that expired before the remote-start fence can be closed by any
+// current workspace manager. This path deliberately does not require the
+// requester or approver sessions to remain live: it only removes authority and
+// is what lets a claim recover after the process or original session exits.
+export async function cancelExpiredProviderOperationExecution(
+  input: ProviderOperationExecutionIdentity & { now: Date },
+): Promise<ProviderOperationCancellationRecord | null> {
+  assertExecutionIdentity(input);
+  if (Number.isNaN(input.now.valueOf())) {
+    throw new Error("Invalid provider operation cancellation time");
+  }
+  const auditId = workspaceAuditEventId(
+    "provider-operation:cancel-expired",
+    input.operationId,
+  );
+  const authority = providerMutationAuthoritySql({
+    ...input.authority,
+    requireManager: true,
+    integration: {
+      id: input.integrationId,
+      provider: "neon",
+      generation: input.integrationGeneration,
+      claimId: null,
+    },
+  });
+  const result = await db.execute<ProviderOperationCancellationRow>(sql`
+    WITH candidate AS MATERIALIZED (
+      SELECT operation."id", operation."organization_id", operation."state",
+        operation."risk", operation."approval_policy"
+      FROM ${workspaceProviderOperation} AS operation
+      WHERE operation."id" = ${input.operationId}::uuid
+        AND operation."organization_id" = ${input.authority.organizationId}
+        AND operation."integration_id" = ${input.integrationId}::uuid
+        AND operation."provider" = 'neon'
+        AND operation."kind" = 'neon.branch.create'
+        AND operation."integration_generation" = ${input.integrationGeneration}
+        AND operation."plan_hash" = ${input.planHash}
+        AND operation."ownership_marker" = ${input.ownershipMarker}
+        AND operation."state" IN ('approved', 'claimed')
+        AND operation."remote_started_at" IS NULL
+        AND operation."plan_expires_at" <= now()
+        AND ${authority}
+      FOR UPDATE OF operation
+    ), updated AS MATERIALIZED (
+      UPDATE ${workspaceProviderOperation} AS operation
+      SET "state" = 'cancelled',
+        "reconcile_after" = NULL,
+        "completed_at" = ${input.now},
+        "updated_at" = ${input.now}
+      FROM candidate
+      WHERE operation."id" = candidate."id"
+        AND operation."organization_id" = candidate."organization_id"
+        AND operation."state" = candidate."state"
+      RETURNING operation."id"::text AS "id", operation."state" AS "state",
+        operation."provider_operation_id" AS "providerOperationId",
+        operation."provider_resource_id" AS "providerResourceId",
+        operation."reconcile_after" AS "reconcileAfter",
+        operation."failure_code" AS "failureCode",
+        operation."organization_id" AS "organizationId",
+        candidate."risk" AS "risk",
+        candidate."approval_policy" AS "approvalPolicy"
+    ), audit AS (
+      INSERT INTO ${workspaceAuditEvent} AS existing
+        ("id", "organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${auditId}::uuid, updated."organizationId",
+        ${input.authority.userId}, 'provider.operation.cancelled',
+        'provider_operation', updated."id",
+        jsonb_build_object(
+          'provider', 'neon',
+          'kind', 'neon.branch.create',
+          'reason', 'plan_expired_before_remote_start',
+          'risk', updated."risk",
+          'approvalPolicy', updated."approvalPolicy"
+        ), ${input.operationId}::uuid
+      FROM updated
+      ON CONFLICT ("id") DO UPDATE SET "id" = existing."id"
+      WHERE existing."organization_id" = EXCLUDED."organization_id"
+        AND existing."actor_user_id" = EXCLUDED."actor_user_id"
+        AND existing."action" = EXCLUDED."action"
+        AND existing."resource_type" = EXCLUDED."resource_type"
+        AND existing."resource_id" = EXCLUDED."resource_id"
+        AND existing."redacted_summary" = EXCLUDED."redacted_summary"
+        AND existing."request_id" = EXCLUDED."request_id"
+      RETURNING "resource_id"
+    )
+    SELECT updated."id", updated."state", updated."providerOperationId",
+      updated."providerResourceId", updated."reconcileAfter",
+      updated."failureCode"
+    FROM updated
+    JOIN audit ON audit."resource_id" = updated."id"
+  `);
+  const row = result.rows[0];
+  if (
+    !row
+    || row.id !== input.operationId
+    || row.state !== "cancelled"
+    || row.providerOperationId !== null
+    || row.providerResourceId !== null
+    || row.reconcileAfter !== null
+    || row.failureCode !== null
+  ) {
+    return null;
+  }
+  return {
+    id: row.id,
+    state: "cancelled",
+    providerOperationId: null,
+    providerResourceId: null,
+    reconcileAfter: null,
+    failureCode: null,
+  };
+}
+
+export async function claimProviderOperationExecution(
+  input: ProviderOperationExecutionIdentity & { now: Date },
+): Promise<ProviderOperationExecutionClaim | null> {
+  assertExecutionIdentity(input);
+  if (Number.isNaN(input.now.valueOf())) {
+    throw new Error("Invalid provider operation claim time");
+  }
+  const claimId = crypto.randomUUID();
+  const auditId = workspaceAuditEventId("provider-operation:claim", claimId);
+  const authority = currentExecutionAuthoritySql(input);
+  const result = await db.execute<ProviderOperationClaimRow>(sql`
+    WITH candidate AS MATERIALIZED (
+      SELECT operation."id", operation."organization_id", operation."state",
+        operation."claim_id", operation."risk", operation."approval_policy"
+      FROM ${workspaceProviderOperation} AS operation
+      WHERE operation."id" = ${input.operationId}::uuid
+        AND operation."organization_id" = ${input.authority.organizationId}
+        AND operation."integration_id" = ${input.integrationId}::uuid
+        AND operation."provider" = 'neon'
+        AND operation."kind" = 'neon.branch.create'
+        AND operation."integration_generation" = ${input.integrationGeneration}
+        AND operation."plan_hash" = ${input.planHash}
+        AND operation."ownership_marker" = ${input.ownershipMarker}
+        AND operation."state" IN (
+          'approved', 'claimed', 'remote_started', 'reconciling'
+        )
+        AND (
+          operation."state" <> 'approved'
+          OR operation."plan_expires_at" > now()
+        )
+        AND ${authority}
+      FOR UPDATE OF operation
+    ), updated AS MATERIALIZED (
+      UPDATE ${workspaceProviderOperation} AS operation
+      SET "state" = CASE
+          WHEN candidate."state" = 'approved' THEN 'claimed'
+          ELSE operation."state"
+        END,
+        "claim_id" = CASE
+          WHEN candidate."state" = 'approved' THEN ${claimId}::uuid
+          ELSE operation."claim_id"
+        END,
+        "claimed_at" = CASE
+          WHEN candidate."state" = 'approved' THEN ${input.now}
+          ELSE operation."claimed_at"
+        END,
+        "updated_at" = CASE
+          WHEN candidate."state" = 'approved' THEN ${input.now}
+          ELSE operation."updated_at"
+        END
+      FROM candidate
+      WHERE operation."id" = candidate."id"
+        AND operation."organization_id" = candidate."organization_id"
+        AND operation."state" = candidate."state"
+      RETURNING operation."id"::text AS "id", operation."state" AS "state",
+        operation."claim_id"::text AS "claimId",
+        candidate."state" AS "previousState",
+        operation."organization_id" AS "organizationId",
+        candidate."risk" AS "risk",
+        candidate."approval_policy" AS "approvalPolicy"
+    ), audit AS (
+      INSERT INTO ${workspaceAuditEvent} AS existing
+        ("id", "organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${auditId}::uuid, updated."organizationId",
+        ${input.authority.userId}, 'provider.operation.claim',
+        'provider_operation', updated."id",
+        jsonb_build_object(
+          'provider', 'neon',
+          'kind', 'neon.branch.create',
+          'risk', updated."risk",
+          'approvalPolicy', updated."approvalPolicy"
+        ), updated."claimId"::uuid
+      FROM updated
+      WHERE updated."previousState" = 'approved'
+      ON CONFLICT ("id") DO UPDATE SET "id" = existing."id"
+      WHERE existing."organization_id" = EXCLUDED."organization_id"
+        AND existing."actor_user_id" = EXCLUDED."actor_user_id"
+        AND existing."action" = EXCLUDED."action"
+        AND existing."resource_type" = EXCLUDED."resource_type"
+        AND existing."resource_id" = EXCLUDED."resource_id"
+        AND existing."redacted_summary" = EXCLUDED."redacted_summary"
+        AND existing."request_id" = EXCLUDED."request_id"
+      RETURNING "resource_id"
+    )
+    SELECT updated."id", updated."state", updated."claimId",
+      updated."previousState"
+    FROM updated
+    LEFT JOIN audit ON audit."resource_id" = updated."id"
+    WHERE updated."previousState" <> 'approved' OR audit."resource_id" IS NOT NULL
+  `);
+  const row = result.rows[0];
+  if (
+    !row
+    || row.id !== input.operationId
+    || !["claimed", "remote_started", "reconciling"].includes(row.state)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(row.claimId)
+  ) {
+    return null;
+  }
+  return {
+    id: row.id,
+    state: row.state as ProviderOperationState,
+    claimId: row.claimId,
+    claimedNow: row.previousState === "approved",
+  };
+}
+
+type ProviderOperationRemoteStartRow = ProviderOperationClaimRow;
+
+export async function markProviderOperationRemoteStarted(
+  input: ProviderOperationExecutionIdentity & { claimId: string; now: Date },
+): Promise<ProviderOperationRemoteStart | null> {
+  assertExecutionIdentity(input);
+  if (
+    Number.isNaN(input.now.valueOf())
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(input.claimId)
+  ) {
+    throw new Error("Invalid provider operation remote-start context");
+  }
+  const auditId = workspaceAuditEventId(
+    "provider-operation:remote-start",
+    input.claimId,
+  );
+  const authority = currentExecutionAuthoritySql(input);
+  const result = await db.execute<ProviderOperationRemoteStartRow>(sql`
+    WITH candidate AS MATERIALIZED (
+      SELECT operation."id", operation."organization_id", operation."state",
+        operation."claim_id", operation."risk", operation."approval_policy",
+        operation."plan_expires_at"
+      FROM ${workspaceProviderOperation} AS operation
+      WHERE operation."id" = ${input.operationId}::uuid
+        AND operation."organization_id" = ${input.authority.organizationId}
+        AND operation."integration_id" = ${input.integrationId}::uuid
+        AND operation."provider" = 'neon'
+        AND operation."kind" = 'neon.branch.create'
+        AND operation."integration_generation" = ${input.integrationGeneration}
+        AND operation."plan_hash" = ${input.planHash}
+        AND operation."ownership_marker" = ${input.ownershipMarker}
+        AND operation."claim_id" = ${input.claimId}::uuid
+        AND operation."state" IN ('claimed', 'remote_started', 'reconciling')
+        AND ${authority}
+      FOR UPDATE OF operation
+    ), updated AS MATERIALIZED (
+      UPDATE ${workspaceProviderOperation} AS operation
+      SET "state" = CASE
+          WHEN candidate."state" = 'claimed'
+            AND candidate."plan_expires_at" <= now() THEN 'cancelled'
+          WHEN candidate."state" = 'claimed' THEN 'remote_started'
+          ELSE operation."state"
+        END,
+        "remote_started_at" = CASE
+          WHEN candidate."state" = 'claimed'
+            AND candidate."plan_expires_at" > now() THEN ${input.now}
+          ELSE operation."remote_started_at"
+        END,
+        "completed_at" = CASE
+          WHEN candidate."state" = 'claimed'
+            AND candidate."plan_expires_at" <= now() THEN ${input.now}
+          ELSE operation."completed_at"
+        END,
+        "updated_at" = CASE
+          WHEN candidate."state" = 'claimed' THEN ${input.now}
+          ELSE operation."updated_at"
+        END
+      FROM candidate
+      WHERE operation."id" = candidate."id"
+        AND operation."organization_id" = candidate."organization_id"
+        AND operation."state" = candidate."state"
+      RETURNING operation."id"::text AS "id", operation."state" AS "state",
+        operation."claim_id"::text AS "claimId",
+        candidate."state" AS "previousState",
+        operation."organization_id" AS "organizationId",
+        candidate."risk" AS "risk",
+        candidate."approval_policy" AS "approvalPolicy"
+    ), audit AS (
+      INSERT INTO ${workspaceAuditEvent} AS existing
+        ("id", "organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${auditId}::uuid, updated."organizationId",
+        ${input.authority.userId}, CASE
+          WHEN updated."state" = 'cancelled' THEN 'provider.operation.cancelled'
+          ELSE 'provider.operation.remote_started'
+        END,
+        'provider_operation', updated."id",
+        jsonb_build_object(
+          'provider', 'neon',
+          'kind', 'neon.branch.create',
+          'reason', CASE
+            WHEN updated."state" = 'cancelled'
+              THEN 'plan_expired_before_remote_start'
+            ELSE NULL
+          END,
+          'risk', updated."risk",
+          'approvalPolicy', updated."approvalPolicy"
+        ), updated."claimId"::uuid
+      FROM updated
+      WHERE updated."previousState" = 'claimed'
+      ON CONFLICT ("id") DO UPDATE SET "id" = existing."id"
+      WHERE existing."organization_id" = EXCLUDED."organization_id"
+        AND existing."actor_user_id" = EXCLUDED."actor_user_id"
+        AND existing."action" = EXCLUDED."action"
+        AND existing."resource_type" = EXCLUDED."resource_type"
+        AND existing."resource_id" = EXCLUDED."resource_id"
+        AND existing."redacted_summary" = EXCLUDED."redacted_summary"
+        AND existing."request_id" = EXCLUDED."request_id"
+      RETURNING "resource_id"
+    )
+    SELECT updated."id", updated."state", updated."claimId",
+      updated."previousState"
+    FROM updated
+    LEFT JOIN audit ON audit."resource_id" = updated."id"
+    WHERE updated."previousState" <> 'claimed' OR audit."resource_id" IS NOT NULL
+  `);
+  const row = result.rows[0];
+  if (
+    !row
+    || row.id !== input.operationId
+    || !["remote_started", "reconciling", "cancelled"].includes(row.state)
+    || row.claimId !== input.claimId
+  ) {
+    return null;
+  }
+  return {
+    id: row.id,
+    state: row.state as ProviderOperationRemoteStart["state"],
+    claimId: row.claimId,
+    startedNow: row.previousState === "claimed" && row.state === "remote_started",
+  };
+}
+
+type ProviderOperationReconciliationRow = {
+  id: string;
+  state: string;
+  claimId: string;
+  providerOperationId: string | null;
+  providerResourceId: string | null;
+  reconcileAfter: Date | string | null;
+  failureCode: string | null;
+};
+
+function validProviderReconciliation(input: ProviderOperationReconciliationInput) {
+  const branchValid = input.branchId === null
+    || /^[a-z0-9][a-z0-9-]{0,59}$/.test(input.branchId);
+  const endpointValid = input.endpointId === null
+    || /^[a-z0-9][a-z0-9-]{0,59}$/.test(input.endpointId);
+  const operationValid = input.providerOperationId === null
+    || /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(input.providerOperationId);
+  const statusValid = input.providerOperationStatus === null
+    || NEON_OPERATION_STATUSES.includes(
+      input.providerOperationStatus as typeof NEON_OPERATION_STATUSES[number],
+    );
+  const failureValid = input.failureCode === null
+    || /^[A-Z][A-Z0-9_]{0,95}$/.test(input.failureCode);
+  return ["missing", "pending", "ready", "conflict", "failed"].includes(input.status)
+    && branchValid
+    && endpointValid
+    && operationValid
+    && statusValid
+    && failureValid
+    && (input.status !== "missing" || input.branchId === null)
+    && (input.status !== "pending" || input.branchId !== null)
+    && (input.status !== "ready" || (
+      input.branchId !== null && input.failureCode === null
+    ))
+    && ((input.status !== "conflict" && input.status !== "failed")
+      || input.failureCode !== null)
+    && ((input.status === "conflict" || input.status === "failed")
+      || input.failureCode === null);
+}
+
+export async function applyProviderOperationReconciliation(
+  input: ProviderOperationExecutionIdentity & {
+    claimId: string;
+    result: ProviderOperationReconciliationInput;
+    now: Date;
+  },
+): Promise<ProviderOperationReconciliationRecord | null> {
+  assertExecutionIdentity(input);
+  if (
+    Number.isNaN(input.now.valueOf())
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(input.claimId)
+    || !validProviderReconciliation(input.result)
+  ) {
+    throw new Error("Invalid provider operation reconciliation");
+  }
+  const redactedResult = {
+    version: 1,
+    status: input.result.status,
+    branchId: input.result.branchId,
+    providerOperationId: input.result.providerOperationId,
+    providerOperationStatus: input.result.providerOperationStatus,
+    endpointId: input.result.endpointId,
+    failureCode: input.result.failureCode,
+    observedAt: input.now.toISOString(),
+  };
+  safeRedactedValue(redactedResult);
+  const reconcileAuditId = workspaceAuditEventId(
+    "provider-operation:reconcile",
+    input.claimId,
+  );
+  const completionAuditId = workspaceAuditEventId(
+    "provider-operation:complete",
+    input.claimId,
+  );
+  const missingCutoff = new Date(input.now.valueOf() - 2 * 60 * 1_000);
+  const targetState = sql`CASE
+    WHEN ${input.result.status} = 'ready' THEN 'succeeded'
+    WHEN ${input.result.status} = 'conflict' THEN 'needs_repair'
+    WHEN ${input.result.status} = 'failed' AND ${input.result.branchId}::text IS NULL
+      THEN 'failed'
+    WHEN ${input.result.status} = 'failed' THEN 'needs_repair'
+    WHEN ${input.result.status} = 'missing'
+      AND operation."remote_started_at" <= ${missingCutoff} THEN 'needs_repair'
+    ELSE 'reconciling'
+  END`;
+  const targetFailureCode = sql`CASE
+    WHEN ${input.result.status} IN ('conflict', 'failed')
+      THEN ${input.result.failureCode}::text
+    WHEN ${input.result.status} = 'missing'
+      AND operation."remote_started_at" <= ${missingCutoff}
+      THEN 'NEON_CREATE_RESULT_AMBIGUOUS'
+    ELSE NULL
+  END`;
+  // Once the remote-start fence exists, reconciliation is recovery work: no
+  // Provider mutation is issued here. A current manager may therefore finish
+  // observing and recording the exact fenced operation even if the original
+  // requester or approver session has since expired or been revoked.
+  const authority = providerMutationAuthoritySql({
+    ...input.authority,
+    requireManager: true,
+    integration: {
+      id: input.integrationId,
+      provider: "neon",
+      generation: input.integrationGeneration,
+      claimId: null,
+    },
+  });
+  const result = await db.execute<ProviderOperationReconciliationRow>(sql`
+    WITH candidate AS MATERIALIZED (
+      SELECT operation."id", operation."organization_id", operation."state",
+        operation."claim_id", operation."risk", operation."approval_policy"
+      FROM ${workspaceProviderOperation} AS operation
+      WHERE operation."id" = ${input.operationId}::uuid
+        AND operation."organization_id" = ${input.authority.organizationId}
+        AND operation."integration_id" = ${input.integrationId}::uuid
+        AND operation."provider" = 'neon'
+        AND operation."kind" = 'neon.branch.create'
+        AND operation."integration_generation" = ${input.integrationGeneration}
+        AND operation."plan_hash" = ${input.planHash}
+        AND operation."ownership_marker" = ${input.ownershipMarker}
+        AND operation."claim_id" = ${input.claimId}::uuid
+        AND operation."state" IN ('remote_started', 'reconciling')
+        AND (
+          operation."provider_operation_id" IS NULL
+          OR ${input.result.providerOperationId}::text IS NULL
+          OR operation."provider_operation_id" = ${input.result.providerOperationId}
+        )
+        AND (
+          operation."provider_resource_id" IS NULL
+          OR ${input.result.branchId}::text IS NULL
+          OR operation."provider_resource_id" = ${input.result.branchId}
+        )
+        AND (
+          operation."redacted_result" IS NULL
+          OR operation."redacted_result"->>'endpointId' IS NULL
+          OR ${input.result.endpointId}::text IS NULL
+          OR operation."redacted_result"->>'endpointId' = ${input.result.endpointId}
+        )
+        AND ${authority}
+      FOR UPDATE OF operation
+    ), updated AS MATERIALIZED (
+      UPDATE ${workspaceProviderOperation} AS operation
+      SET "state" = ${targetState},
+        "provider_operation_id" = COALESCE(
+          operation."provider_operation_id", ${input.result.providerOperationId}
+        ),
+        "provider_resource_id" = COALESCE(
+          operation."provider_resource_id", ${input.result.branchId}
+        ),
+        "redacted_result" = ${JSON.stringify(redactedResult)}::jsonb
+          || jsonb_build_object(
+            'endpointId', COALESCE(
+              ${input.result.endpointId}::text,
+              operation."redacted_result"->>'endpointId'
+            )
+          ),
+        "failure_code" = ${targetFailureCode},
+        "reconcile_after" = CASE
+          WHEN ${targetState} = 'reconciling'
+            THEN ${new Date(input.now.valueOf() + 3_000)}
+          ELSE NULL
+        END,
+        "completed_at" = CASE
+          WHEN ${targetState} = 'reconciling' THEN NULL
+          ELSE ${input.now}
+        END,
+        "updated_at" = ${input.now}
+      FROM candidate
+      WHERE operation."id" = candidate."id"
+        AND operation."organization_id" = candidate."organization_id"
+        AND operation."state" = candidate."state"
+      RETURNING operation."id"::text AS "id", operation."state" AS "state",
+        operation."claim_id"::text AS "claimId",
+        operation."provider_operation_id" AS "providerOperationId",
+        operation."provider_resource_id" AS "providerResourceId",
+        operation."reconcile_after" AS "reconcileAfter",
+        operation."failure_code" AS "failureCode",
+        operation."organization_id" AS "organizationId",
+        candidate."state" AS "previousState",
+        candidate."risk" AS "risk",
+        candidate."approval_policy" AS "approvalPolicy"
+    ), reconcile_audit AS (
+      INSERT INTO ${workspaceAuditEvent} AS existing
+        ("id", "organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${reconcileAuditId}::uuid, updated."organizationId",
+        ${input.authority.userId}, 'provider.operation.reconciling',
+        'provider_operation', updated."id",
+        jsonb_build_object(
+          'provider', 'neon',
+          'kind', 'neon.branch.create',
+          'observation', ${input.result.status}::text,
+          'branchId', ${input.result.branchId}::text,
+          'providerOperationId', ${input.result.providerOperationId}::text,
+          'risk', updated."risk",
+          'approvalPolicy', updated."approvalPolicy"
+        ), updated."claimId"::uuid
+      FROM updated
+      WHERE updated."previousState" = 'remote_started'
+      ON CONFLICT ("id") DO UPDATE SET "id" = existing."id"
+      WHERE existing."organization_id" = EXCLUDED."organization_id"
+        AND existing."actor_user_id" = EXCLUDED."actor_user_id"
+        AND existing."action" = EXCLUDED."action"
+        AND existing."resource_type" = EXCLUDED."resource_type"
+        AND existing."resource_id" = EXCLUDED."resource_id"
+        AND existing."redacted_summary" = EXCLUDED."redacted_summary"
+        AND existing."request_id" = EXCLUDED."request_id"
+      RETURNING "resource_id"
+    ), completion_audit AS (
+      INSERT INTO ${workspaceAuditEvent} AS existing
+        ("id", "organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${completionAuditId}::uuid, updated."organizationId",
+        ${input.authority.userId},
+        'provider.operation.' || updated."state",
+        'provider_operation', updated."id",
+        jsonb_build_object(
+          'provider', 'neon',
+          'kind', 'neon.branch.create',
+          'state', updated."state",
+          'branchId', updated."providerResourceId",
+          'providerOperationId', updated."providerOperationId",
+          'failureCode', updated."failureCode",
+          'risk', updated."risk",
+          'approvalPolicy', updated."approvalPolicy"
+        ), updated."claimId"::uuid
+      FROM updated
+      WHERE updated."state" <> 'reconciling'
+      ON CONFLICT ("id") DO UPDATE SET "id" = existing."id"
+      WHERE existing."organization_id" = EXCLUDED."organization_id"
+        AND existing."actor_user_id" = EXCLUDED."actor_user_id"
+        AND existing."action" = EXCLUDED."action"
+        AND existing."resource_type" = EXCLUDED."resource_type"
+        AND existing."resource_id" = EXCLUDED."resource_id"
+        AND existing."redacted_summary" = EXCLUDED."redacted_summary"
+        AND existing."request_id" = EXCLUDED."request_id"
+      RETURNING "resource_id"
+    )
+    SELECT updated."id", updated."state", updated."claimId",
+      updated."providerOperationId", updated."providerResourceId",
+      updated."reconcileAfter", updated."failureCode"
+    FROM updated
+    LEFT JOIN reconcile_audit
+      ON reconcile_audit."resource_id" = updated."id"
+    LEFT JOIN completion_audit
+      ON completion_audit."resource_id" = updated."id"
+    WHERE (
+      updated."previousState" <> 'remote_started'
+      OR reconcile_audit."resource_id" IS NOT NULL
+    ) AND (
+      updated."state" = 'reconciling'
+      OR completion_audit."resource_id" IS NOT NULL
+    )
+  `);
+  const row = result.rows[0];
+  const reconcileAfter = row ? optionalDate(row.reconcileAfter) : null;
+  if (
+    !row
+    || row.id !== input.operationId
+    || row.claimId !== input.claimId
+    || !operationStates.includes(row.state as ProviderOperationState)
+    || (row.providerOperationId !== null
+      && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        .test(row.providerOperationId))
+    || (row.providerResourceId !== null
+      && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(row.providerResourceId))
+    || (row.failureCode !== null && !/^[A-Z][A-Z0-9_]{0,95}$/.test(row.failureCode))
+  ) {
+    return null;
+  }
+  return {
+    id: row.id,
+    state: row.state as ProviderOperationState,
+    claimId: row.claimId,
+    providerOperationId: row.providerOperationId,
+    providerResourceId: row.providerResourceId,
+    reconcileAfter,
+    failureCode: row.failureCode,
   };
 }

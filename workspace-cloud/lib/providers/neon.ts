@@ -33,13 +33,48 @@ import {
   parseNeonBranchInventory,
   type NeonBranchInventory,
 } from "./neon-branches";
+import type { NeonBranchCreatePlan } from "./neon-branch-plan";
+import {
+  neonBranchMutationBody,
+  parseNeonBranchAnnotation,
+  parseNeonBranchCreateReceipt,
+  parseNeonBranchEndpoints,
+  parseNeonBranchOperation,
+  type NeonBranchCreateReceipt,
+  type NeonOperationStatus,
+} from "./neon-branch-mutation";
+
+export type { NeonBranchCreateReceipt } from "./neon-branch-mutation";
 
 const API_ORIGIN = "https://console.neon.tech/api/v2";
 const REQUEST_TIMEOUT_MS = 15_000;
 const NEON_PAGE_LIMIT = 100;
 const MAX_NEON_PAGES = 16;
 const MAX_NEON_RESPONSE_BYTES = 2 * 1_024 * 1_024;
+const MAX_NEON_MUTATION_RESPONSE_BYTES = 512 * 1_024;
+const NEON_MUTATION_RETRY_DELAY_MS = 250;
 type JsonObject = Record<string, unknown>;
+
+export type NeonBranchReconciliation = Readonly<{
+  status: "missing" | "pending" | "ready" | "conflict" | "failed";
+  branchId: string | null;
+  providerOperationId: string | null;
+  providerOperationStatus: NeonOperationStatus | null;
+  endpointId: string | null;
+  failureCode: string | null;
+}>;
+
+export class NeonBranchMutationRequestError extends ProviderRequestError {
+  constructor(
+    message: string,
+    status: number,
+    readonly responseReceived: boolean,
+    readonly explicitlyRetrySafe: boolean,
+  ) {
+    super("neon", message, status);
+    this.name = "NeonBranchMutationRequestError";
+  }
+}
 
 export type NeonAuthInfo = {
   displayName: string;
@@ -87,7 +122,10 @@ function apiSegment(value: string) {
   return encodeURIComponent(value);
 }
 
-async function boundedJson(response: Response): Promise<unknown> {
+async function boundedJson(
+  response: Response,
+  maxBytes = MAX_NEON_RESPONSE_BYTES,
+): Promise<unknown> {
   const lengthHeader = response.headers.get("content-length");
   if (lengthHeader !== null) {
     if (!/^\d+$/.test(lengthHeader)) {
@@ -96,7 +134,7 @@ async function boundedJson(response: Response): Promise<unknown> {
     const contentLength = Number(lengthHeader);
     if (
       !Number.isSafeInteger(contentLength)
-      || contentLength > MAX_NEON_RESPONSE_BYTES
+      || contentLength > maxBytes
     ) {
       await response.body?.cancel().catch(() => undefined);
       throw new ProviderRequestError("neon", "Neon response is too large", 502);
@@ -114,7 +152,7 @@ async function boundedJson(response: Response): Promise<unknown> {
     });
     if (done) break;
     total += value.byteLength;
-    if (total > MAX_NEON_RESPONSE_BYTES) {
+    if (total > maxBytes) {
       await reader.cancel().catch(() => undefined);
       throw new ProviderRequestError("neon", "Neon response is too large", 502);
     }
@@ -349,6 +387,271 @@ export async function listNeonBranches(
       ready: branch.ready,
     };
   });
+}
+
+async function mutationRetryDelay() {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, NEON_MUTATION_RETRY_DELAY_MS);
+  });
+}
+
+export async function createNeonBranch(input: {
+  credential: NeonCredential;
+  plan: NeonBranchCreatePlan;
+  planHash: string;
+  ownershipMarker: string;
+}): Promise<NeonBranchCreateReceipt> {
+  const body = neonBranchMutationBody(input);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(
+      `${API_ORIGIN}/projects/${apiSegment(input.plan.source.projectId)}/branches`,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${input.credential.apiKey}`,
+          "content-type": "application/json",
+          "x-request-id": input.plan.operationId,
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      },
+    ).catch(() => {
+      throw new NeonBranchMutationRequestError(
+        "Neon branch creation response was not received",
+        502,
+        false,
+        false,
+      );
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      const explicitlyRetrySafe = response.status === 423 || response.status === 503;
+      if (explicitlyRetrySafe && attempt === 0) {
+        await mutationRetryDelay();
+        continue;
+      }
+      const status = response.status === 401
+        ? 424
+        : response.status >= 500
+          ? 502
+          : response.status;
+      throw new NeonBranchMutationRequestError(
+        "Neon rejected branch creation",
+        status,
+        true,
+        explicitlyRetrySafe,
+      );
+    }
+    if (response.status !== 201) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new NeonBranchMutationRequestError(
+        "Neon returned an unexpected branch creation response",
+        502,
+        true,
+        false,
+      );
+    }
+    return parseNeonBranchCreateReceipt(
+      await boundedJson(response, MAX_NEON_MUTATION_RESPONSE_BYTES),
+      input.plan,
+    );
+  }
+  throw new NeonBranchMutationRequestError(
+    "Neon branch creation retry boundary failed",
+    502,
+    true,
+    false,
+  );
+}
+
+async function ownedBranchId(input: {
+  credential: NeonCredential;
+  projectId: string;
+  targetName: string;
+  operationId: string;
+  planHash: string;
+  ownershipMarker: string;
+}) {
+  const rows = await listNeonCollection({
+    credential: input.credential,
+    path: `/projects/${apiSegment(input.projectId)}/branches`,
+    collection: "branches",
+    query: new URLSearchParams({ search: input.targetName }),
+    scopeLabel: "branch reconciliation",
+  });
+  const exact = rows.filter((row) => requiredString(row.name, "branch name") === input.targetName);
+  if (exact.length === 0) return { status: "missing" as const, branchId: null };
+  if (exact.length !== 1) return { status: "conflict" as const, branchId: null };
+  const branchId = requiredString(exact[0].id, "branch id");
+  if (!neonSegment(branchId)) {
+    throw new ProviderRequestError("neon", "Neon returned an invalid branch id", 502);
+  }
+  const body = object(await apiRequest(
+    input.credential,
+    `/projects/${apiSegment(input.projectId)}/branches/${apiSegment(branchId)}`,
+  ));
+  const branch = object(body.branch);
+  const properties = parseNeonBranchAnnotation(body.annotation, branchId);
+  if (
+    branch.id !== branchId
+    || branch.project_id !== input.projectId
+    || branch.name !== input.targetName
+    || properties?.["dopedb-operation-id"] !== input.operationId
+    || properties?.["dopedb-plan-hash"] !== input.planHash
+    || properties?.["dopedb-ownership"] !== input.ownershipMarker
+  ) {
+    return { status: "conflict" as const, branchId };
+  }
+  return { status: "owned" as const, branchId };
+}
+
+async function branchEndpointReconciliation(
+  credential: NeonCredential,
+  projectId: string,
+  branchId: string,
+  expected: NeonBranchCreatePlan["target"]["endpoint"],
+) {
+  const body = object(await apiRequest(
+    credential,
+    `/projects/${apiSegment(projectId)}/branches/${apiSegment(branchId)}/endpoints`,
+  ));
+  const endpoints = parseNeonBranchEndpoints(body.endpoints, branchId);
+  if (expected === "none") {
+    return endpoints.length === 0
+      ? { status: "ready" as const, endpointId: null }
+      : { status: "conflict" as const, endpointId: null };
+  }
+  if (endpoints.length === 0) return { status: "pending" as const, endpointId: null };
+  const endpoint = endpoints.length === 1
+    && endpoints[0].type === "read_write"
+    && !endpoints[0].disabled
+    ? endpoints[0]
+    : null;
+  return endpoint
+    ? { status: "ready" as const, endpointId: endpoint.id }
+    : { status: "conflict" as const, endpointId: null };
+}
+
+async function projectOperation(
+  credential: NeonCredential,
+  projectId: string,
+  operationId: string,
+) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(operationId)) {
+    throw new ProviderRequestError("neon", "Invalid Neon operation id", 400);
+  }
+  const body = object(await apiRequest(
+    credential,
+    `/projects/${apiSegment(projectId)}/operations/${encodeURIComponent(operationId)}`,
+  ));
+  return parseNeonBranchOperation(body.operation, projectId, requiredString(
+    object(body.operation).branch_id,
+    "operation branch id",
+  ));
+}
+
+export async function reconcileNeonBranchCreate(input: {
+  credential: NeonCredential;
+  plan: NeonBranchCreatePlan;
+  planHash: string;
+  ownershipMarker: string;
+  providerOperationId: string | null;
+}): Promise<NeonBranchReconciliation> {
+  const owned = await ownedBranchId({
+    credential: input.credential,
+    projectId: input.plan.source.projectId,
+    targetName: input.plan.target.name,
+    operationId: input.plan.operationId,
+    planHash: input.planHash,
+    ownershipMarker: input.ownershipMarker,
+  });
+  if (owned.status === "missing") {
+    return {
+      status: "missing",
+      branchId: null,
+      providerOperationId: input.providerOperationId,
+      providerOperationStatus: null,
+      endpointId: null,
+      failureCode: null,
+    };
+  }
+  if (owned.status === "conflict") {
+    return {
+      status: "conflict",
+      branchId: owned.branchId,
+      providerOperationId: input.providerOperationId,
+      providerOperationStatus: null,
+      endpointId: null,
+      failureCode: "NEON_OWNERSHIP_MARKER_MISMATCH",
+    };
+  }
+  const [inventory, endpoint, operation] = await Promise.all([
+    listNeonBranchInventory(input.credential, input.plan.source.projectId),
+    branchEndpointReconciliation(
+      input.credential,
+      input.plan.source.projectId,
+      owned.branchId,
+      input.plan.target.endpoint,
+    ),
+    input.providerOperationId
+      ? projectOperation(
+        input.credential,
+        input.plan.source.projectId,
+        input.providerOperationId,
+      )
+      : Promise.resolve(null),
+  ]);
+  if (operation && operation.branchId !== owned.branchId) {
+    return {
+      status: "conflict",
+      branchId: owned.branchId,
+      providerOperationId: operation.id,
+      providerOperationStatus: operation.status,
+      endpointId: endpoint.endpointId,
+      failureCode: "NEON_OPERATION_BRANCH_MISMATCH",
+    };
+  }
+  if (
+    operation
+    && ["failed", "error", "cancelled", "skipped"].includes(operation.status)
+  ) {
+    return {
+      status: "failed",
+      branchId: owned.branchId,
+      providerOperationId: operation.id,
+      providerOperationStatus: operation.status,
+      endpointId: endpoint.endpointId,
+      failureCode: "NEON_OPERATION_FAILED",
+    };
+  }
+  if (endpoint.status === "conflict") {
+    return {
+      status: "conflict",
+      branchId: owned.branchId,
+      providerOperationId: operation?.id ?? input.providerOperationId,
+      providerOperationStatus: operation?.status ?? null,
+      endpointId: endpoint.endpointId,
+      failureCode: "NEON_ENDPOINT_SET_MISMATCH",
+    };
+  }
+  const branches = inventory.branches.filter((branch) => branch.id === owned.branchId);
+  const branch = branches.length === 1 ? branches[0] : null;
+  const ready = branch?.currentState === "ready"
+    && branch.pendingState === null
+    && branch.ready
+    && endpoint.status === "ready"
+    && (!operation || operation.status === "finished");
+  return {
+    status: ready ? "ready" : "pending",
+    branchId: owned.branchId,
+    providerOperationId: operation?.id ?? input.providerOperationId,
+    providerOperationStatus: operation?.status ?? null,
+    endpointId: endpoint.endpointId,
+    failureCode: null,
+  };
 }
 
 export async function listNeonDatabases(

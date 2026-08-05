@@ -104,6 +104,7 @@ BEGIN
   END IF;
 END
 $fixture$;
+
 SQL
 
 migration_0010="$fixture_root/workspace-cloud/drizzle/0010_open_micromacro.sql"
@@ -360,6 +361,44 @@ BEGIN
   EXCEPTION WHEN unique_violation THEN
     NULL;
   END;
+END
+$fixture$;
+
+UPDATE "workspace_control"."workspace_provider_operation"
+SET "state" = 'approved'
+WHERE "id" = '40000000-0000-4000-8000-000000000002';
+
+UPDATE "workspace_control"."workspace_provider_operation"
+SET "state" = 'claimed',
+    "claim_id" = '43000000-0000-4000-8000-000000000002',
+    "claimed_at" = now()
+WHERE "id" = '40000000-0000-4000-8000-000000000002';
+
+UPDATE "workspace_control"."workspace_provider_operation"
+SET "state" = 'remote_started', "remote_started_at" = now()
+WHERE "id" = '40000000-0000-4000-8000-000000000002';
+
+UPDATE "workspace_control"."workspace_provider_operation"
+SET "state" = 'reconciling',
+    "provider_operation_id" = '44000000-0000-4000-8000-000000000002',
+    "provider_resource_id" = 'br-created',
+    "redacted_result" = '{"status":"pending"}'::jsonb,
+    "reconcile_after" = now() + interval '3 seconds'
+WHERE "id" = '40000000-0000-4000-8000-000000000002';
+
+UPDATE "workspace_control"."workspace_provider_operation"
+SET "state" = 'succeeded',
+    "redacted_result" = '{"status":"ready"}'::jsonb,
+    "reconcile_after" = NULL,
+    "completed_at" = now()
+WHERE "id" = '40000000-0000-4000-8000-000000000002';
+
+DO $fixture$
+BEGIN
+  IF (SELECT "state" FROM "workspace_control"."workspace_provider_operation"
+      WHERE "id" = '40000000-0000-4000-8000-000000000002') <> 'succeeded' THEN
+    RAISE EXCEPTION 'provider operation durable lifecycle did not complete';
+  END IF;
 END
 $fixture$;
 SQL
