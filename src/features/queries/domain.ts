@@ -69,6 +69,11 @@ export type ManualTransactionStatus = {
   expiresAt: string;
 };
 
+export type ManualTransactionChangedEvent = {
+  connectionId: string;
+  status: ManualTransactionStatus | null;
+};
+
 // The SQL screen is the single writer for a desktop stream.  Keeping the reducer
 // with the transport DTOs makes stale-run and sequence validation testable without
 // giving a component permission to acknowledge a batch before it is accepted.

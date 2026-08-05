@@ -22,18 +22,40 @@ export function useAvailableUpdate() {
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), UPDATE_CHECK_INTERVAL_MS);
+    let disposed = false;
+    let secondFrame = 0;
+    let idleCallback: number | undefined;
+    const scheduleVisibleRefresh = () => {
+      if (disposed || document.hidden) return;
+      const run = () => {
+        if (!disposed && !document.hidden) void refresh();
+      };
+      if (typeof window.requestIdleCallback === "function") {
+        idleCallback = window.requestIdleCallback(run, { timeout: 1_500 });
+      } else {
+        run();
+      }
+    };
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(scheduleVisibleRefresh);
+    });
+    const interval = window.setInterval(() => {
+      if (!document.hidden) void refresh();
+    }, UPDATE_CHECK_INTERVAL_MS);
     const onVisibility = () => {
       if (
         !document.hidden &&
         Date.now() - lastCheckAt.current >= UPDATE_CHECK_INTERVAL_MS
       ) {
-        void refresh();
+        scheduleVisibleRefresh();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      disposed = true;
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+      if (idleCallback !== undefined) window.cancelIdleCallback(idleCallback);
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };

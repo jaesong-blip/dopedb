@@ -24,6 +24,7 @@ import type { SqlOperationProposal } from "./domain";
 import {
   exportSqlResult,
   inspectSql,
+  listManualTransactions,
   proposeSql,
   readSqlResultPage,
   runSqlReadPage,
@@ -65,7 +66,7 @@ describe("query Tauri adapter", () => {
     channels.length = 0;
   });
 
-  it("uses one backend-owned inspection command instead of a classify-preview race", async () => {
+  it("uses backend-owned inspection and one consolidated transaction snapshot", async () => {
     invokeMock.mockResolvedValueOnce({
       classification: readProposal.classification,
       report: readProposal.preview,
@@ -83,6 +84,10 @@ describe("query Tauri adapter", () => {
       database: "analytics",
       namespace: "billing",
     });
+
+    invokeMock.mockResolvedValueOnce([]);
+    await expect(listManualTransactions()).resolves.toEqual([]);
+    expect(invokeMock).toHaveBeenLastCalledWith("list_manual_transactions");
   });
 
   it("preserves the propose SQL command and camelCase wire shape", async () => {

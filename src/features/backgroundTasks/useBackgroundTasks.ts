@@ -12,6 +12,7 @@ import {
 import type { Job } from "../jobs/domain";
 import { cancelJob } from "../jobs/tauriAdapter";
 import { jobsQuery, qk } from "../../lib/queries";
+import { usePostPaintReady } from "../../lib/usePostPaintReady";
 import type { BackgroundTask, BackgroundTaskStatus } from "./domain";
 
 const ACTIVE_JOB_STATES = new Set<Job["state"]>([
@@ -76,18 +77,23 @@ export function useBackgroundTasks({
   workspaceScopeKey: string;
 }) {
   const queryClient = useQueryClient();
+  const postPaintReady = usePostPaintReady();
   const [agentSessions, setAgentSessions] = useState<AcpSessionSummary[]>([]);
   const [cancellingKeys, setCancellingKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const jobQueries = useQueries({
-    queries: connections.map((connection) => jobsQuery(connection.id)),
+    queries: connections.map((connection) => ({
+      ...jobsQuery(connection.id),
+      enabled: postPaintReady,
+    })),
   });
 
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     setAgentSessions([]);
+    if (!postPaintReady) return;
 
     void onAgentAcpChanged((change) => {
       if (disposed) return;
@@ -119,7 +125,7 @@ export function useBackgroundTasks({
       disposed = true;
       unlisten?.();
     };
-  }, [workspaceScopeKey]);
+  }, [postPaintReady, workspaceScopeKey]);
 
   const tasks = useMemo(() => {
     const connectionNames = new Map(

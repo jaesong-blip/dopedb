@@ -1,17 +1,20 @@
 // Workspace-level observer for connection-scoped manual transactions. Individual
 // query and data editors share the same TanStack Query keys, while this hook gives
 // the status bar one recovery surface for transactions left outside the active view.
-import { useState } from "react";
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ConnectionProfile } from "../connections/domain";
 import { qk } from "../../lib/queries";
+import { usePostPaintReady } from "../../lib/usePostPaintReady";
 import type { ManualTransactionStatus } from "./domain";
 import {
   commitManualTransaction,
-  getManualTransaction,
+  listManualTransactions,
   rollbackManualTransaction,
 } from "./tauriAdapter";
+
+const ACTIVE_TRANSACTION_RECONCILIATION_MS = 30_000;
 
 export type WorkspaceManualTransaction = ManualTransactionStatus & {
   connectionName: string;
@@ -21,25 +24,46 @@ export function useWorkspaceManualTransactions(
   connections: ConnectionProfile[],
 ) {
   const queryClient = useQueryClient();
-  const transactionConnections = connections.filter(
-    (connection) => connection.engine !== "mongodb",
+  const postPaintReady = usePostPaintReady();
+  const transactionConnections = useMemo(
+    () => connections.filter((connection) => connection.engine !== "mongodb"),
+    [connections],
   );
   const [settlingIds, setSettlingIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const queries = useQueries({
-    queries: transactionConnections.map((connection) => ({
-      queryKey: qk.manualTransaction(connection.id),
-      queryFn: () => getManualTransaction(connection.id),
-      refetchInterval: 2_000,
-    })),
+  const snapshot = useQuery({
+    queryKey: qk.manualTransactions(),
+    queryFn: listManualTransactions,
+    enabled: postPaintReady,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) =>
+      query.state.data?.length
+      && globalThis.document?.visibilityState === "visible"
+        ? ACTIVE_TRANSACTION_RECONCILIATION_MS
+        : false,
+    refetchIntervalInBackground: false,
   });
-  const transactions = queries.flatMap((query, index) => {
-    const status = query.data;
-    const connection = transactionConnections[index];
-    return status && connection
-      ? [{ ...status, connectionName: connection.name }]
-      : [];
+
+  useEffect(() => {
+    if (!snapshot.data) return;
+    const statuses = new Map(
+      snapshot.data.map((status) => [status.connectionId, status]),
+    );
+    for (const connection of transactionConnections) {
+      queryClient.setQueryData(
+        qk.manualTransaction(connection.id),
+        statuses.get(connection.id) ?? null,
+      );
+    }
+  }, [queryClient, snapshot.data, transactionConnections]);
+
+  const connectionNames = new Map<string, string>(
+    transactionConnections.map((connection) => [connection.id, connection.name]),
+  );
+  const transactions = (snapshot.data ?? []).flatMap((status) => {
+    const connectionName = connectionNames.get(status.connectionId);
+    return connectionName ? [{ ...status, connectionName }] : [];
   });
 
   async function settle(
@@ -67,6 +91,13 @@ export function useWorkspaceManualTransactions(
       queryClient.setQueryData(
         qk.manualTransaction(transaction.connectionId),
         null,
+      );
+      queryClient.setQueryData<ManualTransactionStatus[]>(
+        qk.manualTransactions(),
+        (current) =>
+          current?.filter(
+            (status) => status.connectionId !== transaction.connectionId,
+          ),
       );
       await Promise.all([
         queryClient.invalidateQueries({

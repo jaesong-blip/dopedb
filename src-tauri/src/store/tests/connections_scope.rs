@@ -102,6 +102,40 @@ async fn assert_legacy_agent_acp_provider_migrates() {
     assert_eq!(event_parent, "agent_acp_sessions");
 }
 
+async fn assert_current_store_migration_is_write_free() {
+    let pool = memory_pool().await;
+    assert!(super::super::bootstrap::migrate_local_store(&pool)
+        .await
+        .unwrap());
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(version, super::super::bootstrap::LOCAL_SCHEMA_VERSION);
+
+    sqlx::query("PRAGMA query_only = ON")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(!super::super::bootstrap::migrate_local_store(&pool)
+        .await
+        .unwrap());
+    sqlx::query("PRAGMA query_only = OFF")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let gate = crate::startup::PostPaintRecoveryGate::new();
+    assert!(gate.claim_start());
+    assert!(!gate.claim_start());
+    let waiting_gate = gate.clone();
+    let waiter = tokio::spawn(async move { waiting_gate.wait().await });
+    tokio::task::yield_now().await;
+    assert!(!waiter.is_finished());
+    gate.finish(true);
+    waiter.await.unwrap().unwrap();
+}
+
 async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: Uuid) {
     use crate::features::agents::domain::{
         AcpSessionEvent, AcpSessionEventPayload, AcpSessionLifecycle, AcpSessionSummary,
@@ -204,6 +238,7 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
 async fn remote_template_sync_preserves_member_local_credential_binding() {
     assert_legacy_sql_document_database_scope_migrates().await;
     assert_legacy_agent_acp_provider_migrates().await;
+    assert_current_store_migration_is_write_free().await;
     let pool = memory_pool().await;
     sqlx::raw_sql(migrations::SCHEMA)
         .execute(&pool)

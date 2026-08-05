@@ -28,6 +28,7 @@ import {
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
 import type { Dashboard } from "../../features/dashboards/domain";
+import { recordStartupMark } from "../../features/runtime/tauriAdapter";
 import { useQueryServices } from "../../features/queryServices/useQueryServices";
 import SkillStartupGate from "../../features/skills/SkillStartupGate";
 import type { SqlDocument } from "../../features/sqlDocuments/domain";
@@ -49,6 +50,7 @@ import { ToastProvider, useToast } from "../../components/Toast";
 import { hasCapability, isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
 import { resetConnectionResourceQueries } from "../../lib/queryClient";
+import { usePostPaintReady } from "../../lib/usePostPaintReady";
 import {
   OperationActivityProvider,
   useOperationActivity,
@@ -115,12 +117,14 @@ function Shell() {
     (error: unknown) => toast(errMessage(error), "error"),
     [toast],
   );
-  // Keep one bounded Skill inventory observer alive for the app lifecycle. This performs
-  // the required startup scan and rechecks after focus without creating install roots.
-  useQuery(skillStatusQuery());
+  const postPaintReady = usePostPaintReady();
+  // Keep one bounded Skill inventory observer alive after the first visible frame.
+  // Focus rechecks remain owned by TanStack Query without scanning while hidden.
+  useQuery(skillStatusQuery(postPaintReady));
   const {
     connections: conns,
     setConnections: setConns,
+    loaded: connectionsLoaded,
     loadError,
     refresh,
     clear: clearConnections,
@@ -159,6 +163,7 @@ function Shell() {
   });
   const manualTransactions = useWorkspaceManualTransactions(conns);
   const [selectedId, setSelectedId] = usePersistentSelectedConnection();
+  const selectionRestoreMarked = useRef(false);
   const {
     safety,
     error: safetyError,
@@ -212,6 +217,14 @@ function Shell() {
   } = useDashboardCreation(openDashboard);
 
   const selected = conns.find((c) => c.id === selectedId) ?? null;
+  useEffect(() => {
+    if (!connectionsLoaded || selectionRestoreMarked.current) return;
+    selectionRestoreMarked.current = true;
+    void recordStartupMark(
+      "selected_connection_restored",
+      loadError === null,
+    ).catch(() => undefined);
+  }, [connectionsLoaded, loadError]);
   const searchCatalogTargets = useCachedCatalogOverviews(
     queryClient,
     conns,

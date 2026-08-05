@@ -42,6 +42,10 @@ export function getManualTransaction(
   return invoke("get_manual_transaction", { id });
 }
 
+export function listManualTransactions(): Promise<ManualTransactionStatus[]> {
+  return invoke("list_manual_transactions");
+}
+
 export function beginManualTransaction(
   id: string,
   database?: string,

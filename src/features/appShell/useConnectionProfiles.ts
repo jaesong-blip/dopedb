@@ -45,6 +45,7 @@ export function changedConnectionRuntimeIds(
 export function useConnectionProfiles() {
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   const refresh = useCallback(
     async function refreshProfiles(
@@ -54,6 +55,7 @@ export function useConnectionProfiles() {
         const profiles = await listConnections();
         setConnections(profiles);
         setLoadError(null);
+        setLoaded(true);
         return profiles;
       } catch (error) {
         if (attempt < 3 && isTransientDbError(error)) {
@@ -63,6 +65,7 @@ export function useConnectionProfiles() {
           return refreshProfiles(attempt + 1);
         }
         setLoadError(errMessage(error));
+        setLoaded(true);
         return null;
       }
     },
@@ -76,8 +79,12 @@ export function useConnectionProfiles() {
   return {
     connections,
     setConnections,
+    loaded,
     loadError,
     refresh,
-    clear: useCallback(() => setConnections([]), []),
+    clear: useCallback(() => {
+      setConnections([]);
+      setLoaded(false);
+    }, []),
   };
 }

@@ -2,24 +2,142 @@
 
 use super::*;
 
+/// Version 1 represents the complete local schema when versioned migration was
+/// introduced. Future schema changes must increment this value and add an ordered
+/// version step.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 1;
+
+pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(pool)
+        .await?;
+    if version > LOCAL_SCHEMA_VERSION {
+        return Err(AppError::Config(format!(
+            "local database schema version {version} is newer than this app supports ({LOCAL_SCHEMA_VERSION})"
+        )));
+    }
+    if version == LOCAL_SCHEMA_VERSION {
+        return Ok(false);
+    }
+
+    // Version zero covers both a fresh database and every pre-versioned DopeDB
+    // database. The compatibility checks are explicit schema reads, so expected
+    // duplicate-column errors are never part of the successful startup path.
+    sqlx::raw_sql(migrations::SCHEMA).execute(pool).await?;
+    add_legacy_columns(pool).await?;
+    add_sql_document_database_scope(pool).await?;
+    add_workspace_columns(pool).await?;
+    migrate_workspace_foundation(pool).await?;
+    migrate_audit_no_cascade(pool).await?;
+    add_local_scope_columns(pool).await?;
+    add_connection_binding_scope_columns(pool).await?;
+    migrate_agent_acp_providers(pool).await?;
+    migrate_schema_cache_scopes(pool).await?;
+    ensure_schema_cache_v2(pool).await?;
+    ensure_local_scope_indexes(pool).await?;
+    sqlx::query(AssertSqlSafe(format!(
+        "PRAGMA user_version = {LOCAL_SCHEMA_VERSION}"
+    )))
+    .execute(pool)
+    .await?;
+    Ok(true)
+}
+
+async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> AppResult<bool> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2)",
+    )
+    .bind(table)
+    .bind(column)
+    .fetch_one(pool)
+    .await?
+        != 0)
+}
+
+async fn add_column_if_missing(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+    statement: &'static str,
+) -> AppResult<()> {
+    if !column_exists(pool, table, column).await? {
+        sqlx::query(statement).execute(pool).await?;
+    }
+    Ok(())
+}
+
+async fn add_legacy_columns(pool: &SqlitePool) -> AppResult<()> {
+    let columns = [
+        ("connections", "env", "ALTER TABLE connections ADD COLUMN env TEXT"),
+        (
+            "connections",
+            "schema_group",
+            "ALTER TABLE connections ADD COLUMN schema_group TEXT",
+        ),
+        (
+            "connections",
+            "provider",
+            "ALTER TABLE connections ADD COLUMN provider TEXT NOT NULL DEFAULT 'auto'",
+        ),
+        (
+            "connections",
+            "driver_id",
+            "ALTER TABLE connections ADD COLUMN driver_id TEXT",
+        ),
+        (
+            "connections",
+            "workspace_access",
+            "ALTER TABLE connections ADD COLUMN workspace_access TEXT NOT NULL DEFAULT 'local'",
+        ),
+        (
+            "connections",
+            "credential_mode",
+            "ALTER TABLE connections ADD COLUMN credential_mode TEXT NOT NULL DEFAULT 'local'",
+        ),
+        (
+            "connections",
+            "provider_target",
+            "ALTER TABLE connections ADD COLUMN provider_target TEXT",
+        ),
+        (
+            "agent_chat_threads",
+            "connection_id",
+            "ALTER TABLE agent_chat_threads ADD COLUMN connection_id TEXT",
+        ),
+        (
+            "jobs",
+            "pause_requested",
+            "ALTER TABLE jobs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0 CHECK(pause_requested IN (0, 1))",
+        ),
+        (
+            "sql_documents",
+            "selected_schema",
+            "ALTER TABLE sql_documents ADD COLUMN selected_schema TEXT",
+        ),
+        (
+            "sql_documents",
+            "resolve_mode",
+            "ALTER TABLE sql_documents ADD COLUMN resolve_mode TEXT NOT NULL DEFAULT 'playground' CHECK(resolve_mode IN ('playground', 'script'))",
+        ),
+    ];
+    for (table, column, statement) in columns {
+        add_column_if_missing(pool, table, column, statement).await?;
+    }
+    Ok(())
+}
+
 /// Add the database scope selected by each SQL document and seed legacy rows from
 /// the connection column's persisted SQLite name. Rust exposes that value as
 /// `ConnectionProfile::database`, but the store schema has always called it
 /// `connections.db_name`.
 pub(super) async fn add_sql_document_database_scope(pool: &SqlitePool) -> AppResult<()> {
-    if let Err(error) = sqlx::query("ALTER TABLE sql_documents ADD COLUMN selected_database TEXT")
-        .execute(pool)
-        .await
-    {
-        let duplicate_column = matches!(
-            &error,
-            sqlx::Error::Database(database)
-                if database.message().contains("duplicate column name")
-        );
-        if !duplicate_column {
-            return Err(error.into());
-        }
-    }
+    add_column_if_missing(
+        pool,
+        "sql_documents",
+        "selected_database",
+        "ALTER TABLE sql_documents ADD COLUMN selected_database TEXT",
+    )
+    .await?;
     sqlx::query(
         "UPDATE sql_documents
          SET selected_database = (
@@ -35,9 +153,9 @@ pub(super) async fn add_sql_document_database_scope(pool: &SqlitePool) -> AppRes
 }
 
 /// Add synchronizable resource columns to databases created before the workspace
-/// schema existed. SQLite lacks `ADD COLUMN IF NOT EXISTS`, so duplicate errors are
-/// expected and deliberately ignored after each independent statement.
-pub(super) async fn add_workspace_columns(pool: &SqlitePool) {
+/// schema existed. SQLite lacks `ADD COLUMN IF NOT EXISTS`, so each statement is
+/// preceded by an explicit `pragma_table_info` check.
+pub(super) async fn add_workspace_columns(pool: &SqlitePool) -> AppResult<()> {
     let statements = [
         "ALTER TABLE connections ADD COLUMN workspace_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'",
         "ALTER TABLE connections ADD COLUMN account_user_id TEXT",
@@ -57,22 +175,40 @@ pub(super) async fn add_workspace_columns(pool: &SqlitePool) {
         "ALTER TABLE snippets ADD COLUMN deleted_at TEXT",
     ];
     for statement in statements {
-        let _ = sqlx::query(statement).execute(pool).await;
+        let column = statement
+            .split_whitespace()
+            .nth(5)
+            .expect("workspace compatibility statement names its column");
+        let table = statement
+            .split_whitespace()
+            .nth(2)
+            .expect("workspace compatibility statement names its table");
+        add_column_if_missing(pool, table, column, statement).await?;
     }
+    Ok(())
 }
 
 /// Add account-local execution scope columns to pre-multi-account databases. The
 /// default preserves Personal Workspace data until a verified team membership can
 /// claim legacy rows during `sync_account_workspaces`.
-pub(super) async fn add_local_scope_columns(pool: &SqlitePool) {
+pub(super) async fn add_local_scope_columns(pool: &SqlitePool) -> AppResult<()> {
     let statements = [
         "ALTER TABLE query_history ADD COLUMN account_scope TEXT NOT NULL DEFAULT 'personal'",
         "ALTER TABLE agent_chat_threads ADD COLUMN workspace_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'",
         "ALTER TABLE agent_chat_threads ADD COLUMN account_scope TEXT NOT NULL DEFAULT 'personal'",
     ];
     for statement in statements {
-        let _ = sqlx::query(statement).execute(pool).await;
+        let column = statement
+            .split_whitespace()
+            .nth(5)
+            .expect("scope compatibility statement names its column");
+        let table = statement
+            .split_whitespace()
+            .nth(2)
+            .expect("scope compatibility statement names its table");
+        add_column_if_missing(pool, table, column, statement).await?;
     }
+    Ok(())
 }
 
 /// Add fail-closed per-account RBAC cache fields to databases created by the first
@@ -84,16 +220,11 @@ pub(super) async fn add_connection_binding_scope_columns(pool: &SqlitePool) -> A
         "ALTER TABLE workspace_connection_bindings ADD COLUMN revision INTEGER NOT NULL DEFAULT 1",
     ];
     for statement in statements {
-        if let Err(error) = sqlx::query(statement).execute(pool).await {
-            let duplicate_column = matches!(
-                &error,
-                sqlx::Error::Database(database)
-                    if database.message().contains("duplicate column name")
-            );
-            if !duplicate_column {
-                return Err(error.into());
-            }
-        }
+        let column = statement
+            .split_whitespace()
+            .nth(5)
+            .expect("binding compatibility statement names its column");
+        add_column_if_missing(pool, "workspace_connection_bindings", column, statement).await?;
     }
     Ok(())
 }

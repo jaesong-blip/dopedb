@@ -7,6 +7,10 @@ import { listen } from "@tauri-apps/api/event";
 import { AGENT_WORKSPACE_QUERY_ROOTS } from "../features/agents/queryKeys";
 import type { Dashboard } from "../features/dashboards/domain";
 import type { JobChangedEvent } from "../features/jobs/domain";
+import type {
+  ManualTransactionChangedEvent,
+  ManualTransactionStatus,
+} from "../features/queries/domain";
 import { qk } from "./queries";
 
 const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
@@ -22,6 +26,7 @@ const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
   "audit",
   "monitoring",
   "manualTransaction",
+  "manualTransactions",
   "dashboards",
   "dashboardRun",
   "tableRows",
@@ -118,6 +123,48 @@ function CacheInvalidation({ children }: { children: ReactNode }) {
       listen<JobChangedEvent>("job:changed", (event) => {
         void queryClient.invalidateQueries({
           queryKey: qk.jobs(event.payload.connectionId),
+        });
+      }),
+      listen<ManualTransactionChangedEvent>(
+        "manual-transaction:changed",
+        (event) => {
+          const { connectionId, status } = event.payload;
+          queryClient.setQueryData(qk.manualTransaction(connectionId), status);
+          queryClient.setQueryData<ManualTransactionStatus[]>(
+            qk.manualTransactions(),
+            (current) => {
+              if (!current && !status) return current;
+              const next = (current ?? []).filter(
+                (item) => item.connectionId !== connectionId,
+              );
+              if (status) next.push(status);
+              next.sort((left, right) =>
+                left.connectionId.localeCompare(right.connectionId),
+              );
+              return next;
+            },
+          );
+          // If an event raced the initial snapshot, cancel that older response and
+          // converge through one backend-owned snapshot instead of N connection calls.
+          void queryClient.invalidateQueries({
+            queryKey: qk.manualTransactions(),
+            exact: true,
+            refetchType: "active",
+          });
+        },
+      ).then((unlisten) => {
+        // Close the listener-registration race with one consolidated snapshot.
+        void queryClient.invalidateQueries({
+          queryKey: qk.manualTransactions(),
+          refetchType: "active",
+        });
+        return unlisten;
+      }),
+      listen("manual-transaction:resync", () => {
+        void queryClient.invalidateQueries({
+          queryKey: qk.manualTransactions(),
+          exact: true,
+          refetchType: "active",
         });
       }),
     ];

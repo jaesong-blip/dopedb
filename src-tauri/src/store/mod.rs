@@ -163,64 +163,8 @@ impl Store {
             .foreign_keys(true);
 
         let pool = SqlitePoolOptions::new().connect_with(opts).await?;
-        sqlx::raw_sql(migrations::SCHEMA).execute(&pool).await?;
-        // Idempotent column adds for DBs created before the column existed (SQLite has
-        // no `ADD COLUMN IF NOT EXISTS`, so we run it and ignore the duplicate-column error).
-        let _ = sqlx::query("ALTER TABLE connections ADD COLUMN env TEXT")
-            .execute(&pool)
-            .await;
-        let _ = sqlx::query("ALTER TABLE connections ADD COLUMN schema_group TEXT")
-            .execute(&pool)
-            .await;
-        let _ =
-            sqlx::query("ALTER TABLE connections ADD COLUMN provider TEXT NOT NULL DEFAULT 'auto'")
-                .execute(&pool)
-                .await;
-        let _ = sqlx::query("ALTER TABLE connections ADD COLUMN driver_id TEXT")
-            .execute(&pool)
-            .await;
-        let _ = sqlx::query(
-            "ALTER TABLE connections ADD COLUMN workspace_access TEXT NOT NULL DEFAULT 'local'",
-        )
-        .execute(&pool)
-        .await;
-        let _ = sqlx::query(
-            "ALTER TABLE connections ADD COLUMN credential_mode TEXT NOT NULL DEFAULT 'local'",
-        )
-        .execute(&pool)
-        .await;
-        let _ = sqlx::query("ALTER TABLE connections ADD COLUMN provider_target TEXT")
-            .execute(&pool)
-            .await;
-        let _ = sqlx::query("ALTER TABLE agent_chat_threads ADD COLUMN connection_id TEXT")
-            .execute(&pool)
-            .await;
-        let _ = sqlx::query(
-            "ALTER TABLE jobs ADD COLUMN pause_requested INTEGER NOT NULL DEFAULT 0
-             CHECK(pause_requested IN (0, 1))",
-        )
-        .execute(&pool)
-        .await;
-        let _ = sqlx::query("ALTER TABLE sql_documents ADD COLUMN selected_schema TEXT")
-            .execute(&pool)
-            .await;
-        add_sql_document_database_scope(&pool).await?;
-        let _ = sqlx::query(
-            "ALTER TABLE sql_documents ADD COLUMN resolve_mode TEXT NOT NULL
-             DEFAULT 'playground' CHECK(resolve_mode IN ('playground', 'script'))",
-        )
-        .execute(&pool)
-        .await;
-        add_workspace_columns(&pool).await;
-        migrate_workspace_foundation(&pool).await?;
-        migrate_audit_no_cascade(&pool).await?;
-        add_local_scope_columns(&pool).await;
-        add_connection_binding_scope_columns(&pool).await?;
-        migrate_agent_acp_providers(&pool).await?;
-        migrate_schema_cache_scopes(&pool).await?;
-        ensure_schema_cache_v2(&pool).await?;
+        migrate_local_store(&pool).await?;
         repair_active_scope_on_open(&pool).await?;
-        ensure_local_scope_indexes(&pool).await?;
         Ok(Store {
             pool,
             audit_lock: Arc::new(Mutex::new(())),

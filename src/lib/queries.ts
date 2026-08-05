@@ -216,6 +216,7 @@ export const qk = {
   monitoring: (connectionId: string) => ["monitoring", connectionId] as const,
   manualTransaction: (connectionId: string) =>
     ["manualTransaction", connectionId] as const,
+  manualTransactions: () => ["manualTransactions"] as const,
   dashboards: (connectionId: string) => ["dashboards", connectionId] as const,
   dashboardRun: (dashboardId: string) => ["dashboardRun", dashboardId] as const,
   drivers: () => ["drivers"] as const,
@@ -274,12 +275,13 @@ export function cliInstallationStatusQuery() {
   });
 }
 
-export function skillStatusQuery() {
+export function skillStatusQuery(enabled = true) {
   return queryOptions({
     queryKey: qk.skillStatus(),
     staleTime: 30_000,
     gcTime: Infinity,
     retry: false,
+    enabled,
     refetchOnWindowFocus: true,
     queryFn: () => skillStatus("all"),
   });

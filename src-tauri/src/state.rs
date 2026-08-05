@@ -11,6 +11,7 @@ use crate::features::terminals::{self, TerminalsFeature};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
 use crate::services::ApplicationServices;
 use crate::skills::SkillManager;
+use crate::startup::{PostPaintRecoveryGate, StartupTrace};
 use crate::store::Store;
 
 pub struct AppState {
@@ -27,12 +28,17 @@ pub struct AppState {
     /// Desktop-only approval capability. CLI and Terminal adapters are composed
     /// without this authority and therefore cannot obtain it.
     pub(crate) local_operation_approval: LocalApprovalAuthority,
+    pub(crate) startup_trace: StartupTrace,
+    store: Store,
+    post_paint_recovery: PostPaintRecoveryGate,
 }
 
 impl AppState {
-    pub async fn new() -> AppResult<Self> {
-        let store = Store::open().await?;
-        store.recover_interrupted_agent_acp_sessions().await?;
+    pub async fn new(startup_trace: StartupTrace) -> AppResult<Self> {
+        let started = startup_trace.stage_started();
+        let store = Store::open().await;
+        startup_trace.finish("store_ready", "critical", started, store.is_ok());
+        let store = store?;
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let providers = providers::compose(store.clone(), operation.clone());
         let connections = ConnectionManager::with_authorities(
@@ -52,12 +58,22 @@ impl AppState {
             providers,
         );
         let skills = SkillManager::new()?;
-        services.job.recover_interrupted().await?;
-        let recovery = services.operation.recover_previous_runtimes().await?;
-        services
+        let started = startup_trace.stage_started();
+        let recovery = services.operation.recover_previous_runtimes().await;
+        startup_trace.finish("operation_recovery", "critical", started, recovery.is_ok());
+        let recovery = recovery?;
+        let started = startup_trace.stage_started();
+        let provider_recovery = services
             .providers
             .recover_provisioning(&recovery.provisioning_checkpoint_validation_required)
-            .await?;
+            .await;
+        startup_trace.finish(
+            "provider_recovery",
+            "critical",
+            started,
+            provider_recovery.is_ok(),
+        );
+        provider_recovery?;
         Ok(Self {
             services,
             broker,
@@ -65,6 +81,48 @@ impl AppState {
             terminals,
             agents_acp,
             local_operation_approval,
+            startup_trace,
+            store,
+            post_paint_recovery: PostPaintRecoveryGate::new(),
         })
+    }
+
+    pub(crate) fn start_post_paint_recovery(&self, app: tauri::AppHandle) {
+        if !self.post_paint_recovery.claim_start() {
+            return;
+        }
+        let store = self.store.clone();
+        let jobs = self.services.job.clone();
+        let trace = self.startup_trace.clone();
+        let gate = self.post_paint_recovery.clone();
+        let broker = self.broker.clone();
+        let services = self.services.clone();
+        let skills = self.skills.clone();
+        tauri::async_runtime::spawn(async move {
+            let started = trace.stage_started();
+            let acp = store.recover_interrupted_agent_acp_sessions().await;
+            trace.finish("agent_session_recovery", "post_paint", started, acp.is_ok());
+            if let Err(error) = &acp {
+                tracing::error!(%error, "post-paint Agent session recovery failed");
+            }
+
+            let started = trace.stage_started();
+            let jobs = jobs.recover_interrupted().await;
+            trace.finish("job_recovery", "post_paint", started, jobs.is_ok());
+            if let Err(error) = &jobs {
+                tracing::error!(%error, "post-paint Job recovery failed");
+            }
+            let succeeded = acp.is_ok() && jobs.is_ok();
+            if succeeded {
+                let started = trace.stage_started();
+                crate::broker::start(broker, services, Some(skills), app);
+                trace.finish("broker_start", "post_paint", started, true);
+            }
+            gate.finish(succeeded);
+        });
+    }
+
+    pub(crate) async fn wait_for_post_paint_recovery(&self) -> AppResult<()> {
+        self.post_paint_recovery.wait().await
     }
 }

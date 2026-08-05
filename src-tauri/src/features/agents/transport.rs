@@ -19,6 +19,7 @@ pub async fn start_agent_acp_session(
     connection_id: ConnectionId,
     provider: AgentProvider,
 ) -> AppResult<AcpSessionFocus> {
+    state.wait_for_post_paint_recovery().await?;
     state.agents_acp.start(connection_id, provider, app).await
 }
 
@@ -29,6 +30,7 @@ pub async fn resume_agent_acp_session(
     app: tauri::AppHandle,
     id: AcpSessionId,
 ) -> AppResult<AcpSessionFocus> {
+    state.wait_for_post_paint_recovery().await?;
     state.agents_acp.resume(id, app).await
 }
 
@@ -37,6 +39,7 @@ pub async fn resume_agent_acp_session(
 pub async fn list_agent_acp_sessions(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<AcpSessionSummary>> {
+    state.wait_for_post_paint_recovery().await?;
     state.agents_acp.list().await
 }
 
@@ -47,17 +50,19 @@ pub async fn focus_agent_acp_session(
     id: AcpSessionId,
     after_sequence: Option<u64>,
 ) -> AppResult<AcpSessionFocus> {
+    state.wait_for_post_paint_recovery().await?;
     state.agents_acp.focus(id, after_sequence).await
 }
 
 /// Submit a prompt plus bounded editor context to the pinned ACP session.
 #[tauri::command]
-pub fn prompt_agent_acp_session(
+pub async fn prompt_agent_acp_session(
     state: State<'_, AppState>,
     id: AcpSessionId,
     prompt: String,
     context: AcpPromptContext,
 ) -> AppResult<()> {
+    state.wait_for_post_paint_recovery().await?;
     state.agents_acp.prompt(id, prompt, context)
 }
 
@@ -67,17 +72,19 @@ pub async fn cancel_agent_acp_session(
     state: State<'_, AppState>,
     id: AcpSessionId,
 ) -> AppResult<()> {
+    state.wait_for_post_paint_recovery().await?;
     state.agents_acp.cancel(id).await
 }
 
 /// Resolve an actual ACP permission request with one offered option or cancel it.
 #[tauri::command]
-pub fn respond_agent_acp_permission(
+pub async fn respond_agent_acp_permission(
     state: State<'_, AppState>,
     id: AcpSessionId,
     request_id: String,
     option_id: Option<String>,
 ) -> AppResult<()> {
+    state.wait_for_post_paint_recovery().await?;
     state
         .agents_acp
         .respond_permission(id, &request_id, option_id)
@@ -85,7 +92,11 @@ pub fn respond_agent_acp_permission(
 
 /// Close one ACP process and immediately revoke its connection capability.
 #[tauri::command]
-pub fn close_agent_acp_session(state: State<'_, AppState>, id: AcpSessionId) -> AppResult<()> {
+pub async fn close_agent_acp_session(
+    state: State<'_, AppState>,
+    id: AcpSessionId,
+) -> AppResult<()> {
+    state.wait_for_post_paint_recovery().await?;
     state.agents_acp.close(id)
 }
 
@@ -97,6 +108,7 @@ pub async fn set_agent_acp_config_option(
     config_id: String,
     value: String,
 ) -> AppResult<()> {
+    state.wait_for_post_paint_recovery().await?;
     state
         .agents_acp
         .set_config_option(id, config_id, value)

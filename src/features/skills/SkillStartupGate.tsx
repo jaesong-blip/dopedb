@@ -20,6 +20,7 @@ import {
 } from "../../ipc/types";
 import { useI18n } from "../../lib/i18n";
 import { skillStatusQuery } from "../../lib/queries";
+import { usePostPaintReady } from "../../lib/usePostPaintReady";
 import {
   hasSavedAgentTargets,
   loadAgentTargets,
@@ -31,7 +32,8 @@ import {
 export default function SkillStartupGate() {
   const { t } = useI18n();
   const toast = useToast();
-  const statusQuery = useQuery(skillStatusQuery());
+  const postPaintReady = usePostPaintReady();
+  const statusQuery = useQuery(skillStatusQuery(postPaintReady));
   const refetchStatus = statusQuery.refetch;
   const [selected, setSelected] = useState<SkillTarget[]>(loadAgentTargets);
   const [open, setOpen] = useState(false);

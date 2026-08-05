@@ -23,6 +23,7 @@ mod safety;
 mod services;
 mod skills;
 mod sql_script;
+mod startup;
 mod state;
 mod store;
 
@@ -33,13 +34,14 @@ use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 pub fn run() {
+    let startup_trace = startup::StartupTrace::new();
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
-    let state = tauri::async_runtime::block_on(state::AppState::new())
+    let state = tauri::async_runtime::block_on(state::AppState::new(startup_trace))
         .expect("failed to initialize app state");
 
     tauri::Builder::default()
@@ -50,12 +52,6 @@ pub fn run() {
         .manage(state)
         .setup(|app| {
             let state = app.state::<state::AppState>();
-            broker::start(
-                state.broker.clone(),
-                state.services.clone(),
-                Some(state.skills.clone()),
-                app.handle().clone(),
-            );
             let mut events = state.services.job.subscribe();
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -68,6 +64,32 @@ pub fn run() {
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
                 }
+            });
+            let mut manual_transaction_events =
+                state.services.queries.manual_transactions().subscribe();
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match manual_transaction_events.recv().await {
+                        Ok(event) => {
+                            let _ = handle.emit("manual-transaction:changed", event);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            let _ = handle.emit("manual-transaction:resync", ());
+                            continue;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // A broken renderer must not leave Agent/Job commands waiting forever.
+                // The normal path starts immediately after the renderer's second frame.
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                handle
+                    .state::<state::AppState>()
+                    .start_post_paint_recovery(handle.clone());
             });
             Ok(())
         })
@@ -92,6 +114,8 @@ pub fn run() {
             commands::repair_skill,
             commands::remove_skill,
             commands::skill_self_test,
+            startup::record_startup_mark,
+            startup::runtime_startup_summary,
             legacy_mcp_cleanup::legacy_mcp_cleanup_status,
             legacy_mcp_cleanup::legacy_mcp_cleanup_apply,
             features::terminals::transport::terminal_create,
@@ -160,6 +184,7 @@ pub fn run() {
             features::queries::transport::inspect_sql,
             features::queries::transport::propose_sql,
             features::queries::transport::get_manual_transaction,
+            features::queries::transport::list_manual_transactions,
             features::queries::transport::begin_manual_transaction,
             features::queries::transport::commit_manual_transaction,
             features::queries::transport::rollback_manual_transaction,
@@ -216,6 +241,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            if let tauri::RunEvent::Ready = event {
+                app_handle
+                    .state::<state::AppState>()
+                    .startup_trace
+                    .mark_once("window_shown", "critical", true);
+            }
             // Terminal PTYs and the local broker own process/socket resources outside
             // ordinary command futures. Close them within a bounded window before the
             // app process exits so child trees and runtime endpoints are not orphaned.

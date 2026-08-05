@@ -56,6 +56,18 @@ pub(crate) async fn get_manual_transaction(
 }
 
 #[tauri::command]
+pub(crate) async fn list_manual_transactions(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<super::ManualTransactionStatus>> {
+    Ok(state
+        .services
+        .queries
+        .manual_transactions()
+        .snapshot()
+        .await)
+}
+
+#[tauri::command]
 pub(crate) async fn begin_manual_transaction(
     state: State<'_, AppState>,
     id: Uuid,

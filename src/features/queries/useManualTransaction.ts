@@ -20,7 +20,6 @@ export function useManualTransaction(
   const query = useQuery({
     queryKey: qk.manualTransaction(connectionId),
     queryFn: () => getManualTransaction(connectionId),
-    refetchInterval: 2_000,
   });
 
   async function mutate(

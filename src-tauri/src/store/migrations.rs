@@ -1,5 +1,5 @@
-//! DDL for the local app.db. Idempotent
-//! `CREATE TABLE IF NOT EXISTS` so `Store::open` can run it on every start.
+//! Baseline DDL for the local app.db. `bootstrap::migrate_local_store` runs this
+//! only while advancing `PRAGMA user_version`, not on every application start.
 //! Secrets never live here — connections hold only a `secret_ref` (credential-store id).
 
 /// Stable id for the offline-first Personal Workspace created during migration.
