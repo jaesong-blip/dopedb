@@ -14,6 +14,7 @@ import {
   saveQueryServiceSession,
   type QueryServiceStorageScope,
 } from "./tauriAdapter";
+import { clearSqlResultPageCache } from "../queries/resultPageCache";
 
 const MAX_SESSIONS = 20;
 
@@ -48,6 +49,7 @@ export function useQueryServices(
   errorHandlerRef.current = onPersistenceError;
 
   useEffect(() => {
+    clearSqlResultPageCache();
     persistedSnapshots.current.clear();
     const expectedScope = storageScope(scope);
     if (!scope.ready || !expectedScope) {

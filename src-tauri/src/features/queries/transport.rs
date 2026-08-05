@@ -10,6 +10,7 @@ use crate::state::AppState;
 use super::{
     DesktopPreviewIntent, DesktopSqlInspectionError, DesktopSqlInspectionReceipt,
     DesktopSqlInspectionRequest, DesktopSqlProposalReceipt, DesktopSqlProposalRequest,
+    DesktopSqlResultExportFormat, DesktopSqlResultExportProgress, DesktopSqlResultExportReceipt,
     DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamBatch, DesktopSqlStreamReady,
     DesktopSqlStreamReceipt, DesktopSqlStreamSinkError,
 };
@@ -277,6 +278,117 @@ pub(crate) fn pull_sql_stream_batch(
     state.services.queries.pull_desktop_sql_stream(
         operation_id.into(),
         sequence,
+        &capability,
+        webview.label(),
+    )
+}
+
+/// Reads one immutable completed-result page after revalidating workspace,
+/// account, connection revision, renderer, and the bearer capability.
+#[tauri::command]
+pub(crate) async fn read_sql_result_page(
+    state: State<'_, AppState>,
+    webview: tauri::WebviewWindow,
+    operation_id: Uuid,
+    sequence: u64,
+    capability: String,
+) -> AppResult<DesktopSqlStreamBatch> {
+    state
+        .services
+        .queries
+        .read_desktop_sql_result_page(operation_id.into(), sequence, &capability, webview.label())
+        .await
+}
+
+/// Picks a native destination and writes an immutable result without exposing
+/// either row payloads or filesystem paths to the renderer.
+#[tauri::command]
+pub(crate) async fn export_sql_result(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    webview: tauri::WebviewWindow,
+    export_id: Uuid,
+    operation_id: Uuid,
+    capability: String,
+    format: DesktopSqlResultExportFormat,
+    suggested_name: String,
+    on_progress: Channel<DesktopSqlResultExportProgress>,
+) -> AppResult<Option<DesktopSqlResultExportReceipt>> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let extension = match format {
+        DesktopSqlResultExportFormat::Csv => "csv",
+        DesktopSqlResultExportFormat::Json => "json",
+    };
+    let suggested_name = safe_result_export_name(&suggested_name, extension)?;
+    let destination = app
+        .dialog()
+        .file()
+        .set_file_name(suggested_name)
+        .add_filter(extension.to_ascii_uppercase(), &[extension])
+        .blocking_save_file()
+        .and_then(|path| path.into_path().ok());
+    let Some(destination) = destination else {
+        return Ok(None);
+    };
+    state
+        .services
+        .queries
+        .export_desktop_sql_result(
+            export_id,
+            operation_id.into(),
+            capability,
+            webview.label().to_string(),
+            format,
+            destination,
+            move |progress| {
+                on_progress.send(progress).map_err(|_| {
+                    crate::error::AppError::Safety(
+                        "SQL result export progress receiver disconnected".into(),
+                    )
+                })
+            },
+        )
+        .await
+        .map(Some)
+}
+
+fn safe_result_export_name(value: &str, extension: &str) -> AppResult<String> {
+    let filename = std::path::Path::new(value)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| crate::error::AppError::Blocked {
+            reason: "SQL result export name is invalid".into(),
+        })?;
+    if filename.is_empty()
+        || filename.len() > 240
+        || filename.chars().any(char::is_control)
+        || filename == "."
+        || filename == ".."
+    {
+        return Err(crate::error::AppError::Blocked {
+            reason: "SQL result export name is invalid".into(),
+        });
+    }
+    let suffix = format!(".{extension}");
+    Ok(if filename.to_ascii_lowercase().ends_with(&suffix) {
+        filename.to_string()
+    } else {
+        format!("{filename}{suffix}")
+    })
+}
+
+#[tauri::command]
+pub(crate) fn cancel_sql_result_export(
+    state: State<'_, AppState>,
+    webview: tauri::WebviewWindow,
+    export_id: Uuid,
+    operation_id: Uuid,
+    capability: String,
+) -> bool {
+    state.services.queries.cancel_desktop_sql_result_export(
+        export_id,
+        operation_id.into(),
         &capability,
         webview.label(),
     )

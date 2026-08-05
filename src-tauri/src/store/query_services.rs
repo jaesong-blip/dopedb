@@ -7,7 +7,8 @@ use sqlx::Row;
 
 use crate::error::{AppError, AppResult};
 use crate::features::queries::{
-    validate_query_service_session_snapshot, QueryServiceSessionSnapshot,
+    project_query_service_session_snapshot, validate_query_service_session_snapshot,
+    QueryServiceSessionSnapshot,
 };
 
 use super::Store;
@@ -40,26 +41,39 @@ impl Store {
         .bind(MAX_PERSISTED_QUERY_SERVICE_SESSIONS)
         .fetch_all(&self.pool)
         .await?;
-        rows.into_iter()
-            .map(|row| {
-                let snapshot_json: String = row.try_get("snapshot_json")?;
-                let snapshot = serde_json::from_str(&snapshot_json)?;
-                let validated = validate_query_service_session_snapshot(snapshot)?;
-                let stored_connection_id: String = row.try_get("connection_id")?;
-                let stored_updated_at: i64 = row.try_get("updated_at")?;
-                let stored_status: String = row.try_get("status")?;
-                if validated.id != row.try_get::<String, _>("id")?
-                    || validated.connection_id.to_string() != stored_connection_id
-                    || validated.updated_at != stored_updated_at
-                    || validated.status.as_str() != stored_status
-                {
-                    return Err(AppError::Config(
-                        "persisted Services metadata does not match its snapshot".into(),
-                    ));
-                }
-                Ok(validated.snapshot)
-            })
-            .collect()
+        let mut snapshots = Vec::with_capacity(rows.len());
+        for row in rows {
+            let snapshot_json: String = row.try_get("snapshot_json")?;
+            let snapshot = serde_json::from_str(&snapshot_json)?;
+            let validated = validate_query_service_session_snapshot(snapshot)?;
+            let stored_connection_id: String = row.try_get("connection_id")?;
+            let stored_updated_at: i64 = row.try_get("updated_at")?;
+            let stored_status: String = row.try_get("status")?;
+            if validated.id != row.try_get::<String, _>("id")?
+                || validated.connection_id.to_string() != stored_connection_id
+                || validated.updated_at != stored_updated_at
+                || validated.status.as_str() != stored_status
+            {
+                return Err(AppError::Config(
+                    "persisted Services metadata does not match its snapshot".into(),
+                ));
+            }
+            let (snapshot, migrated) = project_query_service_session_snapshot(validated.snapshot);
+            if migrated {
+                sqlx::query(
+                    "UPDATE query_service_sessions SET snapshot_json = ?1
+                         WHERE workspace_id = ?2 AND account_scope = ?3 AND id = ?4",
+                )
+                .bind(serde_json::to_string(&snapshot)?)
+                .bind(scope.workspace_id.to_string())
+                .bind(scope.account_scope.storage_key())
+                .bind(&validated.id)
+                .execute(&self.pool)
+                .await?;
+            }
+            snapshots.push(snapshot);
+        }
+        Ok(snapshots)
     }
 
     pub(crate) async fn save_query_service_session(

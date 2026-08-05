@@ -29,10 +29,11 @@ pub(crate) use adapters::{
 };
 use application::QueryUseCases;
 pub(crate) use domain::{
-    validate_query_service_session_snapshot, DesktopPreviewIntent, DesktopSqlInspectionRequest,
-    DesktopSqlProposalRequest, DesktopSqlStreamBatch, DesktopSqlStreamReady,
-    DesktopSqlStreamSinkError, QueryServiceSessionSnapshot, TerminalQueryPlanRequest,
-    TerminalSqlProposalRequest,
+    project_query_service_session_snapshot, validate_query_service_session_snapshot,
+    DesktopPreviewIntent, DesktopSqlInspectionRequest, DesktopSqlProposalRequest,
+    DesktopSqlResultExportFormat, DesktopSqlResultExportProgress, DesktopSqlResultExportReceipt,
+    DesktopSqlStreamBatch, DesktopSqlStreamReady, DesktopSqlStreamSinkError,
+    QueryServiceSessionSnapshot, TerminalQueryPlanRequest, TerminalSqlProposalRequest,
 };
 pub(crate) use manual_transaction::{
     ManualExecutionTarget, ManualScriptRequest, ManualTransactionRuntime, ManualTransactionStatus,
@@ -364,6 +365,122 @@ impl QueriesFeature {
     pub(crate) fn forget_pending_desktop_sql_stream(&self, capability: &str, owner_webview: &str) {
         self.desktop_streams
             .forget_pending(capability, owner_webview);
+    }
+
+    async fn authorize_desktop_sql_result(
+        &self,
+        operation_id: OperationId,
+        capability: &str,
+        owner_webview: &str,
+    ) -> crate::error::AppResult<adapters::DesktopSqlResultAuthority> {
+        let authority =
+            self.desktop_streams
+                .result_authority(operation_id, capability, owner_webview)?;
+        let pin = self
+            .store
+            .pin_connection_for_read(authority.connection_id)
+            .await?;
+        if pin.scope.workspace_id != authority.workspace_id
+            || pin.scope.account_scope.storage_key() != authority.account_scope
+            || pin.connection_revision != authority.connection_revision
+            || !pin.profile.workspace_access.can_read()
+        {
+            return Err(crate::error::AppError::Blocked {
+                reason: "SQL result authority changed; run the query again".into(),
+            });
+        }
+        Ok(authority)
+    }
+
+    pub(crate) async fn read_desktop_sql_result_page(
+        &self,
+        operation_id: OperationId,
+        sequence: u64,
+        capability: &str,
+        owner_webview: &str,
+    ) -> crate::error::AppResult<DesktopSqlStreamBatch> {
+        let authority = self
+            .authorize_desktop_sql_result(operation_id, capability, owner_webview)
+            .await?;
+        if sequence as usize >= authority.page_count {
+            return Err(crate::error::AppError::NotFound("SQL result page".into()));
+        }
+        let page = self.desktop_streams.read_result_page(
+            operation_id,
+            sequence,
+            capability,
+            owner_webview,
+        )?;
+        if page.columns != authority.columns {
+            return Err(crate::error::AppError::OutcomeUnknown(
+                "stored SQL result columns changed".into(),
+            ));
+        }
+        Ok(page)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn export_desktop_sql_result<F>(
+        &self,
+        export_id: uuid::Uuid,
+        operation_id: OperationId,
+        capability: String,
+        owner_webview: String,
+        format: DesktopSqlResultExportFormat,
+        destination: std::path::PathBuf,
+        progress: F,
+    ) -> crate::error::AppResult<DesktopSqlResultExportReceipt>
+    where
+        F: FnMut(DesktopSqlResultExportProgress) -> crate::error::AppResult<()> + Send + 'static,
+    {
+        let cancelled = self.desktop_streams.start_result_export(
+            export_id,
+            operation_id,
+            &capability,
+            &owner_webview,
+        )?;
+        // Register the exact export before the first await so a cancellation
+        // cannot race ahead of connection-revision reauthorization.
+        if let Err(error) = self
+            .authorize_desktop_sql_result(operation_id, &capability, &owner_webview)
+            .await
+        {
+            self.desktop_streams.finish_result_export(export_id);
+            return Err(error);
+        }
+        let streams = self.desktop_streams.clone();
+        let joined = tokio::task::spawn_blocking(move || {
+            streams.export_result_to_path(
+                export_id,
+                operation_id,
+                &capability,
+                &owner_webview,
+                format,
+                destination,
+                cancelled,
+                progress,
+            )
+        })
+        .await;
+        self.desktop_streams.finish_result_export(export_id);
+        joined.map_err(|_| {
+            crate::error::AppError::Config("SQL result export worker stopped".into())
+        })?
+    }
+
+    pub(crate) fn cancel_desktop_sql_result_export(
+        &self,
+        export_id: uuid::Uuid,
+        operation_id: OperationId,
+        capability: &str,
+        owner_webview: &str,
+    ) -> bool {
+        self.desktop_streams.cancel_result_export(
+            export_id,
+            operation_id,
+            capability,
+            owner_webview,
+        )
     }
 }
 

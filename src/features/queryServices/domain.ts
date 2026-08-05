@@ -41,10 +41,15 @@ export type QueryServiceResult =
       kind: "error";
       error: QueryServiceError;
       prompt: string;
+    }
+  | {
+      kind: "unavailable";
+      sql: string;
+      reason: string;
     };
 
 export type QueryServiceSession = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   documentId: string;
   connectionId: string;
@@ -78,9 +83,13 @@ export function isTerminalQueryServiceSession(
 }
 
 export function parseQueryServiceSession(value: unknown): QueryServiceSession {
-  if (!isRecord(value) || value.schemaVersion !== 1) {
+  if (
+    !isRecord(value) ||
+    (value.schemaVersion !== 1 && value.schemaVersion !== 2)
+  ) {
     throw new Error("Unsupported Services session snapshot");
   }
+  const normalized = normalizeLegacySession(value);
   const strings = [
     "id",
     "documentId",
@@ -94,24 +103,49 @@ export function parseQueryServiceSession(value: unknown): QueryServiceSession {
     "startedLabel",
   ] as const;
   if (
-    strings.some((key) => typeof value[key] !== "string") ||
-    typeof value.updatedAt !== "number" ||
-    !["completed", "failed", "cancelled"].includes(String(value.status)) ||
-    !isQueryServiceResult(value.result)
+    strings.some((key) => typeof normalized[key] !== "string") ||
+    typeof normalized.updatedAt !== "number" ||
+    !["completed", "failed", "cancelled"].includes(String(normalized.status)) ||
+    !isQueryServiceResult(normalized.result)
   ) {
     throw new Error("Invalid Services session snapshot");
   }
-  const resultKind = value.result.kind;
+  const resultKind = normalized.result.kind;
   const statusMatchesResult =
-    (value.status === "completed" &&
-      ["materialized", "stream", "script"].includes(resultKind)) ||
-    (value.status === "failed" && resultKind === "error") ||
-    (value.status === "cancelled" &&
-      (resultKind === "none" || resultKind === "stream"));
+    (normalized.status === "completed" &&
+      ["materialized", "stream", "script", "unavailable"].includes(resultKind)) ||
+    (normalized.status === "failed" && resultKind === "error") ||
+    (normalized.status === "cancelled" && resultKind === "none");
   if (!statusMatchesResult) {
     throw new Error("Invalid Services session terminal state");
   }
-  return value as QueryServiceSession;
+  return normalized as QueryServiceSession;
+}
+
+function normalizeLegacySession(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  if (value.schemaVersion !== 1) return value;
+  const result = value.result;
+  if (isRecord(result) && result.kind === "stream") {
+    if (value.status === "cancelled") {
+      return {
+        ...value,
+        schemaVersion: 2,
+        result: { kind: "none" },
+      };
+    }
+    return {
+      ...value,
+      schemaVersion: 2,
+      result: {
+        kind: "unavailable",
+        sql: typeof result.sql === "string" ? result.sql : String(value.sql ?? ""),
+        reason: "legacyResultFormat",
+      },
+    };
+  }
+  return { ...value, schemaVersion: 2 };
 }
 
 function isQueryServiceResult(
@@ -136,6 +170,9 @@ function isQueryServiceResult(
   }
   if (value.kind === "script") {
     return typeof value.at === "string" && isScriptOutcome(value.outcome);
+  }
+  if (value.kind === "unavailable") {
+    return typeof value.sql === "string" && typeof value.reason === "string";
   }
   return (
     value.kind === "error" &&
@@ -199,26 +236,16 @@ function isQueryResult(value: unknown) {
 function isStreamViewState(value: unknown) {
   if (
     !isRecord(value) ||
-    !["complete", "cancelled"].includes(String(value.phase)) ||
+    value.phase !== "complete" ||
     !Array.isArray(value.columns) ||
     !value.columns.every((column) => typeof column === "string") ||
     !isRecord(value.rowSource) ||
-    !isRecord(value.rowSource.chunkIndex) ||
-    !Array.isArray(value.rowSource.chunkIndex.chunks)
-  ) {
-    return false;
-  }
-  const columnCount = value.columns.length;
-  if (
-    !value.rowSource.chunkIndex.chunks.every(
-      (chunk) =>
-        isRecord(chunk) &&
-        isNonNegativeNumber(chunk.start) &&
-        Array.isArray(chunk.rows) &&
-        chunk.rows.every(
-          (row) => Array.isArray(row) && row.length === columnCount,
-        ),
-    )
+    (value.rowSource.operationId !== null &&
+      typeof value.rowSource.operationId !== "string") ||
+    (value.rowSource.capability !== null &&
+      typeof value.rowSource.capability !== "string") ||
+    !isNonNegativeNumber(value.rowSource.pageRows) ||
+    typeof value.rowSource.complete !== "boolean"
   ) {
     return false;
   }
@@ -230,6 +257,11 @@ function isStreamViewState(value: unknown) {
     isNonNegativeNumber(value.rowSource.rowCount) &&
     isNonNegativeNumber(value.rowCount) &&
     value.rowSource.rowCount === value.rowCount &&
+    value.rowSource.pageRows === 256 &&
+    value.rowSource.complete === true &&
+    typeof value.rowSource.operationId === "string" &&
+    typeof value.rowSource.capability === "string" &&
+    /^[0-9a-f]{64}$/i.test(value.rowSource.capability) &&
     typeof value.truncated === "boolean" &&
     isNullableNumber(value.durationMs) &&
     (value.error === null || typeof value.error === "string")

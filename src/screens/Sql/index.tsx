@@ -420,7 +420,7 @@ export default function Sql({
     const at = new Date().toLocaleTimeString();
     const sessionId = nextQueryServiceSessionId(documentId);
     serviceSessionRef.current = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: sessionId,
       documentId,
       connectionId: connection.id,
@@ -789,7 +789,7 @@ export default function Sql({
         at: run.at,
         maxRows: safety.maxRows,
       };
-    } else if (resultKind === "single" && stream.phase !== "idle") {
+    } else if (resultKind === "single" && stream.phase === "complete") {
       result = {
         kind: "stream",
         sql: lastAttempt?.sql ?? session.sql,

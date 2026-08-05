@@ -10,9 +10,10 @@ import {
 } from "react";
 import type { QueryResult } from "../ipc/types";
 import {
-  sqlStreamRowAt,
   type SqlStreamRowSource,
 } from "../features/queries/domain";
+import { sqlResultRowAt } from "../features/queries/resultPageCache";
+import { useSqlResultPages } from "../features/queries/useSqlResultPages";
 import type { GridSort } from "../lib/sqlBuild";
 import { Icon } from "./Icon";
 import DataGridColumnFilterMenu from "./DataGridColumnFilterMenu";
@@ -108,7 +109,7 @@ export default function DataGridVirtual(props: Props) {
   const rowCount = props.rowSource?.rowCount ?? props.result.rows.length;
   const rowAt = (index: number) =>
     props.rowSource
-      ? sqlStreamRowAt(props.rowSource, index)
+      ? sqlResultRowAt(props.rowSource, index)
       : props.result.rows[index];
   const columnWidths = useMemo(
     () =>
@@ -129,6 +130,12 @@ export default function DataGridVirtual(props: Props) {
     props.result.columns.length,
     offsets,
     scroll,
+  );
+  const pageError = useSqlResultPages(
+    props.rowSource,
+    startRow,
+    endRow,
+    props.result.columns,
   );
 
   useEffect(() => {
@@ -258,6 +265,14 @@ export default function DataGridVirtual(props: Props) {
         })
       }
     >
+      {pageError ? (
+        <div
+          className="tw:sticky tw:top-control-sm tw:left-0 tw:z-[var(--ds-z-sticky)] tw:w-fit tw:max-w-[min(520px,90%)] tw:bg-danger-muted tw:px-2 tw:py-1 tw:font-sans tw:text-xs tw:text-danger"
+          role="status"
+        >
+          {pageError}
+        </div>
+      ) : null}
       <div
         className="tw:relative tw:min-w-full tw:font-mono tw:[&_[data-grid-box]]:absolute tw:[&_[data-grid-box]]:box-border tw:[&_[data-grid-box]]:h-control-sm tw:[&_[data-grid-box]]:overflow-hidden tw:[&_[data-grid-box]]:border-r tw:[&_[data-grid-box]]:border-b tw:[&_[data-grid-box]]:border-border-subtle tw:[&_[data-grid-box]]:bg-background tw:[&_[data-grid-box]]:px-2 tw:[&_[data-grid-box]]:py-1 tw:[&_[data-grid-box]]:leading-ui tw:[&_[data-grid-box]]:text-ellipsis tw:[&_[data-grid-box]]:whitespace-nowrap"
         style={{
@@ -386,7 +401,8 @@ export default function DataGridVirtual(props: Props) {
             </div>
             {visibleColumns.map((columnIndex) => {
               const value = rowAt(rowIndex)?.[columnIndex];
-              const text = display(value);
+              const loading = value === undefined && !!props.rowSource;
+              const text = loading ? "…" : display(value);
               const selected = gridSelectionIncludes(
                 selection,
                 rowIndex,
@@ -401,10 +417,11 @@ export default function DataGridVirtual(props: Props) {
                   data-grid-cell={`${rowIndex}:${columnIndex}`}
                   data-grid-box
                   data-null={value === null}
+                  data-loading={loading}
                   data-interactive={interactive}
                   data-selected={selected}
                   data-focused={focused}
-                  className="tw:group-data-[selected=true]:!bg-selection tw:data-[null=true]:text-muted-foreground tw:data-[null=true]:italic tw:data-[interactive=true]:cursor-pointer tw:data-[selected=true]:!bg-selection tw:data-[focused=true]:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]"
+                  className="tw:group-data-[selected=true]:!bg-selection tw:data-[null=true]:text-muted-foreground tw:data-[null=true]:italic tw:data-[loading=true]:text-muted-foreground tw:data-[interactive=true]:cursor-pointer tw:data-[selected=true]:!bg-selection tw:data-[focused=true]:shadow-[inset_0_0_0_var(--ds-border-width-strong)_var(--ds-ring)]"
                   role="gridcell"
                   aria-colindex={columnIndex + 2}
                   aria-selected={selected}

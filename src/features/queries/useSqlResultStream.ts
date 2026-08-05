@@ -14,6 +14,7 @@ import {
   emptySqlStreamView,
   finishSqlStream,
 } from "./domain";
+import { clearSqlResultPageCache } from "./resultPageCache";
 
 type ControllerFactory = (
   onBatch: (batch: SqlStreamBatch) => Promise<void>,
@@ -125,7 +126,13 @@ export function useSqlResultStream(scopeKey: string) {
       current.runId === run.id &&
       (current.phase === "connecting" || current.phase === "streaming")
     ) {
-      const cancelled = { ...current, phase: "cancelled" as const };
+      clearSqlResultPageCache(current.rowSource);
+      const cancelled = {
+        ...current,
+        phase: "cancelled" as const,
+        rowSource: emptySqlStreamView(run.id).rowSource,
+        rowCount: 0,
+      };
       stateRef.current = cancelled;
       setStream(cancelled);
     }

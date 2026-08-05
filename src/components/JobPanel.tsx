@@ -34,6 +34,7 @@ import {
 } from "../ipc/types";
 import { Icon } from "./Icon";
 import { Field } from "../design-system/components/FormControls";
+import { ProgressBar } from "../design-system/components/Progress";
 import { StatusDot, type StatusTone } from "../design-system/components/Status";
 import { InspectorHeader } from "../design-system/components/Workbench";
 import { jobsQuery, qk } from "../lib/queries";
@@ -759,15 +760,11 @@ export default function JobPanel({
                     </span>
                   </button>
                   {percent != null && (
-                    <div
-                      className="tw:h-0.5 tw:overflow-hidden tw:bg-border-subtle"
-                      aria-label={`${percent.toFixed(0)}%`}
-                    >
-                      <span
-                        className="tw:block tw:h-full tw:w-full tw:origin-left tw:bg-primary tw:transition-transform tw:duration-150 tw:motion-reduce:transition-none"
-                        style={{ transform: `scaleX(${percent / 100})` }}
-                      />
-                    </div>
+                    <ProgressBar
+                      density="compact"
+                      value={percent}
+                      label={`${percent.toFixed(0)}%`}
+                    />
                   )}
                   <div className="ds-control-row tw:flex tw:justify-end tw:gap-1">
                     {(job.state === "queued" || job.state === "paused") && (

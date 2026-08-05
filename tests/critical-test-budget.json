@@ -11,7 +11,7 @@
   "frontend": {
     "src/components/DataGridVirtual.test.ts": {
       "tests": 2,
-      "protects": "Large-grid bounds and keyboard reachability"
+      "protects": "Large-grid virtualization, bounded result-page cache eviction, and keyboard reachability"
     },
     "src/features/providers/tauriAdapter.test.ts": {
       "tests": 4,
@@ -65,7 +65,7 @@
     },
     "src-tauri/src/features/queries/domain_tests.rs": {
       "tests": 1,
-      "protects": "Production guidance stays non-blocking while SQL namespaces remain bounded and safely quoted"
+      "protects": "Production guidance, namespace safety, and row-free Services result migration"
     },
     "src-tauri/src/operations/canonicalize.rs": {
       "tests": 3,

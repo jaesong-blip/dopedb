@@ -239,6 +239,9 @@ Elevation은 세 단계만 허용한다.
 - `ManualTransactionControls`: query/data toolbar가 공유하는 feature composition.
   `WorkbenchButton`만 합성해 Auto/Manual/failed 상태와 commit/rollback command를
   같은 밀도로 표시하며 화면별 Tx utility나 style map을 만들지 않는다.
+- `ProgressBar`: 업데이트 다운로드, Services 작업, 결과 내보내기가 공유하는
+  determinate/indeterminate 진행률 primitive. `default`와 `compact` 밀도만
+  허용하고 화면별 track/fill utility나 임의 최소 진행률을 다시 만들지 않는다.
 - `ProviderTargetLabel`: Explorer, connection picker, workbench가 공유하는
   provider target feature composition. 현재는 DQ-28의 Neon branch identity만
   허용하며, 긴 ID는 mono ellipsis와 tooltip으로 보존하고 provider state는

@@ -30,6 +30,7 @@ export default function QueryServiceResult({
   result: QueryServiceResultModel;
   scriptStatementIndex?: number;
 }) {
+  const { t } = useI18n();
   if (result.kind === "none") {
     return (
       <WorkbenchEmptyState icon="table">
@@ -63,6 +64,17 @@ export default function QueryServiceResult({
         at={result.at}
         statementIndex={scriptStatementIndex}
       />
+    );
+  }
+  if (result.kind === "unavailable") {
+    return (
+      <WorkbenchEmptyState icon="table">
+        <span>
+          {result.reason === "legacyResultFormat"
+            ? t("results.legacyUnavailable")
+            : result.reason}
+        </span>
+      </WorkbenchEmptyState>
     );
   }
   return <SqlErrorCard error={result.error} prompt={result.prompt} />;

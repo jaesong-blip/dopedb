@@ -242,26 +242,27 @@ impl QueryPlatformAdapter {
         };
         let mut sequence = 0_u64;
         let mut first_batch_ms = None;
-        let mut stream =
-            match self
-                .desktop_streams
-                .begin_reserved(operation_id, &owner_webview, &capability)
-            {
-                Ok(stream) => stream,
-                Err(error) => {
-                    let result = self
-                        .stream_error(
-                            operation_id,
-                            &pin,
-                            &payload,
-                            AppError::Safety(error.to_string()),
-                            Some(lease),
-                        )
-                        .await;
-                    finalizer.disarm().await;
-                    return result;
-                }
-            };
+        let mut stream = match self.desktop_streams.begin_reserved(
+            operation_id,
+            &owner_webview,
+            &capability,
+            &pin,
+        ) {
+            Ok(stream) => stream,
+            Err(error) => {
+                let result = self
+                    .stream_error(
+                        operation_id,
+                        &pin,
+                        &payload,
+                        AppError::Safety(error.to_string()),
+                        Some(lease),
+                    )
+                    .await;
+                finalizer.disarm().await;
+                return result;
+            }
+        };
         tracing::debug!(
             phase = TRACE_BACKEND_EXECUTE_START,
             duration_ms = operation_started.elapsed().as_millis() as u64,
@@ -342,9 +343,23 @@ impl QueryPlatformAdapter {
                 .await
             }
         };
-        stream.close();
         match streamed {
             Ok(summary) => {
+                if let Err(error) =
+                    stream.complete(summary.row_count, summary.truncated, summary.duration_ms)
+                {
+                    let result = self
+                        .stream_error(
+                            operation_id,
+                            &pin,
+                            &payload,
+                            AppError::Safety(error.to_string()),
+                            Some(lease),
+                        )
+                        .await;
+                    finalizer.disarm().await;
+                    return result;
+                }
                 tracing::debug!(
                     phase = TRACE_BACKEND_COMPLETE,
                     duration_ms = summary.duration_ms,
@@ -417,6 +432,7 @@ impl QueryPlatformAdapter {
                 })
             }
             Err(error) => {
+                stream.close();
                 let result = self
                     .stream_error(operation_id, &pin, &payload, error, Some(lease))
                     .await;

@@ -5,13 +5,19 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::watch;
+use uuid::Uuid;
 
 use crate::executor::read::DESKTOP_STREAM_BATCH_MAX_BYTES;
 use crate::kernel::identity::OperationId;
 use crate::kernel::sync::lock_unpoisoned;
+use crate::store::PinnedConnection;
 
 use super::super::domain::{
+    DesktopSqlResultExportFormat, DesktopSqlResultExportProgress, DesktopSqlResultExportReceipt,
     DesktopSqlStreamBatch, DesktopSqlStreamReady, DesktopSqlStreamSinkError,
+};
+use super::desktop_result_store::{
+    DesktopSqlResultAuthority, DesktopSqlResultStore, DesktopSqlResultWriter,
 };
 
 pub(super) const MAX_IN_FLIGHT_BATCHES: usize = 1;
@@ -21,6 +27,7 @@ pub(super) const STREAM_ACK_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) struct DesktopSqlStreamRegistry {
     streams: Arc<Mutex<HashMap<OperationId, StreamCredit>>>,
     pending: Arc<Mutex<HashMap<String, PendingStream>>>,
+    results: DesktopSqlResultStore,
 }
 
 struct PendingStream {
@@ -35,7 +42,7 @@ struct StreamCredit {
     cancelled: bool,
     owner_webview: String,
     capability: String,
-    batch: Option<DesktopSqlStreamBatch>,
+    result_writer: Option<DesktopSqlResultWriter>,
     /// Versioned state change signal. A waiter subscribes before inspecting the
     /// credit, so an ACK between unlock and await is observed rather than lost.
     changed: watch::Sender<u64>,
@@ -46,6 +53,7 @@ struct StreamCredit {
 pub(super) struct DesktopSqlStreamSession {
     operation_id: OperationId,
     registry: DesktopSqlStreamRegistry,
+    active: bool,
 }
 
 #[derive(Clone)]
@@ -114,7 +122,7 @@ impl DesktopSqlStreamRegistry {
                 cancelled: false,
                 owner_webview,
                 capability,
-                batch: None,
+                result_writer: None,
                 changed,
             },
         );
@@ -133,18 +141,29 @@ impl DesktopSqlStreamRegistry {
         operation_id: OperationId,
         owner_webview: &str,
         capability: &str,
+        pin: &PinnedConnection,
     ) -> Result<DesktopSqlStreamSession, DesktopSqlStreamSinkError> {
-        let streams = lock_unpoisoned(&self.streams);
-        let Some(stream) = streams.get(&operation_id) else {
+        let mut streams = lock_unpoisoned(&self.streams);
+        let Some(stream) = streams.get_mut(&operation_id) else {
             return Err(DesktopSqlStreamSinkError::StreamNotActive);
         };
         if stream.owner_webview != owner_webview || stream.capability != capability {
             return Err(DesktopSqlStreamSinkError::InvalidAcknowledgement);
         }
+        if stream.result_writer.is_some() {
+            return Err(DesktopSqlStreamSinkError::StreamAlreadyActive);
+        }
+        stream.result_writer = Some(DesktopSqlResultWriter::begin(
+            operation_id,
+            pin,
+            owner_webview,
+            capability,
+        )?);
         drop(streams);
         Ok(DesktopSqlStreamSession {
             operation_id,
             registry: self.clone(),
+            active: true,
         })
     }
 
@@ -159,7 +178,6 @@ impl DesktopSqlStreamRegistry {
     /// never let a different renderer cancel a stream it does not own.
     fn reject_owned(stream: &mut StreamCredit) {
         stream.cancelled = true;
-        stream.batch = None;
         stream
             .changed
             .send_modify(|version| *version = version.saturating_add(1));
@@ -181,10 +199,9 @@ impl DesktopSqlStreamRegistry {
             Self::reject_owned(stream);
             return None;
         }
+        let batch = stream.result_writer.as_ref()?.read_page(sequence).ok()?;
         stream.pulled = true;
-        // Transfer rather than clone: the registry has at most one bounded page,
-        // and a webview drop after pull cannot retain a second serialized copy.
-        stream.batch.take()
+        Some(batch)
     }
 
     pub(crate) fn acknowledge(
@@ -264,11 +281,111 @@ impl DesktopSqlStreamRegistry {
             false
         }
     }
+
+    fn complete(
+        &self,
+        operation_id: OperationId,
+        row_count: usize,
+        truncated: bool,
+        duration_ms: u64,
+    ) -> Result<(), DesktopSqlStreamSinkError> {
+        let mut stream = lock_unpoisoned(&self.streams)
+            .remove(&operation_id)
+            .ok_or(DesktopSqlStreamSinkError::StreamNotActive)?;
+        stream
+            .changed
+            .send_modify(|version| *version = version.saturating_add(1));
+        if stream.cancelled || stream.in_flight.is_some() {
+            return Err(if stream.cancelled {
+                DesktopSqlStreamSinkError::Cancelled
+            } else {
+                DesktopSqlStreamSinkError::InvalidAcknowledgement
+            });
+        }
+        stream
+            .result_writer
+            .as_mut()
+            .ok_or(DesktopSqlStreamSinkError::ResultStoreUnavailable)?
+            .complete(row_count, truncated, duration_ms)
+    }
+
+    pub(crate) fn result_authority(
+        &self,
+        operation_id: OperationId,
+        capability: &str,
+        owner_webview: &str,
+    ) -> crate::error::AppResult<DesktopSqlResultAuthority> {
+        self.results
+            .authority(operation_id, capability, owner_webview)
+    }
+
+    pub(crate) fn read_result_page(
+        &self,
+        operation_id: OperationId,
+        sequence: u64,
+        capability: &str,
+        owner_webview: &str,
+    ) -> crate::error::AppResult<DesktopSqlStreamBatch> {
+        self.results
+            .read_page(operation_id, sequence, capability, owner_webview)
+    }
+
+    pub(crate) fn start_result_export(
+        &self,
+        export_id: Uuid,
+        operation_id: OperationId,
+        capability: &str,
+        owner_webview: &str,
+    ) -> crate::error::AppResult<Arc<std::sync::atomic::AtomicBool>> {
+        self.results
+            .start_export(export_id, operation_id, capability, owner_webview)
+    }
+
+    pub(crate) fn finish_result_export(&self, export_id: Uuid) {
+        self.results.finish_export(export_id);
+    }
+
+    pub(crate) fn cancel_result_export(
+        &self,
+        export_id: Uuid,
+        operation_id: OperationId,
+        capability: &str,
+        owner_webview: &str,
+    ) -> bool {
+        self.results
+            .cancel_export(export_id, operation_id, capability, owner_webview)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn export_result_to_path(
+        &self,
+        export_id: Uuid,
+        operation_id: OperationId,
+        capability: &str,
+        owner_webview: &str,
+        format: DesktopSqlResultExportFormat,
+        destination: std::path::PathBuf,
+        cancelled: Arc<std::sync::atomic::AtomicBool>,
+        progress: impl FnMut(DesktopSqlResultExportProgress) -> crate::error::AppResult<()>,
+    ) -> crate::error::AppResult<DesktopSqlResultExportReceipt> {
+        self.results.export_to_path(
+            export_id,
+            operation_id,
+            capability,
+            owner_webview,
+            format,
+            destination,
+            cancelled,
+            progress,
+        )
+    }
 }
 
 impl Drop for DesktopSqlStreamSession {
     fn drop(&mut self) {
-        self.registry.close(self.operation_id);
+        if self.active {
+            self.registry.close(self.operation_id);
+        }
     }
 }
 
@@ -281,7 +398,26 @@ impl DesktopSqlStreamSession {
     }
 
     pub(super) fn close(&mut self) {
-        self.registry.close(self.operation_id);
+        if self.active {
+            self.registry.close(self.operation_id);
+            self.active = false;
+        }
+    }
+
+    pub(super) fn complete(
+        &mut self,
+        row_count: usize,
+        truncated: bool,
+        duration_ms: u64,
+    ) -> Result<(), DesktopSqlStreamSinkError> {
+        if !self.active {
+            return Err(DesktopSqlStreamSinkError::StreamNotActive);
+        }
+        let result = self
+            .registry
+            .complete(self.operation_id, row_count, truncated, duration_ms);
+        self.active = false;
+        result
     }
 }
 
@@ -312,7 +448,11 @@ impl StreamBorrow {
             }
             stream.in_flight = Some(sequence);
             stream.pulled = false;
-            stream.batch = Some(batch);
+            let writer = stream
+                .result_writer
+                .as_mut()
+                .ok_or(DesktopSqlStreamSinkError::ResultStoreUnavailable)?;
+            writer.write_page(&batch, &encoded)?;
             DesktopSqlStreamReady {
                 operation_id: self.operation_id,
                 sequence,

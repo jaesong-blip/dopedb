@@ -17,6 +17,14 @@ import {
   DATA_GRID_ROW_HEIGHT,
   DATA_GRID_ROW_NUMBER_WIDTH,
 } from "../design-system/dataGridGeometry";
+import type { SqlStreamRowSource } from "../features/queries/domain";
+import {
+  clearSqlResultPageCache,
+  SQL_RESULT_CACHE_MAX_PAGES,
+  retainSqlStreamBatch,
+  sqlResultRowAt,
+  subscribeSqlResultPages,
+} from "../features/queries/resultPageCache";
 
 const offsets = Array.from(
   { length: 51 },
@@ -25,9 +33,9 @@ const offsets = Array.from(
 );
 
 describe("DataGridVirtual window", () => {
-  it("keeps a 50k by 50 grid bounded at a 360px viewport", () => {
-    const window = virtualGridWindow(50_000, 50, offsets, {
-      top: 20_000 * DATA_GRID_ROW_HEIGHT,
+  it("keeps a 1m by 50 grid bounded at a 360px viewport", () => {
+    const window = virtualGridWindow(1_000_000, 50, offsets, {
+      top: 500_000 * DATA_GRID_ROW_HEIGHT,
       left: 2_000,
       width: 360,
       height: 240,
@@ -35,7 +43,7 @@ describe("DataGridVirtual window", () => {
     const cellCount =
       (window.endRow - window.startRow) * window.visibleColumns.length;
     expect(window.startRow).toBeGreaterThan(0);
-    expect(window.endRow).toBeLessThan(50_000);
+    expect(window.endRow).toBeLessThan(1_000_000);
     expect(window.visibleColumns.length).toBeLessThan(15);
     expect(cellCount).toBeLessThan(400);
   });
@@ -107,5 +115,58 @@ describe("DataGridVirtual window", () => {
     expect(gridExpressionIssue("orderBy", "city DESC LIMIT 5000")).toBe(
       "clauseBoundary",
     );
+
+    const capability = "a".repeat(64);
+    const source: SqlStreamRowSource = {
+      operationId: "00000000-0000-0000-0000-000000000123",
+      capability,
+      pageRows: 256,
+      rowCount: 1_000_000,
+      complete: true,
+    };
+    for (let sequence = 0; sequence <= SQL_RESULT_CACHE_MAX_PAGES; sequence += 1) {
+      retainSqlStreamBatch(source, {
+        operationId: source.operationId!,
+        resultCapability: capability,
+        sequence,
+        columns: ["id"],
+        rows: Array.from({ length: 256 }, (_, row) => [sequence * 256 + row]),
+      });
+    }
+    expect(sqlResultRowAt(source, 0)).toBeUndefined();
+    expect(sqlResultRowAt(source, SQL_RESULT_CACHE_MAX_PAGES * 256)).toEqual([
+      SQL_RESULT_CACHE_MAX_PAGES * 256,
+    ]);
+
+    clearSqlResultPageCache();
+    retainSqlStreamBatch(source, {
+      operationId: source.operationId!,
+      resultCapability: capability,
+      sequence: 0,
+      columns: ["id"],
+      rows: [[0]],
+    });
+    let evictionNotifications = 0;
+    const unsubscribe = subscribeSqlResultPages(source, () => {
+      evictionNotifications += 1;
+    });
+    for (let index = 0; index < 4; index += 1) {
+      const other = {
+        ...source,
+        operationId: `00000000-0000-0000-0000-${String(index + 200).padStart(12, "0")}`,
+        capability: String(index + 1).repeat(64),
+      };
+      retainSqlStreamBatch(other, {
+        operationId: other.operationId,
+        resultCapability: other.capability,
+        sequence: 0,
+        columns: ["id"],
+        rows: [[index]],
+      });
+    }
+    expect(sqlResultRowAt(source, 0)).toBeUndefined();
+    expect(evictionNotifications).toBe(1);
+    unsubscribe();
+    clearSqlResultPageCache();
   });
 });

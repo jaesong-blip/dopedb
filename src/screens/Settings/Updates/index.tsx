@@ -6,6 +6,7 @@ import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updat
 import { Icon, type IconName } from "../../../components/Icon";
 import InfoTip from "../../../components/InfoTip";
 import { Button } from "../../../design-system/components/Button";
+import { ProgressBar } from "../../../design-system/components/Progress";
 import {
   StatusBadge,
   type StatusTone,
@@ -196,12 +197,10 @@ export default function Updates({
 
         {state === "downloading" && (
           <div className="tw:grid tw:gap-2 tw:border-b tw:border-border-subtle tw:py-3">
-            <div className="tw:h-2 tw:w-full tw:overflow-hidden tw:rounded-full tw:border tw:border-border-subtle tw:bg-muted">
-              <span
-                className="tw:block tw:h-full tw:min-w-3 tw:rounded-full tw:bg-primary tw:transition-[width] tw:duration-200"
-                style={{ width: `${progress ?? 12}%` }}
-              />
-            </div>
+            <ProgressBar
+              value={progress}
+              label={t("updates.downloadingFallback")}
+            />
             <div className="tw:text-muted-foreground">
               {progress == null
                 ? t("updates.received", {

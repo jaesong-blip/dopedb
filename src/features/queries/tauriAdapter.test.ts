@@ -22,8 +22,10 @@ import {
 } from "../queryServices/tauriAdapter";
 import type { SqlOperationProposal } from "./domain";
 import {
+  exportSqlResult,
   inspectSql,
   proposeSql,
+  readSqlResultPage,
   runSqlReadPage,
   runSqlReadStream,
   runSqlStream,
@@ -103,7 +105,7 @@ describe("query Tauri adapter", () => {
     });
 
     const serviceSession: QueryServiceSession = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: "document-1:1",
       documentId: "document-1",
       connectionId: "00000000-0000-0000-0000-000000000001",
@@ -161,6 +163,26 @@ describe("query Tauri adapter", () => {
     await expect(listQueryServiceSessions(serviceScope)).rejects.toThrow(
       "Invalid Services session terminal state",
     );
+    invokeMock.mockResolvedValueOnce([
+      {
+        ...serviceSession,
+        schemaVersion: 1,
+        status: "cancelled",
+        result: {
+          kind: "stream",
+          sql: "SELECT retired_rows",
+          stream: { rowSource: { chunkIndex: { chunks: [[["secret"]]] } } },
+          maxRows: 1000,
+        },
+      },
+    ]);
+    await expect(listQueryServiceSessions(serviceScope)).resolves.toEqual([
+      expect.objectContaining({
+        schemaVersion: 2,
+        status: "cancelled",
+        result: { kind: "none" },
+      }),
+    ]);
   });
 
   it("collects a bounded table page through one atomic read stream", async () => {
@@ -287,7 +309,7 @@ describe("query Tauri adapter", () => {
           durationMs: number;
         }) => void)
       | undefined;
-    invokeMock.mockImplementation((command) => {
+    invokeMock.mockImplementation((command, payload) => {
       if (command === "pull_sql_stream_batch") {
         return Promise.resolve({
           operationId: "operation-1",
@@ -299,6 +321,22 @@ describe("query Tauri adapter", () => {
       if (command === "run_sql_stream") {
         return new Promise((resolve) => {
           resolveReceipt = resolve;
+        });
+      }
+      if (command === "read_sql_result_page") {
+        return Promise.resolve({
+          operationId: "operation-1",
+          sequence: 0,
+          columns: ["id"],
+          rows: [[1]],
+        });
+      }
+      if (command === "export_sql_result") {
+        const exportId = (payload as { exportId: string }).exportId;
+        return Promise.resolve({
+          exportId,
+          operationId: "operation-1",
+          rowsWritten: 3,
         });
       }
       return Promise.resolve(true);
@@ -322,7 +360,13 @@ describe("query Tauri adapter", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(batches).toEqual([
-      { operationId: "operation-1", sequence: 0, columns: ["id"], rows: [[1]] },
+      {
+        operationId: "operation-1",
+        sequence: 0,
+        columns: ["id"],
+        rows: [[1]],
+        resultCapability: capability,
+      },
     ]);
     expect(invokeMock).toHaveBeenLastCalledWith("ack_sql_stream", {
       operationId: "operation-1",
@@ -336,6 +380,48 @@ describe("query Tauri adapter", () => {
       durationMs: 7,
     });
     await expect(controller.completion).resolves.toMatchObject({ rowCount: 3 });
+
+    await expect(
+      readSqlResultPage(
+        { operationId: "operation-1", capability },
+        0,
+      ),
+    ).resolves.toMatchObject({ sequence: 0, rows: [[1]] });
+    expect(invokeMock).toHaveBeenLastCalledWith("read_sql_result_page", {
+      operationId: "operation-1",
+      sequence: 0,
+      capability,
+    });
+
+    const progress = vi.fn();
+    const exportController = exportSqlResult(
+      { operationId: "operation-1", capability },
+      "csv",
+      "query.csv",
+      progress,
+    );
+    channels[channels.length - 1]?.onmessage?.({
+      exportId: exportController.exportId,
+      operationId: "operation-1",
+      rowsWritten: 1,
+      totalRows: 3,
+    });
+    expect(progress).toHaveBeenCalledWith(
+      expect.objectContaining({ rowsWritten: 1, totalRows: 3 }),
+    );
+    await expect(exportController.completion).resolves.toMatchObject({
+      operationId: "operation-1",
+      rowsWritten: 3,
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith(
+      "export_sql_result",
+      expect.objectContaining({
+        operationId: "operation-1",
+        capability,
+        format: "csv",
+        suggestedName: "query.csv",
+      }),
+    );
   });
 
   it("atomically plans and streams an auto-run read in one IPC request", async () => {

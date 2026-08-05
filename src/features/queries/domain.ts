@@ -1,5 +1,7 @@
 // Query's public DTOs are generated from the Rust model/receipt contracts.  Keeping this
 // module as the only frontend owner preserves existing imports without a hand-written mirror.
+import { retainSqlStreamBatch } from "./resultPageCache";
+
 export type {
   Classification,
   PreviewMode,
@@ -13,11 +15,16 @@ export type {
 
 // Desktop-only channel payload. Broker, CLI, dashboard, and legacy run receipts
 // deliberately keep their bounded materialized contract.
-export type SqlStreamBatch = {
+export type SqlStreamBatchWire = {
   operationId: string;
   sequence: number;
   columns: string[];
   rows: unknown[][];
+};
+
+export type SqlStreamBatch = SqlStreamBatchWire & {
+  /** One renderer-local bearer capability; never included in a row page file. */
+  resultCapability: string;
 };
 
 /** Small Channel notification; row data is pulled with this exact capability. */
@@ -87,80 +94,25 @@ export type SqlStreamViewState = {
   error: string | null;
 };
 
-/** Snapshot view over an append-only, random-access chunk index. */
+/** Serializable handle over a Rust-owned, immutable local result artifact. */
 export type SqlStreamRowSource = {
-  /**
-   * A deliberately shared, append-only index.  The SQL stream reducer is its
-   * only writer; each source carries its own row-count snapshot, so older
-   * renders cannot read rows appended by a newer render.  This avoids copying
-   * the whole chunk index for every 256-row Channel page.
-   */
-  chunkIndex: SqlStreamChunkIndex;
+  operationId: string | null;
+  capability: string | null;
+  pageRows: number;
   rowCount: number;
-};
-
-/** A batch's stable range in its owner's append-only index. */
-export type SqlStreamRowChunk = {
-  start: number;
-  rows: readonly unknown[][];
-};
-
-/** Owned by one stream reducer; consumers must treat it as append-only. */
-export type SqlStreamChunkIndex = {
-  chunks: SqlStreamRowChunk[];
+  complete: boolean;
 };
 
 export const SQL_STREAM_MAX_ROWS_PER_BATCH = 256;
 
 export function emptySqlStreamRows(): SqlStreamRowSource {
-  return { chunkIndex: { chunks: [] }, rowCount: 0 };
-}
-
-export function appendSqlStreamRows(
-  source: SqlStreamRowSource,
-  rows: readonly unknown[][],
-): SqlStreamRowSource {
-  if (!rows.length) return source;
-  // `chunkIndex` is intentionally not persistent. The stream reducer is the
-  // single writer and every returned source has a fixed `rowCount` snapshot.
-  // Appending is therefore amortized O(1), while row lookup remains O(log B).
-  source.chunkIndex.chunks.push({ start: source.rowCount, rows });
   return {
-    chunkIndex: source.chunkIndex,
-    rowCount: source.rowCount + rows.length,
+    operationId: null,
+    capability: null,
+    pageRows: SQL_STREAM_MAX_ROWS_PER_BATCH,
+    rowCount: 0,
+    complete: false,
   };
-}
-
-export function sqlStreamRowAt(
-  source: SqlStreamRowSource,
-  index: number,
-): readonly unknown[] | undefined {
-  if (index < 0 || index >= source.rowCount) return undefined;
-  let low = 0;
-  const chunks = source.chunkIndex.chunks;
-  let high = chunks.length - 1;
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const chunk = chunks[middle];
-    if (index < chunk.start) high = middle - 1;
-    else if (
-      index >= Math.min(chunk.start + chunk.rows.length, source.rowCount)
-    )
-      low = middle + 1;
-    else return chunk.rows[index - chunk.start];
-  }
-  return undefined;
-}
-
-export function* iterateSqlStreamRows(
-  source: SqlStreamRowSource,
-): Generator<readonly unknown[]> {
-  for (const chunk of source.chunkIndex.chunks) {
-    const remaining = source.rowCount - chunk.start;
-    if (remaining <= 0) return;
-    for (let index = 0; index < Math.min(chunk.rows.length, remaining); index += 1)
-      yield chunk.rows[index];
-  }
 }
 
 export function emptySqlStreamView(runId = 0): SqlStreamViewState {
@@ -206,13 +158,31 @@ export function acceptSqlStreamBatch(
     return null;
   if (state.columns.length && !sameColumns(state.columns, batch.columns))
     return null;
+  const sourceOperationId = state.rowSource.operationId ?? batch.operationId;
+  const sourceCapability =
+    state.rowSource.capability ?? batch.resultCapability;
+  if (
+    sourceOperationId !== batch.operationId ||
+    sourceCapability !== batch.resultCapability ||
+    batch.resultCapability.length !== 64 ||
+    !/^[0-9a-f]+$/i.test(batch.resultCapability)
+  )
+    return null;
+  const rowSource = {
+    operationId: sourceOperationId,
+    capability: sourceCapability,
+    pageRows: SQL_STREAM_MAX_ROWS_PER_BATCH,
+    rowCount: state.rowCount + batch.rows.length,
+    complete: false,
+  } satisfies SqlStreamRowSource;
+  retainSqlStreamBatch(rowSource, batch);
   return {
     ...state,
     phase: "streaming",
     operationId: batch.operationId,
     nextSequence: state.nextSequence + 1,
     columns: state.columns.length ? state.columns : [...batch.columns],
-    rowSource: appendSqlStreamRows(state.rowSource, batch.rows),
+    rowSource,
     rowCount: state.rowCount + batch.rows.length,
   };
 }
@@ -244,5 +214,10 @@ export function finishSqlStream(
     rowCount: receipt.rowCount,
     truncated: receipt.truncated,
     durationMs: receipt.durationMs,
+    rowSource: {
+      ...state.rowSource,
+      rowCount: receipt.rowCount,
+      complete: true,
+    },
   };
 }

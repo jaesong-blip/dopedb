@@ -144,9 +144,10 @@ flowchart TB
     ERD engine은 아니다.
   - Catalog V2와 ERD 진입점으로 확장한다.
 - `src/lib/export.ts`
-  - 현재 frontend가 보유한 result page를 Blob으로 저장하는 범위다.
-  - 전체 table/database streaming export의 기반으로 확장하지 않고 Rust Job Engine으로
-    교체한다.
+  - bounded table page와 materialized script result만 frontend Blob 경로를 사용한다.
+  - 임의 SQL stream은 `docs/contracts/local-query-results.md`의 Rust-owned disk result와
+    native CSV/JSON sink를 사용하며 WebView가 전체 result Blob을 만들지 않는다.
+  - 전체 table/database 이동은 별도 Rust Job Engine이 소유한다.
 - `src/lib/queries.ts`, `src/lib/queryClient.tsx`
   - backend read state와 event-driven invalidation을 유지한다.
 

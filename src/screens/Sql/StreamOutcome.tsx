@@ -3,9 +3,13 @@
 import { useMemo, useState } from "react";
 
 import {
-  iterateSqlStreamRows,
   type SqlStreamViewState,
 } from "../../features/queries/domain";
+import {
+  collectCachedSqlResultRows,
+  SQL_RESULT_CACHE_MAX_PAGES,
+} from "../../features/queries/resultPageCache";
+import { useSqlResultPages } from "../../features/queries/useSqlResultPages";
 import DataGrid from "../../components/DataGrid";
 import {
   ResultWorkbenchFooter,
@@ -35,11 +39,25 @@ export default function StreamOutcome({
   const partial = stream.phase !== "complete";
   const [filterOpen, setFilterOpen] = useState(false);
   const [filter, setFilter] = useState("");
+  const filterRowLimit =
+    stream.rowSource.pageRows * SQL_RESULT_CACHE_MAX_PAGES;
+  useSqlResultPages(
+    stream.rowSource,
+    0,
+    stream.rowCount <= filterRowLimit ? stream.rowCount : 0,
+    stream.columns,
+  );
   const normalizedFilter = filter.trim().toLocaleLowerCase();
+  // The page cache is an external bounded store. The page hook triggers this
+  // render when async reads land, so this lookup must not be memoized only by
+  // the stable result handle.
+  const filterableRows = partial
+    ? null
+    : collectCachedSqlResultRows(stream.rowSource);
   const filteredRows = useMemo<JsonValue[][] | null>(() => {
-    if (partial || !normalizedFilter) return null;
+    if (!filterableRows || !normalizedFilter) return null;
     const rows: JsonValue[][] = [];
-    for (const row of iterateSqlStreamRows(stream.rowSource)) {
+    for (const row of filterableRows) {
       if (
         row.some((value) =>
           resultCellText(value)
@@ -51,7 +69,7 @@ export default function StreamOutcome({
       }
     }
     return rows;
-  }, [normalizedFilter, partial, stream.rowSource]);
+  }, [filterableRows, normalizedFilter]);
   const phaseLabel =
     stream.phase === "cancelled"
       ? t("sql.cancelled")
@@ -82,7 +100,7 @@ export default function StreamOutcome({
             partial={partial}
             filterOpen={filterOpen}
             filter={filter}
-            filterDisabled={partial}
+            filterDisabled={partial || filterableRows === null}
             onToggleFilter={() => {
               setFilterOpen((open) => !open);
               if (filterOpen) setFilter("");

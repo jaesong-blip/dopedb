@@ -74,7 +74,7 @@ pub(crate) fn validate_query_service_session_snapshot(
         });
     }
     let envelope: QueryServiceSessionEnvelope = serde_json::from_slice(&encoded)?;
-    if envelope.schema_version != 1 {
+    if !matches!(envelope.schema_version, 1 | 2) {
         return Err(AppError::Config(
             "Services snapshot schema version is unsupported".into(),
         ));
@@ -129,15 +129,24 @@ pub(crate) fn validate_query_service_session_snapshot(
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::Config("Services result kind is missing".into()))?;
     let valid_result = match status {
-        QueryServiceSessionStatus::Completed => {
-            matches!(result_kind, "materialized" | "stream" | "script")
-        }
+        QueryServiceSessionStatus::Completed => matches!(
+            result_kind,
+            "materialized" | "stream" | "script" | "unavailable"
+        ),
         QueryServiceSessionStatus::Failed => result_kind == "error",
-        QueryServiceSessionStatus::Cancelled => matches!(result_kind, "none" | "stream"),
+        QueryServiceSessionStatus::Cancelled => result_kind == "none",
     };
     if !valid_result {
         return Err(AppError::Config(
             "Services status and result kind are inconsistent".into(),
+        ));
+    }
+    if envelope.schema_version == 2 && result_kind == "stream" {
+        validate_disk_backed_stream_snapshot(&envelope.result)?;
+    }
+    if envelope.schema_version == 1 && result_kind == "unavailable" {
+        return Err(AppError::Config(
+            "legacy Services snapshots cannot declare unavailable results".into(),
         ));
     }
     Ok(QueryServiceSessionSnapshot {
@@ -147,6 +156,73 @@ pub(crate) fn validate_query_service_session_snapshot(
         status,
         snapshot,
     })
+}
+
+/// Retire legacy row-owning stream snapshots before they cross IPC again.
+/// The Services entry remains visible, but its old row chunks are discarded.
+pub(crate) fn project_query_service_session_snapshot(mut snapshot: Value) -> (Value, bool) {
+    if snapshot.get("schemaVersion").and_then(Value::as_u64) != Some(1)
+        || snapshot.pointer("/result/kind").and_then(Value::as_str) != Some("stream")
+    {
+        return (snapshot, false);
+    }
+    let sql = snapshot
+        .pointer("/result/sql")
+        .and_then(Value::as_str)
+        .or_else(|| snapshot.get("sql").and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_string();
+    snapshot["schemaVersion"] = Value::from(2);
+    if snapshot.get("status").and_then(Value::as_str) == Some("cancelled") {
+        snapshot["result"] = serde_json::json!({"kind": "none"});
+        return (snapshot, true);
+    }
+    snapshot["result"] = serde_json::json!({
+        "kind": "unavailable",
+        "sql": sql,
+        "reason": "legacyResultFormat"
+    });
+    (snapshot, true)
+}
+
+fn validate_disk_backed_stream_snapshot(result: &Value) -> AppResult<()> {
+    let stream = result
+        .get("stream")
+        .and_then(Value::as_object)
+        .ok_or_else(|| AppError::Config("Services stream state is missing".into()))?;
+    let source = stream
+        .get("rowSource")
+        .and_then(Value::as_object)
+        .ok_or_else(|| AppError::Config("Services result handle is missing".into()))?;
+    let operation_id = source
+        .get("operationId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::Config("Services result operation is missing".into()))?;
+    Uuid::parse_str(operation_id)
+        .map_err(|_| AppError::Config("Services result operation is invalid".into()))?;
+    let capability = source
+        .get("capability")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::Config("Services result capability is missing".into()))?;
+    if capability.len() != 64 || !capability.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(AppError::Config(
+            "Services result capability is invalid".into(),
+        ));
+    }
+    let page_rows = source.get("pageRows").and_then(Value::as_u64);
+    let row_count = source.get("rowCount").and_then(Value::as_u64);
+    let stream_row_count = stream.get("rowCount").and_then(Value::as_u64);
+    if page_rows != Some(256)
+        || row_count != stream_row_count
+        || source.get("complete").and_then(Value::as_bool) != Some(true)
+        || stream.get("operationId").and_then(Value::as_str) != Some(operation_id)
+        || stream.get("phase").and_then(Value::as_str) != Some("complete")
+    {
+        return Err(AppError::Config(
+            "Services result handle metadata is inconsistent".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_bounded_label(label: &str, value: &str, max_bytes: usize) -> AppResult<()> {
@@ -206,13 +282,40 @@ pub(crate) struct DesktopSqlProposalRequest {
 /// One bounded desktop-only page of a read result. It is intentionally not a
 /// model contract: CLI, Broker, dashboards, and bounded execution retain their
 /// materialized bounded receipt wire.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DesktopSqlStreamBatch {
     pub(crate) operation_id: OperationId,
     pub(crate) sequence: u64,
     pub(crate) columns: Vec<String>,
     pub(crate) rows: Vec<Vec<serde_json::Value>>,
+}
+
+/// Renderer-requested format for an immutable local SQL result artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum DesktopSqlResultExportFormat {
+    Csv,
+    Json,
+}
+
+/// Small progress notification. Result rows and filesystem paths never enter it.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DesktopSqlResultExportProgress {
+    pub(crate) export_id: uuid::Uuid,
+    pub(crate) operation_id: OperationId,
+    pub(crate) rows_written: usize,
+    pub(crate) total_rows: usize,
+}
+
+/// Completed bounded export receipt; the native destination remains private.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DesktopSqlResultExportReceipt {
+    pub(crate) export_id: uuid::Uuid,
+    pub(crate) operation_id: OperationId,
+    pub(crate) rows_written: usize,
 }
 
 /// Small notification sent over Tauri Channel; rows remain in the feature-owned
@@ -236,6 +339,8 @@ pub(crate) enum DesktopSqlStreamSinkError {
     InvalidAcknowledgement,
     BatchTooLarge,
     Cancelled,
+    ResultStoreUnavailable,
+    ResultReceiptMismatch,
 }
 
 impl std::fmt::Display for DesktopSqlStreamSinkError {
@@ -258,6 +363,12 @@ impl std::fmt::Display for DesktopSqlStreamSinkError {
                 formatter.write_str("desktop query stream batch exceeds its safe wire limit")
             }
             Self::Cancelled => formatter.write_str("query cancelled"),
+            Self::ResultStoreUnavailable => {
+                formatter.write_str("desktop query result storage is unavailable")
+            }
+            Self::ResultReceiptMismatch => {
+                formatter.write_str("desktop query result receipt did not match stored pages")
+            }
         }
     }
 }

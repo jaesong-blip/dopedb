@@ -8,12 +8,33 @@ import type {
   SqlInspection,
   ManualTransactionStatus,
   SqlOperationProposal,
-  SqlStreamBatch,
+  SqlStreamBatchWire,
   SqlStreamBatchHandler,
   SqlStreamController,
   SqlStreamReady,
   SqlStreamReceipt,
 } from "./domain";
+
+export type SqlResultExportFormat = "csv" | "json";
+
+export type SqlResultExportProgress = {
+  exportId: string;
+  operationId: string;
+  rowsWritten: number;
+  totalRows: number;
+};
+
+export type SqlResultExportReceipt = {
+  exportId: string;
+  operationId: string;
+  rowsWritten: number;
+};
+
+export type SqlResultExportController = {
+  exportId: string;
+  completion: Promise<SqlResultExportReceipt | null>;
+  cancel: () => Promise<void>;
+};
 
 export function getManualTransaction(
   id: string,
@@ -253,7 +274,7 @@ async function pullAcceptAndAcknowledgeStreamBatch(
       await bestEffortCancel();
       return;
     }
-    const batch = await invoke<SqlStreamBatch | null>("pull_sql_stream_batch", {
+    const batch = await invoke<SqlStreamBatchWire | null>("pull_sql_stream_batch", {
       operationId: ready.operationId,
       sequence: ready.sequence,
       capability: ready.capability,
@@ -267,7 +288,7 @@ async function pullAcceptAndAcknowledgeStreamBatch(
     }
     if (!isOpen()) return;
     markFirstBatchReceived();
-    await onBatch(batch, {
+    await onBatch({ ...batch, resultCapability: ready.capability }, {
       operationId: ready.operationId,
       capability: ready.capability,
       cancel: async () => {
@@ -290,6 +311,74 @@ async function pullAcceptAndAcknowledgeStreamBatch(
   } catch (error) {
     await fail(error);
   }
+}
+
+export function readSqlResultPage(
+  source: { operationId: string | null; capability: string | null },
+  sequence: number,
+): Promise<SqlStreamBatchWire> {
+  if (!source.operationId || !source.capability) {
+    return Promise.reject(new Error("SQL result handle is incomplete"));
+  }
+  return invoke("read_sql_result_page", {
+    operationId: source.operationId,
+    sequence,
+    capability: source.capability,
+  });
+}
+
+export function exportSqlResult(
+  source: { operationId: string | null; capability: string | null },
+  format: SqlResultExportFormat,
+  suggestedName: string,
+  onProgress: (progress: SqlResultExportProgress) => void,
+): SqlResultExportController {
+  if (!source.operationId || !source.capability) {
+    return {
+      exportId: "",
+      completion: Promise.reject(new Error("SQL result handle is incomplete")),
+      cancel: async () => undefined,
+    };
+  }
+  const exportId = globalThis.crypto.randomUUID();
+  const operationId = source.operationId;
+  const capability = source.capability;
+  const channel = new Channel<SqlResultExportProgress>();
+  channel.onmessage = onProgress;
+  const completion = invoke<SqlResultExportReceipt | null>(
+    "export_sql_result",
+    {
+      exportId,
+      operationId,
+      capability,
+      format,
+      suggestedName,
+      onProgress: channel,
+    },
+  )
+    .then((receipt) => {
+      if (
+        receipt &&
+        (receipt.exportId !== exportId || receipt.operationId !== operationId)
+      ) {
+        throw new Error("SQL result export receipt did not match its owner");
+      }
+      return receipt;
+    })
+    .finally(() => {
+      channel.onmessage = () => undefined;
+    });
+  return {
+    exportId,
+    completion,
+    cancel: async () => {
+      await invoke("cancel_sql_result_export", {
+        exportId,
+        operationId,
+        capability,
+      });
+    },
+  };
 }
 
 /** Collect one bounded auto-run read through the same atomic stream used by the SQL console. */
