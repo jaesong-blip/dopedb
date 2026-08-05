@@ -68,7 +68,8 @@ function lockAndRevalidate(tx: TransactionSql, input: {
       SELECT pg_advisory_xact_lock(hashtextextended(${integrationLock(input)}, 0))
       FROM authority
     ), receipt_scope AS MATERIALIZED (
-      SELECT receipt."id", receipt."resource_id" AS "resourceId"
+      SELECT receipt."id", receipt."resource_id" AS "resourceId",
+        resource."provider", resource."resource"
       FROM "workspace_control"."workspace_provider_discovery_receipt" receipt
       JOIN "workspace_control"."workspace_provider_integration" integration
         ON integration."organization_id" = receipt."organization_id"
@@ -91,6 +92,18 @@ function lockAndRevalidate(tx: TransactionSql, input: {
         AND integration."revocation_pending_at" IS NULL
         AND integration."revocation_claim_id" IS NULL
       FOR UPDATE OF receipt, integration, resource
+    ), branch_lock AS MATERIALIZED (
+      -- Branch deletion and import share this provider identity lock. If an
+      -- import wins, remote-start sees the new connection; if deletion wins,
+      -- the fresh import snapshot sees the durable delete fence.
+      SELECT pg_advisory_xact_lock(hashtextextended(
+        'provider-branch:' || ${input.organizationId} || ':'
+        || ${input.integrationId} || ':' || receipt_scope."provider" || ':'
+        || COALESCE(receipt_scope."resource" ->> 'project', '') || ':'
+        || COALESCE(receipt_scope."resource" ->> 'branch', ''),
+        0
+      ))
+      FROM receipt_scope
     ), resource_lock AS MATERIALIZED (
       -- A different idempotency key must not race the partial unique index on
       -- workspace_connection.provider_resource_id.  Lock the durable canonical
@@ -101,6 +114,7 @@ function lockAndRevalidate(tx: TransactionSql, input: {
         0
       ))
       FROM receipt_scope
+      JOIN branch_lock ON TRUE
     ), target_scope AS MATERIALIZED (
       -- Replacing a shared template preserves its UUID and every dashboard/grant
       -- reference. The target is locked after the canonical provider resource so
@@ -187,6 +201,20 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
         receipt."integration_generation" AS "integrationGeneration",
         resource."provider", resource."resource",
         resource."capability_manifest",
+        EXISTS (
+          SELECT 1
+          FROM "workspace_control"."workspace_provider_operation" deletion
+          WHERE deletion."organization_id" = receipt."organization_id"
+            AND deletion."integration_id" = receipt."integration_id"
+            AND deletion."integration_generation" = receipt."integration_generation"
+            AND deletion."provider" = 'neon'
+            AND deletion."kind" = 'neon.branch.delete'
+            AND deletion."resource_scope" = resource."resource" ->> 'project'
+            AND deletion."source_resource_id" = resource."resource" ->> 'branch'
+            AND deletion."state" IN (
+              'approved', 'claimed', 'remote_started', 'reconciling', 'succeeded'
+            )
+        ) AS "deletionBlocked",
         encode(digest(
           (
             jsonb_build_object(
@@ -309,12 +337,19 @@ function mutateFreshSnapshot(tx: TransactionSql, input: {
        AND connection."provider_resource" = scope."resource"
        AND connection."readonly_default" = TRUE
        AND connection."deleted_at" IS NULL
-    ), resource_conflict AS MATERIALIZED (
+    ), connection_conflict AS MATERIALIZED (
       SELECT connection."id" FROM "workspace_control"."workspace_connection" connection JOIN scope
         ON connection."organization_id" = ${input.organizationId}
        AND connection."provider_resource_id" = scope."resourceId" AND connection."deleted_at" IS NULL
       WHERE NOT EXISTS (SELECT 1 FROM prior_key)
       FOR UPDATE OF connection
+    ), deletion_conflict AS MATERIALIZED (
+      SELECT scope."resourceId" FROM scope
+      WHERE scope."deletionBlocked"
+    ), resource_conflict AS MATERIALIZED (
+      SELECT "id" FROM connection_conflict
+      UNION ALL
+      SELECT "resourceId" FROM deletion_conflict
     ), fresh AS MATERIALIZED (
       SELECT scope.* FROM scope
       WHERE NOT EXISTS (SELECT 1 FROM prior_key) AND NOT EXISTS (SELECT 1 FROM resource_conflict)

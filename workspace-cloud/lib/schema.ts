@@ -403,7 +403,10 @@ export const workspaceProviderOperation = workspaceControl.table(
       name: "provider_operation_org_integration_fk",
     }).onDelete("cascade"),
     check("provider_operation_provider", sql`${table.provider} = 'neon'`),
-    check("provider_operation_kind", sql`${table.kind} = 'neon.branch.create'`),
+    check(
+      "provider_operation_kind",
+      sql`${table.kind} IN ('neon.branch.create', 'neon.branch.delete')`,
+    ),
     check(
       "provider_operation_state",
       sql`${table.state} IN (

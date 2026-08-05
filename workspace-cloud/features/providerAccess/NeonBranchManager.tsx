@@ -61,12 +61,17 @@ async function responseError(response: Response | null, fallback: string) {
   return typeof body?.error === "string" ? body.error : fallback;
 }
 
-function operationLabel(state: NeonBranchOperationState) {
+function operationLabel(operation: NeonBranchOperation) {
+  const state = operation.state;
   if (state === "awaiting_approval") return "승인 대기";
   if (state === "approved") return "실행 준비";
-  if (state === "claimed" || state === "remote_started") return "생성 시작";
+  if (state === "claimed" || state === "remote_started") {
+    return operation.plan.kind === "neon.branch.delete" ? "폐기 시작" : "생성 시작";
+  }
   if (state === "reconciling") return "Provider 확인 중";
-  if (state === "succeeded") return "생성 완료";
+  if (state === "succeeded") {
+    return operation.plan.kind === "neon.branch.delete" ? "폐기 확인됨" : "생성 완료";
+  }
   if (state === "needs_repair") return "복구 필요";
   if (state === "failed") return "실패";
   return "취소됨";
@@ -90,6 +95,25 @@ function warningLabel(code: string) {
     return "상속된 DopeDB 임시 역할을 폐기합니다";
   }
   if (code === "NEON_HEAD_RESOLVED_AT_EXECUTION") return "실행 시점의 최신 head를 사용합니다";
+  if (code === "NEON_BRANCH_CONNECTIONS_TERMINATE") {
+    return "Provider 삭제가 시작되면 branch endpoint 연결이 종료됩니다";
+  }
+  if (code === "NEON_SOFT_DELETE_RECOVERY_NOT_GUARANTEED") {
+    return "복구 가능 기간은 Neon 계정 capability에 따라 달라지며 DopeDB가 보장하지 않습니다";
+  }
+  return code;
+}
+
+function deletionBlockerLabel(code: string) {
+  if (code === "CREATE_OPERATION_INCOMPLETE") return "생성 작업이 아직 완료되지 않았습니다";
+  if (code === "BRANCH_NOT_READY") return "Provider 작업이 진행 중입니다";
+  if (code === "ROOT_BRANCH") return "root 브랜치는 폐기할 수 없습니다";
+  if (code === "DEFAULT_BRANCH") return "default 브랜치는 폐기할 수 없습니다";
+  if (code === "PROTECTED_BRANCH") return "보호 브랜치는 폐기할 수 없습니다";
+  if (code === "CHILD_BRANCHES") return "먼저 child 브랜치를 정리해야 합니다";
+  if (code === "WORKSPACE_CONNECTIONS") return "이 브랜치를 참조하는 공유 연결이 있습니다";
+  if (code === "ACTIVE_LEASES") return "활성 자격증명 lease가 남아 있습니다";
+  if (code === "PROVIDER_RESTRICTED") return "Neon이 현재 이 변경을 제한합니다";
   return code;
 }
 
@@ -306,6 +330,55 @@ export function NeonBranchManager({
     setMutation("");
   }
 
+  async function planDelete() {
+    if (
+      !selectedTarget
+      || !selectedBranch?.deletion?.canPlan
+      || mutation
+    ) {
+      return;
+    }
+    setMutation("delete-plan");
+    setError("");
+    const response = await fetch(
+      `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`
+      + `/provider-integrations/${encodeURIComponent(selectedTarget.integration.id)}`
+      + "/neon-branches/operations",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "planDelete",
+          request: {
+            idempotencyKey: crypto.randomUUID(),
+            projectId: selectedTarget.projectId,
+            branchId: selectedBranch.id,
+          },
+        }),
+      },
+    ).catch(() => null);
+    if (!response?.ok) {
+      setError(await responseError(response, "Neon 브랜치 폐기 계획을 만들지 못했습니다."));
+      setMutation("");
+      return;
+    }
+    const operation = parseNeonBranchPlanResponse(await response.json().catch(() => null));
+    if (
+      !operation
+      || operation.plan.kind !== "neon.branch.delete"
+      || operation.plan.integrationId !== selectedTarget.integration.id
+    ) {
+      setError("Neon 브랜치 폐기 계획 응답이 올바르지 않습니다.");
+      setMutation("");
+      return;
+    }
+    setOperations((current) => [
+      operation,
+      ...current.filter((item) => item.id !== operation.id),
+    ]);
+    setMutation("");
+  }
+
   const mutateOperation = useCallback(async (
     operation: NeonBranchOperation,
     action: "approve" | "reject" | "execute",
@@ -313,14 +386,15 @@ export function NeonBranchManager({
     if (!selectedTarget || mutation) return;
     setMutation(`${action}:${operation.id}`);
     setError("");
+    const deleting = operation.plan.kind === "neon.branch.delete";
     const body = action === "execute"
       ? {
-        action: "executeCreate",
+        action: deleting ? "executeDelete" : "executeCreate",
         operationId: operation.id,
         planHash: operation.planHash,
       }
       : {
-        action: "decideCreate",
+        action: deleting ? "decideDelete" : "decideCreate",
         operationId: operation.id,
         planHash: operation.planHash,
         decision: action === "approve" ? "approved" : "rejected",
@@ -461,6 +535,37 @@ export function NeonBranchManager({
         </aside>
 
         <main className="tw:grid tw:min-w-0 tw:content-start tw:gap-4 tw:p-4">
+          {selectedBranch?.deletion ? (
+            <section className="tw:grid tw:gap-3 tw:border-b tw:border-border tw:pb-4" aria-labelledby="neon-delete-title">
+              <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[560px]:grid">
+                <div className="tw:grid tw:min-w-0 tw:gap-1">
+                  <strong id="neon-delete-title" className="tw:truncate tw:text-xs tw:text-foreground">
+                    DopeDB 소유 브랜치 · {selectedBranch.name}
+                  </strong>
+                  <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    폐기는 별도 계획과 승인을 거치며 Neon의 기본 복구 가능 삭제만 사용합니다.
+                  </small>
+                </div>
+                {selectedBranch.deletion.canPlan ? (
+                  <ControlButton
+                    tone="danger"
+                    onClick={() => void planDelete()}
+                    disabled={Boolean(mutation)}
+                  >
+                    {mutation === "delete-plan" ? "계획 만드는 중" : "폐기 계획 만들기"}
+                  </ControlButton>
+                ) : null}
+              </div>
+              {selectedBranch.deletion.blockerCodes.length > 0 ? (
+                <ul className="tw:m-0 tw:grid tw:list-none tw:gap-1 tw:border tw:border-warning/40 tw:bg-warning/10 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-warning">
+                  {selectedBranch.deletion.blockerCodes.map((code) => (
+                    <li key={code}>· {deletionBlockerLabel(code)}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          ) : null}
+
           {showCreate ? (
             <section className="tw:grid tw:gap-4 tw:border-b tw:border-border tw:pb-5" aria-labelledby="neon-create-title">
               <div className="tw:grid tw:gap-1">
@@ -593,18 +698,24 @@ export function NeonBranchManager({
                   <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[560px]:grid">
                     <div className="tw:grid tw:min-w-0 tw:gap-1">
                       <strong className="tw:truncate tw:text-xs tw:text-foreground">
-                        {operation.plan.source.name} → {operation.plan.target.name}
+                        {operation.plan.kind === "neon.branch.delete"
+                          ? `${operation.plan.target.name} 폐기`
+                          : `${operation.plan.source.name} → ${operation.plan.target.name}`}
                       </strong>
                       <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                        {operation.plan.target.initSource === "schema-only" ? "스키마만" : "데이터 + 스키마"}
-                        {operation.plan.target.endpoint === "read_write" ? " · endpoint 포함" : " · checkpoint"}
+                        {operation.plan.kind === "neon.branch.delete"
+                          ? `soft delete · endpoint ${operation.plan.references.endpointIds.length}개 · 연결 0개 · lease 0개`
+                          : <>
+                            {operation.plan.target.initSource === "schema-only" ? "스키마만" : "데이터 + 스키마"}
+                            {operation.plan.target.endpoint === "read_write" ? " · endpoint 포함" : " · checkpoint"}
+                          </>}
                       </small>
                     </div>
                     <span
                       className="tw:shrink-0 tw:border tw:border-border tw:px-2 tw:py-1 tw:font-mono tw:text-2xs tw:text-muted-foreground tw:data-[tone=danger]:border-danger/40 tw:data-[tone=danger]:text-danger tw:data-[tone=success]:border-success/40 tw:data-[tone=success]:text-success tw:data-[tone=warning]:border-warning/40 tw:data-[tone=warning]:text-warning"
                       data-tone={operationTone(operation.state)}
                     >
-                      {operationLabel(operation.state)}
+                      {operationLabel(operation)}
                     </span>
                   </div>
                   {operation.plan.warningCodes.length > 0 ? (
@@ -619,7 +730,8 @@ export function NeonBranchManager({
                         운영 데이터 계획은 다른 관리자 계정에서 승인해야 합니다. 이 화면을 다른 관리자에게 열어 달라고 요청하세요.
                       </p>
                     ) : null}
-                  {operation.managedAccessState === "bootstrap_required" ? (
+                  {operation.plan.kind === "neon.branch.create"
+                    && operation.managedAccessState === "bootstrap_required" ? (
                     <p className="tw:m-0 tw:border tw:border-warning/40 tw:bg-warning/10 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-warning">
                       브랜치는 생성됐지만 아직 공유 DB가 아닙니다. 위의 DB 추가에서 새 브랜치를 선택해 최소권한 준비와 DB 검증을 완료하세요.
                     </p>
@@ -640,7 +752,7 @@ export function NeonBranchManager({
                       ) : null}
                       {operation.canApprove ? (
                         <ControlButton
-                          tone="primary"
+                          tone={operation.plan.kind === "neon.branch.delete" ? "danger" : "primary"}
                           onClick={() => void mutateOperation(operation, "approve")}
                           disabled={Boolean(mutation)}
                         >
@@ -649,11 +761,15 @@ export function NeonBranchManager({
                       ) : null}
                       {operation.canExecute ? (
                         <ControlButton
-                          tone="primary"
+                          tone={operation.plan.kind === "neon.branch.delete" ? "danger" : "primary"}
                           onClick={() => void mutateOperation(operation, "execute")}
                           disabled={Boolean(mutation)}
                         >
-                          {operation.needsCredentialFenceRecovery
+                          {operation.plan.kind === "neon.branch.delete"
+                            ? operationBusy(operation)
+                              ? "폐기 상태 다시 확인"
+                              : "브랜치 폐기 실행"
+                            : operation.needsCredentialFenceRecovery
                             ? "자격증명 경계 복구"
                             : operationBusy(operation)
                               ? "상태 다시 확인"
@@ -666,7 +782,7 @@ export function NeonBranchManager({
               ))}
               {!loading && operations.length === 0 ? (
                 <p className="tw:m-0 tw:border-b tw:border-border tw:py-6 tw:text-center tw:text-2xs tw:text-muted-foreground">
-                  아직 브랜치 생성 계획이 없습니다.
+                  아직 브랜치 작업 계획이 없습니다.
                 </p>
               ) : null}
             </div>

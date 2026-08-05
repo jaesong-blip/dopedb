@@ -37,17 +37,23 @@ import {
   type NeonBranchInventory,
 } from "./neon-branches";
 import type { NeonBranchCreatePlan } from "./neon-branch-plan";
+import type { NeonBranchDeletePlan } from "./neon-branch-delete-plan";
 import {
   neonBranchMutationBody,
   parseNeonBranchAnnotation,
   parseNeonBranchCreateReceipt,
+  parseNeonBranchDeleteReceipt,
   parseNeonBranchEndpoints,
   parseNeonBranchOperation,
   type NeonBranchCreateReceipt,
+  type NeonBranchDeleteReceipt,
   type NeonOperationStatus,
 } from "./neon-branch-mutation";
 
-export type { NeonBranchCreateReceipt } from "./neon-branch-mutation";
+export type {
+  NeonBranchCreateReceipt,
+  NeonBranchDeleteReceipt,
+} from "./neon-branch-mutation";
 
 const API_ORIGIN = "https://console.neon.tech/api/v2";
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -74,6 +80,20 @@ export type NeonBranchReconciliation = Readonly<{
     | "bootstrap_required"
     | "needs_repair"
     | "unavailable";
+  failureCode: string | null;
+}>;
+
+export type NeonBranchDeleteReconciliation = Readonly<{
+  status: "pending" | "ready" | "conflict" | "failed";
+  branchId: string;
+  providerOperationId: string | null;
+  providerOperationStatus: NeonOperationStatus | null;
+  endpointId: null;
+  databaseCount: null;
+  databaseFingerprint: null;
+  retiredInheritedRoleCount: null;
+  credentialFenceFingerprint: null;
+  managedAccessState: "unavailable";
   failureCode: string | null;
 }>;
 
@@ -406,6 +426,41 @@ export async function listNeonBranchInventory(
   return parseNeonBranchInventory(project, rows);
 }
 
+export async function listNeonBranchEndpointIds(
+  credential: NeonCredential,
+  projectId: string,
+  branchId: string,
+): Promise<readonly string[]> {
+  const body = object(await apiRequest(
+    credential,
+    `/projects/${apiSegment(projectId)}/branches/${apiSegment(branchId)}/endpoints`,
+  ));
+  return parseNeonBranchEndpoints(body.endpoints, branchId)
+    .map((endpoint) => endpoint.id)
+    .sort();
+}
+
+export async function verifyNeonBranchOwnership(input: {
+  credential: NeonCredential;
+  projectId: string;
+  branchId: string;
+  operationId: string;
+  planHash: string;
+  ownershipMarker: string;
+}) {
+  const body = object(await apiRequest(
+    input.credential,
+    `/projects/${apiSegment(input.projectId)}/branches/${apiSegment(input.branchId)}`,
+  ));
+  const branch = object(body.branch);
+  const properties = parseNeonBranchAnnotation(body.annotation, input.branchId);
+  return branch.id === input.branchId
+    && branch.project_id === input.projectId
+    && properties?.["dopedb-operation-id"] === input.operationId
+    && properties?.["dopedb-plan-hash"] === input.planHash
+    && properties?.["dopedb-ownership"] === input.ownershipMarker;
+}
+
 export async function listNeonBranches(
   credential: NeonCredential,
   project: string,
@@ -493,6 +548,75 @@ export async function createNeonBranch(input: {
   }
   throw new NeonBranchMutationRequestError(
     "Neon branch creation retry boundary failed",
+    502,
+    true,
+    false,
+  );
+}
+
+export async function deleteNeonBranch(input: {
+  credential: NeonCredential;
+  plan: NeonBranchDeletePlan;
+}): Promise<NeonBranchDeleteReceipt> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(
+      `${API_ORIGIN}/projects/${apiSegment(input.plan.target.projectId)}`
+        + `/branches/${apiSegment(input.plan.target.branchId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${input.credential.apiKey}`,
+          "x-request-id": input.plan.operationId,
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      },
+    ).catch(() => {
+      throw new NeonBranchMutationRequestError(
+        "Neon branch deletion response was not received",
+        502,
+        false,
+        false,
+      );
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      const explicitlyRetrySafe = response.status === 423 || response.status === 503;
+      if (explicitlyRetrySafe && attempt === 0) {
+        await mutationRetryDelay();
+        continue;
+      }
+      const status = response.status === 401
+        ? 424
+        : response.status >= 500
+          ? 502
+          : response.status;
+      throw new NeonBranchMutationRequestError(
+        "Neon rejected branch deletion",
+        status,
+        true,
+        explicitlyRetrySafe,
+      );
+    }
+    if (response.status !== 200 && response.status !== 204) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new NeonBranchMutationRequestError(
+        "Neon returned an unexpected branch deletion response",
+        502,
+        true,
+        false,
+      );
+    }
+    return parseNeonBranchDeleteReceipt(
+      response.status === 204
+        ? null
+        : await boundedJson(response, MAX_NEON_MUTATION_RESPONSE_BYTES),
+      input.plan,
+    );
+  }
+  throw new NeonBranchMutationRequestError(
+    "Neon branch deletion retry boundary failed",
     502,
     true,
     false,
@@ -783,6 +907,71 @@ export async function reconcileNeonBranchCreate(input: {
       : "waiting_for_provider",
     failureCode: null,
   };
+}
+
+export async function reconcileNeonBranchDelete(input: {
+  credential: NeonCredential;
+  plan: NeonBranchDeletePlan;
+  providerOperationId: string | null;
+}): Promise<NeonBranchDeleteReconciliation> {
+  const inventory = await listNeonBranchInventory(
+    input.credential,
+    input.plan.target.projectId,
+  );
+  const branch = inventory.branches.find(
+    (candidate) => candidate.id === input.plan.target.branchId,
+  ) ?? null;
+  let operation = null;
+  if (input.providerOperationId) {
+    try {
+      operation = await projectOperation(
+        input.credential,
+        input.plan.target.projectId,
+        input.providerOperationId,
+      );
+    } catch (error) {
+      if (!(error instanceof ProviderRequestError) || error.status !== 404) throw error;
+    }
+  }
+  const base = {
+    branchId: input.plan.target.branchId,
+    providerOperationId: operation?.id ?? input.providerOperationId,
+    providerOperationStatus: operation?.status ?? null,
+    endpointId: null,
+    databaseCount: null,
+    databaseFingerprint: null,
+    retiredInheritedRoleCount: null,
+    credentialFenceFingerprint: null,
+    managedAccessState: "unavailable" as const,
+  };
+  if (operation && operation.branchId !== input.plan.target.branchId) {
+    return {
+      ...base,
+      status: "conflict",
+      failureCode: "NEON_DELETE_OPERATION_BRANCH_MISMATCH",
+    };
+  }
+  if (
+    operation
+    && ["failed", "error", "cancelled", "skipped"].includes(operation.status)
+  ) {
+    return {
+      ...base,
+      status: "failed",
+      failureCode: "NEON_DELETE_OPERATION_FAILED",
+    };
+  }
+  if (!branch && (!operation || operation.status === "finished")) {
+    return { ...base, status: "ready", failureCode: null };
+  }
+  if (branch && operation?.status === "finished") {
+    return {
+      ...base,
+      status: "conflict",
+      failureCode: "NEON_DELETE_RESOURCE_STILL_PRESENT",
+    };
+  }
+  return { ...base, status: "pending", failureCode: null };
 }
 
 export async function listNeonDatabases(

@@ -45,6 +45,7 @@ import managedAccessTargetRouteSource from "../../../workspace-cloud/app/api/v1/
 import providerOperationStoreSource from "../../../workspace-cloud/lib/provider-operation-store.ts?raw";
 import providerOperationMarkerSource from "../../../workspace-cloud/lib/provider-operation-marker.ts?raw";
 import providerOperationMigrationSource from "../../../workspace-cloud/drizzle/0016_first_changeling.sql?raw";
+import providerOperationKindMigrationSource from "../../../workspace-cloud/drizzle/0017_lying_hex.sql?raw";
 import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
 import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-permissions.ts?raw";
@@ -60,8 +61,13 @@ import {
   revalidateNeonBranchCreatePlan,
 } from "../../../workspace-cloud/lib/providers/neon-branch-plan";
 import {
+  buildNeonBranchDeletePlan,
+  revalidateNeonBranchDeletePlan,
+} from "../../../workspace-cloud/lib/providers/neon-branch-delete-plan";
+import {
   neonBranchMutationBody,
   parseNeonBranchCreateReceipt,
+  parseNeonBranchDeleteReceipt,
 } from "../../../workspace-cloud/lib/providers/neon-branch-mutation";
 import {
   neonInheritedRoleRetirementStatement,
@@ -560,6 +566,94 @@ describe("provider credential Tauri adapter", () => {
       optimisticExpiry: true,
     })).toThrow("Invalid Neon branch create plan request");
 
+    const deleteOwnership = {
+      operationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      state: "succeeded",
+      planHash: "d".repeat(64),
+      ownershipMarker: `v1.${"D".repeat(43)}`,
+      branchId: "br-child",
+    };
+    const deletePlan = buildNeonBranchDeletePlan({
+      request: {
+        idempotencyKey: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        projectId: "project-one",
+        branchId: "br-child",
+      },
+      inventory: branchInventory,
+      ownership: deleteOwnership,
+      references: {
+        connectionCount: 0,
+        activeLeaseCount: 0,
+        endpointIds: ["ep-safe"],
+      },
+      operationId: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      integrationId,
+      integrationGeneration: 12n,
+      now: new Date("2026-08-05T02:00:00Z"),
+    });
+    expect(deletePlan).toMatchObject({
+      kind: "neon.branch.delete",
+      deletionMode: "provider_default_soft_delete",
+      risk: "standard",
+      approvalPolicy: "single_admin",
+      target: { branchId: "br-child", default: false, protected: false },
+      references: { connectionCount: 0, activeLeaseCount: 0 },
+    });
+    expect(JSON.stringify(deletePlan)).not.toContain(deleteOwnership.ownershipMarker);
+    expect(revalidateNeonBranchDeletePlan({
+      plan: deletePlan,
+      inventory: branchInventory,
+      ownership: deleteOwnership,
+      references: {
+        connectionCount: 0,
+        activeLeaseCount: 0,
+        endpointIds: ["ep-safe"],
+      },
+      now: new Date("2026-08-05T02:01:00Z"),
+    })).toBe(deletePlan);
+    expect(() => revalidateNeonBranchDeletePlan({
+      plan: deletePlan,
+      inventory: branchInventory,
+      ownership: deleteOwnership,
+      references: {
+        connectionCount: 1,
+        activeLeaseCount: 0,
+        endpointIds: ["ep-safe"],
+      },
+      now: new Date("2026-08-05T02:01:00Z"),
+    })).toThrow("still referenced by workspace authority");
+    const deleteReceipt = parseNeonBranchDeleteReceipt({
+      branch: {
+        id: "br-child",
+        project_id: "project-one",
+        connection_uri: "postgres://must-not-survive",
+      },
+      operations: [
+        {
+          id: "12345678-1234-4234-8234-123456789099",
+          project_id: "project-one",
+          branch_id: "br-child",
+          action: "suspend_compute",
+          status: "running",
+        },
+        {
+          id: "12345678-1234-4234-8234-123456789099",
+          project_id: "project-one",
+          branch_id: "br-child",
+          action: "delete_timeline",
+          status: "scheduling",
+        },
+      ],
+    }, deletePlan);
+    expect(deleteReceipt).toEqual({
+      branchId: "br-child",
+      providerOperationId: "12345678-1234-4234-8234-123456789099",
+      providerOperationStatus: "scheduling",
+      alreadyDeleted: false,
+    });
+    expect(parseNeonBranchDeleteReceipt(null, deletePlan).alreadyDeleted).toBe(true);
+    expect(JSON.stringify(deleteReceipt)).not.toContain("must-not-survive");
+
     const order: string[] = [];
     await expect(issueAfterFreshProviderAuthority(
       "neon",
@@ -740,12 +834,39 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchOperationsRouteSource).toContain("cancelExpiredProviderOperationExecution");
     expect(neonBranchOperationsRouteSource).toContain("markProviderOperationRemoteStarted");
     expect(neonBranchOperationsRouteSource).toContain("reconcileNeonBranchCreate");
+    expect(neonBranchOperationsRouteSource).toContain("revalidateNeonBranchDeletePlan");
+    expect(neonBranchOperationsRouteSource).toContain("verifyNeonBranchOwnership");
+    expect(neonBranchOperationsRouteSource).toContain("reconcileNeonBranchDelete");
     expect(neonBranchOperationsRouteSource).toContain("needsCredentialFenceRecovery");
-    expect(neonBranchOperationsRouteSource.indexOf(
+    const deleteExecutionStart = neonBranchOperationsRouteSource.indexOf(
+      'if (body.action === "executeDelete") {',
+    );
+    const deleteRemoteStart = neonBranchOperationsRouteSource.indexOf(
       "const remoteStart = await markProviderOperationRemoteStarted",
-    )).toBeLessThan(neonBranchOperationsRouteSource.indexOf(
+      deleteExecutionStart,
+    );
+    const deleteProviderCall = neonBranchOperationsRouteSource.indexOf(
+      "const receipt = await deleteNeonBranch",
+      deleteExecutionStart,
+    );
+    expect(deleteExecutionStart).toBeGreaterThanOrEqual(0);
+    expect(deleteRemoteStart).toBeGreaterThan(deleteExecutionStart);
+    expect(deleteProviderCall).toBeGreaterThan(deleteRemoteStart);
+    const createExecutionStart = neonBranchOperationsRouteSource.indexOf(
+      'if (body.action === "executeCreate") {',
+      deleteProviderCall,
+    );
+    const createRemoteStart = neonBranchOperationsRouteSource.indexOf(
+      "const remoteStart = await markProviderOperationRemoteStarted",
+      createExecutionStart,
+    );
+    const createProviderCall = neonBranchOperationsRouteSource.indexOf(
       "const receipt = await createNeonBranch",
-    ));
+      createExecutionStart,
+    );
+    expect(createExecutionStart).toBeGreaterThan(deleteProviderCall);
+    expect(createRemoteStart).toBeGreaterThan(createExecutionStart);
+    expect(createProviderCall).toBeGreaterThan(createRemoteStart);
     expect(providerOperationStoreSource).toContain("providerMutationAuthoritySql");
     expect(providerOperationStoreSource).toContain("executionAuthorityLive");
     expect(providerOperationStoreSource).toContain("listProviderOperationExecutions");
@@ -759,6 +880,27 @@ describe("provider credential Tauri adapter", () => {
     expect(providerOperationStoreSource).toContain('"markProviderOperationRemoteStarted"');
     expect(providerOperationStoreSource).toContain('"applyProviderOperationReconciliation"');
     expect(providerOperationStoreSource).toContain('"completeProviderOperationBootstrap"');
+    const remoteStartFence = providerOperationStoreSource.slice(
+      providerOperationStoreSource.indexOf(
+        "export async function markProviderOperationRemoteStarted",
+      ),
+      providerOperationStoreSource.indexOf(
+        "type ProviderOperationReconciliationRow",
+      ),
+    );
+    expect(remoteStartFence).toContain("WITH authorized_operation AS MATERIALIZED");
+    expect(remoteStartFence).toContain("), branch_lock AS MATERIALIZED (");
+    expect(remoteStartFence).toContain("'provider-branch:'");
+    expect(remoteStartFence).toContain("authorized_operation.\"resource_scope\"");
+    expect(remoteStartFence).toContain("authorized_operation.\"source_resource_id\"");
+    expect(remoteStartFence).toContain("workspaceCredentialLease");
+    expect(remoteStartFence).toContain("active_lease.\"expires_at\" > now()");
+    expect(remoteStartFence.indexOf("WITH authorized_operation")).toBeLessThan(
+      remoteStartFence.indexOf("), branch_lock AS MATERIALIZED ("),
+    );
+    expect(remoteStartFence.indexOf("), branch_lock AS MATERIALIZED (")).toBeLessThan(
+      remoteStartFence.indexOf("), candidate AS MATERIALIZED ("),
+    );
     expect(providerOperationStoreSource).toContain(
       'key === "credentialFenceFingerprint"',
     );
@@ -807,6 +949,8 @@ describe("provider credential Tauri adapter", () => {
     expect(neonSource).toContain('"x-request-id": input.plan.operationId');
     expect(neonSource).toContain("response.status === 423 || response.status === 503");
     expect(neonSource).toContain("reconcileNeonBranchCreate");
+    expect(neonSource).toContain("reconcileNeonBranchDelete");
+    expect(neonSource).not.toContain("hard_delete");
     expect(neonSource).toContain('row.branch_id !== branch');
     expect(neonSource).toContain('requiredResourceId(row.id, "database id") === resource.databaseId');
     expect(neonSource).toContain("endpoints.length !== 1");
@@ -824,6 +968,9 @@ describe("provider credential Tauri adapter", () => {
     expect(providerOperationMigrationSource).toContain("'separate_admin'");
     expect(providerOperationMigrationSource).toContain(
       'FOREIGN KEY ("organization_id","integration_id","provider")',
+    );
+    expect(providerOperationKindMigrationSource).toContain(
+      "'neon.branch.create', 'neon.branch.delete'",
     );
     expect(providerIntegrationRouteSource).toContain('"api-key-v1"');
     expect(neonSource).toContain(
@@ -874,6 +1021,7 @@ describe("provider credential Tauri adapter", () => {
     expect(providerResourcePickerSource).not.toMatch(/setup terminal|SQL 입력/);
     expect(neonBranchManagerSource).toContain("변경 없는 계획 만들기");
     expect(neonBranchManagerSource).toContain("다른 워크스페이스 관리자가");
+    expect(neonBranchManagerSource).toContain("폐기 계획 만들기");
     expect(neonBranchManagerSource).not.toMatch(/>Switch<|>Restore<|>Delete</);
     const branchPlan = {
       version: 1,
@@ -990,6 +1138,15 @@ describe("provider credential Tauri adapter", () => {
     expect(providerImportStoreSource.match(
       /'productionApproved', \$\{input\.productionApproved\}::boolean/g,
     )).toHaveLength(2);
+    expect(providerImportStoreSource).toContain("), branch_lock AS MATERIALIZED (");
+    expect(providerImportStoreSource).toContain("'provider-branch:'");
+    expect(providerImportStoreSource).toContain('AS "deletionBlocked"');
+    expect(providerImportStoreSource).toContain(
+      'deletion."kind" = \'neon.branch.delete\'',
+    );
+    expect(providerImportStoreSource).toContain(
+      "'approved', 'claimed', 'remote_started', 'reconciling', 'succeeded'",
+    );
     expect(providerImportAuditSql).toContain(
       "'preservedConnectionId', ${replacing}::boolean",
     );

@@ -36,6 +36,10 @@ export type NeonBranchInventoryItem = Readonly<{
     state: NeonBranchOperationState;
     status: NeonManagedAccessState;
   }> | null;
+  deletion: Readonly<{
+    canPlan: boolean;
+    blockerCodes: readonly string[];
+  }> | null;
   connections: readonly NeonBranchConnectionReference[];
 }>;
 
@@ -80,6 +84,39 @@ export type NeonBranchCreatePlan = Readonly<{
   warningCodes: readonly string[];
 }>;
 
+export type NeonBranchDeletePlan = Readonly<{
+  version: 1;
+  kind: "neon.branch.delete";
+  operationId: string;
+  integrationId: string;
+  integrationGeneration: string;
+  issuedAt: string;
+  expiresAt: string;
+  target: Readonly<{
+    projectId: string;
+    branchId: string;
+    name: string;
+    default: false;
+    protected: false;
+    expiresAt: string | null;
+  }>;
+  references: Readonly<{
+    connectionCount: 0;
+    activeLeaseCount: 0;
+    endpointIds: readonly string[];
+  }>;
+  ownership: Readonly<{
+    createOperationId: string;
+    createPlanHash: string;
+  }>;
+  deletionMode: "provider_default_soft_delete";
+  risk: "standard";
+  approvalPolicy: "single_admin";
+  warningCodes: readonly string[];
+}>;
+
+export type NeonBranchPlan = NeonBranchCreatePlan | NeonBranchDeletePlan;
+
 export type NeonBranchOperationState =
   | "awaiting_approval"
   | "approved"
@@ -120,7 +157,7 @@ export type NeonBranchOperation = Readonly<{
   retiredInheritedRoleCount: number | null;
   managedAccessState: NeonManagedAccessState | null;
   failureCode: string | null;
-  plan: NeonBranchCreatePlan;
+  plan: NeonBranchPlan;
 }>;
 
 export type NeonBranchOperations = Readonly<{
@@ -219,7 +256,7 @@ function parseSourcePoint(value: unknown): NeonBranchSourcePoint | null {
   return null;
 }
 
-function parsePlan(value: unknown): NeonBranchCreatePlan | null {
+function parseCreatePlan(value: unknown): NeonBranchCreatePlan | null {
   const row = record(value);
   const source = record(row?.source);
   const target = record(row?.target);
@@ -288,6 +325,93 @@ function parsePlan(value: unknown): NeonBranchCreatePlan | null {
   };
 }
 
+function parseDeletePlan(value: unknown): NeonBranchDeletePlan | null {
+  const row = record(value);
+  const target = record(row?.target);
+  const references = exact(row?.references, [
+    "connectionCount",
+    "activeLeaseCount",
+    "endpointIds",
+  ]);
+  const ownership = exact(row?.ownership, ["createOperationId", "createPlanHash"]);
+  if (
+    !row
+    || row.version !== 1
+    || row.kind !== "neon.branch.delete"
+    || !uuid(row.operationId)
+    || !uuid(row.integrationId)
+    || typeof row.integrationGeneration !== "string"
+    || !/^\d+$/.test(row.integrationGeneration)
+    || !instant(row.issuedAt)
+    || !instant(row.expiresAt)
+    || !target
+    || !segment(target.projectId)
+    || !segment(target.branchId)
+    || !safeText(target.name, 256)
+    || target.default !== false
+    || target.protected !== false
+    || !nullable(target.expiresAt, instant)
+    || !references
+    || references.connectionCount !== 0
+    || references.activeLeaseCount !== 0
+    || !Array.isArray(references.endpointIds)
+    || references.endpointIds.length > 64
+    || !references.endpointIds.every(segment)
+    || new Set(references.endpointIds).size !== references.endpointIds.length
+    || !ownership
+    || !uuid(ownership.createOperationId)
+    || typeof ownership.createPlanHash !== "string"
+    || !/^[0-9a-f]{64}$/.test(ownership.createPlanHash)
+    || row.deletionMode !== "provider_default_soft_delete"
+    || row.risk !== "standard"
+    || row.approvalPolicy !== "single_admin"
+    || !Array.isArray(row.warningCodes)
+    || row.warningCodes.length > 16
+    || !row.warningCodes.every((code) => (
+      typeof code === "string" && /^NEON_[A-Z0-9_]{1,95}$/.test(code)
+    ))
+  ) {
+    return null;
+  }
+  return {
+    version: 1,
+    kind: "neon.branch.delete",
+    operationId: row.operationId,
+    integrationId: row.integrationId,
+    integrationGeneration: row.integrationGeneration,
+    issuedAt: row.issuedAt,
+    expiresAt: row.expiresAt,
+    target: {
+      projectId: target.projectId,
+      branchId: target.branchId,
+      name: target.name,
+      default: false,
+      protected: false,
+      expiresAt: target.expiresAt as string | null,
+    },
+    references: {
+      connectionCount: 0,
+      activeLeaseCount: 0,
+      endpointIds: references.endpointIds as string[],
+    },
+    ownership: {
+      createOperationId: ownership.createOperationId,
+      createPlanHash: ownership.createPlanHash,
+    },
+    deletionMode: "provider_default_soft_delete",
+    risk: "standard",
+    approvalPolicy: "single_admin",
+    warningCodes: row.warningCodes as string[],
+  };
+}
+
+function parsePlan(value: unknown): NeonBranchPlan | null {
+  const row = record(value);
+  if (row?.kind === "neon.branch.create") return parseCreatePlan(value);
+  if (row?.kind === "neon.branch.delete") return parseDeletePlan(value);
+  return null;
+}
+
 function parseConnection(value: unknown): NeonBranchConnectionReference | null {
   const row = exact(value, [
     "connectionId",
@@ -325,7 +449,9 @@ function parseBranch(value: unknown): NeonBranchInventoryItem | null {
   ];
   if (
     !row
-    || !Object.keys(row).every((key) => [...requiredFields, "managedAccess"].includes(key))
+    || !Object.keys(row).every((key) => (
+      [...requiredFields, "managedAccess", "deletion"].includes(key)
+    ))
     || requiredFields.some((field) => !Object.prototype.hasOwnProperty.call(row, field))
     || !segment(row.id)
     || !segment(row.projectId)
@@ -381,11 +507,32 @@ function parseBranch(value: unknown): NeonBranchInventoryItem | null {
     }
     managedAccess = access as NeonBranchInventoryItem["managedAccess"];
   }
+  let deletion: NeonBranchInventoryItem["deletion"] = null;
+  if (row.deletion !== undefined) {
+    const capability = exact(row.deletion, ["canPlan", "blockerCodes"]);
+    if (
+      !capability
+      || typeof capability.canPlan !== "boolean"
+      || !Array.isArray(capability.blockerCodes)
+      || capability.blockerCodes.length > 16
+      || !capability.blockerCodes.every((code) => (
+        typeof code === "string" && /^[A-Z][A-Z0-9_]{0,95}$/.test(code)
+      ))
+      || capability.canPlan !== (capability.blockerCodes.length === 0)
+    ) {
+      return null;
+    }
+    deletion = capability as NeonBranchInventoryItem["deletion"];
+  }
   return {
-    ...(row as Omit<NeonBranchInventoryItem, "restrictedActions" | "connections" | "managedAccess">),
+    ...(row as Omit<
+      NeonBranchInventoryItem,
+      "restrictedActions" | "connections" | "managedAccess" | "deletion"
+    >),
     restrictedActions: restrictedActions as ReadonlyArray<{ name: string; reason: string }>,
     connections: connections as NeonBranchConnectionReference[],
     managedAccess,
+    deletion,
   };
 }
 

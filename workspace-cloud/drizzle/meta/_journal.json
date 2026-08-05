@@ -120,6 +120,13 @@
       "when": 1785887157271,
       "tag": "0016_first_changeling",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785905630765,
+      "tag": "0017_lying_hex",
+      "breakpoints": true
     }
   ]
 }

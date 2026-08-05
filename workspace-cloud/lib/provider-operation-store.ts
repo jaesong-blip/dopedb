@@ -15,6 +15,8 @@ import {
   member,
   session,
   workspaceAuditEvent,
+  workspaceConnection,
+  workspaceCredentialLease,
   workspaceProviderIntegration,
   workspaceProviderOperation,
   workspaceProviderOperationApproval,
@@ -23,6 +25,7 @@ import { workspaceAuditEventId } from "./workspace-audit-id";
 import { canonicalHash, canonicalJson } from "./workspace-versioning";
 import { MAX_PROVIDER_RESULTS } from "./providers/adapter-contract";
 import type { NeonBranchCreatePlan } from "./providers/neon-branch-plan";
+import type { NeonBranchDeletePlan } from "./providers/neon-branch-delete-plan";
 import { NEON_OPERATION_STATUSES } from "./providers/neon-branch-mutation";
 import { ProviderRequestError } from "./providers/provider-types";
 
@@ -40,6 +43,8 @@ const operationStates = [
 ] as const;
 
 export type ProviderOperationState = typeof operationStates[number];
+export type ProviderOperationKind = "neon.branch.create" | "neon.branch.delete";
+export type NeonBranchOperationPlan = NeonBranchCreatePlan | NeonBranchDeletePlan;
 
 // Keep every durable provider-operation write visible in one review surface.
 // Approval, claim, remote-start, reconciliation, and completion transitions
@@ -61,7 +66,7 @@ export type ProviderOperationPlanRecord = Readonly<{
   planExpiresAt: Date;
   risk: "standard" | "production_data";
   approvalPolicy: "single_admin" | "separate_admin";
-  plan: NeonBranchCreatePlan;
+  plan: NeonBranchOperationPlan;
   ownershipMarker: string;
   replayed: boolean;
 }>;
@@ -174,6 +179,7 @@ export type ProviderOperationReconciliationRecord = Readonly<{
 
 type ProviderOperationPlanRow = {
   id: string;
+  kind: string;
   state: string;
   planHash: string;
   planExpiresAt: Date | string;
@@ -244,7 +250,7 @@ function assertPlan(input: {
   operationId: string;
   planHash: string;
   ownershipMarker: string;
-  plan: NeonBranchCreatePlan;
+  plan: NeonBranchOperationPlan;
 }) {
   safeRedactedValue(input.plan);
   if (
@@ -294,7 +300,7 @@ function planRecord(
   ) {
     return null;
   }
-  const plan = row.redactedPlan as NeonBranchCreatePlan;
+  const plan = row.redactedPlan as NeonBranchOperationPlan;
   // A replay verifies the originally persisted operation and marker, never the
   // newly generated candidate that lost the idempotency conflict.
   safeRedactedValue(plan);
@@ -302,7 +308,8 @@ function planRecord(
     canonicalHash(plan) !== row.planHash
     || plan.operationId !== row.id
     || plan.version !== 1
-    || plan.kind !== "neon.branch.create"
+    || (row.kind !== "neon.branch.create" && row.kind !== "neon.branch.delete")
+    || plan.kind !== row.kind
     || plan.integrationId !== input.integrationId
     || plan.integrationGeneration !== input.integrationGeneration.toString()
     || plan.expiresAt !== expiresAt.toISOString()
@@ -337,9 +344,11 @@ export async function loadProviderOperationPlan(input: {
   integrationId: string;
   integrationGeneration: bigint;
   operationId: string;
+  kind: ProviderOperationKind;
 }): Promise<ProviderOperationPlanRecord | null> {
   const result = await db.execute<ProviderOperationPlanRow>(sql`
-    SELECT operation."id"::text AS "id", operation."state" AS "state",
+    SELECT operation."id"::text AS "id", operation."kind" AS "kind",
+      operation."state" AS "state",
       operation."plan_hash" AS "planHash",
       operation."plan_expires_at" AS "planExpiresAt",
       operation."risk" AS "risk",
@@ -351,7 +360,7 @@ export async function loadProviderOperationPlan(input: {
       AND operation."organization_id" = ${input.organizationId}
       AND operation."integration_id" = ${input.integrationId}::uuid
       AND operation."provider" = 'neon'
-      AND operation."kind" = 'neon.branch.create'
+      AND operation."kind" = ${input.kind}
       AND operation."integration_generation" = ${input.integrationGeneration}
     LIMIT 1
   `);
@@ -501,9 +510,11 @@ export async function loadProviderOperationExecution(input: {
   integrationId: string;
   integrationGeneration: bigint;
   operationId: string;
+  kind: ProviderOperationKind;
 }): Promise<ProviderOperationExecutionRecord | null> {
   const result = await db.execute<ProviderOperationExecutionRow>(sql`
-    SELECT operation."id"::text AS "id", operation."state" AS "state",
+    SELECT operation."id"::text AS "id", operation."kind" AS "kind",
+      operation."state" AS "state",
       operation."plan_hash" AS "planHash",
       operation."plan_expires_at" AS "planExpiresAt",
       operation."risk" AS "risk",
@@ -522,7 +533,7 @@ export async function loadProviderOperationExecution(input: {
       AND operation."organization_id" = ${input.organizationId}
       AND operation."integration_id" = ${input.integrationId}::uuid
       AND operation."provider" = 'neon'
-      AND operation."kind" = 'neon.branch.create'
+      AND operation."kind" = ${input.kind}
       AND operation."integration_generation" = ${input.integrationGeneration}
     LIMIT 1
   `);
@@ -547,7 +558,8 @@ export async function listProviderOperationExecutions(input: {
   currentUserId: string;
 }): Promise<ProviderOperationListRecord[]> {
   const result = await db.execute<ProviderOperationListRow>(sql`
-    SELECT operation."id"::text AS "id", operation."state" AS "state",
+    SELECT operation."id"::text AS "id", operation."kind" AS "kind",
+      operation."state" AS "state",
       operation."plan_hash" AS "planHash",
       operation."plan_expires_at" AS "planExpiresAt",
       operation."risk" AS "risk",
@@ -606,7 +618,7 @@ export async function listProviderOperationExecutions(input: {
     WHERE operation."organization_id" = ${input.organizationId}
       AND operation."integration_id" = ${input.integrationId}::uuid
       AND operation."provider" = 'neon'
-      AND operation."kind" = 'neon.branch.create'
+      AND operation."kind" IN ('neon.branch.create', 'neon.branch.delete')
       AND operation."integration_generation" = ${input.integrationGeneration}
     ORDER BY operation."updated_at" DESC, operation."id" DESC
     LIMIT ${MAX_PROVIDER_RESULTS + 1}
@@ -796,6 +808,18 @@ export async function listNeonBranchManagedAccessBoundaries(input: {
       AND operation."resource_scope" = ${input.projectId}
       AND operation."provider_resource_id" IS NOT NULL
       AND operation."state" <> 'cancelled'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM ${workspaceProviderOperation} AS deletion
+        WHERE deletion."organization_id" = operation."organization_id"
+          AND deletion."integration_id" = operation."integration_id"
+          AND deletion."integration_generation" = operation."integration_generation"
+          AND deletion."provider" = 'neon'
+          AND deletion."kind" = 'neon.branch.delete'
+          AND deletion."resource_scope" = operation."resource_scope"
+          AND deletion."source_resource_id" = operation."provider_resource_id"
+          AND deletion."state" = 'succeeded'
+      )
     ORDER BY operation."created_at" DESC, operation."id" DESC
     LIMIT ${MAX_PROVIDER_RESULTS + 1}
   `);
@@ -863,6 +887,7 @@ type ProviderOperationExecutionIdentity = {
   integrationId: string;
   integrationGeneration: bigint;
   operationId: string;
+  kind: ProviderOperationKind;
   planHash: string;
   ownershipMarker: string;
 };
@@ -874,6 +899,7 @@ function assertExecutionIdentity(input: ProviderOperationExecutionIdentity) {
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       .test(input.operationId)
     || !/^[0-9a-f]{64}$/.test(input.planHash)
+    || (input.kind !== "neon.branch.create" && input.kind !== "neon.branch.delete")
     || input.integrationGeneration < 1n
     || !verifyProviderOperationOwnershipMarker({
       organizationId: input.authority.organizationId,
@@ -962,7 +988,8 @@ export async function completeProviderOperationBootstrap(
 ): Promise<ProviderOperationBootstrapCompletionRecord | null> {
   assertExecutionIdentity(input);
   if (
-    !/^[a-z0-9][a-z0-9-]{0,59}$/.test(input.projectId)
+    input.kind !== "neon.branch.create"
+    || !/^[a-z0-9][a-z0-9-]{0,59}$/.test(input.projectId)
     || !/^[a-z0-9][a-z0-9-]{0,59}$/.test(input.branchId)
     || !/^[0-9a-f]{64}$/.test(input.databaseFingerprint)
     || !/^[0-9a-f]{64}$/.test(input.credentialFenceFingerprint)
@@ -1004,7 +1031,7 @@ export async function completeProviderOperationBootstrap(
         AND operation."organization_id" = ${input.authority.organizationId}
         AND operation."integration_id" = ${input.integrationId}::uuid
         AND operation."provider" = 'neon'
-        AND operation."kind" = 'neon.branch.create'
+        AND operation."kind" = ${input.kind}
         AND operation."integration_generation" = ${input.integrationGeneration}
         AND operation."plan_hash" = ${input.planHash}
         AND operation."ownership_marker" = ${input.ownershipMarker}
@@ -1039,7 +1066,7 @@ export async function completeProviderOperationBootstrap(
         'provider_operation', candidate."id",
         jsonb_build_object(
           'provider', 'neon',
-          'kind', 'neon.branch.create',
+          'kind', ${input.kind}::text,
           'branchId', ${input.branchId}::text,
           'providerAuditId', ${input.providerAuditId}::text,
           'resourceFingerprint', ${input.resourceFingerprint}::text,
@@ -1115,6 +1142,52 @@ export async function completeProviderOperationBootstrap(
   };
 }
 
+function providerOperationPlanStorage(plan: NeonBranchOperationPlan) {
+  if (plan.kind === "neon.branch.create") {
+    return {
+      projectId: plan.source.projectId,
+      sourceResourceId: plan.source.branchId,
+      targetName: plan.target.name,
+      audit: {
+        provider: "neon",
+        kind: plan.kind,
+        planHash: "",
+        risk: plan.risk,
+        approvalPolicy: plan.approvalPolicy,
+        projectId: plan.source.projectId,
+        sourceBranchId: plan.source.branchId,
+        targetName: plan.target.name,
+        initSource: plan.target.initSource,
+        sourcePoint: plan.source.point.kind,
+        endpoint: plan.target.endpoint,
+        credentialPolicy: plan.target.endpoint === "read_write"
+          ? "retire_inherited_dopedb_roles"
+          : "no_endpoint",
+      },
+    };
+  }
+  return {
+    projectId: plan.target.projectId,
+    sourceResourceId: plan.target.branchId,
+    targetName: plan.target.name,
+    audit: {
+      provider: "neon",
+      kind: plan.kind,
+      planHash: "",
+      risk: plan.risk,
+      approvalPolicy: plan.approvalPolicy,
+      projectId: plan.target.projectId,
+      targetBranchId: plan.target.branchId,
+      targetName: plan.target.name,
+      deletionMode: plan.deletionMode,
+      connectionCount: plan.references.connectionCount,
+      activeLeaseCount: plan.references.activeLeaseCount,
+      endpointCount: plan.references.endpointIds.length,
+      createOperationId: plan.ownership.createOperationId,
+    },
+  };
+}
+
 export async function recordProviderOperationPlan(input: {
   authority: ProviderMutationAuthority;
   integrationId: string;
@@ -1124,7 +1197,7 @@ export async function recordProviderOperationPlan(input: {
   requestHash: string;
   planHash: string;
   ownershipMarker: string;
-  plan: NeonBranchCreatePlan;
+  plan: NeonBranchOperationPlan;
   now: Date;
 }): Promise<ProviderOperationPlanRecord | null> {
   assertPlan({
@@ -1136,12 +1209,20 @@ export async function recordProviderOperationPlan(input: {
     ownershipMarker: input.ownershipMarker,
     plan: input.plan,
   });
+  const planStorage = providerOperationPlanStorage(input.plan);
+  const validPlanPolicy = input.plan.kind === "neon.branch.create"
+    ? input.plan.risk === (input.plan.target.copiesData
+      && input.plan.source.environment === "production" ? "production_data" : "standard")
+      && input.plan.approvalPolicy === (input.plan.risk === "production_data"
+        ? "separate_admin" : "single_admin")
+    : input.plan.risk === "standard"
+      && input.plan.approvalPolicy === "single_admin"
+      && input.plan.deletionMode === "provider_default_soft_delete"
+      && input.plan.references.connectionCount === 0
+      && input.plan.references.activeLeaseCount === 0;
   if (
     !/^[0-9a-f]{64}$/.test(input.requestHash)
-    || input.plan.risk !== (input.plan.target.copiesData
-      && input.plan.source.environment === "production" ? "production_data" : "standard")
-    || input.plan.approvalPolicy !== (input.plan.risk === "production_data"
-      ? "separate_admin" : "single_admin")
+    || !validPlanPolicy
     || input.plan.expiresAt !== new Date(
       input.now.valueOf() + 10 * 60 * 1_000,
     ).toISOString()
@@ -1189,13 +1270,13 @@ export async function recordProviderOperationPlan(input: {
          "ownership_marker", "redacted_plan", "created_at", "updated_at")
       SELECT ${input.operationId}::uuid, ${input.authority.organizationId},
         live_integration."id", 'neon', ${input.integrationGeneration},
-        'neon.branch.create', 'awaiting_approval', ${input.idempotencyKey}::uuid,
+        ${input.plan.kind}, 'awaiting_approval', ${input.idempotencyKey}::uuid,
         ${input.requestHash}, ${input.planHash}, 1,
         ${new Date(input.plan.expiresAt)}, ${input.plan.risk},
         ${input.plan.approvalPolicy}, ${input.authority.membershipId},
         ${input.authority.userId}, ${input.authority.sessionId},
-        ${input.authority.role}, ${input.plan.source.projectId},
-        ${input.plan.source.branchId}, ${input.plan.target.name},
+        ${input.authority.role}, ${planStorage.projectId},
+        ${planStorage.sourceResourceId}, ${planStorage.targetName},
         ${input.ownershipMarker}, ${JSON.stringify(input.plan)}::jsonb,
         ${input.now}, ${input.now}
       FROM live_integration
@@ -1206,7 +1287,8 @@ export async function recordProviderOperationPlan(input: {
         AND existing."kind" = EXCLUDED."kind"
         AND existing."integration_id" = EXCLUDED."integration_id"
         AND existing."integration_generation" = EXCLUDED."integration_generation"
-      RETURNING existing."id"::text AS "id", existing."state" AS "state",
+      RETURNING existing."id"::text AS "id", existing."kind" AS "kind",
+        existing."state" AS "state",
         existing."plan_hash" AS "planHash",
         existing."plan_expires_at" AS "planExpiresAt",
         existing."risk" AS "risk",
@@ -1220,22 +1302,8 @@ export async function recordProviderOperationPlan(input: {
       SELECT ${auditId}::uuid, ${input.authority.organizationId},
         ${input.authority.userId}, 'provider.operation.plan',
         'provider_operation', recorded."id",
-        jsonb_build_object(
-          'provider', 'neon',
-          'kind', 'neon.branch.create',
-          'planHash', recorded."planHash",
-          'risk', recorded."risk",
-          'approvalPolicy', recorded."approvalPolicy",
-          'projectId', ${input.plan.source.projectId}::text,
-          'sourceBranchId', ${input.plan.source.branchId}::text,
-          'targetName', ${input.plan.target.name}::text,
-          'initSource', ${input.plan.target.initSource}::text,
-          'sourcePoint', ${input.plan.source.point.kind}::text,
-          'endpoint', ${input.plan.target.endpoint}::text,
-          'credentialPolicy', ${input.plan.target.endpoint === "read_write"
-            ? "retire_inherited_dopedb_roles"
-            : "no_endpoint"}::text
-        ), ${input.idempotencyKey}::uuid
+        ${JSON.stringify({ ...planStorage.audit, planHash: input.planHash })}::jsonb,
+        ${input.idempotencyKey}::uuid
       FROM recorded
       ON CONFLICT ("id") DO UPDATE SET "id" = existing."id"
       WHERE existing."organization_id" = EXCLUDED."organization_id"
@@ -1276,6 +1344,7 @@ export async function decideProviderOperation(input: {
   integrationId: string;
   integrationGeneration: bigint;
   operationId: string;
+  kind: ProviderOperationKind;
   planHash: string;
   ownershipMarker: string;
   decision: ProviderOperationDecision;
@@ -1287,6 +1356,7 @@ export async function decideProviderOperation(input: {
     || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       .test(input.operationId)
     || !/^[0-9a-f]{64}$/.test(input.planHash)
+    || (input.kind !== "neon.branch.create" && input.kind !== "neon.branch.delete")
     || (input.decision !== "approved" && input.decision !== "rejected")
     || input.integrationGeneration < 1n
     || Number.isNaN(input.now.valueOf())
@@ -1338,7 +1408,7 @@ export async function decideProviderOperation(input: {
         AND operation."organization_id" = ${input.authority.organizationId}
         AND operation."integration_id" = ${input.integrationId}::uuid
         AND operation."provider" = 'neon'
-        AND operation."kind" = 'neon.branch.create'
+        AND operation."kind" = ${input.kind}
         AND operation."integration_generation" = ${input.integrationGeneration}
         AND operation."plan_hash" = ${input.planHash}
         AND operation."ownership_marker" = ${input.ownershipMarker}
@@ -1435,7 +1505,7 @@ export async function decideProviderOperation(input: {
         'provider_operation', updated."id",
         jsonb_build_object(
           'provider', 'neon',
-          'kind', 'neon.branch.create',
+          'kind', ${input.kind}::text,
           'decision', ${input.decision}::text,
           'planHash', updated."planHash",
           'risk', updated."risk",
@@ -1528,7 +1598,7 @@ export async function cancelExpiredProviderOperationExecution(
         AND operation."organization_id" = ${input.authority.organizationId}
         AND operation."integration_id" = ${input.integrationId}::uuid
         AND operation."provider" = 'neon'
-        AND operation."kind" = 'neon.branch.create'
+        AND operation."kind" = ${input.kind}
         AND operation."integration_generation" = ${input.integrationGeneration}
         AND operation."plan_hash" = ${input.planHash}
         AND operation."ownership_marker" = ${input.ownershipMarker}
@@ -1564,7 +1634,7 @@ export async function cancelExpiredProviderOperationExecution(
         'provider_operation', updated."id",
         jsonb_build_object(
           'provider', 'neon',
-          'kind', 'neon.branch.create',
+          'kind', ${input.kind}::text,
           'reason', 'plan_expired_before_remote_start',
           'risk', updated."risk",
           'approvalPolicy', updated."approvalPolicy"
@@ -1633,7 +1703,7 @@ export async function claimProviderOperationExecution(
         AND operation."organization_id" = ${input.authority.organizationId}
         AND operation."integration_id" = ${input.integrationId}::uuid
         AND operation."provider" = 'neon'
-        AND operation."kind" = 'neon.branch.create'
+        AND operation."kind" = ${input.kind}
         AND operation."integration_generation" = ${input.integrationGeneration}
         AND operation."plan_hash" = ${input.planHash}
         AND operation."ownership_marker" = ${input.ownershipMarker}
@@ -1683,7 +1753,7 @@ export async function claimProviderOperationExecution(
         'provider_operation', updated."id",
         jsonb_build_object(
           'provider', 'neon',
-          'kind', 'neon.branch.create',
+          'kind', ${input.kind}::text,
           'risk', updated."risk",
           'approvalPolicy', updated."approvalPolicy"
         ), updated."claimId"::uuid
@@ -1742,16 +1812,18 @@ export async function markProviderOperationRemoteStarted(
   );
   const authority = currentExecutionAuthoritySql(input);
   const result = await db.execute<ProviderOperationRemoteStartRow>(sql`
-    WITH candidate AS MATERIALIZED (
+    WITH authorized_operation AS MATERIALIZED (
       SELECT operation."id", operation."organization_id", operation."state",
         operation."claim_id", operation."risk", operation."approval_policy",
-        operation."plan_expires_at"
+        operation."plan_expires_at", operation."integration_id",
+        operation."provider", operation."kind", operation."resource_scope",
+        operation."source_resource_id"
       FROM ${workspaceProviderOperation} AS operation
       WHERE operation."id" = ${input.operationId}::uuid
         AND operation."organization_id" = ${input.authority.organizationId}
         AND operation."integration_id" = ${input.integrationId}::uuid
         AND operation."provider" = 'neon'
-        AND operation."kind" = 'neon.branch.create'
+        AND operation."kind" = ${input.kind}
         AND operation."integration_generation" = ${input.integrationGeneration}
         AND operation."plan_hash" = ${input.planHash}
         AND operation."ownership_marker" = ${input.ownershipMarker}
@@ -1759,6 +1831,57 @@ export async function markProviderOperationRemoteStarted(
         AND operation."state" IN ('claimed', 'remote_started', 'reconciling')
         AND ${authority}
       FOR UPDATE OF operation
+    ), branch_lock AS MATERIALIZED (
+      -- Managed imports take this same provider identity lock before their
+      -- fresh snapshot. Whichever mutation wins becomes durable before the
+      -- other can decide whether the branch is still safe to reference.
+      SELECT pg_advisory_xact_lock(hashtextextended(
+        'provider-branch:' || authorized_operation."organization_id"::text || ':'
+        || authorized_operation."integration_id"::text || ':'
+        || authorized_operation."provider" || ':'
+        || authorized_operation."resource_scope" || ':'
+        || authorized_operation."source_resource_id",
+        0
+      ))
+      FROM authorized_operation
+    ), candidate AS MATERIALIZED (
+      SELECT authorized_operation.*
+      FROM authorized_operation
+      JOIN branch_lock ON TRUE
+      WHERE authorized_operation."kind" <> 'neon.branch.delete'
+        OR (
+          NOT EXISTS (
+            SELECT 1
+            FROM ${workspaceConnection} AS branch_connection
+            WHERE branch_connection."organization_id" = authorized_operation."organization_id"
+              AND branch_connection."provider_integration_id" = authorized_operation."integration_id"
+              AND branch_connection."provider" = authorized_operation."provider"
+              AND branch_connection."credential_mode" = 'managed'
+              AND branch_connection."provider_resource" ->> 'project'
+                = authorized_operation."resource_scope"
+              AND branch_connection."provider_resource" ->> 'branch'
+                = authorized_operation."source_resource_id"
+              AND branch_connection."deleted_at" IS NULL
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ${workspaceConnection} AS leased_connection
+            JOIN ${workspaceCredentialLease} AS active_lease
+              ON active_lease."organization_id" = leased_connection."organization_id"
+             AND active_lease."connection_id" = leased_connection."id"
+             AND active_lease."integration_id" = authorized_operation."integration_id"
+             AND active_lease."revoked_at" IS NULL
+             AND active_lease."expires_at" > now()
+            WHERE leased_connection."organization_id" = authorized_operation."organization_id"
+              AND leased_connection."provider_integration_id" = authorized_operation."integration_id"
+              AND leased_connection."provider" = authorized_operation."provider"
+              AND leased_connection."credential_mode" = 'managed'
+              AND leased_connection."provider_resource" ->> 'project'
+                = authorized_operation."resource_scope"
+              AND leased_connection."provider_resource" ->> 'branch'
+                = authorized_operation."source_resource_id"
+          )
+        )
     ), updated AS MATERIALIZED (
       UPDATE ${workspaceProviderOperation} AS operation
       SET "state" = CASE
@@ -1803,7 +1926,7 @@ export async function markProviderOperationRemoteStarted(
         'provider_operation', updated."id",
         jsonb_build_object(
           'provider', 'neon',
-          'kind', 'neon.branch.create',
+          'kind', ${input.kind}::text,
           'reason', CASE
             WHEN updated."state" = 'cancelled'
               THEN 'plan_expired_before_remote_start'
@@ -2030,7 +2153,7 @@ export async function applyProviderOperationReconciliation(
         AND operation."organization_id" = ${input.authority.organizationId}
         AND operation."integration_id" = ${input.integrationId}::uuid
         AND operation."provider" = 'neon'
-        AND operation."kind" = 'neon.branch.create'
+        AND operation."kind" = ${input.kind}
         AND operation."integration_generation" = ${input.integrationGeneration}
         AND operation."plan_hash" = ${input.planHash}
         AND operation."ownership_marker" = ${input.ownershipMarker}
@@ -2129,7 +2252,7 @@ export async function applyProviderOperationReconciliation(
         'provider_operation', updated."id",
         jsonb_build_object(
           'provider', 'neon',
-          'kind', 'neon.branch.create',
+          'kind', ${input.kind}::text,
           'observation', ${input.result.status}::text,
           'branchId', ${input.result.branchId}::text,
           'providerOperationId', ${input.result.providerOperationId}::text,
@@ -2157,7 +2280,7 @@ export async function applyProviderOperationReconciliation(
         'provider_operation', updated."id",
         jsonb_build_object(
           'provider', 'neon',
-          'kind', 'neon.branch.create',
+          'kind', ${input.kind}::text,
           'state', updated."state",
           'branchId', updated."providerResourceId",
           'providerOperationId', updated."providerOperationId",

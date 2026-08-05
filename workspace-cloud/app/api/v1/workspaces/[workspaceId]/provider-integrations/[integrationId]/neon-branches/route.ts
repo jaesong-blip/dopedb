@@ -108,12 +108,12 @@ export async function GET(request: Request, context: RouteContext) {
         contentRevision: workspaceConnection.contentRevision,
         authorityRevision: workspaceConnection.revision,
         resource: workspaceConnection.providerResource,
+        deletedAt: workspaceConnection.deletedAt,
+        revocationPendingAt: workspaceConnection.revocationPendingAt,
       }).from(workspaceConnection).where(and(
         eq(workspaceConnection.organizationId, workspaceId),
         eq(workspaceConnection.providerIntegrationId, integrationId),
         eq(workspaceConnection.credentialMode, "managed"),
-        isNull(workspaceConnection.deletedAt),
-        isNull(workspaceConnection.revocationPendingAt),
       )).limit(MAX_PROVIDER_RESULTS + 1),
       db.select({
         connectionId: workspaceCredentialLease.connectionId,
@@ -123,7 +123,7 @@ export async function GET(request: Request, context: RouteContext) {
         eq(workspaceCredentialLease.integrationId, integrationId),
         isNull(workspaceCredentialLease.revokedAt),
         gt(workspaceCredentialLease.expiresAt, now),
-      )).groupBy(workspaceCredentialLease.connectionId),
+      )).groupBy(workspaceCredentialLease.connectionId).limit(MAX_PROVIDER_RESULTS + 1),
       listNeonBranchManagedAccessBoundaries({
         organizationId: workspaceId,
         integrationId,
@@ -131,7 +131,10 @@ export async function GET(request: Request, context: RouteContext) {
         projectId,
       }),
     ]);
-    if (connectionRows.length > MAX_PROVIDER_RESULTS) {
+    if (
+      connectionRows.length > MAX_PROVIDER_RESULTS
+      || activeLeaseRows.length > MAX_PROVIDER_RESULTS
+    ) {
       throw new ProviderRequestError(
         "neon",
         "Workspace Neon connection scope is too large to inspect safely",
@@ -149,6 +152,9 @@ export async function GET(request: Request, context: RouteContext) {
         status: boundary.managedAccessState,
       }]),
     );
+    const branchBoundaryById = new Map(
+      branchBoundaries.map((boundary) => [boundary.branchId, boundary]),
+    );
     const referencesByBranch = new Map<string, Array<{
       connectionId: string;
       connectionName: string;
@@ -159,6 +165,10 @@ export async function GET(request: Request, context: RouteContext) {
       authorityRevision: number;
       activeLeaseCount: number;
     }>>();
+    const deletionReferencesByBranch = new Map<string, {
+      connectionCount: number;
+      activeLeaseCount: number;
+    }>();
     const missingTargets: Array<{
       connectionId: string;
       connectionName: string;
@@ -190,6 +200,14 @@ export async function GET(request: Request, context: RouteContext) {
         );
       }
       if (resource.project !== projectId) continue;
+      const deletionReferences = deletionReferencesByBranch.get(resource.branch) ?? {
+        connectionCount: 0,
+        activeLeaseCount: 0,
+      };
+      if (row.deletedAt === null) deletionReferences.connectionCount += 1;
+      deletionReferences.activeLeaseCount += activeLeases.get(row.id) ?? 0;
+      deletionReferencesByBranch.set(resource.branch, deletionReferences);
+      if (row.deletedAt !== null || row.revocationPendingAt !== null) continue;
       if (!liveBranchIds.has(resource.branch)) {
         missingTargets.push({
           connectionId: row.id,
@@ -239,13 +257,53 @@ export async function GET(request: Request, context: RouteContext) {
       integrationGeneration: integration.generation.toString(),
       observedAt: new Date().toISOString(),
       rootIds: inventory.rootIds,
-      branches: inventory.branches.map((branch) => ({
-        ...branch,
-        ...(managedAccessByBranch.has(branch.id)
-          ? { managedAccess: managedAccessByBranch.get(branch.id) }
-          : {}),
-        connections: referencesByBranch.get(branch.id) ?? [],
-      })),
+      branches: inventory.branches.map((branch) => {
+        const connections = referencesByBranch.get(branch.id) ?? [];
+        const deletionReferences = deletionReferencesByBranch.get(branch.id) ?? {
+          connectionCount: 0,
+          activeLeaseCount: 0,
+        };
+        const boundary = branchBoundaryById.get(branch.id);
+        const deletionBlockerCodes: string[] = [];
+        if (boundary) {
+          if (boundary.state !== "succeeded") {
+            deletionBlockerCodes.push("CREATE_OPERATION_INCOMPLETE");
+          }
+          if (!branch.ready || branch.currentState !== "ready" || branch.pendingState) {
+            deletionBlockerCodes.push("BRANCH_NOT_READY");
+          }
+          if (branch.treeParentId === null) deletionBlockerCodes.push("ROOT_BRANCH");
+          if (branch.default) deletionBlockerCodes.push("DEFAULT_BRANCH");
+          if (branch.protected) deletionBlockerCodes.push("PROTECTED_BRANCH");
+          if (inventory.branches.some((candidate) => candidate.treeParentId === branch.id)) {
+            deletionBlockerCodes.push("CHILD_BRANCHES");
+          }
+          if (deletionReferences.connectionCount > 0) {
+            deletionBlockerCodes.push("WORKSPACE_CONNECTIONS");
+          }
+          if (deletionReferences.activeLeaseCount > 0) {
+            deletionBlockerCodes.push("ACTIVE_LEASES");
+          }
+          if (branch.restrictedActions.length > 0) {
+            deletionBlockerCodes.push("PROVIDER_RESTRICTED");
+          }
+        }
+        return {
+          ...branch,
+          ...(managedAccessByBranch.has(branch.id)
+            ? { managedAccess: managedAccessByBranch.get(branch.id) }
+            : {}),
+          ...(boundary
+            ? {
+              deletion: {
+                canPlan: deletionBlockerCodes.length === 0,
+                blockerCodes: deletionBlockerCodes,
+              },
+            }
+            : {}),
+          connections,
+        };
+      }),
       missingTargets,
     });
   } catch (error) {

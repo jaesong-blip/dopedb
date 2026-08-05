@@ -3,6 +3,7 @@
 // never projected out of this module.
 
 import type { NeonBranchCreatePlan } from "./neon-branch-plan";
+import type { NeonBranchDeletePlan } from "./neon-branch-delete-plan";
 import { neonSegment } from "./neon-identifiers";
 import { ProviderRequestError } from "./provider-types";
 
@@ -26,6 +27,13 @@ export type NeonBranchCreateReceipt = Readonly<{
   providerOperationId: string | null;
   providerOperationStatus: NeonOperationStatus | null;
   endpointId: string | null;
+}>;
+
+export type NeonBranchDeleteReceipt = Readonly<{
+  branchId: string;
+  providerOperationId: string | null;
+  providerOperationStatus: NeonOperationStatus | null;
+  alreadyDeleted: boolean;
 }>;
 
 export type ParsedNeonBranchOperation = Readonly<{
@@ -247,5 +255,54 @@ export function parseNeonBranchCreateReceipt(
     providerOperationId: primary?.id ?? null,
     providerOperationStatus: primary?.status ?? null,
     endpointId: endpoint?.id ?? null,
+  };
+}
+
+export function parseNeonBranchDeleteReceipt(
+  value: unknown,
+  plan: NeonBranchDeletePlan,
+): NeonBranchDeleteReceipt {
+  if (value === null) {
+    return {
+      branchId: plan.target.branchId,
+      providerOperationId: null,
+      providerOperationStatus: null,
+      alreadyDeleted: true,
+    };
+  }
+  const body = object(value);
+  const branch = object(body.branch);
+  if (
+    branch.id !== plan.target.branchId
+    || branch.project_id !== plan.target.projectId
+  ) {
+    return invalid("Neon returned an invalid deleted branch");
+  }
+  const operationValues = Array.isArray(body.operations) ? body.operations : [];
+  if (operationValues.length > 64) {
+    return invalid("Neon returned too many branch delete operations");
+  }
+  const seenOperations = new Set<string>();
+  const operations = operationValues.map((operation) => {
+    const parsed = parseNeonBranchOperation(
+      operation,
+      plan.target.projectId,
+      plan.target.branchId,
+    );
+    const operationKey = `${parsed.id}:${parsed.action}`;
+    if (seenOperations.has(operationKey)) {
+      return invalid("Neon repeated a branch delete operation");
+    }
+    seenOperations.add(operationKey);
+    return parsed;
+  });
+  const primary = operations.find((operation) => operation.action === "delete_timeline")
+    ?? operations.find((operation) => operation.branchId === plan.target.branchId)
+    ?? null;
+  return {
+    branchId: plan.target.branchId,
+    providerOperationId: primary?.id ?? null,
+    providerOperationStatus: primary?.status ?? null,
+    alreadyDeleted: false,
   };
 }

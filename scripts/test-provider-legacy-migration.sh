@@ -219,6 +219,13 @@ SQL
 
 psql_fixture --quiet --file="$migration_0016"
 
+migration_0017="$fixture_root/workspace-cloud/drizzle/0017_lying_hex.sql"
+psql_fixture --quiet \
+  --command='BEGIN' \
+  --file="$migration_0017" \
+  --command='ROLLBACK'
+psql_fixture --quiet --file="$migration_0017"
+
 psql_fixture --quiet <<'SQL'
 DO $fixture$
 DECLARE
@@ -278,6 +285,49 @@ VALUES
   ('10000000-0000-4000-8000-000000000002', 'legacy-workspace', 'neon',
    'active', 'legacy-neon-account', 'Legacy Neon', 'sealed-neon-credential',
    'api-key-v1', 'legacy-owner');
+
+DO $fixture$
+BEGIN
+  INSERT INTO "workspace_control"."workspace_provider_operation"
+    ("id", "organization_id", "integration_id", "provider",
+     "integration_generation", "kind", "state", "idempotency_key",
+     "request_hash", "plan_hash", "plan_expires_at", "risk",
+     "approval_policy", "requested_by_member_id", "requested_by_user_id",
+     "requested_by_session_id", "requested_by_role", "resource_scope",
+     "source_resource_id", "target_name", "ownership_marker", "redacted_plan")
+  VALUES
+    ('40000000-0000-4000-8000-000000000010', 'legacy-workspace',
+     '10000000-0000-4000-8000-000000000002', 'neon', 1,
+     'neon.branch.delete', 'awaiting_approval',
+     '41000000-0000-4000-8000-000000000010', repeat('4', 64), repeat('5', 64),
+     now() + interval '10 minutes', 'standard', 'single_admin',
+     'legacy-member', 'legacy-owner', 'legacy-session', 'owner',
+     'neon-project', 'br-delete', 'safe-branch', 'v1.' || repeat('E', 43), '{}'::jsonb);
+  DELETE FROM "workspace_control"."workspace_provider_operation"
+  WHERE "id" = '40000000-0000-4000-8000-000000000010';
+
+  BEGIN
+    INSERT INTO "workspace_control"."workspace_provider_operation"
+      ("id", "organization_id", "integration_id", "provider",
+       "integration_generation", "kind", "state", "idempotency_key",
+       "request_hash", "plan_hash", "plan_expires_at", "risk",
+       "approval_policy", "requested_by_member_id", "requested_by_user_id",
+       "requested_by_session_id", "requested_by_role", "resource_scope",
+       "source_resource_id", "target_name", "ownership_marker", "redacted_plan")
+    VALUES
+      ('40000000-0000-4000-8000-000000000011', 'legacy-workspace',
+       '10000000-0000-4000-8000-000000000002', 'neon', 1,
+       'neon.branch.restore', 'awaiting_approval',
+       '41000000-0000-4000-8000-000000000011', repeat('6', 64), repeat('7', 64),
+       now() + interval '10 minutes', 'standard', 'single_admin',
+       'legacy-member', 'legacy-owner', 'legacy-session', 'owner',
+       'neon-project', 'br-delete', 'safe-branch', 'v1.' || repeat('F', 43), '{}'::jsonb);
+    RAISE EXCEPTION 'unimplemented provider operation kind was accepted';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+END
+$fixture$;
 
 INSERT INTO "workspace_control"."workspace_provider_operation"
   ("id", "organization_id", "integration_id", "provider",

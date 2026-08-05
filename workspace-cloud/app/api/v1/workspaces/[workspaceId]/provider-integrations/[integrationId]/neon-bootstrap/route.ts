@@ -539,6 +539,7 @@ export async function POST(request: Request, context: RouteContext) {
         integrationId,
         integrationGeneration: integration.generation,
         operationId: plan.branchOperation.operationId,
+        kind: "neon.branch.create",
         planHash: plan.branchOperation.planHash,
         ownershipMarker: plan.branchOperation.ownershipMarker,
         projectId: applied.resource.project,
