@@ -15,7 +15,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 
-import type { ExecOutcome } from "../../ipc/types";
 import type { QueryServiceSession } from "../queryServices/domain";
 import {
   listQueryServiceSessions,
@@ -25,7 +24,7 @@ import type { SqlOperationProposal } from "./domain";
 import {
   inspectSql,
   proposeSql,
-  runSqlBoundedPage,
+  runSqlReadPage,
   runSqlReadStream,
   runSqlStream,
 } from "./tauriAdapter";
@@ -164,49 +163,119 @@ describe("query Tauri adapter", () => {
     );
   });
 
-  it("runs only a proposal that is both read-only and approval-free", async () => {
-    const outcome: ExecOutcome = {
-      result: null,
-      affected: null,
-      committed: false,
-      manualTransaction: false,
-    };
-    invokeMock
-      .mockResolvedValueOnce(readProposal)
-      .mockResolvedValueOnce(outcome);
+  it("collects a bounded table page through one atomic read stream", async () => {
+    let resolveReceipt:
+      | ((receipt: {
+          operationId: string;
+          rowCount: number;
+          truncated: boolean;
+          durationMs: number;
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation((command) => {
+      if (command === "run_sql_read_stream") {
+        return new Promise((resolve) => {
+          resolveReceipt = resolve;
+        });
+      }
+      if (command === "pull_sql_stream_batch") {
+        return Promise.resolve({
+          operationId: "operation-1",
+          sequence: 0,
+          columns: ["id"],
+          rows: [[1]],
+        });
+      }
+      return Promise.resolve(true);
+    });
 
-    await expect(
-      runSqlBoundedPage(
-        "connection-1",
-        "SELECT 1",
-        "data-view",
-        "analytics",
-      ),
-    ).resolves.toBe(outcome);
-    expect(invokeMock).toHaveBeenNthCalledWith(1, "propose_sql", {
-      id: "connection-1",
-      sql: "SELECT 1",
-      database: "analytics",
-      namespace: null,
-      origin: "data-view",
-    });
-    expect(invokeMock).toHaveBeenNthCalledWith(2, "run_sql", {
+    const resultPromise = runSqlReadPage(
+      "connection-1",
+      "SELECT 1",
+      "data-view",
+      "analytics",
+    );
+    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string })
+      .capability;
+    channels[0]?.onmessage?.({
       operationId: "operation-1",
+      sequence: 0,
+      capability,
     });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    resolveReceipt?.({
+      operationId: "operation-1",
+      rowCount: 1,
+      truncated: false,
+      durationMs: 4,
+    });
+
+    await expect(resultPromise).resolves.toEqual({
+      columns: ["id"],
+      rows: [[1]],
+      rowCount: 1,
+      truncated: false,
+      durationMs: 4,
+    });
+    expect(invokeMock.mock.calls.map(([command]) => command)).not.toContain(
+      "propose_sql",
+    );
+    expect(invokeMock.mock.calls.map(([command]) => command)).not.toContain(
+      "run_sql",
+    );
   });
 
-  it("rejects a target-mutating proposal before run_sql", async () => {
-    invokeMock.mockResolvedValueOnce({
-      ...readProposal,
-      classification: { ...readProposal.classification, kind: "write" },
+  it("rejects and cancels a table page batch with the wrong row width", async () => {
+    let resolveReceipt:
+      | ((receipt: {
+          operationId: string;
+          rowCount: number;
+          truncated: boolean;
+          durationMs: number;
+        }) => void)
+      | undefined;
+    invokeMock.mockImplementation((command) => {
+      if (command === "run_sql_read_stream") {
+        return new Promise((resolve) => {
+          resolveReceipt = resolve;
+        });
+      }
+      if (command === "pull_sql_stream_batch") {
+        return Promise.resolve({
+          operationId: "operation-1",
+          sequence: 0,
+          columns: ["id"],
+          rows: [[1, 2]],
+        });
+      }
+      return Promise.resolve(true);
     });
 
-    await expect(
-      runSqlBoundedPage("connection-1", "UPDATE users SET role = 'admin'"),
-    ).rejects.toThrow(
-      "read execution helper rejected a target-mutating proposal",
+    const resultPromise = runSqlReadPage("connection-1", "SELECT 1");
+    const rejection = expect(resultPromise).rejects.toThrow("wrong width");
+    const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string })
+      .capability;
+    channels[0]?.onmessage?.({
+      operationId: "operation-1",
+      sequence: 0,
+      capability,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    resolveReceipt?.({
+      operationId: "operation-1",
+      rowCount: 1,
+      truncated: false,
+      durationMs: 4,
+    });
+
+    await rejection;
+    expect(invokeMock).toHaveBeenCalledWith("cancel_sql_stream", {
+      operationId: "operation-1",
+      capability,
+    });
+    expect(invokeMock.mock.calls.map(([command]) => command)).not.toContain(
+      "ack_sql_stream",
     );
-    expect(invokeMock).toHaveBeenCalledTimes(1);
   });
 
   it("streams an existing read proposal through one bounded-channel command", async () => {

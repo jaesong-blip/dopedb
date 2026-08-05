@@ -15,6 +15,7 @@ import {
 } from "../features/queries/domain";
 import type { GridSort } from "../lib/sqlBuild";
 import { Icon } from "./Icon";
+import DataGridColumnFilterMenu from "./DataGridColumnFilterMenu";
 import { useI18n } from "../lib/i18n";
 import {
   extendGridSelection,
@@ -38,6 +39,8 @@ type Props = {
   startIndex: number;
   sort?: GridSort | null;
   onSort?: (col: string) => void;
+  filters?: Record<string, string>;
+  onFilter?: (col: string, value: string) => void;
   selectedRow?: number | null;
   onSelectRow?: (i: number) => void;
   onCellClick?: (value: unknown, rowIndex: number, col: string) => void;
@@ -308,24 +311,33 @@ export default function DataGridVirtual(props: Props) {
                 style={{ left: offsets[index], width: columnWidths[index] }}
                 {...sortableHeaderProps}
               >
-                <span
-                  className="tw:inline-flex tw:min-w-0 tw:items-center tw:gap-1 tw:align-middle tw:[&_.icon]:shrink-0 tw:[&_.icon]:text-xs tw:[&_.icon]:text-muted-foreground tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis"
-                  title={props.columnMeta?.[name]?.dataType}
-                >
-                  {props.columnMeta?.[name] ? (
-                    <Icon
-                      name={props.columnMeta[name].pk ? "key" : "columns"}
+                <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1 tw:pr-1">
+                  <span
+                    className="tw:inline-flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1 tw:overflow-hidden tw:align-middle tw:[&_.icon]:shrink-0 tw:[&_.icon]:text-xs tw:[&_.icon]:text-muted-foreground tw:[&>span]:overflow-hidden tw:[&>span]:text-ellipsis"
+                    title={props.columnMeta?.[name]?.dataType}
+                  >
+                    {props.columnMeta?.[name] ? (
+                      <Icon
+                        name={props.columnMeta[name].pk ? "key" : "columns"}
+                      />
+                    ) : null}
+                    <span>{name}</span>
+                    {props.sort?.col === name ? (
+                      <Icon
+                        name={props.sort.dir === "asc" ? "caretUp" : "caretDown"}
+                        className="tw:text-2xs tw:text-primary"
+                      />
+                    ) : null}
+                  </span>
+                  {props.onFilter ? (
+                    <DataGridColumnFilterMenu
+                      column={name}
+                      values={props.result.rows.map((row) => row[index])}
+                      filter={props.filters?.[name] ?? ""}
+                      onFilter={(value) => props.onFilter?.(name, value)}
                     />
                   ) : null}
-                  <span>{name}</span>
                 </span>
-                {props.sort?.col === name && (
-                  <span className="tw:text-2xs tw:text-primary">
-                    <Icon
-                      name={props.sort.dir === "asc" ? "caretUp" : "caretDown"}
-                    />
-                  </span>
-                )}
                 <span
                   className="tw:absolute tw:top-0 tw:right-0 tw:z-[var(--ds-z-sticky)] tw:h-full tw:w-2 tw:cursor-col-resize tw:hover:bg-primary/55 tw:active:bg-primary/55"
                   title={t("grid.resizeHint")}

@@ -20,7 +20,7 @@ const queryCommandFunctions = [
   "runSql",
   "runSqlStream",
   "runSqlReadStream",
-  "runSqlBoundedPage",
+  "runSqlReadPage",
 ];
 const removedQueryCommandFunctions = ["classifySql", "previewSql", "runSqlRead"];
 const queryContractTypes = [

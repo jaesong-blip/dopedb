@@ -34,7 +34,7 @@ import {
   WorkbenchEmptyState,
   WorkbenchPane,
 } from "../../design-system/components/Workbench";
-import { tableRowsQuery } from "../../lib/queries";
+import { tableCountQuery, tableRowsQuery } from "../../lib/queries";
 import { tableKey } from "../../lib/tableRef";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -66,8 +66,13 @@ export default function SqlTableData({
     requestedTable.database ?? connection.database,
   );
   const [ddlOpen, setDdlOpen] = useState(false);
+  const [catalogEnabled, setCatalogEnabled] = useState(false);
   const engine = connection.engine;
-  const { table, snapshotQuery } = useCatalogTableMetadata(connection.id, requestedTable);
+  const { table, snapshotQuery } = useCatalogTableMetadata(
+    connection.id,
+    requestedTable,
+    catalogEnabled,
+  );
 
   const pageSize = Math.min(
     TABLE_PAGE_SIZE,
@@ -115,8 +120,23 @@ export default function SqlTableData({
     // Paging and filtering repaint the previous page (dimmed) instead of blanking the grid.
     placeholderData: keepPreviousData,
   });
+  const pageReady = rowsQuery.data !== undefined && !rowsQuery.isPlaceholderData;
+  const countQuery = useQuery({
+    ...tableCountQuery({
+      connectionId: connection.id,
+      engine,
+      table,
+      filters: appliedFilters,
+      whereExpression: appliedWhereExpression,
+    }),
+    enabled: pageReady,
+  });
+  useEffect(() => {
+    if (pageReady) setCatalogEnabled(true);
+  }, [pageReady]);
   const result = rowsQuery.data?.result ?? null;
-  const total = rowsQuery.data?.total ?? null;
+  const total = countQuery.data ?? null;
+  const hasMore = rowsQuery.data?.hasMore ?? false;
   const busy = rowsQuery.isFetching;
   const err = writeErr ?? (rowsQuery.error ? errMessage(rowsQuery.error) : null);
   const catalogRelation = snapshotQuery.data?.relations.find(
@@ -156,6 +176,11 @@ export default function SqlTableData({
   const rows = result?.rowCount ?? 0;
   const from = rows === 0 ? 0 : page * pageSize + 1;
   const to = page * pageSize + rows;
+
+  async function refreshRowsAndCount() {
+    await rowsQuery.refetch();
+    await countQuery.refetch();
+  }
 
   function cycleSort(col: string) {
     commands.patch({
@@ -353,7 +378,7 @@ export default function SqlTableData({
       pendingDelete: null,
       writeError: null,
     });
-    void rowsQuery.refetch();
+    void refreshRowsAndCount();
   }
 
   const noEditTitle = nonScalarPk
@@ -374,6 +399,7 @@ export default function SqlTableData({
         page={page}
         pageSize={pageSize}
         total={total}
+        hasMore={hasMore}
         rows={rows}
         busy={busy}
         jobsOpen={jobsOpen}
@@ -407,7 +433,7 @@ export default function SqlTableData({
           })
         }
         onPage={(nextPage) => commands.patch({ page: nextPage })}
-        onRefresh={() => void rowsQuery.refetch()}
+        onRefresh={() => void refreshRowsAndCount()}
         onShowDdl={() => setDdlOpen(true)}
         onToggleJobs={() =>
           commands.patch({

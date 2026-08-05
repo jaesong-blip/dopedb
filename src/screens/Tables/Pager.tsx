@@ -8,6 +8,7 @@ export default function Pager({
   page,
   pageSize,
   total,
+  hasMore,
   rows,
   busy,
   showRefresh = true,
@@ -19,6 +20,7 @@ export default function Pager({
   page: number;
   pageSize: number;
   total: number | null;
+  hasMore?: boolean;
   rows: number;
   busy: boolean;
   showRefresh?: boolean;
@@ -31,7 +33,8 @@ export default function Pager({
   const lastPage =
     total != null ? Math.max(0, Math.ceil(total / pageSize) - 1) : null;
   const hasPrev = page > 0;
-  const hasNext = total != null ? page < (lastPage ?? 0) : rows === pageSize;
+  const hasNext =
+    total != null ? page < (lastPage ?? 0) : (hasMore ?? rows === pageSize);
 
   return (
     <div

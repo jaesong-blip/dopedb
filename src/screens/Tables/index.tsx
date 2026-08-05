@@ -16,5 +16,15 @@ export default function TableData({
   if (isDocumentEngine(connection.engine)) {
     return <MongoTableData connection={connection} table={table} />;
   }
-  return <SqlTableData connection={connection} table={table} safety={safety} />;
+  const sqlTableKey = [table.database, table.schema, table.name, table.kind]
+    .filter(Boolean)
+    .join(".");
+  return (
+    <SqlTableData
+      key={sqlTableKey}
+      connection={connection}
+      table={table}
+      safety={safety}
+    />
+  );
 }

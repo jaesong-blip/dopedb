@@ -73,6 +73,9 @@ export function useWorkspaceManualTransactions(
           queryKey: ["tableRows", transaction.connectionId],
         }),
         queryClient.invalidateQueries({
+          queryKey: ["tableCount", transaction.connectionId],
+        }),
+        queryClient.invalidateQueries({
           queryKey: qk.history(transaction.connectionId),
         }),
         queryClient.invalidateQueries({

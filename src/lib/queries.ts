@@ -49,7 +49,7 @@ import {
 import { listErdLayouts } from "../features/erd/tauriAdapter";
 import { jobConnectionId } from "../features/jobs/domain";
 import { listJobs } from "../features/jobs/tauriAdapter";
-import { runSqlBoundedPage } from "../features/queries/tauriAdapter";
+import { runSqlReadPage } from "../features/queries/tauriAdapter";
 import {
   workspaceAuthStateQuery,
   workspaceContextQuery,
@@ -138,7 +138,7 @@ const transientRetry = {
   retryDelay: (attempt: number) => Math.min(1000 * 2 ** attempt, 8_000),
 } as const;
 
-export type TableRowsPage = { result: QueryResult | null; total: number | null };
+export type TableRowsPage = { result: QueryResult; hasMore: boolean };
 
 export type DocumentRowsArgs = {
   connectionId: string;
@@ -158,6 +158,11 @@ export type TableRowsArgs = {
   pageSize: number;
   page: number;
 };
+
+export type TableCountArgs = Pick<
+  TableRowsArgs,
+  "connectionId" | "engine" | "table" | "filters" | "whereExpression"
+>;
 
 // Every key starts with a resource segment plus the connection id, so a connection-scoped
 // invalidation is a prefix match and never has to enumerate sub-resources.
@@ -230,6 +235,13 @@ export const qk = {
         pageSize: args.pageSize,
         page: args.page,
       },
+    ] as const,
+  tableCount: (args: TableCountArgs) =>
+    [
+      "tableCount",
+      args.connectionId,
+      tableKey(args.table),
+      { filters: args.filters, whereExpression: args.whereExpression },
     ] as const,
   documentRows: (args: DocumentRowsArgs) =>
     [
@@ -548,8 +560,8 @@ export function documentCountQuery(connectionId: string, collection: string) {
   });
 }
 
-// One page of table data plus its exact total. Both statements are issued together so a
-// cached page always carries the row count that was true when it was read.
+// One page of table data. Reading one look-ahead row provides exact next-page state
+// without putting a potentially table-sized COUNT(*) on the first-paint critical path.
 export function tableRowsQuery(args: TableRowsArgs) {
   const {
     connectionId,
@@ -571,53 +583,42 @@ export function tableRowsQuery(args: TableRowsArgs) {
         whereExpression,
         orderByExpression,
         sort,
-        limit: pageSize,
+        limit: pageSize + 1,
         offset: page * pageSize,
       });
-      const countSql = buildCountQuery(
-        engine,
-        table,
-        filters,
-        whereExpression,
+      const pageResult = await runSqlReadPage(
+        connectionId,
+        pageSql,
+        "data-view",
+        table.database ?? undefined,
       );
-      // SQLite serializes the operation-history writes that accompany both reads.
-      // Starting page and count proposals together intermittently raises SQLITE_BUSY,
-      // so keep this engine sequential while network databases retain parallel reads.
-      const [pageOut, countOut] =
-        engine === "sqlite"
-          ? [
-              await runSqlBoundedPage(
-                connectionId,
-                pageSql,
-                "data-view",
-                table.database ?? undefined,
-              ),
-              await runSqlBoundedPage(
-                connectionId,
-                countSql,
-                "data-view",
-                table.database ?? undefined,
-              ),
-            ]
-          : await Promise.all([
-              runSqlBoundedPage(
-                connectionId,
-                pageSql,
-                "data-view",
-                table.database ?? undefined,
-              ),
-              runSqlBoundedPage(
-                connectionId,
-                countSql,
-                "data-view",
-                table.database ?? undefined,
-              ),
-            ]);
-      const total = countOut.result?.rows?.[0]?.[0];
+      const hasMore = pageResult.rows.length > pageSize || pageResult.truncated;
+      const rows = pageResult.rows.slice(0, pageSize);
       return {
-        result: pageOut.result ?? null,
-        total: total == null ? null : Number(total),
+        result: { ...pageResult, rows, rowCount: rows.length },
+        hasMore,
       };
+    },
+  });
+}
+
+// Exact totals are useful for last-page navigation, but they are secondary metadata.
+// Cache them independently so paging never repeats the count and callers can defer it
+// until the first visible page has committed.
+export function tableCountQuery(args: TableCountArgs) {
+  const { connectionId, engine, table, filters, whereExpression } = args;
+  return queryOptions({
+    queryKey: qk.tableCount(args),
+    staleTime: LOG_STALE_MS,
+    queryFn: async (): Promise<number | null> => {
+      const result = await runSqlReadPage(
+        connectionId,
+        buildCountQuery(engine, table, filters, whereExpression),
+        "data-view-count",
+        table.database ?? undefined,
+      );
+      const count = result.rows[0]?.[0];
+      return count == null ? null : Number(count);
     },
   });
 }

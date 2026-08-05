@@ -263,12 +263,10 @@ function buildOrderBy(
     const keys = [`${quoteIdent(engine, sort.col)} ${dir}`, ...pkTiebreakers(engine, table, sort.col)];
     return `ORDER BY ${keys.join(", ")}`;
   }
-  // Stable default so LIMIT/OFFSET paging can't repeat or skip rows: primary key,
-  // falling back to the first column.
-  const pk = pkColumns(table);
-  const cols = pk.length ? pk : table.columns.slice(0, 1);
-  if (!cols.length) return "";
-  return `ORDER BY ${cols.map((c) => quoteIdent(engine, c.name)).join(", ")}`;
+  // Preserve the database's native scan order until the user asks for sorting.
+  // An implicit first-column sort can force a full filesort on large tables, and
+  // overview-only metadata may not know the real primary key on the first page.
+  return "";
 }
 
 function nn(n: number): number {

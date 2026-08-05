@@ -28,16 +28,20 @@ export function resolveCatalogTable(
 }
 
 /** Shares the full-catalog upgrade and delayed snapshot read used by editable SQL tables. */
-export function useCatalogTableMetadata(connectionId: string, requested: CatalogTable) {
+export function useCatalogTableMetadata(
+  connectionId: string,
+  requested: CatalogTable,
+  enabled = true,
+) {
   const scope = useCatalogScope();
   const database = requested.database ?? "";
   const defaultCatalogQuery = useQuery({
     ...catalogQuery(connectionId, scope),
-    enabled: !requested.database && scope.ready,
+    enabled: enabled && !requested.database && scope.ready,
   });
   const selectedCatalogQuery = useQuery({
     ...databaseCatalogQuery(connectionId, database, scope),
-    enabled: !!requested.database && scope.ready,
+    enabled: enabled && !!requested.database && scope.ready,
   });
   const catalogQueryResult = requested.database
     ? selectedCatalogQuery
@@ -50,7 +54,8 @@ export function useCatalogTableMetadata(connectionId: string, requested: Catalog
       scope,
     ),
     enabled:
-      !requested.database
+      enabled
+      && !requested.database
       && catalogQueryResult.data !== undefined
       && scope.ready,
   });
@@ -62,7 +67,8 @@ export function useCatalogTableMetadata(connectionId: string, requested: Catalog
       scope,
     ),
     enabled:
-      !!requested.database
+      enabled
+      && !!requested.database
       && catalogQueryResult.data !== undefined
       && scope.ready,
   });

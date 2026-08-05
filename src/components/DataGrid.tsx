@@ -74,20 +74,33 @@ type DataGridProps = {
   surface?: "panel" | "workbench";
 };
 
+export function shouldVirtualizeDataGrid(
+  result: QueryResult,
+  rowSource?: SqlStreamRowSource,
+) {
+  return (
+    !!rowSource
+    || result.rows.length > 200
+    || result.columns.length > 18
+  );
+}
+
 export default function DataGrid(props: DataGridProps) {
   // This wrapper must stay O(columns). In particular, do not add table-only
   // scans here: virtual results may carry 50k × 50 rows.
-  const shouldVirtualize =
-    !!props.rowSource ||
-    props.result.rows.length > 200 ||
-    props.result.columns.length > 18;
-  if (shouldVirtualize && !props.onFilter) {
+  const shouldVirtualize = shouldVirtualizeDataGrid(
+    props.result,
+    props.rowSource,
+  );
+  if (shouldVirtualize) {
     return (
       <DataGridVirtual
         result={props.result}
         startIndex={props.startIndex ?? 0}
         sort={props.sort}
         onSort={props.onSort}
+        filters={props.filters}
+        onFilter={props.onFilter}
         selectedRow={props.selectedRow}
         onSelectRow={props.onSelectRow}
         onCellClick={props.onCellClick}

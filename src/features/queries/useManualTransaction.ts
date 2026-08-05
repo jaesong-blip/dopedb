@@ -47,6 +47,9 @@ export function useManualTransaction(
           queryClient.invalidateQueries({
             queryKey: ["tableRows", connectionId],
           }),
+          queryClient.invalidateQueries({
+            queryKey: ["tableCount", connectionId],
+          }),
           queryClient.invalidateQueries({ queryKey: qk.history(connectionId) }),
           queryClient.invalidateQueries({ queryKey: qk.audit(connectionId) }),
         ]);

@@ -25,6 +25,7 @@ type Props = {
   page: number;
   pageSize: number;
   total: number | null;
+  hasMore: boolean;
   rows: number;
   busy: boolean;
   jobsOpen: boolean;
@@ -58,6 +59,7 @@ export default function TableToolbar(props: Props) {
     page,
     pageSize,
     total,
+    hasMore,
     rows,
     busy,
     jobsOpen,
@@ -83,7 +85,7 @@ export default function TableToolbar(props: Props) {
   const lastPage =
     total != null ? Math.max(0, Math.ceil(total / pageSize) - 1) : null;
   const hasPrev = page > 0;
-  const hasNext = total != null ? page < (lastPage ?? 0) : rows === pageSize;
+  const hasNext = total != null ? page < (lastPage ?? 0) : hasMore;
 
   return (
     <WorkbenchToolbar label={t("tables.querySurface")}>
@@ -179,6 +181,7 @@ export default function TableToolbar(props: Props) {
         page={page}
         pageSize={pageSize}
         total={total}
+        hasMore={hasMore}
         rows={rows}
         busy={busy}
         showRefresh={false}

@@ -3,7 +3,7 @@
 
 import { Channel, invoke } from "@tauri-apps/api/core";
 
-import type { ExecOutcome } from "../../ipc/types";
+import type { ExecOutcome, QueryResult } from "../../ipc/types";
 import type {
   SqlInspection,
   ManualTransactionStatus,
@@ -292,20 +292,45 @@ async function pullAcceptAndAcknowledgeStreamBatch(
   }
 }
 
-// Plan and consume a SQL read without exposing an approval shortcut. Callers that may generate
-// mutations must use the explicit proposal/approval/run sequence.
-/** Bounded legacy page read used only by paginated table data, never SQL console output. */
-export async function runSqlBoundedPage(
+/** Collect one bounded auto-run read through the same atomic stream used by the SQL console. */
+export async function runSqlReadPage(
   id: string,
   sql: string,
   origin?: string,
   database?: string,
-): Promise<ExecOutcome> {
-  const proposal = await proposeSql(id, sql, origin, undefined, database);
-  if (proposal.approvalRequired || proposal.classification.kind !== "read") {
-    throw new Error(
-      "read execution helper rejected a target-mutating proposal",
-    );
+): Promise<QueryResult> {
+  let columns: string[] | null = null;
+  const rows: unknown[][] = [];
+  const controller = runSqlReadStream(
+    id,
+    sql,
+    (batch) => {
+      if (
+        columns
+        && (columns.length !== batch.columns.length
+          || columns.some((column, index) => column !== batch.columns[index]))
+      ) {
+        throw new Error("SQL page stream changed columns between batches");
+      }
+      if (batch.rows.some((row) => row.length !== batch.columns.length)) {
+        throw new Error("SQL page stream returned a row with the wrong width");
+      }
+      columns ??= [...batch.columns];
+      rows.push(...batch.rows);
+    },
+    origin,
+    undefined,
+    database,
+  );
+  const receipt = await controller.completion;
+  if (receipt.rowCount !== rows.length) {
+    throw new Error("SQL page stream receipt did not match accepted rows");
   }
-  return runSql(proposal.operationId);
+  return {
+    columns: columns ?? [],
+    rows: rows as QueryResult["rows"],
+    rowCount: rows.length,
+    truncated: receipt.truncated,
+    durationMs: receipt.durationMs,
+  };
 }

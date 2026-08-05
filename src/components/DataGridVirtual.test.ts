@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPageQuery,
   gridExpressionIssue,
 } from "../lib/sqlBuild";
+import type { CatalogTable } from "../ipc/types";
+import { shouldVirtualizeDataGrid } from "./DataGrid";
 import { virtualGridWindow } from "./DataGridVirtual";
 import {
   extendGridSelection,
@@ -38,6 +41,29 @@ describe("DataGridVirtual window", () => {
   });
 
   it("keeps boundary coordinates and rectangular selection deterministic", () => {
+    expect(
+      shouldVirtualizeDataGrid({
+        columns: Array.from({ length: 19 }, (_, index) => `column_${index}`),
+        rows: [[1]],
+        rowCount: 1,
+        truncated: false,
+        durationMs: 1,
+      }),
+    ).toBe(true);
+    const table = {
+      database: null,
+      schema: "public",
+      name: "events",
+      columns: [{ name: "unindexed_value", pk: false }],
+    } as CatalogTable;
+    expect(
+      buildPageQuery("postgres", table, {
+        filters: {},
+        sort: null,
+        limit: 101,
+        offset: 0,
+      }),
+    ).toBe('SELECT * FROM "public"."events" LIMIT 101 OFFSET 0');
     expect(
       virtualGridWindow(1_000, 50, offsets, {
         top: 0,
