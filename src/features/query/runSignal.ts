@@ -11,6 +11,20 @@ export interface RunSignal {
   icon?: "alert" | "info";
 }
 
+interface RunSignalMessage {
+  key: I18nKey;
+  vars?: Record<string, string | number>;
+}
+
+export interface RunSignalAnalysis {
+  tone: RunSignal["tone"];
+  icon?: RunSignal["icon"];
+  text: RunSignalMessage;
+  title?: RunSignalMessage;
+}
+
+export type RunSignalSafety = Pick<SafetySettings, "allowWrites" | "maxRows">;
+
 type Translate = (
   key: I18nKey,
   vars?: Record<string, string | number>,
@@ -49,12 +63,11 @@ function likelyUnboundedRead(sql: string): boolean {
   return likelyRead(compact) && !/\blimit\s+\d+\b/i.test(compact);
 }
 
-export function buildRunSignal(
+export function analyzeRunSignal(
   sql: string,
   statements: string[],
-  safety: SafetySettings,
-  t: Translate,
-): RunSignal | null {
+  safety: RunSignalSafety,
+): RunSignalAnalysis | null {
   if (!sql.trim()) return null;
   const effectiveStatements = statements.length > 0 ? statements : [sql];
   const writes = effectiveStatements.some(likelyMutates);
@@ -64,30 +77,36 @@ export function buildRunSignal(
       return {
         tone: "danger",
         icon: "alert",
-        text: t("sql.signalWritesDisabled"),
-        title: t("sql.writesDisabledScript"),
+        text: { key: "sql.signalWritesDisabled" },
+        title: { key: "sql.writesDisabledScript" },
       };
     }
     if (effectiveStatements.length >= 12) {
       return {
         tone: "warning",
         icon: "alert",
-        text: t("sql.signalLargeScript", { count: effectiveStatements.length }),
-        title: t("sql.scriptNote"),
+        text: {
+          key: "sql.signalLargeScript",
+          vars: { count: effectiveStatements.length },
+        },
+        title: { key: "sql.scriptNote" },
       };
     }
     if (writes) {
       return {
         tone: "warning",
         icon: "alert",
-        text: t("sql.signalWriteScript"),
-        title: t("sql.scriptNote"),
+        text: { key: "sql.signalWriteScript" },
+        title: { key: "sql.scriptNote" },
       };
     }
     return {
       tone: "muted",
       icon: "info",
-      text: t("sql.signalReadScript", { count: effectiveStatements.length }),
+      text: {
+        key: "sql.signalReadScript",
+        vars: { count: effectiveStatements.length },
+      },
     };
   }
 
@@ -96,14 +115,14 @@ export function buildRunSignal(
     return {
       tone: "warning",
       icon: "alert",
-      text: t("sql.signalNoWhere"),
+      text: { key: "sql.signalNoWhere" },
     };
   }
   if (/^explain\s+analyze\b/i.test(compactSql(statement))) {
     return {
       tone: "warning",
       icon: "alert",
-      text: t("sql.signalExplainAnalyze"),
+      text: { key: "sql.signalExplainAnalyze" },
     };
   }
   if (likelyMutates(statement)) {
@@ -111,28 +130,55 @@ export function buildRunSignal(
       return {
         tone: "danger",
         icon: "alert",
-        text: t("sql.signalWritesDisabled"),
+        text: { key: "sql.signalWritesDisabled" },
       };
     }
     return {
       tone: "warning",
       icon: "alert",
-      text: t("sql.signalWriteStatement"),
+      text: { key: "sql.signalWriteStatement" },
     };
   }
   if (likelyHeavyRead(statement)) {
     return {
       tone: "warning",
       icon: "alert",
-      text: t("sql.signalHeavyRead"),
+      text: { key: "sql.signalHeavyRead" },
     };
   }
   if (likelyUnboundedRead(statement)) {
     return {
       tone: "muted",
       icon: "info",
-      text: t("sql.signalReadCap", { count: safety.maxRows }),
+      text: {
+        key: "sql.signalReadCap",
+        vars: { count: safety.maxRows },
+      },
     };
   }
   return null;
+}
+
+export function localizeRunSignal(
+  analysis: RunSignalAnalysis | null,
+  t: Translate,
+): RunSignal | null {
+  if (!analysis) return null;
+  return {
+    tone: analysis.tone,
+    icon: analysis.icon,
+    text: t(analysis.text.key, analysis.text.vars),
+    title: analysis.title
+      ? t(analysis.title.key, analysis.title.vars)
+      : undefined,
+  };
+}
+
+export function buildRunSignal(
+  sql: string,
+  statements: string[],
+  safety: SafetySettings,
+  t: Translate,
+): RunSignal | null {
+  return localizeRunSignal(analyzeRunSignal(sql, statements, safety), t);
 }

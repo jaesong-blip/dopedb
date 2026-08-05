@@ -169,10 +169,6 @@ export function useWorkbenchDocuments({
     [],
   );
 
-  const updateDraft = useCallback((id: string, draft: string) => {
-    dispatch({ type: "updateDraft", id, draft });
-  }, []);
-
   const updateTitle = useCallback((id: string, title: string) => {
     dispatch({ type: "updateTitle", id, title });
   }, []);
@@ -233,7 +229,6 @@ export function useWorkbenchDocuments({
     activate,
     activateId,
     close,
-    updateDraft,
     updateTitle,
     updateSelectedDatabase,
     updateSelectedSchema,

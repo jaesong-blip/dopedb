@@ -56,7 +56,13 @@ import {
 } from "../../features/sqlDocuments/domain";
 import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
 import { useSqlDocumentAutosave } from "../../features/sqlDocuments/useSqlDocumentAutosave";
-import { buildRunSignal } from "../../features/query/runSignal";
+import { localizeRunSignal } from "../../features/query/runSignal";
+import { useSqlDraftAnalysis } from "../../features/query/useSqlDraftAnalysis";
+import { useSqlEditorBuffer } from "../../features/query/useSqlEditorBuffer";
+import {
+  publishWorkbenchDraft,
+  useWorkbenchDraft,
+} from "../../features/workbench/draftStore";
 import {
   findSqlParameters,
   materializeSqlParameters,
@@ -74,6 +80,7 @@ import {
 } from "../../design-system/components/Workbench";
 import { StatusBadge } from "../../design-system/components/Status";
 import { useI18n } from "../../lib/i18n";
+import { useEventCallback } from "../../lib/useEventCallback";
 import {
   connectionDatabasesQuery,
   databaseCatalogQuery,
@@ -81,6 +88,10 @@ import {
 } from "../../lib/queries";
 import { splitStatements } from "../../lib/sqlStatements";
 import { useQueryRun } from "../../lib/useQueryRun";
+import {
+  clearSqlEditorCursor,
+  publishSqlEditorCursor,
+} from "../../features/queries/editorStatusStore";
 import {
   canFallbackFromCombinedRead,
   initialSqlRunPath,
@@ -102,7 +113,7 @@ interface QueryErrorInfo extends AppErrorDetails {
 interface LastAttempt {
   sql: string;
   at: string;
-  documentSnapshot: string;
+  documentVersion: number;
   source: SqlRunSource;
 }
 
@@ -186,8 +197,7 @@ export default function Sql({
   safety,
   safetyReady,
   safetyLoadError,
-  draft,
-  setDraft,
+  draft: draftSnapshot,
   title,
   setTitle,
   selectedDatabase,
@@ -204,7 +214,6 @@ export default function Sql({
   onShowQueryServices,
   onOpenHistory,
   onRetrySafety,
-  onCursorChange,
 }: {
   connection: ConnectionProfile;
   documentId: string;
@@ -212,7 +221,6 @@ export default function Sql({
   safetyReady: boolean;
   safetyLoadError: string | null;
   draft: string;
-  setDraft: (s: string) => void;
   title: string;
   setTitle: (title: string) => void;
   selectedDatabase: string;
@@ -229,19 +237,37 @@ export default function Sql({
   onShowQueryServices: (sessionId: string) => void;
   onOpenHistory: () => void;
   onRetrySafety: () => void;
-  onCursorChange: (position: SqlCursorPosition) => void;
 }) {
   const { t } = useI18n();
-  const draftStatements = useMemo(() => splitStatements(draft), [draft]);
-  const draftIsScript = draftStatements.length > 1;
+  const shellSnapshot = useWorkbenchDraft(documentId, draftSnapshot);
+  const {
+    draft,
+    draftVersion,
+    setDraft,
+    flushSnapshot: flushDraftSnapshot,
+  } = useSqlEditorBuffer({
+    documentId,
+    snapshot: shellSnapshot,
+    onSnapshot: publishWorkbenchDraft,
+  });
+  const draftAnalysis = useSqlDraftAnalysis({
+    sql: draft,
+    version: draftVersion,
+    engine: connection.engine,
+    safety,
+  });
+  const analysisCurrent = draftAnalysis.version === draftVersion;
+  const draftIsScript =
+    analysisCurrent && draftAnalysis.statementCount > 1;
+  const draftParameterCount = analysisCurrent
+    ? draftAnalysis.parameterCount
+    : 0;
   const draftSignal = useMemo(
-    () => buildRunSignal(
-      draft,
-      draftStatements,
-      safety,
-      t,
-    ),
-    [draft, draftStatements, safety, t],
+    () =>
+      analysisCurrent
+        ? localizeRunSignal(draftAnalysis.runSignal, t)
+        : null,
+    [analysisCurrent, draftAnalysis.runSignal, t],
   );
 
   const [resultKind, setResultKind] = useState<ResultKind | null>(null);
@@ -280,10 +306,6 @@ export default function Sql({
   const [planErr, setPlanErr] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
   const [formatting, setFormatting] = useState(false);
-  const draftParameters = useMemo(
-    () => findSqlParameters(draft, connection.engine),
-    [connection.engine, draft],
-  );
   const catalogScope = useCatalogScope();
   const databasesQuery = useQuery(
     connectionDatabasesQuery(connection.id, catalogScope),
@@ -363,6 +385,7 @@ export default function Sql({
     useSavedVersion: loadSavedConflictVersion,
     keepLocalVersion: keepLocalConflictVersion,
     reportError: reportDocumentSaveError,
+    flushRecovery,
   } = useSqlDocumentAutosave({
     gateway: tauriSqlDocumentGateway,
     connectionId: connectionId(connection.id),
@@ -381,6 +404,20 @@ export default function Sql({
     onContentChange: setDraft,
     onPersisted,
   });
+  const flushEditorState = useEventCallback(() => {
+    flushDraftSnapshot();
+    flushRecovery();
+  });
+  const handleCursorChange = useEventCallback(
+    (position: SqlCursorPosition) => {
+      publishSqlEditorCursor(documentId, position);
+    },
+  );
+
+  useEffect(
+    () => () => clearSqlEditorCursor(documentId),
+    [documentId],
+  );
 
   async function formatDraft() {
     if (!draft.trim() || formatting) return;
@@ -410,6 +447,7 @@ export default function Sql({
 
   async function runSql(sql: string, source: SqlRunSource) {
     if (!sql || running || !safetyReady) return;
+    flushEditorState();
     globalThis.performance?.clearMarks?.(
       "desktop_query_interaction_start",
     );
@@ -446,7 +484,7 @@ export default function Sql({
     setRun(null);
     setScriptOut(null);
     setResultKind(script ? "script" : "single");
-    setLastAttempt({ sql, at, documentSnapshot: draft, source });
+    setLastAttempt({ sql, at, documentVersion: draftVersion, source });
 
     try {
       await execute(async () => {
@@ -552,9 +590,11 @@ export default function Sql({
     }
     void runSql(source.sql, source);
   }
+  const executeSqlFromEditor = useEventCallback(executeSql);
 
   function openParameterDialog() {
-    if (draftParameters.length === 0) return;
+    const parameters = findSqlParameters(draft, connection.engine);
+    if (parameters.length === 0) return;
     setParameterDialog({
       sql: draft,
       source: wholeDocumentRunSource(draft) ?? {
@@ -562,7 +602,7 @@ export default function Sql({
         from: 0,
         to: draft.length,
       },
-      parameters: draftParameters,
+      parameters,
       action: "apply",
     });
   }
@@ -652,8 +692,10 @@ export default function Sql({
   }
 
   function explain() {
-    if (!draft.trim() || draftIsScript || explaining) return;
-    if (draftParameters.length > 0) {
+    if (!draft.trim() || explaining) return;
+    if (splitStatements(draft).length > 1) return;
+    const parameters = findSqlParameters(draft, connection.engine);
+    if (parameters.length > 0) {
       setParameterDialog({
         sql: draft,
         source: wholeDocumentRunSource(draft) ?? {
@@ -661,7 +703,7 @@ export default function Sql({
           from: 0,
           to: draft.length,
         },
-        parameters: draftParameters,
+        parameters,
         action: "explain",
       });
       return;
@@ -673,7 +715,7 @@ export default function Sql({
   useEffect(() => {
     setPlan(null);
     setPlanErr(null);
-  }, [draft]);
+  }, [draftVersion]);
 
   useEffect(() => {
     if (!running) {
@@ -684,22 +726,23 @@ export default function Sql({
     return () => clearInterval(timer);
   }, [running]);
 
-  const promptSql = lastAttempt?.sql || draft;
   const aiPrompt = useMemo(
     () =>
-      buildSqlHelpPrompt({
-        connection,
-        database: effectiveDatabase,
-        namespace: effectiveNamespace,
-        sql: promptSql,
-        error: runErr,
-      }),
-    [connection, effectiveDatabase, effectiveNamespace, promptSql, runErr],
+      runErr
+        ? buildSqlHelpPrompt({
+            connection,
+            database: effectiveDatabase,
+            namespace: effectiveNamespace,
+            sql: lastAttempt?.sql ?? runErr.sql,
+            error: runErr,
+          })
+        : "",
+    [connection, effectiveDatabase, effectiveNamespace, lastAttempt?.sql, runErr],
   );
   const editorExecutionStatus = useMemo<SqlExecutionStatus | null>(() => {
     const attempt = lastAttempt;
     const sql = attempt?.sql.trim();
-    if (!attempt || !sql || attempt.documentSnapshot !== draft) return null;
+    if (!attempt || !sql || attempt.documentVersion !== draftVersion) return null;
     if (runErr) {
       return {
         source: attempt.source,
@@ -752,9 +795,9 @@ export default function Sql({
   }, [
     approvalRejected,
     cancelled,
-    draft,
+    draftVersion,
     elapsed,
-    lastAttempt?.documentSnapshot,
+    lastAttempt?.documentVersion,
     lastAttempt?.source,
     lastAttempt?.sql,
     pendingApproval,
@@ -842,7 +885,7 @@ export default function Sql({
           <WorkbenchButton
             iconOnly
             tone="success"
-            disabled={!draft.trim() || running || !safetyReady}
+            disabled={draft.length === 0 || running || !safetyReady}
             onClick={() => void executeSql()}
             title={t("sql.runHint")}
             aria-label={running ? t("sql.running") : t("sql.run")}
@@ -859,12 +902,12 @@ export default function Sql({
           </WorkbenchButton>
           <WorkbenchButton
             iconOnly
-            disabled={draftParameters.length === 0 || running}
+            disabled={!analysisCurrent || draftParameterCount === 0 || running}
             onClick={openParameterDialog}
             title={
-              draftParameters.length > 0
+              draftParameterCount > 0
                 ? t("sql.viewParametersCount", {
-                    count: draftParameters.length,
+                    count: draftParameterCount,
                   })
                 : t("sql.noParameters")
             }
@@ -875,7 +918,8 @@ export default function Sql({
           <WorkbenchButton
             iconOnly
             disabled={
-              !draft.trim() ||
+              draft.length === 0 ||
+              !analysisCurrent ||
               draftIsScript ||
               explaining ||
               running ||
@@ -889,7 +933,7 @@ export default function Sql({
           </WorkbenchButton>
           <WorkbenchButton
             iconOnly
-            disabled={!draft.trim() || formatting || running}
+            disabled={draft.length === 0 || formatting || running}
             onClick={() => void formatDraft()}
             title={t("sql.formatTitle")}
             aria-label={t("sql.format")}
@@ -1033,14 +1077,15 @@ export default function Sql({
           value={draft}
           editable
           onChange={setDraft}
-          onRun={executeSql}
+          onRun={executeSqlFromEditor}
           catalog={catalog}
           engine={connection.engine}
           resolveMode={resolveMode}
           defaultSchema={effectiveNamespace}
           namespaceOptions={namespaceOptions}
           minHeight="180px"
-          onCursorChange={onCursorChange}
+          onCursorChange={handleCursorChange}
+          onBlur={flushEditorState}
           executionStatus={editorExecutionStatus}
         />
       </div>

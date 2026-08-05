@@ -8,7 +8,6 @@ import type { BackgroundTask } from "../backgroundTasks/domain";
 import type { ConnectionProfile } from "../connections/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import { defaultSqlNamespace } from "../queries/namespace";
-import type { SqlEditorStatus } from "../queries/editorStatus";
 import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
 import type { WorkbenchDocument } from "../workbench/domain";
 import QueryServicesToolWindow from "../queryServices/QueryServicesToolWindow";
@@ -59,7 +58,6 @@ type Props = {
   workbenchDocuments: WorkbenchDocument[];
   activeWorkbenchDocumentId: string | null;
   explorerRevealRequest: number;
-  sqlEditorStatus: SqlEditorStatus | null;
   unseenOperationCount: number;
   sidebarWidth: number;
   mainRef: RefObject<HTMLElement | null>;
@@ -201,12 +199,6 @@ function ShellLayoutContent(props: Props) {
         ? activeWorkbenchDocument.table.database ?? selected.database
         : selected.database
     : null;
-  const activeSqlEditorStatus =
-    activeWorkbenchDocument?.kind === "sql" &&
-    props.sqlEditorStatus?.documentId === activeWorkbenchDocument.id
-      ? props.sqlEditorStatus
-      : null;
-
   return (
     <div
       className="app tw:grid tw:h-dvh tw:overflow-hidden tw:bg-muted"
@@ -410,7 +402,6 @@ function ShellLayoutContent(props: Props) {
         settlingManualTransactionIds={
           props.settlingManualTransactionIds
         }
-        editorStatus={activeSqlEditorStatus}
         writeEnabled={writeEnabled}
         unseenOperationCount={props.unseenOperationCount}
         onOpenQueryTask={(sessionId) => {

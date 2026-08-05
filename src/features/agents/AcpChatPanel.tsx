@@ -45,6 +45,7 @@ import {
 import { useI18n } from "../../lib/i18n";
 import type { ConnectionProfile } from "../connections/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
+import { readWorkbenchDraft } from "../workbench/draftStore";
 import type {
   AcpPermissionOption,
   AcpPromptContext,
@@ -220,14 +221,6 @@ export default function AcpChatPanel({
     [activeDocument, connection, selectedTable, selection],
   );
   const contextLabels = useMemo(() => contextSummary(context), [context]);
-  const submittedContext = includeEditorContext
-    ? context
-    : {
-        database: null,
-        documentName: null,
-        documentText: null,
-        table: null,
-      };
   const pendingPermissionId =
     active?.lifecycle === "waitingPermission"
       ? [...events]
@@ -447,6 +440,19 @@ export default function AcpChatPanel({
         session = focus?.session ?? null;
       }
       if (!session || session.lifecycle !== "ready") return;
+      const submittedContext = includeEditorContext
+        ? promptContext(
+            connection,
+            activeDocument,
+            selectedTable,
+            selection,
+          )
+        : {
+            database: null,
+            documentName: null,
+            documentText: null,
+            table: null,
+          };
       await promptAgentAcpSession(session.id, submitted, submittedContext);
       setPrompt("");
     } catch (reason) {
@@ -1495,7 +1501,10 @@ function promptContext(
       ? {
           database: activeDocument.selectedDatabase || connection.database,
           documentName: activeDocument.title,
-          documentText: activeDocument.draft.slice(
+          documentText: readWorkbenchDraft(
+            activeDocument.id,
+            activeDocument.draft,
+          ).slice(
             0,
             MAX_DOCUMENT_CONTEXT_CHARS,
           ),

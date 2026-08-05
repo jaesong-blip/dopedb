@@ -36,7 +36,6 @@ export type WorkbenchAction =
       connectionId: string;
       keepWelcomeFallback: boolean;
     }
-  | { type: "updateDraft"; id: string; draft: string }
   | { type: "updateTitle"; id: string; title: string }
   | { type: "updateSelectedDatabase"; id: string; selectedDatabase: string }
   | { type: "updateSelectedSchema"; id: string; selectedSchema: string | null }
@@ -112,16 +111,6 @@ export function workbenchReducer(
             : state.activeDocumentId,
       };
     }
-    case "updateDraft":
-      return {
-        ...state,
-        documents: state.documents.map((document) =>
-          document.id === action.id &&
-          (document.kind === "sql" || document.kind === "documents")
-            ? { ...document, draft: action.draft }
-            : document,
-        ),
-      };
     case "updateTitle":
       return {
         ...state,

@@ -76,6 +76,7 @@ export interface SqlViewerProps {
   namespaceOptions?: readonly string[];
   minHeight?: string;
   onCursorChange?: (position: SqlCursorPosition) => void;
+  onBlur?: () => void;
   executionStatus?: SqlExecutionStatus | null;
 }
 
@@ -182,6 +183,7 @@ export default function SqlViewer({
   namespaceOptions = [],
   minHeight = "80px",
   onCursorChange,
+  onBlur,
   executionStatus,
 }: SqlViewerProps) {
   const extensions = useMemo(() => {
@@ -231,12 +233,23 @@ export default function SqlViewer({
         ]),
       );
     }
+    if (onBlur) {
+      ext.push(
+        EditorView.domEventHandlers({
+          blur: () => {
+            onBlur();
+            return false;
+          },
+        }),
+      );
+    }
     return ext;
   }, [
     catalog,
     defaultSchema,
     engine,
     namespaceOptions,
+    onBlur,
     onRun,
     resolveMode,
   ]);
@@ -254,16 +267,15 @@ export default function SqlViewer({
   );
   const handleUpdate = useCallback(
     (update: ViewUpdate) => {
-      if (!onCursorChange || (!update.selectionSet && !update.docChanged)) {
-        return;
-      }
+      if (!onCursorChange || !update.selectionSet) return;
       reportCursor(update.state);
     },
     [onCursorChange, reportCursor],
   );
+  const executionValue = executionStatus ? value : "";
   const executionExtension = useMemo(
-    () => executionStatusExtension(value, executionStatus),
-    [executionStatus, value],
+    () => executionStatusExtension(executionValue, executionStatus),
+    [executionStatus, executionValue],
   );
   const allExtensions = useMemo(
     () => [...extensions, executionExtension],

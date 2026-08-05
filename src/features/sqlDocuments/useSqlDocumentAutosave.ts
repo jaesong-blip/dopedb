@@ -52,6 +52,22 @@ interface SqlDocumentAutosaveOptions {
   onPersisted: (document: SqlDocument) => void;
 }
 
+interface SqlRecoveryPayload {
+  revision: number;
+  title: string;
+  selectedDatabase: string;
+  selectedSchema: string | null;
+  resolveMode: SqlResolveMode;
+  draft: string;
+}
+
+interface PendingRecoveryWrite {
+  key: string;
+  payload: SqlRecoveryPayload;
+}
+
+const RECOVERY_WRITE_INTERVAL_MS = 400;
+
 export function useSqlDocumentAutosave({
   gateway,
   connectionId,
@@ -76,6 +92,25 @@ export function useSqlDocumentAutosave({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<DocumentConflict | null>(null);
   const saveSequence = useRef(0);
+  const mounted = useRef(true);
+  const recoveryTimer = useRef<number | null>(null);
+  const pendingRecovery = useRef<PendingRecoveryWrite | null>(null);
+  const latest = useRef({
+    revision,
+    title,
+    selectedDatabase,
+    selectedSchema,
+    resolveMode,
+    content,
+  });
+  latest.current = {
+    revision,
+    title,
+    selectedDatabase,
+    selectedSchema,
+    resolveMode,
+    content,
+  };
   const callbacks = useRef({
     onTitleChange,
     onSelectedDatabaseChange,
@@ -107,6 +142,50 @@ export function useSqlDocumentAutosave({
     resolveMode: recovered ? undefined : resolveMode,
     content: recovered ? null : content,
   });
+
+  const flushRecovery = useCallback(() => {
+    if (recoveryTimer.current !== null) {
+      window.clearTimeout(recoveryTimer.current);
+      recoveryTimer.current = null;
+    }
+    const pending = pendingRecovery.current;
+    if (!pending) return;
+    pendingRecovery.current = null;
+    try {
+      localStorage.setItem(pending.key, JSON.stringify(pending.payload));
+    } catch (error) {
+      pendingRecovery.current = pending;
+      if (!mounted.current) return;
+      setSaveError(errMessage(error));
+      setSaveState("error");
+    }
+  }, []);
+
+  const scheduleRecovery = useCallback(
+    (write: PendingRecoveryWrite) => {
+      pendingRecovery.current = write;
+      // Do not restart this timer on every keystroke: a continuously edited
+      // document must still reach durable recovery storage within 400 ms.
+      if (recoveryTimer.current !== null) return;
+      recoveryTimer.current = window.setTimeout(
+        flushRecovery,
+        RECOVERY_WRITE_INTERVAL_MS,
+      );
+    },
+    [flushRecovery],
+  );
+
+  const clearRecovery = useCallback((id: SqlDocumentId) => {
+    const key = sqlRecoveryKey(id);
+    if (pendingRecovery.current?.key === key) {
+      pendingRecovery.current = null;
+      if (recoveryTimer.current !== null) {
+        window.clearTimeout(recoveryTimer.current);
+        recoveryTimer.current = null;
+      }
+    }
+    localStorage.removeItem(key);
+  }, []);
 
   const persist = useCallback(
     async (
@@ -153,9 +232,17 @@ export function useSqlDocumentAutosave({
           resolveMode: outcome.document.resolveMode,
           content: outcome.document.content,
         };
-        localStorage.removeItem(sqlRecoveryKey(documentId));
+        const current = latest.current;
+        const savedLatestSnapshot =
+          current.revision === expectedRevision &&
+          current.title === nextTitle &&
+          current.selectedDatabase === nextSelectedDatabase &&
+          current.selectedSchema === nextSelectedSchema &&
+          current.resolveMode === nextResolveMode &&
+          current.content === nextContent;
+        if (savedLatestSnapshot) clearRecovery(documentId);
         setConflict(null);
-        setSaveState("saved");
+        setSaveState(savedLatestSnapshot ? "saved" : "dirty");
         callbacks.current.onPersisted(outcome.document);
       } catch (error) {
         if (sequence !== saveSequence.current) return;
@@ -163,7 +250,7 @@ export function useSqlDocumentAutosave({
         setSaveState("error");
       }
     },
-    [connectionId, documentId, gateway],
+    [clearRecovery, connectionId, documentId, gateway],
   );
 
   useEffect(() => {
@@ -179,20 +266,21 @@ export function useSqlDocumentAutosave({
       baseline.content !== content;
     if (!dirty) {
       setSaveState("saved");
+      if (documentId) clearRecovery(documentId);
       return;
     }
     setSaveState("dirty");
-    localStorage.setItem(
-      sqlRecoveryKey(documentId),
-      JSON.stringify({
+    scheduleRecovery({
+      key: sqlRecoveryKey(documentId),
+      payload: {
         revision,
         title,
         selectedDatabase,
         selectedSchema,
         resolveMode,
         draft: content,
-      }),
-    );
+      },
+    });
     if (!title.trim()) return;
     const timer = window.setTimeout(() => {
       void persist(
@@ -208,22 +296,40 @@ export function useSqlDocumentAutosave({
   }, [
     conflict,
     content,
+    clearRecovery,
     documentId,
     persist,
     recovered,
     revision,
     resolveMode,
+    scheduleRecovery,
     selectedDatabase,
     selectedSchema,
     title,
   ]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const flushWhenHidden = () => {
+      if (document.visibilityState === "hidden") flushRecovery();
+    };
+    window.addEventListener("blur", flushRecovery);
+    window.addEventListener("pagehide", flushRecovery);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    return () => {
+      window.removeEventListener("blur", flushRecovery);
+      window.removeEventListener("pagehide", flushRecovery);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
+  }, [flushRecovery]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       saveSequence.current += 1;
-    },
-    [],
-  );
+      flushRecovery();
+    };
+  }, [flushRecovery]);
 
   const useSavedVersion = useCallback(() => {
     if (!documentId || !conflict) return;
@@ -237,7 +343,7 @@ export function useSqlDocumentAutosave({
       resolveMode: current.resolveMode,
       content: current.content,
     };
-    localStorage.removeItem(sqlRecoveryKey(documentId));
+    clearRecovery(documentId);
     callbacks.current.onTitleChange(current.title);
     callbacks.current.onSelectedDatabaseChange(current.selectedDatabase);
     callbacks.current.onSelectedSchemaChange(current.selectedSchema);
@@ -246,7 +352,7 @@ export function useSqlDocumentAutosave({
     callbacks.current.onPersisted(current);
     setConflict(null);
     setSaveState("saved");
-  }, [conflict, documentId]);
+  }, [clearRecovery, conflict, documentId]);
 
   const keepLocalVersion = useCallback(() => {
     if (!conflict) return;
@@ -272,5 +378,6 @@ export function useSqlDocumentAutosave({
     useSavedVersion,
     keepLocalVersion,
     reportError,
+    flushRecovery,
   };
 }

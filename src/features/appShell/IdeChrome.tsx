@@ -10,10 +10,8 @@ import { providerTargetDisplayName } from "../connections/ProviderTargetLabel";
 import type { WorkbenchDocument } from "../workbench/domain";
 import ManualTransactionsMenu from "../queries/ManualTransactionsMenu";
 import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
-import {
-  SQL_EDITOR_INDENT_SIZE,
-  type SqlEditorStatus,
-} from "../queries/editorStatus";
+import { SQL_EDITOR_INDENT_SIZE } from "../queries/editorStatus";
+import { useSqlEditorCursor } from "../queries/editorStatusStore";
 import { Icon } from "../../components/Icon";
 import ToolbarMenu, {
   ToolbarMenuItem,
@@ -182,7 +180,6 @@ export function IdeStatusBar({
   cancellingBackgroundTaskKeys,
   manualTransactions,
   settlingManualTransactionIds,
-  editorStatus,
   writeEnabled,
   unseenOperationCount,
   onOpenQueryTask,
@@ -204,7 +201,6 @@ export function IdeStatusBar({
   cancellingBackgroundTaskKeys: ReadonlySet<string>;
   manualTransactions: WorkspaceManualTransaction[];
   settlingManualTransactionIds: ReadonlySet<string>;
-  editorStatus: SqlEditorStatus | null;
   writeEnabled: boolean;
   unseenOperationCount: number;
   onOpenQueryTask: (sessionId: string) => void;
@@ -330,24 +326,11 @@ export function IdeStatusBar({
           onOpenQuery={onOpenQueryTask}
         />
       ) : null}
-      {editorStatus ? (
-        <>
-          <StatusBarItem>
-            {editorStatus.line}:{editorStatus.column}
-          </StatusBarItem>
-          <StatusBarItem>LF</StatusBarItem>
-        </>
-      ) : null}
-      <StatusBarItem>
-        UTF-8
-      </StatusBarItem>
-      {editorStatus ? (
-        <StatusBarItem>
-          {t("ide.indentSpaces", {
-            count: SQL_EDITOR_INDENT_SIZE,
-          })}
-        </StatusBarItem>
-      ) : null}
+      <SqlEditorStatusItems
+        documentId={
+          activeDocument?.kind === "sql" ? activeDocument.id : null
+        }
+      />
       {selected ? (
         <StatusBarIconButton
           icon={writeEnabled ? "unlock" : "lock"}
@@ -369,5 +352,30 @@ export function IdeStatusBar({
         disabled={!selected}
       />
     </IdeStatusBarSurface>
+  );
+}
+
+function SqlEditorStatusItems({ documentId }: { documentId: string | null }) {
+  const { t } = useI18n();
+  const editorStatus = useSqlEditorCursor(documentId);
+  return (
+    <>
+      {editorStatus ? (
+        <>
+          <StatusBarItem>
+            {editorStatus.line}:{editorStatus.column}
+          </StatusBarItem>
+          <StatusBarItem>LF</StatusBarItem>
+        </>
+      ) : null}
+      <StatusBarItem>UTF-8</StatusBarItem>
+      {editorStatus ? (
+        <StatusBarItem>
+          {t("ide.indentSpaces", {
+            count: SQL_EDITOR_INDENT_SIZE,
+          })}
+        </StatusBarItem>
+      ) : null}
+    </>
   );
 }

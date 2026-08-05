@@ -33,10 +33,6 @@ import SkillStartupGate from "../../features/skills/SkillStartupGate";
 import type { SqlDocument } from "../../features/sqlDocuments/domain";
 import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapter";
 import type { SqlResolveMode } from "../../features/queries/resolveMode";
-import type {
-  SqlCursorPosition,
-  SqlEditorStatus,
-} from "../../features/queries/editorStatus";
 import {
   useWorkspaceManualTransactions,
   type WorkspaceManualTransaction,
@@ -48,6 +44,7 @@ import {
   type WorkbenchDocument,
 } from "../../features/workbench/domain";
 import { useWorkbenchDocuments } from "../../features/workbench/useWorkbenchDocuments";
+import { publishWorkbenchDraft } from "../../features/workbench/draftStore";
 import { ToastProvider, useToast } from "../../components/Toast";
 import { hasCapability, isDocumentEngine } from "../../lib/capabilities";
 import { useI18n } from "../../lib/i18n";
@@ -199,21 +196,7 @@ function Shell() {
   const [settingsSection, setSettingsSection] = useState<
     SettingsSection | undefined
   >(undefined);
-  const [sqlEditorStatus, setSqlEditorStatus] =
-    useState<SqlEditorStatus | null>(null);
   const [explorerRevealRequest, setExplorerRevealRequest] = useState(0);
-  const handleSqlCursorChange = useCallback(
-    (documentId: string, position: SqlCursorPosition) => {
-      setSqlEditorStatus((current) =>
-        current?.documentId === documentId &&
-        current.line === position.line &&
-        current.column === position.column
-          ? current
-          : { documentId, ...position },
-      );
-    },
-    [],
-  );
   const [schemaDiffGroupKey, setSchemaDiffGroupKey] = useState<string | null>(null);
   const { availableUpdate, sync: syncAvailableUpdate } = useAvailableUpdate();
   const openDashboard = useCallback((dashboard: Dashboard) => {
@@ -514,11 +497,8 @@ function Shell() {
     workbench.close(id, selected.id, supportsSql);
   }
 
-  function setActiveQueryDraft(value: string) {
-    if (!activeDocument || (activeDocument.kind !== "sql" && activeDocument.kind !== "documents")) {
-      return;
-    }
-    workbench.updateDraft(activeDocument.id, value);
+  function setQueryDraft(documentId: string, value: string) {
+    publishWorkbenchDraft(documentId, value);
   }
 
   function setActiveQueryTitle(value: string) {
@@ -897,7 +877,6 @@ function Shell() {
       onOpenActivity={() => openStableDocument("activity")}
       onDashboardFocusConsumed={consumeDashboardFocus}
       onOpenTerminal={openOrFocusTerminalDock}
-      onSetQueryDraft={setActiveQueryDraft}
       onSetQueryTitle={setActiveQueryTitle}
       onSetQueryDatabase={setActiveQueryDatabase}
       onSetQuerySchema={setActiveQuerySchema}
@@ -918,7 +897,6 @@ function Shell() {
         legacyAuditOpen.current = false;
       }}
       onRetrySafety={refreshSafety}
-      onSqlCursorChange={handleSqlCursorChange}
     />
   );
 
@@ -954,7 +932,6 @@ function Shell() {
       workbenchDocuments={selectedDocuments}
       activeWorkbenchDocumentId={activeDocumentId}
       explorerRevealRequest={explorerRevealRequest}
-      sqlEditorStatus={sqlEditorStatus}
       unseenOperationCount={unseen}
       sidebarWidth={sidebarW}
       mainRef={mainRef}
@@ -1047,7 +1024,7 @@ function Shell() {
         setExplorerRevealRequest((request) => request + 1);
       }}
       onActivateWorkbenchDocument={workbench.activateId}
-      onRestoreWorkbenchDocument={workbench.updateDraft}
+      onRestoreWorkbenchDocument={setQueryDraft}
       onStartServicesResize={startServicesResize}
       onResetServicesHeight={resetServicesHeight}
       onSettings={() => {

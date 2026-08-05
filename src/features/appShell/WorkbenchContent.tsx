@@ -1,5 +1,5 @@
 import type { Update } from "@tauri-apps/plugin-updater";
-import { useCallback, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { Icon } from "../../components/Icon";
 import WorkbenchDocumentStrip from "../../components/WorkbenchDocumentStrip";
@@ -8,7 +8,6 @@ import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { QueryServiceSession } from "../queryServices/domain";
 import type { SqlResolveMode } from "../queries/resolveMode";
-import type { SqlCursorPosition } from "../queries/editorStatus";
 import type { SqlDocument } from "../sqlDocuments/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
 import type { CatalogTable, SafetySettings } from "../../ipc/types";
@@ -83,7 +82,6 @@ type Props = {
   onOpenActivity: () => void;
   onDashboardFocusConsumed: () => void;
   onOpenTerminal: () => void;
-  onSetQueryDraft: (value: string) => void;
   onSetQueryTitle: (value: string) => void;
   onSetQueryDatabase: (value: string) => void;
   onSetQuerySchema: (value: string | null) => void;
@@ -95,10 +93,6 @@ type Props = {
   onLoadSql: (sql: string) => Promise<void>;
   onInitialAuditOpenConsumed: () => void;
   onRetrySafety: () => void;
-  onSqlCursorChange: (
-    documentId: string,
-    position: SqlCursorPosition,
-  ) => void;
 };
 
 export default function WorkbenchContent(props: Props) {
@@ -123,16 +117,6 @@ export default function WorkbenchContent(props: Props) {
     initialAuditOpen,
     availableUpdate,
   } = props;
-  const activeSqlDocumentId =
-    activeDocument?.kind === "sql" ? activeDocument.id : null;
-  const reportActiveSqlCursor = useCallback(
-    (position: SqlCursorPosition) => {
-      if (!activeSqlDocumentId) return;
-      props.onSqlCursorChange(activeSqlDocumentId, position);
-    },
-    [activeSqlDocumentId, props.onSqlCursorChange],
-  );
-
   const settingsDialog = settingsOpen ? (
     <Settings
       connection={selected}
@@ -291,7 +275,6 @@ export default function WorkbenchContent(props: Props) {
             safetyReady={safety !== null}
             safetyLoadError={safetyError}
             draft={activeDocument.draft}
-            setDraft={props.onSetQueryDraft}
             title={activeDocument.title}
             setTitle={props.onSetQueryTitle}
             selectedDatabase={activeDocument.selectedDatabase}
@@ -308,7 +291,6 @@ export default function WorkbenchContent(props: Props) {
             onShowQueryServices={props.onShowQueryServices}
             onOpenHistory={props.onOpenActivity}
             onRetrySafety={props.onRetrySafety}
-            onCursorChange={reportActiveSqlCursor}
           />
         ) : activeDocument.kind === "documents" ? (
           <Documents

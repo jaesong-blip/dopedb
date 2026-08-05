@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { connectionId, sqlDocumentId, type SqlDocument } from "../sqlDocuments/domain";
 import { resolveSqlNamespaceAtCaret } from "../queries/resolveMode";
 import { queryDocument, stableDocument } from "./domain";
+import {
+  publishWorkbenchDraft,
+  readWorkbenchDraft,
+  seedWorkbenchDraft,
+} from "./draftStore";
 import { emptyWorkbenchState, workbenchReducer } from "./state";
 
 function storedDocument(id = "doc-1"): SqlDocument {
@@ -58,6 +63,13 @@ describe("workbench state ownership", () => {
 
     expect(second.documents).toHaveLength(1);
     expect(second.activeDocumentId).toBe(query.id);
+
+    seedWorkbenchDraft(query.id, query.draft ?? "");
+    publishWorkbenchDraft(query.id, "SELECT 42;");
+    expect(readWorkbenchDraft(query.id, "SELECT 0;")).toBe("SELECT 42;");
+    seedWorkbenchDraft(query.id, "SELECT 84;");
+    expect(readWorkbenchDraft(query.id, "SELECT 0;")).toBe("SELECT 84;");
+    expect(second.documents[0]).toBe(query);
   });
 
   it("creates the welcome fallback when the last SQL tab closes", () => {
