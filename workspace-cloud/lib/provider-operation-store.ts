@@ -93,6 +93,10 @@ export type ProviderOperationCancellationRecord = Readonly<{
   providerOperationId: null;
   providerResourceId: null;
   reconcileAfter: null;
+  endpointId: null;
+  databaseCount: null;
+  databaseFingerprint: null;
+  managedAccessState: "unavailable";
   failureCode: null;
 }>;
 
@@ -102,8 +106,29 @@ export type ProviderOperationExecutionRecord = ProviderOperationPlanRecord & Rea
   providerOperationId: string | null;
   providerResourceId: string | null;
   reconcileAfter: Date | null;
+  endpointId: string | null;
+  databaseCount: number | null;
+  databaseFingerprint: string | null;
+  managedAccessState: ProviderManagedAccessState | null;
   failureCode: string | null;
 }>;
+
+export type ProviderManagedAccessState =
+  | "waiting_for_provider"
+  | "not_requested"
+  | "bootstrap_required"
+  | "ready"
+  | "needs_repair"
+  | "unavailable";
+
+const managedAccessStates: readonly ProviderManagedAccessState[] = [
+  "waiting_for_provider",
+  "not_requested",
+  "bootstrap_required",
+  "ready",
+  "needs_repair",
+  "unavailable",
+];
 
 export type ProviderOperationReconciliationInput = Readonly<{
   status: "missing" | "pending" | "ready" | "conflict" | "failed";
@@ -111,6 +136,9 @@ export type ProviderOperationReconciliationInput = Readonly<{
   providerOperationId: string | null;
   providerOperationStatus: string | null;
   endpointId: string | null;
+  databaseCount: number | null;
+  databaseFingerprint: string | null;
+  managedAccessState: ProviderManagedAccessState;
   failureCode: string | null;
 }>;
 
@@ -121,6 +149,10 @@ export type ProviderOperationReconciliationRecord = Readonly<{
   providerOperationId: string | null;
   providerResourceId: string | null;
   reconcileAfter: Date | null;
+  endpointId: string | null;
+  databaseCount: number | null;
+  databaseFingerprint: string | null;
+  managedAccessState: ProviderManagedAccessState;
   failureCode: string | null;
 }>;
 
@@ -141,6 +173,7 @@ type ProviderOperationExecutionRow = ProviderOperationPlanRow & {
   providerOperationId: string | null;
   providerResourceId: string | null;
   reconcileAfter: Date | string | null;
+  redactedResult: unknown;
   failureCode: string | null;
 };
 
@@ -313,6 +346,68 @@ function optionalDate(value: Date | string | null): Date | null {
   return date;
 }
 
+function executionResultProjection(value: unknown): Readonly<{
+  endpointId: string | null;
+  databaseCount: number | null;
+  databaseFingerprint: string | null;
+  managedAccessState: ProviderManagedAccessState | null;
+}> | null {
+  if (value === null) {
+    return {
+      endpointId: null,
+      databaseCount: null,
+      databaseFingerprint: null,
+      managedAccessState: null,
+    };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const result = value as Record<string, unknown>;
+  const endpointId = result.endpointId === undefined || result.endpointId === null
+    ? null
+    : result.endpointId;
+  const databaseCount = result.databaseCount === undefined
+    || result.databaseCount === null
+    ? null
+    : result.databaseCount;
+  const databaseFingerprint = result.databaseFingerprint === undefined
+    || result.databaseFingerprint === null
+    ? null
+    : result.databaseFingerprint;
+  const managedAccessState = result.managedAccessState === undefined
+    || result.managedAccessState === null
+    ? null
+    : result.managedAccessState;
+  if (
+    (endpointId !== null && (
+      typeof endpointId !== "string"
+      || !/^[a-z0-9][a-z0-9-]{0,59}$/.test(endpointId)
+    ))
+    || (databaseCount !== null && (
+      typeof databaseCount !== "number"
+      || !Number.isInteger(databaseCount)
+      || databaseCount < 0
+      || databaseCount > 200
+    ))
+    || (databaseFingerprint !== null && (
+      typeof databaseFingerprint !== "string"
+      || !/^[0-9a-f]{64}$/.test(databaseFingerprint)
+    ))
+    || ((databaseCount === null) !== (databaseFingerprint === null))
+    || (managedAccessState !== null && (
+      typeof managedAccessState !== "string"
+      || !managedAccessStates.includes(managedAccessState as ProviderManagedAccessState)
+    ))
+  ) {
+    return null;
+  }
+  return {
+    endpointId: endpointId as string | null,
+    databaseCount: databaseCount as number | null,
+    databaseFingerprint: databaseFingerprint as string | null,
+    managedAccessState: managedAccessState as ProviderManagedAccessState | null,
+  };
+}
+
 export async function loadProviderOperationExecution(input: {
   organizationId: string;
   integrationId: string;
@@ -332,6 +427,7 @@ export async function loadProviderOperationExecution(input: {
       operation."provider_operation_id" AS "providerOperationId",
       operation."provider_resource_id" AS "providerResourceId",
       operation."reconcile_after" AS "reconcileAfter",
+      operation."redacted_result" AS "redactedResult",
       operation."failure_code" AS "failureCode"
     FROM ${workspaceProviderOperation} AS operation
     WHERE operation."id" = ${input.operationId}::uuid
@@ -349,9 +445,11 @@ export async function loadProviderOperationExecution(input: {
     integrationGeneration: input.integrationGeneration,
     operationId: input.operationId,
   });
+  const executionResult = row ? executionResultProjection(row.redactedResult) : null;
   if (
     !row
     || !plan
+    || !executionResult
     || (row.claimId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       .test(row.claimId))
     || (row.providerOperationId !== null
@@ -371,6 +469,7 @@ export async function loadProviderOperationExecution(input: {
     providerOperationId: row.providerOperationId,
     providerResourceId: row.providerResourceId,
     reconcileAfter: optionalDate(row.reconcileAfter),
+    ...executionResult,
     failureCode: row.failureCode,
   };
 }
@@ -945,6 +1044,10 @@ export async function cancelExpiredProviderOperationExecution(
     providerOperationId: null,
     providerResourceId: null,
     reconcileAfter: null,
+    endpointId: null,
+    databaseCount: null,
+    databaseFingerprint: null,
+    managedAccessState: "unavailable",
     failureCode: null,
   };
 }
@@ -1189,6 +1292,7 @@ type ProviderOperationReconciliationRow = {
   providerOperationId: string | null;
   providerResourceId: string | null;
   reconcileAfter: Date | string | null;
+  redactedResult: unknown;
   failureCode: string | null;
 };
 
@@ -1206,16 +1310,47 @@ function validProviderReconciliation(input: ProviderOperationReconciliationInput
     );
   const failureValid = input.failureCode === null
     || /^[A-Z][A-Z0-9_]{0,95}$/.test(input.failureCode);
+  const databaseValid = (
+    input.databaseCount === null
+    && input.databaseFingerprint === null
+  ) || (
+    Number.isInteger(input.databaseCount)
+    && input.databaseCount !== null
+    && input.databaseCount >= 0
+    && input.databaseCount <= 200
+    && typeof input.databaseFingerprint === "string"
+    && /^[0-9a-f]{64}$/.test(input.databaseFingerprint)
+  );
   return ["missing", "pending", "ready", "conflict", "failed"].includes(input.status)
     && branchValid
     && endpointValid
     && operationValid
     && statusValid
     && failureValid
+    && databaseValid
+    && managedAccessStates.includes(input.managedAccessState)
     && (input.status !== "missing" || input.branchId === null)
     && (input.status !== "pending" || input.branchId !== null)
     && (input.status !== "ready" || (
-      input.branchId !== null && input.failureCode === null
+      input.branchId !== null
+      && input.failureCode === null
+      && input.databaseCount !== null
+      && input.databaseCount > 0
+      && input.databaseFingerprint !== null
+      && (input.managedAccessState === "not_requested"
+        || input.managedAccessState === "bootstrap_required")
+    ))
+    && (input.status !== "missing"
+      || input.managedAccessState === "waiting_for_provider")
+    && (input.status !== "pending" || (
+      input.managedAccessState === "waiting_for_provider"
+      && input.databaseCount === null
+      && input.databaseFingerprint === null
+    ))
+    && (input.status !== "conflict"
+      || input.managedAccessState === "needs_repair")
+    && (input.status !== "failed" || input.managedAccessState === (
+      input.branchId === null ? "unavailable" : "needs_repair"
     ))
     && ((input.status !== "conflict" && input.status !== "failed")
       || input.failureCode !== null)
@@ -1246,6 +1381,9 @@ export async function applyProviderOperationReconciliation(
     providerOperationId: input.result.providerOperationId,
     providerOperationStatus: input.result.providerOperationStatus,
     endpointId: input.result.endpointId,
+    databaseCount: input.result.databaseCount,
+    databaseFingerprint: input.result.databaseFingerprint,
+    managedAccessState: input.result.managedAccessState,
     failureCode: input.result.failureCode,
     observedAt: input.now.toISOString(),
   };
@@ -1322,6 +1460,13 @@ export async function applyProviderOperationReconciliation(
           OR ${input.result.endpointId}::text IS NULL
           OR operation."redacted_result"->>'endpointId' = ${input.result.endpointId}
         )
+        AND (
+          operation."redacted_result" IS NULL
+          OR operation."redacted_result"->>'databaseFingerprint' IS NULL
+          OR ${input.result.databaseFingerprint}::text IS NULL
+          OR operation."redacted_result"->>'databaseFingerprint'
+            = ${input.result.databaseFingerprint}
+        )
         AND ${authority}
       FOR UPDATE OF operation
     ), updated AS MATERIALIZED (
@@ -1360,6 +1505,7 @@ export async function applyProviderOperationReconciliation(
         operation."provider_operation_id" AS "providerOperationId",
         operation."provider_resource_id" AS "providerResourceId",
         operation."reconcile_after" AS "reconcileAfter",
+        operation."redacted_result" AS "redactedResult",
         operation."failure_code" AS "failureCode",
         operation."organization_id" AS "organizationId",
         candidate."state" AS "previousState",
@@ -1406,6 +1552,10 @@ export async function applyProviderOperationReconciliation(
           'state', updated."state",
           'branchId', updated."providerResourceId",
           'providerOperationId', updated."providerOperationId",
+          'endpointId', updated."redactedResult"->>'endpointId',
+          'databaseCount', updated."redactedResult"->'databaseCount',
+          'databaseFingerprint', updated."redactedResult"->>'databaseFingerprint',
+          'managedAccessState', updated."redactedResult"->>'managedAccessState',
           'failureCode', updated."failureCode",
           'risk', updated."risk",
           'approvalPolicy', updated."approvalPolicy"
@@ -1424,7 +1574,8 @@ export async function applyProviderOperationReconciliation(
     )
     SELECT updated."id", updated."state", updated."claimId",
       updated."providerOperationId", updated."providerResourceId",
-      updated."reconcileAfter", updated."failureCode"
+      updated."reconcileAfter", updated."redactedResult",
+      updated."failureCode"
     FROM updated
     LEFT JOIN reconcile_audit
       ON reconcile_audit."resource_id" = updated."id"
@@ -1440,8 +1591,10 @@ export async function applyProviderOperationReconciliation(
   `);
   const row = result.rows[0];
   const reconcileAfter = row ? optionalDate(row.reconcileAfter) : null;
+  const executionResult = row ? executionResultProjection(row.redactedResult) : null;
   if (
     !row
+    || !executionResult
     || row.id !== input.operationId
     || row.claimId !== input.claimId
     || !operationStates.includes(row.state as ProviderOperationState)
@@ -1461,6 +1614,8 @@ export async function applyProviderOperationReconciliation(
     providerOperationId: row.providerOperationId,
     providerResourceId: row.providerResourceId,
     reconcileAfter,
+    ...executionResult,
+    managedAccessState: executionResult.managedAccessState ?? "unavailable",
     failureCode: row.failureCode,
   };
 }

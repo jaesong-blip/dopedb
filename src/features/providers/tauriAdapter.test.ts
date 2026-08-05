@@ -725,6 +725,12 @@ describe("provider credential Tauri adapter", () => {
     expect(neonSource).toContain('"x-request-id": input.plan.operationId');
     expect(neonSource).toContain("response.status === 423 || response.status === 503");
     expect(neonSource).toContain("reconcileNeonBranchCreate");
+    expect(neonSource).toContain('row.branch_id !== branch');
+    expect(neonSource).toContain('requiredResourceId(row.id, "database id") === resource.databaseId');
+    expect(neonSource).toContain("endpoints.length !== 1");
+    expect(neonSource).toContain('"bootstrap_required"');
+    expect(neonBranchOperationsRouteSource).toContain("databaseFingerprint");
+    expect(providerOperationStoreSource).toContain("managedAccessState");
     expect(providerOperationMigrationSource).toContain(
       '"approval_policy" text NOT NULL',
     );

@@ -178,6 +178,10 @@ function executionResponse(operation: ProviderOperationExecutionRecord | {
   providerOperationId: string | null;
   providerResourceId: string | null;
   reconcileAfter: Date | null;
+  endpointId: string | null;
+  databaseCount: number | null;
+  databaseFingerprint: string | null;
+  managedAccessState: string | null;
   failureCode: string | null;
 }) {
   return {
@@ -187,6 +191,10 @@ function executionResponse(operation: ProviderOperationExecutionRecord | {
       providerOperationId: operation.providerOperationId,
       branchId: operation.providerResourceId,
       reconcileAfter: operation.reconcileAfter?.toISOString() ?? null,
+      endpointId: operation.endpointId,
+      databaseCount: operation.databaseCount,
+      databaseFingerprint: operation.databaseFingerprint,
+      managedAccessState: operation.managedAccessState,
       failureCode: operation.failureCode,
     },
   };
@@ -307,6 +315,10 @@ export async function POST(request: Request, context: RouteContext) {
             providerOperationId: null,
             providerResourceId: null,
             reconcileAfter: null,
+            endpointId: null,
+            databaseCount: null,
+            databaseFingerprint: null,
+            managedAccessState: "unavailable",
             failureCode: null,
           }));
         }
@@ -339,6 +351,9 @@ export async function POST(request: Request, context: RouteContext) {
             providerOperationId: receipt.providerOperationId,
             providerOperationStatus: receipt.providerOperationStatus,
             endpointId: receipt.endpointId,
+            databaseCount: null,
+            databaseFingerprint: null,
+            managedAccessState: "waiting_for_provider",
             failureCode: null,
           };
         } catch (error) {
@@ -350,6 +365,9 @@ export async function POST(request: Request, context: RouteContext) {
               providerOperationId: null,
               providerOperationStatus: null,
               endpointId: null,
+              databaseCount: null,
+              databaseFingerprint: null,
+              managedAccessState: "unavailable",
               failureCode: "NEON_RETRY_SAFE_REJECTED",
             }
             : {
@@ -358,6 +376,9 @@ export async function POST(request: Request, context: RouteContext) {
               providerOperationId: null,
               providerOperationStatus: null,
               endpointId: null,
+              databaseCount: null,
+              databaseFingerprint: null,
+              managedAccessState: "waiting_for_provider",
               failureCode: null,
             };
         }

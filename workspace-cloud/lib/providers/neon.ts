@@ -2,7 +2,7 @@
 // and obtains an owner session only long enough to create or revoke a constrained role.
 import "server-only";
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { MAX_PROVIDER_RESULTS } from "./adapter-contract";
 import {
@@ -12,6 +12,7 @@ import {
   NEON_PUBLIC_SCHEMA_ESCAPE_SQL,
   NEON_ROLE_CONNECTION_LIMIT,
   createNeonScramVerifier,
+  neonDatabaseName,
   neonIntegrationIdentity,
   neonLeaseRole,
   neonOwnerRoleName,
@@ -61,6 +62,14 @@ export type NeonBranchReconciliation = Readonly<{
   providerOperationId: string | null;
   providerOperationStatus: NeonOperationStatus | null;
   endpointId: string | null;
+  databaseCount: number | null;
+  databaseFingerprint: string | null;
+  managedAccessState:
+    | "waiting_for_provider"
+    | "not_requested"
+    | "bootstrap_required"
+    | "needs_repair"
+    | "unavailable";
   failureCode: string | null;
 }>;
 
@@ -534,6 +543,27 @@ async function branchEndpointReconciliation(
     : { status: "conflict" as const, endpointId: null };
 }
 
+async function branchDatabaseReconciliation(
+  credential: NeonCredential,
+  projectId: string,
+  branchId: string,
+) {
+  try {
+    return await listNeonDatabases(credential, projectId, branchId);
+  } catch (error) {
+    // A newly-created branch can briefly exist before its database collection
+    // is queryable. Only explicit not-ready/locked responses are pending; auth,
+    // malformed data, and transport failures remain hard errors.
+    if (
+      error instanceof ProviderRequestError
+      && [404, 409, 423].includes(error.status)
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function projectOperation(
   credential: NeonCredential,
   projectId: string,
@@ -575,6 +605,9 @@ export async function reconcileNeonBranchCreate(input: {
       providerOperationId: input.providerOperationId,
       providerOperationStatus: null,
       endpointId: null,
+      databaseCount: null,
+      databaseFingerprint: null,
+      managedAccessState: "waiting_for_provider",
       failureCode: null,
     };
   }
@@ -585,10 +618,13 @@ export async function reconcileNeonBranchCreate(input: {
       providerOperationId: input.providerOperationId,
       providerOperationStatus: null,
       endpointId: null,
+      databaseCount: null,
+      databaseFingerprint: null,
+      managedAccessState: "needs_repair",
       failureCode: "NEON_OWNERSHIP_MARKER_MISMATCH",
     };
   }
-  const [inventory, endpoint, operation] = await Promise.all([
+  const [inventory, endpoint, operation, databases] = await Promise.all([
     listNeonBranchInventory(input.credential, input.plan.source.projectId),
     branchEndpointReconciliation(
       input.credential,
@@ -603,7 +639,20 @@ export async function reconcileNeonBranchCreate(input: {
         input.providerOperationId,
       )
       : Promise.resolve(null),
+    branchDatabaseReconciliation(
+      input.credential,
+      input.plan.source.projectId,
+      owned.branchId,
+    ),
   ]);
+  const databaseFingerprint = databases === null ? null : createHash("sha256")
+    .update(JSON.stringify(databases.map((database) => ({
+      id: database.id,
+      name: database.name,
+    })).sort((left, right) => (
+      left.id < right.id ? -1 : left.id === right.id ? 0 : 1
+    ))), "utf8")
+    .digest("hex");
   if (operation && operation.branchId !== owned.branchId) {
     return {
       status: "conflict",
@@ -611,6 +660,9 @@ export async function reconcileNeonBranchCreate(input: {
       providerOperationId: operation.id,
       providerOperationStatus: operation.status,
       endpointId: endpoint.endpointId,
+      databaseCount: databases?.length ?? null,
+      databaseFingerprint,
+      managedAccessState: "needs_repair",
       failureCode: "NEON_OPERATION_BRANCH_MISMATCH",
     };
   }
@@ -624,6 +676,9 @@ export async function reconcileNeonBranchCreate(input: {
       providerOperationId: operation.id,
       providerOperationStatus: operation.status,
       endpointId: endpoint.endpointId,
+      databaseCount: databases?.length ?? null,
+      databaseFingerprint,
+      managedAccessState: "needs_repair",
       failureCode: "NEON_OPERATION_FAILED",
     };
   }
@@ -634,6 +689,9 @@ export async function reconcileNeonBranchCreate(input: {
       providerOperationId: operation?.id ?? input.providerOperationId,
       providerOperationStatus: operation?.status ?? null,
       endpointId: endpoint.endpointId,
+      databaseCount: databases?.length ?? null,
+      databaseFingerprint,
+      managedAccessState: "needs_repair",
       failureCode: "NEON_ENDPOINT_SET_MISMATCH",
     };
   }
@@ -643,6 +701,8 @@ export async function reconcileNeonBranchCreate(input: {
     && branch.pendingState === null
     && branch.ready
     && endpoint.status === "ready"
+    && databases !== null
+    && databases.length > 0
     && (!operation || operation.status === "finished");
   return {
     status: ready ? "ready" : "pending",
@@ -650,6 +710,13 @@ export async function reconcileNeonBranchCreate(input: {
     providerOperationId: operation?.id ?? input.providerOperationId,
     providerOperationStatus: operation?.status ?? null,
     endpointId: endpoint.endpointId,
+    databaseCount: ready ? databases.length : null,
+    databaseFingerprint: ready ? databaseFingerprint : null,
+    managedAccessState: ready
+      ? input.plan.target.endpoint === "read_write"
+        ? "bootstrap_required"
+        : "not_requested"
+      : "waiting_for_provider",
     failureCode: null,
   };
 }
@@ -670,9 +737,21 @@ export async function listNeonDatabases(
     scopeLabel: "database",
   });
   return rows.map((row) => {
+    const id = requiredResourceId(row.id, "database id");
     const name = requiredString(row.name, "database name");
+    if (
+      !/^[0-9]{1,19}$/.test(id)
+      || row.branch_id !== branch
+      || !neonDatabaseName(name)
+    ) {
+      throw new ProviderRequestError(
+        "neon",
+        "Neon returned an invalid branch database",
+        502,
+      );
+    }
     return {
-      id: requiredResourceId(row.id, "database id"),
+      id,
       value: name,
       name,
       kind: "postgres",
@@ -693,8 +772,14 @@ async function databaseOwner(
     }/databases`,
   ));
   const rows = Array.isArray(body.databases) ? body.databases.map(object) : [];
-  const database = rows.find((row) => row.name === resource.database);
-  return database ? requiredString(database.owner_name, "database owner") : null;
+  const databases = rows.filter((row) => (
+    requiredResourceId(row.id, "database id") === resource.databaseId
+    && row.branch_id === resource.branch
+    && row.name === resource.database
+  ));
+  if (databases.length !== 1) return null;
+  const owner = requiredString(databases[0].owner_name, "database owner");
+  return neonOwnerRoleName(owner) ? owner : null;
 }
 
 async function readWriteEndpoint(
@@ -708,13 +793,25 @@ async function readWriteEndpoint(
     }/endpoints`,
   ));
   const rows = Array.isArray(body.endpoints) ? body.endpoints.map(object) : [];
-  const endpoint = rows.find((row) => row.type === "read_write" && row.disabled !== true);
-  if (!endpoint) {
+  const parsed = parseNeonBranchEndpoints(rows, resource.branch);
+  const endpoints = parsed.filter((endpoint) => (
+    endpoint.type === "read_write" && !endpoint.disabled
+  ));
+  if (endpoints.length !== 1) {
     throw new ProviderRequestError(
       "neon",
-      "Neon branch has no available read-write endpoint",
+      "Neon branch does not have one exact read-write endpoint",
       409,
     );
+  }
+  const endpoint = rows.find((row) => (
+    row.id === endpoints[0].id
+    && row.branch_id === resource.branch
+    && row.type === "read_write"
+    && row.disabled !== true
+  ));
+  if (!endpoint) {
+    throw new ProviderRequestError("neon", "Neon endpoint identity changed", 409);
   }
   const host = requiredString(endpoint.host, "endpoint host");
   if (!host.endsWith(".neon.tech")) {
