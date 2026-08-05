@@ -12,7 +12,8 @@ use crate::store::Store;
 
 use super::super::domain::{
     workspace_feature_enabled, PendingDashboardMutation, RemoteDashboard, Workspace,
-    WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceAuthorityFingerprint, WorkspaceRole,
+    WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceAuthorityFingerprint, WorkspacePullPage,
+    WorkspaceRole,
 };
 use super::super::ports::{
     WorkspaceConfigurationPort, WorkspaceConnectionMutationPort, WorkspaceRepositoryPort,
@@ -121,9 +122,10 @@ impl WorkspaceRepositoryPort for SqliteWorkspaceRepository {
     async fn pending_dashboard_mutations(
         &self,
         workspace_id: WorkspaceId,
+        account_id: &AccountId,
     ) -> AppResult<Vec<PendingDashboardMutation>> {
         self.store
-            .pending_dashboard_mutations(workspace_id.into())
+            .pending_dashboard_mutations(workspace_id.into(), account_id.as_str())
             .await
     }
 
@@ -151,10 +153,38 @@ impl WorkspaceRepositoryPort for SqliteWorkspaceRepository {
     async fn sync_remote_dashboards(
         &self,
         workspace_id: WorkspaceId,
+        account_id: &AccountId,
         dashboards: &[RemoteDashboard],
     ) -> AppResult<()> {
         self.store
-            .sync_remote_dashboards(workspace_id.into(), dashboards)
+            .sync_remote_dashboards(workspace_id.into(), account_id.as_str(), dashboards)
+            .await
+    }
+
+    async fn workspace_pull_cursor(
+        &self,
+        workspace_id: WorkspaceId,
+        account_id: &AccountId,
+    ) -> AppResult<Option<i64>> {
+        self.store
+            .workspace_pull_cursor(workspace_id.into(), account_id.as_str())
+            .await
+    }
+
+    async fn commit_workspace_pull_cursor(
+        &self,
+        workspace_id: WorkspaceId,
+        account_id: &AccountId,
+        expected_cursor: Option<i64>,
+        page: WorkspacePullPage,
+    ) -> AppResult<()> {
+        self.store
+            .commit_workspace_pull_cursor(
+                workspace_id.into(),
+                account_id.as_str(),
+                expected_cursor,
+                page,
+            )
             .await
     }
 }

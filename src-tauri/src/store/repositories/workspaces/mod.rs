@@ -3,6 +3,7 @@
 mod accounts;
 mod scope;
 mod selection;
+mod sync;
 
 pub(in crate::store) use scope::{
     account_scope_from_parts, bump_active_scope_generation, parse_scope_generation,

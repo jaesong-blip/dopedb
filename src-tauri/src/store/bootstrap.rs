@@ -6,8 +6,10 @@ use super::*;
 /// paging indexes; version 3 adds the server revision and publication metadata
 /// needed to synchronize dashboard definitions without synchronizing result rows.
 /// Version 4 makes Personal dashboards explicitly local and removes historical
-/// outbox rows that could never have a hosted destination.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 4;
+/// outbox rows that could never have a hosted destination. Version 5 replaces the
+/// workspace-only hosted pull checkpoint with an account-scoped cursor table.
+/// Version 6 partitions the shared dashboard cache and pending author by account.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 6;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -57,7 +59,106 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 4).await?;
         migrated = true;
     }
+    if version < 5 {
+        ensure_workspace_sync_state(pool).await?;
+        set_local_schema_version(pool, 5).await?;
+        migrated = true;
+    }
+    if version < 6 {
+        ensure_dashboard_account_scope(pool).await?;
+        set_local_schema_version(pool, 6).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+async fn ensure_dashboard_account_scope(pool: &SqlitePool) -> AppResult<()> {
+    add_column_if_missing(
+        pool,
+        "dashboards",
+        "pending_account_user_id",
+        "ALTER TABLE dashboards ADD COLUMN pending_account_user_id TEXT",
+    )
+    .await?;
+    let mut tx = pool.begin().await?;
+    sqlx::raw_sql(
+        "CREATE TABLE IF NOT EXISTS workspace_dashboard_visibility (
+             dashboard_id    TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+             account_user_id TEXT NOT NULL CHECK(account_user_id <> ''),
+             last_seen_at    TEXT NOT NULL,
+             PRIMARY KEY (dashboard_id, account_user_id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_workspace_dashboard_visibility_account
+             ON workspace_dashboard_visibility(account_user_id, dashboard_id);",
+    )
+    .execute(&mut *tx)
+    .await?;
+    // Older dashboard outbox rows did not retain the author account. Never replay
+    // such a mutation under whichever account happens to be active after upgrade.
+    sqlx::query(
+        "UPDATE dashboards SET sync_status = 'conflict'
+         WHERE workspace_id IN (SELECT id FROM workspaces WHERE kind = 'team')
+           AND id IN (
+             SELECT resource_id FROM sync_outbox
+             WHERE resource_type = 'dashboard'
+           )
+           AND pending_account_user_id IS NULL",
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM sync_outbox
+         WHERE resource_type = 'dashboard'
+           AND resource_id IN (
+             SELECT id FROM dashboards
+             WHERE pending_account_user_id IS NULL AND sync_status = 'conflict'
+           )",
+    )
+    .execute(&mut *tx)
+    .await?;
+    // Rebuild only visibility implied by a current active membership and exact
+    // connection binding. Read-only roles receive published definitions only.
+    sqlx::query(
+        "INSERT OR IGNORE INTO workspace_dashboard_visibility
+            (dashboard_id, account_user_id, last_seen_at)
+         SELECT dashboard.id, member.user_id, CURRENT_TIMESTAMP
+         FROM dashboards dashboard
+         JOIN workspace_members member
+           ON member.workspace_id = dashboard.workspace_id
+          AND member.user_id IS NOT NULL
+          AND member.status = 'active'
+         JOIN workspace_connection_bindings binding
+           ON binding.connection_id = dashboard.connection_id
+          AND binding.account_user_id = member.user_id
+         JOIN workspaces workspace
+           ON workspace.id = dashboard.workspace_id AND workspace.kind = 'team'
+         WHERE dashboard.deleted_at IS NULL
+           AND NOT (
+             dashboard.sync_status IN ('dirty', 'conflict')
+             AND dashboard.pending_account_user_id IS NULL
+           )
+           AND (member.role IN ('editor', 'admin', 'owner')
+                OR dashboard.state = 'published')",
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn ensure_workspace_sync_state(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(
+        "CREATE TABLE IF NOT EXISTS workspace_sync_state (
+             workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+             account_scope TEXT NOT NULL CHECK(account_scope <> ''),
+             pull_cursor   INTEGER NOT NULL CHECK(pull_cursor >= 0),
+             last_pulled_at TEXT NOT NULL,
+             PRIMARY KEY (workspace_id, account_scope)
+         );",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 async fn normalize_personal_dashboard_sync(pool: &SqlitePool) -> AppResult<()> {

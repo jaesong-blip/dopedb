@@ -430,6 +430,7 @@ CREATE TABLE IF NOT EXISTS dashboards (
                        CHECK(state IN ('draft', 'published', 'archived')),
     owner_member_id    TEXT,
     updated_by_member_id TEXT,
+    pending_account_user_id TEXT,                 -- exact local author for outbox replay
     deleted_at         TEXT,
     created_at         TEXT NOT NULL,
     updated_at         TEXT NOT NULL,
@@ -439,6 +440,19 @@ CREATE INDEX IF NOT EXISTS idx_dashboards_conn_updated
     ON dashboards(connection_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_dashboards_workspace_sync
     ON dashboards(workspace_id, sync_status, updated_at DESC);
+
+-- One shared dashboard definition can be cached for several signed-in accounts,
+-- while each account can see a different subset due to its role and connection
+-- grants. This payload-free map prevents one account's pull from erasing or exposing
+-- another account's authorized offline projection.
+CREATE TABLE IF NOT EXISTS workspace_dashboard_visibility (
+    dashboard_id   TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    account_user_id TEXT NOT NULL CHECK(account_user_id <> ''),
+    last_seen_at   TEXT NOT NULL,
+    PRIMARY KEY (dashboard_id, account_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_dashboard_visibility_account
+    ON workspace_dashboard_visibility(account_user_id, dashboard_id);
 
 CREATE TABLE IF NOT EXISTS sync_outbox (
     id            TEXT PRIMARY KEY,
@@ -463,6 +477,17 @@ CREATE TABLE IF NOT EXISTS sync_state (
 );
 INSERT OR IGNORE INTO sync_state (workspace_id)
 VALUES ('00000000-0000-0000-0000-000000000001');
+
+-- Hosted pull checkpoints are account-scoped. Two accounts in the same team
+-- workspace can have different grants and must never share a cursor merely because
+-- they share the local SQLite file. The legacy table remains for rollback safety.
+CREATE TABLE IF NOT EXISTS workspace_sync_state (
+    workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    account_scope TEXT NOT NULL CHECK(account_scope <> ''),
+    pull_cursor   INTEGER NOT NULL CHECK(pull_cursor >= 0),
+    last_pulled_at TEXT NOT NULL,
+    PRIMARY KEY (workspace_id, account_scope)
+);
 
 CREATE TABLE IF NOT EXISTS schema_cache (
     connection_id   TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,

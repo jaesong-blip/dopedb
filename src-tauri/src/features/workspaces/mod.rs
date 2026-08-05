@@ -22,10 +22,10 @@ pub(crate) use application::{
 };
 pub(crate) use domain::{
     DashboardOutboxOperation, DashboardPushResult, PendingDashboardMutation, RemoteDashboard,
-    RemoteWorkspace, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthState,
-    WorkspaceAuthUser, WorkspaceAuthorityFingerprint, WorkspaceDashboardState,
-    WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceKind,
-    WorkspaceLifecycleState, WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspaceRole,
+    RemoteWorkspace, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount,
+    WorkspaceAuthState, WorkspaceAuthUser, WorkspaceAuthorityFingerprint, WorkspaceDashboardState,
+    WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceKind, WorkspaceLifecycleState,
+    WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspacePullPage, WorkspaceRole,
 };
 
 pub(crate) type WorkspacesFeature = WorkspaceUseCases<

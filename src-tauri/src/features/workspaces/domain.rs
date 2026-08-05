@@ -196,6 +196,22 @@ pub(crate) enum DashboardPushResult {
     Conflict,
 }
 
+/// One payload-free page of the hosted workspace change journal. A page only
+/// selects authoritative collections to reconcile; resource ids, audit summaries,
+/// credentials, dashboard rows, and report evidence never cross this contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WorkspacePullPage {
+    pub(crate) next_cursor: i64,
+    pub(crate) has_more: bool,
+    pub(crate) reset: bool,
+    pub(crate) refresh_connections: bool,
+    pub(crate) refresh_dashboards: bool,
+    pub(crate) refresh_reports: bool,
+    pub(crate) connection_tombstone: bool,
+    pub(crate) dashboard_tombstone: bool,
+    pub(crate) report_tombstone: bool,
+}
+
 /// Complete snapshot of the authority that can keep process-local Terminal sessions
 /// alive. Any scope, account partition, generation, or membership-role change revokes
 /// those sessions.

@@ -183,6 +183,13 @@
       "when": 1785957574487,
       "tag": "0025_tired_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785963478550,
+      "tag": "0026_redundant_lester",
+      "breakpoints": true
     }
   ]
 }

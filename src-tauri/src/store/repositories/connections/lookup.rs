@@ -22,7 +22,9 @@ impl Store {
              LEFT JOIN workspace_connection_bindings b
                ON b.connection_id = c.id AND b.account_user_id = ?2
              WHERE c.workspace_id = ?1 AND c.deleted_at IS NULL
-               AND (?3 = 'personal' OR c.remote_id IS NOT NULL OR c.account_user_id = ?2)
+               AND (?3 = 'personal'
+                    OR (c.remote_id IS NOT NULL AND b.connection_id IS NOT NULL)
+                    OR c.account_user_id = ?2)
              ORDER BY c.name",
         )
         .bind(workspace.id.to_string())
@@ -52,7 +54,9 @@ impl Store {
              LEFT JOIN workspace_connection_bindings b
                ON b.connection_id = c.id AND b.account_user_id = ?3
              WHERE c.id = ?1 AND c.workspace_id = ?2 AND c.deleted_at IS NULL
-               AND (?4 = 'personal' OR c.remote_id IS NOT NULL OR c.account_user_id = ?3)",
+               AND (?4 = 'personal'
+                    OR (c.remote_id IS NOT NULL AND b.connection_id IS NOT NULL)
+                    OR c.account_user_id = ?3)",
         )
         .bind(id.to_string())
         .bind(workspace.id.to_string())
@@ -145,7 +149,7 @@ impl Store {
                           AND m.status = 'active'
                     ))
                AND (active.workspace_kind = 'personal'
-                    OR c.remote_id IS NOT NULL
+                    OR (c.remote_id IS NOT NULL AND b.connection_id IS NOT NULL)
                     OR c.account_user_id = active.selected_account_id)",
         )
         .bind(id.to_string())

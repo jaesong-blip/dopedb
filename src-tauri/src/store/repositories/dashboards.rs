@@ -27,6 +27,16 @@ impl Store {
         } else {
             "local"
         };
+        let pending_account_user_id = if pin.scope.workspace_kind == WorkspaceKind::Team {
+            Some(
+                pin.scope
+                    .selected_account_id
+                    .as_deref()
+                    .ok_or_else(dashboard_scope_changed)?,
+            )
+        } else {
+            None
+        };
         let mut tx = self.pool.begin().await?;
         Self::acquire_dashboard_writer(&mut tx).await?;
         if !Self::is_pin_current_with_access(&mut *tx, pin, true).await? {
@@ -35,8 +45,9 @@ impl Store {
         let inserted = sqlx::query(
             r#"INSERT INTO dashboards
                   (id, connection_id, title, description, sql, visualization_json,
-                   workspace_id, revision, sync_status, created_at, updated_at)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?9,?9)"#,
+                   workspace_id, revision, sync_status, created_at, updated_at,
+                   pending_account_user_id)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,1,?8,?9,?9,?10)"#,
         )
         .bind(id.to_string())
         .bind(draft.connection_id.to_string())
@@ -47,12 +58,23 @@ impl Store {
         .bind(pin.scope.workspace_id.to_string())
         .bind(sync_status)
         .bind(now)
+        .bind(pending_account_user_id)
         .execute(&mut *tx)
         .await?;
         if inserted.rows_affected() != 1 {
             return Err(dashboard_scope_changed());
         }
         if pin.scope.workspace_kind == WorkspaceKind::Team {
+            sqlx::query(
+                "INSERT INTO workspace_dashboard_visibility
+                    (dashboard_id, account_user_id, last_seen_at)
+                 VALUES (?1, ?2, ?3)",
+            )
+            .bind(id.to_string())
+            .bind(pending_account_user_id)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
             enqueue_outbox(
                 &mut tx,
                 pin.scope.workspace_id,
@@ -102,10 +124,28 @@ impl Store {
              JOIN connections c ON c.id = d.connection_id
              WHERE d.connection_id = ?1 AND d.workspace_id = ?2 AND d.deleted_at IS NULL
                AND c.workspace_id = ?2 AND c.deleted_at IS NULL
+               AND (?3 = 'personal' OR (
+                 (d.pending_account_user_id IS NULL
+                  OR d.pending_account_user_id = ?4)
+                 AND EXISTS(
+                   SELECT 1
+                   FROM workspace_dashboard_visibility visibility
+                   JOIN workspace_members member
+                     ON member.workspace_id = d.workspace_id
+                    AND member.user_id = visibility.account_user_id
+                    AND member.status = 'active'
+                   WHERE visibility.dashboard_id = d.id
+                     AND visibility.account_user_id = ?4
+                     AND (member.role IN ('editor', 'admin', 'owner')
+                          OR d.state = 'published')
+                 )
+               ))
              ORDER BY d.updated_at DESC, d.rowid DESC",
         )
         .bind(pin.connection_id.to_string())
         .bind(pin.scope.workspace_id.to_string())
+        .bind(workspace_kind_str(pin.scope.workspace_kind))
+        .bind(pin.scope.selected_account_id.as_deref())
         .fetch_all(&mut *tx)
         .await?;
         let dashboards = rows
@@ -117,19 +157,12 @@ impl Store {
     }
 
     pub(crate) async fn get_dashboard(&self, id: DashboardId) -> AppResult<Dashboard> {
-        let workspace_id = self.active_workspace_id().await?;
-        let row = sqlx::query(
-            "SELECT d.* FROM dashboards d
-             JOIN connections c ON c.id = d.connection_id
-             WHERE d.id = ?1 AND d.workspace_id = ?2 AND d.deleted_at IS NULL
-               AND c.workspace_id = ?2 AND c.deleted_at IS NULL",
-        )
-        .bind(id.to_string())
-        .bind(workspace_id.to_string())
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("dashboard {id}")))?;
-        row_to_dashboard(&row)
+        let pin = self.pin_dashboard_for_view(id).await?;
+        self.list_dashboards_if_current(&pin.connection)
+            .await?
+            .into_iter()
+            .find(|dashboard| dashboard.id == id)
+            .ok_or_else(|| AppError::NotFound(format!("dashboard {id}")))
     }
 
     /// Pin a dashboard identity for metadata deletion without parsing its
@@ -181,8 +214,27 @@ impl Store {
                           AND m.status = 'active'
                     ))
                AND (active.workspace_kind = 'personal'
-                    OR c.remote_id IS NOT NULL
-                    OR c.account_user_id = active.selected_account_id)",
+                    OR (c.remote_id IS NOT NULL AND EXISTS(
+                        SELECT 1 FROM workspace_connection_bindings binding
+                        WHERE binding.connection_id = c.id
+                          AND binding.account_user_id = active.selected_account_id
+                    ))
+                    OR c.account_user_id = active.selected_account_id)
+               AND (active.workspace_kind = 'personal'
+                    OR d.pending_account_user_id IS NULL
+                    OR d.pending_account_user_id = active.selected_account_id)
+               AND (active.workspace_kind = 'personal' OR EXISTS(
+                 SELECT 1
+                 FROM workspace_dashboard_visibility visibility
+                 JOIN workspace_members visible_member
+                   ON visible_member.workspace_id = d.workspace_id
+                  AND visible_member.user_id = visibility.account_user_id
+                  AND visible_member.status = 'active'
+                 WHERE visibility.dashboard_id = d.id
+                   AND visibility.account_user_id = active.selected_account_id
+                   AND (visible_member.role IN ('editor', 'admin', 'owner')
+                        OR d.state = 'published')
+               ))",
         )
         .bind(id.to_string())
         .fetch_optional(&self.pool)
@@ -210,12 +262,30 @@ impl Store {
                  SELECT 1 FROM dashboards d
                  WHERE d.id = ?1 AND d.workspace_id = ?2 AND d.connection_id = ?3
                    AND d.revision = ?4 AND d.deleted_at IS NULL
+                   AND (?5 = 'personal' OR (
+                     (d.pending_account_user_id IS NULL
+                      OR d.pending_account_user_id = ?6)
+                     AND EXISTS(
+                       SELECT 1
+                       FROM workspace_dashboard_visibility visibility
+                       JOIN workspace_members member
+                         ON member.workspace_id = d.workspace_id
+                        AND member.user_id = visibility.account_user_id
+                        AND member.status = 'active'
+                       WHERE visibility.dashboard_id = d.id
+                         AND visibility.account_user_id = ?6
+                         AND (member.role IN ('editor', 'admin', 'owner')
+                              OR d.state = 'published')
+                     )
+                   ))
              )",
         )
         .bind(id.to_string())
         .bind(connection.scope.workspace_id.to_string())
         .bind(connection.connection_id.to_string())
         .bind(dashboard_revision)
+        .bind(workspace_kind_str(connection.scope.workspace_kind))
+        .bind(connection.scope.selected_account_id.as_deref())
         .fetch_one(&mut *tx)
         .await?;
         if !current {
@@ -261,9 +331,21 @@ impl Store {
         } else {
             "local"
         };
+        let pending_account_user_id = if connection.scope.workspace_kind == WorkspaceKind::Team {
+            Some(
+                connection
+                    .scope
+                    .selected_account_id
+                    .as_deref()
+                    .ok_or_else(dashboard_scope_changed)?,
+            )
+        } else {
+            None
+        };
         let revision: Option<i64> = sqlx::query_scalar(
             "UPDATE dashboards SET deleted_at = ?2, updated_at = ?2,
-                    revision = revision + 1, sync_status = ?6
+                    revision = revision + 1, sync_status = ?6,
+                    pending_account_user_id = ?7
              WHERE id = ?1 AND workspace_id = ?3 AND connection_id = ?4
                AND revision = ?5 AND deleted_at IS NULL
              RETURNING revision",
@@ -274,6 +356,7 @@ impl Store {
         .bind(connection.connection_id.to_string())
         .bind(dashboard_revision)
         .bind(sync_status)
+        .bind(pending_account_user_id)
         .fetch_optional(&mut *tx)
         .await?;
         let revision = revision.ok_or_else(dashboard_scope_changed)?;
@@ -312,6 +395,7 @@ impl Store {
     pub(crate) async fn pending_dashboard_mutations(
         &self,
         workspace_id: Uuid,
+        account_user_id: &str,
     ) -> AppResult<Vec<PendingDashboardMutation>> {
         let rows = sqlx::query(
             "SELECT outbox.id AS outbox_id, outbox.resource_id, outbox.operation,
@@ -325,6 +409,7 @@ impl Store {
               AND dashboard.workspace_id = outbox.workspace_id
              WHERE outbox.workspace_id = ?1
                AND outbox.resource_type = 'dashboard'
+               AND dashboard.pending_account_user_id = ?2
                AND NOT EXISTS (
                  SELECT 1 FROM sync_outbox newer
                  WHERE newer.workspace_id = outbox.workspace_id
@@ -335,6 +420,7 @@ impl Store {
              ORDER BY outbox.created_at, outbox.id",
         )
         .bind(workspace_id.to_string())
+        .bind(account_user_id)
         .fetch_all(&self.pool)
         .await?;
         rows.into_iter()
@@ -418,7 +504,9 @@ impl Store {
                 "UPDATE dashboards
                  SET remote_id = ?1, remote_revision = ?2,
                      state = ?3, owner_member_id = ?4, updated_by_member_id = ?5,
-                     sync_status = CASE WHEN revision = ?6 THEN 'synced' ELSE 'dirty' END
+                     sync_status = CASE WHEN revision = ?6 THEN 'synced' ELSE 'dirty' END,
+                     pending_account_user_id = CASE WHEN revision = ?6
+                       THEN NULL ELSE pending_account_user_id END
                  WHERE id = ?7 AND workspace_id = ?8 AND connection_id = ?9",
             )
             .bind(remote.id.to_string())
@@ -440,7 +528,9 @@ impl Store {
         } else {
             let changed = sqlx::query(
                 "UPDATE dashboards
-                 SET sync_status = CASE WHEN revision = ?1 THEN 'local' ELSE 'dirty' END
+                 SET sync_status = CASE WHEN revision = ?1 THEN 'local' ELSE 'dirty' END,
+                     pending_account_user_id = CASE WHEN revision = ?1
+                       THEN NULL ELSE pending_account_user_id END
                  WHERE id = ?2 AND workspace_id = ?3 AND connection_id = ?4",
             )
             .bind(mutation.local_revision)
@@ -477,7 +567,8 @@ impl Store {
         let mut tx = self.pool.begin().await?;
         Self::acquire_dashboard_writer(&mut tx).await?;
         let changed = sqlx::query(
-            "UPDATE dashboards SET sync_status = 'conflict'
+            "UPDATE dashboards
+             SET sync_status = 'conflict'
              WHERE id = ?1 AND workspace_id = ?2 AND revision = ?3",
         )
         .bind(mutation.dashboard_id.to_string())
@@ -510,6 +601,7 @@ impl Store {
     pub(crate) async fn sync_remote_dashboards(
         &self,
         workspace_id: Uuid,
+        account_user_id: &str,
         dashboards: &[RemoteDashboard],
     ) -> AppResult<()> {
         let mut seen = HashSet::with_capacity(dashboards.len());
@@ -522,8 +614,24 @@ impl Store {
             let visualization = serde_json::from_str(&dashboard.visualization_json)?;
             validate_visualization(&visualization)?;
         }
+        let now = Utc::now();
         let mut tx = self.pool.begin().await?;
         Self::acquire_dashboard_writer(&mut tx).await?;
+        let membership_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(
+               SELECT 1 FROM workspace_members
+               WHERE workspace_id = ?1 AND user_id = ?2 AND status = 'active'
+             )",
+        )
+        .bind(workspace_id.to_string())
+        .bind(account_user_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !membership_exists {
+            return Err(AppError::NotFound(format!(
+                "workspace {workspace_id} for account {account_user_id}"
+            )));
+        }
         for dashboard in dashboards {
             let changed = sqlx::query(
                 "INSERT INTO dashboards
@@ -588,30 +696,81 @@ impl Store {
                     ));
                 }
             }
+            let visible = sqlx::query(
+                "INSERT INTO workspace_dashboard_visibility
+                    (dashboard_id, account_user_id, last_seen_at)
+                 SELECT dashboard.id, ?1, ?2
+                 FROM dashboards dashboard
+                 JOIN connections connection
+                   ON connection.id = dashboard.connection_id
+                  AND connection.workspace_id = dashboard.workspace_id
+                  AND connection.deleted_at IS NULL
+                 JOIN workspace_connection_bindings binding
+                   ON binding.connection_id = connection.id
+                  AND binding.account_user_id = ?1
+                 JOIN workspace_members member
+                   ON member.workspace_id = dashboard.workspace_id
+                  AND member.user_id = ?1
+                  AND member.status = 'active'
+                 WHERE dashboard.id = ?3 AND dashboard.workspace_id = ?4
+                 ON CONFLICT(dashboard_id, account_user_id) DO UPDATE SET
+                   last_seen_at = excluded.last_seen_at",
+            )
+            .bind(account_user_id)
+            .bind(now)
+            .bind(dashboard.id.to_string())
+            .bind(workspace_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+            if visible.rows_affected() != 1 {
+                return Err(AppError::Network(
+                    "shared dashboard visibility changed connection authority".into(),
+                ));
+            }
         }
         let cached = sqlx::query(
-            "SELECT id FROM dashboards
-             WHERE workspace_id = ?1 AND remote_id IS NOT NULL
-               AND sync_status = 'synced' AND deleted_at IS NULL",
+            "SELECT dashboard.id, dashboard.pending_account_user_id
+             FROM dashboards dashboard
+             JOIN workspace_dashboard_visibility visibility
+               ON visibility.dashboard_id = dashboard.id
+              AND visibility.account_user_id = ?2
+             WHERE dashboard.workspace_id = ?1 AND dashboard.remote_id IS NOT NULL",
         )
         .bind(workspace_id.to_string())
+        .bind(account_user_id)
         .fetch_all(&mut *tx)
         .await?;
         for row in cached {
             let id = parse_uuid(row.try_get("id")?)?;
             if !seen.contains(&id) {
+                let pending_account_user_id: Option<String> =
+                    row.try_get("pending_account_user_id")?;
+                if pending_account_user_id.as_deref() == Some(account_user_id) {
+                    continue;
+                }
                 sqlx::query(
-                    "UPDATE dashboards SET deleted_at = ?1, state = 'archived', updated_at = ?1
-                     WHERE id = ?2 AND workspace_id = ?3
-                       AND remote_id IS NOT NULL AND sync_status = 'synced'",
+                    "DELETE FROM workspace_dashboard_visibility
+                     WHERE dashboard_id = ?1 AND account_user_id = ?2",
                 )
-                .bind(Utc::now())
                 .bind(id.to_string())
-                .bind(workspace_id.to_string())
+                .bind(account_user_id)
                 .execute(&mut *tx)
                 .await?;
             }
         }
+        sqlx::query(
+            "UPDATE dashboards SET deleted_at = ?1, state = 'archived', updated_at = ?1
+             WHERE workspace_id = ?2 AND remote_id IS NOT NULL
+               AND sync_status = 'synced' AND deleted_at IS NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM workspace_dashboard_visibility visibility
+                 WHERE visibility.dashboard_id = dashboards.id
+               )",
+        )
+        .bind(now)
+        .bind(workspace_id.to_string())
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }

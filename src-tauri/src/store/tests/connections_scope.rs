@@ -277,6 +277,104 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         .await
         .unwrap();
 
+    let cursor_page = crate::features::workspaces::WorkspacePullPage {
+        next_cursor: 4,
+        has_more: false,
+        reset: false,
+        refresh_connections: true,
+        refresh_dashboards: true,
+        refresh_reports: true,
+        connection_tombstone: false,
+        dashboard_tombstone: false,
+        report_tombstone: false,
+    };
+    assert_eq!(
+        store
+            .workspace_pull_cursor(workspace_id, &user.id)
+            .await
+            .unwrap(),
+        None
+    );
+    store
+        .commit_workspace_pull_cursor(workspace_id, &user.id, None, cursor_page)
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .workspace_pull_cursor(workspace_id, &user.id)
+            .await
+            .unwrap(),
+        Some(4)
+    );
+    let stale_cursor = store
+        .commit_workspace_pull_cursor(
+            workspace_id,
+            &user.id,
+            Some(3),
+            crate::features::workspaces::WorkspacePullPage {
+                next_cursor: 5,
+                ..cursor_page
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(stale_cursor, AppError::Blocked { .. }));
+    store
+        .commit_workspace_pull_cursor(
+            workspace_id,
+            &user.id,
+            Some(4),
+            crate::features::workspaces::WorkspacePullPage {
+                next_cursor: 2,
+                reset: true,
+                ..cursor_page
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .workspace_pull_cursor(workspace_id, &user.id)
+            .await
+            .unwrap(),
+        Some(2)
+    );
+    store
+        .commit_workspace_pull_cursor(
+            workspace_id,
+            &user.id,
+            Some(2),
+            crate::features::workspaces::WorkspacePullPage {
+                next_cursor: 10_000,
+                reset: true,
+                ..cursor_page
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .workspace_pull_cursor(workspace_id, &user.id)
+            .await
+            .unwrap(),
+        Some(10_000)
+    );
+    let other_user = workspace_user("20000000-0000-0000-0000-000000000002", "Editor");
+    store
+        .sync_account_workspaces(
+            &other_user,
+            &[(workspace_id, "Team".into(), WorkspaceRole::Editor)],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .workspace_pull_cursor(workspace_id, &other_user.id)
+            .await
+            .unwrap(),
+        None
+    );
+
     let id = Uuid::new_v4();
     let mut local_binding = sqlite_profile(id, "shared");
     local_binding.workspace_access = crate::model::WorkspaceConnectionAccess::Write;
@@ -370,10 +468,15 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     .unwrap();
     assert_eq!(outbox_projection, (None, "upsert".into(), 1));
     let pending = store
-        .pending_dashboard_mutations(workspace_id)
+        .pending_dashboard_mutations(workspace_id, user.id.as_str())
         .await
         .unwrap();
     assert_eq!(pending.len(), 1);
+    assert!(store
+        .pending_dashboard_mutations(workspace_id, other_user.id.as_str())
+        .await
+        .unwrap()
+        .is_empty());
     let now = Utc::now();
     let mut remote_dashboard = crate::features::workspaces::RemoteDashboard {
         id: saved_dashboard.id.into(),
@@ -412,7 +515,7 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     remote_dashboard.revision = 2;
     remote_dashboard.updated_at = Utc::now();
     store
-        .sync_remote_dashboards(workspace_id, &[remote_dashboard.clone()])
+        .sync_remote_dashboards(workspace_id, user.id.as_str(), &[remote_dashboard.clone()])
         .await
         .unwrap();
     assert_eq!(
@@ -432,7 +535,7 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         .await
         .unwrap();
     let pending_delete = store
-        .pending_dashboard_mutations(workspace_id)
+        .pending_dashboard_mutations(workspace_id, user.id.as_str())
         .await
         .unwrap();
     assert_eq!(pending_delete.len(), 1);
@@ -445,18 +548,25 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         .await
         .unwrap();
     store
-        .sync_remote_dashboards(workspace_id, &[remote_dashboard])
+        .sync_remote_dashboards(workspace_id, user.id.as_str(), &[remote_dashboard])
         .await
         .unwrap();
-    let preserved_conflict: (String, String, i64) =
-        sqlx::query_as("SELECT title, sync_status, revision FROM dashboards WHERE id = ?1")
-            .bind(saved_dashboard.id.to_string())
-            .fetch_one(store.pool())
-            .await
-            .unwrap();
+    let preserved_conflict: (String, String, i64, Option<String>) = sqlx::query_as(
+        "SELECT title, sync_status, revision, pending_account_user_id
+             FROM dashboards WHERE id = ?1",
+    )
+    .bind(saved_dashboard.id.to_string())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
     assert_eq!(
         preserved_conflict,
-        ("Remote revision".into(), "conflict".into(), 3)
+        (
+            "Remote revision".into(),
+            "conflict".into(),
+            3,
+            Some(user.id.to_string()),
+        )
     );
     let dashboard_outbox_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM sync_outbox
@@ -1006,6 +1116,140 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
             .len(),
         1
     );
+
+    let shared_dashboard = crate::features::workspaces::RemoteDashboard {
+        id: Uuid::new_v4(),
+        connection_id,
+        title: "Account-scoped dashboard".into(),
+        description: "Visible only after this account pulls it".into(),
+        sql: "SELECT count(*) AS total FROM users".into(),
+        visualization_json: serde_json::json!({
+            "version": 1,
+            "kind": "metric",
+            "xColumn": null,
+            "yColumns": ["total"]
+        })
+        .to_string(),
+        state: crate::features::workspaces::WorkspaceDashboardState::Published,
+        owner_member_id: "31313131-3131-4131-8131-313131313131".into(),
+        updated_by_member_id: "31313131-3131-4131-8131-313131313131".into(),
+        revision: 1,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+    for user in [&user_a, &user_b] {
+        store
+            .sync_remote_dashboards(workspace_id, user.id.as_str(), &[shared_dashboard.clone()])
+            .await
+            .unwrap();
+    }
+    sqlx::query(
+        "UPDATE dashboards
+         SET title = 'Alpha pending edit', sync_status = 'dirty',
+             pending_account_user_id = ?1
+         WHERE id = ?2",
+    )
+    .bind(user_a.id.as_str())
+    .bind(shared_dashboard.id.to_string())
+    .execute(store.pool())
+    .await
+    .unwrap();
+    let dashboard_pin_a = store
+        .pin_connection_for_dashboard(connection_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .list_dashboards_if_current(&dashboard_pin_a)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    store
+        .activate_workspace(workspace_id, Some(&user_b.id))
+        .await
+        .unwrap();
+    let dashboard_pin_b = store
+        .pin_connection_for_dashboard(connection_id)
+        .await
+        .unwrap();
+    assert!(store
+        .list_dashboards_if_current(&dashboard_pin_b)
+        .await
+        .unwrap()
+        .is_empty());
+    store
+        .sync_remote_dashboards(workspace_id, user_b.id.as_str(), &[])
+        .await
+        .unwrap();
+    let user_b_visibility: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM workspace_dashboard_visibility
+         WHERE dashboard_id = ?1 AND account_user_id = ?2",
+    )
+    .bind(shared_dashboard.id.to_string())
+    .bind(user_b.id.as_str())
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(user_b_visibility, 0);
+    store
+        .activate_workspace(workspace_id, Some(&user_a.id))
+        .await
+        .unwrap();
+    let refreshed_dashboard_pin_a = store
+        .pin_connection_for_dashboard(connection_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .list_dashboards_if_current(&refreshed_dashboard_pin_a)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let removed_for_b = store
+        .sync_remote_connections(workspace_id, &user_b.id, &[])
+        .await
+        .unwrap();
+    assert_eq!(removed_for_b, vec![Uuid::parse_str(&ref_b).unwrap()]);
+    assert_eq!(
+        store
+            .get_connection(connection_id)
+            .await
+            .unwrap()
+            .secret_ref
+            .as_deref(),
+        Some(ref_a.as_str())
+    );
+    store
+        .activate_workspace(workspace_id, Some(&user_b.id))
+        .await
+        .unwrap();
+    assert!(store.list_connections().await.unwrap().is_empty());
+    assert!(matches!(
+        store.get_connection(connection_id).await,
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        store
+            .bind_connection_credentials(
+                connection_id,
+                &user_b.id,
+                "no-longer-authorized",
+                &HashMap::new(),
+                None,
+            )
+            .await,
+        Err(AppError::NotFound(_))
+    ));
+    store
+        .activate_workspace(workspace_id, Some(&user_a.id))
+        .await
+        .unwrap();
+    assert_eq!(store.list_connections().await.unwrap().len(), 1);
 }
 
 #[tokio::test]

@@ -46,6 +46,7 @@ where
     pub(super) control_plane: C,
     pub(super) credentials: Arc<V>,
     pub(super) configuration: E,
+    pub(super) sync_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<R, A, C, V, E> Clone for WorkspaceUseCases<R, A, C, V, E>
@@ -63,6 +64,7 @@ where
             control_plane: self.control_plane.clone(),
             credentials: Arc::clone(&self.credentials),
             configuration: self.configuration.clone(),
+            sync_lock: Arc::clone(&self.sync_lock),
         }
     }
 }
@@ -88,6 +90,7 @@ where
             control_plane,
             credentials,
             configuration,
+            sync_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 }

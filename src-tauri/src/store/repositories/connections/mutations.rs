@@ -195,9 +195,16 @@ impl Store {
         let now = Utc::now();
         let mut tx = self.pool.begin().await?;
         let existing_remote: Vec<String> = sqlx::query_scalar(
-            "SELECT id FROM connections WHERE workspace_id = ?1 AND remote_id IS NOT NULL",
+            "SELECT connection.id
+             FROM connections connection
+             JOIN workspace_connection_bindings binding
+               ON binding.connection_id = connection.id
+              AND binding.account_user_id = ?2
+             WHERE connection.workspace_id = ?1
+               AND connection.remote_id IS NOT NULL",
         )
         .bind(workspace_id.to_string())
+        .bind(account_user_id)
         .fetch_all(&mut *tx)
         .await?;
         let incoming = connections
@@ -208,9 +215,11 @@ impl Store {
         for id in existing_remote.iter().filter(|id| !incoming.contains(*id)) {
             let secret_refs: Vec<String> = sqlx::query_scalar(
                 "SELECT secret_ref FROM workspace_connection_bindings
-                 WHERE connection_id = ?1 AND secret_ref IS NOT NULL",
+                 WHERE connection_id = ?1 AND account_user_id = ?2
+                   AND secret_ref IS NOT NULL",
             )
             .bind(id)
+            .bind(account_user_id)
             .fetch_all(&mut *tx)
             .await?;
             for secret_ref in secret_refs {
@@ -225,13 +234,21 @@ impl Store {
                     ),
                 }
             }
-            sqlx::query("DELETE FROM workspace_connection_bindings WHERE connection_id = ?1")
-                .bind(id)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "DELETE FROM workspace_connection_bindings
+                 WHERE connection_id = ?1 AND account_user_id = ?2",
+            )
+            .bind(id)
+            .bind(account_user_id)
+            .execute(&mut *tx)
+            .await?;
             sqlx::query(
                 "UPDATE connections SET deleted_at = ?2, updated_at = ?2
-                 WHERE id = ?1 AND workspace_id = ?3 AND remote_id IS NOT NULL",
+                 WHERE id = ?1 AND workspace_id = ?3 AND remote_id IS NOT NULL
+                   AND NOT EXISTS (
+                     SELECT 1 FROM workspace_connection_bindings binding
+                     WHERE binding.connection_id = connections.id
+                   )",
             )
             .bind(id)
             .bind(now)
@@ -391,7 +408,7 @@ impl Store {
              JOIN workspace_members m
                ON m.workspace_id = c.workspace_id
               AND m.user_id = ?2 AND m.status = 'active'
-             LEFT JOIN workspace_connection_bindings b
+             JOIN workspace_connection_bindings b
                ON b.connection_id = c.id AND b.account_user_id = ?2
              WHERE c.id = ?1 AND c.remote_id IS NOT NULL AND c.deleted_at IS NULL",
         )

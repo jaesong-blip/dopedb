@@ -7,6 +7,7 @@ mod connections;
 mod dashboards;
 mod provider_local_target;
 mod reports;
+mod sync;
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -33,7 +34,7 @@ use crate::features::workspaces::{
     domain::{parse_workspace_role, valid_device_code},
     DashboardPushResult, PendingDashboardMutation, RemoteDashboard, RemoteWorkspace,
     WorkspaceAuthUser, WorkspaceDashboardState, WorkspaceDeviceAuthorization, WorkspaceLoginPoll,
-    WorkspaceLoginPollStatus,
+    WorkspaceLoginPollStatus, WorkspacePullPage,
 };
 use crate::kernel::identity::{AccountId, ConnectionId, ProviderIntegrationId, WorkspaceId};
 use crate::model::{
@@ -52,6 +53,7 @@ use connections::{
 use dashboards::{delete_dashboard, remote_dashboards, upsert_dashboard};
 use provider_local_target::provider_local_target;
 pub(crate) use reports::{append_report_evidence, propose_report};
+use sync::workspace_pull_page;
 
 const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
 const DESKTOP_CLIENT_ID: &str = "dopedb-desktop";
@@ -403,6 +405,15 @@ impl WorkspaceControlPlanePort for HostedWorkspaceControlPlane {
 
     async fn remote_workspaces(&self, account_id: &AccountId) -> AppResult<Vec<RemoteWorkspace>> {
         remote_workspaces(account_id.as_str()).await
+    }
+
+    async fn workspace_pull_page(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+        cursor: Option<i64>,
+    ) -> AppResult<Option<WorkspacePullPage>> {
+        workspace_pull_page(account_id.as_str(), workspace_id.into(), cursor).await
     }
 
     async fn remote_connections(

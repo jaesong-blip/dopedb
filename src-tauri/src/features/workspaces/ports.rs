@@ -11,7 +11,7 @@ use crate::model::ConnectionProfile;
 use super::domain::{
     DashboardPushResult, PendingDashboardMutation, RemoteDashboard, RemoteWorkspace, Workspace,
     WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceAuthorityFingerprint,
-    WorkspaceDeviceAuthorization, WorkspaceLoginPoll, WorkspaceRole,
+    WorkspaceDeviceAuthorization, WorkspaceLoginPoll, WorkspacePullPage, WorkspaceRole,
 };
 
 pub(crate) trait WorkspaceRepositoryPort: Clone + Send + Sync + 'static {
@@ -57,6 +57,7 @@ pub(crate) trait WorkspaceRepositoryPort: Clone + Send + Sync + 'static {
     fn pending_dashboard_mutations(
         &self,
         workspace_id: WorkspaceId,
+        account_id: &AccountId,
     ) -> impl Future<Output = AppResult<Vec<PendingDashboardMutation>>> + Send;
 
     fn acknowledge_dashboard_mutation(
@@ -75,7 +76,22 @@ pub(crate) trait WorkspaceRepositoryPort: Clone + Send + Sync + 'static {
     fn sync_remote_dashboards(
         &self,
         workspace_id: WorkspaceId,
+        account_id: &AccountId,
         dashboards: &[RemoteDashboard],
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn workspace_pull_cursor(
+        &self,
+        workspace_id: WorkspaceId,
+        account_id: &AccountId,
+    ) -> impl Future<Output = AppResult<Option<i64>>> + Send;
+
+    fn commit_workspace_pull_cursor(
+        &self,
+        workspace_id: WorkspaceId,
+        account_id: &AccountId,
+        expected_cursor: Option<i64>,
+        page: WorkspacePullPage,
     ) -> impl Future<Output = AppResult<()>> + Send;
 }
 
@@ -143,6 +159,13 @@ pub(crate) trait WorkspaceControlPlanePort: Clone + Send + Sync + 'static {
         &self,
         account_id: &AccountId,
     ) -> impl Future<Output = AppResult<Vec<RemoteWorkspace>>> + Send;
+
+    fn workspace_pull_page(
+        &self,
+        account_id: &AccountId,
+        workspace_id: WorkspaceId,
+        cursor: Option<i64>,
+    ) -> impl Future<Output = AppResult<Option<WorkspacePullPage>>> + Send;
 
     fn remote_connections(
         &self,

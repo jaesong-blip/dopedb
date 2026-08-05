@@ -4,8 +4,8 @@ Status: Milestone 0 implemented; Milestone 1 identity/RBAC slice implemented;
 Milestone 2 shared-connection core, explicit conflict recovery, plus PlanetScale, Neon,
 and GCP Cloud SQL managed-access adapters implemented; Milestone 4 shared-dashboard definition sync and
 revision core implemented, with packaged two-member verification still open. KMS-wrapped
-metadata backup, resumable key rotation, and reversible Owner workspace deletion are
-implemented in the control plane. Production uses a dedicated Vercel OIDC principal,
+metadata backup, resumable key rotation, reversible Owner workspace deletion, and an
+account-scoped ordered pull cursor are implemented in the control plane. Production uses a dedicated Vercel OIDC principal,
 GCP Workload Identity Federation provider, service account, and single-key KMS grant;
 packaged recovery evidence remains open. General provider inventory, full sync, and per-connection-grant
 exit criteria stay open below.
@@ -313,7 +313,9 @@ boundary.
 - Add `provider_credential_bindings` keyed by provider integration, member, and
   device, including the external identity, verified scope summary, verification time,
   and local `secret_ref`. The credential itself never enters sync storage.
-- Add `sync_outbox` for durable offline mutations and `sync_state` for pull cursors.
+- Add `sync_outbox` for durable offline mutations and an account-scoped
+  `workspace_sync_state` for pull cursors. A workspace-only cursor is invalid because
+  two accounts in the same local app can have different connection grants.
 - Keep query history, schema cache, live monitoring snapshots, and the existing
   hash-chained execution audit local by default.
 
@@ -339,6 +341,19 @@ This gives readers both a durable historical conclusion and a safe way to refres
 against current data.
 
 ## Synchronization Contract
+
+Implementation snapshot (2026-08-06): every committed shared-resource or authority
+audit appends a payload-free event under a gap-free, per-workspace sequence in the
+same PostgreSQL transaction. Credential-lease and web-only backup/key lifecycle facts
+remain in the audit log without expanding the projection cursor. The cursor response carries only changed collection categories and
+tombstone presence—never resource ids, actors, summaries, SQL, credentials, or result
+data. The desktop serializes one workspace/account replay, re-fetches connections and
+dashboards through their independently authorized collection routes, and advances its
+account-scoped SQLite checkpoint only after every selected projection commits. A new
+client bootstraps from a full authorized snapshot; a server restore or long-offline
+cursor compaction explicitly rebases the cursor and also forces a full snapshot. Report proposals/evidence use their strict
+ordered outbound outbox, while report reading remains web-authoritative by design
+rather than creating a second desktop report projection.
 
 - The service is authoritative for workspace membership, permissions, and the latest
   shared resource revision.
