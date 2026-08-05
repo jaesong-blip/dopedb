@@ -21,8 +21,6 @@ if (process.argv.includes("--check-guard-only")) process.exit(0);
 const result = spawnSync(
   "pnpm",
   [
-    "--dir",
-    "..",
     "exec",
     "vitest",
     "run",
