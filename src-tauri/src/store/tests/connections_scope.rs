@@ -448,14 +448,16 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         .sync_remote_dashboards(workspace_id, &[remote_dashboard])
         .await
         .unwrap();
-    let preserved_conflict: (String, String, i64) = sqlx::query_as(
-        "SELECT title, sync_status, revision FROM dashboards WHERE id = ?1",
-    )
-    .bind(saved_dashboard.id.to_string())
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    assert_eq!(preserved_conflict, ("Remote revision".into(), "conflict".into(), 3));
+    let preserved_conflict: (String, String, i64) =
+        sqlx::query_as("SELECT title, sync_status, revision FROM dashboards WHERE id = ?1")
+            .bind(saved_dashboard.id.to_string())
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(
+        preserved_conflict,
+        ("Remote revision".into(), "conflict".into(), 3)
+    );
     let dashboard_outbox_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM sync_outbox
          WHERE workspace_id = ?1 AND resource_type = 'dashboard'",
@@ -465,6 +467,119 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
     .await
     .unwrap();
     assert_eq!(dashboard_outbox_count, 0);
+
+    let report_id = Uuid::new_v4();
+    let first_run_id = crate::kernel::identity::QueryRunId::from(Uuid::new_v4());
+    let first_evidence_id = Uuid::new_v4();
+    let first_claim_id = Uuid::new_v4();
+    let report_authority = crate::features::reports::StoredReportMutationAuthority {
+        account_user_id: user.id.to_string(),
+        connection_revision: dashboard_pin.connection_revision,
+        binding_revision: dashboard_pin.binding_revision,
+        binding_updated_at: dashboard_pin.binding_updated_at.clone(),
+    };
+    let report_create = crate::features::reports::StoredReportMutation {
+        schema_version: crate::features::reports::STORED_REPORT_MUTATION_SCHEMA_VERSION,
+        authority: report_authority.clone(),
+        mutation: crate::features::reports::StoredReportMutationKind::Propose {
+            draft: crate::features::reports::HostedReportDraft {
+                id: report_id,
+                connection_id: id.into(),
+                title: "Current users report".into(),
+                question: "How many users are active?".into(),
+                conclusion: "One current snapshot is available.".into(),
+                preflight_warnings: vec![],
+                claims: vec![crate::features::reports::ReportClaimDraft {
+                    id: first_claim_id,
+                    statement: "The query produced one count.".into(),
+                    evidence_ids: vec![first_evidence_id],
+                }],
+                evidence: vec![crate::features::reports::ReportEvidenceDraft {
+                    id: first_evidence_id,
+                    query_run_id: first_run_id,
+                    sql: "SELECT count(*) AS users FROM users".into(),
+                    executed_at: Utc::now(),
+                }],
+            },
+            query_run_ids: vec![first_run_id],
+        },
+    };
+    let create_outbox_id = store
+        .enqueue_report_mutation_if_current(&dashboard_pin, &report_create)
+        .await
+        .unwrap();
+    let second_run_id = crate::kernel::identity::QueryRunId::from(Uuid::new_v4());
+    let second_evidence_id = Uuid::new_v4();
+    let report_append = crate::features::reports::StoredReportMutation {
+        schema_version: crate::features::reports::STORED_REPORT_MUTATION_SCHEMA_VERSION,
+        authority: report_authority,
+        mutation: crate::features::reports::StoredReportMutationKind::AppendEvidence {
+            draft: crate::features::reports::HostedReportEvidenceAppend {
+                report_id,
+                expected_revision: 1,
+                connection_id: id.into(),
+                claims: vec![crate::features::reports::ReportClaimDraft {
+                    id: Uuid::new_v4(),
+                    statement: "The rerun confirmed the count.".into(),
+                    evidence_ids: vec![second_evidence_id],
+                }],
+                evidence: vec![crate::features::reports::ReportEvidenceDraft {
+                    id: second_evidence_id,
+                    query_run_id: second_run_id,
+                    sql: "SELECT count(*) AS users FROM users /* rerun */".into(),
+                    executed_at: Utc::now(),
+                }],
+            },
+            query_run_ids: vec![second_run_id],
+        },
+    };
+    let append_outbox_id = store
+        .enqueue_report_mutation_if_current(&dashboard_pin, &report_append)
+        .await
+        .unwrap();
+    let report_pending = store
+        .pending_report_mutations_for_active_scope()
+        .await
+        .unwrap();
+    assert_eq!(
+        report_pending
+            .iter()
+            .map(|item| item.outbox_id)
+            .collect::<Vec<_>>(),
+        vec![create_outbox_id, append_outbox_id]
+    );
+    assert!(store
+        .is_report_mutation_authority_current(&report_pending[0])
+        .await
+        .unwrap());
+    store
+        .record_report_mutation_failure(
+            &report_pending[0],
+            &AppError::Network("sensitive hosted response must not persist".into()),
+        )
+        .await
+        .unwrap();
+    let stored_failure: String =
+        sqlx::query_scalar("SELECT last_error FROM sync_outbox WHERE id = ?1")
+            .bind(create_outbox_id.to_string())
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(stored_failure, "network");
+    store
+        .acknowledge_report_mutation(&report_pending[0])
+        .await
+        .unwrap();
+    let report_pending = store
+        .pending_report_mutations_for_active_scope()
+        .await
+        .unwrap();
+    assert_eq!(report_pending.len(), 1);
+    assert_eq!(report_pending[0].outbox_id, append_outbox_id);
+    store
+        .acknowledge_report_mutation(&report_pending[0])
+        .await
+        .unwrap();
 
     assert_agent_acp_batch_replay_is_bounded(&store, id).await;
 

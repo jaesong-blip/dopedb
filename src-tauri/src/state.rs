@@ -115,8 +115,17 @@ impl AppState {
             let succeeded = acp.is_ok() && jobs.is_ok();
             if succeeded {
                 let started = trace.stage_started();
+                let reports = services.report.clone();
                 crate::broker::start(broker, services, Some(skills), app);
                 trace.finish("broker_start", "post_paint", started, true);
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = reports.replay_pending_active().await {
+                        tracing::warn!(
+                            error_kind = error.kind(),
+                            "Agent report replay deferred after startup"
+                        );
+                    }
+                });
             }
             gate.finish(succeeded);
         });

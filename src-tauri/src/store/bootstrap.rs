@@ -582,8 +582,9 @@ pub(super) async fn migrate_workspace_foundation(pool: &SqlitePool) -> AppResult
     Ok(())
 }
 
-/// Queue only mutation identity and revision. A future sync serializer may populate
-/// `payload_json`, but must explicitly redact `secret_ref` before doing so.
+/// Queue mutation identity and revision for projected resources. Evidence-bound
+/// reports use a separate strict serializer because they have no desktop projection;
+/// every other caller keeps `payload_json` NULL and can never serialize `secret_ref`.
 pub(super) async fn enqueue_outbox(
     tx: &mut Transaction<'_, Sqlite>,
     workspace_id: Uuid,

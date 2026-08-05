@@ -599,6 +599,25 @@ database access, and shared dashboards.
 
 ## Milestone 5 — Saved Agent Analysis Reports
 
+Implementation snapshot (2026-08-06): the Agent can propose a complete draft and
+append new immutable evidence only from successful, connection-pinned read runs. The
+desktop writes each exact, secret-free mutation to SQLite before its first hosted
+request and replays one account's rows in insertion order after startup, login,
+membership refresh, or workspace/account activation. Every replay rechecks the active
+Team membership, Editor role, connection revision, member-local binding revision, and
+connection access before the hosted service independently rechecks its live session and
+grant. Lost create and append responses are idempotent only when the report definition,
+new claims, evidence identities, SQL, timestamps, author, and exact adjacent revisions
+all match. Result rows, credentials, artifact handles, and Agent transcripts have no
+outbox or hosted representation; replay failures retain only a categorical error kind.
+
+The web workspace owns report reading, human editing, review, publish/archive, immutable
+revision history, evidence inspection, restore, and ownership transfer. The desktop
+therefore keeps an outbound Agent mutation outbox, not a second report reader cache that
+could become an authority. Remaining release evidence is a packaged two-member recovery
+run that drops responses between commit and acknowledgement and confirms ordered replay
+without duplicate reports or evidence.
+
 Deliverables:
 
 - Add report list, editor, evidence-query panel, review, and publish flows.

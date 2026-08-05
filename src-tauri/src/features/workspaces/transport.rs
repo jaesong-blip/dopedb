@@ -15,6 +15,19 @@ use super::{
     WorkspaceLoginPollStatus,
 };
 
+fn replay_reports_best_effort(state: &AppState, reason: &'static str) {
+    let reports = state.services.report.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = reports.replay_pending_active().await {
+            tracing::warn!(
+                error_kind = error.kind(),
+                reason,
+                "Agent report replay deferred"
+            );
+        }
+    });
+}
+
 async fn revoke_if_authority_changed(
     state: &AppState,
     app: &tauri::AppHandle,
@@ -70,6 +83,7 @@ pub async fn refresh_workspace_auth_state(
     revoke_if_authority_changed(&state, &app, &before).await?;
     if result.is_ok() {
         reconcile_provider_grants_after_refresh(&state).await?;
+        replay_reports_best_effort(&state, "auth_refresh");
     }
     result
 }
@@ -119,6 +133,7 @@ pub async fn poll_workspace_login(
     let result = state.services.workspace.poll_login(&device_code).await?;
     if result.status == WorkspaceLoginPollStatus::SignedIn {
         state.terminals.stop_all(&app);
+        replay_reports_best_effort(&state, "login");
     }
     Ok(result)
 }
@@ -146,6 +161,7 @@ pub async fn refresh_workspace_memberships(
     revoke_if_authority_changed(&state, &app, &before).await?;
     if result.is_ok() {
         reconcile_provider_grants_after_refresh(&state).await?;
+        replay_reports_best_effort(&state, "membership_refresh");
     }
     result
 }
@@ -165,6 +181,9 @@ pub async fn set_active_workspace(
     let before = state.services.workspace.authority_fingerprint().await?;
     let result = state.services.workspace.activate(id, account_user_id).await;
     revoke_if_authority_changed(&state, &app, &before).await?;
+    if result.is_ok() {
+        replay_reports_best_effort(&state, "workspace_activation");
+    }
     result
 }
 
@@ -177,6 +196,9 @@ pub async fn set_active_workspace_account(
     let before = state.services.workspace.authority_fingerprint().await?;
     let result = state.services.workspace.activate_account(user_id).await;
     revoke_if_authority_changed(&state, &app, &before).await?;
+    if result.is_ok() {
+        replay_reports_best_effort(&state, "account_activation");
+    }
     result
 }
 

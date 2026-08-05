@@ -51,6 +51,7 @@ use crate::error::{AppError, AppResult};
 use crate::features::dashboards::{
     validate_visualization, Dashboard, DashboardDraft, DashboardState, DashboardSyncStatus,
 };
+use crate::features::reports::{PendingReportMutation, StoredReportMutation};
 use crate::features::workspaces::{
     DashboardOutboxOperation, PendingDashboardMutation, RemoteDashboard, Workspace,
     WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceKind,

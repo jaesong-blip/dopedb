@@ -447,7 +447,7 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
     resource_id   TEXT NOT NULL,
     operation     TEXT NOT NULL,       -- upsert|delete
     revision      INTEGER NOT NULL,
-    payload_json  TEXT,                -- intentionally NULL until hosted sync exists
+    payload_json  TEXT,                -- NULL for projected resources; bounded for report replay
     created_at    TEXT NOT NULL,
     attempts      INTEGER NOT NULL DEFAULT 0,
     last_error    TEXT
