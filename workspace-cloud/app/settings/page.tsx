@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
 import { acceptPendingWorkspaceInvitations } from "../../lib/pending-invitations";
-import { member } from "../../lib/schema";
+import { member, workspaceProfile } from "../../lib/schema";
 import { Brand } from "../components/Brand";
 import { LocaleSwitcher } from "../components/LocaleSwitcher";
 import {
@@ -89,30 +89,60 @@ export default async function SettingsPage({
   });
   const workspaces = await auth.api.listOrganizations({ headers: requestHeaders });
   const roleRows = workspaces.length > 0
-    ? await db.select({ organizationId: member.organizationId, role: member.role })
+    ? await db.select({
+        organizationId: member.organizationId,
+        role: member.role,
+        lifecycleState: workspaceProfile.lifecycleState,
+      })
         .from(member)
+        .innerJoin(
+          workspaceProfile,
+          eq(workspaceProfile.organizationId, member.organizationId),
+        )
         .where(and(
           eq(member.userId, session.user.id),
           inArray(member.organizationId, workspaces.map((workspace) => workspace.id)),
         ))
     : [];
   const workspaceRoles = new Map(roleRows.map((row) => [row.organizationId, row.role]));
-  const requestedWorkspace = workspaces.find(
+  const workspaceLifecycleStates = new Map(
+    roleRows.map((row) => [row.organizationId, row.lifecycleState]),
+  );
+  const visibleWorkspaces = workspaces.filter((workspace) => (
+    workspaceLifecycleStates.get(workspace.id) === "active"
+    || (
+      workspaceLifecycleStates.get(workspace.id) === "deletion_pending"
+      && workspaceRoles.get(workspace.id) === "owner"
+    )
+  ));
+  const requestedWorkspace = visibleWorkspaces.find(
     (workspace) => workspace.id === requestedWorkspaceId,
   ) ?? null;
-  const sessionWorkspace = workspaces.find(
+  const sessionWorkspace = visibleWorkspaces.find(
     (workspace) => workspace.id === session.session.activeOrganizationId,
   ) ?? null;
-  const activeWorkspace = requestedWorkspace ?? sessionWorkspace ?? workspaces[0] ?? null;
+  const activeWorkspace = requestedWorkspace ?? sessionWorkspace ?? visibleWorkspaces[0] ?? null;
   const activeWorkspaceId = activeWorkspace?.id ?? null;
   const orderedWorkspaces = activeWorkspaceId
     ? [
-        ...workspaces.filter((workspace) => workspace.id === activeWorkspaceId),
-        ...workspaces.filter((workspace) => workspace.id !== activeWorkspaceId),
+        ...visibleWorkspaces.filter((workspace) => workspace.id === activeWorkspaceId),
+        ...visibleWorkspaces.filter((workspace) => workspace.id !== activeWorkspaceId),
       ]
-    : workspaces;
+    : visibleWorkspaces;
+  const activeWorkspaceRole = activeWorkspace
+    ? workspaceRoles.get(activeWorkspace.id) ?? "member"
+    : null;
+  const activeWorkspaceLifecycleState = activeWorkspace
+    ? workspaceLifecycleStates.get(activeWorkspace.id) ?? null
+    : null;
+  const workspaceDeletionPending = activeWorkspaceLifecycleState === "deletion_pending";
+  const canDeleteActiveWorkspace = activeWorkspaceRole === "owner";
   const activeSection: SettingsSection =
-    requestedGcpSetupId || typeof params.provider === "string"
+    workspaceDeletionPending
+      && requestedSection !== "account"
+      && requestedSection !== "workspaces"
+      ? "lifecycle"
+      : requestedGcpSetupId || typeof params.provider === "string"
       ? "cloud-accounts"
       : requestedSection;
   const activeManagementArea: WorkspaceManagementArea | null =
@@ -122,21 +152,22 @@ export default async function SettingsPage({
     || activeSection === "databases"
     || activeSection === "dashboards"
     || activeSection === "reports"
+    || activeSection === "lifecycle"
       ? activeSection
       : null;
   const canManageActiveWorkspace = Boolean(
     activeWorkspace
-    && ["admin", "owner"].includes(workspaceRoles.get(activeWorkspace.id) ?? ""),
+    && ["admin", "owner"].includes(activeWorkspaceRole ?? ""),
   );
   const canEditActiveWorkspace = Boolean(
     activeWorkspace
-    && ["editor", "admin", "owner"].includes(workspaceRoles.get(activeWorkspace.id) ?? ""),
+    && ["editor", "admin", "owner"].includes(activeWorkspaceRole ?? ""),
   );
   const activeManagementDetails = activeManagementArea
     ? workspaceManagementAreas.find((item) => item.id === activeManagementArea)
     : null;
   const pageIndex = activeSection === "account"
-    ? "08"
+    ? "09"
     : activeSection === "workspaces"
       ? "01"
       : activeManagementDetails?.index ?? "01";
@@ -151,7 +182,7 @@ export default async function SettingsPage({
       ? copy.settings.workspacesDescription
       : activeManagementDetails?.description ?? copy.settings.sharedBoundaryDescription;
   const activeRole = activeWorkspace
-    ? workspaceRoles.get(activeWorkspace.id) ?? "member"
+    ? activeWorkspaceRole ?? "member"
     : copy.common.notSelected;
   const roleLabels = copy.members.roles;
   const localizedActiveRole = activeWorkspace && activeRole in roleLabels
@@ -185,6 +216,8 @@ export default async function SettingsPage({
           gcpSetupId={requestedGcpSetupId}
           canManageWorkspace={canManageActiveWorkspace}
           canEditWorkspace={canEditActiveWorkspace}
+          canDeleteWorkspace={canDeleteActiveWorkspace}
+          workspaceDeletionPending={workspaceDeletionPending}
           locale={locale}
         />
       </header>
@@ -246,7 +279,7 @@ export default async function SettingsPage({
         ) : null}
         {activeSection === "account" ? (
           <section id="account" className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]">
-            <ConsoleSectionHeading index="08" title={copy.settings.accountManagementTitle}>
+            <ConsoleSectionHeading index="09" title={copy.settings.accountManagementTitle}>
               {copy.settings.accountManagementDescription}
             </ConsoleSectionHeading>
             <AccountManagementPanel
@@ -274,7 +307,9 @@ export default async function SettingsPage({
                       className="tw:grid tw:min-h-[106px] tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-4 tw:px-5 tw:py-4 tw:transition-colors tw:hover:bg-surface-raised tw:focus-visible:outline-2 tw:focus-visible:outline-offset-[-3px] tw:focus-visible:outline-ring tw:max-[560px]:grid-cols-[auto_minmax(0,1fr)]"
                       href={localizedWorkspacePath(
                         `/settings?workspace=${encodeURIComponent(workspace.id)}&section=${
-                          ["admin", "owner"].includes(workspaceRoles.get(workspace.id) ?? "")
+                          workspaceLifecycleStates.get(workspace.id) === "deletion_pending"
+                            ? "lifecycle"
+                            : ["admin", "owner"].includes(workspaceRoles.get(workspace.id) ?? "")
                             ? "members"
                             : workspaceRoles.get(workspace.id) === "editor"
                               ? "dashboards"
@@ -298,15 +333,20 @@ export default async function SettingsPage({
                         </p>
                       </div>
                       <span className="tw:flex tw:items-center tw:gap-2 tw:font-mono tw:text-2xs tw:text-primary tw:max-[560px]:col-start-2">
-                        <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />
-                        {workspace.id === activeWorkspaceId
-                          ? `${workspaceRoles.get(workspace.id)} · ${copy.settings.currentSuffix}`
-                          : workspaceRoles.get(workspace.id)}
+                        <i
+                          className="tw:size-1.5 tw:rounded-full tw:bg-success tw:data-[pending=true]:bg-danger"
+                          data-pending={workspaceLifecycleStates.get(workspace.id) === "deletion_pending"}
+                        />
+                        {workspaceLifecycleStates.get(workspace.id) === "deletion_pending"
+                          ? copy.workspaceLifecycle.deletionPending
+                          : workspace.id === activeWorkspaceId
+                            ? `${workspaceRoles.get(workspace.id)} · ${copy.settings.currentSuffix}`
+                            : workspaceRoles.get(workspace.id)}
                       </span>
                     </a>
                   </article>
                 ))}
-                {workspaces.length === 0 ? (
+                {visibleWorkspaces.length === 0 ? (
                   <div className="tw:px-7 tw:py-16 tw:text-center">
                     <span className="tw:mx-auto tw:mb-4 tw:grid tw:size-12 tw:place-items-center tw:rounded-full tw:bg-selection tw:text-primary">＋</span>
                     <strong className="tw:block tw:text-sm tw:font-medium tw:text-foreground">
@@ -326,7 +366,9 @@ export default async function SettingsPage({
         {activeManagementArea
         && activeManagementDetails
         && activeWorkspace
-        && (activeManagementArea === "dashboards"
+        && (activeManagementArea === "lifecycle"
+          ? canDeleteActiveWorkspace
+          : activeManagementArea === "dashboards"
           ? canEditActiveWorkspace
           : activeManagementArea === "reports"
             ? true

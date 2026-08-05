@@ -321,6 +321,28 @@ response reports `completed`; key material and ciphertext are never returned.
 Neither successful nor failed responses contain provider grants, target credentials,
 envelope ciphertext, decrypted snapshot data, or database result rows.
 
+## Workspace lifecycle contract
+
+Only the current Owner can inspect or mutate
+`/api/v1/workspaces/:workspaceId/lifecycle`. Scheduling requires the exact current
+workspace name and an opaque UUID that also becomes the durable deletion receipt.
+The final locked mutation refuses to schedule while a provider integration, live
+credential lease, unfinished or repair-required provider operation, key rotation, or
+member revocation claim remains. A successful schedule immediately suspends every
+member and clears that workspace from active sessions; all ordinary workspace APIs
+then fail closed. The matching Owner may still open the lifecycle boundary and cancel
+before the fixed seven-day deadline. Cancellation resumes only member markers written
+by that exact schedule and is idempotent after a lost response.
+
+The authenticated cron hard-purges deleted backup tombstones after seven days and
+processes due workspace deletions in bounded batches. Final workspace purge is one
+database transaction that rechecks the receipt, deadline, live credentials, Provider
+state, rotations, and revocation claims before removing backups, wrapped data keys,
+and the organization. It leaves only a payload-free receipt containing opaque ids,
+timestamps, actor id when the account still exists, and terminal status. The SQL purge
+function is not executable by `PUBLIC`; there is no browser endpoint for immediate
+hard deletion.
+
 Production must define `WORKSPACE_KMS_KEY_NAME`, `WORKSPACE_KMS_WIF_AUDIENCE`, and
 `WORKSPACE_KMS_SERVICE_ACCOUNT_EMAIL`. The WIF provider must accept only the immutable
 Vercel project/team/environment claims for this production deployment. Grant its principal

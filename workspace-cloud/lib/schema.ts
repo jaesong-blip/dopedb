@@ -164,6 +164,48 @@ export const rateLimit = workspaceControl.table("rate_limit", {
   lastRequest: bigint("last_request", { mode: "number" }).notNull(),
 });
 
+// Deletion receipts intentionally outlive the organization row. They contain no
+// workspace name, member list, provider identity, or payload; only the opaque id,
+// actor attribution, retention deadline, and terminal outcome remain after purge.
+export const workspaceDeletionReceipt = workspaceControl.table(
+  "workspace_deletion_receipt",
+  {
+    id: uuid("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    requestedByUserId: text("requested_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    purgeAfter: timestamp("purge_after", { withTimezone: true }).notNull(),
+    status: text("status").notNull().default("pending"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workspace_deletion_receipt_org_pending_idx")
+      .on(table.organizationId)
+      .where(sql`"status" = 'pending'`),
+    index("workspace_deletion_receipt_purge_idx").on(table.status, table.purgeAfter),
+    check(
+      "workspace_deletion_receipt_status",
+      sql`${table.status} IN ('pending', 'cancelled', 'purged')`,
+    ),
+    check(
+      "workspace_deletion_receipt_deadline",
+      sql`${table.purgeAfter} >= ${table.requestedAt} + interval '24 hours'`,
+    ),
+    check(
+      "workspace_deletion_receipt_terminal",
+      sql`(${table.status} = 'pending'
+          AND ${table.cancelledAt} IS NULL AND ${table.purgedAt} IS NULL)
+        OR (${table.status} = 'cancelled'
+          AND ${table.cancelledAt} IS NOT NULL AND ${table.purgedAt} IS NULL)
+        OR (${table.status} = 'purged'
+          AND ${table.cancelledAt} IS NULL AND ${table.purgedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const workspaceProfile = workspaceControl.table("workspace_profile", {
   organizationId: text("organization_id").primaryKey().references(() => organization.id, {
     onDelete: "cascade",
@@ -172,10 +214,29 @@ export const workspaceProfile = workspaceControl.table("workspace_profile", {
   encryptionKeyRef: text("encryption_key_ref").notNull(),
   residencyRegion: text("residency_region"),
   revision: bigint("revision", { mode: "number" }).notNull().default(1),
+  deletionReceiptId: uuid("deletion_receipt_id").references(
+    () => workspaceDeletionReceipt.id,
+    { onDelete: "restrict" },
+  ),
+  deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
+  purgeAfter: timestamp("purge_after", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
+  index("workspace_profile_lifecycle_purge_idx").on(table.lifecycleState, table.purgeAfter),
   check("workspace_profile_revision", sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`),
+  check(
+    "workspace_profile_lifecycle",
+    sql`(${table.lifecycleState} = 'active'
+        AND ${table.deletionReceiptId} IS NULL
+        AND ${table.deletionRequestedAt} IS NULL
+        AND ${table.purgeAfter} IS NULL)
+      OR (${table.lifecycleState} = 'deletion_pending'
+        AND ${table.deletionReceiptId} IS NOT NULL
+        AND ${table.deletionRequestedAt} IS NOT NULL
+        AND ${table.purgeAfter} IS NOT NULL
+        AND ${table.purgeAfter} >= ${table.deletionRequestedAt} + interval '24 hours')`,
+  ),
 ]);
 
 export const workspaceAuditEvent = workspaceControl.table(
@@ -1500,6 +1561,7 @@ export const workspaceMetadataBackup = workspaceControl.table(
     reencryptedAt: timestamp("reencrypted_at", { withTimezone: true }),
     reencryptedByRotationId: uuid("reencrypted_by_rotation_id"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    purgeAfter: timestamp("purge_after", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("workspace_metadata_backup_org_id_idx").on(table.organizationId, table.id),
@@ -1534,6 +1596,13 @@ export const workspaceMetadataBackup = workspaceControl.table(
         OR (${table.dataKeyId} IS NOT NULL
           AND ${table.keyReference} = 'dopedb-workspace-data-key'
           AND ${table.keyVersion} ~ '^v[1-9][0-9]*$')`,
+    ),
+    check(
+      "workspace_metadata_backup_retention",
+      sql`(${table.deletedAt} IS NULL AND ${table.purgeAfter} IS NULL)
+        OR (${table.deletedAt} IS NOT NULL
+          AND ${table.purgeAfter} IS NOT NULL
+          AND ${table.purgeAfter} >= ${table.deletedAt})`,
     ),
   ],
 );

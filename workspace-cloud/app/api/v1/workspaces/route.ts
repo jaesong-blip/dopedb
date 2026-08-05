@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { auth } from "../../../../lib/auth";
 import { authoritativeSession } from "../../../../lib/authoritative-session";
 import { db } from "../../../../lib/db";
@@ -10,7 +10,7 @@ import {
   privateJson,
 } from "../../../../lib/http";
 import { acceptPendingWorkspaceInvitations } from "../../../../lib/pending-invitations";
-import { member } from "../../../../lib/schema";
+import { member, workspaceProfile } from "../../../../lib/schema";
 
 export async function GET(request: Request) {
   const session = await authoritativeSession(request);
@@ -25,9 +25,15 @@ export async function GET(request: Request) {
   const roles = workspaces.length > 0
     ? await db.select({ organizationId: member.organizationId, role: member.role })
         .from(member)
+        .innerJoin(
+          workspaceProfile,
+          eq(workspaceProfile.organizationId, member.organizationId),
+        )
         .where(and(
           eq(member.userId, session.user.id),
           inArray(member.organizationId, workspaces.map((workspace) => workspace.id)),
+          isNull(member.revocationPendingAt),
+          eq(workspaceProfile.lifecycleState, "active"),
         ))
     : [];
   const roleByWorkspace = new Map(roles.map((membership) => [
@@ -35,7 +41,7 @@ export async function GET(request: Request) {
     membership.role,
   ]));
   return privateJson({
-    workspaces: workspaces.map((workspace) => ({
+    workspaces: workspaces.filter((workspace) => roleByWorkspace.has(workspace.id)).map((workspace) => ({
       ...workspace,
       role: roleByWorkspace.get(workspace.id) ?? "viewer",
     })),

@@ -50,6 +50,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         AND to_regclass('workspace_control.workspace_resource_conflict_resolution') IS NOT NULL
         AND to_regclass('workspace_control.workspace_data_key') IS NOT NULL
         AND to_regclass('workspace_control.workspace_data_key_rotation') IS NOT NULL
+        AND to_regclass('workspace_control.workspace_deletion_receipt') IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema = 'workspace_control'
@@ -68,6 +69,13 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
             AND table_name = 'workspace_metadata_backup'
             AND column_name = 'reencrypted_by_rotation_id'
         )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'workspace_control'
+            AND table_name = 'workspace_metadata_backup'
+            AND column_name = 'purge_after'
+        )
+        AND to_regprocedure('workspace_control.purge_due_workspace(text,uuid)') IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM pg_trigger
           WHERE tgrelid = 'workspace_control.workspace_metadata_backup'::regclass
@@ -1119,10 +1127,11 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         workspaceKmsConfiguration: () => { throw new Error("unused harness configuration"); },
         workspaceKmsOidcToken: () => { throw new Error("unused harness OIDC token"); },
       }));
-      const [dataKeyStore, dataKeyRotation, workspaceBackup] = await Promise.all([
+      const [dataKeyStore, dataKeyRotation, workspaceBackup, workspaceLifecycle] = await Promise.all([
         import("./workspace-data-key"),
         import("./workspace-data-key-rotation"),
         import("./workspace-backup"),
+        import("./workspace-lifecycle"),
       ]);
       const kmsSession = {
         configuration: {
@@ -1269,6 +1278,118 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         SET "ciphertext" = 'post-rotation-rewrite'
         WHERE "id" = ${backupId}::uuid
       `).rejects.toThrow(/immutable outside an active key rotation/);
+
+      await sql`
+        UPDATE "workspace_control"."workspace_metadata_backup"
+        SET "deleted_at" = now() - interval '8 days',
+            "purge_after" = now() - interval '1 day'
+        WHERE "id" = ${backupId}::uuid
+          AND "organization_id" = ${kmsOrganizationId}
+      `;
+      const backupRetention = await workspaceLifecycle.cleanupWorkspaceRetention({
+        backupLimit: 8,
+        workspaceLimit: 1,
+      });
+      expect(backupRetention).toMatchObject({ backupsPurged: 1, workspacesPurged: 0 });
+      const deletedBackup = await sql<{ present: boolean }[]>`
+        SELECT EXISTS (
+          SELECT 1 FROM "workspace_control"."workspace_metadata_backup"
+          WHERE "id" = ${backupId}::uuid
+        ) AS "present"
+      `;
+      expect(deletedBackup[0]?.present).toBe(false);
+
+      const deletionRequestId = randomUUID();
+      expect(await workspaceLifecycle.scheduleWorkspaceDeletion({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        requestId: deletionRequestId,
+        confirmation: "wrong workspace name",
+      })).toBeNull();
+      expect(await workspaceLifecycle.scheduleWorkspaceDeletion({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        requestId: deletionRequestId,
+        confirmation: "KMS Harness",
+      })).toBe("scheduled");
+      expect(await workspaceLifecycle.scheduleWorkspaceDeletion({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        requestId: deletionRequestId,
+        confirmation: "KMS Harness",
+      })).toBe("replayed");
+      expect(await workspaceLifecycle.workspaceLifecycleStatus(kmsOrganizationId)).toMatchObject({
+        lifecycleState: "deletion_pending",
+        deletionReceiptId: deletionRequestId,
+        backupCount: 0,
+        blockers: { memberRevocations: 1 },
+      });
+      expect(await workspaceLifecycle.cancelWorkspaceDeletion({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        requestId: deletionRequestId,
+      })).toBe("cancelled");
+      expect(await workspaceLifecycle.cancelWorkspaceDeletion({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        requestId: deletionRequestId,
+      })).toBe("replayed");
+      expect(await workspaceLifecycle.workspaceLifecycleStatus(kmsOrganizationId)).toMatchObject({
+        lifecycleState: "active",
+        deletionReceiptId: null,
+        blockers: { memberRevocations: 0 },
+      });
+
+      const finalDeletionRequestId = randomUUID();
+      expect(await workspaceLifecycle.scheduleWorkspaceDeletion({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        requestId: finalDeletionRequestId,
+        confirmation: "KMS Harness",
+      })).toBe("scheduled");
+      await sql`
+        UPDATE "workspace_control"."workspace_deletion_receipt"
+        SET "requested_at" = now() - interval '8 days',
+            "purge_after" = now() - interval '1 day'
+        WHERE "id" = ${finalDeletionRequestId}::uuid
+          AND "organization_id" = ${kmsOrganizationId}
+      `;
+      await sql`
+        UPDATE "workspace_control"."workspace_profile"
+        SET "deletion_requested_at" = now() - interval '8 days',
+            "purge_after" = now() - interval '1 day'
+        WHERE "organization_id" = ${kmsOrganizationId}
+          AND "deletion_receipt_id" = ${finalDeletionRequestId}::uuid
+      `;
+      await sql`
+        UPDATE "workspace_control"."member" member
+        SET "revocation_pending_at" = profile."deletion_requested_at"
+        FROM "workspace_control"."workspace_profile" profile
+        WHERE member."organization_id" = ${kmsOrganizationId}
+          AND profile."organization_id" = member."organization_id"
+      `;
+      const workspaceRetention = await workspaceLifecycle.cleanupWorkspaceRetention({
+        backupLimit: 8,
+        workspaceLimit: 1,
+      });
+      expect(workspaceRetention).toEqual({
+        backupsPurged: 0,
+        workspacesPurged: 1,
+        workspacesDeferred: 0,
+      });
+      const purgedWorkspace = await sql<{ present: boolean }[]>`
+        SELECT EXISTS (
+          SELECT 1 FROM "workspace_control"."organization"
+          WHERE "id" = ${kmsOrganizationId}
+        ) AS "present"
+      `;
+      expect(purgedWorkspace[0]?.present).toBe(false);
+      const deletionReceipt = await sql<{ status: string; actor: string | null }[]>`
+        SELECT "status" AS "status", "requested_by_user_id" AS "actor"
+        FROM "workspace_control"."workspace_deletion_receipt"
+        WHERE "id" = ${finalDeletionRequestId}::uuid
+      `;
+      expect(deletionReceipt[0]).toEqual({ status: "purged", actor: kmsUserId });
 
       const leaked = await sql<{ leaked: boolean }[]>`
         SELECT EXISTS (

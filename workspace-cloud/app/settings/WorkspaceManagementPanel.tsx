@@ -6,6 +6,7 @@ import { DashboardManagementPanel } from "./DashboardManagementPanel";
 import { ReportManagementPanel } from "./ReportManagementPanel";
 import { SharedDatabasePanel } from "./SharedDatabasePanel";
 import { WorkspaceAccessPanel } from "./WorkspaceAccessPanel";
+import { WorkspaceLifecyclePanel } from "./WorkspaceLifecyclePanel";
 import { localizedWorkspacePath, type WorkspaceLocale } from "../../lib/workspace-locale";
 import { workspaceMessages } from "../../lib/workspace-messages";
 
@@ -15,7 +16,8 @@ export type WorkspaceManagementArea =
   | "database-access"
   | "dashboards"
   | "reports"
-  | "members";
+  | "members"
+  | "lifecycle";
 
 export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Array<{
   id: WorkspaceManagementArea;
@@ -31,6 +33,7 @@ export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Arra
     { id: "dashboards", index: "05", ...areas.dashboards },
     { id: "reports", index: "06", ...areas.reports },
     { id: "members", index: "07", ...areas.members },
+    { id: "lifecycle", index: "08", ...areas.lifecycle },
   ];
 }
 
@@ -112,6 +115,9 @@ export function WorkspaceManagementPanel({
             workspaceId={workspaceId}
             canEditWorkspace={canEditWorkspace}
           />
+        ) : null}
+        {area === "lifecycle" ? (
+          <WorkspaceLifecyclePanel workspaceId={workspaceId} />
         ) : null}
     </section>
   );

@@ -2,10 +2,15 @@
 // and membership from the database and fails closed; client role claims are ignored.
 import "server-only";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { db } from "./db";
 import { authoritativeSession } from "./authoritative-session";
-import { member, workspaceConnection, workspaceConnectionGrant } from "./schema";
+import {
+  member,
+  workspaceConnection,
+  workspaceConnectionGrant,
+  workspaceProfile,
+} from "./schema";
 import {
   accessModeForRole,
   accessModeForConnectionGrant,
@@ -32,17 +37,23 @@ export async function authorizeWorkspace(
   const session = await authoritativeSession(request);
   if (!session) return { ok: false as const, status: 401, error: "Unauthorized" };
 
-  const membership = await db.query.member.findFirst({
-    where: and(
+  const [authority] = await db.select({
+    membership: member,
+    lifecycleState: workspaceProfile.lifecycleState,
+  }).from(member).innerJoin(
+    workspaceProfile,
+    eq(workspaceProfile.organizationId, member.organizationId),
+  ).where(and(
       eq(member.organizationId, organizationId),
       eq(member.userId, session.user.id),
       isNull(member.revocationPendingAt),
-    ),
-  });
+    )).limit(1);
+  const membership = authority?.membership;
   if (
     !membership
     || membership.revocationPendingAt
     || !isWorkspaceRole(membership.role)
+    || authority.lifecycleState !== "active"
   ) {
     return { ok: false as const, status: 403, error: "Workspace access denied" };
   }
@@ -55,6 +66,48 @@ export async function authorizeWorkspace(
     membership,
     role: membership.role,
     accessMode: accessModeForRole(membership.role),
+  };
+}
+
+// Deletion scheduling suspends every ordinary membership gate. Only the exact
+// Owner whose pending marker matches the profile deletion timestamp may inspect
+// or cancel that lifecycle; an unrelated member-removal claim stays denied.
+export async function authorizeWorkspaceLifecycle(
+  request: Request,
+  organizationId: string,
+) {
+  const session = await authoritativeSession(request);
+  if (!session) return { ok: false as const, status: 401, error: "Unauthorized" };
+  const [row] = await db.select({
+    membership: member,
+    lifecycleState: workspaceProfile.lifecycleState,
+  }).from(member).innerJoin(
+    workspaceProfile,
+    eq(workspaceProfile.organizationId, member.organizationId),
+  ).where(and(
+    eq(member.organizationId, organizationId),
+    eq(member.userId, session.user.id),
+    eq(member.role, "owner"),
+    isNull(member.revocationClaimId),
+    or(
+      and(
+        eq(workspaceProfile.lifecycleState, "active"),
+        isNull(member.revocationPendingAt),
+      ),
+      and(
+        eq(workspaceProfile.lifecycleState, "deletion_pending"),
+        eq(member.revocationPendingAt, workspaceProfile.deletionRequestedAt),
+      ),
+    ),
+  )).limit(1);
+  if (!row) {
+    return { ok: false as const, status: 403, error: "Workspace owner access is required" };
+  }
+  return {
+    ok: true as const,
+    session,
+    membership: row.membership,
+    lifecycleState: row.lifecycleState,
   };
 }
 

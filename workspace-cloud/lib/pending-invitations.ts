@@ -1,6 +1,12 @@
 // Reconcile email-bound Better Auth invitations at the first authenticated
 // workspace read. Google is the only identity provider and supplies a verified
 // email, so an invite can be accepted without requiring its link as a second step.
+import "server-only";
+
+import { and, eq, inArray } from "drizzle-orm";
+
+import { db } from "./db";
+import { invitation, workspaceProfile } from "./schema";
 
 type PendingInvitation = {
   id: string;
@@ -51,7 +57,7 @@ export async function acceptPendingWorkspaceInvitations({
   }
 
   const invitations = await api.listUserInvitations({ query: { email } });
-  const invitationIds = [
+  const pendingInvitationIds = [
     ...new Set(
       invitations
         .filter((item) => (
@@ -61,6 +67,17 @@ export async function acceptPendingWorkspaceInvitations({
         .map((item) => item.id),
     ),
   ];
+  const eligible = pendingInvitationIds.length > 0
+    ? await db.select({ id: invitation.id }).from(invitation).innerJoin(
+        workspaceProfile,
+        eq(workspaceProfile.organizationId, invitation.organizationId),
+      ).where(and(
+        inArray(invitation.id, pendingInvitationIds),
+        eq(invitation.status, "pending"),
+        eq(workspaceProfile.lifecycleState, "active"),
+      ))
+    : [];
+  const invitationIds = eligible.map((item) => item.id);
 
   let accepted = 0;
   let failed = 0;

@@ -3,9 +3,12 @@
 Status: Milestone 0 implemented; Milestone 1 identity/RBAC slice implemented;
 Milestone 2 shared-connection core, explicit conflict recovery, plus PlanetScale, Neon,
 and GCP Cloud SQL managed-access adapters implemented; Milestone 4 shared-dashboard definition sync and
-revision core implemented, with packaged two-member verification still open. General
-provider inventory, full sync, KMS wrapping, backup, workspace-deletion, and
-per-connection-grant exit criteria stay open below.
+revision core implemented, with packaged two-member verification still open. KMS-wrapped
+metadata backup, resumable key rotation, and reversible Owner workspace deletion are
+implemented in the control plane. Production uses a dedicated Vercel OIDC principal,
+GCP Workload Identity Federation provider, service account, and single-key KMS grant;
+packaged recovery evidence remains open. General provider inventory, full sync, and per-connection-grant
+exit criteria stay open below.
 
 This roadmap owns how DopeDB completes and hardens its team workspace without
 turning the workspace service into a database proxy or weakening the local
@@ -261,10 +264,13 @@ that pool before expiry. The control plane issues the write identity only after 
 live workspace role, connection grant, administrator write policy, canonical provider
 capability, and #99/#100 provisioning contract all pass in the final lease boundary.
 
-The deployment key is separate from database ciphertext today. Production hardening
-still needs KMS-wrapped key versions and rotation. Managed mode does not proxy database
-queries, and current Provider authorization continues through the three implemented
-adapters until DQ-18 explicitly chooses another Provider or authentication boundary.
+Metadata backups use versioned workspace data keys wrapped by Cloud KMS, with bounded,
+resumable rotation across live and tombstoned backups. Production activates that path
+through an exact-project, exact-team, production-only Vercel OIDC/WIF principal with
+access to the single metadata-backup key. Managed mode does not
+proxy database queries, and current Provider authorization continues through the three
+implemented adapters until DQ-18 explicitly chooses another Provider or authentication
+boundary.
 
 ## Target Data Model
 
@@ -351,9 +357,10 @@ against current data.
   honestly that revocation cannot erase data the member already exported.
 
 The hosted version uses TLS and record-bound AES-256-GCM for managed provider grants.
-KMS-wrapped, versioned data keys and rotation remain required hardening. Plaintext
-provider grants and one-time database passwords are excluded from persistence and
-general logs. End-to-end encrypted workspace content can be evaluated later
+Metadata backups use KMS-wrapped, versioned data keys and resumable rotation; enabling
+that path in production remains gated on dedicated keyless WIF deployment configuration.
+Plaintext provider grants and one-time database passwords are excluded from persistence
+and general logs. End-to-end encrypted workspace content can be evaluated later
 as a separate product and recovery design because it changes search, invitations,
 device recovery, and server-side collaboration behavior.
 
@@ -425,9 +432,10 @@ before device approval and invitation acceptance so an already active browser id
 silently approve the wrong account.
 
 This snapshot is the shipped identity and administration slice, not completion of every
-Milestone 1 exit criterion. Durable bidirectional resource sync, per-workspace envelope
-encryption, backup/restore, and workspace deletion remain future work. Shared-connection
-optimistic conflicts now have an explicit recovery surface under Milestone 2.
+Milestone 1 exit criterion. Durable bidirectional sync for every shared resource and its
+packaged multi-device evidence remain future work. KMS-backed metadata backup/restore,
+resumable key rotation, and reversible workspace deletion are now implemented.
+Shared-connection optimistic conflicts have an explicit recovery surface under Milestone 2.
 The server-log exit criterion is enforced in the root build: one closed categorical
 sink owns runtime failure events, and an automatic source check rejects direct logging
 or exception sinks that could serialize requests, SQL, result rows, identifiers, or

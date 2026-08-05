@@ -57,6 +57,11 @@ import workspaceDataKeyRotationSource from "../../../workspace-cloud/lib/workspa
 import workspaceKmsSource from "../../../workspace-cloud/lib/workspace-kms.ts?raw";
 import workspaceDataKeyMigrationSource from "../../../workspace-cloud/drizzle/0022_dark_darwin.sql?raw";
 import workspaceBackupRotationMigrationSource from "../../../workspace-cloud/drizzle/0023_military_joseph.sql?raw";
+import workspaceLifecycleMigrationSource from "../../../workspace-cloud/drizzle/0025_tired_lord_hawal.sql?raw";
+import workspaceLifecycleSource from "../../../workspace-cloud/lib/workspace-lifecycle.ts?raw";
+import workspaceAuthorizationSource from "../../../workspace-cloud/lib/workspace-authorization.ts?raw";
+import workspaceLifecycleRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/lifecycle/route.ts?raw";
+import workspaceLifecyclePanelSource from "../../../workspace-cloud/app/settings/WorkspaceLifecyclePanel.tsx?raw";
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
 import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-permissions.ts?raw";
 import workspaceRevocationGatesSource from "../../../workspace-cloud/lib/revocation-gates.ts?raw";
@@ -1736,6 +1741,45 @@ describe("provider credential Tauri adapter", () => {
     );
     expect(workspaceBackupRotationMigrationSource).toContain(
       "immutable outside an active key rotation",
+    );
+    expect(workspaceLifecycleMigrationSource).toContain(
+      'CREATE TABLE "workspace_control"."workspace_deletion_receipt"',
+    );
+    expect(workspaceLifecycleMigrationSource).toContain(
+      'CREATE OR REPLACE FUNCTION "workspace_control"."purge_due_workspace"',
+    );
+    expect(workspaceLifecycleMigrationSource).toContain(
+      'REVOKE ALL ON FUNCTION "workspace_control"."purge_due_workspace"',
+    );
+    expect(workspaceLifecycleMigrationSource).toContain(
+      "operation.state NOT IN ('succeeded', 'failed', 'cancelled')",
+    );
+    expect(workspaceLifecycleMigrationSource).toContain(
+      "member.revocation_claim_id IS NOT NULL",
+    );
+    expect(workspaceLifecycleSource).toContain(
+      'AND member."role" = \'owner\'',
+    );
+    expect(workspaceLifecycleSource).toContain(
+      'AND organization."name" = ${input.confirmation}',
+    );
+    expect(workspaceLifecycleSource).toContain(
+      'SET "lifecycle_state" = \'deletion_pending\'',
+    );
+    expect(workspaceLifecycleSource).toContain(
+      'SET "active_organization_id" = NULL',
+    );
+    expect(workspaceAuthorizationSource).toContain(
+      'authority.lifecycleState !== "active"',
+    );
+    expect(workspaceLifecycleRouteSource).toContain(
+      'Object.keys(body).some((key) => !allowedKeys.includes(key))',
+    );
+    expect(workspaceLifecyclePanelSource).toContain(
+      'confirmation !== lifecycle.workspaceName',
+    );
+    expect(workspaceSettingsNavigationSource).toContain(
+      'item.id === "lifecycle" && !canDeleteWorkspace',
     );
     expect(workspaceVersioningStoreSource).toContain("readonlyDefault: true");
     expect(workspaceVersioningStoreSource).toContain("allowWrites: false");

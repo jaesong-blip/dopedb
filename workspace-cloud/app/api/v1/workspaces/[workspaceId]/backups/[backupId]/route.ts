@@ -6,6 +6,7 @@ import { db } from "../../../../../../../lib/db";
 import { env } from "../../../../../../../lib/env";
 import { isUuid, jsonError, mutationAllowed } from "../../../../../../../lib/http";
 import { authorizeWorkspace } from "../../../../../../../lib/workspace-authorization";
+import { WORKSPACE_BACKUP_RETENTION_DAYS } from "../../../../../../../lib/workspace-lifecycle";
 import { revocationGateLockKey } from "../../../../../../../lib/revocation-gates";
 
 type RouteContext = { params: Promise<{ workspaceId: string; backupId: string }> };
@@ -37,7 +38,8 @@ export async function DELETE(request: Request, context: RouteContext) {
       FOR UPDATE OF session, member
     ), deleted AS (
       UPDATE "workspace_control"."workspace_metadata_backup"
-      SET "deleted_at" = now()
+      SET "deleted_at" = now(),
+          "purge_after" = now() + (${WORKSPACE_BACKUP_RETENTION_DAYS} * interval '1 day')
       FROM authority
       WHERE "id" = ${backupId}::uuid AND "organization_id" = ${workspaceId}
         AND "deleted_at" IS NULL
