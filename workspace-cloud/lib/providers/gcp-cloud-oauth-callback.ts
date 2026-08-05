@@ -17,9 +17,14 @@ import {
 import { authorizeWorkspace } from "../workspace-authorization";
 import { exchangeGcpCloudCode } from "./gcp-cloud-oauth";
 import { ProviderRequestError } from "./provider-types";
+import {
+  localizedWorkspacePath,
+  workspaceLocaleFromCookieHeader,
+} from "../workspace-locale";
 
-function settingsUrl(workspaceId: string | null, setupId?: string) {
-  const target = new URL("/settings", env.appOrigin());
+function settingsUrl(request: Request, workspaceId: string | null, setupId?: string) {
+  const locale = workspaceLocaleFromCookieHeader(request.headers.get("cookie"));
+  const target = new URL(localizedWorkspacePath("/settings", locale), env.appOrigin());
   target.searchParams.set("provider", "gcpCloudSql");
   target.searchParams.set("status", setupId ? "authorised" : "failed");
   target.searchParams.set("section", "cloud-accounts");
@@ -53,12 +58,15 @@ export async function gcpCloudSetupCallbackResponse(request: Request) {
   const hash = stateHash(request);
   const code = url.searchParams.get("code") ?? "";
   if (!hash || code.length < 8 || code.length > 2_048) {
-    return Response.redirect(settingsUrl(null));
+    return Response.redirect(settingsUrl(request, null));
   }
   const session = await authoritativeSession(request);
   if (!session) {
     return Response.redirect(new URL(
-      `/auth/sign-in?returnTo=${encodeURIComponent("/settings")}`,
+      localizedWorkspacePath(
+        `/auth/sign-in?returnTo=${encodeURIComponent(localizedWorkspacePath("/settings", workspaceLocaleFromCookieHeader(request.headers.get("cookie"))))}`,
+        workspaceLocaleFromCookieHeader(request.headers.get("cookie")),
+      ),
       env.appOrigin(),
     ));
   }
@@ -69,14 +77,14 @@ export async function gcpCloudSetupCallbackResponse(request: Request) {
     gt(providerOauthState.expiresAt, new Date()),
   )).returning({ organizationId: providerOauthState.organizationId });
   const oauthState = consumed[0];
-  if (!oauthState) return Response.redirect(settingsUrl(null));
+  if (!oauthState) return Response.redirect(settingsUrl(request, null));
   const authorization = await authorizeWorkspace(
     request,
     oauthState.organizationId,
     "manage",
   );
   if (!authorization.ok || authorization.session.user.id !== session.user.id) {
-    return Response.redirect(settingsUrl(oauthState.organizationId));
+    return Response.redirect(settingsUrl(request, oauthState.organizationId));
   }
   let stage:
     | "token_exchange"
@@ -110,7 +118,7 @@ export async function gcpCloudSetupCallbackResponse(request: Request) {
       accountLabel: credential.email,
       expiresAt,
     });
-    return Response.redirect(settingsUrl(oauthState.organizationId, setupId));
+    return Response.redirect(settingsUrl(request, oauthState.organizationId, setupId));
   } catch (error) {
     console.error("gcp_cloud_setup_callback_failed", {
       stage,
@@ -125,6 +133,6 @@ export async function gcpCloudSetupCallbackResponse(request: Request) {
             name: error instanceof Error ? error.name : "UnknownError",
           },
     });
-    return Response.redirect(settingsUrl(oauthState.organizationId));
+    return Response.redirect(settingsUrl(request, oauthState.organizationId));
   }
 }

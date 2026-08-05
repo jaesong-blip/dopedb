@@ -8,6 +8,9 @@ import {
   ControlInput,
   ControlSelect,
 } from "../components/Controls";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import { useWorkspaceLocale } from "../components/WorkspaceLocale";
+import { localizedProviderMessage } from "../../lib/workspace-provider-copy";
 
 type WorkspaceMember = {
   id: string;
@@ -24,15 +27,10 @@ type PendingInvitation = {
   expiresAt: string;
 };
 
-const roleLabel: Record<string, string> = {
-  analyst: "읽기 전용",
-  editor: "읽기 / 쓰기",
-  admin: "관리자",
-  owner: "소유자",
-  viewer: "보기 전용",
-};
-
 export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].members;
+  const roleLabel: Record<string, string> = copy.roles;
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invitations, setInvitations] = useState<PendingInvitation[]>([]);
   const [email, setEmail] = useState("");
@@ -50,18 +48,22 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
     if (signal?.aborted) return;
     if (!response?.ok) {
       const body = await response?.json().catch(() => null);
-      setError(body?.error ?? "멤버와 초대 목록을 불러오지 못했습니다.");
+      setError(
+        typeof body?.error === "string"
+          ? localizedProviderMessage(body.error, locale, copy.loadError)
+          : copy.loadError,
+      );
       return;
     }
     const body = await response.json().catch(() => null);
     if (!body || !Array.isArray(body.members) || !Array.isArray(body.invitations)) {
-      setError("멤버와 초대 목록 응답을 확인하지 못했습니다.");
+      setError(copy.shapeError);
       return;
     }
     setError("");
     setMembers(body.members);
     setInvitations(body.invitations);
-  }, [workspaceId]);
+  }, [copy, locale, workspaceId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,7 +84,11 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
       }).catch(() => null);
       if (!response?.ok) {
         const body = await response?.json().catch(() => null);
-        setError(body?.error ?? "초대를 만들지 못했습니다.");
+        setError(
+          typeof body?.error === "string"
+            ? localizedProviderMessage(body.error, locale, copy.inviteError)
+            : copy.inviteError,
+        );
         return;
       }
       setEmail("");
@@ -104,7 +110,11 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
       }).catch(() => null);
       if (!response?.ok) {
         const body = await response?.json().catch(() => null);
-        setError(body?.error ?? "권한을 변경하지 못했습니다.");
+        setError(
+          typeof body?.error === "string"
+            ? localizedProviderMessage(body.error, locale, copy.updateError)
+            : copy.updateError,
+        );
         return;
       }
       await load();
@@ -125,7 +135,11 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
       }).catch(() => null);
       if (!response?.ok) {
         const body = await response?.json().catch(() => null);
-        setError(body?.error ?? "요청을 처리하지 못했습니다.");
+        setError(
+          typeof body?.error === "string"
+            ? localizedProviderMessage(body.error, locale, copy.requestError)
+            : copy.requestError,
+        );
         return;
       }
       await load();
@@ -146,7 +160,11 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
       }).catch(() => null);
       if (!response?.ok) {
         const body = await response?.json().catch(() => null);
-        setError(body?.error ?? "초대를 다시 만들지 못했습니다.");
+        setError(
+          typeof body?.error === "string"
+            ? localizedProviderMessage(body.error, locale, copy.resendError)
+            : copy.resendError,
+        );
         return;
       }
       await load();
@@ -165,7 +183,7 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
         1800,
       );
     } catch {
-      setError("초대 링크를 클립보드에 복사하지 못했습니다.");
+      setError(copy.copyError);
     }
   }
 
@@ -173,10 +191,10 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
     <section className="tw:grid tw:gap-3 tw:p-5">
       <header className="tw:flex tw:items-start tw:justify-between tw:gap-3">
         <strong className="tw:text-sm tw:text-foreground">
-          워크스페이스 멤버
+          {copy.title}
         </strong>
         <small className="tw:text-right tw:text-2xs tw:leading-body tw:text-muted-foreground">
-          권한은 모든 API 요청에서 서버가 다시 확인합니다.
+          {copy.description}
         </small>
       </header>
       <div className="tw:grid tw:border-t tw:border-border">
@@ -206,17 +224,17 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
                   }
                   disabled={mutatingId !== ""}
                 >
-                  <option value="viewer">보기 전용 (실행 불가)</option>
-                  <option value="analyst">읽기 전용</option>
-                  <option value="editor">읽기 / 쓰기</option>
-                  <option value="admin">관리자</option>
+                  <option value="viewer">{copy.roles.viewerNoRun}</option>
+                  <option value="analyst">{copy.roles.analyst}</option>
+                  <option value="editor">{copy.roles.editor}</option>
+                  <option value="admin">{copy.roles.admin}</option>
                 </ControlSelect>
                 <ControlButton
                   tone="danger"
                   onClick={() => void remove("member", item.id)}
                   disabled={mutatingId !== ""}
                 >
-                  제거
+                  {copy.remove}
                 </ControlButton>
               </div>
             )}
@@ -238,10 +256,10 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
           value={role}
           onChange={(event) => setRole(event.target.value)}
         >
-          <option value="viewer">보기 전용 (실행 불가)</option>
-          <option value="analyst">읽기 전용</option>
-          <option value="editor">읽기 / 쓰기</option>
-          <option value="admin">관리자</option>
+          <option value="viewer">{copy.roles.viewerNoRun}</option>
+          <option value="analyst">{copy.roles.analyst}</option>
+          <option value="editor">{copy.roles.editor}</option>
+          <option value="admin">{copy.roles.admin}</option>
         </ControlSelect>
         <ControlButton
           type="submit"
@@ -249,7 +267,7 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
           size="field"
           disabled={pending || mutatingId !== ""}
         >
-          {pending ? "생성 중" : "초대 링크 만들기"}
+          {pending ? copy.creating : copy.createInvite}
         </ControlButton>
       </form>
       {invitations.length > 0 ? (
@@ -265,32 +283,33 @@ export function WorkspaceAccessPanel({ workspaceId }: { workspaceId: string }) {
                 </strong>
                 <small className="tw:text-2xs tw:text-muted-foreground">
                   {roleLabel[item.role ?? ""] ?? item.role} ·{" "}
-                  {new Date(item.expiresAt).toLocaleDateString("ko-KR")} 만료
+                  {new Date(item.expiresAt).toLocaleDateString(
+                    locale === "ko" ? "ko-KR" : "en-US",
+                  )} {copy.expires}
                 </small>
               </div>
               <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
                 <ControlButton onClick={() => void copyInvitation(item)}>
-                  {copiedId === item.id ? "복사됨" : "링크 복사"}
+                  {copiedId === item.id ? copy.copied : copy.copy}
                 </ControlButton>
                 <ControlButton
                   onClick={() => void resend(item)}
                   disabled={mutatingId !== ""}
                 >
-                  다시 만들기
+                  {copy.resend}
                 </ControlButton>
                 <ControlButton
                   tone="danger"
                   onClick={() => void remove("invitation", item.id)}
                   disabled={mutatingId !== ""}
                 >
-                  취소
+                  {copy.cancel}
                 </ControlButton>
               </div>
             </div>
           ))}
           <p className="tw:mt-2 tw:mb-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-            초대 링크는 해당 이메일로 Google 로그인한 사용자만 수락할 수
-            있습니다.
+            {copy.invitationNote}
           </p>
         </div>
       ) : null}

@@ -4,6 +4,8 @@ import { ConnectionAccessPanel } from "./ConnectionAccessPanel";
 import { CloudAccountPanel } from "./CloudAccountPanel";
 import { SharedDatabasePanel } from "./SharedDatabasePanel";
 import { WorkspaceAccessPanel } from "./WorkspaceAccessPanel";
+import { localizedWorkspacePath, type WorkspaceLocale } from "../../lib/workspace-locale";
+import { workspaceMessages } from "../../lib/workspace-messages";
 
 export type WorkspaceManagementArea =
   | "cloud-accounts"
@@ -11,37 +13,20 @@ export type WorkspaceManagementArea =
   | "database-access"
   | "members";
 
-export const workspaceManagementAreas: Array<{
+export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Array<{
   id: WorkspaceManagementArea;
   index: string;
   label: string;
   description: string;
-}> = [
-  {
-    id: "cloud-accounts",
-    index: "02",
-    label: "클라우드 계정",
-    description: "DB를 찾고 단기 자격증명을 발급할 공급자 인증",
-  },
-  {
-    id: "databases",
-    index: "03",
-    label: "공유 데이터베이스",
-    description: "워크스페이스에서 함께 사용하는 고정 DB 대상",
-  },
-  {
-    id: "database-access",
-    index: "04",
-    label: "DB별 접근 권한",
-    description: "연결마다 보기·사용·관리 권한",
-  },
-  {
-    id: "members",
-    index: "05",
-    label: "멤버 관리",
-    description: "초대와 워크스페이스 역할",
-  },
-];
+}> {
+  const areas = workspaceMessages[locale].settings.areas;
+  return [
+    { id: "cloud-accounts", index: "02", ...areas.cloudAccounts },
+    { id: "databases", index: "03", ...areas.databases },
+    { id: "database-access", index: "04", ...areas.databaseAccess },
+    { id: "members", index: "05", ...areas.members },
+  ];
+}
 
 export function WorkspaceManagementPanel({
   workspaceId,
@@ -50,6 +35,7 @@ export function WorkspaceManagementPanel({
   gcpSetupId,
   initialIntegrationId,
   area,
+  locale,
 }: {
   workspaceId: string;
   workspaceName: string;
@@ -57,7 +43,10 @@ export function WorkspaceManagementPanel({
   gcpSetupId: string | null;
   initialIntegrationId: string | null;
   area: WorkspaceManagementArea;
+  locale: WorkspaceLocale;
 }) {
+  const copy = workspaceMessages[locale];
+  const workspaceManagementAreas = localizedWorkspaceManagementAreas(locale);
   const selected =
     workspaceManagementAreas.find((item) => item.id === area)
     ?? workspaceManagementAreas[0];
@@ -80,9 +69,12 @@ export function WorkspaceManagementPanel({
           </div>
           <a
             className="tw:shrink-0 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3 tw:py-2 tw:text-2xs tw:font-medium tw:text-muted-foreground tw:transition-colors tw:hover:border-primary tw:hover:text-primary"
-            href={`/settings?workspace=${encodeURIComponent(workspaceId)}&section=workspaces`}
+            href={localizedWorkspacePath(
+              `/settings?workspace=${encodeURIComponent(workspaceId)}&section=workspaces`,
+              locale,
+            )}
           >
-            워크스페이스 변경
+            {copy.settings.changeWorkspace}
           </a>
         </header>
 

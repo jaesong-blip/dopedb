@@ -4,6 +4,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { authClient } from "./auth-client";
+import { useWorkspaceLocale } from "../app/components/WorkspaceLocale";
+import { workspaceMessages } from "./workspace-messages";
+import { localizedProviderMessage } from "./workspace-provider-copy";
 
 interface DeviceSession {
   session: {
@@ -19,17 +22,21 @@ interface DeviceSession {
 }
 
 export function useDeviceAccounts() {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].deviceAccounts;
   const [sessions, setSessions] = useState<DeviceSession[]>([]);
   const [error, setError] = useState("");
   const refresh = useCallback(async () => {
     const result = await authClient.multiSession.listDeviceSessions();
     if (result.error) {
-      setError(result.error.message ?? "계정 목록을 불러오지 못했습니다.");
+      setError(result.error.message
+        ? localizedProviderMessage(result.error.message, locale, copy.loadError)
+        : copy.loadError);
       return;
     }
     setError("");
     setSessions(result.data ?? []);
-  }, []);
+  }, [copy.loadError, locale]);
   useEffect(() => {
     void refresh();
   }, [refresh]);

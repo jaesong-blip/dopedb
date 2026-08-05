@@ -9,6 +9,18 @@ const nextConfig = {
   },
   poweredByHeader: false,
   turbopack: { root: process.cwd() },
+  async rewrites() {
+    return [
+      {
+        source: "/ko",
+        destination: "/",
+      },
+      {
+        source: "/ko/:path*",
+        destination: "/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {

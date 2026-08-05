@@ -7,6 +7,10 @@ import { env } from "../../../../../../lib/env";
 import { isUuid, jsonError, mutationAllowed, privateJson } from "../../../../../../lib/http";
 import { revokeActiveLeases } from "../../../../../../lib/provider-integrations";
 import {
+  localizedWorkspacePath,
+  workspaceLocaleFromCookieHeader,
+} from "../../../../../../lib/workspace-locale";
+import {
   claimRevocationGate,
   clearRevocationGate,
   releaseRevocationGateClaim,
@@ -71,12 +75,16 @@ export async function GET(request: Request, context: RouteContext) {
       eq(invitation.status, "pending"),
     )).orderBy(desc(invitation.createdAt)),
   ]);
+  const locale = workspaceLocaleFromCookieHeader(request.headers.get("cookie"));
   return privateJson({
     workspaceId,
     members,
     invitations: invitations.map((item) => ({
       ...item,
-      inviteUrl: `${env.appOrigin()}/accept-invitation/${encodeURIComponent(item.id)}`,
+      inviteUrl: `${env.appOrigin()}${localizedWorkspacePath(
+        `/accept-invitation/${encodeURIComponent(item.id)}`,
+        locale,
+      )}`,
     })),
   });
 }
@@ -105,10 +113,14 @@ export async function POST(request: Request, context: RouteContext) {
     redactedSummary: { role: body.role, emailDomain: email.split("@")[1] },
     requestId: crypto.randomUUID(),
   });
+  const locale = workspaceLocaleFromCookieHeader(request.headers.get("cookie"));
   return privateJson({
     invitation: {
       ...created,
-      inviteUrl: `${env.appOrigin()}/accept-invitation/${encodeURIComponent(created.id)}`,
+      inviteUrl: `${env.appOrigin()}${localizedWorkspacePath(
+        `/accept-invitation/${encodeURIComponent(created.id)}`,
+        locale,
+      )}`,
     },
   }, { status: 201 });
 }

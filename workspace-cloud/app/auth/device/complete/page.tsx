@@ -1,4 +1,5 @@
 import { Brand } from "../../../components/Brand";
+import { LocaleSwitcher } from "../../../components/LocaleSwitcher";
 import {
   IdentityBody,
   IdentityCard,
@@ -6,6 +7,8 @@ import {
   IdentitySingleShell,
   IdentityTitle,
 } from "../../../components/Identity";
+import { getWorkspaceLocale } from "../../../../lib/workspace-locale-server";
+import { workspaceMessages } from "../../../../lib/workspace-messages";
 
 export default async function DeviceCompletePage({
   searchParams,
@@ -13,22 +16,27 @@ export default async function DeviceCompletePage({
   searchParams: Promise<{ denied?: string }>;
 }) {
   const denied = Boolean((await searchParams).denied);
+  const locale = await getWorkspaceLocale();
+  const copy = workspaceMessages[locale].device;
   return (
     <IdentitySingleShell>
-      <Brand />
+      <div className="tw:flex tw:w-full tw:items-center tw:justify-between tw:gap-4">
+        <Brand />
+        <LocaleSwitcher />
+      </div>
       <div className="tw:m-auto tw:w-[min(540px,100%)]">
         <IdentityCard>
           <div className="tw:mb-9 tw:grid tw:size-[54px] tw:place-items-center tw:rounded-surface tw:bg-success tw:text-[23px] tw:text-[var(--ds-text-inverse)]">
             {denied ? "×" : "✓"}
           </div>
           <IdentityEyebrow>
-            {denied ? "DEVICE DENIED" : "DEVICE AUTHORIZED"}
+            {denied ? copy.completeDeniedEyebrow : copy.completeAuthorizedEyebrow}
           </IdentityEyebrow>
           <IdentityTitle>
-            {denied ? "요청을 거절했습니다." : "연결되었습니다."}
+            {denied ? copy.completeDenied : copy.completeAuthorized}
           </IdentityTitle>
           <IdentityBody>
-            DopeDB 앱으로 돌아가세요. 이 브라우저 창은 닫아도 됩니다.
+            {copy.completeBody}
           </IdentityBody>
         </IdentityCard>
       </div>

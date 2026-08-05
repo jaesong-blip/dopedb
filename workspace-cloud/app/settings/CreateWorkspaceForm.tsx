@@ -6,8 +6,13 @@ import {
   ControlButton,
   ControlInput,
 } from "../components/Controls";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import { useWorkspaceLocale } from "../components/WorkspaceLocale";
+import { localizedProviderMessage } from "../../lib/workspace-provider-copy";
 
 export function CreateWorkspaceForm() {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].createWorkspace;
   const router = useRouter();
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -25,7 +30,11 @@ export function CreateWorkspaceForm() {
     setPending(false);
     if (!response?.ok) {
       const body = await response?.json().catch(() => null);
-      setError(body?.error ?? "워크스페이스를 만들지 못했습니다.");
+      setError(
+        typeof body?.error === "string"
+          ? localizedProviderMessage(body.error, locale, copy.error)
+          : copy.error,
+      );
       return;
     }
     setName("");
@@ -39,20 +48,20 @@ export function CreateWorkspaceForm() {
     >
       <header className="tw:grid tw:gap-2">
         <span className="tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.08em] tw:text-primary tw:uppercase">
-          New boundary
+          {copy.eyebrow}
         </span>
         <h3 className="tw:font-serif tw:text-[28px] tw:leading-tight tw:font-normal tw:tracking-[-0.03em]">
-          새 워크스페이스
+          {copy.title}
         </h3>
         <p className="tw:text-xs tw:leading-[1.65] tw:text-muted-foreground">
-          연결과 정책을 공유할 새로운 팀 경계를 만듭니다.
+          {copy.description}
         </p>
       </header>
       <label
         className="tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.06em] tw:text-muted-foreground"
         htmlFor="workspace-name"
       >
-        워크스페이스 이름
+        {copy.label}
       </label>
       <div className="tw:grid tw:gap-2">
         <ControlInput
@@ -60,7 +69,7 @@ export function CreateWorkspaceForm() {
           value={name}
           onChange={(event) => setName(event.target.value)}
           maxLength={120}
-          placeholder="예: Data Platform"
+          placeholder={copy.placeholder}
           required
         />
         <ControlButton
@@ -69,7 +78,7 @@ export function CreateWorkspaceForm() {
           size="field"
           disabled={pending}
         >
-          {pending ? "생성 중" : "워크스페이스 만들기"}
+          {pending ? copy.creating : copy.create}
         </ControlButton>
       </div>
       {error ? (

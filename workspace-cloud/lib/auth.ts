@@ -94,8 +94,8 @@ export const auth = betterAuth({
       invitationExpiresIn: 60 * 60 * 48,
       cancelPendingInvitationsOnReInvite: true,
       requireEmailVerificationOnInvitation: true,
-      sendInvitationEmail: async (data) => {
-        await sendWorkspaceInvitation(data, env.appOrigin());
+      sendInvitationEmail: async (data, request) => {
+        await sendWorkspaceInvitation(data, env.appOrigin(), request);
       },
       organizationHooks: {
         afterCreateOrganization: async ({ organization, user }) => {

@@ -2,6 +2,10 @@
 // without provider credentials retain the verified, email-bound copy-link workflow.
 import "server-only";
 import { singleLineText } from "./http";
+import {
+  localizedWorkspacePath,
+  workspaceLocaleFromCookieHeader,
+} from "./workspace-locale";
 
 interface InvitationEmailData {
   id: string;
@@ -18,15 +22,43 @@ interface InvitationEmailData {
 export async function sendWorkspaceInvitation(
   data: InvitationEmailData,
   appOrigin: string,
+  request?: Request,
 ) {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.WORKSPACE_INVITATION_FROM?.trim();
   if (!apiKey || !from) return;
 
-  const inviteUrl = `${appOrigin}/accept-invitation/${encodeURIComponent(data.id)}`;
+  const locale = workspaceLocaleFromCookieHeader(
+    request?.headers.get("cookie") ?? null,
+  );
+  const inviteUrl = `${appOrigin}${localizedWorkspacePath(
+    `/accept-invitation/${encodeURIComponent(data.id)}`,
+    locale,
+  )}`;
   const organizationName = singleLineText(data.organization.name) || "DopeDB";
-  const inviterName = singleLineText(data.inviter.user.name) || "워크스페이스 관리자";
+  const inviterName = singleLineText(data.inviter.user.name)
+    || (locale === "ko" ? "워크스페이스 관리자" : "Workspace administrator");
   const inviterEmail = singleLineText(data.inviter.user.email);
+  const subject = locale === "ko"
+    ? `${organizationName} 워크스페이스 초대`
+    : `Invitation to the ${organizationName} workspace`;
+  const text = locale === "ko"
+    ? [
+        `${inviterName} (${inviterEmail})님이`,
+        `${organizationName} 워크스페이스에 초대했습니다.`,
+        "",
+        `초대 수락: ${inviteUrl}`,
+        "",
+        "이 링크는 초대받은 Google 이메일로 로그인한 경우에만 사용할 수 있습니다.",
+      ]
+    : [
+        `${inviterName} (${inviterEmail}) invited you`,
+        `to the ${organizationName} workspace.`,
+        "",
+        `Accept invitation: ${inviteUrl}`,
+        "",
+        "This link only works when you sign in with the invited Google email address.",
+      ];
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -37,15 +69,8 @@ export async function sendWorkspaceInvitation(
     body: JSON.stringify({
       from,
       to: [data.email],
-      subject: `${organizationName} 워크스페이스 초대`,
-      text: [
-        `${inviterName} (${inviterEmail})님이`,
-        `${organizationName} 워크스페이스에 초대했습니다.`,
-        "",
-        `초대 수락: ${inviteUrl}`,
-        "",
-        "이 링크는 초대받은 Google 이메일로 로그인한 경우에만 사용할 수 있습니다.",
-      ].join("\n"),
+      subject,
+      text: text.join("\n"),
     }),
   });
   if (!response.ok) {

@@ -3,6 +3,10 @@
 // Connection grants are intentionally separate from workspace roles: membership
 // makes a template visible only when a manager grants view, use, or manage.
 import { useCallback, useEffect, useState } from "react";
+import { useWorkspaceLocale } from "../components/WorkspaceLocale";
+import type { WorkspaceLocale } from "../../lib/workspace-locale";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import { localizedProviderMessage } from "../../lib/workspace-provider-copy";
 
 type ConnectionCapability = "view" | "use" | "manage";
 type SharedConnection = {
@@ -33,12 +37,21 @@ type MemberGrant = {
   capability: ConnectionCapability | null;
 };
 
-async function responseError(response: Response | null, fallback: string) {
+async function responseError(
+  response: Response | null,
+  fallback: string,
+  locale: WorkspaceLocale,
+) {
   const body = await response?.json().catch(() => null);
-  return typeof body?.error === "string" ? body.error : fallback;
+  return typeof body?.error === "string"
+    ? localizedProviderMessage(body.error, locale, fallback)
+    : fallback;
 }
 
 export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].connectionAccess;
+  const common = workspaceMessages[locale].common;
   const [connections, setConnections] = useState<SharedConnection[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [grants, setGrants] = useState<MemberGrant[]>([]);
@@ -55,13 +68,13 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
     ).catch(() => null);
     if (signal?.aborted) return;
     if (!response?.ok) {
-      setError(await responseError(response, "공유 연결을 불러오지 못했습니다."));
+      setError(await responseError(response, copy.loadConnectionsError, locale));
       setLoading(false);
       return;
     }
     const body = await response.json().catch(() => null);
     if (!Array.isArray(body?.connections)) {
-      setError("공유 연결 응답 형식을 확인하지 못했습니다.");
+      setError(copy.connectionsShapeError);
       setLoading(false);
       return;
     }
@@ -74,7 +87,7 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
     ));
     setError("");
     setLoading(false);
-  }, [workspaceId]);
+  }, [copy, locale, workspaceId]);
 
   const loadGrants = useCallback(async (
     connectionId: string,
@@ -91,18 +104,18 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
     ).catch(() => null);
     if (signal?.aborted) return;
     if (!response?.ok) {
-      setError(await responseError(response, "연결 권한을 불러오지 못했습니다."));
+      setError(await responseError(response, copy.loadGrantsError, locale));
       return;
     }
     const body = await response.json().catch(() => null);
     if (!Array.isArray(body?.grants) || typeof body?.actorMemberId !== "string") {
-      setError("연결 권한 응답 형식을 확인하지 못했습니다.");
+      setError(copy.grantsShapeError);
       return;
     }
     setGrants(body.grants);
     setActorMemberId(body.actorMemberId);
     setError("");
-  }, [workspaceId]);
+  }, [copy, locale, workspaceId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -137,7 +150,7 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
           : { method: "DELETE" },
       ).catch(() => null);
       if (!response?.ok) {
-        setError(await responseError(response, "연결 권한을 변경하지 못했습니다."));
+        setError(await responseError(response, copy.changeGrantError, locale));
         return;
       }
       await loadGrants(selectedId);
@@ -184,7 +197,7 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
         },
       ).catch(() => null);
       if (!response?.ok) {
-        setError(await responseError(response, "쓰기 정책을 변경하지 못했습니다."));
+        setError(await responseError(response, copy.changeWriteError, locale));
         return;
       }
       await loadConnections();
@@ -198,20 +211,20 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
       <header className="tw:flex tw:items-start tw:justify-between tw:gap-3">
         <div className="tw:grid tw:gap-1">
           <strong className="tw:text-ui tw:text-foreground">
-            DB별 접근 권한
+            {copy.title}
           </strong>
           <small className="tw:text-xs tw:leading-body tw:text-muted-foreground">
-            워크스페이스 멤버십과 별도로 DB마다 보기·사용·관리 권한을 부여합니다.
+            {copy.description}
           </small>
         </div>
         <span className="tw:shrink-0 tw:rounded-full tw:border tw:border-border tw:px-2 tw:py-1 tw:font-mono tw:text-2xs tw:text-muted-foreground">
-          비밀번호 공유 없음
+          {copy.proof}
         </span>
       </header>
 
       <label className="tw:grid tw:gap-1">
         <span className="tw:font-mono tw:text-2xs tw:text-muted-foreground tw:uppercase">
-          공유 연결
+          {copy.sharedConnection}
         </span>
         <select
           className="tw:h-control-field tw:w-full tw:border tw:border-border tw:bg-surface-inset tw:px-3 tw:text-ui tw:text-foreground tw:outline-none tw:focus:border-primary"
@@ -220,7 +233,7 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
           onChange={(event) => setSelectedId(event.target.value)}
         >
           {connections.length === 0 ? (
-            <option value="">관리할 공유 연결이 없습니다</option>
+            <option value="">{copy.noConnections}</option>
           ) : null}
           {connections.map((connection) => (
             <option key={connection.id} value={connection.id}>
@@ -233,8 +246,8 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
       {selected ? (
         <p className="tw:m-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
           {selected.credentialMode === "managed"
-            ? "역할과 DB 사용 권한은 관리자가 바꿀 때까지 유지되고, 단기 자격 증명만 앱이 자동 회전합니다."
-            : "사용 권한이 있는 멤버는 자신의 기기에서 DB 자격 증명을 한 번 연결해야 합니다."}
+            ? copy.managedDescription
+            : copy.localDescription}
         </p>
       ) : null}
 
@@ -252,13 +265,13 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
             onChange={(event) => void changeWritePolicy(event.target.checked)}
           />
           <span className="tw:grid tw:gap-1 tw:text-xs tw:text-foreground">
-            역할 기반 쓰기 허용
+            {copy.allowWrites}
             <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
               {!selected.writeAvailable
-                ? "이 공급자 연결에는 별도 쓰기 계정이 없습니다. 클라우드 계정을 다시 연결해 쓰기 계정을 구성하세요."
+                ? copy.noWriteAccount
                 : canManageWritePolicy
-                  ? "사용·관리 권한이 있는 에디터, 관리자, 소유자에게 읽기·쓰기 역할을 지속 적용합니다. 운영 여부는 이 정책을 자동으로 끄지 않습니다."
-                  : "현재 상태는 관리자가 정한 DB 정책입니다. 쓰기 허용 여부는 관리자 또는 소유자만 변경할 수 있습니다."}
+                  ? copy.writePolicyManager
+                  : copy.writePolicyViewer}
             </small>
           </span>
         </label>
@@ -275,7 +288,7 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
               <div className="tw:grid tw:min-w-0 tw:gap-0.5">
                 <strong className="tw:overflow-hidden tw:text-ui tw:text-ellipsis tw:whitespace-nowrap tw:text-foreground">
                   {grant.name}
-                  {isActor ? " · 나" : ""}
+                  {isActor ? ` · ${common.me}` : ""}
                 </strong>
                 <small className="tw:overflow-hidden tw:text-xs tw:text-ellipsis tw:whitespace-nowrap tw:text-muted-foreground">
                   {grant.email} · {grant.role}
@@ -283,7 +296,7 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
               </div>
               <select
                 className="tw:h-control-sm tw:w-full tw:border tw:border-border tw:bg-surface-inset tw:px-2 tw:text-xs tw:text-foreground tw:outline-none tw:focus:border-primary tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]"
-                aria-label={`${grant.name} 연결 권한`}
+                aria-label={`${grant.name} ${copy.permissionLabel}`}
                 value={grant.capability ?? ""}
                 disabled={mutatingId !== "" || isActor}
                 onChange={(event) => void changeGrant(
@@ -291,14 +304,14 @@ export function ConnectionAccessPanel({ workspaceId }: { workspaceId: string }) 
                   event.target.value as ConnectionCapability | "",
                 )}
               >
-                <option value="">접근 없음</option>
-                <option value="view">보기 · 연결 정보만</option>
+                <option value="">{copy.noAccess}</option>
+                <option value="view">{copy.view}</option>
                 <option value="use">
                   {selected?.credentialMode === "managed"
-                    ? "사용 · 역할 기반 자동 접근"
-                    : "사용 · 로컬 자격 증명"}
+                    ? copy.useManaged
+                    : copy.useLocal}
                 </option>
-                <option value="manage">관리 · 권한과 설정 변경</option>
+                <option value="manage">{copy.manage}</option>
               </select>
             </div>
           );

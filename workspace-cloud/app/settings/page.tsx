@@ -8,6 +8,7 @@ import { db } from "../../lib/db";
 import { acceptPendingWorkspaceInvitations } from "../../lib/pending-invitations";
 import { member } from "../../lib/schema";
 import { Brand } from "../components/Brand";
+import { LocaleSwitcher } from "../components/LocaleSwitcher";
 import {
   ConsoleNotice,
   ConsoleSectionHeading,
@@ -22,10 +23,13 @@ import {
   type SettingsSection,
 } from "./SettingsNavigation";
 import {
-  workspaceManagementAreas,
+  localizedWorkspaceManagementAreas,
   WorkspaceManagementPanel,
   type WorkspaceManagementArea,
 } from "./WorkspaceManagementPanel";
+import { localizedWorkspacePath } from "../../lib/workspace-locale";
+import { getWorkspaceLocale } from "../../lib/workspace-locale-server";
+import { workspaceMessages } from "../../lib/workspace-messages";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +46,9 @@ export default async function SettingsPage({
   }>;
 }) {
   const params = await searchParams;
+  const locale = await getWorkspaceLocale();
+  const copy = workspaceMessages[locale];
+  const workspaceManagementAreas = localizedWorkspaceManagementAreas(locale);
   const requestedSection: SettingsSection = settingsSection(params.section);
   const requestedWorkspaceId =
     typeof params.workspace === "string" &&
@@ -65,11 +72,14 @@ export default async function SettingsPage({
   const encodedWorkspaceId = requestedWorkspaceId
     ? encodeURIComponent(requestedWorkspaceId)
     : null;
-  const settingsPath = `/settings?${
+  const settingsPath = localizedWorkspacePath(`/settings?${
     encodedWorkspaceId ? `workspace=${encodedWorkspaceId}&` : ""
-  }section=${requestedSection}`;
+  }section=${requestedSection}`, locale);
   if (!session) {
-    redirect(`/auth/sign-in?returnTo=${encodeURIComponent(settingsPath)}`);
+    redirect(localizedWorkspacePath(
+      `/auth/sign-in?returnTo=${encodeURIComponent(settingsPath)}`,
+      locale,
+    ));
   }
   await acceptPendingWorkspaceInvitations({
     api: auth.api,
@@ -125,18 +135,22 @@ export default async function SettingsPage({
       ? "01"
       : activeManagementDetails?.index ?? "01";
   const pageTitle = activeSection === "account"
-    ? "내 계정"
+    ? copy.settings.accountTitle
     : activeSection === "workspaces"
-      ? "워크스페이스"
-      : activeManagementDetails?.label ?? "워크스페이스";
+      ? copy.settings.workspacesTitle
+      : activeManagementDetails?.label ?? copy.settings.workspacesTitle;
   const pageDescription = activeSection === "account"
-    ? "로그인 계정과 인증된 기기를 관리합니다. 이 경계는 어떤 워크스페이스에도 종속되지 않습니다."
+    ? copy.settings.accountDescription
     : activeSection === "workspaces"
-      ? "팀이 함께 사용할 연결과 정책의 경계를 선택하거나 새로 만듭니다."
-      : activeManagementDetails?.description ?? "공유 접근 경계를 관리합니다.";
+      ? copy.settings.workspacesDescription
+      : activeManagementDetails?.description ?? copy.settings.sharedBoundaryDescription;
   const activeRole = activeWorkspace
     ? workspaceRoles.get(activeWorkspace.id) ?? "member"
-    : "선택 안 됨";
+    : copy.common.notSelected;
+  const roleLabels = copy.members.roles;
+  const localizedActiveRole = activeWorkspace && activeRole in roleLabels
+    ? roleLabels[activeRole as keyof typeof roleLabels]
+    : activeRole;
 
   return (
     <main className="tw:min-h-[100dvh]" id="main-content">
@@ -145,22 +159,26 @@ export default async function SettingsPage({
           <Brand tone="inverse" />
           <span className="tw:flex tw:items-center tw:gap-2 tw:font-mono tw:text-2xs tw:text-chrome-muted tw:max-[860px]:hidden">
             <i className="tw:size-1.5 tw:rounded-full tw:bg-signal" />
-            Shared access control plane
+            {copy.settings.headerStatus}
           </span>
-          <AccountSwitcher
-            currentSessionId={session.session.id}
-            currentUser={{
-              id: session.user.id,
-              name: session.user.name,
-              email: session.user.email,
-            }}
-          />
+          <div className="tw:flex tw:items-center tw:gap-2">
+            <LocaleSwitcher tone="inverse" />
+            <AccountSwitcher
+              currentSessionId={session.session.id}
+              currentUser={{
+                id: session.user.id,
+                name: session.user.name,
+                email: session.user.email,
+              }}
+            />
+          </div>
         </div>
         <SettingsNavigation
           activeSection={activeSection}
           workspaceId={activeWorkspaceId}
           gcpSetupId={requestedGcpSetupId}
           canManageWorkspace={canManageActiveWorkspace}
+          locale={locale}
         />
       </header>
       <div className="tw:relative tw:mx-auto tw:w-full tw:max-w-[1480px] tw:px-[clamp(22px,5vw,76px)] tw:pt-[clamp(48px,7vw,88px)] tw:pb-[110px]">
@@ -176,17 +194,17 @@ export default async function SettingsPage({
           </div>
           <dl className="tw:m-0 tw:grid tw:overflow-hidden tw:rounded-surface tw:border tw:border-border tw:bg-surface/85 tw:shadow-[0_16px_50px_color-mix(in_srgb,var(--ds-text)_6%,transparent)] tw:backdrop-blur">
             <div className="tw:grid tw:grid-cols-[110px_minmax(0,1fr)] tw:items-center tw:border-b tw:border-border tw:px-4 tw:py-3.5">
-              <dt className="tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground">{activeSection === "account" ? "Account" : "Workspace"}</dt>
+              <dt className="tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground">{activeSection === "account" ? copy.settings.summaryAccount : copy.settings.summaryWorkspace}</dt>
               <dd className="tw:m-0 tw:truncate tw:text-right tw:text-xs tw:font-medium tw:text-foreground">
                 {activeSection === "account"
                   ? session.user.name
-                  : activeWorkspace?.name ?? "선택 안 됨"}
+                  : activeWorkspace?.name ?? copy.common.notSelected}
               </dd>
             </div>
             <div className="tw:grid tw:grid-cols-[110px_minmax(0,1fr)] tw:items-center tw:px-4 tw:py-3.5">
-              <dt className="tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground">{activeSection === "account" ? "Identity" : "Access"}</dt>
+              <dt className="tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground">{activeSection === "account" ? copy.settings.summaryIdentity : copy.settings.summaryAccess}</dt>
               <dd className="tw:m-0 tw:truncate tw:text-right tw:text-xs tw:text-primary">
-                {activeSection === "account" ? session.user.email : activeRole}
+                {activeSection === "account" ? session.user.email : localizedActiveRole}
               </dd>
             </div>
           </dl>
@@ -195,38 +213,34 @@ export default async function SettingsPage({
         && params.provider === "planetScale"
         && params.status === "connected" ? (
           <ConsoleNotice>
-            PlanetScale 계정이 연결되었습니다. 공유 데이터베이스에서 DB와
-            브랜치를 선택할 수 있습니다.
+            {copy.settings.planetScaleConnected}
           </ConsoleNotice>
         ) : null}
         {activeSection === "cloud-accounts"
         && params.provider === "planetScale"
         && params.status === "failed" ? (
           <ConsoleNotice tone="danger">
-            PlanetScale 연결을 완료하지 못했습니다. 권한과 서버 설정을 확인한
-            뒤 다시 시도하세요.
+            {copy.settings.planetScaleFailed}
           </ConsoleNotice>
         ) : null}
         {activeSection === "cloud-accounts"
         && params.provider === "gcpCloudSql"
         && params.status === "authorised" ? (
           <ConsoleNotice>
-            Google 계정이 승인되었습니다. 아래에서 프로젝트와 Cloud SQL
-            인스턴스를 선택하세요.
+            {copy.settings.gcpConnected}
           </ConsoleNotice>
         ) : null}
         {activeSection === "cloud-accounts"
         && params.provider === "gcpCloudSql"
         && params.status === "failed" ? (
           <ConsoleNotice tone="danger">
-            Google Cloud 승인을 완료하지 못했습니다. 계정과 OAuth 권한을
-            확인한 뒤 다시 시도하세요.
+            {copy.settings.gcpFailed}
           </ConsoleNotice>
         ) : null}
         {activeSection === "account" ? (
           <section id="account" className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]">
-            <ConsoleSectionHeading index="06" title="내 계정 관리">
-              로그인 계정과 인증된 기기는 어떤 워크스페이스에도 종속되지 않습니다.
+            <ConsoleSectionHeading index="06" title={copy.settings.accountManagementTitle}>
+              {copy.settings.accountManagementDescription}
             </ConsoleSectionHeading>
             <AccountManagementPanel
               currentSessionId={session.session.id}
@@ -237,8 +251,8 @@ export default async function SettingsPage({
 
         {activeSection === "workspaces" ? (
           <section id="workspaces" className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]">
-            <ConsoleSectionHeading index="01" title="워크스페이스">
-              연결과 대시보드를 공유할 팀 경계를 선택하거나 만듭니다.
+            <ConsoleSectionHeading index="01" title={copy.settings.workspacesTitle}>
+              {copy.settings.workspaceSectionDescription}
             </ConsoleSectionHeading>
             <div className="tw:grid tw:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.62fr)] tw:items-start tw:gap-6 tw:max-[980px]:grid-cols-1">
               <div className="tw:overflow-hidden tw:rounded-panel tw:border tw:border-border tw:bg-surface tw:shadow-panel">
@@ -251,7 +265,10 @@ export default async function SettingsPage({
                   >
                     <a
                       className="tw:grid tw:min-h-[106px] tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-4 tw:px-5 tw:py-4 tw:transition-colors tw:hover:bg-surface-raised tw:focus-visible:outline-2 tw:focus-visible:outline-offset-[-3px] tw:focus-visible:outline-ring tw:max-[560px]:grid-cols-[auto_minmax(0,1fr)]"
-                      href={`/settings?workspace=${encodeURIComponent(workspace.id)}&section=members`}
+                      href={localizedWorkspacePath(
+                        `/settings?workspace=${encodeURIComponent(workspace.id)}&section=members`,
+                        locale,
+                      )}
                       aria-current={
                         workspace.id === activeWorkspaceId ? "true" : undefined
                       }
@@ -270,7 +287,7 @@ export default async function SettingsPage({
                       <span className="tw:flex tw:items-center tw:gap-2 tw:font-mono tw:text-2xs tw:text-primary tw:max-[560px]:col-start-2">
                         <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />
                         {workspace.id === activeWorkspaceId
-                          ? `${workspaceRoles.get(workspace.id)} · 현재`
+                          ? `${workspaceRoles.get(workspace.id)} · ${copy.settings.currentSuffix}`
                           : workspaceRoles.get(workspace.id)}
                       </span>
                     </a>
@@ -280,10 +297,10 @@ export default async function SettingsPage({
                   <div className="tw:px-7 tw:py-16 tw:text-center">
                     <span className="tw:mx-auto tw:mb-4 tw:grid tw:size-12 tw:place-items-center tw:rounded-full tw:bg-selection tw:text-primary">＋</span>
                     <strong className="tw:block tw:text-sm tw:font-medium tw:text-foreground">
-                      첫 워크스페이스를 만드세요
+                      {copy.settings.emptyTitle}
                     </strong>
                     <small className="tw:mt-2 tw:block tw:text-xs tw:text-muted-foreground">
-                      공유 연결과 정책이 이 경계 안에 모입니다.
+                      {copy.settings.emptyDescription}
                     </small>
                   </div>
                 ) : null}
@@ -314,6 +331,7 @@ export default async function SettingsPage({
               gcpSetupId={requestedGcpSetupId}
               initialIntegrationId={requestedIntegrationId}
               area={activeManagementArea}
+              locale={locale}
             />
           </section>
         ) : null}

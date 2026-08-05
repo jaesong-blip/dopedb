@@ -1,12 +1,19 @@
+"use client";
+
 import Link from "next/link";
+import { localizedWorkspacePath } from "../../lib/workspace-locale";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import { useWorkspaceLocale } from "./WorkspaceLocale";
 
 export function Brand({ tone = "default" }: { tone?: "default" | "inverse" }) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].brand;
   return (
     <Link
       className="tw:group tw:relative tw:z-[2] tw:inline-flex tw:items-center tw:gap-2.5 tw:font-semibold tw:tracking-[-0.025em] tw:data-[tone=inverse]:text-chrome-foreground"
       data-tone={tone}
-      href="/settings"
-      aria-label="DopeDB workspace home"
+      href={localizedWorkspacePath("/settings", locale)}
+      aria-label={copy.home}
     >
       <svg
         className="tw:size-7 tw:text-primary tw:group-data-[tone=inverse]:text-signal"

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "../../../lib/auth";
 import { isUuid } from "../../../lib/http";
 import { Brand } from "../../components/Brand";
+import { LocaleSwitcher } from "../../components/LocaleSwitcher";
 import {
   IdentityBody,
   IdentityCard,
@@ -11,6 +12,9 @@ import {
   IdentityTitle,
 } from "../../components/Identity";
 import { AcceptInvitation } from "./AcceptInvitation";
+import { localizedWorkspacePath } from "../../../lib/workspace-locale";
+import { getWorkspaceLocale } from "../../../lib/workspace-locale-server";
+import { workspaceMessages } from "../../../lib/workspace-messages";
 
 export const dynamic = "force-dynamic";
 
@@ -20,21 +24,30 @@ export default async function InvitationPage({
   params: Promise<{ invitationId: string }>;
 }) {
   const { invitationId } = await params;
+  const locale = await getWorkspaceLocale();
+  const copy = workspaceMessages[locale].invitation;
   if (!isUuid(invitationId)) notFound();
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
-    redirect(`/auth/sign-in?returnTo=${encodeURIComponent(`/accept-invitation/${invitationId}`)}`);
+    const returnTo = localizedWorkspacePath(`/accept-invitation/${invitationId}`, locale);
+    redirect(localizedWorkspacePath(
+      `/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`,
+      locale,
+    ));
   }
   return (
     <IdentitySingleShell>
-      <Brand />
+      <div className="tw:flex tw:w-full tw:items-center tw:justify-between tw:gap-4">
+        <Brand />
+        <LocaleSwitcher />
+      </div>
       <div className="tw:m-auto tw:w-[min(540px,100%)]">
         <IdentityCard>
-          <IdentityEyebrow>VERIFIED INVITATION</IdentityEyebrow>
-          <IdentityTitle>워크스페이스 초대</IdentityTitle>
+          <IdentityEyebrow>{copy.eyebrow}</IdentityEyebrow>
+          <IdentityTitle>{copy.title}</IdentityTitle>
           <IdentityBody>
-            {session.user.email} 계정으로 초대를 수락합니다. 초대 이메일과 로그인
-            이메일이 일치해야 합니다.
+            {copy.descriptionBeforeEmail}{copy.descriptionBeforeEmail ? " " : ""}
+            {session.user.email}{copy.descriptionAfterEmail}
           </IdentityBody>
           <AcceptInvitation
             invitationId={invitationId}

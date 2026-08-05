@@ -1,18 +1,15 @@
 import { Brand } from "../../components/Brand";
+import { LocaleSwitcher } from "../../components/LocaleSwitcher";
 import {
   IdentityCard,
   IdentityError,
   IdentityEyebrow,
 } from "../../components/Identity";
 import { safeReturnTo } from "../../../lib/http";
+import { localizedWorkspacePath } from "../../../lib/workspace-locale";
+import { getWorkspaceLocale } from "../../../lib/workspace-locale-server";
+import { workspaceMessages } from "../../../lib/workspace-messages";
 import { SignInButton } from "./SignInButton";
-
-const messages: Record<string, string> = {
-  oauth_state_missing: "로그인 요청이 만료되었습니다. 다시 시도해 주세요.",
-  oauth_state_invalid: "로그인 요청을 확인할 수 없습니다. 다시 시작해 주세요.",
-  email_not_verified: "확인된 Google 이메일이 필요합니다.",
-  oauth_failed: "Google 로그인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
-};
 
 export default async function SignInPage({
   searchParams,
@@ -20,7 +17,18 @@ export default async function SignInPage({
   searchParams: Promise<{ returnTo?: string; error?: string }>;
 }) {
   const params = await searchParams;
-  const returnTo = safeReturnTo(params.returnTo ?? null);
+  const locale = await getWorkspaceLocale();
+  const copy = workspaceMessages[locale].signIn;
+  const errorMessages: Record<string, string> = {
+    oauth_state_missing: copy.errors.oauthStateMissing,
+    oauth_state_invalid: copy.errors.oauthStateInvalid,
+    email_not_verified: copy.errors.emailNotVerified,
+    oauth_failed: copy.errors.oauthFailed,
+  };
+  const returnTo = localizedWorkspacePath(
+    safeReturnTo(params.returnTo ?? null),
+    locale,
+  );
   return (
     <main
       className="tw:relative tw:grid tw:min-h-[100dvh] tw:grid-rows-[auto_minmax(0,1fr)_auto] tw:overflow-hidden tw:px-[clamp(22px,4vw,64px)] tw:py-[clamp(22px,3vw,42px)]"
@@ -28,27 +36,29 @@ export default async function SignInPage({
     >
       <div className="tw:relative tw:z-[1] tw:flex tw:items-center tw:justify-between">
         <Brand />
-        <span className="tw:inline-flex tw:items-center tw:gap-2 tw:rounded-full tw:border tw:border-border tw:bg-surface/80 tw:px-3 tw:py-2 tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground tw:backdrop-blur tw:max-[720px]:hidden">
-          <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />
-          Control plane available
-        </span>
+        <div className="tw:flex tw:items-center tw:gap-2">
+          <span className="tw:inline-flex tw:items-center tw:gap-2 tw:rounded-full tw:border tw:border-border tw:bg-surface/80 tw:px-3 tw:py-2 tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground tw:backdrop-blur tw:max-[720px]:hidden">
+            <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />
+            {copy.status}
+          </span>
+          <LocaleSwitcher />
+        </div>
       </div>
       <section className="tw:relative tw:z-[1] tw:m-auto tw:grid tw:w-[min(1280px,100%)] tw:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.72fr)] tw:items-center tw:gap-[clamp(48px,8vw,120px)] tw:py-[clamp(68px,10vh,128px)] tw:max-[860px]:grid-cols-1 tw:max-[860px]:gap-12">
         <div>
-          <IdentityEyebrow>SHARED ACCESS / PERSONAL AUTHORITY</IdentityEyebrow>
+          <IdentityEyebrow>{copy.eyebrow}</IdentityEyebrow>
           <h1 className="tw:my-7 tw:max-w-[760px] tw:font-serif tw:text-[clamp(54px,6.4vw,92px)] tw:leading-[0.96] tw:font-normal tw:tracking-[-0.055em] tw:text-balance">
-            DB 접근은 함께.
-            <br />인증 정보는 각자.
+            {copy.headlineFirst}
+            <br />{copy.headlineSecond}
           </h1>
           <p className="tw:max-w-[610px] tw:text-[17px] tw:leading-[1.8] tw:text-[var(--ds-text-secondary)]">
-            워크스페이스는 연결과 정책을 공유하고, 장기 비밀값은 각 구성원의
-            기기에 남깁니다. Agent도 승인된 하나의 DB 경계 안에서만 일합니다.
+            {copy.body}
           </p>
           <dl className="tw:mt-12 tw:grid tw:grid-cols-3 tw:border-y tw:border-border tw:max-[640px]:grid-cols-1 tw:max-[640px]:border-b-0">
             {[
-              ["Shared", "연결 · 정책"],
-              ["Personal", "OS 자격 증명"],
-              ["Managed", "15분 단기 권한"],
+              [copy.sharedTerm, copy.sharedDetail],
+              [copy.personalTerm, copy.personalDetail],
+              [copy.managedTerm, copy.managedDetail],
             ].map(([term, detail]) => (
               <div className="tw:border-r tw:border-border tw:px-4 tw:py-4 tw:first:pl-0 tw:last:border-r-0 tw:max-[640px]:border-r-0 tw:max-[640px]:border-b tw:max-[640px]:px-0" key={term}>
                 <dt className="tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.08em] tw:text-primary tw:uppercase">
@@ -62,41 +72,39 @@ export default async function SignInPage({
           </dl>
         </div>
         <IdentityCard density="compact">
-          <IdentityEyebrow>SIGN IN / GOOGLE</IdentityEyebrow>
+          <IdentityEyebrow>{copy.cardEyebrow}</IdentityEyebrow>
           <h2 className="tw:mt-10 tw:mb-3 tw:font-serif tw:text-[36px] tw:leading-tight tw:font-normal tw:tracking-[-0.035em] tw:text-balance tw:max-[480px]:text-[32px]">
-            워크스페이스에 로그인
+            {copy.title}
           </h2>
           <p className="tw:text-[14px] tw:leading-[1.75] tw:text-muted-foreground">
-            Google 계정으로 본인을 확인합니다. Google 액세스 토큰은 DopeDB에
-            보관하지 않습니다.
+            {copy.description}
           </p>
           {params.error ? (
             <IdentityError>
-              {messages[params.error] ?? "로그인에 실패했습니다."}
+              {errorMessages[params.error] ?? copy.errors.generic}
             </IdentityError>
           ) : null}
           <SignInButton returnTo={returnTo} />
           <p className="tw:mt-5 tw:mb-0 tw:text-2xs tw:leading-[1.7] tw:text-muted-foreground">
-            Google로 계속하면{" "}
+            {copy.legalBeforeTerms}{" "}
             <a
-              href="https://dopedb.dev/ko/terms"
+              href={`https://dopedb.dev${locale === "ko" ? "/ko" : ""}/terms`}
               target="_blank"
               rel="noreferrer"
               className="tw:font-medium tw:text-foreground tw:underline tw:underline-offset-2 tw:hover:text-primary"
             >
-              서비스 이용약관
+              {copy.terms}
             </a>
-            에 동의하고{" "}
+            {" "}{copy.legalBetween}{" "}
             <a
-              href="https://dopedb.dev/ko/privacy"
+              href={`https://dopedb.dev${locale === "ko" ? "/ko" : ""}/privacy`}
               target="_blank"
               rel="noreferrer"
               className="tw:font-medium tw:text-foreground tw:underline tw:underline-offset-2 tw:hover:text-primary"
             >
-              개인정보처리방침
+              {copy.privacy}
             </a>
-            을 확인한 것으로 봅니다. 조직의 워크스페이스 정책과 감사 기록도
-            적용됩니다.
+            {copy.legalAfter}
           </p>
         </IdentityCard>
       </section>

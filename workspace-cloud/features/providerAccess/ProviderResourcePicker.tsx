@@ -8,21 +8,29 @@ import {
 } from "../../app/components/Controls";
 import { selectableProviderResources } from "./domain";
 import type { ProviderAccessController } from "./useProviderAccess";
+import { useWorkspaceLocale } from "../../app/components/WorkspaceLocale";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import {
+  localizedIntegrationDisplayName,
+  localizedNeonFindingText,
+} from "../../lib/workspace-provider-copy";
 
 type ImportIntent = "" | "create" | "replace";
-
-const steps = [
-  "계정",
-  "대상 DB",
-  "연결 방식",
-  "검토",
-] as const;
 
 export function ProviderResourcePicker({
   controller,
 }: {
   controller: ProviderAccessController;
 }) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].resourcePicker;
+  const common = workspaceMessages[locale].common;
+  const steps = [
+    copy.steps.account,
+    copy.steps.database,
+    copy.steps.mode,
+    copy.steps.review,
+  ];
   const {
     integrations,
     connections,
@@ -113,10 +121,10 @@ export function ProviderResourcePicker({
         <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
           <div className="tw:grid tw:gap-1">
             <strong className="tw:text-xs tw:text-foreground">
-              공유 DB 추가
+              {copy.title}
             </strong>
             <small className="tw:text-2xs tw:text-muted-foreground">
-              인증 계정과 고정 DB 대상을 차례로 선택합니다.
+              {copy.description}
             </small>
           </div>
           <span className="tw:font-mono tw:text-2xs tw:uppercase tw:text-primary">
@@ -125,7 +133,7 @@ export function ProviderResourcePicker({
         </div>
         <ol
           className="tw:m-0 tw:grid tw:list-none tw:grid-cols-4 tw:gap-px tw:p-0"
-          aria-label="DB 추가 진행 단계"
+          aria-label={copy.progressLabel}
         >
           {steps.map((label, index) => {
             const itemStep = index + 1;
@@ -152,12 +160,12 @@ export function ProviderResourcePicker({
           role="progressbar"
           aria-label={
             mutation.startsWith("import:")
-              ? "공유 DB를 등록하는 중"
+              ? copy.registering
               : mutation === "neon:preflight"
-                ? "Neon 최소권한 사전 점검 중"
+                ? copy.neonPreflight
                 : mutation === "neon:apply"
-                  ? "Neon 최소권한 설정과 검증 중"
-              : "공급자 리소스를 불러오는 중"
+                  ? copy.neonApplying
+              : copy.resourcesLoading
           }
         >
           <span className="tw:block tw:h-full tw:w-1/2 tw:animate-pulse tw:bg-primary" />
@@ -169,27 +177,30 @@ export function ProviderResourcePicker({
           <>
             <div className="tw:grid tw:gap-1">
               <strong className="tw:text-sm tw:text-foreground">
-                어떤 클라우드 계정에서 찾을까요?
+                {copy.accountQuestion}
               </strong>
               <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                이 선택은 인증에만 쓰입니다. 아직 팀 DB가 만들어지지는 않습니다.
+                {copy.accountDescription}
               </p>
             </div>
-            <ControlField label="클라우드 계정">
+            <ControlField label={copy.cloudAccount}>
               <ControlSelect
                 value={selectedIntegrationId}
                 onChange={(event) => chooseIntegration(event.target.value)}
               >
-                <option value="">계정 선택</option>
+                <option value="">{copy.selectAccount}</option>
                 {integrations.map((integration) => (
                   <option
                     value={integration.id}
                     key={integration.id}
                     disabled={integration.status !== "active"}
                   >
-                    {integration.displayName}
+                    {localizedIntegrationDisplayName(
+                      integration.displayName,
+                      locale,
+                    )}
                     {integration.status === "reconnect_required"
-                      ? " · 재연결 필요"
+                      ? ` · ${common.reconnectRequired}`
                       : ""}
                   </option>
                 ))}
@@ -202,10 +213,10 @@ export function ProviderResourcePicker({
           <>
             <div className="tw:grid tw:gap-1">
               <strong className="tw:text-sm tw:text-foreground">
-                공유할 DB 하나를 선택하세요
+                {copy.selectDatabase}
               </strong>
               <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                선택한 프로젝트·인스턴스·DB만 이 워크스페이스 연결에 고정됩니다.
+                {copy.selectDatabaseDescription}
               </p>
             </div>
             <div className="tw:grid tw:grid-cols-1 tw:gap-3 tw:md:grid-cols-3">
@@ -224,7 +235,12 @@ export function ProviderResourcePicker({
                     selection[selectedProvider.resourceLevels[index - 1].key],
                   );
                 return (
-                  <ControlField key={level.key} label={level.label}>
+                  <ControlField
+                    key={level.key}
+                    label={copy.resourceLabels[
+                      level.kind as keyof typeof copy.resourceLabels
+                    ] ?? level.label}
+                  >
                     <ControlSelect
                       value={selection[level.key] ?? ""}
                       onChange={(event) =>
@@ -232,16 +248,16 @@ export function ProviderResourcePicker({
                       }
                       disabled={!previous || resourcePending}
                     >
-                      <option value="">선택</option>
+                      <option value="">{copy.select}</option>
                       {options.map((item) => (
                         <option value={item.value} key={item.id}>
                           {item.name}
                           {item.production === true
-                            ? " · 운영"
+                            ? ` · ${copy.productionSuffix}`
                             : item.production === "unknown" && isFinalLeaf
-                              ? " · 환경 확인 필요"
+                              ? ` · ${copy.environmentRequiredSuffix}`
                             : item.ready === false
-                              ? " · 준비 안 됨"
+                              ? ` · ${copy.notReadySuffix}`
                               : ""}
                         </option>
                       ))}
@@ -257,11 +273,10 @@ export function ProviderResourcePicker({
           <>
             <div className="tw:grid tw:gap-1">
               <strong className="tw:text-sm tw:text-foreground">
-                새 연결로 추가할까요?
+                {copy.modeQuestion}
               </strong>
               <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                기존 로컬 연결을 같은 DB의 관리형 연결로 바꿀 때만 교체를
-                선택하세요.
+                {copy.modeDescription}
               </p>
             </div>
             <div className="tw:grid tw:border-t tw:border-border">
@@ -278,9 +293,9 @@ export function ProviderResourcePicker({
                   />
                 </span>
                 <span className="tw:grid tw:gap-1">
-                  <strong className="tw:text-xs">새 공유 DB 만들기</strong>
+                  <strong className="tw:text-xs">{copy.createTitle}</strong>
                   <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                    공급자 이름과 DB 이름으로 새 팀 연결을 만듭니다.
+                    {copy.createDescription}
                   </small>
                 </span>
               </button>
@@ -298,15 +313,15 @@ export function ProviderResourcePicker({
                   />
                 </span>
                 <span className="tw:grid tw:gap-1">
-                  <strong className="tw:text-xs">기존 로컬 연결 교체</strong>
+                  <strong className="tw:text-xs">{copy.replaceTitle}</strong>
                   <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                    연결 ID와 대시보드는 유지하고 자격증명 방식만 바꿉니다.
+                    {copy.replaceDescription}
                   </small>
                 </span>
               </button>
             </div>
             {intent === "replace" ? (
-              <ControlField label="교체할 로컬 연결">
+              <ControlField label={copy.replaceField}>
                 <ControlSelect
                   value={selectedConnectionId}
                   onChange={(event) =>
@@ -328,38 +343,43 @@ export function ProviderResourcePicker({
           <>
             <div className="tw:grid tw:gap-1">
               <strong className="tw:text-sm tw:text-foreground">
-                등록 내용을 확인하세요
+                {copy.reviewTitle}
               </strong>
               <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                완료 후 DB별 접근 권한에서 사용할 멤버를 지정할 수 있습니다.
+                {copy.reviewDescription}
               </p>
             </div>
             <dl className="tw:m-0 tw:grid tw:grid-cols-[130px_minmax(0,1fr)] tw:border-t tw:border-border tw:text-xs tw:max-[520px]:grid-cols-1">
               <dt className="tw:border-b tw:border-border tw:py-2 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
-                인증 계정
+                {copy.authorizedAccount}
               </dt>
               <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
-                {selectedIntegration?.displayName}
+                {selectedIntegration
+                  ? localizedIntegrationDisplayName(
+                      selectedIntegration.displayName,
+                      locale,
+                    )
+                  : null}
               </dd>
               <dt className="tw:border-b tw:border-border tw:py-2 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
-                대상
+                {copy.target}
               </dt>
               <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
                 {targetLabel}
               </dd>
               <dt className="tw:border-b tw:border-border tw:py-2 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
-                연결 방식
+                {copy.connectionMode}
               </dt>
               <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
                 {intent === "replace"
-                  ? `${selectedConnection?.name ?? "선택한 연결"} 교체`
-                  : "새 공유 DB"}
+                  ? `${selectedConnection?.name ?? copy.selectedConnection} ${copy.replaceSuffix}`
+                  : copy.newSharedDatabase}
               </dd>
               <dt className="tw:border-b tw:border-border tw:py-2 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
-                자격증명
+                {copy.credentials}
               </dt>
               <dd className="tw:m-0 tw:border-b tw:border-border tw:py-2 tw:text-foreground">
-                멤버별 자동 회전 · 기본 읽기 · 관리자 쓰기 정책
+                {copy.credentialDescription}
               </dd>
             </dl>
             {(isNeon
@@ -367,25 +387,23 @@ export function ProviderResourcePicker({
                 || selectedBranch?.production === true
               : finalResource?.production === true) ? (
               <p className="tw:m-0 tw:border tw:border-danger/40 tw:bg-danger/5 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-danger">
-                운영 DB입니다. 완료 시 관리자 승인이 감사 기록에 남습니다.
+                {copy.productionNotice}
               </p>
             ) : null}
             {isNeon ? (
               <div className="tw:grid tw:gap-3 tw:border-t tw:border-border tw:pt-4">
                 <div className="tw:grid tw:gap-1">
                   <strong className="tw:text-xs tw:text-foreground">
-                    Neon 최소권한 준비
+                    {copy.neonTitle}
                   </strong>
                   <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                    DB를 등록하기 전에 공개 권한과 소유권 경계를 점검합니다.
-                    필요한 변경만 보여주고, 승인 후 read/write 단기 역할의
-                    허용·거부 경계를 실제 연결로 검증합니다.
+                    {copy.neonDescription}
                   </p>
                 </div>
 
                 {selectedBranch?.production === "unknown"
                 || selectedBranch?.production === undefined ? (
-                  <ControlField label="브랜치 환경">
+                  <ControlField label={copy.branchEnvironment}>
                     <ControlSelect
                       value={neonEnvironmentClassification}
                       onChange={(event) => {
@@ -395,9 +413,9 @@ export function ProviderResourcePicker({
                       }}
                       disabled={mutation !== ""}
                     >
-                      <option value="">환경 선택</option>
-                      <option value="development">개발</option>
-                      <option value="production">운영</option>
+                      <option value="">{copy.chooseEnvironment}</option>
+                      <option value="development">{common.development}</option>
+                      <option value="production">{common.production}</option>
                     </ControlSelect>
                   </ControlField>
                 ) : (
@@ -406,23 +424,22 @@ export function ProviderResourcePicker({
                     data-production={selectedBranch.production === true}
                   >
                     {selectedBranch.production === true
-                      ? "Neon에서 보호된 운영 브랜치로 확인했습니다. 개발 환경으로 낮출 수 없습니다."
-                      : "Neon에서 비보호 개발 브랜치로 확인했습니다."}
+                      ? copy.protectedBranch
+                      : copy.developmentBranch}
                   </p>
                 )}
 
                 {!neonBootstrap.report ? (
                   <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border tw:border-border tw:bg-surface-inset tw:p-3 tw:max-[520px]:grid">
                     <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                      아직 DB 권한을 변경하지 않습니다. 먼저 변경 없는 사전 점검
-                      결과를 확인하세요.
+                      {copy.preflightDescription}
                     </p>
                     <ControlButton
                       tone="primary"
                       onClick={() => void preflightNeonBootstrap()}
                       disabled={!neonEnvironmentReady || mutation !== ""}
                     >
-                      {mutation === "neon:preflight" ? "점검 중" : "사전 점검"}
+                      {mutation === "neon:preflight" ? copy.checking : copy.preflight}
                     </ControlButton>
                   </div>
                 ) : (
@@ -433,15 +450,15 @@ export function ProviderResourcePicker({
                     >
                       <strong className="tw:text-xs tw:text-foreground">
                         {neonBootstrap.report.status === "blocked"
-                          ? "자동 설정할 수 없는 항목이 있습니다"
+                          ? copy.blockedTitle
                           : neonBootstrap.report.status === "approvalRequired"
-                            ? "승인할 변경이 있습니다"
-                            : "최소권한 경계를 적용할 수 있습니다"}
+                            ? copy.approvalTitle
+                            : copy.readyTitle}
                       </strong>
                       <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
                         {neonBootstrap.report.canRollback
-                          ? "표시된 자동 변경은 검증 실패 시 원래 상태로 되돌립니다."
-                          : "자동 복구할 수 없는 변경이 있어 적용하지 않습니다."}
+                          ? copy.rollback
+                          : copy.noRollback}
                       </small>
                     </div>
 
@@ -455,10 +472,20 @@ export function ProviderResourcePicker({
                           <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[520px]:grid">
                             <span className="tw:grid tw:gap-1">
                               <strong className="tw:text-xs tw:text-foreground">
-                                {item.description}
+                                {localizedNeonFindingText(
+                                  item.code,
+                                  "description",
+                                  item.description,
+                                  locale,
+                                )}
                               </strong>
                               <small className="tw:text-2xs tw:text-muted-foreground">
-                                {item.target}
+                                {localizedNeonFindingText(
+                                  item.code,
+                                  "target",
+                                  item.target,
+                                  locale,
+                                )}
                               </small>
                             </span>
                             <code className="tw:text-2xs tw:text-muted-foreground">
@@ -467,13 +494,23 @@ export function ProviderResourcePicker({
                           </div>
                           <span className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] tw:items-center tw:gap-2 tw:text-2xs tw:max-[520px]:grid-cols-1">
                             <span className="tw:min-w-0 tw:break-words tw:text-muted-foreground">
-                              {item.before}
+                              {localizedNeonFindingText(
+                                item.code,
+                                "before",
+                                item.before,
+                                locale,
+                              )}
                             </span>
                             <span className="tw:text-primary tw:max-[520px]:hidden" aria-hidden="true">
                               →
                             </span>
                             <span className="tw:min-w-0 tw:break-words tw:text-foreground">
-                              {item.after}
+                              {localizedNeonFindingText(
+                                item.code,
+                                "after",
+                                item.after,
+                                locale,
+                              )}
                             </span>
                           </span>
                         </li>
@@ -490,10 +527,9 @@ export function ProviderResourcePicker({
                           onChange={(event) => setNeonPublicAclApproved(event.target.checked)}
                         />
                         <span className="tw:grid tw:gap-1 tw:text-xs tw:text-foreground">
-                          <strong>표시된 PUBLIC 권한 회수를 승인합니다</strong>
+                          <strong>{copy.publicApproval}</strong>
                           <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
-                            같은 브랜치의 다른 사용자 접근에 영향을 줄 수 있으며,
-                            검증 실패 시 표시된 역연산으로 복구합니다.
+                            {copy.publicApprovalDescription}
                           </small>
                         </span>
                       </label>
@@ -509,9 +545,9 @@ export function ProviderResourcePicker({
                           onChange={(event) => setNeonProductionApproved(event.target.checked)}
                         />
                         <span className="tw:grid tw:gap-1 tw:text-xs tw:text-danger">
-                          <strong>운영 DB의 권한 변경과 검증 실행을 승인합니다</strong>
+                          <strong>{copy.productionApproval}</strong>
                           <small className="tw:text-2xs tw:leading-body">
-                            관리자 승인이 계획 해시와 함께 감사 기록에 남습니다.
+                            {copy.productionApprovalDescription}
                           </small>
                         </span>
                       </label>
@@ -522,9 +558,7 @@ export function ProviderResourcePicker({
                         className="tw:m-0 tw:border tw:border-success/40 tw:bg-success/10 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-success"
                         role="status"
                       >
-                        설정과 검증을 완료했습니다. read role의 쓰기 차단과 write
-                        role의 DML 허용·DDL/role 관리 거부를 확인했습니다. 공유 DB는
-                        쓰기 정책이 꺼진 상태로 생성됩니다.
+                        {copy.verified}
                       </p>
                     ) : (
                       <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
@@ -532,7 +566,7 @@ export function ProviderResourcePicker({
                           onClick={() => void preflightNeonBootstrap()}
                           disabled={mutation !== ""}
                         >
-                          다시 점검
+                          {copy.recheck}
                         </ControlButton>
                         <ControlButton
                           tone="primary"
@@ -550,7 +584,7 @@ export function ProviderResourcePicker({
                             )
                           }
                         >
-                          {mutation === "neon:apply" ? "설정·검증 중" : "승인 후 설정·검증"}
+                          {mutation === "neon:apply" ? copy.applying : copy.apply}
                         </ControlButton>
                       </div>
                     )}
@@ -567,7 +601,7 @@ export function ProviderResourcePicker({
           onClick={() => setStep((current) => Math.max(1, current - 1))}
           disabled={step === 1 || mutation !== ""}
         >
-          이전
+          {copy.previous}
         </ControlButton>
         {step < 4 ? (
           <ControlButton
@@ -586,7 +620,7 @@ export function ProviderResourcePicker({
               )
             }
           >
-            계속
+            {copy.continue}
           </ControlButton>
         ) : (
           <ControlButton
@@ -599,10 +633,10 @@ export function ProviderResourcePicker({
             onClick={() => void importDiscoveredResource()}
           >
             {mutation.startsWith("import:")
-              ? "등록하는 중"
+              ? copy.registeringButton
               : intent === "replace"
-                ? "관리형 연결로 교체"
-                : "공유 DB 만들기"}
+                ? copy.replaceButton
+                : copy.createButton}
           </ControlButton>
         )}
       </footer>

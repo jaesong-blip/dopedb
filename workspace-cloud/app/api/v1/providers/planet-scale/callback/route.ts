@@ -27,12 +27,18 @@ import {
   workspaceProviderIntegration,
 } from "../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
+import {
+  localizedWorkspacePath,
+  workspaceLocaleFromCookieHeader,
+} from "../../../../../../lib/workspace-locale";
 
 function settingsUrl(
+  request: Request,
   workspaceId: string | null,
   status: "connected" | "failed",
 ) {
-  const target = new URL("/settings", env.appOrigin());
+  const locale = workspaceLocaleFromCookieHeader(request.headers.get("cookie"));
+  const target = new URL(localizedWorkspacePath("/settings", locale), env.appOrigin());
   target.searchParams.set("provider", "planetScale");
   target.searchParams.set("status", status);
   target.searchParams.set("section", "cloud-accounts");
@@ -53,12 +59,15 @@ export async function GET(request: Request) {
     || code.length < 8
     || code.length > 2_048
   ) {
-    return Response.redirect(settingsUrl(null, "failed"));
+    return Response.redirect(settingsUrl(request, null, "failed"));
   }
   const session = await authoritativeSession(request);
   if (!session) {
     return Response.redirect(new URL(
-      `/auth/sign-in?returnTo=${encodeURIComponent("/settings")}`,
+      localizedWorkspacePath(
+        `/auth/sign-in?returnTo=${encodeURIComponent(localizedWorkspacePath("/settings", workspaceLocaleFromCookieHeader(request.headers.get("cookie"))))}`,
+        workspaceLocaleFromCookieHeader(request.headers.get("cookie")),
+      ),
       env.appOrigin(),
     ));
   }
@@ -72,14 +81,14 @@ export async function GET(request: Request) {
     organizationId: providerOauthState.organizationId,
   });
   const oauthState = consumed[0];
-  if (!oauthState) return Response.redirect(settingsUrl(null, "failed"));
+  if (!oauthState) return Response.redirect(settingsUrl(request, null, "failed"));
   const authorization = await authorizeWorkspace(
     request,
     oauthState.organizationId,
     "manage",
   );
   if (!authorization.ok || authorization.session.user.id !== session.user.id) {
-    return Response.redirect(settingsUrl(oauthState.organizationId, "failed"));
+    return Response.redirect(settingsUrl(request, oauthState.organizationId, "failed"));
   }
 
   let tokenToRevoke: { accessToken: string; refreshToken: string } | null = null;
@@ -193,12 +202,12 @@ export async function GET(request: Request) {
     if (reconnectClaim && existing) {
       await revokeProviderAuthorization(existing).catch(() => undefined);
     }
-    return Response.redirect(settingsUrl(oauthState.organizationId, "connected"));
+    return Response.redirect(settingsUrl(request, oauthState.organizationId, "connected"));
   } catch {
     if (tokenToRevoke) {
       await revokePlanetScaleAuthorization(tokenToRevoke.accessToken).catch(() => undefined);
       await revokePlanetScaleAuthorization(tokenToRevoke.refreshToken).catch(() => undefined);
     }
-    return Response.redirect(settingsUrl(oauthState.organizationId, "failed"));
+    return Response.redirect(settingsUrl(request, oauthState.organizationId, "failed"));
   }
 }

@@ -2,6 +2,7 @@
 // server and requires an explicit approve or deny action from the signed-in user.
 import { headers } from "next/headers";
 import { Brand } from "../../components/Brand";
+import { LocaleSwitcher } from "../../components/LocaleSwitcher";
 import {
   IdentityBody,
   IdentityCard,
@@ -11,6 +12,9 @@ import {
   IdentityTitle,
 } from "../../components/Identity";
 import { auth } from "../../../lib/auth";
+import { localizedWorkspacePath } from "../../../lib/workspace-locale";
+import { getWorkspaceLocale } from "../../../lib/workspace-locale-server";
+import { workspaceMessages } from "../../../lib/workspace-messages";
 import { DeviceApproval } from "./DeviceApproval";
 import { DeviceAccountActions } from "./DeviceAccountActions";
 import { SignInButton } from "../sign-in/SignInButton";
@@ -21,38 +25,45 @@ export default async function DevicePage({
   searchParams: Promise<{ user_code?: string; error?: string }>;
 }) {
   const params = await searchParams;
+  const locale = await getWorkspaceLocale();
+  const copy = workspaceMessages[locale].device;
   const userCode = params.user_code?.trim() ?? "";
   const valid = /^[A-Z2-9-]{6,20}$/i.test(userCode);
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
-  let verificationError = params.error ? "올바르지 않은 승인 요청입니다." : "";
+  let verificationError = params.error ? copy.invalidRequest : "";
 
   if (valid) {
     try {
       await auth.api.deviceVerify({ query: { user_code: userCode }, headers: requestHeaders });
     } catch {
-      verificationError = "승인 코드가 올바르지 않거나 만료되었습니다.";
+      verificationError = copy.invalidCode;
     }
   }
 
-  const returnTo = `/auth/device?user_code=${encodeURIComponent(userCode)}`;
+  const returnTo = localizedWorkspacePath(
+    `/auth/device?user_code=${encodeURIComponent(userCode)}`,
+    locale,
+  );
   return (
     <IdentitySingleShell>
-      <Brand />
+      <div className="tw:flex tw:w-full tw:items-center tw:justify-between tw:gap-4">
+        <Brand />
+        <LocaleSwitcher />
+      </div>
       <div className="tw:m-auto tw:w-[min(540px,100%)]">
         <IdentityCard>
           <div className="tw:relative tw:mb-10 tw:grid tw:size-14 tw:place-items-center tw:rounded-surface tw:border tw:border-primary/20 tw:bg-selection">
             <span className="tw:text-primary">↗</span>
           </div>
           <IdentityEyebrow>BETTER AUTH / RFC 8628</IdentityEyebrow>
-          <IdentityTitle>이 기기를 연결할까요?</IdentityTitle>
+          <IdentityTitle>{copy.title}</IdentityTitle>
           <IdentityBody>
-            Better Auth의 표준 Device Authorization 흐름으로 데스크톱 앱에
-            별도 세션을 발급합니다.
+            {copy.description}
           </IdentityBody>
           {!valid || verificationError ? (
             <IdentityError>
-              {verificationError || "올바른 승인 코드가 필요합니다."}
+              {verificationError || copy.codeRequired}
             </IdentityError>
           ) : session ? (
             <div>
@@ -79,7 +90,7 @@ export default async function DevicePage({
             <SignInButton returnTo={returnTo} />
           )}
           <small className="tw:mt-4 tw:block tw:text-xs tw:text-muted-foreground">
-            승인 코드는 생성 후 10분 동안만 유효합니다.
+            {copy.expires}
           </small>
         </IdentityCard>
       </div>

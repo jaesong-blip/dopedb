@@ -5,6 +5,10 @@
 import { useState } from "react";
 import { authClient } from "../../../lib/auth-client";
 import { useDeviceAccounts } from "../../../lib/useDeviceAccounts";
+import { localizedWorkspacePath } from "../../../lib/workspace-locale";
+import { workspaceMessages } from "../../../lib/workspace-messages";
+import { localizedProviderMessage } from "../../../lib/workspace-provider-copy";
+import { useWorkspaceLocale } from "../../components/WorkspaceLocale";
 
 export function DeviceAccountActions({
   currentUserId,
@@ -13,10 +17,15 @@ export function DeviceAccountActions({
   currentUserId: string;
   userCode: string;
 }) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].device;
   const { accounts, error: accountError } = useDeviceAccounts();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const returnTo = `/auth/device?user_code=${encodeURIComponent(userCode)}`;
+  const returnTo = localizedWorkspacePath(
+    `/auth/device?user_code=${encodeURIComponent(userCode)}`,
+    locale,
+  );
 
   async function switchAccount(sessionToken: string) {
     setPending(true);
@@ -24,7 +33,9 @@ export function DeviceAccountActions({
     const result = await authClient.multiSession.setActive({ sessionToken });
     if (result.error) {
       setPending(false);
-      setError(result.error.message ?? "계정을 전환하지 못했습니다.");
+      setError(result.error.message
+        ? localizedProviderMessage(result.error.message, locale, copy.switchError)
+        : copy.switchError);
       return;
     }
     location.assign(returnTo);
@@ -48,9 +59,12 @@ export function DeviceAccountActions({
       ))}
       <a
         className="tw:flex tw:min-h-control-md tw:items-center tw:border-b tw:border-border tw:px-3 tw:text-xs tw:text-muted-foreground tw:hover:bg-surface-raised tw:hover:text-foreground"
-        href={`/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
+        href={localizedWorkspacePath(
+          `/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`,
+          locale,
+        )}
       >
-        ＋ 다른 Google 계정으로 승인
+        {copy.otherAccount}
       </a>
       {error ? (
         <small className="tw:mt-2 tw:text-2xs tw:text-danger" role="alert">

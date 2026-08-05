@@ -5,6 +5,9 @@ import { ControlButton, ControlLink } from "../components/Controls";
 import { NeonBranchManager } from "../../features/providerAccess/NeonBranchManager";
 import { ProviderResourcePicker } from "../../features/providerAccess/ProviderResourcePicker";
 import { useProviderAccess } from "../../features/providerAccess/useProviderAccess";
+import { localizedWorkspacePath } from "../../lib/workspace-locale";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import { useWorkspaceLocale } from "../components/WorkspaceLocale";
 
 export function SharedDatabasePanel({
   workspaceId,
@@ -13,6 +16,12 @@ export function SharedDatabasePanel({
   workspaceId: string;
   initialIntegrationId?: string | null;
 }) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].sharedDatabases;
+  const reconnectMessages = [
+    workspaceMessages.en.providerAccess.gcpSessionExpired,
+    workspaceMessages.ko.providerAccess.gcpSessionExpired,
+  ];
   const controller = useProviderAccess(
     workspaceId,
     null,
@@ -28,11 +37,10 @@ export function SharedDatabasePanel({
       <header className="tw:flex tw:items-start tw:justify-between tw:gap-4 tw:max-[640px]:grid">
         <div className="tw:grid tw:gap-1">
           <strong className="tw:text-sm tw:text-foreground">
-            워크스페이스 DB
+            {copy.title}
           </strong>
           <small className="tw:max-w-[44rem] tw:text-2xs tw:leading-body tw:text-muted-foreground">
-            한 번 등록한 DB는 팀에 공유되고, 허용된 멤버의 역할에 맞는 단기
-            자격증명을 앱이 자동으로 회전합니다.
+            {copy.description}
           </small>
         </div>
         <ControlButton
@@ -40,7 +48,7 @@ export function SharedDatabasePanel({
           onClick={() => setAdding((current) => !current)}
           disabled={controller.loading}
         >
-          {adding ? "추가 닫기" : "DB 추가"}
+          {adding ? copy.closeAdd : copy.add}
         </ControlButton>
       </header>
 
@@ -50,18 +58,20 @@ export function SharedDatabasePanel({
         ) : (
           <div className="tw:grid tw:gap-3 tw:border-y tw:border-border tw:py-5">
             <strong className="tw:text-xs tw:text-foreground">
-              먼저 클라우드 계정을 연결하세요
+              {copy.connectFirst}
             </strong>
             <p className="tw:m-0 tw:max-w-[42rem] tw:text-2xs tw:leading-body tw:text-muted-foreground">
-              DopeDB가 프로젝트와 DB를 확인할 인증 계정이 아직 없습니다.
-              계정을 연결한 뒤 이 화면으로 돌아오면 DB를 고를 수 있습니다.
+              {copy.connectFirstDescription}
             </p>
             <div>
               <ControlLink
-                href={`/settings?workspace=${encodeURIComponent(workspaceId)}&section=cloud-accounts`}
+                href={localizedWorkspacePath(
+                  `/settings?workspace=${encodeURIComponent(workspaceId)}&section=cloud-accounts`,
+                  locale,
+                )}
                 data-tone="primary"
               >
-                클라우드 계정 연결
+                {copy.connectCloud}
               </ControlLink>
             </div>
           </div>
@@ -78,7 +88,7 @@ export function SharedDatabasePanel({
 
       {controller.loading ? (
         <p className="tw:m-0 tw:border-y tw:border-border tw:py-5 tw:text-2xs tw:text-muted-foreground">
-          공유 데이터베이스를 확인하는 중입니다.
+          {copy.loading}
         </p>
       ) : (
         <div className="tw:grid tw:border-t tw:border-border">
@@ -110,21 +120,24 @@ export function SharedDatabasePanel({
                   <small className="tw:truncate tw:text-2xs tw:leading-body tw:text-muted-foreground tw:max-[640px]:whitespace-normal">
                     {managed && provider
                       ? `${provider.name} · ${target}`
-                      : "멤버가 각자 로컬 자격증명을 입력하는 연결"}
+                      : copy.memberLocalDescription}
                   </small>
                 </div>
                 <div className="tw:grid tw:justify-items-end tw:gap-1 tw:max-[640px]:justify-items-start">
                   <strong className="tw:font-mono tw:text-2xs tw:uppercase tw:text-primary">
                     {connection.credentialMode === "managed"
-                      ? "역할 기반 자동 접근"
-                      : "멤버 로컬"}
+                      ? copy.managedMode
+                      : copy.localMode}
                   </strong>
                   <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:max-[640px]:justify-start">
                     <a
                       className="tw:text-2xs tw:text-muted-foreground tw:hover:text-foreground"
-                      href={`/settings?workspace=${encodeURIComponent(workspaceId)}&section=database-access`}
+                      href={localizedWorkspacePath(
+                        `/settings?workspace=${encodeURIComponent(workspaceId)}&section=database-access`,
+                        locale,
+                      )}
                     >
-                      접근 권한 관리
+                      {copy.manageAccess}
                     </a>
                     {connection.accessMode === "manage" ? (
                       <ControlButton
@@ -133,8 +146,8 @@ export function SharedDatabasePanel({
                         disabled={Boolean(controller.mutation)}
                       >
                         {controller.mutation === `delete-connection:${connection.id}`
-                          ? "제거 중"
-                          : "공유 DB 제거"}
+                          ? copy.removing
+                          : copy.remove}
                       </ControlButton>
                     ) : null}
                   </span>
@@ -145,10 +158,10 @@ export function SharedDatabasePanel({
           {controller.connections.length === 0 ? (
             <div className="tw:border-b tw:border-border tw:py-10 tw:text-center">
               <strong className="tw:block tw:text-xs tw:text-foreground">
-                아직 공유된 DB가 없습니다
+                {copy.emptyTitle}
               </strong>
               <small className="tw:mt-1 tw:block tw:text-2xs tw:text-muted-foreground">
-                위의 DB 추가에서 연결할 대상을 선택하세요.
+                {copy.emptyDescription}
               </small>
             </div>
           ) : null}
@@ -163,11 +176,15 @@ export function SharedDatabasePanel({
           <p className="tw:m-0 tw:text-2xs tw:leading-body tw:text-danger">
             {controller.error}
           </p>
-          {controller.error.includes("다시 연결") ? (
+          {reconnectMessages.some((message) => controller.error.includes(message))
+          || /reconnect/i.test(controller.error) ? (
             <ControlLink
-              href={`/settings?workspace=${encodeURIComponent(workspaceId)}&section=cloud-accounts`}
+              href={localizedWorkspacePath(
+                `/settings?workspace=${encodeURIComponent(workspaceId)}&section=cloud-accounts`,
+                locale,
+              )}
             >
-              클라우드 계정으로 이동
+              {copy.goToCloud}
             </ControlLink>
           ) : null}
         </div>

@@ -5,6 +5,10 @@
 import { useEffect, useState } from "react";
 import { ControlButton } from "../components/Controls";
 import { authClient } from "../../lib/auth-client";
+import { localizedWorkspacePath } from "../../lib/workspace-locale";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import { localizedProviderMessage } from "../../lib/workspace-provider-copy";
+import { useWorkspaceLocale } from "../components/WorkspaceLocale";
 
 interface SessionItem {
   id: string;
@@ -15,6 +19,8 @@ interface SessionItem {
 }
 
 export function ActiveSessions({ currentSessionId }: { currentSessionId: string }) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].account;
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -28,8 +34,10 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
         || result.error.message === "Session is not fresh";
       setNeedsReauthentication(sessionNotFresh);
       setError(sessionNotFresh
-        ? "보안을 위해 활성 세션 목록은 다시 로그인한 뒤 확인할 수 있습니다. 워크스페이스와 연결 설정 저장에는 영향이 없습니다."
-        : result.error.message ?? "세션을 불러오지 못했습니다.");
+        ? copy.reauthRequired
+        : result.error.message
+          ? localizedProviderMessage(result.error.message, locale, copy.loadError)
+          : copy.loadError);
       return;
     }
     setNeedsReauthentication(false);
@@ -47,7 +55,9 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
     setError("");
     const result = await authClient.revokeSession({ token: item.token });
     if (result.error) {
-      setError(result.error.message ?? "세션을 종료하지 못했습니다.");
+      setError(result.error.message
+        ? localizedProviderMessage(result.error.message, locale, copy.revokeError)
+        : copy.revokeError);
       setPending(null);
       return;
     }
@@ -63,10 +73,15 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
     const result = await authClient.signOut();
     if (result.error) {
       setPending(null);
-      setError(result.error.message ?? "로그아웃하지 못했습니다.");
+      setError(result.error.message
+        ? localizedProviderMessage(result.error.message, locale, copy.signOutError)
+        : copy.signOutError);
       return;
     }
-    location.assign(`/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`);
+    location.assign(localizedWorkspacePath(
+      `/auth/sign-in?returnTo=${encodeURIComponent(returnTo)}`,
+      locale,
+    ));
   }
 
   return (
@@ -84,23 +99,23 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
             <div className="tw:flex tw:flex-col tw:gap-1">
               <strong className="tw:text-ui tw:text-foreground">
                 {item.userAgent?.includes("Mozilla")
-                  ? "Web browser"
-                  : "DopeDB desktop"}
+                  ? copy.browser
+                  : copy.desktop}
               </strong>
               <small className="tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
-                {item.ipAddress ?? "protected session"}
+                {item.ipAddress ?? copy.protectedSession}
               </small>
             </div>
             {current ? (
               <time className="tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
-                현재 세션
+                {copy.currentSession}
               </time>
             ) : (
               <ControlButton
                 onClick={() => void revoke(item)}
                 disabled={pending === item.id}
               >
-                {pending === item.id ? "종료 중…" : "세션 종료"}
+                {pending === item.id ? copy.revoking : copy.revoke}
               </ControlButton>
             )}
           </div>
@@ -108,7 +123,7 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
       })}
       {sessions.length === 0 && !error ? (
         <p className="tw:m-0 tw:px-1 tw:py-5 tw:text-xs tw:text-muted-foreground">
-          활성 세션을 확인하고 있습니다…
+          {copy.checking}
         </p>
       ) : null}
       {error ? (
@@ -119,7 +134,7 @@ export function ActiveSessions({ currentSessionId }: { currentSessionId: string 
               onClick={() => void reauthenticate()}
               disabled={pending !== null}
             >
-              {pending === "reauthenticate" ? "로그아웃 중…" : "로그아웃 후 다시 로그인"}
+              {pending === "reauthenticate" ? copy.signingOut : copy.reauthenticate}
             </ControlButton>
           ) : null}
         </div>

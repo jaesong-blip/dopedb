@@ -21,10 +21,20 @@ import {
   type SharedConnection,
 } from "./domain";
 import { useProviderAccessState } from "./state";
+import { useWorkspaceLocale } from "../../app/components/WorkspaceLocale";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import type { WorkspaceLocale } from "../../lib/workspace-locale";
+import { localizedProviderMessage } from "../../lib/workspace-provider-copy";
 
-async function responseError(response: Response | null, fallback: string) {
+async function responseError(
+  response: Response | null,
+  fallback: string,
+  locale: WorkspaceLocale,
+) {
   const body = await response?.json().catch(() => null);
-  return typeof body?.error === "string" ? body.error : fallback;
+  return typeof body?.error === "string"
+    ? localizedProviderMessage(body.error, locale, fallback)
+    : fallback;
 }
 
 export function useProviderAccess(
@@ -32,6 +42,8 @@ export function useProviderAccess(
   gcpSetupId: string | null = null,
   initialIntegrationId: string | null = null,
 ) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].providerAccess;
   const [state, setField] = useProviderAccessState();
   const {
     providers,
@@ -180,7 +192,8 @@ export function useProviderAccess(
     if (!providerResponse?.ok || !connectionResponse?.ok) {
       setError(await responseError(
         providerResponse?.ok ? connectionResponse : providerResponse,
-        "관리형 접근 설정을 불러오지 못했습니다.",
+        copy.loadError,
+        locale,
       ));
       setLoading(false);
       return;
@@ -193,7 +206,7 @@ export function useProviderAccess(
       || !Array.isArray(providerBody?.managedConnections)
       || !Array.isArray(connectionBody?.connections)
     ) {
-      setError("관리형 접근 응답 형식을 확인하지 못했습니다.");
+      setError(copy.shapeError);
       setLoading(false);
       return;
     }
@@ -217,7 +230,7 @@ export function useProviderAccess(
     ));
     setError("");
     setLoading(false);
-  }, [initialIntegrationId, workspaceId]);
+  }, [copy, initialIntegrationId, locale, workspaceId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -250,12 +263,13 @@ export function useProviderAccess(
         if (response.status === 401 || response.status === 410) {
           setGcpSetupReconnectRequired(true);
           throw new Error(
-            "Google Cloud 승인 세션이 만료되었습니다. 계정을 다시 연결해 계속하세요.",
+            copy.gcpSessionExpired,
           );
         }
         throw new Error(await responseError(
           response,
-          "Google Cloud 프로젝트를 불러오지 못했습니다.",
+          copy.gcpProjectsError,
+          locale,
         ));
       }
       const body = await response.json().catch(() => null);
@@ -264,7 +278,7 @@ export function useProviderAccess(
         || typeof body?.expiresAt !== "string"
         || !Array.isArray(body?.projects)
       ) {
-        throw new Error("Google Cloud 프로젝트 응답 형식을 확인하지 못했습니다.");
+        throw new Error(copy.gcpProjectsShapeError);
       }
       setGcpSetupInventory(body as GcpSetupInventory);
       setGcpSetupReconnectRequired(false);
@@ -272,15 +286,15 @@ export function useProviderAccess(
       if (!controller.signal.aborted) {
         setGcpSetupError(
           cause instanceof Error
-            ? cause.message
-            : "Google Cloud 연결을 시작하지 못했습니다.",
+            ? localizedProviderMessage(cause.message, locale, copy.gcpStartError)
+            : copy.gcpStartError,
         );
       }
     }).finally(() => {
       if (!controller.signal.aborted) setMutation("");
     });
     return () => controller.abort();
-  }, [gcpSetupId, workspaceId]);
+  }, [copy, gcpSetupId, locale, workspaceId]);
 
   async function selectGcpProject(projectId: string) {
     if (!gcpSetupId || mutation) return;
@@ -320,15 +334,16 @@ export function useProviderAccess(
         if (failedResponse?.status === 401 || failedResponse?.status === 410) {
           setGcpSetupReconnectRequired(true);
           setGcpSetupError(
-            "Google Cloud 승인 세션이 만료되었습니다. 계정을 다시 연결해 계속하세요.",
+            copy.gcpSessionExpired,
           );
           return;
         }
         setGcpSetupError(await responseError(
           failedResponse,
           response?.ok
-            ? "Google Cloud 설정 권한을 확인하지 못했습니다."
-            : "Cloud SQL 인스턴스를 불러오지 못했습니다.",
+            ? copy.gcpPermissionsError
+            : copy.gcpInstancesError,
+          locale,
         ));
         return;
       }
@@ -338,7 +353,7 @@ export function useProviderAccess(
         permissionBody?.permissions,
       );
       if (!Array.isArray(body?.instances) || !permissionCheck) {
-        setGcpSetupError("Google Cloud 설정 응답 형식을 확인하지 못했습니다.");
+        setGcpSetupError(copy.gcpSetupShapeError);
         return;
       }
       setGcpSetupInstances(body.instances as GcpSetupInstance[]);
@@ -392,7 +407,7 @@ export function useProviderAccess(
         )
       )
     ) {
-      setGcpSetupError("Cloud SQL 대상과 필요한 승인을 확인하세요.");
+      setGcpSetupError(copy.gcpApprovalsRequired);
       return;
     }
     setMutation("gcp:bootstrap");
@@ -426,7 +441,7 @@ export function useProviderAccess(
         ) {
           setGcpSetupReconnectRequired(true);
           setGcpSetupError(
-            "Google Cloud 승인 세션이 만료되었습니다. 계정을 다시 연결해 계속하세요.",
+            copy.gcpSessionExpired,
           );
           return;
         }
@@ -439,8 +454,12 @@ export function useProviderAccess(
         }
         setGcpSetupError(
           typeof failure?.error === "string"
-            ? failure.error
-            : "Google Cloud 자동 설정을 완료하지 못했습니다.",
+            ? localizedProviderMessage(
+                failure.error,
+                locale,
+                copy.gcpBootstrapError,
+              )
+            : copy.gcpBootstrapError,
         );
         return;
       }
@@ -449,7 +468,7 @@ export function useProviderAccess(
         typeof bootstrap?.bootstrapTicket !== "string"
         || bootstrap.bootstrapTicket.length < 80
       ) {
-        setGcpSetupError("Google Cloud 자동 설정 결과를 확인하지 못했습니다.");
+        setGcpSetupError(copy.gcpBootstrapShapeError);
         return;
       }
       const integrationResponse = await fetch(
@@ -467,7 +486,8 @@ export function useProviderAccess(
       if (!integrationResponse?.ok) {
         setGcpSetupError(await responseError(
           integrationResponse,
-          "Google Cloud 연결을 저장하지 못했습니다.",
+          copy.gcpSaveError,
+          locale,
         ));
         return;
       }
@@ -476,7 +496,7 @@ export function useProviderAccess(
         ? integrationBody.integration.id
         : "";
       if (!integrationId) {
-        setGcpSetupError("저장된 Google Cloud 연결을 확인하지 못했습니다.");
+        setGcpSetupError(copy.gcpSavedShapeError);
         return;
       }
       setGcpSetupInventory(null);
@@ -515,17 +535,17 @@ export function useProviderAccess(
     if (signal?.aborted) return null;
     setResourcePending(false);
     if (!response?.ok) {
-      setError(await responseError(response, "공급자 리소스를 불러오지 못했습니다."));
+      setError(await responseError(response, copy.resourcesError, locale));
       return null;
     }
     const body = await response.json().catch(() => null);
     if (!Array.isArray(body?.resources)) {
-      setError("공급자 리소스 응답 형식을 확인하지 못했습니다.");
+      setError(copy.resourcesShapeError);
       return null;
     }
     setError("");
     return body.resources as Resource[];
-  }, [workspaceId]);
+  }, [copy, locale, workspaceId]);
 
   useEffect(() => {
     const first = selectedProvider?.resourceLevels[0];
@@ -561,13 +581,13 @@ export function useProviderAccess(
         },
       ).catch(() => null);
       if (!response?.ok) {
-        setError(await responseError(response, "공급자 연결을 시작하지 못했습니다."));
+        setError(await responseError(response, copy.connectError, locale));
         return;
       }
       const body = await response.json().catch(() => null);
       if (provider.setupKind === "oauth") {
         if (typeof body?.authorizationUrl !== "string") {
-          setError("공급자 인증 주소를 확인하지 못했습니다.");
+          setError(copy.authorizationUrlError);
           return;
         }
         window.location.assign(body.authorizationUrl);
@@ -597,7 +617,7 @@ export function useProviderAccess(
     const provider = providers.find((item) => item.id === "gcpCloudSql");
     if (!provider?.configured) {
       setGcpSetupError(
-        "Google Cloud 연결을 다시 시작할 수 없습니다. 페이지를 새로고침해 주세요.",
+        copy.reconnectStartError,
       );
       return;
     }
@@ -607,7 +627,7 @@ export function useProviderAccess(
 
   async function disconnect(integration: Integration) {
     if (mutation || !window.confirm(
-      "연결된 DB는 구성원별 자격증명 모드로 돌아갑니다. 공급자 연결을 해제할까요?",
+      copy.disconnectConfirm,
     )) return;
     setMutation(`disconnect:${integration.id}`);
     setError("");
@@ -617,7 +637,7 @@ export function useProviderAccess(
         { method: "DELETE" },
       ).catch(() => null);
       if (!response?.ok) {
-        setError(await responseError(response, "공급자 연결을 해제하지 못했습니다."));
+        setError(await responseError(response, copy.disconnectError, locale));
         return;
       }
       resetResources();
@@ -634,7 +654,7 @@ export function useProviderAccess(
       || !Number.isInteger(connection.revision)
       || connection.revision < 1
       || !window.confirm(
-        `공유 DB '${connection.name}'을 제거할까요? 활성 자격증명과 실행 세션이 종료됩니다.`,
+        `${copy.deleteConfirmPrefix}${connection.name}${copy.deleteConfirmSuffix}`,
       )
     ) {
       return;
@@ -651,7 +671,7 @@ export function useProviderAccess(
         },
       ).catch(() => null);
       if (!response?.ok) {
-        setError(await responseError(response, "공유 DB를 제거하지 못했습니다."));
+        setError(await responseError(response, copy.deleteError, locale));
         return;
       }
       resetResources();
@@ -724,11 +744,11 @@ export function useProviderAccess(
     );
     const environment = selectedNeonEnvironment();
     if (!finalResource?.selectionProof || finalResource.ready !== true) {
-      setError("Neon 데이터베이스를 다시 선택해 주세요.");
+      setError(copy.neonReselect);
       return;
     }
     if (!environment) {
-      setError("Neon 브랜치가 개발용인지 운영용인지 먼저 선택해 주세요.");
+      setError(copy.neonClassify);
       return;
     }
     setMutation("neon:preflight");
@@ -755,7 +775,8 @@ export function useProviderAccess(
       if (!response?.ok) {
         setError(await responseError(
           response,
-          "Neon 최소권한 사전 점검을 완료하지 못했습니다.",
+          copy.neonPreflightError,
+          locale,
         ));
         return;
       }
@@ -776,7 +797,7 @@ export function useProviderAccess(
         || parsed.report.target.branch !== selection[branchLevel.key]
         || parsed.report.target.databaseId !== finalResource.id
       ) {
-        setError("Neon 사전 점검 응답 형식을 확인하지 못했습니다.");
+        setError(copy.neonPreflightShapeError);
         return;
       }
       setNeonBootstrap({
@@ -801,25 +822,25 @@ export function useProviderAccess(
       setNeonBootstrap(emptyNeonBootstrap);
       setNeonPublicAclApproved(false);
       setNeonProductionApproved(false);
-      setError("Neon 사전 점검이 만료되었습니다. 다시 점검해 주세요.");
+      setError(copy.neonPreflightExpired);
       return;
     }
     if (neonBootstrap.report.status === "blocked") {
-      setError("차단 항목을 해결한 뒤 사전 점검을 다시 실행해 주세요.");
+      setError(copy.neonBlocked);
       return;
     }
     if (
       neonBootstrap.report.requiresPublicAclApproval
       && !neonPublicAclApproved
     ) {
-      setError("표시된 PUBLIC 권한 변경을 먼저 승인해 주세요.");
+      setError(copy.neonPublicApproval);
       return;
     }
     if (
       neonBootstrap.report.requiresProductionApproval
       && !neonProductionApproved
     ) {
-      setError("운영 데이터베이스 변경을 먼저 승인해 주세요.");
+      setError(copy.neonProductionApproval);
       return;
     }
     setMutation("neon:apply");
@@ -857,7 +878,8 @@ export function useProviderAccess(
       if (!response?.ok) {
         setError(await responseError(
           response,
-          "Neon 최소권한 설정과 검증을 완료하지 못했습니다.",
+          copy.neonApplyError,
+          locale,
         ));
         return;
       }
@@ -871,7 +893,7 @@ export function useProviderAccess(
         || parsed.report.target.branch !== neonBootstrap.report.target.branch
         || parsed.report.target.databaseId !== neonBootstrap.report.target.databaseId
       ) {
-        setError("Neon 설정·검증 응답 형식을 확인하지 못했습니다.");
+        setError(copy.neonApplyShapeError);
         return;
       }
       setNeonBootstrap((current) => ({
@@ -902,7 +924,7 @@ export function useProviderAccess(
         },
       ).catch(() => null);
       if (!response?.ok) {
-        setError(await responseError(response, "DB 접근 방식을 변경하지 못했습니다."));
+        setError(await responseError(response, copy.accessModeError, locale));
         return;
       }
       await load();
@@ -939,7 +961,7 @@ export function useProviderAccess(
         || Date.parse(neonBootstrap.receiptExpiresAt) <= Date.now()
       )
     ) {
-      setError("Neon 설정 검증이 만료되었습니다. 사전 점검부터 다시 실행해 주세요.");
+      setError(copy.neonVerificationExpired);
       return;
     }
     const productionApproved = isNeon
@@ -955,13 +977,9 @@ export function useProviderAccess(
       : providerImportDisplayName(selectedProvider.name, finalResource.name);
     if (!name) return;
     const confirmation = productionApproved
-      ? `경고: ${finalResource.name}은 운영 데이터베이스로 분류되었습니다. `
-        + "실행 중인 쿼리는 실제 운영 데이터에 영향을 줄 수 있습니다. "
-        + "기본 쓰기 꺼짐인 관리형 연결로 전환하고 이 승인을 감사 기록에 남길까요? "
-        + "쓰기 허용 여부는 이후 DB별 접근 권한에서 별도로 정합니다."
+      ? `${copy.productionConfirmPrefix}${finalResource.name}${copy.productionConfirmBody}`
       : replacementConnection
-        ? `${replacementConnection.name} 연결을 ${finalResource.name} 관리형 대상으로 전환할까요? `
-          + "연결 ID와 대시보드 참조는 유지되고, 기존 구성원별 비밀번호는 더 이상 사용하지 않습니다."
+        ? `${replacementConnection.name}${copy.replaceConfirmMiddle}${finalResource.name}${copy.replaceConfirmSuffix}`
         : null;
     if (confirmation && !window.confirm(confirmation)) return;
     setMutation(`import:${selectedIntegration.id}`);
@@ -990,7 +1008,8 @@ export function useProviderAccess(
         if (!receiptResponse?.ok) {
           setError(await responseError(
             receiptResponse,
-            "선택한 공급자 리소스를 확인하지 못했습니다.",
+            copy.receiptError,
+            locale,
           ));
           return;
         }
@@ -999,7 +1018,7 @@ export function useProviderAccess(
           typeof receiptBody?.receipt !== "string"
           || typeof receiptBody?.receiptExpiresAt !== "string"
         ) {
-          setError("공급자 리소스 확인 응답 형식을 확인하지 못했습니다.");
+          setError(copy.receiptShapeError);
           return;
         }
         receipt = receiptBody.receipt;
@@ -1050,7 +1069,7 @@ export function useProviderAccess(
         },
       ).catch(() => null);
       if (!response?.ok) {
-        setError(await responseError(response, "관리형 연결을 가져오지 못했습니다."));
+        setError(await responseError(response, copy.importError, locale));
         return;
       }
       pendingImportRef.current = null;

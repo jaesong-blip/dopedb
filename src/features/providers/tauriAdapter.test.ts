@@ -29,6 +29,7 @@ import providerAccessDomainSource from "../../../workspace-cloud/features/provid
 import sharedDatabasePanelSource from "../../../workspace-cloud/app/settings/SharedDatabasePanel.tsx?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
 import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
+import workspaceMessagesSource from "../../../workspace-cloud/lib/workspace-messages.ts?raw";
 import providerAdapterContractSource from "../../../workspace-cloud/lib/providers/adapter-contract.ts?raw";
 import {
   issueAfterFreshProviderAuthority,
@@ -842,12 +843,16 @@ describe("provider credential Tauri adapter", () => {
     expect(providerIntegrationRouteSource).not.toContain(
       "parseGcpCloudSqlCredential(body.configuration)",
     );
-    expect(gcpSetupSource).toContain("자동 설정하고 연결");
+    expect(gcpSetupSource).toContain("copy.configure");
+    expect(workspaceMessagesSource).toContain('configure: "Configure and connect"');
+    expect(workspaceMessagesSource).toContain('configure: "자동 설정하고 연결"');
     expect(gcpSetupSource).not.toMatch(
       /workloadIdentityPoolId|workloadIdentityProviderId|readServiceAccountEmail/,
     );
     expect(providerIntegrationListSource).not.toMatch(/availability|"준비 중"/);
-    expect(providerIntegrationListSource).toContain("원클릭 연결이 아니며");
+    expect(providerIntegrationListSource).toContain("copy.neonDescriptionBeforeLink");
+    expect(workspaceMessagesSource).toContain("This is not one-click setup");
+    expect(workspaceMessagesSource).toContain("원클릭 연결이 아니며");
     expect(providerIntegrationListSource).toContain(":personal:broad:");
     expect(providerCatalogSource).not.toMatch(
       /supportsReadWrite|availability|awsRds|oracleOci|mongodbAtlas/,
@@ -1185,19 +1190,26 @@ describe("provider credential Tauri adapter", () => {
     expect(providerAccessControllerSource).toContain('action: "preflight"');
     expect(providerAccessControllerSource).toContain('action: "apply"');
     expect(providerAccessControllerSource).toContain("pendingNeonApplyRef");
-    expect(providerResourcePickerSource).toContain("Neon 최소권한 준비");
-    expect(providerResourcePickerSource).toContain("표시된 PUBLIC 권한 회수를 승인합니다");
+    expect(providerResourcePickerSource).toContain("copy.neonTitle");
+    expect(providerResourcePickerSource).toContain("copy.publicApproval");
+    expect(workspaceMessagesSource).toContain("Prepare Neon least-privilege access");
+    expect(workspaceMessagesSource).toContain("Neon 최소권한 준비");
+    expect(workspaceMessagesSource).toContain("표시된 PUBLIC 권한 회수를 승인합니다");
     expect(providerResourcePickerSource).not.toMatch(/setup terminal|SQL 입력/);
-    expect(neonBranchManagerSource).toContain("변경 없는 계획 만들기");
-    expect(neonBranchManagerSource).toContain("다른 워크스페이스 관리자가");
-    expect(neonBranchManagerSource).toContain("폐기 계획 만들기");
-    expect(neonBranchManagerSource).toContain("전환 계획 만들기");
-    expect(neonBranchManagerSource).toContain("새 branch-bound revision");
-    expect(neonBranchManagerSource).toContain("현재 안전 실행");
-    expect(neonBranchManagerSource).toContain("원본 복귀 계획");
+    expect(neonBranchManagerSource).toContain("copy.createNoChangePlan");
+    expect(neonBranchManagerSource).toContain("copy.productionCopyNotice");
+    expect(neonBranchManagerSource).toContain("copy.createDeletePlan");
+    expect(neonBranchManagerSource).toContain("copy.createSwitchPlan");
+    expect(neonBranchManagerSource).toContain("copy.switchDescription");
+    expect(neonBranchManagerSource).toContain("copy.safeRun.currentTitle");
+    expect(neonBranchManagerSource).toContain("copy.safeRun.returnPlan");
+    expect(workspaceMessagesSource).toContain("Create no-change plan");
+    expect(workspaceMessagesSource).toContain("변경 없는 계획 만들기");
     expect(providerAccessControllerSource).toContain('method: "DELETE"');
     expect(providerAccessControllerSource).toContain('"if-match"');
-    expect(sharedDatabasePanelSource).toContain("공유 DB 제거");
+    expect(sharedDatabasePanelSource).toContain("copy.remove");
+    expect(workspaceMessagesSource).toContain("Remove shared database");
+    expect(workspaceMessagesSource).toContain("공유 DB 제거");
     expect(neonBranchManagerSource).not.toMatch(/>Switch<|>Restore<|>Delete</);
     const branchPlan = {
       version: 1,

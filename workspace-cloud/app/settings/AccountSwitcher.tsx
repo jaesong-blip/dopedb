@@ -6,6 +6,10 @@ import { useEffect, useRef, useState } from "react";
 import { authClient } from "../../lib/auth-client";
 import { sessionsExceptCurrent } from "../../lib/device-session-policy";
 import { useDeviceAccounts } from "../../lib/useDeviceAccounts";
+import { localizedWorkspacePath } from "../../lib/workspace-locale";
+import { workspaceMessages } from "../../lib/workspace-messages";
+import { localizedProviderMessage } from "../../lib/workspace-provider-copy";
+import { useWorkspaceLocale } from "../components/WorkspaceLocale";
 
 export function AccountSwitcher({
   currentUser,
@@ -14,6 +18,8 @@ export function AccountSwitcher({
   currentUser: { id: string; name: string; email: string };
   currentSessionId: string;
 }) {
+  const locale = useWorkspaceLocale();
+  const copy = workspaceMessages[locale].accountSwitcher;
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -44,10 +50,12 @@ export function AccountSwitcher({
     const result = await authClient.multiSession.setActive({ sessionToken });
     if (result.error) {
       setPending(null);
-      setError(result.error.message ?? "계정을 전환하지 못했습니다.");
+      setError(result.error.message
+        ? localizedProviderMessage(result.error.message, locale, copy.switchError)
+        : copy.switchError);
       return;
     }
-    location.assign("/settings");
+    location.assign(localizedWorkspacePath("/settings", locale));
   }
 
   async function revokeAccount(userId: string) {
@@ -67,7 +75,13 @@ export function AccountSwitcher({
         });
         if (switched.error) {
           setPending(null);
-          setError(switched.error.message ?? "다른 계정으로 전환하지 못했습니다.");
+          setError(switched.error.message
+            ? localizedProviderMessage(
+                switched.error.message,
+                locale,
+                copy.fallbackSwitchError,
+              )
+            : copy.fallbackSwitchError);
           return;
         }
       }
@@ -78,11 +92,16 @@ export function AccountSwitcher({
       });
       if (result.error) {
         setPending(null);
-        setError(result.error.message ?? "계정 세션을 종료하지 못했습니다.");
+        setError(result.error.message
+          ? localizedProviderMessage(result.error.message, locale, copy.revokeError)
+          : copy.revokeError);
         return;
       }
     }
-    location.assign(accounts.length > 1 ? "/settings" : "/auth/sign-in");
+    location.assign(localizedWorkspacePath(
+      accounts.length > 1 ? "/settings" : "/auth/sign-in",
+      locale,
+    ));
   }
 
   async function revokeAll() {
@@ -96,17 +115,25 @@ export function AccountSwitcher({
       });
       if (result.error) {
         setPending(null);
-        setError(result.error.message ?? "일부 계정 세션을 종료하지 못했습니다.");
+        setError(result.error.message
+          ? localizedProviderMessage(
+              result.error.message,
+              locale,
+              copy.revokeAllError,
+            )
+          : copy.revokeAllError);
         return;
       }
     }
     const result = await authClient.signOut();
     if (result.error) {
       setPending(null);
-      setError(result.error.message ?? "현재 계정에서 로그아웃하지 못했습니다.");
+      setError(result.error.message
+        ? localizedProviderMessage(result.error.message, locale, copy.signOutError)
+        : copy.signOutError);
       return;
     }
-    location.assign("/auth/sign-in");
+    location.assign(localizedWorkspacePath("/auth/sign-in", locale));
   }
 
   return (
@@ -170,7 +197,7 @@ export function AccountSwitcher({
                 role="menuitem"
                 onClick={() => void revokeAccount(account.user.id)}
                 disabled={pending !== null}
-                aria-label={`${account.user.email} 로그아웃`}
+                aria-label={`${account.user.email} ${copy.signOutLabel}`}
               >
                 ×
               </button>
@@ -179,16 +206,19 @@ export function AccountSwitcher({
           <a
             className="tw:flex tw:min-h-control-md tw:w-full tw:items-center tw:border-t tw:border-border tw:px-2 tw:text-xs tw:text-foreground tw:hover:bg-surface-raised"
             role="menuitem"
-            href="/settings?section=account"
+            href={localizedWorkspacePath("/settings?section=account", locale)}
           >
-            내 계정 관리
+            {copy.manage}
           </a>
           <a
             className="tw:flex tw:min-h-control-md tw:w-full tw:items-center tw:px-2 tw:text-xs tw:text-muted-foreground tw:hover:bg-surface-raised tw:hover:text-foreground"
             role="menuitem"
-            href="/auth/sign-in?returnTo=%2Fsettings"
+            href={localizedWorkspacePath(
+              `/auth/sign-in?returnTo=${encodeURIComponent(localizedWorkspacePath("/settings", locale))}`,
+              locale,
+            )}
           >
-            ＋ 다른 계정 추가
+            {copy.add}
           </a>
           {accounts.length > 1 ? (
             <button
@@ -198,7 +228,7 @@ export function AccountSwitcher({
               onClick={() => void revokeAll()}
               disabled={pending !== null}
             >
-              모든 계정에서 로그아웃
+              {copy.signOutAll}
             </button>
           ) : null}
           {error ? (
