@@ -28,6 +28,8 @@ export type SharedConnection = {
   engine: string;
   credentialMode: "managed" | "member_local";
   allowWrites: boolean;
+  revision: number;
+  accessMode: "view" | "read" | "write" | "manage";
 };
 
 export type Resource = {

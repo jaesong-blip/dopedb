@@ -6,17 +6,22 @@ import {
   ControlButton,
   ControlField,
   ControlInput,
+  ControlLink,
   ControlSelect,
 } from "../../app/components/Controls";
 import type { Integration, ManagedConnection } from "./domain";
 import {
+  deriveNeonSafeRun,
+  neonOperationProjectId,
   parseNeonBranchInventory,
   parseNeonBranchOperations,
   parseNeonBranchPlanResponse,
   type NeonBranchInventory,
   type NeonBranchInventoryItem,
   type NeonBranchOperation,
+  type NeonBranchOperations,
   type NeonBranchOperationState,
+  type NeonSafeRunPhase,
 } from "./neonBranches";
 
 type ProjectTarget = Readonly<{
@@ -26,18 +31,23 @@ type ProjectTarget = Readonly<{
 
 type SourcePointKind = "head" | "timestamp" | "lsn";
 
+const safeRunSteps = [
+  "체크포인트",
+  "격리 연결",
+  "실행·검사",
+  "복귀·폐기",
+] as const;
+
 function projectTargets(
   integrations: readonly Integration[],
   managedConnections: readonly ManagedConnection[],
+  operationCatalog: Readonly<Record<string, NeonBranchOperations>>,
 ) {
   const byId = new Map(integrations.map((integration) => [integration.id, integration]));
   const seen = new Set<string>();
   const targets: ProjectTarget[] = [];
-  for (const connection of managedConnections) {
-    if (connection.provider !== "neon") continue;
-    const integration = byId.get(connection.integrationId);
-    const projectId = connection.resource.project;
-    const key = `${connection.integrationId}:${projectId}`;
+  const add = (integration: Integration | undefined, projectId: string | undefined) => {
+    const key = `${integration?.id}:${projectId}`;
     if (
       !integration
       || integration.provider !== "neon"
@@ -45,10 +55,20 @@ function projectTargets(
       || !/^[a-z0-9][a-z0-9-]{0,59}$/.test(projectId ?? "")
       || seen.has(key)
     ) {
-      continue;
+      return;
     }
     seen.add(key);
-    targets.push({ integration, projectId });
+    targets.push({ integration, projectId: projectId! });
+  };
+  for (const connection of managedConnections) {
+    if (connection.provider !== "neon") continue;
+    add(byId.get(connection.integrationId), connection.resource.project);
+  }
+  for (const [integrationId, catalog] of Object.entries(operationCatalog)) {
+    const integration = byId.get(integrationId);
+    for (const operation of catalog.operations) {
+      add(integration, neonOperationProjectId(operation));
+    }
   }
   return targets.sort((left, right) => (
     left.integration.displayName.localeCompare(right.integration.displayName, "ko")
@@ -146,6 +166,58 @@ function operationBusy(operation: NeonBranchOperation) {
     || operation.state === "reconciling";
 }
 
+function operationCatalogFingerprint(catalog: NeonBranchOperations | undefined) {
+  if (!catalog) return "";
+  return `${catalog.integrationGeneration}|${catalog.operations.map((operation) => (
+    `${operation.id}:${operation.state}:${operation.branchId ?? ""}:`
+    + `${operation.managedAccessState ?? ""}:${operation.planHash}`
+  )).join("|")}`;
+}
+
+function safeRunPhaseLabel(phase: NeonSafeRunPhase) {
+  if (phase === "checkpointing") return "체크포인트 준비 중";
+  if (phase === "access_required") return "최소권한 준비 필요";
+  if (phase === "ready_to_isolate") return "격리 전환 준비됨";
+  if (phase === "isolated_active") return "격리 실행 중";
+  if (phase === "ready_to_discard") return "폐기 준비됨";
+  if (phase === "discarded") return "안전하게 폐기됨";
+  return "확인 필요";
+}
+
+function safeRunPhaseDescription(phase: NeonSafeRunPhase) {
+  if (phase === "checkpointing") {
+    return "아래 승인·실행 내역에서 계획을 승인하고 Provider 완료 상태까지 확인하세요.";
+  }
+  if (phase === "access_required") {
+    return "격리 브랜치의 최소권한 역할과 실제 DB 접속을 먼저 검증해야 합니다.";
+  }
+  if (phase === "ready_to_isolate") {
+    return "원본 연결의 새 revision을 이 브랜치에 고정하면 기존 lease와 세션이 종료됩니다.";
+  }
+  if (phase === "isolated_active") {
+    return "데스크톱에서 표시된 연결로 Agent 작업을 실행하고 결과를 검사한 뒤 원본으로 복귀하세요.";
+  }
+  if (phase === "ready_to_discard") {
+    return "원본 연결 복귀가 확인됐습니다. 참조가 없는 격리 브랜치를 승인 후 폐기할 수 있습니다.";
+  }
+  if (phase === "discarded") {
+    return "Provider에서 격리 브랜치가 사라진 것까지 확인됐습니다.";
+  }
+  return "Provider 상태나 durable operation에 수동 확인이 필요한 불일치가 있습니다.";
+}
+
+function safeRunStepState(phase: NeonSafeRunPhase, step: number) {
+  const checkpointComplete = phase !== "checkpointing" && phase !== "needs_attention";
+  const isolated = phase === "isolated_active"
+    || phase === "ready_to_discard"
+    || phase === "discarded";
+  const inspected = phase === "ready_to_discard" || phase === "discarded";
+  if (step === 1) return checkpointComplete ? "complete" : "active";
+  if (step === 2) return isolated ? "complete" : checkpointComplete ? "active" : "pending";
+  if (step === 3) return inspected ? "complete" : phase === "isolated_active" ? "active" : "pending";
+  return phase === "discarded" ? "complete" : phase === "ready_to_discard" ? "active" : "pending";
+}
+
 export function NeonBranchManager({
   workspaceId,
   integrations,
@@ -155,9 +227,12 @@ export function NeonBranchManager({
   integrations: readonly Integration[];
   managedConnections: readonly ManagedConnection[];
 }) {
+  const [operationCatalog, setOperationCatalog] = useState<
+    Readonly<Record<string, NeonBranchOperations>>
+  >({});
   const targets = useMemo(
-    () => projectTargets(integrations, managedConnections),
-    [integrations, managedConnections],
+    () => projectTargets(integrations, managedConnections, operationCatalog),
+    [integrations, managedConnections, operationCatalog],
   );
   const [targetKey, setTargetKey] = useState("");
   const [inventory, setInventory] = useState<NeonBranchInventory | null>(null);
@@ -199,14 +274,53 @@ export function NeonBranchManager({
   const effectiveSwitchEnvironment = switchKnownEnvironment || switchEnvironment;
 
   useEffect(() => {
+    const activeIntegrations = integrations.filter((integration) => (
+      integration.provider === "neon" && integration.status === "active"
+    ));
+    if (activeIntegrations.length === 0) {
+      setOperationCatalog({});
+      return;
+    }
+    const controller = new AbortController();
+    void Promise.all(activeIntegrations.map(async (integration) => {
+      const response = await fetch(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`
+        + `/provider-integrations/${encodeURIComponent(integration.id)}`
+        + "/neon-branches/operations",
+        { cache: "no-store", signal: controller.signal },
+      ).catch(() => null);
+      if (!response?.ok) return null;
+      const catalog = parseNeonBranchOperations(await response.json().catch(() => null));
+      if (
+        !catalog
+        || catalog.integrationGeneration !== integration.generation
+        || catalog.operations.some((operation) => (
+          operation.plan.integrationId !== integration.id
+        ))
+      ) {
+        return null;
+      }
+      return [integration.id, catalog] as const;
+    })).then((rows) => {
+      if (controller.signal.aborted) return;
+      setOperationCatalog(Object.fromEntries(
+        rows.filter((row): row is readonly [string, NeonBranchOperations] => row !== null),
+      ));
+    });
+    return () => controller.abort();
+  }, [integrations, workspaceId]);
+
+  useEffect(() => {
     if (!targets.length) {
       setTargetKey("");
       return;
     }
-    if (!selectedTarget) {
+    if (!targets.some((target) => (
+      `${target.integration.id}:${target.projectId}` === targetKey
+    ))) {
       setTargetKey(`${targets[0].integration.id}:${targets[0].projectId}`);
     }
-  }, [selectedTarget, targets]);
+  }, [targetKey, targets]);
 
   const load = useCallback(async (signal?: AbortSignal, quiet = false) => {
     if (!selectedTarget) return;
@@ -241,13 +355,28 @@ export function NeonBranchManager({
       || nextInventory.projectId !== selectedTarget.projectId
       || nextInventory.integrationGeneration !== selectedTarget.integration.generation
       || nextOperations.integrationGeneration !== selectedTarget.integration.generation
+      || nextOperations.operations.some((operation) => (
+        operation.plan.integrationId !== selectedTarget.integration.id
+      ))
     ) {
       setError("Neon 브랜치 응답이 현재 연결 세대와 일치하지 않습니다.");
       if (!quiet) setLoading(false);
       return;
     }
+    const projectOperations = nextOperations.operations.filter((operation) => (
+      neonOperationProjectId(operation) === selectedTarget.projectId
+    ));
     setInventory(nextInventory);
-    setOperations(nextOperations.operations);
+    setOperations(projectOperations);
+    setOperationCatalog((current) => (
+      operationCatalogFingerprint(current[selectedTarget.integration.id])
+        === operationCatalogFingerprint(nextOperations)
+        ? current
+        : {
+          ...current,
+          [selectedTarget.integration.id]: nextOperations,
+        }
+    ));
     setSourceBranchId((current) => (
       nextInventory.branches.some((branch) => branch.id === current && branch.ready)
         ? current
@@ -296,6 +425,9 @@ export function NeonBranchManager({
       ))
     )) ?? [];
   }, [inventory?.branches, search]);
+  const safeRun = useMemo(() => (
+    inventory ? deriveNeonSafeRun(inventory, operations) : null
+  ), [inventory, operations]);
 
   async function planCreate() {
     if (
@@ -366,15 +498,15 @@ export function NeonBranchManager({
     setMutation("");
   }
 
-  async function planDelete() {
+  async function planDelete(branch = selectedBranch, mutationKey = "delete-plan") {
     if (
       !selectedTarget
-      || !selectedBranch?.deletion?.canPlan
+      || !branch?.deletion?.canPlan
       || mutation
     ) {
       return;
     }
-    setMutation("delete-plan");
+    setMutation(mutationKey);
     setError("");
     const response = await fetch(
       `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`
@@ -388,7 +520,7 @@ export function NeonBranchManager({
           request: {
             idempotencyKey: crypto.randomUUID(),
             projectId: selectedTarget.projectId,
-            branchId: selectedBranch.id,
+            branchId: branch.id,
           },
         }),
       },
@@ -415,22 +547,39 @@ export function NeonBranchManager({
     setMutation("");
   }
 
-  async function planSwitch() {
+  async function planSwitch(
+    connectionId = selectedSwitchConnection?.connectionId ?? "",
+    targetBranch = selectedBranch,
+    targetEnvironment = effectiveSwitchEnvironment,
+    mutationKey = "switch-plan",
+  ) {
+    const connection = switchConnections.find((item) => (
+      item.connectionId === connectionId
+    )) ?? null;
+    const targetConflict = Boolean(
+      targetBranch
+      && connection
+      && targetBranch.connections.some((item) => (
+        item.connectionId !== connection.connectionId
+        && item.database === connection.database
+      )),
+    );
     if (
       !selectedTarget
-      || !selectedBranch
-      || !selectedSwitchConnection
-      || selectedSwitchConnection.branchId === selectedBranch.id
-      || (selectedBranch.managedAccess !== null && (
-        selectedBranch.managedAccess.state !== "succeeded"
-        || selectedBranch.managedAccess.status !== "ready"
+      || !targetBranch
+      || !connection
+      || connection.branchId === targetBranch.id
+      || (targetBranch.managedAccess !== null && (
+        targetBranch.managedAccess.state !== "succeeded"
+        || targetBranch.managedAccess.status !== "ready"
       ))
-      || !effectiveSwitchEnvironment
+      || targetConflict
+      || !targetEnvironment
       || mutation
     ) {
       return;
     }
-    setMutation("switch-plan");
+    setMutation(mutationKey);
     setError("");
     const response = await fetch(
       `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`
@@ -444,9 +593,9 @@ export function NeonBranchManager({
           request: {
             idempotencyKey: crypto.randomUUID(),
             projectId: selectedTarget.projectId,
-            connectionId: selectedSwitchConnection.connectionId,
-            targetBranchId: selectedBranch.id,
-            targetEnvironment: effectiveSwitchEnvironment,
+            connectionId: connection.connectionId,
+            targetBranchId: targetBranch.id,
+            targetEnvironment,
           },
         }),
       },
@@ -559,6 +708,34 @@ export function NeonBranchManager({
     && !switchTargetConflict
     && effectiveSwitchEnvironment,
   );
+  const safeRunSourceConnections = safeRun?.sourceBranch?.connections ?? [];
+  const safeRunSourceConnection = safeRunSourceConnections.length === 1
+    ? safeRunSourceConnections[0]
+    : null;
+  const safeRunTargetEnvironment = safeRun?.createOperation.risk === "production_data"
+    ? "production"
+    : branchEnvironment(safeRun?.branch ?? null) || (
+      safeRun?.createOperation.plan.kind === "neon.branch.create"
+        ? safeRun.createOperation.plan.source.environment
+        : ""
+    );
+  const safeRunCanIsolate = Boolean(
+    safeRun?.phase === "ready_to_isolate"
+    && safeRun.branch
+    && safeRunSourceConnection
+    && safeRunSourceConnection.database
+    && !safeRun.branch.connections.some((connection) => (
+      connection.connectionId !== safeRunSourceConnection.connectionId
+      && connection.database === safeRunSourceConnection.database
+    ))
+    && safeRunTargetEnvironment,
+  );
+  const safeRunCanReturn = Boolean(
+    safeRun?.phase === "isolated_active"
+    && safeRun.switchedFromSource
+    && safeRun.activeConnection
+    && safeRun.sourceBranch
+  );
 
   if (targets.length === 0) return null;
 
@@ -662,6 +839,131 @@ export function NeonBranchManager({
         </aside>
 
         <main className="tw:grid tw:min-w-0 tw:content-start tw:gap-4 tw:p-4">
+          {safeRun ? (
+            <section className="tw:grid tw:gap-3 tw:border-b tw:border-border tw:pb-4" aria-labelledby="neon-safe-run-title">
+              <div className="tw:flex tw:items-start tw:justify-between tw:gap-3 tw:max-[560px]:grid">
+                <div className="tw:grid tw:min-w-0 tw:gap-1">
+                  <strong id="neon-safe-run-title" className="tw:truncate tw:text-xs tw:text-foreground">
+                    현재 안전 실행 · {safeRun.branch?.name ?? safeRun.createOperation.plan.target.name}
+                  </strong>
+                  <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    {safeRunPhaseDescription(safeRun.phase)}
+                  </small>
+                </div>
+                <span
+                  className="tw:shrink-0 tw:border tw:border-border tw:px-2 tw:py-1 tw:font-mono tw:text-2xs tw:text-muted-foreground tw:data-[state=attention]:border-danger/40 tw:data-[state=attention]:text-danger tw:data-[state=complete]:border-success/40 tw:data-[state=complete]:text-success tw:data-[state=active]:border-primary/40 tw:data-[state=active]:text-primary"
+                  data-state={safeRun.phase === "discarded"
+                    ? "complete"
+                    : safeRun.phase === "needs_attention"
+                      ? "attention"
+                      : "active"}
+                >
+                  {safeRunPhaseLabel(safeRun.phase)}
+                </span>
+              </div>
+
+              <ol className="tw:m-0 tw:grid tw:list-none tw:grid-cols-4 tw:gap-px tw:p-0 tw:max-[560px]:grid-cols-2" aria-label="Neon 안전 실행 단계">
+                {safeRunSteps.map((label, index) => {
+                  const state = safeRunStepState(safeRun.phase, index + 1);
+                  return (
+                    <li
+                      key={label}
+                      className="tw:grid tw:min-w-0 tw:gap-1 tw:border tw:border-border tw:bg-surface-inset tw:px-2 tw:py-2 tw:text-2xs tw:text-muted-foreground tw:data-[state=active]:border-primary/40 tw:data-[state=active]:text-foreground tw:data-[state=complete]:text-primary"
+                      data-state={state}
+                    >
+                      <span className="tw:font-mono tw:text-[10px] tw:uppercase">
+                        {String(index + 1).padStart(2, "0")} · {state === "complete" ? "완료" : state === "active" ? "현재" : "대기"}
+                      </span>
+                      <strong className="tw:truncate tw:text-xs tw:font-medium">{label}</strong>
+                    </li>
+                  );
+                })}
+              </ol>
+
+              <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:max-[560px]:grid">
+                <small className="tw:min-w-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                  {safeRun.sourceBranch?.name ?? safeRun.createOperation.plan.source.name}
+                  {" → "}
+                  {safeRun.branch?.name ?? safeRun.createOperation.plan.target.name}
+                  {safeRun.activeConnection
+                    ? ` · ${safeRun.activeConnection.connectionName}`
+                    : ""}
+                </small>
+                <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-2 tw:max-[560px]:justify-start">
+                  {safeRun.phase === "access_required" ? (
+                    <ControlLink
+                      href={`/settings?workspace=${encodeURIComponent(workspaceId)}`
+                        + `&section=databases&integration=${encodeURIComponent(selectedTarget?.integration.id ?? "")}`}
+                      data-tone="primary"
+                    >
+                      최소권한 준비 열기
+                    </ControlLink>
+                  ) : null}
+                  {safeRun.phase === "ready_to_isolate" && !safeRunCanIsolate ? (
+                    <ControlButton
+                      onClick={() => {
+                        if (!safeRun.branch) return;
+                        setSourceBranchId(safeRun.branch.id);
+                        setSwitchConnectionId(safeRunSourceConnections[0]?.connectionId ?? "");
+                      }}
+                      disabled={Boolean(mutation)}
+                    >
+                      아래에서 연결 선택
+                    </ControlButton>
+                  ) : null}
+                  {safeRun.phase === "ready_to_isolate" && safeRunCanIsolate ? (
+                    <ControlButton
+                      tone="primary"
+                      onClick={() => {
+                        if (!safeRun.branch || !safeRunSourceConnection || !safeRunTargetEnvironment) return;
+                        void planSwitch(
+                          safeRunSourceConnection.connectionId,
+                          safeRun.branch,
+                          safeRunTargetEnvironment,
+                          "safe-isolate-plan",
+                        );
+                      }}
+                      disabled={Boolean(mutation)}
+                    >
+                      {mutation === "safe-isolate-plan" ? "계획 만드는 중" : "격리 전환 계획"}
+                    </ControlButton>
+                  ) : null}
+                  {safeRun.phase === "isolated_active" && safeRunCanReturn ? (
+                    <ControlButton
+                      tone="primary"
+                      onClick={() => {
+                        if (!safeRun.activeConnection || !safeRun.sourceBranch) return;
+                        void planSwitch(
+                          safeRun.activeConnection.connectionId,
+                          safeRun.sourceBranch,
+                          safeRun.createOperation.plan.source.environment,
+                          "safe-return-plan",
+                        );
+                      }}
+                      disabled={Boolean(mutation)}
+                    >
+                      {mutation === "safe-return-plan" ? "계획 만드는 중" : "원본 복귀 계획"}
+                    </ControlButton>
+                  ) : null}
+                  {safeRun.phase === "ready_to_discard" && safeRun.branch?.deletion?.canPlan ? (
+                    <ControlButton
+                      tone="danger"
+                      onClick={() => void planDelete(safeRun.branch, "safe-delete-plan")}
+                      disabled={Boolean(mutation)}
+                    >
+                      {mutation === "safe-delete-plan" ? "계획 만드는 중" : "격리 브랜치 폐기 계획"}
+                    </ControlButton>
+                  ) : null}
+                </div>
+              </div>
+              {safeRun.phase === "isolated_active" && !safeRun.switchedFromSource ? (
+                <p className="tw:m-0 tw:border tw:border-warning/40 tw:bg-warning/10 tw:px-3 tw:py-2 tw:text-2xs tw:leading-body tw:text-warning">
+                  별도 공유 DB로 추가한 격리 연결입니다. 결과 확인 뒤 아래 워크스페이스 DB 목록에서 이 연결을 제거해야 브랜치를 폐기할 수 있습니다.
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
           {selectedBranch && switchConnections.length > 0 ? (
             <section className="tw:grid tw:gap-3 tw:border-b tw:border-border tw:pb-4" aria-labelledby="neon-switch-title">
               <div className="tw:grid tw:gap-1">

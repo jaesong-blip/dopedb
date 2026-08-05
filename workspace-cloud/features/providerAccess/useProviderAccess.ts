@@ -627,6 +627,40 @@ export function useProviderAccess(
     }
   }
 
+  async function deleteSharedConnection(connection: SharedConnection) {
+    if (
+      mutation
+      || connection.accessMode !== "manage"
+      || !Number.isInteger(connection.revision)
+      || connection.revision < 1
+      || !window.confirm(
+        `공유 DB '${connection.name}'을 제거할까요? 활성 자격증명과 실행 세션이 종료됩니다.`,
+      )
+    ) {
+      return;
+    }
+    setMutation(`delete-connection:${connection.id}`);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`
+        + `/connections/${encodeURIComponent(connection.id)}`,
+        {
+          method: "DELETE",
+          headers: { "if-match": `"${connection.revision}"` },
+        },
+      ).catch(() => null);
+      if (!response?.ok) {
+        setError(await responseError(response, "공유 DB를 제거하지 못했습니다."));
+        return;
+      }
+      resetResources();
+      await load();
+    } finally {
+      setMutation("");
+    }
+  }
+
   async function selectResource(levelIndex: number, value: string) {
     if (!selectedProvider || !selectedIntegrationId) return;
     resetNeonBootstrap();
@@ -1107,6 +1141,7 @@ export function useProviderAccess(
     completeGcpSetup,
     connect,
     disconnect,
+    deleteSharedConnection,
     importDiscoveredResource,
     preflightNeonBootstrap,
     resetResources,

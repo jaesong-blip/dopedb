@@ -119,12 +119,25 @@ export function SharedDatabasePanel({
                       ? "역할 기반 자동 접근"
                       : "멤버 로컬"}
                   </strong>
-                  <a
-                    className="tw:text-2xs tw:text-muted-foreground tw:hover:text-foreground"
-                    href={`/settings?workspace=${encodeURIComponent(workspaceId)}&section=database-access`}
-                  >
-                    접근 권한 관리
-                  </a>
+                  <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:max-[640px]:justify-start">
+                    <a
+                      className="tw:text-2xs tw:text-muted-foreground tw:hover:text-foreground"
+                      href={`/settings?workspace=${encodeURIComponent(workspaceId)}&section=database-access`}
+                    >
+                      접근 권한 관리
+                    </a>
+                    {connection.accessMode === "manage" ? (
+                      <ControlButton
+                        tone="danger"
+                        onClick={() => void controller.deleteSharedConnection(connection)}
+                        disabled={Boolean(controller.mutation)}
+                      >
+                        {controller.mutation === `delete-connection:${connection.id}`
+                          ? "제거 중"
+                          : "공유 DB 제거"}
+                      </ControlButton>
+                    ) : null}
+                  </span>
                 </div>
               </article>
             );

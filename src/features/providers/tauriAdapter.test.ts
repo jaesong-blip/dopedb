@@ -26,6 +26,7 @@ import providerResourcePickerSource from "../../../workspace-cloud/features/prov
 import neonBranchManagerSource from "../../../workspace-cloud/features/providerAccess/NeonBranchManager.tsx?raw";
 import providerAccessControllerSource from "../../../workspace-cloud/features/providerAccess/useProviderAccess.ts?raw";
 import providerAccessDomainSource from "../../../workspace-cloud/features/providerAccess/domain.ts?raw";
+import sharedDatabasePanelSource from "../../../workspace-cloud/app/settings/SharedDatabasePanel.tsx?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
 import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
 import providerAdapterContractSource from "../../../workspace-cloud/lib/providers/adapter-contract.ts?raw";
@@ -79,6 +80,8 @@ import {
   neonInheritedRoleRetirementStatement,
 } from "../../../workspace-cloud/lib/providers/neon-role-policy";
 import {
+  deriveNeonSafeRun,
+  parseNeonBranchInventory as parseNeonBranchInventoryResponse,
   parseNeonBranchOperations,
 } from "../../../workspace-cloud/features/providerAccess/neonBranches";
 
@@ -1190,6 +1193,11 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchManagerSource).toContain("폐기 계획 만들기");
     expect(neonBranchManagerSource).toContain("전환 계획 만들기");
     expect(neonBranchManagerSource).toContain("새 branch-bound revision");
+    expect(neonBranchManagerSource).toContain("현재 안전 실행");
+    expect(neonBranchManagerSource).toContain("원본 복귀 계획");
+    expect(providerAccessControllerSource).toContain('method: "DELETE"');
+    expect(providerAccessControllerSource).toContain('"if-match"');
+    expect(sharedDatabasePanelSource).toContain("공유 DB 제거");
     expect(neonBranchManagerSource).not.toMatch(/>Switch<|>Restore<|>Delete</);
     const branchPlan = {
       version: 1,
@@ -1254,6 +1262,263 @@ describe("provider credential Tauri adapter", () => {
       integrationGeneration: "12",
       operations: [{ ...branchOperations?.operations[0], token: "must-not-pass" }],
     })).toBeNull();
+
+    const safeBranchId = "br-agent-safe";
+    const safeConnection = {
+      connectionId,
+      connectionName: "Shared development",
+      database: "app",
+      environment: "development",
+      allowWrites: true,
+      contentRevision: 8,
+      authorityRevision: 12,
+      activeLeaseCount: 0,
+    };
+    const uiBranch = (input: {
+      id: string;
+      name: string;
+      parentId: string | null;
+      depth: number;
+      connections: unknown[];
+      managed?: boolean;
+      deletable?: boolean;
+    }) => ({
+      id: input.id,
+      projectId: branchPlan.source.projectId,
+      parentId: input.parentId,
+      treeParentId: input.parentId,
+      name: input.name,
+      currentState: "ready",
+      pendingState: null,
+      stateChangedAt: "2026-08-05T03:01:00.000Z",
+      createdAt: "2026-08-05T03:01:00.000Z",
+      updatedAt: "2026-08-05T03:01:00.000Z",
+      creationSource: "api",
+      initSource: "parent-data",
+      sourceLsn: null,
+      sourceTimestamp: null,
+      default: input.parentId === null,
+      protected: input.parentId === null,
+      expiresAt: null,
+      restrictedActions: [],
+      production: input.parentId === null,
+      ready: true,
+      depth: input.depth,
+      connections: input.connections,
+      ...(input.managed ? {
+        managedAccess: {
+          operationId: branchPlan.operationId,
+          state: "succeeded",
+          status: "ready",
+        },
+      } : {}),
+      ...(input.deletable === undefined ? {} : {
+        deletion: input.deletable
+          ? { canPlan: true, blockerCodes: [] }
+          : { canPlan: false, blockerCodes: ["WORKSPACE_CONNECTIONS"] },
+      }),
+    });
+    const safeInventory = (sourceConnections: unknown[], targetConnections: unknown[]) => (
+      parseNeonBranchInventoryResponse({
+        projectId: branchPlan.source.projectId,
+        integrationGeneration: "12",
+        observedAt: "2026-08-05T03:07:00.000Z",
+        rootIds: [branchPlan.source.branchId],
+        missingTargets: [],
+        branches: [
+          uiBranch({
+            id: branchPlan.source.branchId,
+            name: branchPlan.source.name,
+            parentId: null,
+            depth: 0,
+            connections: sourceConnections,
+          }),
+          uiBranch({
+            id: safeBranchId,
+            name: branchPlan.target.name,
+            parentId: branchPlan.source.branchId,
+            depth: 1,
+            connections: targetConnections,
+            managed: true,
+            deletable: targetConnections.length === 0,
+          }),
+        ],
+      })
+    );
+    const succeededCreate = {
+      ...(branchOperations?.operations[0] as NonNullable<typeof branchOperations>["operations"][number]),
+      state: "succeeded",
+      requestedByCurrentActor: true,
+      canApprove: false,
+      canReject: false,
+      canExecute: false,
+      providerOperationId: "21212121-2121-4121-8121-212121212121",
+      branchId: safeBranchId,
+      endpointId: "ep-agent-safe",
+      databaseCount: 1,
+      retiredInheritedRoleCount: 0,
+      managedAccessState: "ready",
+    } as const;
+    const isolatePlan = {
+      version: 1,
+      kind: "neon.branch.switch",
+      operationId: "18181818-1818-4818-8818-181818181818",
+      integrationId,
+      integrationGeneration: "12",
+      issuedAt: "2026-08-05T03:02:00.000Z",
+      expiresAt: "2026-08-05T03:12:00.000Z",
+      source: {
+        projectId: branchPlan.source.projectId,
+        branchId: branchPlan.source.branchId,
+        name: branchPlan.source.name,
+        connectionId,
+        connectionName: safeConnection.connectionName,
+        database: safeConnection.database,
+        environment: "production",
+        activeLeaseCount: 0,
+      },
+      target: {
+        projectId: branchPlan.source.projectId,
+        branchId: safeBranchId,
+        name: branchPlan.target.name,
+        database: safeConnection.database,
+        environment: "production",
+      },
+      impact: {
+        activeLeaseCount: 0,
+        closesExistingSessions: true,
+        createsConnectionRevision: true,
+        reintrospectionRequired: true,
+      },
+      risk: "production_data",
+      approvalPolicy: "separate_admin",
+      warningCodes: ["NEON_CONNECTION_TARGET_CHANGES"],
+    } as const;
+    const returnPlan = {
+      ...isolatePlan,
+      operationId: "19191919-1919-4919-8919-191919191919",
+      issuedAt: "2026-08-05T03:05:00.000Z",
+      expiresAt: "2026-08-05T03:15:00.000Z",
+      source: {
+        ...isolatePlan.source,
+        branchId: safeBranchId,
+        name: branchPlan.target.name,
+      },
+      target: {
+        ...isolatePlan.target,
+        branchId: branchPlan.source.branchId,
+        name: branchPlan.source.name,
+      },
+    } as const;
+    const deletePlanForJourney = {
+      version: 1,
+      kind: "neon.branch.delete",
+      operationId: "20202020-2020-4020-8020-202020202020",
+      integrationId,
+      integrationGeneration: "12",
+      issuedAt: "2026-08-05T03:06:00.000Z",
+      expiresAt: "2026-08-05T03:16:00.000Z",
+      target: {
+        projectId: branchPlan.source.projectId,
+        branchId: safeBranchId,
+        name: branchPlan.target.name,
+        default: false,
+        protected: false,
+        expiresAt: null,
+      },
+      references: {
+        connectionCount: 0,
+        activeLeaseCount: 0,
+        endpointIds: ["ep-agent-safe"],
+      },
+      ownership: {
+        createOperationId: branchPlan.operationId,
+        createPlanHash: "a".repeat(64),
+      },
+      deletionMode: "provider_default_soft_delete",
+      risk: "standard",
+      approvalPolicy: "single_admin",
+      warningCodes: ["NEON_SOFT_DELETE_RECOVERY_NOT_GUARANTEED"],
+    } as const;
+    const succeededOperation = (plan: typeof isolatePlan | typeof returnPlan | typeof deletePlanForJourney) => ({
+      id: plan.operationId,
+      state: "succeeded",
+      planHash: "b".repeat(64),
+      planExpiresAt: plan.expiresAt,
+      expired: false,
+      risk: plan.risk,
+      approvalPolicy: plan.approvalPolicy,
+      requestedByCurrentActor: true,
+      canApprove: false,
+      canReject: false,
+      canExecute: false,
+      needsCredentialFenceRecovery: false,
+      providerOperationId: null,
+      branchId: plan.kind === "neon.branch.switch"
+        ? plan.target.branchId
+        : plan.target.branchId,
+      reconcileAfter: null,
+      endpointId: null,
+      databaseCount: null,
+      retiredInheritedRoleCount: null,
+      managedAccessState: null,
+      failureCode: null,
+      plan,
+    });
+    const parsedJourneyOperations = parseNeonBranchOperations({
+      integrationGeneration: "12",
+      operations: [
+        succeededOperation(deletePlanForJourney),
+        succeededOperation(returnPlan),
+        succeededOperation(isolatePlan),
+        succeededCreate,
+      ],
+    });
+    expect(parsedJourneyOperations).not.toBeNull();
+    const readyInventory = safeInventory([safeConnection], []);
+    expect(readyInventory).not.toBeNull();
+    expect(deriveNeonSafeRun(
+      readyInventory!,
+      [succeededCreate] as NonNullable<typeof parsedJourneyOperations>["operations"],
+    )?.phase).toBe("ready_to_isolate");
+    const isolatedInventory = safeInventory([], [safeConnection]);
+    expect(isolatedInventory).not.toBeNull();
+    expect(deriveNeonSafeRun(
+      isolatedInventory!,
+      parsedJourneyOperations!.operations.filter((operation) => (
+        operation.plan.kind !== "neon.branch.delete"
+        && operation.id !== returnPlan.operationId
+      )),
+    )).toMatchObject({
+      phase: "isolated_active",
+      switchedConnectionId: connectionId,
+      switchedFromSource: true,
+    });
+    expect(deriveNeonSafeRun(
+      readyInventory!,
+      parsedJourneyOperations!.operations.filter((operation) => (
+        operation.plan.kind !== "neon.branch.delete"
+      )),
+    )?.phase).toBe("ready_to_discard");
+    const discardedInventory = parseNeonBranchInventoryResponse({
+      projectId: branchPlan.source.projectId,
+      integrationGeneration: "12",
+      observedAt: "2026-08-05T03:07:00.000Z",
+      rootIds: [branchPlan.source.branchId],
+      missingTargets: [],
+      branches: [uiBranch({
+        id: branchPlan.source.branchId,
+        name: branchPlan.source.name,
+        parentId: null,
+        depth: 0,
+        connections: [safeConnection],
+      })],
+    });
+    expect(discardedInventory).not.toBeNull();
+    expect(deriveNeonSafeRun(
+      discardedInventory!,
+      parsedJourneyOperations!.operations,
+    )?.phase).toBe("discarded");
     expect(parseNeonBranchOperations({
       integrationGeneration: "12",
       operations: [{
@@ -1284,6 +1549,35 @@ describe("provider credential Tauri adapter", () => {
       source: { connectionId, branchId: "br-child" },
       target: { branchId: "br-target" },
     });
+    expect(parseNeonBranchOperations({
+      integrationGeneration: "12",
+      operations: [{
+        id: switchPlan.operationId,
+        state: "approved",
+        planHash: "b".repeat(64),
+        planExpiresAt: switchPlan.expiresAt,
+        expired: false,
+        risk: switchPlan.risk,
+        approvalPolicy: switchPlan.approvalPolicy,
+        requestedByCurrentActor: true,
+        canApprove: false,
+        canReject: false,
+        canExecute: true,
+        needsCredentialFenceRecovery: false,
+        providerOperationId: null,
+        branchId: null,
+        reconcileAfter: null,
+        endpointId: null,
+        databaseCount: null,
+        retiredInheritedRoleCount: null,
+        managedAccessState: null,
+        failureCode: null,
+        plan: {
+          ...switchPlan,
+          target: { ...switchPlan.target, projectId: "forged-project" },
+        },
+      }],
+    })).toBeNull();
     expect(neonSource).toContain("NeonLeaseCleanupRequiredError");
     expect(providerLeaseIssuanceSource).toContain(
       "error instanceof NeonLeaseCleanupRequiredError",
