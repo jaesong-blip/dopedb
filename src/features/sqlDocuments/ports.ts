@@ -9,14 +9,20 @@ import type {
   SqlDocument,
   SqlDocumentId,
   SqlDocumentRevision,
+  SqlDocumentRevisionPage,
+  SqlDocumentRevisionPageRequest,
 } from "./domain";
 
 export interface SqlDocumentGateway {
   list(connectionId: ConnectionId): Promise<SqlDocument[]>;
-  listRevisions(
+  listRevisionPage(
+    request: SqlDocumentRevisionPageRequest,
+  ): Promise<SqlDocumentRevisionPage>;
+  getRevision(
     connectionId: ConnectionId,
     id: SqlDocumentId,
-  ): Promise<SqlDocumentRevision[]>;
+    localRevision: number,
+  ): Promise<SqlDocumentRevision>;
   create(request: CreateSqlDocumentRequest): Promise<SqlDocument>;
   save(request: SaveSqlDocumentRequest): Promise<SaveSqlDocumentOutcome>;
   delete(

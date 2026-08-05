@@ -2,7 +2,12 @@
 // DTOs below are generated from their serde producers via ts-rs; Query receipts
 // remain feature-owned. The explicitly marked manual transports later in this file
 // are outside that generation boundary and are not schema-parity claims.
-import type { AuditEntry } from "./generated/model";
+import type {
+  AuditEntry,
+  Engine,
+  HistoryEntry,
+  QueryKind,
+} from "./generated/model";
 import type { OperationState as GeneratedOperationState } from "./generated/protocol-contracts";
 
 export type {
@@ -168,15 +173,79 @@ export interface MonitoringOperationProposal {
   expiresAt: string;
 }
 
-interface AuditVerdict {
+export interface AuditVerdict {
   ok: boolean;
   firstBadIndex: number | null;
+  firstBadId: string | null;
+  entryCount: number;
+  tailHash: string | null;
 }
 
-export interface AuditSnapshot {
-  entries: AuditEntry[];
-  verdict: AuditVerdict;
+export interface HistoryCursor {
+  executedAt: string;
+  rowId: number;
 }
+
+export interface HistoryEntrySummary {
+  id: string;
+  connectionId: string;
+  sqlPreview: string;
+  sqlTruncated: boolean;
+  kind: QueryKind;
+  status: string;
+  rowCount: number | null;
+  durationMs: number | null;
+  errorPreview: string | null;
+  errorTruncated: boolean;
+  executedAt: string;
+  origin: string;
+}
+
+export interface HistoryPage {
+  items: HistoryEntrySummary[];
+  nextCursor: HistoryCursor | null;
+  statuses: string[];
+  origins: string[];
+}
+
+export interface HistoryPageRequest {
+  connectionId: string;
+  cursor: HistoryCursor | null;
+  search: string | null;
+  status: string | null;
+  origin: string | null;
+}
+
+export interface AuditCursor {
+  rowId: number;
+}
+
+export interface AuditEntrySummary {
+  id: string;
+  connectionId: string;
+  ts: string;
+  engine: Engine;
+  agentPromptPreview: string | null;
+  agentPromptTruncated: boolean;
+  sqlPreview: string;
+  sqlTruncated: boolean;
+  kind: QueryKind;
+  action: string;
+  approvedBy: string | null;
+  affectedEstimate: number | null;
+  errorPreview: string | null;
+  errorTruncated: boolean;
+  prevHash: string | null;
+  hash: string;
+}
+
+export interface AuditPage {
+  items: AuditEntrySummary[];
+  nextCursor: AuditCursor | null;
+}
+
+export type AuditEntryDetail = AuditEntry;
+export type HistoryEntryDetail = HistoryEntry;
 
 // The `{ kind, message, position? }` object AppError serializes to.
 interface AppErrorShape {

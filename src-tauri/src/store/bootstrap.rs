@@ -2,10 +2,9 @@
 
 use super::*;
 
-/// Version 1 represents the complete local schema when versioned migration was
-/// introduced. Future schema changes must increment this value and add an ordered
-/// version step.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 1;
+/// Version 1 introduced ordered local migrations. Version 2 adds bounded Activity
+/// paging indexes without returning to per-startup schema DDL.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 2;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -20,27 +19,51 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         return Ok(false);
     }
 
-    // Version zero covers both a fresh database and every pre-versioned DopeDB
-    // database. The compatibility checks are explicit schema reads, so expected
-    // duplicate-column errors are never part of the successful startup path.
-    sqlx::raw_sql(migrations::SCHEMA).execute(pool).await?;
-    add_legacy_columns(pool).await?;
-    add_sql_document_database_scope(pool).await?;
-    add_workspace_columns(pool).await?;
-    migrate_workspace_foundation(pool).await?;
-    migrate_audit_no_cascade(pool).await?;
-    add_local_scope_columns(pool).await?;
-    add_connection_binding_scope_columns(pool).await?;
-    migrate_agent_acp_providers(pool).await?;
-    migrate_schema_cache_scopes(pool).await?;
-    ensure_schema_cache_v2(pool).await?;
-    ensure_local_scope_indexes(pool).await?;
-    sqlx::query(AssertSqlSafe(format!(
-        "PRAGMA user_version = {LOCAL_SCHEMA_VERSION}"
-    )))
+    let mut migrated = false;
+    if version < 1 {
+        // Version zero covers both a fresh database and every pre-versioned DopeDB
+        // database. The compatibility checks are explicit schema reads, so expected
+        // duplicate-column errors are never part of the successful startup path.
+        sqlx::raw_sql(migrations::SCHEMA).execute(pool).await?;
+        add_legacy_columns(pool).await?;
+        add_sql_document_database_scope(pool).await?;
+        add_workspace_columns(pool).await?;
+        migrate_workspace_foundation(pool).await?;
+        migrate_audit_no_cascade(pool).await?;
+        add_local_scope_columns(pool).await?;
+        add_connection_binding_scope_columns(pool).await?;
+        migrate_agent_acp_providers(pool).await?;
+        migrate_schema_cache_scopes(pool).await?;
+        ensure_schema_cache_v2(pool).await?;
+        ensure_local_scope_indexes(pool).await?;
+        set_local_schema_version(pool, 1).await?;
+        migrated = true;
+    }
+    if version < 2 {
+        ensure_activity_paging_indexes(pool).await?;
+        set_local_schema_version(pool, 2).await?;
+        migrated = true;
+    }
+    Ok(migrated)
+}
+
+async fn set_local_schema_version(pool: &SqlitePool, version: i64) -> AppResult<()> {
+    sqlx::query(AssertSqlSafe(format!("PRAGMA user_version = {version}")))
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+async fn ensure_activity_paging_indexes(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(
+        "CREATE INDEX IF NOT EXISTS idx_history_scope_recent
+             ON query_history(connection_id, account_scope, executed_at DESC);
+         CREATE INDEX IF NOT EXISTS idx_audit_connection_row
+             ON audit_log(connection_id);",
+    )
     .execute(pool)
     .await?;
-    Ok(true)
+    Ok(())
 }
 
 async fn column_exists(pool: &SqlitePool, table: &str, column: &str) -> AppResult<bool> {

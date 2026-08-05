@@ -42,6 +42,26 @@ export interface SqlDocumentRevision {
   createdAt: string;
 }
 
+export interface SqlDocumentRevisionSummary {
+  documentId: SqlDocumentId;
+  localRevision: number;
+  contentPreview: string;
+  contentTruncated: boolean;
+  createdAt: string;
+}
+
+export interface SqlDocumentRevisionPage {
+  items: SqlDocumentRevisionSummary[];
+  nextCursor: number | null;
+}
+
+export interface SqlDocumentRevisionPageRequest {
+  connectionId: ConnectionId;
+  id: SqlDocumentId;
+  cursor: number | null;
+  search: string | null;
+}
+
 export interface CreateSqlDocumentRequest {
   connectionId: ConnectionId;
   title?: string | null;

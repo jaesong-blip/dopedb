@@ -4,7 +4,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  AuditSnapshot,
+  AuditEntryDetail,
+  AuditPage,
+  AuditVerdict,
   Catalog,
   CatalogOverview,
   CatalogSnapshot,
@@ -14,7 +16,9 @@ import type {
   DocumentOperationProposal,
   DocumentQuery,
   DatabaseSummary,
-  HistoryEntry,
+  HistoryEntryDetail,
+  HistoryPage,
+  HistoryPageRequest,
   LegacyMcpCleanupExpectation,
   LegacyMcpCleanupReceipt,
   LegacyMcpCleanupStatus,
@@ -278,18 +282,33 @@ export function setPostgresMonitoring(
 // Backend hash-chain verification (rowid order + real SHA-256 recompute). Authoritative —
 // a client-side link-only check can't detect an in-place field edit. firstBadIndex is the
 // insertion-order (oldest-first) position of the first tampered row, or null when ok.
-export function auditVerify(id: string): Promise<{ ok: boolean; firstBadIndex: number | null }> {
+export function auditVerify(id: string): Promise<AuditVerdict> {
   return invoke("audit_verify", { connectionId: id });
 }
 
-// Rows and verdict come from one ordered backend read, so the integrity result always
-// describes the exact audit entries rendered by the Activity detail panel.
-export function auditSnapshot(id: string): Promise<AuditSnapshot> {
-  return invoke("audit_snapshot", { connectionId: id });
+export function listAuditPage(
+  connectionId: string,
+  cursor: { rowId: number } | null,
+): Promise<AuditPage> {
+  return invoke("list_audit_page", { request: { connectionId, cursor } });
 }
 
-export function listHistory(id: string): Promise<HistoryEntry[]> {
-  return invoke("list_history", { id });
+export function getAuditEntry(
+  connectionId: string,
+  entryId: string,
+): Promise<AuditEntryDetail> {
+  return invoke("get_audit_entry", { connectionId, entryId });
+}
+
+export function listHistoryPage(request: HistoryPageRequest): Promise<HistoryPage> {
+  return invoke("list_history_page", { request });
+}
+
+export function getHistoryEntry(
+  connectionId: string,
+  historyId: string,
+): Promise<HistoryEntryDetail> {
+  return invoke("get_history_entry", { connectionId, historyId });
 }
 
 // Native picker (null = user cancelled the dialog).

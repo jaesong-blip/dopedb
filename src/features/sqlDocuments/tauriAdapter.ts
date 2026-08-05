@@ -8,6 +8,8 @@ import type {
   SaveSqlDocumentRequest,
   SqlDocument,
   SqlDocumentRevision,
+  SqlDocumentRevisionPage,
+  SqlDocumentRevisionPageRequest,
 } from "./domain";
 import type { SqlDocumentGateway } from "./ports";
 
@@ -16,10 +18,17 @@ export const tauriSqlDocumentGateway: SqlDocumentGateway = {
     return invoke<SqlDocument[]>("list_sql_documents", { id: connectionId });
   },
 
-  listRevisions(connectionId, id) {
-    return invoke<SqlDocumentRevision[]>("list_sql_document_revisions", {
+  listRevisionPage(request: SqlDocumentRevisionPageRequest) {
+    return invoke<SqlDocumentRevisionPage>("list_sql_document_revision_page", {
+      request,
+    });
+  },
+
+  getRevision(connectionId, id, localRevision) {
+    return invoke<SqlDocumentRevision>("get_sql_document_revision", {
       connectionId,
       id,
+      localRevision,
     });
   },
 

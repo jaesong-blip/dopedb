@@ -89,7 +89,7 @@
     },
     "src-tauri/src/store/tests/connections_scope.rs": {
       "tests": 4,
-      "protects": "Account isolation, credential binding, managed write projection, scope ABA rejection, ACP provider migration, and ordered count/byte-bounded ACP replay batches"
+      "protects": "Account isolation, credential binding, managed write projection, scope ABA rejection, bounded History/Audit metadata and exact detail reads, streamed audit verification identity, ACP provider migration, and ordered count/byte-bounded ACP replay batches"
     },
     "tools/release-updater-verify/src/main.rs": {
       "tests": 4,

@@ -406,3 +406,77 @@ pub struct HistoryEntry {
     /// "agent" | "manual" | "dashboard" | "migration".
     pub origin: String,
 }
+
+/// Stable newest-first cursor for one scoped query-history page. The SQLite row id
+/// only disambiguates executions that share the same timestamp and is never used as
+/// an authority boundary.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryCursor {
+    pub executed_at: DateTime<Utc>,
+    pub row_id: i64,
+}
+
+/// Bounded query-history metadata. Full SQL and error bodies are fetched only when
+/// the user selects this execution for replay.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntrySummary {
+    pub id: Uuid,
+    pub connection_id: Uuid,
+    pub sql_preview: String,
+    pub sql_truncated: bool,
+    pub kind: QueryKind,
+    pub status: String,
+    pub row_count: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub error_preview: Option<String>,
+    pub error_truncated: bool,
+    pub executed_at: DateTime<Utc>,
+    pub origin: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryPage {
+    pub items: Vec<HistoryEntrySummary>,
+    pub next_cursor: Option<HistoryCursor>,
+    pub statuses: Vec<String>,
+    pub origins: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditCursor {
+    pub row_id: i64,
+}
+
+/// One bounded audit-list row. Full prompt, SQL, and error bodies remain behind an
+/// exact connection/id detail read so a single page has a deterministic byte ceiling.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEntrySummary {
+    pub id: Uuid,
+    pub connection_id: Uuid,
+    pub ts: DateTime<Utc>,
+    pub engine: Engine,
+    pub agent_prompt_preview: Option<String>,
+    pub agent_prompt_truncated: bool,
+    pub sql_preview: String,
+    pub sql_truncated: bool,
+    pub kind: QueryKind,
+    pub action: String,
+    pub approved_by: Option<String>,
+    pub affected_estimate: Option<i64>,
+    pub error_preview: Option<String>,
+    pub error_truncated: bool,
+    pub prev_hash: Option<String>,
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditPage {
+    pub items: Vec<AuditEntrySummary>,
+    pub next_cursor: Option<AuditCursor>,
+}

@@ -38,6 +38,8 @@ const KIND_LABELS: Record<DashboardKind, I18nKey> = {
   table: "dashboard.kindTable",
 };
 
+const DASHBOARD_RESULT_CACHE_LIMIT = 4;
+
 function displayTime(value: string) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
@@ -298,6 +300,7 @@ export default function Dashboards({
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const appliedFocusId = useRef<string | null>(null);
+  const resultLru = useRef<string[]>([]);
 
   const list = useQuery(dashboardsQuery(connection.id));
   const dashboards = useMemo(() => list.data ?? [], [list.data]);
@@ -319,9 +322,16 @@ export default function Dashboards({
   });
 
   useEffect(() => {
+    resultLru.current.forEach((dashboardId) => {
+      queryClient.removeQueries({
+        queryKey: qk.dashboardRun(dashboardId),
+        exact: true,
+      });
+    });
+    resultLru.current = [];
     setSelectedId(null);
     appliedFocusId.current = null;
-  }, [connection.id]);
+  }, [connection.id, queryClient]);
 
   useEffect(() => {
     if (!focusId || appliedFocusId.current === focusId) return;
@@ -331,6 +341,7 @@ export default function Dashboards({
     if (selectedId && selectedId !== focusId) {
       void queryClient.cancelQueries({ queryKey: qk.dashboardRun(selectedId) });
     }
+    rememberResult(focusId);
     setSelectedId(focusId);
     window.requestAnimationFrame(() => {
       const tile = document.getElementById(`dashboard-${focusId}`);
@@ -341,6 +352,7 @@ export default function Dashboards({
 
   function execute(dashboard: Dashboard) {
     remove.reset();
+    rememberResult(dashboard.id);
     if (dashboard.id === selectedId) {
       void queryClient.invalidateQueries({ queryKey: qk.dashboardRun(dashboard.id) });
       return;
@@ -349,6 +361,23 @@ export default function Dashboards({
       void queryClient.cancelQueries({ queryKey: qk.dashboardRun(selectedId) });
     }
     setSelectedId(dashboard.id);
+  }
+
+  function rememberResult(dashboardId: string) {
+    const next = [
+      ...resultLru.current.filter((candidate) => candidate !== dashboardId),
+      dashboardId,
+    ];
+    while (next.length > DASHBOARD_RESULT_CACHE_LIMIT) {
+      const evicted = next.shift();
+      if (evicted) {
+        queryClient.removeQueries({
+          queryKey: qk.dashboardRun(evicted),
+          exact: true,
+        });
+      }
+    }
+    resultLru.current = next;
   }
 
   const loading = list.isPending;

@@ -8,14 +8,28 @@
 pub mod chain;
 
 use chrono::Utc;
+use futures::TryStreamExt;
 use sqlx::Row;
 use uuid::Uuid;
 
 use crate::error::AppResult;
-use crate::model::{AuditEntry, Engine, QueryKind};
+use crate::model::{AuditCursor, AuditEntry, AuditEntrySummary, AuditPage, Engine, QueryKind};
 use crate::store::{self, Store};
 
 use chain::AuditFields;
+
+const AUDIT_PAGE_SIZE: usize = 50;
+const AUDIT_PROMPT_PREVIEW_CHARS: i64 = 512;
+const AUDIT_SQL_PREVIEW_CHARS: i64 = 2_048;
+const AUDIT_ERROR_PREVIEW_CHARS: i64 = 512;
+
+pub(crate) struct AuditVerification {
+    pub(crate) ok: bool,
+    pub(crate) first_bad_index: Option<i64>,
+    pub(crate) first_bad_id: Option<Uuid>,
+    pub(crate) entry_count: i64,
+    pub(crate) tail_hash: Option<String>,
+}
 
 /// Owned inputs for one audit record. The caller supplies the semantic fields;
 /// `record` assigns `id`/`ts`, resolves `prev_hash`, and computes `hash`.
@@ -106,65 +120,144 @@ pub async fn record(store: &Store, args: RecordArgs) -> AppResult<AuditEntry> {
     })
 }
 
-/// Audit rows and their verification result from one ordered database read.
-/// Entries are returned newest-first for the UI, while verification runs over the
-/// exact same rows in insertion order so the verdict cannot describe a different
-/// snapshot if another audit record is appended concurrently.
-pub async fn snapshot(
+/// Read one bounded newest-first metadata page. Large prompt, SQL, and error bodies
+/// remain behind [`entry`] so the list has a deterministic IPC byte ceiling.
+pub(crate) async fn page_after(
     store: &Store,
     connection_id: Uuid,
-) -> AppResult<(Vec<AuditEntry>, bool, Option<i64>)> {
-    let rows = sqlx::query("SELECT * FROM audit_log WHERE connection_id = ?1 ORDER BY rowid ASC")
-        .bind(connection_id.to_string())
-        .fetch_all(store.pool())
-        .await?;
+    cursor: Option<AuditCursor>,
+) -> AppResult<AuditPage> {
+    let rows = sqlx::query(
+        "SELECT rowid AS audit_row_id, id, connection_id, ts, engine,
+                CASE WHEN agent_prompt IS NULL THEN NULL
+                     ELSE substr(agent_prompt, 1, ?3) END AS agent_prompt_preview,
+                COALESCE(length(agent_prompt) > ?3, 0) AS agent_prompt_truncated,
+                substr(sql, 1, ?4) AS sql_preview,
+                length(sql) > ?4 AS sql_truncated,
+                kind, action, approved_by, affected_estimate,
+                CASE WHEN error IS NULL THEN NULL ELSE substr(error, 1, ?5) END
+                  AS error_preview,
+                COALESCE(length(error) > ?5, 0) AS error_truncated,
+                prev_hash, hash
+         FROM audit_log
+         WHERE connection_id = ?1 AND (?2 IS NULL OR rowid < ?2)
+         ORDER BY rowid DESC
+         LIMIT ?6",
+    )
+    .bind(connection_id.to_string())
+    .bind(cursor.map(|value| value.row_id))
+    .bind(AUDIT_PROMPT_PREVIEW_CHARS)
+    .bind(AUDIT_SQL_PREVIEW_CHARS)
+    .bind(AUDIT_ERROR_PREVIEW_CHARS)
+    .bind(i64::try_from(AUDIT_PAGE_SIZE + 1).expect("audit page size fits i64"))
+    .fetch_all(store.pool())
+    .await?;
+    let mut items = rows
+        .iter()
+        .map(row_to_audit_summary)
+        .collect::<AppResult<Vec<_>>>()?;
+    let has_more = items.len() > AUDIT_PAGE_SIZE;
+    if has_more {
+        items.pop();
+    }
+    let next_cursor = if has_more {
+        items
+            .last()
+            .map(|(_, row_id)| AuditCursor { row_id: *row_id })
+    } else {
+        None
+    };
+    Ok(AuditPage {
+        items: items.into_iter().map(|(summary, _)| summary).collect(),
+        next_cursor,
+    })
+}
 
-    let mut entries: Vec<AuditEntry> = rows.iter().map(row_to_audit).collect::<AppResult<_>>()?;
-    let (ok, first_bad_index) = verify_entries(&entries);
-    entries.reverse();
-    Ok((entries, ok, first_bad_index))
+pub(crate) async fn entry(
+    store: &Store,
+    connection_id: Uuid,
+    entry_id: Uuid,
+) -> AppResult<AuditEntry> {
+    let row = sqlx::query("SELECT * FROM audit_log WHERE id = ?1 AND connection_id = ?2")
+        .bind(entry_id.to_string())
+        .bind(connection_id.to_string())
+        .fetch_optional(store.pool())
+        .await?
+        .ok_or_else(|| crate::error::AppError::NotFound(format!("audit entry {entry_id}")))?;
+    row_to_audit(&row)
 }
 
 /// Recompute the chain in insertion order and confirm every stored hash matches.
 /// Returns `(false, Some(index))` at the first row that was edited, reordered, or had
 /// its `prev_hash` broken (index = 0-based insertion-order position); `(true, None)`
 /// if the whole chain verifies.
-pub async fn verify_chain(store: &Store, connection_id: Uuid) -> AppResult<(bool, Option<i64>)> {
-    let rows = sqlx::query("SELECT * FROM audit_log WHERE connection_id = ?1 ORDER BY rowid ASC")
-        .bind(connection_id.to_string())
-        .fetch_all(store.pool())
-        .await?;
-
-    let entries: Vec<AuditEntry> = rows.iter().map(row_to_audit).collect::<AppResult<_>>()?;
-    Ok(verify_entries(&entries))
-}
-
-fn verify_entries(entries: &[AuditEntry]) -> (bool, Option<i64>) {
+pub async fn verify_chain(store: &Store, connection_id: Uuid) -> AppResult<AuditVerification> {
+    let mut rows =
+        sqlx::query("SELECT * FROM audit_log WHERE connection_id = ?1 ORDER BY rowid ASC")
+            .bind(connection_id.to_string())
+            .fetch(store.pool());
     let mut expected_prev: Option<String> = None;
-    for (i, e) in entries.iter().enumerate() {
+    let mut first_bad_index = None;
+    let mut first_bad_id = None;
+    let mut entry_count = 0_i64;
+    let mut tail_hash = None;
+    while let Some(row) = rows.try_next().await? {
+        let entry = row_to_audit(&row)?;
         // The stored prev_hash must equal the running tail…
-        if e.prev_hash != expected_prev {
-            return (false, Some(i as i64));
-        }
+        let link_matches = entry.prev_hash == expected_prev;
         // …and the stored hash must match a fresh recomputation.
         let fields = AuditFields {
-            connection_id: e.connection_id,
-            ts: e.ts,
-            engine: e.engine,
-            agent_prompt: e.agent_prompt.as_deref(),
-            sql: &e.sql,
-            kind: e.kind,
-            action: &e.action,
-            approved_by: e.approved_by.as_deref(),
-            affected_estimate: e.affected_estimate,
-            error: e.error.as_deref(),
+            connection_id: entry.connection_id,
+            ts: entry.ts,
+            engine: entry.engine,
+            agent_prompt: entry.agent_prompt.as_deref(),
+            sql: &entry.sql,
+            kind: entry.kind,
+            action: &entry.action,
+            approved_by: entry.approved_by.as_deref(),
+            affected_estimate: entry.affected_estimate,
+            error: entry.error.as_deref(),
         };
-        if chain::compute_hash(e.prev_hash.as_deref(), &fields) != e.hash {
-            return (false, Some(i as i64));
+        let hash_matches = chain::compute_hash(entry.prev_hash.as_deref(), &fields) == entry.hash;
+        if first_bad_index.is_none() && (!link_matches || !hash_matches) {
+            first_bad_index = Some(entry_count);
+            first_bad_id = Some(entry.id);
         }
-        expected_prev = Some(e.hash.clone());
+        entry_count = entry_count.saturating_add(1);
+        expected_prev = Some(entry.hash.clone());
+        tail_hash = Some(entry.hash);
     }
-    (true, None)
+    Ok(AuditVerification {
+        ok: first_bad_index.is_none(),
+        first_bad_index,
+        first_bad_id,
+        entry_count,
+        tail_hash,
+    })
+}
+
+fn row_to_audit_summary(row: &sqlx::sqlite::SqliteRow) -> AppResult<(AuditEntrySummary, i64)> {
+    Ok((
+        AuditEntrySummary {
+            id: store::parse_uuid(row.try_get("id")?)?,
+            connection_id: store::parse_uuid(row.try_get("connection_id")?)?,
+            ts: row.try_get("ts")?,
+            engine: store::parse_engine(row.try_get("engine")?)?,
+            agent_prompt_preview: row.try_get("agent_prompt_preview")?,
+            agent_prompt_truncated: row.try_get::<i64, _>("agent_prompt_truncated")? != 0,
+            sql_preview: row.try_get("sql_preview")?,
+            sql_truncated: row.try_get::<i64, _>("sql_truncated")? != 0,
+            kind: store::parse_kind(row.try_get("kind")?)?,
+            action: row.try_get("action")?,
+            approved_by: row.try_get("approved_by")?,
+            affected_estimate: row.try_get("affected_estimate")?,
+            error_preview: row.try_get("error_preview")?,
+            error_truncated: row.try_get::<i64, _>("error_truncated")? != 0,
+            prev_hash: row.try_get("prev_hash")?,
+            hash: row.try_get("hash")?,
+        },
+        row.try_get("audit_row_id")?,
+    ))
 }
 
 fn row_to_audit(r: &sqlx::sqlite::SqliteRow) -> AppResult<AuditEntry> {

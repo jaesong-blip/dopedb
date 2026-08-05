@@ -12,7 +12,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::features::activity::{AuditSnapshotReceipt, AuditVerdict};
+use crate::features::activity::AuditVerdict;
 use crate::features::documents::{
     DesktopDocumentProposalReceipt, DesktopDocumentProposalRequest, DesktopDocumentReadError,
     DocumentReadReceipt,
@@ -332,8 +332,7 @@ pub async fn set_postgres_monitoring(
 
 // ── logs ─────────────────────────────────────────────────────────────────────
 
-/// Verify the hash-chain for a connection's audit log. Returns `{ ok, firstBadIndex }`
-/// where `firstBadIndex` is the insertion-order position of the first tampered row.
+/// Verify the hash-chain without materializing every audit body in memory.
 #[tauri::command]
 pub async fn audit_verify(
     state: State<'_, AppState>,
@@ -342,18 +341,46 @@ pub async fn audit_verify(
     state.services.activity.verify_audit(connection_id).await
 }
 
-/// Fetch the displayed audit rows and verify that exact ordered snapshot in one read.
 #[tauri::command]
-pub async fn audit_snapshot(
+pub async fn list_audit_page(
     state: State<'_, AppState>,
-    connection_id: Uuid,
-) -> AppResult<AuditSnapshotReceipt> {
-    state.services.activity.audit_snapshot(connection_id).await
+    request: crate::features::activity::AuditPageRequest,
+) -> AppResult<crate::model::AuditPage> {
+    state.services.activity.audit_page(request).await
 }
 
 #[tauri::command]
-pub async fn list_history(state: State<'_, AppState>, id: Uuid) -> AppResult<Vec<HistoryEntry>> {
-    state.services.activity.history(id).await
+pub async fn get_audit_entry(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    entry_id: Uuid,
+) -> AppResult<crate::model::AuditEntry> {
+    state
+        .services
+        .activity
+        .audit_entry(connection_id, entry_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn list_history_page(
+    state: State<'_, AppState>,
+    request: crate::features::activity::HistoryPageRequest,
+) -> AppResult<crate::model::HistoryPage> {
+    state.services.activity.history_page(request).await
+}
+
+#[tauri::command]
+pub async fn get_history_entry(
+    state: State<'_, AppState>,
+    connection_id: Uuid,
+    history_id: Uuid,
+) -> AppResult<HistoryEntry> {
+    state
+        .services
+        .activity
+        .history_entry(connection_id, history_id)
+        .await
 }
 
 // ── native picker ─────────────────────────────────────────────────────────────

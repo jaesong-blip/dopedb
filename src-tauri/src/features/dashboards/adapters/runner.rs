@@ -14,9 +14,16 @@ use crate::model::{HistoryEntry, QueryKind, QueryResult};
 use crate::safety::{self, PoolRef};
 use crate::store::{PinnedConnection, Store};
 
-use super::super::domain::{DashboardDraft, DashboardRunRequest};
+use super::super::domain::{DashboardDraft, DashboardKind, DashboardRunRequest};
 use super::super::ports::DashboardRunPort;
 use super::super::validation;
+
+const METRIC_MAX_ROWS: u64 = 1;
+const METRIC_MAX_BYTES: usize = 64 * 1024;
+const CHART_MAX_ROWS: u64 = 2_000;
+const CHART_MAX_BYTES: usize = 256 * 1024;
+const TABLE_MAX_ROWS: u64 = 1_000;
+const TABLE_MAX_BYTES: usize = 512 * 1024;
 
 pub(crate) struct DashboardRunReceipt {
     pub(in crate::features::dashboards) result: QueryResult,
@@ -199,7 +206,8 @@ impl DashboardRunner {
                 )))
             }
         };
-        let max_rows = settings.max_rows.clamp(1, 100_000);
+        let (max_rows, max_encoded_bytes) =
+            dashboard_result_limits(dashboard.visualization.kind, settings.max_rows);
         let run = safety::run_read_only(pool_ref(live.ro()), &dashboard.sql, max_rows);
         match executor::cancel::guard(
             request.query_id.map(Into::into),
@@ -209,6 +217,30 @@ impl DashboardRunner {
         .await
         {
             Ok(result) => {
+                let result = match enforce_dashboard_result(result, max_encoded_bytes) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        record_dashboard_run(
+                            &self.store,
+                            &operation_pin,
+                            DashboardRunRecord {
+                                sql: &dashboard.sql,
+                                kind: QueryKind::Read,
+                                status: "error",
+                                row_count: None,
+                                duration_ms: None,
+                                error: Some(error.to_string()),
+                            },
+                        )
+                        .await;
+                        return Err(DashboardRunError::Execution(Box::new(
+                            DashboardRunExecutionFailure {
+                                error,
+                                _lease: lease,
+                            },
+                        )));
+                    }
+                };
                 record_dashboard_run(
                     &self.store,
                     &operation_pin,
@@ -250,6 +282,71 @@ impl DashboardRunner {
             }
         }
     }
+}
+
+pub(in crate::features::dashboards) fn dashboard_result_limits(
+    kind: DashboardKind,
+    configured_max_rows: u64,
+) -> (u64, usize) {
+    let (kind_rows, max_encoded_bytes) = match kind {
+        DashboardKind::Metric => (METRIC_MAX_ROWS, METRIC_MAX_BYTES),
+        DashboardKind::Auto | DashboardKind::Line | DashboardKind::Bar => {
+            (CHART_MAX_ROWS, CHART_MAX_BYTES)
+        }
+        DashboardKind::Table => (TABLE_MAX_ROWS, TABLE_MAX_BYTES),
+    };
+    (configured_max_rows.clamp(1, kind_rows), max_encoded_bytes)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DashboardResultView<'a> {
+    columns: &'a [String],
+    rows: &'a [Vec<serde_json::Value>],
+    row_count: usize,
+    truncated: bool,
+    duration_ms: u64,
+}
+
+pub(in crate::features::dashboards) fn enforce_dashboard_result(
+    mut result: QueryResult,
+    max_encoded_bytes: usize,
+) -> Result<QueryResult, AppError> {
+    let total_rows = result.rows.len();
+    let encoded_size = |row_count: usize| -> Result<usize, AppError> {
+        serde_json::to_vec(&DashboardResultView {
+            columns: &result.columns,
+            rows: &result.rows[..row_count],
+            row_count,
+            truncated: result.truncated || row_count < total_rows,
+            duration_ms: result.duration_ms,
+        })
+        .map(|encoded| encoded.len())
+        .map_err(|_| AppError::Config("dashboard result could not be encoded".into()))
+    };
+
+    if encoded_size(0)? > max_encoded_bytes {
+        return Err(AppError::Config(
+            "dashboard column metadata exceeds the result byte budget".into(),
+        ));
+    }
+
+    let mut low = 0;
+    let mut high = total_rows;
+    while low < high {
+        let middle = low + (high - low).div_ceil(2);
+        if encoded_size(middle)? <= max_encoded_bytes {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    if low < total_rows {
+        result.rows.truncate(low);
+        result.truncated = true;
+    }
+    result.row_count = result.rows.len();
+    Ok(result)
 }
 
 struct DashboardRunRecord<'a> {

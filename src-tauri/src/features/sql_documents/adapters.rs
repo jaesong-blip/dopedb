@@ -13,7 +13,8 @@ use crate::model::Engine;
 use crate::store::Store;
 
 use super::domain::{
-    content_hash, SqlDialect, SqlDocument, SqlDocumentRevision, SqlDocumentSyncStatus,
+    content_hash, SqlDialect, SqlDocument, SqlDocumentRevision, SqlDocumentRevisionPage,
+    SqlDocumentRevisionSummary, SqlDocumentSyncStatus,
 };
 use super::ports::{
     SaveDocumentCommand, SaveRepositoryOutcome, SqlDocumentAuthority, SqlDocumentAuthorityGuard,
@@ -21,6 +22,8 @@ use super::ports::{
 };
 
 const REVISION_RETENTION: i64 = 50;
+const REVISION_PAGE_SIZE: usize = 20;
+const REVISION_PREVIEW_CHARS: i64 = 512;
 
 #[derive(Clone)]
 pub(crate) struct ConnectionSqlDocumentAuthority {
@@ -115,14 +118,18 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
         rows.iter().map(row_to_document).collect()
     }
 
-    async fn list_revisions(
+    async fn list_revision_page(
         &self,
         authority: &SqlDocumentAuthority,
         id: SqlDocumentId,
-    ) -> AppResult<Vec<SqlDocumentRevision>> {
+        cursor: Option<i64>,
+        search: Option<&str>,
+    ) -> AppResult<SqlDocumentRevisionPage> {
         let rows = sqlx::query(
             "SELECT revisions.document_id, revisions.local_revision,
-                    revisions.content, revisions.created_at
+                    substr(revisions.content, 1, ?5) AS content_preview,
+                    length(revisions.content) > ?5 AS content_truncated,
+                    revisions.created_at
              FROM sql_document_revisions revisions
              INNER JOIN sql_documents documents
                 ON documents.id = revisions.document_id
@@ -131,15 +138,67 @@ impl SqlDocumentRepositoryPort for SqliteSqlDocumentRepository {
                AND documents.account_scope = ?3
                AND documents.connection_id = ?4
                AND documents.deleted_at IS NULL
-             ORDER BY revisions.local_revision DESC",
+               AND (?6 IS NULL OR revisions.local_revision < ?6)
+               AND (?7 IS NULL OR instr(lower(revisions.content), lower(?7)) > 0)
+             ORDER BY revisions.local_revision DESC
+             LIMIT ?8",
         )
         .bind(id.to_string())
         .bind(authority.resource.workspace_id.to_string())
         .bind(authority.account_scope.as_str())
         .bind(authority.resource.connection_id.to_string())
+        .bind(REVISION_PREVIEW_CHARS)
+        .bind(cursor)
+        .bind(search)
+        .bind(i64::try_from(REVISION_PAGE_SIZE + 1).expect("revision page size fits i64"))
         .fetch_all(self.store.pool())
         .await?;
-        rows.iter().map(row_to_revision).collect()
+        let mut items = rows
+            .iter()
+            .map(row_to_revision_summary)
+            .collect::<AppResult<Vec<_>>>()?;
+        let has_more = items.len() > REVISION_PAGE_SIZE;
+        if has_more {
+            items.pop();
+        }
+        let next_cursor = if has_more {
+            items.last().map(|revision| revision.local_revision)
+        } else {
+            None
+        };
+        Ok(SqlDocumentRevisionPage { items, next_cursor })
+    }
+
+    async fn get_revision(
+        &self,
+        authority: &SqlDocumentAuthority,
+        id: SqlDocumentId,
+        local_revision: i64,
+    ) -> AppResult<SqlDocumentRevision> {
+        let row = sqlx::query(
+            "SELECT revisions.document_id, revisions.local_revision,
+                    revisions.content, revisions.created_at
+             FROM sql_document_revisions revisions
+             INNER JOIN sql_documents documents
+                ON documents.id = revisions.document_id
+             WHERE revisions.document_id = ?1
+               AND revisions.local_revision = ?2
+               AND documents.workspace_id = ?3
+               AND documents.account_scope = ?4
+               AND documents.connection_id = ?5
+               AND documents.deleted_at IS NULL",
+        )
+        .bind(id.to_string())
+        .bind(local_revision)
+        .bind(authority.resource.workspace_id.to_string())
+        .bind(authority.account_scope.as_str())
+        .bind(authority.resource.connection_id.to_string())
+        .fetch_optional(self.store.pool())
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound(format!("SQL document {id} revision {local_revision}"))
+        })?;
+        row_to_revision(&row)
     }
 
     async fn create(
@@ -339,6 +398,22 @@ fn row_to_revision(row: &sqlx::sqlite::SqliteRow) -> AppResult<SqlDocumentRevisi
         document_id: SqlDocumentId::from(parse_uuid(row.try_get("document_id")?)?),
         local_revision,
         content: row.try_get("content")?,
+        created_at: row.try_get("created_at")?,
+    })
+}
+
+fn row_to_revision_summary(row: &sqlx::sqlite::SqliteRow) -> AppResult<SqlDocumentRevisionSummary> {
+    let local_revision = row.try_get("local_revision")?;
+    if local_revision < 1 {
+        return Err(AppError::Config(
+            "stored SQL document revision is invalid".into(),
+        ));
+    }
+    Ok(SqlDocumentRevisionSummary {
+        document_id: SqlDocumentId::from(parse_uuid(row.try_get("document_id")?)?),
+        local_revision,
+        content_preview: row.try_get("content_preview")?,
+        content_truncated: row.try_get::<i64, _>("content_truncated")? != 0,
         created_at: row.try_get("created_at")?,
     })
 }

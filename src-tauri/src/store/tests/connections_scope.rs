@@ -125,6 +125,28 @@ async fn assert_current_store_migration_is_write_free() {
         .await
         .unwrap();
 
+    let v1_pool = memory_pool().await;
+    sqlx::raw_sql(migrations::SCHEMA)
+        .execute(&v1_pool)
+        .await
+        .unwrap();
+    sqlx::query("PRAGMA user_version = 1")
+        .execute(&v1_pool)
+        .await
+        .unwrap();
+    assert!(super::super::bootstrap::migrate_local_store(&v1_pool)
+        .await
+        .unwrap());
+    let paging_indexes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master
+         WHERE type = 'index'
+           AND name IN ('idx_history_scope_recent', 'idx_audit_connection_row')",
+    )
+    .fetch_one(&v1_pool)
+    .await
+    .unwrap();
+    assert_eq!(paging_indexes, 2);
+
     let gate = crate::startup::PostPaintRecoveryGate::new();
     assert!(gate.claim_start());
     assert!(!gate.claim_start());
@@ -520,13 +542,15 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
         .await
         .unwrap();
     let execution_pin_a = store.pin_connection_for_read(connection_id).await.unwrap();
+    let history_id = Uuid::new_v4();
+    let history_sql = format!("SELECT '{}'", "x".repeat(700));
     store
         .insert_history_if_current(
             &execution_pin_a,
             &HistoryEntry {
-                id: Uuid::new_v4(),
+                id: history_id,
                 connection_id,
-                sql: "SELECT 'alpha'".into(),
+                sql: history_sql.clone(),
                 kind: QueryKind::Read,
                 status: "ok".into(),
                 row_count: Some(1),
@@ -538,6 +562,39 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
         )
         .await
         .unwrap();
+    let audit_sql = format!("SELECT '{}'", "audit".repeat(700));
+    let first_audit = crate::audit::record(
+        &store,
+        crate::audit::RecordArgs {
+            connection_id,
+            engine: Engine::Sqlite,
+            agent_prompt: Some("inspect the shared connection".repeat(30)),
+            sql: audit_sql.clone(),
+            kind: QueryKind::Read,
+            action: "execute".into(),
+            approved_by: None,
+            affected_estimate: Some(1),
+            error: None,
+        },
+    )
+    .await
+    .unwrap();
+    crate::audit::record(
+        &store,
+        crate::audit::RecordArgs {
+            connection_id,
+            engine: Engine::Sqlite,
+            agent_prompt: None,
+            sql: audit_sql.clone(),
+            kind: QueryKind::Read,
+            action: "dashboard:run".into(),
+            approved_by: None,
+            affected_estimate: Some(1),
+            error: None,
+        },
+    )
+    .await
+    .unwrap();
     let services_snapshot =
         crate::features::queries::validate_query_service_session_snapshot(serde_json::json!({
             "schemaVersion": 1,
@@ -599,7 +656,12 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
         .await
         .unwrap()
         .is_none());
-    assert!(store.list_history(connection_id).await.unwrap().is_empty());
+    assert!(store
+        .list_history_page(connection_id, None, None, None, None)
+        .await
+        .unwrap()
+        .items
+        .is_empty());
     assert!(store
         .list_query_service_sessions(workspace_id, user_b.id.as_str())
         .await
@@ -639,7 +701,50 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
             .as_deref(),
         Some(r#"{"owner":"alpha"}"#)
     );
-    assert_eq!(store.list_history(connection_id).await.unwrap().len(), 1);
+    let history_page = store
+        .list_history_page(connection_id, None, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(history_page.items.len(), 1);
+    assert!(history_page.items[0].sql_truncated);
+    assert_eq!(history_page.items[0].sql_preview.chars().count(), 512);
+    assert_eq!(
+        store
+            .get_history_entry(connection_id, history_id)
+            .await
+            .unwrap()
+            .sql,
+        history_sql
+    );
+    let audit_page = crate::audit::page_after(&store, connection_id, None)
+        .await
+        .unwrap();
+    assert_eq!(audit_page.items.len(), 2);
+    assert!(audit_page.items.iter().all(|entry| entry.sql_truncated));
+    assert_eq!(
+        crate::audit::entry(&store, connection_id, first_audit.id)
+            .await
+            .unwrap()
+            .sql,
+        audit_sql
+    );
+    let verification = crate::audit::verify_chain(&store, connection_id)
+        .await
+        .unwrap();
+    assert!(verification.ok);
+    assert_eq!(verification.entry_count, 2);
+    assert!(verification.tail_hash.is_some());
+    sqlx::query("UPDATE audit_log SET sql = 'tampered' WHERE id = ?1")
+        .bind(first_audit.id.to_string())
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let verification = crate::audit::verify_chain(&store, connection_id)
+        .await
+        .unwrap();
+    assert!(!verification.ok);
+    assert_eq!(verification.first_bad_index, Some(0));
+    assert_eq!(verification.first_bad_id, Some(first_audit.id));
     assert_eq!(
         store
             .list_query_service_sessions(workspace_id, user_a.id.as_str())

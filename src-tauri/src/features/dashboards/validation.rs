@@ -91,8 +91,12 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+    use crate::features::dashboards::adapters::{
+        dashboard_result_limits, enforce_dashboard_result,
+    };
     use crate::features::dashboards::{DashboardKind, DashboardVisualization};
     use crate::kernel::identity::ConnectionId;
+    use crate::model::QueryResult;
 
     fn draft(sql: &str) -> DashboardDraft {
         DashboardDraft {
@@ -124,6 +128,28 @@ mod tests {
             validate_draft(&draft("SELECT 1; SELECT 2"), Engine::Postgres),
             Err(AppError::Blocked { .. })
         ));
+
+        assert_eq!(dashboard_result_limits(DashboardKind::Metric, 100_000).0, 1);
+        assert_eq!(
+            dashboard_result_limits(DashboardKind::Table, 100_000).0,
+            1_000
+        );
+        let bounded = enforce_dashboard_result(
+            QueryResult {
+                columns: vec!["payload".into()],
+                rows: (0..20)
+                    .map(|_| vec![serde_json::Value::String("x".repeat(128))])
+                    .collect(),
+                row_count: 20,
+                truncated: false,
+                duration_ms: 1,
+            },
+            512,
+        )
+        .expect("dashboard result is bounded");
+        assert!(bounded.rows.len() < 20);
+        assert!(bounded.truncated);
+        assert!(serde_json::to_vec(&bounded).unwrap().len() <= 512);
     }
 
     #[test]

@@ -55,8 +55,8 @@ use crate::features::workspaces::{
 };
 use crate::kernel::identity::{AccountId, ConnectionId, DashboardId, WorkspaceId};
 use crate::model::{
-    ConnectionProfile, Engine, HistoryEntry, Provider, QueryKind, SafetySettings,
-    WorkspaceConnectionAccess, WorkspaceCredentialMode,
+    ConnectionProfile, Engine, HistoryCursor, HistoryEntry, HistoryEntrySummary, HistoryPage,
+    Provider, QueryKind, SafetySettings, WorkspaceConnectionAccess, WorkspaceCredentialMode,
 };
 
 /// Handle to the local app.db. Cheap to clone (the pool is an `Arc` internally).

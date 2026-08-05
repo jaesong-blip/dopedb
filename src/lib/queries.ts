@@ -9,7 +9,6 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import {
-  auditSnapshot,
   auditVerify,
   cliInstallationStatus,
   cancelQuery,
@@ -20,8 +19,11 @@ import {
   getCatalogOverview,
   getCatalogSnapshot,
   getMonitoringStatus,
+  getAuditEntry,
+  getHistoryEntry,
   legacyMcpCleanupStatus,
-  listHistory,
+  listAuditPage,
+  listHistoryPage,
   listConnectionDatabases,
   refreshCatalog,
   runDocumentRead,
@@ -33,6 +35,7 @@ import type {
   CatalogTable,
   DatabaseSummary,
   Engine,
+  HistoryPageRequest,
   QueryResult,
 } from "../ipc/types";
 import { errMessage } from "../ipc/types";
@@ -60,6 +63,7 @@ import { tableKey } from "./tableRef";
 const CATALOG_STALE_MS = Infinity;
 // Avoid redundant log and row refetches while users switch tabs quickly.
 const LOG_STALE_MS = 10_000;
+const LOG_GC_MS = 60_000;
 export type CatalogScope = {
   key: string;
   ready: boolean;
@@ -209,10 +213,18 @@ export const qk = {
     scope === undefined
       ? (["catalogSnapshot", connectionId] as const)
       : (["catalogSnapshot", connectionId, scope] as const),
-  history: (connectionId: string) => ["history", connectionId] as const,
+  history: (connectionId: string, request?: Omit<HistoryPageRequest, "connectionId">) =>
+    request === undefined
+      ? (["history", connectionId] as const)
+      : (["history", connectionId, request] as const),
+  historyEntry: (connectionId: string, historyId: string) =>
+    ["history", connectionId, "entry", historyId] as const,
   audit: (connectionId: string) => ["audit", connectionId] as const,
   auditVerdict: (connectionId: string) => ["audit", connectionId, "verdict"] as const,
-  auditSnapshot: (connectionId: string) => ["audit", connectionId, "snapshot"] as const,
+  auditPage: (connectionId: string, cursor: { rowId: number } | null) =>
+    ["audit", connectionId, "page", cursor] as const,
+  auditEntry: (connectionId: string, entryId: string) =>
+    ["audit", connectionId, "entry", entryId] as const,
   monitoring: (connectionId: string) => ["monitoring", connectionId] as const,
   manualTransaction: (connectionId: string) =>
     ["manualTransaction", connectionId] as const,
@@ -450,11 +462,26 @@ export async function replaceFreshCatalog(
   ]);
 }
 
-export function historyQuery(connectionId: string) {
+export function historyQuery(request: HistoryPageRequest) {
+  const { connectionId, ...scope } = request;
   return queryOptions({
-    queryKey: qk.history(connectionId),
+    queryKey: qk.history(connectionId, scope),
     staleTime: LOG_STALE_MS,
-    queryFn: () => listHistory(connectionId),
+    gcTime: LOG_GC_MS,
+    queryFn: () => listHistoryPage(request),
+  });
+}
+
+export function historyEntryQuery(
+  connectionId: string,
+  historyId: string | null,
+) {
+  return queryOptions({
+    queryKey: qk.historyEntry(connectionId, historyId ?? ""),
+    enabled: historyId !== null,
+    staleTime: Infinity,
+    gcTime: LOG_GC_MS,
+    queryFn: () => getHistoryEntry(connectionId, historyId ?? ""),
   });
 }
 
@@ -467,22 +494,41 @@ export function monitoringStatusQuery(connectionId: string) {
   });
 }
 
-// Verification alone, for the collapsed Activity banner. The full row list can be large,
-// so it stays behind auditSnapshotQuery until the disclosure is opened.
+// Verification alone backs the collapsed Activity banner. The bounded metadata page
+// stays disabled until the disclosure opens, and exact bodies remain per-row reads.
 export function auditVerdictQuery(connectionId: string) {
   return queryOptions({
     queryKey: qk.auditVerdict(connectionId),
     staleTime: LOG_STALE_MS,
+    gcTime: LOG_GC_MS,
     queryFn: () => auditVerify(connectionId),
   });
 }
 
-export function auditSnapshotQuery(connectionId: string, enabled: boolean) {
+export function auditPageQuery(
+  connectionId: string,
+  cursor: { rowId: number } | null,
+  enabled: boolean,
+) {
   return queryOptions({
-    queryKey: qk.auditSnapshot(connectionId),
+    queryKey: qk.auditPage(connectionId, cursor),
     enabled,
     staleTime: LOG_STALE_MS,
-    queryFn: () => auditSnapshot(connectionId),
+    gcTime: LOG_GC_MS,
+    queryFn: () => listAuditPage(connectionId, cursor),
+  });
+}
+
+export function auditEntryQuery(
+  connectionId: string,
+  entryId: string | null,
+) {
+  return queryOptions({
+    queryKey: qk.auditEntry(connectionId, entryId ?? ""),
+    enabled: entryId !== null,
+    staleTime: Infinity,
+    gcTime: LOG_GC_MS,
+    queryFn: () => getAuditEntry(connectionId, entryId ?? ""),
   });
 }
 
@@ -502,6 +548,7 @@ export function dashboardRunQuery(dashboardId: string | null) {
     queryKey: qk.dashboardRun(dashboardId ?? ""),
     enabled: dashboardId !== null,
     staleTime: Infinity,
+    gcTime: 60_000,
     queryFn: ({ signal }) => {
       const queryId = window.crypto.randomUUID();
       signal.addEventListener("abort", () => void cancelQuery(queryId), { once: true });

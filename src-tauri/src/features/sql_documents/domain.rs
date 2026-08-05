@@ -84,6 +84,23 @@ pub(crate) struct SqlDocumentRevision {
     pub(crate) created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SqlDocumentRevisionSummary {
+    pub(crate) document_id: SqlDocumentId,
+    pub(crate) local_revision: i64,
+    pub(crate) content_preview: String,
+    pub(crate) content_truncated: bool,
+    pub(crate) created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SqlDocumentRevisionPage {
+    pub(crate) items: Vec<SqlDocumentRevisionSummary>,
+    pub(crate) next_cursor: Option<i64>,
+}
+
 pub(crate) struct NewSqlDocument {
     pub(crate) connection_id: ConnectionId,
     pub(crate) dialect: SqlDialect,

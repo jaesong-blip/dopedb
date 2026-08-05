@@ -2,6 +2,10 @@
 
 use super::super::*;
 
+const HISTORY_PAGE_SIZE: usize = 100;
+const HISTORY_SQL_PREVIEW_CHARS: i64 = 512;
+const HISTORY_ERROR_PREVIEW_CHARS: i64 = 256;
+
 impl Store {
     // ── query history ──────────────────────────────────────────────────────
 
@@ -96,19 +100,113 @@ impl Store {
         Ok(())
     }
 
-    pub async fn list_history(&self, connection_id: Uuid) -> AppResult<Vec<HistoryEntry>> {
+    pub async fn list_history_page(
+        &self,
+        connection_id: Uuid,
+        cursor: Option<HistoryCursor>,
+        search: Option<&str>,
+        status: Option<&str>,
+        origin: Option<&str>,
+    ) -> AppResult<HistoryPage> {
         self.get_connection(connection_id).await?;
         let account_scope = self.active_local_scope().await?;
+        let cursor_time = cursor.as_ref().map(|value| value.executed_at);
+        let cursor_row_id = cursor.as_ref().map(|value| value.row_id);
         let rows = sqlx::query(
-            "SELECT * FROM query_history
+            "SELECT rowid AS history_row_id, id, connection_id,
+                    substr(sql, 1, ?8) AS sql_preview,
+                    length(sql) > ?8 AS sql_truncated,
+                    kind, status, row_count, duration_ms,
+                    CASE WHEN error IS NULL THEN NULL ELSE substr(error, 1, ?9) END
+                      AS error_preview,
+                    COALESCE(length(error) > ?9, 0) AS error_truncated,
+                    executed_at, origin
+             FROM query_history
              WHERE connection_id = ?1 AND account_scope = ?2
-             ORDER BY executed_at DESC",
+               AND (
+                 ?3 IS NULL OR executed_at < ?3
+                 OR (executed_at = ?3 AND rowid < ?4)
+               )
+               AND (?5 IS NULL OR instr(lower(sql), lower(?5)) > 0)
+               AND (?6 IS NULL OR status = ?6)
+               AND (?7 IS NULL OR origin = ?7)
+             ORDER BY executed_at DESC, rowid DESC
+             LIMIT ?10",
         )
         .bind(connection_id.to_string())
-        .bind(account_scope)
+        .bind(&account_scope)
+        .bind(cursor_time)
+        .bind(cursor_row_id)
+        .bind(search)
+        .bind(status)
+        .bind(origin)
+        .bind(HISTORY_SQL_PREVIEW_CHARS)
+        .bind(HISTORY_ERROR_PREVIEW_CHARS)
+        .bind(i64::try_from(HISTORY_PAGE_SIZE + 1).expect("history page size fits i64"))
         .fetch_all(&self.pool)
         .await?;
-        rows.iter().map(row_to_history).collect()
+        let mut items = rows
+            .iter()
+            .map(row_to_history_summary)
+            .collect::<AppResult<Vec<_>>>()?;
+        let has_more = items.len() > HISTORY_PAGE_SIZE;
+        if has_more {
+            items.pop();
+        }
+        let next_cursor = if has_more {
+            items.last().map(|(summary, row_id)| HistoryCursor {
+                executed_at: summary.executed_at,
+                row_id: *row_id,
+            })
+        } else {
+            None
+        };
+
+        let statuses = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT status FROM query_history
+             WHERE connection_id = ?1 AND account_scope = ?2
+             ORDER BY status LIMIT 32",
+        )
+        .bind(connection_id.to_string())
+        .bind(&account_scope)
+        .fetch_all(&self.pool)
+        .await?;
+        let origins = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT origin FROM query_history
+             WHERE connection_id = ?1 AND account_scope = ?2
+             ORDER BY origin LIMIT 32",
+        )
+        .bind(connection_id.to_string())
+        .bind(&account_scope)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(HistoryPage {
+            items: items.into_iter().map(|(summary, _)| summary).collect(),
+            next_cursor,
+            statuses,
+            origins,
+        })
+    }
+
+    pub async fn get_history_entry(
+        &self,
+        connection_id: Uuid,
+        history_id: Uuid,
+    ) -> AppResult<HistoryEntry> {
+        self.get_connection(connection_id).await?;
+        let account_scope = self.active_local_scope().await?;
+        let row = sqlx::query(
+            "SELECT * FROM query_history
+             WHERE id = ?1 AND connection_id = ?2 AND account_scope = ?3",
+        )
+        .bind(history_id.to_string())
+        .bind(connection_id.to_string())
+        .bind(account_scope)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("query history {history_id}")))?;
+        row_to_history(&row)
     }
 
     /// Resolve the initial query provenance and active generation in one SQLite
@@ -203,4 +301,24 @@ impl Store {
         tx.commit().await?;
         Ok(history)
     }
+}
+
+fn row_to_history_summary(row: &sqlx::sqlite::SqliteRow) -> AppResult<(HistoryEntrySummary, i64)> {
+    Ok((
+        HistoryEntrySummary {
+            id: parse_uuid(row.try_get("id")?)?,
+            connection_id: parse_uuid(row.try_get("connection_id")?)?,
+            sql_preview: row.try_get("sql_preview")?,
+            sql_truncated: row.try_get::<i64, _>("sql_truncated")? != 0,
+            kind: parse_kind(row.try_get("kind")?)?,
+            status: row.try_get("status")?,
+            row_count: row.try_get("row_count")?,
+            duration_ms: row.try_get("duration_ms")?,
+            error_preview: row.try_get("error_preview")?,
+            error_truncated: row.try_get::<i64, _>("error_truncated")? != 0,
+            executed_at: row.try_get("executed_at")?,
+            origin: row.try_get("origin")?,
+        },
+        row.try_get("history_row_id")?,
+    ))
 }

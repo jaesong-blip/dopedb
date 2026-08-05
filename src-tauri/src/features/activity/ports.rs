@@ -5,9 +5,9 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::error::AppResult;
-use crate::model::HistoryEntry;
+use crate::model::{AuditEntry, AuditPage, HistoryEntry, HistoryPage};
 
-use super::{AuditSnapshotReceipt, AuditVerdict};
+use super::{AuditPageRequest, AuditVerdict, HistoryPageRequest};
 
 pub(crate) trait ActivityPort: Clone + Send + Sync + 'static {
     fn verify_audit(
@@ -15,13 +15,25 @@ pub(crate) trait ActivityPort: Clone + Send + Sync + 'static {
         connection_id: Uuid,
     ) -> impl Future<Output = AppResult<AuditVerdict>> + Send;
 
-    fn audit_snapshot(
+    fn audit_page(
         &self,
-        connection_id: Uuid,
-    ) -> impl Future<Output = AppResult<AuditSnapshotReceipt>> + Send;
+        request: AuditPageRequest,
+    ) -> impl Future<Output = AppResult<AuditPage>> + Send;
 
-    fn history(
+    fn audit_entry(
         &self,
         connection_id: Uuid,
-    ) -> impl Future<Output = AppResult<Vec<HistoryEntry>>> + Send;
+        entry_id: Uuid,
+    ) -> impl Future<Output = AppResult<AuditEntry>> + Send;
+
+    fn history_page(
+        &self,
+        request: HistoryPageRequest,
+    ) -> impl Future<Output = AppResult<HistoryPage>> + Send;
+
+    fn history_entry(
+        &self,
+        connection_id: Uuid,
+        history_id: Uuid,
+    ) -> impl Future<Output = AppResult<HistoryEntry>> + Send;
 }

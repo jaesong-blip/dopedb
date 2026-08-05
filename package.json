@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm check:skills && tsc && vite build",
+    "benchmark:data-surfaces": "node --expose-gc --no-warnings scripts/benchmark-data-surfaces.mjs",
     "generate:skills": "node scripts/generate-skill-bundle.mjs",
     "check:skills": "node scripts/generate-skill-bundle.mjs --check",
     "check:test-budget": "node scripts/check-critical-test-budget.mjs",

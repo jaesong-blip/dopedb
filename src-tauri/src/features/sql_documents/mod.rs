@@ -13,9 +13,10 @@ use adapters::{
     ConnectionSqlDocumentAuthority, SqliteSqlDocumentRepository, SystemSqlDocumentGenerator,
 };
 pub(crate) use application::{
-    CreateSqlDocumentRequest, SaveSqlDocumentOutcome, SaveSqlDocumentRequest, SqlDocumentUseCases,
+    CreateSqlDocumentRequest, SaveSqlDocumentOutcome, SaveSqlDocumentRequest,
+    SqlDocumentRevisionPageRequest, SqlDocumentUseCases,
 };
-pub(crate) use domain::{SqlDocument, SqlDocumentRevision};
+pub(crate) use domain::{SqlDocument, SqlDocumentRevision, SqlDocumentRevisionPage};
 
 pub(crate) type SqlDocumentsFeature = SqlDocumentUseCases<
     SqliteSqlDocumentRepository,

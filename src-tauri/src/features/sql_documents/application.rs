@@ -11,7 +11,7 @@ use crate::kernel::sql_namespace::normalize_sql_namespace;
 
 use super::domain::{
     content_hash, normalize_resolve_mode, normalize_title, validate_content, NewSqlDocument,
-    SqlDocument, SqlDocumentRevision,
+    SqlDocument, SqlDocumentRevision, SqlDocumentRevisionPage,
 };
 use super::ports::{
     SaveDocumentCommand, SaveRepositoryOutcome, SqlDocumentAuthorityGuard,
@@ -40,6 +40,15 @@ pub(crate) struct SaveSqlDocumentRequest {
     pub(crate) resolve_mode: String,
     pub(crate) content: String,
     pub(crate) expected_revision: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SqlDocumentRevisionPageRequest {
+    pub(crate) connection_id: ConnectionId,
+    pub(crate) id: SqlDocumentId,
+    pub(crate) cursor: Option<i64>,
+    pub(crate) search: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,13 +86,42 @@ where
         self.repository.list(guard.authority()).await
     }
 
-    pub(crate) async fn list_revisions(
+    pub(crate) async fn list_revision_page(
+        &self,
+        mut request: SqlDocumentRevisionPageRequest,
+    ) -> AppResult<SqlDocumentRevisionPage> {
+        if request.cursor.is_some_and(|cursor| cursor < 1) {
+            return Err(AppError::Config(
+                "SQL document revision cursor must be positive".into(),
+            ));
+        }
+        request.search = normalize_revision_search(request.search)?;
+        let guard = self.authority.authorize(request.connection_id).await?;
+        self.repository
+            .list_revision_page(
+                guard.authority(),
+                request.id,
+                request.cursor,
+                request.search.as_deref(),
+            )
+            .await
+    }
+
+    pub(crate) async fn get_revision(
         &self,
         connection_id: ConnectionId,
         id: SqlDocumentId,
-    ) -> AppResult<Vec<SqlDocumentRevision>> {
+        local_revision: i64,
+    ) -> AppResult<SqlDocumentRevision> {
+        if local_revision < 1 {
+            return Err(AppError::Config(
+                "SQL document revision must be positive".into(),
+            ));
+        }
         let guard = self.authority.authorize(connection_id).await?;
-        self.repository.list_revisions(guard.authority(), id).await
+        self.repository
+            .get_revision(guard.authority(), id, local_revision)
+            .await
     }
 
     pub(crate) async fn create(&self, request: CreateSqlDocumentRequest) -> AppResult<SqlDocument> {
@@ -187,6 +225,22 @@ where
         }
         Ok(())
     }
+}
+
+fn normalize_revision_search(value: Option<String>) -> AppResult<Option<String>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.chars().count() > 256 || value.chars().any(char::is_control) {
+        return Err(AppError::Config(
+            "SQL document revision search is invalid".into(),
+        ));
+    }
+    Ok(Some(value.to_owned()))
 }
 
 fn normalize_database(value: Option<String>, fallback: &str) -> AppResult<String> {
