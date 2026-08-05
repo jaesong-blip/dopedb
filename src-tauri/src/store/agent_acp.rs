@@ -181,7 +181,7 @@ impl Store {
                    LIMIT ?2
                )",
         )
-        .bind(event.session_id.to_string())
+        .bind(summary.id.to_string())
         .bind(MAX_PERSISTED_EVENTS)
         .execute(&mut *transaction)
         .await?;
