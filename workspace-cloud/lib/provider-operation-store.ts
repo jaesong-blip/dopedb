@@ -120,6 +120,11 @@ export type ProviderOperationExecutionRecord = ProviderOperationPlanRecord & Rea
   failureCode: string | null;
 }>;
 
+export type ProviderOperationListRecord = ProviderOperationExecutionRecord & Readonly<{
+  requestedByCurrentActor: boolean;
+  executionAuthorityLive: boolean;
+}>;
+
 export type ProviderManagedAccessState =
   | "waiting_for_provider"
   | "not_requested"
@@ -186,6 +191,12 @@ type ProviderOperationExecutionRow = ProviderOperationPlanRow & {
   reconcileAfter: Date | string | null;
   redactedResult: unknown;
   failureCode: string | null;
+};
+
+type ProviderOperationListRow = ProviderOperationExecutionRow & {
+  requestedByMemberId: string;
+  requestedByUserId: string;
+  executionAuthorityLive: boolean;
 };
 
 function safeRedactedValue(value: unknown, depth = 0): void {
@@ -446,6 +457,45 @@ function executionResultProjection(value: unknown): Readonly<{
   };
 }
 
+function executionRecord(
+  row: ProviderOperationExecutionRow | undefined,
+  input: {
+    organizationId: string;
+    integrationId: string;
+    integrationGeneration: bigint;
+    operationId: string;
+  },
+): ProviderOperationExecutionRecord | null {
+  const plan = planRecord(row, input);
+  const executionResult = row ? executionResultProjection(row.redactedResult) : null;
+  if (
+    !row
+    || !plan
+    || !executionResult
+    || (row.claimId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(row.claimId))
+    || (row.providerOperationId !== null
+      && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        .test(row.providerOperationId))
+    || (row.providerResourceId !== null
+      && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(row.providerResourceId))
+    || (row.failureCode !== null
+      && !/^[A-Z][A-Z0-9_]{0,95}$/.test(row.failureCode))
+  ) {
+    return null;
+  }
+  return {
+    ...plan,
+    claimId: row.claimId,
+    remoteStartedAt: optionalDate(row.remoteStartedAt),
+    providerOperationId: row.providerOperationId,
+    providerResourceId: row.providerResourceId,
+    reconcileAfter: optionalDate(row.reconcileAfter),
+    ...executionResult,
+    failureCode: row.failureCode,
+  };
+}
+
 export async function loadProviderOperationExecution(input: {
   organizationId: string;
   integrationId: string;
@@ -476,40 +526,124 @@ export async function loadProviderOperationExecution(input: {
       AND operation."integration_generation" = ${input.integrationGeneration}
     LIMIT 1
   `);
-  const row = result.rows[0];
-  const plan = planRecord(row, {
+  return executionRecord(result.rows[0], {
     organizationId: input.organizationId,
     integrationId: input.integrationId,
     integrationGeneration: input.integrationGeneration,
     operationId: input.operationId,
   });
-  const executionResult = row ? executionResultProjection(row.redactedResult) : null;
-  if (
-    !row
-    || !plan
-    || !executionResult
-    || (row.claimId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      .test(row.claimId))
-    || (row.providerOperationId !== null
-      && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-        .test(row.providerOperationId))
-    || (row.providerResourceId !== null
-      && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(row.providerResourceId))
-    || (row.failureCode !== null
-      && !/^[A-Z][A-Z0-9_]{0,95}$/.test(row.failureCode))
-  ) {
-    return null;
+}
+
+/**
+ * Lists one integration generation's redacted operations for the workspace
+ * approval surface. Provider secrets, requester identifiers, approval actor
+ * identifiers, and ownership markers never leave this store boundary.
+ */
+export async function listProviderOperationExecutions(input: {
+  organizationId: string;
+  integrationId: string;
+  integrationGeneration: bigint;
+  currentMemberId: string;
+  currentUserId: string;
+}): Promise<ProviderOperationListRecord[]> {
+  const result = await db.execute<ProviderOperationListRow>(sql`
+    SELECT operation."id"::text AS "id", operation."state" AS "state",
+      operation."plan_hash" AS "planHash",
+      operation."plan_expires_at" AS "planExpiresAt",
+      operation."risk" AS "risk",
+      operation."approval_policy" AS "approvalPolicy",
+      operation."redacted_plan" AS "redactedPlan",
+      operation."ownership_marker" AS "ownershipMarker",
+      operation."claim_id"::text AS "claimId",
+      operation."remote_started_at" AS "remoteStartedAt",
+      operation."provider_operation_id" AS "providerOperationId",
+      operation."provider_resource_id" AS "providerResourceId",
+      operation."reconcile_after" AS "reconcileAfter",
+      operation."redacted_result" AS "redactedResult",
+      operation."failure_code" AS "failureCode",
+      operation."requested_by_member_id" AS "requestedByMemberId",
+      operation."requested_by_user_id" AS "requestedByUserId",
+      EXISTS (
+        SELECT 1
+        FROM ${workspaceProviderOperationApproval} AS operation_approval
+        JOIN ${session} AS requester_session
+          ON requester_session."id" = operation."requested_by_session_id"
+         AND requester_session."user_id" = operation."requested_by_user_id"
+         AND requester_session."expires_at" > now()
+        JOIN ${member} AS requester_member
+          ON requester_member."id" = operation."requested_by_member_id"
+         AND requester_member."organization_id" = operation."organization_id"
+         AND requester_member."user_id" = operation."requested_by_user_id"
+         AND requester_member."role" = operation."requested_by_role"
+         AND requester_member."role" IN ('admin', 'owner')
+         AND requester_member."revocation_pending_at" IS NULL
+         AND requester_member."revocation_claim_id" IS NULL
+        JOIN ${session} AS approver_session
+          ON approver_session."id" = operation_approval."actor_session_id"
+         AND approver_session."user_id" = operation_approval."actor_user_id"
+         AND approver_session."expires_at" > now()
+        JOIN ${member} AS approver_member
+          ON approver_member."id" = operation_approval."actor_member_id"
+         AND approver_member."organization_id" = operation_approval."organization_id"
+         AND approver_member."user_id" = operation_approval."actor_user_id"
+         AND approver_member."role" = operation_approval."actor_role"
+         AND approver_member."role" IN ('admin', 'owner')
+         AND approver_member."revocation_pending_at" IS NULL
+         AND approver_member."revocation_claim_id" IS NULL
+        WHERE operation_approval."organization_id" = operation."organization_id"
+          AND operation_approval."operation_id" = operation."id"
+          AND operation_approval."plan_hash" = operation."plan_hash"
+          AND operation_approval."decision" = 'approved'
+          AND (
+            operation."approval_policy" <> 'separate_admin'
+            OR (
+              operation_approval."actor_member_id" <> operation."requested_by_member_id"
+              AND operation_approval."actor_user_id" <> operation."requested_by_user_id"
+            )
+          )
+      ) AS "executionAuthorityLive"
+    FROM ${workspaceProviderOperation} AS operation
+    WHERE operation."organization_id" = ${input.organizationId}
+      AND operation."integration_id" = ${input.integrationId}::uuid
+      AND operation."provider" = 'neon'
+      AND operation."kind" = 'neon.branch.create'
+      AND operation."integration_generation" = ${input.integrationGeneration}
+    ORDER BY operation."updated_at" DESC, operation."id" DESC
+    LIMIT ${MAX_PROVIDER_RESULTS + 1}
+  `);
+  if (result.rows.length > MAX_PROVIDER_RESULTS) {
+    throw new ProviderRequestError(
+      "neon",
+      "Workspace Neon operation scope is too large to inspect safely",
+      409,
+    );
   }
-  return {
-    ...plan,
-    claimId: row.claimId,
-    remoteStartedAt: optionalDate(row.remoteStartedAt),
-    providerOperationId: row.providerOperationId,
-    providerResourceId: row.providerResourceId,
-    reconcileAfter: optionalDate(row.reconcileAfter),
-    ...executionResult,
-    failureCode: row.failureCode,
-  };
+  return result.rows.map((row) => {
+    const operation = executionRecord(row, {
+      organizationId: input.organizationId,
+      integrationId: input.integrationId,
+      integrationGeneration: input.integrationGeneration,
+      operationId: row.id,
+    });
+    if (
+      !operation
+      || typeof row.executionAuthorityLive !== "boolean"
+      || row.requestedByMemberId.length === 0
+      || row.requestedByUserId.length === 0
+    ) {
+      throw new ProviderRequestError(
+        "neon",
+        "Workspace Neon operation inventory is invalid",
+        409,
+      );
+    }
+    return {
+      ...operation,
+      requestedByCurrentActor: row.requestedByMemberId === input.currentMemberId
+        && row.requestedByUserId === input.currentUserId,
+      executionAuthorityLive: row.executionAuthorityLive,
+    };
+  });
 }
 
 export type NeonBranchManagedAccessBoundary = Readonly<{

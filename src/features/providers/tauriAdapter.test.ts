@@ -21,6 +21,7 @@ import providerLeaseIssuanceSource from "../../../workspace-cloud/lib/provider-i
 import gcpSetupSource from "../../../workspace-cloud/features/providerAccess/GcpCloudSetup.tsx?raw";
 import providerIntegrationListSource from "../../../workspace-cloud/features/providerAccess/ProviderIntegrationList.tsx?raw";
 import providerResourcePickerSource from "../../../workspace-cloud/features/providerAccess/ProviderResourcePicker.tsx?raw";
+import neonBranchManagerSource from "../../../workspace-cloud/features/providerAccess/NeonBranchManager.tsx?raw";
 import providerAccessControllerSource from "../../../workspace-cloud/features/providerAccess/useProviderAccess.ts?raw";
 import providerAccessDomainSource from "../../../workspace-cloud/features/providerAccess/domain.ts?raw";
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
@@ -63,6 +64,9 @@ import {
 import {
   neonInheritedRoleRetirementStatement,
 } from "../../../workspace-cloud/lib/providers/neon-role-policy";
+import {
+  parseNeonBranchOperations,
+} from "../../../workspace-cloud/features/providerAccess/neonBranches";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -723,6 +727,10 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchesRouteSource).toContain("export const maxDuration = 60");
     expect(neonBranchesRouteSource).not.toContain("export async function POST");
     expect(neonBranchOperationsRouteSource).toContain("boundedJsonBody");
+    expect(neonBranchOperationsRouteSource).toContain("export async function GET");
+    expect(neonBranchOperationsRouteSource).toContain("listProviderOperationExecutions");
+    expect(neonBranchOperationsRouteSource).toContain("requestedByCurrentActor");
+    expect(neonBranchOperationsRouteSource).toContain("canApprove");
     expect(neonBranchOperationsRouteSource).toContain("recordProviderOperationPlan");
     expect(neonBranchOperationsRouteSource).toContain("revalidateNeonBranchCreatePlan");
     expect(neonBranchOperationsRouteSource).toContain("decideProviderOperation");
@@ -737,6 +745,8 @@ describe("provider credential Tauri adapter", () => {
       "const receipt = await createNeonBranch",
     ));
     expect(providerOperationStoreSource).toContain("providerMutationAuthoritySql");
+    expect(providerOperationStoreSource).toContain("executionAuthorityLive");
+    expect(providerOperationStoreSource).toContain("listProviderOperationExecutions");
     expect(providerOperationStoreSource).toContain(
       'PROVIDER_OPERATION_DURABLE_MUTATION_ENTRYPOINTS = Object.freeze([',
     );
@@ -860,6 +870,72 @@ describe("provider credential Tauri adapter", () => {
     expect(providerResourcePickerSource).toContain("Neon 최소권한 준비");
     expect(providerResourcePickerSource).toContain("표시된 PUBLIC 권한 회수를 승인합니다");
     expect(providerResourcePickerSource).not.toMatch(/setup terminal|SQL 입력/);
+    expect(neonBranchManagerSource).toContain("변경 없는 계획 만들기");
+    expect(neonBranchManagerSource).toContain("다른 워크스페이스 관리자가");
+    expect(neonBranchManagerSource).not.toMatch(/>Switch<|>Restore<|>Delete</);
+    const branchPlan = {
+      version: 1,
+      kind: "neon.branch.create",
+      operationId: "77777777-7777-4777-8777-777777777777",
+      integrationId,
+      integrationGeneration: "12",
+      issuedAt: "2026-08-05T03:00:00.000Z",
+      expiresAt: "2026-08-05T03:10:00.000Z",
+      source: {
+        projectId: "quiet-sun-12345678",
+        branchId: "br-main-12345678",
+        name: "main",
+        protected: true,
+        default: true,
+        environment: "production",
+        point: { kind: "head" },
+      },
+      target: {
+        name: "agent-safe-copy",
+        initSource: "parent-data",
+        endpoint: "read_write",
+        copiesData: true,
+        createsCompute: true,
+      },
+      risk: "production_data",
+      approvalPolicy: "separate_admin",
+      warningCodes: ["NEON_PRODUCTION_DATA_COPY"],
+    };
+    const branchOperations = parseNeonBranchOperations({
+      integrationGeneration: "12",
+      operations: [{
+        id: branchPlan.operationId,
+        state: "awaiting_approval",
+        planHash: "a".repeat(64),
+        planExpiresAt: branchPlan.expiresAt,
+        expired: false,
+        risk: "production_data",
+        approvalPolicy: "separate_admin",
+        requestedByCurrentActor: true,
+        canApprove: false,
+        canReject: true,
+        canExecute: false,
+        needsCredentialFenceRecovery: false,
+        providerOperationId: null,
+        branchId: null,
+        reconcileAfter: null,
+        endpointId: null,
+        databaseCount: null,
+        retiredInheritedRoleCount: null,
+        managedAccessState: null,
+        failureCode: null,
+        plan: branchPlan,
+      }],
+    });
+    expect(branchOperations?.operations[0]).toEqual(expect.objectContaining({
+      requestedByCurrentActor: true,
+      canApprove: false,
+      approvalPolicy: "separate_admin",
+    }));
+    expect(parseNeonBranchOperations({
+      integrationGeneration: "12",
+      operations: [{ ...branchOperations?.operations[0], token: "must-not-pass" }],
+    })).toBeNull();
     expect(neonSource).toContain("NeonLeaseCleanupRequiredError");
     expect(providerLeaseIssuanceSource).toContain(
       "error instanceof NeonLeaseCleanupRequiredError",

@@ -23,6 +23,7 @@ import {
   cancelExpiredProviderOperationExecution,
   claimProviderOperationExecution,
   decideProviderOperation,
+  listProviderOperationExecutions,
   loadProviderOperationExecution,
   loadProviderOperationPlan,
   markProviderOperationRemoteStarted,
@@ -69,6 +70,85 @@ type OperationBody =
   }>;
 
 export const maxDuration = 60;
+
+export async function GET(request: Request, context: RouteContext) {
+  const { workspaceId, integrationId } = await context.params;
+  if (!isUuid(workspaceId) || !isUuid(integrationId)) {
+    return jsonError("Invalid workspace or integration id", 400);
+  }
+  const authorization = await authorizeWorkspace(request, workspaceId, "manage");
+  if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  if (authorization.role !== "admin" && authorization.role !== "owner") {
+    return jsonError("Workspace access denied", 403);
+  }
+  const integration = await activeProviderIntegration(workspaceId, integrationId);
+  if (!integration || integration.provider !== "neon") {
+    return jsonError("Neon integration not found", 404);
+  }
+  try {
+    const operations = await listProviderOperationExecutions({
+      organizationId: workspaceId,
+      integrationId,
+      integrationGeneration: integration.generation,
+      currentMemberId: authorization.membership.id,
+      currentUserId: authorization.session.user.id,
+    });
+    const now = Date.now();
+    return privateJson({
+      integrationGeneration: integration.generation.toString(),
+      operations: operations.map((operation) => {
+        const expired = operation.planExpiresAt.valueOf() <= now;
+        const needsCredentialFenceRecovery = operation.state === "succeeded"
+          && operation.plan.target.endpoint === "read_write"
+          && (
+            operation.retiredInheritedRoleCount === null
+            || operation.credentialFenceFingerprint === null
+          );
+        const canApprove = operation.state === "awaiting_approval"
+          && !expired
+          && (
+            operation.approvalPolicy === "single_admin"
+            || !operation.requestedByCurrentActor
+          );
+        const canExecute = needsCredentialFenceRecovery
+          || operation.state === "remote_started"
+          || operation.state === "reconciling"
+          || (
+            (operation.state === "approved" || operation.state === "claimed")
+            && operation.executionAuthorityLive
+          );
+        return {
+          id: operation.id,
+          state: operation.state,
+          planHash: operation.planHash,
+          planExpiresAt: operation.planExpiresAt.toISOString(),
+          expired,
+          risk: operation.risk,
+          approvalPolicy: operation.approvalPolicy,
+          requestedByCurrentActor: operation.requestedByCurrentActor,
+          canApprove,
+          canReject: operation.state === "awaiting_approval",
+          canExecute,
+          needsCredentialFenceRecovery,
+          providerOperationId: operation.providerOperationId,
+          branchId: operation.providerResourceId,
+          reconcileAfter: operation.reconcileAfter?.toISOString() ?? null,
+          endpointId: operation.endpointId,
+          databaseCount: operation.databaseCount,
+          retiredInheritedRoleCount: operation.retiredInheritedRoleCount,
+          managedAccessState: operation.managedAccessState,
+          failureCode: operation.failureCode,
+          plan: operation.plan,
+        };
+      }),
+    });
+  } catch (error) {
+    if (error instanceof ProviderRequestError) {
+      return jsonError(error.message, error.status);
+    }
+    return jsonError("Neon branch operation inventory failed", 502);
+  }
+}
 
 function exactOperationBody(value: unknown): OperationBody | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ControlButton, ControlLink } from "../components/Controls";
+import { NeonBranchManager } from "../../features/providerAccess/NeonBranchManager";
 import { ProviderResourcePicker } from "../../features/providerAccess/ProviderResourcePicker";
 import { useProviderAccess } from "../../features/providerAccess/useProviderAccess";
 
@@ -65,6 +66,14 @@ export function SharedDatabasePanel({
             </div>
           </div>
         )
+      ) : null}
+
+      {!controller.loading ? (
+        <NeonBranchManager
+          workspaceId={workspaceId}
+          integrations={controller.integrations}
+          managedConnections={controller.managedConnections}
+        />
       ) : null}
 
       {controller.loading ? (
