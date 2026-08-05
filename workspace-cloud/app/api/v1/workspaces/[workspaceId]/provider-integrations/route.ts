@@ -61,6 +61,7 @@ import {
   workspaceProviderPrincipalClaim,
 } from "../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
+import { logProviderConnectionFailure } from "../../../../../../lib/workspace-server-log";
 
 type RouteContext = { params: Promise<{ workspaceId: string }> };
 
@@ -609,11 +610,10 @@ export async function POST(request: Request, context: RouteContext) {
 
   } catch (error) {
     const postgresCode = postgresErrorCode(error);
-    console.error("provider_connection_failed", {
+    logProviderConnectionFailure({
       provider: body.provider,
       stage,
       postgresCode,
-      errorName: error instanceof Error ? error.name : "UnknownError",
     });
     if (body.provider === "gcpCloudSql" && postgresCode === "23505") {
       return jsonError(

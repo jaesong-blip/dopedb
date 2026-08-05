@@ -22,6 +22,7 @@ import {
 import { authorizeWorkspaceConnection } from "../../../../../../../../lib/workspace-authorization";
 import { providerResourceSupportsWrite } from "../../../../../../../../lib/workspace-connections";
 import { hasWorkspaceCapability } from "../../../../../../../../lib/workspace-permissions";
+import { logManagedDatabaseAccessFailure } from "../../../../../../../../lib/workspace-server-log";
 
 type RouteContext = {
   params: Promise<{ workspaceId: string; connectionId: string }>;
@@ -57,6 +58,17 @@ function consumeLeaseReleaseBudget(organizationId: string, userId: string) {
     `workspace-lease-release:${organizationId}:${userId}`,
     30,
   );
+}
+
+function nestedDatabaseCode(error: unknown) {
+  let current = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!current || typeof current !== "object") return null;
+    const code = "code" in current ? current.code : null;
+    if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return code;
+    current = "cause" in current ? current.cause : null;
+  }
+  return null;
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -298,6 +310,12 @@ export async function POST(request: Request, context: RouteContext) {
       },
     });
   } catch (error) {
+    logManagedDatabaseAccessFailure({
+      provider: integration.provider,
+      providerRequest: error instanceof ProviderRequestError,
+      status: error instanceof ProviderRequestError ? error.status : 0,
+      databaseCode: nestedDatabaseCode(error),
+    });
     if (error instanceof ProviderRequestError) {
       return jsonError(error.message, error.status);
     }

@@ -21,6 +21,7 @@ import {
   localizedWorkspacePath,
   workspaceLocaleFromCookieHeader,
 } from "../workspace-locale";
+import { logGcpCloudSetupCallbackFailure } from "../workspace-server-log";
 
 function settingsUrl(request: Request, workspaceId: string | null, setupId?: string) {
   const locale = workspaceLocaleFromCookieHeader(request.headers.get("cookie"));
@@ -120,18 +121,10 @@ export async function gcpCloudSetupCallbackResponse(request: Request) {
     });
     return Response.redirect(settingsUrl(request, oauthState.organizationId, setupId));
   } catch (error) {
-    console.error("gcp_cloud_setup_callback_failed", {
+    logGcpCloudSetupCallbackFailure({
       stage,
-      error: error instanceof ProviderRequestError
-        ? {
-            name: error.name,
-            provider: error.provider,
-            status: error.status,
-            message: error.message,
-          }
-        : {
-            name: error instanceof Error ? error.name : "UnknownError",
-          },
+      providerRequest: error instanceof ProviderRequestError,
+      status: error instanceof ProviderRequestError ? error.status : 0,
     });
     return Response.redirect(settingsUrl(request, oauthState.organizationId));
   }

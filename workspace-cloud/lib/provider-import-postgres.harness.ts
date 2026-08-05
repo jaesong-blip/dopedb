@@ -89,6 +89,68 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
       }),
     };
     vi.doMock("./db", () => ({ db: harnessDb, neonSql }));
+    const serverLog = await import("./workspace-server-log");
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      serverLog.logProviderConnectionFailure({
+        provider: "secret-provider-token",
+        stage: "password-stage",
+        postgresCode: "credential-value",
+      });
+      serverLog.logGcpManagedAccessUpstreamRejection({
+        stage: "authorization-token",
+        upstreamStatus: 999,
+        googleStatus: "SECRET_TOKEN_VALUE",
+        googleReason: "PASSWORD_VALUE",
+      });
+      serverLog.logGcpCloudSetupCallbackFailure({
+        stage: "credential-value",
+        providerRequest: true,
+        status: 999,
+      });
+      serverLog.logManagedDatabaseAccessFailure({
+        provider: "secret-provider-token",
+        providerRequest: false,
+        status: 999,
+        databaseCode: "42703",
+      });
+      serverLog.logManagedDatabaseAccessFailure({
+        provider: "gcpCloudSql",
+        providerRequest: false,
+        status: 999,
+        databaseCode: "password-value",
+      });
+      expect(logSpy.mock.calls).toEqual([
+        ["provider_connection_failed", {
+          provider: "other",
+          stage: "other",
+          databaseKind: null,
+        }],
+        ["gcp_managed_access_upstream_rejection", {
+          stage: "other",
+          upstreamStatus: 0,
+          googleStatus: null,
+          googleReason: null,
+        }],
+        ["gcp_cloud_setup_callback_failed", {
+          stage: "other",
+          kind: "provider_request",
+          status: 0,
+        }],
+        ["managed_database_access_failed", {
+          provider: "other",
+          kind: "database_schema",
+          status: 0,
+        }],
+        ["managed_database_access_failed", {
+          provider: "gcpCloudSql",
+          kind: "unexpected",
+          status: 0,
+        }],
+      ]);
+    } finally {
+      logSpy.mockRestore();
+    }
     const { importProviderReceipt } = await import("./provider-import-store");
 
     const suffix = randomUUID();

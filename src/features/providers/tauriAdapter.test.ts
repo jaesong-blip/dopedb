@@ -30,6 +30,7 @@ import sharedDatabasePanelSource from "../../../workspace-cloud/app/settings/Sha
 import legacyProviderBackupSource from "../../../workspace-cloud/fixtures/provider-legacy-connection-backup-v1.json?raw";
 import providerCatalogSource from "../../../workspace-cloud/lib/provider-catalog.ts?raw";
 import workspaceMessagesSource from "../../../workspace-cloud/lib/workspace-messages.ts?raw";
+import workspaceServerLogSource from "../../../workspace-cloud/lib/workspace-server-log.ts?raw";
 import providerAdapterContractSource from "../../../workspace-cloud/lib/providers/adapter-contract.ts?raw";
 import {
   issueAfterFreshProviderAuthority,
@@ -902,7 +903,16 @@ describe("provider credential Tauri adapter", () => {
     expect(gcpBootstrapSource).toContain("pg_write_all_data");
     expect(gcpBootstrapSource).toContain("roles/serviceusage.serviceUsageConsumer");
     expect(gcpBootstrapSource).toContain("Temporary Cloud SQL privilege bootstrap cleanup failed");
-    expect(gcpCloudSqlSource).toContain("GCP managed access upstream rejection");
+    expect(gcpCloudSqlSource).toContain("logGcpManagedAccessUpstreamRejection");
+    expect(workspaceServerLogSource).toContain(
+      'emitServerFailure("gcp_managed_access_upstream_rejection"',
+    );
+    expect(workspaceServerLogSource).toContain(
+      'emitServerFailure("managed_database_access_failed"',
+    );
+    expect(workspaceServerLogSource).not.toMatch(
+      /error\.message|request\.body|response\.body/,
+    );
     expect(gcpCloudSqlSource).toContain("Cloud SQL Admin denied the managed access check");
     expect(gcpCloudSqlSource).toContain('"x-goog-user-project": credential.projectId');
     expect(gcpCloudSqlSource).toContain("Cloud SQL instance identity changed during verification");

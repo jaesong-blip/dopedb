@@ -36,6 +36,9 @@ http://localhost:3000/api/auth/callback/google
 Then run `pnpm install` in this directory and `pnpm workspace:cloud:dev` from the repo
 root. Generate/check migrations with `pnpm db:generate` and `pnpm db:check` here; apply
 them through the unpooled URL with `pnpm workspace:migrate` from the repository root.
+Production Vercel builds run that migration before the Next.js build; a migration
+failure stops the deployment instead of serving code against an older control-plane
+schema.
 
 ## Neon managed access
 
@@ -218,6 +221,12 @@ definitions, and reuses the existing read-only dashboard safety boundary for exe
   stores each account in a separate operating-system credential item.
 - All application queries use Drizzle ORM; all schema changes use committed Drizzle Kit
   migrations.
+- Application-owned server logging has one categorical sink. The root build rejects
+  direct runtime `console`/stdout/stderr and alternate exception sinks under
+  `workspace-cloud/app` and `workspace-cloud/lib`. Provider setup and managed-lease
+  failures retain only closed provider/stage/status/error-kind values; requests,
+  responses, SQL, identifiers, result rows, credentials, certificates, and raw error
+  messages never cross that sink.
 - Member-local target-database credentials never enter this service. In optional
   managed mode, reusable PlanetScale OAuth or Neon API authorization is AES-256-GCM
   encrypted with record-bound AAD before database persistence; GCP stores only

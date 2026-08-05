@@ -19,6 +19,7 @@ import {
   type ManagedProviderLease,
   type ProviderResourceItem,
 } from "./provider-types";
+import { logGcpManagedAccessUpstreamRejection } from "../workspace-server-log";
 
 const STS_URL = "https://sts.googleapis.com/v1/token";
 const IAM_CREDENTIALS_ORIGIN = "https://iamcredentials.googleapis.com";
@@ -131,7 +132,7 @@ async function jsonRequest(
       ? (googleError as JsonObject).status
       : null;
     const googleReason = googleErrorReason(googleError);
-    console.error("GCP managed access upstream rejection", {
+    logGcpManagedAccessUpstreamRejection({
       stage,
       upstreamStatus: response.status,
       googleStatus,

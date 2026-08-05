@@ -428,6 +428,11 @@ This snapshot is the shipped identity and administration slice, not completion o
 Milestone 1 exit criterion. Durable bidirectional resource sync, per-workspace envelope
 encryption, backup/restore, and workspace deletion remain future work. Shared-connection
 optimistic conflicts now have an explicit recovery surface under Milestone 2.
+The server-log exit criterion is enforced in the root build: one closed categorical
+sink owns runtime failure events, and an automatic source check rejects direct logging
+or exception sinks that could serialize requests, SQL, result rows, identifiers, or
+credentials. Managed-access failures expose only provider, bounded status, and
+`provider_request`/`database_schema`/`database_unavailable`/`unexpected` categories.
 
 Deliverables:
 
