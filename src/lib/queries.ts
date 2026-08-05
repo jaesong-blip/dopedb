@@ -295,6 +295,12 @@ export function skillStatusQuery(enabled = true) {
     retry: false,
     enabled,
     refetchOnWindowFocus: true,
+    // External edits and CLI-managed updates must reach both the startup gate
+    // and Settings without requiring a focus round trip. TanStack suspends this
+    // bounded check while the document is hidden and tears it down with the
+    // final observer.
+    refetchInterval: enabled ? 30_000 : false,
+    refetchIntervalInBackground: false,
     queryFn: () => skillStatus("all"),
   });
 }

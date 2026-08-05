@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -73,6 +74,140 @@ function stableJson(value) {
 
 function contentDigest(contentManifest) {
   return sha256(Buffer.from(stableJson(contentManifest), "utf8"));
+}
+
+function resolveContentRevision(snapshots, packageDigest, snapshotFiles) {
+  const digestMatches = snapshots.filter(
+    (snapshot) => snapshot.packageDigest === packageDigest,
+  );
+  if (digestMatches.length > 1) {
+    throw new Error(
+      `package digest ${packageDigest} names multiple Skill revisions`,
+    );
+  }
+  const reusableSnapshot = digestMatches[0];
+  if (
+    reusableSnapshot &&
+    stableJson(reusableSnapshot.files) !== stableJson(snapshotFiles)
+  ) {
+    throw new Error(
+      `package digest ${packageDigest} names different installed Skill files`,
+    );
+  }
+  return {
+    reusableSnapshot,
+    releaseRevision:
+      reusableSnapshot?.releaseRevision ??
+      snapshots.reduce(
+        (maximum, snapshot) => Math.max(maximum, snapshot.releaseRevision),
+        0,
+      ) + 1,
+  };
+}
+
+// This script is part of every frontend build, so keep the content-versioning
+// policy executable without adding another critical-test slot. Each content
+// surface must earn exactly one revision, while app metadata must not.
+function assertContentRevisionPolicy() {
+  const sourceFile = (path, digest) => ({
+    path,
+    sourcePath: `skills/${skillName}/${path}`,
+    size: 1,
+    executable: false,
+    sha256: digest,
+    normalizedTextSha256: digest,
+  });
+  const installedFile = (digest) => ({
+    path: "SKILL.md",
+    sourcePath: "generated:discovery-stub",
+    size: 1,
+    executable: false,
+    sha256: digest,
+    normalizedTextSha256: digest,
+  });
+  const digest = (digit) => digit.repeat(64);
+  const base = {
+    schemaVersion: 1,
+    skillName,
+    sourcePath: `skills/${skillName}`,
+    sourceFiles: [
+      sourceFile("SKILL.md", digest("1")),
+      sourceFile("references/safety.md", digest("2")),
+    ],
+    installFiles: [installedFile(digest("3"))],
+  };
+  const baseFiles = base.installFiles;
+  const baseDigest = contentDigest(base);
+  const snapshots = [
+    {
+      releaseRevision: 41,
+      packageDigest: baseDigest,
+      files: baseFiles,
+    },
+  ];
+
+  assert.equal(
+    resolveContentRevision(snapshots, baseDigest, baseFiles).releaseRevision,
+    41,
+    "unchanged content must reuse its revision across app releases",
+  );
+
+  const variants = [
+    {
+      ...base,
+      sourceFiles: [
+        sourceFile("SKILL.md", digest("4")),
+        base.sourceFiles[1],
+      ],
+    },
+    {
+      ...base,
+      sourceFiles: [
+        base.sourceFiles[0],
+        sourceFile("references/safety.md", digest("5")),
+      ],
+    },
+    {
+      ...base,
+      installFiles: [installedFile(digest("6"))],
+    },
+  ];
+  for (const variant of variants) {
+    const variantFiles = variant.installFiles;
+    assert.equal(
+      resolveContentRevision(
+        snapshots,
+        contentDigest(variant),
+        variantFiles,
+      ).releaseRevision,
+      42,
+      "one guide, reference, or discovery-stub change must add one revision",
+    );
+  }
+
+  const second = variants[0];
+  const secondDigest = contentDigest(second);
+  const afterSecond = snapshots.concat({
+    releaseRevision: 42,
+    packageDigest: secondDigest,
+    files: second.installFiles,
+  });
+  const third = {
+    ...second,
+    sourceFiles: [
+      second.sourceFiles[0],
+      sourceFile("references/safety.md", digest("7")),
+    ],
+  };
+  assert.equal(
+    resolveContentRevision(
+      afterSecond,
+      contentDigest(third),
+      third.installFiles,
+    ).releaseRevision,
+    43,
+    "successive content changes must stay monotonic without skipping",
+  );
 }
 
 function assertVersionsMatch() {
@@ -185,27 +320,12 @@ const packageDigest = contentDigest(contentManifest);
 
 const registry = loadRegistry();
 const snapshotFiles = installFiles.map(({ content: _content, ...file }) => file);
-const digestMatches = registry.snapshots.filter(
-  (snapshot) => snapshot.packageDigest === packageDigest,
+assertContentRevisionPolicy();
+const { reusableSnapshot, releaseRevision } = resolveContentRevision(
+  registry.snapshots,
+  packageDigest,
+  snapshotFiles,
 );
-if (digestMatches.length > 1) {
-  throw new Error(`package digest ${packageDigest} names multiple Skill revisions`);
-}
-const reusableSnapshot = digestMatches[0];
-if (
-  reusableSnapshot &&
-  stableJson(reusableSnapshot.files) !== stableJson(snapshotFiles)
-) {
-  throw new Error(
-    `package digest ${packageDigest} names different installed Skill files`,
-  );
-}
-const releaseRevision =
-  reusableSnapshot?.releaseRevision ??
-  registry.snapshots.reduce(
-    (maximum, snapshot) => Math.max(maximum, snapshot.releaseRevision),
-    0,
-  ) + 1;
 const currentManifest = {
   ...contentManifest,
   releaseRevision,

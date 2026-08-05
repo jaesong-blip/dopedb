@@ -14,7 +14,7 @@ use crate::model::{
 use crate::monitoring::HealthSnapshot;
 
 #[test]
-fn query_guidance_and_namespace_contracts_stay_fail_closed() {
+fn query_and_skill_security_contracts_stay_fail_closed() {
     let production = ConnectionProfile {
         id: Uuid::new_v4(),
         name: "query-feature-test".into(),
@@ -141,4 +141,6 @@ fn query_guidance_and_namespace_contracts_stay_fail_closed() {
     assert!(!serde_json::to_string(&cancelled)
         .unwrap()
         .contains("row-secret"));
+
+    crate::skills::assert_skill_installation_contract();
 }

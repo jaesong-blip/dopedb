@@ -65,7 +65,7 @@
     },
     "src-tauri/src/features/queries/domain_tests.rs": {
       "tests": 1,
-      "protects": "Production guidance, namespace safety, and row-free Services result migration"
+      "protects": "Production guidance, namespace safety, row-free Services migration, and exact fail-closed Skill installation/conflict handling"
     },
     "src-tauri/src/operations/canonicalize.rs": {
       "tests": 3,
