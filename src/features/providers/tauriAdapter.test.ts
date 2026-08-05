@@ -60,6 +60,9 @@ import {
   neonBranchMutationBody,
   parseNeonBranchCreateReceipt,
 } from "../../../workspace-cloud/lib/providers/neon-branch-mutation";
+import {
+  neonInheritedRoleRetirementStatement,
+} from "../../../workspace-cloud/lib/providers/neon-role-policy";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -280,6 +283,15 @@ describe("provider credential Tauri adapter", () => {
   });
 
   it("prohibits legacy provider identity and manual GCP trust input", async () => {
+    expect(neonInheritedRoleRetirementStatement(
+      "dopedb_member01_1234567890abcdef1234567890abcdef",
+    )).toBe(
+      'ALTER ROLE "dopedb_member01_1234567890abcdef1234567890abcdef" '
+        + "NOLOGIN PASSWORD NULL VALID UNTIL 'epoch'",
+    );
+    expect(() => neonInheritedRoleRetirementStatement(
+      "dopedb_policy_1234567890abcdef",
+    )).toThrow("Invalid Neon lease role");
     const branchRow = {
       project_id: "project-one",
       current_state: "ready",
@@ -394,8 +406,33 @@ describe("provider credential Tauri adapter", () => {
       "NEON_PRODUCTION_DATA_COPY",
       "NEON_PROTECTED_PARENT_CREDENTIALS_ROTATE",
       "NEON_ENDPOINT_CREATES_COMPUTE",
+      "NEON_INHERITED_DOPEDB_CREDENTIALS_RETIRED",
       "NEON_HEAD_RESOLVED_AT_EXECUTION",
     ]);
+    const developmentPlan = buildNeonBranchCreatePlan({
+      request: parseNeonBranchCreatePlanRequest({
+        idempotencyKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        projectId: "project-one",
+        sourceBranchId: "br-child",
+        targetName: "safe-development-branch",
+        initSource: "parent-data",
+        sourcePoint: { kind: "head" },
+        endpoint: "read_write",
+        sourceEnvironment: "development",
+      }),
+      inventory: branchInventory,
+      operationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      integrationId,
+      integrationGeneration: 12n,
+      workspaceProductionReference: false,
+      now: new Date("2026-08-05T02:00:00Z"),
+    });
+    expect(developmentPlan.warningCodes).toContain(
+      "NEON_INHERITED_DOPEDB_CREDENTIALS_RETIRED",
+    );
+    expect(developmentPlan.warningCodes).not.toContain(
+      "NEON_PROTECTED_PARENT_CREDENTIALS_ROTATE",
+    );
     const mutationPlanHash = "a".repeat(64);
     const mutationOwnership = `v1.${"B".repeat(43)}`;
     expect(neonBranchMutationBody({
@@ -693,6 +730,7 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchOperationsRouteSource).toContain("cancelExpiredProviderOperationExecution");
     expect(neonBranchOperationsRouteSource).toContain("markProviderOperationRemoteStarted");
     expect(neonBranchOperationsRouteSource).toContain("reconcileNeonBranchCreate");
+    expect(neonBranchOperationsRouteSource).toContain("needsCredentialFenceRecovery");
     expect(neonBranchOperationsRouteSource.indexOf(
       "const remoteStart = await markProviderOperationRemoteStarted",
     )).toBeLessThan(neonBranchOperationsRouteSource.indexOf(
@@ -728,9 +766,13 @@ describe("provider credential Tauri adapter", () => {
     expect(neonSource).toContain('row.branch_id !== branch');
     expect(neonSource).toContain('requiredResourceId(row.id, "database id") === resource.databaseId');
     expect(neonSource).toContain("endpoints.length !== 1");
+    expect(neonSource).toContain("pg_terminate_backend(pid)");
+    expect(neonSource).toContain("NEON_INHERITED_CREDENTIAL_FENCE_FAILED");
     expect(neonSource).toContain('"bootstrap_required"');
     expect(neonBranchOperationsRouteSource).toContain("databaseFingerprint");
     expect(providerOperationStoreSource).toContain("managedAccessState");
+    expect(providerOperationStoreSource).toContain("credentialFenceFingerprint");
+    expect(providerOperationStoreSource).toContain("provider-operation:complete-fenced");
     expect(providerOperationMigrationSource).toContain(
       '"approval_policy" text NOT NULL',
     );
@@ -749,6 +791,7 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBootstrapSource).toContain("NEON_REVOKE_OTHER_DATABASE_PUBLIC_CONNECT");
     expect(neonBootstrapSource).toContain("NEON_PUBLIC_SECURITY_DEFINER");
     expect(neonBootstrapSource).toContain("NEON_LEASE_ROLE_DRIFT");
+    expect(neonBootstrapSource).toContain("NEON_ACTIVE_LEASE_ROLE_PRESENT");
     expect(neonBootstrapSource).toContain("NEON_READ_WRITE_SMOKE_PLANNED");
     expect(neonBootstrapSource).toContain("expectedPlanHash");
     expect(neonBootstrapSource).toContain("expectedReadyHash");

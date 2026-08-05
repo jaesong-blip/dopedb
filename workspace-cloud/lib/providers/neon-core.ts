@@ -9,8 +9,13 @@ import {
 } from "node:crypto";
 import type { ManagedAccessMode } from "./provider-types";
 import { neonSegment } from "./neon-identifiers";
+import { neonLeaseRoleName } from "./neon-role-policy";
 
 export { neonSegment } from "./neon-identifiers";
+export {
+  neonInheritedRoleRetirementStatement,
+  neonLeaseRoleName,
+} from "./neon-role-policy";
 
 export const NEON_LEASE_SECONDS = 15 * 60;
 export const NEON_ROLE_CONNECTION_LIMIT = 4;
@@ -288,7 +293,7 @@ export function neonRoleStatements(input: {
   schemas: string[];
 }) {
   if (
-    !/^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$/.test(input.role)
+    !neonLeaseRoleName(input.role)
     || !neonOwnerRoleName(input.owner)
     || !/^SCRAM-SHA-256\$4096:[A-Za-z0-9+/]{22}==\$[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=$/
       .test(input.passwordVerifier)
@@ -361,7 +366,7 @@ export function neonRoleRevokeStatements(input: {
   schemas: string[];
 }) {
   if (
-    !/^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$/.test(input.role)
+    !neonLeaseRoleName(input.role)
     || !neonOwnerRoleName(input.owner)
     || !neonDatabaseName(input.database)
     || input.schemas.length > 32

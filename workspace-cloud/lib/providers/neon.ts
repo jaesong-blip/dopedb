@@ -13,8 +13,10 @@ import {
   NEON_ROLE_CONNECTION_LIMIT,
   createNeonScramVerifier,
   neonDatabaseName,
+  neonInheritedRoleRetirementStatement,
   neonIntegrationIdentity,
   neonLeaseRole,
+  neonLeaseRoleName,
   neonOwnerRoleName,
   neonPublicDatabaseBoundaryError,
   neonRoleRevokeStatements,
@@ -64,6 +66,8 @@ export type NeonBranchReconciliation = Readonly<{
   endpointId: string | null;
   databaseCount: number | null;
   databaseFingerprint: string | null;
+  retiredInheritedRoleCount: number | null;
+  credentialFenceFingerprint: string | null;
   managedAccessState:
     | "waiting_for_provider"
     | "not_requested"
@@ -99,6 +103,13 @@ export class NeonLeaseCleanupRequiredError extends ProviderRequestError {
   constructor(readonly externalCredentialId: string) {
     super("neon", "Neon database role cleanup is pending", 503);
     this.name = "NeonLeaseCleanupRequiredError";
+  }
+}
+
+class NeonInheritedCredentialFenceConflictError extends Error {
+  constructor() {
+    super("Neon inherited credential fence requires repair");
+    this.name = "NeonInheritedCredentialFenceConflictError";
   }
 }
 
@@ -607,6 +618,8 @@ export async function reconcileNeonBranchCreate(input: {
       endpointId: null,
       databaseCount: null,
       databaseFingerprint: null,
+      retiredInheritedRoleCount: null,
+      credentialFenceFingerprint: null,
       managedAccessState: "waiting_for_provider",
       failureCode: null,
     };
@@ -620,6 +633,8 @@ export async function reconcileNeonBranchCreate(input: {
       endpointId: null,
       databaseCount: null,
       databaseFingerprint: null,
+      retiredInheritedRoleCount: null,
+      credentialFenceFingerprint: null,
       managedAccessState: "needs_repair",
       failureCode: "NEON_OWNERSHIP_MARKER_MISMATCH",
     };
@@ -662,6 +677,8 @@ export async function reconcileNeonBranchCreate(input: {
       endpointId: endpoint.endpointId,
       databaseCount: databases?.length ?? null,
       databaseFingerprint,
+      retiredInheritedRoleCount: null,
+      credentialFenceFingerprint: null,
       managedAccessState: "needs_repair",
       failureCode: "NEON_OPERATION_BRANCH_MISMATCH",
     };
@@ -678,6 +695,8 @@ export async function reconcileNeonBranchCreate(input: {
       endpointId: endpoint.endpointId,
       databaseCount: databases?.length ?? null,
       databaseFingerprint,
+      retiredInheritedRoleCount: null,
+      credentialFenceFingerprint: null,
       managedAccessState: "needs_repair",
       failureCode: "NEON_OPERATION_FAILED",
     };
@@ -691,19 +710,50 @@ export async function reconcileNeonBranchCreate(input: {
       endpointId: endpoint.endpointId,
       databaseCount: databases?.length ?? null,
       databaseFingerprint,
+      retiredInheritedRoleCount: null,
+      credentialFenceFingerprint: null,
       managedAccessState: "needs_repair",
       failureCode: "NEON_ENDPOINT_SET_MISMATCH",
     };
   }
   const branches = inventory.branches.filter((branch) => branch.id === owned.branchId);
   const branch = branches.length === 1 ? branches[0] : null;
-  const ready = branch?.currentState === "ready"
+  const providerReady = branch?.currentState === "ready"
     && branch.pendingState === null
     && branch.ready
     && endpoint.status === "ready"
     && databases !== null
     && databases.length > 0
     && (!operation || operation.status === "finished");
+  let credentialFence: Awaited<ReturnType<typeof retireInheritedNeonLeaseRoles>> | null = null;
+  if (providerReady && input.plan.target.endpoint === "read_write") {
+    try {
+      credentialFence = await retireInheritedNeonLeaseRoles({
+        credential: input.credential,
+        projectId: input.plan.source.projectId,
+        branchId: owned.branchId,
+        databases,
+      });
+    } catch (error) {
+      if (!(error instanceof NeonInheritedCredentialFenceConflictError)) throw error;
+      return {
+        status: "conflict",
+        branchId: owned.branchId,
+        providerOperationId: operation?.id ?? input.providerOperationId,
+        providerOperationStatus: operation?.status ?? null,
+        endpointId: endpoint.endpointId,
+        databaseCount: databases.length,
+        databaseFingerprint,
+        retiredInheritedRoleCount: null,
+        credentialFenceFingerprint: null,
+        managedAccessState: "needs_repair",
+        failureCode: "NEON_INHERITED_CREDENTIAL_FENCE_FAILED",
+      };
+    }
+  }
+  const ready = providerReady && (
+    input.plan.target.endpoint === "none" || credentialFence !== null
+  );
   return {
     status: ready ? "ready" : "pending",
     branchId: owned.branchId,
@@ -712,6 +762,12 @@ export async function reconcileNeonBranchCreate(input: {
     endpointId: endpoint.endpointId,
     databaseCount: ready ? databases.length : null,
     databaseFingerprint: ready ? databaseFingerprint : null,
+    retiredInheritedRoleCount: ready
+      ? credentialFence?.retiredInheritedRoleCount ?? null
+      : null,
+    credentialFenceFingerprint: ready
+      ? credentialFence?.credentialFenceFingerprint ?? null
+      : null,
     managedAccessState: ready
       ? input.plan.target.endpoint === "read_write"
         ? "bootstrap_required"
@@ -867,6 +923,140 @@ function sqlClient(connectionUri: string) {
 }
 
 export type NeonSqlClient = ReturnType<typeof sqlClient>;
+
+const MAX_INHERITED_NEON_LEASE_ROLES = 200;
+
+function safeInheritedLeaseRoleRow(row: Record<string, unknown>) {
+  return neonLeaseRoleName(row.role_name)
+    && row.superuser === false
+    && row.inherits === true
+    && row.create_role === false
+    && row.create_database === false
+    && row.replication === false
+    && row.bypass_rls === false
+    && row.connection_limit === NEON_ROLE_CONNECTION_LIMIT
+    && row.no_memberships === true
+    && row.no_members === true;
+}
+
+async function retireInheritedNeonLeaseRoles(input: {
+  credential: NeonCredential;
+  projectId: string;
+  branchId: string;
+  databases: readonly ProviderResourceItem[];
+}) {
+  const database = [...input.databases].sort((left, right) => (
+    left.id.localeCompare(right.id)
+  ))[0];
+  if (!database) {
+    throw new ProviderRequestError("neon", "Neon branch has no database", 409);
+  }
+  const resource: NeonResource = {
+    project: input.projectId,
+    branch: input.branchId,
+    databaseId: database.id,
+    database: database.value,
+    engine: "postgres",
+    schemas: ["public"],
+  };
+  const connection = await ownerConnection(input.credential, resource);
+  const sql = sqlClient(connection.connectionUri);
+  try {
+    const rows = await sql.query(
+      "SELECT r.rolname AS role_name, r.rolsuper AS superuser, "
+        + "r.rolinherit AS inherits, r.rolcreaterole AS create_role, "
+        + "r.rolcreatedb AS create_database, r.rolreplication AS replication, "
+        + "r.rolbypassrls AS bypass_rls, r.rolconnlimit AS connection_limit, "
+        + "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) "
+        + "AS no_memberships, "
+        + "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = r.oid) "
+        + "AS no_members FROM pg_roles r "
+        + "WHERE r.rolname ~ '^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$' "
+        + "AND r.rolname !~ '^dopedb_policy_[0-9a-f]{16}$' "
+        + "ORDER BY r.rolname LIMIT 201",
+    );
+    if (
+      rows.length > MAX_INHERITED_NEON_LEASE_ROLES
+      || rows.some((row) => !safeInheritedLeaseRoleRow(row))
+    ) {
+      throw new NeonInheritedCredentialFenceConflictError();
+    }
+    const roles = rows.map((row) => row.role_name as string);
+    if (roles.length > 0) {
+      await sql.transaction(
+        roles.map((role) => sql.query(
+          neonInheritedRoleRetirementStatement(role),
+        )),
+      );
+      // Commit NOLOGIN/password removal before terminating sessions. Otherwise
+      // a preserved password could open one last session between termination
+      // and the transaction commit.
+      await sql.query(
+        "SELECT pg_terminate_backend(pid) AS terminated FROM pg_stat_activity "
+          + "WHERE pid <> pg_backend_pid() AND usename = ANY($1::text[])",
+        [roles],
+      );
+    }
+    const verified = await sql.query(
+      "SELECT r.rolname AS role_name, r.rolcanlogin AS can_login, "
+        + "r.rolvaliduntil <= now() AS expired, r.rolsuper AS superuser, "
+        + "r.rolinherit AS inherits, r.rolcreaterole AS create_role, "
+        + "r.rolcreatedb AS create_database, r.rolreplication AS replication, "
+        + "r.rolbypassrls AS bypass_rls, r.rolconnlimit AS connection_limit, "
+        + "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid) "
+        + "AS no_memberships, "
+        + "NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = r.oid) "
+        + "AS no_members FROM pg_roles r "
+        + "WHERE r.rolname ~ '^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$' "
+        + "AND r.rolname !~ '^dopedb_policy_[0-9a-f]{16}$' "
+        + "ORDER BY r.rolname LIMIT 201",
+    );
+    const verifiedRoles = verified.map((row) => row.role_name);
+    if (
+      verified.length !== roles.length
+      || verified.some((row) => (
+        !safeInheritedLeaseRoleRow(row)
+        || row.can_login !== false
+        || row.expired !== true
+      ))
+      || verifiedRoles.some((role, index) => role !== roles[index])
+    ) {
+      throw new NeonInheritedCredentialFenceConflictError();
+    }
+    if (roles.length > 0) {
+      const sessions = await sql.query(
+        "SELECT 1 AS active FROM pg_stat_activity "
+          + "WHERE pid <> pg_backend_pid() AND usename = ANY($1::text[]) LIMIT 1",
+        [roles],
+      );
+      if (sessions.length > 0) {
+        throw new ProviderRequestError(
+          "neon",
+          "Neon inherited credential sessions are still closing",
+          503,
+        );
+      }
+    }
+    return {
+      retiredInheritedRoleCount: roles.length,
+      credentialFenceFingerprint: createHash("sha256")
+        .update(JSON.stringify({
+          projectId: input.projectId,
+          branchId: input.branchId,
+          retiredRoles: roles,
+        }), "utf8")
+        .digest("hex"),
+    };
+  } catch (error) {
+    if (error instanceof NeonInheritedCredentialFenceConflictError) throw error;
+    if (error instanceof ProviderRequestError) throw error;
+    throw new ProviderRequestError(
+      "neon",
+      "Neon inherited credential fence could not be verified",
+      502,
+    );
+  }
+}
 
 class NeonBoundaryError extends Error {
   constructor(message: string) {
@@ -1467,7 +1657,7 @@ export async function revokeNeonLease(
   resource: NeonResource,
   role: string,
 ) {
-  if (!/^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$/.test(role)) {
+  if (!neonLeaseRoleName(role)) {
     throw new ProviderRequestError("neon", "Invalid Neon lease role", 400);
   }
   const identity = await resolveNeonResourceIdentity(credential, resource);

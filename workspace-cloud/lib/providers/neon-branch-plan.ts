@@ -241,6 +241,7 @@ export function buildNeonBranchCreatePlan(input: {
   if (!copiesData) warningCodes.push("NEON_SCHEMA_ONLY_HAS_NO_DATA");
   if (input.request.endpoint === "read_write") {
     warningCodes.push("NEON_ENDPOINT_CREATES_COMPUTE");
+    warningCodes.push("NEON_INHERITED_DOPEDB_CREDENTIALS_RETIRED");
   }
   if (input.request.sourcePoint.kind === "head") {
     warningCodes.push("NEON_HEAD_RESOLVED_AT_EXECUTION");

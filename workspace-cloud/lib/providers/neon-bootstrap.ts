@@ -521,17 +521,35 @@ export async function inspectNeonBootstrap(input: {
     "SELECT r.rolname AS role_name FROM pg_roles r "
       + "WHERE r.rolname ~ '^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$' "
       + "AND r.rolname !~ '^dopedb_policy_[0-9a-f]{16}$' "
-      + "AND r.rolname <> $1 AND (NOT r.rolcanlogin OR r.rolsuper "
+      + "AND r.rolname <> $1 AND (r.rolsuper OR NOT r.rolinherit "
       + "OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls "
       + "OR r.rolvaliduntil IS NULL OR r.rolconnlimit <> $2 "
+      + "OR (NOT r.rolcanlogin AND r.rolvaliduntil > now()) "
       + "OR EXISTS (SELECT 1 FROM pg_auth_members membership "
-      + "WHERE membership.member = r.oid)) LIMIT 1",
+      + "WHERE membership.member = r.oid) "
+      + "OR EXISTS (SELECT 1 FROM pg_auth_members membership "
+      + "WHERE membership.roleid = r.oid)) LIMIT 1",
     [marker.name, NEON_ROLE_CONNECTION_LIMIT],
   );
   if (driftedLeaseRoleRows.length > 0) {
     findings.push(blocker(
       "NEON_LEASE_ROLE_DRIFT",
       "기존 DopeDB 형식 role의 로그인·만료·권한 경계가 예상 정책과 다릅니다.",
+      "기존 단기 role",
+    ));
+  }
+
+  const activeLeaseRoleRows = await sql.query(
+    "SELECT 1 AS active FROM pg_roles r "
+      + "WHERE r.rolname ~ '^dopedb_[a-z0-9]{1,8}_[a-z0-9]{1,32}$' "
+      + "AND r.rolname !~ '^dopedb_policy_[0-9a-f]{16}$' "
+      + "AND r.rolcanlogin "
+      + "AND (r.rolvaliduntil IS NULL OR r.rolvaliduntil > now()) LIMIT 1",
+  );
+  if (activeLeaseRoleRows.length > 0) {
+    findings.push(blocker(
+      "NEON_ACTIVE_LEASE_ROLE_PRESENT",
+      "활성 DopeDB 단기 role이 남아 있어 다른 branch의 자격증명인지 구분할 수 없습니다.",
       "기존 단기 role",
     ));
   }

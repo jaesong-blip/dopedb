@@ -96,6 +96,8 @@ export type ProviderOperationCancellationRecord = Readonly<{
   endpointId: null;
   databaseCount: null;
   databaseFingerprint: null;
+  retiredInheritedRoleCount: null;
+  credentialFenceFingerprint: null;
   managedAccessState: "unavailable";
   failureCode: null;
 }>;
@@ -109,6 +111,8 @@ export type ProviderOperationExecutionRecord = ProviderOperationPlanRecord & Rea
   endpointId: string | null;
   databaseCount: number | null;
   databaseFingerprint: string | null;
+  retiredInheritedRoleCount: number | null;
+  credentialFenceFingerprint: string | null;
   managedAccessState: ProviderManagedAccessState | null;
   failureCode: string | null;
 }>;
@@ -138,6 +142,8 @@ export type ProviderOperationReconciliationInput = Readonly<{
   endpointId: string | null;
   databaseCount: number | null;
   databaseFingerprint: string | null;
+  retiredInheritedRoleCount: number | null;
+  credentialFenceFingerprint: string | null;
   managedAccessState: ProviderManagedAccessState;
   failureCode: string | null;
 }>;
@@ -152,6 +158,8 @@ export type ProviderOperationReconciliationRecord = Readonly<{
   endpointId: string | null;
   databaseCount: number | null;
   databaseFingerprint: string | null;
+  retiredInheritedRoleCount: number | null;
+  credentialFenceFingerprint: string | null;
   managedAccessState: ProviderManagedAccessState;
   failureCode: string | null;
 }>;
@@ -350,6 +358,8 @@ function executionResultProjection(value: unknown): Readonly<{
   endpointId: string | null;
   databaseCount: number | null;
   databaseFingerprint: string | null;
+  retiredInheritedRoleCount: number | null;
+  credentialFenceFingerprint: string | null;
   managedAccessState: ProviderManagedAccessState | null;
 }> | null {
   if (value === null) {
@@ -357,6 +367,8 @@ function executionResultProjection(value: unknown): Readonly<{
       endpointId: null,
       databaseCount: null,
       databaseFingerprint: null,
+      retiredInheritedRoleCount: null,
+      credentialFenceFingerprint: null,
       managedAccessState: null,
     };
   }
@@ -373,6 +385,14 @@ function executionResultProjection(value: unknown): Readonly<{
     || result.databaseFingerprint === null
     ? null
     : result.databaseFingerprint;
+  const retiredInheritedRoleCount = result.retiredInheritedRoleCount === undefined
+    || result.retiredInheritedRoleCount === null
+    ? null
+    : result.retiredInheritedRoleCount;
+  const credentialFenceFingerprint = result.credentialFenceFingerprint === undefined
+    || result.credentialFenceFingerprint === null
+    ? null
+    : result.credentialFenceFingerprint;
   const managedAccessState = result.managedAccessState === undefined
     || result.managedAccessState === null
     ? null
@@ -393,6 +413,17 @@ function executionResultProjection(value: unknown): Readonly<{
       || !/^[0-9a-f]{64}$/.test(databaseFingerprint)
     ))
     || ((databaseCount === null) !== (databaseFingerprint === null))
+    || (retiredInheritedRoleCount !== null && (
+      typeof retiredInheritedRoleCount !== "number"
+      || !Number.isInteger(retiredInheritedRoleCount)
+      || retiredInheritedRoleCount < 0
+      || retiredInheritedRoleCount > 200
+    ))
+    || (credentialFenceFingerprint !== null && (
+      typeof credentialFenceFingerprint !== "string"
+      || !/^[0-9a-f]{64}$/.test(credentialFenceFingerprint)
+    ))
+    || ((retiredInheritedRoleCount === null) !== (credentialFenceFingerprint === null))
     || (managedAccessState !== null && (
       typeof managedAccessState !== "string"
       || !managedAccessStates.includes(managedAccessState as ProviderManagedAccessState)
@@ -404,6 +435,8 @@ function executionResultProjection(value: unknown): Readonly<{
     endpointId: endpointId as string | null,
     databaseCount: databaseCount as number | null,
     databaseFingerprint: databaseFingerprint as string | null,
+    retiredInheritedRoleCount: retiredInheritedRoleCount as number | null,
+    credentialFenceFingerprint: credentialFenceFingerprint as string | null,
     managedAccessState: managedAccessState as ProviderManagedAccessState | null,
   };
 }
@@ -674,7 +707,10 @@ export async function recordProviderOperationPlan(input: {
           'targetName', ${input.plan.target.name}::text,
           'initSource', ${input.plan.target.initSource}::text,
           'sourcePoint', ${input.plan.source.point.kind}::text,
-          'endpoint', ${input.plan.target.endpoint}::text
+          'endpoint', ${input.plan.target.endpoint}::text,
+          'credentialPolicy', ${input.plan.target.endpoint === "read_write"
+            ? "retire_inherited_dopedb_roles"
+            : "no_endpoint"}::text
         ), ${input.idempotencyKey}::uuid
       FROM recorded
       ON CONFLICT ("id") DO UPDATE SET "id" = existing."id"
@@ -1047,6 +1083,8 @@ export async function cancelExpiredProviderOperationExecution(
     endpointId: null,
     databaseCount: null,
     databaseFingerprint: null,
+    retiredInheritedRoleCount: null,
+    credentialFenceFingerprint: null,
     managedAccessState: "unavailable",
     failureCode: null,
   };
@@ -1321,6 +1359,17 @@ function validProviderReconciliation(input: ProviderOperationReconciliationInput
     && typeof input.databaseFingerprint === "string"
     && /^[0-9a-f]{64}$/.test(input.databaseFingerprint)
   );
+  const credentialFenceValid = (
+    input.retiredInheritedRoleCount === null
+    && input.credentialFenceFingerprint === null
+  ) || (
+    Number.isInteger(input.retiredInheritedRoleCount)
+    && input.retiredInheritedRoleCount !== null
+    && input.retiredInheritedRoleCount >= 0
+    && input.retiredInheritedRoleCount <= 200
+    && typeof input.credentialFenceFingerprint === "string"
+    && /^[0-9a-f]{64}$/.test(input.credentialFenceFingerprint)
+  );
   return ["missing", "pending", "ready", "conflict", "failed"].includes(input.status)
     && branchValid
     && endpointValid
@@ -1328,6 +1377,7 @@ function validProviderReconciliation(input: ProviderOperationReconciliationInput
     && statusValid
     && failureValid
     && databaseValid
+    && credentialFenceValid
     && managedAccessStates.includes(input.managedAccessState)
     && (input.status !== "missing" || input.branchId === null)
     && (input.status !== "pending" || input.branchId !== null)
@@ -1337,8 +1387,14 @@ function validProviderReconciliation(input: ProviderOperationReconciliationInput
       && input.databaseCount !== null
       && input.databaseCount > 0
       && input.databaseFingerprint !== null
-      && (input.managedAccessState === "not_requested"
-        || input.managedAccessState === "bootstrap_required")
+      && (
+        (input.managedAccessState === "not_requested"
+          && input.retiredInheritedRoleCount === null
+          && input.credentialFenceFingerprint === null)
+        || (input.managedAccessState === "bootstrap_required"
+          && input.retiredInheritedRoleCount !== null
+          && input.credentialFenceFingerprint !== null)
+      )
     ))
     && (input.status !== "missing"
       || input.managedAccessState === "waiting_for_provider")
@@ -1346,6 +1402,12 @@ function validProviderReconciliation(input: ProviderOperationReconciliationInput
       input.managedAccessState === "waiting_for_provider"
       && input.databaseCount === null
       && input.databaseFingerprint === null
+      && input.retiredInheritedRoleCount === null
+      && input.credentialFenceFingerprint === null
+    ))
+    && (input.status === "ready" || (
+      input.retiredInheritedRoleCount === null
+      && input.credentialFenceFingerprint === null
     ))
     && (input.status !== "conflict"
       || input.managedAccessState === "needs_repair")
@@ -1383,17 +1445,23 @@ export async function applyProviderOperationReconciliation(
     endpointId: input.result.endpointId,
     databaseCount: input.result.databaseCount,
     databaseFingerprint: input.result.databaseFingerprint,
+    retiredInheritedRoleCount: input.result.retiredInheritedRoleCount,
+    credentialFenceFingerprint: input.result.credentialFenceFingerprint,
     managedAccessState: input.result.managedAccessState,
     failureCode: input.result.failureCode,
     observedAt: input.now.toISOString(),
   };
   safeRedactedValue(redactedResult);
   const reconcileAuditId = workspaceAuditEventId(
-    "provider-operation:reconcile",
+    input.result.credentialFenceFingerprint
+      ? "provider-operation:reconcile-fenced"
+      : "provider-operation:reconcile",
     input.claimId,
   );
   const completionAuditId = workspaceAuditEventId(
-    "provider-operation:complete",
+    input.result.credentialFenceFingerprint
+      ? "provider-operation:complete-fenced"
+      : "provider-operation:complete",
     input.claimId,
   );
   const missingCutoff = new Date(input.now.valueOf() - 2 * 60 * 1_000);
@@ -1415,10 +1483,10 @@ export async function applyProviderOperationReconciliation(
       THEN 'NEON_CREATE_RESULT_AMBIGUOUS'
     ELSE NULL
   END`;
-  // Once the remote-start fence exists, reconciliation is recovery work: no
-  // Provider mutation is issued here. A current manager may therefore finish
-  // observing and recording the exact fenced operation even if the original
-  // requester or approver session has since expired or been revoked.
+  // Once the remote-start fence exists, the branch-create POST is never issued
+  // again. Reconciliation may apply only the approved, idempotent inherited
+  // credential fence before recording success. A current manager may therefore
+  // finish the exact fenced recovery even after the original session expires.
   const authority = providerMutationAuthoritySql({
     ...input.authority,
     requireManager: true,
@@ -1443,7 +1511,17 @@ export async function applyProviderOperationReconciliation(
         AND operation."plan_hash" = ${input.planHash}
         AND operation."ownership_marker" = ${input.ownershipMarker}
         AND operation."claim_id" = ${input.claimId}::uuid
-        AND operation."state" IN ('remote_started', 'reconciling')
+        AND (
+          operation."state" IN ('remote_started', 'reconciling')
+          OR (
+            operation."state" = 'succeeded'
+            AND operation."redacted_plan"->'target'->>'endpoint' = 'read_write'
+            AND operation."redacted_result"->>'credentialFenceFingerprint' IS NULL
+            AND ${input.result.status} = 'ready'
+            AND ${input.result.managedAccessState} = 'bootstrap_required'
+            AND ${input.result.credentialFenceFingerprint}::text IS NOT NULL
+          )
+        )
         AND (
           operation."provider_operation_id" IS NULL
           OR ${input.result.providerOperationId}::text IS NULL
@@ -1466,6 +1544,13 @@ export async function applyProviderOperationReconciliation(
           OR ${input.result.databaseFingerprint}::text IS NULL
           OR operation."redacted_result"->>'databaseFingerprint'
             = ${input.result.databaseFingerprint}
+        )
+        AND (
+          operation."redacted_result" IS NULL
+          OR operation."redacted_result"->>'credentialFenceFingerprint' IS NULL
+          OR ${input.result.credentialFenceFingerprint}::text IS NULL
+          OR operation."redacted_result"->>'credentialFenceFingerprint'
+            = ${input.result.credentialFenceFingerprint}
         )
         AND ${authority}
       FOR UPDATE OF operation
@@ -1555,6 +1640,10 @@ export async function applyProviderOperationReconciliation(
           'endpointId', updated."redactedResult"->>'endpointId',
           'databaseCount', updated."redactedResult"->'databaseCount',
           'databaseFingerprint', updated."redactedResult"->>'databaseFingerprint',
+          'retiredInheritedRoleCount',
+            updated."redactedResult"->'retiredInheritedRoleCount',
+          'credentialFenceFingerprint',
+            updated."redactedResult"->>'credentialFenceFingerprint',
           'managedAccessState', updated."redactedResult"->>'managedAccessState',
           'failureCode', updated."failureCode",
           'risk', updated."risk",

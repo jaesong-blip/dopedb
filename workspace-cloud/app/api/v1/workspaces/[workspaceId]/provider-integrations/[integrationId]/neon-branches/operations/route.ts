@@ -181,6 +181,8 @@ function executionResponse(operation: ProviderOperationExecutionRecord | {
   endpointId: string | null;
   databaseCount: number | null;
   databaseFingerprint: string | null;
+  retiredInheritedRoleCount: number | null;
+  credentialFenceFingerprint: string | null;
   managedAccessState: string | null;
   failureCode: string | null;
 }) {
@@ -194,6 +196,8 @@ function executionResponse(operation: ProviderOperationExecutionRecord | {
       endpointId: operation.endpointId,
       databaseCount: operation.databaseCount,
       databaseFingerprint: operation.databaseFingerprint,
+      retiredInheritedRoleCount: operation.retiredInheritedRoleCount,
+      credentialFenceFingerprint: operation.credentialFenceFingerprint,
       managedAccessState: operation.managedAccessState,
       failureCode: operation.failureCode,
     },
@@ -240,7 +244,16 @@ export async function POST(request: Request, context: RouteContext) {
       if (!operation || operation.planHash !== body.planHash) {
         return jsonError("Neon branch operation plan changed or is unavailable", 409);
       }
-      if (["succeeded", "failed", "needs_repair", "cancelled"].includes(operation.state)) {
+      const needsCredentialFenceRecovery = operation.state === "succeeded"
+        && operation.plan.target.endpoint === "read_write"
+        && (
+          operation.retiredInheritedRoleCount === null
+          || operation.credentialFenceFingerprint === null
+        );
+      if (
+        ["succeeded", "failed", "needs_repair", "cancelled"].includes(operation.state)
+        && !needsCredentialFenceRecovery
+      ) {
         return privateJson(executionResponse(operation));
       }
       if (operation.state === "awaiting_approval") {
@@ -318,6 +331,8 @@ export async function POST(request: Request, context: RouteContext) {
             endpointId: null,
             databaseCount: null,
             databaseFingerprint: null,
+            retiredInheritedRoleCount: null,
+            credentialFenceFingerprint: null,
             managedAccessState: "unavailable",
             failureCode: null,
           }));
@@ -353,6 +368,8 @@ export async function POST(request: Request, context: RouteContext) {
             endpointId: receipt.endpointId,
             databaseCount: null,
             databaseFingerprint: null,
+            retiredInheritedRoleCount: null,
+            credentialFenceFingerprint: null,
             managedAccessState: "waiting_for_provider",
             failureCode: null,
           };
@@ -367,6 +384,8 @@ export async function POST(request: Request, context: RouteContext) {
               endpointId: null,
               databaseCount: null,
               databaseFingerprint: null,
+              retiredInheritedRoleCount: null,
+              credentialFenceFingerprint: null,
               managedAccessState: "unavailable",
               failureCode: "NEON_RETRY_SAFE_REJECTED",
             }
@@ -378,6 +397,8 @@ export async function POST(request: Request, context: RouteContext) {
               endpointId: null,
               databaseCount: null,
               databaseFingerprint: null,
+              retiredInheritedRoleCount: null,
+              credentialFenceFingerprint: null,
               managedAccessState: "waiting_for_provider",
               failureCode: null,
             };
