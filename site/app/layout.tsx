@@ -1,9 +1,30 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { headers } from "next/headers";
+import { Archivo_Black, IBM_Plex_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 
 const siteUrl = "https://dopedb.dev";
+
+const displayFont = Archivo_Black({
+  display: "swap",
+  subsets: ["latin"],
+  variable: "--font-display-loaded",
+  weight: "400",
+});
+
+const bodyFont = Manrope({
+  display: "swap",
+  subsets: ["latin"],
+  variable: "--font-body-loaded",
+});
+
+const monoFont = IBM_Plex_Mono({
+  display: "swap",
+  subsets: ["latin"],
+  variable: "--font-mono-loaded",
+  weight: ["400", "500", "600"],
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -87,7 +108,10 @@ export default async function RootLayout({
   const lang = (await headers()).get("x-site-lang") === "ko" ? "ko" : "en";
 
   return (
-    <html lang={lang}>
+    <html
+      className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable}`}
+      lang={lang}
+    >
       <body className="tw:min-h-[100dvh] tw:bg-paper tw:text-ink tw:antialiased">
         {children}
         <Analytics />

@@ -21,17 +21,34 @@
   --color-site-black: var(--black);
   --color-site-white: var(--white);
   --color-terminal: var(--terminal);
+  --color-night: var(--landing-night);
+  --color-night-raised: var(--landing-night-raised);
+  --color-night-soft: var(--landing-night-soft);
+  --color-cream: var(--landing-cream);
+  --color-cream-muted: var(--landing-cream-muted);
+  --color-signal: var(--landing-signal);
+  --color-signal-strong: var(--landing-signal-strong);
+  --color-electric: var(--landing-electric);
+  --color-hairline: var(--landing-hairline);
+  --color-hairline-strong: var(--landing-hairline-strong);
   --spacing: 4px;
   --font-sans: var(--font-site-sans);
+  --font-display: var(--font-site-display);
   --font-mono: var(--font-site-mono);
   --radius-sm: 6px;
   --radius-md: 8px;
   --shadow-floating: var(--shadow);
   --shadow-button: var(--button-shadow);
   --shadow-terminal: var(--terminal-shadow);
+  --shadow-signal: var(--landing-signal-shadow);
+  --shadow-stage: var(--landing-stage-shadow);
   --shadow-inset-highlight: var(--inset-highlight);
   --background-image-hero: var(--hero-background);
   --background-image-download: var(--download-background);
+  --background-image-control-grid: var(--landing-control-grid);
+  --background-image-signal-grid: var(--landing-signal-grid);
+  --background-image-ambient: var(--landing-ambient);
+  --background-image-diagonal: var(--landing-diagonal);
 }
 
 :root {
@@ -64,9 +81,43 @@
     linear-gradient(315deg, rgba(255, 107, 92, 0.12), transparent 36%),
     var(--paper-2);
   --font-site-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-  --font-site-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    var(--font-body-loaded), "Avenir Next", "Apple SD Gothic Neo", ui-sans-serif,
+    system-ui, sans-serif;
+  --font-site-display:
+    var(--font-display-loaded), "Arial Black", "Apple SD Gothic Neo", sans-serif;
+  --font-site-mono:
+    var(--font-mono-loaded), "SFMono-Regular", Consolas, "Liberation Mono", Menlo,
+    monospace;
+  --landing-night: #070906;
+  --landing-night-raised: #0e120d;
+  --landing-night-soft: #171d15;
+  --landing-cream: #f1f4e9;
+  --landing-cream-muted: #b5bcae;
+  --landing-signal: #b7ff5d;
+  --landing-signal-strong: #80ed45;
+  --landing-electric: #66d9ff;
+  --landing-hairline: rgba(241, 244, 233, 0.14);
+  --landing-hairline-strong: rgba(241, 244, 233, 0.28);
+  --landing-signal-shadow: 0 18px 70px rgba(128, 237, 69, 0.18);
+  --landing-stage-shadow: 0 44px 120px rgba(0, 0, 0, 0.52);
+  --landing-control-grid:
+    linear-gradient(rgba(241, 244, 233, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(241, 244, 233, 0.055) 1px, transparent 1px);
+  --landing-signal-grid:
+    linear-gradient(rgba(7, 9, 6, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(7, 9, 6, 0.11) 1px, transparent 1px);
+  --landing-ambient:
+    radial-gradient(circle at 72% 24%, rgba(183, 255, 93, 0.18), transparent 28%),
+    radial-gradient(circle at 22% 82%, rgba(102, 217, 255, 0.09), transparent 26%),
+    var(--landing-night);
+  --landing-diagonal:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(7, 9, 6, 0.06) 0,
+      rgba(7, 9, 6, 0.06) 1px,
+      transparent 1px,
+      transparent 8px
+    );
   font-family:
     var(--font-site-sans);
 }
@@ -107,4 +158,41 @@ h2,
 h3,
 p {
   margin: 0;
+}
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-dash {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+@keyframes landing-breathe {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 0.72;
+    transform: scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
