@@ -196,6 +196,28 @@ for migration in "${after_0010[@]}"; do
   psql_fixture --quiet --file="$migration"
 done
 
+migration_0016="$fixture_root/workspace-cloud/drizzle/0016_first_changeling.sql"
+psql_fixture --quiet \
+  --command='BEGIN' \
+  --file="$migration_0016" \
+  --command='ROLLBACK'
+
+psql_fixture --quiet <<'SQL'
+DO $fixture$
+BEGIN
+  IF to_regclass('workspace_control.workspace_provider_operation') IS NOT NULL
+     OR to_regclass('workspace_control.workspace_provider_operation_approval') IS NOT NULL THEN
+    RAISE EXCEPTION 'rolled-back provider operation tables survived';
+  END IF;
+  IF to_regclass('workspace_control.provider_integration_org_id_provider_idx') IS NOT NULL THEN
+    RAISE EXCEPTION 'rolled-back provider integration authority index survived';
+  END IF;
+END
+$fixture$;
+SQL
+
+psql_fixture --quiet --file="$migration_0016"
+
 psql_fixture --quiet <<'SQL'
 DO $fixture$
 DECLARE
@@ -224,6 +246,120 @@ BEGIN
       WHERE "id" = '30000000-0000-4000-8000-000000000001') IS NOT NULL THEN
     RAISE EXCEPTION 'legacy lease fabricated a Provider audit identifier';
   END IF;
+
+  BEGIN
+    INSERT INTO "workspace_control"."workspace_provider_operation"
+      ("id", "organization_id", "integration_id", "provider",
+       "integration_generation", "kind", "state", "idempotency_key",
+       "request_hash", "plan_hash", "plan_expires_at", "risk",
+       "approval_policy", "requested_by_member_id", "requested_by_user_id",
+       "requested_by_session_id", "requested_by_role", "resource_scope",
+       "source_resource_id", "target_name", "ownership_marker", "redacted_plan")
+    VALUES
+      ('40000000-0000-4000-8000-000000000001', 'legacy-workspace',
+       '10000000-0000-4000-8000-000000000001', 'neon', 2,
+       'neon.branch.create', 'awaiting_approval',
+       '41000000-0000-4000-8000-000000000001', repeat('a', 64), repeat('b', 64),
+       now() + interval '10 minutes', 'standard', 'single_admin',
+       'legacy-member', 'legacy-owner', 'legacy-session', 'owner',
+       'neon-project', 'br-source', 'safe-branch', 'v1.' || repeat('A', 43), '{}'::jsonb);
+    RAISE EXCEPTION 'cross-provider operation authority was accepted';
+  EXCEPTION WHEN foreign_key_violation THEN
+    NULL;
+  END;
+END
+$fixture$;
+
+INSERT INTO "workspace_control"."workspace_provider_integration"
+  ("id", "organization_id", "provider", "status", "external_account_id",
+   "display_name", "encrypted_credential", "granted_scope", "created_by_user_id")
+VALUES
+  ('10000000-0000-4000-8000-000000000002', 'legacy-workspace', 'neon',
+   'active', 'legacy-neon-account', 'Legacy Neon', 'sealed-neon-credential',
+   'api-key-v1', 'legacy-owner');
+
+INSERT INTO "workspace_control"."workspace_provider_operation"
+  ("id", "organization_id", "integration_id", "provider",
+   "integration_generation", "kind", "state", "idempotency_key",
+   "request_hash", "plan_hash", "plan_expires_at", "risk",
+   "approval_policy", "requested_by_member_id", "requested_by_user_id",
+   "requested_by_session_id", "requested_by_role", "resource_scope",
+   "source_resource_id", "target_name", "ownership_marker", "redacted_plan")
+VALUES
+  ('40000000-0000-4000-8000-000000000002', 'legacy-workspace',
+   '10000000-0000-4000-8000-000000000002', 'neon', 1,
+   'neon.branch.create', 'awaiting_approval',
+   '41000000-0000-4000-8000-000000000002', repeat('c', 64), repeat('d', 64),
+   now() + interval '10 minutes', 'standard', 'single_admin',
+   'legacy-member', 'legacy-owner', 'legacy-session', 'owner',
+   'neon-project', 'br-source', 'safe-branch', 'v1.' || repeat('B', 43), '{}'::jsonb);
+
+INSERT INTO "workspace_control"."workspace_provider_operation_approval"
+  ("id", "organization_id", "operation_id", "plan_hash", "decision",
+   "actor_member_id", "actor_user_id", "actor_session_id", "actor_role")
+VALUES
+  ('42000000-0000-4000-8000-000000000002', 'legacy-workspace',
+   '40000000-0000-4000-8000-000000000002', repeat('d', 64), 'approved',
+   'legacy-member', 'legacy-owner', 'legacy-session', 'owner');
+
+DO $fixture$
+BEGIN
+  BEGIN
+    INSERT INTO "workspace_control"."workspace_provider_operation"
+      ("id", "organization_id", "integration_id", "provider",
+       "integration_generation", "kind", "state", "idempotency_key",
+       "request_hash", "plan_hash", "plan_expires_at", "risk",
+       "approval_policy", "requested_by_member_id", "requested_by_user_id",
+       "requested_by_session_id", "requested_by_role", "resource_scope",
+       "source_resource_id", "target_name", "ownership_marker", "redacted_plan")
+    VALUES
+      ('40000000-0000-4000-8000-000000000003', 'legacy-workspace',
+       '10000000-0000-4000-8000-000000000002', 'neon', 1,
+       'neon.branch.create', 'awaiting_approval',
+       '41000000-0000-4000-8000-000000000003', repeat('e', 64), repeat('f', 64),
+       now() + interval '10 minutes', 'production_data', 'single_admin',
+       'legacy-member', 'legacy-owner', 'legacy-session', 'owner',
+       'neon-project', 'br-source', 'unsafe-branch', 'v1.' || repeat('C', 43), '{}'::jsonb);
+    RAISE EXCEPTION 'production data operation accepted single-person approval';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "workspace_control"."workspace_provider_operation"
+      ("id", "organization_id", "integration_id", "provider",
+       "integration_generation", "kind", "state", "idempotency_key",
+       "request_hash", "plan_hash", "plan_expires_at", "risk",
+       "approval_policy", "requested_by_member_id", "requested_by_user_id",
+       "requested_by_session_id", "requested_by_role", "resource_scope",
+       "source_resource_id", "target_name", "ownership_marker", "redacted_plan",
+       "remote_started_at")
+    VALUES
+      ('40000000-0000-4000-8000-000000000004', 'legacy-workspace',
+       '10000000-0000-4000-8000-000000000002', 'neon', 1,
+       'neon.branch.create', 'remote_started',
+       '41000000-0000-4000-8000-000000000004', repeat('1', 64), repeat('2', 64),
+       now() + interval '10 minutes', 'standard', 'single_admin',
+       'legacy-member', 'legacy-owner', 'legacy-session', 'owner',
+       'neon-project', 'br-source', 'unfenced-branch', 'v1.' || repeat('D', 43),
+       '{}'::jsonb, now());
+    RAISE EXCEPTION 'remote-started operation accepted no claim fence';
+  EXCEPTION WHEN check_violation THEN
+    NULL;
+  END;
+
+  BEGIN
+    INSERT INTO "workspace_control"."workspace_provider_operation_approval"
+      ("id", "organization_id", "operation_id", "plan_hash", "decision",
+       "actor_member_id", "actor_user_id", "actor_session_id", "actor_role")
+    VALUES
+      ('42000000-0000-4000-8000-000000000003', 'legacy-workspace',
+       '40000000-0000-4000-8000-000000000002', repeat('d', 64), 'approved',
+       'legacy-member', 'legacy-owner', 'legacy-session', 'owner');
+    RAISE EXCEPTION 'provider operation accepted a second approval decision';
+  EXCEPTION WHEN unique_violation THEN
+    NULL;
+  END;
 END
 $fixture$;
 SQL

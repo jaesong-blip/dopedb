@@ -37,7 +37,11 @@ import providerLocalTargetSource from "../../../workspace-cloud/lib/provider-loc
 import providerProvisioningTargetSource from "../../../workspace-cloud/lib/provider-provisioning-target.ts?raw";
 import providerResourcesRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/resources/route.ts?raw";
 import neonBranchesRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/neon-branches/route.ts?raw";
+import neonBranchOperationsRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/provider-integrations/[integrationId]/neon-branches/operations/route.ts?raw";
 import managedAccessTargetRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/connections/[connectionId]/managed-access-target/route.ts?raw";
+import providerOperationStoreSource from "../../../workspace-cloud/lib/provider-operation-store.ts?raw";
+import providerOperationMarkerSource from "../../../workspace-cloud/lib/provider-operation-marker.ts?raw";
+import providerOperationMigrationSource from "../../../workspace-cloud/drizzle/0016_first_changeling.sql?raw";
 import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
 import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-permissions.ts?raw";
@@ -47,6 +51,10 @@ import workspaceVersioningStoreSource from "../../../workspace-cloud/lib/workspa
 import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
 import desktopControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane.rs?raw";
 import { parseNeonBranchInventory } from "../../../workspace-cloud/lib/providers/neon-branches";
+import {
+  buildNeonBranchCreatePlan,
+  parseNeonBranchCreatePlanRequest,
+} from "../../../workspace-cloud/lib/providers/neon-branch-plan";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -348,6 +356,82 @@ describe("provider credential Tauri adapter", () => {
         { name: "restore", reason: "two" },
       ],
     }])).toThrow("Neon returned an invalid branch inventory");
+    const productionPlanRequest = parseNeonBranchCreatePlanRequest({
+      idempotencyKey: "77777777-7777-4777-8777-777777777777",
+      projectId: "project-one",
+      sourceBranchId: "br-main",
+      targetName: "safe-production-checkpoint",
+      initSource: "parent-data",
+      sourcePoint: { kind: "head" },
+      endpoint: "read_write",
+      sourceEnvironment: "production",
+    });
+    const productionPlan = buildNeonBranchCreatePlan({
+      request: productionPlanRequest,
+      inventory: branchInventory,
+      operationId: "88888888-8888-4888-8888-888888888888",
+      integrationId,
+      integrationGeneration: 12n,
+      workspaceProductionReference: true,
+      now: new Date("2026-08-05T02:00:00Z"),
+    });
+    expect(productionPlan).toMatchObject({
+      risk: "production_data",
+      approvalPolicy: "separate_admin",
+      target: {
+        copiesData: true,
+        createsCompute: true,
+        protected: false,
+        expiresAt: null,
+      },
+    });
+    expect(productionPlan.warningCodes).toEqual([
+      "NEON_PRODUCTION_DATA_COPY",
+      "NEON_PROTECTED_PARENT_CREDENTIALS_ROTATE",
+      "NEON_ENDPOINT_CREATES_COMPUTE",
+      "NEON_HEAD_RESOLVED_AT_EXECUTION",
+    ]);
+    expect(() => buildNeonBranchCreatePlan({
+      request: { ...productionPlanRequest, sourceEnvironment: "development" },
+      inventory: branchInventory,
+      operationId: "88888888-8888-4888-8888-888888888888",
+      integrationId,
+      integrationGeneration: 12n,
+      workspaceProductionReference: false,
+      now: new Date("2026-08-05T02:00:00Z"),
+    })).toThrow("Neon production source cannot be downgraded");
+    const schemaOnlyPlan = buildNeonBranchCreatePlan({
+      request: parseNeonBranchCreatePlanRequest({
+        idempotencyKey: "99999999-9999-4999-8999-999999999999",
+        projectId: "project-one",
+        sourceBranchId: "br-child",
+        targetName: "schema-sandbox",
+        initSource: "schema-only",
+        sourcePoint: { kind: "timestamp", value: "2026-08-05T01:30:00Z" },
+        endpoint: "none",
+        sourceEnvironment: "development",
+      }),
+      inventory: branchInventory,
+      operationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      integrationId,
+      integrationGeneration: 12n,
+      workspaceProductionReference: false,
+      now: new Date("2026-08-05T02:00:00Z"),
+    });
+    expect(schemaOnlyPlan).toMatchObject({
+      risk: "standard",
+      approvalPolicy: "single_admin",
+      target: { copiesData: false, createsCompute: false },
+    });
+    expect(schemaOnlyPlan.warningCodes).toEqual(["NEON_SCHEMA_ONLY_HAS_NO_DATA"]);
+    expect(() => parseNeonBranchCreatePlanRequest({
+      ...productionPlanRequest,
+      sourcePoint: { kind: "lsn", value: "not-an-lsn" },
+    })).toThrow("Invalid Neon branch create plan request");
+    expect(() => parseNeonBranchCreatePlanRequest({
+      ...productionPlanRequest,
+      optimisticExpiry: true,
+    })).toThrow("Invalid Neon branch create plan request");
 
     const order: string[] = [];
     await expect(issueAfterFreshProviderAuthority(
@@ -517,6 +601,29 @@ describe("provider credential Tauri adapter", () => {
     expect(neonBranchesRouteSource).toContain("missingTargets");
     expect(neonBranchesRouteSource).toContain("export const maxDuration = 60");
     expect(neonBranchesRouteSource).not.toContain("export async function POST");
+    expect(neonBranchOperationsRouteSource).toContain("boundedJsonBody");
+    expect(neonBranchOperationsRouteSource).toContain("recordProviderOperationPlan");
+    expect(neonBranchOperationsRouteSource).not.toContain("createNeonBranch");
+    expect(providerOperationStoreSource).toContain("providerMutationAuthoritySql");
+    expect(providerOperationStoreSource).toContain(
+      'PROVIDER_OPERATION_DURABLE_MUTATION_ENTRYPOINTS = Object.freeze([',
+    );
+    expect(providerOperationStoreSource).toContain('"recordProviderOperationPlan"');
+    expect(providerOperationStoreSource).toContain(
+      'ON CONFLICT ("organization_id", "idempotency_key") DO UPDATE',
+    );
+    expect(providerOperationStoreSource).toContain("JOIN audit");
+    expect(providerOperationStoreSource).toContain("canonicalHash(input.plan)");
+    expect(providerOperationMarkerSource).toContain("hkdfSync");
+    expect(providerOperationMarkerSource).toContain("timingSafeEqual");
+    expect(providerOperationMigrationSource).toContain(
+      '"approval_policy" text NOT NULL',
+    );
+    expect(providerOperationMigrationSource).toContain("'remote_started'");
+    expect(providerOperationMigrationSource).toContain("'separate_admin'");
+    expect(providerOperationMigrationSource).toContain(
+      'FOREIGN KEY ("organization_id","integration_id","provider")',
+    );
     expect(providerIntegrationRouteSource).toContain('"api-key-v1"');
     expect(neonSource).toContain(
       "return { providerAuditId: `${branch.value}:${database.id}` }",

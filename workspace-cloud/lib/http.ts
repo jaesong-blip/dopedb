@@ -14,6 +14,51 @@ export function mutationAllowed(request: Request, appOrigin: string) {
   return request.headers.get("origin") === appOrigin;
 }
 
+/** Reads one JSON request without trusting Content-Length or buffering forever. */
+export async function boundedJsonBody(
+  request: Request,
+  maxBytes: number,
+): Promise<{ ok: true; value: unknown } | { ok: false }> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || !request.body) {
+    return { ok: false };
+  }
+  const lengthHeader = request.headers.get("content-length");
+  if (lengthHeader !== null) {
+    if (!/^\d+$/.test(lengthHeader) || Number(lengthHeader) > maxBytes) {
+      await request.body.cancel().catch(() => undefined);
+      return { ok: false };
+    }
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: false };
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return {
+      ok: true,
+      value: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+    };
+  } catch {
+    await reader.cancel().catch(() => undefined);
+    return { ok: false };
+  }
+}
+
 export function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     .test(value);

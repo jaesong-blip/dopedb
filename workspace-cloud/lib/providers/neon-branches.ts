@@ -151,7 +151,9 @@ function restrictedActions(value: unknown): readonly NeonBranchRestrictedAction[
       name,
       reason: safeLine(row.reason, 512),
     };
-  });
+  }).sort((left, right) => (
+    left.name < right.name ? -1 : left.name === right.name ? 0 : 1
+  ));
 }
 
 function branchOrder(

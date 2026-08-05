@@ -1,6 +1,5 @@
 // One approval-gated Neon preparation flow: sealed discovery leaf -> preflight
 // -> exact plan approval -> apply/verify -> receipt. No SQL or secret crosses it.
-import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 
 import { db } from "../../../../../../../../lib/db";
@@ -37,6 +36,7 @@ import {
 } from "../../../../../../../../lib/secret-envelope";
 import { workspaceAuditEvent } from "../../../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../../../lib/workspace-authorization";
+import { workspaceAuditEventId } from "../../../../../../../../lib/workspace-audit-id";
 
 type RouteContext = {
   params: Promise<{ workspaceId: string; integrationId: string }>;
@@ -68,23 +68,6 @@ function environment(value: unknown): NeonEnvironmentClassification | null | und
   return value === "development" || value === "production" ? value : undefined;
 }
 
-function auditEventId(kind: string, idempotencyKey: string) {
-  const bytes = createHash("sha256")
-    .update(`dopedb:neon-bootstrap:${kind}:${idempotencyKey}`, "utf8")
-    .digest()
-    .subarray(0, 16);
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = bytes.toString("hex");
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20),
-  ].join("-");
-}
-
 async function recordBootstrapAudit(input: {
   kind: string;
   organizationId: string;
@@ -94,7 +77,10 @@ async function recordBootstrapAudit(input: {
   summary: Record<string, unknown>;
   requestId: string;
 }) {
-  const id = auditEventId(input.kind, input.requestId);
+  const id = workspaceAuditEventId(
+    `neon-bootstrap:${input.kind}`,
+    input.requestId,
+  );
   const result = await db.execute<{ id: string }>(sql`
     INSERT INTO ${workspaceAuditEvent} AS existing
       ("id", "organization_id", "actor_user_id", "action", "resource_type",
