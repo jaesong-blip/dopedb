@@ -48,4 +48,7 @@ export const env = {
   googleClientSecret: () => required("GOOGLE_CLIENT_SECRET"),
   planetScaleClientId: () => optional("PLANETSCALE_CLIENT_ID"),
   planetScaleClientSecret: () => optional("PLANETSCALE_CLIENT_SECRET"),
+  workspaceKmsKeyName: () => required("WORKSPACE_KMS_KEY_NAME"),
+  workspaceKmsWifAudience: () => required("WORKSPACE_KMS_WIF_AUDIENCE"),
+  workspaceKmsServiceAccountEmail: () => required("WORKSPACE_KMS_SERVICE_ACCOUNT_EMAIL"),
 };

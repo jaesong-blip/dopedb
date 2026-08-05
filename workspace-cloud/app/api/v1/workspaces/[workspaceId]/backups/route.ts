@@ -14,12 +14,13 @@ import {
 import {
   sealWorkspaceMetadataBackup,
   snapshotHash,
-  WORKSPACE_BACKUP_KEY_REFERENCE,
-  WORKSPACE_BACKUP_KEY_VERSION,
+  WORKSPACE_DATA_KEY_REFERENCE,
 } from "../../../../../../lib/workspace-backup";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
 import { revocationGateLockKey } from "../../../../../../lib/revocation-gates";
 import { parseSharedConnection } from "../../../../../../lib/workspace-connections";
+import { WorkspaceKmsError } from "../../../../../../lib/workspace-kms-core";
+import { logWorkspaceKmsFailure } from "../../../../../../lib/workspace-server-log";
 
 type RouteContext = { params: Promise<{ workspaceId: string }> };
 
@@ -64,8 +65,9 @@ function returnedBackupMetadata(row: ReturnedBackupRow): BackupMetadata | null {
     || !isUuid(row.id)
     || !Number.isSafeInteger(sourceRevision)
     || sourceRevision < 1
-    || row.keyReference !== WORKSPACE_BACKUP_KEY_REFERENCE
-    || row.keyVersion !== WORKSPACE_BACKUP_KEY_VERSION
+    || row.keyReference !== WORKSPACE_DATA_KEY_REFERENCE
+    || typeof row.keyVersion !== "string"
+    || !/^v[1-9][0-9]*$/.test(row.keyVersion)
     || typeof row.snapshotHash !== "string"
     || !/^[a-f0-9]{64}$/i.test(row.snapshotHash)
     || Number.isNaN(createdAt.valueOf())
@@ -161,7 +163,28 @@ export async function POST(request: Request, context: RouteContext) {
     })),
   };
   const backupId = crypto.randomUUID();
-  const ciphertext = sealWorkspaceMetadataBackup(workspaceId, backupId, snapshot);
+  let sealed;
+  try {
+    sealed = await sealWorkspaceMetadataBackup({
+      request,
+      workspaceId,
+      actorUserId: authorization.session.user.id,
+      backupId,
+      snapshot,
+    });
+  } catch (error) {
+    logWorkspaceKmsFailure({
+      operation: "encrypt",
+      kind: error instanceof WorkspaceKmsError ? error.kind : "unexpected",
+      status: error instanceof WorkspaceKmsError ? error.status : 0,
+    });
+    return jsonError(
+      error instanceof WorkspaceKmsError && error.kind === "integrity"
+        ? "Workspace backup key integrity validation failed"
+        : "Workspace backup encryption is unavailable",
+      error instanceof WorkspaceKmsError ? error.status : 503,
+    );
+  }
   const snapshotConnections = connections.map((connection) => ({
     id: connection.id,
     content_revision: connection.contentRevision,
@@ -206,6 +229,15 @@ export async function POST(request: Request, context: RouteContext) {
         AND profile."lifecycle_state" IS NOT DISTINCT FROM ${profile.lifecycleState}
         AND profile."residency_region" IS NOT DISTINCT FROM ${profile.residencyRegion}
       FOR UPDATE OF profile
+    ), data_key_gate AS MATERIALIZED (
+      SELECT key."id"
+      FROM "workspace_control"."workspace_data_key" key
+      JOIN profile_snapshot ON TRUE
+      WHERE key."id" = ${sealed.dataKeyId}::uuid
+        AND key."organization_id" = ${workspaceId}
+        AND key."retired_at" IS NULL
+        AND key."destroyed_at" IS NULL
+      FOR SHARE OF key
     ), supplied_connections AS MATERIALIZED (
       SELECT * FROM jsonb_to_recordset(${JSON.stringify(snapshotConnections)}::jsonb) AS supplied(
         "id" uuid, "content_revision" bigint, "name" text, "engine" text,
@@ -228,6 +260,7 @@ export async function POST(request: Request, context: RouteContext) {
       FOR UPDATE OF connection
     ), snapshot_matches AS MATERIALIZED (
       SELECT 1 FROM profile_snapshot
+      JOIN data_key_gate ON TRUE
       WHERE NOT EXISTS (
         (SELECT * FROM supplied_connections)
         EXCEPT
@@ -240,9 +273,11 @@ export async function POST(request: Request, context: RouteContext) {
       )
     ), inserted AS (
       INSERT INTO "workspace_control"."workspace_metadata_backup"
-        ("id", "organization_id", "source_revision", "key_reference", "key_version", "ciphertext", "snapshot_hash", "created_by_user_id")
-      SELECT ${backupId}::uuid, ${workspaceId}, ${profile.revision}, ${WORKSPACE_BACKUP_KEY_REFERENCE},
-        ${WORKSPACE_BACKUP_KEY_VERSION}, ${ciphertext}, ${snapshotHash(snapshot)}, ${authorization.session.user.id}
+        ("id", "organization_id", "source_revision", "key_reference", "key_version",
+         "data_key_id", "ciphertext", "snapshot_hash", "created_by_user_id")
+      SELECT ${backupId}::uuid, ${workspaceId}, ${profile.revision}, ${sealed.keyReference},
+        ${sealed.keyVersion}, ${sealed.dataKeyId}::uuid, ${sealed.ciphertext},
+        ${snapshotHash(snapshot)}, ${authorization.session.user.id}
       FROM snapshot_matches
       RETURNING "id" AS "id", "source_revision" AS "sourceRevision",
         "key_reference" AS "keyReference", "key_version" AS "keyVersion",
@@ -251,7 +286,12 @@ export async function POST(request: Request, context: RouteContext) {
       INSERT INTO "workspace_control"."workspace_audit_event"
         ("organization_id", "actor_user_id", "action", "resource_type", "resource_id", "redacted_summary", "request_id")
       SELECT ${workspaceId}, ${authorization.session.user.id}, 'workspace.backup.create', 'workspace_backup',
-        inserted."id"::text, jsonb_build_object('connectionCount', ${snapshot.connections.length}, 'sourceRevision', ${profile.revision}), gen_random_uuid()
+        inserted."id"::text,
+        jsonb_build_object(
+          'connectionCount', ${snapshot.connections.length}::integer,
+          'sourceRevision', ${profile.revision}::integer
+        ),
+        gen_random_uuid()
       FROM inserted RETURNING "id"
     ) SELECT inserted.* FROM inserted JOIN audit ON TRUE
   `);

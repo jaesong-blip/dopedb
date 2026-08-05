@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { describe, expect, it, vi } from "vitest";
+import * as workspaceSchema from "./schema";
 
 vi.mock("server-only", () => ({}));
 
@@ -47,6 +48,8 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         AND to_regclass('workspace_control.workspace_provider_import_request') IS NOT NULL
         AND to_regclass('workspace_control.workspace_provider_resource') IS NOT NULL
         AND to_regclass('workspace_control.workspace_resource_conflict_resolution') IS NOT NULL
+        AND to_regclass('workspace_control.workspace_data_key') IS NOT NULL
+        AND to_regclass('workspace_control.workspace_data_key_rotation') IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema = 'workspace_control'
@@ -58,6 +61,18 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           WHERE table_schema = 'workspace_control'
             AND table_name = 'workspace_credential_lease'
             AND column_name = 'provider_audit_id'
+        )
+        AND EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'workspace_control'
+            AND table_name = 'workspace_metadata_backup'
+            AND column_name = 'reencrypted_by_rotation_id'
+        )
+        AND EXISTS (
+          SELECT 1 FROM pg_trigger
+          WHERE tgrelid = 'workspace_control.workspace_metadata_backup'::regclass
+            AND tgname = 'workspace_metadata_backup_payload_immutable'
+            AND NOT tgisinternal
         )
         AND EXISTS (
           SELECT 1 FROM pg_constraint
@@ -82,12 +97,18 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         })
       ),
     };
-    const postgresDb = drizzle(sql);
-    const harnessDb = {
-      execute: async (query: Parameters<typeof postgresDb.execute>[0]) => ({
-        rows: await postgresDb.execute(query),
-      }),
-    };
+    const postgresDb = drizzle(sql, { schema: workspaceSchema });
+    const harnessDb = new Proxy(postgresDb, {
+      get(target, property, receiver) {
+        if (property === "execute") {
+          return async (query: Parameters<typeof postgresDb.execute>[0]) => ({
+            rows: await postgresDb.execute(query),
+          });
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
     vi.doMock("./db", () => ({ db: harnessDb, neonSql }));
     const serverLog = await import("./workspace-server-log");
     const logSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -120,6 +141,11 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         status: 999,
         databaseCode: "password-value",
       });
+      serverLog.logWorkspaceKmsFailure({
+        operation: "credential-value",
+        kind: "secret-value",
+        status: 999,
+      });
       expect(logSpy.mock.calls).toEqual([
         ["provider_connection_failed", {
           provider: "other",
@@ -147,10 +173,46 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           kind: "unexpected",
           status: 0,
         }],
+        ["workspace_kms_failed", {
+          operation: "other",
+          kind: "other",
+          status: 0,
+        }],
       ]);
     } finally {
       logSpy.mockRestore();
     }
+    const kmsCore = await import("./workspace-kms-core");
+    expect(kmsCore.crc32c(Buffer.from("123456789", "utf8"))).toBe(0xe3069283);
+    const kmsKeyName = "projects/dopedb-harness/locations/global/keyRings/workspace/cryptoKeys/backup";
+    expect(kmsCore.parseWorkspaceKmsConfiguration({
+      keyName: kmsKeyName,
+      workloadIdentityAudience: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/vercel/providers/workspace",
+      serviceAccountEmail: "workspace-kms@dopedb-harness.iam.gserviceaccount.com",
+    })).toMatchObject({ keyName: kmsKeyName });
+    expect(() => kmsCore.parseWorkspaceKmsConfiguration({
+      keyName: "credential-value",
+      workloadIdentityAudience: "secret-value",
+      serviceAccountEmail: "password-value",
+    })).toThrow("Workspace KMS configuration failed");
+    const syntheticWrapped = Buffer.from("synthetic wrapped data key", "utf8");
+    const parsedWrapped = kmsCore.parseKmsEncryptResponse({
+      name: `${kmsKeyName}/cryptoKeyVersions/7`,
+      ciphertext: syntheticWrapped.toString("base64"),
+      ciphertextCrc32c: String(kmsCore.crc32c(syntheticWrapped)),
+      verifiedPlaintextCrc32c: true,
+      verifiedAdditionalAuthenticatedDataCrc32c: true,
+    }, kmsKeyName);
+    expect(parsedWrapped.kmsKeyVersion).toBe(`${kmsKeyName}/cryptoKeyVersions/7`);
+    const syntheticPlaintext = Buffer.alloc(32, 23);
+    const parsedPlaintext = kmsCore.parseKmsDecryptResponse({
+      plaintext: syntheticPlaintext.toString("base64"),
+      plaintextCrc32c: String(kmsCore.crc32c(syntheticPlaintext)),
+    });
+    expect(parsedPlaintext).toEqual(syntheticPlaintext);
+    parsedPlaintext.fill(0);
+    syntheticPlaintext.fill(0);
+    syntheticWrapped.fill(0);
     const { importProviderReceipt } = await import("./provider-import-store");
 
     const suffix = randomUUID();
@@ -163,6 +225,10 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
     const resourceId = randomUUID();
     const receiptId = randomUUID();
     const providerSecret = `never-copy-this-${suffix}`;
+    const kmsOrganizationId = randomUUID();
+    const kmsUserId = `harness-kms-user-${suffix}`;
+    const kmsMemberId = `harness-kms-member-${suffix}`;
+    const kmsSessionId = `harness-kms-session-${suffix}`;
     const authority = {
       sessionId,
       userId,
@@ -184,23 +250,33 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         await tx`
           INSERT INTO "workspace_control"."organization" ("id", "name", "slug")
           VALUES (${organizationId}, 'Harness', ${`harness-${suffix}`}),
-                 (${otherOrganizationId}, 'Other', ${`harness-other-${suffix}`})
+                 (${otherOrganizationId}, 'Other', ${`harness-other-${suffix}`}),
+                 (${kmsOrganizationId}, 'KMS Harness', ${`harness-kms-${suffix}`})
         `;
         await tx`
           INSERT INTO "workspace_control"."user"
             ("id", "name", "email", "email_verified")
-          VALUES (${userId}, 'Harness', ${`harness-${suffix}@invalid.test`}, TRUE)
+          VALUES (${userId}, 'Harness', ${`harness-${suffix}@invalid.test`}, TRUE),
+                 (${kmsUserId}, 'KMS Harness', ${`harness-kms-${suffix}@invalid.test`}, TRUE)
         `;
         await tx`
           INSERT INTO "workspace_control"."member"
             ("id", "organization_id", "user_id", "role")
-          VALUES (${memberId}, ${organizationId}, ${userId}, 'admin')
+          VALUES (${memberId}, ${organizationId}, ${userId}, 'admin'),
+                 (${kmsMemberId}, ${kmsOrganizationId}, ${kmsUserId}, 'owner')
         `;
         await tx`
           INSERT INTO "workspace_control"."session"
             ("id", "expires_at", "token", "user_id")
           VALUES (${sessionId}, now() + interval '10 minutes',
-                  ${`harness-token-${suffix}`}, ${userId})
+                  ${`harness-token-${suffix}`}, ${userId}),
+                 (${kmsSessionId}, now() + interval '10 minutes',
+                  ${`harness-kms-token-${suffix}`}, ${kmsUserId})
+        `;
+        await tx`
+          INSERT INTO "workspace_control"."workspace_profile"
+            ("organization_id", "encryption_key_ref")
+          VALUES (${kmsOrganizationId}, ${`pending://${kmsOrganizationId}`})
         `;
         await tx`
           INSERT INTO "workspace_control"."workspace_provider_integration"
@@ -1028,6 +1104,172 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           AND "conflict_id" = ${appliedConflictId}::uuid
       `).rejects.toThrow(/append-only/);
 
+      vi.doMock("./workspace-kms", () => ({
+        wrapWorkspaceDataKey: async (wrappedInput: {
+          configuration: { keyName: string };
+          version: number;
+          plaintextKey: Buffer;
+        }) => ({
+          kmsKeyVersion: `${wrappedInput.configuration.keyName}/cryptoKeyVersions/${wrappedInput.version}`,
+          wrappedKey: Buffer.from(wrappedInput.plaintextKey).toString("base64"),
+        }),
+        unwrapWorkspaceDataKey: async (wrappedInput: { wrappedKey: string }) =>
+          Buffer.from(wrappedInput.wrappedKey, "base64"),
+        workspaceKmsAccessToken: async () => "unused-harness-access-token",
+        workspaceKmsConfiguration: () => { throw new Error("unused harness configuration"); },
+        workspaceKmsOidcToken: () => { throw new Error("unused harness OIDC token"); },
+      }));
+      const [dataKeyStore, dataKeyRotation, workspaceBackup] = await Promise.all([
+        import("./workspace-data-key"),
+        import("./workspace-data-key-rotation"),
+        import("./workspace-backup"),
+      ]);
+      const kmsSession = {
+        configuration: {
+          keyName: kmsKeyName,
+          workloadIdentityAudience: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/vercel/providers/workspace",
+          serviceAccountEmail: "workspace-kms@dopedb-harness.iam.gserviceaccount.com",
+        },
+        accessToken: "harness-access-token",
+      };
+      const kmsAuthority = {
+        sessionId: kmsSessionId,
+        userId: kmsUserId,
+        membershipId: kmsMemberId,
+      };
+      const firstDataKey = await dataKeyStore.ensureActiveWorkspaceDataKey({
+        organizationId: kmsOrganizationId,
+        actorUserId: kmsUserId,
+        kms: kmsSession,
+      });
+      expect(firstDataKey.version).toBe(1);
+      const backupId = randomUUID();
+      const kmsSnapshot = {
+        version: 1 as const,
+        workspace: {
+          organizationId: kmsOrganizationId,
+          lifecycleState: "active",
+          residencyRegion: null,
+          revision: 1,
+        },
+        connections: [],
+      };
+      const firstCiphertext = await dataKeyStore.withWorkspaceDataKey(
+        kmsSession,
+        firstDataKey,
+        (key) => workspaceBackup.sealWorkspaceMetadataBackupWithDataKey(
+          key,
+          firstDataKey,
+          backupId,
+          kmsSnapshot,
+        ),
+      );
+      await sql`
+        INSERT INTO "workspace_control"."workspace_metadata_backup"
+          ("id", "organization_id", "source_revision", "key_reference", "key_version",
+           "data_key_id", "ciphertext", "snapshot_hash", "created_by_user_id")
+        VALUES (${backupId}::uuid, ${kmsOrganizationId}, 1,
+          ${workspaceBackup.WORKSPACE_DATA_KEY_REFERENCE},
+          ${workspaceBackup.workspaceDataKeyVersion(firstDataKey.version)},
+          ${firstDataKey.id}::uuid, ${firstCiphertext},
+          ${workspaceBackup.snapshotHash(kmsSnapshot)}, ${kmsUserId})
+      `;
+      await expect(sql`
+        UPDATE "workspace_control"."workspace_metadata_backup"
+        SET "ciphertext" = 'unauthorized-rewrite'
+        WHERE "id" = ${backupId}::uuid
+      `).rejects.toThrow(/immutable outside an active key rotation/);
+      const rotationRequestId = randomUUID();
+      const startedRotation = await dataKeyRotation.beginOrClaimWorkspaceDataKeyRotation({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        kms: kmsSession,
+        idempotencyKey: rotationRequestId,
+      });
+      expect(startedRotation.replayed).toBe(false);
+      expect(startedRotation.claim).not.toBeNull();
+      if (!startedRotation.claim) throw new Error("KMS harness rotation was not claimed");
+      const advancedRotation = await dataKeyRotation.advanceWorkspaceDataKeyRotation({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        kms: kmsSession,
+        claim: startedRotation.claim,
+      });
+      expect(advancedRotation).toEqual({
+        status: "completed",
+        processedBackups: 1,
+        remaining: 0,
+      });
+      const rotationStatus = await dataKeyRotation.workspaceDataKeyRotationStatus(
+        kmsOrganizationId,
+      );
+      expect(rotationStatus).toMatchObject({
+        activeVersion: 2,
+        backupCount: 1,
+        rotation: {
+          status: "completed",
+          fromVersion: 1,
+          toVersion: 2,
+          processedBackups: 1,
+          remainingBackups: 0,
+        },
+      });
+      const replayedRotation = await dataKeyRotation.beginOrClaimWorkspaceDataKeyRotation({
+        organizationId: kmsOrganizationId,
+        authority: kmsAuthority,
+        kms: kmsSession,
+        idempotencyKey: rotationRequestId,
+      });
+      expect(replayedRotation).toEqual({ claim: null, busy: false, replayed: true });
+      const rotatedBackup = await sql<{
+        ciphertext: string;
+        dataKeyId: string;
+        keyVersion: string;
+        rotationId: string;
+      }[]>`
+        SELECT "ciphertext" AS "ciphertext", "data_key_id"::text AS "dataKeyId",
+          "key_version" AS "keyVersion",
+          "reencrypted_by_rotation_id"::text AS "rotationId"
+        FROM "workspace_control"."workspace_metadata_backup"
+        WHERE "id" = ${backupId}::uuid AND "organization_id" = ${kmsOrganizationId}
+      `;
+      expect(rotatedBackup[0]).toMatchObject({
+        dataKeyId: expect.any(String),
+        keyVersion: "v2",
+        rotationId: rotationStatus.rotation?.id,
+      });
+      const secondDataKey = await dataKeyStore.workspaceDataKeyById(
+        kmsOrganizationId,
+        rotatedBackup[0]!.dataKeyId,
+      );
+      if (!secondDataKey) throw new Error("KMS harness target key is missing");
+      const reopenedSnapshot = await workspaceBackup.openWorkspaceMetadataBackupWithKms(
+        kmsSession,
+        {
+          workspaceId: kmsOrganizationId,
+          backupId,
+          ciphertext: rotatedBackup[0]!.ciphertext,
+          binding: {
+            dataKeyId: secondDataKey.id,
+            keyReference: workspaceBackup.WORKSPACE_DATA_KEY_REFERENCE,
+            keyVersion: workspaceBackup.workspaceDataKeyVersion(secondDataKey.version),
+          },
+        },
+      );
+      expect(reopenedSnapshot).toEqual(kmsSnapshot);
+      const retiredKeyState = await sql<{ wrappedKey: string | null; destroyed: boolean }[]>`
+        SELECT "wrapped_key" AS "wrappedKey", "destroyed_at" IS NOT NULL AS "destroyed"
+        FROM "workspace_control"."workspace_data_key"
+        WHERE "id" = ${firstDataKey.id}::uuid
+          AND "organization_id" = ${kmsOrganizationId}
+      `;
+      expect(retiredKeyState[0]).toEqual({ wrappedKey: null, destroyed: true });
+      await expect(sql`
+        UPDATE "workspace_control"."workspace_metadata_backup"
+        SET "ciphertext" = 'post-rotation-rewrite'
+        WHERE "id" = ${backupId}::uuid
+      `).rejects.toThrow(/immutable outside an active key rotation/);
+
       const leaked = await sql<{ leaked: boolean }[]>`
         SELECT EXISTS (
           SELECT 1
@@ -1055,13 +1297,14 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
     } finally {
       await sql`
         DELETE FROM "workspace_control"."organization"
-        WHERE "id" IN (${organizationId}, ${otherOrganizationId})
+        WHERE "id" IN (${organizationId}, ${otherOrganizationId}, ${kmsOrganizationId})
       `.catch(() => undefined);
       await sql`
-        DELETE FROM "workspace_control"."user" WHERE "id" = ${userId}
+        DELETE FROM "workspace_control"."user" WHERE "id" IN (${userId}, ${kmsUserId})
       `.catch(() => undefined);
       await sql.end({ timeout: 5 });
       vi.doUnmock("./db");
+      vi.doUnmock("./workspace-kms");
     }
   }, 60_000);
 });

@@ -51,6 +51,12 @@ import providerOperationMigrationSource from "../../../workspace-cloud/drizzle/0
 import providerOperationKindMigrationSource from "../../../workspace-cloud/drizzle/0017_lying_hex.sql?raw";
 import providerOperationSwitchMigrationSource from "../../../workspace-cloud/drizzle/0018_lowly_magneto.sql?raw";
 import workspaceBackupCoreSource from "../../../workspace-cloud/lib/workspace-backup-core.ts?raw";
+import workspaceBackupSource from "../../../workspace-cloud/lib/workspace-backup.ts?raw";
+import workspaceDataKeySource from "../../../workspace-cloud/lib/workspace-data-key.ts?raw";
+import workspaceDataKeyRotationSource from "../../../workspace-cloud/lib/workspace-data-key-rotation.ts?raw";
+import workspaceKmsSource from "../../../workspace-cloud/lib/workspace-kms.ts?raw";
+import workspaceDataKeyMigrationSource from "../../../workspace-cloud/drizzle/0022_dark_darwin.sql?raw";
+import workspaceBackupRotationMigrationSource from "../../../workspace-cloud/drizzle/0023_military_joseph.sql?raw";
 import workspaceConnectionsSource from "../../../workspace-cloud/lib/workspace-connections.ts?raw";
 import workspacePermissionsSource from "../../../workspace-cloud/lib/workspace-permissions.ts?raw";
 import workspaceRevocationGatesSource from "../../../workspace-cloud/lib/revocation-gates.ts?raw";
@@ -1711,6 +1717,26 @@ describe("provider credential Tauri adapter", () => {
     ]);
     expect(workspaceBackupCoreSource).toContain("parseBackupConnection(template)");
     expect(workspaceBackupCoreSource).toContain("...parseBackupConnection(template)");
+    expect(workspaceKmsSource).toContain('request.headers.get("x-vercel-oidc-token")');
+    expect(workspaceKmsSource).toContain("https://sts.googleapis.com/v1/token");
+    expect(workspaceKmsSource).toContain(":generateAccessToken");
+    expect(workspaceKmsSource).not.toMatch(
+      /GOOGLE_APPLICATION_CREDENTIALS|private_key|client_email|serviceAccountKey/i,
+    );
+    expect(workspaceDataKeySource).toContain("plaintextKey.fill(0)");
+    expect(workspaceDataKeySource).toContain("workspace-data-key:");
+    expect(workspaceBackupSource).toContain("openWorkspaceMetadataBackupWithKms");
+    expect(workspaceDataKeyRotationSource).toContain("member.\"role\" = 'owner'");
+    expect(workspaceDataKeyRotationSource).toContain('"wrapped_key" = NULL');
+    expect(workspaceDataKeyMigrationSource).toContain(
+      'CREATE TABLE "workspace_control"."workspace_data_key"',
+    );
+    expect(workspaceDataKeyMigrationSource).toContain(
+      'WHERE "retired_at" IS NULL',
+    );
+    expect(workspaceBackupRotationMigrationSource).toContain(
+      "immutable outside an active key rotation",
+    );
     expect(workspaceVersioningStoreSource).toContain("readonlyDefault: true");
     expect(workspaceVersioningStoreSource).toContain("allowWrites: false");
     expect(JSON.stringify(legacyBackup)).not.toMatch(

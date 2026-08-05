@@ -268,10 +268,19 @@ definitions, and reuses the existing read-only dashboard safety boundary for exe
 - Workspace metadata backups are canonical secretless snapshots: they include workspace
   lifecycle metadata and shared connection templates only, never provider OAuth tokens,
   target-database credentials, local secret references, query/result rows, certificates,
-  or URLs with embedded credentials. Each backup uses a workspace-scoped HKDF-SHA-256 key
-  derived in a backup-only domain from the deployment master key, then AES-256-GCM with AAD bound
-  to both its workspace and opaque backup id; it stores that backup-domain key reference/version and ciphertext
-  only, and is never returned as plaintext or ciphertext by the API.
+  or URLs with embedded credentials. A random 256-bit workspace data-encryption key (DEK)
+  seals each snapshot with AES-256-GCM and AAD bound to the workspace and opaque backup id.
+  Only the Cloud KMS-wrapped DEK is durable. The plaintext DEK exists in request memory for
+  the envelope operation and is zeroized before return. Backups created by the former
+  backup-only HKDF v1 domain remain readable until an Owner rotation re-encrypts them.
+- KMS authentication is keyless. A Vercel Function request receives an
+  `x-vercel-oidc-token`, exchanges it through the configured GCP Workload Identity Federation
+  provider, and impersonates a dedicated service account with encrypt/decrypt access scoped
+  to the configured CryptoKey. JSON service-account keys and reusable Google credentials are
+  not accepted by the application. A rotation creates a new wrapped DEK version, processes
+  every live and tombstoned backup in resumable bounded batches, and erases the retired
+  wrapped DEK only after no backup references it. PostgreSQL permits ciphertext mutation only
+  under the active, unexpired Owner rotation claim.
 - A backup restore is additive and conflict-preserving, not a silent rollback. Existing
   connection ids retain the current server projection while the restored candidate is
   recorded as an immutable conflict branch; a new opaque conflict id is the only client
@@ -305,8 +314,19 @@ server-verified Admin/Owner membership, and return `private, no-store` responses
 lists only backup metadata (`id`, source revision, key reference/version, hash, timestamp);
 `POST /` creates a ciphertext-only snapshot; `DELETE /:backupId` creates a retention
 tombstone; and `POST /:backupId/restore` requires a quoted `If-Match` workspace revision.
+`GET /key-rotation` returns only version/count/progress metadata. Owner-only
+`POST /key-rotation` requires an opaque UUID `requestId`, resumes an interrupted rotation,
+and is idempotent after a lost response. Repeated POSTs advance bounded batches until the
+response reports `completed`; key material and ciphertext are never returned.
 Neither successful nor failed responses contain provider grants, target credentials,
 envelope ciphertext, decrypted snapshot data, or database result rows.
+
+Production must define `WORKSPACE_KMS_KEY_NAME`, `WORKSPACE_KMS_WIF_AUDIENCE`, and
+`WORKSPACE_KMS_SERVICE_ACCOUNT_EMAIL`. The WIF provider must accept only the immutable
+Vercel project/team/environment claims for this production deployment. Grant its principal
+`roles/iam.workloadIdentityUser` on the dedicated service account, and grant that service
+account `roles/cloudkms.cryptoKeyEncrypterDecrypter` on the single backup CryptoKey rather
+than at project scope.
 
 ## Security references
 

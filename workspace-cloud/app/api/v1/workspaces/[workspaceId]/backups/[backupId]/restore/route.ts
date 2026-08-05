@@ -10,12 +10,12 @@ import { workspaceMetadataBackup } from "../../../../../../../../lib/schema";
 import {
   openWorkspaceMetadataBackup,
   snapshotHash,
-  WORKSPACE_BACKUP_KEY_REFERENCE,
-  WORKSPACE_BACKUP_KEY_VERSION,
 } from "../../../../../../../../lib/workspace-backup";
 import { parseExpectedRevision } from "../../../../../../../../lib/workspace-versioning";
 import { restoreWorkspaceSnapshot } from "../../../../../../../../lib/workspace-versioning-store";
 import { authorizeWorkspace } from "../../../../../../../../lib/workspace-authorization";
+import { WorkspaceKmsError } from "../../../../../../../../lib/workspace-kms-core";
+import { logWorkspaceKmsFailure } from "../../../../../../../../lib/workspace-server-log";
 
 type RouteContext = { params: Promise<{ workspaceId: string; backupId: string }> };
 
@@ -48,19 +48,37 @@ export async function POST(request: Request, context: RouteContext) {
     ),
   });
   if (!backup || backup.deletedAt) return jsonError("Backup not found", 404);
-  if (
-    backup.keyReference !== WORKSPACE_BACKUP_KEY_REFERENCE
-    || backup.keyVersion !== WORKSPACE_BACKUP_KEY_VERSION
-  ) return jsonError("Backup integrity validation failed", 409);
   let snapshot;
   try {
-    snapshot = openWorkspaceMetadataBackup(workspaceId, backupId, backup.ciphertext);
+    snapshot = await openWorkspaceMetadataBackup({
+      request,
+      workspaceId,
+      backupId,
+      ciphertext: backup.ciphertext,
+      binding: {
+        dataKeyId: backup.dataKeyId,
+        keyReference: backup.keyReference,
+        keyVersion: backup.keyVersion,
+      },
+    });
     if (
       snapshot.workspace.revision !== backup.sourceRevision
       || !sameHash(snapshotHash(snapshot), backup.snapshotHash)
     ) throw new Error("Backup integrity validation failed");
-  } catch {
-    return jsonError("Backup integrity validation failed", 409);
+  } catch (error) {
+    logWorkspaceKmsFailure({
+      operation: "decrypt",
+      kind: error instanceof WorkspaceKmsError ? error.kind : "unexpected",
+      status: error instanceof WorkspaceKmsError ? error.status : 0,
+    });
+    return jsonError(
+      error instanceof WorkspaceKmsError && error.kind !== "integrity"
+        ? "Workspace backup decryption is unavailable"
+        : "Backup integrity validation failed",
+      error instanceof WorkspaceKmsError && error.kind !== "integrity"
+        ? error.status
+        : 409,
+    );
   }
   const restored = await restoreWorkspaceSnapshot({
     organizationId: workspaceId,

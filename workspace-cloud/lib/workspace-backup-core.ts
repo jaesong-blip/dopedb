@@ -7,6 +7,14 @@ import { canonicalHash, canonicalJson } from "./workspace-versioning";
 // These identify the backup-only HKDF domain, not the provider credential master key.
 export const WORKSPACE_BACKUP_KEY_REFERENCE = "dopedb-workspace-backup-hkdf-sha256";
 export const WORKSPACE_BACKUP_KEY_VERSION = "v1";
+export const WORKSPACE_DATA_KEY_REFERENCE = "dopedb-workspace-data-key";
+
+export function workspaceDataKeyVersion(version: number) {
+  if (!Number.isSafeInteger(version) || version < 1 || version > 2_147_483_647) {
+    throw new Error("Invalid workspace data key version");
+  }
+  return `v${version}`;
+}
 
 export type WorkspaceMetadataSnapshot = {
   version: 1;

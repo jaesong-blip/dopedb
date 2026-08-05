@@ -59,6 +59,18 @@ const GOOGLE_REASONS = new Set([
   "SECURITY_POLICY_VIOLATED",
   "SERVICE_DISABLED",
 ]);
+const WORKSPACE_KMS_OPERATIONS = new Set(["encrypt", "decrypt", "rotate"]);
+const WORKSPACE_KMS_FAILURE_KINDS = new Set([
+  "configuration",
+  "oidc",
+  "federation",
+  "impersonation",
+  "encrypt",
+  "decrypt",
+  "integrity",
+  "unavailable",
+  "unexpected",
+]);
 
 type SafeLogScalar = string | number | boolean | null;
 
@@ -145,5 +157,17 @@ export function logManagedDatabaseAccessFailure(input: {
     provider: category(input.provider, PROVIDERS),
     kind,
     status: input.providerRequest ? safeStatus(input.status) : 0,
+  });
+}
+
+export function logWorkspaceKmsFailure(input: {
+  operation: unknown;
+  kind: unknown;
+  status: unknown;
+}) {
+  emitServerFailure("workspace_kms_failed", {
+    operation: category(input.operation, WORKSPACE_KMS_OPERATIONS),
+    kind: category(input.kind, WORKSPACE_KMS_FAILURE_KINDS),
+    status: safeStatus(input.status),
   });
 }
