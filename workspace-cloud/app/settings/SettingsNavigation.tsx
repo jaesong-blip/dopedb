@@ -42,12 +42,9 @@ export function SettingsNavigation({
 
   return (
     <nav
-      className="tw:mt-20 tw:grid tw:content-start tw:max-[800px]:order-3 tw:max-[800px]:col-span-full tw:max-[800px]:mt-4 tw:max-[800px]:flex tw:max-[800px]:overflow-x-auto tw:max-[800px]:border-t tw:max-[800px]:border-border"
+      className="tw:mx-auto tw:flex tw:w-full tw:max-w-[1480px] tw:overflow-x-auto tw:border-t tw:border-chrome-border tw:px-[clamp(20px,4vw,64px)] tw:[scrollbar-width:none]"
       aria-label="설정"
     >
-      <span className="tw:mb-2 tw:px-1 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground tw:max-[800px]:hidden">
-        Workspace
-      </span>
       {workspaceSections.map((item) => {
         if (item.id !== "workspaces" && !canManageWorkspace) return null;
         const setupQuery = item.id === "cloud-accounts" && gcpSetupId
@@ -55,29 +52,26 @@ export function SettingsNavigation({
           : "";
         return (
           <a
-            className="tw:flex tw:min-h-control-md tw:items-center tw:border-t tw:border-border tw:px-1 tw:text-ui tw:text-muted-foreground tw:transition-colors tw:hover:bg-surface-raised tw:hover:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:max-[800px]:min-w-max tw:max-[800px]:border-t-0 tw:max-[800px]:border-r tw:max-[800px]:px-3"
+            className="tw:flex tw:min-h-[48px] tw:min-w-max tw:items-center tw:border-b-2 tw:border-transparent tw:px-3 tw:text-xs tw:font-medium tw:text-chrome-muted tw:transition-colors tw:hover:bg-chrome-foreground/5 tw:hover:text-chrome-foreground tw:data-[active=true]:border-signal tw:data-[active=true]:text-chrome-foreground"
             data-active={activeSection === item.id}
             href={`/settings?${workspaceQuery}section=${item.id}${setupQuery}`}
             aria-current={activeSection === item.id ? "page" : undefined}
             key={item.id}
           >
-            <span className="tw:mr-3 tw:font-mono tw:text-2xs tw:text-primary">
+            <span className="tw:mr-2.5 tw:font-mono tw:text-2xs tw:text-signal">
               {item.index}
             </span>
             {item.label}
           </a>
         );
       })}
-      <span className="tw:mt-8 tw:mb-2 tw:px-1 tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground tw:max-[800px]:hidden">
-        Account
-      </span>
       <a
-        className="tw:flex tw:min-h-control-md tw:items-center tw:border-y tw:border-border tw:px-1 tw:text-ui tw:text-muted-foreground tw:transition-colors tw:hover:bg-surface-raised tw:hover:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:max-[800px]:min-w-max tw:max-[800px]:border-y-0 tw:max-[800px]:px-3"
+        className="tw:ml-auto tw:flex tw:min-h-[48px] tw:min-w-max tw:items-center tw:border-b-2 tw:border-transparent tw:px-3 tw:text-xs tw:font-medium tw:text-chrome-muted tw:transition-colors tw:before:mr-3 tw:before:h-4 tw:before:w-px tw:before:bg-chrome-border tw:before:content-[''] tw:hover:bg-chrome-foreground/5 tw:hover:text-chrome-foreground tw:data-[active=true]:border-signal tw:data-[active=true]:text-chrome-foreground tw:max-[760px]:ml-0"
         data-active={activeSection === "account"}
         href="/settings?section=account"
         aria-current={activeSection === "account" ? "page" : undefined}
       >
-        <span className="tw:mr-3 tw:font-mono tw:text-2xs tw:text-primary">
+        <span className="tw:mr-2.5 tw:font-mono tw:text-2xs tw:text-signal">
           06
         </span>
         내 계정

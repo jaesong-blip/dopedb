@@ -119,47 +119,77 @@ export default async function SettingsPage({
   const activeManagementDetails = activeManagementArea
     ? workspaceManagementAreas.find((item) => item.id === activeManagementArea)
     : null;
+  const pageIndex = activeSection === "account"
+    ? "06"
+    : activeSection === "workspaces"
+      ? "01"
+      : activeManagementDetails?.index ?? "01";
+  const pageTitle = activeSection === "account"
+    ? "내 계정"
+    : activeSection === "workspaces"
+      ? "워크스페이스"
+      : activeManagementDetails?.label ?? "워크스페이스";
+  const pageDescription = activeSection === "account"
+    ? "로그인 계정과 인증된 기기를 관리합니다. 이 경계는 어떤 워크스페이스에도 종속되지 않습니다."
+    : activeSection === "workspaces"
+      ? "팀이 함께 사용할 연결과 정책의 경계를 선택하거나 새로 만듭니다."
+      : activeManagementDetails?.description ?? "공유 접근 경계를 관리합니다.";
+  const activeRole = activeWorkspace
+    ? workspaceRoles.get(activeWorkspace.id) ?? "member"
+    : "선택 안 됨";
 
   return (
-    <main className="tw:grid tw:min-h-screen tw:grid-cols-[250px_minmax(0,1fr)] tw:max-[800px]:block">
-      <aside className="tw:sticky tw:top-0 tw:flex tw:min-h-screen tw:flex-col tw:border-r tw:border-border tw:bg-background/80 tw:p-7 tw:max-[800px]:static tw:max-[800px]:grid tw:max-[800px]:min-h-0 tw:max-[800px]:grid-cols-[minmax(0,1fr)_auto] tw:max-[800px]:items-center tw:max-[800px]:border-r-0 tw:max-[800px]:border-b tw:max-[800px]:px-[22px] tw:max-[800px]:py-4">
-        <Brand />
+    <main className="tw:min-h-[100dvh]" id="main-content">
+      <header className="tw:sticky tw:top-0 tw:z-20 tw:border-b tw:border-chrome-border tw:bg-chrome tw:text-chrome-foreground tw:shadow-[0_14px_40px_color-mix(in_srgb,var(--ds-chrome)_20%,transparent)]">
+        <div className="tw:mx-auto tw:flex tw:min-h-[74px] tw:w-full tw:max-w-[1480px] tw:items-center tw:justify-between tw:gap-5 tw:px-[clamp(20px,4vw,64px)]">
+          <Brand tone="inverse" />
+          <span className="tw:flex tw:items-center tw:gap-2 tw:font-mono tw:text-2xs tw:text-chrome-muted tw:max-[860px]:hidden">
+            <i className="tw:size-1.5 tw:rounded-full tw:bg-signal" />
+            Shared access control plane
+          </span>
+          <AccountSwitcher
+            currentSessionId={session.session.id}
+            currentUser={{
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+            }}
+          />
+        </div>
         <SettingsNavigation
           activeSection={activeSection}
           workspaceId={activeWorkspaceId}
           gcpSetupId={requestedGcpSetupId}
           canManageWorkspace={canManageActiveWorkspace}
         />
-        <AccountSwitcher
-          currentSessionId={session.session.id}
-          currentUser={{
-            id: session.user.id,
-            name: session.user.name,
-            email: session.user.email,
-          }}
-        />
-      </aside>
-      <div className="tw:w-full tw:max-w-[1320px] tw:px-[clamp(32px,6vw,90px)] tw:pt-[52px] tw:pb-[90px] tw:max-[800px]:px-[22px] tw:max-[800px]:pt-[38px] tw:max-[800px]:pb-[70px]">
-        <header className="tw:flex tw:items-end tw:justify-between tw:border-b tw:border-border tw:pb-10 tw:max-[800px]:items-start">
+      </header>
+      <div className="tw:relative tw:mx-auto tw:w-full tw:max-w-[1480px] tw:px-[clamp(22px,5vw,76px)] tw:pt-[clamp(48px,7vw,88px)] tw:pb-[110px]">
+        <header className="tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(300px,0.54fr)] tw:items-end tw:gap-[clamp(36px,7vw,100px)] tw:border-b tw:border-border tw:pb-[clamp(38px,5vw,64px)] tw:max-[820px]:grid-cols-1">
           <div>
-            <IdentityEyebrow>BETTER AUTH / DRIZZLE</IdentityEyebrow>
-            <h1 className="tw:mt-3 tw:mb-0 tw:font-serif tw:text-[clamp(40px,5vw,68px)] tw:font-normal tw:tracking-[-0.055em]">
-              {activeSection === "account" ? "내 계정" : "워크스페이스 설정"}
+            <IdentityEyebrow>CONTROL PLANE / {pageIndex}</IdentityEyebrow>
+            <h1 className="tw:mt-4 tw:font-serif tw:text-[clamp(46px,6vw,76px)] tw:leading-[0.98] tw:font-normal tw:tracking-[-0.055em] tw:text-balance">
+              {pageTitle}
             </h1>
+            <p className="tw:mt-5 tw:max-w-[680px] tw:text-[15px] tw:leading-[1.75] tw:text-muted-foreground">
+              {pageDescription}
+            </p>
           </div>
-          <div className="tw:flex tw:items-center tw:gap-2.5">
-            <span className="tw:grid tw:size-9 tw:place-items-center tw:rounded-full tw:bg-primary-emphasis tw:font-extrabold tw:text-primary-foreground">
-              {session.user.name.slice(0, 1).toUpperCase()}
-            </span>
-            <div className="tw:flex tw:flex-col tw:gap-0.5 tw:max-[800px]:hidden">
-              <strong className="tw:text-ui tw:text-foreground">
-                {session.user.name}
-              </strong>
-              <small className="tw:text-xs tw:text-muted-foreground">
-                {session.user.email}
-              </small>
+          <dl className="tw:m-0 tw:grid tw:overflow-hidden tw:rounded-surface tw:border tw:border-border tw:bg-surface/85 tw:shadow-[0_16px_50px_color-mix(in_srgb,var(--ds-text)_6%,transparent)] tw:backdrop-blur">
+            <div className="tw:grid tw:grid-cols-[110px_minmax(0,1fr)] tw:items-center tw:border-b tw:border-border tw:px-4 tw:py-3.5">
+              <dt className="tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground">{activeSection === "account" ? "Account" : "Workspace"}</dt>
+              <dd className="tw:m-0 tw:truncate tw:text-right tw:text-xs tw:font-medium tw:text-foreground">
+                {activeSection === "account"
+                  ? session.user.name
+                  : activeWorkspace?.name ?? "선택 안 됨"}
+              </dd>
             </div>
-          </div>
+            <div className="tw:grid tw:grid-cols-[110px_minmax(0,1fr)] tw:items-center tw:px-4 tw:py-3.5">
+              <dt className="tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground">{activeSection === "account" ? "Identity" : "Access"}</dt>
+              <dd className="tw:m-0 tw:truncate tw:text-right tw:text-xs tw:text-primary">
+                {activeSection === "account" ? session.user.email : activeRole}
+              </dd>
+            </div>
+          </dl>
         </header>
         {activeSection === "cloud-accounts"
         && params.provider === "planetScale"
@@ -194,7 +224,7 @@ export default async function SettingsPage({
           </ConsoleNotice>
         ) : null}
         {activeSection === "account" ? (
-          <section id="account" className="tw:scroll-mt-5 tw:pt-[58px]">
+          <section id="account" className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]">
             <ConsoleSectionHeading index="06" title="내 계정 관리">
               로그인 계정과 인증된 기기는 어떤 워크스페이스에도 종속되지 않습니다.
             </ConsoleSectionHeading>
@@ -206,52 +236,60 @@ export default async function SettingsPage({
         ) : null}
 
         {activeSection === "workspaces" ? (
-          <section id="workspaces" className="tw:scroll-mt-5 tw:pt-[58px]">
+          <section id="workspaces" className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]">
             <ConsoleSectionHeading index="01" title="워크스페이스">
               연결과 대시보드를 공유할 팀 경계를 선택하거나 만듭니다.
             </ConsoleSectionHeading>
-            <div className="tw:grid tw:grid-cols-2 tw:gap-2.5 tw:max-[1100px]:grid-cols-1">
-              {orderedWorkspaces.map((workspace) => (
-                <article
-                  className="tw:scroll-mt-6 tw:border tw:border-border tw:bg-surface tw:transition-[border-color,box-shadow] tw:data-[focused=true]:border-primary/60 tw:data-[focused=true]:shadow-[0_0_0_1px_color-mix(in_srgb,var(--ds-accent)_18%,transparent)]"
-                  data-focused={workspace.id === activeWorkspaceId}
-                  id={`workspace-${workspace.id}`}
-                  key={workspace.id}
-                >
-                  <a
-                    className="tw:grid tw:min-h-[126px] tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-[18px] tw:p-[22px] tw:transition-colors tw:hover:bg-surface-raised tw:focus-visible:outline-2 tw:focus-visible:outline-offset-[-2px] tw:focus-visible:outline-ring"
-                    href={`/settings?workspace=${encodeURIComponent(workspace.id)}&section=members`}
-                    aria-current={
-                      workspace.id === activeWorkspaceId ? "true" : undefined
-                    }
+            <div className="tw:grid tw:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.62fr)] tw:items-start tw:gap-6 tw:max-[980px]:grid-cols-1">
+              <div className="tw:overflow-hidden tw:rounded-panel tw:border tw:border-border tw:bg-surface tw:shadow-panel">
+                {orderedWorkspaces.map((workspace) => (
+                  <article
+                    className="tw:scroll-mt-32 tw:border-b tw:border-border tw:last:border-b-0 tw:data-[focused=true]:bg-selection"
+                    data-focused={workspace.id === activeWorkspaceId}
+                    id={`workspace-${workspace.id}`}
+                    key={workspace.id}
                   >
-                    <div className="tw:grid tw:size-12 tw:place-items-center tw:border tw:border-primary/45 tw:font-mono tw:text-sm tw:text-primary">
-                      {workspace.name.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="tw:mt-0 tw:mb-1 tw:text-[14px]">
-                        {workspace.name}
-                      </h3>
-                      <p className="tw:m-0 tw:font-mono tw:text-2xs tw:text-muted-foreground tw:uppercase">
-                        {workspace.slug}
-                      </p>
-                    </div>
-                    <span className="tw:flex tw:items-center tw:gap-1.5 tw:font-mono tw:text-2xs tw:text-primary">
-                      <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />
-                      {workspace.id === activeWorkspaceId
-                        ? `${workspaceRoles.get(workspace.id)} · 선택됨`
-                        : workspaceRoles.get(workspace.id)}
-                    </span>
-                  </a>
-                </article>
-              ))}
-              {workspaces.length === 0 ? (
-                <div className="tw:col-span-full tw:border tw:border-dashed tw:border-border tw:px-6 tw:py-12 tw:text-center tw:text-ui tw:text-muted-foreground">
-                  아직 연결된 워크스페이스가 없습니다.
-                </div>
-              ) : null}
+                    <a
+                      className="tw:grid tw:min-h-[106px] tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-4 tw:px-5 tw:py-4 tw:transition-colors tw:hover:bg-surface-raised tw:focus-visible:outline-2 tw:focus-visible:outline-offset-[-3px] tw:focus-visible:outline-ring tw:max-[560px]:grid-cols-[auto_minmax(0,1fr)]"
+                      href={`/settings?workspace=${encodeURIComponent(workspace.id)}&section=members`}
+                      aria-current={
+                        workspace.id === activeWorkspaceId ? "true" : undefined
+                      }
+                    >
+                      <div className="tw:grid tw:size-12 tw:place-items-center tw:rounded-surface tw:border tw:border-primary/20 tw:bg-surface-inset tw:font-mono tw:text-xs tw:font-medium tw:text-primary">
+                        {workspace.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <h3 className="tw:mb-1 tw:text-[15px] tw:font-medium">
+                          {workspace.name}
+                        </h3>
+                        <p className="tw:font-mono tw:text-2xs tw:text-muted-foreground">
+                          {workspace.slug}
+                        </p>
+                      </div>
+                      <span className="tw:flex tw:items-center tw:gap-2 tw:font-mono tw:text-2xs tw:text-primary tw:max-[560px]:col-start-2">
+                        <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />
+                        {workspace.id === activeWorkspaceId
+                          ? `${workspaceRoles.get(workspace.id)} · 현재`
+                          : workspaceRoles.get(workspace.id)}
+                      </span>
+                    </a>
+                  </article>
+                ))}
+                {workspaces.length === 0 ? (
+                  <div className="tw:px-7 tw:py-16 tw:text-center">
+                    <span className="tw:mx-auto tw:mb-4 tw:grid tw:size-12 tw:place-items-center tw:rounded-full tw:bg-selection tw:text-primary">＋</span>
+                    <strong className="tw:block tw:text-sm tw:font-medium tw:text-foreground">
+                      첫 워크스페이스를 만드세요
+                    </strong>
+                    <small className="tw:mt-2 tw:block tw:text-xs tw:text-muted-foreground">
+                      공유 연결과 정책이 이 경계 안에 모입니다.
+                    </small>
+                  </div>
+                ) : null}
+              </div>
+              <CreateWorkspaceForm />
             </div>
-            <CreateWorkspaceForm />
           </section>
         ) : null}
 
@@ -260,7 +298,7 @@ export default async function SettingsPage({
         && activeWorkspace
         && canManageActiveWorkspace ? (
           <section
-            className="tw:scroll-mt-5 tw:pt-[58px]"
+            className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]"
             id="workspace-settings"
           >
             <ConsoleSectionHeading
@@ -269,24 +307,10 @@ export default async function SettingsPage({
             >
               {activeWorkspace.name} · {activeManagementDetails.description}
             </ConsoleSectionHeading>
-            <header className="tw:flex tw:items-center tw:justify-between tw:gap-4 tw:border-x tw:border-t tw:border-border tw:bg-surface-inset tw:px-5 tw:py-3">
-              <div className="tw:grid tw:gap-1">
-                <strong className="tw:text-sm tw:text-foreground">
-                  {activeWorkspace.name}
-                </strong>
-                <small className="tw:font-mono tw:text-2xs tw:uppercase tw:text-muted-foreground">
-                  {activeWorkspace.slug}
-                </small>
-              </div>
-              <a
-                className="tw:text-xs tw:text-primary tw:hover:text-foreground"
-                href={`/settings?workspace=${encodeURIComponent(activeWorkspace.id)}&section=workspaces`}
-              >
-                워크스페이스 변경
-              </a>
-            </header>
             <WorkspaceManagementPanel
               workspaceId={activeWorkspace.id}
+              workspaceName={activeWorkspace.name}
+              workspaceSlug={activeWorkspace.slug}
               gcpSetupId={requestedGcpSetupId}
               initialIntegrationId={requestedIntegrationId}
               area={activeManagementArea}

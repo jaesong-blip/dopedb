@@ -18,7 +18,7 @@ export default async function DeviceCompletePage({
       <Brand />
       <div className="tw:m-auto tw:w-[min(540px,100%)]">
         <IdentityCard>
-          <div className="tw:mb-9 tw:grid tw:size-[54px] tw:place-items-center tw:bg-success tw:text-[23px] tw:text-[var(--ds-text-inverse)]">
+          <div className="tw:mb-9 tw:grid tw:size-[54px] tw:place-items-center tw:rounded-surface tw:bg-success tw:text-[23px] tw:text-[var(--ds-text-inverse)]">
             {denied ? "×" : "✓"}
           </div>
           <IdentityEyebrow>

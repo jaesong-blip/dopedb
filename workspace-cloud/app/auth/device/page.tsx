@@ -41,7 +41,7 @@ export default async function DevicePage({
       <Brand />
       <div className="tw:m-auto tw:w-[min(540px,100%)]">
         <IdentityCard>
-          <div className="tw:relative tw:mb-10 tw:grid tw:size-16 tw:place-items-center tw:rounded-full tw:border tw:border-border tw:after:absolute tw:after:inset-2 tw:after:rounded-full tw:after:border tw:after:border-dashed tw:after:border-primary/55 tw:after:content-['']">
+          <div className="tw:relative tw:mb-10 tw:grid tw:size-14 tw:place-items-center tw:rounded-surface tw:border tw:border-primary/20 tw:bg-selection">
             <span className="tw:text-primary">↗</span>
           </div>
           <IdentityEyebrow>BETTER AUTH / RFC 8628</IdentityEyebrow>
@@ -57,7 +57,7 @@ export default async function DevicePage({
           ) : session ? (
             <div>
               <div className="tw:mt-7 tw:flex tw:items-center tw:gap-3 tw:border tw:border-border tw:bg-surface-raised tw:p-3">
-                <span className="tw:grid tw:size-9 tw:place-items-center tw:rounded-full tw:bg-primary-emphasis tw:font-extrabold tw:text-primary-foreground">
+                <span className="tw:grid tw:size-9 tw:place-items-center tw:rounded-control tw:bg-selection tw:font-semibold tw:text-primary">
                   {session.user.name.slice(0, 1).toUpperCase()}
                 </span>
                 <div className="tw:flex tw:flex-col tw:gap-0.5">

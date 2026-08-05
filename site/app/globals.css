@@ -84,7 +84,7 @@
     var(--font-body-loaded), "Avenir Next", "Apple SD Gothic Neo", ui-sans-serif,
     system-ui, sans-serif;
   --font-site-display:
-    var(--font-display-loaded), "Arial Black", "Apple SD Gothic Neo", sans-serif;
+    var(--font-display-loaded), "Apple SD Gothic Neo", "Helvetica Neue", sans-serif;
   --font-site-mono:
     var(--font-mono-loaded), "SFMono-Regular", Consolas, "Liberation Mono", Menlo,
     monospace;

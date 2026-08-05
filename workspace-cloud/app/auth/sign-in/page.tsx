@@ -22,43 +22,51 @@ export default async function SignInPage({
   const params = await searchParams;
   const returnTo = safeReturnTo(params.returnTo ?? null);
   return (
-    <main className="tw:relative tw:grid tw:min-h-screen tw:grid-rows-[auto_minmax(0,1fr)_auto] tw:overflow-hidden tw:px-10 tw:py-[30px] tw:after:absolute tw:after:bottom-[-65%] tw:after:left-[15%] tw:after:size-[640px] tw:after:rounded-full tw:after:border tw:after:border-primary/25 tw:after:shadow-[0_0_150px_color-mix(in_srgb,var(--ds-accent)_6%,transparent),inset_0_0_100px_color-mix(in_srgb,var(--ds-accent)_4%,transparent)] tw:after:content-[''] tw:max-[800px]:p-[22px]">
+    <main
+      className="tw:relative tw:grid tw:min-h-[100dvh] tw:grid-rows-[auto_minmax(0,1fr)_auto] tw:overflow-hidden tw:px-[clamp(22px,4vw,64px)] tw:py-[clamp(22px,3vw,42px)]"
+      id="main-content"
+    >
       <div className="tw:relative tw:z-[1] tw:flex tw:items-center tw:justify-between">
         <Brand />
-        <span className="tw:font-mono tw:text-xs tw:tracking-[0.08em] tw:text-muted-foreground tw:uppercase tw:max-[800px]:hidden">
-          <i className="tw:mr-2 tw:inline-block tw:size-1.5 tw:rounded-full tw:bg-primary tw:shadow-[0_0_14px_var(--ds-accent)]" />{" "}
-          Identity gateway online
+        <span className="tw:inline-flex tw:items-center tw:gap-2 tw:rounded-full tw:border tw:border-border tw:bg-surface/80 tw:px-3 tw:py-2 tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground tw:backdrop-blur tw:max-[720px]:hidden">
+          <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />
+          Control plane available
         </span>
       </div>
-      <section className="tw:relative tw:z-[1] tw:m-auto tw:grid tw:w-[min(1180px,100%)] tw:grid-cols-[minmax(0,1fr)_minmax(380px,0.65fr)] tw:items-center tw:gap-[clamp(42px,6vw,90px)] tw:max-[800px]:grid-cols-1 tw:max-[800px]:gap-[42px] tw:max-[800px]:py-[70px]">
+      <section className="tw:relative tw:z-[1] tw:m-auto tw:grid tw:w-[min(1280px,100%)] tw:grid-cols-[minmax(0,1.15fr)_minmax(380px,0.72fr)] tw:items-center tw:gap-[clamp(48px,8vw,120px)] tw:py-[clamp(68px,10vh,128px)] tw:max-[860px]:grid-cols-1 tw:max-[860px]:gap-12">
         <div>
-          <IdentityEyebrow>CONTROL PLANE / 01</IdentityEyebrow>
-          <h1 className="tw:my-6 tw:font-serif tw:text-[clamp(48px,5.5vw,80px)] tw:font-normal tw:leading-[0.98] tw:tracking-[-0.055em] tw:max-[800px]:text-[51px]">
-            팀의 데이터 작업을
-            <br />한 경계 안에서.
+          <IdentityEyebrow>SHARED ACCESS / PERSONAL AUTHORITY</IdentityEyebrow>
+          <h1 className="tw:my-7 tw:max-w-[760px] tw:font-serif tw:text-[clamp(54px,6.4vw,92px)] tw:leading-[0.96] tw:font-normal tw:tracking-[-0.055em] tw:text-balance">
+            DB 접근은 함께.
+            <br />인증 정보는 각자.
           </h1>
-          <p className="tw:max-w-[530px] tw:text-[17px] tw:leading-[1.7] tw:text-[var(--ds-text-secondary)] tw:max-[800px]:hidden">
-            워크스페이스는 연결 정보, 권한, 대시보드와 변경 이력을 팀 단위로
-            분리합니다.
+          <p className="tw:max-w-[610px] tw:text-[17px] tw:leading-[1.8] tw:text-[var(--ds-text-secondary)]">
+            워크스페이스는 연결과 정책을 공유하고, 장기 비밀값은 각 구성원의
+            기기에 남깁니다. Agent도 승인된 하나의 DB 경계 안에서만 일합니다.
           </p>
-          <div className="tw:mt-10 tw:flex tw:flex-wrap tw:gap-2 tw:max-[800px]:hidden">
-            <span className="tw:border tw:border-border tw:px-3 tw:py-2 tw:font-mono tw:text-2xs tw:tracking-[0.08em] tw:text-muted-foreground tw:uppercase">
-              Better Auth
-            </span>
-            <span className="tw:border tw:border-border tw:px-3 tw:py-2 tw:font-mono tw:text-2xs tw:tracking-[0.08em] tw:text-muted-foreground tw:uppercase">
-              RFC 8628 device login
-            </span>
-            <span className="tw:border tw:border-border tw:px-3 tw:py-2 tw:font-mono tw:text-2xs tw:tracking-[0.08em] tw:text-muted-foreground tw:uppercase">
-              Drizzle ORM
-            </span>
-          </div>
+          <dl className="tw:mt-12 tw:grid tw:grid-cols-3 tw:border-y tw:border-border tw:max-[640px]:grid-cols-1 tw:max-[640px]:border-b-0">
+            {[
+              ["Shared", "연결 · 정책"],
+              ["Personal", "OS 자격 증명"],
+              ["Managed", "15분 단기 권한"],
+            ].map(([term, detail]) => (
+              <div className="tw:border-r tw:border-border tw:px-4 tw:py-4 tw:first:pl-0 tw:last:border-r-0 tw:max-[640px]:border-r-0 tw:max-[640px]:border-b tw:max-[640px]:px-0" key={term}>
+                <dt className="tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.08em] tw:text-primary tw:uppercase">
+                  {term}
+                </dt>
+                <dd className="tw:mt-2 tw:ml-0 tw:text-xs tw:text-muted-foreground">
+                  {detail}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
         <IdentityCard density="compact">
-          <IdentityEyebrow>AUTH / GOOGLE</IdentityEyebrow>
-          <h2 className="tw:mt-12 tw:mb-3 tw:font-serif tw:text-[31px] tw:font-normal tw:tracking-[-0.035em]">
+          <IdentityEyebrow>SIGN IN / GOOGLE</IdentityEyebrow>
+          <h2 className="tw:mt-10 tw:mb-3 tw:font-serif tw:text-[36px] tw:leading-tight tw:font-normal tw:tracking-[-0.035em] tw:text-balance tw:max-[480px]:text-[32px]">
             워크스페이스에 로그인
           </h2>
-          <p className="tw:text-[13px] tw:leading-[1.65] tw:text-muted-foreground">
+          <p className="tw:text-[14px] tw:leading-[1.75] tw:text-muted-foreground">
             Google 계정으로 본인을 확인합니다. Google 액세스 토큰은 DopeDB에
             보관하지 않습니다.
           </p>
@@ -68,13 +76,13 @@ export default async function SignInPage({
             </IdentityError>
           ) : null}
           <SignInButton returnTo={returnTo} />
-          <p className="tw:mt-4 tw:mb-0 tw:text-xs tw:leading-relaxed tw:text-muted-foreground">
+          <p className="tw:mt-5 tw:mb-0 tw:text-2xs tw:leading-[1.7] tw:text-muted-foreground">
             Google로 계속하면{" "}
             <a
               href="https://dopedb.dev/ko/terms"
               target="_blank"
               rel="noreferrer"
-              className="tw:font-semibold tw:text-foreground tw:underline tw:underline-offset-2 tw:hover:text-primary"
+              className="tw:font-medium tw:text-foreground tw:underline tw:underline-offset-2 tw:hover:text-primary"
             >
               서비스 이용약관
             </a>
@@ -83,7 +91,7 @@ export default async function SignInPage({
               href="https://dopedb.dev/ko/privacy"
               target="_blank"
               rel="noreferrer"
-              className="tw:font-semibold tw:text-foreground tw:underline tw:underline-offset-2 tw:hover:text-primary"
+              className="tw:font-medium tw:text-foreground tw:underline tw:underline-offset-2 tw:hover:text-primary"
             >
               개인정보처리방침
             </a>
@@ -92,8 +100,8 @@ export default async function SignInPage({
           </p>
         </IdentityCard>
       </section>
-      <footer className="tw:relative tw:z-[1] tw:flex tw:items-center tw:justify-between tw:border-t tw:border-border tw:pt-4 tw:font-mono tw:text-xs tw:tracking-[0.08em] tw:text-muted-foreground tw:uppercase">
-        <span>DopeDB cloud control plane</span>
+      <footer className="tw:relative tw:z-[1] tw:flex tw:items-center tw:justify-between tw:border-t tw:border-border tw:pt-4 tw:font-mono tw:text-2xs tw:text-muted-foreground">
+        <span>DopeDB workspace control plane</span>
         <span className="tw:max-[800px]:hidden">Seoul · Virginia</span>
       </footer>
     </main>

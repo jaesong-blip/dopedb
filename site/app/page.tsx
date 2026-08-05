@@ -747,7 +747,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <Database size={16} strokeWidth={2.2} />
               <span className="tw:absolute tw:-right-1 tw:-bottom-1 tw:size-2 tw:border tw:border-night tw:bg-electric" />
             </span>
-            <span className="tw:font-display tw:text-[17px] tw:tracking-[-0.03em]">
+            <span className="tw:font-display tw:text-[17px] tw:font-semibold tw:tracking-[-0.03em]">
               DopeDB
             </span>
             <span className="tw:hidden tw:border-l tw:border-hairline tw:pl-3 tw:font-mono tw:text-[9px] tw:font-medium tw:tracking-[0.13em] tw:text-cream-muted tw:uppercase tw:min-[560px]:inline">
@@ -812,7 +812,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <div className="tw:animate-[landing-rise_.7s_ease-out_both] tw:motion-reduce:animate-none">
                 <SectionLabel>{c.hero.eyebrow}</SectionLabel>
               </div>
-              <h1 className="tw:mt-7 tw:font-display tw:text-[clamp(54px,7.6vw,124px)] tw:leading-[0.86] tw:tracking-[-0.065em] tw:text-balance tw:animate-[landing-rise_.8s_.08s_ease-out_both] tw:[animation-fill-mode:both] tw:motion-reduce:animate-none">
+              <h1 className="tw:mt-7 tw:font-display tw:text-[clamp(54px,7.6vw,124px)] tw:leading-[0.9] tw:font-normal tw:tracking-[-0.055em] tw:text-balance tw:animate-[landing-rise_.8s_.08s_ease-out_both] tw:[animation-fill-mode:both] tw:motion-reduce:animate-none">
                 <span className="tw:block">{c.hero.headline}</span>
                 <span className="tw:mt-[0.08em] tw:block tw:text-signal">{c.hero.accent}</span>
               </h1>
@@ -865,7 +865,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <dt className="tw:font-mono tw:text-[9px] tw:font-semibold tw:tracking-[0.12em] tw:text-cream-muted tw:uppercase">
                 {proof.label}
               </dt>
-              <dd className="tw:mt-2 tw:text-[14px] tw:font-bold tw:text-cream">
+              <dd className="tw:mt-2 tw:text-[14px] tw:font-medium tw:text-cream">
                 {proof.value}
               </dd>
             </div>
@@ -880,7 +880,7 @@ export default async function Home({ searchParams }: HomeProps) {
           <div className="tw:relative tw:mx-auto tw:grid tw:max-w-[1520px] tw:grid-cols-[minmax(300px,0.75fr)_minmax(0,1.25fr)] tw:gap-[clamp(50px,8vw,140px)] tw:px-[clamp(16px,4vw,64px)] tw:py-[clamp(90px,12vw,180px)] tw:max-[960px]:grid-cols-1">
             <div className="tw:self-start tw:min-[961px]:sticky tw:min-[961px]:top-32">
               <SectionLabel tone="light">{c.boundary.eyebrow}</SectionLabel>
-              <h2 className="tw:mt-6 tw:max-w-[650px] tw:font-display tw:text-[clamp(48px,6.8vw,108px)] tw:leading-[0.88] tw:tracking-[-0.06em] tw:text-balance">
+              <h2 className="tw:mt-6 tw:max-w-[650px] tw:font-display tw:text-[clamp(48px,6.8vw,108px)] tw:leading-[0.92] tw:font-normal tw:tracking-[-0.05em] tw:text-balance">
                 {c.boundary.title}
               </h2>
               <p className="tw:mt-7 tw:max-w-[520px] tw:text-[clamp(16px,1.35vw,20px)] tw:leading-[1.7] tw:text-night/65">
@@ -894,14 +894,14 @@ export default async function Home({ searchParams }: HomeProps) {
                   className="tw:group tw:grid tw:grid-cols-[90px_minmax(0,1fr)] tw:gap-5 tw:border-b tw:border-night/20 tw:py-[clamp(28px,5vw,58px)] tw:max-[540px]:grid-cols-[56px_minmax(0,1fr)]"
                   key={item.index}
                 >
-                  <span className="tw:font-display tw:text-[clamp(34px,4vw,68px)] tw:leading-none tw:text-night/14 tw:transition-colors tw:duration-300 tw:group-hover:text-night/30">
+                  <span className="tw:font-display tw:text-[clamp(34px,4vw,68px)] tw:leading-none tw:font-normal tw:text-night/14 tw:transition-colors tw:duration-300 tw:group-hover:text-night/30">
                     {item.index}
                   </span>
                   <div>
                     <p className="tw:font-mono tw:text-[10px] tw:font-semibold tw:tracking-[0.12em] tw:text-night/50 tw:uppercase">
                       {item.overline}
                     </p>
-                    <h3 className="tw:mt-3 tw:max-w-[700px] tw:text-[clamp(23px,2.65vw,42px)] tw:leading-[1.04] tw:font-bold tw:tracking-[-0.035em] tw:text-balance">
+                    <h3 className="tw:mt-3 tw:max-w-[700px] tw:text-[clamp(23px,2.65vw,42px)] tw:leading-[1.08] tw:font-medium tw:tracking-[-0.03em] tw:text-balance">
                       {item.title}
                     </h3>
                     <p className="tw:mt-5 tw:max-w-[650px] tw:text-[15px] tw:leading-[1.75] tw:text-night/62">
@@ -920,7 +920,7 @@ export default async function Home({ searchParams }: HomeProps) {
             <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(300px,0.55fr)] tw:items-end tw:gap-12 tw:max-[900px]:grid-cols-1">
               <div>
                 <SectionLabel>{c.product.eyebrow}</SectionLabel>
-                <h2 className="tw:mt-6 tw:max-w-[980px] tw:font-display tw:text-[clamp(48px,6.8vw,108px)] tw:leading-[0.88] tw:tracking-[-0.06em] tw:text-balance">
+                <h2 className="tw:mt-6 tw:max-w-[980px] tw:font-display tw:text-[clamp(48px,6.8vw,108px)] tw:leading-[0.92] tw:font-normal tw:tracking-[-0.05em] tw:text-balance">
                   {c.product.title}
                 </h2>
               </div>
@@ -992,7 +992,7 @@ export default async function Home({ searchParams }: HomeProps) {
             <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_minmax(280px,0.5fr)] tw:items-end tw:gap-12 tw:max-[900px]:grid-cols-1">
               <div>
                 <SectionLabel tone="signal">{c.principles.eyebrow}</SectionLabel>
-                <h2 className="tw:mt-6 tw:max-w-[940px] tw:font-display tw:text-[clamp(52px,7.4vw,118px)] tw:leading-[0.85] tw:tracking-[-0.065em] tw:text-balance">
+                <h2 className="tw:mt-6 tw:max-w-[940px] tw:font-display tw:text-[clamp(52px,7.4vw,118px)] tw:leading-[0.9] tw:font-normal tw:tracking-[-0.055em] tw:text-balance">
                   {c.principles.title}
                 </h2>
               </div>
@@ -1010,7 +1010,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <span className="tw:grid tw:size-11 tw:place-items-center tw:bg-night tw:text-signal">
                     <item.icon size={20} strokeWidth={1.8} />
                   </span>
-                  <h3 className="tw:mt-7 tw:text-[clamp(23px,2vw,32px)] tw:font-extrabold tw:tracking-[-0.035em]">
+                  <h3 className="tw:mt-7 tw:text-[clamp(23px,2vw,32px)] tw:font-medium tw:tracking-[-0.025em]">
                     {item.title}
                   </h3>
                   <p className="tw:mt-4 tw:max-w-[420px] tw:text-[15px] tw:leading-[1.7] tw:text-night/65">
@@ -1029,7 +1029,7 @@ export default async function Home({ searchParams }: HomeProps) {
           <div className="tw:mx-auto tw:grid tw:max-w-[1520px] tw:grid-cols-[minmax(380px,0.82fr)_minmax(0,1fr)] tw:gap-[clamp(50px,8vw,130px)] tw:px-[clamp(16px,4vw,64px)] tw:py-[clamp(90px,12vw,180px)] tw:max-[980px]:grid-cols-1">
             <div className="tw:self-start tw:min-[981px]:sticky tw:min-[981px]:top-28">
               <SectionLabel>{c.workflow.eyebrow}</SectionLabel>
-              <h2 className="tw:mt-6 tw:max-w-[740px] tw:font-display tw:text-[clamp(48px,6.4vw,100px)] tw:leading-[0.88] tw:tracking-[-0.06em] tw:text-balance">
+              <h2 className="tw:mt-6 tw:max-w-[740px] tw:font-display tw:text-[clamp(48px,6.4vw,100px)] tw:leading-[0.92] tw:font-normal tw:tracking-[-0.05em] tw:text-balance">
                 {c.workflow.title}
               </h2>
               <p className="tw:mt-7 tw:max-w-[560px] tw:text-[clamp(15px,1.25vw,19px)] tw:leading-[1.75] tw:text-cream-muted">
@@ -1063,7 +1063,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     / {step.index}
                   </span>
                   <div>
-                    <h3 className="tw:text-[clamp(24px,2.4vw,38px)] tw:leading-none tw:font-bold tw:tracking-[-0.04em]">
+                    <h3 className="tw:text-[clamp(24px,2.4vw,38px)] tw:leading-[1.05] tw:font-medium tw:tracking-[-0.03em]">
                       {step.title}
                     </h3>
                     <p className="tw:mt-4 tw:max-w-[560px] tw:text-[15px] tw:leading-[1.7] tw:text-cream-muted">
@@ -1081,7 +1081,7 @@ export default async function Home({ searchParams }: HomeProps) {
           <div className="tw:mx-auto tw:grid tw:max-w-[1520px] tw:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.28fr)] tw:gap-[clamp(50px,8vw,140px)] tw:px-[clamp(16px,4vw,64px)] tw:py-[clamp(90px,11vw,160px)] tw:max-[940px]:grid-cols-1">
             <div>
               <SectionLabel tone="light">{c.faq.eyebrow}</SectionLabel>
-              <h2 className="tw:mt-6 tw:max-w-[650px] tw:font-display tw:text-[clamp(46px,5.8vw,92px)] tw:leading-[0.9] tw:tracking-[-0.055em] tw:text-balance">
+              <h2 className="tw:mt-6 tw:max-w-[650px] tw:font-display tw:text-[clamp(46px,5.8vw,92px)] tw:leading-[0.94] tw:font-normal tw:tracking-[-0.045em] tw:text-balance">
                 {c.faq.title}
               </h2>
             </div>
@@ -1089,7 +1089,7 @@ export default async function Home({ searchParams }: HomeProps) {
             <div className="tw:border-t tw:border-night/20">
               {c.faq.items.map((item) => (
                 <details className="tw:group tw:border-b tw:border-night/20" key={item.question}>
-                  <summary className="tw:flex tw:cursor-pointer tw:list-none tw:items-start tw:justify-between tw:gap-6 tw:py-6 tw:text-[clamp(18px,1.7vw,25px)] tw:leading-tight tw:font-bold tw:tracking-[-0.025em] tw:[&::-webkit-details-marker]:hidden">
+                  <summary className="tw:flex tw:cursor-pointer tw:list-none tw:items-start tw:justify-between tw:gap-6 tw:py-6 tw:text-[clamp(18px,1.7vw,25px)] tw:leading-tight tw:font-medium tw:tracking-[-0.02em] tw:[&::-webkit-details-marker]:hidden">
                     {item.question}
                     <ChevronRight className="tw:mt-1 tw:shrink-0 tw:text-night/40 tw:transition-transform tw:duration-200 tw:group-open:rotate-90" size={20} />
                   </summary>
@@ -1107,14 +1107,14 @@ export default async function Home({ searchParams }: HomeProps) {
           id="download"
         >
           <div className="tw:pointer-events-none tw:absolute tw:inset-0 tw:-z-10 tw:bg-control-grid tw:opacity-60 tw:[background-size:44px_44px]" />
-          <div className="tw:pointer-events-none tw:absolute tw:-right-[0.06em] tw:-bottom-[0.18em] tw:-z-10 tw:font-display tw:text-[clamp(180px,35vw,560px)] tw:leading-none tw:tracking-[-0.08em] tw:text-cream/[0.025] tw:select-none">
+          <div className="tw:pointer-events-none tw:absolute tw:-right-[0.06em] tw:-bottom-[0.18em] tw:-z-10 tw:font-display tw:text-[clamp(180px,35vw,560px)] tw:leading-none tw:font-normal tw:tracking-[-0.07em] tw:text-cream/[0.025] tw:select-none">
             ALPHA
           </div>
 
           <div className="tw:mx-auto tw:grid tw:max-w-[1520px] tw:grid-cols-[minmax(0,1fr)_minmax(340px,0.72fr)] tw:items-center tw:gap-[clamp(50px,8vw,130px)] tw:px-[clamp(16px,4vw,64px)] tw:py-[clamp(100px,14vw,210px)] tw:max-[940px]:grid-cols-1">
             <div>
               <SectionLabel>{c.download.eyebrow}</SectionLabel>
-              <h2 className="tw:mt-6 tw:max-w-[900px] tw:font-display tw:text-[clamp(50px,7vw,116px)] tw:leading-[0.86] tw:tracking-[-0.065em] tw:text-balance">
+              <h2 className="tw:mt-6 tw:max-w-[900px] tw:font-display tw:text-[clamp(50px,7vw,116px)] tw:leading-[0.9] tw:font-normal tw:tracking-[-0.055em] tw:text-balance">
                 {c.download.title}
               </h2>
               <p className="tw:mt-7 tw:max-w-[650px] tw:text-[clamp(16px,1.35vw,20px)] tw:leading-[1.7] tw:text-cream-muted">
@@ -1176,7 +1176,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <div className="tw:mt-5 tw:flex tw:gap-3 tw:border tw:border-warning/30 tw:bg-warning/5 tw:p-4">
                 <LockKeyhole className="tw:mt-0.5 tw:shrink-0 tw:text-warning" size={17} />
                 <div>
-                  <h3 className="tw:text-[13px] tw:font-bold tw:text-cream">
+                  <h3 className="tw:text-[13px] tw:font-medium tw:text-cream">
                     {c.download.warningTitle}
                   </h3>
                   <p className="tw:mt-1.5 tw:text-xs tw:leading-relaxed tw:text-cream-muted">
@@ -1193,7 +1193,7 @@ export default async function Home({ searchParams }: HomeProps) {
             <div className="tw:grid tw:grid-cols-[minmax(280px,0.62fr)_minmax(0,1.38fr)] tw:gap-[clamp(40px,7vw,110px)] tw:max-[860px]:grid-cols-1">
               <div>
                 <SectionLabel>{c.docs.eyebrow}</SectionLabel>
-                <h2 className="tw:mt-6 tw:max-w-[580px] tw:text-[clamp(34px,4.5vw,68px)] tw:leading-[0.96] tw:font-extrabold tw:tracking-[-0.05em] tw:text-balance">
+                <h2 className="tw:mt-6 tw:max-w-[580px] tw:text-[clamp(34px,4.5vw,68px)] tw:leading-[1] tw:font-medium tw:tracking-[-0.04em] tw:text-balance">
                   {c.docs.title}
                 </h2>
               </div>
@@ -1207,7 +1207,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <span className="tw:font-mono tw:text-[9px] tw:font-semibold tw:tracking-[0.1em] tw:text-signal tw:uppercase">
                       DOC / 0{index + 1}
                     </span>
-                    <span className="tw:mt-7 tw:text-[21px] tw:font-bold tw:tracking-[-0.03em] tw:text-cream">
+                    <span className="tw:mt-7 tw:text-[21px] tw:font-medium tw:tracking-[-0.02em] tw:text-cream">
                       {doc.title}
                     </span>
                     <p className="tw:mt-3 tw:max-w-[300px] tw:text-[13px] tw:leading-relaxed tw:text-cream-muted">
@@ -1229,7 +1229,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <Database size={14} />
             </span>
             <div>
-              <p className="tw:text-sm tw:font-bold">© {currentYear} DopeDB</p>
+              <p className="tw:text-sm tw:font-medium">© {currentYear} DopeDB</p>
               <p className="tw:mt-1 tw:font-mono tw:text-[9px] tw:tracking-[0.07em] tw:text-cream-muted tw:uppercase">
                 {c.footer.statement}
               </p>

@@ -45,11 +45,15 @@ export const workspaceManagementAreas: Array<{
 
 export function WorkspaceManagementPanel({
   workspaceId,
+  workspaceName,
+  workspaceSlug,
   gcpSetupId,
   initialIntegrationId,
   area,
 }: {
   workspaceId: string;
+  workspaceName: string;
+  workspaceSlug: string;
   gcpSetupId: string | null;
   initialIntegrationId: string | null;
   area: WorkspaceManagementArea;
@@ -59,19 +63,27 @@ export function WorkspaceManagementPanel({
     ?? workspaceManagementAreas[0];
 
   return (
-    <section className="tw:min-w-0 tw:border tw:border-border tw:bg-surface">
-        <header className="tw:flex tw:items-start tw:justify-between tw:gap-4 tw:border-b tw:border-border tw:px-5 tw:py-4">
-          <div className="tw:grid tw:gap-1">
-            <span className="tw:font-mono tw:text-2xs tw:text-primary">
-              {selected.index}
+    <section className="tw:min-w-0 tw:overflow-hidden tw:rounded-panel tw:border tw:border-border tw:bg-surface tw:shadow-panel">
+        <header className="tw:flex tw:items-center tw:justify-between tw:gap-5 tw:border-b tw:border-border tw:bg-surface-inset/70 tw:px-6 tw:py-4 tw:max-[640px]:items-start">
+          <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-3">
+            <span className="tw:grid tw:size-10 tw:shrink-0 tw:place-items-center tw:rounded-surface tw:bg-selection tw:font-mono tw:text-2xs tw:font-medium tw:text-primary">
+              {workspaceName.slice(0, 2).toUpperCase()}
             </span>
-            <h3 className="tw:m-0 tw:text-sm tw:font-semibold tw:text-foreground">
-              {selected.label}
-            </h3>
+            <div className="tw:grid tw:min-w-0 tw:gap-0.5">
+              <h3 className="tw:truncate tw:text-sm tw:font-medium tw:text-foreground">
+                {workspaceName}
+              </h3>
+              <span className="tw:truncate tw:font-mono tw:text-2xs tw:text-muted-foreground">
+                {workspaceSlug} · {selected.index} {selected.label}
+              </span>
+            </div>
           </div>
-          <p className="tw:m-0 tw:max-w-[38rem] tw:text-right tw:text-xs tw:leading-body tw:text-muted-foreground tw:max-[720px]:hidden">
-            {selected.description}
-          </p>
+          <a
+            className="tw:shrink-0 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3 tw:py-2 tw:text-2xs tw:font-medium tw:text-muted-foreground tw:transition-colors tw:hover:border-primary tw:hover:text-primary"
+            href={`/settings?workspace=${encodeURIComponent(workspaceId)}&section=workspaces`}
+          >
+            워크스페이스 변경
+          </a>
         </header>
 
         {area === "members" ? (

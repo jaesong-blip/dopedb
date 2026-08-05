@@ -26,6 +26,14 @@
   --color-selection-foreground: var(--ds-selection-foreground);
   --color-ring: var(--ds-ring);
   --color-border: var(--ds-border);
+  --color-chrome: var(--ds-chrome);
+  --color-chrome-foreground: var(--ds-chrome-foreground);
+  --color-chrome-muted: var(--ds-chrome-muted);
+  --color-chrome-border: var(--ds-chrome-border);
+  --color-signal: var(--ds-signal);
+  --font-sans: var(--font-workspace-sans);
+  --font-serif: var(--font-workspace-display);
+  --font-mono: var(--font-workspace-mono);
   --spacing: var(--ds-space-1);
   --spacing-control-sm: var(--ds-control-sm);
   --spacing-control-md: var(--ds-control-md);
@@ -37,44 +45,54 @@
   --text-ui: var(--ds-font-size-ui);
   --leading-body: var(--ds-line-body);
   --radius-full: var(--ds-radius-pill);
+  --radius-control: var(--ds-radius-control);
+  --radius-surface: var(--ds-radius-surface);
+  --radius-panel: var(--ds-radius-panel);
+  --shadow-panel: var(--ds-shadow-panel);
   --shadow-popover: var(--ds-shadow-popover);
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   /* This file is the workspace web app's design-token source. Components below
      consume only --ds-* values, matching the desktop design-system convention. */
-  --ds-background: #1c2128;
-  --ds-surface: #22272e;
-  --ds-surface-inset: #161b22;
-  --ds-surface-raised: #2d333b;
-  --ds-text: #adbac7;
-  --ds-text-secondary: #9da7b3;
-  --ds-text-muted: #8c959f;
-  --ds-text-inverse: #ffffff;
-  --ds-text-on-accent: #ffffff;
-  --ds-accent: #539bf5;
-  --ds-accent-emphasis: #316dca;
-  --ds-success: #57ab5a;
-  --ds-success-emphasis: #347d39;
-  --ds-warning: #d29922;
-  --ds-danger: #f47067;
-  --ds-danger-emphasis: #c93c37;
-  --ds-selection: color-mix(in srgb, var(--ds-accent) 18%, transparent);
-  --ds-selection-foreground: #dbeafe;
-  --ds-ring: #539bf5;
+  --ds-background: #efeee7;
+  --ds-surface: #fbfaf5;
+  --ds-surface-inset: #f2f0e8;
+  --ds-surface-raised: #e8ebe2;
+  --ds-text: #171c17;
+  --ds-text-secondary: #424a42;
+  --ds-text-muted: #6e776d;
+  --ds-text-inverse: #f8f8f2;
+  --ds-text-on-accent: #f8f8f2;
+  --ds-accent: #36734e;
+  --ds-accent-emphasis: #24583a;
+  --ds-signal: #ccf36b;
+  --ds-success: #2f7a4b;
+  --ds-success-emphasis: #225b38;
+  --ds-warning: #9c6b18;
+  --ds-danger: #b84a3d;
+  --ds-danger-emphasis: #8f342b;
+  --ds-selection: color-mix(in srgb, var(--ds-accent) 12%, var(--ds-surface));
+  --ds-selection-foreground: #173f2a;
+  --ds-ring: #36734e;
   --ds-google-blue: #4285f4;
   --ds-white: #ffffff;
-  --ds-border: color-mix(in srgb, var(--ds-text) 14%, transparent);
-  --ds-control-sm: 32px;
-  --ds-control-md: 38px;
-  --ds-control-field: 42px;
+  --ds-chrome: #151a16;
+  --ds-chrome-foreground: #f3f4ec;
+  --ds-chrome-muted: #aab4a8;
+  --ds-chrome-border: color-mix(in srgb, var(--ds-chrome-foreground) 16%, transparent);
+  --ds-grid-line: color-mix(in srgb, var(--ds-text) 4%, transparent);
+  --ds-border: color-mix(in srgb, var(--ds-text) 13%, transparent);
+  --ds-control-sm: 34px;
+  --ds-control-md: 40px;
+  --ds-control-field: 44px;
   --ds-control-lg: 52px;
-  --ds-font-size-2xs: 9px;
-  --ds-font-size-xs: 10px;
-  --ds-font-size-sm: 11px;
-  --ds-font-size-ui: 12px;
-  --ds-line-body: 1.5;
+  --ds-font-size-2xs: 11px;
+  --ds-font-size-xs: 12px;
+  --ds-font-size-sm: 13px;
+  --ds-font-size-ui: 14px;
+  --ds-line-body: 1.55;
   --ds-space-1: 4px;
   --ds-space-2: 8px;
   --ds-space-3: 12px;
@@ -82,19 +100,47 @@
   --ds-space-5: 20px;
   --ds-space-6: 24px;
   --ds-border-width: 1px;
+  --ds-radius-control: 9px;
+  --ds-radius-surface: 14px;
+  --ds-radius-panel: 22px;
   --ds-radius-pill: 999px;
   --ds-icon-xs: 16px;
   --ds-z-popover: 5;
   --ds-popover-width: 320px;
   --ds-popover-height: 430px;
-  --ds-shadow-popover: 0 24px 70px color-mix(in srgb, var(--ds-background) 70%, transparent);
+  --ds-shadow-panel: 0 22px 70px color-mix(in srgb, var(--ds-text) 9%, transparent);
+  --ds-shadow-popover: 0 24px 70px color-mix(in srgb, var(--ds-text) 18%, transparent);
   --ds-disabled-opacity: .55;
+  --font-workspace-sans:
+    var(--font-workspace-body-loaded), "Apple SD Gothic Neo", "Noto Sans KR",
+    ui-sans-serif, system-ui, sans-serif;
+  --font-workspace-display:
+    var(--font-workspace-display-loaded), "Apple SD Gothic Neo", "Noto Sans KR",
+    ui-sans-serif, system-ui, sans-serif;
+  --font-workspace-mono:
+    var(--font-workspace-mono-loaded), "SFMono-Regular", Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--ds-background); color: var(--ds-text); font-family: "Avenir Next", "Helvetica Neue", sans-serif; }
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--ds-background);
+  color: var(--ds-text);
+  font-family: var(--font-workspace-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
 button, input, select { min-width: 0; font: inherit; }
 a { color: inherit; text-decoration: none; }
+h1, h2, h3, p { margin: 0; }
+strong { font-weight: 600; }
+::selection { background: var(--ds-selection); color: var(--ds-selection-foreground); }
+:focus-visible { outline-color: var(--ds-ring); }
 
 body :where(main, aside, section, article, header, footer, nav, div, form, fieldset, label, details) { min-width: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}

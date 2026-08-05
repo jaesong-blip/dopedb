@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { headers } from "next/headers";
-import { Archivo_Black, IBM_Plex_Mono, Manrope } from "next/font/google";
+import { Archivo, IBM_Plex_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 
 const siteUrl = "https://dopedb.dev";
 
-const displayFont = Archivo_Black({
+const displayFont = Archivo({
   display: "swap",
   subsets: ["latin"],
   variable: "--font-display-loaded",
-  weight: "400",
+  weight: ["400", "500", "600"],
 });
 
 const bodyFont = Manrope({

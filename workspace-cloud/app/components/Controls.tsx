@@ -20,7 +20,7 @@ function ControlAction({
     {
       ...props,
       className:
-        "tw:inline-flex tw:h-control-sm tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:border tw:border-border tw:bg-transparent tw:px-3 tw:text-2xs tw:font-semibold tw:text-foreground tw:no-underline tw:transition-colors tw:data-[size=field]:h-control-field tw:data-[size=field]:px-4 tw:data-[tone=danger]:text-danger tw:data-[tone=primary]:border-primary-emphasis tw:data-[tone=primary]:bg-primary-emphasis tw:data-[tone=primary]:font-extrabold tw:data-[tone=primary]:text-primary-foreground tw:hover:border-primary tw:hover:bg-surface-raised tw:data-[tone=primary]:hover:bg-primary tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring tw:active:translate-y-px tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]",
+        "tw:inline-flex tw:h-control-sm tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3.5 tw:text-2xs tw:font-medium tw:text-foreground tw:no-underline tw:shadow-[inset_0_1px_0_color-mix(in_srgb,var(--ds-white)_70%,transparent)] tw:transition-[transform,background-color,border-color,color] tw:duration-200 tw:data-[size=field]:h-control-field tw:data-[size=field]:px-4 tw:data-[tone=danger]:text-danger tw:data-[tone=primary]:border-primary-emphasis tw:data-[tone=primary]:bg-primary-emphasis tw:data-[tone=primary]:font-semibold tw:data-[tone=primary]:text-primary-foreground tw:data-[tone=primary]:shadow-none tw:hover:-translate-y-px tw:hover:border-primary tw:hover:bg-surface-raised tw:data-[tone=primary]:hover:bg-primary tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-ring tw:active:translate-y-px tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)] tw:disabled:hover:translate-y-0",
     },
     children,
   );
@@ -69,7 +69,7 @@ export function ControlField({
 }) {
   return (
     <label className="tw:grid tw:min-w-0 tw:gap-2">
-      <span className="tw:font-mono tw:text-2xs tw:font-semibold tw:uppercase tw:text-muted-foreground">
+      <span className="tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.06em] tw:uppercase tw:text-muted-foreground">
         {label}
       </span>
       {children}
@@ -82,7 +82,7 @@ export function ControlInput(
 ) {
   return (
     <input
-      className="tw:h-control-field tw:w-full tw:min-w-0 tw:border tw:border-border tw:bg-surface-inset tw:px-3 tw:text-xs tw:text-foreground tw:outline-none tw:placeholder:text-muted-foreground tw:focus:border-primary tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]"
+      className="tw:h-control-field tw:w-full tw:min-w-0 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3.5 tw:text-xs tw:text-foreground tw:shadow-[inset_0_1px_2px_color-mix(in_srgb,var(--ds-text)_5%,transparent)] tw:outline-none tw:placeholder:text-muted-foreground tw:focus:border-primary tw:focus:ring-2 tw:focus:ring-ring/20 tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]"
       {...props}
     />
   );
@@ -96,7 +96,7 @@ export function ControlSelect({
 }) {
   return (
     <select
-      className="tw:h-control-field tw:w-full tw:min-w-0 tw:border tw:border-border tw:bg-surface-inset tw:px-3 tw:text-xs tw:text-foreground tw:outline-none tw:focus:border-primary tw:focus:ring-2 tw:focus:ring-ring/30 tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]"
+      className="tw:h-control-field tw:w-full tw:min-w-0 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3.5 tw:text-xs tw:text-foreground tw:shadow-[inset_0_1px_2px_color-mix(in_srgb,var(--ds-text)_5%,transparent)] tw:outline-none tw:focus:border-primary tw:focus:ring-2 tw:focus:ring-ring/20 tw:disabled:cursor-not-allowed tw:disabled:opacity-[var(--ds-disabled-opacity)]"
       {...props}
     >
       {children}

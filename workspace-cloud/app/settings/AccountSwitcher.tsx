@@ -111,29 +111,29 @@ export function AccountSwitcher({
 
   return (
     <div
-      className="tw:relative tw:mt-auto tw:w-full tw:max-[800px]:mt-0 tw:max-[800px]:w-[min(190px,55vw)]"
+      className="tw:relative tw:w-[min(245px,48vw)]"
       ref={rootRef}
     >
       <button
-        className="tw:grid tw:min-h-control-md tw:w-full tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)_auto] tw:items-center tw:gap-2 tw:border-0 tw:bg-transparent tw:p-0 tw:text-left tw:text-foreground"
+        className="tw:grid tw:min-h-control-md tw:w-full tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)_auto] tw:items-center tw:gap-2 tw:rounded-control tw:border tw:border-chrome-border tw:bg-chrome-foreground/5 tw:px-1.5 tw:py-1 tw:text-left tw:text-chrome-foreground tw:transition-colors tw:hover:bg-chrome-foreground/10 tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-signal"
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        <span className="tw:grid tw:size-control-sm tw:place-items-center tw:rounded-full tw:bg-primary-emphasis tw:text-xs tw:font-extrabold tw:text-primary-foreground">
+        <span className="tw:grid tw:size-control-sm tw:place-items-center tw:rounded-control tw:bg-signal tw:text-xs tw:font-semibold tw:text-chrome">
           {(current?.user.name ?? currentUser.name).slice(0, 1).toUpperCase()}
         </span>
-        <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-xs tw:text-muted-foreground">
+        <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap tw:text-2xs tw:font-medium tw:text-chrome-muted">
           {current?.user.email ?? currentUser.email}
         </strong>
-        <i className="tw:text-muted-foreground tw:not-italic" aria-hidden="true">
-          ⌃
+        <i className="tw:text-chrome-muted tw:not-italic" aria-hidden="true">
+          ↓
         </i>
       </button>
       {open ? (
         <div
-          className="tw:absolute tw:bottom-[calc(100%+var(--ds-space-3))] tw:left-0 tw:z-[var(--ds-z-popover)] tw:max-h-[min(var(--ds-popover-height),calc(100vh-80px))] tw:w-[min(var(--ds-popover-width),calc(100vw-40px))] tw:overflow-auto tw:border tw:border-border tw:bg-surface tw:p-1 tw:shadow-popover tw:max-[800px]:top-[calc(100%+var(--ds-space-3))] tw:max-[800px]:right-0 tw:max-[800px]:bottom-auto tw:max-[800px]:left-auto"
+          className="tw:absolute tw:top-[calc(100%+var(--ds-space-3))] tw:right-0 tw:z-[var(--ds-z-popover)] tw:max-h-[min(var(--ds-popover-height),calc(100vh-80px))] tw:w-[min(var(--ds-popover-width),calc(100vw-40px))] tw:overflow-auto tw:rounded-surface tw:border tw:border-border tw:bg-surface tw:p-1.5 tw:text-foreground tw:shadow-popover"
           role="menu"
         >
           {accounts.map((account) => (
@@ -149,7 +149,7 @@ export function AccountSwitcher({
                 onClick={() => void activate(account.sessions[0].session.token, account.user.id)}
                 disabled={pending !== null}
               >
-                <span className="tw:grid tw:size-control-sm tw:place-items-center tw:rounded-full tw:bg-primary-emphasis tw:text-xs tw:font-extrabold tw:text-primary-foreground">
+                <span className="tw:grid tw:size-control-sm tw:place-items-center tw:rounded-control tw:bg-selection tw:text-xs tw:font-semibold tw:text-primary">
                   {account.user.name.slice(0, 1).toUpperCase()}
                 </span>
                 <div className="tw:grid tw:min-w-0 tw:gap-0.5">
