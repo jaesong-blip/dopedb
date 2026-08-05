@@ -22,6 +22,8 @@
   "query.run",
   "query.cancel",
   "dashboard.create",
+  "report.propose",
+  "report.append_evidence",
   "sql.propose",
   "operation.show",
   "operation.wait",

@@ -16,7 +16,8 @@ const workspaceSections: Array<{
   { id: "databases", index: "03" },
   { id: "database-access", index: "04" },
   { id: "dashboards", index: "05" },
-  { id: "members", index: "06" },
+  { id: "reports", index: "06" },
+  { id: "members", index: "07" },
 ];
 
 export function settingsSection(value: unknown): SettingsSection {
@@ -54,7 +55,12 @@ export function SettingsNavigation({
     >
       {workspaceSections.map((item) => {
         if (item.id === "dashboards" && !canEditWorkspace) return null;
-        if (item.id !== "workspaces" && item.id !== "dashboards" && !canManageWorkspace) {
+        if (
+          item.id !== "workspaces"
+          && item.id !== "dashboards"
+          && item.id !== "reports"
+          && !canManageWorkspace
+        ) {
           return null;
         }
         const setupQuery = item.id === "cloud-accounts" && gcpSetupId
@@ -70,7 +76,9 @@ export function SettingsNavigation({
                 ? copy.settings.areas.databaseAccess.label
                 : item.id === "dashboards"
                   ? copy.settings.areas.dashboards.label
-                  : copy.settings.areas.members.label;
+                  : item.id === "reports"
+                    ? copy.settings.areas.reports.label
+                    : copy.settings.areas.members.label;
         return (
           <a
             className="tw:flex tw:min-h-[48px] tw:min-w-max tw:items-center tw:border-b-2 tw:border-transparent tw:px-3 tw:text-xs tw:font-medium tw:text-chrome-muted tw:transition-colors tw:hover:bg-chrome-foreground/5 tw:hover:text-chrome-foreground tw:data-[active=true]:border-signal tw:data-[active=true]:text-chrome-foreground"
@@ -96,7 +104,7 @@ export function SettingsNavigation({
         aria-current={activeSection === "account" ? "page" : undefined}
       >
         <span className="tw:mr-2.5 tw:font-mono tw:text-2xs tw:text-signal">
-          07
+          08
         </span>
         {copy.settings.accountTitle}
       </a>

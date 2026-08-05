@@ -141,6 +141,13 @@
       "when": 1785944326154,
       "tag": "0019_curious_inhumans",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785947397306,
+      "tag": "0020_busy_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

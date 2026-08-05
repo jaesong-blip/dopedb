@@ -15,6 +15,7 @@ pub mod frame;
 pub mod operation;
 pub mod operation_command;
 pub mod query_command;
+pub mod report_command;
 pub mod request;
 pub mod response;
 pub mod skill_command;
@@ -43,6 +44,7 @@ pub use operation::{
 };
 pub use operation_command::*;
 pub use query_command::*;
+pub use report_command::*;
 pub use request::{CommandName, RequestEnvelope, SessionAuthentication};
 pub use response::ResponseEnvelope;
 pub use skill_command::*;

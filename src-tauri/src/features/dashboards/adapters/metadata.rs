@@ -27,7 +27,7 @@ impl DashboardMetadataPort for DashboardMetadataAdapter {
     async fn list(&self, connection_id: ConnectionId) -> AppResult<Vec<Dashboard>> {
         let operation_scope = self.connections.begin_operation_scope().await;
         let connection = operation_scope
-            .pin_dashboard_connection(connection_id.into())
+            .pin_shared_artifact_connection(connection_id.into())
             .await?;
         self.store.list_dashboards_if_current(&connection).await
     }

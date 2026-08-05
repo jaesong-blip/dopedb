@@ -135,7 +135,9 @@ fn response_timeout(command: dopedb_protocol::CommandName) -> Duration {
         | CommandName::DocumentRun
         | CommandName::QueryPlan
         | CommandName::SqlPropose
-        | CommandName::DashboardCreate => CONTROL_DATABASE_TIMEOUT,
+        | CommandName::DashboardCreate
+        | CommandName::ReportPropose
+        | CommandName::ReportAppendEvidence => CONTROL_DATABASE_TIMEOUT,
         CommandName::QueryRun => CONTROL_QUERY_RUN_TIMEOUT,
         CommandName::OperationWait => CONTROL_OPERATION_WAIT_TIMEOUT,
         _ => CONTROL_METADATA_TIMEOUT,

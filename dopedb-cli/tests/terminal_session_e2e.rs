@@ -389,6 +389,31 @@ pub(super) fn run() {
     let tools = bridge[1]["result"]["tools"].as_array().unwrap();
     assert!(tools.iter().any(|tool| tool["name"] == "catalog_search"));
     assert!(tools.iter().any(|tool| tool["name"] == "query_read"));
+    let report_tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "report_propose")
+        .expect("the app-managed MCP bridge must expose report proposals");
+    assert_eq!(report_tool["annotations"]["destructiveHint"], false);
+    assert_eq!(report_tool["annotations"]["idempotentHint"], false);
+    assert_eq!(report_tool["inputSchema"]["additionalProperties"], false);
+    assert_eq!(report_tool["inputSchema"]["properties"]["claims"]["maxItems"], 32);
+    assert!(report_tool["description"]
+        .as_str()
+        .unwrap()
+        .contains("never reruns SQL"));
+    let append_tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "report_append_evidence")
+        .expect("the app-managed MCP bridge must expose immutable evidence append");
+    assert_eq!(append_tool["inputSchema"]["additionalProperties"], false);
+    assert_eq!(
+        append_tool["inputSchema"]["properties"]["expectedRevision"]["minimum"],
+        1,
+    );
+    assert!(append_tool["description"]
+        .as_str()
+        .unwrap()
+        .contains("never edits historical evidence"));
     assert!(!tools.iter().any(|tool| tool["name"] == "run"));
 
     assert_eq!(bridge[2]["result"]["isError"], false);

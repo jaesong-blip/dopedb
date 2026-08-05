@@ -211,7 +211,7 @@ Elevation은 세 단계만 허용한다.
   않는다. 사이트 전용 색·배경·그림자는 `site/app/globals.css`의 theme token만
   소유하고 화면 selector는 두지 않는다.
 - `workspace-cloud/app/components/Controls`: workspace 관리 화면의
-  `ControlButton`, `ControlLink`, field/input/select 밀도를 함께 소유한다.
+  `ControlButton`, `ControlLink`, field/input/select/textarea 밀도를 함께 소유한다.
   외부 관리 콘솔로 이동하는 action도 화면에서 button utility를 복사하지 않고
   `ControlLink`를 사용한다.
 - `IdeTitleToolbar`, `IdeStatusBarSurface`: DopeDB title/status chrome의

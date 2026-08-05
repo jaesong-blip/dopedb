@@ -277,7 +277,10 @@ impl ConnectionOperationScope {
         self.manager.inner.store.pin_connection_for_view(id).await
     }
 
-    pub(crate) async fn pin_dashboard_connection(&self, id: Uuid) -> AppResult<PinnedConnection> {
+    pub(crate) async fn pin_shared_artifact_connection(
+        &self,
+        id: Uuid,
+    ) -> AppResult<PinnedConnection> {
         self.pin_connection_for_view(id).await
     }
 

@@ -4,11 +4,12 @@ use dopedb_protocol::{
     CommandName, CommandSpec, ConnectionListCommand, ConnectionShowCommand, ConnectionTestCommand,
     DashboardCreateCommand, DatabaseListCommand, DocumentRunCommand, ErrorCode, OfficialAcpAdapter,
     OperationCancelCommand, OperationShowCommand, OperationWaitCommand, ProtocolError,
-    QueryCancelCommand, QueryPlanCommand, QueryRunCommand, RequestEnvelope, ResponseEnvelope,
-    RuntimeDiscovery, SchemaListCommand, SessionAuthentication, SkillInstallCommand,
-    SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand, SkillsGetCommand,
-    SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeCommand,
-    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
+    QueryCancelCommand, QueryPlanCommand, QueryRunCommand, ReportAppendEvidenceCommand,
+    ReportProposeCommand, RequestEnvelope, ResponseEnvelope, RuntimeDiscovery, SchemaListCommand,
+    SessionAuthentication,
+    SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
+    SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult,
+    TableDescribeCommand, VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -167,6 +168,10 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
         CommandName::DashboardCreate => {
             typed_cli_contract::<DashboardCreateCommand>(request, result)
         }
+        CommandName::ReportPropose => typed_cli_contract::<ReportProposeCommand>(request, result),
+        CommandName::ReportAppendEvidence => {
+            typed_cli_contract::<ReportAppendEvidenceCommand>(request, result)
+        }
         CommandName::SqlPropose => typed_cli_contract::<SqlProposeCommand>(request, result),
         CommandName::OperationShow => typed_cli_contract::<OperationShowCommand>(request, result),
         CommandName::OperationWait => typed_cli_contract::<OperationWaitCommand>(request, result),
@@ -184,7 +189,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v5_command_schema_and_pinned_agent_registration() {
+fn query_plan_request_matches_v6_command_schema_and_pinned_agent_registration() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -252,6 +257,8 @@ fn every_phase_six_cli_command_has_request_success_error_and_redaction_goldens()
         CommandName::QueryRun,
         CommandName::QueryCancel,
         CommandName::DashboardCreate,
+        CommandName::ReportPropose,
+        CommandName::ReportAppendEvidence,
         CommandName::SqlPropose,
         CommandName::OperationShow,
         CommandName::OperationWait,
@@ -506,13 +513,13 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v5_catalog() {
+fn command_names_match_the_v6_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v5.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v6.json")).unwrap();
     assert_eq!(actual, expected);
 
     let request: RequestEnvelope = serde_json::from_value(json!({

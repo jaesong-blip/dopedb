@@ -60,7 +60,7 @@ where
         let operation_scope = self.connections.begin_operation_scope().await;
         let resolved = match self
             .store
-            .resolve_history_for_dashboard_prepare(query_run_id.into())
+            .resolve_history_for_shared_artifact_prepare(query_run_id.into())
             .await
         {
             Ok(resolved) => resolved,
@@ -71,7 +71,7 @@ where
             return Err(AgentDashboardCreateError::QueryRunIneligible);
         }
         let connection = operation_scope
-            .pin_dashboard_connection(resolved.history.connection_id)
+            .pin_shared_artifact_connection(resolved.history.connection_id)
             .await
             .map_err(AgentDashboardCreateError::Application)?;
         let source = match self

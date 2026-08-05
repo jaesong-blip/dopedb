@@ -60,11 +60,25 @@ import workspaceDashboardMigrationSource from "../../../workspace-cloud/drizzle/
 import workspaceDashboardCollectionSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/dashboards/route.ts?raw";
 import workspaceDashboardItemSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/dashboards/[dashboardId]/route.ts?raw";
 import workspaceDashboardOwnersSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/dashboards/owners/route.ts?raw";
+import workspaceReportStoreSource from "../../../workspace-cloud/lib/workspace-report-store.ts?raw";
+import workspaceReportMigrationSource from "../../../workspace-cloud/drizzle/0020_busy_yellowjacket.sql?raw";
+import workspaceReportCollectionSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/reports/route.ts?raw";
+import workspaceReportProposalSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/reports/proposals/route.ts?raw";
+import workspaceReportItemSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/reports/[reportId]/route.ts?raw";
+import workspaceReportRevisionSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/reports/[reportId]/revisions/route.ts?raw";
+import workspaceReportAppendProposalSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/reports/[reportId]/proposals/route.ts?raw";
+import workspaceReportPanelSource from "../../../workspace-cloud/app/settings/ReportManagementPanel.tsx?raw";
+import workspaceSettingsNavigationSource from "../../../workspace-cloud/app/settings/SettingsNavigation.tsx?raw";
+import workspaceMemberRouteSource from "../../../workspace-cloud/app/api/v1/workspaces/[workspaceId]/members/route.ts?raw";
 import desktopDashboardStoreSource from "../../../src-tauri/src/store/repositories/dashboards.rs?raw";
 import desktopDashboardControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/dashboards.rs?raw";
 import desktopStoreBootstrapSource from "../../../src-tauri/src/store/bootstrap.rs?raw";
 import desktopSharedConnectionSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/connections.rs?raw";
 import desktopControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane.rs?raw";
+import desktopReportFeatureSource from "../../../src-tauri/src/features/reports/mod.rs?raw";
+import desktopReportControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/reports.rs?raw";
+import desktopReportDispatchSource from "../../../src-tauri/src/broker/dispatch/report_operation.rs?raw";
+import agentMcpSource from "../../../dopedb-cli/src/agent_mcp.rs?raw";
 import { parseNeonBranchInventory } from "../../../workspace-cloud/lib/providers/neon-branches";
 import {
   buildNeonBranchCreatePlan,
@@ -98,6 +112,12 @@ import {
   parseDashboardVersionPayload,
   parseSharedDashboardCreate,
 } from "../../../workspace-cloud/lib/workspace-dashboards";
+import {
+  parseReportVersionPayload,
+  parseSharedReportCreate,
+  parseSharedReportEvidenceAppend,
+  reportVersionPayload,
+} from "../../../workspace-cloud/lib/workspace-reports";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -1743,6 +1763,128 @@ describe("provider credential Tauri adapter", () => {
     expect(workspaceDashboardItemSource).toContain("dashboard.deletedAt");
     expect(workspaceDashboardOwnersSource).toContain(
       'authorizeWorkspace(request, workspaceId, "write")',
+    );
+
+    const reportEvidenceId = "33333333-3333-4333-8333-333333333334";
+    const reportDefinition = parseSharedReportCreate({
+      id: "33333333-3333-4333-8333-333333333335",
+      connectionId,
+      title: "Current users analysis",
+      question: "How many active users are there?",
+      conclusion: "The bounded aggregate observed 12 active users.",
+      preflightWarnings: ["Production-labelled read"],
+      claims: [{
+        id: "33333333-3333-4333-8333-333333333336",
+        statement: "There are 12 active users.",
+        evidenceIds: [reportEvidenceId],
+      }],
+      evidence: [{
+        id: reportEvidenceId,
+        queryRunId: "33333333-3333-4333-8333-333333333337",
+        sql: "SELECT count(*) AS users FROM users WHERE active = TRUE",
+        executedAt: new Date().toISOString(),
+      }],
+    });
+    const reportVersion = reportVersionPayload({
+      connectionId,
+      definition: reportDefinition,
+      state: "published",
+      source: "agent_proposal",
+      ownerMemberId: "32323232-3232-4232-8232-323232323232",
+    });
+    expect(parseReportVersionPayload(reportVersion)).toEqual(
+      expect.objectContaining({
+        connectionId,
+        state: "published",
+        source: "agent_proposal",
+        deleted: false,
+      }),
+    );
+    expect(() => parseSharedReportCreate({
+      ...reportDefinition,
+      resultRows: [{ users: 12 }],
+    })).toThrow("Invalid report identity");
+    expect(() => parseSharedReportCreate({
+      ...reportDefinition,
+      localArtifactHandle: "/private/result.arrow",
+    })).toThrow("Invalid report identity");
+    expect(parseSharedReportEvidenceAppend({
+      connectionId,
+      claims: [{
+        id: "33333333-3333-4333-8333-333333333338",
+        statement: "A later read confirmed the aggregate.",
+        evidenceIds: ["33333333-3333-4333-8333-333333333339"],
+      }],
+      evidence: [{
+        id: "33333333-3333-4333-8333-333333333339",
+        queryRunId: "33333333-3333-4333-8333-333333333340",
+        sql: "SELECT count(*) AS users FROM users WHERE active = TRUE",
+        executedAt: new Date().toISOString(),
+      }],
+    })).toEqual(expect.objectContaining({ connectionId }));
+    expect(workspaceReportMigrationSource).toContain(
+      'CREATE TABLE "workspace_control"."workspace_report"',
+    );
+    expect(workspaceReportMigrationSource).toContain(
+      'CREATE TABLE "workspace_control"."workspace_report_evidence"',
+    );
+    expect(workspaceReportMigrationSource).toContain(
+      'CREATE TABLE "workspace_control"."workspace_report_revision"',
+    );
+    expect(workspaceReportMigrationSource).toContain(
+      'CREATE TRIGGER "workspace_report_evidence_immutable_update"',
+    );
+    const reportTableSql = workspaceReportMigrationSource.slice(
+      workspaceReportMigrationSource.indexOf('CREATE TABLE "workspace_control"."workspace_report"'),
+      workspaceReportMigrationSource.indexOf('--> statement-breakpoint'),
+    );
+    expect(reportTableSql).not.toMatch(/result|artifact|credential|transcript/i);
+    expect(workspaceReportStoreSource).toContain("evidence_inserted AS MATERIALIZED");
+    expect(workspaceReportStoreSource).toContain('| "append_evidence"');
+    expect(workspaceReportStoreSource).not.toContain("UPDATE ${workspaceReportEvidence}");
+    expect(workspaceReportCollectionSource).toContain(
+      'eq(workspaceReport.state, "published")',
+    );
+    expect(workspaceReportCollectionSource).toContain(
+      'canEdit: hasWorkspaceCapability(authorization.role, "write")',
+    );
+    expect(workspaceReportProposalSource).toContain(
+      'createSharedReport(request, workspaceId, "agent_proposal")',
+    );
+    expect(workspaceReportProposalSource).not.toContain("commitReportMutation");
+    expect(workspaceReportAppendProposalSource).toContain(
+      'operation: "append_evidence"',
+    );
+    expect(workspaceReportAppendProposalSource).toContain(
+      "claims: [...current.claims, ...input.claims]",
+    );
+    expect(workspaceReportAppendProposalSource).not.toContain('state: "published"');
+    expect(workspaceReportItemSource).toContain('body.confirmation === "publish"');
+    expect(workspaceReportItemSource).toContain(
+      "Report changed concurrently. The stale edit was not applied.",
+    );
+    expect(workspaceReportRevisionSource).toContain("publicReportEvidence");
+    expect(workspaceReportPanelSource).toContain("copy.claimsAndEvidence");
+    expect(workspaceReportPanelSource).toContain('confirmation: "publish"');
+    expect(workspaceReportPanelSource).toContain("window.confirm(copy.publishConfirm)");
+    expect(workspaceReportPanelSource).not.toMatch(/resultRows|localArtifactHandle/);
+    expect(workspaceSettingsNavigationSource).toContain('{ id: "reports", index: "06" }');
+    expect(workspaceSettingsNavigationSource).not.toContain(
+      'item.id === "dashboards" || item.id === "reports"',
+    );
+    expect(desktopReportFeatureSource).toContain("resolve_history_for_shared_artifact_prepare");
+    expect(desktopReportFeatureSource).toContain("ensure_terminal_pin");
+    expect(desktopReportFeatureSource).toContain("WorkspaceKind::Team");
+    expect(desktopReportControlPlaneSource).toContain("deny_unknown_fields");
+    expect(desktopReportControlPlaneSource).toContain("reports/proposals");
+    expect(desktopReportDispatchSource).toContain("ReportProposeCommand");
+    expect(agentMcpSource).toContain('TOOL_REPORT_PROPOSE: &str = "report_propose"');
+    expect(agentMcpSource).toContain(
+      'TOOL_REPORT_APPEND_EVIDENCE: &str = "report_append_evidence"',
+    );
+    expect(agentMcpSource).toContain("It never reruns SQL, copies result rows, or publishes");
+    expect(workspaceMemberRouteSource).toContain(
+      "Transfer this member's active dashboards and reports",
     );
     expect(desktopDashboardControlPlaneSource).toContain("deny_unknown_fields");
     expect(desktopDashboardControlPlaneSource).toContain(

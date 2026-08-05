@@ -121,6 +121,7 @@ export default async function SettingsPage({
     || activeSection === "cloud-accounts"
     || activeSection === "databases"
     || activeSection === "dashboards"
+    || activeSection === "reports"
       ? activeSection
       : null;
   const canManageActiveWorkspace = Boolean(
@@ -135,7 +136,7 @@ export default async function SettingsPage({
     ? workspaceManagementAreas.find((item) => item.id === activeManagementArea)
     : null;
   const pageIndex = activeSection === "account"
-    ? "07"
+    ? "08"
     : activeSection === "workspaces"
       ? "01"
       : activeManagementDetails?.index ?? "01";
@@ -245,7 +246,7 @@ export default async function SettingsPage({
         ) : null}
         {activeSection === "account" ? (
           <section id="account" className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]">
-            <ConsoleSectionHeading index="07" title={copy.settings.accountManagementTitle}>
+            <ConsoleSectionHeading index="08" title={copy.settings.accountManagementTitle}>
               {copy.settings.accountManagementDescription}
             </ConsoleSectionHeading>
             <AccountManagementPanel
@@ -327,7 +328,9 @@ export default async function SettingsPage({
         && activeWorkspace
         && (activeManagementArea === "dashboards"
           ? canEditActiveWorkspace
-          : canManageActiveWorkspace) ? (
+          : activeManagementArea === "reports"
+            ? true
+            : canManageActiveWorkspace) ? (
           <section
             className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]"
             id="workspace-settings"
@@ -345,6 +348,7 @@ export default async function SettingsPage({
               gcpSetupId={requestedGcpSetupId}
               initialIntegrationId={requestedIntegrationId}
               area={activeManagementArea}
+              canEditWorkspace={canEditActiveWorkspace}
               locale={locale}
             />
           </section>

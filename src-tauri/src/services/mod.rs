@@ -17,6 +17,7 @@ use crate::features::operation_control::{self, OperationControlFeature};
 use crate::features::providers::ProvidersFeature;
 use crate::features::queries::QueriesFeature;
 use crate::features::queries::QueryRunAuthorizationPort;
+use crate::features::reports::{self, ReportsFeature};
 use crate::features::safety_settings::{self, SafetySettingsFeature};
 use crate::features::schema_editor::{self, SchemaEditorFeature};
 use crate::features::scripts::{self, ScriptFeature};
@@ -42,6 +43,7 @@ pub(crate) struct ApplicationServices {
     pub(crate) operation: OperationControlFeature,
     pub(crate) providers: ProvidersFeature,
     pub(crate) queries: QueriesFeature,
+    pub(crate) report: ReportsFeature,
     pub(crate) safety: SafetySettingsFeature,
     pub(crate) schema: SchemaEditorFeature,
     pub(crate) script: ScriptFeature,
@@ -88,8 +90,12 @@ impl ApplicationServices {
             operation.clone(),
         );
         let query_provenance: Arc<dyn QueryRunAuthorizationPort> = Arc::new(queries.provenance());
-        let dashboard =
-            dashboards::compose_erased(store.clone(), connections.clone(), query_provenance);
+        let dashboard = dashboards::compose_erased(
+            store.clone(),
+            connections.clone(),
+            Arc::clone(&query_provenance),
+        );
+        let report = reports::compose(store.clone(), connections.clone(), query_provenance);
         Self {
             activity: activity::compose(store.clone()),
             agents: agents::compose(store.clone()),
@@ -103,6 +109,7 @@ impl ApplicationServices {
             operation: operation_service,
             providers,
             queries,
+            report,
             safety: safety_settings::compose(store.clone(), connections.clone()),
             schema,
             script,

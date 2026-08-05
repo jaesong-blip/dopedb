@@ -224,6 +224,161 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         consumedReceipts: 1,
       });
 
+      const [{ commitReportCreate, commitReportMutation }, reportContract] = await Promise.all([
+        import("./workspace-report-store"),
+        import("./workspace-reports"),
+      ]);
+      const reportId = randomUUID();
+      const firstEvidenceId = randomUUID();
+      const firstQueryRunId = randomUUID();
+      const firstClaimId = randomUUID();
+      const firstExecutedAt = new Date().toISOString();
+      const reportInput = reportContract.parseSharedReportCreate({
+        id: reportId,
+        connectionId: left.connection.id,
+        title: "Harness analysis",
+        question: "How many active rows exist?",
+        conclusion: "The durable read observed one bounded aggregate.",
+        preflightWarnings: ["Harness evidence only"],
+        claims: [{
+          id: firstClaimId,
+          statement: "The aggregate read completed successfully.",
+          evidenceIds: [firstEvidenceId],
+        }],
+        evidence: [{
+          id: firstEvidenceId,
+          queryRunId: firstQueryRunId,
+          sql: "SELECT count(*) AS active_rows FROM users WHERE active = TRUE",
+          executedAt: firstExecutedAt,
+        }],
+      });
+      const createdReport = await commitReportCreate({
+        organizationId,
+        report: reportInput,
+        source: "agent_proposal",
+        authority,
+      });
+      expect(createdReport).toMatchObject({
+        id: reportId,
+        connectionId: left.connection.id,
+        state: "draft",
+        source: "agent_proposal",
+        revision: 1,
+        evidenceCount: 1,
+      });
+
+      const secondEvidenceId = randomUUID();
+      const secondQueryRunId = randomUUID();
+      const secondClaimId = randomUUID();
+      const secondEvidence = reportContract.parseSharedReportEvidenceList([{
+        id: secondEvidenceId,
+        queryRunId: secondQueryRunId,
+        sql: "SELECT count(*) AS active_rows FROM users WHERE active = TRUE AND deleted_at IS NULL",
+        executedAt: new Date().toISOString(),
+      }]);
+      const rerunDefinition = reportContract.parseSharedReportDefinition({
+        title: reportInput.title,
+        question: reportInput.question,
+        conclusion: "Two immutable reads support the reviewed aggregate.",
+        preflightWarnings: reportInput.preflightWarnings,
+        claims: [
+          ...reportInput.claims,
+          {
+            id: secondClaimId,
+            statement: "The rerun excluded deleted rows.",
+            evidenceIds: [secondEvidenceId],
+          },
+        ],
+      });
+      const rerunReport = await commitReportMutation({
+        organizationId,
+        reportId,
+        connectionId: left.connection.id,
+        expectedRevision: 1,
+        definition: rerunDefinition,
+        state: "draft",
+        source: "agent_proposal",
+        ownerMemberId: memberId,
+        authority,
+        operation: "append_evidence",
+        evidence: secondEvidence,
+      });
+      expect(rerunReport).toMatchObject({ revision: 2, evidenceCount: 2, state: "draft" });
+      await expect(commitReportMutation({
+        organizationId,
+        reportId,
+        connectionId: left.connection.id,
+        expectedRevision: 1,
+        definition: reportInput,
+        state: "draft",
+        source: "agent_proposal",
+        ownerMemberId: memberId,
+        authority,
+        operation: "update",
+      })).resolves.toBeNull();
+      const reviewReport = await commitReportMutation({
+        organizationId,
+        reportId,
+        connectionId: left.connection.id,
+        expectedRevision: 2,
+        definition: rerunDefinition,
+        state: "review",
+        source: "agent_proposal",
+        ownerMemberId: memberId,
+        authority,
+        operation: "submit_review",
+      });
+      expect(reviewReport).toMatchObject({ revision: 3, evidenceCount: 2, state: "review" });
+      const publishedReport = await commitReportMutation({
+        organizationId,
+        reportId,
+        connectionId: left.connection.id,
+        expectedRevision: 3,
+        definition: rerunDefinition,
+        state: "published",
+        source: "agent_proposal",
+        ownerMemberId: memberId,
+        authority,
+        operation: "publish",
+      });
+      expect(publishedReport).toMatchObject({
+        revision: 4,
+        evidenceCount: 2,
+        state: "published",
+      });
+      await expect(sql`
+        UPDATE "workspace_control"."workspace_report_evidence"
+        SET "sql" = 'SELECT 0'
+        WHERE "organization_id" = ${organizationId}
+          AND "report_id" = ${reportId}::uuid
+          AND "id" = ${firstEvidenceId}::uuid
+      `).rejects.toThrow(/immutable/);
+      const reportDurability = await sql<{
+        evidence: number;
+        revisions: number;
+        resultColumns: number;
+      }[]>`
+        SELECT
+          (SELECT count(*)::int
+           FROM "workspace_control"."workspace_report_evidence"
+           WHERE "organization_id" = ${organizationId}
+             AND "report_id" = ${reportId}::uuid) AS "evidence",
+          (SELECT count(*)::int
+           FROM "workspace_control"."workspace_report_revision"
+           WHERE "organization_id" = ${organizationId}
+             AND "report_id" = ${reportId}::uuid) AS "revisions",
+          (SELECT count(*)::int
+           FROM information_schema.columns
+           WHERE table_schema = 'workspace_control'
+             AND table_name IN (
+               'workspace_report',
+               'workspace_report_evidence',
+               'workspace_report_revision'
+             )
+             AND column_name ~ '(result|artifact|credential|transcript)') AS "resultColumns"
+      `;
+      expect(reportDurability[0]).toEqual({ evidence: 2, revisions: 4, resultColumns: 0 });
+
       const secondKeyReceipt = randomUUID();
       await insertReceipt(secondKeyReceipt);
       await expect(importProviderReceipt({

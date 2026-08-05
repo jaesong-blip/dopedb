@@ -135,10 +135,10 @@ pub(crate) struct PinnedDashboard {
 }
 
 /// History row plus the exact active scope in which its provenance was first
-/// resolved. Agent dashboard preparation validates eligibility before pinning, then
+/// resolved. Shared-artifact preparation validates eligibility before pinning, then
 /// passes this token back for an ABA-safe same-scope re-read.
 #[derive(Clone)]
-pub(crate) struct ResolvedDashboardHistory {
+pub(crate) struct ResolvedQueryHistory {
     pub history: HistoryEntry,
     scope: ActiveResourceScope,
 }

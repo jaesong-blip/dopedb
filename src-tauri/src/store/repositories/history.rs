@@ -211,10 +211,10 @@ impl Store {
 
     /// Resolve the initial query provenance and active generation in one SQLite
     /// snapshot. Callers inspect eligibility before doing any connection pin work.
-    pub(crate) async fn resolve_history_for_dashboard_prepare(
+    pub(crate) async fn resolve_history_for_shared_artifact_prepare(
         &self,
         id: Uuid,
-    ) -> AppResult<ResolvedDashboardHistory> {
+    ) -> AppResult<ResolvedQueryHistory> {
         let row = sqlx::query(
             "SELECT h.*,
                     active.workspace_id AS pinned_workspace_id,
@@ -263,7 +263,7 @@ impl Store {
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("query history {id}")))?;
-        Ok(ResolvedDashboardHistory {
+        Ok(ResolvedQueryHistory {
             history: row_to_history(&row)?,
             scope: row_to_active_resource_scope(&row)?,
         })
@@ -275,7 +275,7 @@ impl Store {
     pub(crate) async fn get_history_if_current(
         &self,
         pin: &PinnedConnection,
-        resolved: &ResolvedDashboardHistory,
+        resolved: &ResolvedQueryHistory,
     ) -> AppResult<HistoryEntry> {
         if resolved.scope != pin.scope || resolved.history.connection_id != pin.connection_id {
             return Err(dashboard_scope_changed());

@@ -227,6 +227,33 @@ pub(super) fn map_dashboard_create_error(error: AgentDashboardCreateError) -> Er
     }
 }
 
+pub(super) fn report_record(report: &AgentReportProposal) -> ReportRecord {
+    ReportRecord {
+        id: report.id,
+        connection_id: report.connection_id.into(),
+        title: report.title.clone(),
+        question: report.question.clone(),
+        conclusion: report.conclusion.clone(),
+        state: report.state.clone(),
+        source: report.source.clone(),
+        revision: report.revision,
+        evidence_count: report.evidence_count,
+        created_at: report.created_at,
+        updated_at: report.updated_at,
+    }
+}
+
+pub(super) fn map_report_propose_error(error: AgentReportProposeError) -> ErrorCode {
+    match error {
+        AgentReportProposeError::QueryRunNotFound
+        | AgentReportProposeError::QueryRunIneligible
+        | AgentReportProposeError::MixedConnections => ErrorCode::InvalidRequest,
+        AgentReportProposeError::WorkspaceRequired => ErrorCode::ScopeDenied,
+        AgentReportProposeError::InvalidPresentation(error)
+        | AgentReportProposeError::Application(error) => map_application_error(error),
+    }
+}
+
 pub(super) fn map_query_execution_error(error: &AppError) -> ErrorCode {
     match error {
         AppError::Timeout(_) => ErrorCode::Timeout,

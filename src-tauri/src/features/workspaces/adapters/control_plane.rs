@@ -6,6 +6,7 @@ mod authentication;
 mod connections;
 mod dashboards;
 mod provider_local_target;
+mod reports;
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -31,8 +32,8 @@ use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{
     domain::{parse_workspace_role, valid_device_code},
     DashboardPushResult, PendingDashboardMutation, RemoteDashboard, RemoteWorkspace,
-    WorkspaceAuthUser, WorkspaceDashboardState, WorkspaceDeviceAuthorization,
-    WorkspaceLoginPoll, WorkspaceLoginPollStatus,
+    WorkspaceAuthUser, WorkspaceDashboardState, WorkspaceDeviceAuthorization, WorkspaceLoginPoll,
+    WorkspaceLoginPollStatus,
 };
 use crate::kernel::identity::{AccountId, ConnectionId, ProviderIntegrationId, WorkspaceId};
 use crate::model::{
@@ -50,6 +51,7 @@ use connections::{
 };
 use dashboards::{delete_dashboard, remote_dashboards, upsert_dashboard};
 use provider_local_target::provider_local_target;
+pub(crate) use reports::{append_report_evidence, propose_report};
 
 const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
 const DESKTOP_CLIENT_ID: &str = "dopedb-desktop";

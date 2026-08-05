@@ -3,6 +3,7 @@
 import { ConnectionAccessPanel } from "./ConnectionAccessPanel";
 import { CloudAccountPanel } from "./CloudAccountPanel";
 import { DashboardManagementPanel } from "./DashboardManagementPanel";
+import { ReportManagementPanel } from "./ReportManagementPanel";
 import { SharedDatabasePanel } from "./SharedDatabasePanel";
 import { WorkspaceAccessPanel } from "./WorkspaceAccessPanel";
 import { localizedWorkspacePath, type WorkspaceLocale } from "../../lib/workspace-locale";
@@ -13,6 +14,7 @@ export type WorkspaceManagementArea =
   | "databases"
   | "database-access"
   | "dashboards"
+  | "reports"
   | "members";
 
 export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Array<{
@@ -27,7 +29,8 @@ export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Arra
     { id: "databases", index: "03", ...areas.databases },
     { id: "database-access", index: "04", ...areas.databaseAccess },
     { id: "dashboards", index: "05", ...areas.dashboards },
-    { id: "members", index: "06", ...areas.members },
+    { id: "reports", index: "06", ...areas.reports },
+    { id: "members", index: "07", ...areas.members },
   ];
 }
 
@@ -38,6 +41,7 @@ export function WorkspaceManagementPanel({
   gcpSetupId,
   initialIntegrationId,
   area,
+  canEditWorkspace,
   locale,
 }: {
   workspaceId: string;
@@ -46,6 +50,7 @@ export function WorkspaceManagementPanel({
   gcpSetupId: string | null;
   initialIntegrationId: string | null;
   area: WorkspaceManagementArea;
+  canEditWorkspace: boolean;
   locale: WorkspaceLocale;
 }) {
   const copy = workspaceMessages[locale];
@@ -101,6 +106,12 @@ export function WorkspaceManagementPanel({
         ) : null}
         {area === "dashboards" ? (
           <DashboardManagementPanel workspaceId={workspaceId} />
+        ) : null}
+        {area === "reports" ? (
+          <ReportManagementPanel
+            workspaceId={workspaceId}
+            canEditWorkspace={canEditWorkspace}
+          />
         ) : null}
     </section>
   );

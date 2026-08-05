@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-5 command catalog. Any addition, removal, or meaning change requires a
+/// Version-6 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -57,6 +57,10 @@ pub enum CommandName {
     QueryCancel,
     #[serde(rename = "dashboard.create")]
     DashboardCreate,
+    #[serde(rename = "report.propose")]
+    ReportPropose,
+    #[serde(rename = "report.append_evidence")]
+    ReportAppendEvidence,
     #[serde(rename = "sql.propose")]
     SqlPropose,
     #[serde(rename = "operation.show")]
@@ -72,7 +76,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 27] = [
+    pub const ALL: [Self; 29] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -96,6 +100,8 @@ impl CommandName {
         Self::QueryRun,
         Self::QueryCancel,
         Self::DashboardCreate,
+        Self::ReportPropose,
+        Self::ReportAppendEvidence,
         Self::SqlPropose,
         Self::OperationShow,
         Self::OperationWait,
@@ -127,6 +133,8 @@ impl CommandName {
             Self::QueryRun => "query.run",
             Self::QueryCancel => "query.cancel",
             Self::DashboardCreate => "dashboard.create",
+            Self::ReportPropose => "report.propose",
+            Self::ReportAppendEvidence => "report.append_evidence",
             Self::SqlPropose => "sql.propose",
             Self::OperationShow => "operation.show",
             Self::OperationWait => "operation.wait",

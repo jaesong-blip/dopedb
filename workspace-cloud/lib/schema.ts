@@ -983,6 +983,194 @@ export const workspaceDashboardRevision = workspaceControl.table(
   ],
 );
 
+// Evidence-bound reports share only an analysis definition. Claims reference
+// append-only evidence rows below; target result rows, local artifact handles,
+// credentials, and Agent transcripts have no column in this projection.
+export const workspaceReport = workspaceControl.table(
+  "workspace_report",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    connectionId: uuid("connection_id").notNull(),
+    title: text("title").notNull(),
+    question: text("question").notNull(),
+    conclusion: text("conclusion").notNull(),
+    preflightWarnings: jsonb("preflight_warnings").notNull().default([]),
+    claims: jsonb("claims").notNull(),
+    state: text("state").notNull().default("draft"),
+    source: text("source").notNull(),
+    // Membership ids remain immutable attribution values after member removal.
+    // Live ownership is revalidated inside each atomic mutation statement.
+    ownerMemberId: text("owner_member_id").notNull(),
+    updatedByMemberId: text("updated_by_member_id").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workspace_report_org_id_idx").on(table.organizationId, table.id),
+    index("workspace_report_org_updated_idx").on(table.organizationId, table.updatedAt),
+    index("workspace_report_org_connection_idx").on(table.organizationId, table.connectionId),
+    foreignKey({
+      columns: [table.organizationId, table.connectionId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "workspace_report_org_connection_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_report_title_length",
+      sql`char_length(btrim(${table.title})) BETWEEN 1 AND 120`,
+    ),
+    check(
+      "workspace_report_question_length",
+      sql`char_length(btrim(${table.question})) BETWEEN 1 AND 8000`,
+    ),
+    check(
+      "workspace_report_conclusion_length",
+      sql`char_length(btrim(${table.conclusion})) BETWEEN 1 AND 20000`,
+    ),
+    check(
+      "workspace_report_warnings_array",
+      sql`jsonb_typeof(${table.preflightWarnings}) = 'array'`,
+    ),
+    check("workspace_report_claims_array", sql`jsonb_typeof(${table.claims}) = 'array'`),
+    check(
+      "workspace_report_state",
+      sql`${table.state} IN ('draft', 'review', 'published', 'archived')`,
+    ),
+    check(
+      "workspace_report_source",
+      sql`${table.source} IN ('human', 'agent_proposal')`,
+    ),
+    check(
+      "workspace_report_revision",
+      sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`,
+    ),
+  ],
+);
+
+// Query evidence is append-only and contains no result material. The local
+// desktop proves that queryRunId belongs to a successful connection-pinned read
+// before proposing it; the hosted store binds that immutable receipt to a report.
+export const workspaceReportEvidence = workspaceControl.table(
+  "workspace_report_evidence",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    reportId: uuid("report_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    queryRunId: uuid("query_run_id").notNull(),
+    sql: text("sql").notNull(),
+    queryHash: text("query_hash").notNull(),
+    executedAt: timestamp("executed_at", { withTimezone: true }).notNull(),
+    addedAtRevision: bigint("added_at_revision", { mode: "number" }).notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdByMemberId: text("created_by_member_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_report_evidence_org_report_id_idx").on(
+      table.organizationId,
+      table.reportId,
+      table.id,
+    ),
+    uniqueIndex("workspace_report_evidence_org_report_run_idx").on(
+      table.organizationId,
+      table.reportId,
+      table.queryRunId,
+    ),
+    index("workspace_report_evidence_org_report_created_idx").on(
+      table.organizationId,
+      table.reportId,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.reportId],
+      foreignColumns: [workspaceReport.organizationId, workspaceReport.id],
+      name: "workspace_report_evidence_org_report_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.connectionId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "workspace_report_evidence_org_connection_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_report_evidence_sql_length",
+      sql`octet_length(${table.sql}) BETWEEN 1 AND 20000`,
+    ),
+    check(
+      "workspace_report_evidence_query_hash",
+      sql`${table.queryHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "workspace_report_evidence_revision",
+      sql`${table.addedAtRevision} >= 1 AND ${table.addedAtRevision} <= 9007199254740991`,
+    ),
+  ],
+);
+
+// Complete report definitions are immutable revisions. Evidence remains in its
+// own immutable relation and is referenced by the claim ids inside payload.
+export const workspaceReportRevision = workspaceControl.table(
+  "workspace_report_revision",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    reportId: uuid("report_id").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull(),
+    baseRevision: bigint("base_revision", { mode: "number" }),
+    operation: text("operation").notNull(),
+    payload: jsonb("payload").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdByMemberId: text("created_by_member_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_report_revision_org_report_revision_idx").on(
+      table.organizationId,
+      table.reportId,
+      table.revision,
+    ),
+    index("workspace_report_revision_org_report_created_idx").on(
+      table.organizationId,
+      table.reportId,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.reportId],
+      foreignColumns: [workspaceReport.organizationId, workspaceReport.id],
+      name: "workspace_report_revision_org_report_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_report_revision_number",
+      sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`,
+    ),
+    check(
+      "workspace_report_revision_base",
+      sql`${table.baseRevision} IS NULL OR (${table.baseRevision} >= 0 AND ${table.baseRevision} <= 9007199254740991)`,
+    ),
+    check(
+      "workspace_report_revision_operation",
+      sql`${table.operation} IN ('create', 'propose', 'update', 'submit_review', 'return_draft', 'publish', 'archive', 'restore', 'transfer', 'append_evidence', 'delete')`,
+    ),
+    check(
+      "workspace_report_revision_payload_hash",
+      sql`${table.payloadHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
 // Import idempotency is scoped to the tenant and binds the opaque receipt's
 // canonical resource plus the sanitized request representation. The final import
 // command writes this row only after it has created the projection, grant, immutable
