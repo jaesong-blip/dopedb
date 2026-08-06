@@ -40,14 +40,10 @@ function metric(value: unknown): string {
 }
 
 function seriesColor(index: number): string {
-  if (index === 0) return "var(--ds-accent-text)";
-  if (index === 1) {
-    return "color-mix(in srgb, var(--ds-accent-text) 70%, var(--ds-text-muted))";
-  }
-  if (index === 2) {
-    return "color-mix(in srgb, var(--ds-accent-text) 48%, var(--ds-text-muted))";
-  }
-  return "var(--ds-text-muted)";
+  if (index === 0) return "var(--ds-chart-series-1)";
+  if (index === 1) return "var(--ds-chart-series-2)";
+  if (index === 2) return "var(--ds-chart-series-3)";
+  return "var(--ds-chart-series-fallback)";
 }
 
 function chartRows(result: QueryResult) {

@@ -19,7 +19,9 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
 
 | 관심사 | 정본 |
 | --- | --- |
-| 색상·타이포그래피·간격·radius·elevation | `src/design-system/tokens.css` |
+| core chrome 색상·타이포그래피·간격·radius·elevation | `src/design-system/tokens.css` |
+| terminal·Agent syntax·chart 범위 palette | `src/design-system/scoped-palettes.css` |
+| CSS 변수를 읽을 수 없는 생성 artifact palette | `src/design-system/artifactPalettes.ts` |
 | Tailwind theme bridge와 진입점 | `src/design-system/index.css` |
 | 버튼·배지·카드·폼·toolbar·상태 | `src/design-system/system.css` |
 | 반복되는 React UI primitive | `src/design-system/components/` |
@@ -171,6 +173,24 @@ DopeDB 기존 화면은 `--ds-surface-*`, `--ds-text*`, `--ds-accent*` 별칭을
 - `--ds-danger`: 실패, 차단, destructive
 
 상태색을 navigation 선택이나 장식에 재사용하지 않는다.
+
+### 범위별 palette 소유권
+
+core chrome과 색이 본질인 출력 surface는 같은 namespace를 공유하지 않는다.
+`pnpm check:ui-palette`는 아래 소비자 경계를 검사하고 feature TSX/CSS의 raw
+color를 거부한다.
+
+| 범위 | 정본 | 허용 소비자 | fallback과 경계 |
+| --- | --- | --- | --- |
+| core chrome | `tokens.css`의 surface/foreground/selection/focus/status 역할 | 모든 제품 화면과 공용 primitive | neutral surface가 기본이며 다른 palette의 색을 navigation·button·panel에 사용하지 않음 |
+| dashboard chart | `scoped-palettes.css`의 `--ds-chart-*` | `DashboardVisualization` | 네 번째 이후 series는 muted foreground로 수렴하며 core status 색을 series에 사용하지 않음 |
+| terminal ANSI | `scoped-palettes.css`의 `--ds-terminal-*` | `resolvePtyTheme` | xterm host의 background/foreground/selection은 core 역할을 별도 주입하고 ANSI 색은 terminal 밖에서 사용하지 않음 |
+| Agent syntax | `scoped-palettes.css`의 `--ds-syntax-*` | `agentSyntax`의 완료된 code fence | grammar/highlighter가 없으면 색 없는 escaped code를 표시하며 terminal ANSI 역할을 빌리지 않음 |
+| provider/engine brand | `src/assets/db-icons/`와 `AgentProviderMark`의 로컬 정본 SVG | `EngineMark`, `AgentProviderMark` | asset이 없으면 accessible text/neutral glyph를 사용하고 brand pigment를 chrome 상태색으로 승격하지 않음 |
+| ERD export artifact | `artifactPalettes.ts`의 `ERD_EXPORT_PALETTE` | `erdExport.ts` | live CSS와 무관한 deterministic SVG/PNG/PDF 출력 전용이며 앱 surface에서는 사용하지 않음 |
+
+새 scoped palette를 만들 때는 namespace, 단일 소비자 경계, 색 없는 fallback을 이
+표에 먼저 추가한다. 단순히 새 색이 필요하다는 이유로 core token을 늘리지 않는다.
 
 ## 타이포그래피
 

@@ -1,0 +1,74 @@
+/*
+ * Non-chrome palettes with closed consumer boundaries.
+ *
+ * These roles must not be used for navigation, selection, buttons, panels, or
+ * lifecycle state. Core product chrome remains in tokens.css. Keeping the
+ * palettes in a separate file makes a colorful vendor/artifact surface unable
+ * to grow the app palette by accident.
+ */
+
+:root {
+  /* Dashboard SVG series. DashboardVisualization is the only consumer. */
+  --ds-chart-series-1: #6b9bfa;
+  --ds-chart-series-2: color-mix(
+    in srgb,
+    var(--ds-chart-series-1) 70%,
+    var(--ds-text-muted)
+  );
+  --ds-chart-series-3: color-mix(
+    in srgb,
+    var(--ds-chart-series-1) 48%,
+    var(--ds-text-muted)
+  );
+  --ds-chart-series-fallback: var(--ds-text-muted);
+
+  /* xterm ANSI theme. resolvePtyTheme is the only consumer. */
+  --ds-terminal-ansi-black: #26282c;
+  --ds-terminal-ansi-bright-black: #548af7;
+  --ds-terminal-ansi-red: #db5c5c;
+  --ds-terminal-ansi-bright-red: #ff8789;
+  --ds-terminal-ansi-green: #86efac;
+  --ds-terminal-ansi-bright-green: #bbf7d0;
+  --ds-terminal-ansi-yellow: #fbbf24;
+  --ds-terminal-ansi-bright-yellow: #fde68a;
+  --ds-terminal-ansi-blue: #60a5fa;
+  --ds-terminal-ansi-bright-blue: #93c5fd;
+  --ds-terminal-ansi-magenta: #c4b5fd;
+  --ds-terminal-ansi-bright-magenta: #ddd6fe;
+  --ds-terminal-ansi-cyan: #5eead4;
+  --ds-terminal-ansi-bright-cyan: #99f6e4;
+  --ds-terminal-ansi-white: #467ff2;
+  --ds-terminal-ansi-bright-white: #dfe1e5;
+
+  /* Completed Agent code fences. This palette never borrows xterm roles. */
+  --ds-syntax-background: #2b2d30;
+  --ds-syntax-foreground: #dfe1e5;
+  --ds-syntax-comment: #6f737a;
+  --ds-syntax-changed: #fbbf24;
+  --ds-syntax-constant: #fde68a;
+  --ds-syntax-deleted: #ff8789;
+  --ds-syntax-function: #93c5fd;
+  --ds-syntax-inserted: #86efac;
+  --ds-syntax-keyword: #60a5fa;
+  --ds-syntax-link: #60a5fa;
+  --ds-syntax-parameter: #5eead4;
+  --ds-syntax-punctuation: #9da0a8;
+  --ds-syntax-string: #bbf7d0;
+  --ds-syntax-string-expression: #99f6e4;
+  --ds-syntax-ansi-black: #26282c;
+  --ds-syntax-ansi-bright-black: #548af7;
+  --ds-syntax-ansi-red: #db5c5c;
+  --ds-syntax-ansi-bright-red: #ff8789;
+  --ds-syntax-ansi-green: #86efac;
+  --ds-syntax-ansi-bright-green: #bbf7d0;
+  --ds-syntax-ansi-yellow: #fbbf24;
+  --ds-syntax-ansi-bright-yellow: #fde68a;
+  --ds-syntax-ansi-blue: #60a5fa;
+  --ds-syntax-ansi-bright-blue: #93c5fd;
+  --ds-syntax-ansi-magenta: #c4b5fd;
+  --ds-syntax-ansi-bright-magenta: #ddd6fe;
+  --ds-syntax-ansi-cyan: #5eead4;
+  --ds-syntax-ansi-bright-cyan: #99f6e4;
+  --ds-syntax-ansi-white: #467ff2;
+  --ds-syntax-ansi-bright-white: #dfe1e5;
+}

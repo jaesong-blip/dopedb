@@ -1,6 +1,7 @@
 // Deterministic ERD export independent of the React Flow DOM. SVG is the source
 // artifact; PNG and PDF are derived locally so schema metadata never leaves the app.
 import type { CatalogSnapshot } from "../ipc/types";
+import { ERD_EXPORT_PALETTE } from "../design-system/artifactPalettes";
 import type {
   ErdCanvasLayout,
   ErdLayoutMode,
@@ -80,7 +81,7 @@ export function createErdSvg(
       const y2 = to.y + nodeHeight(target.relation.columns.length, compact) / 2;
       const offset = Math.max(40, Math.abs(x2 - x1) * 0.45);
       const path = `M ${x1} ${y1} C ${x1 + offset} ${y1}, ${x2 - offset} ${y2}, ${x2} ${y2}`;
-      return `<path d="${path}" fill="none" stroke="${edge.virtual ? "#9b8cff" : "#77808f"}" stroke-width="${edge.virtual ? 2 : 1.25}"${edge.virtual ? ' stroke-dasharray="7 5"' : ""}/>`;
+      return `<path d="${path}" fill="none" stroke="${edge.virtual ? ERD_EXPORT_PALETTE.virtualEdge : ERD_EXPORT_PALETTE.edge}" stroke-width="${edge.virtual ? 2 : 1.25}"${edge.virtual ? ' stroke-dasharray="7 5"' : ""}/>`;
     })
     .join("");
   const nodes = graph.nodes
@@ -94,13 +95,13 @@ export function createErdSvg(
             .slice(0, 11)
             .map(
               (column, index) =>
-                `<text x="${position.x + 16}" y="${position.y + 67 + index * 24}" fill="#d5d9e0" font-size="12" font-family="ui-monospace, monospace">${escapeXml(column.name)}<tspan x="${position.x + NODE_WIDTH - 16}" text-anchor="end" fill="#8f98a7">${escapeXml(column.nativeType)}</tspan></text>`,
+                `<text x="${position.x + 16}" y="${position.y + 67 + index * 24}" fill="${ERD_EXPORT_PALETTE.columnName}" font-size="12" font-family="ui-monospace, monospace">${escapeXml(column.name)}<tspan x="${position.x + NODE_WIDTH - 16}" text-anchor="end" fill="${ERD_EXPORT_PALETTE.columnType}">${escapeXml(column.nativeType)}</tspan></text>`,
             )
             .join("");
-      return `<g><rect x="${position.x}" y="${position.y}" width="${NODE_WIDTH}" height="${height}" rx="8" fill="#20242b" stroke="#414854"/><text x="${position.x + 16}" y="${position.y + 34}" fill="#f4f6f8" font-size="14" font-weight="600" font-family="ui-sans-serif, sans-serif">${label}</text>${columns}</g>`;
+      return `<g><rect x="${position.x}" y="${position.y}" width="${NODE_WIDTH}" height="${height}" rx="8" fill="${ERD_EXPORT_PALETTE.nodeSurface}" stroke="${ERD_EXPORT_PALETTE.nodeBorder}"/><text x="${position.x + 16}" y="${position.y + 34}" fill="${ERD_EXPORT_PALETTE.nodeTitle}" font-size="14" font-weight="600" font-family="ui-sans-serif, sans-serif">${label}</text>${columns}</g>`;
     })
     .join("");
-  return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="${frame.minX} ${frame.minY} ${frame.width} ${frame.height}"><rect x="${frame.minX}" y="${frame.minY}" width="${frame.width}" height="${frame.height}" fill="#15181d"/>${edges}${nodes}</svg>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}" viewBox="${frame.minX} ${frame.minY} ${frame.width} ${frame.height}"><rect x="${frame.minX}" y="${frame.minY}" width="${frame.width}" height="${frame.height}" fill="${ERD_EXPORT_PALETTE.canvas}"/>${edges}${nodes}</svg>`;
 }
 
 function downloadBlob(blob: Blob, filename: string) {
