@@ -8,6 +8,7 @@ import { errMessage } from "../../ipc/types";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import EngineMark from "../../components/EngineMark";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
+import { Button } from "../../design-system/components/Button";
 import {
   IdeTab,
   IdeTabStrip,
@@ -261,15 +262,16 @@ export default function SchemaDiff({
           ))}
         </WorkbenchSelect>
         <span className="ds-toolbar-spacer" />
-        <button
-          className="btn small icon-only"
+        <Button
           disabled={refreshing}
+          iconOnly
           onClick={() => void refreshAll()}
+          size="compact"
           title={refreshing ? t("schemaDiff.refreshing") : t("schemaDiff.refreshAll")}
           aria-label={refreshing ? t("schemaDiff.refreshing") : t("schemaDiff.refreshAll")}
         >
           <Icon name="refresh" />
-        </button>
+        </Button>
       </WorkbenchToolbar>
 
       {targets.length === 0 ? (
@@ -421,15 +423,17 @@ function SchemaDiffDocumentStrip({
         tabIndex={0}
         onActivate={() => undefined}
         trailing={
-          <button
-            type="button"
-            className="btn small icon-only icon-xs tw:mr-1"
-            onClick={onClose}
-            title={t("common.close")}
-            aria-label={t("common.close")}
-          >
-            <Icon name="close" />
-          </button>
+          <span className="tw:mr-1 tw:flex">
+            <Button
+              iconOnly
+              onClick={onClose}
+              size="xs"
+              title={t("common.close")}
+              aria-label={t("common.close")}
+            >
+              <Icon name="close" />
+            </Button>
+          </span>
         }
       >
         {engine ? <EngineMark engine={engine} /> : null}

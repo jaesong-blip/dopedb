@@ -571,9 +571,12 @@ Cancel, Close, Dismiss는 destructive가 아니다. 기본 `.btn` 또는 `.btn.g
 2. 32px: toolbar, pagination, refresh, overflow menu의 기본 icon action
 3. 36px: title toolbar의 workspace처럼 앱의 주 navigation action
 
-아이콘만 있는 `.btn`에는 반드시 `.icon-only`와 `aria-label`을 함께 둔다. `title`은
-hover tooltip으로 병행할 수 있지만 접근 가능한 이름을 대신하지 않는다. 보통
-icon action은 투명한 surface로 시작하고 hover/active에서만 중립 배경을 드러낸다.
+새로 만들거나 수정하는 아이콘 명령은 `.btn.icon-only`를 직접 조합하지 않고
+`Button iconOnly`를 사용한다. `title` 또는 `aria-label`은 접근 가능한 이름과
+canonical `Tooltip`의 hover/focus 문구를 함께 제공한다. `pnpm
+check:ui-primitives`는 raw icon-only button의 재도입과 이름 없는 `Button
+iconOnly`를 차단한다. 보통 icon action은 투명한 surface로 시작하고
+hover/active에서만 중립 배경을 드러낸다.
 삭제 icon도 idle 상태에서는 빨간 채움 상자로 만들지 않고 의미색 glyph를 사용하며,
 최종 확인 action만 `.btn.danger`의 채움 surface를 사용한다. 변경한 화면에서는
 단일 아이콘 `.btn`의 정사각형 규격과 접근 가능한 이름을 직접 확인한다.

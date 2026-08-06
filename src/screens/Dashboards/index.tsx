@@ -18,6 +18,7 @@ import DashboardVisualizationView from "../../components/DashboardVisualization"
 import { Icon } from "../../components/Icon";
 import Skeleton from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
+import { Button } from "../../design-system/components/Button";
 import { StatusBadge, type StatusTone } from "../../design-system/components/Status";
 import {
   MetadataDot,
@@ -250,16 +251,16 @@ function DashboardTile({
           )}
         </div>
         <div className="ds-control-row tw:flex tw:shrink-0 tw:gap-1">
-          <button
-            type="button"
-            className="btn small icon-only"
+          <Button
             disabled={running || deleting || dashboard.state === "archived"}
+            iconOnly
             onClick={onRefresh}
+            size="compact"
             title={t(selected ? "dashboard.refresh" : "dashboard.clickToRun")}
             aria-label={t(selected ? "dashboard.refresh" : "dashboard.clickToRun")}
           >
             <Icon name={selected ? "refresh" : "play"} />
-          </button>
+          </Button>
           <ConfirmButton
             label={t("common.delete")}
             disabled={running || deleting}

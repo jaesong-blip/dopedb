@@ -33,6 +33,7 @@ import {
   type CatalogRelationV2,
 } from "../ipc/types";
 import { Icon } from "./Icon";
+import { Button } from "../design-system/components/Button";
 import { Field } from "../design-system/components/FormControls";
 import { ProgressBar } from "../design-system/components/Progress";
 import { StatusDot, type StatusTone } from "../design-system/components/Status";
@@ -387,13 +388,15 @@ export default function JobPanel({
           </span>
         }
         actions={
-          <button
-            className="btn small icon-only icon-xs"
+          <Button
+            iconOnly
             onClick={onClose}
+            size="xs"
+            title={t("common.close")}
             aria-label={t("common.close")}
           >
             <Icon name="close" />
-          </button>
+          </Button>
         }
       />
 
@@ -723,14 +726,16 @@ export default function JobPanel({
         <InspectorHeader
           title={t("jobs.history")}
           actions={
-            <button
-              className="btn small icon-only"
+            <Button
               disabled={jobs.isFetching}
+              iconOnly
               onClick={() => void jobs.refetch()}
+              size="compact"
+              title={t("common.refresh")}
               aria-label={t("common.refresh")}
             >
               <Icon name="refresh" />
-            </button>
+            </Button>
           }
         />
         {jobs.isPending ? (
@@ -843,13 +848,15 @@ export default function JobPanel({
           <InspectorHeader
             title={t("jobs.details")}
             actions={
-              <button
-                className="btn small icon-only icon-xs"
+              <Button
+                iconOnly
                 onClick={() => setDetail(null)}
+                size="xs"
+                title={t("common.close")}
                 aria-label={t("common.close")}
               >
                 <Icon name="close" />
-              </button>
+              </Button>
             }
           />
           <JobFacts>

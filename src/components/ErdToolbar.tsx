@@ -7,6 +7,7 @@ import {
 } from "../features/erd/domain";
 import { Icon } from "./Icon";
 import ToolbarMenu, { ToolbarMenuItem } from "./ToolbarMenu";
+import { Button } from "../design-system/components/Button";
 import { WorkbenchToolbar } from "../design-system/components/Workbench";
 import { useI18n } from "../lib/i18n";
 
@@ -85,31 +86,31 @@ export default function ErdToolbar({
           <option value="logical">{t("schema.erdLogical")}</option>
           <option value="uml">{t("schema.erdUml")}</option>
         </select>
-        <button
+        <Button
           data-erd-neighborhood-toggle
-          className="btn small icon-only"
-          type="button"
           disabled={busy}
+          iconOnly
           onClick={onAutoLayout}
+          size="compact"
           title={t("schema.erdAutoLayout")}
           aria-label={t("schema.erdAutoLayout")}
         >
           <Icon name="refresh" />
-        </button>
-        <button
-          className="btn small icon-only"
-          type="button"
+        </Button>
+        <Button
+          iconOnly
           onClick={onToggleCompact}
+          size="compact"
           title={t("schema.erdCompact")}
           aria-label={t("schema.erdCompact")}
           aria-pressed={compact}
         >
           <Icon name="columns" />
-        </button>
-        <button
-          className="btn small icon-only"
-          type="button"
+        </Button>
+        <Button
+          iconOnly
           onClick={onToggleNeighborhood}
+          size="compact"
           title={t(
             neighborhood ? "schema.erdShowAll" : "schema.erdNeighborhood",
           )}
@@ -119,16 +120,16 @@ export default function ErdToolbar({
           aria-pressed={neighborhood}
         >
           <Icon name="target" />
-        </button>
-        <button
-          className="btn small icon-only"
-          type="button"
+        </Button>
+        <Button
+          iconOnly
           onClick={onAddRelation}
+          size="compact"
           title={t("schema.erdAddVirtual")}
           aria-label={t("schema.erdAddVirtual")}
         >
           <Icon name="plus" />
-        </button>
+        </Button>
       </div>
       <div className="tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2">
         {dirty && (

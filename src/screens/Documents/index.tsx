@@ -15,6 +15,7 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import DataGrid from "../../components/DataGrid";
 import { Icon } from "../../components/Icon";
 import ResultToolbar from "../../components/ResultToolbar";
+import { Button } from "../../design-system/components/Button";
 import {
   WorkbenchDivider,
   WorkbenchContainedBody,
@@ -208,24 +209,29 @@ export default function Documents({
     <WorkbenchPane>
       <WorkbenchToolbar label={t("documents.title")} compact>
         <div className="ds-control-row scrollbar-sleek tw:flex tw:min-h-0 tw:min-w-0 tw:flex-[0_1_auto] tw:flex-nowrap tw:items-center tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden">
-          <button
-            className="btn small ghost icon-only tw:text-success"
+          <Button
             disabled={!collection || running}
+            iconOnly
             onClick={() => void execute()}
+            size="compact"
+            tone="success"
             title={running ? t("documents.running") : t("documents.run")}
             aria-label={running ? t("documents.running") : t("documents.run")}
+            variant="ghost"
           >
             <Icon name={running ? "refresh" : "play"} />
-          </button>
-          <button
-            className="btn small ghost icon-only"
+          </Button>
+          <Button
             disabled={!running}
+            iconOnly
             onClick={cancel}
+            size="compact"
             title={t("documents.cancel")}
             aria-label={t("documents.cancel")}
+            variant="ghost"
           >
             <Icon name="stop" />
-          </button>
+          </Button>
           <WorkbenchDivider />
           <WorkbenchSelect
             label={t("documents.operation")}

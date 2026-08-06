@@ -215,13 +215,7 @@ export default function ConnectionNode(props: Props) {
               disabled={props.schemaScopeSaving}
               triggerVariant="treeBadge"
               menuSize="scope"
-              trigger={
-                <>
-                  {availableSchemas.length === 1
-                    ? "1"
-                    : `${selectedSchemaCount} of ${availableSchemas.length}`}
-                </>
-              }
+              trigger={`${selectedSchemaCount} of ${availableSchemas.length}`}
             >
               <div className="tw:grid tw:w-full">
                 <div className="tw:flex tw:min-h-control-md tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-2 tw:py-1">

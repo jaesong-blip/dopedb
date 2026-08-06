@@ -15,6 +15,7 @@ import type { ConnectionProfile } from "../../features/connections/domain";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import Skeleton from "../../components/Skeleton";
+import { Button } from "../../design-system/components/Button";
 import {
   WorkbenchEmptyState,
   WorkbenchPane,
@@ -251,11 +252,10 @@ export default function SchemaExplorer({
             placeholder={t("schema.filterPlaceholder")}
             type="search"
           />
-          <button
-            className="btn small icon-only"
-            type="button"
+          <Button
             aria-expanded={inspectorOpen}
             aria-controls="schema-inspector"
+            iconOnly
             title={t(
               inspectorOpen ? "schema.hideDetails" : "schema.showDetails",
             )}
@@ -263,9 +263,10 @@ export default function SchemaExplorer({
               inspectorOpen ? "schema.hideDetails" : "schema.showDetails",
             )}
             onClick={() => setInspectorOpen((open) => !open)}
+            size="compact"
           >
             <Icon name="panelRight" />
-          </button>
+          </Button>
         </div>
       </div>
 

@@ -42,12 +42,20 @@
   row-number/frozen, resize, selection/focus 계약을 사용한다.
 - icon-only 공용 `Button`은 native title 대신 hover/focus parity와 Escape dismiss를
   가진 canonical `Tooltip`을 사용한다.
+- ERD, Documents, Schema, Dashboard, Job, Schema Diff에 남아 있던 raw
+  `.btn.icon-only` 명령 13개를 공용 `Button`으로 이관하고
+  `pnpm check:ui-primitives`로 재도입을 차단한다.
 - `pnpm check:ui-palette`가 scoped palette 소비자 이탈과 feature TSX/CSS의 raw
   color 재도입을 build에서 차단한다.
+- Explorer의 단일 namespace badge가 `1`로 축약되어 선택/전체 의미를 잃던
+  gap은 같은 `1393×862` fixture의 before/after와 2026.1 reference를
+  [`audits/ui-polish-2026-08-06`](../audits/ui-polish-2026-08-06/README.md)에
+  기록하고 `1 of 1`로 교정했다.
 
 ## 아직 parity 완료 증거가 아닌 항목
 
-- DopeDB 2026.1과 DopeDB의 같은 state·viewport before/reference/after capture
+- Explorer scope badge 외 shell·data editor·Agent 등 기준 시나리오의 DopeDB
+  2026.1/DopeDB 같은 state·viewport before/reference/after capture
 - 30개 이상 column, 긴 NULL/text/numeric data에서 line 없는 grid의 실제 비교
 - compact `560×700`과 macOS·Windows packaged App의 tooltip/focus/text rendering
 - popup, tab, resize, loading 전환의 60fps continuity와 selection/scroll 보존 기록
