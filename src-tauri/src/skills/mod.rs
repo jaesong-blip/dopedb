@@ -208,6 +208,19 @@ pub(crate) fn assert_skill_installation_contract() {
                 == Some(installed.status.skill.package_digest.as_str())
     }));
 
+    let restarted = SkillManager::from_home(home.path().to_path_buf())
+        .expect("restart Skill manager from the clean profile");
+    let restarted_status = restarted
+        .status(SkillTargetSelection::All)
+        .expect("inspect both targets after restart");
+    assert_eq!(restarted_status.skill, installed.status.skill);
+    assert!(restarted_status.targets.iter().all(|target| {
+        target.state == SkillInstallState::ManagedCurrent
+            && target.installed_revision == Some(restarted_status.skill.release_revision)
+            && target.installed_package_digest.as_deref()
+                == Some(restarted_status.skill.package_digest.as_str())
+    }));
+
     let codex_path = target_path(home.path(), SkillTarget::Codex);
     let older = manager
         .inner
