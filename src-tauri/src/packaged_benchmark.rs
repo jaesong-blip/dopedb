@@ -13,7 +13,7 @@ use std::collections::HashMap;
 #[cfg(feature = "packaged-benchmark")]
 use std::fs::OpenOptions;
 #[cfg(feature = "packaged-benchmark")]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 #[cfg(feature = "packaged-benchmark")]
 use uuid::Uuid;
 
@@ -113,7 +113,7 @@ struct PackagedBenchmarkReport<'a> {
 }
 
 #[tauri::command]
-pub(crate) fn packaged_benchmark_config(
+pub(crate) async fn packaged_benchmark_config(
     app: tauri::AppHandle,
 ) -> AppResult<PackagedBenchmarkConfig> {
     #[cfg(not(feature = "packaged-benchmark"))]
@@ -133,9 +133,10 @@ pub(crate) fn packaged_benchmark_config(
                 "packaged benchmark scenario is unsupported".into(),
             ));
         };
-        if kind == "workload" {
-            focus_benchmark_window(&app)?;
-        }
+        // Every measured process must own a visible paint clock. In particular,
+        // repeated cold/warm startup launches can otherwise be left inactive by
+        // macOS before the renderer records its first-shell frame.
+        focus_benchmark_window(&app).await?;
         Ok(PackagedBenchmarkConfig { scenario, kind })
     }
 }
@@ -177,7 +178,7 @@ pub(crate) async fn run_packaged_benchmark_backend(
         }
         let needs_focus_recovery = action == "query-page-store-1m";
         if needs_focus_recovery {
-            focus_benchmark_window(&app)?;
+            focus_benchmark_window(&app).await?;
         }
         benchmark_progress(&action, "start")?;
         let receipt = if matches!(
@@ -201,7 +202,7 @@ pub(crate) async fn run_packaged_benchmark_backend(
         };
         benchmark_progress(&action, "complete")?;
         if needs_focus_recovery {
-            focus_benchmark_window(&app)?;
+            focus_benchmark_window(&app).await?;
         }
         Ok(receipt)
     }
@@ -976,20 +977,37 @@ fn benchmark_progress(action: &str, status: &str) -> AppResult<()> {
 }
 
 #[cfg(feature = "packaged-benchmark")]
-fn focus_benchmark_window(app: &tauri::AppHandle) -> AppResult<()> {
+async fn focus_benchmark_window(app: &tauri::AppHandle) -> AppResult<()> {
     #[cfg(target_os = "macos")]
-    app.run_on_main_thread(|| {
-        let Some(main_thread) = objc2::MainThreadMarker::new() else {
-            return;
-        };
-        let application = objc2_app_kit::NSApplication::sharedApplication(main_thread);
-        // Directly launching the bundle executable repeatedly can leave the next
-        // process visible but inactive after its predecessor exits. WKWebView then
-        // suspends requestAnimationFrame and produces a false paint timeout.
-        #[allow(deprecated)]
-        application.activateIgnoringOtherApps(true);
-    })
-    .map_err(|_| AppError::Config("packaged benchmark app could not be activated".into()))?;
+    {
+        let (activation_sent, activation_received) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let activated = if let Some(main_thread) = objc2::MainThreadMarker::new() {
+                let application =
+                    objc2_app_kit::NSApplication::sharedApplication(main_thread);
+                // Directly launching the bundle executable repeatedly can leave the
+                // next process visible but inactive after its predecessor exits.
+                // WKWebView then suspends requestAnimationFrame and produces a false
+                // paint timeout.
+                #[allow(deprecated)]
+                application.activateIgnoringOtherApps(true);
+                true
+            } else {
+                false
+            };
+            let _ = activation_sent.send(activated);
+        })
+        .map_err(|_| AppError::Config("packaged benchmark app could not be activated".into()))?;
+        let activated = tokio::time::timeout(Duration::from_secs(5), activation_received)
+            .await
+            .map_err(|_| AppError::Config("packaged benchmark activation timed out".into()))?
+            .map_err(|_| AppError::Config("packaged benchmark activation stopped".into()))?;
+        if !activated {
+            return Err(AppError::Config(
+                "packaged benchmark activation left the main thread".into(),
+            ));
+        }
+    }
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| AppError::Config("packaged benchmark window is unavailable".into()))?;
