@@ -977,6 +977,19 @@ fn benchmark_progress(action: &str, status: &str) -> AppResult<()> {
 
 #[cfg(feature = "packaged-benchmark")]
 fn focus_benchmark_window(app: &tauri::AppHandle) -> AppResult<()> {
+    #[cfg(target_os = "macos")]
+    app.run_on_main_thread(|| {
+        let Some(main_thread) = objc2::MainThreadMarker::new() else {
+            return;
+        };
+        let application = objc2_app_kit::NSApplication::sharedApplication(main_thread);
+        // Directly launching the bundle executable repeatedly can leave the next
+        // process visible but inactive after its predecessor exits. WKWebView then
+        // suspends requestAnimationFrame and produces a false paint timeout.
+        #[allow(deprecated)]
+        application.activateIgnoringOtherApps(true);
+    })
+    .map_err(|_| AppError::Config("packaged benchmark app could not be activated".into()))?;
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| AppError::Config("packaged benchmark window is unavailable".into()))?;

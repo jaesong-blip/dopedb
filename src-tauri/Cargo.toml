@@ -19,7 +19,7 @@ path = "src/main.rs"
 default = []
 # Release-profile application used only by scripts/benchmark-packaged-release.mjs.
 # Ordinary production artifacts never compile the isolated fixture/report paths.
-packaged-benchmark = []
+packaged-benchmark = ["dep:objc2", "dep:objc2-app-kit"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -87,6 +87,10 @@ tauri-plugin-updater = "2.10.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6.4", optional = true }
+objc2-app-kit = { version = "0.3.2", features = ["NSApplication"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [

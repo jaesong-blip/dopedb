@@ -44,6 +44,7 @@ import {
   measurePackagedIdle,
   packagedRendererMetrics,
   currentPackagedAction,
+  waitForPackagedPaint,
   type PackagedActionEvidence,
   type PackagedBenchmarkActionName,
 } from "./packagedMetrics";
@@ -137,23 +138,6 @@ async function finishBenchmark() {
   await completePackagedBenchmark(packagedRendererMetrics());
 }
 
-function nextPaint() {
-  return new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const timeout = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error("packaged benchmark paint checkpoint timed out"));
-    }, 10_000);
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      resolve();
-    }));
-  });
-}
-
 async function samples(
   name: PackagedBenchmarkActionName,
   count: number,
@@ -185,7 +169,7 @@ function SqlEditorScenario() {
     for (const [label, size] of fixtures) {
       const source = sqlFixture(size);
       replaceDocument(view, source);
-      await nextPaint();
+      await waitForPackagedPaint();
 
       await samples(`sql-editor-${label}-type`, ACTION_SAMPLES, (index) => {
         const position = Math.max(0, view.state.doc.length - index);
@@ -199,7 +183,7 @@ function SqlEditorScenario() {
       });
       await samples(`sql-editor-${label}-format`, 2, async () => {
         replaceDocument(view, source);
-        await nextPaint();
+        await waitForPackagedPaint();
         const formatted = await formatSqlDocument(
           view.state.doc.toString(),
           "sqlite",
@@ -253,14 +237,14 @@ function ExplorerSearchScenario() {
   useScenarioRunner(scrollElement !== null, async () => {
     for (let index = 0; index < ACTION_SAMPLES; index += 1) {
       setVisibleCount(0);
-      await nextPaint();
+      await waitForPackagedPaint();
       await measurePackagedAction("explorer-first-expand", () => {
         setVisibleCount(2_500);
       });
     }
     for (let index = 0; index < ACTION_SAMPLES; index += 1) {
       setVisibleCount(2_500);
-      await nextPaint();
+      await waitForPackagedPaint();
       await measurePackagedAction("explorer-secondary-expand", () => {
         setVisibleCount(5_000);
       });
@@ -431,7 +415,7 @@ function AgentTranscriptScenario() {
           merged.transcriptBytes + merged.recentBytes + receipt.retainedBytes,
       };
     });
-    await nextPaint();
+    await waitForPackagedPaint();
     await samples("agent-manual-scroll", ACTION_SAMPLES, (index) => {
       const transcript = transcriptRef.current;
       if (!transcript) throw new Error("Agent transcript unavailable");
@@ -575,7 +559,7 @@ function InteractionSurfacesScenario() {
     await waitForSelector("[data-erd-neighborhood-toggle]");
     const toggle = document.querySelector<HTMLButtonElement>("[data-erd-neighborhood-toggle]");
     if (toggle?.getAttribute("aria-pressed") === "true") toggle.click();
-    await nextPaint();
+    await waitForPackagedPaint();
     await waitForSelector(".react-flow__node");
     await samples("erd-drag-1k", ACTION_SAMPLES, (index) => {
       const node = document.querySelector<HTMLElement>(".react-flow__node");
@@ -697,7 +681,7 @@ function mouseDrag(
 async function waitForSelector(selector: string) {
   for (let frame = 0; frame < 120; frame += 1) {
     if (document.querySelector(selector)) return;
-    await nextPaint();
+    await waitForPackagedPaint();
   }
   throw new Error("benchmark surface did not become ready");
 }

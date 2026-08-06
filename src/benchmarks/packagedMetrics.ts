@@ -2,6 +2,10 @@ import type { ProfilerOnRenderCallback } from "react";
 
 const enabled = import.meta.env.VITE_DOPEDB_PACKAGED_BENCHMARK === "1";
 const startedAt = performance.now();
+// This guard detects a renderer that has stopped painting; it is not an action
+// budget. The largest paint-bound action has a 15 second performance budget, so
+// the guard must allow that measurement to finish and be judged by the budget.
+const PAINT_CHECKPOINT_TIMEOUT_MS = 30_000;
 
 let reactCommitCount = 0;
 let reactCommitDurationMs = 0;
@@ -150,14 +154,14 @@ function counters(): CounterSnapshot {
   };
 }
 
-function nextPaint(): Promise<void> {
+export function waitForPackagedPaint(): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const timeout = window.setTimeout(() => {
       if (settled) return;
       settled = true;
       reject(new Error("packaged benchmark paint checkpoint timed out"));
-    }, 10_000);
+    }, PAINT_CHECKPOINT_TIMEOUT_MS);
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       if (settled) return;
       settled = true;
@@ -180,7 +184,7 @@ export async function measurePackagedAction(
   const started = performance.now();
   const evidence = (await action()) ?? {};
   const ipcBatchArrivedAt = performance.now();
-  await nextPaint();
+  await waitForPackagedPaint();
   const paintedAt = performance.now();
   const elapsed = paintedAt - started;
   const after = counters();
