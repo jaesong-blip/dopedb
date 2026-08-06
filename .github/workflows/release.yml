@@ -147,46 +147,6 @@ jobs:
           uploadUpdaterSignatures: true
           args: ${{ matrix.args }}
 
-      - name: Upload stable direct-download asset
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-
-          tag="${GITHUB_REF_NAME}"
-
-          mkdir -p release-alias
-          case "$TARGET" in
-            x86_64-pc-windows-msvc)
-              source_name="DopeDB_${GITHUB_REF_NAME#app-v}_x64-setup.exe"
-              alias="DopeDB-windows-x64-setup.exe"
-              ;;
-            aarch64-apple-darwin)
-              source_name="DopeDB_${GITHUB_REF_NAME#app-v}_aarch64.dmg"
-              alias="DopeDB-macos-arm64.dmg"
-              ;;
-            x86_64-apple-darwin)
-              source_name="DopeDB_${GITHUB_REF_NAME#app-v}_x64.dmg"
-              alias="DopeDB-macos-x64.dmg"
-              ;;
-            *)
-              echo "No stable alias configured for $TARGET"
-              exit 0
-              ;;
-          esac
-
-          gh release download "$tag" --pattern "$source_name" --dir release-alias
-          matches=(release-alias/"$source_name")
-          if [[ "${#matches[@]}" -ne 1 || ! -f "${matches[0]}" ]]; then
-            echo "Expected exactly one current-version asset $source_name for $TARGET" >&2
-            exit 1
-          fi
-
-          cp "${matches[0]}" "release-alias/$alias"
-          gh release upload "$tag" "release-alias/$alias" --clobber
-
   finalize-release:
     needs: publish-tauri
     runs-on: ubuntu-latest
@@ -202,6 +162,56 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
+
+      - name: Upload stable direct-download aliases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          tag="$GITHUB_REF_NAME"
+          version="${GITHUB_REF_NAME#app-v}"
+          mkdir -p release-alias/source
+
+          download_asset() {
+            local source_name="$1"
+            local destination="release-alias/source/$source_name"
+
+            for attempt in 1 2 3 4 5 6; do
+              rm -f "$destination"
+              if gh release download "$tag" \
+                --repo "$GITHUB_REPOSITORY" \
+                --pattern "$source_name" \
+                --dir release-alias/source && [[ -f "$destination" ]]; then
+                return 0
+              fi
+
+              if [[ "$attempt" -eq 6 ]]; then
+                echo "Release asset did not become available: $source_name" >&2
+                return 1
+              fi
+              sleep $((attempt * 2))
+            done
+          }
+
+          download_asset "DopeDB_${version}_aarch64.dmg"
+          download_asset "DopeDB_${version}_x64.dmg"
+          download_asset "DopeDB_${version}_x64-setup.exe"
+
+          cp "release-alias/source/DopeDB_${version}_aarch64.dmg" \
+            release-alias/DopeDB-macos-arm64.dmg
+          cp "release-alias/source/DopeDB_${version}_x64.dmg" \
+            release-alias/DopeDB-macos-x64.dmg
+          cp "release-alias/source/DopeDB_${version}_x64-setup.exe" \
+            release-alias/DopeDB-windows-x64-setup.exe
+
+          gh release upload "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            release-alias/DopeDB-macos-arm64.dmg \
+            release-alias/DopeDB-macos-x64.dmg \
+            release-alias/DopeDB-windows-x64-setup.exe \
+            --clobber
 
       - name: Install isolated Rust updater verifier
         uses: dtolnay/rust-toolchain@stable

@@ -1,5 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
-import { extname, join, relative } from "node:path";
+import { extname, join, relative, sep } from "node:path";
 
 const root = process.cwd();
 const sourceRoot = join(root, "src");
@@ -23,7 +23,7 @@ const files = (await sourceFiles(sourceRoot)).filter((file) =>
 const documents = new Map(
   await Promise.all(
     files.map(async (file) => [
-      relative(root, file),
+      relative(root, file).split(sep).join("/"),
       await readFile(file, "utf8"),
     ]),
   ),
