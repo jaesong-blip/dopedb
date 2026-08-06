@@ -6,6 +6,8 @@ import type {
   Ref,
 } from "react";
 
+import { Tooltip } from "./Tooltip";
+
 export function IdeTitleToolbar({
   macosInset,
   context,
@@ -21,7 +23,7 @@ export function IdeTitleToolbar({
 }) {
   return (
     <header
-      className="tw:relative tw:col-[1/-1] tw:row-start-1 tw:z-[var(--ds-z-sticky)] tw:flex tw:h-title-toolbar tw:min-w-0 tw:select-none tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:bg-[image:var(--ds-title-toolbar-background)] tw:px-2 tw:text-muted-foreground"
+      className="tw:relative tw:col-[1/-1] tw:row-start-1 tw:z-[var(--ds-z-sticky)] tw:flex tw:h-title-toolbar tw:min-w-0 tw:select-none tw:items-center tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-card tw:px-2 tw:text-muted-foreground"
       data-tauri-drag-region="deep"
     >
       {macosInset ? (
@@ -46,23 +48,37 @@ export function IdeToolbarLauncher({
   active,
   buttonRef,
   children,
+  title,
+  "aria-label": ariaLabel,
   ...buttonProps
 }: {
   active?: boolean;
   buttonRef?: Ref<HTMLButtonElement>;
   children: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">) {
-  return (
+  const tooltipLabel =
+    typeof title === "string" && title.trim().length > 0
+      ? title
+      : typeof ariaLabel === "string" && ariaLabel.trim().length > 0
+        ? ariaLabel
+        : null;
+  const button = (
     <button
       ref={buttonRef}
       type="button"
       data-active={active || undefined}
       aria-pressed={active === undefined ? undefined : active}
+      aria-label={ariaLabel ?? tooltipLabel ?? undefined}
       className="tw:grid tw:size-control-md tw:shrink-0 tw:cursor-pointer tw:place-items-center tw:rounded-sm tw:border-0 tw:bg-transparent tw:text-base tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground tw:data-[active=true]:bg-muted tw:data-[active=true]:text-foreground tw:disabled:cursor-not-allowed tw:disabled:opacity-40 tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-inset tw:focus-visible:ring-ring"
       {...buttonProps}
     >
       {children}
     </button>
+  );
+  return tooltipLabel ? (
+    <Tooltip label={tooltipLabel}>{button}</Tooltip>
+  ) : (
+    button
   );
 }
 

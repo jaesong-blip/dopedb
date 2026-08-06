@@ -27,7 +27,7 @@ export function placeFloatingMenu(
   menu: Pick<FloatingRect, "width" | "height">,
   viewport: FloatingViewport,
   options: {
-    align?: "start" | "end";
+    align?: "start" | "center" | "end";
     gap?: number;
     margin?: number;
   } = {},
@@ -48,7 +48,11 @@ export function placeFloatingMenu(
     placement === "top" ? availableAbove : availableBelow;
   const visibleHeight = Math.min(menu.height, maxHeight);
   const desiredLeft =
-    align === "start" ? trigger.left : trigger.right - menu.width;
+    align === "start"
+      ? trigger.left
+      : align === "center"
+        ? trigger.left + (trigger.width - menu.width) / 2
+        : trigger.right - menu.width;
   const maxLeft = Math.max(margin, viewport.width - menu.width - margin);
   const desiredTop =
     placement === "top"

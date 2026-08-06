@@ -295,7 +295,7 @@ function DataGridTable({
     >
       <table
         ref={tableRef}
-        className="tw:table-fixed tw:border-separate tw:border-spacing-0 tw:bg-background tw:font-mono tw:text-ui tw:[&_td]:box-border tw:[&_td]:max-w-none tw:[&_td]:overflow-hidden tw:[&_td]:border-r tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:leading-ui tw:[&_td]:text-left tw:[&_td]:text-ellipsis tw:[&_td]:whitespace-nowrap tw:[&_th]:box-border tw:[&_th]:max-w-none tw:[&_th]:overflow-hidden tw:[&_th]:border-r tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-px tw:[&_th]:leading-ui tw:[&_th]:text-left tw:[&_th]:text-ellipsis tw:[&_th]:whitespace-nowrap tw:[&_thead_th]:sticky tw:[&_thead_th]:top-0 tw:[&_thead_th]:z-[var(--ds-z-raised)] tw:[&_thead_th]:h-control-sm tw:[&_thead_th]:bg-card"
+        className="tw:table-fixed tw:border-separate tw:border-spacing-0 tw:bg-background tw:font-mono tw:text-ui tw:[&_td]:box-border tw:[&_td]:max-w-none tw:[&_td]:overflow-hidden tw:[&_td]:border-b tw:[&_td]:border-border-subtle tw:[&_td]:px-2 tw:[&_td]:py-1 tw:[&_td]:leading-ui tw:[&_td]:text-left tw:[&_td]:text-ellipsis tw:[&_td]:whitespace-nowrap tw:[&_th]:box-border tw:[&_th]:max-w-none tw:[&_th]:overflow-hidden tw:[&_th]:border-r tw:[&_th]:border-b tw:[&_th]:border-border-subtle tw:[&_th]:px-2 tw:[&_th]:py-px tw:[&_th]:leading-ui tw:[&_th]:text-left tw:[&_th]:text-ellipsis tw:[&_th]:whitespace-nowrap tw:[&_thead_th]:sticky tw:[&_thead_th]:top-0 tw:[&_thead_th]:z-[var(--ds-z-raised)] tw:[&_thead_th]:h-control-sm tw:[&_thead_th]:bg-card"
         style={{ tableLayout: "fixed", width: totalW }}
       >
         <colgroup>
@@ -395,7 +395,7 @@ function DataGridTable({
             >
               <td
                 data-interactive={onSelectRow ? "true" : undefined}
-                className="tw:sticky tw:left-0 tw:z-[var(--ds-z-base)] tw:bg-card tw:text-right tw:text-muted-foreground tw:data-[interactive=true]:cursor-pointer"
+                className="tw:sticky tw:left-0 tw:z-[var(--ds-z-base)] tw:border-r tw:bg-card tw:text-right tw:text-muted-foreground tw:data-[interactive=true]:cursor-pointer"
                 role={onSelectRow ? "button" : undefined}
                 tabIndex={onSelectRow ? 0 : undefined}
                 onClick={onSelectRow ? () => onSelectRow(i) : undefined}

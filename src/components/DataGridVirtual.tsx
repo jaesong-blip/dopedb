@@ -298,7 +298,7 @@ export default function DataGridVirtual(props: Props) {
         </div>
       ) : null}
       <div
-        className="tw:relative tw:min-w-full tw:font-mono tw:[&_[data-grid-box]]:absolute tw:[&_[data-grid-box]]:box-border tw:[&_[data-grid-box]]:h-control-sm tw:[&_[data-grid-box]]:overflow-hidden tw:[&_[data-grid-box]]:border-r tw:[&_[data-grid-box]]:border-b tw:[&_[data-grid-box]]:border-border-subtle tw:[&_[data-grid-box]]:bg-background tw:[&_[data-grid-box]]:px-2 tw:[&_[data-grid-box]]:py-1 tw:[&_[data-grid-box]]:leading-ui tw:[&_[data-grid-box]]:text-ellipsis tw:[&_[data-grid-box]]:whitespace-nowrap"
+        className="tw:relative tw:min-w-full tw:font-mono tw:[&_[data-grid-box]]:absolute tw:[&_[data-grid-box]]:box-border tw:[&_[data-grid-box]]:h-control-sm tw:[&_[data-grid-box]]:overflow-hidden tw:[&_[data-grid-box]]:border-b tw:[&_[data-grid-box]]:border-border-subtle tw:[&_[data-grid-box]]:bg-background tw:[&_[data-grid-box]]:px-2 tw:[&_[data-grid-box]]:py-1 tw:[&_[data-grid-box]]:leading-ui tw:[&_[data-grid-box]]:text-ellipsis tw:[&_[data-grid-box]]:whitespace-nowrap"
         style={{
           width: totalWidth,
           height: DATA_GRID_HEADER_HEIGHT + rowCount * DATA_GRID_ROW_HEIGHT,
@@ -311,7 +311,7 @@ export default function DataGridVirtual(props: Props) {
         >
           <div
             data-grid-box
-            className="tw:top-0 tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:!bg-card tw:text-right tw:text-muted-foreground"
+            className="tw:top-0 tw:left-0 tw:z-[calc(var(--ds-z-raised)+1)] tw:border-r tw:!bg-card tw:text-right tw:text-muted-foreground"
             role="columnheader"
             aria-colindex={1}
             style={{ width: DATA_GRID_ROW_NUMBER_WIDTH }}
@@ -343,7 +343,7 @@ export default function DataGridVirtual(props: Props) {
                 key={name}
                 data-grid-box
                 data-sortable={props.onSort ? "true" : undefined}
-                className="tw:top-0 tw:!bg-card tw:font-semibold tw:data-[sortable=true]:cursor-pointer tw:data-[sortable=true]:hover:text-primary"
+                className="tw:top-0 tw:border-r tw:!bg-card tw:font-semibold tw:data-[sortable=true]:cursor-pointer tw:data-[sortable=true]:hover:text-primary"
                 role="columnheader"
                 aria-colindex={index + 2}
                 style={{ left: offsets[index], width: columnWidths[index] }}
@@ -417,7 +417,7 @@ export default function DataGridVirtual(props: Props) {
             <div
               data-grid-box
               data-interactive={props.onSelectRow ? "true" : undefined}
-              className="tw:left-0 tw:z-[var(--ds-z-base)] tw:!bg-card tw:text-right tw:text-muted-foreground tw:group-data-[selected=true]:!bg-selection tw:data-[interactive=true]:cursor-pointer"
+              className="tw:left-0 tw:z-[var(--ds-z-base)] tw:border-r tw:!bg-card tw:text-right tw:text-muted-foreground tw:group-data-[selected=true]:!bg-selection tw:data-[interactive=true]:cursor-pointer"
               role="rowheader"
               aria-colindex={1}
               style={{ width: DATA_GRID_ROW_NUMBER_WIDTH }}

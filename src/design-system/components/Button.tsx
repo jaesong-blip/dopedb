@@ -3,6 +3,8 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { forwardRef } from "react";
 
+import { Tooltip } from "./Tooltip";
+
 export type ButtonProps = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   "className" | "type"
@@ -29,14 +31,24 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     variant = "default",
     children,
     type = "button",
+    title,
+    "aria-label": ariaLabel,
     ...props
   },
   ref,
 ) {
-  return (
+  const tooltipLabel =
+    typeof title === "string" && title.trim().length > 0
+      ? title
+      : typeof ariaLabel === "string" && ariaLabel.trim().length > 0
+        ? ariaLabel
+        : null;
+  const button = (
     <button
       ref={ref}
       type={type}
+      title={iconOnly ? undefined : title}
+      aria-label={ariaLabel ?? (iconOnly ? tooltipLabel ?? undefined : undefined)}
       data-active={active}
       data-collapse={collapse}
       data-icon-only={iconOnly}
@@ -49,5 +61,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     >
       {children}
     </button>
+  );
+  return iconOnly && tooltipLabel ? (
+    <Tooltip label={tooltipLabel}>{button}</Tooltip>
+  ) : (
+    button
   );
 });

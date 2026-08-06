@@ -155,8 +155,9 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
 `--ds-background`는 editor와 tool-window 내부의 가장 어두운 작업 면,
 `--ds-card`와 `--ds-bg-app`은 title/status chrome 및 panel gutter를 소유한다.
 따라서 화면별 wrapper가 임의의 어두운 배경을 다시 만들지 않는다.
-title toolbar의 project-context tint는 `--ds-title-toolbar-background`가
-소유하며 feature 화면에서 gradient를 다시 선언하지 않는다.
+title toolbar는 `--ds-card`의 평평한 chrome surface를 사용한다. project context를
+장식용 tint나 gradient로 강조하지 않고 실제 선택·focus 상태만 semantic token으로
+표시한다.
 
 DopeDB 기존 화면은 `--ds-surface-*`, `--ds-text*`, `--ds-accent*` 별칭을 사용한다.
 이 별칭은 위 역할 토큰에 연결되어 있으므로 새 화면에서는 역할이 더 명확한 정본
@@ -232,6 +233,10 @@ Elevation은 세 단계만 허용한다.
   icon geometry, tone, active/expanded state를 semantic prop으로 소유한다.
   popup 내부 full-width action은 화면별 class를 만들지 않고
   `presentation="menuItem"`을 사용한다.
+- `Tooltip`: icon-only command와 compact help affordance의 portal tooltip.
+  짧은 hover/focus delay, viewport collision, 위·아래 flip, `Esc` dismiss를
+  소유한다. `Button iconOnly`는 `title` 또는 `aria-label`을 이 primitive에
+  전달해 native tooltip과 화면별 hover popup을 만들지 않는다.
 - `WorkbenchButton`: `Button`을 합성한 query, table, result command row의
   32px label/icon action.
   `variant`, `tone`, `active`, `collapse` data contract로 상태와 compact overflow를
@@ -427,6 +432,8 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   column, 144px default data column을 소유하며 일반·가상 renderer는 이 값을
   중복 선언하지 않는다. identifier/value/row number는 `font-mono`를 사용하고
   DopeDB 기준에 없는 강한 zebra 배경을 추가하지 않는다.
+  header와 row-number/frozen boundary만 구조적 세로선을 유지하며 body data
+  cell은 기본 vertical border를 그리지 않는다.
   두 grid의 셀 선택은 공용 anchor/focus 좌표 계약을 사용한다. Shift+click과
   Shift+방향키는 직사각형 범위를 확장하고, 범위 복사는 행을 줄바꿈하고 셀을
   tab으로 구분한 텍스트를 만든다. 선택 배경과 focus ring도 기존
@@ -608,7 +615,7 @@ Agent/safety:
 
 Utility:
 
-- `.icon`, `.ui-help`, `.icon-only-badge`
+- `.icon`, `.icon-only-badge`
 - `.scrollbar-sleek`
 
 텍스트 색·크기·간격 같은 단일 속성을 `.muted`, `.error`, `.loading`, `.form`

@@ -3,6 +3,7 @@
 import type { HTMLAttributes, ReactNode } from "react";
 
 import { Icon, type IconName } from "../../components/Icon";
+import { Tooltip } from "./Tooltip";
 
 export type StatusTone = "neutral" | "success" | "warning" | "danger";
 
@@ -144,30 +145,31 @@ export function StatusBarIconButton({
   children?: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      className="tw:relative tw:inline-flex tw:h-full tw:min-w-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:gap-1 tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-inherit tw:disabled:cursor-default tw:disabled:opacity-40 tw:not-disabled:hover:bg-muted tw:not-disabled:hover:text-foreground tw:not-disabled:focus-visible:bg-muted tw:not-disabled:focus-visible:text-foreground tw:focus-visible:outline-none"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-    >
-      <Icon
-        name={icon}
-        className={
-          spinning
-            ? "tw:animate-spin tw:motion-reduce:animate-none"
-            : undefined
-        }
-      />
-      {children}
-      {attention ? (
-        <span
-          className="tw:absolute tw:top-1 tw:right-1 tw:size-1.5 tw:rounded-full tw:bg-primary"
-          aria-hidden="true"
+    <Tooltip label={label}>
+      <button
+        type="button"
+        className="tw:relative tw:inline-flex tw:h-full tw:min-w-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:gap-1 tw:border-0 tw:border-l tw:border-border-subtle tw:bg-transparent tw:px-1.5 tw:font-sans tw:text-inherit tw:disabled:cursor-default tw:disabled:opacity-40 tw:not-disabled:hover:bg-muted tw:not-disabled:hover:text-foreground tw:not-disabled:focus-visible:bg-muted tw:not-disabled:focus-visible:text-foreground tw:focus-visible:outline-none"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+      >
+        <Icon
+          name={icon}
+          className={
+            spinning
+              ? "tw:animate-spin tw:motion-reduce:animate-none"
+              : undefined
+          }
         />
-      ) : null}
-    </button>
+        {children}
+        {attention ? (
+          <span
+            className="tw:absolute tw:top-1 tw:right-1 tw:size-1.5 tw:rounded-full tw:bg-primary"
+            aria-hidden="true"
+          />
+        ) : null}
+      </button>
+    </Tooltip>
   );
 }
 
