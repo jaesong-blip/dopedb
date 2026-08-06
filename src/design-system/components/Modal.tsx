@@ -5,11 +5,44 @@ import {
   forwardRef,
   type HTMLAttributes,
   type ReactNode,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
 } from "react";
 import { createPortal } from "react-dom";
 
 import { Icon } from "../../components/Icon";
 import { Button } from "./Button";
+
+const MODAL_FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[contenteditable=true]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
+function focusableModalElements(surface: HTMLElement) {
+  return Array.from(
+    surface.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR),
+  ).filter(
+    (element) =>
+      element.tabIndex >= 0 &&
+      !element.hidden &&
+      !element.closest("[inert]") &&
+      element.getAttribute("aria-hidden") !== "true" &&
+      element.getClientRects().length > 0,
+  );
+}
+
+function isTopmostModal(surface: HTMLElement) {
+  const modals = document.querySelectorAll<HTMLElement>(
+    '[role="dialog"][aria-modal="true"]',
+  );
+  return modals.item(modals.length - 1) === surface;
+}
 
 export function ModalBackdrop({
   children,
@@ -37,18 +70,96 @@ export const ModalSurface = forwardRef<
     fill?: boolean;
   } & Omit<HTMLAttributes<HTMLElement>, "className" | "children">
 >(function ModalSurface(
-  { children, size = "medium", fill = false, ...props },
+  {
+    children,
+    size = "medium",
+    fill = false,
+    onKeyDown,
+    tabIndex,
+    ...props
+  },
   ref,
 ) {
+  const surfaceRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(
+    typeof document !== "undefined" &&
+      document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
+  useImperativeHandle(ref, () => surfaceRef.current!);
+
+  useLayoutEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const previousFocus = previousFocusRef.current;
+
+    const focusInside = () => {
+      const preferred =
+        surface.querySelector<HTMLElement>("[data-modal-initial-focus]") ??
+        surface.querySelector<HTMLElement>("[autofocus]") ??
+        focusableModalElements(surface)[0] ??
+        surface;
+      preferred.focus({ preventScroll: true });
+    };
+
+    if (!surface.contains(document.activeElement)) focusInside();
+
+    const containFocus = (event: FocusEvent) => {
+      if (
+        isTopmostModal(surface) &&
+        event.target instanceof Node &&
+        !surface.contains(event.target)
+      ) {
+        focusInside();
+      }
+    };
+    document.addEventListener("focusin", containFocus);
+    return () => {
+      document.removeEventListener("focusin", containFocus);
+      if (
+        previousFocus?.isConnected &&
+        (surface.contains(document.activeElement) ||
+          document.activeElement === document.body)
+      ) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    };
+  }, []);
+
   return (
     <section
-      ref={ref}
+      ref={surfaceRef}
       role="dialog"
       aria-modal="true"
       data-size={size}
       data-fill={fill}
+      tabIndex={tabIndex ?? -1}
       className="ds-panel tw:flex tw:max-h-[calc(100dvh-(var(--ds-space-4)*2))] tw:w-[min(640px,100%)] tw:flex-col tw:overflow-hidden tw:p-0 tw:shadow-popover tw:[container-type:inline-size] tw:data-[fill=true]:h-[min(760px,calc(100dvh-(var(--ds-space-4)*2)))] tw:data-[size=dataSources]:h-[min(731px,calc(100dvh-(var(--ds-space-4)*2)))] tw:data-[size=dataSources]:w-[min(980px,100%)] tw:data-[size=settings]:h-[min(722px,calc(100dvh-(var(--ds-space-4)*2)))] tw:data-[size=settings]:w-[min(982px,100%)] tw:data-[size=wide]:w-[min(1120px,100%)] tw:max-[640px]:max-h-[calc(100dvh-(var(--ds-space-2)*2))] tw:max-[640px]:data-[fill=true]:h-[calc(100dvh-(var(--ds-space-2)*2))] tw:max-[640px]:data-[size=dataSources]:h-[calc(100dvh-(var(--ds-space-2)*2))] tw:max-[640px]:data-[size=settings]:h-[calc(100dvh-(var(--ds-space-2)*2))]"
       onMouseDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (event.defaultPrevented || event.key !== "Tab") return;
+        const focusable = focusableModalElements(event.currentTarget);
+        if (focusable.length === 0) {
+          event.preventDefault();
+          event.currentTarget.focus({ preventScroll: true });
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (
+          event.shiftKey &&
+          (active === first || !event.currentTarget.contains(active))
+        ) {
+          event.preventDefault();
+          last.focus({ preventScroll: true });
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus({ preventScroll: true });
+        }
+      }}
       {...props}
     >
       {children}

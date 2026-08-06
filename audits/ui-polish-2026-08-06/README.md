@@ -43,6 +43,10 @@ DopeDB parity.
   [`18-welcome-after.png`](./18-welcome-after.png)
 - Welcome compact-window projection after correction:
   [`19-welcome-compact-after.png`](./19-welcome-compact-after.png)
+- Agent selection at 360px before modal focus containment:
+  [`20-agent-selection-360-before.png`](./20-agent-selection-360-before.png)
+- Agent selection at 360px with keyboard focus after correction:
+  [`21-agent-selection-360-focus-after.png`](./21-agent-selection-360-focus-after.png)
 
 The DopeDB captures use the same `1393×862` browser projection and deterministic
 PostgreSQL catalog fixture. Browser projection verifies layout and accessible text,
@@ -160,3 +164,15 @@ Recent Files, Navigation Bar, Go to File, and drop-file affordances remain absen
 because those IDE features are outside the product scope. The compact capture checks
 that the same command list remains reachable without introducing another mobile
 navigation surface.
+
+## Modal keyboard containment
+
+The 360px startup Agent selector fit visually before this check, but opening it left
+keyboard focus on Search Everywhere behind the `aria-modal` surface. The shared
+modal now moves focus to the first requested work control, loops Tab and Shift+Tab
+between Close, the two Agent checkboxes, Later, and Save, redirects programmatic
+background focus into the topmost dialog, and restores the launcher after close.
+The after capture records keyboard focus on the Codex checkbox and keeps the full
+body and footer inside a `360×640` viewport. This browser projection verifies DOM
+focus behavior and accessible names; packaged macOS and Windows screen-reader
+behavior remains an explicit #95 gate.

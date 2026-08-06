@@ -57,13 +57,16 @@
 - Welcome 문서는 logo·큰 제목·반복 설명 구획을 제거하고 실제 새 쿼리·새
   연결·전체 검색 command만 남겼다. 연결 전에는 첫 데이터 소스 선택에 필요한
   한 줄만 표시하며 Files/VCS command는 기능 범위 결정에 따라 추가하지 않았다.
+- 공용 modal은 첫 작업 control, Tab/Shift+Tab 순환, 외부 focus containment와
+  trigger 복구를 소유한다. 360px Agent 선택 modal은 첫 checkbox와 semantic
+  focus ring을 사용하고 body/footer를 같은 viewport 안에 유지한다.
 
 ## 아직 parity 완료 증거가 아닌 항목
 
 - Explorer scope badge, Agent 빈 transcript, Welcome 외 shell·data editor·Agent 실행 상태 등 기준 시나리오의 DopeDB
   2026.1/DopeDB 같은 state·viewport before/reference/after capture
 - 30개 이상 column, 긴 NULL/text/numeric data에서 line 없는 grid의 실제 비교
-- compact `560×700`과 macOS·Windows packaged App의 tooltip/focus/text rendering
+- macOS·Windows packaged App의 compact tooltip/focus/text rendering
 - popup, tab, resize, loading 전환의 60fps continuity와 selection/scroll 보존 기록
 
 이 네 항목이 남아 있는 동안 #111과 #112를 완료로 닫지 않는다.

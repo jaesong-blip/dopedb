@@ -181,6 +181,11 @@ export default function SkillStartupGate() {
                   className="tw:flex tw:min-h-14 tw:items-center tw:gap-3 tw:px-3 tw:py-2"
                 >
                   <CheckboxField
+                    data-modal-initial-focus={
+                      agent.target === SUPPORTED_AGENT_TARGETS[0].target
+                        ? true
+                        : undefined
+                    }
                     checked={selected.includes(agent.target)}
                     onChange={(event) =>
                       toggleTarget(agent.target, event.target.checked)

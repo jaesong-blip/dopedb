@@ -163,7 +163,7 @@ export function CheckboxField({
     <label className="tw:inline-flex tw:cursor-pointer tw:items-center tw:gap-2 tw:text-ui tw:text-foreground">
       <input
         type="checkbox"
-        className="tw:size-4 tw:accent-primary"
+        className="tw:size-4 tw:rounded-xs tw:accent-primary tw:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:focus-visible:ring-offset-2 tw:focus-visible:ring-offset-background"
         {...props}
         ref={(node) => {
           if (node) node.indeterminate = indeterminate;

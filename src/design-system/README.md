@@ -350,6 +350,11 @@ Elevation은 세 단계만 허용한다.
   responsive dialog frame과 30px title/48px detail action/50px primary action
   bar. SQL parameter, DDL viewer, provider credential처럼 background interaction을
   막는 feature dialog도 이 frame을 사용하고 별도 modal CSS를 만들지 않는다.
+  `ModalSurface`는 열릴 때 `[data-modal-initial-focus]` 또는 첫 control로 focus를
+  옮기고, Tab/Shift+Tab을 최상위 dialog 안에서 순환시키며, 외부로 이동한
+  programmatic focus를 다시 포함한다. 닫힐 때는 아직 존재하는 원래 trigger로
+  focus를 복구한다. 첫 작업 control을 명시해야 하는 feature만
+  `data-modal-initial-focus`를 사용한다.
   `size="settings"`는 DopeDB 2026.1.4 실앱에서 재측정한 982×722 설정 dialog를,
   `size="dataSources"`는
   DopeDB 2026.1.4 실앱에서 재측정한 980×731 frame을 compact full-height fallback과 함께
