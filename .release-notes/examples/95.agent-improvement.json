@@ -1,0 +1,14 @@
+{
+  "$schema": "../fragment.schema.json",
+  "schemaVersion": 1,
+  "type": "improvement",
+  "area": "agent",
+  "audience": "user",
+  "title": "Agent 준비가 더 쉬워졌습니다",
+  "summary": "사용하는 Codex와 Claude를 선택하고 필요한 DopeDB Skill을 한 번에 준비할 수 있습니다.",
+  "details": [
+    "Agent 선택은 즉시 저장되며 외부 Skill 상태 때문에 ACP 채팅 시작이 막히지 않습니다."
+  ],
+  "issues": [95],
+  "highlight": true
+}

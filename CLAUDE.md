@@ -156,6 +156,17 @@ enabled control에는 실제 command와 state owner가 있어야 한다.
   `app-vX.Y.Z` 태그로 발행한다. 버전 파일과 signing secret을 임의로 다루지
   않는다.
 
+## 릴리스 노트 준비 상태
+
+사용자용 릴리스 노트 파이프라인은 정식 MVP 전까지 의도적으로 `prepared` 모드를
+유지한다. `.release-notes/config.json`이 `prepared`인 동안 실제 fragment를
+요구하거나 적립하지 않고 안정 릴리스는 기존 다운로드 안내문을 사용한다. 정식
+MVP 이후 사용자가 명시적으로 결정하기 전에는 `active`로 바꾸지 않는다. 활성화
+뒤에는 사용자에게 보이는 모든 변경이 `.release-notes/fragments/`의 검증된
+append-only fragment를 추가하며, 커밋과 이슈 링크는 설명이 아니라 근거로만
+붙인다. 형식과 활성화 절차는 [`.release-notes/README.md`](.release-notes/README.md)가
+소유한다.
+
 ## graphify
 
 `graphify-out/graph.json`이 있으면 코드베이스 질문은 원본 파일을 광범위하게

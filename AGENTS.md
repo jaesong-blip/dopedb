@@ -168,6 +168,15 @@ may do so, from `main`, with every version source synchronized and an
 `app-vX.Y.Z` tag. Do not approve or bypass the protected release environment,
 handle signing material, or create a plain `vX.Y.Z` release tag.
 
+The user-facing release-note pipeline is intentionally in `prepared` mode until
+the product's formal MVP. While `.release-notes/config.json` says `prepared`, do
+not require or accumulate production fragments; stable releases keep the generic
+download body. Do not switch it to `active` without an explicit post-MVP user
+decision. Once active, every user-visible change adds a validated append-only
+fragment under `.release-notes/fragments/`; commit and issue links remain evidence
+rather than the explanation itself. The contract and activation checklist live
+in [`.release-notes/README.md`](.release-notes/README.md).
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

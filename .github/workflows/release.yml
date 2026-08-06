@@ -13,6 +13,8 @@ jobs:
   verify-release:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      release_body: ${{ steps.release_notes.outputs.body }}
     permissions:
       contents: read
     steps:
@@ -39,6 +41,39 @@ jobs:
             echo "Stable releases must point to a commit already merged into main." >&2
             exit 1
           fi
+
+      - name: Prepare release notes
+        id: release_notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME#app-v}"
+          mode="$(node scripts/release/generate-release-notes.mjs mode)"
+          notes_path="$RUNNER_TEMP/release-notes.md"
+          args=(
+            render
+            --version "$version"
+            --tag "$GITHUB_REF_NAME"
+            --to "$GITHUB_SHA"
+            --output "$notes_path"
+          )
+
+          if [[ "$mode" == "active" ]]; then
+            previous_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+            args+=(--from "$previous_tag")
+          fi
+
+          node scripts/release/generate-release-notes.mjs "${args[@]}"
+
+          delimiter="RELEASE_NOTES_${GITHUB_SHA:0:12}"
+          {
+            echo "body<<$delimiter"
+            cat "$notes_path"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
 
   publish-tauri:
     needs: verify-release
@@ -105,10 +140,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: dopedb v__VERSION__
-          releaseBody: |
-            Download the macOS or Windows installer from the assets below.
-
-            The Tauri updater uses `latest.json` from this release to detect and install signed updates.
+          releaseBody: ${{ needs.verify-release.outputs.release_body }}
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true

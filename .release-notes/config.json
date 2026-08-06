@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "mode": "prepared",
+  "repository": "json-choi/dopedb",
+  "defaultLocale": "ko",
+  "fragmentsDirectory": ".release-notes/fragments",
+  "examplesDirectory": ".release-notes/examples",
+  "maxHighlights": 3
+}

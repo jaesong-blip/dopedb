@@ -65,6 +65,14 @@ UI 상태와 기능 상태를 각각 갱신한다. DopeDB 자체 baseline을 승
 `app-vX.Y.Z` 태그를 만든다. 보호된 환경, tag 규칙, signing key를 우회하거나
 노출하지 않는다.
 
+사용자용 릴리스 노트 파이프라인은 정식 MVP 전까지 `prepared` 모드다.
+`.release-notes/config.json`이 `prepared`인 동안 production fragment를 요구하거나
+적립하지 않고 기존 다운로드 안내문을 그대로 발행한다. 정식 MVP 이후 사용자의
+명시적 결정 없이 `active`로 바꾸지 않는다. 활성화 뒤에는 사용자에게 보이는
+변경마다 `.release-notes/fragments/`에 검증된 append-only fragment를 추가한다.
+작성 형식, 미리보기 명령, 활성화 절차는
+[`.release-notes/README.md`](.release-notes/README.md)를 따른다.
+
 ## graphify
 
 `graphify-out/graph.json`이 있으면 코드베이스 질문은 원본 파일을 광범위하게

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dopedb.dev/schemas/release-note-fragment-v1.json",
+  "title": "DopeDB release-note fragment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "area",
+    "audience",
+    "title",
+    "summary",
+    "details",
+    "issues",
+    "highlight"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "../fragment.schema.json"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "type": {
+      "enum": ["feature", "improvement", "fix", "security", "breaking"]
+    },
+    "area": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,31}$"
+    },
+    "audience": {
+      "enum": ["user", "admin", "developer", "internal"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 80
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 240
+    },
+    "details": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "minLength": 10,
+        "maxLength": 240
+      }
+    },
+    "issues": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 999999
+      }
+    },
+    "highlight": {
+      "type": "boolean"
+    }
+  }
+}
