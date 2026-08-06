@@ -31,6 +31,12 @@ DopeDB parity.
   [`12-search-everywhere-actions-after.png`](./12-search-everywhere-actions-after.png)
 - Search Everywhere compact projection after correction:
   [`13-search-everywhere-compact-after.png`](./13-search-everywhere-compact-after.png)
+- AI Chat verbose empty state before correction:
+  [`14-agent-empty-before.png`](./14-agent-empty-before.png)
+- AI Chat compact capability state after correction:
+  [`15-agent-empty-after.png`](./15-agent-empty-after.png)
+- AI Chat compact-window projection after correction:
+  [`16-agent-empty-compact-after.png`](./16-agent-empty-compact-after.png)
 
 The DopeDB captures use the same `1393×862` browser projection and deterministic
 PostgreSQL catalog fixture. Browser projection verifies layout and accessible text,
@@ -111,3 +117,22 @@ catalog; DopeDB-only Files, Code, and Text categories are not represented by lab
 or placeholders. Desktop and compact captures verify the blank and action states.
 Playwright also verified scoped filtering, Arrow selection, roving tab
 Arrow/Home/End, Escape dismissal, and focus restoration to the toolbar launcher.
+
+## AI Chat empty-state 2026.1.4 recheck
+
+The isolated DopeDB 2026.1.4 window exposed a blank AI Chat with a flat header,
+three terse capability lines, a 108px composer, and the Agent picker below it. It
+did not place a large title or explanatory paragraph in the transcript. The
+temporary `1400×929` reference capture has SHA-256
+`bc1b88e156dd6c4d3c259dee68bf4e95755cd10ee92a23baf482f6ea66f9fe69` and is not
+copied into the repository.
+
+DopeDB keeps the previously verified independent 600px preferred width from the
+user's detailed reference. Only the empty transcript changed: it now presents
+three real DopeDB capabilities—SQL work, schema/selection inspection, and explicit
+approval before changes. DopeDB's editor-completion features were not copied and
+no inactive link or control was added. The hidden heading preserves an accessible
+name without spending steady-state visible text. The `560×700` capture confirms the
+same three-line hierarchy while the composer and Agent picker remain visible. At
+`1400×929`, the browser projection measured the right surface at `596px`, the
+composer at `570×108px`, and no horizontal document overflow.

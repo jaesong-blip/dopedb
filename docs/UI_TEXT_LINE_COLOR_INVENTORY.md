@@ -27,7 +27,7 @@
 | SQL editor | document/schema/mode, 실행·취소, parameter/Tx 예외 상태 | 실행/history/format은 icon+Tooltip, 정상 저장 상태는 숨김, 결과 SQL은 Result toolbar에서 반복하지 않음 | editor/result split, toolbar divider, focus/selection | neutral editor, success glyph, running/warning/error 상태 | `WorkbenchPane`, `WorkbenchToolbar`, `WorkbenchButton`, `ManualTransactionControls` |
 | Services·Result·Output | session/document/result tab, running/waiting/error, row count/duration | full SQL/error detail은 선택 Result/Output에서만, export 형식은 menu | tree/result split, sticky tab/header/footer, selected/focus | neutral workbench, lifecycle status, grid selection/focus | `ToolWindowHeader`, `IdeToolTabStrip`, `ResultWorkbench*`, `DataGridStatusPill` |
 | table data·Mongo Documents | object/query context, WHERE/ORDER BY 또는 operation, staged/write/error 상태, 실제 values | 반복 edit/export command는 icon/menu, query 도움말은 error/first-use에만 | toolbar/body/inspector split, grid header/frozen/resize/focus; body vertical cell line 없음 | neutral data surface, selection/focus, NULL/mutation/error 의미 | `TableToolbar`, `TableExpressionBar`, `DataGridViewport`, `Inspector*` |
-| Agent·approval | Agent identity, user/final answer, current one-line activity, permission reason/options, attached DB context | raw tool input/output는 debug mode, provider setup/terms는 CLI missing·logout일 때만, 종료 세션 resume은 History 선택 뒤만 | tool-window split, composer/approval/focus boundary; transcript card border 반복 금지 | neutral transcript, focus, trust/warning/danger와 local provider mark | `ToolWindowComposer*`, `AgentActivityLine`, `AgentToolCallCard`, `AgentPermissionCard`, `AgentRichText` |
+| Agent·approval | Agent identity, user/final answer, current one-line activity, permission reason/options, attached DB context; 빈 transcript는 실제 capability 3줄만 표시 | raw tool input/output는 debug mode, provider setup/terms는 CLI missing·logout일 때만, 종료 세션 resume은 History 선택 뒤만, 빈 상태 제목·설명 문단은 숨김 | tool-window split, composer/approval/focus boundary; transcript card border 반복 금지 | neutral transcript, focus, trust/warning/danger와 local provider mark | `ToolWindowComposer*`, `AgentActivityLine`, `AgentToolCallCard`, `AgentPermissionCard`, `AgentRichText` |
 | Settings·provider·jobs | selected setting, editable value, progress, failure와 recovery | 정상 상태 설명과 provider metadata는 detail/diagnostic으로 이동 | rail/detail split, field/focus, progress track, modal boundary | neutral settings, progress/focus, 실제 status | `SettingsGroup`, form primitives, `ProgressBar`, `InlineNotice`, `Modal*` |
 | onboarding·empty·loading·error | 첫 선택에 필요한 설명, 현재 blocked reason, 직접 실행할 recovery | steady-state에서는 onboarding 문단 제거, 3초 미만 loading은 control/label feedback으로 축약 | dialog/empty owner의 한 boundary; nested card 금지 | neutral surface, actionable warning/danger only | `WorkbenchEmptyState`, `LoadingLabel`, `InlineNotice`, startup `Modal*` |
 | popup·menu·tooltip·toast | menu command label, current selection, actionable toast | Tooltip은 icon command명/shortcut만, 위험·오류 본문은 owner surface에 유지 | viewport collision을 가진 floating boundary와 focus ring | popover surface, selection/focus, 실제 status | `ToolbarMenu`, `PopupMenu*`, `Tooltip`, toast primitive |
@@ -51,10 +51,13 @@
   gap은 같은 `1393×862` fixture의 before/after와 2026.1 reference를
   [`audits/ui-polish-2026-08-06`](../audits/ui-polish-2026-08-06/README.md)에
   기록하고 `1 of 1`로 교정했다.
+- 빈 AI Chat은 큰 제목과 설명 문단을 제거하고 실제 SQL·탐색·승인 capability
+  세 줄만 남겼다. `1400×929` DopeDB 2026.1.4 빈 transcript와 같은 구조로
+  다시 대조하되 DopeDB의 IDE 전용 capability는 추가하지 않았다.
 
 ## 아직 parity 완료 증거가 아닌 항목
 
-- Explorer scope badge 외 shell·data editor·Agent 등 기준 시나리오의 DopeDB
+- Explorer scope badge와 Agent 빈 transcript 외 shell·data editor·Agent 실행 상태 등 기준 시나리오의 DopeDB
   2026.1/DopeDB 같은 state·viewport before/reference/after capture
 - 30개 이상 column, 긴 NULL/text/numeric data에서 line 없는 grid의 실제 비교
 - compact `560×700`과 macOS·Windows packaged App의 tooltip/focus/text rendering

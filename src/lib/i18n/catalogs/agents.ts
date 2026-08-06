@@ -67,8 +67,6 @@ export const agentsCatalog = defineCatalog(
     "agent.acpDiagramSource": "View diagram source",
     "agent.acpAttachContext": "Attach current editor context",
     "agent.acpDetachContext": "Remove current editor context",
-    "agent.acpEmptyBody":
-      "Ask Claude or Codex to work on the current database. The screen keeps every action observable and approval-gated.",
     "agent.acpEmptyFeatureSql": "Write, explain, and review SQL",
     "agent.acpEmptyFeatureInspect": "Inspect schemas, tables, and selected data",
     "agent.acpEmptyFeatureApprove": "Run changes only after explicit approval",
@@ -345,8 +343,6 @@ export const agentsCatalog = defineCatalog(
     "agent.acpDiagramSource": "다이어그램 원본 보기",
     "agent.acpAttachContext": "현재 편집기 문맥 첨부",
     "agent.acpDetachContext": "현재 편집기 문맥 제거",
-    "agent.acpEmptyBody":
-      "Claude 또는 Codex에게 현재 데이터베이스 작업을 요청하세요. 모든 동작은 화면에서 관찰하고 승인할 수 있습니다.",
     "agent.acpEmptyFeatureSql": "SQL 작성·설명·검토",
     "agent.acpEmptyFeatureInspect": "스키마·테이블·선택 데이터 탐색",
     "agent.acpEmptyFeatureApprove": "명시적 승인 뒤 변경 실행",

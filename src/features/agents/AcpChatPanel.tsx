@@ -815,9 +815,8 @@ export default function AcpChatPanel({
           />
         ) : !active ? (
           <AgentEmpty>
-            <strong>{t("agent.acpEmptyTitle")}</strong>
-            <p>{t("agent.acpEmptyBody")}</p>
-            <ul className="tw:m-0 tw:grid tw:gap-2 tw:p-0 tw:text-left tw:list-none">
+            <h2 className="tw:sr-only">{t("agent.acpEmptyTitle")}</h2>
+            <ul className="tw:m-0 tw:grid tw:w-full tw:max-w-[18rem] tw:gap-3 tw:p-0 tw:text-left tw:list-none">
               <li>{t("agent.acpEmptyFeatureSql")}</li>
               <li>{t("agent.acpEmptyFeatureInspect")}</li>
               <li>{t("agent.acpEmptyFeatureApprove")}</li>

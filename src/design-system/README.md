@@ -423,6 +423,9 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
   않는다. session 전용 tab action menu는 활성 session이 있을 때만 표시하며
   빈 AI Chat에 disabled kebab을 남기지 않는다.
+- 빈 AI Chat transcript는 제목·설명 card를 만들지 않고 실제 SQL 작업,
+  스키마·선택 데이터 탐색, 명시적 변경 승인 세 줄만 표시한다. 화면에 없는
+  IDE capability를 본뜨거나 steady-state onboarding 문단을 반복하지 않는다.
 - Query parameter dialog는 parameter token/이름과 SQL expression 값을 한 행에
   대응시키고, 빈 값에서는 primary 실행 action을 비활성화한다. 치환 설명은
   divider surface에 두며 feature 전용 CSS나 style map을 만들지 않는다. title과
