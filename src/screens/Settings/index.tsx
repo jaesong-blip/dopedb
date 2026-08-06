@@ -188,9 +188,9 @@ export default function Settings({
             onClose={close}
           />
 
-          <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-[300px_minmax(0,1fr)] tw:@max-[700px]:grid-cols-1 tw:@max-[700px]:grid-rows-[auto_minmax(0,1fr)]">
-            <aside className="tw:flex tw:min-h-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card tw:py-2 tw:@max-[700px]:max-h-[188px] tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">
-              <div className="tw:px-2 tw:py-1">
+          <div className="tw:grid tw:min-h-0 tw:flex-1 tw:grid-cols-[202px_minmax(0,1fr)] tw:@max-[700px]:grid-cols-1 tw:@max-[700px]:grid-rows-[auto_minmax(0,1fr)]">
+            <aside className="tw:flex tw:min-h-0 tw:flex-col tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[700px]:max-h-[188px] tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b">
+              <div className="tw:p-2">
                 <TreeSearch
                   value={filter}
                   autoFocus
@@ -203,7 +203,7 @@ export default function Settings({
                   }}
                 />
               </div>
-              <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:pt-2">
+              <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto">
                 {(["application", "dataSource"] as const).map((scope) => {
                   const entries = filteredEntries.filter(
                     (entry) => entry.scope === scope,
@@ -214,7 +214,7 @@ export default function Settings({
                       key={scope}
                       className="tw:grid tw:gap-0.5 tw:pb-2"
                     >
-                      <div className="tw:flex tw:min-h-control-sm tw:items-center tw:gap-1 tw:px-2 tw:text-ui tw:font-semibold">
+                      <div className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:items-center tw:gap-1 tw:px-2 tw:text-ui tw:font-semibold">
                         <Icon
                           name="chevronDown"
                           className="tw:text-muted-foreground"
@@ -232,7 +232,7 @@ export default function Settings({
                           key={entry.id}
                           type="button"
                           data-active={section === entry.id}
-                          className="tw:min-h-control-sm tw:cursor-pointer tw:rounded-none tw:border-0 tw:bg-transparent tw:pr-3 tw:pl-8 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
+                          className="tw:min-h-[var(--ds-tree-row-height)] tw:cursor-pointer tw:rounded-none tw:border-0 tw:bg-transparent tw:pr-3 tw:pl-12 tw:font-sans tw:text-left tw:text-ui tw:text-foreground tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground tw:disabled:cursor-default tw:disabled:opacity-50 tw:not-disabled:hover:bg-muted"
                           onClick={() => setSection(entry.id)}
                           disabled={entry.disabled}
                           title={
@@ -256,7 +256,7 @@ export default function Settings({
             </aside>
 
             <section className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-col">
-              <div className="tw:flex tw:h-[42px] tw:min-h-[42px] tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-4 tw:text-ui tw:font-semibold">
+              <div className="tw:flex tw:h-[42px] tw:min-h-[42px] tw:shrink-0 tw:items-center tw:gap-2 tw:bg-background tw:px-4 tw:text-ui tw:font-semibold">
                 <span className="tw:text-muted-foreground">
                   {t(
                     activeEntry?.scope === "dataSource"

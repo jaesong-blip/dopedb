@@ -17,6 +17,12 @@ DopeDB parity.
   [`05-data-sources-rail-after.png`](./05-data-sources-rail-after.png)
 - Data Sources compact projection after correction:
   [`06-data-sources-compact-after.png`](./06-data-sources-compact-after.png)
+- Settings wide rail before correction:
+  [`07-settings-rail-before.png`](./07-settings-rail-before.png)
+- Settings desktop rail after correction:
+  [`08-settings-rail-after.png`](./08-settings-rail-after.png)
+- Settings compact projection after correction:
+  [`09-settings-compact-after.png`](./09-settings-compact-after.png)
 
 The DopeDB captures use the same `1393×862` browser projection and deterministic
 PostgreSQL catalog fixture. Browser projection verifies layout and accessible text,
@@ -58,6 +64,18 @@ Clouds, and Drivers categories; it does not add DopeDB-only categories or a
 disabled placeholder. The category title now appears once instead of repeating
 above the list. Arrow keys and Home/End move and activate desktop rail tabs;
 compact dialogs keep the existing text SegmentedControl and source selector.
+
+## Settings 2026.1.4 recheck
+
+The same isolated DopeDB process exposed a native Settings window measuring
+`982×722`, with a roughly `202px` navigation rail and an 8px search gutter. Its
+temporary reference capture has SHA-256
+`6fa4a3f912c16c5aa6677db144271239351ab3768e929b1be6a9fbd2d0e9872d` and is
+not copied into the repository. The previous DopeDB capture shows the obsolete
+`945×700` frame and `300px` rail; the after capture records the corrected compact
+hierarchy, 24px navigation rows, and flat breadcrumb surface. The compact capture
+confirms the same searchable navigation remains scrollable above the document body
+and that the footer action stays inside the viewport.
 
 ## Icon-command primitive check
 

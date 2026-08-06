@@ -342,7 +342,8 @@ Elevation은 세 단계만 허용한다.
   responsive dialog frame과 30px title/48px detail action/50px primary action
   bar. SQL parameter, DDL viewer, provider credential처럼 background interaction을
   막는 feature dialog도 이 frame을 사용하고 별도 modal CSS를 만들지 않는다.
-  `size="settings"`는 945×700 설정 dialog를, `size="dataSources"`는
+  `size="settings"`는 DopeDB 2026.1.4 실앱에서 재측정한 982×722 설정 dialog를,
+  `size="dataSources"`는
   DopeDB 2026.1.4 실앱에서 재측정한 980×731 frame을 compact full-height fallback과 함께
   소유한다. Data Sources의 `Problems`는 catalog 하단, `Test Connection`은
   detail action bar, `Cancel/Apply/OK`는 `ModalFooter`에 두며 한 footer에
@@ -515,7 +516,7 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   오류/경고 개수를 같은 compact hierarchy로 표시.
 - `SettingsGroup`: 설정·정책 화면의 제목, 상단 divider, dense spacing을 공유하는
   평평한 control group. Settings dialog 안에 card surface를 다시 중첩하지 않는다.
-  300px settings rail은 검색 input에 8px 좌우 gutter를 두고 hierarchy의
+  202px settings rail은 검색 input에 8px gutter를 두고 24px hierarchy의
   hover/selection row는 rail 전체 폭을 차지하는 평평한 surface를 사용한다.
   선택 항목을 inset rounded pill로 만들지 않는다.
 
