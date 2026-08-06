@@ -109,6 +109,9 @@ jobs:
       - name: Install workspace cloud dependencies
         run: pnpm --dir workspace-cloud install --frozen-lockfile
 
+      - name: Build workspace cloud without production secrets
+        run: pnpm --dir workspace-cloud build
+
       - name: Ensure PostgreSQL client
         run: |
           if ! command -v psql >/dev/null; then

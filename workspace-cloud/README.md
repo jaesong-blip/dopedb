@@ -36,6 +36,8 @@ http://localhost:3000/api/auth/callback/google
 Then run `pnpm install` in this directory and `pnpm workspace:cloud:dev` from the repo
 root. Generate/check migrations with `pnpm db:generate` and `pnpm db:check` here; apply
 them through the unpooled URL with `pnpm workspace:migrate` from the repository root.
+`pnpm build` intentionally succeeds without production secrets: database and auth
+clients resolve configuration on the first request, where missing values fail closed.
 Production Vercel builds run that migration before the Next.js build; a migration
 failure stops the deployment instead of serving code against an older control-plane
 schema.
