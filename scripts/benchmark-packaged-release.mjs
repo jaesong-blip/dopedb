@@ -12,9 +12,12 @@ import {
 } from "node:fs/promises";
 import { arch, cpus, platform, release, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+const tauriCli = require.resolve("@tauri-apps/cli/tauri.js");
 const prefix = "dopedb-packaged-benchmark-";
 const marker = "DOPEDB_PACKAGED_BENCHMARK:";
 const fixtureMarker = "DOPEDB_PACKAGED_BENCHMARK_FIXTURE:";
@@ -311,8 +314,8 @@ async function buildPackagedBenchmark() {
     : platform() === "win32"
       ? "nsis"
       : "appimage";
-  await runCommand("pnpm", [
-    "tauri",
+  await runCommand(process.execPath, [
+    tauriCli,
     "build",
     "--features",
     "packaged-benchmark",
