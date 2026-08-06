@@ -24,10 +24,13 @@ import {
   AgentToolCallCard,
 } from "../../design-system/components/Agent";
 import {
+  AgentPlainText,
   AgentRichText,
   AgentStreamingText,
+  canRenderAgentRichText,
 } from "../../design-system/components/AgentRichText";
 import { Button } from "../../design-system/components/Button";
+import RenderRecoveryBoundary from "../../design-system/components/RenderRecoveryBoundary";
 import {
   InlineNotice,
   LoadingLabel,
@@ -102,24 +105,13 @@ const AGENT_SETUP_URL: Record<AgentProvider, string> = {
   codex: "https://help.openai.com/en/articles/11096431",
 };
 const AUTO_SCROLL_THRESHOLD_PX = 96;
+const MAX_RICH_TRANSCRIPT_MESSAGES = 12;
+const MAX_RICH_TRANSCRIPT_CHARS = 192 * 1024;
+const MAX_RICH_TRANSCRIPT_LINES = 2_400;
 
-type PendingAcpSessionChange = {
-  session: AcpSessionSummary;
-  events: AcpSessionEvent[];
-};
+type AgentDockLayout = "compact" | "docked" | "overlay";
 
-export default function AcpChatPanel({
-  connection,
-  documents,
-  activeDocumentId,
-  selectedTable,
-  overlay,
-  compact = false,
-  width,
-  onWidthChange,
-  onOpenArchive,
-  onClose,
-}: {
+type AcpChatPanelProps = {
   connection: ConnectionProfile;
   documents: WorkbenchDocument[];
   activeDocumentId: string | null;
@@ -130,7 +122,43 @@ export default function AcpChatPanel({
   onWidthChange: (width: number) => void;
   onOpenArchive: () => void;
   onClose: () => void;
-}) {
+};
+
+type PendingAcpSessionChange = {
+  session: AcpSessionSummary;
+  events: AcpSessionEvent[];
+};
+
+export default function AcpChatPanel(props: AcpChatPanelProps) {
+  return (
+    <RenderRecoveryBoundary
+      fallback={({ retry }) => (
+        <AcpChatPanelRecovery
+          compact={props.compact ?? false}
+          onClose={props.onClose}
+          onRetry={retry}
+          overlay={props.overlay}
+        />
+      )}
+      resetKeys={[props.connection.id]}
+    >
+      <AcpChatPanelContent {...props} />
+    </RenderRecoveryBoundary>
+  );
+}
+
+function AcpChatPanelContent({
+  connection,
+  documents,
+  activeDocumentId,
+  selectedTable,
+  overlay,
+  compact = false,
+  width,
+  onWidthChange,
+  onOpenArchive,
+  onClose,
+}: AcpChatPanelProps) {
   const { t } = useI18n();
   const { selection } = useAgentSelection();
   const debugDetails = useAgentDebugDetails();
@@ -188,6 +216,10 @@ export default function AcpChatPanel({
     () => visibleAcpTranscriptItems(activeProjection),
     [active?.id, projectionRevision],
   );
+  const richTranscriptKeys = useMemo(
+    () => selectRichTranscriptKeys(transcript),
+    [transcript],
+  );
   const configOptions = activeProjection?.configOptions ?? [];
   const modelOption = configOptions.find(
     (option) =>
@@ -223,7 +255,7 @@ export default function AcpChatPanel({
     selectedCliStatus?.installed === true &&
     selectedCliStatus.authenticated === true;
   const prerequisitesReady = selectedCliReady;
-  const dockLayout = compact ? "compact" : overlay ? "overlay" : "docked";
+  const dockLayout = agentDockLayout(compact, overlay);
 
   const upsertSessions = useCallback((updates: AcpSessionSummary[]) => {
     if (updates.length === 0) return;
@@ -649,13 +681,7 @@ export default function AcpChatPanel({
   }
 
   return (
-    <aside
-      className="tw:relative tw:col-start-4 tw:row-start-2 tw:mt-0 tw:mr-1 tw:mb-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[layout=overlay]:fixed tw:data-[layout=overlay]:inset-y-0 tw:data-[layout=overlay]:right-0 tw:data-[layout=overlay]:z-[var(--ds-z-modal)] tw:data-[layout=overlay]:m-0 tw:data-[layout=overlay]:w-[min(520px,calc(100vw_-_44px))] tw:data-[layout=overlay]:rounded-none tw:data-[layout=overlay]:shadow-popover tw:data-[layout=compact]:fixed tw:data-[layout=compact]:top-title-toolbar tw:data-[layout=compact]:right-0 tw:data-[layout=compact]:bottom-status-bar tw:data-[layout=compact]:left-0 tw:data-[layout=compact]:z-[var(--ds-z-modal)] tw:data-[layout=compact]:m-0 tw:data-[layout=compact]:w-screen tw:data-[layout=compact]:rounded-none tw:data-[layout=compact]:border-x-0"
-      data-layout={dockLayout}
-      aria-label={t("agent.acpTitle")}
-      role={dockLayout === "docked" ? undefined : "dialog"}
-      aria-modal={dockLayout === "docked" ? undefined : true}
-    >
+    <AcpChatSurface label={t("agent.acpTitle")} layout={dockLayout}>
       <div
         className="tw:absolute tw:inset-y-0 tw:-left-[3px] tw:z-[var(--ds-z-raised)] tw:w-[7px] tw:cursor-col-resize tw:hover:bg-ring/30 tw:active:bg-ring/30 tw:data-[layout=overlay]:hidden tw:data-[layout=compact]:hidden"
         data-layout={dockLayout}
@@ -857,6 +883,7 @@ export default function AcpChatPanel({
                   item={item}
                   revision={item.revision}
                   debugDetails={debugDetails}
+                  richText={richTranscriptKeys.has(item.key)}
                   streaming={
                     active.lifecycle === "running" &&
                     item.kind === "agent" &&
@@ -1066,6 +1093,75 @@ export default function AcpChatPanel({
           ) : null}
         </ToolWindowComposerContext>
       </ToolWindowComposerDock>
+    </AcpChatSurface>
+  );
+}
+
+function AcpChatPanelRecovery({
+  compact,
+  onClose,
+  onRetry,
+  overlay,
+}: {
+  compact: boolean;
+  onClose: () => void;
+  onRetry: () => void;
+  overlay: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <AcpChatSurface
+      label={t("agent.acpTitle")}
+      layout={agentDockLayout(compact, overlay)}
+    >
+      <ToolWindowHeader
+        divider={false}
+        title={t("agent.acpTitle")}
+        actions={
+          <ToolWindowHideButton
+            label={t("common.close")}
+            onClick={onClose}
+          />
+        }
+      />
+      <div
+        className="tw:m-auto tw:flex tw:w-[min(360px,calc(100%_-_var(--ds-space-6)))] tw:flex-col tw:items-center tw:justify-center tw:gap-3 tw:text-center tw:text-sm tw:text-muted-foreground"
+        role="alert"
+      >
+        <Icon className="tw:size-7 tw:text-warning" name="alert" />
+        <strong className="tw:text-title tw:text-foreground">
+          {t("agent.acpRenderFailed")}
+        </strong>
+        <p className="tw:m-0 tw:leading-body">
+          {t("agent.acpRenderFailedBody")}
+        </p>
+        <Button onClick={onRetry} size="compact" variant="primary">
+          <Icon name="refresh" />
+          {t("agent.acpRenderRetry")}
+        </Button>
+      </div>
+    </AcpChatSurface>
+  );
+}
+
+function AcpChatSurface({
+  children,
+  label,
+  layout,
+}: {
+  children: ReactNode;
+  label: string;
+  layout: AgentDockLayout;
+}) {
+  return (
+    <aside
+      className="tw:relative tw:col-start-4 tw:row-start-2 tw:mt-0 tw:mr-1 tw:mb-1 tw:ml-0 tw:flex tw:min-w-0 tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-background tw:data-[layout=overlay]:fixed tw:data-[layout=overlay]:inset-y-0 tw:data-[layout=overlay]:right-0 tw:data-[layout=overlay]:z-[var(--ds-z-modal)] tw:data-[layout=overlay]:m-0 tw:data-[layout=overlay]:w-[min(520px,calc(100vw_-_44px))] tw:data-[layout=overlay]:rounded-none tw:data-[layout=overlay]:shadow-popover tw:data-[layout=compact]:fixed tw:data-[layout=compact]:top-title-toolbar tw:data-[layout=compact]:right-0 tw:data-[layout=compact]:bottom-status-bar tw:data-[layout=compact]:left-0 tw:data-[layout=compact]:z-[var(--ds-z-modal)] tw:data-[layout=compact]:m-0 tw:data-[layout=compact]:w-screen tw:data-[layout=compact]:rounded-none tw:data-[layout=compact]:border-x-0"
+      aria-label={label}
+      aria-modal={layout === "docked" ? undefined : true}
+      data-layout={layout}
+      role={layout === "docked" ? undefined : "dialog"}
+    >
+      {children}
     </aside>
   );
 }
@@ -1197,6 +1293,59 @@ function loginCommand(provider: AgentProvider) {
   return provider === "claude" ? "claude auth login" : "codex login";
 }
 
+function agentDockLayout(
+  compact: boolean,
+  overlay: boolean,
+): AgentDockLayout {
+  return compact ? "compact" : overlay ? "overlay" : "docked";
+}
+
+function selectRichTranscriptKeys(items: AcpTranscriptItem[]) {
+  const selected = new Set<string>();
+  let messages = 0;
+  let characters = 0;
+  let lines = 0;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (
+      messages >= MAX_RICH_TRANSCRIPT_MESSAGES ||
+      characters >= MAX_RICH_TRANSCRIPT_CHARS ||
+      lines >= MAX_RICH_TRANSCRIPT_LINES
+    ) {
+      break;
+    }
+    const item = items[index];
+    if (!item || item.kind !== "agent") continue;
+    if (!canRenderAgentRichText(item.chunks)) continue;
+    const itemCharacters = item.chunks.reduce(
+      (total, chunk) => total + chunk.length,
+      0,
+    );
+    const itemLines = item.chunks.reduce(
+      (total, chunk) => total + countLineBreaks(chunk),
+      1,
+    );
+    if (
+      characters + itemCharacters > MAX_RICH_TRANSCRIPT_CHARS ||
+      lines + itemLines > MAX_RICH_TRANSCRIPT_LINES
+    ) {
+      break;
+    }
+    selected.add(item.key);
+    messages += 1;
+    characters += itemCharacters;
+    lines += itemLines;
+  }
+  return selected;
+}
+
+function countLineBreaks(value: string) {
+  let count = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) === 10) count += 1;
+  }
+  return count;
+}
+
 function openAgentMessageLink(href: string) {
   void openUrl(href).catch(() => undefined);
 }
@@ -1213,6 +1362,7 @@ function isLiveSession(lifecycle: AcpSessionLifecycle) {
 const TranscriptItemView = memo(function TranscriptItemView({
   item,
   debugDetails,
+  richText,
   streaming,
   pendingPermissionId,
   permissionSubmitting,
@@ -1221,6 +1371,7 @@ const TranscriptItemView = memo(function TranscriptItemView({
   item: AcpTranscriptItem;
   revision: number;
   debugDetails: boolean;
+  richText: boolean;
   streaming: boolean;
   pendingPermissionId: string | null;
   permissionSubmitting: string | null;
@@ -1249,7 +1400,7 @@ const TranscriptItemView = memo(function TranscriptItemView({
             chunks={item.chunks}
             revision={item.revision}
           />
-        ) : (
+        ) : richText ? (
           <AgentRichText
             labels={{
               copied: t("agent.acpCopied"),
@@ -1260,10 +1411,13 @@ const TranscriptItemView = memo(function TranscriptItemView({
               diagramSource: t("agent.acpDiagramSource"),
               imageOmitted: t("agent.acpImageOmitted"),
               openLink: t("agent.acpOpenLink"),
+              plainTextFallback: t("agent.acpPlainTextFallback"),
             }}
             onOpenLink={openAgentMessageLink}
             text={item.chunks.join("")}
           />
+        ) : (
+          <AgentPlainText text={item.chunks.join("")} />
         )}
       </article>
     );

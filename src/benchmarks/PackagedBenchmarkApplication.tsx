@@ -398,6 +398,7 @@ function AgentTranscriptScenario() {
   const [projection, setProjection] = useState<AcpConversationProjection>(() =>
     createAcpConversationProjection([]),
   );
+  const [turnComplete, setTurnComplete] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   useScenarioRunner(true, async () => {
@@ -415,6 +416,8 @@ function AgentTranscriptScenario() {
           merged.transcriptBytes + merged.recentBytes + receipt.retainedBytes,
       };
     });
+    await waitForPackagedPaint();
+    setTurnComplete(true);
     await waitForPackagedPaint();
     await samples("agent-manual-scroll", ACTION_SAMPLES, (index) => {
       const transcript = transcriptRef.current;
@@ -446,15 +449,35 @@ function AgentTranscriptScenario() {
     <BenchmarkSurface title={`Agent · 10 minute / 10,000 event transcript · ${items.length} retained items`}>
       <div ref={transcriptRef} className="tw:min-h-0 tw:flex-1 tw:overflow-auto tw:p-4">
         <div className="tw:grid tw:min-w-0 tw:gap-3">
-          {items.map((item) => <BenchmarkTranscriptItem key={item.key} item={item} />)}
+          {items.map((item) => (
+            <BenchmarkTranscriptItem
+              key={item.key}
+              item={item}
+              turnComplete={turnComplete}
+            />
+          ))}
         </div>
       </div>
     </BenchmarkSurface>
   );
 }
 
-function BenchmarkTranscriptItem({ item }: { item: AcpTranscriptItem }) {
+function BenchmarkTranscriptItem({
+  item,
+  turnComplete,
+}: {
+  item: AcpTranscriptItem;
+  turnComplete: boolean;
+}) {
   if (item.kind === "agent" || item.kind === "thought") {
+    if (item.kind === "agent" && turnComplete) {
+      return (
+        <AgentRichText
+          labels={agentRichTextLabels}
+          text={item.chunks.join("")}
+        />
+      );
+    }
     return <AgentStreamingText chunks={item.chunks} revision={item.revision} />;
   }
   if (item.kind === "permission") {
@@ -491,6 +514,7 @@ const agentRichTextLabels = {
   diagramSource: "Source",
   imageOmitted: "Image omitted",
   openLink: "Open",
+  plainTextFallback: "Shown as plain text for stability",
 };
 
 function agentEvents(count: number, start = 1): AcpSessionEvent[] {

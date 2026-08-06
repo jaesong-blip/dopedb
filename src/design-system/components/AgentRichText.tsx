@@ -1,13 +1,11 @@
-// Canonical ACP message renderer. Incomplete streams append escaped text nodes;
-// Markdown, syntax, and diagram parsing runs once after a durable turn boundary.
+// Canonical ACP message renderer. React owns incomplete text and completed rich
+// output is isolated behind bounded Markdown and a visible plain-text fallback.
 // Remote images and raw HTML never enter the Agent transcript.
 import {
   Fragment,
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type MouseEvent,
   type ReactNode,
@@ -25,9 +23,12 @@ import {
   type AgentSyntaxLine,
 } from "../agentSyntax";
 import { Button } from "./Button";
+import RenderRecoveryBoundary from "./RenderRecoveryBoundary";
 
 const MAX_HIGHLIGHT_CHARS = 48_000;
 const MAX_MERMAID_CHARS = 24_000;
+const MAX_RICH_TEXT_CHARS = 64 * 1024;
+const MAX_RICH_TEXT_LINES = 1_000;
 const REMARK_PLUGINS = [remarkGfm];
 const REHYPE_PLUGINS = [rehypeSanitize];
 
@@ -40,9 +41,39 @@ export type AgentRichTextLabels = {
   diagramSource: string;
   imageOmitted: string;
   openLink: string;
+  plainTextFallback: string;
 };
 
 export function AgentRichText({
+  labels,
+  onOpenLink,
+  text,
+}: {
+  labels: AgentRichTextLabels;
+  onOpenLink?: (href: string) => void;
+  text: string;
+}) {
+  if (!canRenderAgentRichText([text])) {
+    return <AgentPlainText notice={labels.plainTextFallback} text={text} />;
+  }
+
+  return (
+    <RenderRecoveryBoundary
+      fallback={() => (
+        <AgentPlainText notice={labels.plainTextFallback} text={text} />
+      )}
+      resetKeys={[text]}
+    >
+      <AgentRichTextContent
+        labels={labels}
+        onOpenLink={onOpenLink}
+        text={text}
+      />
+    </RenderRecoveryBoundary>
+  );
+}
+
+function AgentRichTextContent({
   labels,
   onOpenLink,
   text,
@@ -81,11 +112,7 @@ export function AgentRichText({
   );
 }
 
-/** Append-only renderer for an incomplete ACP response.
- *
- * Markdown is parsed once after the response reaches a boundary. While tokens
- * are arriving, only the new text nodes are appended to the existing DOM.
- */
+/** React-owned escaped renderer for an incomplete ACP response. */
 export function AgentStreamingText({
   chunks,
   revision,
@@ -93,35 +120,44 @@ export function AgentStreamingText({
   chunks: string[];
   revision: number;
 }) {
-  const paragraphRef = useRef<HTMLParagraphElement>(null);
-  const chunksRef = useRef(chunks);
-  const renderedChunksRef = useRef(0);
+  const text = useMemo(() => chunks.join(""), [chunks, revision]);
 
-  useLayoutEffect(() => {
-    const paragraph = paragraphRef.current;
-    if (!paragraph) return;
-    if (chunksRef.current !== chunks) {
-      paragraph.textContent = "";
-      chunksRef.current = chunks;
-      renderedChunksRef.current = 0;
-    }
-    let appended = "";
-    for (
-      let index = renderedChunksRef.current;
-      index < chunks.length;
-      index += 1
-    ) {
-      appended += chunks[index] ?? "";
-    }
-    if (appended) paragraph.append(document.createTextNode(appended));
-    renderedChunksRef.current = chunks.length;
-  }, [chunks, revision]);
+  return <AgentPlainText text={text} />;
+}
 
+export function AgentPlainText({
+  notice,
+  text,
+}: {
+  notice?: string;
+  text: string;
+}) {
   return (
     <div className="tw:grid tw:max-w-full tw:min-w-0 tw:gap-3 tw:break-words tw:text-sm tw:leading-body tw:text-foreground">
-      <p ref={paragraphRef} className="tw:m-0 tw:min-w-0 tw:whitespace-pre-wrap" />
+      <p className="tw:m-0 tw:min-w-0 tw:whitespace-pre-wrap">{text}</p>
+      {notice ? (
+        <small className="tw:text-xs tw:leading-body tw:text-muted-foreground" role="status">
+          {notice}
+        </small>
+      ) : null}
     </div>
   );
+}
+
+export function canRenderAgentRichText(chunks: readonly string[]) {
+  let characters = 0;
+  let lines = 1;
+  for (const chunk of chunks) {
+    characters += chunk.length;
+    if (characters > MAX_RICH_TEXT_CHARS) return false;
+    for (let index = 0; index < chunk.length; index += 1) {
+      if (chunk.charCodeAt(index) === 10) {
+        lines += 1;
+        if (lines > MAX_RICH_TEXT_LINES) return false;
+      }
+    }
+  }
+  return true;
 }
 
 function createMarkdownComponents(

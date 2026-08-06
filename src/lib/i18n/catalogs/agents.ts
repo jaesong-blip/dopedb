@@ -90,6 +90,8 @@ export const agentsCatalog = defineCatalog(
       "Earlier local transcript events were removed by the replay limit.",
     "agent.acpNoToken": "Local login · no app token",
     "agent.acpOpenLink": "Open link in the system browser",
+    "agent.acpPlainTextFallback":
+      "This response is shown as plain text to keep the chat stable.",
     "agent.acpPermission": "Permission required",
     "agent.acpPermissionFailed":
       "Could not answer the permission request: {error}",
@@ -103,6 +105,10 @@ export const agentsCatalog = defineCatalog(
     "agent.acpReadyBody":
       "The current connection and visible editor selection will be attached as explicit ACP context blocks.",
     "agent.acpReadyTitle": "Ready to work",
+    "agent.acpRenderFailed": "AI Chat could not be displayed",
+    "agent.acpRenderFailedBody":
+      "The session is still stored locally. Retry the panel or close it and continue in the workspace.",
+    "agent.acpRenderRetry": "Retry panel",
     "agent.acpResume": "Resume session",
     "agent.acpResumeBody":
       "This bounded history is stored locally. Resume it through the same official adapter.",
@@ -366,6 +372,8 @@ export const agentsCatalog = defineCatalog(
       "로컬 재생 한도를 넘은 이전 대화 기록은 정리되었습니다.",
     "agent.acpNoToken": "로컬 로그인 · 앱 토큰 없음",
     "agent.acpOpenLink": "시스템 브라우저에서 링크 열기",
+    "agent.acpPlainTextFallback":
+      "채팅을 안정적으로 유지하기 위해 이 답변을 일반 텍스트로 표시합니다.",
     "agent.acpPermission": "권한 승인 필요",
     "agent.acpPermissionFailed": "권한 요청에 응답하지 못했습니다: {error}",
     "agent.acpPermissionResolved": "이 권한 요청은 더 이상 대기 중이 아닙니다.",
@@ -378,6 +386,10 @@ export const agentsCatalog = defineCatalog(
     "agent.acpReadyBody":
       "현재 연결과 화면에서 선택한 편집기 문맥을 명시적인 ACP 컨텍스트 블록으로 첨부합니다.",
     "agent.acpReadyTitle": "작업 준비 완료",
+    "agent.acpRenderFailed": "AI Chat 화면을 표시하지 못했습니다",
+    "agent.acpRenderFailedBody":
+      "세션은 로컬에 보존되어 있습니다. 패널을 다시 표시하거나 닫고 워크스페이스에서 계속 작업할 수 있습니다.",
+    "agent.acpRenderRetry": "패널 다시 표시",
     "agent.acpResume": "세션 이어가기",
     "agent.acpResumeBody":
       "크기가 제한된 이 기록은 로컬에 저장됩니다. 같은 공식 어댑터로 세션을 이어갑니다.",

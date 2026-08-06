@@ -268,6 +268,10 @@ Elevation은 세 단계만 허용한다.
 - `ProgressBar`: 업데이트 다운로드, Services 작업, 결과 내보내기가 공유하는
   determinate/indeterminate 진행률 primitive. `default`와 `compact` 밀도만
   허용하고 화면별 track/fill utility나 임의 최소 진행률을 다시 만들지 않는다.
+- `RenderRecoveryBoundary`: Markdown, diagram, provider payload처럼 선택적인
+  rich surface의 render 실패를 해당 feature 안에 격리한다. 오류 원문은 UI에
+  노출하지 않고 호출자가 제공한 안전한 fallback과 명시적 retry만 표시하며,
+  이후 진단 수집은 별도 observer가 소유한다.
 - `ProviderTargetLabel`: Explorer, connection picker, workbench가 공유하는
   provider target feature composition. 현재는 DQ-28의 Neon branch identity만
   허용하며, 긴 ID는 mono ellipsis와 tooltip으로 보존하고 provider state는
@@ -559,9 +563,13 @@ provider를 disabled option으로 노출하지 않는다.
 
 Agent의 최종 답변과 streaming 답변 본문은
 [`src/design-system/components/AgentRichText.tsx`](components/AgentRichText.tsx)의
-`AgentRichText`, `AgentStreamingText`를 사용한다. streaming 중에는 기존 DOM을
-다시 파싱하지 않고 새 chunk만 escaped text node로 append하며, turn boundary 뒤
-`react-markdown` + `remark-gfm`으로 최종 본문을 한 번 렌더링한다.
+`AgentRichText`, `AgentStreamingText`, `AgentPlainText`를 사용한다. streaming
+중에는 React가 소유하는 escaped plain text만 표시하며, turn boundary 뒤
+`react-markdown` + `remark-gfm`으로 최종 본문을 한 번 렌더링한다. rich parsing은
+답변당 64KiB·1,000줄, transcript당 최근 12개·192KiB·2,400줄 안에서만 허용하고
+이전 답변과 한도 초과 답변은 내용 손실 없이 일반 텍스트로 표시한다. Markdown render가
+실패해도 답변별 `RenderRecoveryBoundary`가 일반 텍스트로 되돌리며 AI Chat의
+feature boundary가 앱 shell 전체의 unmount를 막는다.
 raw HTML과 원격 image는 렌더링하지 않고, `rehype-sanitize`를 통과한 외부
 `http(s)`/`mailto` link만 시스템 browser로 연다. 완료된 code fence는
 fine-grained Shiki JavaScript engine과 요청된 grammar만 지연 로드하며 색상은
