@@ -892,6 +892,7 @@ function Shell() {
       onRenameDocument={workbench.updateTitle}
       onCloseDocument={closeDocument}
       onNewQuery={() => void openQueryDocument()}
+      onSearchEverywhere={() => setSearchEverywhereOpen(true)}
       onOpenActivity={() => openStableDocument("activity")}
       onDashboardFocusConsumed={consumeDashboardFocus}
       onOpenTerminal={openOrFocusTerminalDock}

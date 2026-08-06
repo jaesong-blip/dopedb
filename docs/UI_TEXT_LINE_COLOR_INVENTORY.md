@@ -54,10 +54,13 @@
 - 빈 AI Chat은 큰 제목과 설명 문단을 제거하고 실제 SQL·탐색·승인 capability
   세 줄만 남겼다. `1400×929` DopeDB 2026.1.4 빈 transcript와 같은 구조로
   다시 대조하되 DopeDB의 IDE 전용 capability는 추가하지 않았다.
+- Welcome 문서는 logo·큰 제목·반복 설명 구획을 제거하고 실제 새 쿼리·새
+  연결·전체 검색 command만 남겼다. 연결 전에는 첫 데이터 소스 선택에 필요한
+  한 줄만 표시하며 Files/VCS command는 기능 범위 결정에 따라 추가하지 않았다.
 
 ## 아직 parity 완료 증거가 아닌 항목
 
-- Explorer scope badge와 Agent 빈 transcript 외 shell·data editor·Agent 실행 상태 등 기준 시나리오의 DopeDB
+- Explorer scope badge, Agent 빈 transcript, Welcome 외 shell·data editor·Agent 실행 상태 등 기준 시나리오의 DopeDB
   2026.1/DopeDB 같은 state·viewport before/reference/after capture
 - 30개 이상 column, 긴 NULL/text/numeric data에서 line 없는 grid의 실제 비교
 - compact `560×700`과 macOS·Windows packaged App의 tooltip/focus/text rendering

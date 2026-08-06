@@ -1,96 +1,74 @@
-// DopeDB-style Welcome document. Creation actions stay in Database Explorer,
-// and Agent actions stay in AI Chat, so the center does not duplicate tool windows.
+// DopeDB-style Welcome document. Only commands with a real application owner
+// appear here; provider setup and Agent actions stay in their tool windows.
 import { useI18n } from "../../lib/i18n";
-import { Icon, type IconName } from "../../components/Icon";
+import { Button } from "../../design-system/components/Button";
 
 export default function Onboarding({
-  embedded = false,
   connectionName,
+  onNewConnection,
+  onNewQuery,
+  onSearchEverywhere,
 }: {
-  embedded?: boolean;
   connectionName?: string;
+  onNewConnection: () => void;
+  onNewQuery?: () => void;
+  onSearchEverywhere: () => void;
 }) {
   const { t } = useI18n();
   const connected = Boolean(connectionName);
-  const guides: ReadonlyArray<{
-    icon: IconName;
-    title: string;
-    body: string;
-  }> = [
+  const commands = [
+    ...(connected && onNewQuery
+      ? [
+          {
+            id: "new-query",
+            label: t("ide.action.newQuery"),
+            onClick: onNewQuery,
+          },
+        ]
+      : []),
     {
-      icon: "database",
-      title: t("onboarding.explorerTitle"),
-      body: t(
-        connected
-          ? "onboarding.connectedExplorerBody"
-          : "onboarding.explorerBody",
-      ),
+      id: "new-data-source",
+      label: t("connections.new"),
+      onClick: onNewConnection,
     },
     {
-      icon: "search",
-      title: t("onboarding.searchTitle"),
-      body: t("onboarding.searchBody"),
+      id: "search-everywhere",
+      label: t("ide.action.searchEverywhere"),
+      shortcut: "Shift ×2",
+      onClick: onSearchEverywhere,
     },
-    {
-      icon: "check",
-      title: t("onboarding.safetyTitle"),
-      body: t("onboarding.safetyBody"),
-    },
-  ];
+  ] as const;
 
   return (
     <div className="tw:flex tw:h-full tw:min-h-0 tw:flex-col tw:overflow-hidden tw:bg-editor">
-      {!embedded && (
-        <header className="tw:flex tw:min-h-9 tw:shrink-0 tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:bg-card tw:px-3 tw:text-sm">
-          <span className="tw:grid tw:size-5 tw:place-items-center tw:rounded-xs tw:bg-secondary tw:font-mono tw:text-xs tw:font-bold">
-            D
-          </span>
-          <span>{t("ide.noDataSource")}</span>
-        </header>
-      )}
-      <div className="tw:grid tw:min-h-0 tw:flex-1 tw:place-items-center tw:overflow-auto tw:p-[clamp(var(--ds-space-5),5vw,64px)]">
-        <main className="tw:w-full tw:max-w-[560px]">
-          <div className="tw:mb-7 tw:text-center">
-            <div
-              className="tw:mx-auto tw:mb-3 tw:grid tw:size-9 tw:place-items-center tw:rounded-sm tw:border tw:border-border-strong tw:bg-secondary tw:font-mono tw:text-title tw:font-bold"
-              aria-hidden="true"
-            >
-              D
-            </div>
-            <h1 className="tw:mt-0 tw:mb-2 tw:text-heading tw:tracking-[-0.02em]">
-              {t("onboarding.title")}
-            </h1>
-            <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-              {connected
-                ? t("onboarding.connectedLead", {
-                    connection: connectionName ?? "",
-                  })
-                : t("onboarding.lead")}
+      <div className="tw:grid tw:min-h-0 tw:flex-1 tw:place-items-center tw:overflow-auto tw:p-5">
+        <main className="tw:w-full tw:max-w-[320px]">
+          <h1 className="tw:sr-only">{t("onboarding.title")}</h1>
+          {!connected ? (
+            <p className="tw:mt-0 tw:mb-3 tw:text-center tw:text-sm tw:leading-body tw:text-muted-foreground">
+              {t("onboarding.firstRunLead")}
             </p>
-          </div>
-
-          <div className="tw:grid tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
-            {guides.map((guide) => (
-              <div
-                key={guide.title}
-                className="tw:grid tw:grid-cols-[28px_minmax(0,1fr)] tw:gap-3 tw:px-1 tw:py-3"
+          ) : null}
+          <div className="tw:grid tw:gap-1" aria-label={t("onboarding.title")}>
+            {commands.map((command) => (
+              <Button
+                key={command.id}
+                presentation="menuItem"
+                size="compact"
+                variant="ghost"
+                onClick={command.onClick}
               >
-                <Icon
-                  name={guide.icon}
-                  className="tw:mt-[var(--ds-optical-offset-xs)] tw:text-[length:var(--ds-icon-md)] tw:text-muted-foreground"
-                />
-                <div>
-                  <strong className="tw:text-ui">{guide.title}</strong>
-                  <p className="tw:mt-1 tw:mb-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
-                    {guide.body}
-                  </p>
-                </div>
-              </div>
+                <span className="tw:flex tw:w-full tw:min-w-0 tw:items-center tw:justify-between tw:gap-4">
+                  <span className="tw:truncate">{command.label}</span>
+                  {"shortcut" in command ? (
+                    <span className="tw:shrink-0 tw:font-mono tw:text-xs tw:font-normal tw:text-muted-foreground">
+                      {command.shortcut}
+                    </span>
+                  ) : null}
+                </span>
+              </Button>
             ))}
           </div>
-          <p className="tw:mt-4 tw:mb-0 tw:text-center tw:text-xs tw:text-muted-foreground">
-            {t(connected ? "onboarding.connectedFoot" : "onboarding.foot")}
-          </p>
         </main>
       </div>
     </div>

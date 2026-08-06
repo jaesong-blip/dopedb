@@ -37,6 +37,12 @@ DopeDB parity.
   [`15-agent-empty-after.png`](./15-agent-empty-after.png)
 - AI Chat compact-window projection after correction:
   [`16-agent-empty-compact-after.png`](./16-agent-empty-compact-after.png)
+- Welcome document with oversized guidance before correction:
+  [`17-welcome-before.png`](./17-welcome-before.png)
+- Welcome document command list after correction:
+  [`18-welcome-after.png`](./18-welcome-after.png)
+- Welcome compact-window projection after correction:
+  [`19-welcome-compact-after.png`](./19-welcome-compact-after.png)
 
 The DopeDB captures use the same `1393×862` browser projection and deterministic
 PostgreSQL catalog fixture. Browser projection verifies layout and accessible text,
@@ -136,3 +142,21 @@ name without spending steady-state visible text. The `560×700` capture confirms
 same three-line hierarchy while the composer and Agent picker remain visible. At
 `1400×929`, the browser projection measured the right surface at `596px`, the
 composer at `570×108px`, and no horizontal document overflow.
+
+## Welcome 2026.1.4 recheck
+
+The isolated DopeDB `1400×929` central surface used a small command list without
+a logo, visible page title, or explanatory cards. Its temporary reference capture
+has SHA-256
+`0b860bc2de60a0e4ece901527fbc3a081d76855073465e5eaeeb2c86cfaeaea4` and is not
+copied into the repository.
+
+DopeDB's previous document was structurally real but still devoted the center to a
+large mark, heading, lead, three guidance sections, and a footer. The connected
+document now exposes only commands with real owners: New Query Console, New Data
+Source, and Search Everywhere. The disconnected projection adds one first-choice
+sentence and omits the unavailable query command instead of disabling it. DopeDB's
+Recent Files, Navigation Bar, Go to File, and drop-file affordances remain absent
+because those IDE features are outside the product scope. The compact capture checks
+that the same command list remains reachable without introducing another mobile
+navigation surface.

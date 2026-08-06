@@ -392,6 +392,10 @@ Elevation은 세 단계만 허용한다.
   열린 문서를 나열해 overflow된 문서도 실제 활성화할 수 있어야 한다. 새 쿼리,
   Activity처럼 title toolbar나 status에서 이미 제공하는 action을 tab strip에
   중복 배치하지 않으며, tab용 feature CSS나 style map을 만들지 않는다.
+  Welcome 본문도 logo·page title·설명 card를 만들지 않고 `Button`의 flat
+  `menuItem` projection으로 실제 AppShell command만 나열한다. 연결 전에는 첫
+  데이터 소스 선택에 필요한 한 줄만 허용하며 범위 밖 IDE command나 비활성
+  placeholder는 표시하지 않는다.
 
 DopeDB 참조에서 추출한 chrome 높이, panel gutter, 화면별 비교 순서와 기능
 결정 대기 목록은

@@ -79,6 +79,7 @@ type Props = {
   onRenameDocument: (id: string, title: string) => void;
   onCloseDocument: (id: string) => void;
   onNewQuery: () => void;
+  onSearchEverywhere: () => void;
   onOpenActivity: () => void;
   onDashboardFocusConsumed: () => void;
   onOpenTerminal: () => void;
@@ -182,7 +183,12 @@ export default function WorkbenchContent(props: Props) {
   }
 
   if (connections.length === 0) {
-    return withSettings(<Onboarding />);
+    return withSettings(
+      <Onboarding
+        onNewConnection={() => props.onNewConnection()}
+        onSearchEverywhere={props.onSearchEverywhere}
+      />,
+    );
   }
 
   const safetyFallback = safetyError ? (
@@ -245,8 +251,10 @@ export default function WorkbenchContent(props: Props) {
           </WorkbenchEmptyState>
         ) : activeDocument.kind === "welcome" ? (
           <Onboarding
-            embedded
             connectionName={selected.name || selected.database}
+            onNewConnection={() => props.onNewConnection()}
+            onNewQuery={props.onNewQuery}
+            onSearchEverywhere={props.onSearchEverywhere}
           />
         ) : activeDocument.kind === "data" ? (
           safety ? (
