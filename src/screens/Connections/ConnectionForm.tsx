@@ -31,6 +31,7 @@ import {
   TextInput,
   type FieldValidation,
 } from "../../design-system/components/FormControls";
+import { IconRailTabs } from "../../design-system/components/IconRailTabs";
 import {
   ModalBackdrop,
   ModalDetailActionBar,
@@ -48,7 +49,6 @@ import { TreeSearch } from "../../design-system/components/TreeControls";
 import {
   ToolWindowAction,
   ToolWindowSearchRow,
-  ToolWindowSection,
 } from "../../design-system/components/ToolWindow";
 import {
   formatConnectionUrl,
@@ -1244,19 +1244,22 @@ export function ConnectionForm({
             onChange={setEditorView}
           />
         </div>
-        <aside className="tw:flex tw:w-[258px] tw:shrink-0 tw:flex-col tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
-          <PanelTabs
+        <aside className="tw:flex tw:w-[292px] tw:shrink-0 tw:overflow-visible tw:border-r tw:border-border-subtle tw:bg-card tw:@max-[760px]:hidden">
+          <IconRailTabs
             tabs={[
               {
                 id: "dataSources",
+                icon: <Icon name="database" />,
                 label: t("connections.dataSources"),
               },
               {
                 id: "clouds",
+                icon: <Icon name="key" />,
                 label: t("connections.clouds"),
               },
               {
                 id: "drivers",
+                icon: <Icon name="gear" />,
                 label: t("connections.drivers"),
               },
             ]}
@@ -1264,6 +1267,14 @@ export function ConnectionForm({
             onChange={setEditorView}
             label={t("connections.dataSourceCatalogNavigation")}
           />
+          <div className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-visible">
+            <div className="tw:flex tw:h-control-lg tw:min-h-control-lg tw:items-center tw:border-b tw:border-border-subtle tw:px-3 tw:text-sm tw:font-semibold tw:text-foreground">
+              {editorView === "dataSources"
+                ? t("connections.dataSources")
+                : editorView === "clouds"
+                  ? t("connections.clouds")
+                  : t("connections.drivers")}
+            </div>
           <div className="tw:flex tw:h-control-lg tw:min-h-control-lg tw:items-center tw:border-b tw:border-border-subtle tw:px-3">
             {editorView === "dataSources" ? (
               <div className="tw:flex tw:items-center tw:gap-1">
@@ -1566,10 +1577,7 @@ export function ConnectionForm({
           <nav className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:py-2">
             {editorView === "dataSources" &&
             visibleConnections.length > 0 ? (
-              <ToolWindowSection
-                title={t("connections.dataSources")}
-                prominence="catalog"
-              >
+              <div className="tw:grid tw:gap-[2px]">
                 {visibleConnections.map((connection) => (
                   <ToolWindowAction
                     key={connection.id}
@@ -1583,7 +1591,7 @@ export function ConnectionForm({
                     {connection.name || t("app.unnamed")}
                   </ToolWindowAction>
                 ))}
-              </ToolWindowSection>
+              </div>
             ) : null}
             {editorView === "dataSources" &&
             connections.length > 0 &&
@@ -1605,10 +1613,7 @@ export function ConnectionForm({
                   {t("connections.problemDriverCatalogUnavailable")}
                 </p>
               ) : visibleCatalogDrivers.length > 0 ? (
-                <ToolWindowSection
-                  title={t("connections.drivers")}
-                  prominence="catalog"
-                >
+                <div className="tw:grid tw:gap-[2px]">
                   {visibleCatalogDrivers.map((driver) => (
                     <ToolWindowAction
                       key={driver.id}
@@ -1627,7 +1632,7 @@ export function ConnectionForm({
                       {driver.name}
                     </ToolWindowAction>
                   ))}
-                </ToolWindowSection>
+                </div>
               ) : (
                 <p className="tw:px-2 tw:py-4 tw:text-center tw:text-sm tw:text-muted-foreground">
                   {t("connections.noDriverResults")}
@@ -1635,10 +1640,7 @@ export function ConnectionForm({
               )
             ) : null}
             {editorView === "clouds" ? (
-              <ToolWindowSection
-                title={t("connections.clouds")}
-                prominence="catalog"
-              >
+              <div className="tw:grid tw:gap-[2px]">
                 {cloudProviders.map((provider) => (
                   <ToolWindowAction
                     key={provider.provider}
@@ -1654,7 +1656,7 @@ export function ConnectionForm({
                     {provider.label}
                   </ToolWindowAction>
                 ))}
-              </ToolWindowSection>
+              </div>
             ) : null}
           </nav>
           {editorView === "dataSources" ? (
@@ -1688,6 +1690,7 @@ export function ConnectionForm({
               </ToolWindowAction>
             </div>
           ) : null}
+          </div>
         </aside>
 
         <section className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col tw:overflow-hidden">

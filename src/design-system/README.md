@@ -80,10 +80,11 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
   provider/driver `CommandMenu`를 즉시 연다. engine/provider preset이 명시된
   진입만 해당 속성 form을 바로 표시한다. 실제 생성하지 않는 demo나 지원하지
   않는 provider resource를 선택지 설명으로 약속하지 않는다.
-- Data Sources and Drivers dialog는 왼쪽 258px catalog pane 상단의
-  Data Sources, Clouds, Drivers category tab으로 책임을 분리한다.
-  DopeDB 참조에 없는 별도 세로 icon rail을 만들지 않는다. data source와
-  driver는 각각 하나의 검색 가능한 목록만 가지며, driver detail은 backend
+- Data Sources and Drivers dialog는 DopeDB 2026.1.4 실앱에서 다시 측정한
+  42px 세로 category rail과 250px catalog list로 책임을 분리한다. rail에는
+  실제 화면이 있는 Data Sources, Clouds, Drivers만 두며 label은 hover와
+  keyboard focus tooltip로 제공한다. data source와 driver는 각각 하나의
+  검색 가능한 목록만 가지며, driver detail은 backend
   catalog가 반환한 이름, version, 설치 상태, 지원 connection method와
   capability만 표시한다. `+` popup의 provider group은 DopeDB 용어인
   `Data Source from Cloud Provider`를 사용한다. Clouds category는 실제
@@ -317,6 +318,8 @@ Elevation은 세 단계만 허용한다.
   monospace `TextAreaInput`을 사용한다. 계층 checklist의 parent는
   `CheckboxField`의 native `indeterminate` 상태로 부분 선택을 표현한다.
 - `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.
+- `IconRailTabs`: desktop dialog의 42px 세로 category navigation. icon-only
+  tab의 selection, tooltip, roving arrow/Home/End keyboard focus를 소유한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.
 - `EnvironmentBadge`: dev/staging/prod 의미색과 대문자 표기를 한곳에서 소유.
@@ -339,8 +342,8 @@ Elevation은 세 단계만 허용한다.
   responsive dialog frame과 30px title/48px detail action/50px primary action
   bar. SQL parameter, DDL viewer, provider credential처럼 background interaction을
   막는 feature dialog도 이 frame을 사용하고 별도 modal CSS를 만들지 않는다.
-  `size="settings"`는 945×700 설정 dialog를, `size="dataSources"`는 공식
-  Data Sources 정본의 888×731 frame을 compact full-height fallback과 함께
+  `size="settings"`는 945×700 설정 dialog를, `size="dataSources"`는
+  DopeDB 2026.1.4 실앱에서 재측정한 980×731 frame을 compact full-height fallback과 함께
   소유한다. Data Sources의 `Problems`는 catalog 하단, `Test Connection`은
   detail action bar, `Cancel/Apply/OK`는 `ModalFooter`에 두며 한 footer에
   섞지 않는다.
@@ -519,8 +522,8 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 툴윈도우 primitive는
 [`src/design-system/components/ToolWindow.tsx`](components/ToolWindow.tsx)에
 있고 form과 tab primitive는 같은 디렉터리의 `FormControls.tsx`,
-`PanelTabs.tsx`, `SegmentedControl.tsx`에 있다. 같은 형태는 화면에서 utility
-문자열로 다시 만들지 않는다.
+`PanelTabs.tsx`, `IconRailTabs.tsx`, `SegmentedControl.tsx`에 있다. 같은
+형태는 화면에서 utility 문자열로 다시 만들지 않는다.
 
 ACP처럼 protocol이 작업 상태를 소유하는 화면은
 [`src/design-system/components/Agent.tsx`](components/Agent.tsx)의

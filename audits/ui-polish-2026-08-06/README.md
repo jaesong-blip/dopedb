@@ -11,6 +11,12 @@ DopeDB parity.
 - After: [`02-explorer-scope-after.png`](./02-explorer-scope-after.png)
 - Canonical icon-command focus tooltip:
   [`03-erd-tooltip-focus-after.png`](./03-erd-tooltip-focus-after.png)
+- Data Sources horizontal category tabs before correction:
+  [`04-data-sources-tabs-before.png`](./04-data-sources-tabs-before.png)
+- Data Sources desktop rail after correction:
+  [`05-data-sources-rail-after.png`](./05-data-sources-rail-after.png)
+- Data Sources compact projection after correction:
+  [`06-data-sources-compact-after.png`](./06-data-sources-compact-after.png)
 
 The DopeDB captures use the same `1393×862` browser projection and deterministic
 PostgreSQL catalog fixture. Browser projection verifies layout and accessible text,
@@ -35,6 +41,23 @@ checklist. No new feature or inactive control was added.
 
 The wider shell, data editor, Agent, popup and compact-platform scenarios remain
 open until the same before/reference/after and packaged macOS/Windows evidence exists.
+
+## Data Sources 2026.1.4 recheck
+
+An isolated official DopeDB 2026.1.4 (`DB-261.26222.86`) process was opened
+with a clean empty project. Its native Data Sources and Drivers window measured
+`980×737` before the macOS capture shadow; the application content uses a roughly
+`42px` vertical category rail followed by a roughly `250px` catalog list. The
+temporary reference capture has SHA-256
+`0487e71353fcf36a7876b5d8bd4f50bfda8ff8df7ecc89b25f9a77eedb241852`
+and is intentionally not copied into the repository.
+
+This contradicts the earlier horizontal-category interpretation recorded in the
+tracker. The correction keeps only DopeDB's already implemented Data Sources,
+Clouds, and Drivers categories; it does not add DopeDB-only categories or a
+disabled placeholder. The category title now appears once instead of repeating
+above the list. Arrow keys and Home/End move and activate desktop rail tabs;
+compact dialogs keep the existing text SegmentedControl and source selector.
 
 ## Icon-command primitive check
 
