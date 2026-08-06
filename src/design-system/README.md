@@ -336,7 +336,15 @@ Elevation은 세 단계만 허용한다.
   실제 전역 작업 모델에 있는 task만 표시하고 지원되지 않는 중단 control은
   만들지 않는다.
 - `CommandMenu`, `CommandMenuGroup`, `CommandMenuItem`: 검색 입력, 분류,
-  설명이 필요한 생성·선택 command popup.
+  설명이 필요한 생성·선택 command popup. `CommandMenuItem`의
+  `aria-selected`는 Search Everywhere와 같은 listbox의 공용 선택 row
+  treatment를 소유한다.
+- Search Everywhere는 `1400×929`에서 약 `672px` 폭, `top=190px`의
+  transparent-dismiss popup으로 투영한다. 빈 질의는 결과 영역을
+  늘리지 않고, 실제 검색 가능한 Database·Documents·Actions·Settings
+  범위만 `Button` tab으로 표시한다. `/`는 실제 action catalog를
+  열며 Files·Code·Text 같은 범위 밖 category placeholder를 만들지
+  않는다.
 - `ModalBackdrop`, `ModalSurface`, `ModalTitleBar`, `ModalDetailActionBar`,
   `ModalFooter`: background interaction을 차단하는 공용 viewport backdrop,
   responsive dialog frame과 30px title/48px detail action/50px primary action

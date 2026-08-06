@@ -23,6 +23,14 @@ DopeDB parity.
   [`08-settings-rail-after.png`](./08-settings-rail-after.png)
 - Settings compact projection after correction:
   [`09-settings-compact-after.png`](./09-settings-compact-after.png)
+- Search Everywhere oversized modal before correction:
+  [`10-search-everywhere-before.png`](./10-search-everywhere-before.png)
+- Search Everywhere compact blank state after correction:
+  [`11-search-everywhere-after.png`](./11-search-everywhere-after.png)
+- Search Everywhere `/` action mode after correction:
+  [`12-search-everywhere-actions-after.png`](./12-search-everywhere-actions-after.png)
+- Search Everywhere compact projection after correction:
+  [`13-search-everywhere-compact-after.png`](./13-search-everywhere-compact-after.png)
 
 The DopeDB captures use the same `1393×862` browser projection and deterministic
 PostgreSQL catalog fixture. Browser projection verifies layout and accessible text,
@@ -86,3 +94,20 @@ keyboard focus. The ERD capture records the focused state. An interaction check 
 confirmed `Escape` dismisses the tooltip and leaves the command focused. The static
 `pnpm check:ui-primitives` rule prevents a raw icon-only button or a statically unnamed
 `Button iconOnly` from entering the source tree again.
+
+## Search Everywhere 2026.1.4 recheck
+
+The isolated DopeDB 2026.1.4 window exposed a roughly `672px` Search Everywhere
+popup at `top=190px` in a `1400×929` logical viewport. The blank popup contains a
+category row and a focused 32px search row without dimming the application or
+expanding an empty result area. The temporary reference capture has SHA-256
+`ee86a84e871c96122a0329d4cd38a0dd912fcdb1d6e69557a59d90ac7c22512d` and is not
+copied into the repository.
+
+The correction replaces the former `760×620` dimmed modal and initial 40-item list
+with the measured popup geometry. Only categories backed by real DopeDB results are
+shown: Database, Documents, Actions, and Settings. `/` searches the existing action
+catalog; DopeDB-only Files, Code, and Text categories are not represented by labels
+or placeholders. Desktop and compact captures verify the blank and action states.
+Playwright also verified scoped filtering, Arrow selection, roving tab
+Arrow/Home/End, Escape dismissal, and focus restoration to the toolbar launcher.
