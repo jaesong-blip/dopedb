@@ -1,5 +1,9 @@
-name: packaged-performance
+name: Manual packaged performance
+run-name: Manual packaged performance · startup=${{ inputs.startup_samples }} · workload=${{ inputs.workload_samples }}
 
+# Deliberately manual-only. Do not add push, pull_request, schedule, release,
+# or workflow_call triggers: this benchmark is long-running diagnostic work,
+# not a required CI or release check.
 on:
   workflow_dispatch:
     inputs:

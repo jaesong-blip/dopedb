@@ -96,8 +96,10 @@ Node와 WebView engine/version, fixture 정의, 개별 numeric sample, 집계와
    별도 계측이 필요한 상태다.
 5. 세부 성능 이슈의 before/after artifact를 같은 명령과 fixture로 만들고 링크한다.
 
-`.github/workflows/packaged-performance.yml`을 수동 실행하면 macOS arm64와 Windows
-x64 artifact를 각각 생성해 workflow artifact로 30일 보관한다. 이 workflow는
+`.github/workflows/packaged-performance.yml`은 GitHub Actions의 **Run workflow**로
+원할 때만 수동 실행한다. push, pull request, schedule, release 또는 다른 workflow의
+호출로는 시작하지 않으며 필수 CI·릴리스 체크가 아니다. 수동 실행하면 macOS arm64와
+Windows x64 artifact를 각각 생성해 workflow artifact로 30일 보관한다. 이 workflow는
 서명·배포·updater 채널을 건드리지 않는다.
 
 ## 개인정보 경계
