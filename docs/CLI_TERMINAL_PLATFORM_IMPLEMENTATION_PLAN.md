@@ -1,9 +1,17 @@
 # DopeDB CLI·Terminal Platform 구현 계획
 
-- 상태: 구현 진행 — Phase 7~10 완료, Phase 11 착수 전
+- 상태: **역사적 구현 기록 — 현재 제품 로드맵으로 사용하지 않음**
 - 최종 갱신: 2026-07-25
 - 적용 대상: DopeDB Desktop, `workspace-cloud`, 신규 `dopedb-cli`, 향후
   Plugin/Realtime 서비스
+
+> 2026-08-05 제품 방향 변경으로 이 문서의 Terminal 우선 Agent UI, 범용 Plugin
+> Platform, Realtime SQL CRDT, masked result snapshot 단계는 폐기됐다. 현재 범위와
+> 착수 순서는 `AGENTS.md`의 Product direction,
+> [`PRODUCT_POSITIONING.md`](./PRODUCT_POSITIONING.md),
+> [`DopeDB_VISUAL_REFERENCE_SPEC.md`](./DopeDB_VISUAL_REFERENCE_SPEC.md)의
+> 기능 범위 결정 표가 소유한다. 이 문서의 Phase 번호나 미완료 checklist는 새 기능
+> 착수 근거가 아니다.
 
 ## 1. 문서 목적
 
