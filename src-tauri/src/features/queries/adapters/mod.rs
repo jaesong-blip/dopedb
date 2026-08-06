@@ -23,6 +23,10 @@ pub(crate) use desktop_contracts::{
     DesktopSqlRunError, DesktopSqlRunReceipt, DesktopSqlStreamReceipt,
 };
 pub(crate) use desktop_result_store::DesktopSqlResultAuthority;
+#[cfg(feature = "packaged-benchmark")]
+pub(crate) use desktop_result_store::{
+    run_packaged_result_store_benchmark, PackagedResultStoreMetric,
+};
 pub(crate) use desktop_stream_lifecycle::{DesktopStreamCleanupOwner, DesktopStreamCleanupRuntime};
 pub(crate) use desktop_stream_registry::DesktopSqlStreamRegistry;
 pub(crate) use errors::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};

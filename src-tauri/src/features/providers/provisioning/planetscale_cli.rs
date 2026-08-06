@@ -70,7 +70,8 @@ impl PlanetScaleInventory {
             },
         )
         .await?;
-        let home = dirs::home_dir().ok_or(ProvisioningProcessFailure::ExecutableRejected)?;
+        let home = crate::app_paths::optional_home_dir()
+            .ok_or(ProvisioningProcessFailure::ExecutableRejected)?;
         let config = home.join(".config/planetscale/pscale.yml");
         let home = safe_path_text(&home)?;
         let config_file = config
@@ -351,13 +352,18 @@ fn ensure_authority(authority: &ProvisioningReadAuthority) -> AppResult<()> {
 
 fn pscale_candidates() -> Vec<(PathBuf, PathBuf)> {
     let mut candidates = Vec::new();
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = crate::app_paths::optional_home_dir() {
         let local = home.join(".local");
         candidates.push((local.clone(), local.join("bin/pscale")));
         let bin = home.join("bin");
         candidates.push((bin.clone(), bin.join("pscale")));
     }
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "packaged-benchmark"))]
+    if let Ok(local) = crate::app_paths::data_root() {
+        let root = local.join("programs-planetscale");
+        candidates.push((root.clone(), root.join("pscale.exe")));
+    }
+    #[cfg(all(windows, not(feature = "packaged-benchmark")))]
     if let Some(local) = dirs::data_local_dir() {
         let root = local.join("Programs/PlanetScale");
         candidates.push((root.clone(), root.join("pscale.exe")));

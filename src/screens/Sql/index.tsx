@@ -58,6 +58,7 @@ import { tauriSqlDocumentGateway } from "../../features/sqlDocuments/tauriAdapte
 import { useSqlDocumentAutosave } from "../../features/sqlDocuments/useSqlDocumentAutosave";
 import { localizeRunSignal } from "../../features/query/runSignal";
 import { useSqlDraftAnalysis } from "../../features/query/useSqlDraftAnalysis";
+import { formatSqlDocument } from "../../features/query/sqlFormatter";
 import { useSqlEditorBuffer } from "../../features/query/useSqlEditorBuffer";
 import {
   publishWorkbenchDraft,
@@ -408,21 +409,13 @@ export default function Sql({
     if (!draft.trim() || formatting) return;
     setFormatting(true);
     try {
-      const formatter = await import("sql-formatter");
       const language: SqlLanguage =
         connection.engine === "postgres"
           ? "postgresql"
           : connection.engine === "mysql"
             ? "mysql"
             : "sqlite";
-      setDraft(
-        formatter.format(draft, {
-          language,
-          keywordCase: "upper",
-          tabWidth: 2,
-          linesBetweenQueries: 2,
-        }),
-      );
+      setDraft(await formatSqlDocument(draft, language));
     } catch (error) {
       reportDocumentSaveError(error);
     } finally {

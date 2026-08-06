@@ -1,7 +1,7 @@
 // The only frontend module that owns SQL query command literals and their camelCase wire shape.
 // Mutating execution stays behind the explicit proposal/approval/run flow.
 
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "../../ipc/core";
 
 import type { ExecOutcome, QueryResult } from "../../ipc/types";
 import type {

@@ -1,6 +1,6 @@
 // The sole frontend owner of local-provider command literals. Requests carry a
 // short-lived receipt or a one-shot form value; no provider secret is retained here.
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../ipc/core";
 
 import {
   parseProviderCredentialBindingSummary,

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../ipc/core";
 
 export type StartupStage = {
   name: string;
@@ -13,6 +13,51 @@ export type StartupSummary = {
   stages: StartupStage[];
 };
 
+export type PackagedBenchmarkRendererMetrics = {
+  rendererElapsedMs: number;
+  reactCommitCount: number;
+  reactCommitDurationMs: number;
+  maxReactCommitDurationMs: number;
+  longTaskSupported: boolean;
+  longTaskCount: number;
+  maxLongTaskMs: number;
+  frameSampleCount: number;
+  frameOver50MsCount: number;
+  maxFrameGapMs: number;
+  ipcCallCount: number;
+  ipcTotalDurationMs: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  devicePixelRatio: number;
+  webviewEngine: "webkit" | "webview2" | "unknown";
+  webviewVersion: string;
+  actions: Array<{
+    name: string;
+    samplesMs: number[];
+    reactCommitCount: number;
+    reactCommitDurationMs: number;
+    maxFrameGapMs: number;
+    frameSampleCount: number;
+    droppedFrameCount: number;
+    ipcCallCount: number;
+    ipcDurationMs: number;
+    ipcPayloadBytes: number;
+    sqliteTransactionCount: number;
+    retainedBytes: number;
+    backendRequestToFirstRowMs: number | null;
+    backendFirstRowToIpcBatchMs: number | null;
+    ipcBatchToReactCommitMs: number | null;
+  }>;
+  idleObservationMs: number;
+  idleIpcCallCount: number;
+  webviewHeapBytes: number | null;
+};
+
+export type PackagedBenchmarkConfig = {
+  scenario: string;
+  kind: "startup" | "workload";
+};
+
 export function recordStartupMark(
   mark: "first_shell_commit" | "selected_connection_restored",
   succeeded = true,
@@ -22,4 +67,29 @@ export function recordStartupMark(
 
 export function runtimeStartupSummary(): Promise<StartupSummary> {
   return invoke("runtime_startup_summary");
+}
+
+export function packagedBenchmarkConfig(): Promise<PackagedBenchmarkConfig> {
+  return invoke("packaged_benchmark_config");
+}
+
+export function completePackagedBenchmark(
+  metrics: PackagedBenchmarkRendererMetrics,
+): Promise<void> {
+  return invoke("complete_packaged_benchmark", { metrics });
+}
+
+export type PackagedBenchmarkFailureReason =
+  | "surface_unavailable"
+  | "paint_timeout"
+  | "backend_command"
+  | "type_error"
+  | "range_error"
+  | "unexpected";
+
+export function failPackagedBenchmark(
+  phase: string,
+  reason: PackagedBenchmarkFailureReason,
+): Promise<void> {
+  return invoke("fail_packaged_benchmark", { phase, reason });
 }

@@ -17,7 +17,7 @@ pub(crate) fn executable_search_path(first: Option<&Path>) -> OsString {
             .map(PathBuf::from),
     );
 
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = crate::app_paths::optional_home_dir() {
         #[cfg(not(windows))]
         for relative in [
             ".local/bin",

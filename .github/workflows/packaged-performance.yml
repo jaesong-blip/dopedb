@@ -1,0 +1,84 @@
+name: packaged-performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      startup_samples:
+        description: "Cold/warm samples per startup state"
+        required: true
+        default: "5"
+        type: string
+      workload_samples:
+        description: "Samples per workload scenario"
+        required: true
+        default: "3"
+        type: string
+
+concurrency:
+  group: packaged-performance-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-15
+            slug: macos-arm64
+          - platform: windows-latest
+            slug: windows-x64
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.17.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            src-tauri -> src-tauri/target
+
+      - name: Install app dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Measure packaged release journeys
+        shell: bash
+        env:
+          STARTUP_SAMPLES: ${{ inputs.startup_samples }}
+          WORKLOAD_SAMPLES: ${{ inputs.workload_samples }}
+          OUTPUT: src-tauri/benchmarks/packaged-release-${{ matrix.slug }}.json
+        run: >-
+          pnpm benchmark:packaged-release --
+          --samples "$STARTUP_SAMPLES"
+          --workload-samples "$WORKLOAD_SAMPLES"
+          --output "$OUTPUT"
+
+      - name: Upload numeric performance artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-performance-${{ matrix.slug }}
+          path: src-tauri/benchmarks/packaged-release-${{ matrix.slug }}.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,6 +1,6 @@
 // The only frontend owner of workspace Tauri command names. Bearer sessions remain
 // behind the Rust adapter and no function here accepts or returns token material.
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../ipc/core";
 
 import type {
   ConnectionId,

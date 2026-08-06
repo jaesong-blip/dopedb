@@ -134,4 +134,9 @@ impl AppState {
     pub(crate) async fn wait_for_post_paint_recovery(&self) -> AppResult<()> {
         self.post_paint_recovery.wait().await
     }
+
+    #[cfg(feature = "packaged-benchmark")]
+    pub(crate) fn packaged_benchmark_store(&self) -> &Store {
+        &self.store
+    }
 }

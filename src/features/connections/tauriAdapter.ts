@@ -1,6 +1,6 @@
 // The only frontend owner of saved-connection Tauri command names. Screens depend on
 // these typed functions and never invoke the connection transport directly.
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../ipc/core";
 
 import type {
   ConnectionId,

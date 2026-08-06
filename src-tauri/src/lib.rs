@@ -1,6 +1,7 @@
 //! dopedb — Rust core entrypoint. Wires modules, state, the Tauri command surface,
 //! and the owner-local CLI broker used by connection-pinned Terminal sessions.
 
+mod app_paths;
 mod audit;
 mod broker;
 mod cli_environment;
@@ -19,6 +20,7 @@ pub mod model;
 mod mongo;
 mod monitoring;
 pub mod operations;
+mod packaged_benchmark;
 mod safety;
 mod services;
 mod skills;
@@ -34,6 +36,12 @@ use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 pub fn run() {
+    #[cfg(feature = "packaged-benchmark")]
+    if packaged_benchmark::prepare_fixture_if_requested()
+        .expect("failed to prepare packaged benchmark fixture")
+    {
+        return;
+    }
     let startup_trace = startup::StartupTrace::new();
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -116,6 +124,10 @@ pub fn run() {
             commands::skill_self_test,
             startup::record_startup_mark,
             startup::runtime_startup_summary,
+            packaged_benchmark::packaged_benchmark_config,
+            packaged_benchmark::run_packaged_benchmark_backend,
+            packaged_benchmark::complete_packaged_benchmark,
+            packaged_benchmark::fail_packaged_benchmark,
             legacy_mcp_cleanup::legacy_mcp_cleanup_status,
             legacy_mcp_cleanup::legacy_mcp_cleanup_apply,
             features::terminals::transport::terminal_create,
@@ -249,6 +261,11 @@ pub fn run() {
                     .state::<state::AppState>()
                     .startup_trace
                     .mark_once("window_shown", "critical", true);
+                #[cfg(feature = "packaged-benchmark")]
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
             }
             // Terminal PTYs and the local broker own process/socket resources outside
             // ordinary command futures. Close them within a bounded window before the

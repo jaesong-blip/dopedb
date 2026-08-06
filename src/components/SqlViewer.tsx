@@ -78,6 +78,8 @@ export interface SqlViewerProps {
   onCursorChange?: (position: SqlCursorPosition) => void;
   onBlur?: () => void;
   executionStatus?: SqlExecutionStatus | null;
+  /** Receives the production CodeMirror view for deterministic packaged profiling. */
+  onEditorReady?: (view: EditorView) => void;
 }
 
 function cursorPosition(state: EditorState): SqlCursorPosition {
@@ -185,6 +187,7 @@ export default function SqlViewer({
   onCursorChange,
   onBlur,
   executionStatus,
+  onEditorReady,
 }: SqlViewerProps) {
   const extensions = useMemo(() => {
     const dialect = editorDialect(engine);
@@ -262,8 +265,9 @@ export default function SqlViewer({
   const handleCreateEditor = useCallback(
     (view: EditorView) => {
       reportCursor(view.state);
+      onEditorReady?.(view);
     },
-    [reportCursor],
+    [onEditorReady, reportCursor],
   );
   const handleUpdate = useCallback(
     (update: ViewUpdate) => {

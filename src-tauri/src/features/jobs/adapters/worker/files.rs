@@ -109,10 +109,7 @@ fn replace_file(partial: &Path, output: &Path) -> std::io::Result<()> {
 }
 
 pub(super) fn error_artifact_path(job_id: JobId) -> AppResult<PathBuf> {
-    let directory = dirs::data_dir()
-        .ok_or_else(|| AppError::Config("no OS data directory".into()))?
-        .join("dopedb")
-        .join("job-artifacts");
+    let directory = crate::app_paths::data_root()?.join("job-artifacts");
     std::fs::create_dir_all(&directory)?;
     let metadata = std::fs::symlink_metadata(&directory)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {

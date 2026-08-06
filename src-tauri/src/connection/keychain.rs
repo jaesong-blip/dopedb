@@ -10,10 +10,13 @@
 //! (-34018)`). So in DEBUG builds only we fall back to an obfuscated file under the
 //! app data dir.
 //! That fallback is NOT real security; it exists solely so unsigned dev builds run.
+//! Packaged benchmark builds never open the OS credential store. Their synthetic
+//! credentials use the benchmark's isolated temporary data root instead.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
+#[cfg(not(feature = "packaged-benchmark"))]
 use keyring::Entry;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -22,6 +25,7 @@ use crate::error::{AppError, AppResult};
 use crate::kernel::sync::lock_unpoisoned;
 
 /// Credential-store service name (bundle id). Must match the signed bundle identifier.
+#[cfg(not(feature = "packaged-benchmark"))]
 const SERVICE: &str = "dev.dopedb.desktop";
 const LEGACY_WORKSPACE_SESSION_ACCOUNT: &str = "workspace-session";
 static SESSION_CACHE: LazyLock<Mutex<HashMap<String, Zeroizing<String>>>> =
@@ -57,6 +61,7 @@ fn forget_secret(account: &str) {
     session_cache().remove(account);
 }
 
+#[cfg(not(feature = "packaged-benchmark"))]
 fn entry(account: &str) -> AppResult<Entry> {
     Ok(Entry::new(SERVICE, account)?)
 }
@@ -64,6 +69,9 @@ fn entry(account: &str) -> AppResult<Entry> {
 /// Store (or replace) the secret for a connection.
 pub fn store_secret(connection_id: &Uuid, secret: &str) -> AppResult<()> {
     let account = connection_id.to_string();
+    #[cfg(feature = "packaged-benchmark")]
+    file_store(&account, secret)?;
+    #[cfg(not(feature = "packaged-benchmark"))]
     match entry(&account)?.set_password(secret) {
         Ok(()) => Ok(()),
         Err(e) if should_fallback(&e) => file_store(&account, secret),
@@ -76,14 +84,24 @@ pub fn store_secret(connection_id: &Uuid, secret: &str) -> AppResult<()> {
 /// Fetch the secret for a connection.
 pub fn fetch_secret(connection_id: &Uuid) -> AppResult<String> {
     let account = connection_id.to_string();
-    read_cached_secret(&account, || match entry(&account)?.get_password() {
-        Ok(s) => Ok(s),
-        Err(keyring::Error::NoEntry) if cfg!(debug_assertions) => file_fetch(&account),
-        Err(keyring::Error::NoEntry) => Err(AppError::NotFound(format!(
-            "no secret for connection {connection_id}"
-        ))),
-        Err(e) if should_fallback(&e) => file_fetch(&account),
-        Err(e) => Err(e.into()),
+    read_cached_secret(&account, || {
+        #[cfg(feature = "packaged-benchmark")]
+        return file_fetch(&account).map_err(|error| match error {
+            AppError::NotFound(_) => {
+                AppError::NotFound(format!("no secret for connection {connection_id}"))
+            }
+            error => error,
+        });
+        #[cfg(not(feature = "packaged-benchmark"))]
+        match entry(&account)?.get_password() {
+            Ok(s) => Ok(s),
+            Err(keyring::Error::NoEntry) if cfg!(debug_assertions) => file_fetch(&account),
+            Err(keyring::Error::NoEntry) => Err(AppError::NotFound(format!(
+                "no secret for connection {connection_id}"
+            ))),
+            Err(e) if should_fallback(&e) => file_fetch(&account),
+            Err(e) => Err(e.into()),
+        }
     })
 }
 
@@ -91,6 +109,9 @@ pub fn fetch_secret(connection_id: &Uuid) -> AppResult<String> {
 pub fn delete_secret(connection_id: &Uuid) -> AppResult<()> {
     let account = connection_id.to_string();
     forget_secret(&account);
+    #[cfg(feature = "packaged-benchmark")]
+    return file_delete(&account);
+    #[cfg(not(feature = "packaged-benchmark"))]
     match entry(&account)?.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => {
@@ -109,6 +130,9 @@ fn workspace_session_account(user_id: &str) -> AppResult<String> {
 }
 
 fn store_workspace_session_account(account: &str, token: &str) -> AppResult<()> {
+    #[cfg(feature = "packaged-benchmark")]
+    file_store(account, token)?;
+    #[cfg(not(feature = "packaged-benchmark"))]
     match entry(account)?.set_password(token) {
         Ok(()) => Ok(()),
         Err(e) if should_fallback(&e) => file_store(account, token),
@@ -122,6 +146,13 @@ fn fetch_workspace_session_account(account: &str) -> AppResult<Option<String>> {
     if let Some(token) = cached_secret(account) {
         return Ok(Some(token));
     }
+    #[cfg(feature = "packaged-benchmark")]
+    let token = match file_fetch(account) {
+        Ok(token) => Some(token),
+        Err(AppError::NotFound(_)) => None,
+        Err(error) => return Err(error),
+    };
+    #[cfg(not(feature = "packaged-benchmark"))]
     let token = match entry(account)?.get_password() {
         Ok(token) => Some(token),
         Err(keyring::Error::NoEntry) if cfg!(debug_assertions) => match file_fetch(account) {
@@ -145,6 +176,9 @@ fn fetch_workspace_session_account(account: &str) -> AppResult<Option<String>> {
 
 fn delete_workspace_session_account(account: &str) -> AppResult<()> {
     forget_secret(account);
+    #[cfg(feature = "packaged-benchmark")]
+    return file_delete(account);
+    #[cfg(not(feature = "packaged-benchmark"))]
     match entry(account)?.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => {
@@ -183,6 +217,7 @@ pub(crate) fn delete_legacy_workspace_session() -> AppResult<()> {
 
 /// True when the OS credential store is structurally unavailable (for example an
 /// unsigned dev build) AND we are in a debug build permitted to use the file fallback.
+#[cfg(not(feature = "packaged-benchmark"))]
 fn should_fallback(e: &keyring::Error) -> bool {
     cfg!(debug_assertions)
         && matches!(
@@ -201,10 +236,7 @@ fn should_fallback(e: &keyring::Error) -> bool {
 const OBFUSCATION_KEY: &[u8] = b"dopedb-dev-only-not-secure-v1";
 
 fn fallback_dir() -> AppResult<std::path::PathBuf> {
-    let dir = dirs::data_dir()
-        .ok_or_else(|| AppError::Config("no data dir".into()))?
-        .join("dopedb")
-        .join("dev-secrets");
+    let dir = crate::app_paths::data_root()?.join("dev-secrets");
     std::fs::create_dir_all(&dir)?;
     #[cfg(unix)]
     {

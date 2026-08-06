@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../ipc/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { ConnectionId } from "../connections/domain";

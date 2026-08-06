@@ -47,8 +47,7 @@ pub(crate) struct SkillManager {
 
 impl SkillManager {
     pub fn new() -> AppResult<Self> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| AppError::Config("no user home directory is available".into()))?;
+        let home = crate::app_paths::home_dir()?;
         Self::from_home(home)
     }
 

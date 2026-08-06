@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 2,
+  "measurementScope": "packaged_release_user_journeys",
+  "sampleCountPerState": 5,
+  "workloadSampleCountPerScenario": 3,
+  "warmupRunsPerFixture": 1,
+  "budgets": {
+    "firstShellCommitP95Ms": 2500,
+    "selectedConnectionRestoreP95Ms": 3000,
+    "maxMainThreadLongTaskMs": 50,
+    "maxFrameGapP95Ms": 100,
+    "maxReactCommitDurationP95Ms": 100,
+    "maxProcessRssP95Bytes": 536870912,
+    "interactionP95Ms": 100,
+    "idleIpcCallsPerMinute": 30,
+    "maxWebviewHeapBytes": 536870912
+  },
+  "actionP95Ms": {
+    "sql-editor-10k-format": 500,
+    "sql-editor-100k-format": 2500,
+    "sql-editor-1m-format": 15000,
+    "query-page-store-1m": 180000,
+    "query-export": 180000,
+    "agent-stream-10k": 5000,
+    "history-10k": 500,
+    "audit-100k": 500,
+    "local-history-50": 500,
+    "dashboard-multi-tile": 500
+  },
+  "notes": {
+    "interactionP95Ms": "Applies to editor input/cursor/run, Explorer expansion/search, first result batch, grid/Agent scroll, permission/reconnect, ERD drag, cancellation, and resize checkpoints. Explicit background/format budgets are listed in actionP95Ms.",
+    "idleIpcCallsPerMinute": "Measured for ten visible idle seconds and normalized to one minute; startup IPC is reported separately.",
+    "longTaskFallback": "When the WebView Long Tasks API is unavailable, frame gaps are recorded and the 50 ms long-task checkpoint remains explicitly unsupported instead of being treated as zero."
+  }
+}

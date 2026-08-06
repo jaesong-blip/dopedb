@@ -188,20 +188,41 @@ fn host_target_triple() -> Option<&'static str> {
 
 #[cfg(windows)]
 fn global_cli_target() -> AppResult<PathBuf> {
+    #[cfg(feature = "packaged-benchmark")]
+    {
+        return Ok(crate::app_paths::data_root()?
+            .join("global-cli")
+            .join("dopedb.exe"));
+    }
+    #[cfg(not(feature = "packaged-benchmark"))]
     let local = dirs::data_local_dir()
         .ok_or_else(|| AppError::Config("no local application-data directory".into()))?;
+    #[cfg(not(feature = "packaged-benchmark"))]
     Ok(local.join("DopeDB").join("bin").join("dopedb.exe"))
 }
 
 #[cfg(not(windows))]
 fn global_cli_target() -> AppResult<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| AppError::Config("no home directory".into()))?;
+    let home = crate::app_paths::home_dir()?;
     Ok(home.join(".local").join("bin").join("dopedb"))
 }
 
 fn in_app_cli_target() -> AppResult<PathBuf> {
+    #[cfg(feature = "packaged-benchmark")]
+    {
+        return Ok(crate::app_paths::data_root()?
+            .join("cli")
+            .join("bin")
+            .join(if cfg!(windows) {
+                "dopedb.exe"
+            } else {
+                "dopedb"
+            }));
+    }
+    #[cfg(not(feature = "packaged-benchmark"))]
     let base = dirs::data_local_dir()
         .ok_or_else(|| AppError::Config("no local application-data directory".into()))?;
+    #[cfg(not(feature = "packaged-benchmark"))]
     Ok(base
         .join("dopedb")
         .join("cli")
@@ -417,7 +438,7 @@ fn path_change_supported() -> bool {
 
 #[cfg(not(windows))]
 fn shell_profile() -> AppResult<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| AppError::Config("no home directory".into()))?;
+    let home = crate::app_paths::home_dir()?;
     let shell = std::env::var_os("SHELL")
         .and_then(|value| PathBuf::from(value).file_name().map(OsStr::to_owned))
         .and_then(|value| value.into_string().ok())

@@ -196,10 +196,7 @@ fn terminal_path(cli_directory: &Path) -> AppResult<OsString> {
 }
 
 pub(super) fn neutral_working_directory() -> AppResult<PathBuf> {
-    let base = dirs::data_local_dir()
-        .or_else(dirs::data_dir)
-        .ok_or_else(|| AppError::Config("no local application-data directory".into()))?;
-    let directory = base.join("dopedb").join("terminal-workdir");
+    let directory = crate::app_paths::local_data_root()?.join("terminal-workdir");
     std::fs::create_dir_all(&directory)?;
     let metadata = std::fs::symlink_metadata(&directory)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {

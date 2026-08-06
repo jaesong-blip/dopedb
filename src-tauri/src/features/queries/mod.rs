@@ -18,6 +18,8 @@ pub(crate) use adapters::QueryPlatformAdapter;
 #[cfg(not(test))]
 use adapters::QueryPlatformAdapter;
 pub(crate) use adapters::TerminalQueryRunRegistry;
+#[cfg(feature = "packaged-benchmark")]
+pub(crate) use adapters::{run_packaged_result_store_benchmark, PackagedResultStoreMetric};
 pub(crate) use adapters::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};
 use adapters::{
     AgentQueryPlanReceipt, DesktopSqlStreamRegistry, DesktopStreamCleanupOwner,

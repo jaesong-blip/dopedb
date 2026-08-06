@@ -1,5 +1,5 @@
 //! The local application store: a WAL SQLite DB at
-//! `dirs::data_dir()/dopedb/app.db` holding connections, safety settings,
+//! the application-owned data root's `app.db` holding connections, safety settings,
 //! query history, the audit log, saved dashboards, snippets, and the schema cache.
 //!
 //! Secrets are NEVER stored here — connections carry only a `secret_ref` that
@@ -154,9 +154,7 @@ pub(crate) enum CacheWriteOutcome {
 impl Store {
     /// Open (creating if needed) the app.db and run migrations.
     pub async fn open() -> AppResult<Store> {
-        let dir = dirs::data_dir()
-            .ok_or_else(|| AppError::Config("no OS data dir (dirs::data_dir)".into()))?
-            .join("dopedb");
+        let dir = crate::app_paths::data_root()?;
         std::fs::create_dir_all(&dir)?;
         let path = dir.join("app.db");
 

@@ -86,6 +86,7 @@ export default function ErdToolbar({
           <option value="uml">{t("schema.erdUml")}</option>
         </select>
         <button
+          data-erd-neighborhood-toggle
           className="btn small icon-only"
           type="button"
           disabled={busy}

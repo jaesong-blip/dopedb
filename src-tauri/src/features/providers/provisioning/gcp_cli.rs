@@ -73,7 +73,8 @@ impl GcloudInventory {
             &["gcloud"],
         )
         .await?;
-        let home = dirs::home_dir().ok_or(ProvisioningProcessFailure::ExecutableRejected)?;
+        let home = crate::app_paths::optional_home_dir()
+            .ok_or(ProvisioningProcessFailure::ExecutableRejected)?;
         let config = home.join(".config/gcloud");
         let home = safe_path_text(&home)?;
         let config = safe_path_text(&config)?;
@@ -322,7 +323,7 @@ fn ensure_authority(authority: &ProvisioningReadAuthority) -> AppResult<()> {
 
 fn gcloud_candidates() -> Vec<(PathBuf, PathBuf)> {
     let mut roots = Vec::new();
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = crate::app_paths::optional_home_dir() {
         roots.push(home.join("google-cloud-sdk"));
     }
     roots.extend([

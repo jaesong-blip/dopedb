@@ -187,7 +187,7 @@ fn inspect_all() -> LegacyMcpCleanupStatus {
 
 fn target_specs() -> Vec<TargetSpec> {
     let mut targets = Vec::new();
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = crate::app_paths::optional_home_dir() {
         targets.push(TargetSpec {
             id: "claude-code",
             display_name: "Claude Code",
@@ -210,11 +210,11 @@ fn target_specs() -> Vec<TargetSpec> {
             format: TargetFormat::Toml,
         });
     }
-    if let Some(data) = dirs::data_dir() {
+    if let Ok(data) = crate::app_paths::data_root() {
         targets.push(TargetSpec {
             id: "dopedb-runtime",
             display_name: "DopeDB legacy runtime",
-            path: data.join("dopedb").join("mcp.json"),
+            path: data.join("mcp.json"),
             format: TargetFormat::AppOwnedSecret,
         });
     }
@@ -228,13 +228,13 @@ fn claude_desktop_config_path(home: &Path) -> PathBuf {
     }
     #[cfg(windows)]
     {
-        dirs::config_dir()
+        crate::app_paths::optional_config_dir()
             .unwrap_or_else(|| home.join("AppData/Roaming"))
             .join("Claude/claude_desktop_config.json")
     }
     #[cfg(not(any(target_os = "macos", windows)))]
     {
-        dirs::config_dir()
+        crate::app_paths::optional_config_dir()
             .unwrap_or_else(|| home.join(".config"))
             .join("Claude/claude_desktop_config.json")
     }

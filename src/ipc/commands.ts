@@ -2,7 +2,7 @@
 // adapter beside the feature; remaining names match src-tauri/src/commands/mod.rs.
 // Argument keys always match the Rust parameter names.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./core";
 import type {
   AuditEntryDetail,
   AuditPage,

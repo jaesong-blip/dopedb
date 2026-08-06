@@ -12,8 +12,16 @@ use crate::kernel::identity::RuntimeId;
 
 const PRODUCTION_APP_IDENTIFIER: &str = "dev.dopedb.desktop";
 const DEVELOPMENT_APP_IDENTIFIER: &str = "dev.dopedb.desktop.dev";
+#[cfg(feature = "packaged-benchmark")]
+const BENCHMARK_APP_IDENTIFIER: &str = "dev.dopedb.desktop.benchmark";
 
 pub(crate) fn runtime_file_for_identifier(app_identifier: &str) -> AppResult<PathBuf> {
+    #[cfg(feature = "packaged-benchmark")]
+    if app_identifier == BENCHMARK_APP_IDENTIFIER {
+        return Ok(crate::app_paths::data_root()?
+            .join(RUNTIME_DIRECTORY_NAME)
+            .join(RUNTIME_FILE_NAME));
+    }
     let data_directory = match app_identifier {
         PRODUCTION_APP_IDENTIFIER => "dopedb",
         DEVELOPMENT_APP_IDENTIFIER => "dopedb-dev",

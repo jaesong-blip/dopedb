@@ -15,6 +15,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "dopedb"
 path = "src/main.rs"
 
+[features]
+default = []
+# Release-profile application used only by scripts/benchmark-packaged-release.mjs.
+# Ordinary production artifacts never compile the isolated fixture/report paths.
+packaged-benchmark = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "pnpm check:skills && pnpm check:workspace-logs && tsc && vite build",
     "benchmark:data-surfaces": "node --expose-gc --no-warnings scripts/benchmark-data-surfaces.mjs",
+    "benchmark:packaged-release": "node --no-warnings scripts/benchmark-packaged-release.mjs",
     "benchmark:render-hot-paths": "node --no-warnings scripts/benchmark-render-hot-paths.mjs",
     "generate:skills": "node scripts/generate-skill-bundle.mjs",
     "check:skills": "node scripts/generate-skill-bundle.mjs --check",

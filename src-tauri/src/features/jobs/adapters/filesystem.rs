@@ -94,10 +94,7 @@ fn snapshot_input(path: PathBuf) -> AppResult<PreparedJobFile> {
 }
 
 fn job_input_directory() -> AppResult<PathBuf> {
-    Ok(dirs::data_dir()
-        .ok_or_else(|| AppError::Config("no OS data directory".into()))?
-        .join("dopedb")
-        .join("job-inputs"))
+    Ok(crate::app_paths::data_root()?.join("job-inputs"))
 }
 
 fn remove_staged_input(path: &Path) -> AppResult<()> {

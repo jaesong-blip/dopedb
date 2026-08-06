@@ -116,6 +116,7 @@ export default function QueryServicesToolWindow({
       aria-label={t("services.title")}
     >
       <div
+        data-services-resize-handle
         className="tw:absolute tw:-top-1 tw:right-0 tw:left-0 tw:z-[var(--ds-z-raised)] tw:h-2 tw:cursor-row-resize tw:hover:bg-ring/30 tw:active:bg-ring/30"
         title={t("app.dragResize")}
         onMouseDown={onStartResize}

@@ -379,6 +379,7 @@ export default function DataGridVirtual(props: Props) {
                   ) : null}
                 </span>
                 <span
+                  data-grid-resize-handle
                   className="tw:absolute tw:top-0 tw:right-0 tw:z-[var(--ds-z-sticky)] tw:h-full tw:w-2 tw:cursor-col-resize tw:hover:bg-primary/55 tw:active:bg-primary/55"
                   title={t("grid.resizeHint")}
                   onMouseDown={(event) => resize(event, index)}

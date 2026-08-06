@@ -1,7 +1,7 @@
 // Tauri adapter for the SQL document feature. This is the only frontend file that
 // knows the four SQL document command names.
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../ipc/core";
 import type {
   CreateSqlDocumentRequest,
   SaveSqlDocumentOutcome,
