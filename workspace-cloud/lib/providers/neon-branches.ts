@@ -54,6 +54,17 @@ export type NeonBranchInventory = Readonly<{
   branches: readonly NeonBranchInventoryItem[];
 }>;
 
+/**
+ * Archived branches remain queryable and wake on access, but they are not
+ * mutation-ready. Keep this separate from `branch.ready`, which protects
+ * branch lifecycle operations that require Neon's exact `ready` state.
+ */
+export function neonBranchQueryable(
+  branch: Pick<NeonBranchInventoryItem, "currentState">,
+) {
+  return branch.currentState === "ready" || branch.currentState === "archived";
+}
+
 function invalid(message = "Neon returned an invalid branch inventory"): never {
   throw new ProviderRequestError("neon", message, 502);
 }

@@ -91,7 +91,10 @@ import desktopReportFeatureSource from "../../../src-tauri/src/features/reports/
 import desktopReportControlPlaneSource from "../../../src-tauri/src/features/workspaces/adapters/control_plane/reports.rs?raw";
 import desktopReportDispatchSource from "../../../src-tauri/src/broker/dispatch/report_operation.rs?raw";
 import agentMcpSource from "../../../dopedb-cli/src/agent_mcp.rs?raw";
-import { parseNeonBranchInventory } from "../../../workspace-cloud/lib/providers/neon-branches";
+import {
+  neonBranchQueryable,
+  parseNeonBranchInventory,
+} from "../../../workspace-cloud/lib/providers/neon-branches";
 import {
   buildNeonBranchCreatePlan,
   parseNeonBranchCreatePlanRequest,
@@ -398,11 +401,19 @@ describe("provider credential Tauri adapter", () => {
         expires_at: "2026-08-06T00:00:00Z",
         restricted_actions: [{ name: "restore", reason: "Restore is unavailable" }],
       },
+      {
+        ...branchRow,
+        id: "br-archived",
+        parent_id: "br-main",
+        name: "archived-preview",
+        current_state: "archived",
+      },
     ]);
     expect(branchInventory.rootIds).toEqual(["br-main", "br-schema"]);
     expect(branchInventory.branches.map((branch) => branch.id)).toEqual([
       "br-main",
       "br-child",
+      "br-archived",
       "br-schema",
     ]);
     expect(branchInventory.branches[1]).toMatchObject({
@@ -413,7 +424,7 @@ describe("provider credential Tauri adapter", () => {
       production: false,
       ready: true,
     });
-    expect(branchInventory.branches[2]).toMatchObject({
+    expect(branchInventory.branches[3]).toMatchObject({
       parentId: "br-main",
       treeParentId: null,
       initSource: "schema-only",
@@ -421,6 +432,11 @@ describe("provider credential Tauri adapter", () => {
       depth: 0,
       ready: false,
     });
+    expect(branchInventory.branches[2]).toMatchObject({
+      currentState: "archived",
+      ready: false,
+    });
+    expect(neonBranchQueryable(branchInventory.branches[2])).toBe(true);
     expect(() => parseNeonBranchInventory("project-one", [{
       ...branchRow,
       id: "br-orphan",
@@ -740,7 +756,7 @@ describe("provider credential Tauri adapter", () => {
       activeLeaseCount: 2,
     };
     const switchTarget = {
-      branch: switchInventory.branches[3],
+      branch: switchInventory.branches.find((branch) => branch.id === "br-target")!,
       databaseId: "987654321",
       database: "app",
       endpointId: "ep-target",

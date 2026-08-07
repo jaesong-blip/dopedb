@@ -25,6 +25,7 @@ import {
   listNeonDatabases,
   listNeonProjects,
 } from "../providers/neon";
+import { neonBranchQueryable } from "../providers/neon-branches";
 import { parseNeonCredential } from "../providers/neon-core";
 import {
   listGcpCloudSqlDatabases,
@@ -365,8 +366,12 @@ export async function discoverProviderResources(input: {
       ) {
         const inventory = await listNeonBranchInventory(credential, selection.project);
         const branch = inventory.branches.find((item) => item.id === selection.branch);
-        if (!branch || branch.ready !== true) {
-          throw new ProviderRequestError("neon", "Neon branch is not ready", 409);
+        if (!branch || !neonBranchQueryable(branch)) {
+          throw new ProviderRequestError(
+            "neon",
+            "Neon branch is starting or resetting. Try again shortly.",
+            409,
+          );
         }
         return boundedDiscoveryResults(await listNeonDatabases(
           credential,

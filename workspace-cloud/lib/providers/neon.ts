@@ -33,6 +33,7 @@ import {
   type ProviderResourceItem,
 } from "./provider-types";
 import {
+  neonBranchQueryable,
   parseNeonBranchInventory,
   type NeonBranchInventory,
 } from "./neon-branches";
@@ -575,7 +576,7 @@ export async function listNeonBranches(
       value: branch.id,
       name: branch.name,
       production: branch.production,
-      ready: branch.ready,
+      ready: neonBranchQueryable(branch),
     };
   });
 }
