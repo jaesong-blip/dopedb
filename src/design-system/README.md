@@ -227,6 +227,11 @@ Elevation은 세 단계만 허용한다.
 
 ### React primitive
 
+- `workspace-cloud/app/components/Brand`와 `site/app/DopeDBMark`: workspace의
+  선형 D 마크를 DopeDB 브랜드 정본으로 공유한다. 공개 사이트 header/footer와
+  workspace navigation은 이 도형을 사용하고, favicon·OAuth·Tauri bundle
+  아이콘은 `scripts/generate-icons.py`가 같은 D 마크에서 생성한다. database
+  engine이나 외부 Agent provider 로고는 이 브랜드 자산으로 대체하지 않는다.
 - `site/app/MarketingButton`: 공개 마케팅 사이트의 다운로드·소스 CTA가 공유하는
   primary/secondary anchor primitive. `TrackedLink`를 합성해 선택적인 analytics
   event와 동일한 반응형 폭·상태를 소유하며 page에서 CTA utility를 복사하지

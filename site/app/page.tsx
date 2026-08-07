@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { MarketingButton } from "./MarketingButton";
+import { DopeDBMark } from "./DopeDBMark";
 import { TrackedLink } from "./TrackedLink";
 
 const repoUrl = "https://github.com/json-choi/dopedb";
@@ -767,9 +768,8 @@ export default async function Home({ searchParams }: HomeProps) {
       <header className="tw:sticky tw:top-0 tw:z-40 tw:border-b tw:border-hairline tw:bg-night/82 tw:backdrop-blur-xl">
         <div className="tw:mx-auto tw:flex tw:min-h-16 tw:max-w-[1520px] tw:items-center tw:justify-between tw:gap-5 tw:px-[clamp(16px,4vw,64px)]">
           <a className="tw:flex tw:items-center tw:gap-3" href="#top" aria-label={c.nav.home}>
-            <span className="tw:relative tw:grid tw:size-8 tw:place-items-center tw:border tw:border-signal/50 tw:bg-signal tw:text-night">
-              <Database size={16} strokeWidth={2.2} />
-              <span className="tw:absolute tw:-right-1 tw:-bottom-1 tw:size-2 tw:border tw:border-night tw:bg-electric" />
+            <span className="tw:text-signal">
+              <DopeDBMark />
             </span>
             <span className="tw:font-display tw:text-[17px] tw:font-semibold tw:tracking-[-0.03em]">
               DopeDB
@@ -1262,8 +1262,8 @@ export default async function Home({ searchParams }: HomeProps) {
       <footer className="tw:border-t tw:border-hairline tw:bg-night">
         <div className="tw:mx-auto tw:flex tw:max-w-[1520px] tw:items-center tw:justify-between tw:gap-6 tw:px-[clamp(16px,4vw,64px)] tw:py-7 tw:max-[680px]:flex-col tw:max-[680px]:items-start">
           <div className="tw:flex tw:items-center tw:gap-3">
-            <span className="tw:grid tw:size-7 tw:place-items-center tw:bg-signal tw:text-night">
-              <Database size={14} />
+            <span className="tw:text-signal">
+              <DopeDBMark />
             </span>
             <div>
               <p className="tw:text-sm tw:font-medium">© {currentYear} DopeDB</p>

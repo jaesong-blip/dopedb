@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#151a16"/>
-  <path d="M13 16h25c11.3 0 19 7.3 19 16s-7.7 16-19 16H13V16Z" fill="none" stroke="#ccf36b" stroke-width="3"/>
-  <path d="M13 25.5h27M13 36h20" fill="none" stroke="#ccf36b" stroke-width="3"/>
-  <circle cx="47" cy="42" r="5" fill="#ccf36b"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" role="img" aria-label="DopeDB">
+  <rect width="28" height="28" rx="6.125" fill="#151a16"/>
+  <path d="M4 6.5h11.25c5.1 0 8.75 3.28 8.75 7.5s-3.65 7.5-8.75 7.5H4V6.5Z" fill="none" stroke="#ccf36b" stroke-width="1.5"/>
+  <path d="M4 11h12M4 16h9" fill="none" stroke="#ccf36b" stroke-width="1.5"/>
+  <circle cx="20.5" cy="18.5" r="2.25" fill="#ccf36b"/>
 </svg>
