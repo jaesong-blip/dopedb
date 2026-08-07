@@ -2,12 +2,14 @@
 // error details out of the UI; diagnostics can attach an explicit observer later.
 import {
   Component,
+  type ErrorInfo,
   type ReactNode,
 } from "react";
 
 type RenderRecoveryBoundaryProps = {
   children: ReactNode;
   fallback: (controls: { retry: () => void }) => ReactNode;
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
   resetKeys?: readonly unknown[];
 };
 
@@ -23,6 +25,10 @@ export default class RenderRecoveryBoundary extends Component<
 
   static getDerivedStateFromError(): RenderRecoveryBoundaryState {
     return { failed: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    this.props.onError?.(error, errorInfo);
   }
 
   componentDidUpdate(previous: RenderRecoveryBoundaryProps) {

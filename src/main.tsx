@@ -8,7 +8,10 @@ import {
   packagedBenchmarkConfig,
   recordStartupMark,
 } from "./features/runtime/tauriAdapter";
+import { initializeClientMonitoring } from "./features/monitoring/client";
 import { AppProviders } from "./lib/appProviders";
+
+void initializeClientMonitoring().catch(() => undefined);
 
 const packagedBenchmark =
   import.meta.env.VITE_DOPEDB_PACKAGED_BENCHMARK === "1";

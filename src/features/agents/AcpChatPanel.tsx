@@ -52,6 +52,7 @@ import {
 import { useI18n } from "../../lib/i18n";
 import { createFrameCoalescer } from "../../lib/frameCoalescer";
 import type { ConnectionProfile } from "../connections/domain";
+import { reportRenderFailure } from "../monitoring/client";
 import type { WorkbenchDocument } from "../workbench/domain";
 import { readWorkbenchDraft } from "../workbench/draftStore";
 import type {
@@ -140,6 +141,9 @@ export default function AcpChatPanel(props: AcpChatPanelProps) {
           overlay={props.overlay}
         />
       )}
+      onError={(error, errorInfo) =>
+        reportRenderFailure("ai_chat", error, errorInfo)
+      }
       resetKeys={[props.connection.id]}
     >
       <AcpChatPanelContent {...props} />
@@ -1413,6 +1417,9 @@ const TranscriptItemView = memo(function TranscriptItemView({
               openLink: t("agent.acpOpenLink"),
               plainTextFallback: t("agent.acpPlainTextFallback"),
             }}
+            onError={(error, errorInfo) =>
+              reportRenderFailure("agent_rich_text", error, errorInfo)
+            }
             onOpenLink={openAgentMessageLink}
             text={item.chunks.join("")}
           />

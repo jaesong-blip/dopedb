@@ -91,14 +91,17 @@ jobs:
             target: aarch64-apple-darwin
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target aarch64-apple-darwin
+            sentry_sourcemaps: "1"
           - platform: macos-15
             target: x86_64-apple-darwin
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target x86_64-apple-darwin
+            sentry_sourcemaps: "0"
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             rust-targets: x86_64-pc-windows-msvc
             args: --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json
+            sentry_sourcemaps: "0"
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v7
@@ -137,6 +140,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          DOPEDB_SENTRY_UPLOAD_SOURCE_MAPS: ${{ matrix.sentry_sourcemaps }}
+          SENTRY_AUTH_TOKEN: ${{ matrix.sentry_sourcemaps == '1' && secrets.SENTRY_AUTH_TOKEN || '' }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: dopedb v__VERSION__

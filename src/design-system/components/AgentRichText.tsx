@@ -7,6 +7,7 @@ import {
   useId,
   useMemo,
   useState,
+  type ErrorInfo,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -46,10 +47,12 @@ export type AgentRichTextLabels = {
 
 export function AgentRichText({
   labels,
+  onError,
   onOpenLink,
   text,
 }: {
   labels: AgentRichTextLabels;
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
   onOpenLink?: (href: string) => void;
   text: string;
 }) {
@@ -62,6 +65,7 @@ export function AgentRichText({
       fallback={() => (
         <AgentPlainText notice={labels.plainTextFallback} text={text} />
       )}
+      onError={onError}
       resetKeys={[text]}
     >
       <AgentRichTextContent
