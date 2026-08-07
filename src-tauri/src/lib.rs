@@ -99,6 +99,8 @@ pub fn run() {
                     .state::<state::AppState>()
                     .start_post_paint_recovery(handle.clone());
             });
+            #[cfg(target_os = "macos")]
+            refresh_macos_icon_cache();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -289,4 +291,36 @@ pub fn run() {
                 tauri::async_runtime::block_on(broker.shutdown_and_wait(Duration::from_secs(2)));
             }
         });
+}
+
+/// macOS는 앱 번들을 제자리에서 교체해도 LaunchServices 아이콘 캐시를 버리지 않아
+/// 업데이트한 뒤에도 옛 앱 아이콘이 남는다. 번들 mtime을 올려 캐시 키를 무효화하고
+/// 다시 등록해, 사용자가 `lsregister`나 `killall Dock`을 직접 치지 않게 한다.
+#[cfg(target_os = "macos")]
+fn refresh_macos_icon_cache() {
+    const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister";
+
+    let Ok(executable) = std::env::current_exe() else {
+        return;
+    };
+    // <bundle>.app/Contents/MacOS/<binary>
+    let Some(bundle) = executable.ancestors().nth(3) else {
+        return;
+    };
+    if bundle.extension().and_then(|extension| extension.to_str()) != Some("app") {
+        return;
+    }
+
+    let bundle = bundle.to_path_buf();
+    // ponytail: 마지막 실행 버전을 추적하지 않고 시작마다 재등록한다. 두 호출 모두
+    // idempotent하고 수십 ms라, 상태를 하나 더 늘리는 값이 더 비싸다.
+    std::thread::spawn(move || {
+        let _ = std::process::Command::new("/usr/bin/touch")
+            .arg(&bundle)
+            .status();
+        let _ = std::process::Command::new(LSREGISTER)
+            .arg("-f")
+            .arg(&bundle)
+            .status();
+    });
 }
