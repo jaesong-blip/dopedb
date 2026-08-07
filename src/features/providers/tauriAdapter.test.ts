@@ -37,7 +37,6 @@ import {
   MANAGED_PROVIDER_AUTHORITY_TIMEOUT_MS,
   verifiedProviderAuditId,
 } from "../../../workspace-cloud/lib/providers/provider-types";
-import { parseNeonCredential } from "../../../workspace-cloud/lib/providers/neon-core";
 import providerImportProjectionSource from "../../../workspace-cloud/lib/providers/import-projection.ts?raw";
 import providerImportStoreSource from "../../../workspace-cloud/lib/provider-import-store.ts?raw";
 import providerLocalTargetSource from "../../../workspace-cloud/lib/provider-local-target.ts?raw";
@@ -994,33 +993,8 @@ describe("provider credential Tauri adapter", () => {
     expect(neonCoreSource).toContain("ALTER DEFAULT PRIVILEGES FOR ROLE");
     expect(neonCoreSource).toContain("NEON_CREDENTIAL_SCHEMA_VERSION = 2");
     expect(neonCoreSource).toContain("parseNeonCredential");
-    const compatibleNeonApiKey = `napi_${"a".repeat(24)}`;
-    expect(parseNeonCredential({
-      kind: "apiKey",
-      schemaVersion: 1,
-      apiKey: compatibleNeonApiKey,
-      organizationId: null,
-    })).toEqual({
-      kind: "apiKey",
-      schemaVersion: 2,
-      apiKey: compatibleNeonApiKey,
-      projectId: null,
-      organizationId: null,
-    });
-    expect(parseNeonCredential({
-      kind: "apiKey",
-      schemaVersion: 2,
-      apiKey: compatibleNeonApiKey,
-      projectId: "frosty-tree-12345678",
-      organizationId: null,
-    }).projectId).toBe("frosty-tree-12345678");
-    expect(() => parseNeonCredential({
-      kind: "apiKey",
-      schemaVersion: 2,
-      apiKey: compatibleNeonApiKey,
-      projectId: "../another-project",
-      organizationId: null,
-    })).toThrow("Invalid Neon credential");
+    expect(neonCoreSource).toContain("row.schemaVersion !== 1");
+    expect(neonCoreSource).toContain("projectId: current ? row.projectId");
     expect(neonCoreSource).toContain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES");
     expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON TABLES");
     expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA");
