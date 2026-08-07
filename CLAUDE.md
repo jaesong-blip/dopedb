@@ -5,7 +5,11 @@ Rust 코어, 연결 고정 Terminal, 로컬 CLI Broker로 구성된다.
 
 ## 작업 규칙
 
-저장소 정책은 `AGENTS.md`, 사람용 흐름은 `CONTRIBUTING.md`를 따른다.
+저장소 정책은 아래 import로 함께 읽는 `AGENTS.md`, 사람용 흐름은
+`CONTRIBUTING.md`를 따른다.
+
+@AGENTS.md
+
 협업·배포 정책을 바꿀 때는 세 파일을 함께 갱신한다. 커밋 메시지는
 `docs/commit.md`를 따른다. 작업 전에는 `git status`를 확인하고 다른 변경을
 보존한다.
