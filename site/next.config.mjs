@@ -26,6 +26,10 @@ const nextConfig = {
         source: "/ko/terms",
         destination: "/terms?lang=ko",
       },
+      {
+        source: "/product-map",
+        destination: "/product-map.html",
+      },
     ];
   },
   async redirects() {
