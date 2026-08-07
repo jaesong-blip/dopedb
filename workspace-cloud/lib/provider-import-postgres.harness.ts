@@ -133,6 +133,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         provider: "secret-provider-token",
         stage: "password-stage",
         postgresCode: "credential-value",
+        providerStatus: 999,
       });
       serverLog.logGcpManagedAccessUpstreamRejection({
         stage: "authorization-token",
@@ -167,6 +168,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           provider: "other",
           stage: "other",
           databaseKind: null,
+          providerStatus: 0,
         }],
         ["gcp_managed_access_upstream_rejection", {
           stage: "other",

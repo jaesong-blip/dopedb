@@ -1,5 +1,18 @@
 import type { WorkspaceLocale } from "./workspace-locale";
 
+const koreanByEnglish: Readonly<Record<string, string>> = {
+  "Neon API key is invalid or revoked":
+    "Neon API 키가 유효하지 않거나 폐기되었습니다. Neon Console에서 새 키를 발급해 다시 연결하세요.",
+  "Neon API key cannot access the requested scope":
+    "Neon API 키로 요청한 범위에 접근할 수 없습니다. 개인 키와 조직 ID 또는 조직·프로젝트 범위 키의 권한을 확인하세요.",
+  "Neon could not discover projects for this API key":
+    "Neon이 이 API 키의 프로젝트 목록 요청을 거부했습니다. 키가 프로젝트 범위 조직 키인지 확인하고 새 키로 다시 시도하세요.",
+  "Neon API key cannot access a project":
+    "Neon API 키로 접근 가능한 프로젝트가 없습니다. 프로젝트 범위와 조직 권한을 확인하세요.",
+  "Neon API request limit was reached. Try again shortly.":
+    "Neon API 요청 한도에 도달했습니다. 잠시 뒤 다시 시도하세요.",
+};
+
 const englishByKorean: Readonly<Record<string, string>> = {
   "Google Cloud 자동 설정에 필요한 권한을 확인하세요.":
     "Check the permissions required for automatic Google Cloud setup.",
@@ -59,7 +72,9 @@ export function localizedProviderMessage(
   fallback = message,
 ): string {
   const containsKorean = /[가-힣]/.test(message);
-  if (locale === "ko") return containsKorean ? message : fallback;
+  if (locale === "ko") {
+    return containsKorean ? message : koreanByEnglish[message] ?? fallback;
+  }
   const exact = englishByKorean[message];
   if (exact) return exact;
 

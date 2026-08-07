@@ -107,11 +107,13 @@ export function logProviderConnectionFailure(input: {
   provider: unknown;
   stage: unknown;
   postgresCode: unknown;
+  providerStatus: unknown;
 }) {
   emitServerFailure("provider_connection_failed", {
     provider: category(input.provider, PROVIDERS),
     stage: category(input.stage, CONNECTION_STAGES),
     databaseKind: databaseFailureKind(input.postgresCode),
+    providerStatus: safeStatus(input.providerStatus),
   });
 }
 

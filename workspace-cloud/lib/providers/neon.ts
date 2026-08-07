@@ -128,7 +128,7 @@ export type NeonAuthInfo = {
   projectCount: number;
   projectIds: readonly string[];
   scopeFingerprint: string;
-  authMethod: "api_key_user" | "api_key_org";
+  authMethod: "api_key_user" | "api_key_org" | "api_key_unclassified";
   broadScope: boolean;
 };
 
@@ -370,47 +370,118 @@ export async function listNeonProjects(
 export async function inspectNeonCredential(
   credential: NeonCredential,
 ): Promise<NeonAuthInfo> {
-  // /auth works for personal, organization, and project-scoped organization
-  // keys. Pairing that identity with the complete project set detects both
-  // principal replacement and scope drift without requiring account-level APIs.
-  const [projects, authBody] = await Promise.all([
-    listNeonProjects(credential),
-    apiRequest(credential, "/auth").then(object),
-  ]);
-  if (projects.length === 0) {
-    throw new ProviderRequestError("neon", "Neon API key cannot access a project", 403);
-  }
-  const accountId = requiredString(authBody.account_id, "authenticated account id");
-  const authMethod = authBody.auth_method;
-  if (
-    authMethod !== "api_key_user"
-    && authMethod !== "api_key_org"
-  ) {
-    throw new ProviderRequestError(
-      "neon",
-      "Neon credential is not an API key",
-      409,
+  try {
+    // Neon infers org_id from organization and project-scoped organization
+    // keys. Identify the key first so a user-entered org_id is sent only for a
+    // personal key, as required by the provider contract.
+    let accountId: string | null = null;
+    let authMethod: NeonAuthInfo["authMethod"] = "api_key_unclassified";
+    try {
+      const authBody = object(await apiRequest(credential, "/auth"));
+      accountId = requiredString(
+        authBody.account_id,
+        "authenticated account id",
+      );
+      if (
+        authBody.auth_method !== "api_key_user"
+        && authBody.auth_method !== "api_key_org"
+      ) {
+        throw new ProviderRequestError(
+          "neon",
+          "Neon credential is not an API key",
+          409,
+        );
+      }
+      authMethod = authBody.auth_method;
+    } catch (error) {
+      // Neon currently returns 400 from the account-level auth endpoint for
+      // some otherwise valid project-scoped organization keys. Project
+      // discovery remains the exact authority check for that compatibility
+      // path; all other auth failures stay fatal.
+      if (
+        !(error instanceof ProviderRequestError)
+        || error.message !== "Neon rejected the request"
+        || error.status !== 400
+      ) {
+        throw error;
+      }
+    }
+    const projects = await listNeonProjects(
+      authMethod !== "api_key_user"
+        ? { ...credential, organizationId: null }
+        : credential,
     );
+    if (projects.length === 0) {
+      throw new ProviderRequestError(
+        "neon",
+        "Neon API key cannot access a project",
+        403,
+      );
+    }
+    const projectIds = projects.map((project) => project.value);
+    const identity = neonIntegrationIdentity(
+      authMethod === "api_key_org" && accountId
+        ? { kind: "organization", id: accountId }
+        : authMethod === "api_key_user" && accountId
+          ? { kind: "user", id: accountId }
+          : {
+              kind: "organization",
+              id: `scope-${createHash("sha256")
+                .update([...projectIds].sort().join("\n"), "utf8")
+                .digest("base64url")}`,
+            },
+      projectIds,
+    );
+    return {
+      displayName: projects.length === 1
+        ? `Neon · ${projects[0].name}`
+        : `Neon · 프로젝트 ${projects.length}개`,
+      externalAccountId: identity.externalAccountId,
+      projectCount: projects.length,
+      projectIds: projects.map((project) => project.id),
+      scopeFingerprint: identity.scopeFingerprint,
+      authMethod,
+      // An org_id query narrows discovery, but not a personal key's authority.
+      // An unclassified compatibility key is conservatively treated as broad.
+      broadScope: authMethod !== "api_key_org",
+    };
+  } catch (error) {
+    if (
+      !(error instanceof ProviderRequestError)
+      || error.message !== "Neon rejected the request"
+    ) {
+      throw error;
+    }
+    if (error.status === 424) {
+      throw new ProviderRequestError(
+        "neon",
+        "Neon API key is invalid or revoked",
+        error.status,
+      );
+    }
+    if (error.status === 400) {
+      throw new ProviderRequestError(
+        "neon",
+        "Neon could not discover projects for this API key",
+        error.status,
+      );
+    }
+    if (error.status === 403) {
+      throw new ProviderRequestError(
+        "neon",
+        "Neon API key cannot access the requested scope",
+        error.status,
+      );
+    }
+    if (error.status === 429) {
+      throw new ProviderRequestError(
+        "neon",
+        "Neon API request limit was reached. Try again shortly.",
+        error.status,
+      );
+    }
+    throw error;
   }
-  const identity = neonIntegrationIdentity(
-    authMethod === "api_key_org"
-      ? { kind: "organization", id: accountId }
-      : { kind: "user", id: accountId },
-    projects.map((project) => project.value),
-  );
-  return {
-    displayName: projects.length === 1
-      ? `Neon · ${projects[0].name}`
-      : `Neon · 프로젝트 ${projects.length}개`,
-    externalAccountId: identity.externalAccountId,
-    projectCount: projects.length,
-    projectIds: projects.map((project) => project.id),
-    scopeFingerprint: identity.scopeFingerprint,
-    authMethod,
-    // An org_id query narrows this integration's discovery, but does not narrow
-    // the authority carried by a personal key itself.
-    broadScope: authMethod === "api_key_user",
-  };
 }
 
 export async function listNeonBranchInventory(

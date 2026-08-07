@@ -257,7 +257,11 @@ export async function POST(request: Request, context: RouteContext) {
       displayName = info.displayName;
       grantedScope = [
         "api-key-v1",
-        info.authMethod === "api_key_user" ? "personal" : "organization",
+        info.authMethod === "api_key_user"
+          ? "personal"
+          : info.authMethod === "api_key_org"
+            ? "organization"
+            : "provider-scoped",
         info.broadScope ? "broad" : "scoped",
         `projects:${info.projectCount}`,
         info.scopeFingerprint.slice(0, 16),
@@ -614,6 +618,9 @@ export async function POST(request: Request, context: RouteContext) {
       provider: body.provider,
       stage,
       postgresCode,
+      providerStatus: error instanceof ProviderRequestError
+        ? error.status
+        : null,
     });
     if (body.provider === "gcpCloudSql" && postgresCode === "23505") {
       return jsonError(

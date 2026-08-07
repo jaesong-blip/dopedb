@@ -447,7 +447,7 @@ const en = {
     neonDescriptionAfterLink: ". The key is encrypted on the server and is never stored with a shared database.",
     neonApiKey: "Neon API key",
     neonApiKeyPlaceholder: "Project-scoped API key",
-    organizationId: "Organization ID · optional",
+    organizationId: "Organization ID · personal key only",
     verifyConnect: "Verify and connect",
   },
   providerAccess: {
@@ -1263,7 +1263,7 @@ const ko: DeepStringShape<typeof en> = {
     neonDescriptionAfterLink: "를 만들어 사용하세요. 키는 서버에서 암호화되며 공유 DB에는 저장되지 않습니다.",
     neonApiKey: "Neon API 키",
     neonApiKeyPlaceholder: "프로젝트 범위 API 키",
-    organizationId: "조직 ID · 선택",
+    organizationId: "조직 ID · 개인 키만",
     verifyConnect: "검증 후 연결",
   },
   providerAccess: {
