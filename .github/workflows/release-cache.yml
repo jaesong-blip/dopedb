@@ -1,0 +1,52 @@
+name: release-cache
+
+# Actions 캐시는 만들어진 ref에 묶인다. app-v* 태그에서 도는 release 워크플로우는
+# 이전 태그가 저장한 캐시를 볼 수 없고 기본 브랜치 캐시만 fallback으로 읽으므로,
+# release와 같은 shared-key로 main에서 release 프로필 의존성을 미리 컴파일해 둔다.
+# Cargo.lock이 바뀔 때만 돌린다. stable rustc가 올라가면 캐시 키도 바뀌므로 그때는
+# workflow_dispatch로 한 번 워밍한다.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - Cargo.lock
+      - .github/workflows/release-cache.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  warm:
+    name: warm-${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-15
+            target: aarch64-apple-darwin
+          - platform: macos-15
+            target: x86_64-apple-darwin
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          workspaces: |
+            . -> target
+            src-tauri -> src-tauri/target
+
+      - name: Compile release dependencies
+        run: cargo build --release --locked --target ${{ matrix.target }} --workspace

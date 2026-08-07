@@ -127,6 +127,11 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
+          # 태그 ref에서 저장한 캐시는 다음 태그가 읽을 수 없으므로 release-cache
+          # 워크플로우가 main에 적립한 같은 shared-key 캐시만 읽는다. shared-key가
+          # 없으면 두 macOS target이 job 이름 기반 키를 공유해 서로 덮어쓴다.
+          shared-key: release-${{ matrix.target }}
+          save-if: false
           workspaces: |
             . -> target
             src-tauri -> src-tauri/target
