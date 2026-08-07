@@ -27,7 +27,7 @@ const monoFont = IBM_Plex_Mono({
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getWorkspaceLocale();
-  return locale === "ko"
+  const localized = locale === "ko"
     ? {
         title: "DopeDB 워크스페이스",
         description: "DopeDB의 공유 데이터베이스 접근 및 권한 제어 공간",
@@ -36,6 +36,17 @@ export async function generateMetadata(): Promise<Metadata> {
         title: "DopeDB Workspace",
         description: "Shared database access and authority control plane for DopeDB",
       };
+  return {
+    ...localized,
+    robots: {
+      index: false,
+      follow: true,
+      googleBot: {
+        index: false,
+        follow: true,
+      },
+    },
+  };
 }
 
 export default async function RootLayout({

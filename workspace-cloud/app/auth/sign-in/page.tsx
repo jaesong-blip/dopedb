@@ -35,7 +35,7 @@ export default async function SignInPage({
       id="main-content"
     >
       <div className="tw:relative tw:z-[1] tw:flex tw:items-center tw:justify-between">
-        <Brand />
+        <Brand destination="marketing" />
         <div className="tw:flex tw:items-center tw:gap-2">
           <span className="tw:inline-flex tw:items-center tw:gap-2 tw:rounded-full tw:border tw:border-border tw:bg-surface/80 tw:px-3 tw:py-2 tw:font-mono tw:text-2xs tw:font-medium tw:text-muted-foreground tw:backdrop-blur tw:max-[720px]:hidden">
             <i className="tw:size-1.5 tw:rounded-full tw:bg-success" />

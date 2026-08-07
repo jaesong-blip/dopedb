@@ -17,6 +17,7 @@ const en = {
   },
   brand: {
     home: "DopeDB workspace home",
+    marketingHome: "DopeDB product overview",
   },
   signIn: {
     status: "Control plane available",
@@ -856,6 +857,7 @@ const ko: DeepStringShape<typeof en> = {
   },
   brand: {
     home: "DopeDB 워크스페이스 홈",
+    marketingHome: "DopeDB 제품 소개",
   },
   signIn: {
     status: "Control plane available",

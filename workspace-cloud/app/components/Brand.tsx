@@ -5,15 +5,24 @@ import { localizedWorkspacePath } from "../../lib/workspace-locale";
 import { workspaceMessages } from "../../lib/workspace-messages";
 import { useWorkspaceLocale } from "./WorkspaceLocale";
 
-export function Brand({ tone = "default" }: { tone?: "default" | "inverse" }) {
+export function Brand({
+  destination = "workspace",
+  tone = "default",
+}: {
+  destination?: "marketing" | "workspace";
+  tone?: "default" | "inverse";
+}) {
   const locale = useWorkspaceLocale();
   const copy = workspaceMessages[locale].brand;
+  const href = destination === "marketing"
+    ? `https://dopedb.dev${locale === "ko" ? "/ko" : ""}`
+    : localizedWorkspacePath("/settings", locale);
   return (
     <Link
       className="tw:group tw:relative tw:z-[2] tw:inline-flex tw:items-center tw:gap-2.5 tw:font-semibold tw:tracking-[-0.025em] tw:data-[tone=inverse]:text-chrome-foreground"
       data-tone={tone}
-      href={localizedWorkspacePath("/settings", locale)}
-      aria-label={copy.home}
+      href={href}
+      aria-label={destination === "marketing" ? copy.marketingHome : copy.home}
     >
       <svg
         className="tw:size-7 tw:text-primary tw:group-data-[tone=inverse]:text-signal"

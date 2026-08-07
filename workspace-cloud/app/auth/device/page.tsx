@@ -48,7 +48,7 @@ export default async function DevicePage({
   return (
     <IdentitySingleShell>
       <div className="tw:flex tw:w-full tw:items-center tw:justify-between tw:gap-4">
-        <Brand />
+        <Brand destination="marketing" />
         <LocaleSwitcher />
       </div>
       <div className="tw:m-auto tw:w-[min(540px,100%)]">

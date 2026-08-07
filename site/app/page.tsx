@@ -28,6 +28,7 @@ import { TrackedLink } from "./TrackedLink";
 
 const repoUrl = "https://github.com/json-choi/dopedb";
 const releasesUrl = `${repoUrl}/releases/latest`;
+const workspaceSiteUrl = "https://app.dopedb.dev";
 const downloadUrls = {
   windows: `${repoUrl}/releases/latest/download/DopeDB-windows-x64-setup.exe`,
   macApple: `${repoUrl}/releases/latest/download/DopeDB-macos-arm64.dmg`,
@@ -36,6 +37,11 @@ const downloadUrls = {
 const siteUrl = "https://dopedb.dev";
 
 type Lang = "en" | "ko";
+
+const workspaceUrls: Record<Lang, string> = {
+  en: `${workspaceSiteUrl}/settings`,
+  ko: `${workspaceSiteUrl}/ko/settings`,
+};
 
 type HomeProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -47,6 +53,7 @@ const copy = {
       access: "Shared access",
       boundary: "Control boundary",
       flow: "How it works",
+      workspace: "Open workspace",
       download: "Get the alpha",
       github: "Open GitHub repository",
       home: "DopeDB home",
@@ -59,7 +66,7 @@ const copy = {
       text:
         "DopeDB gives a team one connection and policy without creating one shared password. Each member or Agent receives only the authority it needs, while database traffic and recovery stay on the desktop.",
       primary: "Download the alpha",
-      secondary: "Inspect the source",
+      secondary: "Open team workspace",
       proof:
         "Personal Workspace needs no account · macOS and Windows · MIT licensed",
     },
@@ -261,6 +268,7 @@ receipt         pending human decision`,
     },
     footer: {
       statement: "Shared access. Personal credentials. Exact Agent authority.",
+      workspace: "Team workspace",
       privacy: "Privacy",
       terms: "Terms",
     },
@@ -272,6 +280,7 @@ receipt         pending human decision`,
       access: "공유 접근",
       boundary: "통제 경계",
       flow: "작동 방식",
+      workspace: "워크스페이스 열기",
       download: "Alpha 받기",
       github: "GitHub 저장소 열기",
       home: "DopeDB 홈",
@@ -284,7 +293,7 @@ receipt         pending human decision`,
       text:
         "DopeDB는 공용 password를 만들지 않고도 팀이 하나의 연결과 정책을 쓰게 합니다. 구성원과 Agent는 필요한 권한만 받고, DB traffic과 복구 경계는 Desktop에 남습니다.",
       primary: "Alpha 다운로드",
-      secondary: "소스 확인하기",
+      secondary: "팀 워크스페이스 열기",
       proof: "Personal Workspace는 무계정 · macOS와 Windows · MIT 라이선스",
     },
     topology: {
@@ -485,6 +494,7 @@ receipt         pending human decision`,
     },
     footer: {
       statement: "공유 접근. 개인별 인증정보. 정확한 Agent 권한.",
+      workspace: "팀 워크스페이스",
       privacy: "개인정보처리방침",
       terms: "이용약관",
     },
@@ -706,6 +716,16 @@ export default async function Home({ searchParams }: HomeProps) {
   const otherLang = lang === "ko" ? "en" : "ko";
   const currentYear = new Date().getFullYear();
 
+  const websiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "@id": `${siteUrl}/#website`,
+    url: siteUrl,
+    name: "DopeDB",
+    alternateName: "도프디비",
+    inLanguage: ["en", "ko"],
+  };
+
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -729,6 +749,10 @@ export default async function Home({ searchParams }: HomeProps) {
 
   return (
     <main className="tw:overflow-clip tw:bg-night tw:text-cream" lang={lang}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+      />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -787,6 +811,14 @@ export default async function Home({ searchParams }: HomeProps) {
               <GitBranch size={16} />
             </a>
             <TrackedLink
+              className="tw:hidden tw:min-h-9 tw:items-center tw:border tw:border-hairline tw:px-3.5 tw:font-mono tw:text-[10px] tw:font-semibold tw:tracking-[0.08em] tw:text-cream-muted tw:uppercase tw:transition-colors tw:hover:border-cream/40 tw:hover:text-cream tw:min-[1180px]:inline-flex"
+              href={workspaceUrls[lang]}
+              event="Workspace Opened"
+              properties={{ source: "header" }}
+            >
+              {c.nav.workspace}
+            </TrackedLink>
+            <TrackedLink
               className="tw:hidden tw:min-h-9 tw:items-center tw:gap-2 tw:bg-signal tw:px-3.5 tw:font-mono tw:text-[10px] tw:font-semibold tw:tracking-[0.08em] tw:text-night tw:uppercase tw:transition-colors tw:hover:bg-signal-strong tw:min-[720px]:inline-flex"
               href={releasesUrl}
               event="Download Clicked"
@@ -832,7 +864,12 @@ export default async function Home({ searchParams }: HomeProps) {
                   <Download size={16} />
                   {c.hero.primary}
                 </MarketingButton>
-                <MarketingButton variant="secondary" href={repoUrl}>
+                <MarketingButton
+                  variant="secondary"
+                  href={workspaceUrls[lang]}
+                  event="Workspace Opened"
+                  properties={{ source: "hero" }}
+                >
                   {c.hero.secondary}
                   <ArrowUpRight size={16} />
                 </MarketingButton>
@@ -1235,7 +1272,15 @@ export default async function Home({ searchParams }: HomeProps) {
               </p>
             </div>
           </div>
-          <nav className="tw:flex tw:items-center tw:gap-5 tw:font-mono tw:text-[9px] tw:font-medium tw:tracking-[0.08em] tw:text-cream-muted tw:uppercase" aria-label="Legal">
+          <nav className="tw:flex tw:items-center tw:gap-5 tw:font-mono tw:text-[9px] tw:font-medium tw:tracking-[0.08em] tw:text-cream-muted tw:uppercase" aria-label="Footer navigation">
+            <TrackedLink
+              className="tw:transition-colors tw:hover:text-signal"
+              href={workspaceUrls[lang]}
+              event="Workspace Opened"
+              properties={{ source: "footer" }}
+            >
+              {c.footer.workspace}
+            </TrackedLink>
             <a className="tw:transition-colors tw:hover:text-signal" href={lang === "ko" ? "/ko/privacy" : "/privacy"}>
               {c.footer.privacy}
             </a>
