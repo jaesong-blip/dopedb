@@ -7,6 +7,10 @@ const koreanByEnglish: Readonly<Record<string, string>> = {
     "Neon API 키로 요청한 범위에 접근할 수 없습니다. 개인 키와 조직 ID 또는 조직·프로젝트 범위 키의 권한을 확인하세요.",
   "Neon could not discover projects for this API key":
     "Neon이 이 API 키의 프로젝트 목록 요청을 거부했습니다. 키가 프로젝트 범위 조직 키인지 확인하고 새 키로 다시 시도하세요.",
+  "Neon could not verify this project for the API key":
+    "Neon이 입력한 프로젝트와 API 키의 범위를 확인하지 못했습니다. 프로젝트 ID와 키를 같은 프로젝트에서 복사했는지 확인하세요.",
+  "Neon project was not found or this API key cannot access it":
+    "Neon 프로젝트를 찾을 수 없거나 이 API 키로 접근할 수 없습니다. 프로젝트 ID와 키 범위를 확인하세요.",
   "Neon API key cannot access a project":
     "Neon API 키로 접근 가능한 프로젝트가 없습니다. 프로젝트 범위와 조직 권한을 확인하세요.",
   "Neon API request limit was reached. Try again shortly.":

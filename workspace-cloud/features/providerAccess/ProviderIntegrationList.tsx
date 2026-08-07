@@ -4,6 +4,7 @@ import {
   ControlButton,
   ControlField,
   ControlInput,
+  ControlLink,
 } from "../../app/components/Controls";
 import type { ProviderAccessController } from "./useProviderAccess";
 import { useWorkspaceLocale } from "../../app/components/WorkspaceLocale";
@@ -179,24 +180,89 @@ export function ProviderIntegrationList({
 
       {setupProvider?.id === "neon" ? (
         <form
-          className="tw:grid tw:grid-cols-1 tw:items-end tw:gap-3 tw:border-y tw:border-border tw:py-4 tw:lg:grid-cols-2"
+          className="tw:grid tw:grid-cols-1 tw:items-end tw:gap-3 tw:border-y tw:border-border tw:py-4 tw:lg:grid-cols-3"
           onSubmit={(event) => {
             event.preventDefault();
             void connect(setupProvider, neonConfiguration);
           }}
         >
           <p className="tw:col-span-full tw:m-0 tw:text-2xs tw:leading-body tw:text-muted-foreground">
-            {copy.neonDescriptionBeforeLink}{" "}
-            <a
-              className="tw:text-primary"
-              href="https://neon.com/docs/manage/api-keys"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {copy.neonDescriptionLink}
-            </a>
+            {copy.neonDescriptionBeforeLink} {copy.neonDescriptionLink}
             {copy.neonDescriptionAfterLink}
           </p>
+          <aside className="tw:col-span-full tw:grid tw:gap-3 tw:rounded-control tw:border tw:border-border tw:bg-surface-inset tw:p-3.5">
+            <div className="tw:flex tw:flex-col tw:items-start tw:justify-between tw:gap-3 tw:sm:flex-row tw:sm:items-center">
+              <div className="tw:grid tw:gap-1">
+                <strong className="tw:text-xs tw:text-foreground">
+                  {copy.neonGuide.title}
+                </strong>
+                <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                  {copy.neonGuide.description}
+                </small>
+              </div>
+              <ControlLink
+                href="https://neon.com/docs/manage/api-keys"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {copy.neonGuide.openDocs}
+              </ControlLink>
+            </div>
+            <ol className="tw:m-0 tw:grid tw:list-none tw:grid-cols-1 tw:gap-2 tw:p-0 tw:md:grid-cols-3">
+              {[
+                {
+                  number: copy.neonGuide.firstNumber,
+                  title: copy.neonGuide.firstTitle,
+                  path: copy.neonGuide.firstPath,
+                  body: copy.neonGuide.firstBody,
+                },
+                {
+                  number: copy.neonGuide.secondNumber,
+                  title: copy.neonGuide.secondTitle,
+                  path: copy.neonGuide.secondPath,
+                  body: copy.neonGuide.secondBody,
+                },
+                {
+                  number: copy.neonGuide.thirdNumber,
+                  title: copy.neonGuide.thirdTitle,
+                  path: copy.neonGuide.thirdPath,
+                  body: copy.neonGuide.thirdBody,
+                },
+              ].map((step) => (
+                <li
+                  key={step.number}
+                  className="tw:grid tw:content-start tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:p-3"
+                >
+                  <span className="tw:font-mono tw:text-2xs tw:font-semibold tw:text-primary">
+                    {step.number}
+                  </span>
+                  <strong className="tw:text-xs tw:text-foreground">
+                    {step.title}
+                  </strong>
+                  <code className="tw:w-fit tw:max-w-full tw:overflow-x-auto tw:rounded-control tw:bg-surface-inset tw:px-2 tw:py-1 tw:text-2xs tw:text-foreground">
+                    {step.path}
+                  </code>
+                  <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                    {step.body}
+                  </small>
+                </li>
+              ))}
+            </ol>
+            <div className="tw:flex tw:flex-col tw:gap-1 tw:border-t tw:border-border tw:pt-3 tw:sm:flex-row tw:sm:items-center tw:sm:gap-3">
+              <strong className="tw:text-2xs tw:text-foreground">
+                {copy.neonGuide.personalTitle}
+              </strong>
+              <code className="tw:w-fit tw:max-w-full tw:overflow-x-auto tw:rounded-control tw:bg-surface tw:px-2 tw:py-1 tw:text-2xs tw:text-foreground">
+                {copy.neonGuide.personalPath}
+              </code>
+              <small className="tw:text-2xs tw:leading-body tw:text-muted-foreground">
+                {copy.neonGuide.personalBody}
+              </small>
+            </div>
+            <p className="tw:m-0 tw:text-2xs tw:font-medium tw:leading-body tw:text-warning">
+              {copy.neonGuide.caution}
+            </p>
+          </aside>
           <ControlField label={copy.neonApiKey}>
             <ControlInput
               type="password"
@@ -210,6 +276,18 @@ export function ProviderIntegrationList({
               }
               placeholder={copy.neonApiKeyPlaceholder}
               required
+            />
+          </ControlField>
+          <ControlField label={copy.projectId}>
+            <ControlInput
+              value={neonConfiguration.projectId}
+              onChange={(event) =>
+                setNeonConfiguration({
+                  ...neonConfiguration,
+                  projectId: event.target.value,
+                })
+              }
+              placeholder={copy.projectIdPlaceholder}
             />
           </ControlField>
           <ControlField label={copy.organizationId}>

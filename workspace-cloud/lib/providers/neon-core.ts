@@ -72,12 +72,13 @@ export function neonPublicDatabaseBoundaryError(
   return null;
 }
 
-export const NEON_CREDENTIAL_SCHEMA_VERSION = 1 as const;
+export const NEON_CREDENTIAL_SCHEMA_VERSION = 2 as const;
 
 export type NeonCredential = {
   kind: "apiKey";
   schemaVersion: typeof NEON_CREDENTIAL_SCHEMA_VERSION;
   apiKey: string;
+  projectId: string | null;
   organizationId: string | null;
 };
 
@@ -94,10 +95,16 @@ export function parseNeonCredential(value: unknown): NeonCredential {
   const row = value as Record<string, unknown>;
   const fields = Object.keys(row).sort();
   const legacy = fields.join(",") === "apiKey,organizationId";
-  const current = fields.join(",")
+  const versionOne = fields.join(",")
     === "apiKey,kind,organizationId,schemaVersion";
+  const current = fields.join(",")
+    === "apiKey,kind,organizationId,projectId,schemaVersion";
   if (
-    (!legacy && !current)
+    (!legacy && !versionOne && !current)
+    || (versionOne && (
+      row.kind !== "apiKey"
+      || row.schemaVersion !== 1
+    ))
     || (current && (
       row.kind !== "apiKey"
       || row.schemaVersion !== NEON_CREDENTIAL_SCHEMA_VERSION
@@ -110,6 +117,10 @@ export function parseNeonCredential(value: unknown): NeonCredential {
       typeof row.organizationId !== "string"
       || !neonSegment(row.organizationId)
     ))
+    || (current && row.projectId !== null && (
+      typeof row.projectId !== "string"
+      || !neonSegment(row.projectId)
+    ))
   ) {
     throw new Error("Invalid Neon credential");
   }
@@ -117,6 +128,7 @@ export function parseNeonCredential(value: unknown): NeonCredential {
     kind: "apiKey",
     schemaVersion: NEON_CREDENTIAL_SCHEMA_VERSION,
     apiKey: row.apiKey,
+    projectId: current ? row.projectId as string | null : null,
     organizationId: row.organizationId as string | null,
   };
 }

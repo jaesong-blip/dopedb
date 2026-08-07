@@ -236,10 +236,16 @@ export async function POST(request: Request, context: RouteContext) {
         && configuration.organizationId.trim()
         ? configuration.organizationId.trim()
         : null;
+      const projectId = typeof configuration?.projectId === "string"
+        && configuration.projectId.trim()
+        ? configuration.projectId.trim()
+        : null;
       if (
         apiKey.length < 20
         || apiKey.length > 512
         || /\s/.test(apiKey)
+        || (projectId !== null
+          && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(projectId))
         || (organizationId !== null
           && !/^[a-z0-9][a-z0-9-]{0,59}$/.test(organizationId))
       ) {
@@ -247,8 +253,9 @@ export async function POST(request: Request, context: RouteContext) {
       }
       credential = parseNeonCredential({
         kind: "apiKey",
-        schemaVersion: 1,
+        schemaVersion: 2,
         apiKey,
+        projectId,
         organizationId,
       });
       neonConfigurationCredential = credential;

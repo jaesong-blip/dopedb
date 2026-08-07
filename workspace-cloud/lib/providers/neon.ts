@@ -345,6 +345,29 @@ async function listNeonCollection(input: {
 export async function listNeonProjects(
   credential: NeonCredential,
 ): Promise<ProviderResourceItem[]> {
+  if (credential.projectId) {
+    const body = object(await apiRequest(
+      credential,
+      `/projects/${apiSegment(credential.projectId)}`,
+    ));
+    const project = object(body.project);
+    const id = requiredString(project.id, "project id");
+    if (id !== credential.projectId) {
+      throw new ProviderRequestError(
+        "neon",
+        "Neon returned a different project than requested",
+        502,
+      );
+    }
+    return [{
+      id,
+      value: id,
+      name: requiredString(project.name, "project name"),
+      kind: "postgres",
+      ready: true,
+      production: "unknown" as const,
+    }];
+  }
   const query = new URLSearchParams({ timeout: "15000" });
   if (credential.organizationId) query.set("org_id", credential.organizationId);
   const rows = await listNeonCollection({
@@ -443,7 +466,7 @@ export async function inspectNeonCredential(
       authMethod,
       // An org_id query narrows discovery, but not a personal key's authority.
       // An unclassified compatibility key is conservatively treated as broad.
-      broadScope: authMethod !== "api_key_org",
+      broadScope: credential.projectId === null && authMethod !== "api_key_org",
     };
   } catch (error) {
     if (
@@ -462,7 +485,16 @@ export async function inspectNeonCredential(
     if (error.status === 400) {
       throw new ProviderRequestError(
         "neon",
-        "Neon could not discover projects for this API key",
+        credential.projectId
+          ? "Neon could not verify this project for the API key"
+          : "Neon could not discover projects for this API key",
+        error.status,
+      );
+    }
+    if (error.status === 404 && credential.projectId) {
+      throw new ProviderRequestError(
+        "neon",
+        "Neon project was not found or this API key cannot access it",
         error.status,
       );
     }

@@ -37,6 +37,7 @@ import {
   MANAGED_PROVIDER_AUTHORITY_TIMEOUT_MS,
   verifiedProviderAuditId,
 } from "../../../workspace-cloud/lib/providers/provider-types";
+import { parseNeonCredential } from "../../../workspace-cloud/lib/providers/neon-core";
 import providerImportProjectionSource from "../../../workspace-cloud/lib/providers/import-projection.ts?raw";
 import providerImportStoreSource from "../../../workspace-cloud/lib/provider-import-store.ts?raw";
 import providerLocalTargetSource from "../../../workspace-cloud/lib/provider-local-target.ts?raw";
@@ -896,6 +897,8 @@ describe("provider credential Tauri adapter", () => {
     );
     expect(providerIntegrationListSource).not.toMatch(/availability|"준비 중"/);
     expect(providerIntegrationListSource).toContain("copy.neonDescriptionBeforeLink");
+    expect(providerIntegrationListSource).toContain("copy.neonGuide.firstPath");
+    expect(providerIntegrationListSource).toContain("neonConfiguration.projectId");
     expect(workspaceMessagesSource).toContain("This is not one-click setup");
     expect(workspaceMessagesSource).toContain("원클릭 연결이 아니며");
     expect(providerIntegrationListSource).toContain(":personal:broad:");
@@ -989,14 +992,43 @@ describe("provider credential Tauri adapter", () => {
       'integration.provider === "planetScale" || integration.provider === "neon"',
     );
     expect(neonCoreSource).toContain("ALTER DEFAULT PRIVILEGES FOR ROLE");
-    expect(neonCoreSource).toContain("NEON_CREDENTIAL_SCHEMA_VERSION = 1");
+    expect(neonCoreSource).toContain("NEON_CREDENTIAL_SCHEMA_VERSION = 2");
     expect(neonCoreSource).toContain("parseNeonCredential");
+    const compatibleNeonApiKey = `napi_${"a".repeat(24)}`;
+    expect(parseNeonCredential({
+      kind: "apiKey",
+      schemaVersion: 1,
+      apiKey: compatibleNeonApiKey,
+      organizationId: null,
+    })).toEqual({
+      kind: "apiKey",
+      schemaVersion: 2,
+      apiKey: compatibleNeonApiKey,
+      projectId: null,
+      organizationId: null,
+    });
+    expect(parseNeonCredential({
+      kind: "apiKey",
+      schemaVersion: 2,
+      apiKey: compatibleNeonApiKey,
+      projectId: "frosty-tree-12345678",
+      organizationId: null,
+    }).projectId).toBe("frosty-tree-12345678");
+    expect(() => parseNeonCredential({
+      kind: "apiKey",
+      schemaVersion: 2,
+      apiKey: compatibleNeonApiKey,
+      projectId: "../another-project",
+      organizationId: null,
+    })).toThrow("Invalid Neon credential");
     expect(neonCoreSource).toContain("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES");
     expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON TABLES");
     expect(neonCoreSource).toContain("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA");
     expect(neonSource).toContain("FROM pg_default_acl d");
     expect(neonSource).toContain("Neon future-object privilege verification failed");
     expect(neonSource).toContain('apiRequest(credential, "/auth")');
+    expect(neonSource).toContain("`/projects/${apiSegment(credential.projectId)}`");
+    expect(neonSource).toContain("credential.projectId === null");
     expect(neonSource).toContain("seenCursors.has(next)");
     expect(neonSource).toContain("MAX_NEON_RESPONSE_BYTES");
     expect(neonSource).toContain("response.body.getReader()");

@@ -113,6 +113,7 @@ export type ManagedConnection = {
 
 export type NeonConfiguration = {
   apiKey: string;
+  projectId: string;
   organizationId: string;
 };
 
@@ -415,4 +416,8 @@ export function parseGcpSetupPermissionCheck(
   };
 }
 
-export const emptyNeon: NeonConfiguration = { apiKey: "", organizationId: "" };
+export const emptyNeon: NeonConfiguration = {
+  apiKey: "",
+  projectId: "",
+  organizationId: "",
+};
