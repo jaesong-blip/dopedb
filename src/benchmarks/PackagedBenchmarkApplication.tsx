@@ -69,6 +69,7 @@ import {
 
 const ACTION_SAMPLES = 5;
 const FIXTURE_CONNECTION_ID = "bed00000-0000-0000-0000-000000000001";
+const DENSE_GRID_COLUMN_COUNT = 36;
 
 export function PackagedBenchmarkApplication({
   scenario,
@@ -340,10 +341,17 @@ function QueryResultScenario() {
       }
       const scroller = document.querySelector<HTMLElement>("[data-data-grid-scroll]");
       if (!scroller) throw new Error("grid scroller unavailable");
+      if (scroller.scrollWidth <= scroller.clientWidth) {
+        throw new Error("dense grid horizontal scroll unavailable");
+      }
+      const left = (index % 4) * 180;
       scroller.scrollTo({
         top: index % 2 === 0 ? scroller.scrollHeight : 0,
-        left: (index % 4) * 180,
+        left,
       });
+      if (left > 0 && scroller.scrollLeft === 0) {
+        throw new Error("dense grid horizontal scroll did not advance");
+      }
       scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
 
@@ -364,7 +372,7 @@ function QueryResultScenario() {
   });
 
   return (
-    <BenchmarkSurface title={`Query result · 50,000 visible rows · backend ${backendStatus}`}>
+    <BenchmarkSurface title={`Query result · 50,000 rows × ${DENSE_GRID_COLUMN_COUNT} columns · backend ${backendStatus}`}>
       <DataGrid result={result} surface="workbench" />
     </BenchmarkSurface>
   );
@@ -394,19 +402,19 @@ function TableFirstRowScenario() {
 }
 
 function queryResult(rowCount: number): QueryResult {
-  const columns = ["id", "account", "region", "state", "score", "created", "flag", "note"];
+  const columns = Array.from(
+    { length: DENSE_GRID_COLUMN_COUNT },
+    (_, index) => index === 0 ? "id" : `metric_${index}`,
+  );
   return {
     columns,
-    rows: Array.from({ length: rowCount }, (_, index) => [
-      index,
-      index % 1_000,
-      index % 12,
-      index % 4,
-      index / 10,
-      index % 365,
-      index % 2,
-      index % 100,
-    ]),
+    rows: Array.from({ length: rowCount }, (_, rowIndex) =>
+      columns.map((_, columnIndex) =>
+        columnIndex === 0
+          ? rowIndex
+          : (rowIndex * (columnIndex + 1)) % 10_000,
+      ),
+    ),
     rowCount,
     truncated: false,
     durationMs: 0,
