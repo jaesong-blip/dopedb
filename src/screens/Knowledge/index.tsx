@@ -14,6 +14,7 @@ import {
   InlineNotice,
   LoadingLabel,
   StatusBadge,
+  StatusDot,
   type StatusTone,
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
@@ -58,6 +59,13 @@ function repositoryLabel(repository: GithubKnowledgeRepository): string {
   return `${repository.fullName}${repository.private ? " · Private" : ""}`;
 }
 
+function riskTone(riskClass: KnowledgeEnvironment["riskClass"]): StatusTone {
+  if (riskClass === "production") return "danger";
+  if (riskClass === "staging") return "warning";
+  if (riskClass === "development") return "success";
+  return "neutral";
+}
+
 export default function Knowledge() {
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: projectKey, queryFn: listKnowledgeProjects });
@@ -82,6 +90,9 @@ export default function Knowledge() {
   const [connectionId, setConnectionId] = useState("");
   const [connectionRole, setConnectionRole] = useState("primary");
   const [connectionAlias, setConnectionAlias] = useState("");
+  const [view, setView] = useState<"sources" | "databases" | "explore">(
+    "sources",
+  );
   const environmentConnections = useQuery({
     queryKey: ["knowledge", "environment-connections", environmentId],
     queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
@@ -91,6 +102,16 @@ export default function Knowledge() {
   const selectedProject = useMemo(
     () => projects.data?.find((project) => project.id === projectId) ?? null,
     [projectId, projects.data],
+  );
+  const selectedEnvironment = selectedProject?.environments.find(
+    (environment) => environment.id === environmentId,
+  ) ?? null;
+  const selectedEnvironmentSources = useMemo(
+    () =>
+      (sources.data ?? []).filter(
+        (source) => source.projectEnvironmentId === environmentId,
+      ),
+    [environmentId, sources.data],
   );
   const selectedRepository = repositories.data?.find(
     (repository) => repository.id === repositoryId,
@@ -267,31 +288,122 @@ export default function Knowledge() {
       ) : null}
 
       {(projects.data?.length ?? 0) > 0 ? (
+        <section className="tw:grid tw:grid-cols-[minmax(190px,260px)_minmax(0,1fr)] tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:@max-[700px]:grid-cols-1">
+          <nav
+            className="tw:grid tw:content-start tw:gap-1 tw:border-r tw:border-border-subtle tw:bg-secondary/40 tw:p-2 tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b"
+            aria-label="Project environments"
+          >
+            {projects.data?.map((project) => (
+              <div key={project.id} className="tw:grid tw:gap-0.5">
+                <div className="tw:flex tw:min-h-control-md tw:min-w-0 tw:items-center tw:gap-1.5 tw:px-1.5 tw:text-xs tw:font-semibold tw:text-foreground">
+                  <Icon name="folder" />
+                  <span className="tw:truncate">{project.name}</span>
+                </div>
+                <div className="tw:grid tw:gap-0.5 tw:pl-3">
+                  {project.environments.map((environment) => {
+                    const sourceCount = (sources.data ?? []).filter(
+                      (source) =>
+                        source.projectEnvironmentId === environment.id,
+                    ).length;
+                    return (
+                      <button
+                        key={environment.id}
+                        type="button"
+                        data-active={environment.id === environmentId}
+                        className="tw:flex tw:min-h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground"
+                        onClick={() => {
+                          setProjectId(project.id);
+                          setEnvironmentId(environment.id);
+                        }}
+                      >
+                        <StatusDot tone={riskTone(environment.riskClass)} />
+                        <span className="tw:min-w-0 tw:flex-1 tw:truncate">
+                          {environment.name}
+                        </span>
+                        <span className="tw:shrink-0 tw:text-[11px] tw:opacity-70">
+                          {sourceCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+          <div className="tw:grid tw:min-w-0 tw:content-start tw:gap-4 tw:p-4">
+            <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
+              <div className="tw:grid tw:min-w-0 tw:gap-1">
+                <span className="tw:text-xs tw:text-muted-foreground">
+                  {selectedProject?.name}
+                </span>
+                <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
+                  <h2 className="tw:m-0 tw:truncate tw:text-lg tw:font-semibold">
+                    {selectedEnvironment?.name}
+                  </h2>
+                  {selectedEnvironment ? (
+                    <StatusBadge
+                      density="compact"
+                      tone={riskTone(selectedEnvironment.riskClass)}
+                    >
+                      {selectedEnvironment.riskClass}
+                    </StatusBadge>
+                  ) : null}
+                </div>
+              </div>
+              <span className="tw:text-xs tw:text-muted-foreground">
+                revision {selectedEnvironment?.revision ?? "—"}
+              </span>
+            </div>
+            <div
+              className="tw:flex tw:min-w-0 tw:gap-1 tw:overflow-x-auto"
+              role="tablist"
+              aria-label="Environment resources"
+            >
+              {(["sources", "databases", "explore"] as const).map(
+                (candidate) => (
+                  <Button
+                    key={candidate}
+                    size="compact"
+                    variant={view === candidate ? "selected" : "ghost"}
+                    role="tab"
+                    aria-selected={view === candidate}
+                    onClick={() => setView(candidate)}
+                  >
+                    <Icon
+                      name={
+                        candidate === "sources"
+                          ? "branch"
+                          : candidate === "databases"
+                            ? "database"
+                            : "search"
+                      }
+                    />
+                    {candidate === "sources"
+                      ? "Sources"
+                      : candidate === "databases"
+                        ? "Databases"
+                        : "Explore"}
+                  </Button>
+                ),
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {(projects.data?.length ?? 0) > 0 && view === "sources" ? (
         <section data-primary-flow className="tw:grid tw:gap-4 tw:border-b tw:border-border-subtle tw:pb-5">
           <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
             <div className="tw:grid tw:gap-1">
               <h2 className="tw:m-0 tw:text-base tw:font-semibold">Connect a source</h2>
-              <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">Choose the scope first; it will not change when a branch moves.</p>
+              <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
+                Connect to {selectedProject?.name} / {selectedEnvironment?.name}. This scope will not change when a branch moves.
+              </p>
             </div>
             <div className="tw:inline-flex tw:gap-1" role="group" aria-label="Source provider">
               <Button size="compact" variant={provider === "github" ? "selected" : "ghost"} onClick={() => setProvider("github")}>GitHub</Button>
               <Button size="compact" variant={provider === "local_folder" ? "selected" : "ghost"} onClick={() => setProvider("local_folder")}><Icon name="folder" />Local Folder</Button>
             </div>
-          </div>
-
-          <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[620px]:grid-cols-1">
-            <Field label="Project">
-              <SelectInput value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                {projects.data?.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </SelectInput>
-            </Field>
-            <Field label="Environment">
-              <SelectInput value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)}>
-                {selectedProject?.environments.map((environment) => (
-                  <option key={environment.id} value={environment.id}>{environment.name} · {environment.riskClass}</option>
-                ))}
-              </SelectInput>
-            </Field>
           </div>
 
           {provider === "github" ? (
@@ -370,7 +482,7 @@ export default function Knowledge() {
         </section>
       ) : null}
 
-      {(projects.data?.length ?? 0) > 0 ? (
+      {(projects.data?.length ?? 0) > 0 && view === "databases" ? (
         <section className="tw:grid tw:gap-3 tw:border-b tw:border-border-subtle tw:pb-5">
           <div className="tw:grid tw:gap-1">
             <h2 className="tw:m-0 tw:text-base tw:font-semibold">Environment databases</h2>
@@ -432,16 +544,17 @@ export default function Knowledge() {
         </section>
       ) : null}
 
+      {(projects.data?.length ?? 0) > 0 && view === "sources" ? (
       <section className="tw:grid tw:gap-3">
         <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
           <h2 className="tw:m-0 tw:text-base tw:font-semibold">Sources</h2>
           <Button iconOnly size="compact" variant="ghost" title="Refresh sources" onClick={() => void sources.refetch()}><Icon name="refresh" /></Button>
         </div>
-        {sources.isPending ? <LoadingLabel>Loading sources…</LoadingLabel> : (sources.data?.length ?? 0) === 0 ? (
-          <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">No source is connected to this workspace yet.</p>
+        {sources.isPending ? <LoadingLabel>Loading sources…</LoadingLabel> : selectedEnvironmentSources.length === 0 ? (
+          <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">No source is connected to this Environment yet.</p>
         ) : (
           <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
-            {sources.data?.map((source) => {
+            {selectedEnvironmentSources.map((source) => {
               const tone: StatusTone = source.health === "ready" ? "success" : source.health === "failed" ? "danger" : "warning";
               return (
                 <article key={source.sourceId} className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-3 tw:last:border-b-0 tw:@max-[560px]:grid-cols-1">
@@ -449,7 +562,9 @@ export default function Knowledge() {
                     <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
                       <strong className="tw:truncate tw:text-sm">{source.displayName}</strong>
                       <StatusBadge tone={tone} density="compact">{source.health}</StatusBadge>
-                      <span className="badge kind">{source.provider === "github" ? "GitHub" : "Local Folder"}</span>
+                      <StatusBadge density="compact">
+                        {source.provider === "github" ? "GitHub" : "Local Folder"}
+                      </StatusBadge>
                     </div>
                     <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{source.projectName} / {source.environmentName} · {revisionLabel(source.revision)}</span>
                     {source.provider === "local_folder" && !source.localCapabilityAvailable ? (
@@ -468,21 +583,15 @@ export default function Knowledge() {
           </div>
         )}
       </section>
+      ) : null}
 
-      {(sources.data?.length ?? 0) > 0 ? (
+      {(projects.data?.length ?? 0) > 0 && view === "explore" ? (
         <section data-primary-flow className="tw:grid tw:gap-3 tw:border-t tw:border-border-subtle tw:pt-5">
           <div className="tw:grid tw:gap-1">
             <h2 className="tw:m-0 tw:text-base tw:font-semibold">Explore</h2>
             <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">Search the active immutable revision. Results retain their exact source-qualified identity.</p>
           </div>
-          <div className="tw:grid tw:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] tw:items-end tw:gap-2 tw:@max-[620px]:grid-cols-1">
-            <Field label="Environment">
-              <SelectInput value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)}>
-                {projects.data?.flatMap((project) => project.environments.map((environment) => (
-                  <option key={environment.id} value={environment.id}>{project.name} / {environment.name}</option>
-                )))}
-              </SelectInput>
-            </Field>
+          <div className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-end tw:gap-2 tw:@max-[620px]:grid-cols-1">
             <Field label="Code, route, event, or table">
               <TextInput value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => {
                 if (event.key === "Enter" && searchQuery.trim() && environmentId) {
@@ -498,7 +607,7 @@ export default function Knowledge() {
                 <p className="tw:m-0 tw:p-3 tw:text-sm tw:text-muted-foreground">No matching node in this graph revision.</p>
               ) : search.data.matches.map((match) => (
                 <div key={`${match.graphRevisionId}:${match.node.id}`} className="tw:grid tw:min-w-0 tw:grid-cols-[auto_minmax(0,1fr)] tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0">
-                  <span className="badge kind">{match.node.kind}</span>
+                  <StatusBadge density="compact">{match.node.kind}</StatusBadge>
                   <span className="tw:grid tw:min-w-0 tw:gap-0.5">
                     <strong className="tw:truncate tw:text-sm">{match.node.name}</strong>
                     <span className="tw:truncate tw:font-mono tw:text-xs tw:text-muted-foreground">{match.node.qualifiedName}</span>
