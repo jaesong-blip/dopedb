@@ -28,3 +28,6 @@ src-tauri/gen/
 
 # Browser verification artifacts are local and reproducible.
 /.playwright-cli/
+
+# Ad-hoc packaged benchmark runs are local diagnostics, not release evidence.
+/src-tauri/benchmarks/*-diagnostic.json
