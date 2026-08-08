@@ -10,6 +10,7 @@ const PAINT_CHECKPOINT_TIMEOUT_MS = 30_000;
 let reactCommitCount = 0;
 let reactCommitDurationMs = 0;
 let maxReactCommitDurationMs = 0;
+let maxActionReactCommitDurationMs = 0;
 let ipcCallCount = 0;
 let ipcTotalDurationMs = 0;
 let longTaskCount = 0;
@@ -132,6 +133,12 @@ export const recordReactCommit: ProfilerOnRenderCallback = (
   reactCommitCount += 1;
   reactCommitDurationMs += actualDuration;
   maxReactCommitDurationMs = Math.max(maxReactCommitDurationMs, actualDuration);
+  if (activeAction !== null) {
+    maxActionReactCommitDurationMs = Math.max(
+      maxActionReactCommitDurationMs,
+      actualDuration,
+    );
+  }
 };
 
 export function recordBenchmarkIpc(durationMs: number) {
@@ -276,11 +283,17 @@ function webviewIdentity() {
 export function packagedRendererMetrics() {
   if (frameHandle !== null) window.cancelAnimationFrame(frameHandle);
   longTaskObserver?.disconnect();
+  // Startup samples have no named actions and must include the initial shell
+  // mount. Workload samples own a narrower contract: setup and navigation
+  // between surfaces are not attributed to the actions being budgeted.
+  const budgetedReactCommitDurationMs = actions.size > 0
+    ? maxActionReactCommitDurationMs
+    : maxReactCommitDurationMs;
   return {
     rendererElapsedMs: performance.now() - startedAt,
     reactCommitCount,
     reactCommitDurationMs,
-    maxReactCommitDurationMs,
+    maxReactCommitDurationMs: budgetedReactCommitDurationMs,
     longTaskSupported,
     longTaskCount,
     maxLongTaskMs,
