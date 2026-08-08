@@ -424,12 +424,16 @@ async function runMeasuredApp(
     ...(phase === null ? {} : { DOPEDB_PACKAGED_BENCHMARK_PHASE: phase }),
   }), marker, true, scenarioTimeoutMs(scenario));
   validateMeasuredOutcome(outcome, scenario, connectionCount, phase);
+  const reportedProcessTreeRss = Number(outcome.report.processTreeRssBytes) || 0;
   return {
     scenario,
     ...(phase === null ? {} : { phase }),
     connectionCount,
     wallMs: round(performance.now() - started),
-    maxProcessTreeRssBytes: outcome.maxProcessTreeRssBytes,
+    maxProcessTreeRssBytes: Math.max(
+      outcome.maxProcessTreeRssBytes,
+      reportedProcessTreeRss,
+    ),
     startup: outcome.report.startup,
     renderer: outcome.report.renderer,
   };
@@ -451,7 +455,10 @@ function validateMeasuredOutcome(outcome, scenario, connectionCount, phase = nul
     renderer?.reactCommitCount,
     renderer?.frameSampleCount,
     renderer?.ipcCallCount,
-    outcome?.maxProcessTreeRssBytes,
+    Math.max(
+      outcome?.maxProcessTreeRssBytes ?? 0,
+      Number(report?.processTreeRssBytes) || 0,
+    ),
   ];
   if (
     report?.schemaVersion !== 2
@@ -656,9 +663,9 @@ function runApplication(
         });
     };
     if (sampleRss) sampleProcessTreeRss();
-    // Starting PowerShell and querying CIM can take several seconds on a cold
-    // Windows runner. Sampling every frame only queues more expensive process
-    // enumerations and can leave a short journey without one usable sample.
+    // Windows gets an exact process-tree sample from the app's native ToolHelp
+    // report at shutdown. The periodic sampler tracks the root process peak only;
+    // unlike CIM enumeration it completes inside short benchmark journeys.
     const sampler = sampleRss
       ? setInterval(sampleProcessTreeRss, platform() === "win32" ? 1_000 : 50)
       : null;
@@ -729,17 +736,11 @@ async function processTreeRssBytes(rootPid) {
   if (!Number.isInteger(rootPid) || rootPid <= 0) return 0;
   try {
     if (platform() === "win32") {
-      const script = [
-        `$root=${rootPid}`,
-        "$rows=Get-CimInstance -Query 'SELECT ProcessId, ParentProcessId, WorkingSetSize FROM Win32_Process'",
-        "$ids=@($root)",
-        "do {$before=$ids.Count; $ids += @($rows | Where-Object {$ids -contains $_.ParentProcessId} | ForEach-Object {$_.ProcessId}); $ids=@($ids | Sort-Object -Unique)} while ($ids.Count -gt $before)",
-        "($rows | Where-Object {$ids -contains $_.ProcessId} | Measure-Object WorkingSetSize -Sum).Sum",
-      ].join("; ");
+      const script = `(Get-Process -Id ${rootPid} -ErrorAction Stop).WorkingSet64`;
       const { stdout } = await execFileAsync(
         "powershell",
         ["-NoProfile", "-NonInteractive", "-Command", script],
-        { encoding: "utf8", timeout: 10_000, windowsHide: true },
+        { encoding: "utf8", timeout: 2_000, windowsHide: true },
       );
       return Number(stdout.trim()) || 0;
     }

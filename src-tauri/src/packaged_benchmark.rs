@@ -109,6 +109,7 @@ struct PackagedBenchmarkReport<'a> {
     app_version: &'static str,
     scenario: &'a str,
     connection_count: u32,
+    process_tree_rss_bytes: Option<u64>,
     startup: StartupSummary,
     renderer: &'a RendererMetrics,
 }
@@ -262,12 +263,14 @@ pub(crate) async fn complete_packaged_benchmark(
         state.wait_for_post_paint_recovery().await?;
         let scenario = benchmark_scenario()?;
         let connection_count = benchmark_connection_count()?;
+        let process_tree_rss_bytes = packaged_process_tree_rss_bytes();
         let report = PackagedBenchmarkReport {
             schema_version: 2,
             measurement_scope: "packaged_release_user_journeys",
             app_version: env!("CARGO_PKG_VERSION"),
             scenario: &scenario,
             connection_count,
+            process_tree_rss_bytes,
             startup: state.startup_trace.summary(),
             renderer: &metrics,
         };
@@ -696,6 +699,88 @@ fn benchmark_phase(scenario: &str) -> AppResult<Option<String>> {
             "benchmark phase is only supported for agent-tools".into(),
         )),
     }
+}
+
+#[cfg(all(feature = "packaged-benchmark", windows))]
+fn packaged_process_tree_rss_bytes() -> Option<u64> {
+    use std::collections::HashSet;
+    use std::mem::size_of;
+
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::ProcessStatus::{
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+    };
+
+    struct OwnedHandle(HANDLE);
+    impl Drop for OwnedHandle {
+        fn drop(&mut self) {
+            unsafe { CloseHandle(self.0) };
+        }
+    }
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return None;
+    }
+    let snapshot = OwnedHandle(snapshot);
+    let mut entry = PROCESSENTRY32W {
+        dwSize: u32::try_from(size_of::<PROCESSENTRY32W>()).ok()?,
+        ..Default::default()
+    };
+    if unsafe { Process32FirstW(snapshot.0, &mut entry) } == 0 {
+        return None;
+    }
+    let mut processes = Vec::new();
+    loop {
+        processes.push((entry.th32ProcessID, entry.th32ParentProcessID));
+        if unsafe { Process32NextW(snapshot.0, &mut entry) } == 0 {
+            break;
+        }
+    }
+
+    let mut descendants = HashSet::from([std::process::id()]);
+    loop {
+        let before = descendants.len();
+        for &(pid, parent_pid) in &processes {
+            if descendants.contains(&parent_pid) {
+                descendants.insert(pid);
+            }
+        }
+        if descendants.len() == before {
+            break;
+        }
+    }
+
+    let mut total = 0u64;
+    for pid in descendants {
+        let process = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
+        if process.is_null() {
+            continue;
+        }
+        let process = OwnedHandle(process);
+        let counter_size = u32::try_from(size_of::<PROCESS_MEMORY_COUNTERS>()).ok()?;
+        let mut counters = PROCESS_MEMORY_COUNTERS {
+            cb: counter_size,
+            ..Default::default()
+        };
+        if unsafe { K32GetProcessMemoryInfo(process.0, &mut counters, counter_size) } != 0 {
+            total =
+                total.saturating_add(u64::try_from(counters.WorkingSetSize).unwrap_or(u64::MAX));
+        }
+    }
+    (total > 0).then_some(total)
+}
+
+#[cfg(all(feature = "packaged-benchmark", not(windows)))]
+fn packaged_process_tree_rss_bytes() -> Option<u64> {
+    None
 }
 
 #[cfg(feature = "packaged-benchmark")]
