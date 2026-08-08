@@ -79,6 +79,94 @@ export type MutatedSignalRule = Readonly<{
   nextEvaluationAt: Date;
 }>;
 
+/**
+ * Recheck a one-use runner lease without exposing its capability or rule
+ * definition. Desktop polls this boundary while a local query is running so a
+ * pause, disable, runner change, or grant revocation can stop the exact run.
+ */
+export async function signalRunnerLeaseIsActive(input: {
+  organizationId: string;
+  leaseId: string;
+  leaseCapability: string;
+  authority: DashboardMutationAuthority;
+}): Promise<boolean> {
+  const capabilityHash = createHash("sha256")
+    .update(input.leaseCapability)
+    .digest("hex");
+  const rows = await db.execute<Record<string, unknown>>(sql`
+    SELECT lease."id"::text AS "id"
+    FROM ${workspaceSignalRunnerLease} lease
+    JOIN ${workspaceSignalRunner} runner
+      ON runner."organization_id" = lease."organization_id"
+     AND runner."id" = lease."runner_id"
+    JOIN "workspace_control"."session" session
+      ON session."id" = ${input.authority.sessionId}
+     AND session."user_id" = ${input.authority.userId}
+     AND session."expires_at" > now()
+    JOIN ${member} member
+      ON member."id" = ${input.authority.membershipId}
+     AND member."organization_id" = lease."organization_id"
+     AND member."user_id" = session."user_id"
+     AND member."id" = runner."member_id"
+     AND member."role" = ${input.authority.role}
+     AND member."revocation_pending_at" IS NULL
+     AND member."revocation_claim_id" IS NULL
+    JOIN ${workspaceSignalRule} rule
+      ON rule."organization_id" = lease."organization_id"
+     AND rule."id" = lease."rule_id"
+     AND rule."revision" = lease."rule_revision"
+     AND rule."runner_id" = runner."id"
+     AND rule."enabled"
+     AND rule."deleted_at" IS NULL
+    JOIN ${knowledgeProjectEnvironment} environment
+      ON environment."organization_id" = rule."organization_id"
+     AND environment."id" = rule."project_environment_id"
+     AND environment."revision" = rule."environment_revision"
+    JOIN ${workspaceFunnelAnalysis} analysis
+      ON analysis."organization_id" = rule."organization_id"
+     AND analysis."id" = rule."source_analysis_id"
+     AND analysis."revision" = rule."source_analysis_revision"
+     AND analysis."state" = 'published'
+     AND analysis."deleted_at" IS NULL
+    WHERE lease."organization_id" = ${input.organizationId}
+      AND lease."id" = ${input.leaseId}::uuid
+      AND lease."lease_capability_hash" = ${capabilityHash}
+      AND lease."completed_at" IS NULL
+      AND lease."revoked_at" IS NULL
+      AND lease."expires_at" > now()
+      AND runner."revoked_at" IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM ${workspaceSignalRuleConnection} required
+        LEFT JOIN ${knowledgeEnvironmentConnection} binding
+          ON binding."organization_id" = required."organization_id"
+         AND binding."project_environment_id" = rule."project_environment_id"
+         AND binding."environment_revision" = rule."environment_revision"
+         AND binding."connection_id" = required."connection_id"
+         AND binding."connection_revision" = required."connection_revision"
+         AND binding."revoked_at" IS NULL
+        LEFT JOIN ${workspaceConnection} connection
+          ON connection."organization_id" = required."organization_id"
+         AND connection."id" = required."connection_id"
+         AND connection."revision" = required."connection_revision"
+         AND connection."readonly_default" = TRUE
+         AND connection."allow_writes" = FALSE
+         AND connection."deleted_at" IS NULL
+         AND connection."revocation_pending_at" IS NULL
+        LEFT JOIN ${workspaceConnectionGrant} grant_record
+          ON grant_record."organization_id" = required."organization_id"
+         AND grant_record."connection_id" = required."connection_id"
+         AND grant_record."member_id" = member."id"
+         AND grant_record."capability" IN ('use', 'manage')
+        WHERE required."organization_id" = rule."organization_id"
+          AND required."rule_id" = rule."id"
+          AND (binding."connection_id" IS NULL OR connection."id" IS NULL
+            OR grant_record."connection_id" IS NULL)
+      )
+    LIMIT 1
+  `);
+  return rows.rows.length === 1;
+}
+
 function authorityLockKey(input: { organizationId: string; authority: DashboardMutationAuthority }) {
   return `signal:${input.organizationId}:${input.authority.membershipId}:${input.authority.userId}`;
 }
@@ -879,6 +967,9 @@ export async function commitSignalRuleMutation(input: {
   const current = currentRows[0];
   if (!current || !current.definition || typeof current.definition !== "object"
     || Array.isArray(current.definition)) return null;
+  const updateDefinition = input.mutation.action === "update"
+    ? input.mutation.definition : null;
+  const updatesDefinition = updateDefinition !== null;
   const bumpsRevision = input.mutation.action !== "run_now";
   const nextRevision = bumpsRevision ? input.expectedRevision + 1 : input.expectedRevision;
   const nextStatus = input.mutation.action === "enable" ? "active"
@@ -890,9 +981,23 @@ export async function commitSignalRuleMutation(input: {
     ? input.mutation.runnerId : current.runnerId;
   const nextDefinition = bumpsRevision ? {
     ...(current.definition as Record<string, unknown>),
+    ...(updateDefinition ?? {}),
+    ...(updatesDefinition ? { productionConfirmed: undefined } : {}),
     enabled: nextEnabled,
     revision: nextRevision,
   } : current.definition;
+  if (updatesDefinition) delete (nextDefinition as Record<string, unknown>).productionConfirmed;
+  const plannedNextEvaluationAt = updatesDefinition
+    ? nextSignalEvaluationAt(
+        updateDefinition!.schedule,
+        updateDefinition!.timezone,
+        new Date(),
+      )
+    : null;
+  const recipientMemberIds = updatesDefinition
+    ? updateDefinition.recipientMemberIds : [];
+  const productionConfirmed = updatesDefinition
+    ? updateDefinition.productionConfirmed : false;
   const payloadHash = canonicalHash(nextDefinition);
   const requestId = crypto.randomUUID();
   const result = await db.execute<Record<string, unknown>>(sql`
@@ -916,8 +1021,12 @@ export async function commitSignalRuleMutation(input: {
         AND member."revocation_claim_id" IS NULL
       FOR UPDATE OF session, member
     ), current_rule AS MATERIALIZED (
-      SELECT rule.*
+      SELECT rule.*, environment."risk_class"
       FROM ${workspaceSignalRule} rule
+      JOIN ${knowledgeProjectEnvironment} environment
+        ON environment."organization_id" = rule."organization_id"
+       AND environment."id" = rule."project_environment_id"
+       AND environment."revision" = rule."environment_revision"
       JOIN authority ON rule."owner_member_id" = authority."id"
         OR authority."role" IN ('admin', 'owner')
       WHERE rule."organization_id" = ${input.organizationId}
@@ -927,7 +1036,10 @@ export async function commitSignalRuleMutation(input: {
         AND (${input.mutation.action} <> 'runner_change'
           OR rule."owner_member_id" = authority."id")
         AND (${input.mutation.action} <> 'run_now' OR rule."enabled")
-        AND (${input.mutation.action} IN ('pause', 'disable', 'runner_change') OR NOT EXISTS (
+        AND (${input.mutation.action} <> 'update'
+          OR environment."risk_class" <> 'production'
+          OR (authority."role" IN ('admin', 'owner') AND ${productionConfirmed}))
+        AND (${input.mutation.action} IN ('pause', 'disable', 'runner_change', 'update') OR NOT EXISTS (
           SELECT 1 FROM ${workspaceSignalRunnerLease} active
           WHERE active."organization_id" = rule."organization_id"
             AND active."rule_id" = rule."id"
@@ -951,27 +1063,53 @@ export async function commitSignalRuleMutation(input: {
       UNION ALL
       SELECT NULL::uuid FROM current_rule
       WHERE ${nextRunnerId}::text IS NULL AND NOT ${nextEnabled}
+    ), requested_recipient AS MATERIALIZED (
+      SELECT value AS member_id
+      FROM jsonb_array_elements_text(${JSON.stringify(recipientMemberIds)}::jsonb)
+    ), recipient_authority AS MATERIALIZED (
+      SELECT recipient."id"
+      FROM requested_recipient requested
+      JOIN ${member} recipient ON recipient."id" = requested.member_id
+      JOIN authority ON TRUE
+      WHERE recipient."organization_id" = ${input.organizationId}
+        AND recipient."revocation_pending_at" IS NULL
+        AND recipient."revocation_claim_id" IS NULL
+      FOR UPDATE OF recipient
     ), revoked_leases AS MATERIALIZED (
       UPDATE ${workspaceSignalRunnerLease} lease SET "revoked_at" = now()
       FROM current_rule
       WHERE lease."organization_id" = current_rule."organization_id"
         AND lease."rule_id" = current_rule."id"
         AND lease."completed_at" IS NULL AND lease."revoked_at" IS NULL
-        AND ${input.mutation.action} IN ('pause', 'disable', 'runner_change')
+        AND ${input.mutation.action} IN ('pause', 'disable', 'runner_change', 'update')
       RETURNING lease."id"
     ), stored AS MATERIALIZED (
       UPDATE ${workspaceSignalRule} rule SET
         "runner_id" = selected_runner."id",
         "enabled" = ${nextEnabled}, "status" = ${nextStatus},
         "revision" = ${nextRevision}, "definition" = ${JSON.stringify(nextDefinition)}::jsonb,
-        "next_evaluation_at" = CASE WHEN ${input.mutation.action} = 'run_now'
+        "production_approved_by_member_id" = CASE
+          WHEN ${input.mutation.action} = 'update' AND current_rule."risk_class" = 'production'
+            THEN authority."id"
+          WHEN ${input.mutation.action} = 'update' THEN NULL
+          ELSE rule."production_approved_by_member_id" END,
+        "production_approved_at" = CASE
+          WHEN ${input.mutation.action} = 'update' AND current_rule."risk_class" = 'production'
+            THEN now()
+          WHEN ${input.mutation.action} = 'update' THEN NULL
+          ELSE rule."production_approved_at" END,
+        "next_evaluation_at" = CASE WHEN ${input.mutation.action} = 'update'
+          THEN ${plannedNextEvaluationAt}
+          WHEN ${input.mutation.action} = 'run_now'
           OR (${input.mutation.action} = 'enable' AND NOT current_rule."enabled")
           THEN now() ELSE rule."next_evaluation_at" END,
         "updated_at" = now()
-      FROM current_rule CROSS JOIN selected_runner
+      FROM current_rule CROSS JOIN selected_runner CROSS JOIN authority
       CROSS JOIN (SELECT count(*) FROM revoked_leases) revoked_gate
       WHERE rule."organization_id" = current_rule."organization_id"
         AND rule."id" = current_rule."id"
+        AND (${input.mutation.action} <> 'update'
+          OR (SELECT count(*) FROM recipient_authority) = ${recipientMemberIds.length})
       RETURNING rule.*
     ), stored_revision AS (
       INSERT INTO ${workspaceSignalRuleRevision}

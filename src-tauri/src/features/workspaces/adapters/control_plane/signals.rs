@@ -83,6 +83,12 @@ struct ReceiptResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LeaseStatusResponse {
+    active: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct RemoteSignalReceipt {
     pub(crate) id: Uuid,
     pub(crate) state: String,
@@ -279,4 +285,31 @@ pub(crate) async fn submit_signal_receipt(
         ));
     }
     Ok(body.receipt)
+}
+
+pub(crate) async fn signal_lease_is_active(
+    user_id: &str,
+    workspace_id: Uuid,
+    lease: &RemoteSignalLease,
+) -> AppResult<bool> {
+    let token = signal_token(user_id)?;
+    let response = client()?
+        .get(format!(
+            "{}/api/v1/workspaces/{workspace_id}/signals/leases/{}",
+            origin()?,
+            lease.id
+        ))
+        .bearer_auth(token.as_str())
+        .header("x-dopedb-signal-lease", lease.capability.as_str())
+        .send()
+        .await
+        .map_err(|error| request_error("checking Signal lease", error))?;
+    if response.status() == StatusCode::UNAUTHORIZED {
+        delete_workspace_session(user_id)?;
+    }
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let body: LeaseStatusResponse = bounded_json(response, "Signal lease status").await?;
+    Ok(body.active)
 }

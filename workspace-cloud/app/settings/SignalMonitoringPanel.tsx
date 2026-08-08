@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ControlButton,
@@ -48,8 +48,14 @@ type Rule = {
   definition: {
     schedule: string;
     timezone: string;
+    evaluationWindowSeconds: number;
     condition: { kind: string; value?: number; percentage?: number; count?: number };
+    baselineWindowSeconds: number | null;
+    minimumSampleCount: number;
+    cooldownSeconds: number;
+    rearmAfterNormalCount: number;
     severity: string;
+    recipientMemberIds: string[];
     channels: string[];
   };
   runnerId: string | null;
@@ -149,7 +155,16 @@ function validRule(value: unknown): value is Rule {
     })
     && typeof row.metricSemanticId === "string" && typeof definition.schedule === "string"
     && typeof definition.timezone === "string" && typeof condition.kind === "string"
-    && typeof definition.severity === "string" && Array.isArray(definition.channels)
+    && Number.isSafeInteger(definition.evaluationWindowSeconds)
+    && (definition.baselineWindowSeconds === null
+      || Number.isSafeInteger(definition.baselineWindowSeconds))
+    && Number.isSafeInteger(definition.minimumSampleCount)
+    && Number.isSafeInteger(definition.cooldownSeconds)
+    && Number.isSafeInteger(definition.rearmAfterNormalCount)
+    && typeof definition.severity === "string"
+    && Array.isArray(definition.recipientMemberIds)
+    && definition.recipientMemberIds.every((member) => typeof member === "string")
+    && Array.isArray(definition.channels)
     && (row.runnerId === null || typeof row.runnerId === "string")
     && typeof row.enabled === "boolean" && ["active", "paused", "disabled"].includes(String(row.status))
     && Number.isSafeInteger(row.revision) && validDate(row.nextEvaluationAt)
@@ -181,7 +196,7 @@ function validReceipt(value: unknown): value is Receipt {
 
 const copyByLocale = {
   en: {
-    tabs: ["Rules", "Firing", "Health"], create: "New rule", cancel: "Cancel",
+    tabs: ["Rules", "Firing", "Health"], create: "New rule", edit: "Edit", cancel: "Cancel",
     configured: "Configured", monitoring: "Actually monitoring", active: "Active",
     paused: "Paused", disabled: "Disabled", online: "Online", offline: "Offline",
     noRunner: "No Desktop runner", noRules: "No signal rules yet.", noFiring: "Nothing needs attention.",
@@ -189,7 +204,7 @@ const copyByLocale = {
     runNow: "Run now", pause: "Pause", enable: "Enable", disable: "Disable", timeline: "Timeline",
     source: "Published metric", runner: "Desktop runner", schedule: "Schedule", condition: "Condition",
     value: "Condition value", severity: "Severity", recipients: "Recipients", channels: "Delivery",
-    window: "Evaluation window", createAction: "Create signal", creating: "Creating…",
+    window: "Evaluation window", createAction: "Create signal", saveAction: "Save changes", creating: "Saving…",
     production: "I approve monitoring this Environment if it is classified as production.",
     enabled: "Start monitoring immediately", refresh: "Refresh", markRead: "Mark read",
     loadError: "Could not load monitoring state.", mutationError: "The signal changed. Refresh and try again.",
@@ -201,7 +216,7 @@ const copyByLocale = {
     offlineEnable: "Choose an online Desktop runner before enabling monitoring.",
   },
   ko: {
-    tabs: ["규칙", "발생 중", "상태"], create: "새 규칙", cancel: "취소",
+    tabs: ["규칙", "발생 중", "상태"], create: "새 규칙", edit: "편집", cancel: "취소",
     configured: "설정 상태", monitoring: "실제 감시", active: "활성",
     paused: "일시정지", disabled: "비활성", online: "온라인", offline: "오프라인",
     noRunner: "Desktop 실행기 없음", noRules: "아직 신호 규칙이 없습니다.", noFiring: "확인할 신호가 없습니다.",
@@ -209,7 +224,7 @@ const copyByLocale = {
     runNow: "지금 실행", pause: "일시정지", enable: "활성화", disable: "비활성화", timeline: "타임라인",
     source: "발행된 지표", runner: "Desktop 실행기", schedule: "주기", condition: "조건",
     value: "조건값", severity: "심각도", recipients: "수신자", channels: "알림 채널",
-    window: "평가 구간", createAction: "신호 만들기", creating: "생성 중…",
+    window: "평가 구간", createAction: "신호 만들기", saveAction: "변경 저장", creating: "저장 중…",
     production: "이 Environment가 운영으로 분류된 경우 감시 실행을 승인합니다.",
     enabled: "만든 직후 감시 시작", refresh: "새로고침", markRead: "읽음 처리",
     loadError: "모니터링 상태를 불러오지 못했습니다.", mutationError: "신호가 변경되었습니다. 새로고침 후 다시 시도하세요.",
@@ -254,6 +269,7 @@ export function SignalMonitoringPanel({
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState("");
   const [source, setSource] = useState("");
   const [runnerId, setRunnerId] = useState("");
   const [schedule, setSchedule] = useState("*/15 * * * *");
@@ -261,12 +277,17 @@ export function SignalMonitoringPanel({
   const [conditionValue, setConditionValue] = useState("1");
   const [severity, setSeverity] = useState("warning");
   const [windowSeconds, setWindowSeconds] = useState("3600");
+  const [baselineWindowSeconds, setBaselineWindowSeconds] = useState("86400");
+  const [minimumSampleCount, setMinimumSampleCount] = useState("1");
+  const [cooldownSeconds, setCooldownSeconds] = useState("3600");
+  const [rearmAfterNormalCount, setRearmAfterNormalCount] = useState("1");
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
   const [channels, setChannels] = useState<string[]>(["desktop", "workspace_web"]);
   const [enabled, setEnabled] = useState(true);
   const [productionConfirmed, setProductionConfirmed] = useState(false);
   const [selectedRuleId, setSelectedRuleId] = useState("");
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const sourceDeepLinkApplied = useRef(false);
 
   const metricSources = useMemo(() => analyses.flatMap((analysis) =>
     analysis.definition.tiles.filter((tile) => tile.kind === "metric").map((tile) => ({ analysis, tile }))), [analyses]);
@@ -335,6 +356,29 @@ export function SignalMonitoringPanel({
   }, []);
 
   useEffect(() => {
+    if (sourceDeepLinkApplied.current || !canEditWorkspace) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("create") !== "1") return;
+    const analysisId = params.get("analysis");
+    const tileId = params.get("tile");
+    const matched = metricSources.find(({ analysis, tile }) => (
+      analysis.id === analysisId && tile.id === tileId
+    ));
+    if (!matched) return;
+    sourceDeepLinkApplied.current = true;
+    setTab("rules");
+    setEditingRuleId("");
+    setSource(`${matched.analysis.id}:${matched.tile.id}`);
+    setCreating(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("signal-rule-editor")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [canEditWorkspace, metricSources]);
+
+  useEffect(() => {
     if (!selectedRuleId) {
       setReceipts([]);
       return;
@@ -392,10 +436,10 @@ export function SignalMonitoringPanel({
         timezone: selectedSource.analysis.definition.timezone,
         evaluationWindowSeconds: Number(windowSeconds),
         condition,
-        baselineWindowSeconds: conditionKind.includes("change") ? 86400 : null,
-        minimumSampleCount: 1,
-        cooldownSeconds: 3600,
-        rearmAfterNormalCount: 1,
+        baselineWindowSeconds: conditionKind.includes("change") ? Number(baselineWindowSeconds) : null,
+        minimumSampleCount: Number(minimumSampleCount),
+        cooldownSeconds: Number(cooldownSeconds),
+        rearmAfterNormalCount: Number(rearmAfterNormalCount),
         severity,
         recipientMemberIds: selectedRecipients,
         channels,
@@ -407,6 +451,85 @@ export function SignalMonitoringPanel({
     if (!response?.ok) setError(await responseError(response, copy.mutationError));
     else {
       setCreating(false);
+      setEditingRuleId("");
+      await load();
+    }
+    setMutating(false);
+  }
+
+  function startCreate() {
+    setEditingRuleId("");
+    setSchedule("*/15 * * * *");
+    setConditionKind("threshold_above");
+    setConditionValue("1");
+    setSeverity("warning");
+    setWindowSeconds("3600");
+    setBaselineWindowSeconds("86400");
+    setMinimumSampleCount("1");
+    setCooldownSeconds("3600");
+    setRearmAfterNormalCount("1");
+    setChannels(["desktop", "workspace_web"]);
+    setEnabled(true);
+    setProductionConfirmed(false);
+    setCreating(true);
+  }
+
+  function startEdit(rule: Rule) {
+    const condition = rule.definition.condition;
+    setEditingRuleId(rule.id);
+    setSource(`${rule.sourceAnalysisId}:${rule.sourceTileId}`);
+    setSchedule(rule.definition.schedule);
+    setConditionKind(condition.kind);
+    setConditionValue(String(condition.value ?? condition.percentage ?? condition.count ?? 1));
+    setSeverity(rule.definition.severity);
+    setWindowSeconds(String(rule.definition.evaluationWindowSeconds));
+    setBaselineWindowSeconds(String(rule.definition.baselineWindowSeconds ?? 86400));
+    setMinimumSampleCount(String(rule.definition.minimumSampleCount));
+    setCooldownSeconds(String(rule.definition.cooldownSeconds));
+    setRearmAfterNormalCount(String(rule.definition.rearmAfterNormalCount));
+    setSelectedRecipients(rule.definition.recipientMemberIds);
+    setChannels(rule.definition.channels);
+    setProductionConfirmed(false);
+    setCreating(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("signal-rule-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  async function updateRule(rule: Rule) {
+    if (selectedRecipients.length === 0 || channels.length === 0) return;
+    setMutating(true);
+    const numeric = Number(conditionValue);
+    const condition = conditionKind === "percentage_change"
+      ? { kind: conditionKind, percentage: numeric }
+      : conditionKind === "missing_data" || conditionKind === "consecutive_failure"
+        ? { kind: conditionKind, count: numeric }
+        : { kind: conditionKind, value: numeric };
+    const response = await fetch(`/api/v1/workspaces/${workspaceId}/signals/${rule.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "If-Match": `"${rule.revision}"` },
+      body: JSON.stringify({
+        action: "update",
+        definition: {
+          schedule,
+          timezone: rule.definition.timezone,
+          evaluationWindowSeconds: Number(windowSeconds),
+          condition,
+          baselineWindowSeconds: conditionKind.includes("change") ? Number(baselineWindowSeconds) : null,
+          minimumSampleCount: Number(minimumSampleCount),
+          cooldownSeconds: Number(cooldownSeconds),
+          rearmAfterNormalCount: Number(rearmAfterNormalCount),
+          severity,
+          recipientMemberIds: selectedRecipients,
+          channels,
+          productionConfirmed,
+        },
+      }),
+    }).catch(() => null);
+    if (!response?.ok) setError(await responseError(response, copy.mutationError));
+    else {
+      setCreating(false);
+      setEditingRuleId("");
       await load();
     }
     setMutating(false);
@@ -438,17 +561,17 @@ export function SignalMonitoringPanel({
         </div>
         <div className="tw:flex tw:gap-2">
           <ControlButton disabled={loading || mutating} onClick={() => void load()}>{copy.refresh}</ControlButton>
-          {tab === "rules" && canEditWorkspace ? <ControlButton tone="primary" onClick={() => setCreating((value) => !value)}>{creating ? copy.cancel : copy.create}</ControlButton> : null}
+          {tab === "rules" && canEditWorkspace ? <ControlButton tone="primary" onClick={() => { if (creating) { setCreating(false); setEditingRuleId(""); } else startCreate(); }}>{creating ? copy.cancel : copy.create}</ControlButton> : null}
         </div>
       </div>
 
       {error ? <p className="tw:m-5 tw:rounded-surface tw:border tw:border-danger/30 tw:bg-danger/5 tw:px-4 tw:py-3 tw:text-xs tw:text-danger">{error}</p> : null}
 
       {tab === "rules" && creating ? (
-        <section className="tw:grid tw:gap-5 tw:border-b tw:border-border tw:bg-surface-inset/45 tw:p-5">
+        <section id="signal-rule-editor" className="tw:grid tw:gap-5 tw:border-b tw:border-border tw:bg-surface-inset/45 tw:p-5">
           <div className="tw:grid tw:grid-cols-3 tw:gap-4 tw:max-[860px]:grid-cols-2 tw:max-[560px]:grid-cols-1">
-            <ControlField label={copy.source}><ControlSelect value={source} onChange={(event) => setSource(event.target.value)}><option value="">—</option>{metricSources.map(({ analysis, tile }) => <option key={`${analysis.id}:${tile.id}`} value={`${analysis.id}:${tile.id}`}>{analysis.definition.title} · {tile.title}</option>)}</ControlSelect></ControlField>
-            <ControlField label={copy.runner}><ControlSelect value={runnerId} onChange={(event) => setRunnerId(event.target.value)}><option value="">—</option>{runners.map((runner) => <option key={runner.id} value={runner.id}>{runner.displayName} · {runner.online ? copy.online : copy.offline}</option>)}</ControlSelect></ControlField>
+            <ControlField label={copy.source}><ControlSelect disabled={Boolean(editingRuleId)} value={source} onChange={(event) => setSource(event.target.value)}><option value="">—</option>{metricSources.map(({ analysis, tile }) => <option key={`${analysis.id}:${tile.id}`} value={`${analysis.id}:${tile.id}`}>{analysis.definition.title} · {tile.title}</option>)}</ControlSelect></ControlField>
+            <ControlField label={copy.runner}><ControlSelect disabled={Boolean(editingRuleId)} value={runnerId} onChange={(event) => setRunnerId(event.target.value)}><option value="">—</option>{runners.map((runner) => <option key={runner.id} value={runner.id}>{runner.displayName} · {runner.online ? copy.online : copy.offline}</option>)}</ControlSelect></ControlField>
             <ControlField label={copy.schedule}><ControlSelect value={schedule} onChange={(event) => setSchedule(event.target.value)}><option value="*/5 * * * *">5 min</option><option value="*/15 * * * *">15 min</option><option value="0 * * * *">1 hour</option><option value="0 9 * * *">09:00 daily</option></ControlSelect></ControlField>
             <ControlField label={copy.condition}><ControlSelect value={conditionKind} onChange={(event) => setConditionKind(event.target.value)}><option value="threshold_above">Above</option><option value="threshold_below">Below</option><option value="absolute_change">Absolute change</option><option value="percentage_change">Percentage change</option><option value="missing_data">Missing data</option><option value="consecutive_failure">Consecutive failure</option></ControlSelect></ControlField>
             <ControlField label={copy.value}><ControlInput min="0" step="any" type="number" value={conditionValue} onChange={(event) => setConditionValue(event.target.value)} /></ControlField>
@@ -457,16 +580,16 @@ export function SignalMonitoringPanel({
           </div>
           <fieldset className="tw:grid tw:gap-2"><legend className="tw:mb-2 tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.06em] tw:uppercase tw:text-muted-foreground">{copy.recipients}</legend><div className="tw:flex tw:flex-wrap tw:gap-2">{recipients.map((member) => <label className="tw:flex tw:items-center tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3 tw:py-2 tw:text-2xs" key={member.id}><input checked={selectedRecipients.includes(member.id)} onChange={() => toggle(selectedRecipients, member.id, setSelectedRecipients)} type="checkbox" />{member.name} · {member.role}</label>)}</div></fieldset>
           <fieldset className="tw:grid tw:gap-2"><legend className="tw:mb-2 tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.06em] tw:uppercase tw:text-muted-foreground">{copy.channels}</legend><div className="tw:flex tw:flex-wrap tw:gap-2">{[["desktop", copy.desktop], ["workspace_web", copy.web], ["email", copy.email]].map(([value, label]) => <label className="tw:flex tw:items-center tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3 tw:py-2 tw:text-2xs" key={value}><input checked={channels.includes(value)} onChange={() => toggle(channels, value, setChannels)} type="checkbox" />{label}</label>)}</div></fieldset>
-          <div className="tw:grid tw:gap-2 tw:text-xs tw:text-muted-foreground"><label className="tw:flex tw:items-start tw:gap-2"><input checked={enabled} onChange={(event) => setEnabled(event.target.checked)} type="checkbox" />{copy.enabled}</label><label className="tw:flex tw:items-start tw:gap-2"><input checked={productionConfirmed} onChange={(event) => setProductionConfirmed(event.target.checked)} type="checkbox" />{copy.production}</label></div>
+          <div className="tw:grid tw:gap-2 tw:text-xs tw:text-muted-foreground">{!editingRuleId ? <label className="tw:flex tw:items-start tw:gap-2"><input checked={enabled} onChange={(event) => setEnabled(event.target.checked)} type="checkbox" />{copy.enabled}</label> : null}<label className="tw:flex tw:items-start tw:gap-2"><input checked={productionConfirmed} onChange={(event) => setProductionConfirmed(event.target.checked)} type="checkbox" />{copy.production}</label></div>
           {selectedSource ? <section className="tw:grid tw:gap-3 tw:border-y tw:border-border tw:py-4" aria-label={copy.review}><div className="tw:grid tw:grid-cols-3 tw:gap-4 tw:text-2xs tw:max-[720px]:grid-cols-1"><div><strong className="tw:block tw:font-medium tw:text-foreground">{copy.revision}</strong><span className="tw:mt-1 tw:block tw:font-mono tw:text-muted-foreground">Environment r{selectedSource.analysis.environmentRevision} · Analysis r{selectedSource.analysis.revision}</span></div><div><strong className="tw:block tw:font-medium tw:text-foreground">{copy.databaseScope}</strong><span className="tw:mt-1 tw:block tw:text-muted-foreground">{selectedSource.analysis.connections.map((connection) => `${connection.alias} · r${connection.connectionRevision}`).join(", ")}</span></div><div><strong className="tw:block tw:font-medium tw:text-foreground">{copy.expectedLoad}</strong><span className="tw:mt-1 tw:block tw:text-muted-foreground">{schedule} · {Number(windowSeconds) / 60} min window</span></div></div><p className="tw:m-0 tw:text-2xs tw:text-muted-foreground">{copy.readOnly}</p></section> : null}
-          <div className="tw:flex tw:items-center tw:justify-between tw:gap-4"><p className="tw:text-2xs tw:text-muted-foreground">{enabled && selectedRunner && !selectedRunner.online ? copy.offlineEnable : copy.requirement}</p><ControlButton disabled={mutating || !selectedSource || !runnerId || (enabled && !selectedRunner?.online) || selectedRecipients.length === 0 || channels.length === 0} onClick={() => void createRule()} tone="primary">{mutating ? copy.creating : copy.createAction}</ControlButton></div>
+          <div className="tw:flex tw:items-center tw:justify-between tw:gap-4"><p className="tw:text-2xs tw:text-muted-foreground">{!editingRuleId && enabled && selectedRunner && !selectedRunner.online ? copy.offlineEnable : copy.requirement}</p><ControlButton disabled={mutating || (!editingRuleId && (!selectedSource || !runnerId || (enabled && !selectedRunner?.online))) || selectedRecipients.length === 0 || channels.length === 0} onClick={() => { const rule = rules.find((candidate) => candidate.id === editingRuleId); if (rule) void updateRule(rule); else void createRule(); }} tone="primary">{mutating ? copy.creating : editingRuleId ? copy.saveAction : copy.createAction}</ControlButton></div>
         </section>
       ) : null}
 
       {tab === "rules" ? <div className="tw:divide-y tw:divide-border">{rules.map((rule) => (
         <article className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-5 tw:p-5 tw:max-[720px]:grid-cols-1" id={`signal-${rule.id}`} key={rule.id}>
           <div className="tw:min-w-0"><div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2"><h4 className="tw:truncate tw:text-sm tw:font-medium">{rule.metricSemanticId}</h4><span className="tw:rounded-full tw:bg-surface-inset tw:px-2 tw:py-1 tw:font-mono tw:text-2xs tw:text-muted-foreground">{conditionLabel(rule)}</span></div><dl className="tw:mt-3 tw:grid tw:grid-cols-2 tw:gap-x-5 tw:gap-y-2 tw:text-2xs tw:max-[480px]:grid-cols-1"><div className="tw:flex tw:justify-between tw:gap-3"><dt className="tw:text-muted-foreground">{copy.configured}</dt><dd>{rule.status === "active" ? copy.active : rule.status === "paused" ? copy.paused : copy.disabled}</dd></div><div className="tw:flex tw:justify-between tw:gap-3"><dt className="tw:text-muted-foreground">{copy.monitoring}</dt><dd className={rule.actuallyMonitoring ? "tw:text-success" : "tw:text-danger"}>{rule.actuallyMonitoring ? copy.online : copy.offline}</dd></div><div className="tw:flex tw:justify-between tw:gap-3"><dt className="tw:text-muted-foreground">{copy.runner}</dt><dd className="tw:truncate">{rule.runner?.displayName ?? copy.noRunner}</dd></div><div className="tw:flex tw:justify-between tw:gap-3"><dt className="tw:text-muted-foreground">Next</dt><dd>{date(rule.nextEvaluationAt)}</dd></div></dl></div>
-          <div className="tw:flex tw:flex-wrap tw:items-start tw:justify-end tw:gap-2"><ControlButton onClick={() => setSelectedRuleId((current) => current === rule.id ? "" : rule.id)}>{copy.timeline}</ControlButton>{canEditWorkspace ? <><ControlButton disabled={mutating || !rule.runner?.online} onClick={() => void command(rule, "run_now")}>{copy.runNow}</ControlButton>{rule.status === "active" ? <ControlButton disabled={mutating} onClick={() => void command(rule, "pause")}>{copy.pause}</ControlButton> : <ControlButton disabled={mutating || !rule.runner?.online} onClick={() => void command(rule, "enable")}>{copy.enable}</ControlButton>}<ControlButton disabled={mutating || rule.status === "disabled"} onClick={() => void command(rule, "disable")} tone="danger">{copy.disable}</ControlButton><div className="tw:min-w-44"><ControlSelect aria-label={copy.runner} disabled={mutating} value={rule.runnerId ?? ""} onChange={(event) => void command(rule, "runner_change", event.target.value)}><option value="">—</option>{runners.map((runner) => <option key={runner.id} value={runner.id}>{runner.displayName}</option>)}</ControlSelect></div></> : null}</div>
+          <div className="tw:flex tw:flex-wrap tw:items-start tw:justify-end tw:gap-2"><ControlButton onClick={() => setSelectedRuleId((current) => current === rule.id ? "" : rule.id)}>{copy.timeline}</ControlButton>{canEditWorkspace ? <><ControlButton disabled={mutating} onClick={() => startEdit(rule)}>{copy.edit}</ControlButton><ControlButton disabled={mutating || !rule.runner?.online} onClick={() => void command(rule, "run_now")}>{copy.runNow}</ControlButton>{rule.status === "active" ? <ControlButton disabled={mutating} onClick={() => void command(rule, "pause")}>{copy.pause}</ControlButton> : <ControlButton disabled={mutating || !rule.runner?.online} onClick={() => void command(rule, "enable")}>{copy.enable}</ControlButton>}<ControlButton disabled={mutating || rule.status === "disabled"} onClick={() => void command(rule, "disable")} tone="danger">{copy.disable}</ControlButton><div className="tw:min-w-44"><ControlSelect aria-label={copy.runner} disabled={mutating} value={rule.runnerId ?? ""} onChange={(event) => void command(rule, "runner_change", event.target.value)}><option value="">—</option>{runners.map((runner) => <option key={runner.id} value={runner.id}>{runner.displayName}</option>)}</ControlSelect></div></> : null}</div>
           {selectedRuleId === rule.id ? <section className="tw:col-span-2 tw:grid tw:gap-3 tw:border-t tw:border-border tw:pt-4 tw:max-[720px]:col-span-1"><div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:text-2xs tw:text-muted-foreground"><span className="tw:font-mono">Rule r{rule.revision} · Environment r{rule.environmentRevision} · Analysis r{rule.sourceAnalysisRevision}</span>{(() => { const analysis = analyses.find((candidate) => candidate.id === rule.sourceAnalysisId); const tile = analysis?.definition.tiles.find((candidate) => candidate.id === rule.sourceTileId); return tile?.dashboardId ? <a className="tw:font-medium tw:text-primary tw:hover:underline" href={`?workspace=${encodeURIComponent(workspaceId)}&section=dashboards&dashboard=${encodeURIComponent(tile.dashboardId)}`}>{copy.openDashboard}</a> : null; })()}</div><p className="tw:m-0 tw:font-mono tw:text-2xs tw:text-muted-foreground">{rule.connections.map((connection) => `${connection.connectionId} · r${connection.connectionRevision}`).join(" · ")}</p><ol className="tw:grid tw:gap-2">{receipts.map((receipt) => <li className="tw:grid tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:rounded-surface tw:bg-surface-inset tw:px-3 tw:py-2 tw:text-2xs" key={receipt.id}><span className="tw:font-mono tw:text-muted-foreground">#{receipt.transitionSequence}</span><span className="tw:min-w-0 tw:truncate"><strong className={receipt.state === "normal" || receipt.state === "recovered" ? "tw:text-success" : "tw:text-danger"}>{receipt.state.replaceAll("_", " ")}</strong> · {receipt.connectionIds.length} DB · {receipt.durationMs} ms · {receipt.rowCountCategory}{receipt.errorKind ? ` · ${receipt.errorKind}` : ""}</span><time className="tw:text-muted-foreground">{date(receipt.evaluatedAt)}</time></li>)}</ol></section> : null}
         </article>
       ))}{!loading && rules.length === 0 ? <p className="tw:p-10 tw:text-center tw:text-xs tw:text-muted-foreground">{copy.noRules}</p> : null}</div> : null}

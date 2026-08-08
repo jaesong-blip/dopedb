@@ -85,6 +85,7 @@ type Props = {
   onOpenActivity: () => void;
   onDashboardFocusConsumed: () => void;
   onOpenTerminal: () => void;
+  onOpenAgentTask: (connectionId: string) => void;
   onSetQueryTitle: (value: string) => void;
   onSetQueryDatabase: (value: string) => void;
   onSetQuerySchema: (value: string | null) => void;
@@ -174,7 +175,10 @@ export default function WorkbenchContent(props: Props) {
   if (area === "knowledge") {
     return withSettings(
       <section className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background">
-        <Knowledge analysisFocus={props.knowledgeAnalysisFocus} />
+        <Knowledge
+          analysisFocus={props.knowledgeAnalysisFocus}
+          onOpenAgent={props.onOpenAgentTask}
+        />
       </section>,
     );
   }

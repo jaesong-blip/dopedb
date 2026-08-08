@@ -22,6 +22,10 @@ import { errMessage } from "../../ipc/types";
 import { cancelQuery } from "../../ipc/commands";
 import { listConnections } from "../../features/connections/tauriAdapter";
 import type { ConnectionProfile } from "../../features/connections/domain";
+import {
+  getActiveWorkspace,
+  workspaceConsoleUrl,
+} from "../../features/workspaces/tauriAdapter";
 import type {
   GithubKnowledgeRepository,
   FunnelAnalysisArtifact,
@@ -92,8 +96,10 @@ function legacyEnvironmentMatches(
 
 export default function Knowledge({
   analysisFocus,
+  onOpenAgent,
 }: {
   analysisFocus?: { environmentId: string; requestId: number } | null;
+  onOpenAgent?: (connectionId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: projectKey, queryFn: listKnowledgeProjects });
@@ -452,6 +458,21 @@ export default function Knowledge({
     if (queryId) void cancelQuery(queryId);
   }
 
+  async function openSignalCreator(analysisId: string, tileId: string) {
+    setActionError(null);
+    try {
+      const workspace = await getActiveWorkspace();
+      const url = new URL(await workspaceConsoleUrl(workspace.id));
+      url.searchParams.set("section", "monitoring");
+      url.searchParams.set("create", "1");
+      url.searchParams.set("analysis", analysisId);
+      url.searchParams.set("tile", tileId);
+      await openUrl(url.toString());
+    } catch (error) {
+      setActionError(errMessage(error));
+    }
+  }
+
   const pending = connectGithub.isPending || connectLocal.isPending;
   const sourceLoadError = projects.error ?? sources.error;
 
@@ -803,9 +824,32 @@ export default function Knowledge({
                     <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[680px]:grid-cols-1">
                       {analysis.tiles.map((tile) => (
                         <section key={tile.definition.id} className="tw:grid tw:min-w-0 tw:content-start tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
-                          <div className="tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2">
+                          <div className="tw:flex tw:min-w-0 tw:items-start tw:justify-between tw:gap-2">
                             <strong className="tw:truncate tw:text-sm">{tile.definition.title}</strong>
-                            <span className="tw:flex tw:items-center tw:gap-1">
+                            <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-1">
+                              {analysis.state === "published"
+                                && tile.definition.kind === "metric"
+                                && tile.availability === "ready" ? (
+                                  <Button
+                                    size="xs"
+                                    variant="ghost"
+                                    onClick={() => void openSignalCreator(
+                                      analysis.id,
+                                      tile.definition.id,
+                                    )}
+                                  >
+                                    Create signal
+                                  </Button>
+                                ) : null}
+                              {analysis.state === "published" && tile.dashboard && onOpenAgent ? (
+                                <Button
+                                  size="xs"
+                                  variant="ghost"
+                                  onClick={() => onOpenAgent(tile.dashboard!.connectionId)}
+                                >
+                                  Analyze
+                                </Button>
+                              ) : null}
                               <StatusBadge
                                 density="compact"
                                 tone={tile.availability === "ready" ? "success" : "warning"}

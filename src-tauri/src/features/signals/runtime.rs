@@ -21,7 +21,8 @@ use crate::features::knowledge::transport::{
     FunnelTileRunStatus,
 };
 use crate::features::workspaces::adapters::control_plane::{
-    claim_signal_lease, register_signal_runner, submit_signal_receipt, RemoteSignalLease,
+    claim_signal_lease, register_signal_runner, signal_lease_is_active, submit_signal_receipt,
+    RemoteSignalLease,
 };
 use crate::features::workspaces::WorkspaceKind;
 use crate::kernel::identity::QueryExecutionId;
@@ -31,6 +32,7 @@ use crate::state::AppState;
 const POLL_INTERVAL: Duration = Duration::from_secs(20);
 const MAX_CLAIMS_PER_TICK: usize = 4;
 const MAX_BASELINE_SAMPLES: usize = 1_000;
+const LEASE_RECHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Default)]
 pub(crate) struct SignalRunnerRuntime {
@@ -166,7 +168,27 @@ async fn evaluate_and_submit(
         });
     }
     let started = Instant::now();
-    let evaluation = evaluate_metric(state, scope, account_id, &lease).await;
+    let active_query_ids = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+    let evaluation = tokio::select! {
+        evaluation = evaluate_metric(
+            state,
+            scope,
+            account_id,
+            &lease,
+            Arc::clone(&active_query_ids),
+        ) => evaluation,
+        revoked = wait_for_signal_lease_revocation(
+            account_id,
+            scope.workspace_id,
+            &lease,
+            Arc::clone(&active_query_ids),
+        ) => {
+            revoked?;
+            Err(AppError::Blocked {
+                reason: "Signal evaluation was cancelled because its lease changed".into(),
+            })
+        }
+    };
     let evaluated_at = chrono::Utc::now();
     let evaluation = match evaluation {
         Ok(value) => value,
@@ -258,6 +280,7 @@ async fn evaluate_metric(
     scope: &crate::store::ActiveResourceScope,
     account_id: &str,
     lease: &RemoteSignalLease,
+    active_query_ids: Arc<tokio::sync::RwLock<Vec<Uuid>>>,
 ) -> AppResult<LocalEvaluation> {
     let artifacts =
         list_funnel_analysis_artifacts_inner(state, lease.rule.project_environment_id).await?;
@@ -305,6 +328,7 @@ async fn evaluate_metric(
         .iter()
         .map(|request| Uuid::from(request.query_id))
         .collect::<Vec<_>>();
+    *active_query_ids.write().await = query_run_ids.clone();
     let run = run_funnel_analysis_artifact_inner(
         state,
         lease.rule.project_environment_id,
@@ -438,6 +462,23 @@ async fn evaluate_metric(
         receipt_state: state_kind,
         error_kind: None,
     })
+}
+
+async fn wait_for_signal_lease_revocation(
+    account_id: &str,
+    workspace_id: Uuid,
+    lease: &RemoteSignalLease,
+    active_query_ids: Arc<tokio::sync::RwLock<Vec<Uuid>>>,
+) -> AppResult<()> {
+    loop {
+        if !signal_lease_is_active(account_id, workspace_id, lease).await? {
+            for query_id in active_query_ids.read().await.iter().copied() {
+                let _ = crate::executor::cancel::cancel_query(query_id).await;
+            }
+            return Ok(());
+        }
+        tokio::time::sleep(LEASE_RECHECK_INTERVAL).await;
+    }
 }
 
 async fn condition_for_missing_or_error(

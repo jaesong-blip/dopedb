@@ -71,10 +71,25 @@ export type SignalLeaseClaim = Readonly<{
   background: boolean;
 }>;
 
-export type SignalRuleMutation = Readonly<{
-  action: "pause" | "enable" | "disable" | "run_now" | "runner_change";
-  runnerId: string | null;
+export type SignalRuleUpdate = Readonly<{
+  schedule: string;
+  timezone: string;
+  evaluationWindowSeconds: number;
+  condition: Readonly<Record<string, unknown>>;
+  baselineWindowSeconds: number | null;
+  minimumSampleCount: number;
+  cooldownSeconds: number;
+  rearmAfterNormalCount: number;
+  severity: "info" | "warning" | "critical";
+  recipientMemberIds: readonly string[];
+  channels: readonly ("desktop" | "workspace_web" | "email")[];
+  productionConfirmed: boolean;
 }>;
+
+export type SignalRuleMutation =
+  | Readonly<{ action: "pause" | "enable" | "disable" | "run_now" }>
+  | Readonly<{ action: "runner_change"; runnerId: string }>
+  | Readonly<{ action: "update"; definition: SignalRuleUpdate }>;
 
 function exactRecord(value: unknown, fields: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -201,12 +216,72 @@ export function parseSignalRuleMutation(value: unknown): SignalRuleMutation {
     }
     return { action, runnerId: row.runnerId };
   }
+  if (action === "update") {
+    const row = exactRecord(value, ["action", "definition"]);
+    const definition = exactRecord(row?.definition, [
+      "schedule", "timezone", "evaluationWindowSeconds", "condition",
+      "baselineWindowSeconds", "minimumSampleCount", "cooldownSeconds",
+      "rearmAfterNormalCount", "severity", "recipientMemberIds", "channels",
+      "productionConfirmed",
+    ]);
+    const schedule = safeSchedule(definition?.schedule);
+    const timezone = safeTimezone(definition?.timezone);
+    const evaluationWindow = integer(definition?.evaluationWindowSeconds, 1, 31_622_400);
+    const baselineWindow = definition?.baselineWindowSeconds === null
+      ? null : integer(definition?.baselineWindowSeconds, 1, 31_622_400);
+    const minimumSample = integer(definition?.minimumSampleCount, 0, 1_000_000_000);
+    const cooldown = integer(definition?.cooldownSeconds, 0, 31_622_400);
+    const rearm = integer(definition?.rearmAfterNormalCount, 1, 1_000);
+    if (!row || !definition || schedule === null || timezone === null
+      || evaluationWindow === null
+      || (definition.baselineWindowSeconds !== null && baselineWindow === null)
+      || minimumSample === null || cooldown === null || rearm === null
+      || !(definition.severity === "info" || definition.severity === "warning"
+        || definition.severity === "critical")
+      || typeof definition.productionConfirmed !== "boolean"
+      || !Array.isArray(definition.recipientMemberIds)
+      || definition.recipientMemberIds.length < 1
+      || definition.recipientMemberIds.length > 100
+      || !Array.isArray(definition.channels)
+      || definition.channels.length < 1 || definition.channels.length > 3) {
+      throw new Error("Invalid signal rule update");
+    }
+    const recipientMemberIds = definition.recipientMemberIds.map((member) => text(member, 256));
+    const channels = definition.channels.map(String);
+    if (recipientMemberIds.some((member) => member === null)
+      || !unique(recipientMemberIds as string[]) || !unique(channels)
+      || channels.some((channel) => !["desktop", "workspace_web", "email"].includes(channel))) {
+      throw new Error("Invalid signal recipients or channels");
+    }
+    const condition = parseCondition(definition.condition);
+    if ((condition.kind === "absolute_change" || condition.kind === "percentage_change")
+      && baselineWindow === null) {
+      throw new Error("Change signals require a baseline window");
+    }
+    return {
+      action,
+      definition: {
+        schedule,
+        timezone,
+        evaluationWindowSeconds: evaluationWindow,
+        condition,
+        baselineWindowSeconds: baselineWindow,
+        minimumSampleCount: minimumSample,
+        cooldownSeconds: cooldown,
+        rearmAfterNormalCount: rearm,
+        severity: definition.severity,
+        recipientMemberIds: recipientMemberIds as string[],
+        channels: channels as SignalRuleUpdate["channels"],
+        productionConfirmed: definition.productionConfirmed,
+      },
+    };
+  }
   if (!["pause", "enable", "disable", "run_now"].includes(String(action))) {
     throw new Error("Invalid signal rule command");
   }
   const row = exactRecord(value, ["action"]);
   if (!row) throw new Error("Invalid signal rule command");
-  return { action: action as SignalRuleMutation["action"], runnerId: null };
+  return { action: action as "pause" | "enable" | "disable" | "run_now" };
 }
 
 export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {

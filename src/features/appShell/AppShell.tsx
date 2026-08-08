@@ -901,6 +901,7 @@ function Shell() {
       onOpenActivity={() => openStableDocument("activity")}
       onDashboardFocusConsumed={consumeDashboardFocus}
       onOpenTerminal={openOrFocusTerminalDock}
+      onOpenAgentTask={openAgentTask}
       onSetQueryTitle={setActiveQueryTitle}
       onSetQueryDatabase={setActiveQueryDatabase}
       onSetQuerySchema={setActiveQuerySchema}

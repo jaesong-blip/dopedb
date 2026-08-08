@@ -69,7 +69,8 @@ pub(crate) use knowledge::{
 use provider_local_target::provider_local_target;
 pub(crate) use reports::{append_report_evidence, propose_report};
 pub(crate) use signals::{
-    claim_signal_lease, register_signal_runner, submit_signal_receipt, RemoteSignalLease,
+    claim_signal_lease, register_signal_runner, signal_lease_is_active, submit_signal_receipt,
+    RemoteSignalLease,
 };
 use sync::workspace_pull_page;
 
