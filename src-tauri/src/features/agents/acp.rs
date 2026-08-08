@@ -204,6 +204,7 @@ impl AcpRuntime {
         connection_id: ConnectionId,
         provider: AgentProvider,
         project_environment_id: Option<Uuid>,
+        environment_connection_ids: Option<Vec<Uuid>>,
         app: AppHandle,
     ) -> AppResult<AcpSessionFocus> {
         let first = self
@@ -211,13 +212,21 @@ impl AcpRuntime {
                 connection_id,
                 provider,
                 project_environment_id,
+                environment_connection_ids.clone(),
                 app.clone(),
                 None,
             )
             .await;
         if first.is_err() && self.plugins.has_ready_fallback(acp_plugin_id(provider))? {
             return self
-                .launch(connection_id, provider, project_environment_id, app, None)
+                .launch(
+                    connection_id,
+                    provider,
+                    project_environment_id,
+                    environment_connection_ids,
+                    app,
+                    None,
+                )
                 .await;
         }
         first
@@ -251,6 +260,7 @@ impl AcpRuntime {
                 connection_id,
                 provider,
                 None,
+                None,
                 app.clone(),
                 Some(ResumeSeed {
                     summary: focus.session,
@@ -264,6 +274,7 @@ impl AcpRuntime {
                 .launch(
                     connection_id,
                     provider,
+                    None,
                     None,
                     app,
                     Some(ResumeSeed {
@@ -281,6 +292,7 @@ impl AcpRuntime {
         connection_id: ConnectionId,
         provider: AgentProvider,
         requested_environment_id: Option<Uuid>,
+        requested_connection_ids: Option<Vec<Uuid>>,
         app: AppHandle,
         resume_seed: Option<ResumeSeed>,
     ) -> AppResult<AcpSessionFocus> {
@@ -347,7 +359,7 @@ impl AcpRuntime {
             .store
             .pin_connection_for_read(Uuid::from(connection_id))
             .await?;
-        let knowledge_scope = match resume_seed.as_ref() {
+        let mut knowledge_scope = match resume_seed.as_ref() {
             Some(seed) => summary_knowledge_scope(&seed.summary)?,
             None => {
                 self.store
@@ -355,6 +367,13 @@ impl AcpRuntime {
                     .await?
             }
         };
+        if resume_seed.is_none() {
+            narrow_knowledge_scope(
+                &mut knowledge_scope,
+                Uuid::from(connection_id),
+                requested_connection_ids,
+            )?;
+        }
         if let Some(scope) = &knowledge_scope {
             self.store.exact_knowledge_session_graphs(scope).await?;
         }
@@ -2053,6 +2072,46 @@ fn complete_ready(
 fn same_storage_scope(left: &ActiveResourceScope, right: &ActiveResourceScope) -> bool {
     left.workspace_id == right.workspace_id
         && left.account_scope.storage_key() == right.account_scope.storage_key()
+}
+
+pub(crate) fn narrow_knowledge_scope(
+    scope: &mut Option<KnowledgeSessionScope>,
+    current_connection_id: Uuid,
+    requested_connection_ids: Option<Vec<Uuid>>,
+) -> AppResult<()> {
+    let Some(requested_connection_ids) = requested_connection_ids else {
+        return Ok(());
+    };
+    let requested = requested_connection_ids
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    if requested.is_empty()
+        || requested.len() != requested_connection_ids.len()
+        || requested.len() > 32
+        || !requested.contains(&current_connection_id)
+    {
+        return Err(AppError::Blocked {
+            reason: "the selected Agent database subset is invalid".into(),
+        });
+    }
+    let scope = scope.as_mut().ok_or_else(|| AppError::Blocked {
+        reason: "a database subset requires one selected Project Environment".into(),
+    })?;
+    if requested.iter().any(|connection_id| {
+        !scope
+            .connections
+            .iter()
+            .any(|connection| connection.connection_id == *connection_id)
+    }) {
+        return Err(AppError::Blocked {
+            reason: "the selected database is outside this member's exact Environment grant".into(),
+        });
+    }
+    scope
+        .connections
+        .retain(|connection| requested.contains(&connection.connection_id));
+    Ok(())
 }
 
 fn neutral_agent_working_directory() -> AppResult<PathBuf> {

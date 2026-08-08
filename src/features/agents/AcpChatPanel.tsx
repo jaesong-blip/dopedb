@@ -52,6 +52,7 @@ import {
 import { useI18n } from "../../lib/i18n";
 import { createFrameCoalescer } from "../../lib/frameCoalescer";
 import type { ConnectionProfile } from "../connections/domain";
+import { listKnowledgeEnvironmentConnections } from "../knowledge/tauriAdapter";
 import { reportRenderFailure } from "../monitoring/client";
 import type { WorkbenchDocument } from "../workbench/domain";
 import { readWorkbenchDraft } from "../workbench/draftStore";
@@ -186,6 +187,8 @@ function AcpChatPanelContent({
   const [selectedProvider, setSelectedProvider] =
     useState<AgentProvider>("claude");
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<string | null>(null);
+  const [selectedEnvironmentConnectionIds, setSelectedEnvironmentConnectionIds] =
+    useState<string[]>([]);
   const [includeEditorContext, setIncludeEditorContext] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [configChanging, setConfigChanging] = useState<string | null>(null);
@@ -211,6 +214,12 @@ function AcpChatPanelContent({
   const knowledgeEnvironmentsQuery = useQuery({
     queryKey: ["agentKnowledgeEnvironments", connection.id],
     queryFn: () => listAgentKnowledgeEnvironments(connection.id),
+    refetchOnWindowFocus: false,
+  });
+  const environmentConnectionsQuery = useQuery({
+    queryKey: ["knowledge", "environment-connections", selectedEnvironmentId],
+    queryFn: () => listKnowledgeEnvironmentConnections(selectedEnvironmentId!),
+    enabled: selectedEnvironmentId !== null,
     refetchOnWindowFocus: false,
   });
   const enabledProviders = useMemo(
@@ -290,6 +299,12 @@ function AcpChatPanelContent({
     selectedCliStatus.authenticated === true;
   const selectedPluginReady = enabledProviders.includes(selectedProvider);
   const prerequisitesReady = selectedCliReady && selectedPluginReady;
+  const environmentScopeReady =
+    active !== null ||
+    selectedEnvironmentId === null ||
+    (!environmentConnectionsQuery.isPending &&
+      selectedEnvironmentConnectionIds.length > 0 &&
+      selectedEnvironmentConnectionIds.includes(connection.id));
   const dockLayout = agentDockLayout(compact, overlay);
 
   const upsertSessions = useCallback((updates: AcpSessionSummary[]) => {
@@ -466,6 +481,24 @@ function AcpChatPanelContent({
   }, [active?.id, active?.projectEnvironmentId, connection.id, knowledgeEnvironmentsQuery.data]);
 
   useEffect(() => {
+    if (active || selectedEnvironmentId === null) {
+      if (!active) setSelectedEnvironmentConnectionIds([]);
+      return;
+    }
+    const eligible = (environmentConnectionsQuery.data ?? [])
+      .filter(
+        (binding) => binding.connectionId !== null && !binding.stale,
+      )
+      .map((binding) => binding.connectionId as string);
+    setSelectedEnvironmentConnectionIds(eligible);
+  }, [
+    active?.id,
+    connection.id,
+    environmentConnectionsQuery.data,
+    selectedEnvironmentId,
+  ]);
+
+  useEffect(() => {
     if (enabledProviders.includes(selectedProvider)) return;
     const next = enabledProviders[0];
     if (next) void changeProvider(next);
@@ -512,7 +545,7 @@ function AcpChatPanelContent({
   }, []);
 
   async function startSession(provider = selectedProvider) {
-    if (starting || !prerequisitesReady) return null;
+    if (starting || !prerequisitesReady || !environmentScopeReady) return null;
     setStarting(true);
     setError(null);
     try {
@@ -520,6 +553,7 @@ function AcpChatPanelContent({
         connection.id,
         provider,
         selectedEnvironmentId,
+        selectedEnvironmentId ? selectedEnvironmentConnectionIds : null,
       );
       applyFocus(focus);
       setSelectedProvider(provider);
@@ -582,7 +616,7 @@ function AcpChatPanelContent({
   async function sendPrompt(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (starting || !prompt.trim()) return;
-    if (!prerequisitesReady) return;
+    if (!prerequisitesReady || !environmentScopeReady) return;
     const submitted = prompt;
     setError(null);
     try {
@@ -977,7 +1011,7 @@ function AcpChatPanelContent({
             <Button
               size="compact"
               variant="primary"
-              disabled={starting || !prerequisitesReady}
+              disabled={starting || !prerequisitesReady || !environmentScopeReady}
               onClick={() =>
                 void (active.acpSessionId === null
                   ? startSession()
@@ -1007,6 +1041,7 @@ function AcpChatPanelContent({
             disabled={
               starting ||
               !prerequisitesReady ||
+              !environmentScopeReady ||
               (active !== null &&
                 active.lifecycle !== "ready" &&
                 active.lifecycle !== "closed" &&
@@ -1111,6 +1146,7 @@ function AcpChatPanelContent({
                 disabled={
                   starting ||
                   !prerequisitesReady ||
+                  !environmentScopeReady ||
                   (active !== null &&
                     active.lifecycle !== "ready" &&
                     active.lifecycle !== "closed" &&
@@ -1176,19 +1212,153 @@ function AcpChatPanelContent({
                   </option>
                 ))}
               </select>
-              {active?.projectEnvironmentId ? (
-                <span className="tw:shrink-0 tw:text-xs tw:text-muted-foreground">
-                  {t("agent.acpEnvironmentScope", {
-                    databases: active.environmentConnections.length,
-                    sources: active.graphRevisionIds.length,
-                  })}
-                </span>
+              {selectedEnvironmentId ? (
+                <details className="tw:relative tw:min-w-0">
+                  <summary className="tw:inline-flex tw:h-control-sm tw:cursor-pointer tw:list-none tw:items-center tw:gap-1 tw:rounded-xs tw:px-1.5 tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:[&::-webkit-details-marker]:hidden">
+                    <Icon name="database" />
+                    {t("agent.acpEnvironmentScope", {
+                      databases:
+                        active?.environmentConnections.length ??
+                        selectedEnvironmentConnectionIds.length,
+                      sources:
+                        active?.graphRevisionIds.length ??
+                        knowledgeEnvironmentsQuery.data?.find(
+                          (environment) =>
+                            environment.id === selectedEnvironmentId,
+                        )?.graphRevisionCount ??
+                        0,
+                    })}
+                    <Icon name="chevronDown" />
+                  </summary>
+                  <div className="tw:absolute tw:right-0 tw:bottom-[calc(100%+var(--ds-space-2))] tw:z-[var(--ds-z-popover)] tw:grid tw:w-[min(320px,calc(100vw-var(--ds-space-6)))] tw:gap-1 tw:rounded-md tw:border tw:border-border tw:bg-popover tw:p-2 tw:text-popover-foreground tw:shadow-popover">
+                    <p className="tw:m-0 tw:px-1 tw:pb-1 tw:text-xs tw:leading-body tw:text-muted-foreground">
+                      {active
+                        ? t("agent.acpEnvironmentScopePinned")
+                        : t("agent.acpEnvironmentScopeChoose")}
+                    </p>
+                    {active ? (
+                      active.environmentConnections.map((binding) => (
+                        <EnvironmentConnectionScopeRow
+                          key={binding.connectionId}
+                          alias={binding.alias}
+                          role={binding.role}
+                          revision={binding.connectionRevision}
+                          checked
+                          disabled
+                        />
+                      ))
+                    ) : environmentConnectionsQuery.isPending ? (
+                      <LoadingLabel>{t("common.loading")}</LoadingLabel>
+                    ) : (environmentConnectionsQuery.data?.length ?? 0) > 0 ? (
+                      environmentConnectionsQuery.data?.map((binding) => {
+                        const bindingConnectionId = binding.connectionId;
+                        const required = bindingConnectionId === connection.id;
+                        const available =
+                          bindingConnectionId !== null && !binding.stale;
+                        return (
+                          <EnvironmentConnectionScopeRow
+                            key={binding.id}
+                            alias={binding.alias}
+                            role={binding.role}
+                            revision={binding.connectionRevision}
+                            checked={
+                              bindingConnectionId !== null &&
+                              selectedEnvironmentConnectionIds.includes(
+                                bindingConnectionId,
+                              )
+                            }
+                            disabled={!available || required}
+                            warning={
+                              binding.stale
+                                ? t("agent.acpEnvironmentScopeStale")
+                                : bindingConnectionId === null
+                                  ? t("agent.acpEnvironmentScopeUnavailable")
+                                  : required
+                                    ? t("agent.acpEnvironmentScopeRequired")
+                                    : undefined
+                            }
+                            onChange={
+                              available && bindingConnectionId !== null
+                                ? (checked) =>
+                                    setSelectedEnvironmentConnectionIds(
+                                      (current) =>
+                                        checked
+                                          ? Array.from(
+                                              new Set([
+                                                ...current,
+                                                bindingConnectionId,
+                                              ]),
+                                            )
+                                          : current.filter(
+                                              (id) =>
+                                                id !== bindingConnectionId,
+                                            ),
+                                    )
+                                : undefined
+                            }
+                          />
+                        );
+                      })
+                    ) : (
+                      <p className="tw:m-0 tw:px-1 tw:py-2 tw:text-xs tw:text-warning">
+                        {t("agent.acpEnvironmentScopeEmpty")}
+                      </p>
+                    )}
+                  </div>
+                </details>
               ) : null}
             </span>
           ) : null}
         </ToolWindowComposerContext>
       </ToolWindowComposerDock>
     </AcpChatSurface>
+  );
+}
+
+function EnvironmentConnectionScopeRow({
+  alias,
+  role,
+  revision,
+  checked,
+  disabled,
+  warning,
+  onChange,
+}: {
+  alias: string;
+  role: string;
+  revision: number;
+  checked: boolean;
+  disabled: boolean;
+  warning?: string;
+  onChange?: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      data-disabled={disabled || undefined}
+      className="tw:flex tw:min-w-0 tw:items-center tw:gap-2 tw:rounded-xs tw:px-1.5 tw:py-1.5 tw:text-xs tw:hover:bg-muted tw:data-[disabled=true]:cursor-default tw:data-[disabled=true]:opacity-60"
+    >
+      <input
+        type="checkbox"
+        className="tw:size-3.5 tw:shrink-0 tw:accent-primary"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange?.(event.target.checked)}
+      />
+      <span className="tw:grid tw:min-w-0 tw:flex-1 tw:gap-0.5">
+        <strong className="tw:truncate tw:font-medium tw:text-foreground">
+          {alias}
+        </strong>
+        <span className="tw:truncate tw:text-muted-foreground">
+          {role} · revision {revision}
+        </span>
+      </span>
+      {warning ? (
+        <span className="tw:shrink-0 tw:text-warning" title={warning}>
+          <Icon name="alert" />
+          <span className="tw:sr-only">{warning}</span>
+        </span>
+      ) : null}
+    </label>
   );
 }
 

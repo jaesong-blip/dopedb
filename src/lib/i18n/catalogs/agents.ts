@@ -110,6 +110,16 @@ export const agentsCatalog = defineCatalog(
       "Pins code knowledge and every mapped database to one exact environment revision.",
     "agent.acpDatabaseOnly": "Current database only",
     "agent.acpEnvironmentScope": "DB {databases} · Source {sources}",
+    "agent.acpEnvironmentScopeChoose":
+      "Choose the exact databases this new session may use. The current database is always included.",
+    "agent.acpEnvironmentScopePinned":
+      "This session is pinned to these exact database revisions.",
+    "agent.acpEnvironmentScopeRequired": "Current database · required",
+    "agent.acpEnvironmentScopeStale": "Binding changed · reconfirm it",
+    "agent.acpEnvironmentScopeUnavailable":
+      "No local credential or managed grant on this device",
+    "agent.acpEnvironmentScopeEmpty":
+      "No usable database binding is available in this Environment.",
     "agent.acpProtocol": "ACP v1 · official Claude and Codex adapters",
     "agent.acpReadyBody":
       "The current connection and visible editor selection will be attached as explicit ACP context blocks.",
@@ -434,6 +444,16 @@ export const agentsCatalog = defineCatalog(
       "코드 지식과 연결된 모든 DB를 정확한 환경 리비전에 고정합니다.",
     "agent.acpDatabaseOnly": "현재 DB만",
     "agent.acpEnvironmentScope": "DB {databases} · 소스 {sources}",
+    "agent.acpEnvironmentScopeChoose":
+      "새 세션이 사용할 정확한 DB를 선택하세요. 현재 DB는 항상 포함됩니다.",
+    "agent.acpEnvironmentScopePinned":
+      "이 세션은 아래의 정확한 DB 리비전에 고정되어 있습니다.",
+    "agent.acpEnvironmentScopeRequired": "현재 DB · 필수",
+    "agent.acpEnvironmentScopeStale": "연결이 변경됨 · 재확인 필요",
+    "agent.acpEnvironmentScopeUnavailable":
+      "이 기기에 로컬 자격증명이나 관리형 권한이 없음",
+    "agent.acpEnvironmentScopeEmpty":
+      "이 환경에 사용할 수 있는 DB 연결이 없습니다.",
     "agent.acpProtocol": "ACP v1 · 공식 Claude·Codex 어댑터",
     "agent.acpReadyBody":
       "현재 연결과 화면에서 선택한 편집기 문맥을 명시적인 ACP 컨텍스트 블록으로 첨부합니다.",

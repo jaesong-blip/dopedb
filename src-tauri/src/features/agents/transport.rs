@@ -66,11 +66,18 @@ pub async fn start_agent_acp_session(
     connection_id: ConnectionId,
     provider: AgentProvider,
     project_environment_id: Option<Uuid>,
+    environment_connection_ids: Option<Vec<Uuid>>,
 ) -> AppResult<AcpSessionFocus> {
     state.wait_for_post_paint_recovery().await?;
     state
         .agents_acp
-        .start(connection_id, provider, project_environment_id, app)
+        .start(
+            connection_id,
+            provider,
+            project_environment_id,
+            environment_connection_ids,
+            app,
+        )
         .await
 }
 

@@ -189,6 +189,47 @@ async fn assert_current_store_migration_is_write_free() {
         .iter()
         .any(|candidate| candidate.graph_revision_id == second.graph_revision_id));
 
+    let current_connection_id = Uuid::from_u128(0x1291);
+    let secondary_connection_id = Uuid::from_u128(0x1292);
+    let mut agent_scope = Some(crate::features::knowledge::domain::KnowledgeSessionScope {
+        project_environment_id: environment.id,
+        environment_revision: environment.revision,
+        graph_revision_ids: active_set
+            .iter()
+            .map(|candidate| candidate.graph_revision_id)
+            .collect(),
+        connections: vec![
+            crate::features::knowledge::domain::KnowledgeSessionConnection {
+                connection_id: current_connection_id,
+                connection_revision: 1,
+                role: "primary".into(),
+                alias: "Primary".into(),
+            },
+            crate::features::knowledge::domain::KnowledgeSessionConnection {
+                connection_id: secondary_connection_id,
+                connection_revision: 2,
+                role: "analytics".into(),
+                alias: "Analytics".into(),
+            },
+        ],
+    });
+    crate::features::agents::acp::narrow_knowledge_scope(
+        &mut agent_scope,
+        current_connection_id,
+        Some(vec![current_connection_id]),
+    )
+    .unwrap();
+    assert_eq!(agent_scope.unwrap().connections.len(), 1);
+    let mut invalid_scope = None;
+    assert!(matches!(
+        crate::features::agents::acp::narrow_knowledge_scope(
+            &mut invalid_scope,
+            current_connection_id,
+            Some(vec![secondary_connection_id]),
+        ),
+        Err(AppError::Blocked { .. })
+    ));
+
     let mut failed = artifact.clone();
     failed.graph_revision_id = Uuid::from_u128(127);
     failed.parent_graph_revision_id = Some(artifact.graph_revision_id);

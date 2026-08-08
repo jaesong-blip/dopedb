@@ -46,8 +46,14 @@ export function startAgentAcpSession(
   connectionId: ConnectionId,
   provider: AgentProvider,
   projectEnvironmentId?: string | null,
+  environmentConnectionIds?: string[] | null,
 ): Promise<AcpSessionFocus> {
-  return invoke("start_agent_acp_session", { connectionId, provider, projectEnvironmentId });
+  return invoke("start_agent_acp_session", {
+    connectionId,
+    provider,
+    projectEnvironmentId,
+    environmentConnectionIds,
+  });
 }
 
 export function listAgentKnowledgeEnvironments(
