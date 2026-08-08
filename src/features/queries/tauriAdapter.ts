@@ -394,26 +394,29 @@ export async function runSqlReadPage(
 ): Promise<QueryResult> {
   let columns: string[] | null = null;
   const rows: unknown[][] = [];
-  const controller = runSqlReadStream(
-    id,
-    sql,
-    (batch) => {
-      if (
-        columns
-        && (columns.length !== batch.columns.length
-          || columns.some((column, index) => column !== batch.columns[index]))
-      ) {
-        throw new Error("SQL page stream changed columns between batches");
-      }
-      if (batch.rows.some((row) => row.length !== batch.columns.length)) {
-        throw new Error("SQL page stream returned a row with the wrong width");
-      }
-      columns ??= [...batch.columns];
-      rows.push(...batch.rows);
-    },
-    origin,
-    undefined,
-    database,
+  const controller = startSqlStream("", (batch) => {
+    if (
+      columns
+      && (columns.length !== batch.columns.length
+        || columns.some((column, index) => column !== batch.columns[index]))
+    ) {
+      throw new Error("SQL page stream changed columns between batches");
+    }
+    if (batch.rows.some((row) => row.length !== batch.columns.length)) {
+      throw new Error("SQL page stream returned a row with the wrong width");
+    }
+    columns ??= [...batch.columns];
+    rows.push(...batch.rows);
+  }, (capability, onRows) =>
+    invoke<SqlStreamReceipt>("run_sql_read_page_stream", {
+      id,
+      sql,
+      database: database ?? null,
+      namespace: null,
+      origin: origin ?? null,
+      capability,
+      onRows,
+    }),
   );
   const receipt = await controller.completion;
   if (receipt.rowCount !== rows.length) {

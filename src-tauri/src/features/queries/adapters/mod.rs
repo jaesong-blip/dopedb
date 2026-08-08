@@ -28,6 +28,8 @@ pub(crate) use desktop_result_store::{
     run_packaged_result_store_benchmark, PackagedResultStoreMetric,
 };
 pub(crate) use desktop_stream_lifecycle::{DesktopStreamCleanupOwner, DesktopStreamCleanupRuntime};
+#[cfg(test)]
+pub(crate) use desktop_stream_registry::assert_ephemeral_page_contract;
 pub(crate) use desktop_stream_registry::DesktopSqlStreamRegistry;
 pub(crate) use errors::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};
 pub(crate) use platform::QueryPlatformAdapter;

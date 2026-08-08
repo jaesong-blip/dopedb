@@ -259,6 +259,54 @@ pub(crate) async fn run_sql_read_stream(
     result
 }
 
+/// Atomically plans a bounded table page without publishing a durable result artifact.
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub(crate) async fn run_sql_read_page_stream(
+    state: State<'_, AppState>,
+    webview: tauri::WebviewWindow,
+    id: Uuid,
+    sql: String,
+    database: Option<String>,
+    namespace: Option<String>,
+    origin: Option<String>,
+    capability: String,
+    on_rows: Channel<DesktopSqlStreamReady>,
+) -> AppResult<DesktopSqlStreamReceipt> {
+    state
+        .services
+        .queries
+        .reserve_pending_desktop_sql_page(webview.label().to_string(), capability.clone())
+        .map_err(|error| crate::error::AppError::Safety(error.to_string()))?;
+    let result = state
+        .services
+        .queries
+        .run_desktop_sql_read_stream(
+            DesktopSqlProposalRequest {
+                connection_id: id.into(),
+                sql,
+                database,
+                namespace,
+                origin,
+            },
+            webview.label().to_string(),
+            capability.clone(),
+            move |batch| {
+                on_rows
+                    .send(batch)
+                    .map_err(|_| DesktopSqlStreamSinkError::ReceiverDropped)
+            },
+        )
+        .await;
+    if result.is_err() {
+        state
+            .services
+            .queries
+            .forget_pending_desktop_sql_stream(&capability, webview.label());
+    }
+    result
+}
+
 /// Releases the exact next desktop result-stream credit after the frontend has
 /// accepted its batch. Invalid, stale, foreign, or replayed ACKs return false
 /// and never advance the database cursor.

@@ -33,6 +33,13 @@ pub(crate) struct DesktopSqlStreamRegistry {
 struct PendingStream {
     owner_webview: String,
     cancelled: bool,
+    retention: DesktopSqlStreamRetention,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum DesktopSqlStreamRetention {
+    Durable,
+    Ephemeral,
 }
 
 struct StreamCredit {
@@ -42,7 +49,10 @@ struct StreamCredit {
     cancelled: bool,
     owner_webview: String,
     capability: String,
+    retention: DesktopSqlStreamRetention,
+    started: bool,
     result_writer: Option<DesktopSqlResultWriter>,
+    ephemeral_batch: Option<DesktopSqlStreamBatch>,
     /// Versioned state change signal. A waiter subscribes before inspecting the
     /// credit, so an ACK between unlock and await is observed rather than lost.
     changed: watch::Sender<u64>,
@@ -68,6 +78,34 @@ impl DesktopSqlStreamRegistry {
         owner_webview: String,
         capability: String,
     ) -> Result<(), DesktopSqlStreamSinkError> {
+        self.reserve_pending_with_retention(
+            owner_webview,
+            capability,
+            DesktopSqlStreamRetention::Durable,
+        )
+    }
+
+    /// A table page is already bounded by its SQL LIMIT and never becomes a
+    /// persistent result artifact. It retains only the single in-flight page
+    /// until the owning renderer acknowledges it.
+    pub(crate) fn reserve_pending_ephemeral(
+        &self,
+        owner_webview: String,
+        capability: String,
+    ) -> Result<(), DesktopSqlStreamSinkError> {
+        self.reserve_pending_with_retention(
+            owner_webview,
+            capability,
+            DesktopSqlStreamRetention::Ephemeral,
+        )
+    }
+
+    fn reserve_pending_with_retention(
+        &self,
+        owner_webview: String,
+        capability: String,
+        retention: DesktopSqlStreamRetention,
+    ) -> Result<(), DesktopSqlStreamSinkError> {
         Self::validate_capability(&capability)?;
         let mut pending = lock_unpoisoned(&self.pending);
         if pending
@@ -76,6 +114,7 @@ impl DesktopSqlStreamRegistry {
                 PendingStream {
                     owner_webview,
                     cancelled: false,
+                    retention,
                 },
             )
             .is_some()
@@ -98,7 +137,7 @@ impl DesktopSqlStreamRegistry {
         if pending.owner_webview != owner_webview || pending.cancelled {
             return Err(DesktopSqlStreamSinkError::Cancelled);
         }
-        self.reserve(operation_id, owner_webview, capability)
+        self.reserve_with_retention(operation_id, owner_webview, capability, pending.retention)
     }
 
     pub(crate) fn reserve(
@@ -106,6 +145,21 @@ impl DesktopSqlStreamRegistry {
         operation_id: OperationId,
         owner_webview: String,
         capability: String,
+    ) -> Result<(), DesktopSqlStreamSinkError> {
+        self.reserve_with_retention(
+            operation_id,
+            owner_webview,
+            capability,
+            DesktopSqlStreamRetention::Durable,
+        )
+    }
+
+    fn reserve_with_retention(
+        &self,
+        operation_id: OperationId,
+        owner_webview: String,
+        capability: String,
+        retention: DesktopSqlStreamRetention,
     ) -> Result<(), DesktopSqlStreamSinkError> {
         Self::validate_capability(&capability)?;
         let mut streams = lock_unpoisoned(&self.streams);
@@ -122,7 +176,10 @@ impl DesktopSqlStreamRegistry {
                 cancelled: false,
                 owner_webview,
                 capability,
+                retention,
+                started: false,
                 result_writer: None,
+                ephemeral_batch: None,
                 changed,
             },
         );
@@ -141,7 +198,7 @@ impl DesktopSqlStreamRegistry {
         operation_id: OperationId,
         owner_webview: &str,
         capability: &str,
-        pin: &PinnedConnection,
+        pin: Option<&PinnedConnection>,
     ) -> Result<DesktopSqlStreamSession, DesktopSqlStreamSinkError> {
         let mut streams = lock_unpoisoned(&self.streams);
         let Some(stream) = streams.get_mut(&operation_id) else {
@@ -150,15 +207,19 @@ impl DesktopSqlStreamRegistry {
         if stream.owner_webview != owner_webview || stream.capability != capability {
             return Err(DesktopSqlStreamSinkError::InvalidAcknowledgement);
         }
-        if stream.result_writer.is_some() {
+        if stream.started {
             return Err(DesktopSqlStreamSinkError::StreamAlreadyActive);
         }
-        stream.result_writer = Some(DesktopSqlResultWriter::begin(
-            operation_id,
-            pin,
-            owner_webview,
-            capability,
-        )?);
+        stream.started = true;
+        if stream.retention == DesktopSqlStreamRetention::Durable {
+            let pin = pin.ok_or(DesktopSqlStreamSinkError::ResultStoreUnavailable)?;
+            stream.result_writer = Some(DesktopSqlResultWriter::begin(
+                operation_id,
+                pin,
+                owner_webview,
+                capability,
+            )?);
+        }
         drop(streams);
         Ok(DesktopSqlStreamSession {
             operation_id,
@@ -199,7 +260,12 @@ impl DesktopSqlStreamRegistry {
             Self::reject_owned(stream);
             return None;
         }
-        let batch = stream.result_writer.as_ref()?.read_page(sequence).ok()?;
+        let batch = match stream.retention {
+            DesktopSqlStreamRetention::Durable => {
+                stream.result_writer.as_ref()?.read_page(sequence).ok()?
+            }
+            DesktopSqlStreamRetention::Ephemeral => stream.ephemeral_batch.clone()?,
+        };
         stream.pulled = true;
         Some(batch)
     }
@@ -224,6 +290,7 @@ impl DesktopSqlStreamRegistry {
         }
         stream.in_flight = None;
         stream.pulled = false;
+        stream.ephemeral_batch = None;
         stream.next_sequence = stream.next_sequence.saturating_add(1);
         stream
             .changed
@@ -302,11 +369,20 @@ impl DesktopSqlStreamRegistry {
                 DesktopSqlStreamSinkError::InvalidAcknowledgement
             });
         }
-        stream
-            .result_writer
-            .as_mut()
-            .ok_or(DesktopSqlStreamSinkError::ResultStoreUnavailable)?
-            .complete(row_count, truncated, duration_ms)
+        match stream.retention {
+            DesktopSqlStreamRetention::Durable => stream
+                .result_writer
+                .as_mut()
+                .ok_or(DesktopSqlStreamSinkError::ResultStoreUnavailable)?
+                .complete(row_count, truncated, duration_ms),
+            DesktopSqlStreamRetention::Ephemeral => {
+                if stream.ephemeral_batch.is_some() {
+                    Err(DesktopSqlStreamSinkError::InvalidAcknowledgement)
+                } else {
+                    Ok(())
+                }
+            }
+        }
     }
 
     pub(crate) fn result_authority(
@@ -390,6 +466,12 @@ impl Drop for DesktopSqlStreamSession {
 }
 
 impl DesktopSqlStreamSession {
+    pub(super) fn is_ephemeral(&self) -> bool {
+        lock_unpoisoned(&self.registry.streams)
+            .get(&self.operation_id)
+            .is_some_and(|stream| stream.retention == DesktopSqlStreamRetention::Ephemeral)
+    }
+
     pub(super) fn borrow(&self) -> StreamBorrow {
         StreamBorrow {
             operation_id: self.operation_id,
@@ -448,11 +530,16 @@ impl StreamBorrow {
             }
             stream.in_flight = Some(sequence);
             stream.pulled = false;
-            let writer = stream
-                .result_writer
-                .as_mut()
-                .ok_or(DesktopSqlStreamSinkError::ResultStoreUnavailable)?;
-            writer.write_page(&batch, &encoded)?;
+            match stream.retention {
+                DesktopSqlStreamRetention::Durable => stream
+                    .result_writer
+                    .as_mut()
+                    .ok_or(DesktopSqlStreamSinkError::ResultStoreUnavailable)?
+                    .write_page(&batch, &encoded)?,
+                DesktopSqlStreamRetention::Ephemeral => {
+                    stream.ephemeral_batch = Some(batch);
+                }
+            }
             DesktopSqlStreamReady {
                 operation_id: self.operation_id,
                 sequence,
@@ -504,4 +591,41 @@ impl StreamBorrow {
             }
         }
     }
+}
+
+#[cfg(test)]
+pub(crate) fn assert_ephemeral_page_contract() {
+    let registry = DesktopSqlStreamRegistry::default();
+    let operation_id = Uuid::new_v4().into();
+    let capability = "a".repeat(64);
+    registry
+        .reserve_pending_ephemeral("main".into(), capability.clone())
+        .expect("reserve ephemeral page");
+    registry
+        .bind_pending(operation_id, "main".into(), capability.clone())
+        .expect("bind ephemeral page");
+    let mut session = registry
+        .begin_reserved(operation_id, "main", &capability, None)
+        .expect("begin without disk authority");
+    assert!(session.is_ephemeral());
+
+    let batch = DesktopSqlStreamBatch {
+        operation_id,
+        sequence: 0,
+        columns: vec!["id".into()],
+        rows: vec![vec![serde_json::json!(1)]],
+    };
+    session
+        .borrow()
+        .dispatch(0, batch.clone(), |_| Ok::<_, ()>(()))
+        .expect("dispatch retained page");
+    let pulled = registry
+        .pull(operation_id, 0, &capability, "main")
+        .expect("pull retained page");
+    assert_eq!(pulled.operation_id, batch.operation_id);
+    assert_eq!(pulled.sequence, batch.sequence);
+    assert_eq!(pulled.columns, batch.columns);
+    assert_eq!(pulled.rows, batch.rows);
+    assert!(registry.acknowledge(operation_id, 0, &capability, "main"));
+    session.complete(1, false, 1).expect("complete page");
 }

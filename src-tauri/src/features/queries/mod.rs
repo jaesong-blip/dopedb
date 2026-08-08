@@ -110,6 +110,15 @@ impl QueriesFeature {
             .reserve_pending(owner_webview, capability)
     }
 
+    pub(crate) fn reserve_pending_desktop_sql_page(
+        &self,
+        owner_webview: String,
+        capability: String,
+    ) -> Result<(), DesktopSqlStreamSinkError> {
+        self.desktop_streams
+            .reserve_pending_ephemeral(owner_webview, capability)
+    }
+
     pub(crate) fn reserve_desktop_sql_stream(
         &self,
         operation_id: OperationId,

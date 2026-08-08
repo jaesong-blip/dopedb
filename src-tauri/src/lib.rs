@@ -209,6 +209,7 @@ pub fn run() {
             features::queries::transport::run_sql,
             features::queries::transport::run_sql_stream,
             features::queries::transport::run_sql_read_stream,
+            features::queries::transport::run_sql_read_page_stream,
             features::queries::transport::pull_sql_stream_batch,
             features::queries::transport::read_sql_result_page,
             features::queries::transport::export_sql_result,

@@ -269,7 +269,7 @@ describe("query Tauri adapter", () => {
         }) => void)
       | undefined;
     invokeMock.mockImplementation((command) => {
-      if (command === "run_sql_read_stream") {
+      if (command === "run_sql_read_page_stream") {
         return new Promise((resolve) => {
           resolveReceipt = resolve;
         });
@@ -331,7 +331,7 @@ describe("query Tauri adapter", () => {
         }) => void)
       | undefined;
     invokeMock.mockImplementation((command) => {
-      if (command === "run_sql_read_stream") {
+      if (command === "run_sql_read_page_stream") {
         return new Promise((resolve) => {
           resolveReceipt = resolve;
         });

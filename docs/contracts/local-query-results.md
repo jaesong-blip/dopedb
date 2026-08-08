@@ -48,6 +48,21 @@ not change the CLI, dashboard, table pagination, or public ACP wire.
   fully cached result of at most six pages (1,536 rows). Larger condition changes
   are a SQL/Agent re-query; selected grid cells remain copyable.
 
+## Table pagination boundary
+
+- Table data keeps its separate bounded page contract. The generated query
+  requests at most the visible 100 rows plus one look-ahead row, and the normal
+  safety row/byte caps still apply.
+- A table page uses the same capability-bound pull/ACK and cancellation guard,
+  but Rust retains the one in-flight page in memory instead of creating a
+  partial directory, page file, checksum, manifest, or completed result handle.
+- The page is removed immediately after ACK. Operation receipt and local
+  history finalization continue on the owned cleanup runtime after the bounded
+  page receipt is returned, so those secondary writes do not delay the first
+  grid commit.
+- SQL console and Services streams remain durable and continue to use the disk
+  contract above; table pages cannot be reopened or exported as result handles.
+
 ## Export
 
 - Completed CSV and JSON exports use a native save dialog; the destination path

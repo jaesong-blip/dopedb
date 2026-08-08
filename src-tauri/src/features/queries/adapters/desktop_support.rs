@@ -246,7 +246,7 @@ impl QueryPlatformAdapter {
             operation_id,
             &owner_webview,
             &capability,
-            &pin,
+            Some(&pin),
         ) {
             Ok(stream) => stream,
             Err(error) => {
@@ -345,6 +345,7 @@ impl QueryPlatformAdapter {
         };
         match streamed {
             Ok(summary) => {
+                let ephemeral = stream.is_ephemeral();
                 if let Err(error) =
                     stream.complete(summary.row_count, summary.truncated, summary.duration_ms)
                 {
@@ -366,6 +367,58 @@ impl QueryPlatformAdapter {
                     first_batch_ms = ?first_batch_ms,
                     "desktop query stream phase"
                 );
+                if ephemeral {
+                    let operation = self.operation.clone();
+                    let store = self.store.clone();
+                    let pin = pin.clone();
+                    let payload = payload.clone();
+                    let row_count = summary.row_count;
+                    let duration_ms = summary.duration_ms;
+                    tokio::spawn(async move {
+                        let receipt = operation
+                            .succeed(
+                                operation_id.into(),
+                                &serde_json::json!({
+                                    "committed": false,
+                                    "manualTransaction": manual_transaction,
+                                    "durationMs": duration_ms,
+                                    "rowCount": row_count,
+                                }),
+                            )
+                            .await;
+                        record_desktop_run(
+                            &store,
+                            &pin,
+                            DesktopRunRecord {
+                                sql: &payload.sql,
+                                kind: QueryKind::Read,
+                                action: if receipt.is_ok() { "read" } else { "error" },
+                                status: if receipt.is_ok() { "ok" } else { "error" },
+                                row_count: Some(row_count as i64),
+                                duration_ms: Some(duration_ms as i64),
+                                error: receipt.as_ref().err().map(ToString::to_string),
+                                origin: &payload.history_origin,
+                            },
+                        )
+                        .await;
+                        if receipt.is_err() {
+                            let _ = operation
+                                .fail(
+                                    operation_id.into(),
+                                    &serde_json::json!({"reason":"local_receipt_failed"}),
+                                )
+                                .await;
+                        }
+                        finalizer.disarm().await;
+                    });
+                    return Ok(DesktopSqlStreamReceipt {
+                        operation_id,
+                        row_count: summary.row_count,
+                        truncated: summary.truncated,
+                        duration_ms: summary.duration_ms,
+                        _lease: lease,
+                    });
+                }
                 tracing::debug!(
                     phase = TRACE_OPERATION_FINALIZE_START,
                     duration_ms = operation_started.elapsed().as_millis() as u64,
