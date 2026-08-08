@@ -53,7 +53,7 @@ pnpm benchmark:packaged-release -- --output src-tauri/benchmarks/packaged-releas
 | Agent | 10분 timestamp 범위의 10,000 ACP event | stream projection과 64-event SQLite batch persistence, manual scroll, permission pending, reconnect |
 | Agent tools | 격리된 clean HOME, Codex·Claude Code 두 Skill target | exact inventory fingerprint로 동시 설치, manager 재생성 뒤 revision·digest 재검사, 동시 제거 |
 | Long-lived data | history 10,000, audit 100,000, 1 MiB revision 50개, dashboard 8개 | production SQLite의 bounded page/detail 경로 |
-| Interactions | 1,000-node ERD, 50,000행 grid, Services pane | drag, column resize, Services/main resize → 두 번째 frame |
+| Interactions | 1,000-node ERD, 50,000행 grid, Services pane, 긴 Workbench document | drag, column resize, Services/main resize → 두 번째 frame, resize 뒤 grid/document scroll과 마지막 action focus 보존 |
 | Idle | workload 화면을 10초간 그대로 유지 | IPC 호출 수를 분당 값으로 정규화 |
 
 Cold는 migration을 마친 sealed fixture를 새 process가 처음 여는 상태다. Warm은 그

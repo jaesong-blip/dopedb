@@ -56,7 +56,8 @@ export type PackagedBenchmarkActionName =
   | "local-history-50"
   | "dashboard-multi-tile"
   | "erd-drag-1k"
-  | "grid-and-pane-resize";
+  | "grid-and-pane-resize"
+  | "workbench-scroll-continuity";
 
 export type PackagedActionEvidence = {
   ipcPayloadBytes?: number;

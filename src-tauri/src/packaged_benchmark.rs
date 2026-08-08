@@ -936,7 +936,7 @@ const WORKLOAD_SCENARIOS: [&str; 8] = [
 ];
 
 #[cfg(feature = "packaged-benchmark")]
-const ACTION_NAMES: [&str; 33] = [
+const ACTION_NAMES: [&str; 34] = [
     "sql-editor-10k-type",
     "sql-editor-10k-cursor",
     "sql-editor-10k-format",
@@ -970,6 +970,7 @@ const ACTION_NAMES: [&str; 33] = [
     "dashboard-multi-tile",
     "erd-drag-1k",
     "grid-and-pane-resize",
+    "workbench-scroll-continuity",
 ];
 
 #[cfg(feature = "packaged-benchmark")]

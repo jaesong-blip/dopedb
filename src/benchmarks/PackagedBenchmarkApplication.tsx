@@ -11,6 +11,10 @@ import {
   AgentRichText,
   AgentStreamingText,
 } from "../design-system/components/AgentRichText";
+import {
+  WorkbenchButton,
+  WorkbenchScrollBody,
+} from "../design-system/components/Workbench";
 import { VirtualTreeRows, type VirtualTreeRow } from "../design-system/components/VirtualTreeRows";
 import {
   indexSearchEverywhereItems,
@@ -688,13 +692,46 @@ function InteractionSurfacesScenario() {
       document.dispatchEvent(new MouseEvent("mousemove", { clientY: 420 - index }));
       document.dispatchEvent(new MouseEvent("mouseup", { clientY: 400 - index }));
     });
+    await samples("workbench-scroll-continuity", ACTION_SAMPLES, async (index) => {
+      const documentScroller = document.querySelector<HTMLElement>(
+        '[data-workbench-scroll-owner="document"]',
+      );
+      const gridScroller = document.querySelector<HTMLElement>("[data-data-grid-scroll]");
+      const lastAction = document.querySelector<HTMLButtonElement>(
+        "[data-benchmark-last-action]",
+      );
+      if (!documentScroller || !gridScroller || !lastAction) {
+        throw new Error("workbench scroll surface unavailable");
+      }
+
+      documentScroller.scrollTop = documentScroller.scrollHeight;
+      documentScroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+      gridScroller.scrollTop = gridScroller.scrollHeight;
+      gridScroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+      lastAction.focus();
+
+      layout.startServicesResize({ preventDefault: () => undefined, clientY: 500 });
+      document.dispatchEvent(new MouseEvent("mousemove", { clientY: 360 + index * 8 }));
+      document.dispatchEvent(new MouseEvent("mouseup", { clientY: 360 + index * 8 }));
+      await waitForPackagedPaint();
+
+      const documentBottom = documentScroller.scrollHeight
+        - documentScroller.clientHeight
+        - documentScroller.scrollTop;
+      if (documentBottom > 2 || gridScroller.scrollTop <= 0) {
+        throw new Error("workbench scroll position was not preserved");
+      }
+      if (document.activeElement !== lastAction) {
+        throw new Error("workbench focus was not preserved");
+      }
+    });
     await finishBenchmark();
   });
 
   return (
     <BenchmarkSurface title="Interactions · 1,000-node ERD · grid and Services resize">
       <div className="tw:flex tw:min-h-0 tw:flex-1">
-        <div className="tw:flex tw:min-h-0 tw:w-1/2 tw:flex-col tw:border-r tw:border-border-subtle">
+        <div className="tw:flex tw:min-h-0 tw:w-1/3 tw:flex-col tw:border-r tw:border-border-subtle">
           <ErdCanvas
             snapshot={snapshot}
             filter=""
@@ -703,7 +740,7 @@ function InteractionSurfacesScenario() {
             onOpen={() => undefined}
           />
         </div>
-        <div className="tw:flex tw:min-h-0 tw:w-1/2 tw:flex-col">
+        <div className="tw:flex tw:min-h-0 tw:w-1/3 tw:flex-col tw:border-r tw:border-border-subtle">
           <DataGrid result={result} surface="workbench" />
           <div
             className="tw:relative tw:shrink-0 tw:border-t tw:border-border-subtle tw:bg-card"
@@ -713,6 +750,18 @@ function InteractionSurfacesScenario() {
             <span className="tw:p-3 tw:text-sm">Services</span>
           </div>
         </div>
+        <WorkbenchScrollBody aria-label="Scrollable workbench document">
+          <div className="tw:flex tw:shrink-0 tw:flex-col tw:gap-2 tw:p-3">
+            {Array.from({ length: 80 }, (_, index) => (
+              <p className="tw:m-0 tw:text-sm" key={index}>
+                Workbench document row {index + 1}
+              </p>
+            ))}
+            <WorkbenchButton data-benchmark-last-action>
+              Last document action
+            </WorkbenchButton>
+          </div>
+        </WorkbenchScrollBody>
       </div>
     </BenchmarkSurface>
   );

@@ -51,7 +51,11 @@ const requiredActionsByScenario = {
   "agent-transcript": ["agent-stream-10k", "agent-manual-scroll", "agent-permission", "agent-reconnect"],
   "agent-tools": ["agent-skill-install-all", "agent-skill-reload", "agent-skill-remove-all"],
   "long-lived-data": ["history-10k", "audit-100k", "local-history-50", "dashboard-multi-tile"],
-  "interaction-surfaces": ["erd-drag-1k", "grid-and-pane-resize"],
+  "interaction-surfaces": [
+    "erd-drag-1k",
+    "grid-and-pane-resize",
+    "workbench-scroll-continuity",
+  ],
   "idle-runtime": [],
 };
 const nonVisualNativeActions = new Set([
