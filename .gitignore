@@ -31,3 +31,4 @@ src-tauri/gen/
 
 # Ad-hoc packaged benchmark runs are local diagnostics, not release evidence.
 /src-tauri/benchmarks/*-diagnostic.json
+/src-tauri/benchmarks/packaged-release-local-*.json

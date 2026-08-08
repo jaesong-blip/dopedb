@@ -555,6 +555,7 @@ function AgentToolsScenario({
   const { setLang } = useI18n();
   const [status, setStatus] = useState<SkillStatus | null>(null);
   const [surfaceMounted, setSurfaceMounted] = useState(true);
+  const [settingsMounted, setSettingsMounted] = useState(false);
 
   useScenarioRunner(true, async () => {
     await setPackagedBenchmarkCompactWindow(true);
@@ -566,6 +567,8 @@ function AgentToolsScenario({
       await validateAndDismissAgentSelectionModal(lang);
     }
     await setPackagedBenchmarkCompactWindow(false);
+    await waitForPackagedPaint();
+    setSettingsMounted(true);
     await waitForPackagedPaint();
     const initial = await skillStatus("all");
     assertSkillState(initial, phase === "restart" ? "managed_current" : "missing");
@@ -620,7 +623,7 @@ function AgentToolsScenario({
         {surfaceMounted ? (
           <>
             <SkillStartupGate />
-            <AgentToolsSettings />
+            {settingsMounted ? <AgentToolsSettings /> : null}
           </>
         ) : null}
         <output className="tw:sr-only" aria-live="polite">
