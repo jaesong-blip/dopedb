@@ -5,7 +5,8 @@ use crate::kernel::identity::{ConnectionId, DashboardId, QueryRunId};
 use crate::kernel::TerminalAuthority;
 
 use super::domain::{
-    AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardRunRequest,
+    AgentDashboardCreateError, AgentDashboardPresentation, Dashboard,
+    DashboardDefinitionRunRequest, DashboardRunRequest,
 };
 use super::ports::{DashboardCreatePort, DashboardMetadataPort, DashboardRunPort};
 
@@ -40,6 +41,13 @@ where
 
     pub(crate) async fn run(&self, request: DashboardRunRequest) -> Result<R::Receipt, R::Error> {
         self.runner.run(request).await
+    }
+
+    pub(crate) async fn run_definition(
+        &self,
+        request: DashboardDefinitionRunRequest,
+    ) -> Result<R::Receipt, R::Error> {
+        self.runner.run_definition(request).await
     }
 
     pub(crate) async fn create_terminal(

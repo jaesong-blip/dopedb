@@ -9,7 +9,8 @@ use crate::kernel::identity::{ConnectionId, DashboardId, QueryRunId};
 use crate::kernel::TerminalAuthority;
 
 use super::domain::{
-    AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardRunRequest,
+    AgentDashboardCreateError, AgentDashboardPresentation, Dashboard,
+    DashboardDefinitionRunRequest, DashboardRunRequest,
 };
 
 pub(crate) trait DashboardMetadataPort: Clone + Send + Sync + 'static {
@@ -28,6 +29,11 @@ pub(crate) trait DashboardRunPort: Clone + Send + Sync + 'static {
     fn run(
         &self,
         request: DashboardRunRequest,
+    ) -> impl Future<Output = Result<Self::Receipt, Self::Error>> + Send;
+
+    fn run_definition(
+        &self,
+        request: DashboardDefinitionRunRequest,
     ) -> impl Future<Output = Result<Self::Receipt, Self::Error>> + Send;
 }
 

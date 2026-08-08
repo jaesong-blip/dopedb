@@ -197,6 +197,7 @@ pub(super) fn dashboard_record(dashboard: &Dashboard) -> DashboardRecord {
     DashboardRecord {
         id: dashboard.id.into(),
         connection_id: dashboard.connection_id.into(),
+        revision: dashboard.revision,
         title: dashboard.title.clone(),
         description: dashboard.description.clone(),
         sql: dashboard.sql.clone(),

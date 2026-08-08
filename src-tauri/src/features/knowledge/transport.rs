@@ -4,7 +4,12 @@
 //! installation tokens remain in the control plane, and Local Folder paths stay
 //! behind this native command boundary and the OS credential store.
 
-use dopedb_protocol::{KnowledgeSourceProvider, KnowledgeSourceVisibility, SourceRevisionIdentity};
+use dopedb_protocol::{
+    DashboardKind as ProtocolDashboardKind, FunnelAnalysisArtifactRecord, FunnelAnalysisFreshness,
+    FunnelTileAvailability, FunnelTileKind, KnowledgeSourceProvider, KnowledgeSourceVisibility,
+    SourceRevisionIdentity,
+};
+use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use uuid::Uuid;
@@ -20,11 +25,12 @@ use crate::features::workspaces::adapters::control_plane::{
     list_current_knowledge_grants,
     list_environment_connections as list_remote_environment_connections,
     list_knowledge_github_repositories, list_knowledge_projects, list_remote_knowledge_mappings,
-    publish_knowledge_graph, revoke_environment_connection as revoke_remote_environment_connection,
+    publish_funnel_analysis, publish_knowledge_graph, remote_funnel_analyses,
+    revoke_environment_connection as revoke_remote_environment_connection,
     CreateKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, RemoteGithubRepository,
     RemoteKnowledgeProject,
 };
-use crate::kernel::identity::{AccountId, WorkspaceId};
+use crate::kernel::identity::{AccountId, ConnectionId, QueryExecutionId, WorkspaceId};
 use crate::state::AppState;
 use crate::store::ActiveResourceScope;
 
@@ -39,6 +45,11 @@ use super::extractor::build_graph;
 use super::ports::{
     KnowledgeGrantPort, KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
     KnowledgeScopeRepositoryPort, SourceProviderAdapter,
+};
+
+use crate::features::dashboards::{
+    DashboardDefinitionRunRequest, DashboardDraft, DashboardKind, DashboardRunError,
+    DashboardVisualization,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -780,6 +791,500 @@ pub(crate) async fn search_knowledge_graph(
         ));
     }
     search_graphs(&graphs, &query, limit.unwrap_or(20))
+}
+
+#[tauri::command]
+pub(crate) async fn list_funnel_analysis_artifacts(
+    state: State<'_, AppState>,
+    project_environment_id: Uuid,
+) -> AppResult<Vec<FunnelAnalysisArtifactRecord>> {
+    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    let account_id =
+        active_scope
+            .selected_account_id
+            .as_deref()
+            .ok_or_else(|| AppError::Blocked {
+                reason: "funnel analysis requires an exact member grant".into(),
+            })?;
+    let environment_revision = graphs
+        .first()
+        .map(|graph| graph.environment_revision)
+        .ok_or_else(|| AppError::NotFound("an active Knowledge graph revision set".into()))?;
+    let graph_revision_ids = graphs
+        .iter()
+        .map(|graph| graph.graph_revision_id)
+        .collect::<Vec<_>>();
+    let knowledge_grant_id = state
+        .knowledge_store()
+        .active_knowledge_grant(
+            active_scope.workspace_id,
+            account_id,
+            project_environment_id,
+            environment_revision,
+            &graph_revision_ids,
+        )
+        .await?
+        .ok_or_else(|| AppError::Blocked {
+            reason: "this member has no current funnel analysis grant".into(),
+        })?;
+    if let Ok(remote) =
+        remote_funnel_analyses(account_id, active_scope.workspace_id, knowledge_grant_id).await
+    {
+        for mut artifact in remote
+            .into_iter()
+            .filter(|artifact| artifact.project_environment_id == project_environment_id)
+        {
+            if artifact.environment_revision != environment_revision
+                || artifact.graph_revision_ids != graph_revision_ids
+            {
+                artifact.freshness = dopedb_protocol::FunnelAnalysisFreshness::GraphDrift;
+            }
+            state
+                .knowledge_store()
+                .sync_remote_funnel_analysis(active_scope.workspace_id, account_id, &artifact)
+                .await?;
+        }
+    }
+    let mut artifacts = state
+        .knowledge_store()
+        .list_funnel_analysis_for_scope(
+            active_scope.workspace_id,
+            account_id,
+            project_environment_id,
+            environment_revision,
+            knowledge_grant_id,
+            &graph_revision_ids,
+        )
+        .await?;
+    for artifact in &mut artifacts {
+        revalidate_funnel_artifact(&state, project_environment_id, artifact).await?;
+    }
+    Ok(artifacts)
+}
+
+async fn revalidate_funnel_artifact(
+    state: &AppState,
+    project_environment_id: Uuid,
+    artifact: &mut FunnelAnalysisArtifactRecord,
+) -> AppResult<()> {
+    if artifact.freshness == FunnelAnalysisFreshness::GraphDrift {
+        return Ok(());
+    }
+    let bindings = state
+        .knowledge_store()
+        .environment_connections(
+            state
+                .knowledge_store()
+                .active_resource_scope()
+                .await?
+                .workspace_id,
+            project_environment_id,
+        )
+        .await?;
+    let mut freshness = FunnelAnalysisFreshness::Current;
+    for tile in &mut artifact.tiles {
+        if tile.definition.kind == FunnelTileKind::Markdown {
+            continue;
+        }
+        let Some(dashboard) = tile.dashboard.as_ref() else {
+            tile.availability = FunnelTileAvailability::MissingGrant;
+            tile.unavailable_reason.get_or_insert_with(|| {
+                "This member has no usable grant for the tile connection.".into()
+            });
+            if freshness == FunnelAnalysisFreshness::Current {
+                freshness = FunnelAnalysisFreshness::Partial;
+            }
+            continue;
+        };
+        let binding = bindings
+            .iter()
+            .find(|binding| binding.connection_id == dashboard.connection_id);
+        let Some(binding) = binding else {
+            tile.availability = FunnelTileAvailability::MissingGrant;
+            tile.unavailable_reason =
+                Some("This device has no local binding for the tile connection.".into());
+            if freshness == FunnelAnalysisFreshness::Current {
+                freshness = FunnelAnalysisFreshness::Partial;
+            }
+            continue;
+        };
+        if tile.connection_revision != Some(binding.connection_revision)
+            || binding.connection_revision != binding.current_connection_revision
+        {
+            tile.availability = FunnelTileAvailability::StaleDashboard;
+            tile.unavailable_reason =
+                Some("The Environment connection revision changed after publication.".into());
+            freshness = FunnelAnalysisFreshness::SchemaDrift;
+            continue;
+        }
+        if let Ok(current_dashboard) = state
+            .knowledge_store()
+            .get_dashboard(dashboard.id.into())
+            .await
+        {
+            if tile.definition.expected_dashboard_revision != Some(current_dashboard.revision) {
+                tile.availability = FunnelTileAvailability::StaleDashboard;
+                tile.unavailable_reason =
+                    Some("The saved dashboard revision changed after publication.".into());
+                freshness = FunnelAnalysisFreshness::SchemaDrift;
+                continue;
+            }
+        }
+        tile.availability = FunnelTileAvailability::Ready;
+        tile.unavailable_reason = None;
+    }
+    artifact.freshness = freshness;
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn publish_funnel_analysis_artifact(
+    state: State<'_, AppState>,
+    project_environment_id: Uuid,
+    artifact_id: Uuid,
+    production_confirmed: bool,
+) -> AppResult<FunnelAnalysisArtifactRecord> {
+    state.services.workspace.refresh_dashboards().await?;
+    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    let account_id =
+        active_scope
+            .selected_account_id
+            .as_deref()
+            .ok_or_else(|| AppError::Blocked {
+                reason: "publishing funnel analysis requires an exact member account".into(),
+            })?;
+    let knowledge_scope = state
+        .knowledge_store()
+        .scopes(active_scope.workspace_id)
+        .await?
+        .into_iter()
+        .find(|scope| scope.environment.id == project_environment_id)
+        .ok_or_else(|| AppError::NotFound("the Project Environment".into()))?;
+    if knowledge_scope.environment.risk_class == EnvironmentRiskClass::Production
+        && !production_confirmed
+    {
+        return Err(AppError::Blocked {
+            reason: "Production analysis publication requires explicit confirmation".into(),
+        });
+    }
+    let environment_revision = knowledge_scope.environment.revision;
+    let graph_revision_ids = graphs
+        .iter()
+        .map(|graph| graph.graph_revision_id)
+        .collect::<Vec<_>>();
+    let knowledge_grant_id = state
+        .knowledge_store()
+        .active_knowledge_grant(
+            active_scope.workspace_id,
+            account_id,
+            project_environment_id,
+            environment_revision,
+            &graph_revision_ids,
+        )
+        .await?
+        .ok_or_else(|| AppError::Blocked {
+            reason: "the exact member Knowledge grant expired before publication".into(),
+        })?;
+    let artifact = state
+        .knowledge_store()
+        .list_funnel_analysis_for_scope(
+            active_scope.workspace_id,
+            account_id,
+            project_environment_id,
+            environment_revision,
+            knowledge_grant_id,
+            &graph_revision_ids,
+        )
+        .await?
+        .into_iter()
+        .find(|artifact| artifact.id == artifact_id)
+        .ok_or_else(|| AppError::NotFound("the current funnel analysis draft".into()))?;
+    let connections = state
+        .knowledge_store()
+        .environment_connections(active_scope.workspace_id, project_environment_id)
+        .await?;
+    let published = publish_funnel_analysis(
+        account_id,
+        active_scope.workspace_id,
+        &artifact,
+        &connections,
+    )
+    .await?;
+    state
+        .knowledge_store()
+        .mark_funnel_analysis_published(
+            active_scope.workspace_id,
+            account_id,
+            artifact.id,
+            published.revision,
+        )
+        .await
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct FunnelTileRunRequest {
+    tile_id: String,
+    query_id: QueryExecutionId,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum FunnelTileRunStatus {
+    Ok,
+    MissingGrant,
+    Stale,
+    Error,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct FunnelTileRunProjection {
+    tile_id: String,
+    query_id: QueryExecutionId,
+    status: FunnelTileRunStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct FunnelAnalysisRunProjection {
+    artifact_id: Uuid,
+    artifact_revision: i64,
+    started_at: chrono::DateTime<chrono::Utc>,
+    completed_at: chrono::DateTime<chrono::Utc>,
+    tiles: Vec<FunnelTileRunProjection>,
+}
+
+fn dashboard_kind(kind: ProtocolDashboardKind) -> DashboardKind {
+    match kind {
+        ProtocolDashboardKind::Auto => DashboardKind::Auto,
+        ProtocolDashboardKind::Metric => DashboardKind::Metric,
+        ProtocolDashboardKind::Line => DashboardKind::Line,
+        ProtocolDashboardKind::Bar => DashboardKind::Bar,
+        ProtocolDashboardKind::Table => DashboardKind::Table,
+    }
+}
+
+/// Re-runs a published definition with the current member's exact local grants.
+/// Results remain process-local and are never added to the shared artifact.
+#[tauri::command]
+pub(crate) async fn run_funnel_analysis_artifact(
+    state: State<'_, AppState>,
+    project_environment_id: Uuid,
+    artifact_id: Uuid,
+    tile_requests: Vec<FunnelTileRunRequest>,
+) -> AppResult<FunnelAnalysisRunProjection> {
+    if tile_requests.is_empty() || tile_requests.len() > dopedb_protocol::MAX_FUNNEL_TILES {
+        return Err(AppError::Config(
+            "a funnel analysis run requires between 1 and 32 tile requests".into(),
+        ));
+    }
+    let mut requested_tiles = std::collections::HashMap::with_capacity(tile_requests.len());
+    let mut query_ids = std::collections::HashSet::with_capacity(tile_requests.len());
+    for request in tile_requests {
+        if request.tile_id.trim().is_empty()
+            || requested_tiles
+                .insert(request.tile_id.clone(), request.query_id)
+                .is_some()
+            || !query_ids.insert(request.query_id)
+        {
+            return Err(AppError::Config(
+                "tile and query ids must be non-empty and unique for each run".into(),
+            ));
+        }
+    }
+
+    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    let account_id =
+        active_scope
+            .selected_account_id
+            .as_deref()
+            .ok_or_else(|| AppError::Blocked {
+                reason: "running funnel analysis requires an exact member account".into(),
+            })?;
+    let environment_revision = graphs
+        .first()
+        .map(|graph| graph.environment_revision)
+        .ok_or_else(|| AppError::NotFound("an active Knowledge graph revision set".into()))?;
+    let graph_revision_ids = graphs
+        .iter()
+        .map(|graph| graph.graph_revision_id)
+        .collect::<Vec<_>>();
+    let knowledge_grant_id = state
+        .knowledge_store()
+        .active_knowledge_grant(
+            active_scope.workspace_id,
+            account_id,
+            project_environment_id,
+            environment_revision,
+            &graph_revision_ids,
+        )
+        .await?
+        .ok_or_else(|| AppError::Blocked {
+            reason: "the current member has no exact grant for this analysis".into(),
+        })?;
+    let mut artifact = state
+        .knowledge_store()
+        .list_funnel_analysis_for_scope(
+            active_scope.workspace_id,
+            account_id,
+            project_environment_id,
+            environment_revision,
+            knowledge_grant_id,
+            &graph_revision_ids,
+        )
+        .await?
+        .into_iter()
+        .find(|artifact| artifact.id == artifact_id)
+        .ok_or_else(|| AppError::NotFound("the current funnel analysis".into()))?;
+    revalidate_funnel_artifact(&state, project_environment_id, &mut artifact).await?;
+    if matches!(
+        artifact.freshness,
+        FunnelAnalysisFreshness::GraphDrift | FunnelAnalysisFreshness::SchemaDrift
+    ) {
+        return Err(AppError::Blocked {
+            reason: "the analysis definition drifted; review and republish it before running"
+                .into(),
+        });
+    }
+
+    let requested_count = requested_tiles.len();
+    let selected_tiles = artifact
+        .tiles
+        .iter()
+        .filter_map(|tile| {
+            requested_tiles
+                .remove(&tile.definition.id)
+                .map(|query_id| (tile.clone(), query_id))
+        })
+        .collect::<Vec<_>>();
+    if !requested_tiles.is_empty() || selected_tiles.len() != requested_count {
+        return Err(AppError::Config(
+            "the run contains a tile that is not part of this analysis revision".into(),
+        ));
+    }
+
+    let dashboard_service = state.services.dashboard.clone();
+    let started_at = chrono::Utc::now();
+    let mut tiles = stream::iter(selected_tiles.into_iter().enumerate().map(
+        |(index, (tile, query_id))| {
+            let dashboard_service = dashboard_service.clone();
+            async move {
+                let unavailable = match tile.availability {
+                    FunnelTileAvailability::MissingGrant => Some(FunnelTileRunStatus::MissingGrant),
+                    FunnelTileAvailability::StaleDashboard => Some(FunnelTileRunStatus::Stale),
+                    FunnelTileAvailability::Error => Some(FunnelTileRunStatus::Error),
+                    FunnelTileAvailability::Ready => None,
+                };
+                if let Some(status) = unavailable {
+                    return (
+                        index,
+                        FunnelTileRunProjection {
+                            tile_id: tile.definition.id,
+                            query_id,
+                            status,
+                            result: None,
+                            error: tile.unavailable_reason,
+                        },
+                    );
+                }
+                if tile.definition.kind == FunnelTileKind::Markdown {
+                    return (
+                        index,
+                        FunnelTileRunProjection {
+                            tile_id: tile.definition.id,
+                            query_id,
+                            status: FunnelTileRunStatus::Error,
+                            result: None,
+                            error: Some("markdown tiles do not execute a database query".into()),
+                        },
+                    );
+                }
+                let Some(dashboard) = tile.dashboard else {
+                    return (
+                        index,
+                        FunnelTileRunProjection {
+                            tile_id: tile.definition.id,
+                            query_id,
+                            status: FunnelTileRunStatus::Error,
+                            result: None,
+                            error: Some(
+                                "the shared tile has no executable dashboard definition".into(),
+                            ),
+                        },
+                    );
+                };
+                let Some(connection_revision) = tile.connection_revision else {
+                    return (
+                        index,
+                        FunnelTileRunProjection {
+                            tile_id: tile.definition.id,
+                            query_id,
+                            status: FunnelTileRunStatus::Stale,
+                            result: None,
+                            error: Some("the shared tile has no pinned connection revision".into()),
+                        },
+                    );
+                };
+                let request = DashboardDefinitionRunRequest {
+                    draft: DashboardDraft {
+                        connection_id: ConnectionId::from(dashboard.connection_id),
+                        title: dashboard.title,
+                        description: dashboard.description,
+                        sql: dashboard.sql,
+                        visualization: DashboardVisualization {
+                            version: dashboard.visualization.version,
+                            kind: dashboard_kind(dashboard.visualization.kind),
+                            x_column: dashboard.visualization.x_column,
+                            y_columns: dashboard.visualization.y_columns,
+                        },
+                    },
+                    expected_connection_revision: connection_revision,
+                    query_id: Some(query_id),
+                };
+                match dashboard_service.run_definition(request).await {
+                    Ok(receipt) => (
+                        index,
+                        FunnelTileRunProjection {
+                            tile_id: tile.definition.id,
+                            query_id,
+                            status: FunnelTileRunStatus::Ok,
+                            result: serde_json::to_value(receipt).ok(),
+                            error: None,
+                        },
+                    ),
+                    Err(error) => (
+                        index,
+                        FunnelTileRunProjection {
+                            tile_id: tile.definition.id,
+                            query_id,
+                            status: FunnelTileRunStatus::Error,
+                            result: None,
+                            error: Some(DashboardRunError::into_error(error).to_string()),
+                        },
+                    ),
+                }
+            }
+        },
+    ))
+    .buffer_unordered(3)
+    .collect::<Vec<_>>()
+    .await;
+    tiles.sort_by_key(|(index, _)| *index);
+    Ok(FunnelAnalysisRunProjection {
+        artifact_id: artifact.id,
+        artifact_revision: artifact.revision,
+        started_at,
+        completed_at: chrono::Utc::now(),
+        tiles: tiles.into_iter().map(|(_, tile)| tile).collect(),
+    })
 }
 
 #[tauri::command]

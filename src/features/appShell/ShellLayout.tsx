@@ -73,6 +73,7 @@ type Props = {
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
   onCreateDemoDatabase: () => void;
   onArea: (area: AppArea) => void;
+  onOpenKnowledgeAnalysis: (environmentId: string) => void;
   onToggleDatabaseExplorer: () => void;
   onToggleLocalHistory: () => void;
   onCloseLocalHistory: () => void;
@@ -365,6 +366,7 @@ function ShellLayoutContent(props: Props) {
           width={rightDockWidth}
           onWidthChange={props.onTerminalWidthChange}
           onOpenArchive={props.onOpenAgentArchive}
+          onOpenKnowledgeAnalysis={props.onOpenKnowledgeAnalysis}
           onClose={props.onCloseTerminal}
         />
       )}

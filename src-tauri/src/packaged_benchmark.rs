@@ -988,8 +988,7 @@ async fn focus_benchmark_window(app: &tauri::AppHandle) -> AppResult<()> {
         let (activation_sent, activation_received) = tokio::sync::oneshot::channel();
         app.run_on_main_thread(move || {
             let activated = if let Some(main_thread) = objc2::MainThreadMarker::new() {
-                let application =
-                    objc2_app_kit::NSApplication::sharedApplication(main_thread);
+                let application = objc2_app_kit::NSApplication::sharedApplication(main_thread);
                 // Directly launching the bundle executable repeatedly can leave the
                 // next process visible but inactive after its predecessor exits.
                 // WKWebView then suspends requestAnimationFrame and produces a false

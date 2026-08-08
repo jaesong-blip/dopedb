@@ -13,6 +13,8 @@ import type {
   EnvironmentConnection,
   BindEnvironmentConnectionInput,
   KnowledgeMapping,
+  FunnelAnalysisArtifact,
+  FunnelAnalysisRun,
 } from "./domain";
 
 export function listKnowledgeProjects(): Promise<KnowledgeProject[]> {
@@ -42,6 +44,36 @@ export function listKnowledgeMappings(
   projectEnvironmentId: string,
 ): Promise<KnowledgeMapping[]> {
   return invoke("list_knowledge_mappings", { projectEnvironmentId });
+}
+
+export function listFunnelAnalysisArtifacts(
+  projectEnvironmentId: string,
+): Promise<FunnelAnalysisArtifact[]> {
+  return invoke("list_funnel_analysis_artifacts", { projectEnvironmentId });
+}
+
+export function publishFunnelAnalysisArtifact(
+  projectEnvironmentId: string,
+  artifactId: string,
+  productionConfirmed: boolean,
+): Promise<FunnelAnalysisArtifact> {
+  return invoke("publish_funnel_analysis_artifact", {
+    projectEnvironmentId,
+    artifactId,
+    productionConfirmed,
+  });
+}
+
+export function runFunnelAnalysisArtifact(
+  projectEnvironmentId: string,
+  artifactId: string,
+  tileRequests: Array<{ tileId: string; queryId: string }>,
+): Promise<FunnelAnalysisRun> {
+  return invoke("run_funnel_analysis_artifact", {
+    projectEnvironmentId,
+    artifactId,
+    tileRequests,
+  });
 }
 
 export function decideKnowledgeMapping(

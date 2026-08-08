@@ -13,6 +13,7 @@ pub mod discovery;
 pub mod document_command;
 pub mod error;
 pub mod frame;
+pub mod funnel_dashboard_command;
 pub mod knowledge;
 pub mod knowledge_command;
 pub mod operation;
@@ -43,6 +44,7 @@ pub use discovery::{
 pub use document_command::*;
 pub use error::{ErrorCode, ProtocolError};
 pub use frame::{decode_frame, encode_frame, parse_frame_length, FrameError, FramePayload};
+pub use funnel_dashboard_command::*;
 pub use knowledge::*;
 pub use knowledge_command::*;
 pub use operation::{

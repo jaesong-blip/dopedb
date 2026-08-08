@@ -360,6 +360,109 @@ async fn assert_current_store_migration_is_write_free() {
         artifact.graph_revision_id
     );
 
+    let now = Utc::now();
+    let funnel = dopedb_protocol::FunnelAnalysisArtifactRecord {
+        id: Uuid::from_u128(0x1300),
+        project_environment_id: environment.id,
+        environment_revision: environment.revision,
+        knowledge_grant_id: Uuid::from_u128(0x1301),
+        published_from_knowledge_grant_id: None,
+        graph_revision_ids: active_set
+            .iter()
+            .map(|candidate| candidate.graph_revision_id)
+            .collect(),
+        source_agent: dopedb_protocol::AcpPluginId::Codex,
+        title: "Activation funnel".into(),
+        question: "Where do users stop?".into(),
+        purpose: "Review activation conversion.".into(),
+        timezone: "Asia/Seoul".into(),
+        conversion_window_seconds: 86_400,
+        denominator_semantics: "Distinct accounts".into(),
+        numerator_semantics: "Distinct completed accounts".into(),
+        deduplication_policy: "First step event".into(),
+        late_event_policy: "Recompute the open window".into(),
+        steps: vec![dopedb_protocol::FunnelStepDefinition {
+            id: "signup".into(),
+            label: "Signed up".into(),
+            meaning: "An account was created.".into(),
+            connection_role: "primary".into(),
+            entity_key: "account_id".into(),
+            timestamp_field: "created_at".into(),
+            ordering_rule: "First event per account".into(),
+            mapping_state: dopedb_protocol::FunnelMappingState::Inferred,
+            mapping_proposal_id: None,
+            graph_node_ids: vec![artifact.nodes[0].id.clone()],
+            evidence_ids: vec![artifact.evidence[0].id.clone()],
+        }],
+        tiles: vec![dopedb_protocol::FunnelDashboardTileRecord {
+            definition: dopedb_protocol::FunnelTileDefinition {
+                id: "summary".into(),
+                title: "Definition".into(),
+                kind: dopedb_protocol::FunnelTileKind::Markdown,
+                dashboard_id: None,
+                expected_dashboard_revision: None,
+                query_run_id: None,
+                step_ids: vec!["signup".into()],
+                markdown: Some("Review this inferred mapping before publish.".into()),
+            },
+            dashboard: None,
+            connection_revision: None,
+            availability: dopedb_protocol::FunnelTileAvailability::Ready,
+            unavailable_reason: None,
+        }],
+        warnings: vec!["Contains an inferred mapping.".into()],
+        freshness: dopedb_protocol::FunnelAnalysisFreshness::Current,
+        state: "draft".into(),
+        revision: 1,
+        created_at: now,
+        updated_at: now,
+    };
+    store
+        .save_funnel_analysis_draft(
+            Uuid::from(project.workspace_id),
+            "knowledge-member",
+            &funnel,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .list_funnel_analysis_for_scope(
+                Uuid::from(project.workspace_id),
+                "knowledge-member",
+                environment.id,
+                environment.revision,
+                funnel.knowledge_grant_id,
+                &funnel.graph_revision_ids,
+            )
+            .await
+            .unwrap(),
+        vec![funnel.clone()]
+    );
+    assert!(store
+        .list_funnel_analysis_for_scope(
+            Uuid::from(project.workspace_id),
+            "other-member",
+            environment.id,
+            environment.revision,
+            funnel.knowledge_grant_id,
+            &funnel.graph_revision_ids,
+        )
+        .await
+        .unwrap()
+        .is_empty());
+    let funnel_columns: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM pragma_table_info('funnel_analysis_artifacts') ORDER BY cid",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    for forbidden in ["row", "credential", "transcript", "password", "token"] {
+        assert!(!funnel_columns
+            .iter()
+            .any(|column| column.to_ascii_lowercase().contains(forbidden)));
+    }
+
     sqlx::query("PRAGMA query_only = ON")
         .execute(&pool)
         .await

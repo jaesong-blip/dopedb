@@ -127,6 +127,7 @@ type AcpChatPanelProps = {
   width: number;
   onWidthChange: (width: number) => void;
   onOpenArchive: () => void;
+  onOpenKnowledgeAnalysis: (environmentId: string) => void;
   onClose: () => void;
 };
 
@@ -166,6 +167,7 @@ function AcpChatPanelContent({
   width,
   onWidthChange,
   onOpenArchive,
+  onOpenKnowledgeAnalysis,
   onClose,
 }: AcpChatPanelProps) {
   const { t } = useI18n();
@@ -986,6 +988,7 @@ function AcpChatPanelContent({
                   pendingPermissionId={pendingPermissionId}
                   permissionSubmitting={permissionSubmitting}
                   onPermission={respondPermission}
+                  onOpenKnowledgeAnalysis={onOpenKnowledgeAnalysis}
                 />
               </Fragment>
             ))}
@@ -1632,6 +1635,7 @@ const TranscriptItemView = memo(function TranscriptItemView({
   pendingPermissionId,
   permissionSubmitting,
   onPermission,
+  onOpenKnowledgeAnalysis,
 }: {
   item: AcpTranscriptItem;
   revision: number;
@@ -1641,6 +1645,7 @@ const TranscriptItemView = memo(function TranscriptItemView({
   pendingPermissionId: string | null;
   permissionSubmitting: string | null;
   onPermission: (requestId: string, optionId: string | null) => void;
+  onOpenKnowledgeAnalysis: (environmentId: string) => void;
 }) {
   const { t } = useI18n();
   if (item.kind === "user") {
@@ -1711,7 +1716,13 @@ const TranscriptItemView = memo(function TranscriptItemView({
     );
   }
   if (item.kind === "tool") {
-    return <ToolCallCard data={item.data} debugDetails={debugDetails} />;
+    return (
+      <ToolCallCard
+        data={item.data}
+        debugDetails={debugDetails}
+        onOpenKnowledgeAnalysis={onOpenKnowledgeAnalysis}
+      />
+    );
   }
   if (item.kind === "permission") {
     const pending = item.event.requestId === pendingPermissionId;
@@ -1825,9 +1836,11 @@ const TranscriptItemView = memo(function TranscriptItemView({
 function ToolCallCard({
   data,
   debugDetails,
+  onOpenKnowledgeAnalysis,
 }: {
   data: Record<string, unknown>;
   debugDetails: boolean;
+  onOpenKnowledgeAnalysis: (environmentId: string) => void;
 }) {
   const { t } = useI18n();
   const status = recordString(data, "status") ?? "pending";
@@ -1838,13 +1851,26 @@ function ToolCallCard({
   const content = toolContentText(data.content);
   const rawOutput = data.rawOutput;
   const rawInput = data.rawInput;
+  const funnelArtifact = findFunnelAnalysisArtifact(rawOutput ?? data.content);
   if (!debugDetails) {
     return (
-      <AgentActivityLine
-        label={toolActivityLabel(data, t)}
-        status={toolStatusLabel(status, t)}
-        tone={toolStatusTone(status)}
-      />
+      <div className="tw:grid tw:gap-2">
+        <AgentActivityLine
+          label={toolActivityLabel(data, t)}
+          status={toolStatusLabel(status, t)}
+          tone={toolStatusTone(status)}
+        />
+        {funnelArtifact ? (
+          <Button
+            size="compact"
+            variant="primary"
+            onClick={() => onOpenKnowledgeAnalysis(funnelArtifact.projectEnvironmentId)}
+          >
+            <Icon name="chart" />
+            {t("agent.acpReviewFunnelDraft")}
+          </Button>
+        ) : null}
+      </div>
     );
   }
   return (
@@ -1877,9 +1903,62 @@ function ToolCallCard({
           </details>
         ) : null}
         <AcpStructuredResult value={rawOutput ?? data.content} />
+        {funnelArtifact ? (
+          <Button
+            size="compact"
+            variant="primary"
+            onClick={() => onOpenKnowledgeAnalysis(funnelArtifact.projectEnvironmentId)}
+          >
+            <Icon name="chart" />
+            {t("agent.acpReviewFunnelDraft")}
+          </Button>
+        ) : null}
       </div>
     </AgentToolCallCard>
   );
+}
+
+function findFunnelAnalysisArtifact(
+  value: unknown,
+  depth = 0,
+): { id: string; projectEnvironmentId: string } | null {
+  if (depth > 5 || value == null) return null;
+  if (typeof value === "string") {
+    try {
+      return findFunnelAnalysisArtifact(JSON.parse(value), depth + 1);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = findFunnelAnalysisArtifact(entry, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const artifact = record.artifact;
+  if (artifact && typeof artifact === "object" && !Array.isArray(artifact)) {
+    const candidate = artifact as Record<string, unknown>;
+    if (
+      typeof candidate.id === "string"
+      && typeof candidate.projectEnvironmentId === "string"
+      && /^[0-9a-f-]{36}$/i.test(candidate.id)
+      && /^[0-9a-f-]{36}$/i.test(candidate.projectEnvironmentId)
+    ) {
+      return {
+        id: candidate.id,
+        projectEnvironmentId: candidate.projectEnvironmentId,
+      };
+    }
+  }
+  for (const key of ["result", "data", "output", "rawOutput", "content", "text"] as const) {
+    const found = findFunnelAnalysisArtifact(record[key], depth + 1);
+    if (found) return found;
+  }
+  return null;
 }
 
 function PermissionButton({

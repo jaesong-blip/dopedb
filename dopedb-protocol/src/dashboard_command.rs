@@ -57,6 +57,7 @@ pub struct DashboardVisualization {
 pub struct DashboardRecord {
     pub id: Uuid,
     pub connection_id: Uuid,
+    pub revision: i64,
     pub title: String,
     pub description: String,
     pub sql: String,

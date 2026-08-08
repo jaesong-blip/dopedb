@@ -21,9 +21,9 @@ use adapters::{DashboardMetadataAdapter, DashboardRunner, TerminalDashboardCreat
 pub(crate) use adapters::{DashboardRunError, DashboardRunReceipt};
 use application::DashboardUseCases;
 pub(crate) use domain::{
-    AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardDraft,
-    DashboardKind, DashboardRunRequest, DashboardState, DashboardSyncStatus,
-    DashboardVisualization,
+    AgentDashboardCreateError, AgentDashboardPresentation, Dashboard,
+    DashboardDefinitionRunRequest, DashboardDraft, DashboardKind, DashboardRunRequest,
+    DashboardState, DashboardSyncStatus, DashboardVisualization,
 };
 pub(crate) use validation::validate_visualization;
 
@@ -75,6 +75,13 @@ where
         request: DashboardRunRequest,
     ) -> Result<DashboardRunReceipt, DashboardRunError> {
         self.application.run(request).await
+    }
+
+    pub(crate) async fn run_definition(
+        &self,
+        request: DashboardDefinitionRunRequest,
+    ) -> Result<DashboardRunReceipt, DashboardRunError> {
+        self.application.run_definition(request).await
     }
 
     pub(crate) async fn create_terminal(

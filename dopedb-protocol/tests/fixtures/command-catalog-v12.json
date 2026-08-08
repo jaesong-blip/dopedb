@@ -35,6 +35,8 @@
   "knowledge.evidence",
   "knowledge.diff",
   "funnel.trace",
+  "funnel.dashboard.propose",
+  "funnel.dashboard.list",
   "environment.context",
   "knowledge.mapping.propose"
 ]

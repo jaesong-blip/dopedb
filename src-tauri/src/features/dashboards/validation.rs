@@ -110,7 +110,9 @@ pub(super) fn validate_draft(draft: &DashboardDraft, engine: Engine) -> AppResul
         )));
     }
     if draft.sql.contains('\0') {
-        return Err(AppError::Config("dashboard SQL contains a null byte".into()));
+        return Err(AppError::Config(
+            "dashboard SQL contains a null byte".into(),
+        ));
     }
     validate_visualization(&draft.visualization)?;
     let classification = safety::classify(&draft.sql, engine)?;

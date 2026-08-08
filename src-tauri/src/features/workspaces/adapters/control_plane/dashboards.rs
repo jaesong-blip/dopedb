@@ -74,8 +74,7 @@ fn safe_display(value: &str, max_chars: usize, allow_empty: bool) -> bool {
     (allow_empty || !value.trim().is_empty())
         && value.chars().count() <= max_chars
         && !value.chars().any(|character| {
-            character.is_control()
-                && !matches!(character, '\n' | '\r' | '\t')
+            character.is_control() && !matches!(character, '\n' | '\r' | '\t')
                 || matches!(
                     character,
                     '\u{202a}'
@@ -110,8 +109,8 @@ fn parse_remote_dashboard(value: RemoteDashboardResponse) -> AppResult<RemoteDas
             "shared dashboard returned an unsafe definition".into(),
         ));
     }
-    let visualization: DashboardVisualization =
-        serde_json::from_value(value.visualization).map_err(|_| {
+    let visualization: DashboardVisualization = serde_json::from_value(value.visualization)
+        .map_err(|_| {
             AppError::Network("shared dashboard returned an invalid visualization".into())
         })?;
     validate_visualization(&visualization).map_err(|_| {
@@ -140,8 +139,7 @@ fn parse_remote_dashboard(value: RemoteDashboardResponse) -> AppResult<RemoteDas
 }
 
 fn mutation_visualization(mutation: &PendingDashboardMutation) -> AppResult<serde_json::Value> {
-    let visualization: DashboardVisualization =
-        serde_json::from_str(&mutation.visualization_json)?;
+    let visualization: DashboardVisualization = serde_json::from_str(&mutation.visualization_json)?;
     validate_visualization(&visualization)?;
     serde_json::to_value(visualization).map_err(Into::into)
 }
@@ -182,8 +180,7 @@ pub(super) async fn remote_dashboards(
             "shared dashboard collection changed workspace identity".into(),
         ));
     }
-    body
-        .dashboards
+    body.dashboards
         .into_iter()
         .map(parse_remote_dashboard)
         .collect::<AppResult<Vec<_>>>()
@@ -287,8 +284,7 @@ pub(super) async fn delete_dashboard(
     workspace_id: Uuid,
     mutation: &PendingDashboardMutation,
 ) -> AppResult<DashboardPushResult> {
-    let (Some(remote_id), Some(remote_revision)) =
-        (mutation.remote_id, mutation.remote_revision)
+    let (Some(remote_id), Some(remote_revision)) = (mutation.remote_id, mutation.remote_revision)
     else {
         return Ok(DashboardPushResult::Deleted(0));
     };

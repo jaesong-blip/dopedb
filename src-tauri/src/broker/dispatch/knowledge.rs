@@ -4,13 +4,17 @@ use std::collections::BTreeSet;
 
 use dopedb_protocol::{
     CatalogArguments, ConnectionSelector, EnvironmentConnectionScope, EnvironmentContextCommand,
-    EnvironmentContextResult, FunnelTraceArguments, FunnelTraceCommand, GraphBuildArtifactV1,
-    KnowledgeDiffCommand, KnowledgeEvidenceCommand, KnowledgeEvidenceResult,
+    EnvironmentContextResult, FunnelAnalysisArtifactRecord, FunnelAnalysisFreshness,
+    FunnelDashboardListCommand, FunnelDashboardProposeArguments, FunnelDashboardProposeCommand,
+    FunnelDashboardProposeResult, FunnelDashboardTileRecord, FunnelMappingState,
+    FunnelTileAvailability, FunnelTileKind, FunnelTraceArguments, FunnelTraceCommand,
+    GraphBuildArtifactV1, KnowledgeDiffCommand, KnowledgeEvidenceCommand, KnowledgeEvidenceResult,
     KnowledgeExplainCommand, KnowledgeMappingProposalResult, KnowledgeMappingProposeArguments,
     KnowledgeMappingProposeCommand, KnowledgeMappingTargetKind, KnowledgeNeighborDirection,
     KnowledgeNeighborsArguments, KnowledgeNeighborsCommand, KnowledgeNodeArguments,
     KnowledgeNodeMatch, KnowledgePathCommand, KnowledgeSearchCommand, KnowledgeSearchResult,
-    KnowledgeSubgraphResult, MAX_KNOWLEDGE_EVIDENCE_IDS, MAX_KNOWLEDGE_NEIGHBORS,
+    KnowledgeSubgraphResult, MAX_FUNNEL_REFERENCES, MAX_FUNNEL_STEPS, MAX_FUNNEL_TILES,
+    MAX_FUNNEL_WARNINGS, MAX_KNOWLEDGE_EVIDENCE_IDS, MAX_KNOWLEDGE_NEIGHBORS,
     MAX_KNOWLEDGE_QUERY_BYTES, MAX_KNOWLEDGE_RESULTS, MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES,
 };
 use serde_json::json;
@@ -20,7 +24,9 @@ use crate::features::knowledge::domain::{KnowledgeMappingProposal, MappingPropos
 use crate::features::knowledge::ports::{
     KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
 };
+use crate::features::queries::QueryRunAuthorizationPort;
 use crate::features::workspaces::adapters::control_plane::propose_remote_knowledge_mapping;
+use crate::model::QueryKind;
 
 use super::*;
 
@@ -29,10 +35,10 @@ pub(super) async fn handle(
     request: &RequestEnvelope,
 ) -> ResponseEnvelope {
     let request_id = request.request_id;
-    let capability = if request.command == CommandName::KnowledgeMappingPropose {
-        BrokerCapability::KnowledgePropose
-    } else {
-        BrokerCapability::KnowledgeRead
+    let capability = match request.command {
+        CommandName::KnowledgeMappingPropose => BrokerCapability::KnowledgePropose,
+        CommandName::FunnelDashboardPropose => BrokerCapability::DashboardCreate,
+        _ => BrokerCapability::KnowledgeRead,
     };
     let session = match dispatcher.authenticate(request, capability) {
         Ok(session) => session,
@@ -253,6 +259,44 @@ pub(super) async fn handle(
                 funnel_trace(&graphs, &arguments).map_err(map_application_error),
             )
         }
+        CommandName::FunnelDashboardPropose => {
+            let arguments = match decode_arguments::<FunnelDashboardProposeCommand>(request) {
+                Ok(arguments) if valid_funnel_arguments(scope, &graphs, &arguments) => arguments,
+                _ => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            respond(
+                request_id,
+                propose_funnel_dashboard(
+                    &session,
+                    scope,
+                    services,
+                    &graphs,
+                    arguments,
+                    request.protocol_version,
+                )
+                .await,
+            )
+        }
+        CommandName::FunnelDashboardList => {
+            if decode_arguments::<FunnelDashboardListCommand>(request).is_err() {
+                return failure(request_id, ErrorCode::InvalidRequest, false);
+            }
+            respond(
+                request_id,
+                services
+                    .knowledge
+                    .list_funnel_analysis_for_scope(
+                        Uuid::from(session.workspace_id),
+                        session.account_scope.as_str(),
+                        scope.project_environment_id,
+                        scope.environment_revision,
+                        scope.knowledge_grant_id,
+                        &scope.graph_revision_ids,
+                    )
+                    .await
+                    .map_err(map_application_error),
+            )
+        }
         CommandName::KnowledgeMappingPropose => {
             let arguments = match decode_arguments::<KnowledgeMappingProposeCommand>(request) {
                 Ok(arguments) if valid_mapping_arguments(scope, &graphs, &arguments) => arguments,
@@ -273,6 +317,258 @@ pub(super) async fn handle(
         }
         _ => failure(request_id, ErrorCode::InvalidRequest, false),
     }
+}
+
+fn valid_funnel_arguments(
+    scope: &crate::features::knowledge::domain::KnowledgeSessionScope,
+    graphs: &[GraphBuildArtifactV1],
+    arguments: &FunnelDashboardProposeArguments,
+) -> bool {
+    if !valid_funnel_text(&arguments.title, 256)
+        || !valid_funnel_text(&arguments.question, 8_000)
+        || !valid_funnel_text(&arguments.purpose, 8_000)
+        || !valid_funnel_text(&arguments.timezone, 128)
+        || arguments.conversion_window_seconds == 0
+        || arguments.conversion_window_seconds > 366 * 24 * 60 * 60
+        || !valid_funnel_text(&arguments.denominator_semantics, 4_000)
+        || !valid_funnel_text(&arguments.numerator_semantics, 4_000)
+        || !valid_funnel_text(&arguments.deduplication_policy, 4_000)
+        || !valid_funnel_text(&arguments.late_event_policy, 4_000)
+        || arguments.steps.is_empty()
+        || arguments.steps.len() > MAX_FUNNEL_STEPS
+        || arguments.tiles.is_empty()
+        || arguments.tiles.len() > MAX_FUNNEL_TILES
+        || arguments.warnings.len() > MAX_FUNNEL_WARNINGS
+        || arguments
+            .warnings
+            .iter()
+            .any(|warning| !valid_funnel_text(warning, 2_000))
+    {
+        return false;
+    }
+    let graph_nodes = graphs
+        .iter()
+        .flat_map(|graph| graph.nodes.iter().map(|node| node.id.as_str()))
+        .collect::<BTreeSet<_>>();
+    let graph_evidence = graphs
+        .iter()
+        .flat_map(|graph| graph.evidence.iter().map(|evidence| evidence.id.as_str()))
+        .collect::<BTreeSet<_>>();
+    let roles = scope
+        .connections
+        .iter()
+        .map(|connection| connection.role.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut step_ids = BTreeSet::new();
+    for step in &arguments.steps {
+        if !valid_funnel_id(&step.id)
+            || !step_ids.insert(step.id.as_str())
+            || !valid_funnel_text(&step.label, 256)
+            || !valid_funnel_text(&step.meaning, 4_000)
+            || !roles.contains(step.connection_role.as_str())
+            || !valid_funnel_text(&step.entity_key, 512)
+            || !valid_funnel_text(&step.timestamp_field, 512)
+            || !valid_funnel_text(&step.ordering_rule, 2_000)
+            || step.graph_node_ids.is_empty()
+            || step.graph_node_ids.len() > MAX_FUNNEL_REFERENCES
+            || step.evidence_ids.len() > MAX_FUNNEL_REFERENCES
+            || step
+                .graph_node_ids
+                .iter()
+                .any(|id| !graph_nodes.contains(id.as_str()))
+            || step
+                .evidence_ids
+                .iter()
+                .any(|id| !graph_evidence.contains(id.as_str()))
+            || match step.mapping_state {
+                FunnelMappingState::Inferred => step.mapping_proposal_id.is_some(),
+                FunnelMappingState::Confirmed => step.mapping_proposal_id.is_none(),
+            }
+        {
+            return false;
+        }
+    }
+    let mut tile_ids = BTreeSet::new();
+    arguments.tiles.iter().all(|tile| {
+        let is_markdown = tile.kind == FunnelTileKind::Markdown;
+        valid_funnel_id(&tile.id)
+            && tile_ids.insert(tile.id.as_str())
+            && valid_funnel_text(&tile.title, 256)
+            && tile.step_ids.len() <= MAX_FUNNEL_STEPS
+            && tile
+                .step_ids
+                .iter()
+                .all(|step_id| step_ids.contains(step_id.as_str()))
+            && if is_markdown {
+                tile.dashboard_id.is_none()
+                    && tile.expected_dashboard_revision.is_none()
+                    && tile.query_run_id.is_none()
+                    && tile
+                        .markdown
+                        .as_deref()
+                        .is_some_and(|markdown| valid_funnel_text(markdown, 32_000))
+            } else {
+                tile.dashboard_id.is_some()
+                    && tile
+                        .expected_dashboard_revision
+                        .is_some_and(|revision| revision > 0)
+                    && tile.query_run_id.is_some()
+                    && tile.markdown.is_none()
+                    && !tile.step_ids.is_empty()
+            }
+    })
+}
+
+async fn propose_funnel_dashboard(
+    session: &AuthenticatedSession,
+    scope: &crate::features::knowledge::domain::KnowledgeSessionScope,
+    services: &ApplicationServices,
+    graphs: &[GraphBuildArtifactV1],
+    mut arguments: FunnelDashboardProposeArguments,
+    client_protocol_version: u16,
+) -> Result<FunnelDashboardProposeResult, ErrorCode> {
+    let mut approved_mappings = BTreeSet::new();
+    for graph in graphs {
+        for mapping in services
+            .knowledge
+            .mappings_for_revision(scope.project_environment_id, graph.graph_revision_id)
+            .await
+            .map_err(map_application_error)?
+        {
+            if mapping.state == MappingProposalState::Approved {
+                approved_mappings.insert(mapping.id);
+            }
+        }
+    }
+    if arguments.steps.iter().any(|step| {
+        step.mapping_state == FunnelMappingState::Confirmed
+            && !step
+                .mapping_proposal_id
+                .is_some_and(|id| approved_mappings.contains(&id))
+    }) {
+        return Err(ErrorCode::ScopeDenied);
+    }
+    if arguments
+        .steps
+        .iter()
+        .any(|step| step.mapping_state == FunnelMappingState::Inferred)
+        && !arguments
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("inferred mapping"))
+    {
+        arguments
+            .warnings
+            .push("Contains inferred mappings that require human review before publish.".into());
+    }
+
+    let mut tiles = Vec::with_capacity(arguments.tiles.len());
+    for definition in &arguments.tiles {
+        let Some(dashboard_id) = definition.dashboard_id else {
+            tiles.push(FunnelDashboardTileRecord {
+                definition: definition.clone(),
+                dashboard: None,
+                connection_revision: None,
+                availability: FunnelTileAvailability::Ready,
+                unavailable_reason: None,
+            });
+            continue;
+        };
+        let dashboard = services
+            .knowledge
+            .get_dashboard(dashboard_id.into())
+            .await
+            .map_err(map_application_error)?;
+        if dashboard.revision != definition.expected_dashboard_revision.unwrap_or_default()
+            || dashboard.state == crate::features::dashboards::DashboardState::Archived
+        {
+            return Err(ErrorCode::OperationConflict);
+        }
+        let query_run_id = definition.query_run_id.ok_or(ErrorCode::InvalidRequest)?;
+        services
+            .queries
+            .provenance()
+            .authorize(
+                QueryRunId::from(query_run_id),
+                &terminal_authority(session, client_protocol_version),
+            )
+            .map_err(|_| ErrorCode::ScopeDenied)?;
+        let query_run = services
+            .knowledge
+            .resolve_history_for_shared_artifact_prepare(query_run_id)
+            .await
+            .map_err(map_application_error)?;
+        if query_run.history.connection_id != Uuid::from(dashboard.connection_id)
+            || query_run.history.sql != dashboard.sql
+            || query_run.history.status != "ok"
+            || query_run.history.origin != "agent"
+            || query_run.history.kind != QueryKind::Read
+        {
+            return Err(ErrorCode::OperationConflict);
+        }
+        let connection = scope
+            .connections
+            .iter()
+            .find(|connection| connection.connection_id == Uuid::from(dashboard.connection_id))
+            .ok_or(ErrorCode::ScopeDenied)?;
+        tiles.push(FunnelDashboardTileRecord {
+            definition: definition.clone(),
+            dashboard: Some(dashboard_record(&dashboard)),
+            connection_revision: Some(connection.connection_revision),
+            availability: FunnelTileAvailability::Ready,
+            unavailable_reason: None,
+        });
+    }
+
+    let now = chrono::Utc::now();
+    let artifact = FunnelAnalysisArtifactRecord {
+        id: Uuid::new_v4(),
+        project_environment_id: scope.project_environment_id,
+        environment_revision: scope.environment_revision,
+        knowledge_grant_id: scope.knowledge_grant_id,
+        published_from_knowledge_grant_id: None,
+        graph_revision_ids: scope.graph_revision_ids.clone(),
+        source_agent: session.agent_plugin_id.ok_or(ErrorCode::ScopeDenied)?,
+        title: arguments.title,
+        question: arguments.question,
+        purpose: arguments.purpose,
+        timezone: arguments.timezone,
+        conversion_window_seconds: arguments.conversion_window_seconds,
+        denominator_semantics: arguments.denominator_semantics,
+        numerator_semantics: arguments.numerator_semantics,
+        deduplication_policy: arguments.deduplication_policy,
+        late_event_policy: arguments.late_event_policy,
+        steps: arguments.steps,
+        tiles,
+        warnings: arguments.warnings,
+        freshness: FunnelAnalysisFreshness::Current,
+        state: "draft".into(),
+        revision: 1,
+        created_at: now,
+        updated_at: now,
+    };
+    services
+        .knowledge
+        .save_funnel_analysis_draft(
+            Uuid::from(session.workspace_id),
+            session.account_scope.as_str(),
+            &artifact,
+        )
+        .await
+        .map_err(map_application_error)?;
+    Ok(FunnelDashboardProposeResult { artifact })
+}
+
+fn valid_funnel_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn valid_funnel_text(value: &str, max_bytes: usize) -> bool {
+    !value.trim().is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
 }
 
 fn valid_mapping_arguments(

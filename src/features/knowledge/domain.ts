@@ -150,3 +150,94 @@ export type KnowledgeMapping = {
   state: "proposed" | "approved" | "rejected" | "stale";
   proposedAt: string;
 };
+
+export type FunnelStepDefinition = {
+  id: string;
+  label: string;
+  meaning: string;
+  connectionRole: string;
+  entityKey: string;
+  timestampField: string;
+  orderingRule: string;
+  mappingState: "inferred" | "confirmed";
+  mappingProposalId?: string;
+  graphNodeIds: string[];
+  evidenceIds: string[];
+};
+
+export type FunnelDashboardRecord = {
+  id: string;
+  connectionId: string;
+  revision: number;
+  title: string;
+  description: string;
+  sql: string;
+  visualization: {
+    version: number;
+    kind: "auto" | "metric" | "line" | "bar" | "table";
+    xColumn?: string;
+    yColumns: string[];
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FunnelDashboardTile = {
+  definition: {
+    id: string;
+    title: string;
+    kind: "metric" | "funnel" | "time_series" | "breakdown" | "table" | "markdown";
+    dashboardId?: string;
+    expectedDashboardRevision?: number;
+    queryRunId?: string;
+    stepIds: string[];
+    markdown?: string;
+  };
+  dashboard?: FunnelDashboardRecord;
+  connectionRevision?: number;
+  availability: "ready" | "missing_grant" | "stale_dashboard" | "error";
+  unavailableReason?: string;
+};
+
+export type FunnelAnalysisArtifact = {
+  id: string;
+  projectEnvironmentId: string;
+  environmentRevision: number;
+  knowledgeGrantId: string;
+  publishedFromKnowledgeGrantId?: string;
+  graphRevisionIds: string[];
+  sourceAgent: "dopedb.acp.claude" | "dopedb.acp.codex";
+  title: string;
+  question: string;
+  purpose: string;
+  timezone: string;
+  conversionWindowSeconds: number;
+  denominatorSemantics: string;
+  numeratorSemantics: string;
+  deduplicationPolicy: string;
+  lateEventPolicy: string;
+  steps: FunnelStepDefinition[];
+  tiles: FunnelDashboardTile[];
+  warnings: string[];
+  freshness: "current" | "graph_drift" | "schema_drift" | "partial";
+  state: "draft" | "published" | "archived";
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FunnelAnalysisTileRun = {
+  tileId: string;
+  queryId: string;
+  status: "ok" | "missing_grant" | "stale" | "error";
+  result?: import("../../ipc/types").QueryResult;
+  error?: string;
+};
+
+export type FunnelAnalysisRun = {
+  artifactId: string;
+  artifactRevision: number;
+  startedAt: string;
+  completedAt: string;
+  tiles: FunnelAnalysisTileRun[];
+};

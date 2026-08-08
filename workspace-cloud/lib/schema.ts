@@ -2272,6 +2272,172 @@ export const knowledgeMappingProposal = workspaceControl.table(
   ],
 );
 
+// A funnel analysis is an Environment-pinned, rerunnable definition. Result rows,
+// credentials, Agent transcripts, and local execution handles have no column.
+// Connection and graph references are normalized so authorization and drift checks
+// never depend on trusting identities hidden inside the JSON definition.
+export const workspaceFunnelAnalysis = workspaceControl.table(
+  "workspace_funnel_analysis",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    projectEnvironmentId: uuid("project_environment_id").notNull(),
+    environmentRevision: bigint("environment_revision", { mode: "number" }).notNull(),
+    sourceKnowledgeGrantId: uuid("source_knowledge_grant_id").notNull(),
+    definition: jsonb("definition").notNull(),
+    state: text("state").notNull().default("draft"),
+    ownerMemberId: text("owner_member_id").notNull(),
+    updatedByMemberId: text("updated_by_member_id").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workspace_funnel_analysis_org_id_idx").on(table.organizationId, table.id),
+    index("workspace_funnel_analysis_environment_idx").on(
+      table.organizationId,
+      table.projectEnvironmentId,
+      table.updatedAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.projectEnvironmentId],
+      foreignColumns: [
+        knowledgeProjectEnvironment.organizationId,
+        knowledgeProjectEnvironment.id,
+      ],
+      name: "workspace_funnel_analysis_org_environment_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_funnel_analysis_environment_revision",
+      sql`${table.environmentRevision} >= 1`,
+    ),
+    check(
+      "workspace_funnel_analysis_state",
+      sql`${table.state} IN ('draft', 'published', 'archived')`,
+    ),
+    check(
+      "workspace_funnel_analysis_revision",
+      sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`,
+    ),
+    check(
+      "workspace_funnel_analysis_definition_object",
+      sql`jsonb_typeof(${table.definition}) = 'object'`,
+    ),
+  ],
+);
+
+export const workspaceFunnelAnalysisConnection = workspaceControl.table(
+  "workspace_funnel_analysis_connection",
+  {
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    analysisId: uuid("analysis_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    connectionRevision: bigint("connection_revision", { mode: "number" }).notNull(),
+    role: text("role").notNull(),
+    alias: text("alias").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.analysisId, table.connectionId] }),
+    index("workspace_funnel_analysis_connection_org_idx").on(
+      table.organizationId,
+      table.connectionId,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.analysisId],
+      foreignColumns: [workspaceFunnelAnalysis.organizationId, workspaceFunnelAnalysis.id],
+      name: "workspace_funnel_analysis_connection_org_analysis_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.connectionId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "workspace_funnel_analysis_connection_org_connection_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_funnel_analysis_connection_revision",
+      sql`${table.connectionRevision} >= 1`,
+    ),
+    check(
+      "workspace_funnel_analysis_connection_labels",
+      sql`char_length(${table.role}) BETWEEN 1 AND 64
+        AND char_length(${table.alias}) BETWEEN 1 AND 128`,
+    ),
+  ],
+);
+
+export const workspaceFunnelAnalysisGraph = workspaceControl.table(
+  "workspace_funnel_analysis_graph",
+  {
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    analysisId: uuid("analysis_id").notNull(),
+    graphRevisionId: uuid("graph_revision_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.analysisId, table.graphRevisionId] }),
+    foreignKey({
+      columns: [table.organizationId, table.analysisId],
+      foreignColumns: [workspaceFunnelAnalysis.organizationId, workspaceFunnelAnalysis.id],
+      name: "workspace_funnel_analysis_graph_org_analysis_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.graphRevisionId],
+      foreignColumns: [knowledgeGraphRevision.organizationId, knowledgeGraphRevision.id],
+      name: "workspace_funnel_analysis_graph_org_graph_fk",
+    }).onDelete("restrict"),
+  ],
+);
+
+export const workspaceFunnelAnalysisRevision = workspaceControl.table(
+  "workspace_funnel_analysis_revision",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    analysisId: uuid("analysis_id").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull(),
+    baseRevision: bigint("base_revision", { mode: "number" }),
+    operation: text("operation").notNull(),
+    payload: jsonb("payload").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdByMemberId: text("created_by_member_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_funnel_analysis_revision_unique_idx").on(
+      table.organizationId,
+      table.analysisId,
+      table.revision,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.analysisId],
+      foreignColumns: [workspaceFunnelAnalysis.organizationId, workspaceFunnelAnalysis.id],
+      name: "workspace_funnel_analysis_revision_org_analysis_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_funnel_analysis_revision_number",
+      sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`,
+    ),
+    check(
+      "workspace_funnel_analysis_revision_operation",
+      sql`${table.operation} IN ('create', 'publish', 'archive', 'restore', 'conflict_copy')`,
+    ),
+    check(
+      "workspace_funnel_analysis_revision_payload_hash",
+      sql`${table.payloadHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
 export const knowledgeSourceEvent = workspaceControl.table(
   "knowledge_source_event",
   {

@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-11 command catalog. Any addition, removal, or meaning change requires a
+/// Version-12 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -83,6 +83,10 @@ pub enum CommandName {
     KnowledgeDiff,
     #[serde(rename = "funnel.trace")]
     FunnelTrace,
+    #[serde(rename = "funnel.dashboard.propose")]
+    FunnelDashboardPropose,
+    #[serde(rename = "funnel.dashboard.list")]
+    FunnelDashboardList,
     #[serde(rename = "environment.context")]
     EnvironmentContext,
     #[serde(rename = "knowledge.mapping.propose")]
@@ -94,7 +98,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 38] = [
+    pub const ALL: [Self; 40] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -131,6 +135,8 @@ impl CommandName {
         Self::KnowledgeEvidence,
         Self::KnowledgeDiff,
         Self::FunnelTrace,
+        Self::FunnelDashboardPropose,
+        Self::FunnelDashboardList,
         Self::EnvironmentContext,
         Self::KnowledgeMappingPropose,
     ];
@@ -173,6 +179,8 @@ impl CommandName {
             Self::KnowledgeEvidence => "knowledge.evidence",
             Self::KnowledgeDiff => "knowledge.diff",
             Self::FunnelTrace => "funnel.trace",
+            Self::FunnelDashboardPropose => "funnel.dashboard.propose",
+            Self::FunnelDashboardList => "funnel.dashboard.list",
             Self::EnvironmentContext => "environment.context",
             Self::KnowledgeMappingPropose => "knowledge.mapping.propose",
             Self::Unknown => "unknown",

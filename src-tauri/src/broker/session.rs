@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use dopedb_protocol::{AgentSessionRegisterArguments, SessionAuthentication};
+use dopedb_protocol::{AcpPluginId, AgentSessionRegisterArguments, SessionAuthentication};
 use subtle::ConstantTimeEq;
 #[cfg(test)]
 use uuid::Uuid;
@@ -62,6 +62,7 @@ impl BrokerCapability {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AuthenticatedSession {
     pub(crate) terminal_session_id: TerminalSessionId,
+    pub(crate) agent_plugin_id: Option<AcpPluginId>,
     pub(crate) runtime_id: RuntimeId,
     pub(crate) workspace_id: WorkspaceId,
     pub(crate) account_scope: AccountScopeId,
@@ -231,8 +232,12 @@ impl BrokerSessionRegistry {
         let expires_at = Utc::now()
             + chrono::Duration::from_std(ttl)
                 .map_err(|_| AppError::Config("terminal session TTL is too large".into()))?;
+        let agent_plugin_id = agent_registration
+            .as_ref()
+            .map(|registration| registration.plugin_id);
         let metadata = AuthenticatedSession {
             terminal_session_id,
+            agent_plugin_id,
             runtime_id: self.runtime_id,
             workspace_id: pin.scope.workspace_id.into(),
             account_scope: AccountScopeId::new(pin.scope.account_scope.storage_key())

@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import ConfirmButton from "../../components/ConfirmButton";
+import DashboardVisualizationView from "../../components/DashboardVisualization";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
 import {
@@ -18,9 +19,12 @@ import {
   type StatusTone,
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
+import { cancelQuery } from "../../ipc/commands";
 import { listConnections } from "../../features/connections/tauriAdapter";
 import type {
   GithubKnowledgeRepository,
+  FunnelAnalysisArtifact,
+  FunnelAnalysisRun,
   KnowledgeEnvironment,
   KnowledgeRevision,
 } from "../../features/knowledge/domain";
@@ -32,11 +36,14 @@ import {
   createKnowledgeProject,
   decideKnowledgeMapping,
   listKnowledgeGithubRepositories,
+  listFunnelAnalysisArtifacts,
   listKnowledgeMappings,
   listKnowledgeEnvironmentConnections,
   listKnowledgeProjects,
   listKnowledgeSources,
   onKnowledgeSourceChanged,
+  publishFunnelAnalysisArtifact,
+  runFunnelAnalysisArtifact,
   revokeKnowledgeSource,
   revokeKnowledgeEnvironmentConnection,
   searchKnowledgeGraph,
@@ -69,7 +76,11 @@ function riskTone(riskClass: KnowledgeEnvironment["riskClass"]): StatusTone {
   return "neutral";
 }
 
-export default function Knowledge() {
+export default function Knowledge({
+  analysisFocus,
+}: {
+  analysisFocus?: { environmentId: string; requestId: number } | null;
+}) {
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: projectKey, queryFn: listKnowledgeProjects });
   const sources = useQuery({ queryKey: sourceKey, queryFn: listKnowledgeSources });
@@ -89,11 +100,17 @@ export default function Knowledge() {
   const [environmentName, setEnvironmentName] = useState("Development");
   const [riskClass, setRiskClass] = useState<KnowledgeEnvironment["riskClass"]>("development");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [analysisRuns, setAnalysisRuns] = useState(
+    new Map<string, FunnelAnalysisRun>(),
+  );
+  const [analysisRunQueries, setAnalysisRunQueries] = useState(
+    new Map<string, Map<string, string>>(),
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [connectionId, setConnectionId] = useState("");
   const [connectionRole, setConnectionRole] = useState("primary");
   const [connectionAlias, setConnectionAlias] = useState("");
-  const [view, setView] = useState<"sources" | "databases" | "mappings" | "explore">(
+  const [view, setView] = useState<"sources" | "databases" | "mappings" | "analysis" | "explore">(
     "sources",
   );
   const [sourceActivity, setSourceActivity] = useState(
@@ -115,6 +132,11 @@ export default function Knowledge() {
     queryKey: mappingsKey,
     queryFn: () => listKnowledgeMappings(environmentId),
     enabled: Boolean(environmentId),
+  });
+  const analyses = useQuery({
+    queryKey: ["knowledge", "funnel-analysis", environmentId],
+    queryFn: () => listFunnelAnalysisArtifacts(environmentId),
+    enabled: Boolean(environmentId) && view === "analysis",
   });
 
   const selectedProject = useMemo(
@@ -147,6 +169,19 @@ export default function Knowledge() {
       setEnvironmentId(selectedProject.environments[0]?.id ?? "");
     }
   }, [environmentId, selectedProject]);
+
+  useEffect(() => {
+    if (!analysisFocus || !projects.data) return;
+    const project = projects.data.find((candidate) =>
+      candidate.environments.some(
+        (environment) => environment.id === analysisFocus.environmentId,
+      ),
+    );
+    if (!project) return;
+    setProjectId(project.id);
+    setEnvironmentId(analysisFocus.environmentId);
+    setView("analysis");
+  }, [analysisFocus, projects.data]);
 
   useEffect(() => {
     if (!repositories.data?.length || repositoryId) return;
@@ -314,6 +349,76 @@ export default function Knowledge() {
     },
     onError: (error) => setActionError(errMessage(error)),
   });
+  const publishAnalysis = useMutation({
+    mutationFn: ({ artifactId, productionConfirmed }: { artifactId: string; productionConfirmed: boolean }) =>
+      publishFunnelAnalysisArtifact(environmentId, artifactId, productionConfirmed),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["knowledge", "funnel-analysis", environmentId],
+      });
+    },
+    onError: (error) => setActionError(errMessage(error)),
+  });
+  const runAnalysis = useMutation({
+    mutationFn: ({
+      artifactId,
+      tileRequests,
+    }: {
+      artifactId: string;
+      tileRequests: Array<{ tileId: string; queryId: string }>;
+    }) => runFunnelAnalysisArtifact(environmentId, artifactId, tileRequests),
+    onMutate: ({ artifactId, tileRequests }) => {
+      setActionError(null);
+      setAnalysisRuns((current) => {
+        const next = new Map(current);
+        next.delete(artifactId);
+        return next;
+      });
+      setAnalysisRunQueries((current) => {
+        const next = new Map(current);
+        next.set(
+          artifactId,
+          new Map(tileRequests.map((request) => [request.tileId, request.queryId])),
+        );
+        return next;
+      });
+    },
+    onSuccess: (run, { artifactId }) => {
+      setAnalysisRuns((current) => new Map(current).set(artifactId, run));
+      setAnalysisRunQueries((current) => {
+        const next = new Map(current);
+        next.delete(artifactId);
+        return next;
+      });
+    },
+    onError: (error, { artifactId }) => {
+      setActionError(errMessage(error));
+      setAnalysisRunQueries((current) => {
+        const next = new Map(current);
+        next.delete(artifactId);
+        return next;
+      });
+    },
+  });
+
+  function executeAnalysis(analysis: FunnelAnalysisArtifact) {
+    const tileRequests = analysis.tiles
+      .filter((tile) => tile.definition.kind !== "markdown")
+      .map((tile) => ({ tileId: tile.definition.id, queryId: crypto.randomUUID() }));
+    if (tileRequests.length === 0) return;
+    runAnalysis.mutate({ artifactId: analysis.id, tileRequests });
+  }
+
+  function cancelAnalysis(artifactId: string) {
+    const queryIds = analysisRunQueries.get(artifactId)?.values() ?? [];
+    void Promise.all(Array.from(queryIds, (queryId) => cancelQuery(queryId)));
+  }
+
+  function cancelAnalysisTile(artifactId: string, tileId: string) {
+    const queryId = analysisRunQueries.get(artifactId)?.get(tileId);
+    if (queryId) void cancelQuery(queryId);
+  }
 
   const pending = connectGithub.isPending || connectLocal.isPending;
   const sourceLoadError = projects.error ?? sources.error;
@@ -450,7 +555,7 @@ export default function Knowledge() {
               role="tablist"
               aria-label="Environment resources"
             >
-              {(["sources", "databases", "mappings", "explore"] as const).map(
+              {(["sources", "databases", "mappings", "analysis", "explore"] as const).map(
                 (candidate) => (
                   <Button
                     key={candidate}
@@ -468,6 +573,8 @@ export default function Knowledge() {
                             ? "database"
                             : candidate === "mappings"
                               ? "table"
+                              : candidate === "analysis"
+                                ? "chart"
                               : "search"
                       }
                     />
@@ -477,12 +584,275 @@ export default function Knowledge() {
                         ? "Databases"
                         : candidate === "mappings"
                           ? `Mappings${mappings.data?.some((mapping) => mapping.state === "proposed") ? ` (${mappings.data.filter((mapping) => mapping.state === "proposed").length})` : ""}`
+                          : candidate === "analysis"
+                            ? "Analysis"
                           : "Explore"}
                   </Button>
                 ),
               )}
             </div>
           </div>
+        </section>
+      ) : null}
+
+      {(projects.data?.length ?? 0) > 0 && view === "analysis" ? (
+        <section data-primary-flow className="tw:grid tw:gap-4 tw:border-b tw:border-border-subtle tw:pb-5">
+          <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
+            <div className="tw:grid tw:gap-1">
+              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Funnel analysis drafts</h2>
+              <p className="tw:m-0 tw:max-w-[760px] tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+                Agent proposals are pinned to this Environment, its source graphs, and exact database revisions. Drafts remain private until a workspace editor reviews and publishes them.
+              </p>
+            </div>
+            <Button iconOnly size="compact" variant="ghost" title="Refresh analysis drafts" onClick={() => void analyses.refetch()}>
+              <Icon name="refresh" />
+            </Button>
+          </div>
+          {analyses.isPending ? (
+            <LoadingLabel>Loading funnel analysis drafts…</LoadingLabel>
+          ) : analyses.error ? (
+            <InlineNotice tone="danger" icon="alert">{errMessage(analyses.error)}</InlineNotice>
+          ) : (analyses.data?.length ?? 0) === 0 ? (
+            <div className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-secondary/30 tw:p-4">
+              <strong className="tw:text-sm">No draft has been proposed</strong>
+              <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+                Start an Agent session for this Environment, run and save each verified query, then ask it to propose a funnel dashboard.
+              </p>
+            </div>
+          ) : (
+            <div className="tw:grid tw:gap-4">
+              {analyses.data?.map((analysis) => {
+                const connectionCount = new Set(
+                  analysis.tiles.flatMap((tile) => tile.dashboard?.connectionId ? [tile.dashboard.connectionId] : []),
+                ).size;
+                const currentRun = analysisRuns.get(analysis.id);
+                const running = analysisRunQueries.has(analysis.id);
+                const executableTileCount = analysis.tiles.filter(
+                  (tile) => tile.definition.kind !== "markdown",
+                ).length;
+                const readyTileCount = analysis.tiles.filter(
+                  (tile) => tile.definition.kind !== "markdown" && tile.availability === "ready",
+                ).length;
+                return (
+                  <article key={analysis.id} className="tw:grid tw:min-w-0 tw:gap-4 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-4">
+                    <header className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
+                      <div className="tw:grid tw:min-w-0 tw:gap-1">
+                        <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
+                          <h3 className="tw:m-0 tw:text-base tw:font-semibold">{analysis.title}</h3>
+                          <StatusBadge density="compact">
+                            {analysis.sourceAgent === "dopedb.acp.claude" ? "Claude" : "Codex"}
+                          </StatusBadge>
+                          <StatusBadge density="compact">{analysis.state}</StatusBadge>
+                          <StatusBadge
+                            density="compact"
+                            tone={analysis.freshness === "current" ? "success" : "warning"}
+                          >
+                            {analysis.freshness.replace(/_/g, " ")}
+                          </StatusBadge>
+                          <StatusBadge
+                            density="compact"
+                            tone={readyTileCount === executableTileCount ? "success" : "warning"}
+                          >
+                            {readyTileCount}/{executableTileCount} runnable
+                          </StatusBadge>
+                          {analysis.warnings.length > 0 ? <StatusBadge density="compact" tone="warning">Review required</StatusBadge> : null}
+                        </div>
+                        <strong className="tw:text-sm tw:font-medium">{analysis.question}</strong>
+                        <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">{analysis.purpose}</p>
+                      </div>
+                      <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2">
+                        <span className="tw:font-mono tw:text-[11px] tw:text-muted-foreground">r{analysis.revision} · {analysis.id.slice(0, 8)}</span>
+                        {currentRun ? (
+                          <span className="tw:text-[11px] tw:text-muted-foreground">
+                            Local run {new Date(currentRun.completedAt).toLocaleString()}
+                          </span>
+                        ) : null}
+                        {running ? (
+                          <Button size="compact" variant="danger" onClick={() => cancelAnalysis(analysis.id)}>
+                            Cancel run
+                          </Button>
+                        ) : (
+                          <Button
+                            size="compact"
+                            variant="ghost"
+                            disabled={
+                              analysis.freshness === "graph_drift"
+                              || analysis.freshness === "schema_drift"
+                              || executableTileCount === 0
+                            }
+                            onClick={() => executeAnalysis(analysis)}
+                          >
+                            <Icon name="refresh" />
+                            Run current data
+                          </Button>
+                        )}
+                        {analysis.state === "draft" && selectedEnvironment?.riskClass === "production" ? (
+                          <ConfirmButton
+                            size="compact"
+                            variant="primary"
+                            confirmLabel="Publish this Production analysis?"
+                            disabled={publishAnalysis.isPending}
+                            onConfirm={() => publishAnalysis.mutate({ artifactId: analysis.id, productionConfirmed: true })}
+                          >
+                            Publish
+                          </ConfirmButton>
+                        ) : analysis.state === "draft" ? (
+                          <Button
+                            size="compact"
+                            variant="primary"
+                            disabled={publishAnalysis.isPending}
+                            onClick={() => publishAnalysis.mutate({ artifactId: analysis.id, productionConfirmed: false })}
+                          >
+                            {publishAnalysis.isPending ? "Publishing…" : "Publish"}
+                          </Button>
+                        ) : null}
+                      </span>
+                    </header>
+
+                    <dl className="tw:grid tw:grid-cols-4 tw:gap-px tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-border-subtle tw:@max-[720px]:grid-cols-2 tw:@max-[430px]:grid-cols-1">
+                      {[
+                        ["Environment", `revision ${analysis.environmentRevision}`],
+                        ["Databases", String(connectionCount)],
+                        ["Source graphs", String(analysis.graphRevisionIds.length)],
+                        ["Window", `${analysis.conversionWindowSeconds.toLocaleString()}s · ${analysis.timezone}`],
+                      ].map(([label, value]) => (
+                        <div key={label} className="tw:grid tw:gap-0.5 tw:bg-card tw:px-3 tw:py-2">
+                          <dt className="tw:text-[11px] tw:text-muted-foreground">{label}</dt>
+                          <dd className="tw:m-0 tw:truncate tw:text-xs tw:font-medium">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+
+                    <div className="tw:grid tw:gap-2">
+                      <span className="tw:text-xs tw:font-semibold tw:text-foreground">Funnel steps</span>
+                      <ol className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0">
+                        {analysis.steps.map((step, index) => (
+                          <li key={step.id} className="tw:grid tw:grid-cols-[24px_minmax(0,1fr)_auto] tw:items-start tw:gap-2 tw:rounded-sm tw:bg-secondary/35 tw:px-3 tw:py-2 tw:@max-[520px]:grid-cols-[24px_minmax(0,1fr)]">
+                            <span className="tw:flex tw:size-6 tw:items-center tw:justify-center tw:rounded-full tw:bg-primary tw:text-[11px] tw:font-semibold tw:text-primary-foreground">{index + 1}</span>
+                            <span className="tw:grid tw:min-w-0 tw:gap-0.5">
+                              <strong className="tw:truncate tw:text-xs">{step.label}</strong>
+                              <span className="tw:text-xs tw:leading-relaxed tw:text-muted-foreground">{step.meaning}</span>
+                              <code className="tw:truncate tw:text-[11px] tw:text-muted-foreground">{step.entityKey} · {step.timestampField}</code>
+                            </span>
+                            <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-1 tw:@max-[520px]:col-start-2 tw:@max-[520px]:justify-start">
+                              <StatusBadge density="compact">{step.connectionRole}</StatusBadge>
+                              <StatusBadge density="compact" tone={step.mappingState === "confirmed" ? "success" : "warning"}>{step.mappingState}</StatusBadge>
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+
+                    <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[680px]:grid-cols-1">
+                      <div className="tw:grid tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
+                        <span className="tw:text-[11px] tw:font-semibold tw:text-muted-foreground">DENOMINATOR</span>
+                        <p className="tw:m-0 tw:text-xs tw:leading-relaxed">{analysis.denominatorSemantics}</p>
+                      </div>
+                      <div className="tw:grid tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
+                        <span className="tw:text-[11px] tw:font-semibold tw:text-muted-foreground">NUMERATOR</span>
+                        <p className="tw:m-0 tw:text-xs tw:leading-relaxed">{analysis.numeratorSemantics}</p>
+                      </div>
+                    </div>
+
+                    {analysis.warnings.map((warning) => (
+                      <InlineNotice key={warning} tone="warning" icon="alert">{warning}</InlineNotice>
+                    ))}
+
+                    <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[680px]:grid-cols-1">
+                      {analysis.tiles.map((tile) => (
+                        <section key={tile.definition.id} className="tw:grid tw:min-w-0 tw:content-start tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
+                          <div className="tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2">
+                            <strong className="tw:truncate tw:text-sm">{tile.definition.title}</strong>
+                            <span className="tw:flex tw:items-center tw:gap-1">
+                              <StatusBadge
+                                density="compact"
+                                tone={tile.availability === "ready" ? "success" : "warning"}
+                              >
+                                {tile.availability.replace(/_/g, " ")}
+                              </StatusBadge>
+                              <StatusBadge density="compact">{tile.definition.kind}</StatusBadge>
+                            </span>
+                          </div>
+                          {tile.definition.markdown ? (
+                            <p className="tw:m-0 tw:text-xs tw:leading-relaxed tw:text-muted-foreground">{tile.definition.markdown}</p>
+                          ) : tile.dashboard ? (
+                            <>
+                              <span className="tw:truncate tw:text-xs tw:text-muted-foreground">
+                                DB {tile.dashboard.connectionId.slice(0, 8)} · connection r{tile.connectionRevision} · dashboard r{tile.dashboard.revision}
+                              </span>
+                              {tile.definition.queryRunId ? (
+                                <span className="tw:truncate tw:font-mono tw:text-[11px] tw:text-muted-foreground">
+                                  Verified run {tile.definition.queryRunId}
+                                </span>
+                              ) : null}
+                              <details className="tw:min-w-0 tw:text-xs">
+                                <summary className="tw:cursor-pointer tw:text-muted-foreground">Review query</summary>
+                                <pre className="tw:mt-2 tw:max-h-48 tw:overflow-auto tw:whitespace-pre-wrap tw:break-words tw:rounded-sm tw:bg-secondary tw:p-2 tw:font-mono tw:text-[11px]">{tile.dashboard.sql}</pre>
+                              </details>
+                            </>
+                          ) : (
+                            <InlineNotice tone="warning" icon="alert">
+                              {tile.unavailableReason ?? "This tile is unavailable under the current member grant."}
+                            </InlineNotice>
+                          )}
+                          {tile.dashboard && tile.availability !== "ready" ? (
+                            <InlineNotice tone="warning" icon="alert">
+                              {tile.unavailableReason ?? "This tile cannot run with the current member grant."}
+                            </InlineNotice>
+                          ) : null}
+                          {running && tile.definition.kind !== "markdown" ? (
+                            <div className="tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2">
+                              <LoadingLabel>Running with your current grant…</LoadingLabel>
+                              <Button
+                                size="xs"
+                                variant="dangerGhost"
+                                onClick={() => cancelAnalysisTile(analysis.id, tile.definition.id)}
+                              >
+                                Cancel tile
+                              </Button>
+                            </div>
+                          ) : (() => {
+                            const tileRun = currentRun?.tiles.find(
+                              (candidate) => candidate.tileId === tile.definition.id,
+                            );
+                            if (!tileRun) {
+                              return tile.definition.kind === "markdown" ? null : (
+                                <span className="tw:text-xs tw:text-muted-foreground">
+                                  No current result. Run this analysis to query with your own grant.
+                                </span>
+                              );
+                            }
+                            if (tileRun.status !== "ok" || !tileRun.result) {
+                              return (
+                                <InlineNotice tone="warning" icon="alert">
+                                  {tileRun.error ?? `Tile run ended as ${tileRun.status.replace(/_/g, " ")}.`}
+                                </InlineNotice>
+                              );
+                            }
+                            if (!tile.dashboard) return null;
+                            return (
+                              <div className="tw:min-w-0 tw:overflow-hidden tw:border-t tw:border-border-subtle tw:pt-3">
+                                <DashboardVisualizationView
+                                  compact
+                                  result={tileRun.result}
+                                  visualization={{
+                                    version: 1,
+                                    kind: tile.dashboard.visualization.kind,
+                                    xColumn: tile.dashboard.visualization.xColumn ?? null,
+                                    yColumns: tile.dashboard.visualization.yColumns,
+                                  }}
+                                />
+                              </div>
+                            );
+                          })()}
+                        </section>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </section>
       ) : null}
 

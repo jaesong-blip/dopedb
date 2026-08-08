@@ -120,6 +120,13 @@ pub(crate) struct DashboardRunRequest {
     pub(crate) query_id: Option<QueryExecutionId>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct DashboardDefinitionRunRequest {
+    pub(crate) draft: DashboardDraft,
+    pub(crate) expected_connection_revision: i64,
+    pub(crate) query_id: Option<QueryExecutionId>,
+}
+
 #[derive(Debug)]
 pub(crate) enum AgentDashboardCreateError {
     QueryRunNotFound,

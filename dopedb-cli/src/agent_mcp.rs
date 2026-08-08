@@ -15,7 +15,8 @@ use dopedb_protocol::{
     CommandSpec, ConnectionSelector, ConnectionSelectorArguments, ConnectionShowCommand,
     ConnectionTestCommand, DashboardCreateArguments, DashboardCreateCommand, DashboardKind,
     DatabaseListArguments, DatabaseListCommand, DocumentQuery, DocumentRunArguments,
-    DocumentRunCommand, EmptyArguments, EnvironmentContextCommand, FunnelTraceArguments,
+    DocumentRunCommand, EmptyArguments, EnvironmentContextCommand, FunnelDashboardListCommand,
+    FunnelDashboardProposeArguments, FunnelDashboardProposeCommand, FunnelTraceArguments,
     FunnelTraceCommand, KnowledgeDiffArguments, KnowledgeDiffCommand, KnowledgeEvidenceArguments,
     KnowledgeEvidenceCommand, KnowledgeExplainCommand, KnowledgeMappingProposeArguments,
     KnowledgeMappingProposeCommand, KnowledgeNeighborsArguments, KnowledgeNeighborsCommand,
@@ -26,7 +27,8 @@ use dopedb_protocol::{
     ReportAppendEvidenceArguments, ReportAppendEvidenceCommand, ReportClaimInput,
     ReportProposeArguments, ReportProposeCommand, SchemaListCommand, SqlProposeArguments,
     SqlProposeCommand, TableDescribeArguments, TableDescribeCommand, MAX_CATALOG_SEARCH_KINDS,
-    MAX_CATALOG_SEARCH_MATCHES, MAX_CATALOG_SEARCH_QUERY_BYTES, MAX_KNOWLEDGE_EVIDENCE_IDS,
+    MAX_CATALOG_SEARCH_MATCHES, MAX_CATALOG_SEARCH_QUERY_BYTES, MAX_FUNNEL_REFERENCES,
+    MAX_FUNNEL_STEPS, MAX_FUNNEL_TILES, MAX_FUNNEL_WARNINGS, MAX_KNOWLEDGE_EVIDENCE_IDS,
     MAX_KNOWLEDGE_NEIGHBORS, MAX_KNOWLEDGE_QUERY_BYTES, MAX_KNOWLEDGE_RESULTS,
     MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES, MAX_REQUEST_BYTES, MAX_STRING_BYTES,
 };
@@ -81,6 +83,8 @@ const TOOL_KNOWLEDGE_EVIDENCE: &str = "knowledge_evidence";
 const TOOL_KNOWLEDGE_DIFF: &str = "knowledge_diff";
 const TOOL_KNOWLEDGE_MAPPING_PROPOSE: &str = "knowledge_mapping_propose";
 const TOOL_FUNNEL_TRACE: &str = "funnel_trace";
+const TOOL_FUNNEL_DASHBOARD_PROPOSE: &str = "funnel_dashboard_propose";
+const TOOL_FUNNEL_DASHBOARD_LIST: &str = "funnel_dashboard_list";
 const TOOL_ENVIRONMENT_CONTEXT: &str = "environment_context";
 
 #[derive(Debug, Default, Deserialize)]
@@ -793,6 +797,26 @@ fn tools_result() -> Value {
                 true,
             ),
             tool_definition(
+                TOOL_FUNNEL_DASHBOARD_PROPOSE,
+                "Propose a funnel dashboard draft",
+                "Creates a human-reviewable draft from exact saved dashboard revisions in this Environment. It copies definitions and provenance only: no result rows, credentials, or transcript are stored, and this tool cannot publish.",
+                funnel_dashboard_proposal_schema(),
+                false,
+                false,
+            ),
+            tool_definition(
+                TOOL_FUNNEL_DASHBOARD_LIST,
+                "List funnel dashboard drafts",
+                "Lists only funnel analysis drafts pinned to this session's exact member grant, Environment revision, and graph revision set.",
+                json!({
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }),
+                true,
+                true,
+            ),
+            tool_definition(
                 TOOL_QUERY_READ,
                 "Run safe SQL read",
                 "Plans exactly one SQL read and, only when the Broker returns an executable decision, runs that exact single-use plan. Returns both plan diagnostics and the bounded result in one tool call. For Environment-wide analysis issue one call per connectionId; each call has its own timeout and cancellation boundary.",
@@ -1029,6 +1053,82 @@ fn report_claims_schema() -> Value {
     })
 }
 
+fn funnel_dashboard_proposal_schema() -> Value {
+    let text = |maximum| json!({ "type": "string", "minLength": 1, "maxLength": maximum });
+    json!({
+        "type": "object",
+        "properties": {
+            "title": text(256),
+            "question": text(8000),
+            "purpose": text(8000),
+            "timezone": text(128),
+            "conversionWindowSeconds": { "type": "integer", "minimum": 1, "maximum": 31622400 },
+            "denominatorSemantics": text(4000),
+            "numeratorSemantics": text(4000),
+            "deduplicationPolicy": text(4000),
+            "lateEventPolicy": text(4000),
+            "steps": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": MAX_FUNNEL_STEPS,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+                        "label": text(256),
+                        "meaning": text(4000),
+                        "connectionRole": text(64),
+                        "entityKey": text(512),
+                        "timestampField": text(512),
+                        "orderingRule": text(2000),
+                        "mappingState": { "type": "string", "enum": ["inferred", "confirmed"] },
+                        "mappingProposalId": { "type": "string", "format": "uuid" },
+                        "graphNodeIds": {
+                            "type": "array", "minItems": 1, "maxItems": MAX_FUNNEL_REFERENCES,
+                            "items": knowledge_hash_schema()
+                        },
+                        "evidenceIds": {
+                            "type": "array", "maxItems": MAX_FUNNEL_REFERENCES,
+                            "items": knowledge_hash_schema()
+                        }
+                    },
+                    "required": ["id", "label", "meaning", "connectionRole", "entityKey", "timestampField", "orderingRule", "mappingState", "graphNodeIds"],
+                    "additionalProperties": false
+                }
+            },
+            "tiles": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": MAX_FUNNEL_TILES,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+                        "title": text(256),
+                        "kind": { "type": "string", "enum": ["metric", "funnel", "time_series", "breakdown", "table", "markdown"] },
+                        "dashboardId": { "type": "string", "format": "uuid" },
+                        "expectedDashboardRevision": { "type": "integer", "minimum": 1 },
+                        "queryRunId": { "type": "string", "format": "uuid" },
+                        "stepIds": {
+                            "type": "array", "maxItems": MAX_FUNNEL_STEPS,
+                            "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }
+                        },
+                        "markdown": text(32000)
+                    },
+                    "required": ["id", "title", "kind", "stepIds"],
+                    "additionalProperties": false
+                }
+            },
+            "warnings": {
+                "type": "array", "maxItems": MAX_FUNNEL_WARNINGS,
+                "items": text(2000)
+            }
+        },
+        "required": ["title", "question", "purpose", "timezone", "conversionWindowSeconds", "denominatorSemantics", "numeratorSemantics", "deduplicationPolicy", "lateEventPolicy", "steps", "tiles"],
+        "additionalProperties": false
+    })
+}
+
 fn document_read_schema(connection_property: Value) -> Value {
     json!({
         "type": "object",
@@ -1206,6 +1306,17 @@ async fn call_tool(
         TOOL_FUNNEL_TRACE => {
             let arguments: FunnelTraceArguments = tool_arguments(params)?;
             let result = broker_request::<FunnelTraceCommand>(client, &arguments).await?;
+            tool_success(&result)
+        }
+        TOOL_FUNNEL_DASHBOARD_PROPOSE => {
+            let arguments: FunnelDashboardProposeArguments = tool_arguments(params)?;
+            let result =
+                broker_request::<FunnelDashboardProposeCommand>(client, &arguments).await?;
+            tool_success(&result)
+        }
+        TOOL_FUNNEL_DASHBOARD_LIST => {
+            let result =
+                broker_request::<FunnelDashboardListCommand>(client, &EmptyArguments {}).await?;
             tool_success(&result)
         }
         TOOL_QUERY_READ => query_read(client, tool_arguments(params)?, cancellation).await,

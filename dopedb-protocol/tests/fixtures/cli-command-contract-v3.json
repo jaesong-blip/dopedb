@@ -216,6 +216,7 @@
       "dashboard": {
         "id": "00000000-0000-0000-0000-000000000006",
         "connectionId": "00000000-0000-0000-0000-000000000001",
+        "revision": 1,
         "title": "Active users",
         "description": "Current active-user view",
         "sql": "SELECT id, email FROM public.users",
@@ -228,6 +229,60 @@
         "updatedAt": "2026-07-24T00:00:00Z"
       }
     }
+  },
+  {
+    "command": "funnel.dashboard.propose",
+    "arguments": {
+      "title": "Activation funnel",
+      "question": "Where do new accounts stop?",
+      "purpose": "Track verified activation conversion.",
+      "timezone": "Asia/Seoul",
+      "conversionWindowSeconds": 604800,
+      "denominatorSemantics": "Distinct accounts created in the window.",
+      "numeratorSemantics": "Distinct accounts completing the next ordered step.",
+      "deduplicationPolicy": "Keep the first event for each account and step.",
+      "lateEventPolicy": "Recompute the open conversion window.",
+      "steps": [
+        {
+          "id": "signup",
+          "label": "Signed up",
+          "meaning": "An account was created.",
+          "connectionRole": "identity",
+          "entityKey": "account_id",
+          "timestampField": "created_at",
+          "orderingRule": "First event per account.",
+          "mappingState": "inferred",
+          "graphNodeIds": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "evidenceIds": [
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ]
+        }
+      ],
+      "tiles": [
+        {
+          "id": "signup-metric",
+          "title": "Signups",
+          "kind": "metric",
+          "dashboardId": "00000000-0000-0000-0000-000000000006",
+          "expectedDashboardRevision": 1,
+          "queryRunId": "00000000-0000-0000-0000-000000000007",
+          "stepIds": [
+            "signup"
+          ]
+        }
+      ],
+      "warnings": [
+        "Contains inferred mappings that require human review before publish."
+      ]
+    },
+    "resultFixture": "funnel-analysis"
+  },
+  {
+    "command": "funnel.dashboard.list",
+    "arguments": {},
+    "resultFixture": "funnel-analysis-list"
   },
   {
     "command": "report.propose",

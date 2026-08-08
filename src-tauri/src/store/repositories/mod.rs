@@ -3,6 +3,7 @@
 mod catalog;
 mod connections;
 mod dashboards;
+mod funnel_dashboards;
 mod history;
 mod knowledge;
 mod reports;

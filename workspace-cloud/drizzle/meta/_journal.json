@@ -225,6 +225,13 @@
       "when": 1786182896562,
       "tag": "0031_early_speedball",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786190366663,
+      "tag": "0032_luxuriant_solo",
+      "breakpoints": true
     }
   ]
 }

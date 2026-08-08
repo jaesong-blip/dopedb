@@ -14,7 +14,10 @@ use crate::model::{HistoryEntry, QueryKind, QueryResult};
 use crate::safety::{self, PoolRef};
 use crate::store::{PinnedConnection, Store};
 
-use super::super::domain::{DashboardDraft, DashboardKind, DashboardRunRequest, DashboardState};
+use super::super::domain::{
+    DashboardDefinitionRunRequest, DashboardDraft, DashboardKind, DashboardRunRequest,
+    DashboardState,
+};
 use super::super::ports::DashboardRunPort;
 use super::super::validation;
 
@@ -89,6 +92,14 @@ impl DashboardRunPort for DashboardRunner {
     async fn run(&self, request: DashboardRunRequest) -> Result<Self::Receipt, Self::Error> {
         self.run_scoped(request).await
     }
+
+    async fn run_definition(
+        &self,
+        request: DashboardDefinitionRunRequest,
+    ) -> Result<Self::Receipt, Self::Error> {
+        let operation_scope = self.connections.begin_operation_scope().await;
+        self.run_definition_scoped(operation_scope, request).await
+    }
 }
 
 #[derive(Debug)]
@@ -131,18 +142,6 @@ impl DashboardRunner {
                 _scope: operation_scope,
             }));
         }
-        let operation_pin = match operation_scope
-            .pin_connection(dashboard.connection_id.into())
-            .await
-        {
-            Ok(pin) => pin,
-            Err(error) => {
-                return Err(DashboardRunError::Scoped(DashboardRunScopedFailure {
-                    error,
-                    _scope: operation_scope,
-                }))
-            }
-        };
         let draft = DashboardDraft {
             connection_id: dashboard.connection_id,
             title: dashboard.title.clone(),
@@ -150,15 +149,58 @@ impl DashboardRunner {
             sql: dashboard.sql.clone(),
             visualization: dashboard.visualization.clone(),
         };
+        self.run_definition_scoped(
+            operation_scope,
+            DashboardDefinitionRunRequest {
+                draft,
+                expected_connection_revision: 0,
+                query_id: request.query_id,
+            },
+        )
+        .await
+    }
+
+    async fn run_definition_scoped(
+        &self,
+        operation_scope: ConnectionOperationScope,
+        request: DashboardDefinitionRunRequest,
+    ) -> Result<DashboardRunReceipt, DashboardRunError> {
+        let draft = request.draft;
+        let operation_pin = match operation_scope
+            .pin_connection(draft.connection_id.into())
+            .await
+        {
+            Ok(pin)
+                if request.expected_connection_revision == 0
+                    || pin.connection_revision == request.expected_connection_revision =>
+            {
+                pin
+            }
+            Ok(_) => {
+                return Err(DashboardRunError::Scoped(DashboardRunScopedFailure {
+                    error: AppError::Blocked {
+                        reason: "the dashboard connection revision changed after publication"
+                            .into(),
+                    },
+                    _scope: operation_scope,
+                }))
+            }
+            Err(error) => {
+                return Err(DashboardRunError::Scoped(DashboardRunScopedFailure {
+                    error,
+                    _scope: operation_scope,
+                }))
+            }
+        };
         if let Err(error) = validation::validate_draft(&draft, operation_pin.profile.engine) {
-            let kind = safety::classify(&dashboard.sql, operation_pin.profile.engine)
+            let kind = safety::classify(&draft.sql, operation_pin.profile.engine)
                 .map(|classification| classification.kind)
                 .unwrap_or(QueryKind::Write);
             record_dashboard_run(
                 &self.store,
                 &operation_pin,
                 DashboardRunRecord {
-                    sql: &dashboard.sql,
+                    sql: &draft.sql,
                     kind,
                     status: "blocked",
                     row_count: None,
@@ -172,7 +214,7 @@ impl DashboardRunner {
                 _scope: operation_scope,
             }));
         }
-        let settings = match self.store.get_safety(dashboard.connection_id.into()).await {
+        let settings = match self.store.get_safety(draft.connection_id.into()).await {
             Ok(settings) => settings,
             Err(error) => {
                 return Err(DashboardRunError::Scoped(DashboardRunScopedFailure {
@@ -191,7 +233,7 @@ impl DashboardRunner {
                     &self.store,
                     &operation_pin,
                     DashboardRunRecord {
-                        sql: &dashboard.sql,
+                        sql: &draft.sql,
                         kind: QueryKind::Read,
                         status: "error",
                         row_count: None,
@@ -215,8 +257,8 @@ impl DashboardRunner {
             }
         };
         let (max_rows, max_encoded_bytes) =
-            dashboard_result_limits(dashboard.visualization.kind, settings.max_rows);
-        let run = safety::run_read_only(pool_ref(live.ro()), &dashboard.sql, max_rows);
+            dashboard_result_limits(draft.visualization.kind, settings.max_rows);
+        let run = safety::run_read_only(pool_ref(live.ro()), &draft.sql, max_rows);
         match executor::cancel::guard(
             request.query_id.map(Into::into),
             executor::cancel::QUERY_TIMEOUT,
@@ -232,7 +274,7 @@ impl DashboardRunner {
                             &self.store,
                             &operation_pin,
                             DashboardRunRecord {
-                                sql: &dashboard.sql,
+                                sql: &draft.sql,
                                 kind: QueryKind::Read,
                                 status: "error",
                                 row_count: None,
@@ -253,7 +295,7 @@ impl DashboardRunner {
                     &self.store,
                     &operation_pin,
                     DashboardRunRecord {
-                        sql: &dashboard.sql,
+                        sql: &draft.sql,
                         kind: QueryKind::Read,
                         status: "ok",
                         row_count: Some(result.row_count as i64),
@@ -272,7 +314,7 @@ impl DashboardRunner {
                     &self.store,
                     &operation_pin,
                     DashboardRunRecord {
-                        sql: &dashboard.sql,
+                        sql: &draft.sql,
                         kind: QueryKind::Read,
                         status: "error",
                         row_count: None,

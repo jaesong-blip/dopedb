@@ -611,6 +611,38 @@ CREATE TABLE IF NOT EXISTS workspace_dashboard_visibility (
 CREATE INDEX IF NOT EXISTS idx_workspace_dashboard_visibility_account
     ON workspace_dashboard_visibility(account_user_id, dashboard_id);
 
+-- Environment-wide funnel analysis stores only a bounded, secret-free definition.
+-- Result rows, credentials, ACP transcripts, and local provider handles have no
+-- representable column. The copied tile definitions retain exact dashboard and
+-- connection revisions so schema or grant drift fails visibly on rerun.
+CREATE TABLE IF NOT EXISTS funnel_analysis_artifacts (
+    id                     TEXT NOT NULL,
+    workspace_id           TEXT NOT NULL REFERENCES workspaces(id),
+    account_user_id        TEXT NOT NULL CHECK(account_user_id <> ''),
+    project_environment_id TEXT NOT NULL,
+    environment_revision   INTEGER NOT NULL CHECK(environment_revision > 0),
+    knowledge_grant_id     TEXT NOT NULL,
+    graph_revision_ids     TEXT NOT NULL CHECK(json_valid(graph_revision_ids)),
+    definition_json        TEXT NOT NULL
+                               CHECK(json_valid(definition_json)
+                                 AND length(definition_json) <= 1048576),
+    state                  TEXT NOT NULL DEFAULT 'draft'
+                               CHECK(state IN ('draft', 'published', 'archived')),
+    revision               INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    remote_id              TEXT,
+    remote_revision        INTEGER CHECK(remote_revision IS NULL OR remote_revision > 0),
+    sync_status            TEXT NOT NULL DEFAULT 'local'
+                               CHECK(sync_status IN ('local', 'dirty', 'synced', 'conflict')),
+    deleted_at             TEXT,
+    created_at             TEXT NOT NULL,
+    updated_at             TEXT NOT NULL,
+    PRIMARY KEY (id, account_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_funnel_analysis_environment_updated
+    ON funnel_analysis_artifacts(
+        workspace_id, account_user_id, project_environment_id, updated_at DESC
+    ) WHERE deleted_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS sync_outbox (
     id            TEXT PRIMARY KEY,
     workspace_id  TEXT NOT NULL REFERENCES workspaces(id),

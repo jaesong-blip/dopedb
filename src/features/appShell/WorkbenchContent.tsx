@@ -58,6 +58,7 @@ type Props = {
   activeDocumentId: string | null;
   supportsSql: boolean;
   dashboardFocusId: string | null;
+  knowledgeAnalysisFocus: { environmentId: string; requestId: number } | null;
   initialAuditOpen: boolean;
   availableUpdate: Update | null;
   creatingDemo: boolean;
@@ -173,7 +174,7 @@ export default function WorkbenchContent(props: Props) {
   if (area === "knowledge") {
     return withSettings(
       <section className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background">
-        <Knowledge />
+        <Knowledge analysisFocus={props.knowledgeAnalysisFocus} />
       </section>,
     );
   }

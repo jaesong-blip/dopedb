@@ -179,6 +179,10 @@ function Shell() {
   const lastShiftAtRef = useRef(0);
   const { legacyAuditOpen, restoredDocumentKind } = useRestoredWorkbenchState();
   const [area, setArea] = usePersistentAppArea();
+  const [knowledgeAnalysisFocus, setKnowledgeAnalysisFocus] = useState<{
+    environmentId: string;
+    requestId: number;
+  } | null>(null);
   const {
     open: terminalDockOpen,
     width: terminalDockWidth,
@@ -847,6 +851,7 @@ function Shell() {
       activeDocumentId={activeDocumentId}
       supportsSql={supportsSql}
       dashboardFocusId={dashboardFocusId}
+      knowledgeAnalysisFocus={knowledgeAnalysisFocus}
       initialAuditOpen={legacyAuditOpen.current}
       availableUpdate={availableUpdate}
       creatingDemo={creatingDemo}
@@ -982,6 +987,14 @@ function Shell() {
           else if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
           else setMobileExplorerOpen(true);
         }
+      }}
+      onOpenKnowledgeAnalysis={(environmentId) => {
+        setSettingsOpen(false);
+        setEditing(null);
+        setSchemaDiffGroupKey(null);
+        setKnowledgeAnalysisFocus({ environmentId, requestId: Date.now() });
+        setArea("knowledge");
+        setMobileExplorerOpen(false);
       }}
       onToggleDatabaseExplorer={() => {
         if (!compactShell) {
