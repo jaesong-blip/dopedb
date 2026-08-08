@@ -35,6 +35,7 @@ const MAX_BASELINE_SAMPLES: usize = 1_000;
 #[derive(Clone, Default)]
 pub(crate) struct SignalRunnerRuntime {
     started: Arc<AtomicBool>,
+    background_allowed: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -56,6 +57,21 @@ struct LocalEvaluation {
 }
 
 impl SignalRunnerRuntime {
+    pub(crate) fn new(background_allowed: bool) -> Self {
+        Self {
+            started: Arc::new(AtomicBool::new(false)),
+            background_allowed: Arc::new(AtomicBool::new(background_allowed)),
+        }
+    }
+
+    pub(crate) fn background_allowed(&self) -> bool {
+        self.background_allowed.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn set_background_allowed(&self, allowed: bool) {
+        self.background_allowed.store(allowed, Ordering::Release);
+    }
+
     pub(crate) fn start(&self, app: AppHandle) {
         if self
             .started
@@ -64,9 +80,17 @@ impl SignalRunnerRuntime {
         {
             return;
         }
+        let background_allowed = self.background_allowed.clone();
+        let background_launch =
+            std::env::args().any(|argument| argument == "--signal-runner-background");
         tauri::async_runtime::spawn(async move {
             loop {
-                if let Err(error) = poll_active_scope(&app).await {
+                let allowed = background_allowed.load(Ordering::Acquire);
+                if background_launch && !allowed {
+                    emit(&app, "disabled", None, None);
+                    break;
+                }
+                if let Err(error) = poll_active_scope(&app, allowed, background_launch).await {
                     tracing::warn!(
                         error_kind = error.kind(),
                         "foreground Signal runner poll deferred"
@@ -79,7 +103,11 @@ impl SignalRunnerRuntime {
     }
 }
 
-async fn poll_active_scope(app: &AppHandle) -> AppResult<()> {
+async fn poll_active_scope(
+    app: &AppHandle,
+    background_allowed: bool,
+    background_launch: bool,
+) -> AppResult<()> {
     let state = app.state::<AppState>();
     let scope = state.knowledge_store().active_resource_scope().await?;
     if scope.workspace_kind != WorkspaceKind::Team {
@@ -94,7 +122,7 @@ async fn poll_active_scope(app: &AppHandle) -> AppResult<()> {
         account_id,
         scope.workspace_id,
         &device_id.to_string(),
-        false,
+        background_allowed,
     )
     .await?;
     for _ in 0..MAX_CLAIMS_PER_TICK {
@@ -103,7 +131,7 @@ async fn poll_active_scope(app: &AppHandle) -> AppResult<()> {
             scope.workspace_id,
             runner.id,
             &device_id.to_string(),
-            false,
+            background_launch,
         )
         .await?
         else {

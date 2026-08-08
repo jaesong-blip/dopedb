@@ -471,6 +471,12 @@ async fn assert_current_store_migration_is_write_free() {
         store.signal_runner_device_id().await.unwrap(),
         signal_device
     );
+    assert!(!store.signal_runner_background_allowed().await.unwrap());
+    store
+        .set_signal_runner_background_allowed(true)
+        .await
+        .unwrap();
+    assert!(store.signal_runner_background_allowed().await.unwrap());
     let signal_rule = Uuid::new_v4();
     let signal_time = Utc::now();
     store

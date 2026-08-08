@@ -11,6 +11,30 @@ pub(crate) struct LocalSignalMetricSample {
 }
 
 impl Store {
+    pub(crate) async fn signal_runner_background_allowed(&self) -> AppResult<bool> {
+        let value: Option<String> = sqlx::query_scalar(
+            "SELECT value FROM app_settings WHERE key = 'signal_runner_background_allowed'",
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(value.as_deref() == Some("1"))
+    }
+
+    pub(crate) async fn set_signal_runner_background_allowed(
+        &self,
+        allowed: bool,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "INSERT INTO app_settings (key, value)
+             VALUES ('signal_runner_background_allowed', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        )
+        .bind(if allowed { "1" } else { "0" })
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub(crate) async fn signal_runner_device_id(&self) -> AppResult<Uuid> {
         let generated = Uuid::new_v4();
         sqlx::query(
@@ -105,7 +129,7 @@ impl Store {
             || schema_fingerprint.len() != 64
             || !schema_fingerprint
                 .bytes()
-                .all(|byte| byte.is_ascii_hexdigit())
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
         {
             return Err(AppError::Config("Signal metric sample is invalid".into()));
         }

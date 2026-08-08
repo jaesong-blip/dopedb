@@ -40,7 +40,7 @@ interface BrokerOperationEvent {
 }
 
 interface SignalRunnerEvent {
-  state: "registering" | "evaluating" | "ready" | "deferred";
+  state: "registering" | "evaluating" | "ready" | "deferred" | "disabled";
   ruleId: string | null;
   errorKind: string | null;
 }

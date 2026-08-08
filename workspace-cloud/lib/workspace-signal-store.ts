@@ -927,13 +927,13 @@ export async function commitSignalRuleMutation(input: {
         AND (${input.mutation.action} <> 'runner_change'
           OR rule."owner_member_id" = authority."id")
         AND (${input.mutation.action} <> 'run_now' OR rule."enabled")
-        AND NOT EXISTS (
+        AND (${input.mutation.action} IN ('pause', 'disable', 'runner_change') OR NOT EXISTS (
           SELECT 1 FROM ${workspaceSignalRunnerLease} active
           WHERE active."organization_id" = rule."organization_id"
             AND active."rule_id" = rule."id"
             AND active."completed_at" IS NULL AND active."revoked_at" IS NULL
             AND active."expires_at" > now()
-        )
+        ))
       FOR UPDATE OF rule
     ), runner AS MATERIALIZED (
       SELECT runner."id"
@@ -951,6 +951,14 @@ export async function commitSignalRuleMutation(input: {
       UNION ALL
       SELECT NULL::uuid FROM current_rule
       WHERE ${nextRunnerId}::text IS NULL AND NOT ${nextEnabled}
+    ), revoked_leases AS MATERIALIZED (
+      UPDATE ${workspaceSignalRunnerLease} lease SET "revoked_at" = now()
+      FROM current_rule
+      WHERE lease."organization_id" = current_rule."organization_id"
+        AND lease."rule_id" = current_rule."id"
+        AND lease."completed_at" IS NULL AND lease."revoked_at" IS NULL
+        AND ${input.mutation.action} IN ('pause', 'disable', 'runner_change')
+      RETURNING lease."id"
     ), stored AS MATERIALIZED (
       UPDATE ${workspaceSignalRule} rule SET
         "runner_id" = selected_runner."id",
@@ -961,6 +969,7 @@ export async function commitSignalRuleMutation(input: {
           THEN now() ELSE rule."next_evaluation_at" END,
         "updated_at" = now()
       FROM current_rule CROSS JOIN selected_runner
+      CROSS JOIN (SELECT count(*) FROM revoked_leases) revoked_gate
       WHERE rule."organization_id" = current_rule."organization_id"
         AND rule."id" = current_rule."id"
       RETURNING rule.*
@@ -1002,4 +1011,135 @@ export async function commitSignalRuleMutation(input: {
     enabled: row.enabled,
     nextEvaluationAt,
   };
+}
+
+/**
+ * Materialize one categorical offline transition per active rule revision.
+ * This scheduler never executes a query and stores no local result value.
+ */
+export async function recordOfflineSignalTransitions(limit = 10) {
+  const candidates = await db.select({
+    organizationId: workspaceSignalRule.organizationId,
+    ruleId: workspaceSignalRule.id,
+    ruleRevision: workspaceSignalRule.revision,
+  }).from(workspaceSignalRule).innerJoin(workspaceSignalRunner, and(
+    eq(workspaceSignalRunner.organizationId, workspaceSignalRule.organizationId),
+    eq(workspaceSignalRunner.id, workspaceSignalRule.runnerId),
+  )).where(and(
+    eq(workspaceSignalRule.enabled, true),
+    isNull(workspaceSignalRule.deletedAt),
+    isNull(workspaceSignalRunner.revokedAt),
+    sql`${workspaceSignalRunner.lastSeenAt} <= now() - interval '2 minutes'`,
+  )).limit(Math.max(1, Math.min(limit, 100)));
+  const stored: Array<{ organizationId: string; receiptId: string }> = [];
+  for (const candidate of candidates) {
+    const leaseId = crypto.randomUUID();
+    const receiptId = crypto.randomUUID();
+    const scheduledAt = new Date();
+    const expiresAt = new Date(scheduledAt.getTime() + 1_000);
+    const fingerprint = createHash("sha256")
+      .update(`runner-offline:${candidate.ruleId}:${candidate.ruleRevision}`)
+      .digest("hex");
+    const requestId = crypto.randomUUID();
+    const result = await db.execute<Record<string, unknown>>(sql`
+      WITH authority_lock AS MATERIALIZED (
+        SELECT pg_advisory_xact_lock(hashtextextended(
+          ${`signal-offline:${candidate.organizationId}:${candidate.ruleId}`}, 0))
+      ), current_rule AS MATERIALIZED (
+        SELECT rule.*, runner."id" AS "offline_runner_id"
+        FROM ${workspaceSignalRule} rule
+        JOIN ${workspaceSignalRunner} runner
+          ON runner."organization_id" = rule."organization_id"
+         AND runner."id" = rule."runner_id"
+        JOIN authority_lock ON TRUE
+        WHERE rule."organization_id" = ${candidate.organizationId}
+          AND rule."id" = ${candidate.ruleId}::uuid
+          AND rule."revision" = ${candidate.ruleRevision}
+          AND rule."enabled" AND rule."deleted_at" IS NULL
+          AND runner."revoked_at" IS NULL
+          AND runner."last_seen_at" <= now() - interval '2 minutes'
+          AND COALESCE((
+            SELECT receipt."state"
+            FROM ${workspaceSignalEvaluationReceipt} receipt
+            WHERE receipt."organization_id" = rule."organization_id"
+              AND receipt."rule_id" = rule."id"
+              AND receipt."rule_revision" = rule."revision"
+            ORDER BY receipt."transition_sequence" DESC
+            LIMIT 1
+          ), '') <> 'runner_offline'
+          AND NOT EXISTS (
+            SELECT 1 FROM ${workspaceSignalRunnerLease} active
+            WHERE active."organization_id" = rule."organization_id"
+              AND active."rule_id" = rule."id"
+              AND active."completed_at" IS NULL AND active."revoked_at" IS NULL
+              AND active."expires_at" > now()
+          )
+        FOR UPDATE OF rule, runner
+      ), stored_lease AS MATERIALIZED (
+        INSERT INTO ${workspaceSignalRunnerLease}
+          ("id", "organization_id", "rule_id", "rule_revision", "runner_id",
+           "idempotency_key", "lease_capability_hash", "scheduled_at", "expires_at",
+           "completed_at")
+        SELECT ${leaseId}::uuid, current_rule."organization_id", current_rule."id",
+          current_rule."revision", current_rule."offline_runner_id",
+          ${`runner-offline:${leaseId}`}, ${fingerprint}, ${scheduledAt}, ${expiresAt}, now()
+        FROM current_rule
+        ON CONFLICT DO NOTHING
+        RETURNING *
+      ), stored_receipt AS MATERIALIZED (
+        INSERT INTO ${workspaceSignalEvaluationReceipt}
+          ("id", "organization_id", "rule_id", "rule_revision", "runner_id", "lease_id",
+           "project_environment_id", "environment_revision", "scheduled_at", "evaluated_at",
+           "observed_state", "state", "query_run_ids", "connection_ids", "duration_ms",
+           "row_count_category", "schema_fingerprint", "dedupe_key", "transition_sequence",
+           "error_kind")
+        SELECT ${receiptId}::uuid, stored_lease."organization_id", stored_lease."rule_id",
+          stored_lease."rule_revision", stored_lease."runner_id", stored_lease."id",
+          current_rule."project_environment_id", current_rule."environment_revision",
+          ${scheduledAt}, ${scheduledAt}, 'stale', 'runner_offline', '[]'::jsonb,
+          (SELECT jsonb_agg(connection."connection_id"::text ORDER BY connection."connection_id")
+           FROM ${workspaceSignalRuleConnection} connection
+           WHERE connection."organization_id" = current_rule."organization_id"
+             AND connection."rule_id" = current_rule."id"),
+          0, 'unknown', ${fingerprint}, ${`runner-offline:${leaseId}`},
+          COALESCE((SELECT max(receipt."transition_sequence")
+            FROM ${workspaceSignalEvaluationReceipt} receipt
+            WHERE receipt."organization_id" = current_rule."organization_id"
+              AND receipt."rule_id" = current_rule."id"
+              AND receipt."rule_revision" = current_rule."revision"), 0) + 1,
+          NULL
+        FROM stored_lease JOIN current_rule ON current_rule."id" = stored_lease."rule_id"
+        RETURNING *
+      ), notifications AS (
+        INSERT INTO ${workspaceSignalNotification}
+          ("organization_id", "receipt_id", "recipient_member_id", "channel", "state")
+        SELECT stored_receipt."organization_id", stored_receipt."id", recipient.member_id,
+          channel.channel, 'pending'
+        FROM stored_receipt
+        JOIN current_rule ON current_rule."id" = stored_receipt."rule_id"
+        CROSS JOIN LATERAL jsonb_array_elements_text(
+          current_rule."definition"->'recipientMemberIds') recipient(member_id)
+        CROSS JOIN LATERAL jsonb_array_elements_text(
+          current_rule."definition"->'channels') channel(channel)
+        WHERE channel.channel <> 'desktop'
+        ON CONFLICT DO NOTHING
+      ), audit AS (
+        INSERT INTO ${workspaceAuditEvent}
+          ("organization_id", "actor_user_id", "action", "resource_type",
+           "resource_id", "redacted_summary", "request_id")
+        SELECT stored_receipt."organization_id", NULL, 'signal.runner.offline',
+          'signal_receipt', stored_receipt."id"::text,
+          jsonb_build_object('ruleId', stored_receipt."rule_id",
+            'state', stored_receipt."state"), ${requestId}::uuid
+        FROM stored_receipt
+      )
+      SELECT stored_receipt."id"::text AS "receiptId"
+      FROM stored_receipt
+    `);
+    const row = result.rows[0];
+    if (row && typeof row.receiptId === "string") {
+      stored.push({ organizationId: candidate.organizationId, receiptId: row.receiptId });
+    }
+  }
+  return stored;
 }

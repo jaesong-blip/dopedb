@@ -52,7 +52,25 @@ pub fn run() {
     let state = tauri::async_runtime::block_on(state::AppState::new(startup_trace))
         .expect("failed to initialize app state");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        if !args
+            .iter()
+            .any(|argument| argument == "--signal-runner-background")
+        {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+    }));
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        Some(vec!["--signal-runner-background"]),
+    ));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -61,6 +79,13 @@ pub fn run() {
         .manage(state)
         .setup(|app| {
             let state = app.state::<state::AppState>();
+            if std::env::args().any(|argument| argument == "--signal-runner-background")
+                && state.signal_runner.background_allowed()
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
             let mut events = state.services.job.subscribe();
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -123,6 +148,8 @@ pub fn run() {
             features::agents::transport::list_retired_chat_archive_threads,
             features::agents::transport::get_retired_chat_archive_messages,
             features::workspaces::transport::workspace_feature_state,
+            features::signals::transport::signal_runner_settings,
+            features::signals::transport::set_signal_runner_background_allowed,
             commands::cli_installation_status,
             commands::install_cli,
             commands::skill_status,
@@ -281,6 +308,20 @@ pub fn run() {
             commands::pick_file,
             executor::cancel::cancel_query,
         ])
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && matches!(event, tauri::WindowEvent::CloseRequested { .. })
+                && window
+                    .state::<state::AppState>()
+                    .signal_runner
+                    .background_allowed()
+            {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
@@ -290,6 +331,17 @@ pub fn run() {
                     .startup_trace
                     .mark_once("window_shown", "critical", true);
                 #[cfg(feature = "packaged-benchmark")]
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();

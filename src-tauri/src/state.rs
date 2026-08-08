@@ -50,6 +50,7 @@ impl AppState {
         let store = Store::open().await;
         startup_trace.finish("store_ready", "critical", started, store.is_ok());
         let store = store?;
+        let signal_background_allowed = store.signal_runner_background_allowed().await?;
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let providers = providers::compose(store.clone(), operation.clone());
         let connections = ConnectionManager::with_authorities(
@@ -96,7 +97,7 @@ impl AppState {
             local_operation_approval,
             local_knowledge_sources: LocalFolderAdapter::new(),
             knowledge_watches: KnowledgeWatchRuntime::default(),
-            signal_runner: SignalRunnerRuntime::default(),
+            signal_runner: SignalRunnerRuntime::new(signal_background_allowed),
             startup_trace,
             store,
             post_paint_recovery: PostPaintRecoveryGate::new(),
