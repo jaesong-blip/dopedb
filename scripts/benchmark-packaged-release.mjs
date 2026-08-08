@@ -205,11 +205,25 @@ try {
       if (!fixture) throw new Error("workload fixture is unavailable");
       const warmupRoot = join(temporaryRoot, `warmup-workload-${scenario}`);
       await cloneFixture(fixture, warmupRoot);
-      await runMeasuredApp(executable, warmupRoot, scenario, 20);
+      if (scenario === "agent-tools") {
+        await runMeasuredApp(executable, warmupRoot, scenario, 20, "install");
+        await runMeasuredApp(executable, warmupRoot, scenario, 20, "restart");
+      } else {
+        await runMeasuredApp(executable, warmupRoot, scenario, 20);
+      }
       for (let index = 1; index <= workloadSampleCount; index += 1) {
         const runRoot = join(temporaryRoot, `run-workload-${scenario}-${index}`);
         await cloneFixture(fixture, runRoot);
-        samples.push(await runMeasuredApp(executable, runRoot, scenario, 20));
+        if (scenario === "agent-tools") {
+          samples.push(
+            await runMeasuredApp(executable, runRoot, scenario, 20, "install"),
+          );
+          samples.push(
+            await runMeasuredApp(executable, runRoot, scenario, 20, "restart"),
+          );
+        } else {
+          samples.push(await runMeasuredApp(executable, runRoot, scenario, 20));
+        }
       }
     }
   }
@@ -245,7 +259,10 @@ try {
         explorer: { connections: 20, databases: 50, objects: 5_000 },
         queryRows: { visible: 50_000, diskStore: 1_000_000 },
         agent: { elapsedMinutes: 10, events: 10_000 },
-        agentTools: { targets: 2, lifecycle: ["install", "reload", "remove"] },
+        agentTools: {
+          targets: 2,
+          lifecycle: ["install", "app-exit", "app-restart", "reload", "remove"],
+        },
         longLived: { history: 10_000, audit: 100_000, revisions: 50, dashboardTiles: 8 },
         erdNodes: 1_000,
       },
@@ -389,8 +406,14 @@ async function cloneFixture(fixture, destination) {
   await cp(join(fixture, "home"), join(destination, "home"), { recursive: true });
 }
 
-async function runMeasuredApp(executable, runRoot, scenario, connectionCount) {
-  progress("run", scenario);
+async function runMeasuredApp(
+  executable,
+  runRoot,
+  scenario,
+  connectionCount,
+  phase = null,
+) {
+  progress("run", phase === null ? scenario : `${scenario}-${phase}`);
   const started = performance.now();
   const home = join(runRoot, "home");
   const outcome = await runApplication(executable, isolatedEnvironment(home, {
@@ -398,10 +421,12 @@ async function runMeasuredApp(executable, runRoot, scenario, connectionCount) {
     DOPEDB_PACKAGED_BENCHMARK_HOME_DIR: home,
     DOPEDB_PACKAGED_BENCHMARK_SCENARIO: scenario,
     DOPEDB_PACKAGED_BENCHMARK_CONNECTIONS: String(connectionCount),
+    ...(phase === null ? {} : { DOPEDB_PACKAGED_BENCHMARK_PHASE: phase }),
   }), marker, true, scenarioTimeoutMs(scenario));
-  validateMeasuredOutcome(outcome, scenario, connectionCount);
+  validateMeasuredOutcome(outcome, scenario, connectionCount, phase);
   return {
     scenario,
+    ...(phase === null ? {} : { phase }),
     connectionCount,
     wallMs: round(performance.now() - started),
     maxProcessTreeRssBytes: outcome.maxProcessTreeRssBytes,
@@ -410,10 +435,14 @@ async function runMeasuredApp(executable, runRoot, scenario, connectionCount) {
   };
 }
 
-function validateMeasuredOutcome(outcome, scenario, connectionCount) {
+function validateMeasuredOutcome(outcome, scenario, connectionCount, phase = null) {
   const report = outcome?.report;
   const renderer = report?.renderer;
-  const expectedActions = requiredActionsByScenario[scenario] ?? [];
+  const expectedActions = scenario === "agent-tools" && phase === "install"
+    ? ["agent-skill-install-all"]
+    : scenario === "agent-tools" && phase === "restart"
+      ? ["agent-skill-reload", "agent-skill-remove-all"]
+      : requiredActionsByScenario[scenario] ?? [];
   const reportedActions = renderer?.actions?.map((action) => action.name) ?? [];
   const uniqueActions = new Set(reportedActions);
   const missingActions = expectedActions.filter((action) => !uniqueActions.has(action));
@@ -436,6 +465,7 @@ function validateMeasuredOutcome(outcome, scenario, connectionCount) {
       (action) => !Array.isArray(action.samplesMs) || action.samplesMs.length === 0,
     )
     || (scenario === "idle-runtime" && renderer.idleObservationMs < 9_000)
+    || (scenario === "agent-tools" && renderer.idleObservationMs < 1_400)
     || !requiredPositiveCounts.every(
       (value) => Number.isFinite(value) && value > 0,
     )
@@ -924,7 +954,7 @@ function evaluateBudgets(
   ).length;
   const idleRate = percentile(
     allSamples
-      .filter((sample) => sample.scenario === "idle-runtime")
+      .filter((sample) => sample.renderer.idleObservationMs > 0)
       .map(idleIpcCallsPerMinute),
     0.95,
   );

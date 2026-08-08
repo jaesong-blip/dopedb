@@ -72,8 +72,10 @@ const FIXTURE_CONNECTION_ID = "bed00000-0000-0000-0000-000000000001";
 
 export function PackagedBenchmarkApplication({
   scenario,
+  phase,
 }: {
   scenario: string;
+  phase: "install" | "restart" | null;
 }) {
   switch (scenario) {
     case "sql-editor":
@@ -87,7 +89,7 @@ export function PackagedBenchmarkApplication({
     case "agent-transcript":
       return <AgentTranscriptScenario />;
     case "agent-tools":
-      return <AgentToolsScenario />;
+      return <AgentToolsScenario phase={phase} />;
     case "long-lived-data":
       return <LongLivedDataScenario />;
     case "interaction-surfaces":
@@ -525,40 +527,54 @@ function assertSkillState(status: SkillStatus, expected: "missing" | "managed_cu
   }
 }
 
-function AgentToolsScenario() {
+function AgentToolsScenario({
+  phase,
+}: {
+  phase: "install" | "restart" | null;
+}) {
   const [status, setStatus] = useState<SkillStatus | null>(null);
   const [surfaceMounted, setSurfaceMounted] = useState(true);
 
   useScenarioRunner(true, async () => {
     await validateAndDismissAgentSelectionModal();
     const initial = await skillStatus("all");
-    assertSkillState(initial, "missing");
-    await measurePackagedAction("agent-skill-install-all", async () => {
-      const installButton = await waitForAgentSkillInstallButton();
-      installButton.click();
-      const installed = await waitForAgentSkillState("managed_current");
-      assertSkillState(installed, "managed_current");
-      setStatus(installed);
-    });
-    await measurePackagedAction("agent-skill-reload", async () => {
-      const receipt = await runPackagedBenchmarkBackend("agent-skill-reload");
-      if (receipt.rowCount !== 2) {
-        throw new Error("packaged Skill manager recreation did not find both targets");
-      }
-      const reloaded = await skillStatus("all");
-      assertSkillState(reloaded, "managed_current");
-      setStatus({ ...reloaded });
-      return backendEvidence(receipt);
-    });
-    await measurePackagedAction("agent-skill-remove-all", async () => {
-      const current = await skillStatus("all");
-      const receipt = await removeSkill("all", skillExpectations(current));
-      assertSkillState(receipt.status, "missing");
-      if (receipt.changedTargets.length !== 2) {
-        throw new Error("packaged Skill removal did not change both targets");
-      }
-      setStatus(receipt.status);
-    });
+    assertSkillState(initial, phase === "restart" ? "managed_current" : "missing");
+    setStatus(initial);
+
+    if (phase !== "restart") {
+      await preparePackagedBenchmarkWorkload();
+      await measurePackagedAction("agent-skill-install-all", async () => {
+        const installButton = await waitForAgentSkillInstallButton();
+        installButton.click();
+        const installed = await waitForAgentSkillState("managed_current");
+        assertSkillState(installed, "managed_current");
+        setStatus(installed);
+      });
+    }
+
+    if (phase !== "install") {
+      await preparePackagedBenchmarkWorkload();
+      await measurePackagedAction("agent-skill-reload", async () => {
+        const receipt = await runPackagedBenchmarkBackend("agent-skill-reload");
+        if (receipt.rowCount !== 2) {
+          throw new Error("restarted app did not find both packaged Skill targets");
+        }
+        const reloaded = await skillStatus("all");
+        assertSkillState(reloaded, "managed_current");
+        setStatus({ ...reloaded });
+        return backendEvidence(receipt);
+      });
+      await preparePackagedBenchmarkWorkload();
+      await measurePackagedAction("agent-skill-remove-all", async () => {
+        const current = await skillStatus("all");
+        const receipt = await removeSkill("all", skillExpectations(current));
+        assertSkillState(receipt.status, "missing");
+        if (receipt.changedTargets.length !== 2) {
+          throw new Error("packaged Skill removal did not change both targets");
+        }
+        setStatus(receipt.status);
+      });
+    }
     setSurfaceMounted(false);
     await waitForPackagedPaint();
     // Let the final observer-owned request that started before unmount settle;
@@ -569,7 +585,7 @@ function AgentToolsScenario() {
   });
 
   return (
-    <BenchmarkSurface title="Agent tools · clean profile installation and restart">
+    <BenchmarkSurface title={`Agent tools · ${phase ?? "single-process compatibility"}`}>
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto">
         {surfaceMounted ? (
           <>

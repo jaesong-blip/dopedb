@@ -30,7 +30,10 @@ if (benchmarkConfig?.kind === "workload") {
   );
   application = (
     <AppProviders>
-      <PackagedBenchmarkApplication scenario={benchmarkConfig.scenario} />
+      <PackagedBenchmarkApplication
+        scenario={benchmarkConfig.scenario}
+        phase={benchmarkConfig.phase}
+      />
     </AppProviders>
   );
 } else {

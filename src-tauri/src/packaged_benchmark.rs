@@ -83,6 +83,7 @@ struct ActionMetrics {
 pub(crate) struct PackagedBenchmarkConfig {
     scenario: String,
     kind: &'static str,
+    phase: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -137,7 +138,12 @@ pub(crate) async fn packaged_benchmark_config(
         // repeated cold/warm startup launches can otherwise be left inactive by
         // macOS before the renderer records its first-shell frame.
         focus_benchmark_window(&app).await?;
-        Ok(PackagedBenchmarkConfig { scenario, kind })
+        let phase = benchmark_phase(&scenario)?;
+        Ok(PackagedBenchmarkConfig {
+            scenario,
+            kind,
+            phase,
+        })
     }
 }
 
@@ -674,6 +680,22 @@ fn benchmark_scenario() -> AppResult<String> {
         return Err(AppError::Config("benchmark scenario is invalid".into()));
     }
     Ok(value)
+}
+
+#[cfg(feature = "packaged-benchmark")]
+fn benchmark_phase(scenario: &str) -> AppResult<Option<String>> {
+    let value = std::env::var("DOPEDB_PACKAGED_BENCHMARK_PHASE").ok();
+    match (scenario, value.as_deref()) {
+        ("agent-tools", Some("install" | "restart")) => Ok(value),
+        ("agent-tools", None) => Ok(None),
+        ("agent-tools", Some(_)) => Err(AppError::Config(
+            "agent-tools benchmark phase is invalid".into(),
+        )),
+        (_, None) => Ok(None),
+        (_, Some(_)) => Err(AppError::Config(
+            "benchmark phase is only supported for agent-tools".into(),
+        )),
+    }
 }
 
 #[cfg(feature = "packaged-benchmark")]
