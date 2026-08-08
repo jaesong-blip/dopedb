@@ -21,6 +21,7 @@ import {
 import { errMessage } from "../../ipc/types";
 import { cancelQuery } from "../../ipc/commands";
 import { listConnections } from "../../features/connections/tauriAdapter";
+import type { ConnectionProfile } from "../../features/connections/domain";
 import type {
   GithubKnowledgeRepository,
   FunnelAnalysisArtifact,
@@ -74,6 +75,19 @@ function riskTone(riskClass: KnowledgeEnvironment["riskClass"]): StatusTone {
   if (riskClass === "staging") return "warning";
   if (riskClass === "development") return "success";
   return "neutral";
+}
+
+function legacyEnvironmentMatches(
+  connection: Pick<ConnectionProfile, "env">,
+  environment: KnowledgeEnvironment | null,
+): boolean {
+  return Boolean(
+    connection.env
+    && environment
+    && connection.env.trim().localeCompare(environment.name.trim(), undefined, {
+      sensitivity: "accent",
+    }) === 0,
+  );
 }
 
 export default function Knowledge({
@@ -146,6 +160,20 @@ export default function Knowledge({
   const selectedEnvironment = selectedProject?.environments.find(
     (environment) => environment.id === environmentId,
   ) ?? null;
+  const boundConnectionIds = useMemo(
+    () => new Set(
+      (environmentConnections.data ?? []).flatMap((binding) =>
+        binding.connectionId ? [binding.connectionId] : []
+      ),
+    ),
+    [environmentConnections.data],
+  );
+  const assignableConnections = useMemo(
+    () => (connections.data ?? []).filter(
+      (connection) => !boundConnectionIds.has(connection.id),
+    ),
+    [boundConnectionIds, connections.data],
+  );
   const selectedEnvironmentSources = useMemo(
     () =>
       (sources.data ?? []).filter(
@@ -193,10 +221,14 @@ export default function Knowledge({
   }, [repositories.data, repositoryId]);
 
   useEffect(() => {
-    if (!connections.data?.length || connectionId) return;
-    setConnectionId(connections.data[0].id);
-    setConnectionAlias(connections.data[0].name);
-  }, [connectionId, connections.data]);
+    const selected = assignableConnections.find(
+      (connection) => connection.id === connectionId,
+    );
+    if (selected) return;
+    const next = assignableConnections[0];
+    setConnectionId(next?.id ?? "");
+    setConnectionAlias(next?.name ?? "");
+  }, [assignableConnections, connectionId]);
 
   useEffect(() => {
     let disposed = false;
@@ -1048,7 +1080,7 @@ export default function Knowledge({
                 setConnectionId(event.target.value);
                 if (connection) setConnectionAlias(connection.name);
               }}>
-                {connections.data?.map((connection) => (
+                {assignableConnections.map((connection) => (
                   <option key={connection.id} value={connection.id}>{connection.name}</option>
                 ))}
               </SelectInput>
@@ -1072,6 +1104,46 @@ export default function Knowledge({
               {bindConnection.isPending ? "Binding…" : "Bind database"}
             </Button>
           </div>
+          {assignableConnections.length > 0 ? (
+            <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
+              <div className="tw:grid tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-surface-subtle tw:px-3 tw:py-2">
+                <strong className="tw:text-sm">Connections not assigned to this Environment</strong>
+                <span className="tw:text-xs tw:text-muted-foreground">
+                  Legacy environment labels are suggestions only. Selecting one never changes its scope until you bind it above.
+                </span>
+              </div>
+              {assignableConnections.map((connection) => {
+                const suggestedHere = legacyEnvironmentMatches(connection, selectedEnvironment);
+                return (
+                  <div key={connection.id} className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0 tw:@max-[560px]:grid-cols-1">
+                    <span className="tw:grid tw:min-w-0 tw:gap-1">
+                      <strong className="tw:truncate tw:text-sm">{connection.name}</strong>
+                      <span className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2 tw:text-xs tw:text-muted-foreground">
+                        <span className="tw:truncate">{connection.engine} · {connection.database}</span>
+                        {suggestedHere ? (
+                          <StatusBadge tone="success" density="compact">Suggested here</StatusBadge>
+                        ) : connection.env ? (
+                          <StatusBadge tone="warning" density="compact">Legacy: {connection.env}</StatusBadge>
+                        ) : (
+                          <StatusBadge density="compact">No legacy environment</StatusBadge>
+                        )}
+                      </span>
+                    </span>
+                    <Button
+                      size="compact"
+                      variant={connection.id === connectionId ? "selected" : "ghost"}
+                      onClick={() => {
+                        setConnectionId(connection.id);
+                        setConnectionAlias(connection.name);
+                      }}
+                    >
+                      {connection.id === connectionId ? "Selected" : "Review binding"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
           {environmentConnections.isPending ? (
             <LoadingLabel>Loading Environment databases…</LoadingLabel>
           ) : (environmentConnections.data?.length ?? 0) === 0 ? (
