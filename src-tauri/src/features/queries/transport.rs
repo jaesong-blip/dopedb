@@ -15,6 +15,49 @@ use super::{
     DesktopSqlStreamReceipt, DesktopSqlStreamSinkError,
 };
 
+const MAX_SQL_FORMAT_INPUT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SQL_FORMAT_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+
+/// Formats one bounded SQL fragment without creating a second JavaScript runtime.
+///
+/// Large documents are split at statement boundaries by the renderer and sent
+/// here sequentially. The closed dialect and size boundary keep this utility
+/// from becoming an unbounded general-purpose parsing command.
+#[tauri::command]
+pub(crate) async fn format_sql_fragment(sql: String, language: String) -> AppResult<String> {
+    if sql.len() > MAX_SQL_FORMAT_INPUT_BYTES {
+        return Err(crate::AppError::Config(
+            "SQL format fragment exceeds the 2 MiB limit".into(),
+        ));
+    }
+    let dialect = match language.as_str() {
+        "postgresql" => sqlformat::Dialect::PostgreSql,
+        "mysql" | "sqlite" => sqlformat::Dialect::Generic,
+        _ => {
+            return Err(crate::AppError::Config(
+                "SQL format language is unsupported".into(),
+            ))
+        }
+    };
+    tokio::task::spawn_blocking(move || {
+        let options = sqlformat::FormatOptions {
+            uppercase: Some(true),
+            lines_between_queries: 2,
+            dialect,
+            ..Default::default()
+        };
+        let formatted = sqlformat::format(&sql, &sqlformat::QueryParams::None, &options);
+        if formatted.len() > MAX_SQL_FORMAT_OUTPUT_BYTES {
+            return Err(crate::AppError::Config(
+                "formatted SQL exceeds the 8 MiB limit".into(),
+            ));
+        }
+        Ok(formatted)
+    })
+    .await
+    .map_err(|_| crate::AppError::Config("the SQL formatter worker stopped unexpectedly".into()))?
+}
+
 #[tauri::command]
 pub(crate) async fn list_query_service_sessions(
     state: State<'_, AppState>,

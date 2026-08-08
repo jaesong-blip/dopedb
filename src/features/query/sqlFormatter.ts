@@ -1,4 +1,6 @@
 import type { SqlLanguage } from "sql-formatter";
+import { isTauri } from "@tauri-apps/api/core";
+import { formatSqlFragment } from "../queries/tauriAdapter";
 
 export type SqlFormatRequest = {
   requestId: number;
@@ -12,6 +14,7 @@ export type SqlFormatResponse =
 
 let requestSequence = 0;
 const LARGE_DOCUMENT_BYTES = 128 * 1024;
+const NATIVE_FORMAT_DOCUMENT_BYTES = 256 * 1024;
 const FORMAT_CHUNK_BYTES = 64 * 1024;
 
 function hasCompoundStatement(sql: string, language: SqlLanguage) {
@@ -159,11 +162,32 @@ function formatWithRequestWorker(
   });
 }
 
+async function formatWithNativeRuntime(
+  chunks: readonly string[],
+  language: SqlLanguage,
+) {
+  if (language !== "sqlite" && language !== "mysql" && language !== "postgresql") {
+    throw new Error(`SQL formatter language ${language} is unsupported`);
+  }
+  const formatted: string[] = [];
+  for (const chunk of chunks) {
+    formatted.push(await formatSqlFragment(chunk, language));
+  }
+  return formatted.join("\n\n");
+}
+
 export async function formatSqlDocument(
   sql: string,
   language: SqlLanguage,
 ): Promise<string> {
   const chunks = splitSqlFormatChunks(sql, language);
+  if (
+    sql.length >= NATIVE_FORMAT_DOCUMENT_BYTES
+    && chunks.length > 1
+    && isTauri()
+  ) {
+    return formatWithNativeRuntime(chunks, language);
+  }
   if (typeof Worker === "undefined") {
     const formatter = await import("sql-formatter");
     return formatter.format(sql, {

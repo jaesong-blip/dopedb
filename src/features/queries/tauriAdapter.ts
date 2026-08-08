@@ -36,6 +36,13 @@ export type SqlResultExportController = {
   cancel: () => Promise<void>;
 };
 
+export function formatSqlFragment(
+  sql: string,
+  language: "sqlite" | "mysql" | "postgresql",
+): Promise<string> {
+  return invoke("format_sql_fragment", { sql, language });
+}
+
 export function getManualTransaction(
   id: string,
 ): Promise<ManualTransactionStatus | null> {
