@@ -551,9 +551,10 @@ function AgentToolsScenario({
 
   useScenarioRunner(true, async () => {
     await setPackagedBenchmarkCompactWindow(true);
+    await waitForPackagedViewport(360, 640);
     for (const lang of ["en", "ko"] as const) {
       setLang(lang);
-      await waitForPackagedPaint();
+      await waitForDocumentLanguage(lang);
       if (lang === "ko") openAgentSetup();
       await validateAndDismissAgentSelectionModal(lang);
     }
@@ -621,6 +622,27 @@ function AgentToolsScenario({
       </div>
     </BenchmarkSurface>
   );
+}
+
+async function waitForPackagedViewport(maxWidth: number, maxHeight: number) {
+  const deadline = performance.now() + 5_000;
+  while (performance.now() < deadline) {
+    if (window.innerWidth <= maxWidth && window.innerHeight <= maxHeight) return;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  throw new Error("packaged compact viewport timed out");
+}
+
+async function waitForDocumentLanguage(lang: Lang) {
+  const deadline = performance.now() + 5_000;
+  while (performance.now() < deadline) {
+    if (document.documentElement.lang === lang) {
+      await waitForPackagedPaint();
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  throw new Error("packaged Agent locale timed out");
 }
 
 async function validateAndDismissAgentSelectionModal(lang: Lang) {
