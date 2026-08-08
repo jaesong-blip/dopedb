@@ -71,10 +71,10 @@ jobs:
           raw="$RUNNER_TEMP/acp-plugin.raw"
           decoded="$RUNNER_TEMP/acp-plugin.decoded"
           printf '%s' "$ACP_SIGNING_PRIVATE_KEY" > "$raw"
-          if grep -q '^untrusted comment: minisign .*secret key' "$raw"; then
+          if grep -Eq '^untrusted comment: (minisign|rsign) .*secret key' "$raw"; then
             mv "$raw" "$RUNNER_TEMP/acp-plugin.key"
           elif base64 --decode "$raw" > "$decoded" 2>/dev/null \
-            && grep -q '^untrusted comment: minisign .*secret key' "$decoded"; then
+            && grep -Eq '^untrusted comment: (minisign|rsign) .*secret key' "$decoded"; then
             mv "$decoded" "$RUNNER_TEMP/acp-plugin.key"
             rm -f "$raw"
           else
