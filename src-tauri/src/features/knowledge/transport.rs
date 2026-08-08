@@ -16,9 +16,11 @@ use crate::error::{AppError, AppResult};
 use crate::features::workspaces::adapters::control_plane::{
     begin_knowledge_github_install,
     bind_environment_connection as bind_remote_environment_connection, create_knowledge_project,
-    delete_knowledge_source, list_environment_connections as list_remote_environment_connections,
-    list_knowledge_github_repositories, list_knowledge_projects, publish_knowledge_graph,
-    revoke_environment_connection as revoke_remote_environment_connection,
+    decide_remote_knowledge_mapping, delete_knowledge_source, download_knowledge_graph,
+    list_current_knowledge_grants,
+    list_environment_connections as list_remote_environment_connections,
+    list_knowledge_github_repositories, list_knowledge_projects, list_remote_knowledge_mappings,
+    publish_knowledge_graph, revoke_environment_connection as revoke_remote_environment_connection,
     CreateKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, RemoteGithubRepository,
     RemoteKnowledgeProject,
 };
@@ -35,8 +37,8 @@ use super::domain::{
 };
 use super::extractor::build_graph;
 use super::ports::{
-    KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort, KnowledgeScopeRepositoryPort,
-    SourceProviderAdapter,
+    KnowledgeGrantPort, KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
+    KnowledgeScopeRepositoryPort, SourceProviderAdapter,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -248,7 +250,9 @@ fn project_source(scope: StoredKnowledgeScope) -> KnowledgeSourceProjection {
         display_name: scope.binding.display_name,
         visibility: scope.binding.visibility,
         revision: scope.binding.revision,
-        health: if local_capability_available {
+        health: if local_capability_available
+            || scope.binding.visibility == KnowledgeSourceVisibility::SharedGraph
+        {
             SourceHealthState::Ready
         } else {
             SourceHealthState::Stale
@@ -277,7 +281,114 @@ pub(crate) async fn list_knowledge_projects_command(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<RemoteKnowledgeProject>> {
     let (scope, account) = active_remote_scope(&state).await?;
-    list_knowledge_projects(account.as_str(), scope.workspace_id).await
+    let projects = list_knowledge_projects(account.as_str(), scope.workspace_id).await?;
+    sync_current_knowledge_access_with_projects(&state, &scope, &account, &projects).await?;
+    Ok(projects)
+}
+
+pub(crate) async fn sync_current_knowledge_access(state: &AppState) -> AppResult<()> {
+    let (scope, account) = active_remote_scope(state).await?;
+    let projects = list_knowledge_projects(account.as_str(), scope.workspace_id).await?;
+    sync_current_knowledge_access_with_projects(state, &scope, &account, &projects).await
+}
+
+async fn sync_current_knowledge_access_with_projects(
+    state: &AppState,
+    scope: &ActiveResourceScope,
+    account: &AccountId,
+    projects: &[RemoteKnowledgeProject],
+) -> AppResult<()> {
+    let grants = list_current_knowledge_grants(account.as_str(), scope.workspace_id).await?;
+    for grant in &grants {
+        let remote_project = projects
+            .iter()
+            .find(|project| project.id == grant.project_id)
+            .ok_or_else(|| AppError::Network("Knowledge grant project is missing".into()))?;
+        let remote_environment = remote_project
+            .environments
+            .iter()
+            .find(|environment| environment.id == grant.project_environment_id)
+            .filter(|environment| environment.revision == grant.environment_revision)
+            .ok_or_else(|| AppError::Network("Knowledge grant environment is stale".into()))?;
+        let project = Project {
+            id: remote_project.id,
+            workspace_id: WorkspaceId::from(scope.workspace_id),
+            name: remote_project.name.clone(),
+            revision: remote_project.revision,
+        };
+        let environment = ProjectEnvironment {
+            id: remote_environment.id,
+            project_id: remote_project.id,
+            name: remote_environment.name.clone(),
+            risk_class: remote_environment.risk_class,
+            revision: remote_environment.revision,
+        };
+        for graph_scope in &grant.graph_scopes {
+            let artifact = match state
+                .knowledge_store()
+                .by_revision(graph_scope.graph_revision_id)
+                .await?
+            {
+                Some(artifact) => artifact,
+                None => {
+                    download_knowledge_graph(
+                        account.as_str(),
+                        scope.workspace_id,
+                        grant.id,
+                        graph_scope.source_id,
+                        graph_scope.graph_revision_id,
+                    )
+                    .await?
+                }
+            };
+            if artifact.binding.project_id != project.id
+                || artifact.binding.project_environment_id != environment.id
+                || artifact.environment_revision != environment.revision
+                || artifact.binding.source_id != graph_scope.source_id
+            {
+                return Err(AppError::Network(
+                    "Knowledge grant graph crossed its Project Environment".into(),
+                ));
+            }
+            state
+                .knowledge_store()
+                .save_scope(
+                    &project,
+                    &environment,
+                    &artifact.binding,
+                    artifact.environment_revision,
+                )
+                .await?;
+            state
+                .knowledge_store()
+                .import_granted_active_graph(&artifact)
+                .await?;
+        }
+        state
+            .knowledge_store()
+            .retain_granted_environment_heads(environment.id, &grant.graph_revision_ids)
+            .await?;
+    }
+    state
+        .knowledge_store()
+        .revoke_knowledge_grants_for_account(scope.workspace_id, account.as_str())
+        .await?;
+    for grant in grants {
+        state
+            .knowledge_store()
+            .save_grant(&super::domain::KnowledgeGrant {
+                id: grant.id,
+                workspace_id: WorkspaceId::from(scope.workspace_id),
+                account_id: account.clone(),
+                project_id: grant.project_id,
+                project_environment_id: grant.project_environment_id,
+                environment_revision: grant.environment_revision,
+                graph_revision_ids: grant.graph_revision_ids,
+                expires_at: grant.expires_at,
+            })
+            .await?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -604,6 +715,7 @@ async fn active_workspace_graphs(
     state: &AppState,
     project_environment_id: Uuid,
 ) -> AppResult<Vec<dopedb_protocol::GraphBuildArtifactV1>> {
+    sync_current_knowledge_access(state).await?;
     let active_scope = state.knowledge_store().active_resource_scope().await?;
     let allowed = state
         .knowledge_store()
@@ -616,10 +728,42 @@ async fn active_workspace_graphs(
             "the active workspace Project Environment".into(),
         ));
     }
-    state
+    let account_id =
+        active_scope
+            .selected_account_id
+            .as_deref()
+            .ok_or_else(|| AppError::Blocked {
+                reason: "Project Knowledge requires an exact member grant".into(),
+            })?;
+    let graphs = state
         .knowledge_store()
         .active_set(project_environment_id)
-        .await
+        .await?;
+    let environment_revision = graphs
+        .first()
+        .map(|graph| graph.environment_revision)
+        .ok_or_else(|| AppError::NotFound("an active Knowledge graph revision set".into()))?;
+    let graph_revision_ids = graphs
+        .iter()
+        .map(|graph| graph.graph_revision_id)
+        .collect::<Vec<_>>();
+    if state
+        .knowledge_store()
+        .active_knowledge_grant(
+            active_scope.workspace_id,
+            account_id,
+            project_environment_id,
+            environment_revision,
+            &graph_revision_ids,
+        )
+        .await?
+        .is_none()
+    {
+        return Err(AppError::Blocked {
+            reason: "this member has no current grant for the active Knowledge revision set".into(),
+        });
+    }
+    Ok(graphs)
 }
 
 #[tauri::command]
@@ -662,6 +806,22 @@ pub(crate) async fn list_knowledge_mappings(
     project_environment_id: Uuid,
 ) -> AppResult<Vec<KnowledgeMappingProjection>> {
     let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    if let Some(account_id) = active_scope.selected_account_id.as_deref() {
+        for mapping in list_remote_knowledge_mappings(account_id, active_scope.workspace_id).await?
+        {
+            if mapping.project_environment_id == project_environment_id
+                && graphs
+                    .iter()
+                    .any(|graph| graph.graph_revision_id == mapping.graph_revision_id)
+            {
+                state
+                    .knowledge_store()
+                    .sync_remote_knowledge_mapping(&mapping)
+                    .await?;
+            }
+        }
+    }
     let mut result = Vec::new();
     for graph in graphs {
         let proposals = state
@@ -698,16 +858,24 @@ pub(crate) async fn decide_knowledge_mapping(
             reason: "the Knowledge mapping proposal no longer belongs to the active graph".into(),
         });
     }
-    state
-        .knowledge_store()
-        .decide_mapping(
+    let state_value = match decision {
+        KnowledgeMappingDecision::Approved => MappingProposalState::Approved,
+        KnowledgeMappingDecision::Rejected => MappingProposalState::Rejected,
+    };
+    let active_scope = state.knowledge_store().active_resource_scope().await?;
+    if let Some(account_id) = active_scope.selected_account_id.as_deref() {
+        decide_remote_knowledge_mapping(
+            account_id,
+            active_scope.workspace_id,
             proposal_id,
             expected_graph_revision_id,
-            match decision {
-                KnowledgeMappingDecision::Approved => MappingProposalState::Approved,
-                KnowledgeMappingDecision::Rejected => MappingProposalState::Rejected,
-            },
+            state_value,
         )
+        .await?;
+    }
+    state
+        .knowledge_store()
+        .decide_mapping(proposal_id, expected_graph_revision_id, state_value)
         .await
 }
 

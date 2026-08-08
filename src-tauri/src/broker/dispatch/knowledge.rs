@@ -20,6 +20,7 @@ use crate::features::knowledge::domain::{KnowledgeMappingProposal, MappingPropos
 use crate::features::knowledge::ports::{
     KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
 };
+use crate::features::workspaces::adapters::control_plane::propose_remote_knowledge_mapping;
 
 use super::*;
 
@@ -46,7 +47,11 @@ pub(super) async fn handle(
     };
     let graphs = match services
         .knowledge
-        .exact_knowledge_session_graphs(scope)
+        .exact_knowledge_session_graphs(
+            scope,
+            Uuid::from(session.workspace_id),
+            session.account_scope.as_str(),
+        )
         .await
     {
         Ok(graphs) => graphs,
@@ -351,6 +356,14 @@ async fn propose_mapping(
         state: MappingProposalState::Proposed,
         proposed_at: chrono::Utc::now(),
     };
+    let proposal = propose_remote_knowledge_mapping(
+        session.account_scope.as_str(),
+        Uuid::from(session.workspace_id),
+        scope.knowledge_grant_id,
+        &proposal,
+    )
+    .await
+    .map_err(map_application_error)?;
     services
         .knowledge
         .propose_mapping(&proposal)

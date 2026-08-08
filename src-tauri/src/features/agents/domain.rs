@@ -87,6 +87,8 @@ pub(crate) struct AcpSessionSummary {
     pub(crate) lifecycle: AcpSessionLifecycle,
     pub(crate) acp_session_id: Option<String>,
     #[serde(default)]
+    pub(crate) knowledge_grant_id: Option<uuid::Uuid>,
+    #[serde(default)]
     pub(crate) project_environment_id: Option<uuid::Uuid>,
     #[serde(default)]
     pub(crate) environment_revision: Option<u64>,

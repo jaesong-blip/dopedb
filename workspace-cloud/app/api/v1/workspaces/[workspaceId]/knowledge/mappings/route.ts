@@ -6,6 +6,7 @@ import { authorizeKnowledgeGrant } from "@/lib/knowledge/authorization";
 import {
   knowledgeEnvironmentHead,
   knowledgeMappingProposal,
+  workspaceAuditEvent,
 } from "@/lib/schema";
 import { authorizeWorkspace } from "@/lib/workspace-authorization";
 
@@ -14,9 +15,19 @@ type RouteContext = { params: Promise<{ workspaceId: string }> };
 export async function GET(request: Request, context: RouteContext) {
   const { workspaceId } = await context.params;
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
-  const authorization = await authorizeWorkspace(request, workspaceId, "manage");
+  const authorization = await authorizeWorkspace(request, workspaceId, "view");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const mappings = await db.select().from(knowledgeMappingProposal).where(eq(
+  const mappings = await db.select({
+    id: knowledgeMappingProposal.id,
+    projectEnvironmentId: knowledgeMappingProposal.projectEnvironmentId,
+    graphRevisionId: knowledgeMappingProposal.graphRevisionId,
+    schemaFingerprint: knowledgeMappingProposal.schemaFingerprint,
+    fromNodeId: knowledgeMappingProposal.fromNodeId,
+    targetKind: knowledgeMappingProposal.targetKind,
+    targetIdentity: knowledgeMappingProposal.targetIdentity,
+    state: knowledgeMappingProposal.state,
+    proposedAt: knowledgeMappingProposal.proposedAt,
+  }).from(knowledgeMappingProposal).where(eq(
     knowledgeMappingProposal.organizationId,
     workspaceId,
   ));
@@ -60,17 +71,43 @@ export async function POST(request: Request, context: RouteContext) {
       eq(knowledgeEnvironmentHead.environmentRevision, authorization.grant.environmentRevision),
     )).limit(1);
   if (!head) return jsonError("Knowledge grant graph is no longer active", 409);
-  const [mapping] = await db.insert(knowledgeMappingProposal).values({
-    organizationId: workspaceId,
-    projectEnvironmentId: authorization.grant.projectEnvironmentId,
-    graphRevisionId: body.graphRevisionId,
-    schemaFingerprint: body.schemaFingerprint,
-    fromNodeId: body.fromNodeId,
-    targetKind: body.targetKind,
-    targetIdentity: body.targetIdentity,
-    state: "proposed",
-    proposedByMemberId: authorization.membership.id,
-  }).returning({ id: knowledgeMappingProposal.id, state: knowledgeMappingProposal.state });
+  const mapping = await db.transaction(async (transaction) => {
+    const [created] = await transaction.insert(knowledgeMappingProposal).values({
+      organizationId: workspaceId,
+      projectEnvironmentId: authorization.grant.projectEnvironmentId,
+      graphRevisionId: body.graphRevisionId as string,
+      schemaFingerprint: body.schemaFingerprint as string,
+      fromNodeId: body.fromNodeId as string,
+      targetKind: body.targetKind as string,
+      targetIdentity: body.targetIdentity as string,
+      state: "proposed",
+      proposedByMemberId: authorization.membership.id,
+    }).returning({
+      id: knowledgeMappingProposal.id,
+      projectEnvironmentId: knowledgeMappingProposal.projectEnvironmentId,
+      graphRevisionId: knowledgeMappingProposal.graphRevisionId,
+      schemaFingerprint: knowledgeMappingProposal.schemaFingerprint,
+      fromNodeId: knowledgeMappingProposal.fromNodeId,
+      targetKind: knowledgeMappingProposal.targetKind,
+      targetIdentity: knowledgeMappingProposal.targetIdentity,
+      state: knowledgeMappingProposal.state,
+      proposedAt: knowledgeMappingProposal.proposedAt,
+    });
+    await transaction.insert(workspaceAuditEvent).values({
+      organizationId: workspaceId,
+      actorUserId: authorization.session.user.id,
+      action: "knowledge.mapping.propose",
+      resourceType: "knowledge_mapping",
+      resourceId: created.id,
+      redactedSummary: {
+        projectEnvironmentId: created.projectEnvironmentId,
+        graphRevisionId: created.graphRevisionId,
+        targetKind: created.targetKind,
+      },
+      requestId: crypto.randomUUID(),
+    });
+    return created;
+  });
   return privateJson({ mapping }, { status: 201 });
 }
 
@@ -90,22 +127,46 @@ export async function PATCH(request: Request, context: RouteContext) {
     || !isUuid(body.expectedGraphRevisionId)
     || (body.decision !== "approved" && body.decision !== "rejected")
   ) return jsonError("Invalid Knowledge mapping decision", 400);
-  const updated = await db.update(knowledgeMappingProposal).set({
-    state: body.decision,
-    decidedByMemberId: authorization.membership.id,
-    decidedAt: new Date(),
-  }).where(and(
-    eq(knowledgeMappingProposal.organizationId, workspaceId),
-    eq(knowledgeMappingProposal.id, body.mappingId),
-    eq(knowledgeMappingProposal.graphRevisionId, body.expectedGraphRevisionId),
-    eq(knowledgeMappingProposal.state, "proposed"),
-    sql`EXISTS (
-      SELECT 1 FROM ${knowledgeEnvironmentHead} head
-      WHERE head.organization_id = ${workspaceId}
-        AND head.project_environment_id = ${knowledgeMappingProposal.projectEnvironmentId}
-        AND head.graph_revision_id = ${knowledgeMappingProposal.graphRevisionId}
-    )`,
-  )).returning({ id: knowledgeMappingProposal.id, state: knowledgeMappingProposal.state });
+  const mappingId = body.mappingId;
+  const expectedGraphRevisionId = body.expectedGraphRevisionId;
+  const decision = body.decision;
+  const updated = await db.transaction(async (transaction) => {
+    const rows = await transaction.update(knowledgeMappingProposal).set({
+      state: decision,
+      decidedByMemberId: authorization.membership.id,
+      decidedAt: new Date(),
+    }).where(and(
+      eq(knowledgeMappingProposal.organizationId, workspaceId),
+      eq(knowledgeMappingProposal.id, mappingId),
+      eq(knowledgeMappingProposal.graphRevisionId, expectedGraphRevisionId),
+      eq(knowledgeMappingProposal.state, "proposed"),
+      sql`EXISTS (
+        SELECT 1 FROM ${knowledgeEnvironmentHead} head
+        WHERE head.organization_id = ${workspaceId}
+          AND head.project_environment_id = ${knowledgeMappingProposal.projectEnvironmentId}
+          AND head.graph_revision_id = ${knowledgeMappingProposal.graphRevisionId}
+      )`,
+    )).returning({
+      id: knowledgeMappingProposal.id,
+      state: knowledgeMappingProposal.state,
+      projectEnvironmentId: knowledgeMappingProposal.projectEnvironmentId,
+      graphRevisionId: knowledgeMappingProposal.graphRevisionId,
+    });
+    if (rows.length !== 1) return rows;
+    await transaction.insert(workspaceAuditEvent).values({
+      organizationId: workspaceId,
+      actorUserId: authorization.session.user.id,
+      action: `knowledge.mapping.${decision}`,
+      resourceType: "knowledge_mapping",
+      resourceId: rows[0]!.id,
+      redactedSummary: {
+        projectEnvironmentId: rows[0]!.projectEnvironmentId,
+        graphRevisionId: rows[0]!.graphRevisionId,
+      },
+      requestId: crypto.randomUUID(),
+    });
+    return rows;
+  });
   if (updated.length !== 1) return jsonError("Knowledge mapping is stale or already decided", 409);
   return privateJson({ mapping: updated[0] });
 }

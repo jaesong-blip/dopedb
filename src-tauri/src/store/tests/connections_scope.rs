@@ -114,13 +114,14 @@ async fn assert_current_store_migration_is_write_free() {
     assert_eq!(version, super::super::bootstrap::LOCAL_SCHEMA_VERSION);
 
     use crate::features::knowledge::domain::{
-        EnvironmentRiskClass, KnowledgeMappingProposal, MappingProposalState, Project,
-        ProjectEnvironment,
+        EnvironmentRiskClass, KnowledgeGrant, KnowledgeMappingProposal, MappingProposalState,
+        Project, ProjectEnvironment,
     };
     use crate::features::knowledge::ports::{
-        KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort, KnowledgeScopeRepositoryPort,
+        KnowledgeGrantPort, KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
+        KnowledgeScopeRepositoryPort,
     };
-    use crate::kernel::identity::WorkspaceId;
+    use crate::kernel::identity::{AccountId, WorkspaceId};
     use dopedb_protocol::GraphBuildArtifactV1;
 
     let store = Store::from_pool_for_test(pool.clone());
@@ -192,6 +193,37 @@ async fn assert_current_store_migration_is_write_free() {
         .iter()
         .any(|candidate| candidate.graph_revision_id == second.graph_revision_id));
 
+    let account_id = AccountId::new("knowledge-member").unwrap();
+    sqlx::query(
+        "UPDATE workspace_members SET user_id = ?1
+         WHERE workspace_id = ?2 AND status = 'active'",
+    )
+    .bind(account_id.as_str())
+    .bind(project.workspace_id.to_string())
+    .execute(&pool)
+    .await
+    .unwrap();
+    let grant = KnowledgeGrant {
+        id: Uuid::from_u128(0x1262),
+        workspace_id: project.workspace_id,
+        account_id,
+        project_id: project.id,
+        project_environment_id: environment.id,
+        environment_revision: environment.revision,
+        graph_revision_ids: active_set
+            .iter()
+            .map(|candidate| candidate.graph_revision_id)
+            .collect(),
+        expires_at: Utc::now() + chrono::Duration::hours(1),
+    };
+    store.save_grant(&grant).await.unwrap();
+    assert_eq!(
+        store.exact_grant(grant.id).await.unwrap(),
+        Some(grant.clone())
+    );
+    store.revoke_grant(grant.id).await.unwrap();
+    assert_eq!(store.exact_grant(grant.id).await.unwrap(), None);
+
     let mapping = KnowledgeMappingProposal {
         id: Uuid::from_u128(0x1261),
         project_environment_id: environment.id,
@@ -231,6 +263,24 @@ async fn assert_current_store_migration_is_write_free() {
             .state,
         MappingProposalState::Approved
     );
+    let approved_mapping = KnowledgeMappingProposal {
+        state: MappingProposalState::Approved,
+        ..mapping.clone()
+    };
+    store
+        .sync_remote_knowledge_mapping(&approved_mapping)
+        .await
+        .unwrap();
+    let changed_remote_identity = KnowledgeMappingProposal {
+        target_identity: "changed".into(),
+        ..approved_mapping
+    };
+    assert!(matches!(
+        store
+            .sync_remote_knowledge_mapping(&changed_remote_identity)
+            .await,
+        Err(AppError::Blocked { .. })
+    ));
     assert!(matches!(
         store
             .decide_mapping(
@@ -245,6 +295,7 @@ async fn assert_current_store_migration_is_write_free() {
     let current_connection_id = Uuid::from_u128(0x1291);
     let secondary_connection_id = Uuid::from_u128(0x1292);
     let mut agent_scope = Some(crate::features::knowledge::domain::KnowledgeSessionScope {
+        knowledge_grant_id: Uuid::from_u128(0x1290),
         project_environment_id: environment.id,
         environment_revision: environment.revision,
         graph_revision_ids: active_set
@@ -371,6 +422,7 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
         title: "Bounded replay".into(),
         lifecycle: AcpSessionLifecycle::Ready,
         acp_session_id: Some("official-adapter-session".into()),
+        knowledge_grant_id: None,
         project_environment_id: None,
         environment_revision: None,
         graph_revision_ids: Vec::new(),

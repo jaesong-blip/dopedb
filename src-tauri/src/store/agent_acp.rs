@@ -222,9 +222,9 @@ where
         "INSERT INTO agent_acp_sessions(
              id, connection_id, workspace_id, account_scope, provider, title,
              lifecycle, acp_session_id, project_environment_id,
-             environment_revision, graph_revision_ids, environment_connections,
-             error, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             knowledge_grant_id, environment_revision, graph_revision_ids,
+             environment_connections, error, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
          ON CONFLICT(id) DO UPDATE SET
              title = excluded.title,
              lifecycle = excluded.lifecycle,
@@ -246,6 +246,7 @@ where
             .project_environment_id
             .map(|value| value.to_string()),
     )
+    .bind(summary.knowledge_grant_id.map(|value| value.to_string()))
     .bind(
         summary
             .environment_revision
@@ -271,6 +272,10 @@ fn row_to_summary(row: &sqlx::sqlite::SqliteRow) -> AppResult<AcpSessionSummary>
         title: row.try_get("title")?,
         lifecycle: parse_lifecycle(row.try_get("lifecycle")?)?,
         acp_session_id: row.try_get("acp_session_id")?,
+        knowledge_grant_id: row
+            .try_get::<Option<String>, _>("knowledge_grant_id")?
+            .map(parse_uuid)
+            .transpose()?,
         project_environment_id: row
             .try_get::<Option<String>, _>("project_environment_id")?
             .map(parse_uuid)

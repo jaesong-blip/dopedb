@@ -104,6 +104,7 @@ export interface AcpSessionSummary {
   title: string;
   lifecycle: AcpSessionLifecycle;
   acpSessionId: string | null;
+  knowledgeGrantId: string | null;
   projectEnvironmentId: string | null;
   environmentRevision: number | null;
   graphRevisionIds: string[];

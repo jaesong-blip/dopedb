@@ -54,12 +54,14 @@ use connections::{
 use dashboards::{delete_dashboard, remote_dashboards, upsert_dashboard};
 pub(crate) use knowledge::{
     begin_knowledge_github_install, bind_environment_connection, create_knowledge_project,
-    create_knowledge_source, delete_knowledge_source, knowledge_source_events,
-    knowledge_source_snapshot, list_environment_connections, list_knowledge_github_repositories,
-    list_knowledge_projects, publish_knowledge_graph, read_knowledge_source_blob,
-    revoke_environment_connection, CreateKnowledgeEnvironmentRequest,
-    CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest, RemoteGithubRepository,
-    RemoteKnowledgeProject,
+    create_knowledge_source, decide_remote_knowledge_mapping, delete_knowledge_source,
+    download_knowledge_graph, knowledge_source_events, knowledge_source_snapshot,
+    list_current_knowledge_grants, list_environment_connections,
+    list_knowledge_github_repositories, list_knowledge_projects, list_remote_knowledge_mappings,
+    propose_remote_knowledge_mapping, publish_knowledge_graph, read_knowledge_source_blob,
+    revoke_environment_connection,
+    CreateKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, CreateKnowledgeSourceRequest,
+    RemoteGithubRepository, RemoteKnowledgeProject,
 };
 use provider_local_target::provider_local_target;
 pub(crate) use reports::{append_report_evidence, propose_report};

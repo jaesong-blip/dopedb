@@ -69,6 +69,9 @@ pub async fn start_agent_acp_session(
     environment_connection_ids: Option<Vec<Uuid>>,
 ) -> AppResult<AcpSessionFocus> {
     state.wait_for_post_paint_recovery().await?;
+    if project_environment_id.is_some() {
+        crate::features::knowledge::transport::sync_current_knowledge_access(&state).await?;
+    }
     state
         .agents_acp
         .start(
@@ -92,6 +95,9 @@ pub async fn list_agent_knowledge_environments(
         .knowledge_store()
         .pin_connection_for_read(Uuid::from(connection_id))
         .await?;
+    if connection.scope.selected_account_id.is_some() {
+        crate::features::knowledge::transport::sync_current_knowledge_access(&state).await?;
+    }
     state
         .knowledge_store()
         .agent_knowledge_environments(&connection)

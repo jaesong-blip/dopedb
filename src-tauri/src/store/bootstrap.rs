@@ -18,7 +18,8 @@ use super::*;
 /// Version 11 pins an Environment KnowledgeGrant to its complete graph revision set.
 /// Version 12 persists the exact Knowledge scope of resumable ACP sessions.
 /// Version 13 adds the session's immutable Environment connection allowlist.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 13;
+/// Version 14 persists the exact member KnowledgeGrant used by a resumable session.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 14;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -113,7 +114,22 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 13).await?;
         migrated = true;
     }
+    if version < 14 {
+        ensure_agent_acp_knowledge_grant(pool).await?;
+        set_local_schema_version(pool, 14).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+async fn ensure_agent_acp_knowledge_grant(pool: &SqlitePool) -> AppResult<()> {
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
+        "knowledge_grant_id",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN knowledge_grant_id TEXT",
+    )
+    .await
 }
 
 async fn ensure_agent_acp_environment_connections(pool: &SqlitePool) -> AppResult<()> {

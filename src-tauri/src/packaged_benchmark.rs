@@ -738,6 +738,7 @@ async fn packaged_agent_receipt(
         title: "Packaged benchmark".into(),
         lifecycle: AcpSessionLifecycle::Running,
         acp_session_id: Some("packaged-benchmark-session".into()),
+        knowledge_grant_id: None,
         project_environment_id: None,
         environment_revision: None,
         graph_revision_ids: Vec::new(),

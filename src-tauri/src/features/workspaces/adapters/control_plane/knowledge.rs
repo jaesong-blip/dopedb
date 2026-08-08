@@ -2,7 +2,9 @@
 //! source content is returned only for an exact workspace/source/revision request.
 
 use super::*;
-use crate::features::knowledge::domain::EnvironmentRiskClass;
+use crate::features::knowledge::domain::{
+    EnvironmentRiskClass, KnowledgeMappingProposal, MappingProposalState,
+};
 use dopedb_protocol::GraphBuildArtifactV1;
 use sha2::{Digest, Sha256};
 const MAX_SOURCE_FILES: usize = 100_000;
@@ -145,6 +147,72 @@ pub(crate) struct RemoteKnowledgeProject {
     pub(crate) environments: Vec<RemoteKnowledgeEnvironment>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteKnowledgeGraphScope {
+    pub(crate) source_id: Uuid,
+    pub(crate) graph_revision_id: Uuid,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteKnowledgeGrant {
+    pub(crate) id: Uuid,
+    pub(crate) member_id: String,
+    pub(crate) project_id: Uuid,
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) environment_revision: u64,
+    pub(crate) graph_revision_ids: Vec<Uuid>,
+    pub(crate) graph_scopes: Vec<RemoteKnowledgeGraphScope>,
+    pub(crate) expires_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct KnowledgeGrantsResponse {
+    grants: Vec<RemoteKnowledgeGrant>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct KnowledgeMappingsResponse {
+    mappings: Vec<KnowledgeMappingProposal>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct KnowledgeMappingResponse {
+    mapping: KnowledgeMappingProposal,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProposeKnowledgeMappingRequest<'a> {
+    grant_id: Uuid,
+    graph_revision_id: Uuid,
+    schema_fingerprint: &'a str,
+    from_node_id: &'a str,
+    target_kind: &'a str,
+    target_identity: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecideKnowledgeMappingRequest<'a> {
+    mapping_id: Uuid,
+    expected_graph_revision_id: Uuid,
+    decision: &'a str,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DownloadedKnowledgeGraphResponse {
+    graph_revision_id: Uuid,
+    artifact_sha256: String,
+    artifact: GraphBuildArtifactV1,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KnowledgeProjectsResponse {
@@ -285,6 +353,228 @@ pub(crate) async fn create_knowledge_project(
         ));
     }
     Ok(project)
+}
+
+pub(crate) async fn list_current_knowledge_grants(
+    user_id: &str,
+    workspace_id: Uuid,
+) -> AppResult<Vec<RemoteKnowledgeGrant>> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .get(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/grants?scope=mine",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .send()
+        .await
+        .map_err(|error| request_error("loading current Knowledge grants", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let grants = response
+        .json::<KnowledgeGrantsResponse>()
+        .await
+        .map_err(|error| request_error("reading current Knowledge grants", error))?
+        .grants;
+    let now = chrono::Utc::now();
+    if grants.len() > 1_000
+        || grants.iter().any(|grant| {
+            grant.member_id.is_empty()
+                || grant.member_id.len() > 255
+                || grant.environment_revision == 0
+                || grant.graph_revision_ids.is_empty()
+                || grant.graph_revision_ids.len() > 100
+                || grant.graph_scopes.len() != grant.graph_revision_ids.len()
+                || grant.expires_at <= now
+                || grant.revoked_at.is_some()
+                || grant
+                    .graph_scopes
+                    .iter()
+                    .any(|scope| !grant.graph_revision_ids.contains(&scope.graph_revision_id))
+        })
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned invalid current grants".into(),
+        ));
+    }
+    Ok(grants)
+}
+
+fn valid_remote_mapping(mapping: &KnowledgeMappingProposal) -> bool {
+    mapping.schema_fingerprint.len() == 64
+        && mapping
+            .schema_fingerprint
+            .bytes()
+            .all(|value| value.is_ascii_hexdigit() && !value.is_ascii_uppercase())
+        && mapping.from_node_id.len() == 64
+        && mapping
+            .from_node_id
+            .bytes()
+            .all(|value| value.is_ascii_hexdigit() && !value.is_ascii_uppercase())
+        && !mapping.target_kind.trim().is_empty()
+        && mapping.target_kind.len() <= 128
+        && !mapping.target_identity.trim().is_empty()
+        && mapping.target_identity.len() <= 2_048
+        && !mapping.target_identity.chars().any(char::is_control)
+}
+
+pub(crate) async fn list_remote_knowledge_mappings(
+    user_id: &str,
+    workspace_id: Uuid,
+) -> AppResult<Vec<KnowledgeMappingProposal>> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .get(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/mappings",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .send()
+        .await
+        .map_err(|error| request_error("loading Knowledge mappings", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let mappings = response
+        .json::<KnowledgeMappingsResponse>()
+        .await
+        .map_err(|error| request_error("reading Knowledge mappings", error))?
+        .mappings;
+    if mappings.len() > 10_000
+        || mappings
+            .iter()
+            .any(|mapping| !valid_remote_mapping(mapping))
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned invalid mappings".into(),
+        ));
+    }
+    Ok(mappings)
+}
+
+pub(crate) async fn propose_remote_knowledge_mapping(
+    user_id: &str,
+    workspace_id: Uuid,
+    grant_id: Uuid,
+    proposal: &KnowledgeMappingProposal,
+) -> AppResult<KnowledgeMappingProposal> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/mappings",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .json(&ProposeKnowledgeMappingRequest {
+            grant_id,
+            graph_revision_id: proposal.graph_revision_id,
+            schema_fingerprint: &proposal.schema_fingerprint,
+            from_node_id: &proposal.from_node_id,
+            target_kind: &proposal.target_kind,
+            target_identity: &proposal.target_identity,
+        })
+        .send()
+        .await
+        .map_err(|error| request_error("proposing a Knowledge mapping", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let mapping = response
+        .json::<KnowledgeMappingResponse>()
+        .await
+        .map_err(|error| request_error("reading the Knowledge mapping proposal", error))?
+        .mapping;
+    if mapping.project_environment_id != proposal.project_environment_id
+        || mapping.graph_revision_id != proposal.graph_revision_id
+        || mapping.schema_fingerprint != proposal.schema_fingerprint
+        || mapping.from_node_id != proposal.from_node_id
+        || mapping.target_kind != proposal.target_kind
+        || mapping.target_identity != proposal.target_identity
+        || mapping.state != MappingProposalState::Proposed
+        || !valid_remote_mapping(&mapping)
+    {
+        return Err(AppError::Network(
+            "Project Knowledge changed the mapping proposal".into(),
+        ));
+    }
+    Ok(mapping)
+}
+
+pub(crate) async fn decide_remote_knowledge_mapping(
+    user_id: &str,
+    workspace_id: Uuid,
+    mapping_id: Uuid,
+    expected_graph_revision_id: Uuid,
+    decision: MappingProposalState,
+) -> AppResult<()> {
+    let decision = match decision {
+        MappingProposalState::Approved => "approved",
+        MappingProposalState::Rejected => "rejected",
+        _ => {
+            return Err(AppError::Config(
+                "a remote Knowledge mapping decision must be final".into(),
+            ));
+        }
+    };
+    let token = bearer(user_id)?;
+    let response = client()?
+        .patch(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/mappings",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .json(&DecideKnowledgeMappingRequest {
+            mapping_id,
+            expected_graph_revision_id,
+            decision,
+        })
+        .send()
+        .await
+        .map_err(|error| request_error("deciding a Knowledge mapping", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    Ok(())
+}
+
+pub(crate) async fn download_knowledge_graph(
+    user_id: &str,
+    workspace_id: Uuid,
+    grant_id: Uuid,
+    source_id: Uuid,
+    expected_graph_revision_id: Uuid,
+) -> AppResult<GraphBuildArtifactV1> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .get(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/sources/{source_id}/graph?grantId={grant_id}",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .send()
+        .await
+        .map_err(|error| request_error("loading a granted Knowledge graph", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let downloaded = response
+        .json::<DownloadedKnowledgeGraphResponse>()
+        .await
+        .map_err(|error| request_error("reading a granted Knowledge graph", error))?;
+    let artifact_value = serde_json::to_value(&downloaded.artifact)?;
+    let artifact_sha256 = hex::encode(Sha256::digest(serde_json::to_vec(&artifact_value)?));
+    if downloaded.graph_revision_id != expected_graph_revision_id
+        || downloaded.artifact.graph_revision_id != expected_graph_revision_id
+        || downloaded.artifact.binding.source_id != source_id
+        || downloaded.artifact_sha256 != artifact_sha256
+        || !downloaded.artifact.validate()
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned an invalid granted graph".into(),
+        ));
+    }
+    Ok(downloaded.artifact)
 }
 
 pub(crate) async fn list_environment_connections(

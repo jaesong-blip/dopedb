@@ -49,21 +49,50 @@ impl Store {
         .bind(connection.scope.workspace_id.to_string())
         .fetch_all(&self.pool)
         .await?;
-        rows.into_iter()
-            .map(
-                |(id, project_name, name, risk_class, graph_revision_count)| {
-                    Ok(AgentKnowledgeEnvironment {
-                        id: parse_uuid(id)?,
-                        project_name,
-                        name,
-                        risk_class: parse_risk_class(&risk_class)?,
-                        graph_revision_count: u64::try_from(graph_revision_count).map_err(
-                            |_| AppError::Config("the Knowledge graph count is invalid".into()),
-                        )?,
-                    })
-                },
-            )
-            .collect()
+        let Some(account_id) = connection.scope.selected_account_id.as_deref() else {
+            return Ok(Vec::new());
+        };
+        let mut environments = Vec::new();
+        for (id, project_name, name, risk_class, graph_revision_count) in rows {
+            let id = parse_uuid(id)?;
+            let graphs = self.active_set(id).await?;
+            if graphs.is_empty() {
+                continue;
+            }
+            let environment_revision = graphs[0].environment_revision;
+            if graphs
+                .iter()
+                .any(|graph| graph.environment_revision != environment_revision)
+            {
+                continue;
+            }
+            let graph_revision_ids = graphs
+                .iter()
+                .map(|graph| graph.graph_revision_id)
+                .collect::<Vec<_>>();
+            if self
+                .active_knowledge_grant(
+                    connection.scope.workspace_id,
+                    account_id,
+                    id,
+                    environment_revision,
+                    &graph_revision_ids,
+                )
+                .await?
+                .is_none()
+            {
+                continue;
+            }
+            environments.push(AgentKnowledgeEnvironment {
+                id,
+                project_name,
+                name,
+                risk_class: parse_risk_class(&risk_class)?,
+                graph_revision_count: u64::try_from(graph_revision_count)
+                    .map_err(|_| AppError::Config("the Knowledge graph count is invalid".into()))?,
+            });
+        }
+        Ok(environments)
     }
 
     pub(crate) async fn knowledge_session_scope(
@@ -122,6 +151,30 @@ impl Store {
                 reason: "the Project Environment Knowledge graph set is stale".into(),
             });
         }
+        let account_id = connection
+            .scope
+            .selected_account_id
+            .as_deref()
+            .ok_or_else(|| AppError::Blocked {
+                reason: "Project Knowledge requires an exact member grant".into(),
+            })?;
+        let graph_revision_ids = graphs
+            .iter()
+            .map(|graph| graph.graph_revision_id)
+            .collect::<Vec<_>>();
+        let knowledge_grant_id = self
+            .active_knowledge_grant(
+                connection.scope.workspace_id,
+                account_id,
+                project_environment_id,
+                environment_revision,
+                &graph_revision_ids,
+            )
+            .await?
+            .ok_or_else(|| AppError::Blocked {
+                reason: "this member has no current grant for the active Knowledge revision set"
+                    .into(),
+            })?;
         let bindings = self
             .environment_connections(connection.scope.workspace_id, project_environment_id)
             .await?;
@@ -173,20 +226,71 @@ impl Store {
             });
         }
         Ok(Some(KnowledgeSessionScope {
+            knowledge_grant_id,
             project_environment_id,
             environment_revision,
-            graph_revision_ids: graphs
-                .into_iter()
-                .map(|graph| graph.graph_revision_id)
-                .collect(),
+            graph_revision_ids,
             connections,
         }))
+    }
+
+    pub(crate) async fn active_knowledge_grant(
+        &self,
+        workspace_id: Uuid,
+        account_id: &str,
+        project_environment_id: Uuid,
+        environment_revision: u64,
+        graph_revision_ids: &[Uuid],
+    ) -> AppResult<Option<Uuid>> {
+        let candidates: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM knowledge_grants
+             WHERE workspace_id = ?1 AND account_user_id = ?2
+               AND project_environment_id = ?3 AND environment_revision = ?4
+               AND expires_at > ?5
+             ORDER BY expires_at DESC, id",
+        )
+        .bind(workspace_id.to_string())
+        .bind(account_id)
+        .bind(project_environment_id.to_string())
+        .bind(u64_to_i64(environment_revision, "environment revision")?)
+        .bind(Utc::now())
+        .fetch_all(&self.pool)
+        .await?;
+        for candidate in candidates {
+            let id = parse_uuid(candidate)?;
+            if self
+                .exact_grant(id)
+                .await?
+                .is_some_and(|grant| grant.graph_revision_ids == graph_revision_ids)
+            {
+                return Ok(Some(id));
+            }
+        }
+        Ok(None)
     }
 
     pub(crate) async fn exact_knowledge_session_graphs(
         &self,
         scope: &KnowledgeSessionScope,
+        expected_workspace_id: Uuid,
+        expected_account_id: &str,
     ) -> AppResult<Vec<GraphBuildArtifactV1>> {
+        let grant = self
+            .exact_grant(scope.knowledge_grant_id)
+            .await?
+            .ok_or_else(|| AppError::Blocked {
+                reason: "the Agent Knowledge grant expired or was revoked".into(),
+            })?;
+        if Uuid::from(grant.workspace_id) != expected_workspace_id
+            || grant.account_id.as_str() != expected_account_id
+            || grant.project_environment_id != scope.project_environment_id
+            || grant.environment_revision != scope.environment_revision
+            || grant.graph_revision_ids != scope.graph_revision_ids
+        {
+            return Err(AppError::Blocked {
+                reason: "the Agent Knowledge grant changed; start a new session".into(),
+            });
+        }
         let graphs = self.active_set(scope.project_environment_id).await?;
         let active_ids = graphs
             .iter()
@@ -250,6 +354,174 @@ impl Store {
             }
         }
         Ok(graphs)
+    }
+
+    pub(crate) async fn revoke_knowledge_grants_for_account(
+        &self,
+        workspace_id: Uuid,
+        account_id: &str,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "DELETE FROM knowledge_grants
+             WHERE workspace_id = ?1 AND account_user_id = ?2",
+        )
+        .bind(workspace_id.to_string())
+        .bind(account_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Import a graph already authorized as the active revision by the hosted
+    /// KnowledgeGrant endpoint. The authenticated response, artifact digest, and
+    /// exact grant are verified before this trusted adapter boundary is called.
+    pub(crate) async fn import_granted_active_graph(
+        &self,
+        artifact: &GraphBuildArtifactV1,
+    ) -> AppResult<()> {
+        self.stage(artifact).await?;
+        let environment_revision =
+            u64_to_i64(artifact.environment_revision, "environment revision")?;
+        sqlx::query(
+            "UPDATE knowledge_mapping_proposals
+             SET state = 'stale', decided_at = ?3
+             WHERE project_environment_id = ?1 AND graph_revision_id IN (
+                   SELECT revision.graph_revision_id
+                   FROM knowledge_graph_revisions revision
+                   WHERE revision.source_id = ?4
+                     AND revision.graph_revision_id <> ?2
+               )
+               AND state IN ('proposed', 'approved')",
+        )
+        .bind(artifact.binding.project_environment_id.to_string())
+        .bind(artifact.graph_revision_id.to_string())
+        .bind(Utc::now())
+        .bind(artifact.binding.source_id.to_string())
+        .execute(&self.pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO knowledge_environment_heads
+                 (project_environment_id, source_id, graph_revision_id,
+                  environment_revision, activated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(project_environment_id, source_id) DO UPDATE SET
+                 graph_revision_id = excluded.graph_revision_id,
+                 environment_revision = excluded.environment_revision,
+                 activated_at = excluded.activated_at",
+        )
+        .bind(artifact.binding.project_environment_id.to_string())
+        .bind(artifact.binding.source_id.to_string())
+        .bind(artifact.graph_revision_id.to_string())
+        .bind(environment_revision)
+        .bind(Utc::now())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn retain_granted_environment_heads(
+        &self,
+        project_environment_id: Uuid,
+        graph_revision_ids: &[Uuid],
+    ) -> AppResult<()> {
+        let heads: Vec<(String, String)> = sqlx::query_as(
+            "SELECT source_id, graph_revision_id FROM knowledge_environment_heads
+             WHERE project_environment_id = ?1",
+        )
+        .bind(project_environment_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        for (source_id, graph_revision_id) in heads {
+            let graph_revision_id = parse_uuid(graph_revision_id)?;
+            if graph_revision_ids.contains(&graph_revision_id) {
+                continue;
+            }
+            sqlx::query(
+                "DELETE FROM knowledge_environment_heads
+                 WHERE project_environment_id = ?1 AND source_id = ?2
+                   AND graph_revision_id = ?3",
+            )
+            .bind(project_environment_id.to_string())
+            .bind(source_id)
+            .bind(graph_revision_id.to_string())
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn sync_remote_knowledge_mapping(
+        &self,
+        proposal: &KnowledgeMappingProposal,
+    ) -> AppResult<()> {
+        if proposal.schema_fingerprint.len() != 64
+            || proposal.from_node_id.len() != 64
+            || proposal.target_kind.trim().is_empty()
+            || proposal.target_kind.len() > 128
+            || proposal.target_identity.trim().is_empty()
+            || proposal.target_identity.len() > 2_048
+            || proposal
+                .target_identity
+                .chars()
+                .any(|character| character.is_control())
+        {
+            return Err(AppError::Config(
+                "the remote Knowledge mapping proposal is invalid".into(),
+            ));
+        }
+        let active: bool = sqlx::query_scalar(
+            "SELECT EXISTS(
+                 SELECT 1 FROM knowledge_graph_revisions graph
+                 JOIN knowledge_environment_heads head
+                   ON head.project_environment_id = graph.project_environment_id
+                  AND head.graph_revision_id = graph.graph_revision_id
+                  AND head.source_id = graph.source_id
+                 WHERE graph.graph_revision_id = ?1
+                   AND graph.project_environment_id = ?2
+             )",
+        )
+        .bind(proposal.graph_revision_id.to_string())
+        .bind(proposal.project_environment_id.to_string())
+        .fetch_one(&self.pool)
+        .await?;
+        if !active {
+            return Err(AppError::Blocked {
+                reason: "a remote mapping is outside the active Knowledge graph".into(),
+            });
+        }
+        let updated = sqlx::query(
+            "INSERT INTO knowledge_mapping_proposals
+                 (id, project_environment_id, graph_revision_id, schema_fingerprint,
+                  from_node_id, target_kind, target_identity, state, proposed_at, decided_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET
+                 state = excluded.state,
+                 decided_at = excluded.decided_at
+             WHERE knowledge_mapping_proposals.project_environment_id = excluded.project_environment_id
+               AND knowledge_mapping_proposals.graph_revision_id = excluded.graph_revision_id
+               AND knowledge_mapping_proposals.schema_fingerprint = excluded.schema_fingerprint
+               AND knowledge_mapping_proposals.from_node_id = excluded.from_node_id
+               AND knowledge_mapping_proposals.target_kind = excluded.target_kind
+               AND knowledge_mapping_proposals.target_identity = excluded.target_identity",
+        )
+        .bind(proposal.id.to_string())
+        .bind(proposal.project_environment_id.to_string())
+        .bind(proposal.graph_revision_id.to_string())
+        .bind(&proposal.schema_fingerprint)
+        .bind(&proposal.from_node_id)
+        .bind(&proposal.target_kind)
+        .bind(&proposal.target_identity)
+        .bind(mapping_state_value(proposal.state))
+        .bind(proposal.proposed_at)
+        .bind((proposal.state != MappingProposalState::Proposed).then(Utc::now))
+        .execute(&self.pool)
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(AppError::Blocked {
+                reason: "the remote Knowledge mapping identity changed".into(),
+            });
+        }
+        Ok(())
     }
 
     pub(crate) async fn bind_environment_connection(

@@ -375,7 +375,13 @@ impl AcpRuntime {
             )?;
         }
         if let Some(scope) = &knowledge_scope {
-            self.store.exact_knowledge_session_graphs(scope).await?;
+            self.store
+                .exact_knowledge_session_graphs(
+                    scope,
+                    connection.scope.workspace_id,
+                    connection.scope.account_scope.storage_key(),
+                )
+                .await?;
         }
 
         let now = Utc::now();
@@ -423,6 +429,9 @@ impl AcpRuntime {
                         title: "New Agent session".into(),
                         lifecycle: AcpSessionLifecycle::Starting,
                         acp_session_id: None,
+                        knowledge_grant_id: knowledge_scope
+                            .as_ref()
+                            .map(|scope| scope.knowledge_grant_id),
                         project_environment_id: knowledge_scope
                             .as_ref()
                             .map(|scope| scope.project_environment_id),
@@ -780,22 +789,28 @@ fn summary_knowledge_scope(
     summary: &AcpSessionSummary,
 ) -> AppResult<Option<KnowledgeSessionScope>> {
     match (
+        summary.knowledge_grant_id,
         summary.project_environment_id,
         summary.environment_revision,
         summary.graph_revision_ids.is_empty(),
     ) {
-        (None, None, true) => Ok(None),
-        (Some(project_environment_id), Some(environment_revision), false)
-            if environment_revision > 0
-                && summary.graph_revision_ids.len() <= 100
-                && summary
-                    .graph_revision_ids
-                    .iter()
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .len()
-                    == summary.graph_revision_ids.len() =>
+        (None, None, None, true) => Ok(None),
+        (
+            Some(knowledge_grant_id),
+            Some(project_environment_id),
+            Some(environment_revision),
+            false,
+        ) if environment_revision > 0
+            && summary.graph_revision_ids.len() <= 100
+            && summary
+                .graph_revision_ids
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                == summary.graph_revision_ids.len() =>
         {
             Ok(Some(KnowledgeSessionScope {
+                knowledge_grant_id,
                 project_environment_id,
                 environment_revision,
                 graph_revision_ids: summary.graph_revision_ids.clone(),
