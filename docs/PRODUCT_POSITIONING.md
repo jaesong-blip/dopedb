@@ -118,6 +118,9 @@ open roadmap work is complete:
 - full bidirectional resource sync, KMS wrapping, backup/restore, or self-service
   workspace deletion;
 - shared dashboard and Agent report publishing;
+- GitHub/Local Folder Project Knowledge, environment-scoped multi-database Agent
+  analysis, funnel dashboards, or local signal monitoring;
+- bundled Node and independently installed first-party ACP adapter distribution;
 - arbitrary cloud providers, database engines, or provider branching abstractions.
 
 ## Priority order
@@ -127,8 +130,11 @@ When work competes for time, use this order:
 1. Make sharing one connection and obtaining individual access reliable.
 2. Finish provider discovery, least-privilege issuance, revoke, expiry, and drift.
 3. Strengthen the exact Agent authority, approval, stop, result, and recovery loop.
-4. Complete shared dashboards and durable Agent reports only on top of that boundary.
-5. Deepen schema introspection where it improves Agent judgment.
+4. Bind GitHub and Local Folder evidence to an immutable Project Knowledge graph,
+   then make Project Environment the exact multi-database and source revision scope.
+5. Complete shared dashboards, durable Agent reports, funnel publication, and local
+   signal monitoring only on top of that environment boundary.
+6. Deepen schema introspection where it improves Agent judgment.
 
 General local-client convenience, driver breadth, visual object authoring, built-in
 model APIs, and universal MCP compatibility do not outrank those items.
