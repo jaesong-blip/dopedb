@@ -14,7 +14,6 @@ export type SqlFormatResponse =
 
 let requestSequence = 0;
 const LARGE_DOCUMENT_BYTES = 128 * 1024;
-const NATIVE_FORMAT_DOCUMENT_BYTES = 256 * 1024;
 const FORMAT_CHUNK_BYTES = 64 * 1024;
 
 function hasCompoundStatement(sql: string, language: SqlLanguage) {
@@ -180,12 +179,9 @@ export async function formatSqlDocument(
   sql: string,
   language: SqlLanguage,
 ): Promise<string> {
+  const compoundStatement = hasCompoundStatement(sql, language);
   const chunks = splitSqlFormatChunks(sql, language);
-  if (
-    sql.length >= NATIVE_FORMAT_DOCUMENT_BYTES
-    && chunks.length > 1
-    && isTauri()
-  ) {
+  if (!compoundStatement && isTauri()) {
     return formatWithNativeRuntime(chunks, language);
   }
   if (typeof Worker === "undefined") {
