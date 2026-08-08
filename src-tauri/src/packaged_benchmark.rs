@@ -142,6 +142,30 @@ pub(crate) async fn packaged_benchmark_config(
 }
 
 #[tauri::command]
+pub(crate) async fn prepare_packaged_benchmark_workload(app: tauri::AppHandle) -> AppResult<()> {
+    #[cfg(not(feature = "packaged-benchmark"))]
+    {
+        let _ = app;
+        Err(AppError::NotFound(DISABLED.into()))
+    }
+    #[cfg(feature = "packaged-benchmark")]
+    {
+        let scenario = benchmark_scenario()?;
+        if !WORKLOAD_SCENARIOS.contains(&scenario.as_str()) {
+            return Err(AppError::Config(
+                "packaged benchmark workload preparation requires a workload scenario".into(),
+            ));
+        }
+        // The config command runs before React mounts. CI launchers can activate a
+        // later process between that early call and the first rendered workload,
+        // which suspends WKWebView's first paint clock. Reassert focus only after
+        // the scenario surface is ready so every measured process owns the same
+        // visible-window condition as a user interaction.
+        focus_benchmark_window(&app).await
+    }
+}
+
+#[tauri::command]
 pub(crate) async fn run_packaged_benchmark_backend(
     state: State<'_, AppState>,
     app: tauri::AppHandle,

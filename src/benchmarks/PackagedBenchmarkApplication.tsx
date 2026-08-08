@@ -49,6 +49,7 @@ import type {
 import {
   completePackagedBenchmark,
   failPackagedBenchmark,
+  preparePackagedBenchmarkWorkload,
   type PackagedBenchmarkFailureReason,
 } from "../features/runtime/tauriAdapter";
 import {
@@ -131,12 +132,14 @@ function useScenarioRunner(ready: boolean, runner: () => Promise<void>) {
   useEffect(() => {
     if (!ready || started.current) return;
     started.current = true;
-    void latest.current().catch((error) =>
-      failPackagedBenchmark(
-        currentPackagedAction() ?? "scenario-setup",
-        benchmarkFailureReason(error),
-      )
-    );
+    void preparePackagedBenchmarkWorkload()
+      .then(() => latest.current())
+      .catch((error) =>
+        failPackagedBenchmark(
+          currentPackagedAction() ?? "scenario-setup",
+          benchmarkFailureReason(error),
+        )
+      );
   }, [ready]);
 }
 

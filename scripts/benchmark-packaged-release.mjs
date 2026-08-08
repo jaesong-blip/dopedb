@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import {
   cp,
   lstat,
@@ -13,10 +13,12 @@ import {
 import { arch, cpus, platform, release, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createRequire } from "node:module";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
+const execFileAsync = promisify(execFile);
 const tauriCli = require.resolve("@tauri-apps/cli/tauri.js");
 const prefix = "dopedb-packaged-benchmark-";
 const marker = "DOPEDB_PACKAGED_BENCHMARK:";
@@ -609,8 +611,19 @@ function runApplication(
     };
     child.stdout.on("data", inspect);
     child.stderr.on("data", inspect);
+    let rssSamplePending = false;
+    let latestRssSample = Promise.resolve();
     const sampleProcessTreeRss = () => {
-      maximumRss = Math.max(maximumRss, processTreeRssBytes(child.pid));
+      if (rssSamplePending) return;
+      rssSamplePending = true;
+      latestRssSample = processTreeRssBytes(child.pid)
+        .then((rss) => {
+          maximumRss = Math.max(maximumRss, rss);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          rssSamplePending = false;
+        });
     };
     if (sampleRss) sampleProcessTreeRss();
     // Starting PowerShell and querying CIM can take several seconds on a cold
@@ -624,10 +637,11 @@ function runApplication(
       child.kill("SIGTERM");
     }, timeoutMs);
     child.once("error", reject);
-    child.once("close", (code, signal) => {
+    child.once("close", async (code, signal) => {
       activeChildren.delete(child);
       clearTimeout(timeout);
       if (sampler !== null) clearInterval(sampler);
+      await latestRssSample;
       if (pending) inspect("\n");
       if (interrupted) {
         reject(new Error("packaged benchmark interrupted"));
@@ -681,7 +695,7 @@ function scenarioTimeoutMs(scenario) {
   return 90_000;
 }
 
-function processTreeRssBytes(rootPid) {
+async function processTreeRssBytes(rootPid) {
   if (!Number.isInteger(rootPid) || rootPid <= 0) return 0;
   try {
     if (platform() === "win32") {
@@ -692,12 +706,12 @@ function processTreeRssBytes(rootPid) {
         "do {$before=$ids.Count; $ids += @($rows | Where-Object {$ids -contains $_.ParentProcessId} | ForEach-Object {$_.ProcessId}); $ids=@($ids | Sort-Object -Unique)} while ($ids.Count -gt $before)",
         "($rows | Where-Object {$ids -contains $_.ProcessId} | Measure-Object WorkingSetSize -Sum).Sum",
       ].join("; ");
-      const output = execFileSync(
+      const { stdout } = await execFileAsync(
         "powershell",
         ["-NoProfile", "-NonInteractive", "-Command", script],
-        { encoding: "utf8", timeout: 10_000 },
-      ).trim();
-      return Number(output) || 0;
+        { encoding: "utf8", timeout: 10_000, windowsHide: true },
+      );
+      return Number(stdout.trim()) || 0;
     }
     const output = execFileSync(
       "ps",

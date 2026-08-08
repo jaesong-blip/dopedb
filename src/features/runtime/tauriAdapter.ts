@@ -73,6 +73,10 @@ export function packagedBenchmarkConfig(): Promise<PackagedBenchmarkConfig> {
   return invoke("packaged_benchmark_config");
 }
 
+export function preparePackagedBenchmarkWorkload(): Promise<void> {
+  return invoke("prepare_packaged_benchmark_workload");
+}
+
 export function completePackagedBenchmark(
   metrics: PackagedBenchmarkRendererMetrics,
 ): Promise<void> {
