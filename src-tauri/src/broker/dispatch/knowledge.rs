@@ -1,19 +1,25 @@
-//! Read-only Project Knowledge tools scoped to one immutable ACP revision set.
+//! Project Knowledge tools scoped to one immutable ACP revision set.
 
 use std::collections::BTreeSet;
 
 use dopedb_protocol::{
-    EnvironmentConnectionScope, EnvironmentContextCommand, EnvironmentContextResult,
-    FunnelTraceArguments, FunnelTraceCommand, GraphBuildArtifactV1, KnowledgeDiffCommand,
-    KnowledgeEvidenceCommand, KnowledgeEvidenceResult, KnowledgeExplainCommand,
-    KnowledgeNeighborDirection, KnowledgeNeighborsArguments, KnowledgeNeighborsCommand,
-    KnowledgeNodeArguments, KnowledgeNodeMatch, KnowledgePathCommand, KnowledgeSearchCommand,
-    KnowledgeSearchResult, KnowledgeSubgraphResult, MAX_KNOWLEDGE_EVIDENCE_IDS,
-    MAX_KNOWLEDGE_NEIGHBORS, MAX_KNOWLEDGE_QUERY_BYTES, MAX_KNOWLEDGE_RESULTS,
+    CatalogArguments, ConnectionSelector, EnvironmentConnectionScope, EnvironmentContextCommand,
+    EnvironmentContextResult, FunnelTraceArguments, FunnelTraceCommand, GraphBuildArtifactV1,
+    KnowledgeDiffCommand, KnowledgeEvidenceCommand, KnowledgeEvidenceResult,
+    KnowledgeExplainCommand, KnowledgeMappingProposalResult, KnowledgeMappingProposeArguments,
+    KnowledgeMappingProposeCommand, KnowledgeMappingTargetKind, KnowledgeNeighborDirection,
+    KnowledgeNeighborsArguments, KnowledgeNeighborsCommand, KnowledgeNodeArguments,
+    KnowledgeNodeMatch, KnowledgePathCommand, KnowledgeSearchCommand, KnowledgeSearchResult,
+    KnowledgeSubgraphResult, MAX_KNOWLEDGE_EVIDENCE_IDS, MAX_KNOWLEDGE_NEIGHBORS,
+    MAX_KNOWLEDGE_QUERY_BYTES, MAX_KNOWLEDGE_RESULTS, MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES,
 };
+use serde_json::json;
 
 use crate::features::knowledge::application::{graph_path, search_graphs};
-use crate::features::knowledge::ports::KnowledgeGraphRepositoryPort;
+use crate::features::knowledge::domain::{KnowledgeMappingProposal, MappingProposalState};
+use crate::features::knowledge::ports::{
+    KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
+};
 
 use super::*;
 
@@ -22,7 +28,12 @@ pub(super) async fn handle(
     request: &RequestEnvelope,
 ) -> ResponseEnvelope {
     let request_id = request.request_id;
-    let session = match dispatcher.authenticate(request, BrokerCapability::KnowledgeRead) {
+    let capability = if request.command == CommandName::KnowledgeMappingPropose {
+        BrokerCapability::KnowledgePropose
+    } else {
+        BrokerCapability::KnowledgeRead
+    };
+    let session = match dispatcher.authenticate(request, capability) {
         Ok(session) => session,
         Err(code) => return failure(request_id, code, false),
     };
@@ -180,15 +191,41 @@ pub(super) async fn handle(
                 Ok(arguments)
                     if scope
                         .graph_revision_ids
-                        .contains(&arguments.from_graph_revision_id)
-                        && scope
-                            .graph_revision_ids
-                            .contains(&arguments.to_graph_revision_id) =>
+                        .contains(&arguments.to_graph_revision_id) =>
                 {
                     arguments
                 }
                 _ => return failure(request_id, ErrorCode::ScopeDenied, false),
             };
+            let current = match graphs
+                .iter()
+                .find(|graph| graph.graph_revision_id == arguments.to_graph_revision_id)
+            {
+                Some(graph)
+                    if graph.parent_graph_revision_id == Some(arguments.from_graph_revision_id) =>
+                {
+                    graph
+                }
+                _ => return failure(request_id, ErrorCode::ScopeDenied, false),
+            };
+            let previous = match services
+                .knowledge
+                .by_revision(arguments.from_graph_revision_id)
+                .await
+            {
+                Ok(Some(graph))
+                    if graph.binding.source_id == current.binding.source_id
+                        && graph.binding.project_environment_id
+                            == current.binding.project_environment_id =>
+                {
+                    graph
+                }
+                Ok(_) => return failure(request_id, ErrorCode::ScopeDenied, false),
+                Err(error) => {
+                    return failure(request_id, map_application_error(error), false);
+                }
+            };
+            drop(previous);
             respond(
                 request_id,
                 services
@@ -211,8 +248,165 @@ pub(super) async fn handle(
                 funnel_trace(&graphs, &arguments).map_err(map_application_error),
             )
         }
+        CommandName::KnowledgeMappingPropose => {
+            let arguments = match decode_arguments::<KnowledgeMappingProposeCommand>(request) {
+                Ok(arguments) if valid_mapping_arguments(scope, &graphs, &arguments) => arguments,
+                _ => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            respond(
+                request_id,
+                propose_mapping(
+                    dispatcher,
+                    &session,
+                    scope,
+                    services,
+                    arguments,
+                    request.protocol_version,
+                )
+                .await,
+            )
+        }
         _ => failure(request_id, ErrorCode::InvalidRequest, false),
     }
+}
+
+fn valid_mapping_arguments(
+    scope: &crate::features::knowledge::domain::KnowledgeSessionScope,
+    graphs: &[GraphBuildArtifactV1],
+    arguments: &KnowledgeMappingProposeArguments,
+) -> bool {
+    scope
+        .graph_revision_ids
+        .contains(&arguments.graph_revision_id)
+        && scope
+            .connections
+            .iter()
+            .any(|connection| connection.connection_id == arguments.connection_id)
+        && graphs.iter().any(|graph| {
+            graph.graph_revision_id == arguments.graph_revision_id
+                && graph
+                    .nodes
+                    .iter()
+                    .any(|node| node.id == arguments.from_node_id)
+        })
+        && valid_hash(&arguments.from_node_id)
+        && !arguments.target_identity.trim().is_empty()
+        && arguments.target_identity.len() <= MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES
+        && !arguments.target_identity.chars().any(char::is_control)
+        && arguments.database.as_ref().is_none_or(|database| {
+            !database.trim().is_empty()
+                && database.len() <= MAX_TABLE_SELECTOR_BYTES
+                && !database.chars().any(char::is_control)
+        })
+}
+
+async fn propose_mapping(
+    dispatcher: &BrokerDispatcher,
+    session: &AuthenticatedSession,
+    scope: &crate::features::knowledge::domain::KnowledgeSessionScope,
+    services: &ApplicationServices,
+    arguments: KnowledgeMappingProposeArguments,
+    client_protocol_version: u16,
+) -> Result<KnowledgeMappingProposalResult, ErrorCode> {
+    let connection = scope
+        .connections
+        .iter()
+        .find(|connection| connection.connection_id == arguments.connection_id)
+        .ok_or(ErrorCode::ScopeDenied)?;
+    let catalog = dispatcher
+        .catalog(
+            session,
+            &CatalogArguments {
+                connection: ConnectionSelector::Id(arguments.connection_id),
+                database: arguments.database,
+            },
+            client_protocol_version,
+        )
+        .await?;
+    let requested = arguments.target_identity.trim();
+    let qualified_target = resolve_mapping_target(&catalog, arguments.target_kind, requested)
+        .ok_or(ErrorCode::InvalidRequest)?;
+    let stored_target = serde_json::to_string(&json!({
+        "connectionId": arguments.connection_id,
+        "connectionRevision": connection.connection_revision,
+        "database": catalog.database(),
+        "qualifiedTarget": qualified_target,
+    }))
+    .map_err(|_| ErrorCode::Internal)?;
+    if stored_target.len() > MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES {
+        return Err(ErrorCode::InvalidRequest);
+    }
+    let proposal = KnowledgeMappingProposal {
+        id: Uuid::new_v4(),
+        project_environment_id: scope.project_environment_id,
+        graph_revision_id: arguments.graph_revision_id,
+        schema_fingerprint: catalog.fingerprint().to_owned(),
+        from_node_id: arguments.from_node_id,
+        target_kind: match arguments.target_kind {
+            KnowledgeMappingTargetKind::Table => "table",
+            KnowledgeMappingTargetKind::Column => "column",
+        }
+        .into(),
+        target_identity: stored_target,
+        state: MappingProposalState::Proposed,
+        proposed_at: chrono::Utc::now(),
+    };
+    services
+        .knowledge
+        .propose_mapping(&proposal)
+        .await
+        .map_err(map_application_error)?;
+    Ok(KnowledgeMappingProposalResult {
+        id: proposal.id,
+        project_environment_id: proposal.project_environment_id,
+        graph_revision_id: proposal.graph_revision_id,
+        connection_id: arguments.connection_id,
+        connection_revision: connection.connection_revision,
+        database: catalog.database().to_owned(),
+        schema_fingerprint: proposal.schema_fingerprint,
+        from_node_id: proposal.from_node_id,
+        target_kind: arguments.target_kind,
+        target_identity: qualified_target,
+        state: "proposed".into(),
+    })
+}
+
+fn resolve_mapping_target(
+    catalog: &dopedb_protocol::CatalogSnapshot,
+    kind: KnowledgeMappingTargetKind,
+    requested: &str,
+) -> Option<String> {
+    for relation in catalog.relations() {
+        let relation_name = qualified_object_name(&relation.object);
+        match kind {
+            KnowledgeMappingTargetKind::Table if relation_name == requested => {
+                return Some(relation_name);
+            }
+            KnowledgeMappingTargetKind::Column => {
+                if let Some(column) = relation
+                    .columns
+                    .iter()
+                    .find(|column| format!("{relation_name}.{}", column.name) == requested)
+                {
+                    return Some(format!("{relation_name}.{}", column.name));
+                }
+            }
+            KnowledgeMappingTargetKind::Table => {}
+        }
+    }
+    None
+}
+
+fn qualified_object_name(object: &dopedb_protocol::ObjectRef) -> String {
+    [
+        object.catalog.as_deref(),
+        object.namespace.as_deref(),
+        Some(&object.name),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(".")
 }
 
 fn valid_query(query: &str, limit: u32) -> bool {

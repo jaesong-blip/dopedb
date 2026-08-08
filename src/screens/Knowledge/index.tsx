@@ -30,7 +30,9 @@ import {
   connectKnowledgeGithubSource,
   connectKnowledgeLocalFolder,
   createKnowledgeProject,
+  decideKnowledgeMapping,
   listKnowledgeGithubRepositories,
+  listKnowledgeMappings,
   listKnowledgeEnvironmentConnections,
   listKnowledgeProjects,
   listKnowledgeSources,
@@ -91,7 +93,7 @@ export default function Knowledge() {
   const [connectionId, setConnectionId] = useState("");
   const [connectionRole, setConnectionRole] = useState("primary");
   const [connectionAlias, setConnectionAlias] = useState("");
-  const [view, setView] = useState<"sources" | "databases" | "explore">(
+  const [view, setView] = useState<"sources" | "databases" | "mappings" | "explore">(
     "sources",
   );
   const [sourceActivity, setSourceActivity] = useState(
@@ -106,6 +108,12 @@ export default function Knowledge() {
   const environmentConnections = useQuery({
     queryKey: ["knowledge", "environment-connections", environmentId],
     queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
+    enabled: Boolean(environmentId),
+  });
+  const mappingsKey = ["knowledge", "mappings", environmentId] as const;
+  const mappings = useQuery({
+    queryKey: mappingsKey,
+    queryFn: () => listKnowledgeMappings(environmentId),
     enabled: Boolean(environmentId),
   });
 
@@ -284,6 +292,28 @@ export default function Knowledge() {
     },
     onError: (error) => setActionError(errMessage(error)),
   });
+  const decideMapping = useMutation({
+    mutationFn: ({
+      proposalId,
+      graphRevisionId,
+      decision,
+    }: {
+      proposalId: string;
+      graphRevisionId: string;
+      decision: "approved" | "rejected";
+    }) =>
+      decideKnowledgeMapping(
+        environmentId,
+        proposalId,
+        graphRevisionId,
+        decision,
+      ),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: mappingsKey });
+    },
+    onError: (error) => setActionError(errMessage(error)),
+  });
 
   const pending = connectGithub.isPending || connectLocal.isPending;
   const sourceLoadError = projects.error ?? sources.error;
@@ -420,7 +450,7 @@ export default function Knowledge() {
               role="tablist"
               aria-label="Environment resources"
             >
-              {(["sources", "databases", "explore"] as const).map(
+              {(["sources", "databases", "mappings", "explore"] as const).map(
                 (candidate) => (
                   <Button
                     key={candidate}
@@ -436,14 +466,18 @@ export default function Knowledge() {
                           ? "branch"
                           : candidate === "databases"
                             ? "database"
-                            : "search"
+                            : candidate === "mappings"
+                              ? "table"
+                              : "search"
                       }
                     />
                     {candidate === "sources"
                       ? "Sources"
                       : candidate === "databases"
                         ? "Databases"
-                        : "Explore"}
+                        : candidate === "mappings"
+                          ? `Mappings${mappings.data?.some((mapping) => mapping.state === "proposed") ? ` (${mappings.data.filter((mapping) => mapping.state === "proposed").length})` : ""}`
+                          : "Explore"}
                   </Button>
                 ),
               )}
@@ -539,6 +573,66 @@ export default function Knowledge() {
                 })}><Icon name="folder" />{connectLocal.isPending ? "Scanning…" : "Choose folder"}</Button>
               </div>
             </>
+          )}
+        </section>
+      ) : null}
+
+      {(projects.data?.length ?? 0) > 0 && view === "mappings" ? (
+        <section data-primary-flow className="tw:grid tw:gap-3 tw:border-b tw:border-border-subtle tw:pb-5">
+          <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
+            <div className="tw:grid tw:gap-1">
+              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Mapping review</h2>
+              <p className="tw:m-0 tw:max-w-[720px] tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+                Agents can propose code-to-table relations, but only your approval makes one trusted. Every proposal is pinned to the exact graph, connection, and schema revisions shown here.
+              </p>
+            </div>
+            <Button iconOnly size="compact" variant="ghost" title="Refresh mappings" onClick={() => void mappings.refetch()}>
+              <Icon name="refresh" />
+            </Button>
+          </div>
+          {mappings.isPending ? (
+            <LoadingLabel>Loading mapping proposals…</LoadingLabel>
+          ) : mappings.error ? (
+            <InlineNotice tone="danger" icon="alert">{errMessage(mappings.error)}</InlineNotice>
+          ) : (mappings.data?.length ?? 0) === 0 ? (
+            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
+              No mapping has been proposed in this Environment. Agents can propose one after resolving an exact live schema object.
+            </p>
+          ) : (
+            <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
+              {mappings.data?.map((mapping) => {
+                const tone: StatusTone = mapping.state === "approved" ? "success" : mapping.state === "rejected" ? "danger" : mapping.state === "stale" ? "warning" : "neutral";
+                return (
+                  <article key={mapping.id} className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-3 tw:last:border-b-0 tw:@max-[680px]:grid-cols-1">
+                    <div className="tw:grid tw:min-w-0 tw:gap-1.5">
+                      <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
+                        <StatusBadge tone={tone} density="compact">{mapping.state}</StatusBadge>
+                        <StatusBadge density="compact">{mapping.targetKind}</StatusBadge>
+                        <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{mapping.database}</span>
+                      </div>
+                      <div className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] tw:items-center tw:gap-2 tw:text-sm tw:@max-[560px]:grid-cols-1">
+                        <code className="tw:truncate tw:text-xs">{mapping.fromNodeName}</code>
+                        <span className="tw:text-xs tw:text-muted-foreground tw:@max-[560px]:hidden">→</span>
+                        <code className="tw:truncate tw:text-xs">{mapping.targetIdentity}</code>
+                      </div>
+                      <span className="tw:truncate tw:font-mono tw:text-[11px] tw:text-muted-foreground">
+                        graph {mapping.graphRevisionId.slice(0, 8)} · connection r{mapping.connectionRevision} · schema {mapping.schemaFingerprint.slice(0, 8)}
+                      </span>
+                    </div>
+                    {mapping.state === "proposed" ? (
+                      <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:@max-[680px]:justify-start">
+                        <Button size="compact" variant="primary" disabled={decideMapping.isPending} onClick={() => decideMapping.mutate({ proposalId: mapping.id, graphRevisionId: mapping.graphRevisionId, decision: "approved" })}>
+                          <Icon name="check" />Approve
+                        </Button>
+                        <Button size="compact" variant="dangerGhost" disabled={decideMapping.isPending} onClick={() => decideMapping.mutate({ proposalId: mapping.id, graphRevisionId: mapping.graphRevisionId, decision: "rejected" })}>
+                          Reject
+                        </Button>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
           )}
         </section>
       ) : null}

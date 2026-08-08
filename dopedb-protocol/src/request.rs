@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-9 command catalog. Any addition, removal, or meaning change requires a
+/// Version-10 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -85,6 +85,8 @@ pub enum CommandName {
     FunnelTrace,
     #[serde(rename = "environment.context")]
     EnvironmentContext,
+    #[serde(rename = "knowledge.mapping.propose")]
+    KnowledgeMappingPropose,
     /// Preserve envelope decodability long enough to return a stable schema/version
     /// error to a newer client. Unknown command payloads are never dispatched.
     #[serde(other)]
@@ -92,7 +94,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 37] = [
+    pub const ALL: [Self; 38] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -130,6 +132,7 @@ impl CommandName {
         Self::KnowledgeDiff,
         Self::FunnelTrace,
         Self::EnvironmentContext,
+        Self::KnowledgeMappingPropose,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -171,6 +174,7 @@ impl CommandName {
             Self::KnowledgeDiff => "knowledge.diff",
             Self::FunnelTrace => "funnel.trace",
             Self::EnvironmentContext => "environment.context",
+            Self::KnowledgeMappingPropose => "knowledge.mapping.propose",
             Self::Unknown => "unknown",
         }
     }

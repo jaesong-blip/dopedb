@@ -29,12 +29,14 @@ use crate::store::ActiveResourceScope;
 use super::adapters::github::GithubSourceAdapter;
 use super::application::{graph_path, search_graphs, KnowledgePathResult, KnowledgeSearchResult};
 use super::domain::{
-    validate_graph_publish, EnvironmentRiskClass, Project, ProjectEnvironment, SourceBindingDraft,
-    SourceHealthState, SourceLocator, StoredKnowledgeScope,
+    validate_graph_publish, EnvironmentRiskClass, KnowledgeMappingProposal, MappingProposalState,
+    Project, ProjectEnvironment, SourceBindingDraft, SourceHealthState, SourceLocator,
+    StoredKnowledgeScope,
 };
 use super::extractor::build_graph;
 use super::ports::{
-    KnowledgeGraphRepositoryPort, KnowledgeScopeRepositoryPort, SourceProviderAdapter,
+    KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort, KnowledgeScopeRepositoryPort,
+    SourceProviderAdapter,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -117,6 +119,69 @@ pub(crate) struct BindEnvironmentConnectionInput {
     connection_id: Uuid,
     role: String,
     alias: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StoredMappingTarget {
+    connection_id: Uuid,
+    connection_revision: i64,
+    database: String,
+    qualified_target: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct KnowledgeMappingProjection {
+    id: Uuid,
+    project_environment_id: Uuid,
+    graph_revision_id: Uuid,
+    connection_id: Uuid,
+    connection_revision: i64,
+    database: String,
+    schema_fingerprint: String,
+    from_node_id: String,
+    from_node_name: String,
+    target_kind: String,
+    target_identity: String,
+    state: MappingProposalState,
+    proposed_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum KnowledgeMappingDecision {
+    Approved,
+    Rejected,
+}
+
+fn mapping_projection(
+    proposal: KnowledgeMappingProposal,
+    graph: &dopedb_protocol::GraphBuildArtifactV1,
+) -> AppResult<KnowledgeMappingProjection> {
+    let target: StoredMappingTarget = serde_json::from_str(&proposal.target_identity)
+        .map_err(|_| AppError::Config("the stored Knowledge mapping target is invalid".into()))?;
+    let from_node_name = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == proposal.from_node_id)
+        .map(|node| node.qualified_name.clone())
+        .ok_or_else(|| AppError::Config("the stored Knowledge mapping node is invalid".into()))?;
+    Ok(KnowledgeMappingProjection {
+        id: proposal.id,
+        project_environment_id: proposal.project_environment_id,
+        graph_revision_id: proposal.graph_revision_id,
+        connection_id: target.connection_id,
+        connection_revision: target.connection_revision,
+        database: target.database,
+        schema_fingerprint: proposal.schema_fingerprint,
+        from_node_id: proposal.from_node_id,
+        from_node_name,
+        target_kind: proposal.target_kind,
+        target_identity: target.qualified_target,
+        state: proposal.state,
+        proposed_at: proposal.proposed_at,
+    })
 }
 
 pub(super) fn selected_team_account(scope: &ActiveResourceScope) -> AppResult<AccountId> {
@@ -589,6 +654,61 @@ pub(crate) async fn find_knowledge_graph_path(
         })
         .ok_or_else(|| AppError::NotFound("a Knowledge graph containing both endpoints".into()))?;
     graph_path(graph, &from_node_id, &to_node_id)
+}
+
+#[tauri::command]
+pub(crate) async fn list_knowledge_mappings(
+    state: State<'_, AppState>,
+    project_environment_id: Uuid,
+) -> AppResult<Vec<KnowledgeMappingProjection>> {
+    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    let mut result = Vec::new();
+    for graph in graphs {
+        let proposals = state
+            .knowledge_store()
+            .mappings_for_revision(project_environment_id, graph.graph_revision_id)
+            .await?;
+        for proposal in proposals {
+            result.push(mapping_projection(proposal, &graph)?);
+        }
+    }
+    result.sort_by(|left, right| {
+        right
+            .proposed_at
+            .cmp(&left.proposed_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(result)
+}
+
+#[tauri::command]
+pub(crate) async fn decide_knowledge_mapping(
+    state: State<'_, AppState>,
+    project_environment_id: Uuid,
+    proposal_id: Uuid,
+    expected_graph_revision_id: Uuid,
+    decision: KnowledgeMappingDecision,
+) -> AppResult<()> {
+    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    if !graphs
+        .iter()
+        .any(|graph| graph.graph_revision_id == expected_graph_revision_id)
+    {
+        return Err(AppError::Blocked {
+            reason: "the Knowledge mapping proposal no longer belongs to the active graph".into(),
+        });
+    }
+    state
+        .knowledge_store()
+        .decide_mapping(
+            proposal_id,
+            expected_graph_revision_id,
+            match decision {
+                KnowledgeMappingDecision::Approved => MappingProposalState::Approved,
+                KnowledgeMappingDecision::Rejected => MappingProposalState::Rejected,
+            },
+        )
+        .await
 }
 
 #[tauri::command]

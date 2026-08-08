@@ -174,6 +174,8 @@ pub fn run() {
             features::knowledge::transport::sync_knowledge_source,
             features::knowledge::transport::search_knowledge_graph,
             features::knowledge::transport::find_knowledge_graph_path,
+            features::knowledge::transport::list_knowledge_mappings,
+            features::knowledge::transport::decide_knowledge_mapping,
             features::knowledge::transport::list_knowledge_environment_connections,
             features::knowledge::transport::bind_knowledge_environment_connection,
             features::knowledge::transport::revoke_knowledge_environment_connection,

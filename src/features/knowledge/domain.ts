@@ -134,3 +134,19 @@ export type BindEnvironmentConnectionInput = {
   role: string;
   alias: string;
 };
+
+export type KnowledgeMapping = {
+  id: string;
+  projectEnvironmentId: string;
+  graphRevisionId: string;
+  connectionId: string;
+  connectionRevision: number;
+  database: string;
+  schemaFingerprint: string;
+  fromNodeId: string;
+  fromNodeName: string;
+  targetKind: "table" | "column";
+  targetIdentity: string;
+  state: "proposed" | "approved" | "rejected" | "stale";
+  proposedAt: string;
+};

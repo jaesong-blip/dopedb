@@ -113,9 +113,12 @@ async fn assert_current_store_migration_is_write_free() {
         .unwrap();
     assert_eq!(version, super::super::bootstrap::LOCAL_SCHEMA_VERSION);
 
-    use crate::features::knowledge::domain::{EnvironmentRiskClass, Project, ProjectEnvironment};
+    use crate::features::knowledge::domain::{
+        EnvironmentRiskClass, KnowledgeMappingProposal, MappingProposalState, Project,
+        ProjectEnvironment,
+    };
     use crate::features::knowledge::ports::{
-        KnowledgeGraphRepositoryPort, KnowledgeScopeRepositoryPort,
+        KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort, KnowledgeScopeRepositoryPort,
     };
     use crate::kernel::identity::WorkspaceId;
     use dopedb_protocol::GraphBuildArtifactV1;
@@ -188,6 +191,56 @@ async fn assert_current_store_migration_is_write_free() {
     assert!(active_set
         .iter()
         .any(|candidate| candidate.graph_revision_id == second.graph_revision_id));
+
+    let mapping = KnowledgeMappingProposal {
+        id: Uuid::from_u128(0x1261),
+        project_environment_id: environment.id,
+        graph_revision_id: artifact.graph_revision_id,
+        schema_fingerprint: "a".repeat(64),
+        from_node_id: artifact.nodes[0].id.clone(),
+        target_kind: "table".into(),
+        target_identity: serde_json::json!({
+            "connectionId": Uuid::from_u128(0x1291),
+            "connectionRevision": 1,
+            "database": "app",
+            "qualifiedTarget": "public.users"
+        })
+        .to_string(),
+        state: MappingProposalState::Proposed,
+        proposed_at: Utc::now(),
+    };
+    store.propose_mapping(&mapping).await.unwrap();
+    let proposals = store
+        .mappings_for_revision(environment.id, artifact.graph_revision_id)
+        .await
+        .unwrap();
+    assert_eq!(proposals, vec![mapping.clone()]);
+    store
+        .decide_mapping(
+            mapping.id,
+            artifact.graph_revision_id,
+            MappingProposalState::Approved,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .mappings_for_revision(environment.id, artifact.graph_revision_id)
+            .await
+            .unwrap()[0]
+            .state,
+        MappingProposalState::Approved
+    );
+    assert!(matches!(
+        store
+            .decide_mapping(
+                mapping.id,
+                artifact.graph_revision_id,
+                MappingProposalState::Rejected,
+            )
+            .await,
+        Err(AppError::Blocked { .. })
+    ));
 
     let current_connection_id = Uuid::from_u128(0x1291);
     let secondary_connection_id = Uuid::from_u128(0x1292);

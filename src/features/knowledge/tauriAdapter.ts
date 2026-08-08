@@ -12,6 +12,7 @@ import type {
   LocalKnowledgeSourceInput,
   EnvironmentConnection,
   BindEnvironmentConnectionInput,
+  KnowledgeMapping,
 } from "./domain";
 
 export function listKnowledgeProjects(): Promise<KnowledgeProject[]> {
@@ -35,6 +36,26 @@ export function revokeKnowledgeEnvironmentConnection(
   bindingId: string,
 ): Promise<void> {
   return invoke("revoke_knowledge_environment_connection", { projectEnvironmentId, bindingId });
+}
+
+export function listKnowledgeMappings(
+  projectEnvironmentId: string,
+): Promise<KnowledgeMapping[]> {
+  return invoke("list_knowledge_mappings", { projectEnvironmentId });
+}
+
+export function decideKnowledgeMapping(
+  projectEnvironmentId: string,
+  proposalId: string,
+  expectedGraphRevisionId: string,
+  decision: "approved" | "rejected",
+): Promise<void> {
+  return invoke("decide_knowledge_mapping", {
+    projectEnvironmentId,
+    proposalId,
+    expectedGraphRevisionId,
+    decision,
+  });
 }
 
 export function createKnowledgeProject(

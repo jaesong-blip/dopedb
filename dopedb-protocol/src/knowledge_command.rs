@@ -16,6 +16,7 @@ pub const MAX_KNOWLEDGE_QUERY_BYTES: usize = 512;
 pub const MAX_KNOWLEDGE_RESULTS: u32 = 50;
 pub const MAX_KNOWLEDGE_NEIGHBORS: u32 = 100;
 pub const MAX_KNOWLEDGE_EVIDENCE_IDS: usize = 64;
+pub const MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES: usize = 2_048;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -89,6 +90,41 @@ pub struct FunnelTraceArguments {
     pub limit: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KnowledgeMappingTargetKind {
+    Table,
+    Column,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnowledgeMappingProposeArguments {
+    pub graph_revision_id: Uuid,
+    pub connection_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+    pub from_node_id: String,
+    pub target_kind: KnowledgeMappingTargetKind,
+    pub target_identity: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnowledgeMappingProposalResult {
+    pub id: Uuid,
+    pub project_environment_id: Uuid,
+    pub graph_revision_id: Uuid,
+    pub connection_id: Uuid,
+    pub connection_revision: i64,
+    pub database: String,
+    pub schema_fingerprint: String,
+    pub from_node_id: String,
+    pub target_kind: KnowledgeMappingTargetKind,
+    pub target_identity: String,
+    pub state: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KnowledgeNodeMatch {
@@ -127,6 +163,7 @@ pub struct KnowledgeEvidenceCommand;
 pub struct KnowledgeDiffCommand;
 pub struct FunnelTraceCommand;
 pub struct EnvironmentContextCommand;
+pub struct KnowledgeMappingProposeCommand;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -164,6 +201,12 @@ knowledge_command!(
     KnowledgeSearchArguments,
     KnowledgeSearchResult,
     CommandName::KnowledgeSearch
+);
+knowledge_command!(
+    KnowledgeMappingProposeCommand,
+    KnowledgeMappingProposeArguments,
+    KnowledgeMappingProposalResult,
+    CommandName::KnowledgeMappingPropose
 );
 knowledge_command!(
     EnvironmentContextCommand,

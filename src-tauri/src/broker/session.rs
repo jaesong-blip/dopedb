@@ -38,10 +38,11 @@ pub(crate) enum BrokerCapability {
     OperationRead,
     OperationCancel,
     KnowledgeRead,
+    KnowledgePropose,
 }
 
 impl BrokerCapability {
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 13] = [
         Self::ConnectionRead,
         Self::ConnectionTest,
         Self::CatalogRead,
@@ -54,6 +55,7 @@ impl BrokerCapability {
         Self::OperationRead,
         Self::OperationCancel,
         Self::KnowledgeRead,
+        Self::KnowledgePropose,
     ];
 }
 

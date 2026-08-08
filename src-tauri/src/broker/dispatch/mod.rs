@@ -224,7 +224,8 @@ impl BrokerDispatcher {
             | CommandName::KnowledgeEvidence
             | CommandName::KnowledgeDiff
             | CommandName::FunnelTrace
-            | CommandName::EnvironmentContext => knowledge::handle(self, &request).await,
+            | CommandName::EnvironmentContext
+            | CommandName::KnowledgeMappingPropose => knowledge::handle(self, &request).await,
             CommandName::Unknown => failure(request_id, ErrorCode::InvalidRequest, false),
         }
     }

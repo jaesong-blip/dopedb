@@ -210,7 +210,7 @@ impl BrokerDispatcher {
         })
     }
 
-    async fn catalog(
+    pub(super) async fn catalog(
         &self,
         session: &AuthenticatedSession,
         arguments: &CatalogArguments,
