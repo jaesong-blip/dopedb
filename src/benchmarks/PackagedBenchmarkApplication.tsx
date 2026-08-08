@@ -881,6 +881,7 @@ function InteractionSurfacesScenario() {
   const snapshot = useMemo(erdSnapshot, []);
   const result = useMemo(() => queryResult(50_000), []);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [surface, setSurface] = useState<"erd" | "workbench">("erd");
   const layout = useToolWindowLayout();
 
   useScenarioRunner(true, async () => {
@@ -895,6 +896,9 @@ function InteractionSurfacesScenario() {
       pointerDrag(node, 100 + index * 3, 120 + index * 3, 180 + index * 3, 190 + index * 3);
     });
 
+    setSurface("workbench");
+    await waitForPackagedPaint();
+    await waitForSelector("[data-grid-resize-handle]");
     await samples("grid-and-pane-resize", 10, (index) => {
       const handle = document.querySelector<HTMLElement>("[data-grid-resize-handle]");
       if (!handle) throw new Error("grid resize handle unavailable");
@@ -942,37 +946,42 @@ function InteractionSurfacesScenario() {
   return (
     <BenchmarkSurface title="Interactions · 1,000-node ERD · grid and Services resize">
       <div className="tw:flex tw:min-h-0 tw:flex-1">
-        <div className="tw:flex tw:min-h-0 tw:w-1/3 tw:flex-col tw:border-r tw:border-border-subtle">
-          <ErdCanvas
-            snapshot={snapshot}
-            filter=""
-            selectedKey={selectedKey}
-            onSelect={(relation) => setSelectedKey(JSON.stringify(relation.object))}
-            onOpen={() => undefined}
-          />
-        </div>
-        <div className="tw:flex tw:min-h-0 tw:w-1/3 tw:flex-col tw:border-r tw:border-border-subtle">
-          <DataGrid result={result} surface="workbench" />
-          <div
-            className="tw:relative tw:shrink-0 tw:border-t tw:border-border-subtle tw:bg-card"
-            style={{ height: layout.servicesHeight }}
-          >
-            <div className="tw:absolute tw:-top-1 tw:h-2 tw:w-full tw:cursor-row-resize" />
-            <span className="tw:p-3 tw:text-sm">Services</span>
+        {surface === "erd" ? (
+          <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col">
+            <ErdCanvas
+              snapshot={snapshot}
+              filter=""
+              selectedKey={selectedKey}
+              onSelect={(relation) => setSelectedKey(JSON.stringify(relation.object))}
+              onOpen={() => undefined}
+            />
           </div>
-        </div>
-        <WorkbenchScrollBody aria-label="Scrollable workbench document">
-          <div className="tw:flex tw:shrink-0 tw:flex-col tw:gap-2 tw:p-3">
-            {Array.from({ length: 80 }, (_, index) => (
-              <p className="tw:m-0 tw:text-sm" key={index}>
-                Workbench document row {index + 1}
-              </p>
-            ))}
-            <WorkbenchButton data-benchmark-last-action>
-              Last document action
-            </WorkbenchButton>
-          </div>
-        </WorkbenchScrollBody>
+        ) : (
+          <>
+            <div className="tw:flex tw:min-h-0 tw:w-1/2 tw:flex-col tw:border-r tw:border-border-subtle">
+              <DataGrid result={result} surface="workbench" />
+              <div
+                className="tw:relative tw:shrink-0 tw:border-t tw:border-border-subtle tw:bg-card"
+                style={{ height: layout.servicesHeight }}
+              >
+                <div className="tw:absolute tw:-top-1 tw:h-2 tw:w-full tw:cursor-row-resize" />
+                <span className="tw:p-3 tw:text-sm">Services</span>
+              </div>
+            </div>
+            <WorkbenchScrollBody aria-label="Scrollable workbench document">
+              <div className="tw:flex tw:shrink-0 tw:flex-col tw:gap-2 tw:p-3">
+                {Array.from({ length: 80 }, (_, index) => (
+                  <p className="tw:m-0 tw:text-sm" key={index}>
+                    Workbench document row {index + 1}
+                  </p>
+                ))}
+                <WorkbenchButton data-benchmark-last-action>
+                  Last document action
+                </WorkbenchButton>
+              </div>
+            </WorkbenchScrollBody>
+          </>
+        )}
       </div>
     </BenchmarkSurface>
   );
