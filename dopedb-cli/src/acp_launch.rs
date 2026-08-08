@@ -5,7 +5,7 @@
 //! never forwards that capability to the official adapter process.
 
 use dopedb_cli::agent_launch_policy::{
-    adapter_command, take_registration_authentication, validate_descriptor, verify_launcher,
+    adapter_command, take_registration_authentication, validate_descriptor, verify_launch_files,
 };
 use dopedb_protocol::{
     AcpPluginId, AgentSessionRegisterArguments, AgentSessionRegisterCommand, EmptyArguments,
@@ -15,15 +15,27 @@ use crate::client::{BrokerClient, ClientError};
 
 pub(crate) async fn run(
     plugin_id: AcpPluginId,
-    launcher_executable: String,
-    launcher_resolved_executable: String,
-    launcher_sha256: String,
+    adapter_bundle_version: String,
+    runtime_executable: String,
+    runtime_resolved_executable: String,
+    runtime_sha256: String,
+    adapter_entrypoint: String,
+    adapter_entrypoint_sha256: String,
+    provider_cli_executable: String,
+    provider_cli_resolved_executable: String,
+    provider_cli_sha256: String,
 ) -> Result<(), ClientError> {
     let registration = AgentSessionRegisterArguments {
         plugin_id,
-        launcher_executable,
-        launcher_resolved_executable,
-        launcher_sha256,
+        adapter_bundle_version,
+        runtime_executable,
+        runtime_resolved_executable,
+        runtime_sha256,
+        adapter_entrypoint,
+        adapter_entrypoint_sha256,
+        provider_cli_executable,
+        provider_cli_resolved_executable,
+        provider_cli_sha256,
     };
     validate_registration(&registration)?;
 
@@ -32,7 +44,7 @@ pub(crate) async fn run(
     // async suspension can extend its lifetime.
     let authentication =
         take_registration_authentication().map_err(|_| ClientError::AuthenticationUnavailable)?;
-    verify_launcher(&registration).map_err(|_| ClientError::InvalidArguments)?;
+    verify_launch_files(&registration).map_err(|_| ClientError::InvalidArguments)?;
     let client = BrokerClient::discover()?;
     let _: EmptyArguments = client
         .request_with_authentication::<AgentSessionRegisterCommand>(

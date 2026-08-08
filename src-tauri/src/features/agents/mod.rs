@@ -5,6 +5,7 @@ pub(crate) mod adapters;
 mod application;
 pub(crate) mod domain;
 mod ports;
+pub(crate) mod runtime;
 pub(crate) mod transport;
 
 use crate::store::Store;

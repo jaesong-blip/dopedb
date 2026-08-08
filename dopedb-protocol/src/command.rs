@@ -93,30 +93,54 @@ pub struct AppOpenCommand;
 pub struct AgentSessionRegisterCommand;
 
 pub const MAX_AGENT_LAUNCHER_PATH_BYTES: usize = 16 * 1024;
+pub const MAX_AGENT_BUNDLE_VERSION_BYTES: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentSessionRegisterArguments {
     pub plugin_id: AcpPluginId,
-    pub launcher_executable: String,
-    pub launcher_resolved_executable: String,
-    pub launcher_sha256: String,
+    pub adapter_bundle_version: String,
+    pub runtime_executable: String,
+    pub runtime_resolved_executable: String,
+    pub runtime_sha256: String,
+    pub adapter_entrypoint: String,
+    pub adapter_entrypoint_sha256: String,
+    pub provider_cli_executable: String,
+    pub provider_cli_resolved_executable: String,
+    pub provider_cli_sha256: String,
 }
 
 impl AgentSessionRegisterArguments {
     pub fn validate(&self) -> bool {
-        !self.launcher_executable.is_empty()
-            && self.launcher_executable.len() <= MAX_AGENT_LAUNCHER_PATH_BYTES
-            && !self.launcher_executable.contains('\0')
-            && !self.launcher_resolved_executable.is_empty()
-            && self.launcher_resolved_executable.len() <= MAX_AGENT_LAUNCHER_PATH_BYTES
-            && !self.launcher_resolved_executable.contains('\0')
-            && self.launcher_sha256.len() == 64
-            && self
-                .launcher_sha256
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        valid_bundle_version(&self.adapter_bundle_version)
+            && valid_launcher_path(&self.runtime_executable)
+            && valid_launcher_path(&self.runtime_resolved_executable)
+            && valid_digest(&self.runtime_sha256)
+            && valid_launcher_path(&self.adapter_entrypoint)
+            && valid_digest(&self.adapter_entrypoint_sha256)
+            && valid_launcher_path(&self.provider_cli_executable)
+            && valid_launcher_path(&self.provider_cli_resolved_executable)
+            && valid_digest(&self.provider_cli_sha256)
     }
+}
+
+fn valid_launcher_path(value: &str) -> bool {
+    !value.is_empty() && value.len() <= MAX_AGENT_LAUNCHER_PATH_BYTES && !value.contains('\0')
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn valid_bundle_version(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_AGENT_BUNDLE_VERSION_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
 }
 
 impl CommandSpec for AgentSessionRegisterCommand {

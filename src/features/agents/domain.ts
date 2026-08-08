@@ -21,6 +21,33 @@ export type AcpSessionId = string & {
 };
 
 export type AgentProvider = "claude" | "codex";
+export type AcpPluginId = "dopedb.acp.claude" | "dopedb.acp.codex";
+export type AcpPluginInstallationState =
+  | "not_installed"
+  | "checking"
+  | "downloading"
+  | "verifying"
+  | "staged"
+  | "ready"
+  | "update_available"
+  | "removing"
+  | "failed"
+  | "rollback_required";
+
+export interface AcpPluginStatus {
+  pluginId: AcpPluginId;
+  state: AcpPluginInstallationState;
+  enabled: boolean;
+  installedVersion: string | null;
+  candidateVersion: string | null;
+  lastKnownGoodVersion: string | null;
+  failure: string | null;
+}
+
+export interface AcpPluginMutationReceipt {
+  changed: boolean;
+  status: AcpPluginStatus;
+}
 
 export interface AgentCliInfo {
   id: AgentProvider;

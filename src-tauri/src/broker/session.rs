@@ -165,9 +165,7 @@ impl BrokerSessionRegistry {
         ttl: Duration,
         registration: AgentSessionRegisterArguments,
     ) -> AppResult<IssuedSessionCapability> {
-        if !registration.validate()
-            || !std::path::Path::new(&registration.launcher_executable).is_absolute()
-        {
+        if !valid_agent_registration_paths(&registration) {
             return Err(AppError::Config(
                 "the ACP launcher registration descriptor is invalid".into(),
             ));
@@ -269,9 +267,7 @@ impl BrokerSessionRegistry {
         peer: PeerProcessIdentity,
         registration: &AgentSessionRegisterArguments,
     ) -> AppResult<AuthenticatedSession> {
-        if !registration.validate()
-            || !std::path::Path::new(&registration.launcher_executable).is_absolute()
-        {
+        if !valid_agent_registration_paths(registration) {
             return Err(authentication_denied());
         }
         let terminal_session_id = TerminalSessionId::from(authentication.terminal_session_id);
@@ -367,6 +363,19 @@ impl BrokerSessionRegistry {
     }
 }
 
+fn valid_agent_registration_paths(registration: &AgentSessionRegisterArguments) -> bool {
+    registration.validate()
+        && [
+            registration.runtime_executable.as_str(),
+            registration.runtime_resolved_executable.as_str(),
+            registration.adapter_entrypoint.as_str(),
+            registration.provider_cli_executable.as_str(),
+            registration.provider_cli_resolved_executable.as_str(),
+        ]
+        .into_iter()
+        .all(|path| std::path::Path::new(path).is_absolute())
+}
+
 fn authentication_denied() -> AppError {
     AppError::Blocked {
         reason: "terminal session authentication was denied".into(),
@@ -388,19 +397,22 @@ mod tests {
     use super::*;
 
     fn registration(plugin_id: dopedb_protocol::AcpPluginId) -> AgentSessionRegisterArguments {
+        let root = if cfg!(windows) {
+            r"C:\DopeDB"
+        } else {
+            "/opt/dopedb"
+        };
         AgentSessionRegisterArguments {
             plugin_id,
-            launcher_executable: if cfg!(windows) {
-                r"C:\Program Files\nodejs\npx.cmd".into()
-            } else {
-                "/usr/bin/npx".into()
-            },
-            launcher_resolved_executable: if cfg!(windows) {
-                r"C:\Program Files\nodejs\npx.cmd".into()
-            } else {
-                "/usr/bin/npx".into()
-            },
-            launcher_sha256: "ab".repeat(32),
+            adapter_bundle_version: "1.0.0".into(),
+            runtime_executable: format!("{root}/node"),
+            runtime_resolved_executable: format!("{root}/node"),
+            runtime_sha256: "ab".repeat(32),
+            adapter_entrypoint: format!("{root}/plugins/adapter.js"),
+            adapter_entrypoint_sha256: "cd".repeat(32),
+            provider_cli_executable: format!("{root}/provider-cli"),
+            provider_cli_resolved_executable: format!("{root}/provider-cli"),
+            provider_cli_sha256: "ef".repeat(32),
         }
     }
 

@@ -8,7 +8,16 @@ import {
   detectAgentClis,
   getRetiredChatArchiveMessages,
   listRetiredChatArchiveThreads,
+  listAgentAcpPlugins,
 } from "./tauriAdapter";
+
+export function agentPluginStatusQuery() {
+  return queryOptions({
+    queryKey: agentQueryKeys.pluginStatus(),
+    staleTime: 15_000,
+    queryFn: listAgentAcpPlugins,
+  });
+}
 
 // Short staleTime keeps an explicit refresh responsive without re-spawning local CLIs on render.
 export function agentCliDetectionQuery() {

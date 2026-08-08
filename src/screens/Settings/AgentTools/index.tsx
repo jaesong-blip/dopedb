@@ -1,8 +1,21 @@
 // Manages the bounded Codex/Claude Skill inventory through explicit install,
 // backup-and-repair, remove, and version-matched CLI self-test actions.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { agentCliDetectionQuery } from "../../../features/agents/queryOptions";
+import {
+  agentCliDetectionQuery,
+  agentPluginStatusQuery,
+} from "../../../features/agents/queryOptions";
+import {
+  installAgentAcpPlugin,
+  removeAgentAcpPlugin,
+  setAgentAcpPluginEnabled,
+} from "../../../features/agents/tauriAdapter";
+import type {
+  AcpPluginId,
+  AcpPluginInstallationState,
+  AgentProvider,
+} from "../../../features/agents/domain";
 import {
   legacyMcpCleanupApply,
   installSkill,
@@ -23,6 +36,9 @@ import InfoTip from "../../../components/InfoTip";
 import Skeleton from "../../../components/Skeleton";
 import { useToast } from "../../../components/Toast";
 import { Button } from "../../../design-system/components/Button";
+import { AgentProviderMark } from "../../../design-system/components/Agent";
+import { CheckboxField } from "../../../design-system/components/FormControls";
+import { ProgressBar } from "../../../design-system/components/Progress";
 import {
   legacyMcpCleanupStatusQuery,
   qk,
@@ -37,6 +53,59 @@ import {
 import { StatusBadge } from "../../../design-system/components/Status";
 
 type Mutation = "repair" | "remove";
+type BusyAction =
+  | SkillTargetSelection
+  | AcpPluginId
+  | "plugin-batch"
+  | "self-test"
+  | "legacy-cleanup";
+
+const plugins: ReadonlyArray<{
+  id: AcpPluginId;
+  provider: AgentProvider;
+  label: string;
+  download: string;
+}> = [
+  {
+    id: "dopedb.acp.claude",
+    provider: "claude",
+    label: "Claude",
+    download: "≤ 30 MB",
+  },
+  {
+    id: "dopedb.acp.codex",
+    provider: "codex",
+    label: "Codex",
+    download: "≤ 30 MB",
+  },
+];
+
+const activePluginStates = new Set<AcpPluginInstallationState>([
+  "checking",
+  "downloading",
+  "verifying",
+  "removing",
+]);
+
+const pluginStateLabel: Record<AcpPluginInstallationState, I18nKey> = {
+  not_installed: "agentTools.pluginState.notInstalled",
+  checking: "agentTools.pluginState.checking",
+  downloading: "agentTools.pluginState.downloading",
+  verifying: "agentTools.pluginState.verifying",
+  staged: "agentTools.pluginState.staged",
+  ready: "agentTools.pluginState.ready",
+  update_available: "agentTools.pluginState.updateAvailable",
+  removing: "agentTools.pluginState.removing",
+  failed: "agentTools.pluginState.failed",
+  rollback_required: "agentTools.pluginState.rollbackRequired",
+};
+
+function pluginTone(state: AcpPluginInstallationState) {
+  if (state === "ready") return "success" as const;
+  if (state === "failed" || state === "rollback_required") return "danger" as const;
+  if (state === "not_installed") return "neutral" as const;
+  return "warning" as const;
+}
 
 const conflictLabel: Record<SkillConflictKind, I18nKey> = {
   invalid_provenance: "agentTools.conflictInvalidProvenance",
@@ -85,17 +154,90 @@ export default function AgentTools() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const statusQ = useQuery(skillStatusQuery());
+  const pluginsQ = useQuery(agentPluginStatusQuery());
   const agentsQ = useQuery({
     ...agentCliDetectionQuery(),
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   });
   const cleanupQ = useQuery(legacyMcpCleanupStatusQuery());
-  const [busy, setBusy] = useState<
-    SkillTargetSelection | "self-test" | "legacy-cleanup" | null
-  >(null);
+  const [busy, setBusy] = useState<BusyAction | null>(null);
+  const [selectedPlugins, setSelectedPlugins] = useState<AcpPluginId[]>([]);
   const [error, setError] = useState<string | null>(null);
   const status = statusQ.data ?? null;
+
+  useEffect(() => {
+    if (busy !== "plugin-batch" && !busy?.startsWith("dopedb.acp.")) return;
+    const timer = window.setInterval(() => void pluginsQ.refetch(), 500);
+    return () => window.clearInterval(timer);
+  }, [busy, pluginsQ.refetch]);
+
+  useEffect(() => {
+    if (!pluginsQ.data || selectedPlugins.length > 0) return;
+    setSelectedPlugins(
+      pluginsQ.data
+        .filter((plugin) => plugin.state === "not_installed")
+        .map((plugin) => plugin.pluginId),
+    );
+  }, [pluginsQ.data, selectedPlugins.length]);
+
+  async function installPlugins(pluginIds: AcpPluginId[]) {
+    if (pluginIds.length === 0) return;
+    setBusy(pluginIds.length === 1 ? pluginIds[0] : "plugin-batch");
+    setError(null);
+    const failures: string[] = [];
+    try {
+      for (const pluginId of pluginIds) {
+        try {
+          await installAgentAcpPlugin(pluginId);
+        } catch (reason) {
+          failures.push(errMessage(reason));
+        } finally {
+          await pluginsQ.refetch();
+        }
+      }
+      if (failures.length > 0) throw new Error(failures.join("\n"));
+      setSelectedPlugins([]);
+      toast(t("agentTools.pluginsInstalled", { count: pluginIds.length }));
+    } catch (reason) {
+      const message = errMessage(reason);
+      setError(message);
+      toast(message, "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removePlugin(pluginId: AcpPluginId) {
+    setBusy(pluginId);
+    setError(null);
+    try {
+      await removeAgentAcpPlugin(pluginId);
+      await pluginsQ.refetch();
+      toast(t("agentTools.pluginRemoved"));
+    } catch (reason) {
+      const message = errMessage(reason);
+      setError(message);
+      toast(message, "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function togglePlugin(pluginId: AcpPluginId, enabled: boolean) {
+    setBusy(pluginId);
+    setError(null);
+    try {
+      await setAgentAcpPluginEnabled(pluginId, enabled);
+      await pluginsQ.refetch();
+    } catch (reason) {
+      const message = errMessage(reason);
+      setError(message);
+      toast(message, "error");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   function expectations(target: SkillTargetSelection): SkillTargetExpectation[] {
     const selected =
@@ -246,6 +388,185 @@ export default function AgentTools() {
         <InfoTip label={t("agentTools.description")} />
       </div>
 
+      <section className="tw:mt-5 tw:border-t tw:border-border-subtle tw:pt-5">
+        <div className="tw:flex tw:items-start tw:justify-between tw:gap-4 tw:@max-[520px]:flex-col">
+          <div>
+            <h3 className="tw:m-0">{t("agentTools.pluginsTitle")}</h3>
+            <p className="tw:mt-1 tw:mb-0 tw:text-muted-foreground">
+              {t("agentTools.pluginsDescription")}
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            disabled={busy !== null || selectedPlugins.length === 0}
+            onClick={() => void installPlugins(selectedPlugins)}
+          >
+            {t("agentTools.installSelected", { count: selectedPlugins.length })}
+          </Button>
+        </div>
+
+        {pluginsQ.isPending ? (
+          <Skeleton lines={4} />
+        ) : pluginsQ.error ? (
+          <div className="tw:mt-3 tw:text-ui tw:text-danger" role="alert">
+            {t("agentTools.pluginsError", { error: errMessage(pluginsQ.error) })}
+          </div>
+        ) : (
+          <div className="tw:mt-3 tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
+            {plugins.map((plugin) => {
+              const pluginStatus = pluginsQ.data?.find(
+                (candidate) => candidate.pluginId === plugin.id,
+              );
+              if (!pluginStatus) return null;
+              const operationActive =
+                activePluginStates.has(pluginStatus.state) ||
+                busy === plugin.id ||
+                busy === "plugin-batch";
+              const installed = Boolean(
+                pluginStatus.installedVersion ||
+                  pluginStatus.candidateVersion ||
+                  pluginStatus.lastKnownGoodVersion,
+              );
+              const selectable =
+                pluginStatus.state !== "ready" || Boolean(pluginStatus.failure);
+              return (
+                <div className="tw:grid tw:gap-3 tw:py-4" key={plugin.id}>
+                  <div className="tw:flex tw:items-center tw:justify-between tw:gap-4 tw:@max-[520px]:flex-col tw:@max-[520px]:items-start">
+                    <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
+                      {selectable ? (
+                        <CheckboxField
+                          checked={selectedPlugins.includes(plugin.id)}
+                          disabled={busy !== null}
+                          onChange={(event) =>
+                            setSelectedPlugins((current) =>
+                              event.target.checked
+                                ? [...new Set([...current, plugin.id])]
+                                : current.filter((id) => id !== plugin.id),
+                            )
+                          }
+                          label={
+                            <span className="tw:flex tw:items-center tw:gap-2">
+                              <AgentProviderMark provider={plugin.provider} />
+                              <strong>{plugin.label}</strong>
+                            </span>
+                          }
+                        />
+                      ) : (
+                        <span className="tw:flex tw:items-center tw:gap-2">
+                          <AgentProviderMark provider={plugin.provider} />
+                          <strong>{plugin.label}</strong>
+                        </span>
+                      )}
+                      <StatusBadge tone={pluginTone(pluginStatus.state)}>
+                        {t(pluginStateLabel[pluginStatus.state])}
+                      </StatusBadge>
+                    </div>
+                    <span className="tw:text-ui tw:text-muted-foreground">
+                      {pluginStatus.candidateVersion ??
+                        pluginStatus.installedVersion ??
+                        pluginStatus.lastKnownGoodVersion ??
+                        t("agentTools.pluginDownload", { size: plugin.download })}
+                    </span>
+                  </div>
+                  {operationActive ? (
+                    <ProgressBar
+                      value={null}
+                      density="compact"
+                      label={t("agentTools.pluginProgress", { provider: plugin.label })}
+                    />
+                  ) : null}
+                  {pluginStatus.failure ? (
+                    <p className="tw:m-0 tw:text-ui tw:text-danger" role="alert">
+                      {pluginStatus.failure}
+                    </p>
+                  ) : null}
+                  <div className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:gap-[var(--ds-control-gap)]">
+                    {selectable ? (
+                      <Button
+                        disabled={busy !== null}
+                        onClick={() => void installPlugins([plugin.id])}
+                      >
+                        {t(installed ? "agentTools.retryPlugin" : "agentTools.installPlugin")}
+                      </Button>
+                    ) : (
+                      <Button
+                        disabled={busy !== null}
+                        onClick={() =>
+                          void togglePlugin(plugin.id, !pluginStatus.enabled)
+                        }
+                      >
+                        {t(
+                          pluginStatus.enabled
+                            ? "agentTools.disablePlugin"
+                            : "agentTools.enablePlugin",
+                        )}
+                      </Button>
+                    )}
+                    {installed ? (
+                      <ConfirmButton
+                        disabled={busy !== null}
+                        confirmLabel={t("agentTools.removePluginConfirm", {
+                          provider: plugin.label,
+                        })}
+                        onConfirm={() => void removePlugin(plugin.id)}
+                      >
+                        {t("agentTools.removePlugin")}
+                      </ConfirmButton>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="tw:border-t tw:border-border-subtle tw:pt-5 tw:pb-2">
+        <h3 className="tw:m-0">{t("agentTools.localClisTitle")}</h3>
+        <p className="tw:mt-1 tw:mb-0 tw:text-muted-foreground">
+          {t("agentTools.localClisDescription")}
+        </p>
+        {agentsQ.isPending ? (
+          <Skeleton lines={3} />
+        ) : (
+          <div className="tw:mt-3 tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
+            {plugins.map((plugin) => {
+              const cli = agentsQ.data?.find((item) => item.id === plugin.provider);
+              return (
+                <div
+                  className="tw:flex tw:items-start tw:justify-between tw:gap-4 tw:py-3 tw:@max-[520px]:flex-col"
+                  key={plugin.provider}
+                >
+                  <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
+                    <AgentProviderMark provider={plugin.provider} />
+                    <strong>{cli?.name ?? plugin.label}</strong>
+                  </div>
+                  <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                    <StatusBadge tone={cli?.installed ? "success" : "warning"}>
+                      {t(cli?.installed ? "agentTools.detected" : "agentTools.cliMissing")}
+                    </StatusBadge>
+                    <StatusBadge tone={cli?.authenticated ? "success" : "warning"}>
+                      {t(
+                        cli?.authenticated
+                          ? "agentTools.authenticated"
+                          : "agentTools.notAuthenticated",
+                      )}
+                    </StatusBadge>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="tw:border-t tw:border-border-subtle tw:pt-5">
+        <h3 className="tw:m-0">{t("agentTools.skillTitle")}</h3>
+        <p className="tw:mt-1 tw:mb-0 tw:text-muted-foreground">
+          {t("agentTools.skillDescription")}
+        </p>
+      </section>
+
       {status && (
         <p className="tw:mt-1 tw:mb-4 tw:text-muted-foreground">
           {t("agentTools.version", {
@@ -274,8 +595,6 @@ export default function AgentTools() {
         status && (
           <div className="tw:mt-3 tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
             {status.targets.map((target) => {
-              const providerId = target.target === "codex" ? "codex" : "claude";
-              const cli = agentsQ.data?.find((item) => item.id === providerId);
               const canInstall =
                 target.state === "missing" || target.state === "managed_older";
               const canRepair =
@@ -298,24 +617,6 @@ export default function AgentTools() {
                       <StatusBadge tone={skillStateTone(target.state)}>
                         {t(skillStateLabel[target.state])}
                       </StatusBadge>
-                    </div>
-                    <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:text-ui tw:text-muted-foreground tw:@max-[520px]:justify-start">
-                      <span>
-                        {cli?.installed
-                          ? t("agentTools.detected")
-                          : t("agentTools.cliMissing")}
-                      </span>
-                      <span
-                        className="tw:text-muted-foreground"
-                        aria-hidden="true"
-                      >
-                        ·
-                      </span>
-                      <span>
-                        {cli?.authenticated
-                          ? t("agentTools.authenticated")
-                          : t("agentTools.notAuthenticated")}
-                      </span>
                     </div>
                   </div>
 
@@ -527,6 +828,7 @@ export default function AgentTools() {
           disabled={
             busy !== null ||
             statusQ.isFetching ||
+            pluginsQ.isFetching ||
             agentsQ.isFetching ||
             cleanupQ.isFetching
           }
@@ -534,6 +836,7 @@ export default function AgentTools() {
             setError(null);
             void Promise.all([
               statusQ.refetch(),
+              pluginsQ.refetch(),
               agentsQ.refetch(),
               cleanupQ.refetch(),
             ]);

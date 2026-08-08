@@ -71,7 +71,10 @@ import {
   clampAgentDockWidth,
 } from "./layout";
 import AcpStructuredResult from "./AcpStructuredResult";
-import { agentCliDetectionQuery } from "./queryOptions";
+import {
+  agentCliDetectionQuery,
+  agentPluginStatusQuery,
+} from "./queryOptions";
 import {
   openAgentSetup,
   useEnabledAgentProviders,
@@ -166,7 +169,7 @@ function AcpChatPanelContent({
   const { t } = useI18n();
   const { selection } = useAgentSelection();
   const debugDetails = useAgentDebugDetails();
-  const enabledProviders = useEnabledAgentProviders();
+  const configuredProviders = useEnabledAgentProviders();
   const [sessions, setSessions] = useState<AcpSessionSummary[]>([]);
   const [activeId, setActiveId] = useState<AcpSessionId | null>(null);
   const projectionsRef = useRef(new Map<string, AcpConversationProjection>());
@@ -199,6 +202,26 @@ function AcpChatPanelContent({
     ...agentCliDetectionQuery(),
     refetchOnWindowFocus: false,
   });
+  const pluginStatusQuery = useQuery({
+    ...agentPluginStatusQuery(),
+    refetchOnWindowFocus: false,
+  });
+  const enabledProviders = useMemo(
+    () =>
+      configuredProviders.filter((provider) => {
+        const pluginId = `dopedb.acp.${provider}`;
+        const plugin = pluginStatusQuery.data?.find(
+          (status) => status.pluginId === pluginId,
+        );
+        return (
+          plugin?.enabled === true &&
+          (plugin.installedVersion !== null ||
+            plugin.candidateVersion !== null ||
+            plugin.lastKnownGoodVersion !== null)
+        );
+      }),
+    [configuredProviders, pluginStatusQuery.data],
+  );
 
   const connectionSessions = useMemo(
     () =>
@@ -258,7 +281,8 @@ function AcpChatPanelContent({
   const selectedCliReady =
     selectedCliStatus?.installed === true &&
     selectedCliStatus.authenticated === true;
-  const prerequisitesReady = selectedCliReady;
+  const selectedPluginReady = enabledProviders.includes(selectedProvider);
+  const prerequisitesReady = selectedCliReady && selectedPluginReady;
   const dockLayout = agentDockLayout(compact, overlay);
 
   const upsertSessions = useCallback((updates: AcpSessionSummary[]) => {
@@ -823,6 +847,7 @@ function AcpChatPanelContent({
       >
         {loading ||
         cliStatusQuery.isPending ||
+        pluginStatusQuery.isPending ||
         (active && !activeEventsLoaded) ? (
           <AgentEmpty>
             <LoadingLabel>{t("common.loading")}</LoadingLabel>
@@ -830,6 +855,15 @@ function AcpChatPanelContent({
         ) : starting && !active ? (
           <AgentEmpty>
             <LoadingLabel>{t("agent.acpStarting")}</LoadingLabel>
+          </AgentEmpty>
+        ) : !selectedPluginReady ? (
+          <AgentEmpty>
+            <Icon name="gear" />
+            <strong>{t("agent.acpPluginRequired")}</strong>
+            <p>{t("agent.acpPluginRequiredBody")}</p>
+            <Button size="compact" variant="primary" onClick={openAgentSetup}>
+              {t("agent.acpOpenSetup")}
+            </Button>
           </AgentEmpty>
         ) : selectedCliStatus && !selectedCliReady ? (
           <AgentSetupGuidance
@@ -1071,7 +1105,7 @@ function AcpChatPanelContent({
         </ToolWindowComposer>
         <ToolWindowComposerContext>
           <AgentProviderMark provider={selectedProvider} />
-          <select
+          {enabledProviders.length > 0 ? <select
             className="tw:h-control-sm tw:max-w-[10rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-ui tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
             value={selectedProvider}
             disabled={starting}
@@ -1087,7 +1121,11 @@ function AcpChatPanelContent({
             {enabledProviders.includes("codex") ? (
               <option value="codex">Codex</option>
             ) : null}
-          </select>
+          </select> : (
+            <Button size="compact" variant="ghost" onClick={openAgentSetup}>
+              {t("agent.acpOpenSetup")}
+            </Button>
+          )}
           {modelOption ? (
             <ConfigSelect
               option={modelOption}

@@ -4,12 +4,14 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use dopedb_protocol::{AcpPluginId, AgentSessionRegisterArguments, SessionAuthentication};
+use dopedb_protocol::{AgentSessionRegisterArguments, SessionAuthentication};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-const MAX_LAUNCHER_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_RUNTIME_BYTES: u64 = 130 * 1024 * 1024;
+const MAX_ADAPTER_ENTRYPOINT_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_PROVIDER_CLI_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AgentLaunchPolicyError;
@@ -39,31 +41,65 @@ pub fn take_registration_authentication() -> Result<SessionAuthentication, Agent
 pub fn validate_descriptor(
     registration: &AgentSessionRegisterArguments,
 ) -> Result<(), AgentLaunchPolicyError> {
-    let path = Path::new(&registration.launcher_executable);
-    let resolved = Path::new(&registration.launcher_resolved_executable);
-    if !registration.validate() || !path.is_absolute() || !resolved.is_absolute() {
+    let paths = [
+        registration.runtime_executable.as_str(),
+        registration.runtime_resolved_executable.as_str(),
+        registration.adapter_entrypoint.as_str(),
+        registration.provider_cli_executable.as_str(),
+        registration.provider_cli_resolved_executable.as_str(),
+    ];
+    if !registration.validate() || paths.iter().any(|path| !Path::new(path).is_absolute()) {
         return Err(AgentLaunchPolicyError);
     }
     Ok(())
 }
 
-pub fn verify_launcher(
+pub fn verify_launch_files(
     registration: &AgentSessionRegisterArguments,
 ) -> Result<(), AgentLaunchPolicyError> {
     validate_descriptor(registration)?;
-    let invocation = Path::new(&registration.launcher_executable);
-    let path = PathBuf::from(&registration.launcher_resolved_executable);
+    verify_file(
+        &registration.runtime_executable,
+        &registration.runtime_resolved_executable,
+        &registration.runtime_sha256,
+        MAX_RUNTIME_BYTES,
+        true,
+    )?;
+    verify_file(
+        &registration.adapter_entrypoint,
+        &registration.adapter_entrypoint,
+        &registration.adapter_entrypoint_sha256,
+        MAX_ADAPTER_ENTRYPOINT_BYTES,
+        false,
+    )?;
+    verify_file(
+        &registration.provider_cli_executable,
+        &registration.provider_cli_resolved_executable,
+        &registration.provider_cli_sha256,
+        MAX_PROVIDER_CLI_BYTES,
+        true,
+    )
+}
+
+fn verify_file(
+    invocation: &str,
+    expected_resolved: &str,
+    expected_sha256: &str,
+    maximum_bytes: u64,
+    executable: bool,
+) -> Result<(), AgentLaunchPolicyError> {
+    let invocation = Path::new(invocation);
+    let path = PathBuf::from(expected_resolved);
     if std::fs::canonicalize(invocation).map_err(|_| AgentLaunchPolicyError)? != path {
         return Err(AgentLaunchPolicyError);
     }
     let metadata = path.metadata().map_err(|_| AgentLaunchPolicyError)?;
-    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_LAUNCHER_BYTES {
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > maximum_bytes {
         return Err(AgentLaunchPolicyError);
     }
     #[cfg(unix)]
-    {
+    if executable {
         use std::os::unix::fs::PermissionsExt;
-
         if metadata.permissions().mode() & 0o111 == 0 {
             return Err(AgentLaunchPolicyError);
         }
@@ -78,7 +114,7 @@ pub fn verify_launcher(
         }
         hasher.update(&buffer[..read]);
     }
-    if hex::encode(hasher.finalize()) != registration.launcher_sha256 {
+    if hex::encode(hasher.finalize()) != expected_sha256 {
         return Err(AgentLaunchPolicyError);
     }
     Ok(())
@@ -87,20 +123,14 @@ pub fn verify_launcher(
 pub fn adapter_command(
     registration: &AgentSessionRegisterArguments,
 ) -> Result<Command, AgentLaunchPolicyError> {
-    verify_launcher(registration)?;
-    let mut command = Command::new(&registration.launcher_executable);
+    verify_launch_files(registration)?;
+    let mut command = Command::new(&registration.runtime_executable);
     command
-        .args(["-y", transitional_npx_package(registration.plugin_id)])
+        .arg(&registration.adapter_entrypoint)
+        .env(
+            registration.plugin_id.local_cli_environment(),
+            &registration.provider_cli_executable,
+        )
         .env_remove("DOPEDB_SESSION_TOKEN");
     Ok(command)
-}
-
-// Removed with the npx launcher once the signed plugin installer activates a
-// verified adapter entrypoint. Keeping this mapping inside the closed bridge
-// means the registration wire can no longer smuggle an npm package name.
-fn transitional_npx_package(plugin_id: AcpPluginId) -> &'static str {
-    match plugin_id {
-        AcpPluginId::Claude => "@agentclientprotocol/claude-agent-acp@0.63.0",
-        AcpPluginId::Codex => "@agentclientprotocol/codex-acp@1.1.7",
-    }
 }

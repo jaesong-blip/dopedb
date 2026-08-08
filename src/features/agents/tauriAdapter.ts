@@ -4,6 +4,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ConnectionId } from "../connections/domain";
 import type {
   AcpPromptContext,
+  AcpPluginId,
+  AcpPluginMutationReceipt,
+  AcpPluginStatus,
   AcpSessionChanged,
   AcpSessionFocus,
   AcpSessionId,
@@ -14,6 +17,29 @@ import type {
   RetiredChatArchiveMessage,
   RetiredChatArchiveThread,
 } from "./domain";
+
+export function listAgentAcpPlugins(): Promise<AcpPluginStatus[]> {
+  return invoke("list_agent_acp_plugins");
+}
+
+export function installAgentAcpPlugin(
+  pluginId: AcpPluginId,
+): Promise<AcpPluginMutationReceipt> {
+  return invoke("install_agent_acp_plugin", { pluginId });
+}
+
+export function removeAgentAcpPlugin(
+  pluginId: AcpPluginId,
+): Promise<AcpPluginMutationReceipt> {
+  return invoke("remove_agent_acp_plugin", { pluginId });
+}
+
+export function setAgentAcpPluginEnabled(
+  pluginId: AcpPluginId,
+  enabled: boolean,
+): Promise<AcpPluginStatus> {
+  return invoke("set_agent_acp_plugin_enabled", { pluginId, enabled });
+}
 
 export function startAgentAcpSession(
   connectionId: ConnectionId,

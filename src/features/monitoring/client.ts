@@ -3,12 +3,34 @@
 // before an event can leave the WebView.
 import * as Sentry from "@sentry/react";
 import { getVersion } from "@tauri-apps/api/app";
+import { listen } from "@tauri-apps/api/event";
 import type { Event } from "@sentry/react";
 import type { ErrorInfo } from "react";
 
 const SENTRY_DSN =
   "https://6a996b840dfc625c22eee410e885b93f@o4511867515895808.ingest.us.sentry.io/4511868739190784";
-const SAFE_TAGS = new Set(["surface", "runtime", "react_tree"]);
+const SAFE_TAGS = new Set([
+  "surface",
+  "runtime",
+  "react_tree",
+  "agent_plugin_provider",
+  "agent_plugin_operation",
+  "agent_plugin_outcome",
+]);
+const AGENT_PLUGIN_PROVIDERS = new Set(["claude", "codex"]);
+const AGENT_PLUGIN_OPERATIONS = new Set([
+  "install_update",
+  "remove",
+  "candidate_initialize",
+  "session_initialize",
+]);
+const AGENT_PLUGIN_OUTCOMES = new Set([
+  "started",
+  "succeeded",
+  "failed",
+  "promoted",
+  "quarantined",
+]);
 const SAFE_ERROR_TYPES = new Set([
   "AggregateError",
   "DOMException",
@@ -110,6 +132,35 @@ export function reportRenderFailure(
     const componentTree = safeComponentTree(errorInfo.componentStack);
     if (componentTree) scope.setTag("react_tree", componentTree);
     Sentry.captureException(monitoredError);
+  });
+}
+
+type AgentPluginTelemetry = {
+  provider: string;
+  operation: string;
+  outcome: string;
+};
+
+export async function listenForAgentPluginTelemetry() {
+  return listen<AgentPluginTelemetry>("agent-plugin:telemetry", (event) => {
+    const { provider, operation, outcome } = event.payload;
+    if (
+      !Sentry.isEnabled() ||
+      !AGENT_PLUGIN_PROVIDERS.has(provider) ||
+      !AGENT_PLUGIN_OPERATIONS.has(operation) ||
+      !AGENT_PLUGIN_OUTCOMES.has(outcome) ||
+      outcome === "started" ||
+      outcome === "succeeded" ||
+      outcome === "promoted"
+    ) {
+      return;
+    }
+    Sentry.withScope((scope) => {
+      scope.setTag("agent_plugin_provider", provider);
+      scope.setTag("agent_plugin_operation", operation);
+      scope.setTag("agent_plugin_outcome", outcome);
+      Sentry.captureException(new Error("Agent plugin operation failed"));
+    });
   });
 }
 

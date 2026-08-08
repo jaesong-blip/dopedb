@@ -40,9 +40,10 @@ use super::domain::{
     AcpPermissionOption, AcpPromptContext, AcpSessionChanged, AcpSessionEvent,
     AcpSessionEventPayload, AcpSessionFocus, AcpSessionLifecycle, AcpSessionSummary, AgentProvider,
 };
+use super::runtime::AcpPluginManager;
 
 const DOPEDB_MCP_SERVER_NAME: &str = "dopedb-desktop-session";
-const MAX_ACP_LAUNCHER_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_PROVIDER_CLI_BYTES: u64 = 512 * 1024 * 1024;
 const ACP_CAPABILITY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ACP_START_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_ACTIVE_SESSIONS: usize = 8;
@@ -69,6 +70,7 @@ pub(crate) struct AcpRuntime {
     broker: BrokerRuntime,
     sessions: Arc<DashMap<AcpSessionId, Arc<AcpSession>>>,
     persistence: Arc<PersistenceTracker>,
+    plugins: AcpPluginManager,
 }
 
 struct AcpSession {
@@ -88,6 +90,8 @@ struct AcpSession {
     command: Mutex<Option<tokio::sync::mpsc::UnboundedSender<SessionCommand>>>,
     permissions: Mutex<HashMap<String, PendingPermission>>,
     config_options: Mutex<HashMap<String, HashSet<String>>>,
+    terminated: AtomicBool,
+    termination: Notify,
     app: AppHandle,
 }
 
@@ -139,12 +143,13 @@ enum SessionCommand {
 }
 
 impl AcpRuntime {
-    pub(crate) fn new(store: Store, broker: BrokerRuntime) -> Self {
+    pub(crate) fn new(store: Store, broker: BrokerRuntime, plugins: AcpPluginManager) -> Self {
         Self {
             store,
             broker,
             sessions: Arc::new(DashMap::new()),
             persistence: Arc::new(PersistenceTracker::default()),
+            plugins,
         }
     }
 
@@ -199,7 +204,13 @@ impl AcpRuntime {
         provider: AgentProvider,
         app: AppHandle,
     ) -> AppResult<AcpSessionFocus> {
-        self.launch(connection_id, provider, app, None).await
+        let first = self
+            .launch(connection_id, provider, app.clone(), None)
+            .await;
+        if first.is_err() && self.plugins.has_ready_fallback(acp_plugin_id(provider))? {
+            return self.launch(connection_id, provider, app, None).await;
+        }
+        first
     }
 
     pub(crate) async fn resume(
@@ -224,16 +235,33 @@ impl AcpRuntime {
             });
         }
         let connection_id = focus.session.connection_id;
-        self.launch(
-            connection_id,
-            focus.session.provider,
-            app,
-            Some(ResumeSeed {
-                summary: focus.session,
-                events: focus.events,
-            }),
-        )
-        .await
+        let provider = focus.session.provider;
+        let first = self
+            .launch(
+                connection_id,
+                provider,
+                app.clone(),
+                Some(ResumeSeed {
+                    summary: focus.session,
+                    events: focus.events,
+                }),
+            )
+            .await;
+        if first.is_err() && self.plugins.has_ready_fallback(acp_plugin_id(provider))? {
+            let focus = self.store.focus_agent_acp_session(id, None).await?;
+            return self
+                .launch(
+                    connection_id,
+                    provider,
+                    app,
+                    Some(ResumeSeed {
+                        summary: focus.session,
+                        events: focus.events,
+                    }),
+                )
+                .await;
+        }
+        first
     }
 
     async fn launch(
@@ -260,32 +288,40 @@ impl AcpRuntime {
             });
         }
 
-        let npx = crate::cli_environment::find_executable("npx").ok_or_else(|| {
-            AppError::Agent(
-                "Node.js `npx` was not found. Install Node.js to run the official ACP adapter."
-                    .into(),
-            )
+        let plugin_id = acp_plugin_id(provider);
+        let plugin_plan = self.plugins.launch_plan(&app, plugin_id)?;
+        let cli_name = match provider {
+            AgentProvider::Claude => "claude",
+            AgentProvider::Codex => "codex",
+        };
+        let provider_cli = crate::cli_environment::find_executable(cli_name).ok_or_else(|| {
+            AppError::Agent(format!(
+                "{} is not installed. Install its official local CLI, then start a new Agent session.",
+                provider_name(provider)
+            ))
         })?;
-        let (npx, launcher_resolved, launcher_sha256) =
-            tokio::task::spawn_blocking(move || verified_acp_launcher(npx))
+        let (provider_cli, provider_cli_resolved, provider_cli_sha256) =
+            tokio::task::spawn_blocking(move || verified_provider_cli(provider_cli))
                 .await
                 .map_err(|_| {
-                    AppError::Config("the ACP launcher verifier stopped unexpectedly".into())
+                    AppError::Config("the provider CLI verifier stopped unexpectedly".into())
                 })??;
-        let plugin_id = acp_plugin_id(provider);
+        let runtime_resolved = std::fs::canonicalize(&plugin_plan.node_executable)?;
+        let adapter_entrypoint = std::fs::canonicalize(&plugin_plan.adapter_entrypoint)?;
         let registration = AgentSessionRegisterArguments {
             plugin_id,
-            launcher_executable: npx
-                .to_str()
-                .ok_or_else(|| AppError::Config("the ACP launcher path is not valid UTF-8".into()))?
-                .to_owned(),
-            launcher_resolved_executable: launcher_resolved
-                .to_str()
-                .ok_or_else(|| {
-                    AppError::Config("the resolved ACP launcher path is not valid UTF-8".into())
-                })?
-                .to_owned(),
-            launcher_sha256: launcher_sha256.clone(),
+            adapter_bundle_version: plugin_plan.adapter_bundle_version.clone(),
+            runtime_executable: utf8_path(&runtime_resolved, "bundled Node runtime")?,
+            runtime_resolved_executable: utf8_path(&runtime_resolved, "bundled Node runtime")?,
+            runtime_sha256: plugin_plan.node_sha256.clone(),
+            adapter_entrypoint: utf8_path(&adapter_entrypoint, "ACP adapter entrypoint")?,
+            adapter_entrypoint_sha256: plugin_plan.adapter_entrypoint_sha256.clone(),
+            provider_cli_executable: utf8_path(&provider_cli, "provider CLI")?,
+            provider_cli_resolved_executable: utf8_path(
+                &provider_cli_resolved,
+                "resolved provider CLI",
+            )?,
+            provider_cli_sha256: provider_cli_sha256.clone(),
         };
         let agent_bridge =
             tokio::task::spawn_blocking(crate::cli_install::bundled_agent_bridge_binary)
@@ -396,6 +432,8 @@ impl AcpRuntime {
             command: Mutex::new(None),
             permissions: Mutex::new(HashMap::new()),
             config_options: Mutex::new(HashMap::new()),
+            terminated: AtomicBool::new(false),
+            termination: Notify::new(),
             app,
         });
         self.sessions.insert(id, session.clone());
@@ -419,9 +457,16 @@ impl AcpRuntime {
         let connection_summary = connection_context(&connection.profile);
         let launch = LaunchContext {
             plugin_id,
-            npx,
-            launcher_resolved,
-            launcher_sha256,
+            adapter_bundle_version: plugin_plan.adapter_bundle_version,
+            runtime_executable: runtime_resolved,
+            runtime_sha256: plugin_plan.node_sha256,
+            adapter_entrypoint,
+            adapter_entrypoint_sha256: plugin_plan.adapter_entrypoint_sha256,
+            provider_cli,
+            provider_cli_resolved,
+            provider_cli_sha256,
+            plugin_candidate: plugin_plan.candidate,
+            plugin_manager: self.plugins.clone(),
             agent_bridge,
             working_directory,
             runtime_file: self.broker.runtime_file(),
@@ -598,6 +643,42 @@ impl AcpRuntime {
             let _ = self.close(*id);
         }
         sessions.len()
+    }
+
+    pub(crate) async fn stop_provider_and_wait(
+        &self,
+        provider: AgentProvider,
+        timeout: Duration,
+    ) -> AppResult<usize> {
+        let sessions = self
+            .sessions
+            .iter()
+            .filter_map(|entry| {
+                (entry.value().summary().provider == provider
+                    && !entry.value().terminated.load(Ordering::SeqCst))
+                .then_some((*entry.key(), entry.value().clone()))
+            })
+            .collect::<Vec<_>>();
+        for (id, _) in &sessions {
+            let _ = self.close(*id);
+        }
+        let wait = async {
+            for (_, session) in &sessions {
+                loop {
+                    let notified = session.termination.notified();
+                    if session.terminated.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    notified.await;
+                }
+            }
+        };
+        tokio::time::timeout(timeout, wait).await.map_err(|_| {
+            AppError::Timeout(
+                "the Agent process did not stop, so its adapter plugin was not removed".into(),
+            )
+        })?;
+        Ok(sessions.len())
     }
 
     pub(crate) fn shutdown_all(&self) {
@@ -1019,9 +1100,16 @@ fn replay_event_bytes(event: &AcpSessionEvent) -> usize {
 
 struct LaunchContext {
     plugin_id: AcpPluginId,
-    npx: PathBuf,
-    launcher_resolved: PathBuf,
-    launcher_sha256: String,
+    adapter_bundle_version: String,
+    runtime_executable: PathBuf,
+    runtime_sha256: String,
+    adapter_entrypoint: PathBuf,
+    adapter_entrypoint_sha256: String,
+    provider_cli: PathBuf,
+    provider_cli_resolved: PathBuf,
+    provider_cli_sha256: String,
+    plugin_candidate: bool,
+    plugin_manager: AcpPluginManager,
     agent_bridge: PathBuf,
     working_directory: PathBuf,
     runtime_file: Option<PathBuf>,
@@ -1047,6 +1135,14 @@ async fn run_session(
     mut commands: tokio::sync::mpsc::UnboundedReceiver<SessionCommand>,
     ready: Arc<Mutex<Option<oneshot::Sender<AppResult<()>>>>>,
 ) {
+    let plugin_id = launch.plugin_id;
+    let plugin_version = launch.adapter_bundle_version.clone();
+    let plugin_candidate = launch.plugin_candidate;
+    let plugin_manager = launch.plugin_manager.clone();
+    let plugin_activated = Arc::new(AtomicBool::new(!plugin_candidate));
+    let activation_for_connection = plugin_activated.clone();
+    let manager_for_connection = plugin_manager.clone();
+    let version_for_connection = plugin_version.clone();
     let config = agent_config(&session, &mut launch);
     let agent = AcpAgent::new(config);
     let notification_session = session.clone();
@@ -1178,6 +1274,21 @@ async fn run_session(
             };
             connection_session.set_acp_session_id(acp_session_id.to_string());
             push_session_configuration(&connection_session, config_options);
+            if plugin_candidate {
+                match manager_for_connection.record_initialize_success(
+                    &connection_session.app,
+                    plugin_id,
+                    &version_for_connection,
+                ) {
+                    Ok(_) => activation_for_connection.store(true, Ordering::SeqCst),
+                    Err(error) => tracing::warn!(
+                        %error,
+                        plugin_id = plugin_id.as_str(),
+                        plugin_version = %version_for_connection,
+                        "ACP plugin initialized but its candidate promotion was deferred"
+                    ),
+                }
+            }
             connection_session.set_lifecycle(AcpSessionLifecycle::Ready, None);
             complete_ready(&ready_for_connection, Ok(()));
 
@@ -1259,6 +1370,21 @@ async fn run_session(
         }
         Err(error) => {
             let message = actionable_acp_error(session.summary().provider, &error.to_string());
+            if plugin_candidate && !plugin_activated.load(Ordering::SeqCst) {
+                if let Err(state_error) = plugin_manager.record_initialize_failure(
+                    &session.app,
+                    plugin_id,
+                    &plugin_version,
+                    &message,
+                ) {
+                    tracing::warn!(
+                        error = %state_error,
+                        plugin_id = plugin_id.as_str(),
+                        plugin_version = %plugin_version,
+                        "could not quarantine a failed ACP plugin candidate"
+                    );
+                }
+            }
             complete_ready(&ready, Err(AppError::Agent(message.clone())));
             session.push(AcpSessionEventPayload::Error {
                 message: message.clone(),
@@ -1266,6 +1392,8 @@ async fn run_session(
             session.set_lifecycle(AcpSessionLifecycle::Failed, Some(message));
         }
     }
+    session.terminated.store(true, Ordering::SeqCst);
+    session.termination.notify_waiters();
 }
 
 async fn run_turn(
@@ -1418,17 +1546,35 @@ fn agent_config(session: &AcpSession, launch: &mut LaunchContext) -> AcpAgentCon
         .args([
             "launch".to_owned(),
             launch.plugin_id.as_str().to_owned(),
+            launch.adapter_bundle_version.clone(),
             launch
-                .npx
+                .runtime_executable
                 .to_str()
-                .expect("verified ACP launcher path remains UTF-8")
+                .expect("verified bundled Node path remains UTF-8")
                 .to_owned(),
             launch
-                .launcher_resolved
+                .runtime_executable
                 .to_str()
-                .expect("verified resolved ACP launcher path remains UTF-8")
+                .expect("verified bundled Node path remains UTF-8")
                 .to_owned(),
-            launch.launcher_sha256.clone(),
+            launch.runtime_sha256.clone(),
+            launch
+                .adapter_entrypoint
+                .to_str()
+                .expect("verified adapter entrypoint remains UTF-8")
+                .to_owned(),
+            launch.adapter_entrypoint_sha256.clone(),
+            launch
+                .provider_cli
+                .to_str()
+                .expect("verified provider CLI path remains UTF-8")
+                .to_owned(),
+            launch
+                .provider_cli_resolved
+                .to_str()
+                .expect("verified resolved provider CLI path remains UTF-8")
+                .to_owned(),
+            launch.provider_cli_sha256.clone(),
         ])
         .env(
             "PATH",
@@ -1749,10 +1895,6 @@ fn actionable_acp_error(provider: AgentProvider, message: &str) -> String {
             AgentProvider::Codex => "Codex is not authenticated. Run `codex login` in a terminal, then start a new Agent session.".into(),
         };
     }
-    if lower.contains("not found") && lower.contains("npx") {
-        return "Node.js `npx` is unavailable. Install Node.js, then start a new Agent session."
-            .into();
-    }
     format!("{} ACP error: {message}", provider_name(provider))
 }
 
@@ -1781,22 +1923,22 @@ fn acp_plugin_id(provider: AgentProvider) -> AcpPluginId {
     }
 }
 
-fn verified_acp_launcher(path: PathBuf) -> AppResult<(PathBuf, PathBuf, String)> {
+fn verified_provider_cli(path: PathBuf) -> AppResult<(PathBuf, PathBuf, String)> {
     if !path.is_absolute() || path.to_str().is_none() {
         return Err(AppError::Config(
-            "the ACP launcher must have an absolute UTF-8 path".into(),
+            "the provider CLI must have an absolute UTF-8 path".into(),
         ));
     }
     let resolved = std::fs::canonicalize(&path)?;
     if !resolved.is_absolute() || resolved.to_str().is_none() {
         return Err(AppError::Config(
-            "the resolved ACP launcher must have an absolute UTF-8 path".into(),
+            "the resolved provider CLI must have an absolute UTF-8 path".into(),
         ));
     }
     let metadata = std::fs::metadata(&resolved)?;
-    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_ACP_LAUNCHER_BYTES {
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_PROVIDER_CLI_BYTES {
         return Err(AppError::Blocked {
-            reason: "the ACP launcher is not a bounded regular file".into(),
+            reason: "the provider CLI is not a bounded regular file".into(),
         });
     }
     #[cfg(unix)]
@@ -1805,7 +1947,7 @@ fn verified_acp_launcher(path: PathBuf) -> AppResult<(PathBuf, PathBuf, String)>
 
         if metadata.permissions().mode() & 0o111 == 0 {
             return Err(AppError::Blocked {
-                reason: "the ACP launcher is not executable".into(),
+                reason: "the provider CLI is not executable".into(),
             });
         }
     }
@@ -1820,6 +1962,12 @@ fn verified_acp_launcher(path: PathBuf) -> AppResult<(PathBuf, PathBuf, String)>
         hasher.update(&buffer[..read]);
     }
     Ok((path, resolved, hex::encode(hasher.finalize())))
+}
+
+fn utf8_path(path: &std::path::Path, label: &str) -> AppResult<String> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| AppError::Config(format!("the {label} path is not valid UTF-8")))
 }
 
 fn complete_ready(

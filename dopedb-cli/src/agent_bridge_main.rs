@@ -23,27 +23,51 @@ async fn main() -> ExitCode {
     let result = match arguments.next().as_deref() {
         Some("launch") => {
             let plugin_id = arguments.next().as_deref().and_then(AcpPluginId::parse);
-            let launcher_executable = arguments.next();
-            let launcher_resolved_executable = arguments.next();
-            let launcher_sha256 = arguments.next();
+            let adapter_bundle_version = arguments.next();
+            let runtime_executable = arguments.next();
+            let runtime_resolved_executable = arguments.next();
+            let runtime_sha256 = arguments.next();
+            let adapter_entrypoint = arguments.next();
+            let adapter_entrypoint_sha256 = arguments.next();
+            let provider_cli_executable = arguments.next();
+            let provider_cli_resolved_executable = arguments.next();
+            let provider_cli_sha256 = arguments.next();
             if let (
                 Some(plugin_id),
-                Some(launcher_executable),
-                Some(launcher_resolved_executable),
-                Some(launcher_sha256),
+                Some(adapter_bundle_version),
+                Some(runtime_executable),
+                Some(runtime_resolved_executable),
+                Some(runtime_sha256),
+                Some(adapter_entrypoint),
+                Some(adapter_entrypoint_sha256),
+                Some(provider_cli_executable),
+                Some(provider_cli_resolved_executable),
+                Some(provider_cli_sha256),
                 None,
             ) = (
                 plugin_id,
-                launcher_executable,
-                launcher_resolved_executable,
-                launcher_sha256,
+                adapter_bundle_version,
+                runtime_executable,
+                runtime_resolved_executable,
+                runtime_sha256,
+                adapter_entrypoint,
+                adapter_entrypoint_sha256,
+                provider_cli_executable,
+                provider_cli_resolved_executable,
+                provider_cli_sha256,
                 arguments.next(),
             ) {
                 acp_launch::run(
                     plugin_id,
-                    launcher_executable,
-                    launcher_resolved_executable,
-                    launcher_sha256,
+                    adapter_bundle_version,
+                    runtime_executable,
+                    runtime_resolved_executable,
+                    runtime_sha256,
+                    adapter_entrypoint,
+                    adapter_entrypoint_sha256,
+                    provider_cli_executable,
+                    provider_cli_resolved_executable,
+                    provider_cli_sha256,
                 )
                 .await
             } else {

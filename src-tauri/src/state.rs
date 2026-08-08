@@ -6,6 +6,7 @@ use crate::broker::BrokerRuntime;
 use crate::connection::ConnectionManager;
 use crate::error::AppResult;
 use crate::features::agents::acp::AcpRuntime;
+use crate::features::agents::runtime::AcpPluginManager;
 use crate::features::providers;
 use crate::features::terminals::{self, TerminalsFeature};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
@@ -25,6 +26,8 @@ pub struct AppState {
     pub(crate) terminals: TerminalsFeature,
     /// Official ACP client sessions. Authentication remains in local agent tooling.
     pub(crate) agents_acp: AcpRuntime,
+    /// Signed first-party ACP adapter plugins and the bundled Node runtime.
+    pub(crate) agent_plugins: AcpPluginManager,
     /// Desktop-only approval capability. CLI and Terminal adapters are composed
     /// without this authority and therefore cannot obtain it.
     pub(crate) local_operation_approval: LocalApprovalAuthority,
@@ -50,7 +53,8 @@ impl AppState {
         providers.bind_provisioning_runtime(Arc::new(connections.clone()))?;
         let broker = BrokerRuntime::new(operation.runtime_id().into());
         let terminals = terminals::compose(store.clone(), broker.clone());
-        let agents_acp = AcpRuntime::new(store.clone(), broker.clone());
+        let agent_plugins = AcpPluginManager::new()?;
+        let agents_acp = AcpRuntime::new(store.clone(), broker.clone(), agent_plugins.clone());
         let services = ApplicationServices::with_providers(
             store.clone(),
             connections.clone(),
@@ -80,6 +84,7 @@ impl AppState {
             skills,
             terminals,
             agents_acp,
+            agent_plugins,
             local_operation_approval,
             startup_trace,
             store,
@@ -98,6 +103,7 @@ impl AppState {
         let broker = self.broker.clone();
         let services = self.services.clone();
         let skills = self.skills.clone();
+        let agent_plugins = self.agent_plugins.clone();
         tauri::async_runtime::spawn(async move {
             let started = trace.stage_started();
             let acp = store.recover_interrupted_agent_acp_sessions().await;
@@ -116,8 +122,12 @@ impl AppState {
             if succeeded {
                 let started = trace.stage_started();
                 let reports = services.report.clone();
-                crate::broker::start(broker, services, Some(skills), app);
+                crate::broker::start(broker, services, Some(skills), app.clone());
                 trace.finish("broker_start", "post_paint", started, true);
+                let update_app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    agent_plugins.update_installed(&update_app).await;
+                });
                 tauri::async_runtime::spawn(async move {
                     if let Err(error) = reports.replay_pending_active().await {
                         tracing::warn!(

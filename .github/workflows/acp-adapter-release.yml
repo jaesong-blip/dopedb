@@ -1,0 +1,149 @@
+name: ACP adapter bundle release
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: Adapter bundle to build
+        required: true
+        type: choice
+        options: [claude, codex, all]
+      channel:
+        description: Candidate only, or promote the signed manifest to stable
+        required: true
+        type: choice
+        options: [candidate, stable]
+      confirm_sentry_healthy:
+        description: Stable only — confirm candidate initialization telemetry is healthy
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: acp-adapter-release
+  cancel-in-progress: false
+
+jobs:
+  build-sign-publish:
+    if: github.actor == 'json-choi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    environment:
+      name: acp-adapter-release
+      url: https://github.com/${{ github.repository }}/releases/tag/acp-bundle-stable
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Validate promotion gate
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          SENTRY_HEALTHY: ${{ inputs.confirm_sentry_healthy }}
+        run: |
+          set -euo pipefail
+          if [[ "$CHANNEL" == "stable" && "$SENTRY_HEALTHY" != "true" ]]; then
+            echo "Stable promotion requires an explicit healthy Sentry initialization review." >&2
+            exit 1
+          fi
+          node scripts/agent-runtime/build-acp-plugin.mjs --check-config
+
+      - name: Install isolated signature verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+
+      - name: Materialize protected signing key
+        shell: bash
+        env:
+          ACP_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$ACP_SIGNING_PRIVATE_KEY"
+          umask 077
+          printf '%s' "$ACP_SIGNING_PRIVATE_KEY" > "$RUNNER_TEMP/acp-plugin.key"
+
+      - name: Build, sign, verify, and publish selected bundles
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINISIGN_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          SELECTED_PLUGIN: ${{ inputs.plugin }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          plugins=(claude codex)
+          if [[ "$SELECTED_PLUGIN" != "all" ]]; then
+            plugins=("$SELECTED_PLUGIN")
+          fi
+          released_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          for plugin in "${plugins[@]}"; do
+            output="$RUNNER_TEMP/acp-$plugin"
+            node scripts/agent-runtime/build-acp-plugin.mjs \
+              --plugin "$plugin" \
+              --output "$output"
+            bundle_version="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.plugin.adapterBundleVersion)' "$output/build-metadata.json")"
+            release_tag="acp-bundle-$plugin-$bundle_version"
+            node scripts/agent-runtime/sign-acp-plugin.mjs \
+              --input "$output" \
+              --secret-key "$RUNNER_TEMP/acp-plugin.key" \
+              --release-tag "$release_tag" \
+              --released-at "$released_at"
+
+            minisign -Vm "$output/$plugin.tar.gz" \
+              -x "$output/$plugin.tar.gz.minisig" \
+              -p src-tauri/resources/agent-runtime/acp-plugin.pub
+            minisign -Vm "$output/$plugin.manifest.canonical.json" \
+              -x "$output/$plugin.manifest.canonical.json.minisig" \
+              -p src-tauri/resources/agent-runtime/acp-plugin.pub
+
+            if ! gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              prerelease_args=()
+              if [[ "$CHANNEL" == "candidate" ]]; then prerelease_args+=(--prerelease); fi
+              gh release create "$release_tag" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" \
+                --title "$plugin ACP adapter $bundle_version" \
+                --notes "Signed independent ACP adapter bundle. The app, CLI, and Skill versions are unchanged." \
+                --latest=false \
+                "${prerelease_args[@]}"
+            fi
+            if [[ "$CHANNEL" == "stable" ]]; then
+              gh release edit "$release_tag" --repo "$GITHUB_REPOSITORY" --prerelease=false
+            fi
+            gh release upload "$release_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              "$output/$plugin.tar.gz" \
+              "$output/$plugin.tar.gz.minisig" \
+              "$output/$plugin.manifest.json" \
+              "$output/build-metadata.json" \
+              --clobber
+
+            if [[ "$CHANNEL" == "stable" ]]; then
+              if ! gh release view acp-bundle-stable --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                gh release create acp-bundle-stable \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --target "$GITHUB_SHA" \
+                  --title "DopeDB stable ACP adapter catalog" \
+                  --notes "Mutable signed catalog manifests; immutable adapter artifacts remain on versioned acp-bundle tags." \
+                  --latest=false
+              fi
+              gh release upload acp-bundle-stable \
+                --repo "$GITHUB_REPOSITORY" \
+                "$output/$plugin.manifest.json" \
+                --clobber
+            fi
+          done
+
+      - name: Erase signing material
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/acp-plugin.key"

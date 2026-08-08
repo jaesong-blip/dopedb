@@ -12,7 +12,7 @@
     "benchmark:render-hot-paths": "node --no-warnings scripts/benchmark-render-hot-paths.mjs",
     "generate:skills": "node scripts/generate-skill-bundle.mjs",
     "check:skills": "node scripts/generate-skill-bundle.mjs --check",
-    "check:agent-runtime": "node scripts/prepare-agent-runtime.mjs --check-config",
+    "check:agent-runtime": "node scripts/prepare-agent-runtime.mjs --check-config && node scripts/agent-runtime/build-acp-plugin.mjs --check-config",
     "check:workspace-logs": "node scripts/check-workspace-server-logs.mjs",
     "check:release-notes": "node scripts/release/generate-release-notes.mjs check",
     "check:ui-primitives": "node scripts/check-ui-primitives.mjs",

@@ -12,14 +12,14 @@ pub const MAX_ACP_PLUGIN_LICENSES: usize = 64;
 pub const MAX_ACP_PLUGIN_PACKED_BYTES: u64 = 30 * 1024 * 1024;
 pub const MAX_ACP_PLUGIN_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AcpPluginProvider {
     Claude,
     Codex,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum AcpPluginId {
     #[serde(rename = "dopedb.acp.claude")]
     Claude,
@@ -123,6 +123,7 @@ pub struct AcpPluginManifestV1 {
     pub artifact: AcpPluginArtifact,
     pub licenses: Vec<AcpPluginLicense>,
     pub sbom_sha256: String,
+    pub content_sha256: String,
     pub released_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revoked_at: Option<String>,
@@ -156,7 +157,7 @@ impl AcpPluginManifestV1 {
             )
             && valid_artifact_url(&self.artifact.url)
             && valid_sha256(&self.artifact.sha256)
-            && valid_text(&self.artifact.signature)
+            && valid_signature(&self.artifact.signature)
             && valid_text(&self.artifact.key_id)
             && self.artifact.packed_bytes > 0
             && self.artifact.packed_bytes <= MAX_ACP_PLUGIN_PACKED_BYTES
@@ -169,6 +170,7 @@ impl AcpPluginManifestV1 {
                 .iter()
                 .all(|license| valid_text(&license.name) && valid_relative_path(&license.path))
             && valid_sha256(&self.sbom_sha256)
+            && valid_sha256(&self.content_sha256)
             && valid_timestamp(&self.released_at)
             && self.revoked_at.as_deref().is_none_or(valid_timestamp)
             && self.rollout_basis_points <= 10_000
@@ -188,7 +190,7 @@ impl SignedAcpPluginManifestV1 {
     pub fn validate_shape(&self) -> bool {
         self.manifest.validate()
             && valid_sha256(&self.manifest_sha256)
-            && valid_text(&self.signature)
+            && valid_signature(&self.signature)
             && valid_text(&self.key_id)
     }
 }
@@ -200,6 +202,15 @@ fn valid_text(value: &str) -> bool {
         && !value.chars().any(char::is_control)
 }
 
+fn valid_signature(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_ACP_PLUGIN_STRING_BYTES
+        && !value.contains('\0')
+        && !value
+            .chars()
+            .any(|character| character.is_control() && character != '\n' && character != '\t')
+}
+
 fn valid_https_url(value: &str) -> bool {
     valid_text(value) && value.starts_with("https://") && !value.contains(['\\', '\0'])
 }
@@ -207,6 +218,7 @@ fn valid_https_url(value: &str) -> bool {
 fn valid_artifact_url(value: &str) -> bool {
     valid_https_url(value)
         && value.starts_with("https://github.com/json-choi/dopedb/releases/download/acp-bundle-")
+        && value.ends_with(".tar.gz")
 }
 
 fn valid_relative_path(value: &str) -> bool {

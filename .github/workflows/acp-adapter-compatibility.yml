@@ -1,0 +1,43 @@
+name: ACP adapter compatibility
+
+on:
+  pull_request:
+    paths:
+      - "agent-runtime/plugins/**"
+      - "scripts/agent-runtime/**"
+      - "dopedb-protocol/src/acp_plugin.rs"
+      - "src-tauri/src/features/agents/runtime/**"
+      - ".github/workflows/acp-adapter-*.yml"
+  workflow_dispatch:
+
+jobs:
+  unsigned-bundle-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [claude, codex]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Build bounded provider-binary-free bundle
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/${{ matrix.plugin }}"
+          node scripts/agent-runtime/build-acp-plugin.mjs \
+            --plugin "${{ matrix.plugin }}" \
+            --output "$output"
+          entrypoint="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.plugin.entrypoint)' "$output/build-metadata.json")"
+          node "$output/payload/$entrypoint" --version
+
+      - name: Publish size and largest-file evidence
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/${{ matrix.plugin }}/build-metadata.json" ]]; then
+            cat "$RUNNER_TEMP/${{ matrix.plugin }}/build-metadata.json" >> "$GITHUB_STEP_SUMMARY"
+          fi

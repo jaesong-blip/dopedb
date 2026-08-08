@@ -1,5 +1,6 @@
 //! Tauri transport for ACP sessions, CLI probes, and read-only retired archives.
 
+use dopedb_protocol::AcpPluginId;
 use tauri::State;
 
 use crate::error::AppResult;
@@ -10,6 +11,51 @@ use super::domain::{
     AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, AgentProvider,
     RetiredChatArchiveMessage, RetiredChatArchiveThread,
 };
+use super::runtime::{AcpPluginMutationReceipt, AcpPluginStatus};
+
+/// Inspect the two closed-catalog ACP adapter plugin installations.
+#[tauri::command]
+pub fn list_agent_acp_plugins(state: State<'_, AppState>) -> AppResult<Vec<AcpPluginStatus>> {
+    state.agent_plugins.statuses()
+}
+
+/// Download, verify, stage, and enable one signed first-party adapter plugin.
+#[tauri::command]
+pub async fn install_agent_acp_plugin(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    plugin_id: AcpPluginId,
+) -> AppResult<AcpPluginMutationReceipt> {
+    state.agent_plugins.install(&app, plugin_id).await
+}
+
+/// Close that provider's sessions and remove only its managed plugin files.
+#[tauri::command]
+pub async fn remove_agent_acp_plugin(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    plugin_id: AcpPluginId,
+) -> AppResult<AcpPluginMutationReceipt> {
+    let provider = match plugin_id {
+        AcpPluginId::Claude => AgentProvider::Claude,
+        AcpPluginId::Codex => AgentProvider::Codex,
+    };
+    state
+        .agents_acp
+        .stop_provider_and_wait(provider, std::time::Duration::from_secs(10))
+        .await?;
+    state.agent_plugins.remove(&app, plugin_id).await
+}
+
+/// Enable or disable an installed provider without changing its local CLI or login.
+#[tauri::command]
+pub fn set_agent_acp_plugin_enabled(
+    state: State<'_, AppState>,
+    plugin_id: AcpPluginId,
+    enabled: bool,
+) -> AppResult<AcpPluginStatus> {
+    state.agent_plugins.set_enabled(plugin_id, enabled)
+}
 
 /// Start one connection-pinned session through an official ACP registry adapter.
 #[tauri::command]

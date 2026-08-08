@@ -531,7 +531,7 @@ pub(super) fn run() {
 
     // Exercise the token-bearing launcher path in the same critical journey so
     // the fixed test budget does not grow. The fake executable stands in for
-    // npx and records only its non-secret arguments and inherited environment.
+    // bundled Node and records only its adapter argument and injected CLI path.
     fs::remove_file(&endpoint).unwrap();
     let launcher_runtime_directory = runtime_directory;
     let launcher_runtime_id = Uuid::from_u128(11);
@@ -558,22 +558,37 @@ pub(super) fn run() {
     .unwrap();
     fs::set_permissions(&launcher_runtime_file, fs::Permissions::from_mode(0o600)).unwrap();
 
-    let launcher_target = temp.path().join("verified-npx-target");
+    let launcher_target = temp.path().join("verified-node-target");
     fs::write(
         &launcher_target,
-        b"#!/bin/sh\nif env | grep -q '^DOPEDB_SESSION_TOKEN='; then exit 91; fi\nprintf '%s\\n%s\\n%s\\n' \"$1\" \"$2\" \"$DOPEDB_TERMINAL_SESSION_ID\" > \"$DOPEDB_TEST_LAUNCH_OUTPUT\"\n",
+        b"#!/bin/sh\nif env | grep -q '^DOPEDB_SESSION_TOKEN='; then exit 91; fi\nprintf '%s\\n%s\\n%s\\n' \"$1\" \"$CODEX_PATH\" \"$DOPEDB_TERMINAL_SESSION_ID\" > \"$DOPEDB_TEST_LAUNCH_OUTPUT\"\n",
     )
     .unwrap();
     fs::set_permissions(&launcher_target, fs::Permissions::from_mode(0o700)).unwrap();
-    let launcher = temp.path().join("verified-npx");
+    let launcher = temp.path().join("verified-node");
     symlink(&launcher_target, &launcher).unwrap();
     let launcher_resolved = fs::canonicalize(&launcher).unwrap();
     let launcher_sha256 = hex::encode(Sha256::digest(fs::read(&launcher_resolved).unwrap()));
+    let adapter = temp.path().join("codex-adapter.js");
+    fs::write(&adapter, b"verified adapter fixture").unwrap();
+    let adapter = fs::canonicalize(adapter).unwrap();
+    let adapter_sha256 = hex::encode(Sha256::digest(fs::read(&adapter).unwrap()));
+    let provider_cli = temp.path().join("codex");
+    fs::write(&provider_cli, b"#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&provider_cli, fs::Permissions::from_mode(0o700)).unwrap();
+    let provider_cli_resolved = fs::canonicalize(&provider_cli).unwrap();
+    let provider_cli_sha256 =
+        hex::encode(Sha256::digest(fs::read(&provider_cli_resolved).unwrap()));
     let launcher_output = temp.path().join("launcher-output.txt");
     let launcher_session_id = Uuid::from_u128(12);
     let expected_launcher = launcher.to_string_lossy().into_owned();
     let expected_resolved_launcher = launcher_resolved.to_string_lossy().into_owned();
     let expected_sha256 = launcher_sha256.clone();
+    let expected_adapter = adapter.to_string_lossy().into_owned();
+    let expected_adapter_sha256 = adapter_sha256.clone();
+    let expected_provider_cli = provider_cli.to_string_lossy().into_owned();
+    let expected_provider_cli_resolved = provider_cli_resolved.to_string_lossy().into_owned();
+    let expected_provider_cli_sha256 = provider_cli_sha256.clone();
     let launcher_server = thread::spawn(move || {
         let (mut stream, _) = launcher_listener.accept().unwrap();
         let request = read_request(&mut stream);
@@ -584,12 +599,21 @@ pub(super) fn run() {
         let arguments: AgentSessionRegisterArguments =
             serde_json::from_value(request.arguments.clone()).unwrap();
         assert_eq!(arguments.plugin_id, AcpPluginId::Codex);
-        assert_eq!(arguments.launcher_executable, expected_launcher);
+        assert_eq!(arguments.adapter_bundle_version, "1.0.0");
+        assert_eq!(arguments.runtime_executable, expected_launcher);
         assert_eq!(
-            arguments.launcher_resolved_executable,
+            arguments.runtime_resolved_executable,
             expected_resolved_launcher
         );
-        assert_eq!(arguments.launcher_sha256, expected_sha256);
+        assert_eq!(arguments.runtime_sha256, expected_sha256);
+        assert_eq!(arguments.adapter_entrypoint, expected_adapter);
+        assert_eq!(arguments.adapter_entrypoint_sha256, expected_adapter_sha256);
+        assert_eq!(arguments.provider_cli_executable, expected_provider_cli);
+        assert_eq!(
+            arguments.provider_cli_resolved_executable,
+            expected_provider_cli_resolved
+        );
+        assert_eq!(arguments.provider_cli_sha256, expected_provider_cli_sha256);
         respond(&mut stream, &request, &EmptyArguments::default());
     });
 
@@ -597,9 +621,15 @@ pub(super) fn run() {
         .args([
             "launch",
             AcpPluginId::Codex.as_str(),
+            "1.0.0",
             launcher.to_str().unwrap(),
             launcher_resolved.to_str().unwrap(),
             launcher_sha256.as_str(),
+            adapter.to_str().unwrap(),
+            adapter_sha256.as_str(),
+            provider_cli.to_str().unwrap(),
+            provider_cli_resolved.to_str().unwrap(),
+            provider_cli_sha256.as_str(),
         ])
         .env("DOPEDB_RUNTIME_FILE", &launcher_runtime_file)
         .env(
@@ -616,8 +646,8 @@ pub(super) fn run() {
     assert_eq!(
         inherited.lines().collect::<Vec<_>>(),
         [
-            "-y",
-            "@agentclientprotocol/codex-acp@1.1.7",
+            adapter.to_string_lossy().as_ref(),
+            provider_cli.to_string_lossy().as_ref(),
             launcher_session_id.to_string().as_str(),
         ]
     );
@@ -646,14 +676,27 @@ mod platform {
         std::env::remove_var("DOPEDB_TERMINAL_SESSION_ID");
 
         let temp = TempDir::new().unwrap();
-        let launcher = temp.path().join("verified-npx.cmd");
+        let launcher = temp.path().join("verified-node.cmd");
         fs::write(&launcher, b"@echo off\r\nexit /b 0\r\n").unwrap();
         let launcher_resolved = fs::canonicalize(&launcher).unwrap();
+        let adapter = temp.path().join("claude-adapter.js");
+        fs::write(&adapter, b"verified adapter fixture").unwrap();
+        let provider_cli = temp.path().join("claude.cmd");
+        fs::write(&provider_cli, b"@echo off\r\nexit /b 0\r\n").unwrap();
+        let provider_cli_resolved = fs::canonicalize(&provider_cli).unwrap();
         let registration = AgentSessionRegisterArguments {
             plugin_id: AcpPluginId::Claude,
-            launcher_executable: launcher.to_string_lossy().into_owned(),
-            launcher_resolved_executable: launcher_resolved.to_string_lossy().into_owned(),
-            launcher_sha256: hex::encode(Sha256::digest(fs::read(&launcher_resolved).unwrap())),
+            adapter_bundle_version: "1.0.0".into(),
+            runtime_executable: launcher.to_string_lossy().into_owned(),
+            runtime_resolved_executable: launcher_resolved.to_string_lossy().into_owned(),
+            runtime_sha256: hex::encode(Sha256::digest(fs::read(&launcher_resolved).unwrap())),
+            adapter_entrypoint: adapter.to_string_lossy().into_owned(),
+            adapter_entrypoint_sha256: hex::encode(Sha256::digest(fs::read(&adapter).unwrap())),
+            provider_cli_executable: provider_cli.to_string_lossy().into_owned(),
+            provider_cli_resolved_executable: provider_cli_resolved.to_string_lossy().into_owned(),
+            provider_cli_sha256: hex::encode(Sha256::digest(
+                fs::read(&provider_cli_resolved).unwrap(),
+            )),
         };
         let command = adapter_command(&registration).unwrap();
         assert_eq!(command.get_program(), launcher.as_os_str());
@@ -662,17 +705,17 @@ mod platform {
                 .get_args()
                 .map(|argument| argument.to_string_lossy().into_owned())
                 .collect::<Vec<_>>(),
-            [
-                "-y".to_owned(),
-                "@agentclientprotocol/claude-agent-acp@0.63.0".to_owned(),
-            ]
+            [adapter.to_string_lossy().into_owned()]
         );
+        assert!(command.get_envs().any(|(name, value)| {
+            name == "CLAUDE_CODE_EXECUTABLE" && value == Some(provider_cli.as_os_str())
+        }));
         assert!(command
             .get_envs()
             .any(|(name, value)| { name == "DOPEDB_SESSION_TOKEN" && value.is_none() }));
 
         let mut changed = registration;
-        changed.launcher_sha256 = "00".repeat(32);
+        changed.runtime_sha256 = "00".repeat(32);
         assert!(adapter_command(&changed).is_err());
     }
 }

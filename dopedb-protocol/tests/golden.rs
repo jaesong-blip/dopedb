@@ -191,7 +191,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v7_command_schema_and_pinned_agent_registration() {
+fn query_plan_request_matches_v8_command_schema_and_pinned_agent_registration() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -215,9 +215,15 @@ fn query_plan_request_matches_v7_command_schema_and_pinned_agent_registration() 
 
     let registration = AgentSessionRegisterArguments {
         plugin_id: AcpPluginId::Claude,
-        launcher_executable: "/opt/homebrew/bin/npx".into(),
-        launcher_resolved_executable: "/opt/homebrew/bin/node".into(),
-        launcher_sha256: "ab".repeat(32),
+        adapter_bundle_version: "1.0.0".into(),
+        runtime_executable: "/Applications/DopeDB.app/Resources/node".into(),
+        runtime_resolved_executable: "/Applications/DopeDB.app/Resources/node".into(),
+        runtime_sha256: "ab".repeat(32),
+        adapter_entrypoint: "/Users/test/acp/claude/1.0.0/index.js".into(),
+        adapter_entrypoint_sha256: "cd".repeat(32),
+        provider_cli_executable: "/opt/homebrew/bin/claude".into(),
+        provider_cli_resolved_executable: "/opt/homebrew/lib/node_modules/claude/cli.js".into(),
+        provider_cli_sha256: "ef".repeat(32),
     };
     assert!(registration.validate());
     assert_eq!(
@@ -235,7 +241,7 @@ fn query_plan_request_matches_v7_command_schema_and_pinned_agent_registration() 
     registration_json["package"] = json!("attacker/package@latest");
     assert!(serde_json::from_value::<AgentSessionRegisterArguments>(registration_json).is_err());
     let mut invalid_digest = registration;
-    invalid_digest.launcher_sha256 = "AB".repeat(32);
+    invalid_digest.runtime_sha256 = "AB".repeat(32);
     assert!(!invalid_digest.validate());
 
     let manifest = AcpPluginManifestV1 {
@@ -272,6 +278,7 @@ fn query_plan_request_matches_v7_command_schema_and_pinned_agent_registration() 
             path: "licenses/NOTICE.txt".into(),
         }],
         sbom_sha256: "ef".repeat(32),
+        content_sha256: "de".repeat(32),
         released_at: "2026-08-08T00:00:00Z".into(),
         revoked_at: None,
         rollout_basis_points: 1_000,
@@ -579,13 +586,13 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v7_catalog() {
+fn command_names_match_the_v8_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v7.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v8.json")).unwrap();
     assert_eq!(actual, expected);
 
     let request: RequestEnvelope = serde_json::from_value(json!({
