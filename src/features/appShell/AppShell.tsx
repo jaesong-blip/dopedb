@@ -971,14 +971,15 @@ function Shell() {
         setEditing(null);
         setSchemaDiffGroupKey(null);
         setArea(next);
-        if (!compactShell) showDatabaseExplorer();
+        if (!compactShell && next !== "knowledge") showDatabaseExplorer();
         if (next === "workspace" && selected) {
           openStableDocument("schema", false);
         }
         if (compactShell) {
           closeServices();
           closeTerminalDock();
-          if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
+          if (next === "knowledge") setMobileExplorerOpen(false);
+          else if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
           else setMobileExplorerOpen(true);
         }
       }}

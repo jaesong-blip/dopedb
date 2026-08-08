@@ -215,6 +215,49 @@ pub(crate) fn delete_legacy_workspace_session() -> AppResult<()> {
     delete_workspace_session_account(LEGACY_WORKSPACE_SESSION_ACCOUNT)
 }
 
+fn knowledge_source_root_account(source_id: Uuid) -> String {
+    format!("knowledge-source-root:{source_id}")
+}
+
+/// Local Folder roots are device capabilities, not workspace metadata. Persist the
+/// canonical root only in the OS credential store under the source UUID.
+pub(crate) fn store_knowledge_source_root(
+    source_id: Uuid,
+    root: &std::path::Path,
+) -> AppResult<()> {
+    let canonical = std::fs::canonicalize(root)?;
+    if !canonical.is_dir() {
+        return Err(AppError::Config(
+            "the Project Knowledge root is not a directory".into(),
+        ));
+    }
+    let value = canonical
+        .to_str()
+        .ok_or_else(|| AppError::Config("the Project Knowledge root is not Unicode".into()))?;
+    store_workspace_session_account(&knowledge_source_root_account(source_id), value)
+}
+
+pub(crate) fn fetch_knowledge_source_root(
+    source_id: Uuid,
+) -> AppResult<Option<std::path::PathBuf>> {
+    let Some(value) = fetch_workspace_session_account(&knowledge_source_root_account(source_id))?
+    else {
+        return Ok(None);
+    };
+    let root = std::path::PathBuf::from(value);
+    let canonical = std::fs::canonicalize(&root)?;
+    if canonical != root || !canonical.is_dir() {
+        return Err(AppError::Blocked {
+            reason: "the Project Knowledge root capability changed".into(),
+        });
+    }
+    Ok(Some(root))
+}
+
+pub(crate) fn delete_knowledge_source_root(source_id: Uuid) -> AppResult<()> {
+    delete_workspace_session_account(&knowledge_source_root_account(source_id))
+}
+
 /// True when the OS credential store is structurally unavailable (for example an
 /// unsigned dev build) AND we are in a debug build permitted to use the file fallback.
 #[cfg(not(feature = "packaged-benchmark"))]

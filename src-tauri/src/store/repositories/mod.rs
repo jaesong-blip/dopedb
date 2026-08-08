@@ -4,6 +4,7 @@ mod catalog;
 mod connections;
 mod dashboards;
 mod history;
+mod knowledge;
 mod reports;
 mod safety;
 mod workspaces;

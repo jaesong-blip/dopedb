@@ -18,6 +18,7 @@ import { ConnectionForm } from "../../screens/Connections";
 import Dashboards from "../../screens/Dashboards";
 import Documents from "../../screens/Documents";
 import Onboarding from "../../screens/Onboarding";
+import Knowledge from "../../screens/Knowledge";
 import SchemaExplorer from "../../screens/Schema";
 import SchemaDiff from "../../screens/SchemaDiff";
 import Settings, { type SettingsSection } from "../../screens/Settings";
@@ -166,6 +167,14 @@ export default function WorkbenchContent(props: Props) {
           onCancel={props.onCancelEditing}
         />
       </div>,
+    );
+  }
+
+  if (area === "knowledge") {
+    return withSettings(
+      <section className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background">
+        <Knowledge />
+      </section>,
     );
   }
 

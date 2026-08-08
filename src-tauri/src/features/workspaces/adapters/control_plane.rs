@@ -5,6 +5,7 @@
 mod authentication;
 mod connections;
 mod dashboards;
+mod knowledge;
 mod provider_local_target;
 mod reports;
 mod sync;
@@ -51,6 +52,13 @@ use connections::{
     release_managed_connection_lease, remote_connections, share_connection, update_connection,
 };
 use dashboards::{delete_dashboard, remote_dashboards, upsert_dashboard};
+pub(crate) use knowledge::{
+    begin_knowledge_github_install, create_knowledge_project, create_knowledge_source,
+    delete_knowledge_source, knowledge_source_events, knowledge_source_snapshot,
+    list_knowledge_github_repositories, list_knowledge_projects, publish_knowledge_graph,
+    read_knowledge_source_blob, CreateKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest,
+    CreateKnowledgeSourceRequest, RemoteGithubRepository, RemoteKnowledgeProject,
+};
 use provider_local_target::provider_local_target;
 pub(crate) use reports::{append_report_evidence, propose_report};
 use sync::workspace_pull_page;

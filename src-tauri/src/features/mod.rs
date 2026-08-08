@@ -12,6 +12,7 @@ pub(crate) mod dashboards;
 pub(crate) mod documents;
 pub(crate) mod erd;
 pub(crate) mod jobs;
+pub(crate) mod knowledge;
 pub(crate) mod monitoring;
 pub(crate) mod operation_control;
 pub(crate) mod providers;

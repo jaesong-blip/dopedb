@@ -1,0 +1,17 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {},
+  "nodes": [
+    {"id":"file","label":"main.ts","norm_label":"main.ts","file_type":"code","source_file":"src/main.ts","source_location":"L1","metadata":{"language":"typescript","kind":"file"},"_origin":"ast"},
+    {"id":"main","label":"main()","norm_label":"main","file_type":"code","source_file":"src/main.ts","source_location":"L2","metadata":{"language":"typescript","kind":"function"},"_origin":"ast"},
+    {"id":"run","label":"run()","norm_label":"run","file_type":"code","source_file":"src/main.ts","source_location":"L3","metadata":{"language":"typescript","kind":"function"},"_origin":"ast"},
+    {"id":"summary","label":"ignored semantic summary","norm_label":"ignored semantic summary","file_type":"concept","source_file":"src/main.ts","source_location":"L1","_origin":"llm"}
+  ],
+  "links": [
+    {"source":"file","target":"main","relation":"defines","source_file":"src/main.ts","source_location":"L2","_origin":"ast"},
+    {"source":"main","target":"run","relation":"calls","source_file":"src/main.ts","source_location":"L3","_origin":"ast"},
+    {"source":"summary","target":"main","relation":"rationale_for","source_file":"src/main.ts","source_location":"L1","_origin":"llm"}
+  ],
+  "hyperedges": []
+}

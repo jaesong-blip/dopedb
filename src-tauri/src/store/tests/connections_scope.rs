@@ -113,6 +113,81 @@ async fn assert_current_store_migration_is_write_free() {
         .unwrap();
     assert_eq!(version, super::super::bootstrap::LOCAL_SCHEMA_VERSION);
 
+    use crate::features::knowledge::domain::{Project, ProjectEnvironment};
+    use crate::features::knowledge::ports::{
+        KnowledgeGraphRepositoryPort, KnowledgeScopeRepositoryPort,
+    };
+    use crate::kernel::identity::WorkspaceId;
+    use dopedb_protocol::GraphBuildArtifactV1;
+
+    let store = Store::from_pool_for_test(pool.clone());
+    let artifact: GraphBuildArtifactV1 = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../dopedb-protocol/tests/fixtures/graph-build-artifact-v1.json"
+    )))
+    .unwrap();
+    let project = Project {
+        id: artifact.binding.project_id,
+        workspace_id: WorkspaceId::from(
+            Uuid::parse_str(migrations::PERSONAL_WORKSPACE_ID).unwrap(),
+        ),
+        name: "DopeDB".into(),
+        revision: 1,
+    };
+    let environment = ProjectEnvironment {
+        id: artifact.binding.project_environment_id,
+        project_id: project.id,
+        name: "Development".into(),
+        production: false,
+        revision: artifact.environment_revision,
+    };
+    store
+        .save_scope(
+            &project,
+            &environment,
+            &artifact.binding,
+            artifact.environment_revision,
+        )
+        .await
+        .unwrap();
+    store.stage(&artifact).await.unwrap();
+    store.activate(&artifact).await.unwrap();
+    assert_eq!(
+        store
+            .active(environment.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .graph_revision_id,
+        artifact.graph_revision_id
+    );
+
+    let mut failed = artifact.clone();
+    failed.graph_revision_id = Uuid::from_u128(127);
+    failed.parent_graph_revision_id = Some(artifact.graph_revision_id);
+    failed.health.complete = false;
+    assert!(matches!(
+        store.stage(&failed).await,
+        Err(AppError::Blocked { .. })
+    ));
+    let mut stale = artifact.clone();
+    stale.graph_revision_id = Uuid::from_u128(128);
+    stale.parent_graph_revision_id = None;
+    store.stage(&stale).await.unwrap();
+    assert!(matches!(
+        store.activate(&stale).await,
+        Err(AppError::Blocked { .. })
+    ));
+    assert_eq!(
+        store
+            .active(environment.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .graph_revision_id,
+        artifact.graph_revision_id
+    );
+
     sqlx::query("PRAGMA query_only = ON")
         .execute(&pool)
         .await

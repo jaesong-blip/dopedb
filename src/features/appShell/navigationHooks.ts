@@ -25,12 +25,11 @@ export function useSqlEditorPreload(
 }
 
 export function usePersistentAppArea() {
-  const [area, setArea] = useState<AppArea>(() =>
-    localStorage.getItem("appArea") === "dashboard" ||
-    localStorage.getItem("tab") === "dashboard"
-      ? "dashboard"
-      : "workspace",
-  );
+  const [area, setArea] = useState<AppArea>(() => {
+    const saved = localStorage.getItem("appArea");
+    if (saved === "knowledge" || saved === "dashboard") return saved;
+    return localStorage.getItem("tab") === "dashboard" ? "dashboard" : "workspace";
+  });
   useEffect(() => {
     localStorage.setItem("appArea", area);
     localStorage.setItem("tab", area === "dashboard" ? "dashboard" : "data");

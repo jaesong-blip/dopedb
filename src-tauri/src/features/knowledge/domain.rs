@@ -1,0 +1,273 @@
+//! Provider-neutral Project Knowledge values and safety invariants.
+
+use std::path::PathBuf;
+
+use chrono::{DateTime, Utc};
+use dopedb_protocol::{
+    GraphBuildArtifactV1, KnowledgeSourceBindingV1, KnowledgeSourceProvider,
+    KnowledgeSourceVisibility, SourceProviderCapability, SourceRevisionIdentity,
+};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
+
+use crate::error::{AppError, AppResult};
+use crate::kernel::identity::{AccountId, WorkspaceId};
+
+pub(crate) const INITIAL_SOURCE_PROVIDERS: [KnowledgeSourceProvider; 2] = [
+    KnowledgeSourceProvider::Github,
+    KnowledgeSourceProvider::LocalFolder,
+];
+
+pub(crate) const SOURCE_PROVIDER_CAPABILITIES: [SourceProviderCapability; 9] = [
+    SourceProviderCapability::Discover,
+    SourceProviderCapability::Bind,
+    SourceProviderCapability::ResolveRevision,
+    SourceProviderCapability::Snapshot,
+    SourceProviderCapability::ListChanges,
+    SourceProviderCapability::ReadFileAtRevision,
+    SourceProviderCapability::Watch,
+    SourceProviderCapability::Health,
+    SourceProviderCapability::Revoke,
+];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Project {
+    pub(crate) id: Uuid,
+    pub(crate) workspace_id: WorkspaceId,
+    pub(crate) name: String,
+    pub(crate) revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ProjectEnvironment {
+    pub(crate) id: Uuid,
+    pub(crate) project_id: Uuid,
+    pub(crate) name: String,
+    pub(crate) production: bool,
+    pub(crate) revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StoredKnowledgeScope {
+    pub(crate) project: Project,
+    pub(crate) environment: ProjectEnvironment,
+    pub(crate) binding: KnowledgeSourceBindingV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SourceLocator {
+    Github {
+        installation_id: Uuid,
+        repository_id: String,
+        repository: String,
+        ref_name: String,
+    },
+    /// The absolute path is process-local and must never be serialized into a
+    /// workspace record, graph artifact, telemetry event, or ACP response.
+    LocalFolder { root: PathBuf },
+}
+
+impl SourceLocator {
+    pub(crate) fn provider(&self) -> KnowledgeSourceProvider {
+        match self {
+            Self::Github { .. } => KnowledgeSourceProvider::Github,
+            Self::LocalFolder { .. } => KnowledgeSourceProvider::LocalFolder,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SourceBindingDraft {
+    pub(crate) source_id: Uuid,
+    pub(crate) project_id: Uuid,
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) environment_revision: u64,
+    pub(crate) display_name: String,
+    pub(crate) visibility: KnowledgeSourceVisibility,
+    pub(crate) locator: SourceLocator,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SourceFileManifest {
+    pub(crate) path: String,
+    pub(crate) content_hash: String,
+    pub(crate) hash_algorithm: SourceContentHashAlgorithm,
+    pub(crate) bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SourceContentHashAlgorithm {
+    GitSha1,
+    Sha256,
+}
+
+pub(crate) fn source_snapshot_digest(files: &[SourceFileManifest]) -> String {
+    let mut hash = Sha256::new();
+    for file in files {
+        hash.update((file.path.len() as u64).to_be_bytes());
+        hash.update(file.path.as_bytes());
+        hash.update(file.bytes.to_be_bytes());
+        hash.update(match file.hash_algorithm {
+            SourceContentHashAlgorithm::GitSha1 => b"git-sha1".as_slice(),
+            SourceContentHashAlgorithm::Sha256 => b"sha256".as_slice(),
+        });
+        hash.update(hex::decode(&file.content_hash).expect("validated source inventory hash"));
+    }
+    hex::encode(hash.finalize())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SourceSnapshot {
+    pub(crate) binding: KnowledgeSourceBindingV1,
+    pub(crate) environment_revision: u64,
+    pub(crate) source_revision_sha256: String,
+    pub(crate) files: Vec<SourceFileManifest>,
+    pub(crate) changed_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SourceHealthState {
+    Ready,
+    Syncing,
+    Stale,
+    Failed,
+    Revoked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SourceHealth {
+    pub(crate) state: SourceHealthState,
+    pub(crate) last_good_graph_revision_id: Option<Uuid>,
+    pub(crate) checked_at: DateTime<Utc>,
+    pub(crate) failure_code: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct KnowledgeGrant {
+    pub(crate) id: Uuid,
+    pub(crate) workspace_id: WorkspaceId,
+    pub(crate) account_id: AccountId,
+    pub(crate) project_id: Uuid,
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) environment_revision: u64,
+    pub(crate) graph_revision_id: Uuid,
+    pub(crate) expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum MappingProposalState {
+    Proposed,
+    Approved,
+    Rejected,
+    Stale,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct KnowledgeMappingProposal {
+    pub(crate) id: Uuid,
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) graph_revision_id: Uuid,
+    pub(crate) schema_fingerprint: String,
+    pub(crate) from_node_id: String,
+    pub(crate) target_kind: String,
+    pub(crate) target_identity: String,
+    pub(crate) state: MappingProposalState,
+    pub(crate) proposed_at: DateTime<Utc>,
+}
+
+pub(crate) fn validate_binding_draft(
+    draft: &SourceBindingDraft,
+    environment: &ProjectEnvironment,
+) -> AppResult<()> {
+    if draft.project_environment_id != environment.id
+        || draft.project_id != environment.project_id
+        || draft.environment_revision != environment.revision
+        || draft.environment_revision == 0
+        || draft.display_name.trim().is_empty()
+        || draft.display_name.len() > 512
+        || draft.display_name.chars().any(char::is_control)
+    {
+        return Err(AppError::Config(
+            "the Knowledge source binding is invalid or stale".into(),
+        ));
+    }
+    if draft.locator.provider() == KnowledgeSourceProvider::LocalFolder
+        && draft.visibility == KnowledgeSourceVisibility::SharedGraph
+    {
+        return Err(AppError::Blocked {
+            reason: "a Local Folder starts local-only and requires a separate publish approval"
+                .into(),
+        });
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_graph_publish(
+    artifact: &GraphBuildArtifactV1,
+    environment: &ProjectEnvironment,
+) -> AppResult<()> {
+    if !artifact.validate()
+        || artifact.binding.project_environment_id != environment.id
+        || artifact.binding.project_id != environment.project_id
+        || artifact.environment_revision != environment.revision
+    {
+        return Err(AppError::Blocked {
+            reason: "the graph artifact is unhealthy or belongs to a stale environment revision"
+                .into(),
+        });
+    }
+    if environment.production
+        && matches!(
+            artifact.binding.revision,
+            SourceRevisionIdentity::LocalGit { dirty: true, .. }
+        )
+    {
+        return Err(AppError::Blocked {
+            reason: "dirty Local Folder snapshots cannot be published to Production".into(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn assert_knowledge_domain_contract() {
+    super::extractor::assert_extractor_contract();
+    assert_eq!(INITIAL_SOURCE_PROVIDERS.len(), 2);
+    assert_eq!(SOURCE_PROVIDER_CAPABILITIES.len(), 9);
+    assert!(!format!("{INITIAL_SOURCE_PROVIDERS:?}").contains("Bitbucket"));
+    let environment = ProjectEnvironment {
+        id: Uuid::from_u128(3),
+        project_id: Uuid::from_u128(2),
+        name: "Production".into(),
+        production: true,
+        revision: 1,
+    };
+    let draft = SourceBindingDraft {
+        source_id: Uuid::from_u128(1),
+        project_id: environment.project_id,
+        project_environment_id: environment.id,
+        environment_revision: environment.revision,
+        display_name: "Local app".into(),
+        visibility: KnowledgeSourceVisibility::SharedGraph,
+        locator: SourceLocator::LocalFolder {
+            root: PathBuf::from("/private/source"),
+        },
+    };
+    assert!(matches!(
+        validate_binding_draft(&draft, &environment),
+        Err(AppError::Blocked { .. })
+    ));
+    let serialized = serde_json::to_string(&draft.locator.provider()).unwrap();
+    assert!(!serialized.contains("private/source"));
+}

@@ -205,6 +205,9 @@ impl Store {
             .connect_with(opts)
             .await?;
         sqlx::raw_sql(migrations::SCHEMA).execute(&pool).await?;
+        sqlx::raw_sql(migrations::KNOWLEDGE_SCHEMA)
+            .execute(&pool)
+            .await?;
         Ok(Self::from_pool_for_test(pool))
     }
 }

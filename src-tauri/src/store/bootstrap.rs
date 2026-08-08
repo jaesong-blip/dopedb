@@ -9,7 +9,11 @@ use super::*;
 /// outbox rows that could never have a hosted destination. Version 5 replaces the
 /// workspace-only hosted pull checkpoint with an account-scoped cursor table.
 /// Version 6 partitions the shared dashboard cache and pending author by account.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 6;
+/// Version 7 adds immutable Project Knowledge revisions and an atomically selected
+/// last-good head. Version 8 stores only a bounded source manifest so incremental
+/// extraction can compare content hashes; roots, credentials, and source bodies
+/// still have no representable column.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 8;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -69,7 +73,49 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 6).await?;
         migrated = true;
     }
+    if version < 7 {
+        ensure_project_knowledge_schema(pool).await?;
+        set_local_schema_version(pool, 7).await?;
+        migrated = true;
+    }
+    if version < 8 {
+        ensure_project_knowledge_snapshot_columns(pool).await?;
+        set_local_schema_version(pool, 8).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+async fn ensure_project_knowledge_snapshot_columns(pool: &SqlitePool) -> AppResult<()> {
+    add_column_if_missing(
+        pool,
+        "knowledge_sources",
+        "source_revision_sha256",
+        "ALTER TABLE knowledge_sources ADD COLUMN source_revision_sha256 TEXT",
+    )
+    .await?;
+    add_column_if_missing(
+        pool,
+        "knowledge_sources",
+        "snapshot_json",
+        "ALTER TABLE knowledge_sources ADD COLUMN snapshot_json TEXT",
+    )
+    .await?;
+    add_column_if_missing(
+        pool,
+        "knowledge_sources",
+        "revoked_at",
+        "ALTER TABLE knowledge_sources ADD COLUMN revoked_at TEXT",
+    )
+    .await?;
+    Ok(())
+}
+
+async fn ensure_project_knowledge_schema(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(migrations::KNOWLEDGE_SCHEMA)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 async fn ensure_dashboard_account_scope(pool: &SqlitePool) -> AppResult<()> {

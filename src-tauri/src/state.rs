@@ -7,6 +7,7 @@ use crate::connection::ConnectionManager;
 use crate::error::AppResult;
 use crate::features::agents::acp::AcpRuntime;
 use crate::features::agents::runtime::AcpPluginManager;
+use crate::features::knowledge::adapters::local::LocalFolderAdapter;
 use crate::features::providers;
 use crate::features::terminals::{self, TerminalsFeature};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
@@ -31,6 +32,9 @@ pub struct AppState {
     /// Desktop-only approval capability. CLI and Terminal adapters are composed
     /// without this authority and therefore cannot obtain it.
     pub(crate) local_operation_approval: LocalApprovalAuthority,
+    /// Process-local capability registry for Local Folder Knowledge sources.
+    /// Absolute roots are restored from the OS credential store and never cross IPC.
+    pub(crate) local_knowledge_sources: LocalFolderAdapter,
     pub(crate) startup_trace: StartupTrace,
     store: Store,
     post_paint_recovery: PostPaintRecoveryGate,
@@ -86,6 +90,7 @@ impl AppState {
             agents_acp,
             agent_plugins,
             local_operation_approval,
+            local_knowledge_sources: LocalFolderAdapter::new(),
             startup_trace,
             store,
             post_paint_recovery: PostPaintRecoveryGate::new(),
@@ -143,6 +148,10 @@ impl AppState {
 
     pub(crate) async fn wait_for_post_paint_recovery(&self) -> AppResult<()> {
         self.post_paint_recovery.wait().await
+    }
+
+    pub(crate) fn knowledge_store(&self) -> &Store {
+        &self.store
     }
 
     #[cfg(feature = "packaged-benchmark")]

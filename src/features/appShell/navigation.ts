@@ -1,1 +1,1 @@
-export type AppArea = "workspace" | "dashboard";
+export type AppArea = "workspace" | "dashboard" | "knowledge";

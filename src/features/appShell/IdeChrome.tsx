@@ -128,6 +128,12 @@ export function IdeTopBar({
             {t("tabs.dashboard")}
           </ToolbarMenuItem>
           <ToolbarMenuItem
+            icon="branch"
+            onClick={() => onArea("knowledge")}
+          >
+            Knowledge
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
             icon={localHistoryOpen ? "check" : "history"}
             disabled={!selected || !supportsSql}
             onClick={onToggleLocalHistory}

@@ -13,6 +13,7 @@ pub mod discovery;
 pub mod document_command;
 pub mod error;
 pub mod frame;
+pub mod knowledge;
 pub mod operation;
 pub mod operation_command;
 pub mod query_command;
@@ -41,6 +42,7 @@ pub use discovery::{
 pub use document_command::*;
 pub use error::{ErrorCode, ProtocolError};
 pub use frame::{decode_frame, encode_frame, parse_frame_length, FrameError, FramePayload};
+pub use knowledge::*;
 pub use operation::{
     OperationActorKind, OperationEventKind, OperationKind, OperationRiskLevel, OperationState,
 };

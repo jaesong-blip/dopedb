@@ -165,8 +165,8 @@ function ShellLayoutContent(props: Props) {
     creatingDemo,
   } = props;
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
-  const databaseExplorerVisible = databaseExplorerOpen;
-  const localHistoryVisible = localHistoryOpen;
+  const databaseExplorerVisible = area !== "knowledge" && databaseExplorerOpen;
+  const localHistoryVisible = area !== "knowledge" && localHistoryOpen;
   const leftToolWindowVisible =
     databaseExplorerVisible || localHistoryVisible;
   const servicesVisible = servicesOpen;

@@ -4,14 +4,15 @@ use dopedb_protocol::{
     AgentSessionRegisterArguments, AppOpenCommand, AppOpenResult, AuthenticationRequirement,
     CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec, ConnectionListCommand,
     ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand, DatabaseListCommand,
-    DocumentRunCommand, ErrorCode, OperationCancelCommand, OperationShowCommand,
-    OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand,
-    ReportAppendEvidenceCommand, ReportProposeCommand, RequestEnvelope, ResponseEnvelope,
-    RuntimeDiscovery, SchemaListCommand, SessionAuthentication, SignedAcpPluginManifestV1,
-    SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
-    SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult,
-    TableDescribeCommand, VersionCommand, VersionResult, ACP_PLUGIN_MANIFEST_SCHEMA_VERSION,
-    COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
+    DocumentRunCommand, ErrorCode, GraphBuildArtifactV1, OperationCancelCommand,
+    OperationShowCommand, OperationWaitCommand, ProtocolError, QueryCancelCommand,
+    QueryPlanCommand, QueryRunCommand, ReportAppendEvidenceCommand, ReportProposeCommand,
+    RequestEnvelope, ResponseEnvelope, RuntimeDiscovery, SchemaListCommand, SessionAuthentication,
+    SignedAcpPluginManifestV1, SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand,
+    SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand,
+    StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
+    ACP_PLUGIN_MANIFEST_SCHEMA_VERSION, COMMAND_SCHEMA_VERSION,
+    GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -310,6 +311,17 @@ fn query_plan_request_matches_v8_command_schema_and_pinned_agent_registration() 
     oversized.artifact.packed_bytes = 1024;
     oversized.compatibility.node_version_min = "25.0.0".into();
     assert!(!oversized.validate());
+
+    let graph_source = include_str!("fixtures/graph-build-artifact-v1.json");
+    let graph: GraphBuildArtifactV1 =
+        serde_json::from_str(graph_source).expect("knowledge artifact fixture must decode");
+    assert_eq!(graph.schema_version, GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION);
+    assert!(graph.validate());
+    assert_eq!(serde_json::to_value(&graph).unwrap(), value(graph_source));
+    let mut unsafe_graph = serde_json::to_value(graph).unwrap();
+    unsafe_graph["evidence"][0]["filePath"] = json!("../secrets.env");
+    let unsafe_graph: GraphBuildArtifactV1 = serde_json::from_value(unsafe_graph).unwrap();
+    assert!(!unsafe_graph.validate());
 }
 
 #[test]

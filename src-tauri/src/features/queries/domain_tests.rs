@@ -144,5 +144,6 @@ fn query_and_skill_security_contracts_stay_fail_closed() {
 
     crate::skills::assert_skill_installation_contract();
     crate::features::agents::runtime::assert_acp_plugin_runtime_contract();
+    crate::features::knowledge::domain::assert_knowledge_domain_contract();
     super::adapters::assert_ephemeral_page_contract();
 }

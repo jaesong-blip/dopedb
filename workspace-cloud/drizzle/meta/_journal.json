@@ -190,6 +190,13 @@
       "when": 1785963478550,
       "tag": "0026_redundant_lester",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786178407902,
+      "tag": "0027_previous_sphinx",
+      "breakpoints": true
     }
   ]
 }

@@ -38,6 +38,22 @@ function optional(name: string): string | null {
   return process.env[name]?.trim() || null;
 }
 
+function githubKnowledgePrivateKey(): string | null {
+  const value = optional("GITHUB_KNOWLEDGE_APP_PRIVATE_KEY");
+  if (!value) return null;
+  const key = value.includes("BEGIN RSA PRIVATE KEY") || value.includes("BEGIN PRIVATE KEY")
+    ? value.replaceAll("\\n", "\n")
+    : Buffer.from(value, "base64").toString("utf8");
+  if (
+    !key.includes("-----BEGIN")
+    || !key.includes("PRIVATE KEY-----")
+    || !key.includes("-----END")
+  ) {
+    throw new Error("GITHUB_KNOWLEDGE_APP_PRIVATE_KEY is not a PEM private key");
+  }
+  return key;
+}
+
 export const env = {
   appOrigin,
   authSecret,
@@ -46,6 +62,10 @@ export const env = {
   databaseUrl: () => required("DATABASE_URL"),
   googleClientId: () => required("GOOGLE_CLIENT_ID"),
   googleClientSecret: () => required("GOOGLE_CLIENT_SECRET"),
+  githubKnowledgeAppId: () => optional("GITHUB_KNOWLEDGE_APP_ID"),
+  githubKnowledgeAppSlug: () => optional("GITHUB_KNOWLEDGE_APP_SLUG"),
+  githubKnowledgePrivateKey,
+  githubKnowledgeWebhookSecret: () => optional("GITHUB_KNOWLEDGE_WEBHOOK_SECRET"),
   planetScaleClientId: () => optional("PLANETSCALE_CLIENT_ID"),
   planetScaleClientSecret: () => optional("PLANETSCALE_CLIENT_SECRET"),
   workspaceKmsKeyName: () => required("WORKSPACE_KMS_KEY_NAME"),
