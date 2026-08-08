@@ -35,7 +35,7 @@ export async function GET(request: Request, context: RouteContext) {
         .map((environment) => ({
           id: environment.id,
           name: environment.name,
-          production: environment.production,
+          riskClass: environment.riskClass,
           revision: environment.revision,
         })),
     })),
@@ -60,10 +60,12 @@ export async function POST(request: Request, context: RouteContext) {
     || !environments.every((value) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return false;
       const environment = value as Record<string, unknown>;
-      return Object.keys(environment).sort().join(",") === "name,production"
+      return Object.keys(environment).sort().join(",") === "name,riskClass"
         && typeof environment.name === "string"
         && isSafeDisplayText(environment.name.trim(), 512)
-        && typeof environment.production === "boolean";
+        && typeof environment.riskClass === "string"
+        && ["production", "staging", "development", "test", "custom"]
+          .includes(environment.riskClass);
     })
     || new Set(environments.map((value) =>
       (value as Record<string, unknown>).name as string
@@ -80,18 +82,22 @@ export async function POST(request: Request, context: RouteContext) {
       }).returning({ id: knowledgeProject.id, revision: knowledgeProject.revision });
       const createdEnvironments = await transaction.insert(knowledgeProjectEnvironment).values(
         environments.map((value) => {
-          const environment = value as { name: string; production: boolean };
+          const environment = value as {
+            name: string;
+            riskClass: "production" | "staging" | "development" | "test" | "custom";
+          };
           return {
             organizationId: workspaceId,
             projectId: project.id,
             name: environment.name.trim(),
-            production: environment.production,
+            production: environment.riskClass === "production",
+            riskClass: environment.riskClass,
           };
         }),
       ).returning({
         id: knowledgeProjectEnvironment.id,
         name: knowledgeProjectEnvironment.name,
-        production: knowledgeProjectEnvironment.production,
+        riskClass: knowledgeProjectEnvironment.riskClass,
         revision: knowledgeProjectEnvironment.revision,
       });
       return { ...project, name: projectName, environments: createdEnvironments };

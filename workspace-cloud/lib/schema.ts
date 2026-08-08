@@ -9,6 +9,7 @@ import {
   integer,
   jsonb,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -1802,6 +1803,7 @@ export const knowledgeProjectEnvironment = workspaceControl.table(
     }),
     name: text("name").notNull(),
     production: boolean("production").notNull().default(false),
+    riskClass: text("risk_class").notNull().default("custom"),
     revision: bigint("revision", { mode: "number" }).notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1815,7 +1817,66 @@ export const knowledgeProjectEnvironment = workspaceControl.table(
       name: "knowledge_environment_org_project_fk",
     }).onDelete("cascade"),
     check("knowledge_environment_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 512`),
+    check(
+      "knowledge_environment_risk_class",
+      sql`${table.riskClass} IN ('production', 'staging', 'development', 'test', 'custom')`,
+    ),
     check("knowledge_environment_revision_positive", sql`${table.revision} >= 1`),
+  ],
+);
+
+export const knowledgeEnvironmentConnection = workspaceControl.table(
+  "knowledge_environment_connection",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    projectEnvironmentId: uuid("project_environment_id").notNull().references(
+      () => knowledgeProjectEnvironment.id,
+      { onDelete: "cascade" },
+    ),
+    environmentRevision: bigint("environment_revision", { mode: "number" }).notNull(),
+    connectionId: uuid("connection_id").notNull().references(() => workspaceConnection.id, {
+      onDelete: "cascade",
+    }),
+    connectionRevision: bigint("connection_revision", { mode: "number" }).notNull(),
+    role: text("role").notNull(),
+    alias: text("alias").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("knowledge_environment_connection_active_idx")
+      .on(table.projectEnvironmentId, table.connectionId)
+      .where(sql`${table.revokedAt} IS NULL`),
+    index("knowledge_environment_connection_scope_idx").on(
+      table.organizationId,
+      table.projectEnvironmentId,
+      table.revokedAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.projectEnvironmentId],
+      foreignColumns: [
+        knowledgeProjectEnvironment.organizationId,
+        knowledgeProjectEnvironment.id,
+      ],
+      name: "knowledge_environment_connection_org_environment_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.connectionId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "knowledge_environment_connection_org_connection_fk",
+    }).onDelete("cascade"),
+    check(
+      "knowledge_environment_connection_revisions_positive",
+      sql`${table.environmentRevision} >= 1 AND ${table.connectionRevision} >= 1`,
+    ),
+    check(
+      "knowledge_environment_connection_labels",
+      sql`char_length(${table.role}) BETWEEN 1 AND 64
+        AND char_length(${table.alias}) BETWEEN 1 AND 128`,
+    ),
   ],
 );
 
@@ -2033,10 +2094,13 @@ export const knowledgeEnvironmentHead = workspaceControl.table(
     organizationId: text("organization_id").notNull().references(() => organization.id, {
       onDelete: "cascade",
     }),
-    projectEnvironmentId: uuid("project_environment_id").primaryKey().references(
+    projectEnvironmentId: uuid("project_environment_id").notNull().references(
       () => knowledgeProjectEnvironment.id,
       { onDelete: "cascade" },
     ),
+    sourceId: uuid("source_id").notNull().references(() => knowledgeSource.id, {
+      onDelete: "cascade",
+    }),
     graphRevisionId: uuid("graph_revision_id").notNull().unique().references(
       () => knowledgeGraphRevision.id,
       { onDelete: "restrict" },
@@ -2045,6 +2109,7 @@ export const knowledgeEnvironmentHead = workspaceControl.table(
     activatedAt: timestamp("activated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    primaryKey({ columns: [table.projectEnvironmentId, table.sourceId] }),
     foreignKey({
       columns: [table.organizationId, table.projectEnvironmentId],
       foreignColumns: [
@@ -2052,6 +2117,11 @@ export const knowledgeEnvironmentHead = workspaceControl.table(
         knowledgeProjectEnvironment.id,
       ],
       name: "knowledge_environment_head_org_environment_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.sourceId],
+      foreignColumns: [knowledgeSource.organizationId, knowledgeSource.id],
+      name: "knowledge_environment_head_org_source_fk",
     }).onDelete("cascade"),
     foreignKey({
       columns: [table.organizationId, table.graphRevisionId],
@@ -2087,6 +2157,7 @@ export const knowledgeGrant = workspaceControl.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    uniqueIndex("knowledge_grant_org_id_idx").on(table.organizationId, table.id),
     index("knowledge_grant_member_active_idx").on(
       table.organizationId,
       table.memberId,
@@ -2116,6 +2187,35 @@ export const knowledgeGrant = workspaceControl.table(
       name: "knowledge_grant_org_graph_fk",
     }).onDelete("cascade"),
     check("knowledge_grant_environment_revision_positive", sql`${table.environmentRevision} >= 1`),
+  ],
+);
+
+export const knowledgeGrantGraphRevision = workspaceControl.table(
+  "knowledge_grant_graph_revision",
+  {
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    grantId: uuid("grant_id").notNull().references(() => knowledgeGrant.id, {
+      onDelete: "cascade",
+    }),
+    graphRevisionId: uuid("graph_revision_id").notNull().references(
+      () => knowledgeGraphRevision.id,
+      { onDelete: "cascade" },
+    ),
+  },
+  (table) => [
+    primaryKey({ columns: [table.grantId, table.graphRevisionId] }),
+    foreignKey({
+      columns: [table.organizationId, table.grantId],
+      foreignColumns: [knowledgeGrant.organizationId, knowledgeGrant.id],
+      name: "knowledge_grant_graph_revision_org_grant_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.graphRevisionId],
+      foreignColumns: [knowledgeGraphRevision.organizationId, knowledgeGraphRevision.id],
+      name: "knowledge_grant_graph_revision_org_graph_fk",
+    }).onDelete("cascade"),
   ],
 );
 

@@ -4,7 +4,9 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "../db";
 import {
   knowledgeGrant,
+  knowledgeGrantGraphRevision,
   knowledgeGraphRevision,
+  knowledgeEnvironmentHead,
   knowledgeProjectEnvironment,
   knowledgeSource,
 } from "../schema";
@@ -22,7 +24,6 @@ export async function authorizeKnowledgeGrant(
     projectId: knowledgeGrant.projectId,
     projectEnvironmentId: knowledgeGrant.projectEnvironmentId,
     environmentRevision: knowledgeGrant.environmentRevision,
-    graphRevisionId: knowledgeGrant.graphRevisionId,
     expiresAt: knowledgeGrant.expiresAt,
   }).from(knowledgeGrant).innerJoin(
     knowledgeProjectEnvironment,
@@ -32,13 +33,33 @@ export async function authorizeKnowledgeGrant(
       eq(knowledgeProjectEnvironment.projectId, knowledgeGrant.projectId),
       eq(knowledgeProjectEnvironment.revision, knowledgeGrant.environmentRevision),
     ),
-  ).innerJoin(
+  ).where(and(
+    eq(knowledgeGrant.id, grantId),
+    eq(knowledgeGrant.organizationId, organizationId),
+    eq(knowledgeGrant.memberId, workspace.membership.id),
+    isNull(knowledgeGrant.revokedAt),
+    gt(knowledgeGrant.expiresAt, new Date()),
+  )).limit(1);
+  if (!grant) return { ok: false as const, status: 403, error: "Knowledge grant denied" };
+  const revisions = await db.select({
+    graphRevisionId: knowledgeGrantGraphRevision.graphRevisionId,
+    sourceId: knowledgeGraphRevision.sourceId,
+  }).from(knowledgeGrantGraphRevision).innerJoin(
     knowledgeGraphRevision,
     and(
-      eq(knowledgeGraphRevision.organizationId, knowledgeGrant.organizationId),
-      eq(knowledgeGraphRevision.id, knowledgeGrant.graphRevisionId),
-      eq(knowledgeGraphRevision.projectEnvironmentId, knowledgeGrant.projectEnvironmentId),
-      eq(knowledgeGraphRevision.environmentRevision, knowledgeGrant.environmentRevision),
+      eq(knowledgeGraphRevision.organizationId, knowledgeGrantGraphRevision.organizationId),
+      eq(knowledgeGraphRevision.id, knowledgeGrantGraphRevision.graphRevisionId),
+      eq(knowledgeGraphRevision.projectEnvironmentId, grant.projectEnvironmentId),
+      eq(knowledgeGraphRevision.environmentRevision, grant.environmentRevision),
+    ),
+  ).innerJoin(
+    knowledgeEnvironmentHead,
+    and(
+      eq(knowledgeEnvironmentHead.organizationId, knowledgeGraphRevision.organizationId),
+      eq(knowledgeEnvironmentHead.projectEnvironmentId, knowledgeGraphRevision.projectEnvironmentId),
+      eq(knowledgeEnvironmentHead.sourceId, knowledgeGraphRevision.sourceId),
+      eq(knowledgeEnvironmentHead.graphRevisionId, knowledgeGraphRevision.id),
+      eq(knowledgeEnvironmentHead.environmentRevision, knowledgeGraphRevision.environmentRevision),
     ),
   ).innerJoin(
     knowledgeSource,
@@ -48,12 +69,16 @@ export async function authorizeKnowledgeGrant(
       isNull(knowledgeSource.revokedAt),
     ),
   ).where(and(
-    eq(knowledgeGrant.id, grantId),
-    eq(knowledgeGrant.organizationId, organizationId),
-    eq(knowledgeGrant.memberId, workspace.membership.id),
-    isNull(knowledgeGrant.revokedAt),
-    gt(knowledgeGrant.expiresAt, new Date()),
-  )).limit(1);
-  if (!grant) return { ok: false as const, status: 403, error: "Knowledge grant denied" };
-  return { ...workspace, ok: true as const, grant };
+    eq(knowledgeGrantGraphRevision.organizationId, organizationId),
+    eq(knowledgeGrantGraphRevision.grantId, grant.id),
+  ));
+  if (revisions.length < 1) {
+    return { ok: false as const, status: 409, error: "Knowledge grant graph is no longer active" };
+  }
+  return {
+    ...workspace,
+    ok: true as const,
+    grant: { ...grant, graphRevisionIds: revisions.map((revision) => revision.graphRevisionId) },
+    revisions,
+  };
 }

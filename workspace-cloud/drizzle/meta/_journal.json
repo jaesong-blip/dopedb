@@ -197,6 +197,34 @@
       "when": 1786178407902,
       "tag": "0027_previous_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786181883206,
+      "tag": "0028_talented_rick_jones",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786182078739,
+      "tag": "0029_freezing_the_spike",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786182405059,
+      "tag": "0030_purple_thor_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786182896562,
+      "tag": "0031_early_speedball",
+      "breakpoints": true
     }
   ]
 }

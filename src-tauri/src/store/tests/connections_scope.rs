@@ -113,7 +113,7 @@ async fn assert_current_store_migration_is_write_free() {
         .unwrap();
     assert_eq!(version, super::super::bootstrap::LOCAL_SCHEMA_VERSION);
 
-    use crate::features::knowledge::domain::{Project, ProjectEnvironment};
+    use crate::features::knowledge::domain::{EnvironmentRiskClass, Project, ProjectEnvironment};
     use crate::features::knowledge::ports::{
         KnowledgeGraphRepositoryPort, KnowledgeScopeRepositoryPort,
     };
@@ -138,7 +138,7 @@ async fn assert_current_store_migration_is_write_free() {
         id: artifact.binding.project_environment_id,
         project_id: project.id,
         name: "Development".into(),
-        production: false,
+        risk_class: EnvironmentRiskClass::Development,
         revision: artifact.environment_revision,
     };
     store
@@ -154,13 +154,40 @@ async fn assert_current_store_migration_is_write_free() {
     store.activate(&artifact).await.unwrap();
     assert_eq!(
         store
-            .active(environment.id)
+            .active_for_source(artifact.binding.source_id)
             .await
             .unwrap()
             .unwrap()
             .graph_revision_id,
         artifact.graph_revision_id
     );
+    let mut second = artifact.clone();
+    second.binding.source_id = Uuid::from_u128(0x126);
+    second.binding.display_name = "Web".into();
+    second.graph_revision_id = Uuid::from_u128(0x1260);
+    second.parent_graph_revision_id = None;
+    for evidence in &mut second.evidence {
+        evidence.source_id = second.binding.source_id;
+    }
+    store
+        .save_scope(
+            &project,
+            &environment,
+            &second.binding,
+            second.environment_revision,
+        )
+        .await
+        .unwrap();
+    store.stage(&second).await.unwrap();
+    store.activate(&second).await.unwrap();
+    let active_set = store.active_set(environment.id).await.unwrap();
+    assert_eq!(active_set.len(), 2);
+    assert!(active_set
+        .iter()
+        .any(|candidate| candidate.graph_revision_id == artifact.graph_revision_id));
+    assert!(active_set
+        .iter()
+        .any(|candidate| candidate.graph_revision_id == second.graph_revision_id));
 
     let mut failed = artifact.clone();
     failed.graph_revision_id = Uuid::from_u128(127);
@@ -180,7 +207,7 @@ async fn assert_current_store_migration_is_write_free() {
     ));
     assert_eq!(
         store
-            .active(environment.id)
+            .active_for_source(artifact.binding.source_id)
             .await
             .unwrap()
             .unwrap()

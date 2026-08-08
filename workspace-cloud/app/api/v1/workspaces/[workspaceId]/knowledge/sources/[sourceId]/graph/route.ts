@@ -24,20 +24,24 @@ export async function GET(request: Request, context: RouteContext) {
   }
   const authorization = await authorizeKnowledgeGrant(request, workspaceId, grantId);
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  const authorizedRevision = authorization.revisions.find(
+    (revision) => revision.sourceId === sourceId,
+  );
+  if (!authorizedRevision) return jsonError("Knowledge source is outside this grant", 403);
   const [revision] = await db.select({
     sourceId: knowledgeGraphRevision.sourceId,
     artifact: knowledgeGraphRevision.artifact,
     artifactSha256: knowledgeGraphRevision.artifactSha256,
   }).from(knowledgeGraphRevision).where(and(
     eq(knowledgeGraphRevision.organizationId, workspaceId),
-    eq(knowledgeGraphRevision.id, authorization.grant.graphRevisionId),
+    eq(knowledgeGraphRevision.id, authorizedRevision.graphRevisionId),
     eq(knowledgeGraphRevision.sourceId, sourceId),
     eq(knowledgeGraphRevision.projectEnvironmentId, authorization.grant.projectEnvironmentId),
     eq(knowledgeGraphRevision.environmentRevision, authorization.grant.environmentRevision),
   )).limit(1);
   if (!revision) return jsonError("Knowledge graph revision not found", 404);
   return privateJson({
-    graphRevisionId: authorization.grant.graphRevisionId,
+    graphRevisionId: authorizedRevision.graphRevisionId,
     artifactSha256: revision.artifactSha256,
     artifact: revision.artifact,
   });
@@ -126,6 +130,7 @@ export async function POST(request: Request, context: RouteContext) {
       }).from(knowledgeEnvironmentHead).where(and(
         eq(knowledgeEnvironmentHead.organizationId, workspaceId),
         eq(knowledgeEnvironmentHead.projectEnvironmentId, source.projectEnvironmentId),
+        eq(knowledgeEnvironmentHead.sourceId, sourceId),
       )).limit(1);
       if ((head?.graphRevisionId ?? null) !== artifact.parentGraphRevisionId) {
         throw new Error("stale_parent");
@@ -156,15 +161,21 @@ export async function POST(request: Request, context: RouteContext) {
         eq(knowledgeMappingProposal.organizationId, workspaceId),
         eq(knowledgeMappingProposal.projectEnvironmentId, source.projectEnvironmentId),
         ne(knowledgeMappingProposal.graphRevisionId, artifact.graphRevisionId),
+        sql`EXISTS (
+          SELECT 1 FROM ${knowledgeGraphRevision} revision
+          WHERE revision.id = ${knowledgeMappingProposal.graphRevisionId}
+            AND revision.source_id = ${sourceId}
+        )`,
         sql`${knowledgeMappingProposal.state} IN ('proposed', 'approved')`,
       ));
       await transaction.insert(knowledgeEnvironmentHead).values({
         organizationId: workspaceId,
         projectEnvironmentId: source.projectEnvironmentId,
+        sourceId,
         graphRevisionId: artifact.graphRevisionId,
         environmentRevision: artifact.environmentRevision,
       }).onConflictDoUpdate({
-        target: knowledgeEnvironmentHead.projectEnvironmentId,
+        target: [knowledgeEnvironmentHead.projectEnvironmentId, knowledgeEnvironmentHead.sourceId],
         set: {
           graphRevisionId: artifact.graphRevisionId,
           environmentRevision: artifact.environmentRevision,

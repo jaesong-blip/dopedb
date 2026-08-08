@@ -12,8 +12,11 @@ use super::*;
 /// Version 7 adds immutable Project Knowledge revisions and an atomically selected
 /// last-good head. Version 8 stores only a bounded source manifest so incremental
 /// extraction can compare content hashes; roots, credentials, and source bodies
-/// still have no representable column.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 8;
+/// still have no representable column. Version 9 makes the last-good head
+/// source-specific so an Environment can own multiple active graph revisions.
+/// Version 10 binds multiple exact connection revisions to that Environment.
+/// Version 11 pins an Environment KnowledgeGrant to its complete graph revision set.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 11;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -83,7 +86,129 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 8).await?;
         migrated = true;
     }
+    if version < 9 {
+        ensure_project_knowledge_revision_set(pool).await?;
+        set_local_schema_version(pool, 9).await?;
+        migrated = true;
+    }
+    if version < 10 {
+        ensure_project_environment_connections(pool).await?;
+        set_local_schema_version(pool, 10).await?;
+        migrated = true;
+    }
+    if version < 11 {
+        ensure_knowledge_grant_revision_sets(pool).await?;
+        set_local_schema_version(pool, 11).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+async fn ensure_knowledge_grant_revision_sets(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(
+        "CREATE TABLE IF NOT EXISTS knowledge_grant_graph_revisions (
+             grant_id TEXT NOT NULL REFERENCES knowledge_grants(id) ON DELETE CASCADE,
+             graph_revision_id TEXT NOT NULL
+                 REFERENCES knowledge_graph_revisions(graph_revision_id),
+             PRIMARY KEY (grant_id, graph_revision_id)
+         );
+         INSERT OR IGNORE INTO knowledge_grant_graph_revisions (grant_id, graph_revision_id)
+         SELECT id, graph_revision_id FROM knowledge_grants;",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn ensure_project_environment_connections(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(
+        "CREATE TABLE IF NOT EXISTS knowledge_environment_connections (
+             id TEXT PRIMARY KEY,
+             workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+             project_environment_id TEXT NOT NULL
+                 REFERENCES knowledge_project_environments(id) ON DELETE CASCADE,
+             environment_revision INTEGER NOT NULL CHECK(environment_revision > 0),
+             connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+             connection_revision INTEGER NOT NULL CHECK(connection_revision > 0),
+             role TEXT NOT NULL CHECK(length(role) BETWEEN 1 AND 64),
+             alias TEXT NOT NULL CHECK(length(alias) BETWEEN 1 AND 128),
+             created_at TEXT NOT NULL,
+             revoked_at TEXT
+         );
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_environment_connection_active
+           ON knowledge_environment_connections(project_environment_id, connection_id)
+           WHERE revoked_at IS NULL;
+         CREATE INDEX IF NOT EXISTS idx_knowledge_environment_connection_scope
+           ON knowledge_environment_connections(workspace_id, project_environment_id, revoked_at);",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn ensure_project_knowledge_revision_set(pool: &SqlitePool) -> AppResult<()> {
+    add_column_if_missing(
+        pool,
+        "knowledge_project_environments",
+        "risk_class",
+        "ALTER TABLE knowledge_project_environments ADD COLUMN risk_class TEXT NOT NULL DEFAULT 'custom'",
+    )
+    .await?;
+    sqlx::query(
+        "UPDATE knowledge_project_environments
+         SET risk_class = CASE WHEN production = 1 THEN 'production' ELSE 'custom' END
+         WHERE risk_class = 'custom'",
+    )
+    .execute(pool)
+    .await?;
+    let has_source_id: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+             SELECT 1 FROM pragma_table_info('knowledge_environment_heads')
+             WHERE name = 'source_id'
+         )",
+    )
+    .fetch_one(pool)
+    .await?;
+    if has_source_id {
+        return Ok(());
+    }
+    let mut tx = pool.begin().await?;
+    sqlx::raw_sql(
+        "DROP TRIGGER IF EXISTS knowledge_graph_revisions_reject_delete_active;
+         ALTER TABLE knowledge_environment_heads RENAME TO knowledge_environment_heads_v8;
+         CREATE TABLE knowledge_environment_heads (
+             project_environment_id TEXT NOT NULL
+                 REFERENCES knowledge_project_environments(id) ON DELETE CASCADE,
+             source_id TEXT NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+             graph_revision_id TEXT NOT NULL UNIQUE
+                 REFERENCES knowledge_graph_revisions(graph_revision_id),
+             environment_revision INTEGER NOT NULL CHECK(environment_revision > 0),
+             activated_at TEXT NOT NULL,
+             PRIMARY KEY (project_environment_id, source_id)
+         );
+         INSERT INTO knowledge_environment_heads
+             (project_environment_id, source_id, graph_revision_id,
+              environment_revision, activated_at)
+         SELECT old.project_environment_id, revision.source_id,
+                old.graph_revision_id, old.environment_revision, old.activated_at
+         FROM knowledge_environment_heads_v8 old
+         JOIN knowledge_graph_revisions revision
+           ON revision.graph_revision_id = old.graph_revision_id;
+         DROP TABLE knowledge_environment_heads_v8;
+         CREATE TRIGGER knowledge_graph_revisions_reject_delete_active
+         BEFORE DELETE ON knowledge_graph_revisions
+         WHEN EXISTS (
+             SELECT 1 FROM knowledge_environment_heads
+             WHERE graph_revision_id = OLD.graph_revision_id
+         )
+         BEGIN
+             SELECT RAISE(ABORT, 'active knowledge graph revision cannot be deleted');
+         END;",
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 async fn ensure_project_knowledge_snapshot_columns(pool: &SqlitePool) -> AppResult<()> {

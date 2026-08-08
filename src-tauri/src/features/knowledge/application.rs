@@ -16,8 +16,15 @@ const MAX_PATH_VISITS: usize = 2_000;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct KnowledgeSearchResult {
+    pub(crate) graph_revision_ids: Vec<uuid::Uuid>,
+    pub(crate) matches: Vec<KnowledgeSearchMatch>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct KnowledgeSearchMatch {
     pub(crate) graph_revision_id: uuid::Uuid,
-    pub(crate) matches: Vec<KnowledgeNodeV1>,
+    pub(crate) node: KnowledgeNodeV1,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -29,8 +36,8 @@ pub(crate) struct KnowledgePathResult {
     pub(crate) evidence: Vec<KnowledgeEvidenceV1>,
 }
 
-pub(crate) fn search_graph(
-    graph: &GraphBuildArtifactV1,
+pub(crate) fn search_graphs(
+    graphs: &[GraphBuildArtifactV1],
     query: &str,
     limit: usize,
 ) -> AppResult<KnowledgeSearchResult> {
@@ -44,10 +51,10 @@ pub(crate) fn search_graph(
         return Err(AppError::Config("the Knowledge search is invalid".into()));
     }
     let needle = query.to_lowercase();
-    let mut ranked = graph
-        .nodes
+    let mut ranked = graphs
         .iter()
-        .filter_map(|node| {
+        .flat_map(|graph| graph.nodes.iter().map(move |node| (graph, node)))
+        .filter_map(|(graph, node)| {
             let name = node.name.to_lowercase();
             let qualified = node.qualified_name.to_lowercase();
             let score = if name == needle {
@@ -61,16 +68,24 @@ pub(crate) fn search_graph(
             } else {
                 return None;
             };
-            Some((score, node.qualified_name.as_str(), node))
+            Some((
+                score,
+                node.qualified_name.as_str(),
+                graph.graph_revision_id,
+                node,
+            ))
         })
         .collect::<Vec<_>>();
-    ranked.sort_by(|left, right| (left.0, left.1).cmp(&(right.0, right.1)));
+    ranked.sort_by(|left, right| (left.0, left.1, left.2).cmp(&(right.0, right.1, right.2)));
     Ok(KnowledgeSearchResult {
-        graph_revision_id: graph.graph_revision_id,
+        graph_revision_ids: graphs.iter().map(|graph| graph.graph_revision_id).collect(),
         matches: ranked
             .into_iter()
             .take(limit)
-            .map(|(_, _, node)| node.clone())
+            .map(|(_, _, graph_revision_id, node)| KnowledgeSearchMatch {
+                graph_revision_id,
+                node: node.clone(),
+            })
             .collect(),
     })
 }
@@ -162,10 +177,10 @@ pub(crate) fn graph_path(
 #[cfg(test)]
 pub(crate) fn assert_query_contract(graph: &GraphBuildArtifactV1) {
     if let Some(node) = graph.nodes.first() {
-        let found = search_graph(graph, &node.name, 5).unwrap();
-        assert_eq!(found.graph_revision_id, graph.graph_revision_id);
-        assert!(found.matches.iter().any(|value| value.id == node.id));
+        let found = search_graphs(std::slice::from_ref(graph), &node.name, 5).unwrap();
+        assert_eq!(found.graph_revision_ids, vec![graph.graph_revision_id]);
+        assert!(found.matches.iter().any(|value| value.node.id == node.id));
     }
-    assert!(search_graph(graph, "", 5).is_err());
-    assert!(search_graph(graph, "a", MAX_SEARCH_RESULTS + 1).is_err());
+    assert!(search_graphs(std::slice::from_ref(graph), "", 5).is_err());
+    assert!(search_graphs(std::slice::from_ref(graph), "a", MAX_SEARCH_RESULTS + 1).is_err());
 }

@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS knowledge_project_environments (
     project_id TEXT NOT NULL REFERENCES knowledge_projects(id) ON DELETE CASCADE,
     name       TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 512),
     production INTEGER NOT NULL CHECK(production IN (0, 1)),
+    risk_class TEXT NOT NULL DEFAULT 'custom'
+               CHECK(risk_class IN ('production', 'staging', 'development', 'test', 'custom')),
     revision   INTEGER NOT NULL CHECK(revision > 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -54,6 +56,24 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
 CREATE INDEX IF NOT EXISTS idx_knowledge_sources_environment
     ON knowledge_sources(project_environment_id, provider, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS knowledge_environment_connections (
+    id                     TEXT PRIMARY KEY,
+    workspace_id           TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    project_environment_id TEXT NOT NULL REFERENCES knowledge_project_environments(id) ON DELETE CASCADE,
+    environment_revision   INTEGER NOT NULL CHECK(environment_revision > 0),
+    connection_id          TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    connection_revision    INTEGER NOT NULL CHECK(connection_revision > 0),
+    role                   TEXT NOT NULL CHECK(length(role) BETWEEN 1 AND 64),
+    alias                  TEXT NOT NULL CHECK(length(alias) BETWEEN 1 AND 128),
+    created_at             TEXT NOT NULL,
+    revoked_at             TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_environment_connection_active
+    ON knowledge_environment_connections(project_environment_id, connection_id)
+    WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_knowledge_environment_connection_scope
+    ON knowledge_environment_connections(workspace_id, project_environment_id, revoked_at);
+
 CREATE TABLE IF NOT EXISTS knowledge_graph_revisions (
     graph_revision_id        TEXT PRIMARY KEY,
     source_id                TEXT NOT NULL REFERENCES knowledge_sources(id) ON DELETE CASCADE,
@@ -74,12 +94,15 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_graph_revisions_environment
     ON knowledge_graph_revisions(project_environment_id, staged_at DESC);
 
 CREATE TABLE IF NOT EXISTS knowledge_environment_heads (
-    project_environment_id TEXT PRIMARY KEY
+    project_environment_id TEXT NOT NULL
                            REFERENCES knowledge_project_environments(id) ON DELETE CASCADE,
+    source_id              TEXT NOT NULL
+                           REFERENCES knowledge_sources(id) ON DELETE CASCADE,
     graph_revision_id      TEXT NOT NULL UNIQUE
                            REFERENCES knowledge_graph_revisions(graph_revision_id),
     environment_revision   INTEGER NOT NULL CHECK(environment_revision > 0),
-    activated_at           TEXT NOT NULL
+    activated_at           TEXT NOT NULL,
+    PRIMARY KEY (project_environment_id, source_id)
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_grants (
@@ -96,6 +119,12 @@ CREATE TABLE IF NOT EXISTS knowledge_grants (
 );
 CREATE INDEX IF NOT EXISTS idx_knowledge_grants_account
     ON knowledge_grants(workspace_id, account_user_id, expires_at);
+
+CREATE TABLE IF NOT EXISTS knowledge_grant_graph_revisions (
+    grant_id          TEXT NOT NULL REFERENCES knowledge_grants(id) ON DELETE CASCADE,
+    graph_revision_id TEXT NOT NULL REFERENCES knowledge_graph_revisions(graph_revision_id),
+    PRIMARY KEY (grant_id, graph_revision_id)
+);
 
 CREATE TABLE IF NOT EXISTS knowledge_mapping_proposals (
     id                     TEXT PRIMARY KEY,

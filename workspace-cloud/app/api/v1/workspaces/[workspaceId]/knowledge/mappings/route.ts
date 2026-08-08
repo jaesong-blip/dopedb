@@ -33,6 +33,8 @@ export async function POST(request: Request, context: RouteContext) {
     !body
     || typeof body.grantId !== "string"
     || !isUuid(body.grantId)
+    || typeof body.graphRevisionId !== "string"
+    || !isUuid(body.graphRevisionId)
     || typeof body.schemaFingerprint !== "string"
     || !/^[0-9a-f]{64}$/.test(body.schemaFingerprint)
     || typeof body.fromNodeId !== "string"
@@ -47,18 +49,21 @@ export async function POST(request: Request, context: RouteContext) {
   ) return jsonError("Invalid Knowledge mapping proposal", 400);
   const authorization = await authorizeKnowledgeGrant(request, workspaceId, body.grantId);
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
+  if (!authorization.grant.graphRevisionIds.includes(body.graphRevisionId)) {
+    return jsonError("Knowledge graph is outside this grant", 403);
+  }
   const [head] = await db.select({ graphRevisionId: knowledgeEnvironmentHead.graphRevisionId })
     .from(knowledgeEnvironmentHead).where(and(
       eq(knowledgeEnvironmentHead.organizationId, workspaceId),
       eq(knowledgeEnvironmentHead.projectEnvironmentId, authorization.grant.projectEnvironmentId),
-      eq(knowledgeEnvironmentHead.graphRevisionId, authorization.grant.graphRevisionId),
+      eq(knowledgeEnvironmentHead.graphRevisionId, body.graphRevisionId),
       eq(knowledgeEnvironmentHead.environmentRevision, authorization.grant.environmentRevision),
     )).limit(1);
   if (!head) return jsonError("Knowledge grant graph is no longer active", 409);
   const [mapping] = await db.insert(knowledgeMappingProposal).values({
     organizationId: workspaceId,
     projectEnvironmentId: authorization.grant.projectEnvironmentId,
-    graphRevisionId: authorization.grant.graphRevisionId,
+    graphRevisionId: body.graphRevisionId,
     schemaFingerprint: body.schemaFingerprint,
     fromNodeId: body.fromNodeId,
     targetKind: body.targetKind,

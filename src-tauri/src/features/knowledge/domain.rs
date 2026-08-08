@@ -46,8 +46,18 @@ pub(crate) struct ProjectEnvironment {
     pub(crate) id: Uuid,
     pub(crate) project_id: Uuid,
     pub(crate) name: String,
-    pub(crate) production: bool,
+    pub(crate) risk_class: EnvironmentRiskClass,
     pub(crate) revision: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum EnvironmentRiskClass {
+    Production,
+    Staging,
+    Development,
+    Test,
+    Custom,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,7 +169,7 @@ pub(crate) struct KnowledgeGrant {
     pub(crate) project_id: Uuid,
     pub(crate) project_environment_id: Uuid,
     pub(crate) environment_revision: u64,
-    pub(crate) graph_revision_id: Uuid,
+    pub(crate) graph_revision_ids: Vec<Uuid>,
     pub(crate) expires_at: DateTime<Utc>,
 }
 
@@ -184,6 +194,25 @@ pub(crate) struct KnowledgeMappingProposal {
     pub(crate) target_identity: String,
     pub(crate) state: MappingProposalState,
     pub(crate) proposed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct EnvironmentConnectionBinding {
+    pub(crate) id: Uuid,
+    pub(crate) workspace_id: WorkspaceId,
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) environment_revision: u64,
+    pub(crate) connection_id: Uuid,
+    pub(crate) connection_revision: i64,
+    pub(crate) current_connection_revision: i64,
+    pub(crate) connection_name: String,
+    pub(crate) role: String,
+    pub(crate) alias: String,
+}
+
+pub(crate) fn validate_environment_connection_label(value: &str, max_bytes: usize) -> bool {
+    !value.trim().is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
 }
 
 pub(crate) fn validate_binding_draft(
@@ -227,7 +256,7 @@ pub(crate) fn validate_graph_publish(
                 .into(),
         });
     }
-    if environment.production
+    if environment.risk_class == EnvironmentRiskClass::Production
         && matches!(
             artifact.binding.revision,
             SourceRevisionIdentity::LocalGit { dirty: true, .. }
@@ -250,7 +279,7 @@ pub(crate) fn assert_knowledge_domain_contract() {
         id: Uuid::from_u128(3),
         project_id: Uuid::from_u128(2),
         name: "Production".into(),
-        production: true,
+        risk_class: EnvironmentRiskClass::Production,
         revision: 1,
     };
     let draft = SourceBindingDraft {

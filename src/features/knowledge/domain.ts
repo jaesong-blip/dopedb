@@ -1,7 +1,7 @@
 export type KnowledgeEnvironment = {
   id: string;
   name: string;
-  production: boolean;
+  riskClass: "production" | "staging" | "development" | "test" | "custom";
   revision: number;
 };
 
@@ -52,7 +52,7 @@ export type KnowledgeSource = {
   projectEnvironmentId: string;
   environmentName: string;
   environmentRevision: number;
-  production: boolean;
+  riskClass: KnowledgeEnvironment["riskClass"];
   provider: "github" | "local_folder";
   displayName: string;
   visibility: "local_only" | "shared_graph";
@@ -63,7 +63,7 @@ export type KnowledgeSource = {
 
 export type CreateKnowledgeProjectInput = {
   name: string;
-  environments: Array<{ name: string; production: boolean }>;
+  environments: Array<{ name: string; riskClass: KnowledgeEnvironment["riskClass"] }>;
 };
 
 export type GithubKnowledgeSourceInput = {
@@ -101,6 +101,30 @@ export type KnowledgeNode = {
 };
 
 export type KnowledgeSearchResult = {
-  graphRevisionId: string;
-  matches: KnowledgeNode[];
+  graphRevisionIds: string[];
+  matches: Array<{
+    graphRevisionId: string;
+    node: KnowledgeNode;
+  }>;
+};
+
+export type EnvironmentConnection = {
+  id: string;
+  projectEnvironmentId: string;
+  environmentRevision: number;
+  connectionId: string | null;
+  remoteConnectionId: string | null;
+  connectionRevision: number;
+  currentConnectionRevision: number;
+  connectionName: string;
+  role: string;
+  alias: string;
+  stale: boolean;
+};
+
+export type BindEnvironmentConnectionInput = {
+  projectEnvironmentId: string;
+  connectionId: string;
+  role: string;
+  alias: string;
 };

@@ -14,8 +14,11 @@ use crate::connection::keychain::{
 };
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::adapters::control_plane::{
-    begin_knowledge_github_install, create_knowledge_project, delete_knowledge_source,
+    begin_knowledge_github_install,
+    bind_environment_connection as bind_remote_environment_connection, create_knowledge_project,
+    delete_knowledge_source, list_environment_connections as list_remote_environment_connections,
     list_knowledge_github_repositories, list_knowledge_projects, publish_knowledge_graph,
+    revoke_environment_connection as revoke_remote_environment_connection,
     CreateKnowledgeEnvironmentRequest, CreateKnowledgeProjectRequest, RemoteGithubRepository,
     RemoteKnowledgeProject,
 };
@@ -24,10 +27,10 @@ use crate::state::AppState;
 use crate::store::ActiveResourceScope;
 
 use super::adapters::github::GithubSourceAdapter;
-use super::application::{graph_path, search_graph, KnowledgePathResult, KnowledgeSearchResult};
+use super::application::{graph_path, search_graphs, KnowledgePathResult, KnowledgeSearchResult};
 use super::domain::{
-    validate_graph_publish, Project, ProjectEnvironment, SourceBindingDraft, SourceHealthState,
-    SourceLocator, StoredKnowledgeScope,
+    validate_graph_publish, EnvironmentRiskClass, Project, ProjectEnvironment, SourceBindingDraft,
+    SourceHealthState, SourceLocator, StoredKnowledgeScope,
 };
 use super::extractor::build_graph;
 use super::ports::{
@@ -43,7 +46,7 @@ pub(crate) struct KnowledgeSourceProjection {
     project_environment_id: Uuid,
     environment_name: String,
     environment_revision: u64,
-    production: bool,
+    risk_class: EnvironmentRiskClass,
     provider: KnowledgeSourceProvider,
     display_name: String,
     visibility: KnowledgeSourceVisibility,
@@ -91,6 +94,31 @@ pub(crate) struct KnowledgeSyncProjection {
     edge_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct EnvironmentConnectionProjection {
+    id: Uuid,
+    project_environment_id: Uuid,
+    environment_revision: u64,
+    connection_id: Option<Uuid>,
+    remote_connection_id: Option<Uuid>,
+    connection_revision: i64,
+    current_connection_revision: i64,
+    connection_name: String,
+    role: String,
+    alias: String,
+    stale: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BindEnvironmentConnectionInput {
+    project_environment_id: Uuid,
+    connection_id: Uuid,
+    role: String,
+    alias: String,
+}
+
 fn selected_team_account(scope: &ActiveResourceScope) -> AppResult<AccountId> {
     let value = scope.selected_account_id.as_ref().ok_or_else(|| {
         AppError::Config("Project Knowledge requires a selected workspace account".into())
@@ -131,7 +159,7 @@ fn domain_scope(
             id: remote_environment.id,
             project_id: remote_project.id,
             name: remote_environment.name.clone(),
-            production: remote_environment.production,
+            risk_class: remote_environment.risk_class,
             revision: remote_environment.revision,
         },
     ))
@@ -150,7 +178,7 @@ fn project_source(scope: StoredKnowledgeScope) -> KnowledgeSourceProjection {
         project_environment_id: scope.environment.id,
         environment_name: scope.environment.name,
         environment_revision: scope.environment.revision,
-        production: scope.environment.production,
+        risk_class: scope.environment.risk_class,
         provider: scope.binding.provider,
         display_name: scope.binding.display_name,
         visibility: scope.binding.visibility,
@@ -388,10 +416,7 @@ pub(crate) async fn sync_knowledge_source(
         .into_iter()
         .find(|candidate| candidate.binding.source_id == source_id)
         .ok_or_else(|| AppError::NotFound("the Project Knowledge source".into()))?;
-    let previous_artifact = state
-        .knowledge_store()
-        .active(stored.environment.id)
-        .await?;
+    let previous_artifact = state.knowledge_store().active_for_source(source_id).await?;
     let parent = previous_artifact
         .as_ref()
         .map(|artifact| artifact.graph_revision_id);
@@ -491,10 +516,10 @@ pub(crate) async fn sync_knowledge_source(
     })
 }
 
-async fn active_workspace_graph(
+async fn active_workspace_graphs(
     state: &AppState,
     project_environment_id: Uuid,
-) -> AppResult<dopedb_protocol::GraphBuildArtifactV1> {
+) -> AppResult<Vec<dopedb_protocol::GraphBuildArtifactV1>> {
     let active_scope = state.knowledge_store().active_resource_scope().await?;
     let allowed = state
         .knowledge_store()
@@ -509,9 +534,8 @@ async fn active_workspace_graph(
     }
     state
         .knowledge_store()
-        .active(project_environment_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("an active Knowledge graph".into()))
+        .active_set(project_environment_id)
+        .await
 }
 
 #[tauri::command]
@@ -521,8 +545,13 @@ pub(crate) async fn search_knowledge_graph(
     query: String,
     limit: Option<usize>,
 ) -> AppResult<KnowledgeSearchResult> {
-    let graph = active_workspace_graph(&state, project_environment_id).await?;
-    search_graph(&graph, &query, limit.unwrap_or(20))
+    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    if graphs.is_empty() {
+        return Err(AppError::NotFound(
+            "an active Knowledge graph revision set".into(),
+        ));
+    }
+    search_graphs(&graphs, &query, limit.unwrap_or(20))
 }
 
 #[tauri::command]
@@ -532,6 +561,171 @@ pub(crate) async fn find_knowledge_graph_path(
     from_node_id: String,
     to_node_id: String,
 ) -> AppResult<KnowledgePathResult> {
-    let graph = active_workspace_graph(&state, project_environment_id).await?;
-    graph_path(&graph, &from_node_id, &to_node_id)
+    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    let graph = graphs
+        .iter()
+        .find(|graph| {
+            graph.nodes.iter().any(|node| node.id == from_node_id)
+                && graph.nodes.iter().any(|node| node.id == to_node_id)
+        })
+        .ok_or_else(|| AppError::NotFound("a Knowledge graph containing both endpoints".into()))?;
+    graph_path(graph, &from_node_id, &to_node_id)
+}
+
+#[tauri::command]
+pub(crate) async fn list_knowledge_environment_connections(
+    state: State<'_, AppState>,
+    project_environment_id: Uuid,
+) -> AppResult<Vec<EnvironmentConnectionProjection>> {
+    let scope = state.knowledge_store().active_resource_scope().await?;
+    if let Some(account) = scope.selected_account_id.as_deref() {
+        let remote = list_remote_environment_connections(
+            account,
+            scope.workspace_id,
+            project_environment_id,
+        )
+        .await?;
+        let mut projections = Vec::with_capacity(remote.len());
+        for binding in remote {
+            let local_connection_id = state
+                .knowledge_store()
+                .local_connection_id_for_remote(scope.workspace_id, binding.connection_id)
+                .await?;
+            if let Some(local_connection_id) = local_connection_id {
+                if let Ok(connection) = state
+                    .knowledge_store()
+                    .pin_connection_for_read(local_connection_id)
+                    .await
+                {
+                    let _ = state
+                        .knowledge_store()
+                        .bind_environment_connection(
+                            binding.id,
+                            &connection,
+                            project_environment_id,
+                            &binding.role,
+                            &binding.alias,
+                        )
+                        .await;
+                }
+            }
+            projections.push(EnvironmentConnectionProjection {
+                id: binding.id,
+                project_environment_id: binding.project_environment_id,
+                environment_revision: binding.environment_revision,
+                connection_id: local_connection_id,
+                remote_connection_id: Some(binding.connection_id),
+                connection_revision: binding.connection_revision,
+                current_connection_revision: binding.current_connection_revision,
+                connection_name: binding.connection_name,
+                role: binding.role,
+                alias: binding.alias,
+                stale: binding.stale,
+            });
+        }
+        return Ok(projections);
+    }
+    let bindings = state
+        .knowledge_store()
+        .environment_connections(scope.workspace_id, project_environment_id)
+        .await?;
+    Ok(bindings
+        .into_iter()
+        .map(|binding| EnvironmentConnectionProjection {
+            id: binding.id,
+            project_environment_id: binding.project_environment_id,
+            environment_revision: binding.environment_revision,
+            connection_id: Some(binding.connection_id),
+            remote_connection_id: None,
+            connection_revision: binding.connection_revision,
+            current_connection_revision: binding.current_connection_revision,
+            connection_name: binding.connection_name,
+            role: binding.role,
+            alias: binding.alias,
+            stale: binding.connection_revision != binding.current_connection_revision,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub(crate) async fn bind_knowledge_environment_connection(
+    state: State<'_, AppState>,
+    input: BindEnvironmentConnectionInput,
+) -> AppResult<EnvironmentConnectionProjection> {
+    let connection = state
+        .knowledge_store()
+        .pin_connection_for_read(input.connection_id)
+        .await?;
+    let proposed_binding_id = Uuid::new_v4();
+    let binding_id = if let Some(account) = connection.scope.selected_account_id.as_deref() {
+        let remote_connection_id = state
+            .knowledge_store()
+            .remote_connection_id(&connection)
+            .await?
+            .ok_or_else(|| AppError::Blocked {
+                reason: "only a shared workspace connection can be bound to a shared Environment"
+                    .into(),
+            })?;
+        bind_remote_environment_connection(
+            account,
+            connection.scope.workspace_id,
+            input.project_environment_id,
+            proposed_binding_id,
+            remote_connection_id,
+            &input.role,
+            &input.alias,
+        )
+        .await?
+        .id
+    } else {
+        proposed_binding_id
+    };
+    let binding = state
+        .knowledge_store()
+        .bind_environment_connection(
+            binding_id,
+            &connection,
+            input.project_environment_id,
+            &input.role,
+            &input.alias,
+        )
+        .await?;
+    Ok(EnvironmentConnectionProjection {
+        id: binding.id,
+        project_environment_id: binding.project_environment_id,
+        environment_revision: binding.environment_revision,
+        connection_id: Some(binding.connection_id),
+        remote_connection_id: state
+            .knowledge_store()
+            .remote_connection_id(&connection)
+            .await?,
+        connection_revision: binding.connection_revision,
+        current_connection_revision: binding.current_connection_revision,
+        connection_name: binding.connection_name,
+        role: binding.role,
+        alias: binding.alias,
+        stale: binding.connection_revision != binding.current_connection_revision,
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn revoke_knowledge_environment_connection(
+    state: State<'_, AppState>,
+    project_environment_id: Uuid,
+    binding_id: Uuid,
+) -> AppResult<()> {
+    let scope = state.knowledge_store().active_resource_scope().await?;
+    if let Some(account) = scope.selected_account_id.as_deref() {
+        revoke_remote_environment_connection(
+            account,
+            scope.workspace_id,
+            project_environment_id,
+            binding_id,
+        )
+        .await?;
+    }
+    state
+        .knowledge_store()
+        .revoke_environment_connection(scope.workspace_id, binding_id)
+        .await
 }

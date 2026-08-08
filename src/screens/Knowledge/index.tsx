@@ -6,7 +6,6 @@ import ConfirmButton from "../../components/ConfirmButton";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
 import {
-  CheckboxField,
   Field,
   SelectInput,
   TextInput,
@@ -18,19 +17,24 @@ import {
   type StatusTone,
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
+import { listConnections } from "../../features/connections/tauriAdapter";
 import type {
   GithubKnowledgeRepository,
+  KnowledgeEnvironment,
   KnowledgeRevision,
 } from "../../features/knowledge/domain";
 import {
   beginKnowledgeGithubInstall,
+  bindKnowledgeEnvironmentConnection,
   connectKnowledgeGithubSource,
   connectKnowledgeLocalFolder,
   createKnowledgeProject,
   listKnowledgeGithubRepositories,
+  listKnowledgeEnvironmentConnections,
   listKnowledgeProjects,
   listKnowledgeSources,
   revokeKnowledgeSource,
+  revokeKnowledgeEnvironmentConnection,
   searchKnowledgeGraph,
   syncKnowledgeSource,
 } from "../../features/knowledge/tauriAdapter";
@@ -38,6 +42,7 @@ import {
 const projectKey = ["knowledge", "projects"] as const;
 const sourceKey = ["knowledge", "sources"] as const;
 const repositoryKey = ["knowledge", "github-repositories"] as const;
+const connectionsKey = ["connections"] as const;
 
 function revisionLabel(revision: KnowledgeRevision): string {
   if (revision.kind === "github") {
@@ -62,6 +67,7 @@ export default function Knowledge() {
     queryFn: listKnowledgeGithubRepositories,
     retry: false,
   });
+  const connections = useQuery({ queryKey: connectionsKey, queryFn: listConnections });
   const [projectId, setProjectId] = useState("");
   const [environmentId, setEnvironmentId] = useState("");
   const [provider, setProvider] = useState<"github" | "local_folder">("github");
@@ -70,9 +76,17 @@ export default function Knowledge() {
   const [displayName, setDisplayName] = useState("");
   const [projectName, setProjectName] = useState("");
   const [environmentName, setEnvironmentName] = useState("Development");
-  const [production, setProduction] = useState(false);
+  const [riskClass, setRiskClass] = useState<KnowledgeEnvironment["riskClass"]>("development");
   const [actionError, setActionError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [connectionId, setConnectionId] = useState("");
+  const [connectionRole, setConnectionRole] = useState("primary");
+  const [connectionAlias, setConnectionAlias] = useState("");
+  const environmentConnections = useQuery({
+    queryKey: ["knowledge", "environment-connections", environmentId],
+    queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
+    enabled: Boolean(environmentId),
+  });
 
   const selectedProject = useMemo(
     () => projects.data?.find((project) => project.id === projectId) ?? null,
@@ -103,6 +117,12 @@ export default function Knowledge() {
     setRefName(repository.defaultBranch);
     setDisplayName(repository.fullName);
   }, [repositories.data, repositoryId]);
+
+  useEffect(() => {
+    if (!connections.data?.length || connectionId) return;
+    setConnectionId(connections.data[0].id);
+    setConnectionAlias(connections.data[0].name);
+  }, [connectionId, connections.data]);
 
   const refreshInventory = async () => {
     await Promise.all([
@@ -161,6 +181,27 @@ export default function Knowledge() {
     onError: (error) => setActionError(errMessage(error)),
     onSuccess: () => setActionError(null),
   });
+  const bindConnection = useMutation({
+    mutationFn: bindKnowledgeEnvironmentConnection,
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["knowledge", "environment-connections", environmentId],
+      });
+    },
+    onError: (error) => setActionError(errMessage(error)),
+  });
+  const unbindConnection = useMutation({
+    mutationFn: ({ environmentId: id, bindingId }: { environmentId: string; bindingId: string }) =>
+      revokeKnowledgeEnvironmentConnection(id, bindingId),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["knowledge", "environment-connections", environmentId],
+      });
+    },
+    onError: (error) => setActionError(errMessage(error)),
+  });
 
   const pending = connectGithub.isPending || connectLocal.isPending;
   const sourceLoadError = projects.error ?? sources.error;
@@ -201,18 +242,22 @@ export default function Knowledge() {
               <TextInput value={environmentName} onChange={(event) => setEnvironmentName(event.target.value)} />
             </Field>
           </div>
-          <CheckboxField
-            checked={production}
-            onChange={(event) => setProduction(event.target.checked)}
-            label="Apply Production safeguards"
-          />
+          <Field label="Risk class">
+            <SelectInput value={riskClass} onChange={(event) => setRiskClass(event.target.value as KnowledgeEnvironment["riskClass"])}>
+              <option value="development">Development</option>
+              <option value="staging">Staging</option>
+              <option value="production">Production</option>
+              <option value="test">Test</option>
+              <option value="custom">Custom</option>
+            </SelectInput>
+          </Field>
           <div>
             <Button
               variant="primary"
               disabled={!projectName.trim() || !environmentName.trim() || createProject.isPending}
               onClick={() => createProject.mutate({
                 name: projectName.trim(),
-                environments: [{ name: environmentName.trim(), production }],
+                environments: [{ name: environmentName.trim(), riskClass }],
               })}
             >
               {createProject.isPending ? "Creating…" : "Create Project"}
@@ -243,7 +288,7 @@ export default function Knowledge() {
             <Field label="Environment">
               <SelectInput value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)}>
                 {selectedProject?.environments.map((environment) => (
-                  <option key={environment.id} value={environment.id}>{environment.name}{environment.production ? " · Production" : ""}</option>
+                  <option key={environment.id} value={environment.id}>{environment.name} · {environment.riskClass}</option>
                 ))}
               </SelectInput>
             </Field>
@@ -325,6 +370,68 @@ export default function Knowledge() {
         </section>
       ) : null}
 
+      {(projects.data?.length ?? 0) > 0 ? (
+        <section className="tw:grid tw:gap-3 tw:border-b tw:border-border-subtle tw:pb-5">
+          <div className="tw:grid tw:gap-1">
+            <h2 className="tw:m-0 tw:text-base tw:font-semibold">Environment databases</h2>
+            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
+              Bind exact connection revisions to this Environment. A binding names a resource; it never grants credentials or wider access.
+            </p>
+          </div>
+          <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(0,.7fr)_minmax(0,1fr)_auto] tw:items-end tw:gap-2 tw:@max-[760px]:grid-cols-2 tw:@max-[520px]:grid-cols-1">
+            <Field label="Database connection">
+              <SelectInput value={connectionId} onChange={(event) => {
+                const connection = connections.data?.find((candidate) => candidate.id === event.target.value);
+                setConnectionId(event.target.value);
+                if (connection) setConnectionAlias(connection.name);
+              }}>
+                {connections.data?.map((connection) => (
+                  <option key={connection.id} value={connection.id}>{connection.name}</option>
+                ))}
+              </SelectInput>
+            </Field>
+            <Field label="Role">
+              <TextInput value={connectionRole} placeholder="primary" onChange={(event) => setConnectionRole(event.target.value)} />
+            </Field>
+            <Field label="Alias">
+              <TextInput value={connectionAlias} onChange={(event) => setConnectionAlias(event.target.value)} />
+            </Field>
+            <Button
+              variant="primary"
+              disabled={!environmentId || !connectionId || !connectionRole.trim() || !connectionAlias.trim() || bindConnection.isPending}
+              onClick={() => bindConnection.mutate({
+                projectEnvironmentId: environmentId,
+                connectionId,
+                role: connectionRole.trim(),
+                alias: connectionAlias.trim(),
+              })}
+            >
+              {bindConnection.isPending ? "Binding…" : "Bind database"}
+            </Button>
+          </div>
+          {environmentConnections.isPending ? (
+            <LoadingLabel>Loading Environment databases…</LoadingLabel>
+          ) : (environmentConnections.data?.length ?? 0) === 0 ? (
+            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">No database is bound to this Environment.</p>
+          ) : (
+            <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
+              {environmentConnections.data?.map((binding) => (
+                <div key={binding.id} className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0">
+                  <span className="tw:grid tw:min-w-0 tw:gap-0.5">
+                    <strong className="tw:truncate tw:text-sm">{binding.alias}</strong>
+                    <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{binding.connectionName} · {binding.role} · revision {binding.connectionRevision}</span>
+                  </span>
+                  <span className="tw:flex tw:items-center tw:gap-2">
+                    {binding.stale ? <StatusBadge tone="warning">Reconfirm</StatusBadge> : <StatusBadge tone="success">Pinned</StatusBadge>}
+                    <ConfirmButton size="compact" variant="dangerGhost" disabled={unbindConnection.isPending} onConfirm={() => unbindConnection.mutate({ environmentId, bindingId: binding.id })}>Remove</ConfirmButton>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
       <section className="tw:grid tw:gap-3">
         <div className="tw:flex tw:items-center tw:justify-between tw:gap-3">
           <h2 className="tw:m-0 tw:text-base tw:font-semibold">Sources</h2>
@@ -389,12 +496,12 @@ export default function Knowledge() {
             <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
               {search.data.matches.length === 0 ? (
                 <p className="tw:m-0 tw:p-3 tw:text-sm tw:text-muted-foreground">No matching node in this graph revision.</p>
-              ) : search.data.matches.map((node) => (
-                <div key={node.id} className="tw:grid tw:min-w-0 tw:grid-cols-[auto_minmax(0,1fr)] tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0">
-                  <span className="badge kind">{node.kind}</span>
+              ) : search.data.matches.map((match) => (
+                <div key={`${match.graphRevisionId}:${match.node.id}`} className="tw:grid tw:min-w-0 tw:grid-cols-[auto_minmax(0,1fr)] tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0">
+                  <span className="badge kind">{match.node.kind}</span>
                   <span className="tw:grid tw:min-w-0 tw:gap-0.5">
-                    <strong className="tw:truncate tw:text-sm">{node.name}</strong>
-                    <span className="tw:truncate tw:font-mono tw:text-xs tw:text-muted-foreground">{node.qualifiedName}</span>
+                    <strong className="tw:truncate tw:text-sm">{match.node.name}</strong>
+                    <span className="tw:truncate tw:font-mono tw:text-xs tw:text-muted-foreground">{match.node.qualifiedName}</span>
                   </span>
                 </div>
               ))}

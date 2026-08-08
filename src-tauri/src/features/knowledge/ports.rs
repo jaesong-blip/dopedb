@@ -90,10 +90,14 @@ pub(crate) trait KnowledgeGraphRepositoryPort: Clone + Send + Sync + 'static {
         &self,
         artifact: &GraphBuildArtifactV1,
     ) -> impl Future<Output = AppResult<()>> + Send;
-    fn active(
+    fn active_for_source(
+        &self,
+        source_id: Uuid,
+    ) -> impl Future<Output = AppResult<Option<GraphBuildArtifactV1>>> + Send;
+    fn active_set(
         &self,
         project_environment_id: Uuid,
-    ) -> impl Future<Output = AppResult<Option<GraphBuildArtifactV1>>> + Send;
+    ) -> impl Future<Output = AppResult<Vec<GraphBuildArtifactV1>>> + Send;
     fn by_revision(
         &self,
         graph_revision_id: Uuid,

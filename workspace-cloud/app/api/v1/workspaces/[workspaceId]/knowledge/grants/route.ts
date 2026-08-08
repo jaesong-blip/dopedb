@@ -5,7 +5,9 @@ import { boundedJsonBody, isUuid, jsonError, mutationAllowed, privateJson } from
 import {
   knowledgeEnvironmentHead,
   knowledgeGrant,
+  knowledgeGrantGraphRevision,
   knowledgeProjectEnvironment,
+  knowledgeSource,
   member,
 } from "@/lib/schema";
 import { authorizeWorkspace } from "@/lib/workspace-authorization";
@@ -17,19 +19,52 @@ export async function GET(request: Request, context: RouteContext) {
   if (!isUuid(workspaceId)) return jsonError("Invalid workspace id", 400);
   const authorization = await authorizeWorkspace(request, workspaceId, "manage");
   if (!authorization.ok) return jsonError(authorization.error, authorization.status);
-  const grants = await db.select({
+  const rows = await db.select({
     id: knowledgeGrant.id,
     memberId: knowledgeGrant.memberId,
     projectId: knowledgeGrant.projectId,
     projectEnvironmentId: knowledgeGrant.projectEnvironmentId,
     environmentRevision: knowledgeGrant.environmentRevision,
-    graphRevisionId: knowledgeGrant.graphRevisionId,
+    graphRevisionId: knowledgeGrantGraphRevision.graphRevisionId,
     expiresAt: knowledgeGrant.expiresAt,
     revokedAt: knowledgeGrant.revokedAt,
-  }).from(knowledgeGrant).where(and(
+  }).from(knowledgeGrant).innerJoin(
+    knowledgeGrantGraphRevision,
+    and(
+      eq(knowledgeGrantGraphRevision.organizationId, knowledgeGrant.organizationId),
+      eq(knowledgeGrantGraphRevision.grantId, knowledgeGrant.id),
+    ),
+  ).where(and(
     eq(knowledgeGrant.organizationId, workspaceId),
     gt(knowledgeGrant.expiresAt, new Date()),
   ));
+  const grants = Array.from(rows.reduce((grouped, row) => {
+    const current = grouped.get(row.id);
+    if (current) {
+      current.graphRevisionIds.push(row.graphRevisionId);
+      return grouped;
+    }
+    grouped.set(row.id, {
+      id: row.id,
+      memberId: row.memberId,
+      projectId: row.projectId,
+      projectEnvironmentId: row.projectEnvironmentId,
+      environmentRevision: row.environmentRevision,
+      graphRevisionIds: [row.graphRevisionId],
+      expiresAt: row.expiresAt,
+      revokedAt: row.revokedAt,
+    });
+    return grouped;
+  }, new Map<string, {
+    id: string;
+    memberId: string;
+    projectId: string;
+    projectEnvironmentId: string;
+    environmentRevision: number;
+    graphRevisionIds: string[];
+    expiresAt: Date;
+    revokedAt: Date | null;
+  }>()).values());
   return privateJson({ grants });
 }
 
@@ -53,7 +88,10 @@ export async function POST(request: Request, context: RouteContext) {
   ) {
     return jsonError("Invalid Knowledge grant", 400);
   }
-  const [scope] = await db.select({
+  const memberId = body.memberId;
+  const projectEnvironmentId = body.projectEnvironmentId;
+  const ttlSeconds = body.ttlSeconds;
+  const scopes = await db.select({
     memberId: member.id,
     projectId: knowledgeProjectEnvironment.projectId,
     environmentRevision: knowledgeProjectEnvironment.revision,
@@ -68,25 +106,45 @@ export async function POST(request: Request, context: RouteContext) {
       eq(knowledgeEnvironmentHead.projectEnvironmentId, knowledgeProjectEnvironment.id),
       eq(knowledgeEnvironmentHead.environmentRevision, knowledgeProjectEnvironment.revision),
     ),
+  ).innerJoin(
+    knowledgeSource,
+    and(
+      eq(knowledgeSource.organizationId, knowledgeEnvironmentHead.organizationId),
+      eq(knowledgeSource.id, knowledgeEnvironmentHead.sourceId),
+      isNull(knowledgeSource.revokedAt),
+    ),
   ).where(and(
     eq(member.organizationId, workspaceId),
-    eq(member.id, body.memberId),
+    eq(member.id, memberId),
     isNull(member.revocationPendingAt),
-    eq(knowledgeProjectEnvironment.id, body.projectEnvironmentId),
-  )).limit(1);
-  if (!scope) return jsonError("Member or active Knowledge graph not found", 404);
-  const [grant] = await db.insert(knowledgeGrant).values({
-    organizationId: workspaceId,
-    memberId: scope.memberId,
-    projectId: scope.projectId,
-    projectEnvironmentId: body.projectEnvironmentId,
-    environmentRevision: scope.environmentRevision,
-    graphRevisionId: scope.graphRevisionId,
-    expiresAt: new Date(Date.now() + body.ttlSeconds * 1_000),
-  }).returning({
-    id: knowledgeGrant.id,
-    graphRevisionId: knowledgeGrant.graphRevisionId,
-    expiresAt: knowledgeGrant.expiresAt,
+    eq(knowledgeProjectEnvironment.id, projectEnvironmentId),
+  ));
+  if (scopes.length < 1) return jsonError("Member or active Knowledge graph not found", 404);
+  if (scopes.length > 100) return jsonError("Knowledge environment has too many active graphs", 409);
+  const scope = scopes[0]!;
+  const graphRevisionIds = scopes.map((candidate) => candidate.graphRevisionId);
+  const grant = await db.transaction(async (transaction) => {
+    const [created] = await transaction.insert(knowledgeGrant).values({
+      organizationId: workspaceId,
+      memberId: scope.memberId,
+      projectId: scope.projectId,
+      projectEnvironmentId,
+      environmentRevision: scope.environmentRevision,
+      // Kept as the compatibility anchor while the set table is authoritative.
+      graphRevisionId: graphRevisionIds[0],
+      expiresAt: new Date(Date.now() + ttlSeconds * 1_000),
+    }).returning({
+      id: knowledgeGrant.id,
+      expiresAt: knowledgeGrant.expiresAt,
+    });
+    await transaction.insert(knowledgeGrantGraphRevision).values(graphRevisionIds.map(
+      (graphRevisionId) => ({
+        organizationId: workspaceId,
+        grantId: created.id,
+        graphRevisionId,
+      }),
+    ));
+    return { ...created, graphRevisionIds };
   });
   return privateJson({ grant }, { status: 201 });
 }

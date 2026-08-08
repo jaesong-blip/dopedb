@@ -8,6 +8,7 @@ use dopedb_protocol::{
 use sha2::{Digest, Sha256};
 
 use crate::features::knowledge::domain::{
+    validate_environment_connection_label, EnvironmentConnectionBinding, EnvironmentRiskClass,
     KnowledgeGrant, KnowledgeMappingProposal, MappingProposalState, Project, ProjectEnvironment,
     SourceSnapshot, StoredKnowledgeScope,
 };
@@ -17,6 +18,201 @@ use crate::features::knowledge::ports::{
 };
 
 const MAX_GRAPH_ARTIFACT_JSON_BYTES: usize = 256 * 1024 * 1024;
+
+impl Store {
+    pub(crate) async fn bind_environment_connection(
+        &self,
+        binding_id: Uuid,
+        connection: &PinnedConnection,
+        project_environment_id: Uuid,
+        role: &str,
+        alias: &str,
+    ) -> AppResult<EnvironmentConnectionBinding> {
+        if connection.connection_revision <= 0
+            || !validate_environment_connection_label(role, 64)
+            || !validate_environment_connection_label(alias, 128)
+        {
+            return Err(AppError::Config(
+                "the Environment connection binding is invalid".into(),
+            ));
+        }
+        let environment: Option<(i64,)> = sqlx::query_as(
+            "SELECT environment.revision
+             FROM knowledge_project_environments environment
+             JOIN knowledge_projects project ON project.id = environment.project_id
+             WHERE environment.id = ?1 AND project.workspace_id = ?2",
+        )
+        .bind(project_environment_id.to_string())
+        .bind(connection.scope.workspace_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some((environment_revision,)) = environment else {
+            return Err(AppError::NotFound(
+                "the active workspace Project Environment".into(),
+            ));
+        };
+        let now = Utc::now();
+        sqlx::query(
+            "INSERT INTO knowledge_environment_connections
+                 (id, workspace_id, project_environment_id, environment_revision,
+                  connection_id, connection_revision, role, alias, created_at, revoked_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)
+             ON CONFLICT(project_environment_id, connection_id) WHERE revoked_at IS NULL
+             DO UPDATE SET environment_revision = excluded.environment_revision,
+                           connection_revision = excluded.connection_revision,
+                           role = excluded.role, alias = excluded.alias",
+        )
+        .bind(binding_id.to_string())
+        .bind(connection.scope.workspace_id.to_string())
+        .bind(project_environment_id.to_string())
+        .bind(environment_revision)
+        .bind(connection.connection_id.to_string())
+        .bind(connection.connection_revision)
+        .bind(role.trim())
+        .bind(alias.trim())
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        self.environment_connections(connection.scope.workspace_id, project_environment_id)
+            .await?
+            .into_iter()
+            .find(|binding| binding.connection_id == Uuid::from(connection.connection_id))
+            .ok_or_else(|| AppError::Config("the Environment connection binding was lost".into()))
+    }
+
+    pub(crate) async fn remote_connection_id(
+        &self,
+        connection: &PinnedConnection,
+    ) -> AppResult<Option<Uuid>> {
+        let remote_id: Option<String> = sqlx::query_scalar(
+            "SELECT remote_id FROM connections
+             WHERE id = ?1 AND workspace_id = ?2 AND revision = ?3
+               AND deleted_at IS NULL",
+        )
+        .bind(connection.connection_id.to_string())
+        .bind(connection.scope.workspace_id.to_string())
+        .bind(connection.connection_revision)
+        .fetch_optional(&self.pool)
+        .await?
+        .flatten();
+        remote_id.map(parse_uuid).transpose()
+    }
+
+    pub(crate) async fn local_connection_id_for_remote(
+        &self,
+        workspace_id: Uuid,
+        remote_connection_id: Uuid,
+    ) -> AppResult<Option<Uuid>> {
+        let id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM connections
+             WHERE workspace_id = ?1 AND remote_id = ?2 AND deleted_at IS NULL",
+        )
+        .bind(workspace_id.to_string())
+        .bind(remote_connection_id.to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        id.map(parse_uuid).transpose()
+    }
+
+    pub(crate) async fn environment_connections(
+        &self,
+        workspace_id: Uuid,
+        project_environment_id: Uuid,
+    ) -> AppResult<Vec<EnvironmentConnectionBinding>> {
+        let rows: Vec<(
+            String,
+            String,
+            String,
+            i64,
+            String,
+            i64,
+            i64,
+            String,
+            String,
+            String,
+        )> = sqlx::query_as(
+            "SELECT binding.id, binding.workspace_id, binding.project_environment_id,
+                        binding.environment_revision, binding.connection_id,
+                        binding.connection_revision, connection.revision,
+                        connection.name, binding.role, binding.alias
+                 FROM knowledge_environment_connections binding
+                 JOIN knowledge_project_environments environment
+                   ON environment.id = binding.project_environment_id
+                  AND environment.revision = binding.environment_revision
+                 JOIN knowledge_projects project ON project.id = environment.project_id
+                 JOIN connections connection ON connection.id = binding.connection_id
+                 WHERE binding.workspace_id = ?1
+                   AND binding.project_environment_id = ?2
+                   AND binding.revoked_at IS NULL
+                   AND project.workspace_id = binding.workspace_id
+                   AND connection.workspace_id = binding.workspace_id
+                   AND connection.deleted_at IS NULL
+                 ORDER BY binding.role, binding.alias, binding.id",
+        )
+        .bind(workspace_id.to_string())
+        .bind(project_environment_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(
+                |(
+                    id,
+                    workspace_id,
+                    environment_id,
+                    environment_revision,
+                    connection_id,
+                    connection_revision,
+                    current_connection_revision,
+                    connection_name,
+                    role,
+                    alias,
+                )| {
+                    Ok(EnvironmentConnectionBinding {
+                        id: parse_uuid(id)?,
+                        workspace_id: WorkspaceId::from(parse_uuid(workspace_id)?),
+                        project_environment_id: parse_uuid(environment_id)?,
+                        environment_revision: u64::try_from(environment_revision).map_err(
+                            |_| {
+                                AppError::Config(
+                                    "the stored Environment revision is invalid".into(),
+                                )
+                            },
+                        )?,
+                        connection_id: parse_uuid(connection_id)?,
+                        connection_revision,
+                        current_connection_revision,
+                        connection_name,
+                        role,
+                        alias,
+                    })
+                },
+            )
+            .collect()
+    }
+
+    pub(crate) async fn revoke_environment_connection(
+        &self,
+        workspace_id: Uuid,
+        binding_id: Uuid,
+    ) -> AppResult<()> {
+        let changed = sqlx::query(
+            "UPDATE knowledge_environment_connections
+             SET revoked_at = ?1
+             WHERE id = ?2 AND workspace_id = ?3 AND revoked_at IS NULL",
+        )
+        .bind(Utc::now())
+        .bind(binding_id.to_string())
+        .bind(workspace_id.to_string())
+        .execute(&self.pool)
+        .await?;
+        if changed.rows_affected() != 1 {
+            return Err(AppError::NotFound(
+                "the Environment connection binding".into(),
+            ));
+        }
+        Ok(())
+    }
+}
 
 fn checked_name(value: &str) -> AppResult<&str> {
     let value = value.trim();
@@ -39,6 +235,29 @@ fn visibility_value(visibility: KnowledgeSourceVisibility) -> &'static str {
     match visibility {
         KnowledgeSourceVisibility::LocalOnly => "local_only",
         KnowledgeSourceVisibility::SharedGraph => "shared_graph",
+    }
+}
+
+fn risk_class_value(risk_class: EnvironmentRiskClass) -> &'static str {
+    match risk_class {
+        EnvironmentRiskClass::Production => "production",
+        EnvironmentRiskClass::Staging => "staging",
+        EnvironmentRiskClass::Development => "development",
+        EnvironmentRiskClass::Test => "test",
+        EnvironmentRiskClass::Custom => "custom",
+    }
+}
+
+fn parse_risk_class(value: &str) -> AppResult<EnvironmentRiskClass> {
+    match value {
+        "production" => Ok(EnvironmentRiskClass::Production),
+        "staging" => Ok(EnvironmentRiskClass::Staging),
+        "development" => Ok(EnvironmentRiskClass::Development),
+        "test" => Ok(EnvironmentRiskClass::Test),
+        "custom" => Ok(EnvironmentRiskClass::Custom),
+        _ => Err(AppError::Config(
+            "the stored Project Environment risk class is invalid".into(),
+        )),
     }
 }
 
@@ -162,11 +381,12 @@ impl KnowledgeScopeRepositoryPort for Store {
 
         sqlx::query(
             "INSERT INTO knowledge_project_environments
-                 (id, project_id, name, production, revision, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+                 (id, project_id, name, production, risk_class, revision, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
              ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
                  production = excluded.production,
+                 risk_class = excluded.risk_class,
                  revision = excluded.revision,
                  updated_at = excluded.updated_at
              WHERE knowledge_project_environments.project_id = excluded.project_id
@@ -175,7 +395,8 @@ impl KnowledgeScopeRepositoryPort for Store {
         .bind(environment.id.to_string())
         .bind(project.id.to_string())
         .bind(environment_name)
-        .bind(environment.production)
+        .bind(environment.risk_class == EnvironmentRiskClass::Production)
+        .bind(risk_class_value(environment.risk_class))
         .bind(environment_revision)
         .bind(now)
         .execute(&mut *tx)
@@ -242,10 +463,19 @@ impl KnowledgeScopeRepositoryPort for Store {
     }
 
     async fn scopes(&self, workspace_id: Uuid) -> AppResult<Vec<StoredKnowledgeScope>> {
-        let rows: Vec<(String, String, i64, String, String, bool, i64, i64, String)> =
-            sqlx::query_as(
-                "SELECT project.id, project.name, project.revision,
-                    environment.id, environment.name, environment.production,
+        let rows: Vec<(
+            String,
+            String,
+            i64,
+            String,
+            String,
+            String,
+            i64,
+            i64,
+            String,
+        )> = sqlx::query_as(
+            "SELECT project.id, project.name, project.revision,
+                    environment.id, environment.name, environment.risk_class,
                     environment.revision, source.environment_revision,
                     source.binding_json
              FROM knowledge_sources source
@@ -255,10 +485,10 @@ impl KnowledgeScopeRepositoryPort for Store {
               AND environment.project_id = project.id
              WHERE project.workspace_id = ?1 AND source.revoked_at IS NULL
              ORDER BY project.name, environment.name, source.display_name",
-            )
-            .bind(workspace_id.to_string())
-            .fetch_all(&self.pool)
-            .await?;
+        )
+        .bind(workspace_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
         rows.into_iter()
             .map(
                 |(
@@ -267,7 +497,7 @@ impl KnowledgeScopeRepositoryPort for Store {
                     project_revision,
                     environment_id,
                     environment_name,
-                    production,
+                    risk_class,
                     environment_revision,
                     source_environment_revision,
                     binding_json,
@@ -301,7 +531,7 @@ impl KnowledgeScopeRepositoryPort for Store {
                             id: environment_id,
                             project_id,
                             name: environment_name,
-                            production,
+                            risk_class: parse_risk_class(&risk_class)?,
                             revision: u64::try_from(environment_revision).map_err(|_| {
                                 AppError::Config(
                                     "the stored Environment revision is invalid".into(),
@@ -499,9 +729,10 @@ impl KnowledgeGraphRepositoryPort for Store {
         }
         let current: Option<String> = sqlx::query_scalar(
             "SELECT graph_revision_id FROM knowledge_environment_heads
-             WHERE project_environment_id = ?1",
+             WHERE project_environment_id = ?1 AND source_id = ?2",
         )
         .bind(&environment_id)
+        .bind(artifact.binding.source_id.to_string())
         .fetch_optional(&mut *tx)
         .await?;
         if artifact.parent_graph_revision_id.map(|id| id.to_string()) != current {
@@ -514,24 +745,32 @@ impl KnowledgeGraphRepositoryPort for Store {
         sqlx::query(
             "UPDATE knowledge_mapping_proposals
              SET state = 'stale', decided_at = ?3
-             WHERE project_environment_id = ?1 AND graph_revision_id <> ?2
+             WHERE project_environment_id = ?1 AND graph_revision_id IN (
+                   SELECT revision.graph_revision_id
+                   FROM knowledge_graph_revisions revision
+                   WHERE revision.source_id = ?4
+                     AND revision.graph_revision_id <> ?2
+               )
                AND state IN ('proposed', 'approved')",
         )
         .bind(&environment_id)
         .bind(artifact.graph_revision_id.to_string())
         .bind(Utc::now())
+        .bind(artifact.binding.source_id.to_string())
         .execute(&mut *tx)
         .await?;
         sqlx::query(
             "INSERT INTO knowledge_environment_heads
-                 (project_environment_id, graph_revision_id, environment_revision, activated_at)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(project_environment_id) DO UPDATE SET
+                 (project_environment_id, source_id, graph_revision_id,
+                  environment_revision, activated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(project_environment_id, source_id) DO UPDATE SET
                  graph_revision_id = excluded.graph_revision_id,
                  environment_revision = excluded.environment_revision,
                  activated_at = excluded.activated_at",
         )
         .bind(&environment_id)
+        .bind(artifact.binding.source_id.to_string())
         .bind(artifact.graph_revision_id.to_string())
         .bind(environment_revision)
         .bind(Utc::now())
@@ -541,23 +780,44 @@ impl KnowledgeGraphRepositoryPort for Store {
         Ok(())
     }
 
-    async fn active(
-        &self,
-        project_environment_id: Uuid,
-    ) -> AppResult<Option<GraphBuildArtifactV1>> {
+    async fn active_for_source(&self, source_id: Uuid) -> AppResult<Option<GraphBuildArtifactV1>> {
         let json: Option<String> = sqlx::query_scalar(
             "SELECT revision.artifact_json
              FROM knowledge_environment_heads head
              JOIN knowledge_graph_revisions revision
                ON revision.graph_revision_id = head.graph_revision_id
-             WHERE head.project_environment_id = ?1
+             WHERE head.source_id = ?1
+               AND revision.source_id = head.source_id
                AND revision.project_environment_id = head.project_environment_id
                AND revision.environment_revision = head.environment_revision",
         )
-        .bind(project_environment_id.to_string())
+        .bind(source_id.to_string())
         .fetch_optional(&self.pool)
         .await?;
         json.map(parse_artifact).transpose()
+    }
+
+    async fn active_set(
+        &self,
+        project_environment_id: Uuid,
+    ) -> AppResult<Vec<GraphBuildArtifactV1>> {
+        let rows = sqlx::query_scalar::<_, String>(
+            "SELECT revision.artifact_json
+             FROM knowledge_environment_heads head
+             JOIN knowledge_graph_revisions revision
+               ON revision.graph_revision_id = head.graph_revision_id
+             JOIN knowledge_sources source ON source.id = head.source_id
+             WHERE head.project_environment_id = ?1
+               AND source.revoked_at IS NULL
+               AND revision.source_id = head.source_id
+               AND revision.project_environment_id = head.project_environment_id
+               AND revision.environment_revision = head.environment_revision
+             ORDER BY head.source_id",
+        )
+        .bind(project_environment_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(parse_artifact).collect()
     }
 
     async fn by_revision(
@@ -663,6 +923,14 @@ impl KnowledgeGrantPort for Store {
     async fn save_grant(&self, grant: &KnowledgeGrant) -> AppResult<()> {
         let now = Utc::now();
         if grant.environment_revision == 0
+            || grant.graph_revision_ids.is_empty()
+            || grant.graph_revision_ids.len() > 100
+            || grant
+                .graph_revision_ids
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != grant.graph_revision_ids.len()
             || grant.expires_at <= now
             || grant.expires_at > now + chrono::Duration::hours(24)
         {
@@ -671,8 +939,10 @@ impl KnowledgeGrantPort for Store {
             });
         }
         let environment_revision = u64_to_i64(grant.environment_revision, "environment revision")?;
-        let authorized: bool = sqlx::query_scalar(
-            "SELECT EXISTS(
+        let mut tx = self.pool.begin().await?;
+        for graph_revision_id in &grant.graph_revision_ids {
+            let authorized: bool = sqlx::query_scalar(
+                "SELECT EXISTS(
                  SELECT 1
                  FROM knowledge_projects project
                  JOIN knowledge_project_environments environment
@@ -683,6 +953,10 @@ impl KnowledgeGrantPort for Store {
                    ON graph.project_environment_id = environment.id
                   AND graph.graph_revision_id = ?6
                   AND graph.environment_revision = environment.revision
+                 JOIN knowledge_environment_heads head
+                   ON head.project_environment_id = environment.id
+                  AND head.graph_revision_id = graph.graph_revision_id
+                  AND head.source_id = graph.source_id
                  JOIN knowledge_sources source
                    ON source.id = graph.source_id
                   AND source.revoked_at IS NULL
@@ -692,19 +966,21 @@ impl KnowledgeGrantPort for Store {
                   AND member.status = 'active'
                  WHERE project.id = ?3 AND project.workspace_id = ?1
              )",
-        )
-        .bind(grant.workspace_id.to_string())
-        .bind(grant.account_id.as_str())
-        .bind(grant.project_id.to_string())
-        .bind(grant.project_environment_id.to_string())
-        .bind(environment_revision)
-        .bind(grant.graph_revision_id.to_string())
-        .fetch_one(&self.pool)
-        .await?;
-        if !authorized {
-            return Err(AppError::Blocked {
-                reason: "the Knowledge grant is outside the member's exact workspace scope".into(),
-            });
+            )
+            .bind(grant.workspace_id.to_string())
+            .bind(grant.account_id.as_str())
+            .bind(grant.project_id.to_string())
+            .bind(grant.project_environment_id.to_string())
+            .bind(environment_revision)
+            .bind(graph_revision_id.to_string())
+            .fetch_one(&mut *tx)
+            .await?;
+            if !authorized {
+                return Err(AppError::Blocked {
+                    reason: "the Knowledge grant is outside the member's exact workspace scope"
+                        .into(),
+                });
+            }
         }
         sqlx::query(
             "INSERT INTO knowledge_grants
@@ -719,20 +995,30 @@ impl KnowledgeGrantPort for Store {
         .bind(grant.project_id.to_string())
         .bind(grant.project_environment_id.to_string())
         .bind(environment_revision)
-        .bind(grant.graph_revision_id.to_string())
+        .bind(grant.graph_revision_ids[0].to_string())
         .bind(grant.expires_at)
         .bind(now)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+        for graph_revision_id in &grant.graph_revision_ids {
+            sqlx::query(
+                "INSERT INTO knowledge_grant_graph_revisions (grant_id, graph_revision_id)
+                 VALUES (?1, ?2)",
+            )
+            .bind(grant.id.to_string())
+            .bind(graph_revision_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
         Ok(())
     }
 
     async fn exact_grant(&self, grant_id: Uuid) -> AppResult<Option<KnowledgeGrant>> {
-        let row: Option<(String, String, String, String, i64, String, DateTime<Utc>)> =
-            sqlx::query_as(
-                "SELECT grant.workspace_id, grant.account_user_id, grant.project_id,
+        let row: Option<(String, String, String, String, i64, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT grant.workspace_id, grant.account_user_id, grant.project_id,
                         grant.project_environment_id, grant.environment_revision,
-                        grant.graph_revision_id, grant.expires_at
+                        grant.expires_at
                  FROM knowledge_grants grant
                  JOIN knowledge_projects project
                    ON project.id = grant.project_id
@@ -741,35 +1027,51 @@ impl KnowledgeGrantPort for Store {
                    ON environment.id = grant.project_environment_id
                   AND environment.project_id = project.id
                   AND environment.revision = grant.environment_revision
-                 JOIN knowledge_graph_revisions graph
-                   ON graph.graph_revision_id = grant.graph_revision_id
-                  AND graph.project_environment_id = environment.id
-                  AND graph.environment_revision = environment.revision
-                 JOIN knowledge_sources source
-                   ON source.id = graph.source_id
-                  AND source.revoked_at IS NULL
                  JOIN workspace_members member
                    ON member.workspace_id = grant.workspace_id
                   AND member.user_id = grant.account_user_id
                   AND member.status = 'active'
                  WHERE grant.id = ?1 AND grant.expires_at > ?2",
-            )
-            .bind(grant_id.to_string())
-            .bind(Utc::now())
-            .fetch_optional(&self.pool)
-            .await?;
+        )
+        .bind(grant_id.to_string())
+        .bind(Utc::now())
+        .fetch_optional(&self.pool)
+        .await?;
         let Some((
             workspace_id,
             account_id,
             project_id,
             project_environment_id,
             environment_revision,
-            graph_revision_id,
             expires_at,
         )) = row
         else {
             return Ok(None);
         };
+        let graph_revision_rows: Vec<String> = sqlx::query_scalar(
+            "SELECT revision.graph_revision_id
+             FROM knowledge_grant_graph_revisions grant_revision
+             JOIN knowledge_graph_revisions revision
+               ON revision.graph_revision_id = grant_revision.graph_revision_id
+             JOIN knowledge_environment_heads head
+               ON head.graph_revision_id = revision.graph_revision_id
+              AND head.source_id = revision.source_id
+              AND head.project_environment_id = revision.project_environment_id
+             JOIN knowledge_sources source
+               ON source.id = revision.source_id AND source.revoked_at IS NULL
+             WHERE grant_revision.grant_id = ?1
+               AND revision.project_environment_id = ?2
+               AND revision.environment_revision = ?3
+             ORDER BY revision.source_id",
+        )
+        .bind(grant_id.to_string())
+        .bind(&project_environment_id)
+        .bind(environment_revision)
+        .fetch_all(&self.pool)
+        .await?;
+        if graph_revision_rows.is_empty() {
+            return Ok(None);
+        }
         Ok(Some(KnowledgeGrant {
             id: grant_id,
             workspace_id: WorkspaceId::from(parse_uuid(workspace_id)?),
@@ -781,7 +1083,10 @@ impl KnowledgeGrantPort for Store {
             environment_revision: u64::try_from(environment_revision).map_err(|_| {
                 AppError::Config("the stored Knowledge grant revision is invalid".into())
             })?,
-            graph_revision_id: parse_uuid(graph_revision_id)?,
+            graph_revision_ids: graph_revision_rows
+                .into_iter()
+                .map(parse_uuid)
+                .collect::<AppResult<Vec<_>>>()?,
             expires_at,
         }))
     }

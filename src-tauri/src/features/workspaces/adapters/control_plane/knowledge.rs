@@ -2,6 +2,7 @@
 //! source content is returned only for an exact workspace/source/revision request.
 
 use super::*;
+use crate::features::knowledge::domain::EnvironmentRiskClass;
 use dopedb_protocol::GraphBuildArtifactV1;
 use sha2::{Digest, Sha256};
 const MAX_SOURCE_FILES: usize = 100_000;
@@ -131,7 +132,7 @@ struct KnowledgeSourceEventsResponse {
 pub(crate) struct RemoteKnowledgeEnvironment {
     pub(crate) id: Uuid,
     pub(crate) name: String,
-    pub(crate) production: bool,
+    pub(crate) risk_class: EnvironmentRiskClass,
     pub(crate) revision: u64,
 }
 
@@ -154,7 +155,7 @@ struct KnowledgeProjectsResponse {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct CreateKnowledgeEnvironmentRequest {
     pub(crate) name: String,
-    pub(crate) production: bool,
+    pub(crate) risk_class: EnvironmentRiskClass,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,6 +169,33 @@ pub(crate) struct CreateKnowledgeProjectRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreatedKnowledgeProjectResponse {
     project: RemoteKnowledgeProject,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteEnvironmentConnectionBinding {
+    pub(crate) id: Uuid,
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) environment_revision: u64,
+    pub(crate) connection_id: Uuid,
+    pub(crate) connection_revision: i64,
+    pub(crate) current_connection_revision: i64,
+    pub(crate) connection_name: String,
+    pub(crate) role: String,
+    pub(crate) alias: String,
+    pub(crate) stale: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EnvironmentConnectionBindingsResponse {
+    bindings: Vec<RemoteEnvironmentConnectionBinding>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EnvironmentConnectionBindingResponse {
+    binding: RemoteEnvironmentConnectionBinding,
 }
 
 #[derive(Deserialize)]
@@ -257,6 +285,117 @@ pub(crate) async fn create_knowledge_project(
         ));
     }
     Ok(project)
+}
+
+pub(crate) async fn list_environment_connections(
+    user_id: &str,
+    workspace_id: Uuid,
+    environment_id: Uuid,
+) -> AppResult<Vec<RemoteEnvironmentConnectionBinding>> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .get(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/environments/{environment_id}/connections",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .send()
+        .await
+        .map_err(|error| request_error("loading Environment connections", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let bindings = response
+        .json::<EnvironmentConnectionBindingsResponse>()
+        .await
+        .map_err(|error| request_error("reading Environment connections", error))?
+        .bindings;
+    if bindings.len() > 1_000
+        || bindings.iter().any(|binding| {
+            binding.project_environment_id != environment_id
+                || binding.environment_revision == 0
+                || binding.connection_revision <= 0
+                || binding.current_connection_revision <= 0
+                || binding.connection_name.is_empty()
+                || binding.connection_name.len() > 512
+                || binding.role.is_empty()
+                || binding.role.len() > 64
+                || binding.alias.is_empty()
+                || binding.alias.len() > 128
+                || binding.stale
+                    != (binding.connection_revision != binding.current_connection_revision)
+        })
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned invalid Environment connections".into(),
+        ));
+    }
+    Ok(bindings)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn bind_environment_connection(
+    user_id: &str,
+    workspace_id: Uuid,
+    environment_id: Uuid,
+    binding_id: Uuid,
+    connection_id: Uuid,
+    role: &str,
+    alias: &str,
+) -> AppResult<RemoteEnvironmentConnectionBinding> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/environments/{environment_id}/connections",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .json(&json!({
+            "bindingId": binding_id,
+            "connectionId": connection_id,
+            "role": role,
+            "alias": alias,
+        }))
+        .send()
+        .await
+        .map_err(|error| request_error("binding an Environment connection", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let binding = response
+        .json::<EnvironmentConnectionBindingResponse>()
+        .await
+        .map_err(|error| request_error("reading an Environment connection binding", error))?
+        .binding;
+    if binding.project_environment_id != environment_id || binding.connection_id != connection_id {
+        return Err(AppError::Network(
+            "Project Knowledge changed Environment connection identity".into(),
+        ));
+    }
+    Ok(binding)
+}
+
+pub(crate) async fn revoke_environment_connection(
+    user_id: &str,
+    workspace_id: Uuid,
+    environment_id: Uuid,
+    binding_id: Uuid,
+) -> AppResult<()> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .delete(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/environments/{environment_id}/connections",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .json(&json!({ "bindingId": binding_id }))
+        .send()
+        .await
+        .map_err(|error| request_error("removing an Environment connection", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    Ok(())
 }
 
 pub(crate) async fn begin_knowledge_github_install(

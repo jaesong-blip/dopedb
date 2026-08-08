@@ -8,10 +8,31 @@ import type {
   KnowledgeSyncResult,
   KnowledgeSearchResult,
   LocalKnowledgeSourceInput,
+  EnvironmentConnection,
+  BindEnvironmentConnectionInput,
 } from "./domain";
 
 export function listKnowledgeProjects(): Promise<KnowledgeProject[]> {
   return invoke("list_knowledge_projects_command");
+}
+
+export function listKnowledgeEnvironmentConnections(
+  projectEnvironmentId: string,
+): Promise<EnvironmentConnection[]> {
+  return invoke("list_knowledge_environment_connections", { projectEnvironmentId });
+}
+
+export function bindKnowledgeEnvironmentConnection(
+  input: BindEnvironmentConnectionInput,
+): Promise<EnvironmentConnection> {
+  return invoke("bind_knowledge_environment_connection", { input });
+}
+
+export function revokeKnowledgeEnvironmentConnection(
+  projectEnvironmentId: string,
+  bindingId: string,
+): Promise<void> {
+  return invoke("revoke_knowledge_environment_connection", { projectEnvironmentId, bindingId });
 }
 
 export function createKnowledgeProject(
