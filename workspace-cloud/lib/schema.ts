@@ -2438,6 +2438,460 @@ export const workspaceFunnelAnalysisRevision = workspaceControl.table(
   ],
 );
 
+// Local signal monitoring stores only rule definitions, exact authority
+// references, short runner leases, categorical receipts, and delivery metadata.
+// There is intentionally no SQL, metric value, result row, credential, hostname,
+// schema name, transcript, or local artifact column in this family of tables.
+export const workspaceSignalRunner = workspaceControl.table(
+  "workspace_signal_runner",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    memberId: text("member_id").notNull(),
+    deviceId: text("device_id").notNull(),
+    displayName: text("display_name").notNull(),
+    backgroundAllowed: boolean("background_allowed").notNull().default(false),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workspace_signal_runner_org_id_idx").on(table.organizationId, table.id),
+    uniqueIndex("workspace_signal_runner_org_device_idx").on(
+      table.organizationId,
+      table.deviceId,
+    ),
+    index("workspace_signal_runner_member_idx").on(
+      table.organizationId,
+      table.memberId,
+      table.revokedAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.memberId],
+      foreignColumns: [member.organizationId, member.id],
+      name: "workspace_signal_runner_org_member_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_signal_runner_text",
+      sql`char_length(${table.deviceId}) BETWEEN 1 AND 256
+        AND char_length(${table.displayName}) BETWEEN 1 AND 256`,
+    ),
+  ],
+);
+
+export const workspaceSignalRule = workspaceControl.table(
+  "workspace_signal_rule",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    projectEnvironmentId: uuid("project_environment_id").notNull(),
+    environmentRevision: bigint("environment_revision", { mode: "number" }).notNull(),
+    sourceAnalysisId: uuid("source_analysis_id").notNull(),
+    sourceAnalysisRevision: bigint("source_analysis_revision", { mode: "number" }).notNull(),
+    sourceTileId: text("source_tile_id").notNull(),
+    metricSemanticId: text("metric_semantic_id").notNull(),
+    definition: jsonb("definition").notNull(),
+    ownerMemberId: text("owner_member_id").notNull(),
+    runnerId: uuid("runner_id"),
+    enabled: boolean("enabled").notNull().default(false),
+    revision: bigint("revision", { mode: "number" }).notNull().default(1),
+    productionApprovedByMemberId: text("production_approved_by_member_id"),
+    productionApprovedAt: timestamp("production_approved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("workspace_signal_rule_org_id_idx").on(table.organizationId, table.id),
+    index("workspace_signal_rule_environment_idx").on(
+      table.organizationId,
+      table.projectEnvironmentId,
+      table.enabled,
+      table.updatedAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.projectEnvironmentId],
+      foreignColumns: [
+        knowledgeProjectEnvironment.organizationId,
+        knowledgeProjectEnvironment.id,
+      ],
+      name: "workspace_signal_rule_org_environment_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.sourceAnalysisId, table.sourceAnalysisRevision],
+      foreignColumns: [
+        workspaceFunnelAnalysisRevision.organizationId,
+        workspaceFunnelAnalysisRevision.analysisId,
+        workspaceFunnelAnalysisRevision.revision,
+      ],
+      name: "workspace_signal_rule_org_analysis_revision_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.ownerMemberId],
+      foreignColumns: [member.organizationId, member.id],
+      name: "workspace_signal_rule_org_owner_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.productionApprovedByMemberId],
+      foreignColumns: [member.organizationId, member.id],
+      name: "workspace_signal_rule_org_approver_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.runnerId],
+      foreignColumns: [workspaceSignalRunner.organizationId, workspaceSignalRunner.id],
+      name: "workspace_signal_rule_org_runner_fk",
+    }).onDelete("restrict"),
+    check(
+      "workspace_signal_rule_revisions",
+      sql`${table.environmentRevision} >= 1
+        AND ${table.sourceAnalysisRevision} >= 1
+        AND ${table.revision} >= 1
+        AND ${table.revision} <= 9007199254740991`,
+    ),
+    check(
+      "workspace_signal_rule_text",
+      sql`char_length(${table.sourceTileId}) BETWEEN 1 AND 64
+        AND char_length(${table.metricSemanticId}) BETWEEN 1 AND 256`,
+    ),
+    check("workspace_signal_rule_definition_object", sql`jsonb_typeof(${table.definition}) = 'object'`),
+    check(
+      "workspace_signal_rule_production_approval",
+      sql`(${table.productionApprovedByMemberId} IS NULL AND ${table.productionApprovedAt} IS NULL)
+        OR (${table.productionApprovedByMemberId} IS NOT NULL
+          AND ${table.productionApprovedAt} IS NOT NULL)`,
+    ),
+    check(
+      "workspace_signal_rule_enabled_runner",
+      sql`NOT ${table.enabled} OR ${table.runnerId} IS NOT NULL`,
+    ),
+  ],
+);
+
+export const workspaceSignalRuleRevision = workspaceControl.table(
+  "workspace_signal_rule_revision",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    ruleId: uuid("rule_id").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull(),
+    baseRevision: bigint("base_revision", { mode: "number" }),
+    operation: text("operation").notNull(),
+    payload: jsonb("payload").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    createdByMemberId: text("created_by_member_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_signal_rule_revision_unique_idx").on(
+      table.organizationId,
+      table.ruleId,
+      table.revision,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.ruleId],
+      foreignColumns: [workspaceSignalRule.organizationId, workspaceSignalRule.id],
+      name: "workspace_signal_rule_revision_org_rule_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.createdByMemberId],
+      foreignColumns: [member.organizationId, member.id],
+      name: "workspace_signal_rule_revision_org_member_fk",
+    }).onDelete("restrict"),
+    check(
+      "workspace_signal_rule_revision_number",
+      sql`${table.revision} >= 1 AND ${table.revision} <= 9007199254740991`,
+    ),
+    check(
+      "workspace_signal_rule_revision_operation",
+      sql`${table.operation} IN ('create', 'update', 'enable', 'pause', 'disable', 'runner_change')`,
+    ),
+    check(
+      "workspace_signal_rule_revision_hash",
+      sql`${table.payloadHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check("workspace_signal_rule_revision_payload", sql`jsonb_typeof(${table.payload}) = 'object'`),
+  ],
+);
+
+export const workspaceSignalRuleConnection = workspaceControl.table(
+  "workspace_signal_rule_connection",
+  {
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    ruleId: uuid("rule_id").notNull(),
+    connectionId: uuid("connection_id").notNull(),
+    connectionRevision: bigint("connection_revision", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ruleId, table.connectionId] }),
+    foreignKey({
+      columns: [table.organizationId, table.ruleId],
+      foreignColumns: [workspaceSignalRule.organizationId, workspaceSignalRule.id],
+      name: "workspace_signal_rule_connection_org_rule_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.connectionId],
+      foreignColumns: [workspaceConnection.organizationId, workspaceConnection.id],
+      name: "workspace_signal_rule_connection_org_connection_fk",
+    }).onDelete("restrict"),
+    check(
+      "workspace_signal_rule_connection_revision",
+      sql`${table.connectionRevision} >= 1`,
+    ),
+  ],
+);
+
+export const workspaceSignalRunnerLease = workspaceControl.table(
+  "workspace_signal_runner_lease",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    ruleId: uuid("rule_id").notNull(),
+    ruleRevision: bigint("rule_revision", { mode: "number" }).notNull(),
+    runnerId: uuid("runner_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    leaseCapabilityHash: text("lease_capability_hash").notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_signal_runner_lease_org_id_idx").on(
+      table.organizationId,
+      table.id,
+    ),
+    uniqueIndex("workspace_signal_runner_lease_scope_idx").on(
+      table.organizationId,
+      table.id,
+      table.ruleId,
+      table.ruleRevision,
+      table.runnerId,
+    ),
+    uniqueIndex("workspace_signal_runner_lease_idempotency_idx").on(
+      table.organizationId,
+      table.idempotencyKey,
+    ),
+    index("workspace_signal_runner_lease_due_idx").on(
+      table.organizationId,
+      table.ruleId,
+      table.expiresAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.ruleId],
+      foreignColumns: [workspaceSignalRule.organizationId, workspaceSignalRule.id],
+      name: "workspace_signal_runner_lease_org_rule_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.ruleId, table.ruleRevision],
+      foreignColumns: [
+        workspaceSignalRuleRevision.organizationId,
+        workspaceSignalRuleRevision.ruleId,
+        workspaceSignalRuleRevision.revision,
+      ],
+      name: "workspace_signal_runner_lease_org_rule_revision_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.runnerId],
+      foreignColumns: [workspaceSignalRunner.organizationId, workspaceSignalRunner.id],
+      name: "workspace_signal_runner_lease_org_runner_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_signal_runner_lease_revision",
+      sql`${table.ruleRevision} >= 1`,
+    ),
+    check(
+      "workspace_signal_runner_lease_hash",
+      sql`${table.leaseCapabilityHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "workspace_signal_runner_lease_time",
+      sql`${table.expiresAt} > ${table.scheduledAt}`,
+    ),
+  ],
+);
+
+export const workspaceSignalEvaluationReceipt = workspaceControl.table(
+  "workspace_signal_evaluation_receipt",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    ruleId: uuid("rule_id").notNull(),
+    ruleRevision: bigint("rule_revision", { mode: "number" }).notNull(),
+    runnerId: uuid("runner_id").notNull(),
+    leaseId: uuid("lease_id").notNull(),
+    projectEnvironmentId: uuid("project_environment_id").notNull(),
+    environmentRevision: bigint("environment_revision", { mode: "number" }).notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    evaluatedAt: timestamp("evaluated_at", { withTimezone: true }).notNull(),
+    state: text("state").notNull(),
+    queryRunIds: jsonb("query_run_ids").notNull().default(sql`'[]'::jsonb`),
+    connectionIds: jsonb("connection_ids").notNull().default(sql`'[]'::jsonb`),
+    durationMs: bigint("duration_ms", { mode: "number" }).notNull(),
+    rowCountCategory: text("row_count_category").notNull(),
+    schemaFingerprint: text("schema_fingerprint").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
+    transitionSequence: bigint("transition_sequence", { mode: "number" }).notNull(),
+    errorKind: text("error_kind"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_signal_receipt_org_id_idx").on(table.organizationId, table.id),
+    uniqueIndex("workspace_signal_receipt_dedupe_idx").on(
+      table.organizationId,
+      table.dedupeKey,
+    ),
+    index("workspace_signal_receipt_rule_idx").on(
+      table.organizationId,
+      table.ruleId,
+      table.transitionSequence,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.ruleId],
+      foreignColumns: [workspaceSignalRule.organizationId, workspaceSignalRule.id],
+      name: "workspace_signal_receipt_org_rule_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.ruleId, table.ruleRevision],
+      foreignColumns: [
+        workspaceSignalRuleRevision.organizationId,
+        workspaceSignalRuleRevision.ruleId,
+        workspaceSignalRuleRevision.revision,
+      ],
+      name: "workspace_signal_receipt_org_rule_revision_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.runnerId],
+      foreignColumns: [workspaceSignalRunner.organizationId, workspaceSignalRunner.id],
+      name: "workspace_signal_receipt_org_runner_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.leaseId],
+      foreignColumns: [workspaceSignalRunnerLease.organizationId, workspaceSignalRunnerLease.id],
+      name: "workspace_signal_receipt_org_lease_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [
+        table.organizationId,
+        table.leaseId,
+        table.ruleId,
+        table.ruleRevision,
+        table.runnerId,
+      ],
+      foreignColumns: [
+        workspaceSignalRunnerLease.organizationId,
+        workspaceSignalRunnerLease.id,
+        workspaceSignalRunnerLease.ruleId,
+        workspaceSignalRunnerLease.ruleRevision,
+        workspaceSignalRunnerLease.runnerId,
+      ],
+      name: "workspace_signal_receipt_exact_lease_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organizationId, table.projectEnvironmentId],
+      foreignColumns: [
+        knowledgeProjectEnvironment.organizationId,
+        knowledgeProjectEnvironment.id,
+      ],
+      name: "workspace_signal_receipt_org_environment_fk",
+    }).onDelete("restrict"),
+    check(
+      "workspace_signal_receipt_state",
+      sql`${table.state} IN ('normal', 'firing', 'recovered', 'no_data', 'error', 'stale', 'runner_offline')`,
+    ),
+    check(
+      "workspace_signal_receipt_numbers",
+      sql`${table.ruleRevision} >= 1 AND ${table.environmentRevision} >= 1
+        AND ${table.durationMs} >= 0 AND ${table.transitionSequence} >= 1`,
+    ),
+    check(
+      "workspace_signal_receipt_arrays",
+      sql`jsonb_typeof(${table.queryRunIds}) = 'array'
+        AND jsonb_typeof(${table.connectionIds}) = 'array'`,
+    ),
+    check(
+      "workspace_signal_receipt_fingerprint",
+      sql`${table.schemaFingerprint} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "workspace_signal_receipt_text",
+      sql`char_length(${table.rowCountCategory}) BETWEEN 1 AND 32
+        AND char_length(${table.dedupeKey}) BETWEEN 1 AND 256
+        AND (${table.errorKind} IS NULL OR char_length(${table.errorKind}) BETWEEN 1 AND 128)`,
+    ),
+  ],
+);
+
+export const workspaceSignalNotification = workspaceControl.table(
+  "workspace_signal_notification",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    receiptId: uuid("receipt_id").notNull(),
+    recipientMemberId: text("recipient_member_id").notNull(),
+    channel: text("channel").notNull(),
+    state: text("state").notNull().default("pending"),
+    deliveryAttempt: integer("delivery_attempt").notNull().default(0),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    errorKind: text("error_kind"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("workspace_signal_notification_delivery_idx").on(
+      table.organizationId,
+      table.receiptId,
+      table.recipientMemberId,
+      table.channel,
+    ),
+    index("workspace_signal_notification_inbox_idx").on(
+      table.organizationId,
+      table.recipientMemberId,
+      table.readAt,
+      table.createdAt,
+    ),
+    foreignKey({
+      columns: [table.organizationId, table.receiptId],
+      foreignColumns: [
+        workspaceSignalEvaluationReceipt.organizationId,
+        workspaceSignalEvaluationReceipt.id,
+      ],
+      name: "workspace_signal_notification_org_receipt_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.organizationId, table.recipientMemberId],
+      foreignColumns: [member.organizationId, member.id],
+      name: "workspace_signal_notification_org_member_fk",
+    }).onDelete("cascade"),
+    check(
+      "workspace_signal_notification_channel",
+      sql`${table.channel} IN ('desktop', 'workspace_web', 'email')`,
+    ),
+    check(
+      "workspace_signal_notification_state",
+      sql`${table.state} IN ('pending', 'delivered', 'failed', 'suppressed')`,
+    ),
+    check(
+      "workspace_signal_notification_attempt",
+      sql`${table.deliveryAttempt} >= 0 AND ${table.deliveryAttempt} <= 100`,
+    ),
+  ],
+);
+
 export const knowledgeSourceEvent = workspaceControl.table(
   "knowledge_source_event",
   {
