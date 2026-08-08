@@ -176,7 +176,16 @@ pub(crate) async fn prepare_packaged_benchmark_workload(app: tauri::AppHandle) -
         // which suspends WKWebView's first paint clock. Reassert focus only after
         // the scenario surface is ready so every measured process owns the same
         // visible-window condition as a user interaction.
-        focus_benchmark_window(&app).await
+        focus_benchmark_window(&app).await?;
+        #[cfg(target_os = "macos")]
+        {
+            // NSApplication activation and the key-window transition complete
+            // after set_focus returns. Keep that native transition outside the
+            // first measured editor/tree/grid action instead of attributing a
+            // one-off activation frame gap to the product interaction.
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        Ok(())
     }
 }
 
