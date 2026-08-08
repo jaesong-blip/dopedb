@@ -609,10 +609,15 @@ function runApplication(
     };
     child.stdout.on("data", inspect);
     child.stderr.on("data", inspect);
+    const sampleProcessTreeRss = () => {
+      maximumRss = Math.max(maximumRss, processTreeRssBytes(child.pid));
+    };
+    if (sampleRss) sampleProcessTreeRss();
+    // Starting PowerShell and querying CIM can take several seconds on a cold
+    // Windows runner. Sampling every frame only queues more expensive process
+    // enumerations and can leave a short journey without one usable sample.
     const sampler = sampleRss
-      ? setInterval(() => {
-          maximumRss = Math.max(maximumRss, processTreeRssBytes(child.pid));
-        }, 50)
+      ? setInterval(sampleProcessTreeRss, platform() === "win32" ? 1_000 : 50)
       : null;
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -682,7 +687,7 @@ function processTreeRssBytes(rootPid) {
     if (platform() === "win32") {
       const script = [
         `$root=${rootPid}`,
-        "$rows=Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize",
+        "$rows=Get-CimInstance -Query 'SELECT ProcessId, ParentProcessId, WorkingSetSize FROM Win32_Process'",
         "$ids=@($root)",
         "do {$before=$ids.Count; $ids += @($rows | Where-Object {$ids -contains $_.ParentProcessId} | ForEach-Object {$_.ProcessId}); $ids=@($ids | Sort-Object -Unique)} while ($ids.Count -gt $before)",
         "($rows | Where-Object {$ids -contains $_.ProcessId} | Measure-Object WorkingSetSize -Sum).Sum",
@@ -690,7 +695,7 @@ function processTreeRssBytes(rootPid) {
       const output = execFileSync(
         "powershell",
         ["-NoProfile", "-NonInteractive", "-Command", script],
-        { encoding: "utf8", timeout: 2_000 },
+        { encoding: "utf8", timeout: 10_000 },
       ).trim();
       return Number(output) || 0;
     }
