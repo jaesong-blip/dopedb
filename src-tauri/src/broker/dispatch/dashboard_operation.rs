@@ -96,6 +96,12 @@ impl BrokerDispatcher {
         client_protocol_version: u16,
     ) -> Result<DashboardCreateResult, ErrorCode> {
         let authority = terminal_authority(session, client_protocol_version);
+        let authority = match arguments.connection.as_ref() {
+            Some(connection) => {
+                terminal_authority_for_selector(session, connection, client_protocol_version)?
+            }
+            None => authority,
+        };
         let dashboard = self
             .services()?
             .dashboard

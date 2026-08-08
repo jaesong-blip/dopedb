@@ -176,6 +176,8 @@ struct OperationWaitToolArguments {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DashboardSaveToolArguments {
     query_run_id: Uuid,
+    #[serde(default)]
+    connection_id: Option<Uuid>,
     title: String,
     #[serde(default)]
     description: String,
@@ -829,7 +831,7 @@ fn tools_result() -> Value {
                 json!({
                     "type": "object",
                     "properties": {
-                        "connectionId": connection_property,
+                        "connectionId": connection_property.clone(),
                         "database": database_property,
                         "sql": { "type": "string", "minLength": 1, "maxLength": MAX_STRING_BYTES }
                     },
@@ -887,6 +889,7 @@ fn tools_result() -> Value {
                     "type": "object",
                     "properties": {
                         "queryRunId": { "type": "string", "format": "uuid" },
+                        "connectionId": connection_property,
                         "title": { "type": "string", "minLength": 1, "maxLength": MAX_DASHBOARD_TITLE_BYTES },
                         "description": { "type": "string", "maxLength": 4096 },
                         "kind": { "type": "string", "enum": ["auto", "metric", "line", "bar", "table"] },
@@ -1294,6 +1297,7 @@ async fn call_tool(
                 client,
                 &DashboardCreateArguments {
                     query_run_id: arguments.query_run_id,
+                    connection: arguments.connection_id.map(ConnectionSelector::Id),
                     title: arguments.title,
                     description: arguments.description,
                     kind: arguments.kind.unwrap_or(DashboardKind::Auto),

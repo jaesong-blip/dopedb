@@ -22,6 +22,7 @@ pub(crate) async fn create(
     let result: DashboardCreateResult = client
         .request::<DashboardCreateCommand>(&DashboardCreateArguments {
             query_run_id,
+            connection: None,
             title,
             description,
             kind,

@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{AuthenticationRequirement, CommandName, CommandSpec};
+use crate::{AuthenticationRequirement, CommandName, CommandSpec, ConnectionSelector};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +20,8 @@ pub enum DashboardKind {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DashboardCreateArguments {
     pub query_run_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectionSelector>,
     pub title: String,
     #[serde(default)]
     pub description: String,
