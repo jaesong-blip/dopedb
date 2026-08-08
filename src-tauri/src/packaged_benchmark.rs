@@ -173,6 +173,41 @@ pub(crate) async fn prepare_packaged_benchmark_workload(app: tauri::AppHandle) -
 }
 
 #[tauri::command]
+pub(crate) async fn set_packaged_benchmark_compact_window(
+    app: tauri::AppHandle,
+    compact: bool,
+) -> AppResult<()> {
+    #[cfg(not(feature = "packaged-benchmark"))]
+    {
+        let _ = (app, compact);
+        Err(AppError::NotFound(DISABLED.into()))
+    }
+    #[cfg(feature = "packaged-benchmark")]
+    {
+        if benchmark_scenario()? != "agent-tools" {
+            return Err(AppError::Config(
+                "compact benchmark window requires the agent-tools scenario".into(),
+            ));
+        }
+        let window = app
+            .get_webview_window("main")
+            .ok_or_else(|| AppError::Config("packaged benchmark window is unavailable".into()))?;
+        let (minimum, size) = if compact {
+            ((360.0, 520.0), (360.0, 640.0))
+        } else {
+            ((420.0, 520.0), (1200.0, 800.0))
+        };
+        window
+            .set_min_size(Some(tauri::LogicalSize::new(minimum.0, minimum.1)))
+            .map_err(|_| AppError::Config("packaged benchmark minimum size failed".into()))?;
+        window
+            .set_size(tauri::LogicalSize::new(size.0, size.1))
+            .map_err(|_| AppError::Config("packaged benchmark resize failed".into()))?;
+        focus_benchmark_window(&app).await
+    }
+}
+
+#[tauri::command]
 pub(crate) async fn run_packaged_benchmark_backend(
     state: State<'_, AppState>,
     app: tauri::AppHandle,

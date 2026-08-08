@@ -161,6 +161,7 @@ pub fn run() {
             startup::runtime_startup_summary,
             packaged_benchmark::packaged_benchmark_config,
             packaged_benchmark::prepare_packaged_benchmark_workload,
+            packaged_benchmark::set_packaged_benchmark_compact_window,
             packaged_benchmark::run_packaged_benchmark_backend,
             packaged_benchmark::complete_packaged_benchmark,
             packaged_benchmark::fail_packaged_benchmark,

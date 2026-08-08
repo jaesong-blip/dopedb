@@ -78,6 +78,10 @@ export function preparePackagedBenchmarkWorkload(): Promise<void> {
   return invoke("prepare_packaged_benchmark_workload");
 }
 
+export function setPackagedBenchmarkCompactWindow(compact: boolean): Promise<void> {
+  return invoke("set_packaged_benchmark_compact_window", { compact });
+}
+
 export function completePackagedBenchmark(
   metrics: PackagedBenchmarkRendererMetrics,
 ): Promise<void> {

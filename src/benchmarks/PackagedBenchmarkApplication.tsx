@@ -38,6 +38,7 @@ import type {
 import { useToolWindowLayout } from "../features/appShell/useToolWindowLayout";
 import { formatSqlDocument } from "../features/query/sqlFormatter";
 import SkillStartupGate from "../features/skills/SkillStartupGate";
+import { openAgentSetup } from "../features/skills/agentPreferences";
 import { removeSkill, skillStatus } from "../ipc/commands";
 import AgentToolsSettings from "../screens/Settings/AgentTools";
 import type {
@@ -50,8 +51,12 @@ import {
   completePackagedBenchmark,
   failPackagedBenchmark,
   preparePackagedBenchmarkWorkload,
+  setPackagedBenchmarkCompactWindow,
   type PackagedBenchmarkFailureReason,
 } from "../features/runtime/tauriAdapter";
+import { useI18n } from "../lib/i18n";
+import { messages } from "../lib/i18n/catalog";
+import type { Lang } from "../lib/i18n/types";
 import {
   measurePackagedAction,
   measurePackagedIdle,
@@ -540,11 +545,20 @@ function AgentToolsScenario({
 }: {
   phase: "install" | "restart" | null;
 }) {
+  const { setLang } = useI18n();
   const [status, setStatus] = useState<SkillStatus | null>(null);
   const [surfaceMounted, setSurfaceMounted] = useState(true);
 
   useScenarioRunner(true, async () => {
-    await validateAndDismissAgentSelectionModal();
+    await setPackagedBenchmarkCompactWindow(true);
+    for (const lang of ["en", "ko"] as const) {
+      setLang(lang);
+      await waitForPackagedPaint();
+      if (lang === "ko") openAgentSetup();
+      await validateAndDismissAgentSelectionModal(lang);
+    }
+    await setPackagedBenchmarkCompactWindow(false);
+    await waitForPackagedPaint();
     const initial = await skillStatus("all");
     assertSkillState(initial, phase === "restart" ? "managed_current" : "missing");
     setStatus(initial);
@@ -609,7 +623,7 @@ function AgentToolsScenario({
   );
 }
 
-async function validateAndDismissAgentSelectionModal() {
+async function validateAndDismissAgentSelectionModal(lang: Lang) {
   const deadline = performance.now() + 10_000;
   while (performance.now() < deadline) {
     const dialog = document.querySelector<HTMLElement>(
@@ -621,14 +635,33 @@ async function validateAndDismissAgentSelectionModal() {
       const checkedTargets = dialog.querySelectorAll<HTMLInputElement>(
         'input[type="checkbox"]:checked',
       );
+      const title = titleId ? document.getElementById(titleId)?.textContent?.trim() : null;
+      const description = descriptionId
+        ? document.getElementById(descriptionId)?.textContent?.trim()
+        : null;
       if (
         !titleId
         || !descriptionId
         || !document.getElementById(titleId)
         || !document.getElementById(descriptionId)
+        || document.documentElement.lang !== lang
+        || title !== messages[lang]["agentTools.startupTitle"]
+        || description !== messages[lang]["agentTools.startupBody"]
         || checkedTargets.length !== 2
       ) {
         throw new Error("Agent selection modal accessibility contract is incomplete");
+      }
+      const bounds = dialog.getBoundingClientRect();
+      if (
+        window.innerWidth > 360
+        || window.innerHeight > 640
+        || bounds.left < 0
+        || bounds.top < 0
+        || bounds.right > window.innerWidth
+        || bounds.bottom > window.innerHeight
+        || dialog.scrollWidth > dialog.clientWidth
+      ) {
+        throw new Error("Agent selection modal escaped the 360px packaged viewport");
       }
       const initialFocus = dialog.querySelector<HTMLElement>(
         "[data-modal-initial-focus]",
@@ -638,6 +671,30 @@ async function validateAndDismissAgentSelectionModal() {
       }
       if (document.activeElement !== initialFocus) {
         throw new Error("Agent selection modal did not establish keyboard focus");
+      }
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        ),
+      ).filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0);
+      const last = focusable[focusable.length - 1];
+      last?.focus();
+      last?.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Tab",
+        bubbles: true,
+        cancelable: true,
+      }));
+      if (document.activeElement !== focusable[0]) {
+        throw new Error("Agent selection modal did not contain forward keyboard focus");
+      }
+      focusable[0]?.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }));
+      if (document.activeElement !== last) {
+        throw new Error("Agent selection modal did not contain reverse keyboard focus");
       }
       dialog.dispatchEvent(new KeyboardEvent("keydown", {
         key: "Escape",
