@@ -335,10 +335,9 @@ function QueryResultScenario() {
       return backendEvidence(receipt);
     });
 
-    await samples("query-grid-scroll-50k", 10, (index) => {
-      if (index === 0) {
-        setResult(largeResult);
-      }
+    setResult(largeResult);
+    await waitForPackagedPaint();
+    await samples("query-grid-scroll-50k", 10, async (index) => {
       const scroller = document.querySelector<HTMLElement>("[data-data-grid-scroll]");
       if (!scroller) throw new Error("grid scroller unavailable");
       if (scroller.scrollWidth <= scroller.clientWidth) {
@@ -349,6 +348,7 @@ function QueryResultScenario() {
         top: index % 2 === 0 ? scroller.scrollHeight : 0,
         left,
       });
+      await waitForPackagedPaint();
       if (left > 0 && scroller.scrollLeft === 0) {
         throw new Error("dense grid horizontal scroll did not advance");
       }
