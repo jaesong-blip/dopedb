@@ -1,0 +1,2 @@
+ALTER TABLE "workspace_control"."workspace_signal_rule" ADD COLUMN "next_evaluation_at" timestamp with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+CREATE INDEX "workspace_signal_rule_due_idx" ON "workspace_control"."workspace_signal_rule" USING btree ("organization_id","runner_id","enabled","next_evaluation_at");

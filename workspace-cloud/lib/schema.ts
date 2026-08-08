@@ -2499,6 +2499,8 @@ export const workspaceSignalRule = workspaceControl.table(
     runnerId: uuid("runner_id"),
     enabled: boolean("enabled").notNull().default(false),
     revision: bigint("revision", { mode: "number" }).notNull().default(1),
+    nextEvaluationAt: timestamp("next_evaluation_at", { withTimezone: true })
+      .notNull().defaultNow(),
     productionApprovedByMemberId: text("production_approved_by_member_id"),
     productionApprovedAt: timestamp("production_approved_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -2512,6 +2514,12 @@ export const workspaceSignalRule = workspaceControl.table(
       table.projectEnvironmentId,
       table.enabled,
       table.updatedAt,
+    ),
+    index("workspace_signal_rule_due_idx").on(
+      table.organizationId,
+      table.runnerId,
+      table.enabled,
+      table.nextEvaluationAt,
     ),
     foreignKey({
       columns: [table.organizationId, table.projectEnvironmentId],
@@ -2736,6 +2744,7 @@ export const workspaceSignalEvaluationReceipt = workspaceControl.table(
     environmentRevision: bigint("environment_revision", { mode: "number" }).notNull(),
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
     evaluatedAt: timestamp("evaluated_at", { withTimezone: true }).notNull(),
+    observedState: text("observed_state").notNull().default("normal"),
     state: text("state").notNull(),
     queryRunIds: jsonb("query_run_ids").notNull().default(sql`'[]'::jsonb`),
     connectionIds: jsonb("connection_ids").notNull().default(sql`'[]'::jsonb`),
@@ -2809,7 +2818,8 @@ export const workspaceSignalEvaluationReceipt = workspaceControl.table(
     }).onDelete("restrict"),
     check(
       "workspace_signal_receipt_state",
-      sql`${table.state} IN ('normal', 'firing', 'recovered', 'no_data', 'error', 'stale', 'runner_offline')`,
+      sql`${table.observedState} IN ('normal', 'firing', 'no_data', 'error', 'stale')
+        AND ${table.state} IN ('normal', 'firing', 'recovered', 'no_data', 'error', 'stale', 'runner_offline')`,
     ),
     check(
       "workspace_signal_receipt_numbers",

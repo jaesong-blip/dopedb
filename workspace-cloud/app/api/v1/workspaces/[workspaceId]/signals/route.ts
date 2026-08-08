@@ -45,6 +45,7 @@ export async function GET(request: Request, context: RouteContext) {
       runnerId: rule.runnerId,
       enabled: rule.enabled,
       revision: rule.revision,
+      nextEvaluationAt: rule.nextEvaluationAt.toISOString(),
       createdAt: rule.createdAt.toISOString(),
       updatedAt: rule.updatedAt.toISOString(),
     })),

@@ -253,6 +253,20 @@
       "when": 1786194052728,
       "tag": "0035_boring_violations",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786194781075,
+      "tag": "0036_flaky_namorita",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786195093322,
+      "tag": "0037_tranquil_boomerang",
+      "breakpoints": true
     }
   ]
 }

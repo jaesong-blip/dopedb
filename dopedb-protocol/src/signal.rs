@@ -118,6 +118,29 @@ pub enum SignalEvaluationState {
     RunnerOffline,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignalRowCountCategory {
+    Zero,
+    One,
+    Small,
+    Medium,
+    Large,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignalEvaluationErrorKind {
+    QueryFailed,
+    AuthorizationChanged,
+    CredentialUnavailable,
+    SchemaChanged,
+    Timeout,
+    Cancelled,
+    RunnerError,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SignalEvaluationReceiptV1 {
@@ -133,11 +156,11 @@ pub struct SignalEvaluationReceiptV1 {
     pub query_run_ids: Vec<Uuid>,
     pub connection_ids: Vec<Uuid>,
     pub duration_ms: u64,
-    pub row_count_category: String,
+    pub row_count_category: SignalRowCountCategory,
     pub schema_fingerprint: String,
     pub dedupe_key: String,
     pub transition_sequence: u64,
-    pub error_kind: Option<String>,
+    pub error_kind: Option<SignalEvaluationErrorKind>,
 }
 
 impl SignalEvaluationReceiptV1 {
@@ -151,14 +174,10 @@ impl SignalEvaluationReceiptV1 {
             && !self.connection_ids.is_empty()
             && self.connection_ids.len() <= MAX_SIGNAL_CONNECTIONS
             && unique(&self.connection_ids)
-            && safe_text(&self.row_count_category, 32)
             && sha256(&self.schema_fingerprint)
             && safe_text(&self.dedupe_key, 256)
             && self.transition_sequence > 0
-            && self
-                .error_kind
-                .as_ref()
-                .is_none_or(|value| safe_text(value, 128))
+            && (matches!(self.state, SignalEvaluationState::Error) == self.error_kind.is_some())
     }
 }
 

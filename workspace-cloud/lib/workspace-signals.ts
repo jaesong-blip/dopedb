@@ -2,6 +2,8 @@
 // EvaluationReceipts. Exact records make result values, SQL, credentials, and
 // arbitrary provider data fail closed instead of being silently retained.
 
+import { CronExpressionParser } from "cron-parser";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH = /^[0-9a-f]{64}$/;
 const ID = /^[A-Za-z0-9_.:-]{1,256}$/;
@@ -63,6 +65,12 @@ export type SignalRunnerRegistration = Readonly<{
   backgroundAllowed: boolean;
 }>;
 
+export type SignalLeaseClaim = Readonly<{
+  runnerId: string;
+  deviceId: string;
+  background: boolean;
+}>;
+
 function exactRecord(value: unknown, fields: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -94,8 +102,14 @@ function safeSchedule(value: unknown) {
   if (fields.length !== 5 || fields.some((field) => !/^[0-9*/?,\-]+$/.test(field))) return null;
   const minute = fields[0];
   const step = /^\*\/(\d+)$/.exec(minute);
-  if (step) return Number(step[1]) >= 5 && Number(step[1]) <= 59 ? schedule : null;
-  return /^(?:[0-9]|[1-5][0-9])$/.test(minute) ? schedule : null;
+  if (step && (Number(step[1]) < 5 || Number(step[1]) > 59)) return null;
+  if (!step && !/^(?:[0-9]|[1-5][0-9])$/.test(minute)) return null;
+  try {
+    CronExpressionParser.parse(schedule, { currentDate: new Date(), tz: "UTC" }).next();
+    return schedule;
+  } catch {
+    return null;
+  }
 }
 
 function safeTimezone(value: unknown) {
@@ -107,6 +121,19 @@ function safeTimezone(value: unknown) {
   } catch {
     return null;
   }
+}
+
+/** Return the first scheduled instant strictly after the supplied time. */
+export function nextSignalEvaluationAt(schedule: string, timezone: string, after: Date) {
+  const safe = safeSchedule(schedule);
+  const zone = safeTimezone(timezone);
+  if (!safe || !zone || Number.isNaN(after.valueOf())) {
+    throw new Error("Invalid signal schedule");
+  }
+  return CronExpressionParser.parse(safe, {
+    currentDate: after,
+    tz: zone,
+  }).next().toDate();
 }
 
 function parseCondition(value: unknown): Readonly<Record<string, unknown>> {
@@ -145,6 +172,16 @@ export function parseSignalRunnerRegistration(value: unknown): SignalRunnerRegis
     throw new Error("Invalid signal runner registration");
   }
   return { deviceId, displayName, backgroundAllowed: row.backgroundAllowed };
+}
+
+export function parseSignalLeaseClaim(value: unknown): SignalLeaseClaim {
+  const row = exactRecord(value, ["runnerId", "deviceId", "background"]);
+  const deviceId = text(row?.deviceId, 256);
+  if (!row || typeof row.runnerId !== "string" || !UUID.test(row.runnerId)
+    || deviceId === null || typeof row.background !== "boolean") {
+    throw new Error("Invalid signal lease claim");
+  }
+  return { runnerId: row.runnerId, deviceId, background: row.background };
 }
 
 export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {
@@ -247,16 +284,23 @@ export function parseSignalEvaluationReceipt(value: unknown): SignalEvaluationRe
     || sequence === null || !scheduledAt || Number.isNaN(scheduledAt.getTime())
     || !evaluatedAt || Number.isNaN(evaluatedAt.getTime()) || evaluatedAt < scheduledAt
     || !signalEvaluationStates.includes(row.state as SignalEvaluationState)
+    || row.state === "recovered" || row.state === "runner_offline"
     || text(row.runnerDeviceId, 256) === null || !Array.isArray(row.queryRunIds)
     || row.queryRunIds.length > 32 || !Array.isArray(row.connectionIds)
     || row.connectionIds.length < 1 || row.connectionIds.length > 32
     || row.queryRunIds.some((id) => typeof id !== "string" || !UUID.test(id))
     || row.connectionIds.some((id) => typeof id !== "string" || !UUID.test(id))
     || !unique(row.queryRunIds as string[]) || !unique(row.connectionIds as string[])
-    || text(row.rowCountCategory, 32) === null
+    || !["zero", "one", "small", "medium", "large", "unknown"].includes(
+      String(row.rowCountCategory),
+    )
     || typeof row.schemaFingerprint !== "string" || !HASH.test(row.schemaFingerprint)
     || text(row.dedupeKey, 256) === null
-    || !(row.errorKind === null || text(row.errorKind, 128) !== null)) {
+    || !(row.errorKind === null || [
+      "query_failed", "authorization_changed", "credential_unavailable",
+      "schema_changed", "timeout", "cancelled", "runner_error",
+    ].includes(String(row.errorKind)))
+    || ((row.state === "error") !== (row.errorKind !== null))) {
     throw new Error("Invalid signal evaluation receipt");
   }
   return {
