@@ -10,44 +10,9 @@ export type SqlFormatResponse =
   | { requestId: number; formatted: string; error: null }
   | { requestId: number; formatted: null; error: string };
 
-type PendingFormat = {
-  resolve: (formatted: string) => void;
-  reject: (error: Error) => void;
-};
-
-let formatterWorker: Worker | null = null;
 let requestSequence = 0;
-const pendingFormats = new Map<number, PendingFormat>();
 const LARGE_DOCUMENT_BYTES = 128 * 1024;
 const FORMAT_CHUNK_BYTES = 64 * 1024;
-
-function stopFormatterWorker(message: string) {
-  formatterWorker?.terminate();
-  formatterWorker = null;
-  const error = new Error(message);
-  for (const pending of pendingFormats.values()) pending.reject(error);
-  pendingFormats.clear();
-}
-
-function getFormatterWorker() {
-  if (formatterWorker) return formatterWorker;
-  if (typeof Worker === "undefined") return null;
-  const worker = new Worker(new URL("./sqlFormatter.worker.ts", import.meta.url), {
-    type: "module",
-  });
-  worker.onmessage = (event: MessageEvent<SqlFormatResponse>) => {
-    const pending = pendingFormats.get(event.data.requestId);
-    if (!pending) return;
-    pendingFormats.delete(event.data.requestId);
-    if (event.data.error !== null) pending.reject(new Error(event.data.error));
-    else pending.resolve(event.data.formatted);
-  };
-  worker.onerror = () => stopFormatterWorker("SQL formatter worker failed");
-  worker.onmessageerror = () =>
-    stopFormatterWorker("SQL formatter worker returned an invalid response");
-  formatterWorker = worker;
-  return worker;
-}
 
 function hasCompoundStatement(sql: string, language: SqlLanguage) {
   if (language === "mysql") {
@@ -62,9 +27,10 @@ function hasCompoundStatement(sql: string, language: SqlLanguage) {
 
 /**
  * Split only at top-level statement terminators. Large formatter requests are
- * handled by short-lived workers per bounded chunk so parser scratch memory is
- * released instead of becoming a multi-gigabyte resident worker. Compound
- * MySQL/SQLite statements stay on the conservative single-worker path.
+ * handled as bounded chunks inside one request-scoped worker. Reusing that one
+ * worker avoids creating a process for every chunk, while terminating it after
+ * the document releases parser scratch memory. Compound MySQL/SQLite statements
+ * stay on the conservative single-chunk path.
  */
 export function splitSqlFormatChunks(
   sql: string,
@@ -139,37 +105,57 @@ export function splitSqlFormatChunks(
   return chunks.length > 1 ? chunks : [sql];
 }
 
-function formatWithDedicatedWorker(sql: string, language: SqlLanguage) {
+function formatWithRequestWorker(
+  chunks: readonly string[],
+  language: SqlLanguage,
+) {
   return new Promise<string>((resolve, reject) => {
     const worker = new Worker(new URL("./sqlFormatter.worker.ts", import.meta.url), {
       type: "module",
     });
-    const requestId = ++requestSequence;
+    const formatted: string[] = [];
+    let chunkIndex = 0;
+    let requestId = 0;
     const stop = () => worker.terminate();
+    const fail = (error: Error) => {
+      stop();
+      reject(error);
+    };
+    const postNext = () => {
+      requestId = ++requestSequence;
+      try {
+        worker.postMessage({
+          requestId,
+          sql: chunks[chunkIndex],
+          language,
+        } satisfies SqlFormatRequest);
+      } catch (error) {
+        fail(
+          error instanceof Error
+            ? error
+            : new Error("SQL formatter request could not be sent"),
+        );
+      }
+    };
     worker.onmessage = (event: MessageEvent<SqlFormatResponse>) => {
       if (event.data.requestId !== requestId) return;
+      if (event.data.error !== null) {
+        fail(new Error(event.data.error));
+        return;
+      }
+      formatted.push(event.data.formatted);
+      chunkIndex += 1;
+      if (chunkIndex < chunks.length) {
+        postNext();
+        return;
+      }
       stop();
-      if (event.data.error !== null) reject(new Error(event.data.error));
-      else resolve(event.data.formatted);
+      resolve(formatted.join("\n\n"));
     };
-    worker.onerror = () => {
-      stop();
-      reject(new Error("SQL formatter worker failed"));
-    };
-    worker.onmessageerror = () => {
-      stop();
-      reject(new Error("SQL formatter worker returned an invalid response"));
-    };
-    try {
-      worker.postMessage({ requestId, sql, language } satisfies SqlFormatRequest);
-    } catch (error) {
-      stop();
-      reject(
-        error instanceof Error
-          ? error
-          : new Error("SQL formatter request could not be sent"),
-      );
-    }
+    worker.onerror = () => fail(new Error("SQL formatter worker failed"));
+    worker.onmessageerror = () =>
+      fail(new Error("SQL formatter worker returned an invalid response"));
+    postNext();
   });
 }
 
@@ -178,15 +164,7 @@ export async function formatSqlDocument(
   language: SqlLanguage,
 ): Promise<string> {
   const chunks = splitSqlFormatChunks(sql, language);
-  if (chunks.length > 1 && typeof Worker !== "undefined") {
-    const formatted: string[] = [];
-    for (const chunk of chunks) {
-      formatted.push(await formatWithDedicatedWorker(chunk, language));
-    }
-    return formatted.join("\n\n");
-  }
-  const worker = getFormatterWorker();
-  if (!worker) {
+  if (typeof Worker === "undefined") {
     const formatter = await import("sql-formatter");
     return formatter.format(sql, {
       language,
@@ -195,19 +173,5 @@ export async function formatSqlDocument(
       linesBetweenQueries: 2,
     });
   }
-  const requestId = ++requestSequence;
-  const request: SqlFormatRequest = { requestId, sql, language };
-  return new Promise((resolve, reject) => {
-    pendingFormats.set(requestId, { resolve, reject });
-    try {
-      worker.postMessage(request);
-    } catch (error) {
-      pendingFormats.delete(requestId);
-      reject(
-        error instanceof Error
-          ? error
-          : new Error("SQL formatter request could not be sent"),
-      );
-    }
-  });
+  return formatWithRequestWorker(chunks, language);
 }
