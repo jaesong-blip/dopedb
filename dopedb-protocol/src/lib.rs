@@ -22,6 +22,7 @@ pub mod query_command;
 pub mod report_command;
 pub mod request;
 pub mod response;
+pub mod signal;
 pub mod skill_command;
 pub mod version;
 
@@ -55,6 +56,7 @@ pub use query_command::*;
 pub use report_command::*;
 pub use request::{CommandName, RequestEnvelope, SessionAuthentication};
 pub use response::ResponseEnvelope;
+pub use signal::*;
 pub use skill_command::*;
 pub use version::{
     negotiate_protocol, ProtocolVersionMismatch, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX, PROTOCOL_MIN,
