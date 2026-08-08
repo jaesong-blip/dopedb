@@ -42,6 +42,7 @@ export default async function SettingsPage({
     status?: string | string[];
     gcpSetup?: string | string[];
     integration?: string | string[];
+    dashboard?: string | string[];
     section?: string | string[];
   }>;
 }) {
@@ -66,6 +67,12 @@ export default async function SettingsPage({
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
       .test(params.integration)
       ? params.integration
+      : null;
+  const requestedDashboardId =
+    typeof params.dashboard === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      .test(params.dashboard)
+      ? params.dashboard
       : null;
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
@@ -392,6 +399,7 @@ export default async function SettingsPage({
               workspaceSlug={activeWorkspace.slug}
               gcpSetupId={requestedGcpSetupId}
               initialIntegrationId={requestedIntegrationId}
+              initialDashboardId={requestedDashboardId}
               area={activeManagementArea}
               canEditWorkspace={canEditActiveWorkspace}
               locale={locale}

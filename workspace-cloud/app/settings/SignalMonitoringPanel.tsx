@@ -23,17 +23,28 @@ type Analysis = {
   projectEnvironmentId: string;
   environmentRevision: number;
   revision: number;
-  connections: Array<{ connectionId: string; connectionRevision: number }>;
+  connections: Array<{
+    connectionId: string;
+    connectionRevision: number;
+    role: string;
+    alias: string;
+  }>;
   definition: {
     title: string;
     timezone: string;
-    tiles: Array<{ id: string; title: string; kind: string }>;
+    tiles: Array<{ id: string; title: string; kind: string; dashboardId?: string }>;
   };
 };
 type SignalState = "normal" | "firing" | "recovered" | "no_data" | "error" | "stale" | "runner_offline";
 type Rule = {
   id: string;
+  projectEnvironmentId: string;
+  environmentRevision: number;
+  sourceAnalysisId: string;
+  sourceAnalysisRevision: number;
+  sourceTileId: string;
   metricSemanticId: string;
+  connections: Array<{ connectionId: string; connectionRevision: number }>;
   definition: {
     schedule: string;
     timezone: string;
@@ -111,11 +122,13 @@ function validAnalysis(value: unknown): value is Analysis {
     && definition.tiles.every((tile) => {
       const item = object(tile);
       return item && typeof item.id === "string" && typeof item.title === "string"
-        && typeof item.kind === "string";
+        && typeof item.kind === "string"
+        && (item.dashboardId === undefined || typeof item.dashboardId === "string");
     }) && Array.isArray(row.connections) && row.connections.every((connection) => {
       const item = object(connection);
       return item && typeof item.connectionId === "string"
-        && Number.isSafeInteger(item.connectionRevision);
+        && Number.isSafeInteger(item.connectionRevision)
+        && typeof item.role === "string" && typeof item.alias === "string";
     }));
 }
 
@@ -126,6 +139,14 @@ function validRule(value: unknown): value is Rule {
   const evaluation = row?.latestEvaluation === null ? null : object(row?.latestEvaluation);
   const runner = row?.runner === null ? null : object(row?.runner);
   return Boolean(row && definition && condition && typeof row.id === "string"
+    && typeof row.projectEnvironmentId === "string" && Number.isSafeInteger(row.environmentRevision)
+    && typeof row.sourceAnalysisId === "string" && Number.isSafeInteger(row.sourceAnalysisRevision)
+    && typeof row.sourceTileId === "string" && Array.isArray(row.connections)
+    && row.connections.every((connection) => {
+      const item = object(connection);
+      return item && typeof item.connectionId === "string"
+        && Number.isSafeInteger(item.connectionRevision);
+    })
     && typeof row.metricSemanticId === "string" && typeof definition.schedule === "string"
     && typeof definition.timezone === "string" && typeof condition.kind === "string"
     && typeof definition.severity === "string" && Array.isArray(definition.channels)
@@ -174,6 +195,10 @@ const copyByLocale = {
     loadError: "Could not load monitoring state.", mutationError: "The signal changed. Refresh and try again.",
     requirement: "Publish a funnel analysis with a metric tile and open Desktop before creating a rule.",
     desktop: "Desktop", web: "Workspace inbox", email: "Email",
+    review: "Execution boundary", revision: "Pinned revisions", databaseScope: "Database scope",
+    readOnly: "Read-only grants are rechecked by the server and Desktop before every evaluation.",
+    expectedLoad: "Expected load", openDashboard: "Open dashboard revision",
+    offlineEnable: "Choose an online Desktop runner before enabling monitoring.",
   },
   ko: {
     tabs: ["규칙", "발생 중", "상태"], create: "새 규칙", cancel: "취소",
@@ -190,6 +215,10 @@ const copyByLocale = {
     loadError: "모니터링 상태를 불러오지 못했습니다.", mutationError: "신호가 변경되었습니다. 새로고침 후 다시 시도하세요.",
     requirement: "지표 타일이 있는 퍼널 분석을 발행하고 Desktop을 연 뒤 규칙을 만드세요.",
     desktop: "Desktop", web: "워크스페이스 보관함", email: "이메일",
+    review: "실행 경계", revision: "고정된 revision", databaseScope: "DB 범위",
+    readOnly: "서버와 Desktop이 매 평가 전에 읽기 전용 grant를 다시 확인합니다.",
+    expectedLoad: "예상 부하", openDashboard: "대시보드 revision 열기",
+    offlineEnable: "감시를 활성화하려면 온라인 Desktop 실행기를 선택하세요.",
   },
 } as const;
 
@@ -242,6 +271,7 @@ export function SignalMonitoringPanel({
   const metricSources = useMemo(() => analyses.flatMap((analysis) =>
     analysis.definition.tiles.filter((tile) => tile.kind === "metric").map((tile) => ({ analysis, tile }))), [analyses]);
   const selectedSource = metricSources.find(({ analysis, tile }) => `${analysis.id}:${tile.id}` === source) ?? null;
+  const selectedRunner = runners.find((runner) => runner.id === runnerId) ?? null;
   const firing = rules.filter((rule) => rule.latestEvaluation
     && ["firing", "no_data", "error", "stale", "runner_offline"].includes(rule.latestEvaluation.state));
 
@@ -428,7 +458,8 @@ export function SignalMonitoringPanel({
           <fieldset className="tw:grid tw:gap-2"><legend className="tw:mb-2 tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.06em] tw:uppercase tw:text-muted-foreground">{copy.recipients}</legend><div className="tw:flex tw:flex-wrap tw:gap-2">{recipients.map((member) => <label className="tw:flex tw:items-center tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3 tw:py-2 tw:text-2xs" key={member.id}><input checked={selectedRecipients.includes(member.id)} onChange={() => toggle(selectedRecipients, member.id, setSelectedRecipients)} type="checkbox" />{member.name} · {member.role}</label>)}</div></fieldset>
           <fieldset className="tw:grid tw:gap-2"><legend className="tw:mb-2 tw:font-mono tw:text-2xs tw:font-medium tw:tracking-[0.06em] tw:uppercase tw:text-muted-foreground">{copy.channels}</legend><div className="tw:flex tw:flex-wrap tw:gap-2">{[["desktop", copy.desktop], ["workspace_web", copy.web], ["email", copy.email]].map(([value, label]) => <label className="tw:flex tw:items-center tw:gap-2 tw:rounded-control tw:border tw:border-border tw:bg-surface tw:px-3 tw:py-2 tw:text-2xs" key={value}><input checked={channels.includes(value)} onChange={() => toggle(channels, value, setChannels)} type="checkbox" />{label}</label>)}</div></fieldset>
           <div className="tw:grid tw:gap-2 tw:text-xs tw:text-muted-foreground"><label className="tw:flex tw:items-start tw:gap-2"><input checked={enabled} onChange={(event) => setEnabled(event.target.checked)} type="checkbox" />{copy.enabled}</label><label className="tw:flex tw:items-start tw:gap-2"><input checked={productionConfirmed} onChange={(event) => setProductionConfirmed(event.target.checked)} type="checkbox" />{copy.production}</label></div>
-          <div className="tw:flex tw:items-center tw:justify-between tw:gap-4"><p className="tw:text-2xs tw:text-muted-foreground">{copy.requirement}</p><ControlButton disabled={mutating || !selectedSource || !runnerId || selectedRecipients.length === 0 || channels.length === 0} onClick={() => void createRule()} tone="primary">{mutating ? copy.creating : copy.createAction}</ControlButton></div>
+          {selectedSource ? <section className="tw:grid tw:gap-3 tw:border-y tw:border-border tw:py-4" aria-label={copy.review}><div className="tw:grid tw:grid-cols-3 tw:gap-4 tw:text-2xs tw:max-[720px]:grid-cols-1"><div><strong className="tw:block tw:font-medium tw:text-foreground">{copy.revision}</strong><span className="tw:mt-1 tw:block tw:font-mono tw:text-muted-foreground">Environment r{selectedSource.analysis.environmentRevision} · Analysis r{selectedSource.analysis.revision}</span></div><div><strong className="tw:block tw:font-medium tw:text-foreground">{copy.databaseScope}</strong><span className="tw:mt-1 tw:block tw:text-muted-foreground">{selectedSource.analysis.connections.map((connection) => `${connection.alias} · r${connection.connectionRevision}`).join(", ")}</span></div><div><strong className="tw:block tw:font-medium tw:text-foreground">{copy.expectedLoad}</strong><span className="tw:mt-1 tw:block tw:text-muted-foreground">{schedule} · {Number(windowSeconds) / 60} min window</span></div></div><p className="tw:m-0 tw:text-2xs tw:text-muted-foreground">{copy.readOnly}</p></section> : null}
+          <div className="tw:flex tw:items-center tw:justify-between tw:gap-4"><p className="tw:text-2xs tw:text-muted-foreground">{enabled && selectedRunner && !selectedRunner.online ? copy.offlineEnable : copy.requirement}</p><ControlButton disabled={mutating || !selectedSource || !runnerId || (enabled && !selectedRunner?.online) || selectedRecipients.length === 0 || channels.length === 0} onClick={() => void createRule()} tone="primary">{mutating ? copy.creating : copy.createAction}</ControlButton></div>
         </section>
       ) : null}
 
@@ -436,7 +467,7 @@ export function SignalMonitoringPanel({
         <article className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:gap-5 tw:p-5 tw:max-[720px]:grid-cols-1" id={`signal-${rule.id}`} key={rule.id}>
           <div className="tw:min-w-0"><div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2"><h4 className="tw:truncate tw:text-sm tw:font-medium">{rule.metricSemanticId}</h4><span className="tw:rounded-full tw:bg-surface-inset tw:px-2 tw:py-1 tw:font-mono tw:text-2xs tw:text-muted-foreground">{conditionLabel(rule)}</span></div><dl className="tw:mt-3 tw:grid tw:grid-cols-2 tw:gap-x-5 tw:gap-y-2 tw:text-2xs tw:max-[480px]:grid-cols-1"><div className="tw:flex tw:justify-between tw:gap-3"><dt className="tw:text-muted-foreground">{copy.configured}</dt><dd>{rule.status === "active" ? copy.active : rule.status === "paused" ? copy.paused : copy.disabled}</dd></div><div className="tw:flex tw:justify-between tw:gap-3"><dt className="tw:text-muted-foreground">{copy.monitoring}</dt><dd className={rule.actuallyMonitoring ? "tw:text-success" : "tw:text-danger"}>{rule.actuallyMonitoring ? copy.online : copy.offline}</dd></div><div className="tw:flex tw:justify-between tw:gap-3"><dt className="tw:text-muted-foreground">{copy.runner}</dt><dd className="tw:truncate">{rule.runner?.displayName ?? copy.noRunner}</dd></div><div className="tw:flex tw:justify-between tw:gap-3"><dt className="tw:text-muted-foreground">Next</dt><dd>{date(rule.nextEvaluationAt)}</dd></div></dl></div>
           <div className="tw:flex tw:flex-wrap tw:items-start tw:justify-end tw:gap-2"><ControlButton onClick={() => setSelectedRuleId((current) => current === rule.id ? "" : rule.id)}>{copy.timeline}</ControlButton>{canEditWorkspace ? <><ControlButton disabled={mutating || !rule.runner?.online} onClick={() => void command(rule, "run_now")}>{copy.runNow}</ControlButton>{rule.status === "active" ? <ControlButton disabled={mutating} onClick={() => void command(rule, "pause")}>{copy.pause}</ControlButton> : <ControlButton disabled={mutating || !rule.runner?.online} onClick={() => void command(rule, "enable")}>{copy.enable}</ControlButton>}<ControlButton disabled={mutating || rule.status === "disabled"} onClick={() => void command(rule, "disable")} tone="danger">{copy.disable}</ControlButton><div className="tw:min-w-44"><ControlSelect aria-label={copy.runner} disabled={mutating} value={rule.runnerId ?? ""} onChange={(event) => void command(rule, "runner_change", event.target.value)}><option value="">—</option>{runners.map((runner) => <option key={runner.id} value={runner.id}>{runner.displayName}</option>)}</ControlSelect></div></> : null}</div>
-          {selectedRuleId === rule.id ? <ol className="tw:col-span-2 tw:grid tw:gap-2 tw:border-t tw:border-border tw:pt-4 tw:max-[720px]:col-span-1">{receipts.map((receipt) => <li className="tw:grid tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:rounded-surface tw:bg-surface-inset tw:px-3 tw:py-2 tw:text-2xs" key={receipt.id}><span className="tw:font-mono tw:text-muted-foreground">#{receipt.transitionSequence}</span><span className="tw:min-w-0 tw:truncate"><strong className={receipt.state === "normal" || receipt.state === "recovered" ? "tw:text-success" : "tw:text-danger"}>{receipt.state.replaceAll("_", " ")}</strong> · {receipt.connectionIds.length} DB · {receipt.durationMs} ms · {receipt.rowCountCategory}{receipt.errorKind ? ` · ${receipt.errorKind}` : ""}</span><time className="tw:text-muted-foreground">{date(receipt.evaluatedAt)}</time></li>)}</ol> : null}
+          {selectedRuleId === rule.id ? <section className="tw:col-span-2 tw:grid tw:gap-3 tw:border-t tw:border-border tw:pt-4 tw:max-[720px]:col-span-1"><div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:text-2xs tw:text-muted-foreground"><span className="tw:font-mono">Rule r{rule.revision} · Environment r{rule.environmentRevision} · Analysis r{rule.sourceAnalysisRevision}</span>{(() => { const analysis = analyses.find((candidate) => candidate.id === rule.sourceAnalysisId); const tile = analysis?.definition.tiles.find((candidate) => candidate.id === rule.sourceTileId); return tile?.dashboardId ? <a className="tw:font-medium tw:text-primary tw:hover:underline" href={`?workspace=${encodeURIComponent(workspaceId)}&section=dashboards&dashboard=${encodeURIComponent(tile.dashboardId)}`}>{copy.openDashboard}</a> : null; })()}</div><p className="tw:m-0 tw:font-mono tw:text-2xs tw:text-muted-foreground">{rule.connections.map((connection) => `${connection.connectionId} · r${connection.connectionRevision}`).join(" · ")}</p><ol className="tw:grid tw:gap-2">{receipts.map((receipt) => <li className="tw:grid tw:grid-cols-[auto_minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:rounded-surface tw:bg-surface-inset tw:px-3 tw:py-2 tw:text-2xs" key={receipt.id}><span className="tw:font-mono tw:text-muted-foreground">#{receipt.transitionSequence}</span><span className="tw:min-w-0 tw:truncate"><strong className={receipt.state === "normal" || receipt.state === "recovered" ? "tw:text-success" : "tw:text-danger"}>{receipt.state.replaceAll("_", " ")}</strong> · {receipt.connectionIds.length} DB · {receipt.durationMs} ms · {receipt.rowCountCategory}{receipt.errorKind ? ` · ${receipt.errorKind}` : ""}</span><time className="tw:text-muted-foreground">{date(receipt.evaluatedAt)}</time></li>)}</ol></section> : null}
         </article>
       ))}{!loading && rules.length === 0 ? <p className="tw:p-10 tw:text-center tw:text-xs tw:text-muted-foreground">{copy.noRules}</p> : null}</div> : null}
 

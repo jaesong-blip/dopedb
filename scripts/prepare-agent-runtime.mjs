@@ -114,16 +114,18 @@ assertDigest(archivePath, platform.archiveSha256, "cached Node runtime archive")
 const extractionRoot = mkdtempSync(join(tmpdir(), "dopedb-node-runtime-"));
 const stagingDirectory = `${outputDirectory}.staging-${process.pid}`;
 try {
+  const extractionArguments = [
+    ...(targetTriple.includes("windows") ? ["--force-local"] : []),
+    "-xf",
+    archivePath,
+    "-C",
+    extractionRoot,
+    platform.executable,
+    platform.licenseFile,
+  ];
   execFileSync(
     "tar",
-    [
-      "-xf",
-      archivePath,
-      "-C",
-      extractionRoot,
-      platform.executable,
-      platform.licenseFile,
-    ],
+    extractionArguments,
     { stdio: "inherit" },
   );
   const extractedExecutable = join(extractionRoot, platform.executable);

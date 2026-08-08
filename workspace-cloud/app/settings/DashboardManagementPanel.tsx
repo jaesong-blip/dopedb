@@ -178,7 +178,13 @@ function validRevision(value: unknown): value is DashboardRevision {
     && typeof payload.deleted === "boolean";
 }
 
-export function DashboardManagementPanel({ workspaceId }: { workspaceId: string }) {
+export function DashboardManagementPanel({
+  workspaceId,
+  initialDashboardId,
+}: {
+  workspaceId: string;
+  initialDashboardId: string | null;
+}) {
   const locale = useWorkspaceLocale();
   const copy = workspaceMessages[locale].sharedDashboards;
   const [dashboards, setDashboards] = useState<SharedDashboard[]>([]);
@@ -244,14 +250,19 @@ export function DashboardManagementPanel({ workspaceId }: { workspaceId: string 
     const nextDashboards = dashboardBody.dashboards as SharedDashboard[];
     setDashboards(nextDashboards);
     setMembers(memberBody.owners as WorkspaceMember[]);
-    setSelectedId((current) => (
-      nextDashboards.some((dashboard) => dashboard.id === current)
-        ? current
-        : nextDashboards[0]?.id ?? ""
-    ));
+    setSelectedId((current) => {
+      if (nextDashboards.some((dashboard) => dashboard.id === current)) return current;
+      if (
+        initialDashboardId
+        && nextDashboards.some((dashboard) => dashboard.id === initialDashboardId)
+      ) {
+        return initialDashboardId;
+      }
+      return nextDashboards[0]?.id ?? "";
+    });
     setError("");
     setLoading(false);
-  }, [copy.loadError, copy.shapeError, responseError, workspaceId]);
+  }, [copy.loadError, copy.shapeError, initialDashboardId, responseError, workspaceId]);
 
   const loadRevisions = useCallback(async (
     dashboardId: string,

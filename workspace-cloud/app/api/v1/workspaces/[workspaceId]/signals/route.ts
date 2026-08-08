@@ -12,6 +12,7 @@ import {
 import {
   workspaceSignalEvaluationReceipt,
   workspaceSignalRule,
+  workspaceSignalRuleConnection,
   workspaceSignalRunner,
 } from "../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
@@ -35,6 +36,16 @@ export async function GET(request: Request, context: RouteContext) {
         @> ${JSON.stringify([authorization.membership.id])}::jsonb)`,
   )).orderBy(desc(workspaceSignalRule.updatedAt), desc(workspaceSignalRule.id));
   const ruleIds = rules.map((rule) => rule.id);
+  const ruleConnections = ruleIds.length > 0
+    ? await db.select({
+        ruleId: workspaceSignalRuleConnection.ruleId,
+        connectionId: workspaceSignalRuleConnection.connectionId,
+        connectionRevision: workspaceSignalRuleConnection.connectionRevision,
+      }).from(workspaceSignalRuleConnection).where(and(
+        eq(workspaceSignalRuleConnection.organizationId, workspaceId),
+        inArray(workspaceSignalRuleConnection.ruleId, ruleIds),
+      ))
+    : [];
   const receipts = ruleIds.length > 0
     ? await db.select({
         id: workspaceSignalEvaluationReceipt.id,
@@ -86,6 +97,9 @@ export async function GET(request: Request, context: RouteContext) {
       sourceAnalysisRevision: rule.sourceAnalysisRevision,
       sourceTileId: rule.sourceTileId,
       metricSemanticId: rule.metricSemanticId,
+      connections: ruleConnections.filter((connection) => connection.ruleId === rule.id).map(
+        ({ connectionId, connectionRevision }) => ({ connectionId, connectionRevision }),
+      ),
       definition: rule.definition,
       ownerMemberId: rule.ownerMemberId,
       runnerId: rule.runnerId,

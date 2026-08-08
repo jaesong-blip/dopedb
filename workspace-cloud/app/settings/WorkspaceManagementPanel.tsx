@@ -47,6 +47,7 @@ export function WorkspaceManagementPanel({
   workspaceSlug,
   gcpSetupId,
   initialIntegrationId,
+  initialDashboardId,
   area,
   canEditWorkspace,
   locale,
@@ -56,6 +57,7 @@ export function WorkspaceManagementPanel({
   workspaceSlug: string;
   gcpSetupId: string | null;
   initialIntegrationId: string | null;
+  initialDashboardId: string | null;
   area: WorkspaceManagementArea;
   canEditWorkspace: boolean;
   locale: WorkspaceLocale;
@@ -115,7 +117,10 @@ export function WorkspaceManagementPanel({
           />
         ) : null}
         {area === "dashboards" ? (
-          <DashboardManagementPanel workspaceId={workspaceId} />
+          <DashboardManagementPanel
+            workspaceId={workspaceId}
+            initialDashboardId={initialDashboardId}
+          />
         ) : null}
         {area === "reports" ? (
           <ReportManagementPanel
