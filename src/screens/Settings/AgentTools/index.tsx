@@ -804,6 +804,7 @@ export default function AgentTools() {
         {combinedSetupPlan?.selection && (
           <Button
             variant="primary"
+            data-agent-skill-batch-action={combinedSetupPlan.action}
             disabled={busy !== null}
             onClick={() => void runInstall(combinedSetupPlan.selection!)}
           >

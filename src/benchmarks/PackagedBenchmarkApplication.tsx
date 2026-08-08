@@ -37,7 +37,8 @@ import type {
 } from "../features/agents/domain";
 import { useToolWindowLayout } from "../features/appShell/useToolWindowLayout";
 import { formatSqlDocument } from "../features/query/sqlFormatter";
-import { installSkill, removeSkill, skillStatus } from "../ipc/commands";
+import { removeSkill, skillStatus } from "../ipc/commands";
+import AgentToolsSettings from "../screens/Settings/AgentTools";
 import type {
   CatalogSnapshot,
   QueryResult,
@@ -527,12 +528,11 @@ function AgentToolsScenario() {
     const initial = await skillStatus("all");
     assertSkillState(initial, "missing");
     await measurePackagedAction("agent-skill-install-all", async () => {
-      const receipt = await installSkill("all", skillExpectations(initial));
-      assertSkillState(receipt.status, "managed_current");
-      if (receipt.changedTargets.length !== 2) {
-        throw new Error("packaged Skill installation did not change both targets");
-      }
-      setStatus(receipt.status);
+      const installButton = await waitForAgentSkillInstallButton();
+      installButton.click();
+      const installed = await waitForAgentSkillState("managed_current");
+      assertSkillState(installed, "managed_current");
+      setStatus(installed);
     });
     await measurePackagedAction("agent-skill-reload", async () => {
       const receipt = await runPackagedBenchmarkBackend("agent-skill-reload");
@@ -558,21 +558,36 @@ function AgentToolsScenario() {
 
   return (
     <BenchmarkSurface title="Agent tools · clean profile installation and restart">
-      <div className="tw:grid tw:min-h-0 tw:flex-1 tw:content-start tw:gap-2 tw:overflow-auto tw:p-4">
-        {(status?.targets ?? []).map((target) => (
-          <div
-            key={target.target}
-            className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border-b tw:border-border-subtle tw:py-2 tw:text-sm"
-          >
-            <span>{target.displayName}</span>
-            <span className="tw:font-mono tw:text-xs tw:text-muted-foreground">
-              {target.state}
-            </span>
-          </div>
-        ))}
+      <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto">
+        <AgentToolsSettings />
+        <output className="tw:sr-only" aria-live="polite">
+          {status?.targets.map((target) => `${target.target}:${target.state}`).join(",")}
+        </output>
       </div>
     </BenchmarkSurface>
   );
+}
+
+async function waitForAgentSkillInstallButton() {
+  const deadline = performance.now() + 15_000;
+  while (performance.now() < deadline) {
+    const button = document.querySelector<HTMLButtonElement>(
+      '[data-agent-skill-batch-action="install"]',
+    );
+    if (button && !button.disabled) return button;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  throw new Error("Agent Tools install surface timed out");
+}
+
+async function waitForAgentSkillState(expected: "managed_current" | "missing") {
+  const deadline = performance.now() + 15_000;
+  while (performance.now() < deadline) {
+    const status = await skillStatus("all");
+    if (status.targets.every((target) => target.state === expected)) return status;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  throw new Error(`Agent Tools inventory timed out waiting for ${expected}`);
 }
 
 function BenchmarkTranscriptItem({
