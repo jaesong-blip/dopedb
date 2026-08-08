@@ -1,6 +1,6 @@
 // SQL table query, paging, filtering, and staged row-edit controller.
 import { useEffect, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type {
   CatalogTable,
   SafetySettings,
@@ -115,8 +115,10 @@ export default function SqlTableData({
       pageSize,
       page,
     }),
-    // Paging and filtering repaint the previous page (dimmed) instead of blanking the grid.
-    placeholderData: keepPreviousData,
+    // Paging and filtering repaint the same table's previous page. A table switch
+    // never projects stale rows into the new table while its first page loads.
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[2] === key ? previousData : undefined,
   });
   const pageReady =
     rowsQuery.data !== undefined && !rowsQuery.isPlaceholderData;

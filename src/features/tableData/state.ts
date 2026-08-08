@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useEffect, useReducer } from "react";
 
 import type { GridSort } from "../../lib/sqlBuild";
 import type {
@@ -95,12 +95,14 @@ export function useTableDataState(viewKey: string) {
     viewKey,
     initialTableDataState,
   );
-  if (state.viewKey !== viewKey) {
-    dispatch({ type: "reset", viewKey });
-  }
+  const viewChanged = state.viewKey !== viewKey;
+  const activeState = viewChanged ? initialTableDataState(viewKey) : state;
+  useEffect(() => {
+    if (viewChanged) dispatch({ type: "reset", viewKey });
+  }, [viewChanged, viewKey]);
 
   return {
-    state,
+    state: activeState,
     commands: {
       patch: (patch: Partial<TableDataState>) =>
         dispatch({ type: "patch", patch }),
