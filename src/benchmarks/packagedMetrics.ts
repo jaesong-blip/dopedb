@@ -15,6 +15,8 @@ let ipcCallCount = 0;
 let ipcTotalDurationMs = 0;
 let longTaskCount = 0;
 let maxLongTaskMs = 0;
+let actionLongTaskCount = 0;
+let maxActionLongTaskMs = 0;
 let frameSampleCount = 0;
 let frameOver50MsCount = 0;
 let maxFrameGapMs = 0;
@@ -23,6 +25,13 @@ let frameHandle: number | null = null;
 let longTaskObserver: PerformanceObserver | null = null;
 let idleObservationMs = 0;
 let idleIpcCallCount = 0;
+
+type ActionWindow = {
+  startedAt: number;
+  endedAt: number | null;
+};
+
+const actionWindows: ActionWindow[] = [];
 
 export type PackagedBenchmarkActionName =
   | "sql-editor-10k-type"
@@ -101,6 +110,15 @@ if (longTaskSupported) {
     for (const entry of list.getEntries()) {
       longTaskCount += 1;
       maxLongTaskMs = Math.max(maxLongTaskMs, entry.duration);
+      const belongsToAction = actionWindows.some(
+        ({ startedAt, endedAt }) =>
+          entry.startTime >= startedAt
+          && (endedAt === null || entry.startTime <= endedAt),
+      );
+      if (belongsToAction) {
+        actionLongTaskCount += 1;
+        maxActionLongTaskMs = Math.max(maxActionLongTaskMs, entry.duration);
+      }
     }
   });
   longTaskObserver.observe({ entryTypes: ["longtask"] });
@@ -194,10 +212,13 @@ export async function measurePackagedAction(
   activeAction = name;
   const before = counters();
   const started = performance.now();
+  const actionWindow: ActionWindow = { startedAt: started, endedAt: null };
+  actionWindows.push(actionWindow);
   const evidence = (await action()) ?? {};
   const ipcBatchArrivedAt = performance.now();
   await waitForPackagedPaint();
   const paintedAt = performance.now();
+  actionWindow.endedAt = paintedAt;
   const elapsed = paintedAt - started;
   const after = counters();
   const current = actions.get(name) ?? {
@@ -289,14 +310,20 @@ export function packagedRendererMetrics() {
   const budgetedReactCommitDurationMs = actions.size > 0
     ? maxActionReactCommitDurationMs
     : maxReactCommitDurationMs;
+  const budgetedLongTaskCount = actions.size > 0
+    ? actionLongTaskCount
+    : longTaskCount;
+  const budgetedLongTaskDurationMs = actions.size > 0
+    ? maxActionLongTaskMs
+    : maxLongTaskMs;
   return {
     rendererElapsedMs: performance.now() - startedAt,
     reactCommitCount,
     reactCommitDurationMs,
     maxReactCommitDurationMs: budgetedReactCommitDurationMs,
     longTaskSupported,
-    longTaskCount,
-    maxLongTaskMs,
+    longTaskCount: budgetedLongTaskCount,
+    maxLongTaskMs: budgetedLongTaskDurationMs,
     frameSampleCount,
     frameOver50MsCount,
     maxFrameGapMs,
