@@ -185,15 +185,9 @@ pub(super) fn run() {
     let sql = "SELECT COUNT(*) AS total_users FROM public.users";
     let (cancel_started_tx, cancel_started_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for expected in [
-            CommandName::SchemaList,
-            CommandName::CatalogSearch,
-            CommandName::QueryPlan,
-            CommandName::QueryRun,
-        ] {
+        for _ in 0..4 {
             let (mut stream, _) = listener.accept().unwrap();
             let request = read_request(&mut stream);
-            assert_eq!(request.command, expected);
             let authentication = request.authentication.as_ref().unwrap();
             assert_eq!(authentication.terminal_session_id, session_id);
             assert!(authentication.token().is_none());
@@ -201,7 +195,7 @@ pub(super) fn run() {
                 .unwrap()
                 .get("token")
                 .is_none());
-            match expected {
+            match request.command {
                 CommandName::SchemaList => {
                     let arguments: CatalogArguments =
                         serde_json::from_value(request.arguments.clone()).unwrap();
@@ -385,10 +379,28 @@ pub(super) fn run() {
         ],
     );
     assert_eq!(bridge.len(), 5);
-    assert_eq!(bridge[0]["result"]["serverInfo"]["name"], "dopedb");
-    let tools = bridge[1]["result"]["tools"].as_array().unwrap();
+    let response = |id: i64| {
+        bridge
+            .iter()
+            .find(|message| message["id"] == id)
+            .expect("every MCP request must receive one response")
+    };
+    assert_eq!(response(1)["result"]["serverInfo"]["name"], "dopedb");
+    assert!(response(1)["result"]["instructions"]
+        .as_str()
+        .unwrap()
+        .contains("partial result"));
+    let tools = response(2)["result"]["tools"].as_array().unwrap();
     assert!(tools.iter().any(|tool| tool["name"] == "catalog_search"));
     assert!(tools.iter().any(|tool| tool["name"] == "query_read"));
+    let query_read_tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "query_read")
+        .unwrap();
+    assert_eq!(
+        query_read_tool["inputSchema"]["properties"]["timeoutMs"]["maximum"],
+        300_000,
+    );
     let report_tool = tools
         .iter()
         .find(|tool| tool["name"] == "report_propose")
@@ -416,31 +428,31 @@ pub(super) fn run() {
         .contains("never edits historical evidence"));
     assert!(!tools.iter().any(|tool| tool["name"] == "run"));
 
-    assert_eq!(bridge[2]["result"]["isError"], false);
+    assert_eq!(response(3)["result"]["isError"], false);
     assert_eq!(
-        bridge[2]["result"]["structuredContent"]["schemas"][0]["name"],
+        response(3)["result"]["structuredContent"]["schemas"][0]["name"],
         "public"
     );
-    assert_eq!(bridge[3]["result"]["isError"], false);
+    assert_eq!(response(4)["result"]["isError"], false);
     assert_eq!(
-        bridge[3]["result"]["structuredContent"]["matches"][0]["qualifiedName"],
+        response(4)["result"]["structuredContent"]["matches"][0]["qualifiedName"],
         "app.public.users"
     );
     assert_eq!(
-        bridge[3]["result"]["structuredContent"]["matches"][0]["matchedFields"][0],
+        response(4)["result"]["structuredContent"]["matches"][0]["matchedFields"][0],
         "deleted_at"
     );
-    assert!(bridge[3]["result"]["structuredContent"]["matches"][0]
+    assert!(response(4)["result"]["structuredContent"]["matches"][0]
         .get("relation")
         .is_none());
 
-    assert_eq!(bridge[4]["result"]["isError"], false);
+    assert_eq!(response(5)["result"]["isError"], false);
     assert_eq!(
-        bridge[4]["result"]["structuredContent"]["plan"]["planId"],
+        response(5)["result"]["structuredContent"]["plan"]["planId"],
         plan_id.to_string()
     );
     assert_eq!(
-        bridge[4]["result"]["structuredContent"]["run"]["result"]["rows"][0][0],
+        response(5)["result"]["structuredContent"]["run"]["result"]["rows"][0][0],
         42
     );
     let serialized = serde_json::to_string(&bridge).unwrap();
@@ -523,8 +535,13 @@ pub(super) fn run() {
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(responses.len(), 1);
-    assert_eq!(responses[0]["id"], 10);
+    assert_eq!(responses.len(), 2);
+    assert!(responses.iter().any(|response| response["id"] == 10));
+    let cancelled = responses
+        .iter()
+        .find(|response| response["id"] == 11)
+        .expect("a cancelled MCP request must terminate with an error response");
+    assert_eq!(cancelled["error"]["code"], -32800);
     assert!(!stdout.contains("must-never-escape"));
 
     server.join().unwrap();
