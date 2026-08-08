@@ -527,6 +527,7 @@ function assertSkillState(status: SkillStatus, expected: "missing" | "managed_cu
 
 function AgentToolsScenario() {
   const [status, setStatus] = useState<SkillStatus | null>(null);
+  const [surfaceMounted, setSurfaceMounted] = useState(true);
 
   useScenarioRunner(true, async () => {
     await validateAndDismissAgentSelectionModal();
@@ -558,14 +559,24 @@ function AgentToolsScenario() {
       }
       setStatus(receipt.status);
     });
+    setSurfaceMounted(false);
+    await waitForPackagedPaint();
+    // Let the final observer-owned request that started before unmount settle;
+    // the following window owns only timers/listeners that survived cleanup.
+    await new Promise((resolve) => window.setTimeout(resolve, 750));
+    await measurePackagedIdle(1_500);
     await finishBenchmark();
   });
 
   return (
     <BenchmarkSurface title="Agent tools · clean profile installation and restart">
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto">
-        <SkillStartupGate />
-        <AgentToolsSettings />
+        {surfaceMounted ? (
+          <>
+            <SkillStartupGate />
+            <AgentToolsSettings />
+          </>
+        ) : null}
         <output className="tw:sr-only" aria-live="polite">
           {status?.targets.map((target) => `${target.target}:${target.state}`).join(",")}
         </output>
