@@ -164,6 +164,7 @@ pub(crate) async fn run_packaged_benchmark_backend(
                     | "query-cancel"
                     | "query-export"
             ),
+            "table-first-row" => action == "table-first-page",
             "agent-transcript" => action == "agent-stream-10k",
             "agent-tools" => action == "agent-skill-reload",
             "long-lived-data" => matches!(
@@ -313,9 +314,10 @@ pub(crate) fn prepare_fixture_if_requested() -> AppResult<bool> {
         let fixture_kind = benchmark_fixture_kind()?;
         match fixture_kind {
             "standard" => {}
+            "table-data" if count == 20 => prepare_table_data(&store).await?,
             "long-lived" if count == 20 => prepare_long_lived_data(&store).await?,
             "recovery" if count == 20 => prepare_recovery_data(&store).await?,
-            "long-lived" | "recovery" => {
+            "table-data" | "long-lived" | "recovery" => {
                 return Err(AppError::Config(
                     "dense benchmark fixtures require 20 connections".into(),
                 ));
@@ -350,6 +352,7 @@ fn benchmark_fixture_kind() -> AppResult<&'static str> {
         .as_str()
     {
         "standard" => Ok("standard"),
+        "table-data" => Ok("table-data"),
         "long-lived" => Ok("long-lived"),
         "recovery" => Ok("recovery"),
         _ => Err(AppError::Config(
@@ -394,6 +397,25 @@ async fn prepare_connections(store: &crate::store::Store, count: usize) -> AppRe
         };
         store.upsert_connection(&profile).await?;
     }
+    Ok(())
+}
+
+#[cfg(feature = "packaged-benchmark")]
+async fn prepare_table_data(store: &crate::store::Store) -> AppResult<()> {
+    sqlx::query(
+        r#"WITH digits(d) AS (VALUES(0),(1),(2),(3),(4),(5),(6),(7),(8),(9)),
+           numbers(n) AS (SELECT a.d + 10*b.d FROM digits a, digits b)
+           INSERT INTO query_history
+             (id, connection_id, account_scope, sql, kind, status, row_count,
+              duration_ms, error, executed_at, origin)
+           SELECT printf('benchmark-table-page-%03d', n),
+                  'bed00000-0000-0000-0000-000000000001', 'personal',
+                  printf('SELECT %d /* table page */', n), 'read', 'ok', 1,
+                  n % 10, NULL, printf('2026-01-01T00:00:%02dZ', n % 60), 'manual'
+           FROM numbers"#,
+    )
+    .execute(store.pool())
+    .await?;
     Ok(())
 }
 
@@ -858,6 +880,12 @@ async fn packaged_read_receipt(
             256_u64,
             256_usize,
         ),
+        "table-first-page" => (
+            "SELECT rowid, COALESCE(duration_ms, 0), COALESCE(row_count, 0) \
+             FROM query_history ORDER BY executed_at DESC, rowid DESC LIMIT 100",
+            100_u64,
+            100_usize,
+        ),
         "history-10k" => (
             "SELECT rowid, COALESCE(duration_ms, 0), COALESCE(row_count, 0) \
              FROM query_history ORDER BY executed_at DESC, rowid DESC LIMIT 101",
@@ -924,10 +952,11 @@ fn numeric_row(row: &sqlx::sqlite::SqliteRow) -> AppResult<Vec<i64>> {
 }
 
 #[cfg(feature = "packaged-benchmark")]
-const WORKLOAD_SCENARIOS: [&str; 8] = [
+const WORKLOAD_SCENARIOS: [&str; 9] = [
     "sql-editor",
     "explorer-search",
     "query-result",
+    "table-first-row",
     "agent-transcript",
     "agent-tools",
     "long-lived-data",
@@ -936,7 +965,7 @@ const WORKLOAD_SCENARIOS: [&str; 8] = [
 ];
 
 #[cfg(feature = "packaged-benchmark")]
-const ACTION_NAMES: [&str; 34] = [
+const ACTION_NAMES: [&str; 35] = [
     "sql-editor-10k-type",
     "sql-editor-10k-cursor",
     "sql-editor-10k-format",
@@ -957,6 +986,7 @@ const ACTION_NAMES: [&str; 34] = [
     "query-page-store-1m",
     "query-cancel",
     "query-export",
+    "table-first-page",
     "agent-stream-10k",
     "agent-manual-scroll",
     "agent-permission",

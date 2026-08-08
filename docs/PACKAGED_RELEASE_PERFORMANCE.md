@@ -48,8 +48,9 @@ pnpm benchmark:packaged-release -- --output src-tauri/benchmarks/packaged-releas
 | --- | --- | --- |
 | Startup | 0/5/20 SQLite 연결, 중단된 ACP/job/operation이 없는 fixture와 20개 연결 recovery fixture | 새 fixture clone의 cold open, 같은 clone의 warm reopen, process start → Store → window → first shell commit → post-paint recovery |
 | SQL editor | 정확히 10 KiB/100 KiB/1 MiB 문서 | 입력, cursor 이동, format, run → 두 번째 animation frame |
-| Explorer/Search | 20 connections, 50 databases, 5,000 objects | 첫 expand, 두 번째 expand, Search Everywhere → 두 번째 frame |
+| Explorer/Search | 20 connections, 50 databases, 5,000 objects | renderer process당 실제 첫/두 번째 expand 1회, Search Everywhere → 두 번째 frame; 반복 collapse GC는 first-use 수치에서 제외 |
 | Query result | 256행 first batch, 50,000행 grid, production disk store의 1,000,000행 | first batch, scroll, page-store, 진행 중 CSV export 취소와 partial 정리, 전체 CSV export |
+| Table first row | production SQLite의 기본 100행 table page | 빈 grid에서 local page query → 첫 grid paint p50/p95와 backend/IPC/commit 단계 |
 | Agent | 10분 timestamp 범위의 10,000 ACP event | stream projection과 64-event SQLite batch persistence, manual scroll, permission pending, reconnect |
 | Agent tools | 격리된 clean HOME, Codex·Claude Code 두 Skill target | exact inventory fingerprint로 동시 설치, manager 재생성 뒤 revision·digest 재검사, 동시 제거 |
 | Long-lived data | history 10,000, audit 100,000, 1 MiB revision 50개, dashboard 8개 | production SQLite의 bounded page/detail 경로 |

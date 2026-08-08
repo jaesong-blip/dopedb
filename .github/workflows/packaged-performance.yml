@@ -18,6 +18,7 @@ on:
           - sql-editor
           - explorer-search
           - query-result
+          - table-first-row
           - agent-transcript
           - agent-tools
           - long-lived-data

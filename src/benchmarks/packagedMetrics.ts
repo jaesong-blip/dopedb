@@ -44,6 +44,7 @@ export type PackagedBenchmarkActionName =
   | "query-page-store-1m"
   | "query-cancel"
   | "query-export"
+  | "table-first-page"
   | "agent-stream-10k"
   | "agent-manual-scroll"
   | "agent-permission"

@@ -79,6 +79,8 @@ export function PackagedBenchmarkApplication({
       return <ExplorerSearchScenario />;
     case "query-result":
       return <QueryResultScenario />;
+    case "table-first-row":
+      return <TableFirstRowScenario />;
     case "agent-transcript":
       return <AgentTranscriptScenario />;
     case "agent-tools":
@@ -247,20 +249,15 @@ function ExplorerSearchScenario() {
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
 
   useScenarioRunner(scrollElement !== null, async () => {
-    for (let index = 0; index < ACTION_SAMPLES; index += 1) {
-      setVisibleCount(0);
-      await waitForPackagedPaint();
-      await measurePackagedAction("explorer-first-expand", () => {
-        setVisibleCount(2_500);
-      });
-    }
-    for (let index = 0; index < ACTION_SAMPLES; index += 1) {
+    // Measure actual first and secondary expansion once per fresh renderer.
+    // Repeated collapse loops mix collection of the previous synthetic tree
+    // into first-use latency; workload processes own the p50/p95 sample count.
+    await measurePackagedAction("explorer-first-expand", () => {
       setVisibleCount(2_500);
-      await waitForPackagedPaint();
-      await measurePackagedAction("explorer-secondary-expand", () => {
-        setVisibleCount(5_000);
-      });
-    }
+    });
+    await measurePackagedAction("explorer-secondary-expand", () => {
+      setVisibleCount(5_000);
+    });
     await samples("search-everywhere", 10, (index) => {
       const result = searchEverywhereItems(
         fixture.index,
@@ -361,6 +358,29 @@ function QueryResultScenario() {
 
   return (
     <BenchmarkSurface title={`Query result · 50,000 visible rows · backend ${backendStatus}`}>
+      <DataGrid result={result} surface="workbench" />
+    </BenchmarkSurface>
+  );
+}
+
+function TableFirstRowScenario() {
+  const [result, setResult] = useState<QueryResult>(() => queryResult(0));
+
+  useScenarioRunner(true, async () => {
+    for (let index = 0; index < ACTION_SAMPLES; index += 1) {
+      setResult(queryResult(0));
+      await waitForPackagedPaint();
+      await measurePackagedAction("table-first-page", async () => {
+        const receipt = await runPackagedBenchmarkBackend("table-first-page");
+        setResult(receiptResult(receipt));
+        return backendEvidence(receipt);
+      });
+    }
+    await finishBenchmark();
+  });
+
+  return (
+    <BenchmarkSurface title="Table data · local SQLite · first 100-row page">
       <DataGrid result={result} surface="workbench" />
     </BenchmarkSurface>
   );

@@ -34,6 +34,7 @@ const workloadScenarios = [
   "sql-editor",
   "explorer-search",
   "query-result",
+  "table-first-row",
   "agent-transcript",
   "agent-tools",
   "long-lived-data",
@@ -48,6 +49,7 @@ const requiredActionsByScenario = {
   ],
   "explorer-search": ["explorer-first-expand", "explorer-secondary-expand", "search-everywhere"],
   "query-result": ["query-first-batch", "query-grid-scroll-50k", "query-page-store-1m", "query-cancel", "query-export"],
+  "table-first-row": ["table-first-page"],
   "agent-transcript": ["agent-stream-10k", "agent-manual-scroll", "agent-permission", "agent-reconnect"],
   "agent-tools": ["agent-skill-install-all", "agent-skill-reload", "agent-skill-remove-all"],
   "long-lived-data": ["history-10k", "audit-100k", "local-history-50", "dashboard-multi-tile"],
@@ -184,10 +186,20 @@ try {
         "long-lived",
       )
       : null;
+    const tableDataFixture = selectedWorkloads.includes("table-first-row")
+      ? await prepareFixture(
+        executable,
+        temporaryRoot,
+        20,
+        "table-data",
+      )
+      : null;
     for (const scenario of selectedWorkloads) {
       const fixture = scenario === "long-lived-data"
         ? longLivedFixture
-        : workloadFixture;
+        : scenario === "table-first-row"
+          ? tableDataFixture
+          : workloadFixture;
       if (!fixture) throw new Error("workload fixture is unavailable");
       const warmupRoot = join(temporaryRoot, `warmup-workload-${scenario}`);
       await cloneFixture(fixture, warmupRoot);
