@@ -76,6 +76,10 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
+          # A budget regression is a useful diagnostic result, not a failed
+          # compilation. Preserve the completed release build so the next
+          # manually requested scenario does not pay the full Windows build.
+          cache-on-failure: true
           workspaces: |
             . -> target
             src-tauri -> src-tauri/target
