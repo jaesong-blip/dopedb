@@ -37,6 +37,7 @@ import type {
 } from "../features/agents/domain";
 import { useToolWindowLayout } from "../features/appShell/useToolWindowLayout";
 import { formatSqlDocument } from "../features/query/sqlFormatter";
+import SkillStartupGate from "../features/skills/SkillStartupGate";
 import { removeSkill, skillStatus } from "../ipc/commands";
 import AgentToolsSettings from "../screens/Settings/AgentTools";
 import type {
@@ -525,6 +526,7 @@ function AgentToolsScenario() {
   const [status, setStatus] = useState<SkillStatus | null>(null);
 
   useScenarioRunner(true, async () => {
+    await validateAndDismissAgentSelectionModal();
     const initial = await skillStatus("all");
     assertSkillState(initial, "missing");
     await measurePackagedAction("agent-skill-install-all", async () => {
@@ -559,6 +561,7 @@ function AgentToolsScenario() {
   return (
     <BenchmarkSurface title="Agent tools · clean profile installation and restart">
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto">
+        <SkillStartupGate />
         <AgentToolsSettings />
         <output className="tw:sr-only" aria-live="polite">
           {status?.targets.map((target) => `${target.target}:${target.state}`).join(",")}
@@ -566,6 +569,52 @@ function AgentToolsScenario() {
       </div>
     </BenchmarkSurface>
   );
+}
+
+async function validateAndDismissAgentSelectionModal() {
+  const deadline = performance.now() + 10_000;
+  while (performance.now() < deadline) {
+    const dialog = document.querySelector<HTMLElement>(
+      '[role="dialog"][aria-modal="true"]',
+    );
+    if (dialog) {
+      const titleId = dialog.getAttribute("aria-labelledby");
+      const descriptionId = dialog.getAttribute("aria-describedby");
+      const checkedTargets = dialog.querySelectorAll<HTMLInputElement>(
+        'input[type="checkbox"]:checked',
+      );
+      if (
+        !titleId
+        || !descriptionId
+        || !document.getElementById(titleId)
+        || !document.getElementById(descriptionId)
+        || checkedTargets.length !== 2
+      ) {
+        throw new Error("Agent selection modal accessibility contract is incomplete");
+      }
+      const initialFocus = dialog.querySelector<HTMLElement>(
+        "[data-modal-initial-focus]",
+      );
+      if (document.activeElement !== initialFocus) {
+        await waitForPackagedPaint();
+      }
+      if (document.activeElement !== initialFocus) {
+        throw new Error("Agent selection modal did not establish keyboard focus");
+      }
+      dialog.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }));
+      await waitForPackagedPaint();
+      if (document.body.contains(dialog)) {
+        throw new Error("Agent selection modal did not close from the keyboard");
+      }
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  throw new Error("Agent selection modal surface timed out");
 }
 
 async function waitForAgentSkillInstallButton() {
