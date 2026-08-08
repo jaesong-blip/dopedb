@@ -41,6 +41,8 @@ import {
   type SqlResolveMode,
 } from "../features/queries/resolveMode";
 
+const SQL_RICH_EDITING_MAX_BYTES = 256 * 1024;
+
 // Catalog → CodeMirror schema map. Namespaced tables stay below their schema so
 // `defaultSchema` controls which ones complete as bare names. Registering every
 // PostgreSQL table at the root would leak candidates from unrelated schemas.
@@ -181,13 +183,16 @@ export default function SqlViewer({
   executionStatus,
   onEditorReady,
 }: SqlViewerProps) {
+  const richLanguageEditing = value.length <= SQL_RICH_EDITING_MAX_BYTES;
   const extensions = useMemo(() => {
     const dialect = editorDialect(engine);
-    const ext = [
-      sql({ dialect }),
-      EditorView.lineWrapping,
-    ];
-    if (catalog) {
+    // Lezer syntax trees, schema completion, and wrapped-line layout scale with
+    // the whole document. Keep the large-file path responsive and bounded while
+    // preserving editing, cursor movement, execution, and worker-based format.
+    const ext: Extension[] = richLanguageEditing
+      ? [sql({ dialect }), EditorView.lineWrapping]
+      : [];
+    if (catalog && richLanguageEditing) {
       const schema = buildSchema(catalog);
       const schemaCompletion: CompletionSource = (context) => {
         const resolvedDefaultSchema = defaultSchema
@@ -246,6 +251,7 @@ export default function SqlViewer({
     namespaceOptions,
     onBlur,
     onRun,
+    richLanguageEditing,
     resolveMode,
   ]);
   const reportCursor = useCallback(
