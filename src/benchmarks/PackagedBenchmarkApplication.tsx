@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { forceParsing } from "@codemirror/language";
 import type { EditorView } from "@codemirror/view";
 import { Transaction } from "@codemirror/state";
 
@@ -75,6 +76,7 @@ import {
 } from "./backend";
 
 const ACTION_SAMPLES = 5;
+const SQL_RICH_EDITING_MAX_BYTES = 256 * 1024;
 const FIXTURE_CONNECTION_ID = "bed00000-0000-0000-0000-000000000001";
 const DENSE_GRID_COLUMN_COUNT = 36;
 
@@ -210,6 +212,7 @@ function SqlEditorScenario() {
         const position = Math.max(0, view.state.doc.length - index);
         view.dispatch({ changes: { from: position, insert: " " } });
       });
+      await settleSqlNavigationFixture(view, size);
       await samples(`sql-editor-${label}-cursor`, ACTION_SAMPLES, (index) => {
         const position = Math.floor(
           (view.state.doc.length * (index + 1)) / (ACTION_SAMPLES + 1),
@@ -255,6 +258,16 @@ function SqlEditorScenario() {
       />
     </BenchmarkSurface>
   );
+}
+
+async function settleSqlNavigationFixture(view: EditorView, bytes: number) {
+  if (bytes <= SQL_RICH_EDITING_MAX_BYTES) {
+    // Cursor movement measures navigation through a visible, ready document.
+    // Finish CodeMirror's deliberately deferred Lezer work after the synthetic
+    // typing samples so an idle parse is not attributed to the first cursor.
+    forceParsing(view, view.state.doc.length, 1_000);
+  }
+  await waitForPackagedPaint();
 }
 
 async function setControlledSqlDocument(
