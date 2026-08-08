@@ -105,6 +105,11 @@ export const agentsCatalog = defineCatalog(
     "agent.acpPlan": "Plan",
     "agent.acpPrompt": "Describe the database task for the Agent…",
     "agent.acpProvider": "Agent",
+    "agent.acpEnvironment": "Project environment",
+    "agent.acpEnvironmentHint":
+      "Pins code knowledge and every mapped database to one exact environment revision.",
+    "agent.acpDatabaseOnly": "Current database only",
+    "agent.acpEnvironmentScope": "DB {databases} · Source {sources}",
     "agent.acpProtocol": "ACP v1 · official Claude and Codex adapters",
     "agent.acpReadyBody":
       "The current connection and visible editor selection will be attached as explicit ACP context blocks.",
@@ -424,6 +429,11 @@ export const agentsCatalog = defineCatalog(
     "agent.acpPlan": "계획",
     "agent.acpPrompt": "Agent가 수행할 데이터베이스 작업을 입력하세요…",
     "agent.acpProvider": "Agent",
+    "agent.acpEnvironment": "프로젝트 환경",
+    "agent.acpEnvironmentHint":
+      "코드 지식과 연결된 모든 DB를 정확한 환경 리비전에 고정합니다.",
+    "agent.acpDatabaseOnly": "현재 DB만",
+    "agent.acpEnvironmentScope": "DB {databases} · 소스 {sources}",
     "agent.acpProtocol": "ACP v1 · 공식 Claude·Codex 어댑터",
     "agent.acpReadyBody":
       "현재 연결과 화면에서 선택한 편집기 문맥을 명시적인 ACP 컨텍스트 블록으로 첨부합니다.",

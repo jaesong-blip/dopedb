@@ -6,10 +6,11 @@ use tauri::State;
 use crate::error::AppResult;
 use crate::kernel::identity::{AcpSessionId, ConnectionId, RetiredChatThreadId};
 use crate::state::AppState;
+use uuid::Uuid;
 
 use super::domain::{
-    AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, AgentProvider,
-    RetiredChatArchiveMessage, RetiredChatArchiveThread,
+    AcpPromptContext, AcpSessionFocus, AcpSessionSummary, AgentCliInfo, AgentKnowledgeEnvironment,
+    AgentProvider, RetiredChatArchiveMessage, RetiredChatArchiveThread,
 };
 use super::runtime::{AcpPluginMutationReceipt, AcpPluginStatus};
 
@@ -64,9 +65,30 @@ pub async fn start_agent_acp_session(
     app: tauri::AppHandle,
     connection_id: ConnectionId,
     provider: AgentProvider,
+    project_environment_id: Option<Uuid>,
 ) -> AppResult<AcpSessionFocus> {
     state.wait_for_post_paint_recovery().await?;
-    state.agents_acp.start(connection_id, provider, app).await
+    state
+        .agents_acp
+        .start(connection_id, provider, project_environment_id, app)
+        .await
+}
+
+/// List exact Project Environments available through this connection revision.
+#[tauri::command]
+pub async fn list_agent_knowledge_environments(
+    state: State<'_, AppState>,
+    connection_id: ConnectionId,
+) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
+    state.wait_for_post_paint_recovery().await?;
+    let connection = state
+        .knowledge_store()
+        .pin_connection_for_read(Uuid::from(connection_id))
+        .await?;
+    state
+        .knowledge_store()
+        .agent_knowledge_environments(&connection)
+        .await
 }
 
 /// Resume persisted history through the official adapter's ACP session/load path.

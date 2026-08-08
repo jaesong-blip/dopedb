@@ -86,6 +86,7 @@ import {
   closeAgentAcpSession,
   focusAgentAcpSession,
   listAgentAcpSessions,
+  listAgentKnowledgeEnvironments,
   onAgentAcpChanged,
   promptAgentAcpSession,
   respondAgentAcpPermission,
@@ -184,6 +185,7 @@ function AcpChatPanelContent({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] =
     useState<AgentProvider>("claude");
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<string | null>(null);
   const [includeEditorContext, setIncludeEditorContext] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [configChanging, setConfigChanging] = useState<string | null>(null);
@@ -204,6 +206,11 @@ function AcpChatPanelContent({
   });
   const pluginStatusQuery = useQuery({
     ...agentPluginStatusQuery(),
+    refetchOnWindowFocus: false,
+  });
+  const knowledgeEnvironmentsQuery = useQuery({
+    queryKey: ["agentKnowledgeEnvironments", connection.id],
+    queryFn: () => listAgentKnowledgeEnvironments(connection.id),
     refetchOnWindowFocus: false,
   });
   const enabledProviders = useMemo(
@@ -448,6 +455,17 @@ function AcpChatPanelContent({
   }, [active]);
 
   useEffect(() => {
+    if (active?.projectEnvironmentId) {
+      setSelectedEnvironmentId(active.projectEnvironmentId);
+      return;
+    }
+    const available = (knowledgeEnvironmentsQuery.data ?? []).filter(
+      (environment) => environment.graphRevisionCount > 0,
+    );
+    setSelectedEnvironmentId(available.length === 1 ? available[0].id : null);
+  }, [active?.id, active?.projectEnvironmentId, connection.id, knowledgeEnvironmentsQuery.data]);
+
+  useEffect(() => {
     if (enabledProviders.includes(selectedProvider)) return;
     const next = enabledProviders[0];
     if (next) void changeProvider(next);
@@ -498,7 +516,11 @@ function AcpChatPanelContent({
     setStarting(true);
     setError(null);
     try {
-      const focus = await startAgentAcpSession(connection.id, provider);
+      const focus = await startAgentAcpSession(
+        connection.id,
+        provider,
+        selectedEnvironmentId,
+      );
       applyFocus(focus);
       setSelectedProvider(provider);
       setHistoryOpen(false);
@@ -1132,6 +1154,37 @@ function AcpChatPanelContent({
               changing={configChanging === modelOption.id}
               onChange={(value) => void changeConfigOption(modelOption, value)}
             />
+          ) : null}
+          {(knowledgeEnvironmentsQuery.data?.length ?? 0) > 0 ? (
+            <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1">
+              <select
+                className="tw:h-control-sm tw:min-w-0 tw:max-w-[14rem] tw:cursor-pointer tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-1 tw:font-sans tw:text-ui tw:text-foreground tw:outline-none tw:hover:bg-muted tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+                value={selectedEnvironmentId ?? ""}
+                disabled={starting || active !== null}
+                onChange={(event) => setSelectedEnvironmentId(event.target.value || null)}
+                aria-label={t("agent.acpEnvironment")}
+                title={t("agent.acpEnvironmentHint")}
+              >
+                <option value="">{t("agent.acpDatabaseOnly")}</option>
+                {knowledgeEnvironmentsQuery.data?.map((environment) => (
+                  <option
+                    key={environment.id}
+                    value={environment.id}
+                    disabled={environment.graphRevisionCount === 0}
+                  >
+                    {environment.projectName} / {environment.name}
+                  </option>
+                ))}
+              </select>
+              {active?.projectEnvironmentId ? (
+                <span className="tw:shrink-0 tw:text-xs tw:text-muted-foreground">
+                  {t("agent.acpEnvironmentScope", {
+                    databases: active.environmentConnections.length,
+                    sources: active.graphRevisionIds.length,
+                  })}
+                </span>
+              ) : null}
+            </span>
           ) : null}
         </ToolWindowComposerContext>
       </ToolWindowComposerDock>

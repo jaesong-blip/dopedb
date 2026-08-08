@@ -1,6 +1,7 @@
 //! Broker envelope validation, authentication sequencing, and feature-handler routing.
 mod connection_catalog;
 mod dashboard_operation;
+mod knowledge;
 mod projection;
 mod public_skill;
 mod query_document;
@@ -216,6 +217,14 @@ impl BrokerDispatcher {
             CommandName::ReportPropose | CommandName::ReportAppendEvidence => {
                 report_operation::handle(self, &request).await
             }
+            CommandName::KnowledgeSearch
+            | CommandName::KnowledgeExplain
+            | CommandName::KnowledgeNeighbors
+            | CommandName::KnowledgePath
+            | CommandName::KnowledgeEvidence
+            | CommandName::KnowledgeDiff
+            | CommandName::FunnelTrace
+            | CommandName::EnvironmentContext => knowledge::handle(self, &request).await,
             CommandName::Unknown => failure(request_id, ErrorCode::InvalidRequest, false),
         }
     }

@@ -63,7 +63,12 @@ pub(super) async fn handle(
             respond(
                 request_id,
                 dispatcher
-                    .cancel_operation(&session, arguments.operation_id, client_protocol_version)
+                    .cancel_operation(
+                        &session,
+                        arguments.operation_id,
+                        arguments.connection.as_ref(),
+                        client_protocol_version,
+                    )
                     .await,
             )
         }
@@ -84,6 +89,11 @@ impl BrokerDispatcher {
         let connection = self
             .resolve_connection(session, &arguments.connection, client_protocol_version)
             .await?;
+        let authority = terminal_authority_for_selector(
+            session,
+            &arguments.connection,
+            client_protocol_version,
+        )?;
         let receipt = self
             .services()?
             .document
@@ -91,7 +101,7 @@ impl BrokerDispatcher {
                 connection_id: connection.id,
                 query: document_query_from_protocol(arguments.query),
                 max_rows: arguments.max_rows,
-                authority: terminal_authority(session, client_protocol_version),
+                authority,
             })
             .await
             .map_err(map_document_error)?;
@@ -118,6 +128,11 @@ impl BrokerDispatcher {
         let connection = self
             .resolve_connection(session, &arguments.connection, client_protocol_version)
             .await?;
+        let authority = terminal_authority_for_selector(
+            session,
+            &arguments.connection,
+            client_protocol_version,
+        )?;
         let receipt = self
             .services()?
             .queries
@@ -126,7 +141,7 @@ impl BrokerDispatcher {
                 sql: arguments.sql,
                 database: arguments.database,
                 max_rows: arguments.max_rows,
-                authority: terminal_authority(session, client_protocol_version),
+                authority,
             })
             .await;
         let receipt = match receipt {
@@ -159,7 +174,12 @@ impl BrokerDispatcher {
         arguments: QueryRunArguments,
         client_protocol_version: u16,
     ) -> Result<QueryRunResult, ErrorCode> {
-        let authority = terminal_authority(session, client_protocol_version);
+        let authority = match &arguments.connection {
+            Some(connection) => {
+                terminal_authority_for_selector(session, connection, client_protocol_version)?
+            }
+            None => terminal_authority(session, client_protocol_version),
+        };
         let prepared = self
             .services()?
             .queries

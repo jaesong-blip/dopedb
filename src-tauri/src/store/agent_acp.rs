@@ -221,8 +221,10 @@ where
     sqlx::query(
         "INSERT INTO agent_acp_sessions(
              id, connection_id, workspace_id, account_scope, provider, title,
-             lifecycle, acp_session_id, error, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             lifecycle, acp_session_id, project_environment_id,
+             environment_revision, graph_revision_ids, environment_connections,
+             error, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT(id) DO UPDATE SET
              title = excluded.title,
              lifecycle = excluded.lifecycle,
@@ -239,6 +241,20 @@ where
     .bind(&summary.title)
     .bind(lifecycle_str(summary.lifecycle))
     .bind(&summary.acp_session_id)
+    .bind(
+        summary
+            .project_environment_id
+            .map(|value| value.to_string()),
+    )
+    .bind(
+        summary
+            .environment_revision
+            .map(|value| i64::try_from(value))
+            .transpose()
+            .map_err(|_| AppError::Config("the ACP Environment revision is too large".into()))?,
+    )
+    .bind(serde_json::to_string(&summary.graph_revision_ids)?)
+    .bind(serde_json::to_string(&summary.environment_connections)?)
     .bind(&summary.error)
     .bind(summary.created_at)
     .bind(summary.updated_at)
@@ -255,6 +271,27 @@ fn row_to_summary(row: &sqlx::sqlite::SqliteRow) -> AppResult<AcpSessionSummary>
         title: row.try_get("title")?,
         lifecycle: parse_lifecycle(row.try_get("lifecycle")?)?,
         acp_session_id: row.try_get("acp_session_id")?,
+        project_environment_id: row
+            .try_get::<Option<String>, _>("project_environment_id")?
+            .map(parse_uuid)
+            .transpose()?,
+        environment_revision: row
+            .try_get::<Option<i64>, _>("environment_revision")?
+            .map(|value| {
+                u64::try_from(value).map_err(|_| {
+                    AppError::Config("invalid persisted ACP Environment revision".into())
+                })
+            })
+            .transpose()?,
+        graph_revision_ids: serde_json::from_str::<Vec<String>>(
+            &row.try_get::<String, _>("graph_revision_ids")?,
+        )?
+        .into_iter()
+        .map(parse_uuid)
+        .collect::<AppResult<Vec<_>>>()?,
+        environment_connections: serde_json::from_str(
+            &row.try_get::<String, _>("environment_connections")?,
+        )?,
         error: row.try_get("error")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,

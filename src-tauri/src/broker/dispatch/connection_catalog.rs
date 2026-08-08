@@ -148,23 +148,25 @@ impl BrokerDispatcher {
         selector: &ConnectionSelector,
         client_protocol_version: u16,
     ) -> Result<ConnectionSummary, ErrorCode> {
-        let services = self.services()?;
-        let authority = terminal_authority(session, client_protocol_version);
-        let current = services
-            .connections
-            .terminal_summary(&authority)
-            .await
-            .map_err(|_| ErrorCode::ScopeDenied)?;
         match selector {
-            ConnectionSelector::Current => Ok(connection_summary(&current)),
-            ConnectionSelector::Id(id) => {
-                if *id == Uuid::from(current.id) {
-                    Ok(connection_summary(&current))
-                } else {
-                    Err(ErrorCode::ScopeDenied)
-                }
+            ConnectionSelector::Current | ConnectionSelector::Id(_) => {
+                let authority =
+                    terminal_authority_for_selector(session, selector, client_protocol_version)?;
+                self.services()?
+                    .connections
+                    .terminal_summary(&authority)
+                    .await
+                    .map(|summary| connection_summary(&summary))
+                    .map_err(|_| ErrorCode::ScopeDenied)
             }
             ConnectionSelector::Name(name) => {
+                let services = self.services()?;
+                let authority = terminal_authority(session, client_protocol_version);
+                let current = services
+                    .connections
+                    .terminal_summary(&authority)
+                    .await
+                    .map_err(|_| ErrorCode::ScopeDenied)?;
                 let resolved = services
                     .connections
                     .resolve_terminal_cli(&authority, name)
@@ -191,10 +193,15 @@ impl BrokerDispatcher {
         let connection = self
             .resolve_connection(session, &arguments.connection, client_protocol_version)
             .await?;
+        let authority = terminal_authority_for_selector(
+            session,
+            &arguments.connection,
+            client_protocol_version,
+        )?;
         let services = self.services()?;
         services
             .connections
-            .test_terminal(&terminal_authority(session, client_protocol_version))
+            .test_terminal(&authority)
             .await
             .map_err(map_target_error)?;
         Ok(ConnectionTestResult {
@@ -211,7 +218,11 @@ impl BrokerDispatcher {
     ) -> Result<CatalogSnapshot, ErrorCode> {
         self.resolve_connection(session, &arguments.connection, client_protocol_version)
             .await?;
-        let authority = terminal_authority(session, client_protocol_version);
+        let authority = terminal_authority_for_selector(
+            session,
+            &arguments.connection,
+            client_protocol_version,
+        )?;
         if let Some(database) = &arguments.database {
             self.services()?
                 .catalog
@@ -236,10 +247,12 @@ impl BrokerDispatcher {
         let connection = self
             .resolve_connection(session, connection_selector, client_protocol_version)
             .await?;
+        let authority =
+            terminal_authority_for_selector(session, connection_selector, client_protocol_version)?;
         let databases = self
             .services()?
             .catalog
-            .list_terminal_databases(&terminal_authority(session, client_protocol_version))
+            .list_terminal_databases(&authority)
             .await
             .map_err(map_application_error)?
             .into_iter()

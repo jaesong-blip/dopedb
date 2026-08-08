@@ -14,6 +14,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::error::{AppError, AppResult};
+use crate::features::knowledge::domain::KnowledgeSessionScope;
 use crate::kernel::identity::{
     AccountScopeId, ConnectionId, RuntimeId, TerminalSessionId, WorkspaceId,
 };
@@ -36,10 +37,11 @@ pub(crate) enum BrokerCapability {
     SqlPropose,
     OperationRead,
     OperationCancel,
+    KnowledgeRead,
 }
 
 impl BrokerCapability {
-    pub(crate) const ALL: [Self; 11] = [
+    pub(crate) const ALL: [Self; 12] = [
         Self::ConnectionRead,
         Self::ConnectionTest,
         Self::CatalogRead,
@@ -51,6 +53,7 @@ impl BrokerCapability {
         Self::SqlPropose,
         Self::OperationRead,
         Self::OperationCancel,
+        Self::KnowledgeRead,
     ];
 }
 
@@ -64,6 +67,7 @@ pub(crate) struct AuthenticatedSession {
     pub(crate) connection_id: ConnectionId,
     pub(crate) connection_revision: i64,
     pub(crate) capabilities: BTreeSet<BrokerCapability>,
+    pub(crate) knowledge_scope: Option<KnowledgeSessionScope>,
     pub(crate) expires_at: DateTime<Utc>,
 }
 
@@ -154,7 +158,7 @@ impl BrokerSessionRegistry {
         capabilities: impl IntoIterator<Item = BrokerCapability>,
         ttl: Duration,
     ) -> AppResult<IssuedSessionCapability> {
-        self.issue_with_authorization(terminal_session_id, pin, capabilities, ttl, None)
+        self.issue_with_authorization(terminal_session_id, pin, capabilities, ttl, None, None)
     }
 
     pub(crate) fn issue_agent(
@@ -176,6 +180,31 @@ impl BrokerSessionRegistry {
             capabilities,
             ttl,
             Some(registration),
+            None,
+        )
+    }
+
+    pub(crate) fn issue_agent_with_knowledge(
+        &self,
+        terminal_session_id: TerminalSessionId,
+        pin: &PinnedConnection,
+        capabilities: impl IntoIterator<Item = BrokerCapability>,
+        ttl: Duration,
+        registration: AgentSessionRegisterArguments,
+        knowledge_scope: Option<KnowledgeSessionScope>,
+    ) -> AppResult<IssuedSessionCapability> {
+        if !valid_agent_registration_paths(&registration) {
+            return Err(AppError::Config(
+                "the ACP launcher registration descriptor is invalid".into(),
+            ));
+        }
+        self.issue_with_authorization(
+            terminal_session_id,
+            pin,
+            capabilities,
+            ttl,
+            Some(registration),
+            knowledge_scope,
         )
     }
 
@@ -186,6 +215,7 @@ impl BrokerSessionRegistry {
         capabilities: impl IntoIterator<Item = BrokerCapability>,
         ttl: Duration,
         agent_registration: Option<AgentSessionRegisterArguments>,
+        knowledge_scope: Option<KnowledgeSessionScope>,
     ) -> AppResult<IssuedSessionCapability> {
         if ttl.is_zero() {
             return Err(AppError::Config(
@@ -209,6 +239,7 @@ impl BrokerSessionRegistry {
             connection_id: pin.connection_id.into(),
             connection_revision: pin.connection_revision,
             capabilities: capabilities.into_iter().collect(),
+            knowledge_scope,
             expires_at,
         };
         self.sessions.insert(

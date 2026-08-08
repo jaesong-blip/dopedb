@@ -75,7 +75,12 @@ pub(super) async fn handle(
             respond(
                 request_id,
                 dispatcher
-                    .cancel_operation(&session, arguments.operation_id, client_protocol_version)
+                    .cancel_operation(
+                        &session,
+                        arguments.operation_id,
+                        None,
+                        client_protocol_version,
+                    )
                     .await,
             )
         }
@@ -128,7 +133,11 @@ impl BrokerDispatcher {
         let connection = self
             .resolve_connection(session, &arguments.connection, client_protocol_version)
             .await?;
-        let authority = terminal_authority(session, client_protocol_version);
+        let authority = terminal_authority_for_selector(
+            session,
+            &arguments.connection,
+            client_protocol_version,
+        )?;
         let receipt = self
             .services()?
             .queries
@@ -194,14 +203,18 @@ impl BrokerDispatcher {
         &self,
         session: &AuthenticatedSession,
         operation_id: Uuid,
+        connection: Option<&ConnectionSelector>,
         client_protocol_version: u16,
     ) -> Result<OperationSummary, ErrorCode> {
+        let authority = match connection {
+            Some(connection) => {
+                terminal_authority_for_selector(session, connection, client_protocol_version)?
+            }
+            None => terminal_authority(session, client_protocol_version),
+        };
         self.services()?
             .operation
-            .cancel_terminal(
-                &terminal_authority(session, client_protocol_version),
-                operation_id,
-            )
+            .cancel_terminal(&authority, operation_id)
             .await
             .map_err(map_operation_error)
     }

@@ -16,7 +16,9 @@ use super::*;
 /// source-specific so an Environment can own multiple active graph revisions.
 /// Version 10 binds multiple exact connection revisions to that Environment.
 /// Version 11 pins an Environment KnowledgeGrant to its complete graph revision set.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 11;
+/// Version 12 persists the exact Knowledge scope of resumable ACP sessions.
+/// Version 13 adds the session's immutable Environment connection allowlist.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 13;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -101,7 +103,52 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 11).await?;
         migrated = true;
     }
+    if version < 12 {
+        ensure_agent_acp_knowledge_scope(pool).await?;
+        set_local_schema_version(pool, 12).await?;
+        migrated = true;
+    }
+    if version < 13 {
+        ensure_agent_acp_environment_connections(pool).await?;
+        set_local_schema_version(pool, 13).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+async fn ensure_agent_acp_environment_connections(pool: &SqlitePool) -> AppResult<()> {
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
+        "environment_connections",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN environment_connections TEXT NOT NULL DEFAULT '[]'",
+    )
+    .await
+}
+
+async fn ensure_agent_acp_knowledge_scope(pool: &SqlitePool) -> AppResult<()> {
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
+        "project_environment_id",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN project_environment_id TEXT",
+    )
+    .await?;
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
+        "environment_revision",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN environment_revision INTEGER CHECK(environment_revision IS NULL OR environment_revision > 0)",
+    )
+    .await?;
+    add_column_if_missing(
+        pool,
+        "agent_acp_sessions",
+        "graph_revision_ids",
+        "ALTER TABLE agent_acp_sessions ADD COLUMN graph_revision_ids TEXT NOT NULL DEFAULT '[]'",
+    )
+    .await?;
+    Ok(())
 }
 
 async fn ensure_knowledge_grant_revision_sets(pool: &SqlitePool) -> AppResult<()> {

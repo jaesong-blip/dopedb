@@ -27,6 +27,16 @@ pub(crate) struct AgentCliInfo {
     pub(crate) note: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentKnowledgeEnvironment {
+    pub(crate) id: uuid::Uuid,
+    pub(crate) project_name: String,
+    pub(crate) name: String,
+    pub(crate) risk_class: crate::features::knowledge::domain::EnvironmentRiskClass,
+    pub(crate) graph_revision_count: u64,
+}
+
 /// A thread persisted by the retired in-app Agent chat; it has no mutation path.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,6 +86,15 @@ pub(crate) struct AcpSessionSummary {
     pub(crate) title: String,
     pub(crate) lifecycle: AcpSessionLifecycle,
     pub(crate) acp_session_id: Option<String>,
+    #[serde(default)]
+    pub(crate) project_environment_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    pub(crate) environment_revision: Option<u64>,
+    #[serde(default)]
+    pub(crate) graph_revision_ids: Vec<uuid::Uuid>,
+    #[serde(default)]
+    pub(crate) environment_connections:
+        Vec<crate::features::knowledge::domain::KnowledgeSessionConnection>,
     pub(crate) error: Option<String>,
     pub(crate) created_at: DateTime<Utc>,
     pub(crate) updated_at: DateTime<Utc>,

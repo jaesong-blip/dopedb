@@ -105,6 +105,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             features::agents::transport::start_agent_acp_session,
+            features::agents::transport::list_agent_knowledge_environments,
             features::agents::transport::resume_agent_acp_session,
             features::agents::transport::list_agent_acp_sessions,
             features::agents::transport::focus_agent_acp_session,

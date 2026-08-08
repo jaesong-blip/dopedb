@@ -17,6 +17,45 @@ pub(super) fn terminal_authority(
     }
 }
 
+pub(super) fn terminal_authority_for_selector(
+    session: &AuthenticatedSession,
+    selector: &ConnectionSelector,
+    client_protocol_version: u16,
+) -> Result<TerminalAuthority, ErrorCode> {
+    let (connection_id, connection_revision) = match selector {
+        ConnectionSelector::Current => (session.connection_id, session.connection_revision),
+        ConnectionSelector::Id(id) if *id == Uuid::from(session.connection_id) => {
+            (session.connection_id, session.connection_revision)
+        }
+        ConnectionSelector::Id(id) => {
+            let connection = session
+                .knowledge_scope
+                .as_ref()
+                .and_then(|scope| {
+                    scope
+                        .connections
+                        .iter()
+                        .find(|connection| connection.connection_id == *id)
+                })
+                .ok_or(ErrorCode::ScopeDenied)?;
+            (
+                ConnectionId::from(connection.connection_id),
+                connection.connection_revision,
+            )
+        }
+        ConnectionSelector::Name(_) => return Err(ErrorCode::ScopeDenied),
+    };
+    Ok(TerminalAuthority {
+        terminal_session_id: session.terminal_session_id,
+        workspace_id: session.workspace_id,
+        account_scope: session.account_scope.clone(),
+        scope_generation: session.scope_generation,
+        connection_id,
+        connection_revision,
+        client_protocol_version,
+    })
+}
+
 pub(super) fn connection_summary(summary: &AgentConnectionSummary) -> ConnectionSummary {
     ConnectionSummary {
         id: summary.id.into(),

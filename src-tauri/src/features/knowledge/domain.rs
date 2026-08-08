@@ -173,6 +173,26 @@ pub(crate) struct KnowledgeGrant {
     pub(crate) expires_at: DateTime<Utc>,
 }
 
+/// Immutable Knowledge authority copied into one ACP session. The ordered
+/// revision set is the complete active graph set for that Environment revision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct KnowledgeSessionScope {
+    pub(crate) project_environment_id: Uuid,
+    pub(crate) environment_revision: u64,
+    pub(crate) graph_revision_ids: Vec<Uuid>,
+    pub(crate) connections: Vec<KnowledgeSessionConnection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct KnowledgeSessionConnection {
+    pub(crate) connection_id: Uuid,
+    pub(crate) connection_revision: i64,
+    pub(crate) role: String,
+    pub(crate) alias: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum MappingProposalState {

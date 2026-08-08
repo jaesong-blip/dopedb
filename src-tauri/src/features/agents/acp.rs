@@ -31,6 +31,7 @@ use zeroize::Zeroizing;
 
 use crate::broker::{BrokerCapability, BrokerRuntime};
 use crate::error::{AppError, AppResult};
+use crate::features::knowledge::domain::KnowledgeSessionScope;
 use crate::kernel::identity::{AcpSessionId, ConnectionId, TerminalSessionId};
 use crate::kernel::sync::lock_unpoisoned;
 use crate::model::{ConnectionProfile, Engine};
@@ -202,13 +203,22 @@ impl AcpRuntime {
         &self,
         connection_id: ConnectionId,
         provider: AgentProvider,
+        project_environment_id: Option<Uuid>,
         app: AppHandle,
     ) -> AppResult<AcpSessionFocus> {
         let first = self
-            .launch(connection_id, provider, app.clone(), None)
+            .launch(
+                connection_id,
+                provider,
+                project_environment_id,
+                app.clone(),
+                None,
+            )
             .await;
         if first.is_err() && self.plugins.has_ready_fallback(acp_plugin_id(provider))? {
-            return self.launch(connection_id, provider, app, None).await;
+            return self
+                .launch(connection_id, provider, project_environment_id, app, None)
+                .await;
         }
         first
     }
@@ -240,6 +250,7 @@ impl AcpRuntime {
             .launch(
                 connection_id,
                 provider,
+                None,
                 app.clone(),
                 Some(ResumeSeed {
                     summary: focus.session,
@@ -253,6 +264,7 @@ impl AcpRuntime {
                 .launch(
                     connection_id,
                     provider,
+                    None,
                     app,
                     Some(ResumeSeed {
                         summary: focus.session,
@@ -268,6 +280,7 @@ impl AcpRuntime {
         &self,
         connection_id: ConnectionId,
         provider: AgentProvider,
+        requested_environment_id: Option<Uuid>,
         app: AppHandle,
         resume_seed: Option<ResumeSeed>,
     ) -> AppResult<AcpSessionFocus> {
@@ -334,6 +347,17 @@ impl AcpRuntime {
             .store
             .pin_connection_for_read(Uuid::from(connection_id))
             .await?;
+        let knowledge_scope = match resume_seed.as_ref() {
+            Some(seed) => summary_knowledge_scope(&seed.summary)?,
+            None => {
+                self.store
+                    .knowledge_session_scope(&connection, requested_environment_id)
+                    .await?
+            }
+        };
+        if let Some(scope) = &knowledge_scope {
+            self.store.exact_knowledge_session_graphs(scope).await?;
+        }
 
         let now = Utc::now();
         let (id, summary, events, resume) = match resume_seed {
@@ -380,6 +404,20 @@ impl AcpRuntime {
                         title: "New Agent session".into(),
                         lifecycle: AcpSessionLifecycle::Starting,
                         acp_session_id: None,
+                        project_environment_id: knowledge_scope
+                            .as_ref()
+                            .map(|scope| scope.project_environment_id),
+                        environment_revision: knowledge_scope
+                            .as_ref()
+                            .map(|scope| scope.environment_revision),
+                        graph_revision_ids: knowledge_scope
+                            .as_ref()
+                            .map(|scope| scope.graph_revision_ids.clone())
+                            .unwrap_or_default(),
+                        environment_connections: knowledge_scope
+                            .as_ref()
+                            .map(|scope| scope.connections.clone())
+                            .unwrap_or_default(),
                         error: None,
                         created_at: now,
                         updated_at: now,
@@ -396,12 +434,13 @@ impl AcpRuntime {
             .checked_add(1)
             .ok_or_else(|| AppError::Config("the ACP event sequence was exhausted".into()))?;
         let broker_session_id = TerminalSessionId::from(Uuid::new_v4());
-        let issued = self.broker.sessions().issue_agent(
+        let issued = self.broker.sessions().issue_agent_with_knowledge(
             broker_session_id,
             &connection,
             BrokerCapability::ALL,
             ACP_CAPABILITY_TTL,
             registration,
+            knowledge_scope,
         )?;
         let token = Zeroizing::new(issued.token().to_owned());
         drop(issued);
@@ -716,6 +755,38 @@ fn detached_session_projection(mut summary: AcpSessionSummary) -> AcpSessionSumm
         summary.error = None;
     }
     summary
+}
+
+fn summary_knowledge_scope(
+    summary: &AcpSessionSummary,
+) -> AppResult<Option<KnowledgeSessionScope>> {
+    match (
+        summary.project_environment_id,
+        summary.environment_revision,
+        summary.graph_revision_ids.is_empty(),
+    ) {
+        (None, None, true) => Ok(None),
+        (Some(project_environment_id), Some(environment_revision), false)
+            if environment_revision > 0
+                && summary.graph_revision_ids.len() <= 100
+                && summary
+                    .graph_revision_ids
+                    .iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    == summary.graph_revision_ids.len() =>
+        {
+            Ok(Some(KnowledgeSessionScope {
+                project_environment_id,
+                environment_revision,
+                graph_revision_ids: summary.graph_revision_ids.clone(),
+                connections: summary.environment_connections.clone(),
+            }))
+        }
+        _ => Err(AppError::Blocked {
+            reason: "the persisted Agent Knowledge scope is incomplete".into(),
+        }),
+    }
 }
 
 fn detached_focus_projection(mut focus: AcpSessionFocus) -> AcpSessionFocus {

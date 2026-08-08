@@ -58,6 +58,14 @@ export interface AgentCliInfo {
   note: string;
 }
 
+export interface AgentKnowledgeEnvironment {
+  id: string;
+  projectName: string;
+  name: string;
+  riskClass: "production" | "staging" | "development" | "test" | "custom";
+  graphRevisionCount: number;
+}
+
 /** A persisted, read-only conversation created before Terminal sessions replaced chat. */
 export interface RetiredChatArchiveThread {
   id: RetiredChatThreadId;
@@ -96,6 +104,15 @@ export interface AcpSessionSummary {
   title: string;
   lifecycle: AcpSessionLifecycle;
   acpSessionId: string | null;
+  projectEnvironmentId: string | null;
+  environmentRevision: number | null;
+  graphRevisionIds: string[];
+  environmentConnections: Array<{
+    connectionId: string;
+    connectionRevision: number;
+    role: string;
+    alias: string;
+  }>;
   error: string | null;
   createdAt: string;
   updatedAt: string;

@@ -75,6 +75,8 @@ pub struct QueryPlanResult {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryRunArguments {
     pub plan_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectionSelector>,
 }
 
 pub struct QueryRunCommand;
@@ -113,6 +115,8 @@ pub struct QueryRunResult {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryCancelArguments {
     pub operation_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<ConnectionSelector>,
 }
 
 pub struct QueryCancelCommand;

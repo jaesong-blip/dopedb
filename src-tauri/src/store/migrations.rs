@@ -909,6 +909,10 @@ CREATE TABLE IF NOT EXISTS agent_acp_sessions (
                        'failed', 'closed'
                    )),
     acp_session_id TEXT,
+    project_environment_id TEXT,
+    environment_revision INTEGER CHECK(environment_revision IS NULL OR environment_revision > 0),
+    graph_revision_ids TEXT NOT NULL DEFAULT '[]',
+    environment_connections TEXT NOT NULL DEFAULT '[]',
     error          TEXT,
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL

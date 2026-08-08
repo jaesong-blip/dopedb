@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-6 command catalog. Any addition, removal, or meaning change requires a
+/// Version-9 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -69,6 +69,22 @@ pub enum CommandName {
     OperationWait,
     #[serde(rename = "operation.cancel")]
     OperationCancel,
+    #[serde(rename = "knowledge.search")]
+    KnowledgeSearch,
+    #[serde(rename = "knowledge.explain")]
+    KnowledgeExplain,
+    #[serde(rename = "knowledge.neighbors")]
+    KnowledgeNeighbors,
+    #[serde(rename = "knowledge.path")]
+    KnowledgePath,
+    #[serde(rename = "knowledge.evidence")]
+    KnowledgeEvidence,
+    #[serde(rename = "knowledge.diff")]
+    KnowledgeDiff,
+    #[serde(rename = "funnel.trace")]
+    FunnelTrace,
+    #[serde(rename = "environment.context")]
+    EnvironmentContext,
     /// Preserve envelope decodability long enough to return a stable schema/version
     /// error to a newer client. Unknown command payloads are never dispatched.
     #[serde(other)]
@@ -76,7 +92,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 29] = [
+    pub const ALL: [Self; 37] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -106,6 +122,14 @@ impl CommandName {
         Self::OperationShow,
         Self::OperationWait,
         Self::OperationCancel,
+        Self::KnowledgeSearch,
+        Self::KnowledgeExplain,
+        Self::KnowledgeNeighbors,
+        Self::KnowledgePath,
+        Self::KnowledgeEvidence,
+        Self::KnowledgeDiff,
+        Self::FunnelTrace,
+        Self::EnvironmentContext,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -139,6 +163,14 @@ impl CommandName {
             Self::OperationShow => "operation.show",
             Self::OperationWait => "operation.wait",
             Self::OperationCancel => "operation.cancel",
+            Self::KnowledgeSearch => "knowledge.search",
+            Self::KnowledgeExplain => "knowledge.explain",
+            Self::KnowledgeNeighbors => "knowledge.neighbors",
+            Self::KnowledgePath => "knowledge.path",
+            Self::KnowledgeEvidence => "knowledge.evidence",
+            Self::KnowledgeDiff => "knowledge.diff",
+            Self::FunnelTrace => "funnel.trace",
+            Self::EnvironmentContext => "environment.context",
             Self::Unknown => "unknown",
         }
     }

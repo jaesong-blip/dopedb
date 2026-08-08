@@ -12,6 +12,7 @@ import type {
   AcpSessionId,
   AcpSessionSummary,
   AgentCliInfo,
+  AgentKnowledgeEnvironment,
   AgentProvider,
   RetiredChatThreadId,
   RetiredChatArchiveMessage,
@@ -44,8 +45,15 @@ export function setAgentAcpPluginEnabled(
 export function startAgentAcpSession(
   connectionId: ConnectionId,
   provider: AgentProvider,
+  projectEnvironmentId?: string | null,
 ): Promise<AcpSessionFocus> {
-  return invoke("start_agent_acp_session", { connectionId, provider });
+  return invoke("start_agent_acp_session", { connectionId, provider, projectEnvironmentId });
+}
+
+export function listAgentKnowledgeEnvironments(
+  connectionId: ConnectionId,
+): Promise<AgentKnowledgeEnvironment[]> {
+  return invoke("list_agent_knowledge_environments", { connectionId });
 }
 
 export function resumeAgentAcpSession(

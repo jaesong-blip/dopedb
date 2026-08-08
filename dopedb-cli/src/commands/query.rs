@@ -46,7 +46,10 @@ pub(crate) async fn run(plan: &str, mode: OutputMode) -> Result<(), ClientError>
     let plan_id = parse_uuid(plan)?;
     let client = BrokerClient::discover()?;
     let result: QueryRunResult = client
-        .request::<QueryRunCommand>(&QueryRunArguments { plan_id })
+        .request::<QueryRunCommand>(&QueryRunArguments {
+            plan_id,
+            connection: None,
+        })
         .await?;
     match mode {
         OutputMode::Json => output::write_json(&result),
@@ -80,7 +83,10 @@ pub(crate) async fn cancel(operation_id: &str, mode: OutputMode) -> Result<(), C
     let operation_id = parse_uuid(operation_id)?;
     let client = BrokerClient::discover()?;
     let result: OperationSummary = client
-        .request::<QueryCancelCommand>(&QueryCancelArguments { operation_id })
+        .request::<QueryCancelCommand>(&QueryCancelArguments {
+            operation_id,
+            connection: None,
+        })
         .await?;
     write_operation(&result, mode)
 }

@@ -7,10 +7,11 @@ use dopedb_protocol::{
 };
 use sha2::{Digest, Sha256};
 
+use crate::features::agents::domain::AgentKnowledgeEnvironment;
 use crate::features::knowledge::domain::{
     validate_environment_connection_label, EnvironmentConnectionBinding, EnvironmentRiskClass,
-    KnowledgeGrant, KnowledgeMappingProposal, MappingProposalState, Project, ProjectEnvironment,
-    SourceSnapshot, StoredKnowledgeScope,
+    KnowledgeGrant, KnowledgeMappingProposal, KnowledgeSessionConnection, KnowledgeSessionScope,
+    MappingProposalState, Project, ProjectEnvironment, SourceSnapshot, StoredKnowledgeScope,
 };
 use crate::features::knowledge::ports::{
     KnowledgeGrantPort, KnowledgeGraphRepositoryPort, KnowledgeMappingRepositoryPort,
@@ -20,6 +21,237 @@ use crate::features::knowledge::ports::{
 const MAX_GRAPH_ARTIFACT_JSON_BYTES: usize = 256 * 1024 * 1024;
 
 impl Store {
+    pub(crate) async fn agent_knowledge_environments(
+        &self,
+        connection: &PinnedConnection,
+    ) -> AppResult<Vec<AgentKnowledgeEnvironment>> {
+        let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
+            "SELECT environment.id, project.name, environment.name,
+                    environment.risk_class, COUNT(head.graph_revision_id)
+             FROM knowledge_environment_connections binding
+             JOIN knowledge_project_environments environment
+               ON environment.id = binding.project_environment_id
+              AND environment.revision = binding.environment_revision
+             JOIN knowledge_projects project ON project.id = environment.project_id
+             LEFT JOIN knowledge_environment_heads head
+               ON head.project_environment_id = environment.id
+              AND head.environment_revision = environment.revision
+             WHERE binding.connection_id = ?1
+               AND binding.connection_revision = ?2
+               AND binding.revoked_at IS NULL
+               AND project.workspace_id = ?3
+             GROUP BY environment.id, project.name, environment.name,
+                      environment.risk_class
+             ORDER BY project.name, environment.name, environment.id",
+        )
+        .bind(connection.connection_id.to_string())
+        .bind(connection.connection_revision)
+        .bind(connection.scope.workspace_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(
+                |(id, project_name, name, risk_class, graph_revision_count)| {
+                    Ok(AgentKnowledgeEnvironment {
+                        id: parse_uuid(id)?,
+                        project_name,
+                        name,
+                        risk_class: parse_risk_class(&risk_class)?,
+                        graph_revision_count: u64::try_from(graph_revision_count).map_err(
+                            |_| AppError::Config("the Knowledge graph count is invalid".into()),
+                        )?,
+                    })
+                },
+            )
+            .collect()
+    }
+
+    pub(crate) async fn knowledge_session_scope(
+        &self,
+        connection: &PinnedConnection,
+        requested_environment_id: Option<Uuid>,
+    ) -> AppResult<Option<KnowledgeSessionScope>> {
+        let environment_rows: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT DISTINCT environment.id, environment.revision
+             FROM knowledge_environment_connections binding
+             JOIN knowledge_project_environments environment
+               ON environment.id = binding.project_environment_id
+              AND environment.revision = binding.environment_revision
+             JOIN knowledge_projects project ON project.id = environment.project_id
+             WHERE binding.connection_id = ?1
+               AND binding.connection_revision = ?2
+               AND binding.revoked_at IS NULL
+               AND project.workspace_id = ?3
+               AND (?4 IS NULL OR environment.id = ?4)
+             ORDER BY environment.id",
+        )
+        .bind(connection.connection_id.to_string())
+        .bind(connection.connection_revision)
+        .bind(connection.scope.workspace_id.to_string())
+        .bind(requested_environment_id.map(|value| value.to_string()))
+        .fetch_all(&self.pool)
+        .await?;
+        if environment_rows.is_empty() {
+            if requested_environment_id.is_some() {
+                return Err(AppError::Blocked {
+                    reason: "the connection is not bound to that Project Environment revision"
+                        .into(),
+                });
+            }
+            return Ok(None);
+        }
+        if environment_rows.len() != 1 {
+            return Err(AppError::Blocked {
+                reason: "select one Project Environment before starting this Agent session".into(),
+            });
+        }
+        let (environment_id, environment_revision) = &environment_rows[0];
+        let project_environment_id = parse_uuid(environment_id.clone())?;
+        let graphs = self.active_set(project_environment_id).await?;
+        if graphs.is_empty() {
+            return Ok(None);
+        }
+        let environment_revision = u64::try_from(*environment_revision).map_err(|_| {
+            AppError::Config("the stored Project Environment revision is invalid".into())
+        })?;
+        if graphs
+            .iter()
+            .any(|graph| graph.environment_revision != environment_revision)
+        {
+            return Err(AppError::Blocked {
+                reason: "the Project Environment Knowledge graph set is stale".into(),
+            });
+        }
+        let bindings = self
+            .environment_connections(connection.scope.workspace_id, project_environment_id)
+            .await?;
+        if bindings.len() > 32 {
+            return Err(AppError::Blocked {
+                reason: "the Project Environment has too many database bindings".into(),
+            });
+        }
+        let mut connections = Vec::new();
+        for binding in bindings {
+            if binding.connection_revision != binding.current_connection_revision {
+                return Err(AppError::Blocked {
+                    reason: format!(
+                        "the {} Environment database binding changed; reconfirm it before starting an Agent session",
+                        binding.alias
+                    ),
+                });
+            }
+            let pinned = self.pin_connection_for_read(binding.connection_id).await?;
+            if pinned.connection_revision != binding.connection_revision
+                || pinned.scope.workspace_id != connection.scope.workspace_id
+                || pinned.scope.account_scope.storage_key()
+                    != connection.scope.account_scope.storage_key()
+            {
+                return Err(AppError::Blocked {
+                    reason: "an Environment database is outside this member's exact grant".into(),
+                });
+            }
+            connections.push(KnowledgeSessionConnection {
+                connection_id: binding.connection_id,
+                connection_revision: binding.connection_revision,
+                role: binding.role,
+                alias: binding.alias,
+            });
+        }
+        connections.sort_by(|left, right| {
+            (&left.role, &left.alias, left.connection_id).cmp(&(
+                &right.role,
+                &right.alias,
+                right.connection_id,
+            ))
+        });
+        if !connections
+            .iter()
+            .any(|value| value.connection_id == Uuid::from(connection.connection_id))
+        {
+            return Err(AppError::Blocked {
+                reason: "the current connection is not in the selected Environment grant".into(),
+            });
+        }
+        Ok(Some(KnowledgeSessionScope {
+            project_environment_id,
+            environment_revision,
+            graph_revision_ids: graphs
+                .into_iter()
+                .map(|graph| graph.graph_revision_id)
+                .collect(),
+            connections,
+        }))
+    }
+
+    pub(crate) async fn exact_knowledge_session_graphs(
+        &self,
+        scope: &KnowledgeSessionScope,
+    ) -> AppResult<Vec<GraphBuildArtifactV1>> {
+        let graphs = self.active_set(scope.project_environment_id).await?;
+        let active_ids = graphs
+            .iter()
+            .map(|graph| graph.graph_revision_id)
+            .collect::<Vec<_>>();
+        if graphs.is_empty()
+            || graphs
+                .iter()
+                .any(|graph| graph.environment_revision != scope.environment_revision)
+            || active_ids != scope.graph_revision_ids
+        {
+            return Err(AppError::Blocked {
+                reason: "the Agent Knowledge scope changed; start a new session to reconfirm it"
+                    .into(),
+            });
+        }
+        if scope.connections.is_empty()
+            || scope.connections.len() > 32
+            || scope.connections.iter().any(|connection| {
+                connection.connection_revision <= 0
+                    || !validate_environment_connection_label(&connection.role, 64)
+                    || !validate_environment_connection_label(&connection.alias, 128)
+            })
+        {
+            return Err(AppError::Blocked {
+                reason: "the Agent Knowledge database scope is invalid".into(),
+            });
+        }
+        for connection in &scope.connections {
+            let active: bool = sqlx::query_scalar(
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM knowledge_environment_connections binding
+                    JOIN knowledge_project_environments environment
+                      ON environment.id = binding.project_environment_id
+                     AND environment.revision = binding.environment_revision
+                    JOIN connections current ON current.id = binding.connection_id
+                    WHERE binding.project_environment_id = ?1
+                      AND binding.environment_revision = ?2
+                      AND binding.connection_id = ?3
+                      AND binding.connection_revision = ?4
+                      AND binding.revoked_at IS NULL
+                      AND current.revision = binding.connection_revision
+                      AND current.deleted_at IS NULL
+                )",
+            )
+            .bind(scope.project_environment_id.to_string())
+            .bind(u64_to_i64(
+                scope.environment_revision,
+                "environment revision",
+            )?)
+            .bind(connection.connection_id.to_string())
+            .bind(connection.connection_revision)
+            .fetch_one(&self.pool)
+            .await?;
+            if !active {
+                return Err(AppError::Blocked {
+                    reason: "the Agent Environment connection scope changed; start a new session"
+                        .into(),
+                });
+            }
+        }
+        Ok(graphs)
+    }
+
     pub(crate) async fn bind_environment_connection(
         &self,
         binding_id: Uuid,
