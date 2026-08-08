@@ -31,7 +31,9 @@ jobs:
     permissions:
       contents: write
     environment:
-      name: acp-adapter-release
+      # Reuse the protected signing environment so the updater key and its
+      # password never need to be copied into a second GitHub environment.
+      name: stable-release
       url: https://github.com/${{ github.repository }}/releases/tag/acp-bundle-stable
     steps:
       - uses: actions/checkout@v7
