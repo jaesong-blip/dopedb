@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { EditorView } from "@codemirror/view";
+import { Transaction } from "@codemirror/state";
 
 import DataGrid from "../components/DataGrid";
 import ErdCanvas from "../components/ErdCanvas";
@@ -202,8 +204,7 @@ function SqlEditorScenario() {
 
     for (const [label, size] of fixtures) {
       const source = sqlFixture(size);
-      replaceDocument(view, source);
-      await waitForPackagedPaint();
+      await setControlledSqlDocument(view, setValue, source);
 
       await samples(`sql-editor-${label}-type`, ACTION_SAMPLES, (index) => {
         const position = Math.max(0, view.state.doc.length - index);
@@ -215,15 +216,16 @@ function SqlEditorScenario() {
         );
         view.dispatch({ selection: { anchor: position }, scrollIntoView: true });
       });
-      await samples(`sql-editor-${label}-format`, 2, async () => {
-        replaceDocument(view, source);
-        await waitForPackagedPaint();
-        const formatted = await formatSqlDocument(
-          view.state.doc.toString(),
-          "sqlite",
-        );
-        replaceDocument(view, formatted);
-      });
+      for (let index = 0; index < 2; index += 1) {
+        await setControlledSqlDocument(view, setValue, source);
+        await measurePackagedAction(`sql-editor-${label}-format`, async () => {
+          const formatted = await formatSqlDocument(
+            view.state.doc.toString(),
+            "sqlite",
+          );
+          await setControlledSqlDocument(view, setValue, formatted);
+        });
+      }
       await samples(`sql-editor-${label}-run`, ACTION_SAMPLES, () => {
         view.contentDOM.dispatchEvent(
           new KeyboardEvent("keydown", {
@@ -255,11 +257,36 @@ function SqlEditorScenario() {
   );
 }
 
-function replaceDocument(view: EditorView, value: string) {
+async function setControlledSqlDocument(
+  view: EditorView,
+  setValue: (value: string) => void,
+  value: string,
+) {
+  flushSync(() => setValue(value));
+  const matches = () => {
+    const document = view.state.doc;
+    const edgeLength = Math.min(64, value.length);
+    return document.length === value.length
+      && document.sliceString(0, edgeLength) === value.slice(0, edgeLength)
+      && document.sliceString(document.length - edgeLength) === value.slice(-edgeLength);
+  };
+  // @uiw/react-codemirror deliberately defers controlled value echoes while a
+  // typing latch is active. Give the production path a bounded opportunity to
+  // settle after the prop/extension commit.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await waitForPackagedPaint();
+    if (matches()) return;
+  }
+  // Deterministic fixture fallback: rich-language extensions were already
+  // reconfigured by the flushed prop commit, and fixture replacement must not
+  // accumulate synthetic undo history across the 10KiB/100KiB/1MiB cases.
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: value },
     selection: { anchor: 0 },
+    annotations: Transaction.addToHistory.of(false),
   });
+  await waitForPackagedPaint();
+  if (!matches()) throw new Error("controlled SQL benchmark document did not settle");
 }
 
 function ExplorerSearchScenario() {
