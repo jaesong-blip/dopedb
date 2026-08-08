@@ -662,12 +662,14 @@ function runApplication(
           rssSamplePending = false;
         });
     };
-    if (sampleRss) sampleProcessTreeRss();
-    // Windows gets an exact process-tree sample from the app's native ToolHelp
-    // report at shutdown. The periodic sampler tracks the root process peak only;
-    // unlike CIM enumeration it completes inside short benchmark journeys.
-    const sampler = sampleRss
-      ? setInterval(sampleProcessTreeRss, platform() === "win32" ? 1_000 : 50)
+    const usesNativeRssSampler = platform() === "win32" || platform() === "darwin";
+    if (sampleRss && !usesNativeRssSampler) sampleProcessTreeRss();
+    // macOS and Windows feature builds sample the exact process tree in-process.
+    // Spawning `ps`/PowerShell during an interaction perturbs the frame clock the
+    // benchmark is meant to measure, so the launcher only provides the fallback
+    // sampler on platforms without native instrumentation.
+    const sampler = sampleRss && !usesNativeRssSampler
+      ? setInterval(sampleProcessTreeRss, 250)
       : null;
     const timeout = setTimeout(() => {
       timedOut = true;

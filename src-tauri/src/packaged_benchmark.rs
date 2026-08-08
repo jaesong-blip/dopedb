@@ -13,6 +13,13 @@ use std::collections::HashMap;
 #[cfg(feature = "packaged-benchmark")]
 use std::fs::OpenOptions;
 #[cfg(feature = "packaged-benchmark")]
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Once,
+};
+#[cfg(feature = "packaged-benchmark")]
+use std::thread;
+#[cfg(feature = "packaged-benchmark")]
 use std::time::{Duration, Instant};
 #[cfg(feature = "packaged-benchmark")]
 use uuid::Uuid;
@@ -135,6 +142,7 @@ pub(crate) async fn packaged_benchmark_config(
                 "packaged benchmark scenario is unsupported".into(),
             ));
         };
+        start_packaged_process_tree_rss_sampler();
         // Every measured process must own a visible paint clock. In particular,
         // repeated cold/warm startup launches can otherwise be left inactive by
         // macOS before the renderer records its first-shell frame.
@@ -298,7 +306,7 @@ pub(crate) async fn complete_packaged_benchmark(
         state.wait_for_post_paint_recovery().await?;
         let scenario = benchmark_scenario()?;
         let connection_count = benchmark_connection_count()?;
-        let process_tree_rss_bytes = packaged_process_tree_rss_bytes();
+        let process_tree_rss_bytes = maximum_packaged_process_tree_rss_bytes();
         let report = PackagedBenchmarkReport {
             schema_version: 2,
             measurement_scope: "packaged_release_user_journeys",
@@ -741,6 +749,37 @@ fn benchmark_phase(scenario: &str) -> AppResult<Option<String>> {
     }
 }
 
+#[cfg(feature = "packaged-benchmark")]
+static PACKAGED_PROCESS_TREE_RSS_MAX: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(feature = "packaged-benchmark")]
+static PACKAGED_PROCESS_TREE_RSS_SAMPLER: Once = Once::new();
+
+#[cfg(feature = "packaged-benchmark")]
+fn start_packaged_process_tree_rss_sampler() {
+    observe_packaged_process_tree_rss();
+    PACKAGED_PROCESS_TREE_RSS_SAMPLER.call_once(|| {
+        thread::spawn(|| loop {
+            thread::sleep(Duration::from_millis(50));
+            observe_packaged_process_tree_rss();
+        });
+    });
+}
+
+#[cfg(feature = "packaged-benchmark")]
+fn observe_packaged_process_tree_rss() {
+    if let Some(bytes) = packaged_process_tree_rss_bytes() {
+        PACKAGED_PROCESS_TREE_RSS_MAX.fetch_max(bytes, Ordering::Relaxed);
+    }
+}
+
+#[cfg(feature = "packaged-benchmark")]
+fn maximum_packaged_process_tree_rss_bytes() -> Option<u64> {
+    observe_packaged_process_tree_rss();
+    let bytes = PACKAGED_PROCESS_TREE_RSS_MAX.load(Ordering::Relaxed);
+    (bytes > 0).then_some(bytes)
+}
+
 #[cfg(all(feature = "packaged-benchmark", windows))]
 fn packaged_process_tree_rss_bytes() -> Option<u64> {
     use std::collections::HashSet;
@@ -818,7 +857,74 @@ fn packaged_process_tree_rss_bytes() -> Option<u64> {
     (total > 0).then_some(total)
 }
 
-#[cfg(all(feature = "packaged-benchmark", not(windows)))]
+#[cfg(all(feature = "packaged-benchmark", target_os = "macos"))]
+fn packaged_process_tree_rss_bytes() -> Option<u64> {
+    use std::collections::HashSet;
+    use std::ffi::c_void;
+    use std::mem::{size_of, MaybeUninit};
+
+    let pid_count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+    let capacity = usize::try_from(pid_count).ok()?.saturating_add(64);
+    let mut pids = vec![0i32; capacity];
+    let byte_size = i32::try_from(pids.len().checked_mul(size_of::<i32>())?).ok()?;
+    let listed = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast::<c_void>(), byte_size) };
+    let listed = usize::try_from(listed).ok()?.min(pids.len());
+    pids.truncate(listed);
+
+    let bsd_info_size = i32::try_from(size_of::<libc::proc_bsdinfo>()).ok()?;
+    let mut processes = Vec::with_capacity(pids.len());
+    for pid in pids.into_iter().filter(|pid| *pid > 0) {
+        let mut info = MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                info.as_mut_ptr().cast::<c_void>(),
+                bsd_info_size,
+            )
+        };
+        if read == bsd_info_size {
+            let parent_pid = i32::try_from(unsafe { info.assume_init() }.pbi_ppid).ok()?;
+            processes.push((pid, parent_pid));
+        }
+    }
+
+    let root = i32::try_from(std::process::id()).ok()?;
+    let mut descendants = HashSet::from([root]);
+    loop {
+        let before = descendants.len();
+        for &(pid, parent_pid) in &processes {
+            if descendants.contains(&parent_pid) {
+                descendants.insert(pid);
+            }
+        }
+        if descendants.len() == before {
+            break;
+        }
+    }
+
+    let task_info_size = i32::try_from(size_of::<libc::proc_taskinfo>()).ok()?;
+    let mut total = 0u64;
+    for pid in descendants {
+        let mut info = MaybeUninit::<libc::proc_taskinfo>::zeroed();
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTASKINFO,
+                0,
+                info.as_mut_ptr().cast::<c_void>(),
+                task_info_size,
+            )
+        };
+        if read == task_info_size {
+            total = total.saturating_add(unsafe { info.assume_init() }.pti_resident_size);
+        }
+    }
+    (total > 0).then_some(total)
+}
+
+#[cfg(all(feature = "packaged-benchmark", not(any(windows, target_os = "macos"))))]
 fn packaged_process_tree_rss_bytes() -> Option<u64> {
     None
 }
