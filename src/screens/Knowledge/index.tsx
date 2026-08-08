@@ -404,7 +404,7 @@ export default function Knowledge({
 
   function executeAnalysis(analysis: FunnelAnalysisArtifact) {
     const tileRequests = analysis.tiles
-      .filter((tile) => tile.definition.kind !== "markdown")
+      .filter((tile) => Boolean(tile.dashboard))
       .map((tile) => ({ tileId: tile.definition.id, queryId: crypto.randomUUID() }));
     if (tileRequests.length === 0) return;
     runAnalysis.mutate({ artifactId: analysis.id, tileRequests });
@@ -714,7 +714,7 @@ export default function Knowledge({
                         ["Environment", `revision ${analysis.environmentRevision}`],
                         ["Databases", String(connectionCount)],
                         ["Source graphs", String(analysis.graphRevisionIds.length)],
-                        ["Window", `${analysis.conversionWindowSeconds.toLocaleString()}s · ${analysis.timezone}`],
+                        ["Time range", `${analysis.timeRange} · ${analysis.timezone}`],
                       ].map(([label, value]) => (
                         <div key={label} className="tw:grid tw:gap-0.5 tw:bg-card tw:px-3 tw:py-2">
                           <dt className="tw:text-[11px] tw:text-muted-foreground">{label}</dt>
@@ -754,6 +754,16 @@ export default function Knowledge({
                       </div>
                     </div>
 
+                    <div className="tw:grid tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
+                      <span className="tw:text-[11px] tw:font-semibold tw:text-muted-foreground">SEGMENTS & WINDOW</span>
+                      <p className="tw:m-0 tw:text-xs tw:leading-relaxed">
+                        {analysis.segmentFilters.length > 0
+                          ? analysis.segmentFilters.join(" · ")
+                          : "All records"}
+                        {` · conversion window ${analysis.conversionWindowSeconds.toLocaleString()}s`}
+                      </p>
+                    </div>
+
                     {analysis.warnings.map((warning) => (
                       <InlineNotice key={warning} tone="warning" icon="alert">{warning}</InlineNotice>
                     ))}
@@ -775,6 +785,10 @@ export default function Knowledge({
                           </div>
                           {tile.definition.markdown ? (
                             <p className="tw:m-0 tw:text-xs tw:leading-relaxed tw:text-muted-foreground">{tile.definition.markdown}</p>
+                          ) : tile.definition.composition ? (
+                            <span className="tw:text-xs tw:leading-relaxed tw:text-muted-foreground">
+                              {tile.definition.composition.operation} of {tile.definition.composition.inputs.map((input) => input.label).join(" → ")}
+                            </span>
                           ) : tile.dashboard ? (
                             <>
                               <span className="tw:truncate tw:text-xs tw:text-muted-foreground">
@@ -795,12 +809,12 @@ export default function Knowledge({
                               {tile.unavailableReason ?? "This tile is unavailable under the current member grant."}
                             </InlineNotice>
                           )}
-                          {tile.dashboard && tile.availability !== "ready" ? (
+                          {tile.availability !== "ready" && (tile.dashboard || tile.definition.composition) ? (
                             <InlineNotice tone="warning" icon="alert">
                               {tile.unavailableReason ?? "This tile cannot run with the current member grant."}
                             </InlineNotice>
                           ) : null}
-                          {running && tile.definition.kind !== "markdown" ? (
+                          {running && tile.dashboard ? (
                             <div className="tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2">
                               <LoadingLabel>Running with your current grant…</LoadingLabel>
                               <Button
@@ -811,6 +825,8 @@ export default function Knowledge({
                                 Cancel tile
                               </Button>
                             </div>
+                          ) : running && tile.definition.composition ? (
+                            <LoadingLabel>Calculating from current inputs…</LoadingLabel>
                           ) : (() => {
                             const tileRun = currentRun?.tiles.find(
                               (candidate) => candidate.tileId === tile.definition.id,
@@ -829,18 +845,28 @@ export default function Knowledge({
                                 </InlineNotice>
                               );
                             }
-                            if (!tile.dashboard) return null;
+                            const visualization = tile.dashboard
+                              ? {
+                                  version: 1 as const,
+                                  kind: tile.dashboard.visualization.kind,
+                                  xColumn: tile.dashboard.visualization.xColumn ?? null,
+                                  yColumns: tile.dashboard.visualization.yColumns,
+                                }
+                              : tile.definition.composition
+                                ? {
+                                    version: 1 as const,
+                                    kind: tile.definition.composition.operation === "funnel" ? "table" as const : "metric" as const,
+                                    xColumn: null,
+                                    yColumns: [],
+                                  }
+                                : null;
+                            if (!visualization) return null;
                             return (
                               <div className="tw:min-w-0 tw:overflow-hidden tw:border-t tw:border-border-subtle tw:pt-3">
                                 <DashboardVisualizationView
                                   compact
                                   result={tileRun.result}
-                                  visualization={{
-                                    version: 1,
-                                    kind: tile.dashboard.visualization.kind,
-                                    xColumn: tile.dashboard.visualization.xColumn ?? null,
-                                    yColumns: tile.dashboard.visualization.yColumns,
-                                  }}
+                                  visualization={visualization}
                                 />
                               </div>
                             );

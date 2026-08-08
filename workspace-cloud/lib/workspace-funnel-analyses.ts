@@ -22,6 +22,8 @@ export type FunnelAnalysisDefinition = Readonly<{
   question: string;
   purpose: string;
   timezone: string;
+  timeRange: string;
+  segmentFilters: readonly string[];
   conversionWindowSeconds: number;
   denominatorSemantics: string;
   numeratorSemantics: string;
@@ -104,7 +106,7 @@ function parseStep(value: unknown) {
   return { ...exact };
 }
 
-function parseTile(value: unknown) {
+function parseTile(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Invalid funnel tile");
   }
@@ -113,6 +115,7 @@ function parseTile(value: unknown) {
     ...(row.dashboardId === undefined ? [] : ["dashboardId"]),
     ...(row.expectedDashboardRevision === undefined ? [] : ["expectedDashboardRevision"]),
     ...(row.queryRunId === undefined ? [] : ["queryRunId"]),
+    ...(row.composition === undefined ? [] : ["composition"]),
     ...(row.markdown === undefined ? [] : ["markdown"]),
   ];
   const exact = exactRecord(row, ["id", "title", "kind", ...optional, "stepIds"]);
@@ -126,8 +129,29 @@ function parseTile(value: unknown) {
   }
   if (exact.kind === "markdown") {
     if (exact.dashboardId !== undefined || exact.expectedDashboardRevision !== undefined
-      || exact.queryRunId !== undefined
+      || exact.queryRunId !== undefined || exact.composition !== undefined
       || text(exact.markdown, 32_000) === null) throw new Error("Invalid Markdown tile");
+  } else if (exact.composition !== undefined) {
+    const composition = exactRecord(exact.composition, ["operation", "inputs"]);
+    const operations = ["funnel", "ratio", "sum", "difference"];
+    if (!composition || typeof composition.operation !== "string"
+      || !operations.includes(composition.operation) || !Array.isArray(composition.inputs)
+      || composition.inputs.length < 2 || composition.inputs.length > 32
+      || exact.dashboardId !== undefined || exact.expectedDashboardRevision !== undefined
+      || exact.queryRunId !== undefined || exact.markdown !== undefined) {
+      throw new Error("Invalid composed funnel tile");
+    }
+    if ((composition.operation === "ratio" || composition.operation === "difference")
+      && composition.inputs.length !== 2) throw new Error("Invalid composed funnel arity");
+    const inputs = composition.inputs.map((value) => {
+      const input = exactRecord(value, ["tileId", "label", "column"]);
+      if (!input || typeof input.tileId !== "string" || !ID.test(input.tileId)
+        || text(input.label, 256) === null || text(input.column, 512) === null) {
+        throw new Error("Invalid composed funnel input");
+      }
+      return { ...input };
+    });
+    return { ...exact, composition: { operation: composition.operation, inputs } };
   } else if (typeof exact.dashboardId !== "string" || !UUID.test(exact.dashboardId)
     || positiveSafeInteger(exact.expectedDashboardRevision) === null
     || typeof exact.queryRunId !== "string" || !UUID.test(exact.queryRunId)
@@ -139,7 +163,8 @@ function parseTile(value: unknown) {
 
 function parseDefinition(value: unknown): FunnelAnalysisDefinition {
   const row = exactRecord(value, [
-    "sourceAgent", "title", "question", "purpose", "timezone", "conversionWindowSeconds",
+    "sourceAgent", "title", "question", "purpose", "timezone", "timeRange",
+    "segmentFilters", "conversionWindowSeconds",
     "denominatorSemantics", "numeratorSemantics", "deduplicationPolicy",
     "lateEventPolicy", "steps", "tiles", "warnings",
   ]);
@@ -148,6 +173,7 @@ function parseDefinition(value: unknown): FunnelAnalysisDefinition {
   const question = text(row?.question, 8_000);
   const purpose = text(row?.purpose, 8_000);
   const timezone = text(row?.timezone, 128);
+  const timeRange = text(row?.timeRange, 2_000);
   const denominatorSemantics = text(row?.denominatorSemantics, 4_000);
   const numeratorSemantics = text(row?.numeratorSemantics, 4_000);
   const deduplicationPolicy = text(row?.deduplicationPolicy, 4_000);
@@ -155,6 +181,7 @@ function parseDefinition(value: unknown): FunnelAnalysisDefinition {
   const window = positiveSafeInteger(row?.conversionWindowSeconds);
   if (!row || !(sourceAgent === "dopedb.acp.claude" || sourceAgent === "dopedb.acp.codex")
     || title === null || question === null || purpose === null || timezone === null
+    || timeRange === null || !Array.isArray(row.segmentFilters) || row.segmentFilters.length > 32
     || denominatorSemantics === null || numeratorSemantics === null
     || deduplicationPolicy === null || lateEventPolicy === null
     || window === null || window > 31_622_400
@@ -167,14 +194,26 @@ function parseDefinition(value: unknown): FunnelAnalysisDefinition {
   const stepIds = new Set(steps.map((step) => step.id));
   if (stepIds.size !== steps.length) throw new Error("Duplicate funnel step id");
   const tiles = row.tiles.map(parseTile);
-  if (new Set(tiles.map((tile) => tile.id)).size !== tiles.length
+  const queryTileIds = new Set(tiles.flatMap((tile) =>
+    typeof tile.dashboardId === "string" ? [tile.id as string] : []
+  ));
+  if (queryTileIds.size === 0 || new Set(tiles.map((tile) => tile.id)).size !== tiles.length
     || tiles.some((tile) => (tile.stepIds as string[]).some((id) => !stepIds.has(id)))) {
     throw new Error("Invalid funnel tile references");
   }
+  for (const tile of tiles) {
+    const composition = tile.composition as { inputs?: Array<{ tileId?: unknown }> } | undefined;
+    if (composition?.inputs?.some((input) =>
+      typeof input.tileId !== "string" || input.tileId === tile.id || !queryTileIds.has(input.tileId)
+    )) throw new Error("Invalid composed funnel references");
+  }
   const warnings = row.warnings.map((warning) => text(warning, 2_000));
   if (warnings.some((warning) => warning === null)) throw new Error("Invalid funnel warning");
+  const segmentFilters = row.segmentFilters.map((filter) => text(filter, 2_000));
+  if (segmentFilters.some((filter) => filter === null)) throw new Error("Invalid segment filter");
   return {
-    sourceAgent, title, question, purpose, timezone, conversionWindowSeconds: window,
+    sourceAgent, title, question, purpose, timezone, timeRange,
+    segmentFilters: segmentFilters as string[], conversionWindowSeconds: window,
     denominatorSemantics, numeratorSemantics, deduplicationPolicy, lateEventPolicy,
     steps, tiles, warnings: warnings as string[],
   };

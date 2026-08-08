@@ -190,6 +190,10 @@ export type FunnelDashboardTile = {
     dashboardId?: string;
     expectedDashboardRevision?: number;
     queryRunId?: string;
+    composition?: {
+      operation: "funnel" | "ratio" | "sum" | "difference";
+      inputs: Array<{ tileId: string; label: string; column: string }>;
+    };
     stepIds: string[];
     markdown?: string;
   };
@@ -211,6 +215,8 @@ export type FunnelAnalysisArtifact = {
   question: string;
   purpose: string;
   timezone: string;
+  timeRange: string;
+  segmentFilters: string[];
   conversionWindowSeconds: number;
   denominatorSemantics: string;
   numeratorSemantics: string;
@@ -228,7 +234,7 @@ export type FunnelAnalysisArtifact = {
 
 export type FunnelAnalysisTileRun = {
   tileId: string;
-  queryId: string;
+  queryId?: string;
   status: "ok" | "missing_grant" | "stale" | "error";
   result?: import("../../ipc/types").QueryResult;
   error?: string;

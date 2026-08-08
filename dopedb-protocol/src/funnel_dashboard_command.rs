@@ -34,6 +34,30 @@ pub enum FunnelTileKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum FunnelMetricOperation {
+    Funnel,
+    Ratio,
+    Sum,
+    Difference,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FunnelMetricInput {
+    pub tile_id: String,
+    pub label: String,
+    pub column: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FunnelMetricComposition {
+    pub operation: FunnelMetricOperation,
+    pub inputs: Vec<FunnelMetricInput>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FunnelTileAvailability {
     Ready,
     MissingGrant,
@@ -81,6 +105,8 @@ pub struct FunnelTileDefinition {
     pub expected_dashboard_revision: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query_run_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<FunnelMetricComposition>,
     #[serde(default)]
     pub step_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -94,6 +120,8 @@ pub struct FunnelDashboardProposeArguments {
     pub question: String,
     pub purpose: String,
     pub timezone: String,
+    pub time_range: String,
+    pub segment_filters: Vec<String>,
     pub conversion_window_seconds: u64,
     pub denominator_semantics: String,
     pub numerator_semantics: String,
@@ -133,6 +161,8 @@ pub struct FunnelAnalysisArtifactRecord {
     pub question: String,
     pub purpose: String,
     pub timezone: String,
+    pub time_range: String,
+    pub segment_filters: Vec<String>,
     pub conversion_window_seconds: u64,
     pub denominator_semantics: String,
     pub numerator_semantics: String,

@@ -1053,6 +1053,30 @@ fn report_claims_schema() -> Value {
     })
 }
 
+fn funnel_metric_composition_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "operation": { "type": "string", "enum": ["funnel", "ratio", "sum", "difference"] },
+            "inputs": {
+                "type": "array", "minItems": 2, "maxItems": MAX_FUNNEL_TILES,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tileId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+                        "label": { "type": "string", "minLength": 1, "maxLength": 256 },
+                        "column": { "type": "string", "minLength": 1, "maxLength": 512 }
+                    },
+                    "required": ["tileId", "label", "column"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["operation", "inputs"],
+        "additionalProperties": false
+    })
+}
+
 fn funnel_dashboard_proposal_schema() -> Value {
     let text = |maximum| json!({ "type": "string", "minLength": 1, "maxLength": maximum });
     json!({
@@ -1062,6 +1086,11 @@ fn funnel_dashboard_proposal_schema() -> Value {
             "question": text(8000),
             "purpose": text(8000),
             "timezone": text(128),
+            "timeRange": text(2000),
+            "segmentFilters": {
+                "type": "array", "maxItems": MAX_FUNNEL_WARNINGS,
+                "items": text(2000)
+            },
             "conversionWindowSeconds": { "type": "integer", "minimum": 1, "maximum": 31622400 },
             "denominatorSemantics": text(4000),
             "numeratorSemantics": text(4000),
@@ -1109,6 +1138,7 @@ fn funnel_dashboard_proposal_schema() -> Value {
                         "dashboardId": { "type": "string", "format": "uuid" },
                         "expectedDashboardRevision": { "type": "integer", "minimum": 1 },
                         "queryRunId": { "type": "string", "format": "uuid" },
+                        "composition": funnel_metric_composition_schema(),
                         "stepIds": {
                             "type": "array", "maxItems": MAX_FUNNEL_STEPS,
                             "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }
@@ -1124,7 +1154,7 @@ fn funnel_dashboard_proposal_schema() -> Value {
                 "items": text(2000)
             }
         },
-        "required": ["title", "question", "purpose", "timezone", "conversionWindowSeconds", "denominatorSemantics", "numeratorSemantics", "deduplicationPolicy", "lateEventPolicy", "steps", "tiles"],
+        "required": ["title", "question", "purpose", "timezone", "timeRange", "segmentFilters", "conversionWindowSeconds", "denominatorSemantics", "numeratorSemantics", "deduplicationPolicy", "lateEventPolicy", "steps", "tiles"],
         "additionalProperties": false
     })
 }

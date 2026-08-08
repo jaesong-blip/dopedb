@@ -6,8 +6,8 @@
 
 use dopedb_protocol::{
     DashboardKind as ProtocolDashboardKind, FunnelAnalysisArtifactRecord, FunnelAnalysisFreshness,
-    FunnelTileAvailability, FunnelTileKind, KnowledgeSourceProvider, KnowledgeSourceVisibility,
-    SourceRevisionIdentity,
+    FunnelMetricComposition, FunnelMetricOperation, FunnelTileAvailability, FunnelTileKind,
+    KnowledgeSourceProvider, KnowledgeSourceVisibility, SourceRevisionIdentity,
 };
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,7 @@ use crate::features::workspaces::adapters::control_plane::{
     RemoteKnowledgeProject,
 };
 use crate::kernel::identity::{AccountId, ConnectionId, QueryExecutionId, WorkspaceId};
+use crate::model::QueryResult;
 use crate::state::AppState;
 use crate::store::ActiveResourceScope;
 
@@ -884,7 +885,8 @@ async fn revalidate_funnel_artifact(
         .await?;
     let mut freshness = FunnelAnalysisFreshness::Current;
     for tile in &mut artifact.tiles {
-        if tile.definition.kind == FunnelTileKind::Markdown {
+        if tile.definition.kind == FunnelTileKind::Markdown || tile.definition.composition.is_some()
+        {
             continue;
         }
         let Some(dashboard) = tile.dashboard.as_ref() else {
@@ -933,6 +935,56 @@ async fn revalidate_funnel_artifact(
         }
         tile.availability = FunnelTileAvailability::Ready;
         tile.unavailable_reason = None;
+    }
+    for index in 0..artifact.tiles.len() {
+        let Some(composition) = artifact.tiles[index].definition.composition.as_ref() else {
+            continue;
+        };
+        let inputs = composition
+            .inputs
+            .iter()
+            .filter_map(|input| {
+                artifact
+                    .tiles
+                    .iter()
+                    .find(|tile| tile.definition.id == input.tile_id)
+                    .map(|tile| tile.availability)
+            })
+            .collect::<Vec<_>>();
+        let (availability, reason) = if inputs.len() != composition.inputs.len()
+            || inputs
+                .iter()
+                .any(|input| *input == FunnelTileAvailability::Error)
+        {
+            (
+                FunnelTileAvailability::Error,
+                Some("A composed metric input is unavailable.".into()),
+            )
+        } else if inputs
+            .iter()
+            .any(|input| *input == FunnelTileAvailability::StaleDashboard)
+        {
+            freshness = FunnelAnalysisFreshness::SchemaDrift;
+            (
+                FunnelTileAvailability::StaleDashboard,
+                Some("A composed metric input changed after publication.".into()),
+            )
+        } else if inputs
+            .iter()
+            .any(|input| *input == FunnelTileAvailability::MissingGrant)
+        {
+            if freshness == FunnelAnalysisFreshness::Current {
+                freshness = FunnelAnalysisFreshness::Partial;
+            }
+            (
+                FunnelTileAvailability::MissingGrant,
+                Some("A composed metric input is outside this member's grant.".into()),
+            )
+        } else {
+            (FunnelTileAvailability::Ready, None)
+        };
+        artifact.tiles[index].availability = availability;
+        artifact.tiles[index].unavailable_reason = reason;
     }
     artifact.freshness = freshness;
     Ok(())
@@ -1043,7 +1095,8 @@ enum FunnelTileRunStatus {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FunnelTileRunProjection {
     tile_id: String,
-    query_id: QueryExecutionId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    query_id: Option<QueryExecutionId>,
     status: FunnelTileRunStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<serde_json::Value>,
@@ -1069,6 +1122,97 @@ fn dashboard_kind(kind: ProtocolDashboardKind) -> DashboardKind {
         ProtocolDashboardKind::Bar => DashboardKind::Bar,
         ProtocolDashboardKind::Table => DashboardKind::Table,
     }
+}
+
+fn funnel_metric_value(
+    results: &std::collections::HashMap<String, QueryResult>,
+    tile_id: &str,
+    column: &str,
+) -> Result<f64, String> {
+    let result = results
+        .get(tile_id)
+        .ok_or_else(|| format!("input tile {tile_id} did not produce a current result"))?;
+    let column_index = result
+        .columns
+        .iter()
+        .position(|candidate| candidate == column)
+        .ok_or_else(|| format!("input tile {tile_id} has no column named {column}"))?;
+    let value = result
+        .rows
+        .first()
+        .and_then(|row| row.get(column_index))
+        .ok_or_else(|| format!("input tile {tile_id} returned no scalar row"))?;
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|value| value.parse::<f64>().ok()))
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| format!("input tile {tile_id} column {column} is not numeric"))
+}
+
+fn compose_funnel_metric(
+    composition: &FunnelMetricComposition,
+    results: &std::collections::HashMap<String, QueryResult>,
+) -> Result<QueryResult, String> {
+    let values = composition
+        .inputs
+        .iter()
+        .map(|input| {
+            funnel_metric_value(results, &input.tile_id, &input.column)
+                .map(|value| (input.label.clone(), value))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let (columns, rows) = match composition.operation {
+        FunnelMetricOperation::Funnel => {
+            let denominator = values.first().map(|(_, value)| *value).unwrap_or_default();
+            let rows = values
+                .into_iter()
+                .map(|(label, value)| {
+                    let conversion = if denominator == 0.0 {
+                        serde_json::Value::Null
+                    } else {
+                        serde_json::json!(value / denominator)
+                    };
+                    vec![
+                        serde_json::json!(label),
+                        serde_json::json!(value),
+                        conversion,
+                    ]
+                })
+                .collect::<Vec<_>>();
+            (
+                vec!["step".into(), "value".into(), "conversion".into()],
+                rows,
+            )
+        }
+        FunnelMetricOperation::Ratio => {
+            let denominator = values[0].1;
+            if denominator == 0.0 {
+                return Err("the ratio denominator is zero".into());
+            }
+            (
+                vec!["ratio".into()],
+                vec![vec![serde_json::json!(values[1].1 / denominator)]],
+            )
+        }
+        FunnelMetricOperation::Sum => (
+            vec!["sum".into()],
+            vec![vec![serde_json::json!(values
+                .iter()
+                .map(|(_, value)| value)
+                .sum::<f64>())]],
+        ),
+        FunnelMetricOperation::Difference => (
+            vec!["difference".into()],
+            vec![vec![serde_json::json!(values[0].1 - values[1].1)]],
+        ),
+    };
+    Ok(QueryResult {
+        row_count: rows.len(),
+        columns,
+        rows,
+        truncated: false,
+        duration_ms: 0,
+    })
 }
 
 /// Re-runs a published definition with the current member's exact local grants.
@@ -1155,6 +1299,21 @@ pub(crate) async fn run_funnel_analysis_artifact(
         });
     }
 
+    let expected_query_tiles = artifact
+        .tiles
+        .iter()
+        .filter(|tile| tile.dashboard.is_some())
+        .map(|tile| tile.definition.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    if requested_tiles.len() != expected_query_tiles.len()
+        || requested_tiles
+            .keys()
+            .any(|tile_id| !expected_query_tiles.contains(tile_id.as_str()))
+    {
+        return Err(AppError::Config(
+            "the run must identify every query tile in this analysis revision".into(),
+        ));
+    }
     let requested_count = requested_tiles.len();
     let selected_tiles = artifact
         .tiles
@@ -1188,7 +1347,7 @@ pub(crate) async fn run_funnel_analysis_artifact(
                         index,
                         FunnelTileRunProjection {
                             tile_id: tile.definition.id,
-                            query_id,
+                            query_id: Some(query_id),
                             status,
                             result: None,
                             error: tile.unavailable_reason,
@@ -1200,7 +1359,7 @@ pub(crate) async fn run_funnel_analysis_artifact(
                         index,
                         FunnelTileRunProjection {
                             tile_id: tile.definition.id,
-                            query_id,
+                            query_id: Some(query_id),
                             status: FunnelTileRunStatus::Error,
                             result: None,
                             error: Some("markdown tiles do not execute a database query".into()),
@@ -1212,7 +1371,7 @@ pub(crate) async fn run_funnel_analysis_artifact(
                         index,
                         FunnelTileRunProjection {
                             tile_id: tile.definition.id,
-                            query_id,
+                            query_id: Some(query_id),
                             status: FunnelTileRunStatus::Error,
                             result: None,
                             error: Some(
@@ -1226,7 +1385,7 @@ pub(crate) async fn run_funnel_analysis_artifact(
                         index,
                         FunnelTileRunProjection {
                             tile_id: tile.definition.id,
-                            query_id,
+                            query_id: Some(query_id),
                             status: FunnelTileRunStatus::Stale,
                             result: None,
                             error: Some("the shared tile has no pinned connection revision".into()),
@@ -1254,7 +1413,7 @@ pub(crate) async fn run_funnel_analysis_artifact(
                         index,
                         FunnelTileRunProjection {
                             tile_id: tile.definition.id,
-                            query_id,
+                            query_id: Some(query_id),
                             status: FunnelTileRunStatus::Ok,
                             result: serde_json::to_value(receipt).ok(),
                             error: None,
@@ -1264,7 +1423,7 @@ pub(crate) async fn run_funnel_analysis_artifact(
                         index,
                         FunnelTileRunProjection {
                             tile_id: tile.definition.id,
-                            query_id,
+                            query_id: Some(query_id),
                             status: FunnelTileRunStatus::Error,
                             result: None,
                             error: Some(DashboardRunError::into_error(error).to_string()),
@@ -1278,12 +1437,89 @@ pub(crate) async fn run_funnel_analysis_artifact(
     .collect::<Vec<_>>()
     .await;
     tiles.sort_by_key(|(index, _)| *index);
+    let mut projections = tiles.into_iter().map(|(_, tile)| tile).collect::<Vec<_>>();
+    let current_results = projections
+        .iter()
+        .filter(|tile| matches!(tile.status, FunnelTileRunStatus::Ok))
+        .filter_map(|tile| {
+            tile.result
+                .as_ref()
+                .and_then(|result| serde_json::from_value::<QueryResult>(result.clone()).ok())
+                .map(|result| (tile.tile_id.clone(), result))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    for tile in artifact.tiles.iter().filter(|tile| {
+        tile.definition.kind != FunnelTileKind::Markdown
+            && tile.dashboard.is_none()
+            && tile.definition.composition.is_none()
+    }) {
+        let status = match tile.availability {
+            FunnelTileAvailability::MissingGrant => FunnelTileRunStatus::MissingGrant,
+            FunnelTileAvailability::StaleDashboard => FunnelTileRunStatus::Stale,
+            FunnelTileAvailability::Ready | FunnelTileAvailability::Error => {
+                FunnelTileRunStatus::Error
+            }
+        };
+        projections.push(FunnelTileRunProjection {
+            tile_id: tile.definition.id.clone(),
+            query_id: None,
+            status,
+            result: None,
+            error: tile
+                .unavailable_reason
+                .clone()
+                .or_else(|| Some("the tile has no executable definition for this member".into())),
+        });
+    }
+    for tile in artifact
+        .tiles
+        .iter()
+        .filter(|tile| tile.definition.composition.is_some())
+    {
+        let unavailable = match tile.availability {
+            FunnelTileAvailability::MissingGrant => Some(FunnelTileRunStatus::MissingGrant),
+            FunnelTileAvailability::StaleDashboard => Some(FunnelTileRunStatus::Stale),
+            FunnelTileAvailability::Error => Some(FunnelTileRunStatus::Error),
+            FunnelTileAvailability::Ready => None,
+        };
+        if let Some(status) = unavailable {
+            projections.push(FunnelTileRunProjection {
+                tile_id: tile.definition.id.clone(),
+                query_id: None,
+                status,
+                result: None,
+                error: tile.unavailable_reason.clone(),
+            });
+            continue;
+        }
+        let composition = tile
+            .definition
+            .composition
+            .as_ref()
+            .expect("filtered composed tile");
+        match compose_funnel_metric(composition, &current_results) {
+            Ok(result) => projections.push(FunnelTileRunProjection {
+                tile_id: tile.definition.id.clone(),
+                query_id: None,
+                status: FunnelTileRunStatus::Ok,
+                result: serde_json::to_value(result).ok(),
+                error: None,
+            }),
+            Err(error) => projections.push(FunnelTileRunProjection {
+                tile_id: tile.definition.id.clone(),
+                query_id: None,
+                status: FunnelTileRunStatus::Error,
+                result: None,
+                error: Some(error),
+            }),
+        }
+    }
     Ok(FunnelAnalysisRunProjection {
         artifact_id: artifact.id,
         artifact_revision: artifact.revision,
         started_at,
         completed_at: chrono::Utc::now(),
-        tiles: tiles.into_iter().map(|(_, tile)| tile).collect(),
+        tiles: projections,
     })
 }
 

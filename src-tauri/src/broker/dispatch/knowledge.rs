@@ -7,14 +7,14 @@ use dopedb_protocol::{
     EnvironmentContextResult, FunnelAnalysisArtifactRecord, FunnelAnalysisFreshness,
     FunnelDashboardListCommand, FunnelDashboardProposeArguments, FunnelDashboardProposeCommand,
     FunnelDashboardProposeResult, FunnelDashboardTileRecord, FunnelMappingState,
-    FunnelTileAvailability, FunnelTileKind, FunnelTraceArguments, FunnelTraceCommand,
-    GraphBuildArtifactV1, KnowledgeDiffCommand, KnowledgeEvidenceCommand, KnowledgeEvidenceResult,
-    KnowledgeExplainCommand, KnowledgeMappingProposalResult, KnowledgeMappingProposeArguments,
-    KnowledgeMappingProposeCommand, KnowledgeMappingTargetKind, KnowledgeNeighborDirection,
-    KnowledgeNeighborsArguments, KnowledgeNeighborsCommand, KnowledgeNodeArguments,
-    KnowledgeNodeMatch, KnowledgePathCommand, KnowledgeSearchCommand, KnowledgeSearchResult,
-    KnowledgeSubgraphResult, MAX_FUNNEL_REFERENCES, MAX_FUNNEL_STEPS, MAX_FUNNEL_TILES,
-    MAX_FUNNEL_WARNINGS, MAX_KNOWLEDGE_EVIDENCE_IDS, MAX_KNOWLEDGE_NEIGHBORS,
+    FunnelMetricOperation, FunnelTileAvailability, FunnelTileKind, FunnelTraceArguments,
+    FunnelTraceCommand, GraphBuildArtifactV1, KnowledgeDiffCommand, KnowledgeEvidenceCommand,
+    KnowledgeEvidenceResult, KnowledgeExplainCommand, KnowledgeMappingProposalResult,
+    KnowledgeMappingProposeArguments, KnowledgeMappingProposeCommand, KnowledgeMappingTargetKind,
+    KnowledgeNeighborDirection, KnowledgeNeighborsArguments, KnowledgeNeighborsCommand,
+    KnowledgeNodeArguments, KnowledgeNodeMatch, KnowledgePathCommand, KnowledgeSearchCommand,
+    KnowledgeSearchResult, KnowledgeSubgraphResult, MAX_FUNNEL_REFERENCES, MAX_FUNNEL_STEPS,
+    MAX_FUNNEL_TILES, MAX_FUNNEL_WARNINGS, MAX_KNOWLEDGE_EVIDENCE_IDS, MAX_KNOWLEDGE_NEIGHBORS,
     MAX_KNOWLEDGE_QUERY_BYTES, MAX_KNOWLEDGE_RESULTS, MAX_KNOWLEDGE_TARGET_IDENTITY_BYTES,
 };
 use serde_json::json;
@@ -328,6 +328,12 @@ fn valid_funnel_arguments(
         || !valid_funnel_text(&arguments.question, 8_000)
         || !valid_funnel_text(&arguments.purpose, 8_000)
         || !valid_funnel_text(&arguments.timezone, 128)
+        || !valid_funnel_text(&arguments.time_range, 2_000)
+        || arguments.segment_filters.len() > MAX_FUNNEL_WARNINGS
+        || arguments
+            .segment_filters
+            .iter()
+            .any(|filter| !valid_funnel_text(filter, 2_000))
         || arguments.conversion_window_seconds == 0
         || arguments.conversion_window_seconds > 366 * 24 * 60 * 60
         || !valid_funnel_text(&arguments.denominator_semantics, 4_000)
@@ -388,35 +394,77 @@ fn valid_funnel_arguments(
             return false;
         }
     }
-    let mut tile_ids = BTreeSet::new();
-    arguments.tiles.iter().all(|tile| {
-        let is_markdown = tile.kind == FunnelTileKind::Markdown;
-        valid_funnel_id(&tile.id)
-            && tile_ids.insert(tile.id.as_str())
-            && valid_funnel_text(&tile.title, 256)
-            && tile.step_ids.len() <= MAX_FUNNEL_STEPS
-            && tile
-                .step_ids
-                .iter()
-                .all(|step_id| step_ids.contains(step_id.as_str()))
-            && if is_markdown {
-                tile.dashboard_id.is_none()
-                    && tile.expected_dashboard_revision.is_none()
-                    && tile.query_run_id.is_none()
-                    && tile
-                        .markdown
-                        .as_deref()
-                        .is_some_and(|markdown| valid_funnel_text(markdown, 32_000))
-            } else {
-                tile.dashboard_id.is_some()
-                    && tile
-                        .expected_dashboard_revision
-                        .is_some_and(|revision| revision > 0)
-                    && tile.query_run_id.is_some()
-                    && tile.markdown.is_none()
-                    && !tile.step_ids.is_empty()
-            }
-    })
+    let tile_ids = arguments
+        .tiles
+        .iter()
+        .map(|tile| tile.id.as_str())
+        .collect::<BTreeSet<_>>();
+    if tile_ids.len() != arguments.tiles.len()
+        || arguments
+            .tiles
+            .iter()
+            .any(|tile| !valid_funnel_id(&tile.id))
+    {
+        return false;
+    }
+    let query_tile_ids = arguments
+        .tiles
+        .iter()
+        .filter(|tile| tile.dashboard_id.is_some())
+        .map(|tile| tile.id.as_str())
+        .collect::<BTreeSet<_>>();
+    !query_tile_ids.is_empty()
+        && arguments.tiles.iter().all(|tile| {
+            let is_markdown = tile.kind == FunnelTileKind::Markdown;
+            let is_composed = tile.composition.is_some();
+            valid_funnel_text(&tile.title, 256)
+                && tile.step_ids.len() <= MAX_FUNNEL_STEPS
+                && tile
+                    .step_ids
+                    .iter()
+                    .all(|step_id| step_ids.contains(step_id.as_str()))
+                && if is_markdown {
+                    tile.dashboard_id.is_none()
+                        && tile.expected_dashboard_revision.is_none()
+                        && tile.query_run_id.is_none()
+                        && tile.composition.is_none()
+                        && tile
+                            .markdown
+                            .as_deref()
+                            .is_some_and(|markdown| valid_funnel_text(markdown, 32_000))
+                } else if let Some(composition) = tile.composition.as_ref() {
+                    let valid_arity = match composition.operation {
+                        FunnelMetricOperation::Ratio | FunnelMetricOperation::Difference => {
+                            composition.inputs.len() == 2
+                        }
+                        FunnelMetricOperation::Funnel | FunnelMetricOperation::Sum => {
+                            (2..=MAX_FUNNEL_TILES).contains(&composition.inputs.len())
+                        }
+                    };
+                    is_composed
+                        && tile.dashboard_id.is_none()
+                        && tile.expected_dashboard_revision.is_none()
+                        && tile.query_run_id.is_none()
+                        && tile.markdown.is_none()
+                        && !tile.step_ids.is_empty()
+                        && valid_arity
+                        && composition.inputs.iter().all(|input| {
+                            query_tile_ids.contains(input.tile_id.as_str())
+                                && input.tile_id != tile.id
+                                && valid_funnel_text(&input.label, 256)
+                                && valid_funnel_text(&input.column, 512)
+                        })
+                } else {
+                    tile.dashboard_id.is_some()
+                        && tile
+                            .expected_dashboard_revision
+                            .is_some_and(|revision| revision > 0)
+                        && tile.query_run_id.is_some()
+                        && tile.composition.is_none()
+                        && tile.markdown.is_none()
+                        && !tile.step_ids.is_empty()
+                }
+        })
 }
 
 async fn propose_funnel_dashboard(
@@ -533,6 +581,8 @@ async fn propose_funnel_dashboard(
         question: arguments.question,
         purpose: arguments.purpose,
         timezone: arguments.timezone,
+        time_range: arguments.time_range,
+        segment_filters: arguments.segment_filters,
         conversion_window_seconds: arguments.conversion_window_seconds,
         denominator_semantics: arguments.denominator_semantics,
         numerator_semantics: arguments.numerator_semantics,

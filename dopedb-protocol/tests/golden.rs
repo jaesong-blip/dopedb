@@ -128,6 +128,8 @@ fn funnel_analysis_fixture() -> Value {
         "question": "Where do new accounts stop?",
         "purpose": "Track verified activation conversion.",
         "timezone": "Asia/Seoul",
+        "timeRange": "Last 7 days",
+        "segmentFilters": ["All new accounts"],
         "conversionWindowSeconds": 604800,
         "denominatorSemantics": "Distinct accounts created in the window.",
         "numeratorSemantics": "Distinct accounts completing the next ordered step.",

@@ -51,6 +51,8 @@ struct RemoteDefinition {
     question: String,
     purpose: String,
     timezone: String,
+    time_range: String,
+    segment_filters: Vec<String>,
     conversion_window_seconds: u64,
     denominator_semantics: String,
     numerator_semantics: String,
@@ -78,6 +80,8 @@ struct PublishDefinition<'a> {
     question: &'a str,
     purpose: &'a str,
     timezone: &'a str,
+    time_range: &'a str,
+    segment_filters: &'a [String],
     conversion_window_seconds: u64,
     denominator_semantics: &'a str,
     numerator_semantics: &'a str,
@@ -158,6 +162,8 @@ pub(crate) async fn publish_funnel_analysis(
             question: &artifact.question,
             purpose: &artifact.purpose,
             timezone: &artifact.timezone,
+            time_range: &artifact.time_range,
+            segment_filters: &artifact.segment_filters,
             conversion_window_seconds: artifact.conversion_window_seconds,
             denominator_semantics: &artifact.denominator_semantics,
             numerator_semantics: &artifact.numerator_semantics,
@@ -247,12 +253,14 @@ pub(crate) async fn remote_funnel_analyses(
                 ));
             }
             let mut availability = FunnelAnalysisFreshness::Current;
-            let tiles = analysis
+            let mut tiles = analysis
                 .definition
                 .tiles
                 .into_iter()
                 .map(|definition| {
-                    if definition.kind == FunnelTileKind::Markdown {
+                    if definition.kind == FunnelTileKind::Markdown
+                        || definition.composition.is_some()
+                    {
                         return FunnelDashboardTileRecord {
                             definition,
                             dashboard: None,
@@ -319,7 +327,56 @@ pub(crate) async fn remote_funnel_analyses(
                         unavailable_reason,
                     }
                 })
-                .collect();
+                .collect::<Vec<_>>();
+            for index in 0..tiles.len() {
+                let Some(composition) = tiles[index].definition.composition.as_ref() else {
+                    continue;
+                };
+                let inputs = composition
+                    .inputs
+                    .iter()
+                    .filter_map(|input| {
+                        tiles
+                            .iter()
+                            .find(|tile| tile.definition.id == input.tile_id)
+                            .map(|tile| tile.availability)
+                    })
+                    .collect::<Vec<_>>();
+                let (tile_availability, reason) = if inputs.len() != composition.inputs.len()
+                    || inputs
+                        .iter()
+                        .any(|input| *input == FunnelTileAvailability::Error)
+                {
+                    (
+                        FunnelTileAvailability::Error,
+                        Some("A composed metric input is unavailable.".into()),
+                    )
+                } else if inputs
+                    .iter()
+                    .any(|input| *input == FunnelTileAvailability::StaleDashboard)
+                {
+                    availability = FunnelAnalysisFreshness::SchemaDrift;
+                    (
+                        FunnelTileAvailability::StaleDashboard,
+                        Some("A composed metric input changed after publication.".into()),
+                    )
+                } else if inputs
+                    .iter()
+                    .any(|input| *input == FunnelTileAvailability::MissingGrant)
+                {
+                    if availability == FunnelAnalysisFreshness::Current {
+                        availability = FunnelAnalysisFreshness::Partial;
+                    }
+                    (
+                        FunnelTileAvailability::MissingGrant,
+                        Some("A composed metric input is outside this member's grant.".into()),
+                    )
+                } else {
+                    (FunnelTileAvailability::Ready, None)
+                };
+                tiles[index].availability = tile_availability;
+                tiles[index].unavailable_reason = reason;
+            }
             Ok(FunnelAnalysisArtifactRecord {
                 id: analysis.id,
                 project_environment_id: analysis.project_environment_id,
@@ -332,6 +389,8 @@ pub(crate) async fn remote_funnel_analyses(
                 question: analysis.definition.question,
                 purpose: analysis.definition.purpose,
                 timezone: analysis.definition.timezone,
+                time_range: analysis.definition.time_range,
+                segment_filters: analysis.definition.segment_filters,
                 conversion_window_seconds: analysis.definition.conversion_window_seconds,
                 denominator_semantics: analysis.definition.denominator_semantics,
                 numerator_semantics: analysis.definition.numerator_semantics,
