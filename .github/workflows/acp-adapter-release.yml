@@ -68,7 +68,20 @@ jobs:
           set -euo pipefail
           test -n "$ACP_SIGNING_PRIVATE_KEY"
           umask 077
-          printf '%s' "$ACP_SIGNING_PRIVATE_KEY" > "$RUNNER_TEMP/acp-plugin.key"
+          raw="$RUNNER_TEMP/acp-plugin.raw"
+          decoded="$RUNNER_TEMP/acp-plugin.decoded"
+          printf '%s' "$ACP_SIGNING_PRIVATE_KEY" > "$raw"
+          if grep -q '^untrusted comment: minisign .*secret key' "$raw"; then
+            mv "$raw" "$RUNNER_TEMP/acp-plugin.key"
+          elif base64 --decode "$raw" > "$decoded" 2>/dev/null \
+            && grep -q '^untrusted comment: minisign .*secret key' "$decoded"; then
+            mv "$decoded" "$RUNNER_TEMP/acp-plugin.key"
+            rm -f "$raw"
+          else
+            rm -f "$raw" "$decoded"
+            echo "The protected signing key is neither a Minisign file nor Tauri base64 key." >&2
+            exit 1
+          fi
 
       - name: Build, sign, verify, and publish selected bundles
         shell: bash
@@ -146,4 +159,4 @@ jobs:
       - name: Erase signing material
         if: always()
         shell: bash
-        run: rm -f "$RUNNER_TEMP/acp-plugin.key"
+        run: rm -f "$RUNNER_TEMP/acp-plugin.key" "$RUNNER_TEMP/acp-plugin.raw" "$RUNNER_TEMP/acp-plugin.decoded"
