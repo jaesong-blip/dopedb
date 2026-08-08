@@ -27,3 +27,21 @@ export interface SqlExecutionStatus {
   state: SqlExecutionState;
   label: string;
 }
+
+export function sqlExecutionMarkerPosition(
+  value: string,
+  status: SqlExecutionStatus | null | undefined,
+): number | null {
+  const source = status?.source;
+  if (
+    !source ||
+    !source.sql ||
+    source.from < 0 ||
+    source.to < source.from ||
+    source.to > value.length ||
+    value.slice(source.from, source.to).trim() !== source.sql
+  ) {
+    return null;
+  }
+  return source.to;
+}

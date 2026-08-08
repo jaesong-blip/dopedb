@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { connectionId, sqlDocumentId, type SqlDocument } from "../sqlDocuments/domain";
+import {
+  connectionId,
+  retrySqlDocumentConflict,
+  sqlDocumentConflict,
+  sqlDocumentId,
+  type SqlDocument,
+} from "../sqlDocuments/domain";
+import {
+  findSqlParameters,
+  materializeSqlParameters,
+} from "../query/sqlParameters";
 import { resolveSqlNamespaceAtCaret } from "../queries/resolveMode";
+import { sqlExecutionMarkerPosition } from "../queries/editorStatus";
+import {
+  canFallbackFromCombinedRead,
+  initialSqlRunPath,
+} from "../../screens/Sql/runPath";
 import { queryDocument, stableDocument } from "./domain";
 import {
   publishWorkbenchDraft,
@@ -146,5 +161,46 @@ describe("workbench state ownership", () => {
         namespaceOptions: ["billing", "public"],
       }),
     ).toBe("public");
+
+    expect(initialSqlRunPath(true)).toBe("combinedReadStream");
+    expect(canFallbackFromCombinedRead("proposalRequired")).toBe(true);
+    expect(canFallbackFromCombinedRead("network")).toBe(false);
+
+    const parameterSql =
+      "SELECT * FROM invoices WHERE account_id = :account AND created_at >= ${since}";
+    const parameters = findSqlParameters(parameterSql, "postgres");
+    expect(materializeSqlParameters(parameterSql, parameters, {
+      "named:account": "42",
+      "named:since": "DATE '2026-01-01'",
+    })).toBe(
+      "SELECT * FROM invoices WHERE account_id = 42 AND created_at >= DATE '2026-01-01'",
+    );
+
+    const executedSql = "SELECT 1;\nSELECT 2;";
+    const executionStatus = {
+      source: { sql: "SELECT 2;", from: 10, to: 19 },
+      state: "completed" as const,
+      label: "Completed",
+    };
+    expect(sqlExecutionMarkerPosition(executedSql, executionStatus)).toBe(19);
+    expect(
+      sqlExecutionMarkerPosition("SELECT 1;\nSELECT 3;", executionStatus),
+    ).toBeNull();
+
+    const conflict = sqlDocumentConflict(storedDocument(), {
+      title: "Local query",
+      selectedDatabase: "analytics",
+      selectedSchema: "public",
+      resolveMode: "playground",
+      content: "SELECT * FROM events;",
+    });
+    expect(retrySqlDocumentConflict(conflict)).toEqual({
+      expectedRevision: 2,
+      title: "Local query",
+      selectedDatabase: "analytics",
+      selectedSchema: "public",
+      resolveMode: "playground",
+      content: "SELECT * FROM events;",
+    });
   });
 });

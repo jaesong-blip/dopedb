@@ -89,6 +89,42 @@ export interface SaveSqlDocumentOutcome {
   attemptedContentHash: string;
 }
 
+export interface SqlDocumentConflict {
+  current: SqlDocument;
+  localTitle: string;
+  localSelectedDatabase: string;
+  localSelectedSchema: string | null;
+  localResolveMode: SqlResolveMode;
+  localContent: string;
+}
+
+export function sqlDocumentConflict(
+  current: SqlDocument,
+  local: Omit<SaveSqlDocumentRequest, "id" | "connectionId" | "expectedRevision">,
+): SqlDocumentConflict {
+  return {
+    current,
+    localTitle: local.title,
+    localSelectedDatabase: local.selectedDatabase,
+    localSelectedSchema: local.selectedSchema,
+    localResolveMode: local.resolveMode,
+    localContent: local.content,
+  };
+}
+
+export function retrySqlDocumentConflict(
+  conflict: SqlDocumentConflict,
+): Omit<SaveSqlDocumentRequest, "id" | "connectionId"> {
+  return {
+    expectedRevision: conflict.current.localRevision,
+    title: conflict.localTitle,
+    selectedDatabase: conflict.localSelectedDatabase,
+    selectedSchema: conflict.localSelectedSchema,
+    resolveMode: conflict.localResolveMode,
+    content: conflict.localContent,
+  };
+}
+
 export function sqlRecoveryKey(id: SqlDocumentId | string): string {
   return `dopedb.sqlRecovery.${id}`;
 }

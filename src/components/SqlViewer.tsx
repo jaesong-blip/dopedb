@@ -30,6 +30,7 @@ import type { Catalog } from "../ipc/types";
 import type { ConnectionEngine } from "../features/connections/domain";
 import {
   SQL_EDITOR_INDENT_SIZE,
+  sqlExecutionMarkerPosition,
   type SqlCursorPosition,
   type SqlExecutionStatus,
   type SqlRunSource,
@@ -151,24 +152,15 @@ function executionStatusExtension(
   value: string,
   status: SqlExecutionStatus | null | undefined,
 ): Extension {
-  const source = status?.source;
-  if (
-    !status ||
-    !source ||
-    !source.sql ||
-    source.from < 0 ||
-    source.to < source.from ||
-    source.to > value.length ||
-    value.slice(source.from, source.to).trim() !== source.sql
-  ) {
-    return [];
-  }
+  if (!status) return [];
+  const markerPosition = sqlExecutionMarkerPosition(value, status);
+  if (markerPosition === null) return [];
   return EditorView.decorations.of(
     Decoration.set([
       Decoration.widget({
         widget: new SqlExecutionWidget(status),
         side: 1,
-      }).range(source.to),
+      }).range(markerPosition),
     ]),
   );
 }

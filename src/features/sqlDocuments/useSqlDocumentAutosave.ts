@@ -11,9 +11,14 @@ import { errMessage } from "../../ipc/types";
 import type {
   ConnectionId,
   SqlDocument,
+  SqlDocumentConflict,
   SqlDocumentId,
 } from "./domain";
-import { sqlRecoveryKey } from "./domain";
+import {
+  retrySqlDocumentConflict,
+  sqlDocumentConflict,
+  sqlRecoveryKey,
+} from "./domain";
 import type { SqlDocumentGateway } from "./ports";
 import type { SqlResolveMode } from "../queries/resolveMode";
 
@@ -23,15 +28,6 @@ export type DocumentSaveState =
   | "saving"
   | "error"
   | "conflict";
-
-export interface DocumentConflict {
-  current: SqlDocument;
-  localTitle: string;
-  localSelectedDatabase: string;
-  localSelectedSchema: string | null;
-  localResolveMode: SqlResolveMode;
-  localContent: string;
-}
 
 interface SqlDocumentAutosaveOptions {
   gateway: SqlDocumentGateway;
@@ -90,7 +86,7 @@ export function useSqlDocumentAutosave({
     recovered ? "dirty" : "saved",
   );
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [conflict, setConflict] = useState<DocumentConflict | null>(null);
+  const [conflict, setConflict] = useState<SqlDocumentConflict | null>(null);
   const saveSequence = useRef(0);
   const mounted = useRef(true);
   const recoveryTimer = useRef<number | null>(null);
@@ -213,14 +209,13 @@ export function useSqlDocumentAutosave({
         });
         if (sequence !== saveSequence.current) return;
         if (!outcome.saved) {
-          setConflict({
-            current: outcome.document,
-            localTitle: nextTitle,
-            localSelectedDatabase: nextSelectedDatabase,
-            localSelectedSchema: nextSelectedSchema,
-            localResolveMode: nextResolveMode,
-            localContent: nextContent,
-          });
+          setConflict(sqlDocumentConflict(outcome.document, {
+            title: nextTitle,
+            selectedDatabase: nextSelectedDatabase,
+            selectedSchema: nextSelectedSchema,
+            resolveMode: nextResolveMode,
+            content: nextContent,
+          }));
           setSaveState("conflict");
           return;
         }
@@ -356,13 +351,14 @@ export function useSqlDocumentAutosave({
 
   const keepLocalVersion = useCallback(() => {
     if (!conflict) return;
+    const retry = retrySqlDocumentConflict(conflict);
     void persist(
-      conflict.current.localRevision,
-      conflict.localTitle,
-      conflict.localSelectedDatabase,
-      conflict.localSelectedSchema,
-      conflict.localResolveMode,
-      conflict.localContent,
+      retry.expectedRevision,
+      retry.title,
+      retry.selectedDatabase,
+      retry.selectedSchema,
+      retry.resolveMode,
+      retry.content,
     );
   }, [conflict, persist]);
 
