@@ -17,8 +17,9 @@ const workspaceSections: Array<{
   { id: "database-access", index: "04" },
   { id: "dashboards", index: "05" },
   { id: "reports", index: "06" },
-  { id: "members", index: "07" },
-  { id: "lifecycle", index: "08" },
+  { id: "monitoring", index: "07" },
+  { id: "members", index: "08" },
+  { id: "lifecycle", index: "09" },
 ];
 
 export function settingsSection(value: unknown): SettingsSection {
@@ -70,6 +71,7 @@ export function SettingsNavigation({
           item.id !== "workspaces"
           && item.id !== "dashboards"
           && item.id !== "reports"
+          && item.id !== "monitoring"
           && item.id !== "lifecycle"
           && !canManageWorkspace
         ) {
@@ -90,6 +92,8 @@ export function SettingsNavigation({
                   ? copy.settings.areas.dashboards.label
                   : item.id === "reports"
                     ? copy.settings.areas.reports.label
+                    : item.id === "monitoring"
+                      ? copy.settings.areas.monitoring.label
                     : item.id === "members"
                       ? copy.settings.areas.members.label
                       : copy.settings.areas.lifecycle.label;
@@ -118,7 +122,7 @@ export function SettingsNavigation({
         aria-current={activeSection === "account" ? "page" : undefined}
       >
         <span className="tw:mr-2.5 tw:font-mono tw:text-2xs tw:text-signal">
-          09
+          10
         </span>
         {copy.settings.accountTitle}
       </a>

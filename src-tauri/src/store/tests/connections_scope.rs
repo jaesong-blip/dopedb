@@ -466,6 +466,63 @@ async fn assert_current_store_migration_is_write_free() {
             .any(|column| column.to_ascii_lowercase().contains(forbidden)));
     }
 
+    let signal_device = store.signal_runner_device_id().await.unwrap();
+    assert_eq!(
+        store.signal_runner_device_id().await.unwrap(),
+        signal_device
+    );
+    let signal_rule = Uuid::new_v4();
+    let signal_time = Utc::now();
+    store
+        .record_signal_metric_sample(
+            Uuid::from(project.workspace_id),
+            "knowledge-member",
+            signal_rule,
+            1,
+            signal_time,
+            signal_time,
+            Some(42.0),
+            100,
+            dopedb_protocol::SignalEvaluationState::Normal,
+            &"a".repeat(64),
+        )
+        .await
+        .unwrap();
+    let signal_samples = store
+        .recent_signal_metric_samples(
+            Uuid::from(project.workspace_id),
+            "knowledge-member",
+            signal_rule,
+            1,
+            10,
+        )
+        .await
+        .unwrap();
+    assert_eq!(signal_samples.len(), 1);
+    assert_eq!(signal_samples[0].metric_value, Some(42.0));
+    assert!(store
+        .recent_signal_metric_samples(
+            Uuid::from(project.workspace_id),
+            "other-member",
+            signal_rule,
+            1,
+            10,
+        )
+        .await
+        .unwrap()
+        .is_empty());
+    let signal_columns: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM pragma_table_info('signal_metric_samples') ORDER BY cid",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    for forbidden in ["sql", "credential", "password", "token", "host"] {
+        assert!(!signal_columns
+            .iter()
+            .any(|column| column.to_ascii_lowercase().contains(forbidden)));
+    }
+
     sqlx::query("PRAGMA query_only = ON")
         .execute(&pool)
         .await

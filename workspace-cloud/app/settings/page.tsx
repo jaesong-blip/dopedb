@@ -152,6 +152,7 @@ export default async function SettingsPage({
     || activeSection === "databases"
     || activeSection === "dashboards"
     || activeSection === "reports"
+    || activeSection === "monitoring"
     || activeSection === "lifecycle"
       ? activeSection
       : null;
@@ -167,7 +168,7 @@ export default async function SettingsPage({
     ? workspaceManagementAreas.find((item) => item.id === activeManagementArea)
     : null;
   const pageIndex = activeSection === "account"
-    ? "09"
+    ? "10"
     : activeSection === "workspaces"
       ? "01"
       : activeManagementDetails?.index ?? "01";
@@ -279,7 +280,7 @@ export default async function SettingsPage({
         ) : null}
         {activeSection === "account" ? (
           <section id="account" className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]">
-            <ConsoleSectionHeading index="09" title={copy.settings.accountManagementTitle}>
+            <ConsoleSectionHeading index="10" title={copy.settings.accountManagementTitle}>
               {copy.settings.accountManagementDescription}
             </ConsoleSectionHeading>
             <AccountManagementPanel
@@ -372,6 +373,8 @@ export default async function SettingsPage({
           ? canEditActiveWorkspace
           : activeManagementArea === "reports"
             ? true
+            : activeManagementArea === "monitoring"
+              ? true
             : canManageActiveWorkspace) ? (
           <section
             className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]"

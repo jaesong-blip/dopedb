@@ -5,6 +5,7 @@ import { CloudAccountPanel } from "./CloudAccountPanel";
 import { DashboardManagementPanel } from "./DashboardManagementPanel";
 import { KnowledgeAccessPanel } from "./KnowledgeAccessPanel";
 import { ReportManagementPanel } from "./ReportManagementPanel";
+import { SignalMonitoringPanel } from "./SignalMonitoringPanel";
 import { SharedDatabasePanel } from "./SharedDatabasePanel";
 import { WorkspaceAccessPanel } from "./WorkspaceAccessPanel";
 import { WorkspaceLifecyclePanel } from "./WorkspaceLifecyclePanel";
@@ -17,6 +18,7 @@ export type WorkspaceManagementArea =
   | "database-access"
   | "dashboards"
   | "reports"
+  | "monitoring"
   | "members"
   | "lifecycle";
 
@@ -33,8 +35,9 @@ export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Arra
     { id: "database-access", index: "04", ...areas.databaseAccess },
     { id: "dashboards", index: "05", ...areas.dashboards },
     { id: "reports", index: "06", ...areas.reports },
-    { id: "members", index: "07", ...areas.members },
-    { id: "lifecycle", index: "08", ...areas.lifecycle },
+    { id: "monitoring", index: "07", ...areas.monitoring },
+    { id: "members", index: "08", ...areas.members },
+    { id: "lifecycle", index: "09", ...areas.lifecycle },
   ];
 }
 
@@ -116,6 +119,12 @@ export function WorkspaceManagementPanel({
         ) : null}
         {area === "reports" ? (
           <ReportManagementPanel
+            workspaceId={workspaceId}
+            canEditWorkspace={canEditWorkspace}
+          />
+        ) : null}
+        {area === "monitoring" ? (
+          <SignalMonitoringPanel
             workspaceId={workspaceId}
             canEditWorkspace={canEditWorkspace}
           />

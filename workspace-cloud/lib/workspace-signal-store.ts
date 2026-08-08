@@ -4,7 +4,7 @@
 import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { db } from "./db";
 import {
@@ -29,6 +29,7 @@ import {
   nextSignalEvaluationAt,
   type SignalLeaseClaim,
   type SignalEvaluationReceiptInput,
+  type SignalRuleMutation,
   type SignalRuleCreate,
   type SignalRunnerRegistration,
 } from "./workspace-signals";
@@ -60,6 +61,7 @@ export type ClaimedSignalLease = Readonly<{
   ruleDefinition: Readonly<Record<string, unknown>>;
   analysisDefinition: Readonly<Record<string, unknown>>;
   connectionIds: readonly string[];
+  nextTransitionSequence: number;
 }>;
 
 export type StoredSignalEvaluationReceipt = Readonly<{
@@ -67,6 +69,14 @@ export type StoredSignalEvaluationReceipt = Readonly<{
   state: string;
   notificationState: "none" | "pending" | "suppressed";
   transitionSequence: number;
+}>;
+
+export type MutatedSignalRule = Readonly<{
+  id: string;
+  revision: number;
+  status: "active" | "paused" | "disabled";
+  enabled: boolean;
+  nextEvaluationAt: Date;
 }>;
 
 function authorityLockKey(input: { organizationId: string; authority: DashboardMutationAuthority }) {
@@ -296,13 +306,14 @@ export async function commitSignalRuleCreate(input: {
         ("id", "organization_id", "project_environment_id", "environment_revision",
          "source_analysis_id", "source_analysis_revision", "source_tile_id",
          "metric_semantic_id", "definition", "owner_member_id", "runner_id",
-         "enabled", "revision", "production_approved_by_member_id",
+         "enabled", "status", "revision", "production_approved_by_member_id",
          "production_approved_at", "next_evaluation_at")
       SELECT ${input.rule.id}::uuid, ${input.organizationId}, environment."id",
         environment."revision", analysis."id", ${input.rule.sourceAnalysisRevision},
         ${input.rule.sourceTileId}, ${input.rule.metricSemanticId},
         ${JSON.stringify(definition)}::jsonb, authority."id", selected_runner."id",
-        ${input.rule.enabled}, 1, ${productionApproval}, ${productionApprovedAt},
+        ${input.rule.enabled}, ${input.rule.enabled ? "active" : "disabled"}, 1,
+        ${productionApproval}, ${productionApprovedAt},
         ${nextEvaluationAt}
       FROM authority, environment, analysis, selected_runner
       WHERE (SELECT count(*) FROM connection_authority) = ${requestedConnections.length}
@@ -384,6 +395,12 @@ export async function claimSignalRunnerLease(input: {
       rule."next_evaluation_at" AS "nextEvaluationAt",
       rule."definition" AS "ruleDefinition",
       analysis."definition" AS "analysisDefinition",
+      COALESCE((SELECT max(receipt."transition_sequence")
+        FROM ${workspaceSignalEvaluationReceipt} receipt
+        WHERE receipt."organization_id" = rule."organization_id"
+          AND receipt."rule_id" = rule."id"
+          AND receipt."rule_revision" = rule."revision"), 0) + 1
+        AS "nextTransitionSequence",
       COALESCE(jsonb_agg(rule_connection."connection_id"::text
         ORDER BY rule_connection."connection_id"), '[]'::jsonb) AS "connectionIds"
     FROM ${workspaceSignalRule} rule
@@ -449,9 +466,11 @@ export async function claimSignalRunnerLease(input: {
     ? candidate.nextEvaluationAt : new Date(String(candidate?.nextEvaluationAt));
   const revision = Number(candidate?.ruleRevision);
   const environmentRevision = Number(candidate?.environmentRevision);
+  const nextTransitionSequence = Number(candidate?.nextTransitionSequence);
   if (!candidate || typeof candidate.ruleId !== "string"
     || typeof candidate.projectEnvironmentId !== "string"
     || !Number.isSafeInteger(revision) || !Number.isSafeInteger(environmentRevision)
+    || !Number.isSafeInteger(nextTransitionSequence) || nextTransitionSequence < 1
     || Number.isNaN(scheduledAt.valueOf())
     || !candidate.ruleDefinition || typeof candidate.ruleDefinition !== "object"
     || Array.isArray(candidate.ruleDefinition)
@@ -608,6 +627,7 @@ export async function claimSignalRunnerLease(input: {
     ruleDefinition: definition,
     analysisDefinition: candidate.analysisDefinition as Record<string, unknown>,
     connectionIds: candidate.connectionIds as string[],
+    nextTransitionSequence,
   };
 }
 
@@ -835,5 +855,151 @@ export async function commitSignalEvaluationReceipt(input: {
     state: row.state,
     notificationState: row.notificationState as StoredSignalEvaluationReceipt["notificationState"],
     transitionSequence: sequence,
+  };
+}
+
+export async function commitSignalRuleMutation(input: {
+  organizationId: string;
+  ruleId: string;
+  expectedRevision: number;
+  mutation: SignalRuleMutation;
+  authority: DashboardMutationAuthority;
+}): Promise<MutatedSignalRule | null> {
+  const currentRows = await db.select({
+    definition: workspaceSignalRule.definition,
+    enabled: workspaceSignalRule.enabled,
+    status: workspaceSignalRule.status,
+    runnerId: workspaceSignalRule.runnerId,
+  }).from(workspaceSignalRule).where(and(
+    eq(workspaceSignalRule.organizationId, input.organizationId),
+    eq(workspaceSignalRule.id, input.ruleId),
+    eq(workspaceSignalRule.revision, input.expectedRevision),
+    isNull(workspaceSignalRule.deletedAt),
+  )).limit(1);
+  const current = currentRows[0];
+  if (!current || !current.definition || typeof current.definition !== "object"
+    || Array.isArray(current.definition)) return null;
+  const bumpsRevision = input.mutation.action !== "run_now";
+  const nextRevision = bumpsRevision ? input.expectedRevision + 1 : input.expectedRevision;
+  const nextStatus = input.mutation.action === "enable" ? "active"
+    : input.mutation.action === "pause" ? "paused"
+      : input.mutation.action === "disable" ? "disabled"
+        : current.status as MutatedSignalRule["status"];
+  const nextEnabled = nextStatus === "active";
+  const nextRunnerId = input.mutation.action === "runner_change"
+    ? input.mutation.runnerId : current.runnerId;
+  const nextDefinition = bumpsRevision ? {
+    ...(current.definition as Record<string, unknown>),
+    enabled: nextEnabled,
+    revision: nextRevision,
+  } : current.definition;
+  const payloadHash = canonicalHash(nextDefinition);
+  const requestId = crypto.randomUUID();
+  const result = await db.execute<Record<string, unknown>>(sql`
+    WITH authority_lock AS MATERIALIZED (
+      SELECT pg_advisory_xact_lock(hashtextextended(
+        ${`signal-command:${input.organizationId}:${input.ruleId}`}, 0))
+    ), authority AS MATERIALIZED (
+      SELECT member."id", member."role"
+      FROM "workspace_control"."session" session
+      JOIN ${member} member
+        ON member."id" = ${input.authority.membershipId}
+       AND member."organization_id" = ${input.organizationId}
+       AND member."user_id" = ${input.authority.userId}
+      JOIN authority_lock ON TRUE
+      WHERE session."id" = ${input.authority.sessionId}
+        AND session."user_id" = ${input.authority.userId}
+        AND session."expires_at" > now()
+        AND member."role" = ${input.authority.role}
+        AND member."role" IN ('editor', 'admin', 'owner')
+        AND member."revocation_pending_at" IS NULL
+        AND member."revocation_claim_id" IS NULL
+      FOR UPDATE OF session, member
+    ), current_rule AS MATERIALIZED (
+      SELECT rule.*
+      FROM ${workspaceSignalRule} rule
+      JOIN authority ON rule."owner_member_id" = authority."id"
+        OR authority."role" IN ('admin', 'owner')
+      WHERE rule."organization_id" = ${input.organizationId}
+        AND rule."id" = ${input.ruleId}::uuid
+        AND rule."revision" = ${input.expectedRevision}
+        AND rule."deleted_at" IS NULL
+        AND (${input.mutation.action} <> 'runner_change'
+          OR rule."owner_member_id" = authority."id")
+        AND (${input.mutation.action} <> 'run_now' OR rule."enabled")
+        AND NOT EXISTS (
+          SELECT 1 FROM ${workspaceSignalRunnerLease} active
+          WHERE active."organization_id" = rule."organization_id"
+            AND active."rule_id" = rule."id"
+            AND active."completed_at" IS NULL AND active."revoked_at" IS NULL
+            AND active."expires_at" > now()
+        )
+      FOR UPDATE OF rule
+    ), runner AS MATERIALIZED (
+      SELECT runner."id"
+      FROM ${workspaceSignalRunner} runner
+      JOIN current_rule ON current_rule."organization_id" = runner."organization_id"
+      JOIN authority ON TRUE
+      WHERE runner."id" = ${nextRunnerId}::uuid
+        AND runner."revoked_at" IS NULL
+        AND (NOT ${nextEnabled} OR runner."last_seen_at" > now() - interval '2 minutes')
+        AND (${input.mutation.action} <> 'runner_change'
+          OR runner."member_id" = authority."id")
+      FOR UPDATE OF runner
+    ), selected_runner AS MATERIALIZED (
+      SELECT runner."id" FROM runner
+      UNION ALL
+      SELECT NULL::uuid FROM current_rule
+      WHERE ${nextRunnerId}::text IS NULL AND NOT ${nextEnabled}
+    ), stored AS MATERIALIZED (
+      UPDATE ${workspaceSignalRule} rule SET
+        "runner_id" = selected_runner."id",
+        "enabled" = ${nextEnabled}, "status" = ${nextStatus},
+        "revision" = ${nextRevision}, "definition" = ${JSON.stringify(nextDefinition)}::jsonb,
+        "next_evaluation_at" = CASE WHEN ${input.mutation.action} = 'run_now'
+          OR (${input.mutation.action} = 'enable' AND NOT current_rule."enabled")
+          THEN now() ELSE rule."next_evaluation_at" END,
+        "updated_at" = now()
+      FROM current_rule CROSS JOIN selected_runner
+      WHERE rule."organization_id" = current_rule."organization_id"
+        AND rule."id" = current_rule."id"
+      RETURNING rule.*
+    ), stored_revision AS (
+      INSERT INTO ${workspaceSignalRuleRevision}
+        ("organization_id", "rule_id", "revision", "base_revision", "operation",
+         "payload", "payload_hash", "created_by_member_id")
+      SELECT ${input.organizationId}, stored."id", stored."revision",
+        ${input.expectedRevision}, ${input.mutation.action},
+        ${JSON.stringify(nextDefinition)}::jsonb, ${payloadHash}, authority."id"
+      FROM stored CROSS JOIN authority
+      WHERE ${bumpsRevision}
+    ), audit AS (
+      INSERT INTO ${workspaceAuditEvent}
+        ("organization_id", "actor_user_id", "action", "resource_type",
+         "resource_id", "redacted_summary", "request_id")
+      SELECT ${input.organizationId}, ${input.authority.userId},
+        ${`signal.rule.${input.mutation.action}`}, 'signal_rule', stored."id"::text,
+        jsonb_build_object('revision', stored."revision", 'status', stored."status"),
+        ${requestId}::uuid
+      FROM stored
+    )
+    SELECT stored."id"::text AS "id", stored."revision" AS "revision",
+      stored."status" AS "status", stored."enabled" AS "enabled",
+      stored."next_evaluation_at" AS "nextEvaluationAt"
+    FROM stored
+  `);
+  const row = result.rows[0];
+  const revision = Number(row?.revision);
+  const nextEvaluationAt = row?.nextEvaluationAt instanceof Date
+    ? row.nextEvaluationAt : new Date(String(row?.nextEvaluationAt));
+  if (!row || typeof row.id !== "string" || !Number.isSafeInteger(revision)
+    || !["active", "paused", "disabled"].includes(String(row.status))
+    || typeof row.enabled !== "boolean" || Number.isNaN(nextEvaluationAt.valueOf())) return null;
+  return {
+    id: row.id,
+    revision,
+    status: row.status as MutatedSignalRule["status"],
+    enabled: row.enabled,
+    nextEvaluationAt,
   };
 }

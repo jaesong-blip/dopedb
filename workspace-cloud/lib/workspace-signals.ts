@@ -71,6 +71,11 @@ export type SignalLeaseClaim = Readonly<{
   background: boolean;
 }>;
 
+export type SignalRuleMutation = Readonly<{
+  action: "pause" | "enable" | "disable" | "run_now" | "runner_change";
+  runnerId: string | null;
+}>;
+
 function exactRecord(value: unknown, fields: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -184,6 +189,26 @@ export function parseSignalLeaseClaim(value: unknown): SignalLeaseClaim {
   return { runnerId: row.runnerId, deviceId, background: row.background };
 }
 
+export function parseSignalRuleMutation(value: unknown): SignalRuleMutation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid signal rule command");
+  }
+  const action = (value as Record<string, unknown>).action;
+  if (action === "runner_change") {
+    const row = exactRecord(value, ["action", "runnerId"]);
+    if (!row || typeof row.runnerId !== "string" || !UUID.test(row.runnerId)) {
+      throw new Error("Invalid signal runner change");
+    }
+    return { action, runnerId: row.runnerId };
+  }
+  if (!["pause", "enable", "disable", "run_now"].includes(String(action))) {
+    throw new Error("Invalid signal rule command");
+  }
+  const row = exactRecord(value, ["action"]);
+  if (!row) throw new Error("Invalid signal rule command");
+  return { action: action as SignalRuleMutation["action"], runnerId: null };
+}
+
 export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {
   const row = exactRecord(value, [
     "id", "projectEnvironmentId", "environmentRevision", "sourceAnalysisId",
@@ -238,6 +263,11 @@ export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {
     || channels.some((channel) => !["desktop", "workspace_web", "email"].includes(channel))) {
     throw new Error("Invalid signal recipients or channels");
   }
+  const condition = parseCondition(row.condition);
+  if ((condition.kind === "absolute_change" || condition.kind === "percentage_change")
+    && baselineWindow === null) {
+    throw new Error("Change signals require a baseline window");
+  }
   return {
     id: row.id,
     projectEnvironmentId: row.projectEnvironmentId,
@@ -250,7 +280,7 @@ export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {
     schedule,
     timezone,
     evaluationWindowSeconds: evaluationWindow,
-    condition: parseCondition(row.condition),
+    condition,
     baselineWindowSeconds: baselineWindow,
     minimumSampleCount: minimumSample,
     cooldownSeconds: cooldown,

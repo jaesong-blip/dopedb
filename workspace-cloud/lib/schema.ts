@@ -2498,6 +2498,7 @@ export const workspaceSignalRule = workspaceControl.table(
     ownerMemberId: text("owner_member_id").notNull(),
     runnerId: uuid("runner_id"),
     enabled: boolean("enabled").notNull().default(false),
+    status: text("status").notNull().default("disabled"),
     revision: bigint("revision", { mode: "number" }).notNull().default(1),
     nextEvaluationAt: timestamp("next_evaluation_at", { withTimezone: true })
       .notNull().defaultNow(),
@@ -2575,6 +2576,11 @@ export const workspaceSignalRule = workspaceControl.table(
     check(
       "workspace_signal_rule_enabled_runner",
       sql`NOT ${table.enabled} OR ${table.runnerId} IS NOT NULL`,
+    ),
+    check(
+      "workspace_signal_rule_status",
+      sql`${table.status} IN ('active', 'paused', 'disabled')
+        AND (${table.enabled} = (${table.status} = 'active'))`,
     ),
   ],
 );

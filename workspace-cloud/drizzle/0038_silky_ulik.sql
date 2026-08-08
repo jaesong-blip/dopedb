@@ -1,0 +1,3 @@
+ALTER TABLE "workspace_control"."workspace_signal_rule" ADD COLUMN "status" text DEFAULT 'disabled' NOT NULL;--> statement-breakpoint
+ALTER TABLE "workspace_control"."workspace_signal_rule" ADD CONSTRAINT "workspace_signal_rule_status" CHECK ("workspace_control"."workspace_signal_rule"."status" IN ('active', 'paused', 'disabled')
+        AND ("workspace_control"."workspace_signal_rule"."enabled" = ("workspace_control"."workspace_signal_rule"."status" = 'active')));

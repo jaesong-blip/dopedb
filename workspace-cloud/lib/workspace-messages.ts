@@ -124,6 +124,10 @@ const en = {
         label: "Reports",
         description: "Agent proposals, human review, evidence, and publication",
       },
+      monitoring: {
+        label: "Monitoring",
+        description: "Metric rules, firing state, runner health, and recovery",
+      },
       members: {
         label: "Members",
         description: "Invitations and workspace roles",
@@ -963,6 +967,10 @@ const ko: DeepStringShape<typeof en> = {
       reports: {
         label: "분석 보고서",
         description: "Agent 제안, 사람 검토, 근거와 발행",
+      },
+      monitoring: {
+        label: "모니터링",
+        description: "지표 규칙, 발생 상태, 실행기 상태와 복구",
       },
       members: {
         label: "멤버 관리",

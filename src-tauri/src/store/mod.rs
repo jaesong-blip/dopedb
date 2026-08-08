@@ -29,6 +29,7 @@ use workspace_codec::{
 
 use bootstrap::*;
 use projections::*;
+pub(crate) use repositories::LocalSignalMetricSample;
 use repositories::*;
 
 pub(crate) use projections::{

@@ -21,6 +21,7 @@ pub(crate) mod reports;
 pub(crate) mod safety_settings;
 pub(crate) mod schema_editor;
 pub(crate) mod scripts;
+pub(crate) mod signals;
 pub(crate) mod sql_documents;
 pub(crate) mod terminals;
 pub(crate) mod workspaces;

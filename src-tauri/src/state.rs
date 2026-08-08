@@ -10,6 +10,7 @@ use crate::features::agents::runtime::AcpPluginManager;
 use crate::features::knowledge::adapters::local::LocalFolderAdapter;
 use crate::features::knowledge::runtime::KnowledgeWatchRuntime;
 use crate::features::providers;
+use crate::features::signals::runtime::SignalRunnerRuntime;
 use crate::features::terminals::{self, TerminalsFeature};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
 use crate::services::ApplicationServices;
@@ -37,6 +38,7 @@ pub struct AppState {
     /// Absolute roots are restored from the OS credential store and never cross IPC.
     pub(crate) local_knowledge_sources: LocalFolderAdapter,
     pub(crate) knowledge_watches: KnowledgeWatchRuntime,
+    pub(crate) signal_runner: SignalRunnerRuntime,
     pub(crate) startup_trace: StartupTrace,
     store: Store,
     post_paint_recovery: PostPaintRecoveryGate,
@@ -94,6 +96,7 @@ impl AppState {
             local_operation_approval,
             local_knowledge_sources: LocalFolderAdapter::new(),
             knowledge_watches: KnowledgeWatchRuntime::default(),
+            signal_runner: SignalRunnerRuntime::default(),
             startup_trace,
             store,
             post_paint_recovery: PostPaintRecoveryGate::new(),
@@ -113,6 +116,7 @@ impl AppState {
         let skills = self.skills.clone();
         let agent_plugins = self.agent_plugins.clone();
         let knowledge_watches = self.knowledge_watches.clone();
+        let signal_runner = self.signal_runner.clone();
         tauri::async_runtime::spawn(async move {
             let started = trace.stage_started();
             let acp = store.recover_interrupted_agent_acp_sessions().await;
@@ -127,6 +131,7 @@ impl AppState {
             if let Err(error) = &jobs {
                 tracing::error!(%error, "post-paint Job recovery failed");
             }
+            signal_runner.start(app.clone());
             let succeeded = acp.is_ok() && jobs.is_ok();
             if succeeded {
                 let started = trace.stage_started();

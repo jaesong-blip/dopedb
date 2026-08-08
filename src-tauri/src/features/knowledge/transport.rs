@@ -799,7 +799,14 @@ pub(crate) async fn list_funnel_analysis_artifacts(
     state: State<'_, AppState>,
     project_environment_id: Uuid,
 ) -> AppResult<Vec<FunnelAnalysisArtifactRecord>> {
-    let graphs = active_workspace_graphs(&state, project_environment_id).await?;
+    list_funnel_analysis_artifacts_inner(&state, project_environment_id).await
+}
+
+pub(crate) async fn list_funnel_analysis_artifacts_inner(
+    state: &AppState,
+    project_environment_id: Uuid,
+) -> AppResult<Vec<FunnelAnalysisArtifactRecord>> {
+    let graphs = active_workspace_graphs(state, project_environment_id).await?;
     let active_scope = state.knowledge_store().active_resource_scope().await?;
     let account_id =
         active_scope
@@ -859,7 +866,7 @@ pub(crate) async fn list_funnel_analysis_artifacts(
         )
         .await?;
     for artifact in &mut artifacts {
-        revalidate_funnel_artifact(&state, project_environment_id, artifact).await?;
+        revalidate_funnel_artifact(state, project_environment_id, artifact).await?;
     }
     Ok(artifacts)
 }
@@ -1078,13 +1085,13 @@ pub(crate) async fn publish_funnel_analysis_artifact(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FunnelTileRunRequest {
-    tile_id: String,
-    query_id: QueryExecutionId,
+    pub(crate) tile_id: String,
+    pub(crate) query_id: QueryExecutionId,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum FunnelTileRunStatus {
+pub(crate) enum FunnelTileRunStatus {
     Ok,
     MissingGrant,
     Stale,
@@ -1094,24 +1101,24 @@ enum FunnelTileRunStatus {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FunnelTileRunProjection {
-    tile_id: String,
+    pub(crate) tile_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    query_id: Option<QueryExecutionId>,
-    status: FunnelTileRunStatus,
+    pub(crate) query_id: Option<QueryExecutionId>,
+    pub(crate) status: FunnelTileRunStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<serde_json::Value>,
+    pub(crate) result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FunnelAnalysisRunProjection {
-    artifact_id: Uuid,
-    artifact_revision: i64,
-    started_at: chrono::DateTime<chrono::Utc>,
-    completed_at: chrono::DateTime<chrono::Utc>,
-    tiles: Vec<FunnelTileRunProjection>,
+    pub(crate) artifact_id: Uuid,
+    pub(crate) artifact_revision: i64,
+    pub(crate) started_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) completed_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) tiles: Vec<FunnelTileRunProjection>,
 }
 
 fn dashboard_kind(kind: ProtocolDashboardKind) -> DashboardKind {
@@ -1220,6 +1227,16 @@ fn compose_funnel_metric(
 #[tauri::command]
 pub(crate) async fn run_funnel_analysis_artifact(
     state: State<'_, AppState>,
+    project_environment_id: Uuid,
+    artifact_id: Uuid,
+    tile_requests: Vec<FunnelTileRunRequest>,
+) -> AppResult<FunnelAnalysisRunProjection> {
+    run_funnel_analysis_artifact_inner(&state, project_environment_id, artifact_id, tile_requests)
+        .await
+}
+
+pub(crate) async fn run_funnel_analysis_artifact_inner(
+    state: &AppState,
     project_environment_id: Uuid,
     artifact_id: Uuid,
     tile_requests: Vec<FunnelTileRunRequest>,

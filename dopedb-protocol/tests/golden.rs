@@ -8,11 +8,12 @@ use dopedb_protocol::{
     GraphBuildArtifactV1, OperationCancelCommand, OperationShowCommand, OperationWaitCommand,
     ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand,
     ReportAppendEvidenceCommand, ReportProposeCommand, RequestEnvelope, ResponseEnvelope,
-    RuntimeDiscovery, SchemaListCommand, SessionAuthentication, SignedAcpPluginManifestV1,
-    SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
-    SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult,
-    TableDescribeCommand, VersionCommand, VersionResult, ACP_PLUGIN_MANIFEST_SCHEMA_VERSION,
-    COMMAND_SCHEMA_VERSION, GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, PROTOCOL_MAX,
+    RuntimeDiscovery, SchemaListCommand, SessionAuthentication, SignalEvaluationReceiptV1,
+    SignalRuleDefinitionV1, SignedAcpPluginManifestV1, SkillInstallCommand, SkillRemoveCommand,
+    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand,
+    StatusCommand, StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
+    ACP_PLUGIN_MANIFEST_SCHEMA_VERSION, COMMAND_SCHEMA_VERSION,
+    GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -396,6 +397,69 @@ fn query_plan_request_matches_v12_command_schema_and_pinned_agent_registration()
     unsafe_graph["evidence"][0]["filePath"] = json!("../secrets.env");
     let unsafe_graph: GraphBuildArtifactV1 = serde_json::from_value(unsafe_graph).unwrap();
     assert!(!unsafe_graph.validate());
+
+    let signal_rule: SignalRuleDefinitionV1 = serde_json::from_value(json!({
+        "schemaVersion": 1,
+        "ruleId": "00000000-0000-0000-0000-000000000131",
+        "projectEnvironmentId": "00000000-0000-0000-0000-000000000129",
+        "environmentRevision": 3,
+        "sourceAnalysisId": "00000000-0000-0000-0000-000000000130",
+        "sourceAnalysisRevision": 1,
+        "sourceTileId": "signup-metric",
+        "metricSemanticId": "signup_count",
+        "connectionIds": ["00000000-0000-0000-0000-000000000001"],
+        "schedule": "*/15 * * * *",
+        "timezone": "Asia/Seoul",
+        "evaluationWindowSeconds": 3600,
+        "condition": {"kind": "percentage_change", "percentage": 20.0},
+        "baselineWindowSeconds": 86400,
+        "minimumSampleCount": 10,
+        "cooldownSeconds": 3600,
+        "rearmAfterNormalCount": 2,
+        "severity": "warning",
+        "recipientMemberIds": ["member-1"],
+        "channels": ["desktop", "workspace_web", "email"],
+        "enabled": true,
+        "revision": 1,
+        "productionApprovedByMemberId": null,
+        "productionApprovedAt": null
+    }))
+    .expect("Signal rule fixture must decode");
+    assert!(signal_rule.validate());
+    let mut invalid_rule = signal_rule.clone();
+    invalid_rule.baseline_window_seconds = None;
+    assert!(!invalid_rule.validate());
+    let serialized_rule = serde_json::to_string(&signal_rule).unwrap();
+    for forbidden in ["password", "credential", "hostname", "sql", "resultRows"] {
+        assert!(!serialized_rule
+            .to_ascii_lowercase()
+            .contains(&forbidden.to_ascii_lowercase()));
+    }
+
+    let receipt: SignalEvaluationReceiptV1 = serde_json::from_value(json!({
+        "receiptId": "00000000-0000-0000-0000-000000000132",
+        "ruleId": "00000000-0000-0000-0000-000000000131",
+        "ruleRevision": 1,
+        "projectEnvironmentId": "00000000-0000-0000-0000-000000000129",
+        "environmentRevision": 3,
+        "runnerDeviceId": "device-1",
+        "scheduledAt": "2026-08-08T00:00:00Z",
+        "evaluatedAt": "2026-08-08T00:00:01Z",
+        "state": "firing",
+        "queryRunIds": ["00000000-0000-0000-0000-000000000133"],
+        "connectionIds": ["00000000-0000-0000-0000-000000000001"],
+        "durationMs": 1000,
+        "rowCountCategory": "one",
+        "schemaFingerprint": "ab".repeat(32),
+        "dedupeKey": "rule-1:revision-1:schedule-1",
+        "transitionSequence": 1,
+        "errorKind": null
+    }))
+    .expect("Signal receipt fixture must decode");
+    assert!(receipt.validate());
+    let mut unsafe_receipt = serde_json::to_value(receipt).unwrap();
+    unsafe_receipt["resultRows"] = json!([[42]]);
+    assert!(serde_json::from_value::<SignalEvaluationReceiptV1>(unsafe_receipt).is_err());
 }
 
 #[test]

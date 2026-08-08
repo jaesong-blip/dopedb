@@ -9,6 +9,7 @@ mod funnel_analyses;
 mod knowledge;
 mod provider_local_target;
 mod reports;
+mod signals;
 mod sync;
 
 use std::net::IpAddr;
@@ -67,6 +68,9 @@ pub(crate) use knowledge::{
 };
 use provider_local_target::provider_local_target;
 pub(crate) use reports::{append_report_evidence, propose_report};
+pub(crate) use signals::{
+    claim_signal_lease, register_signal_runner, submit_signal_receipt, RemoteSignalLease,
+};
 use sync::workspace_pull_page;
 
 const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";

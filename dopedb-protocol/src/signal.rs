@@ -85,6 +85,10 @@ impl SignalRuleDefinitionV1 {
             && self
                 .baseline_window_seconds
                 .is_none_or(|window| window > 0 && window <= 31_622_400)
+            && (!matches!(
+                self.condition,
+                SignalCondition::AbsoluteChange { .. } | SignalCondition::PercentageChange { .. }
+            ) || self.baseline_window_seconds.is_some())
             && self.minimum_sample_count <= 1_000_000_000
             && self.cooldown_seconds <= 31_622_400
             && self.rearm_after_normal_count > 0
@@ -206,7 +210,10 @@ fn safe_text(value: &str, max_chars: usize) -> bool {
 }
 
 fn sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 fn unique<T: Ord + Clone>(values: &[T]) -> bool {

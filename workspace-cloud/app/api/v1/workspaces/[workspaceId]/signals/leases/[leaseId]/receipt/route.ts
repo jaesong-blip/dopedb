@@ -7,6 +7,7 @@ import {
   privateJson,
 } from "../../../../../../../../../lib/http";
 import { authorizeWorkspace } from "../../../../../../../../../lib/workspace-authorization";
+import { deliverSignalEmailNotifications } from "../../../../../../../../../lib/signal-notifications";
 import { commitSignalEvaluationReceipt } from "../../../../../../../../../lib/workspace-signal-store";
 import { parseSignalEvaluationReceipt } from "../../../../../../../../../lib/workspace-signals";
 
@@ -48,5 +49,6 @@ export async function POST(request: Request, context: RouteContext) {
       409,
     );
   }
+  await deliverSignalEmailNotifications(workspaceId, stored.id);
   return privateJson({ receipt: stored }, { status: 201 });
 }

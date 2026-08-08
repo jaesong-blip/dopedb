@@ -20,7 +20,8 @@ use super::*;
 /// Version 13 adds the session's immutable Environment connection allowlist.
 /// Version 14 persists the exact member KnowledgeGrant used by a resumable session.
 /// Version 15 adds bounded Environment funnel analysis definitions without rows.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 15;
+/// Version 16 adds local-only Signal metric samples and a stable runner identity.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 16;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -125,7 +126,42 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         set_local_schema_version(pool, 15).await?;
         migrated = true;
     }
+    if version < 16 {
+        ensure_signal_runner_schema(pool).await?;
+        set_local_schema_version(pool, 16).await?;
+        migrated = true;
+    }
     Ok(migrated)
+}
+
+async fn ensure_signal_runner_schema(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(
+        "CREATE TABLE IF NOT EXISTS signal_metric_samples (
+             workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+             account_user_id TEXT NOT NULL CHECK(account_user_id <> ''),
+             rule_id TEXT NOT NULL,
+             rule_revision INTEGER NOT NULL CHECK(rule_revision > 0),
+             scheduled_at TEXT NOT NULL,
+             evaluated_at TEXT NOT NULL,
+             metric_value REAL,
+             sample_count INTEGER NOT NULL CHECK(sample_count >= 0),
+             observed_state TEXT NOT NULL
+                 CHECK(observed_state IN ('normal', 'firing', 'no_data', 'error', 'stale')),
+             schema_fingerprint TEXT NOT NULL
+                 CHECK(length(schema_fingerprint) = 64
+                   AND schema_fingerprint NOT GLOB '*[^0-9a-f]*'),
+             PRIMARY KEY (
+               workspace_id, account_user_id, rule_id, rule_revision, scheduled_at
+             )
+         );
+         CREATE INDEX IF NOT EXISTS idx_signal_metric_samples_recent
+           ON signal_metric_samples(
+             workspace_id, account_user_id, rule_id, rule_revision, evaluated_at DESC
+           );",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 async fn ensure_funnel_analysis_schema(pool: &SqlitePool) -> AppResult<()> {

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "../../../../../../lib/db";
 import { env } from "../../../../../../lib/env";
@@ -9,7 +9,11 @@ import {
   mutationAllowed,
   privateJson,
 } from "../../../../../../lib/http";
-import { workspaceSignalRule } from "../../../../../../lib/schema";
+import {
+  workspaceSignalEvaluationReceipt,
+  workspaceSignalRule,
+  workspaceSignalRunner,
+} from "../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
 import { hasWorkspaceCapability } from "../../../../../../lib/workspace-permissions";
 import { commitSignalRuleCreate } from "../../../../../../lib/workspace-signal-store";
@@ -30,9 +34,51 @@ export async function GET(request: Request, context: RouteContext) {
       OR ${workspaceSignalRule.definition}->'recipientMemberIds'
         @> ${JSON.stringify([authorization.membership.id])}::jsonb)`,
   )).orderBy(desc(workspaceSignalRule.updatedAt), desc(workspaceSignalRule.id));
+  const ruleIds = rules.map((rule) => rule.id);
+  const receipts = ruleIds.length > 0
+    ? await db.select({
+        id: workspaceSignalEvaluationReceipt.id,
+        ruleId: workspaceSignalEvaluationReceipt.ruleId,
+        state: workspaceSignalEvaluationReceipt.state,
+        observedState: workspaceSignalEvaluationReceipt.observedState,
+        evaluatedAt: workspaceSignalEvaluationReceipt.evaluatedAt,
+        transitionSequence: workspaceSignalEvaluationReceipt.transitionSequence,
+        errorKind: workspaceSignalEvaluationReceipt.errorKind,
+      }).from(workspaceSignalEvaluationReceipt).where(and(
+        eq(workspaceSignalEvaluationReceipt.organizationId, workspaceId),
+        inArray(workspaceSignalEvaluationReceipt.ruleId, ruleIds),
+      )).orderBy(
+        desc(workspaceSignalEvaluationReceipt.transitionSequence),
+        desc(workspaceSignalEvaluationReceipt.id),
+      )
+    : [];
+  const latestReceipt = new Map<string, (typeof receipts)[number]>();
+  for (const receipt of receipts) {
+    if (!latestReceipt.has(receipt.ruleId)) latestReceipt.set(receipt.ruleId, receipt);
+  }
+  const runnerIds = rules.flatMap((rule) => rule.runnerId ? [rule.runnerId] : []);
+  const runners = runnerIds.length > 0
+    ? await db.select({
+        id: workspaceSignalRunner.id,
+        displayName: workspaceSignalRunner.displayName,
+        backgroundAllowed: workspaceSignalRunner.backgroundAllowed,
+        lastSeenAt: workspaceSignalRunner.lastSeenAt,
+        revokedAt: workspaceSignalRunner.revokedAt,
+      }).from(workspaceSignalRunner).where(and(
+        eq(workspaceSignalRunner.organizationId, workspaceId),
+        inArray(workspaceSignalRunner.id, runnerIds),
+      ))
+    : [];
+  const runnerById = new Map(runners.map((runner) => [runner.id, runner]));
   return privateJson({
     workspaceId,
-    rules: rules.map((rule) => ({
+    rules: rules.map((rule) => {
+      const receipt = latestReceipt.get(rule.id) ?? null;
+      const runner = rule.runnerId ? runnerById.get(rule.runnerId) ?? null : null;
+      const runnerOnline = Boolean(
+        runner && !runner.revokedAt && runner.lastSeenAt.getTime() > Date.now() - 120_000,
+      );
+      return {
       id: rule.id,
       projectEnvironmentId: rule.projectEnvironmentId,
       environmentRevision: rule.environmentRevision,
@@ -44,11 +90,29 @@ export async function GET(request: Request, context: RouteContext) {
       ownerMemberId: rule.ownerMemberId,
       runnerId: rule.runnerId,
       enabled: rule.enabled,
+      status: rule.status,
       revision: rule.revision,
       nextEvaluationAt: rule.nextEvaluationAt.toISOString(),
       createdAt: rule.createdAt.toISOString(),
       updatedAt: rule.updatedAt.toISOString(),
-    })),
+      latestEvaluation: receipt ? {
+        id: receipt.id,
+        state: receipt.state,
+        observedState: receipt.observedState,
+        evaluatedAt: receipt.evaluatedAt.toISOString(),
+        transitionSequence: receipt.transitionSequence,
+        errorKind: receipt.errorKind,
+      } : null,
+      runner: runner ? {
+        id: runner.id,
+        displayName: runner.displayName,
+        backgroundAllowed: runner.backgroundAllowed,
+        lastSeenAt: runner.lastSeenAt.toISOString(),
+        online: runnerOnline,
+      } : null,
+      actuallyMonitoring: rule.enabled && runnerOnline,
+    };
+    }),
   });
 }
 
