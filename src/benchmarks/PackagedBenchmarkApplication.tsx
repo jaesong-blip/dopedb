@@ -155,6 +155,13 @@ function benchmarkFailureReason(error: unknown): PackagedBenchmarkFailureReason 
   if (error instanceof RangeError) return "range_error";
   if (error instanceof TypeError) return "type_error";
   if (!(error instanceof Error)) return "unexpected";
+  if (error.message.includes("accessibility contract")) return "accessibility_contract";
+  if (error.message.includes("viewport")) return "viewport_contract";
+  if (error.message.includes("locale")) return "locale_contract";
+  if (error.message.includes("keyboard")) return "keyboard_contract";
+  if (error.message.includes("Skill inventory") || error.message.includes("Skill targets") || error.message.includes("Skill removal")) {
+    return "skill_state";
+  }
   if (error.message.includes("unavailable")) return "surface_unavailable";
   if (error.message.includes("timed out")) return "paint_timeout";
   if (error.message.includes("benchmark backend")) return "backend_command";

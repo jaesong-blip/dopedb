@@ -92,6 +92,11 @@ export type PackagedBenchmarkFailureReason =
   | "surface_unavailable"
   | "paint_timeout"
   | "backend_command"
+  | "accessibility_contract"
+  | "viewport_contract"
+  | "locale_contract"
+  | "keyboard_contract"
+  | "skill_state"
   | "type_error"
   | "range_error"
   | "unexpected";
