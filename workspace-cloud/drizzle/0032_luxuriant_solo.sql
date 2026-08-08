@@ -55,6 +55,7 @@ CREATE TABLE "workspace_control"."workspace_funnel_analysis_revision" (
 	CONSTRAINT "workspace_funnel_analysis_revision_payload_hash" CHECK ("workspace_control"."workspace_funnel_analysis_revision"."payload_hash" ~ '^[0-9a-f]{64}$')
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_funnel_analysis_org_id_idx" ON "workspace_control"."workspace_funnel_analysis" USING btree ("organization_id","id");--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_funnel_analysis" ADD CONSTRAINT "workspace_funnel_analysis_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_funnel_analysis" ADD CONSTRAINT "workspace_funnel_analysis_org_environment_fk" FOREIGN KEY ("organization_id","project_environment_id") REFERENCES "workspace_control"."knowledge_project_environment"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_funnel_analysis_connection" ADD CONSTRAINT "workspace_funnel_analysis_connection_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -66,7 +67,6 @@ ALTER TABLE "workspace_control"."workspace_funnel_analysis_graph" ADD CONSTRAINT
 ALTER TABLE "workspace_control"."workspace_funnel_analysis_revision" ADD CONSTRAINT "workspace_funnel_analysis_revision_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_funnel_analysis_revision" ADD CONSTRAINT "workspace_funnel_analysis_revision_created_by_user_id_user_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "workspace_control"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_funnel_analysis_revision" ADD CONSTRAINT "workspace_funnel_analysis_revision_org_analysis_fk" FOREIGN KEY ("organization_id","analysis_id") REFERENCES "workspace_control"."workspace_funnel_analysis"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_funnel_analysis_org_id_idx" ON "workspace_control"."workspace_funnel_analysis" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE INDEX "workspace_funnel_analysis_environment_idx" ON "workspace_control"."workspace_funnel_analysis" USING btree ("organization_id","project_environment_id","updated_at");--> statement-breakpoint
 CREATE INDEX "workspace_funnel_analysis_connection_org_idx" ON "workspace_control"."workspace_funnel_analysis_connection" USING btree ("organization_id","connection_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_funnel_analysis_revision_unique_idx" ON "workspace_control"."workspace_funnel_analysis_revision" USING btree ("organization_id","analysis_id","revision");

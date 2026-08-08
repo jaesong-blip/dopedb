@@ -119,6 +119,10 @@ CREATE TABLE "workspace_control"."workspace_signal_runner_lease" (
 	CONSTRAINT "workspace_signal_runner_lease_time" CHECK ("workspace_control"."workspace_signal_runner_lease"."expires_at" > "workspace_control"."workspace_signal_runner_lease"."scheduled_at")
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_signal_receipt_org_id_idx" ON "workspace_control"."workspace_signal_evaluation_receipt" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_signal_rule_org_id_idx" ON "workspace_control"."workspace_signal_rule" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_signal_runner_org_id_idx" ON "workspace_control"."workspace_signal_runner" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_signal_runner_lease_org_id_idx" ON "workspace_control"."workspace_signal_runner_lease" USING btree ("organization_id","id");--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_signal_evaluation_receipt" ADD CONSTRAINT "workspace_signal_evaluation_receipt_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_signal_evaluation_receipt" ADD CONSTRAINT "workspace_signal_receipt_org_rule_fk" FOREIGN KEY ("organization_id","rule_id") REFERENCES "workspace_control"."workspace_signal_rule"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_signal_evaluation_receipt" ADD CONSTRAINT "workspace_signal_receipt_org_runner_fk" FOREIGN KEY ("organization_id","runner_id") REFERENCES "workspace_control"."workspace_signal_runner"("organization_id","id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -139,16 +143,12 @@ ALTER TABLE "workspace_control"."workspace_signal_runner" ADD CONSTRAINT "worksp
 ALTER TABLE "workspace_control"."workspace_signal_runner_lease" ADD CONSTRAINT "workspace_signal_runner_lease_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_signal_runner_lease" ADD CONSTRAINT "workspace_signal_runner_lease_org_rule_fk" FOREIGN KEY ("organization_id","rule_id") REFERENCES "workspace_control"."workspace_signal_rule"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."workspace_signal_runner_lease" ADD CONSTRAINT "workspace_signal_runner_lease_org_runner_fk" FOREIGN KEY ("organization_id","runner_id") REFERENCES "workspace_control"."workspace_signal_runner"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_signal_receipt_org_id_idx" ON "workspace_control"."workspace_signal_evaluation_receipt" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_signal_receipt_dedupe_idx" ON "workspace_control"."workspace_signal_evaluation_receipt" USING btree ("organization_id","dedupe_key");--> statement-breakpoint
 CREATE INDEX "workspace_signal_receipt_rule_idx" ON "workspace_control"."workspace_signal_evaluation_receipt" USING btree ("organization_id","rule_id","transition_sequence");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_signal_notification_delivery_idx" ON "workspace_control"."workspace_signal_notification" USING btree ("organization_id","receipt_id","recipient_member_id","channel");--> statement-breakpoint
 CREATE INDEX "workspace_signal_notification_inbox_idx" ON "workspace_control"."workspace_signal_notification" USING btree ("organization_id","recipient_member_id","read_at","created_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_signal_rule_org_id_idx" ON "workspace_control"."workspace_signal_rule" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE INDEX "workspace_signal_rule_environment_idx" ON "workspace_control"."workspace_signal_rule" USING btree ("organization_id","project_environment_id","enabled","updated_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_signal_runner_org_id_idx" ON "workspace_control"."workspace_signal_runner" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_signal_runner_org_device_idx" ON "workspace_control"."workspace_signal_runner" USING btree ("organization_id","device_id");--> statement-breakpoint
 CREATE INDEX "workspace_signal_runner_member_idx" ON "workspace_control"."workspace_signal_runner" USING btree ("organization_id","member_id","revoked_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "workspace_signal_runner_lease_org_id_idx" ON "workspace_control"."workspace_signal_runner_lease" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workspace_signal_runner_lease_idempotency_idx" ON "workspace_control"."workspace_signal_runner_lease" USING btree ("organization_id","idempotency_key");--> statement-breakpoint
 CREATE INDEX "workspace_signal_runner_lease_due_idx" ON "workspace_control"."workspace_signal_runner_lease" USING btree ("organization_id","rule_id","expires_at");

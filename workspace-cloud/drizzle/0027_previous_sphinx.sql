@@ -178,6 +178,15 @@ CREATE TABLE "workspace_control"."knowledge_source_event" (
 	CONSTRAINT "knowledge_source_event_files_array" CHECK (jsonb_typeof("workspace_control"."knowledge_source_event"."changed_files") = 'array')
 );
 --> statement-breakpoint
+-- Composite tenant-scoped foreign keys below require their referenced unique
+-- keys to exist before PostgreSQL can add the constraints. Drizzle normally
+-- emits indexes after foreign keys, so keep these identity indexes ahead of
+-- the ALTER TABLE block for clean-database migrations.
+CREATE UNIQUE INDEX "knowledge_github_installation_org_id_idx" ON "workspace_control"."knowledge_github_installation" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "knowledge_graph_revision_org_id_idx" ON "workspace_control"."knowledge_graph_revision" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "knowledge_project_org_id_idx" ON "workspace_control"."knowledge_project" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "knowledge_environment_org_id_idx" ON "workspace_control"."knowledge_project_environment" USING btree ("organization_id","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "knowledge_source_org_id_idx" ON "workspace_control"."knowledge_source" USING btree ("organization_id","id");--> statement-breakpoint
 ALTER TABLE "workspace_control"."knowledge_environment_head" ADD CONSTRAINT "knowledge_environment_head_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."knowledge_environment_head" ADD CONSTRAINT "knowledge_environment_head_project_environment_id_knowledge_project_environment_id_fk" FOREIGN KEY ("project_environment_id") REFERENCES "workspace_control"."knowledge_project_environment"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."knowledge_environment_head" ADD CONSTRAINT "knowledge_environment_head_graph_revision_id_knowledge_graph_revision_id_fk" FOREIGN KEY ("graph_revision_id") REFERENCES "workspace_control"."knowledge_graph_revision"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -221,18 +230,13 @@ ALTER TABLE "workspace_control"."knowledge_source" ADD CONSTRAINT "knowledge_sou
 ALTER TABLE "workspace_control"."knowledge_source_event" ADD CONSTRAINT "knowledge_source_event_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "workspace_control"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."knowledge_source_event" ADD CONSTRAINT "knowledge_source_event_source_id_knowledge_source_id_fk" FOREIGN KEY ("source_id") REFERENCES "workspace_control"."knowledge_source"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workspace_control"."knowledge_source_event" ADD CONSTRAINT "knowledge_source_event_org_source_fk" FOREIGN KEY ("organization_id","source_id") REFERENCES "workspace_control"."knowledge_source"("organization_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "knowledge_github_installation_org_id_idx" ON "workspace_control"."knowledge_github_installation" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "knowledge_github_installation_org_external_idx" ON "workspace_control"."knowledge_github_installation" USING btree ("organization_id","installation_id");--> statement-breakpoint
 CREATE INDEX "knowledge_github_setup_state_expiry_idx" ON "workspace_control"."knowledge_github_setup_state" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "knowledge_grant_member_active_idx" ON "workspace_control"."knowledge_grant" USING btree ("organization_id","member_id","expires_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "knowledge_graph_revision_org_id_idx" ON "workspace_control"."knowledge_graph_revision" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE INDEX "knowledge_graph_revision_environment_idx" ON "workspace_control"."knowledge_graph_revision" USING btree ("organization_id","project_environment_id","staged_at");--> statement-breakpoint
 CREATE INDEX "knowledge_mapping_review_idx" ON "workspace_control"."knowledge_mapping_proposal" USING btree ("organization_id","project_environment_id","state","proposed_at");--> statement-breakpoint
-CREATE UNIQUE INDEX "knowledge_project_org_id_idx" ON "workspace_control"."knowledge_project" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "knowledge_project_org_name_idx" ON "workspace_control"."knowledge_project" USING btree ("organization_id","name");--> statement-breakpoint
-CREATE UNIQUE INDEX "knowledge_environment_org_id_idx" ON "workspace_control"."knowledge_project_environment" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE UNIQUE INDEX "knowledge_environment_project_name_idx" ON "workspace_control"."knowledge_project_environment" USING btree ("project_id","name");--> statement-breakpoint
-CREATE UNIQUE INDEX "knowledge_source_org_id_idx" ON "workspace_control"."knowledge_source" USING btree ("organization_id","id");--> statement-breakpoint
 CREATE INDEX "knowledge_source_environment_idx" ON "workspace_control"."knowledge_source" USING btree ("organization_id","project_environment_id","updated_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "knowledge_source_event_delivery_idx" ON "workspace_control"."knowledge_source_event" USING btree ("delivery_id","source_id");--> statement-breakpoint
 CREATE INDEX "knowledge_source_event_pending_idx" ON "workspace_control"."knowledge_source_event" USING btree ("organization_id","source_id","state","created_at");--> statement-breakpoint

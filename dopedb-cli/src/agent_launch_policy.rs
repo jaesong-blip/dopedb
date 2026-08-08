@@ -86,10 +86,11 @@ fn verify_file(
     expected_resolved: &str,
     expected_sha256: &str,
     maximum_bytes: u64,
-    executable: bool,
+    require_executable: bool,
 ) -> Result<(), AgentLaunchPolicyError> {
     let invocation = Path::new(invocation);
-    let path = PathBuf::from(expected_resolved);
+    let path = std::fs::canonicalize(PathBuf::from(expected_resolved))
+        .map_err(|_| AgentLaunchPolicyError)?;
     if std::fs::canonicalize(invocation).map_err(|_| AgentLaunchPolicyError)? != path {
         return Err(AgentLaunchPolicyError);
     }
@@ -98,12 +99,14 @@ fn verify_file(
         return Err(AgentLaunchPolicyError);
     }
     #[cfg(unix)]
-    if executable {
+    if require_executable {
         use std::os::unix::fs::PermissionsExt;
         if metadata.permissions().mode() & 0o111 == 0 {
             return Err(AgentLaunchPolicyError);
         }
     }
+    #[cfg(not(unix))]
+    let _ = require_executable;
     let mut file = std::fs::File::open(path).map_err(|_| AgentLaunchPolicyError)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 16 * 1024];

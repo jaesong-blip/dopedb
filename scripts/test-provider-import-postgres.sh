@@ -15,6 +15,11 @@ if [[ ! "$fixture_database" =~ ^dopedb_provider_import_[0-9]+$ ]]; then
 fi
 
 cleanup_fixture() {
+  local exit_status=$?
+  if [[ "$exit_status" != "0" && -n "$fixture_directory" && -f "$fixture_directory/postgres.log" ]]; then
+    echo "PostgreSQL fixture log (failure tail):" >&2
+    tail -n 80 "$fixture_directory/postgres.log" >&2 || true
+  fi
   if [[ "$fixture_database_created" = "1" ]]; then
     dropdb --if-exists --force --maintenance-db="$admin_url" "$fixture_database" \
       >/dev/null 2>&1 || true
@@ -55,6 +60,7 @@ if [[ -z "$admin_url" ]]; then
     exit 1
   fi
   "$postgres_server_bin/pg_ctl" --pgdata="$fixture_directory/data" \
+    --log="$fixture_directory/postgres.log" \
     --options="-F -h 127.0.0.1 -p $fixture_port -k $fixture_directory/socket" \
     --wait start >/dev/null
   admin_url="postgresql://$(id -un)@127.0.0.1:${fixture_port}/postgres"
@@ -70,7 +76,7 @@ test_url="$(node -e '
 ' "$admin_url" "$fixture_database")"
 
 DATABASE_URL="$test_url" DATABASE_URL_UNPOOLED="$test_url" \
-  pnpm --dir "$repository_root/workspace-cloud" db:migrate >/dev/null
+  pnpm --dir "$repository_root/workspace-cloud" db:migrate
 
 sentinel="provider-import-${fixture_database}-isolated"
 psql --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$test_url" --quiet \
