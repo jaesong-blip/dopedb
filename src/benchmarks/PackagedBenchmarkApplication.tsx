@@ -33,7 +33,13 @@ import type {
 } from "../features/agents/domain";
 import { useToolWindowLayout } from "../features/appShell/useToolWindowLayout";
 import { formatSqlDocument } from "../features/query/sqlFormatter";
-import type { CatalogSnapshot, QueryResult } from "../ipc/types";
+import { installSkill, removeSkill, skillStatus } from "../ipc/commands";
+import type {
+  CatalogSnapshot,
+  QueryResult,
+  SkillStatus,
+  SkillTargetExpectation,
+} from "../ipc/types";
 import {
   completePackagedBenchmark,
   failPackagedBenchmark,
@@ -71,6 +77,8 @@ export function PackagedBenchmarkApplication({
       return <QueryResultScenario />;
     case "agent-transcript":
       return <AgentTranscriptScenario />;
+    case "agent-tools":
+      return <AgentToolsScenario />;
     case "long-lived-data":
       return <LongLivedDataScenario />;
     case "interaction-surfaces":
@@ -457,6 +465,87 @@ function AgentTranscriptScenario() {
             />
           ))}
         </div>
+      </div>
+    </BenchmarkSurface>
+  );
+}
+
+function skillExpectations(status: SkillStatus): SkillTargetExpectation[] {
+  return status.targets.map((target) => ({
+    target: target.target,
+    inventoryFingerprint: target.inventoryFingerprint,
+  }));
+}
+
+function assertSkillState(status: SkillStatus, expected: "missing" | "managed_current") {
+  if (
+    status.targets.length !== 2
+    || status.targets.some((target) => target.state !== expected)
+  ) {
+    throw new Error(`packaged Skill inventory did not converge to ${expected}`);
+  }
+  if (
+    expected === "managed_current"
+    && status.targets.some(
+      (target) =>
+        target.installedRevision !== status.skill.releaseRevision
+        || target.installedPackageDigest !== status.skill.packageDigest,
+    )
+  ) {
+    throw new Error("packaged Skill inventory revision or digest is stale");
+  }
+}
+
+function AgentToolsScenario() {
+  const [status, setStatus] = useState<SkillStatus | null>(null);
+
+  useScenarioRunner(true, async () => {
+    const initial = await skillStatus("all");
+    assertSkillState(initial, "missing");
+    await measurePackagedAction("agent-skill-install-all", async () => {
+      const receipt = await installSkill("all", skillExpectations(initial));
+      assertSkillState(receipt.status, "managed_current");
+      if (receipt.changedTargets.length !== 2) {
+        throw new Error("packaged Skill installation did not change both targets");
+      }
+      setStatus(receipt.status);
+    });
+    await measurePackagedAction("agent-skill-reload", async () => {
+      const receipt = await runPackagedBenchmarkBackend("agent-skill-reload");
+      if (receipt.rowCount !== 2) {
+        throw new Error("packaged Skill manager recreation did not find both targets");
+      }
+      const reloaded = await skillStatus("all");
+      assertSkillState(reloaded, "managed_current");
+      setStatus({ ...reloaded });
+      return backendEvidence(receipt);
+    });
+    await measurePackagedAction("agent-skill-remove-all", async () => {
+      const current = await skillStatus("all");
+      const receipt = await removeSkill("all", skillExpectations(current));
+      assertSkillState(receipt.status, "missing");
+      if (receipt.changedTargets.length !== 2) {
+        throw new Error("packaged Skill removal did not change both targets");
+      }
+      setStatus(receipt.status);
+    });
+    await finishBenchmark();
+  });
+
+  return (
+    <BenchmarkSurface title="Agent tools · clean profile installation and restart">
+      <div className="tw:grid tw:min-h-0 tw:flex-1 tw:content-start tw:gap-2 tw:overflow-auto tw:p-4">
+        {(status?.targets ?? []).map((target) => (
+          <div
+            key={target.target}
+            className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border-b tw:border-border-subtle tw:py-2 tw:text-sm"
+          >
+            <span>{target.displayName}</span>
+            <span className="tw:font-mono tw:text-xs tw:text-muted-foreground">
+              {target.state}
+            </span>
+          </div>
+        ))}
       </div>
     </BenchmarkSurface>
   );

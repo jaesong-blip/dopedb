@@ -165,6 +165,7 @@ pub(crate) async fn run_packaged_benchmark_backend(
                     | "query-export"
             ),
             "agent-transcript" => action == "agent-stream-10k",
+            "agent-tools" => action == "agent-skill-reload",
             "long-lived-data" => matches!(
                 action.as_str(),
                 "history-10k" | "audit-100k" | "local-history-50" | "dashboard-multi-tile"
@@ -197,6 +198,11 @@ pub(crate) async fn run_packaged_benchmark_backend(
             packaged_result_receipt(action.clone(), metric)?
         } else if action == "agent-stream-10k" {
             packaged_agent_receipt(state.packaged_benchmark_store(), action.clone()).await?
+        } else if action == "agent-skill-reload" {
+            let action_for_worker = action.clone();
+            tokio::task::spawn_blocking(move || packaged_skill_reload_receipt(action_for_worker))
+                .await
+                .map_err(|_| AppError::Config("packaged Skill reload worker stopped".into()))??
         } else {
             packaged_read_receipt(state.packaged_benchmark_store(), action.clone()).await?
         };
@@ -714,6 +720,44 @@ fn packaged_result_receipt(
 }
 
 #[cfg(feature = "packaged-benchmark")]
+fn packaged_skill_reload_receipt(action: String) -> AppResult<PackagedBackendReceipt> {
+    use dopedb_protocol::{SkillInstallState, SkillTargetSelection};
+
+    // Recreate the manager from the process home instead of reusing AppState.
+    // This exercises the same embedded bundle + disk inventory boundary that a
+    // clean app restart uses, without weakening the production command surface.
+    let manager = crate::skills::SkillManager::new()?;
+    let status = manager.status(SkillTargetSelection::All)?;
+    if status.targets.len() != 2
+        || status
+            .targets
+            .iter()
+            .any(|target| target.state != SkillInstallState::ManagedCurrent)
+        || status.targets.iter().any(|target| {
+            target.installed_revision != Some(status.skill.release_revision)
+                || target.installed_package_digest.as_deref()
+                    != Some(status.skill.package_digest.as_str())
+        })
+    {
+        return Err(AppError::Config(
+            "packaged Skill inventory did not survive manager recreation".into(),
+        ));
+    }
+    Ok(PackagedBackendReceipt {
+        action,
+        backend_request_to_first_row_ms: None,
+        backend_first_row_to_ipc_batch_ms: None,
+        ipc_payload_bytes: 0,
+        sqlite_transaction_count: 0,
+        retained_bytes: 0,
+        row_count: u64::try_from(status.targets.len())
+            .map_err(|_| AppError::Config("packaged Skill target count is invalid".into()))?,
+        columns: Vec::new(),
+        rows: Vec::new(),
+    })
+}
+
+#[cfg(feature = "packaged-benchmark")]
 async fn packaged_agent_receipt(
     store: &crate::store::Store,
     action: String,
@@ -880,18 +924,19 @@ fn numeric_row(row: &sqlx::sqlite::SqliteRow) -> AppResult<Vec<i64>> {
 }
 
 #[cfg(feature = "packaged-benchmark")]
-const WORKLOAD_SCENARIOS: [&str; 7] = [
+const WORKLOAD_SCENARIOS: [&str; 8] = [
     "sql-editor",
     "explorer-search",
     "query-result",
     "agent-transcript",
+    "agent-tools",
     "long-lived-data",
     "interaction-surfaces",
     "idle-runtime",
 ];
 
 #[cfg(feature = "packaged-benchmark")]
-const ACTION_NAMES: [&str; 30] = [
+const ACTION_NAMES: [&str; 33] = [
     "sql-editor-10k-type",
     "sql-editor-10k-cursor",
     "sql-editor-10k-format",
@@ -916,6 +961,9 @@ const ACTION_NAMES: [&str; 30] = [
     "agent-manual-scroll",
     "agent-permission",
     "agent-reconnect",
+    "agent-skill-install-all",
+    "agent-skill-reload",
+    "agent-skill-remove-all",
     "history-10k",
     "audit-100k",
     "local-history-50",

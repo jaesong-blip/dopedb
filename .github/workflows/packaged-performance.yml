@@ -1,5 +1,5 @@
 name: Manual packaged performance
-run-name: Manual packaged performance · startup=${{ inputs.startup_samples }} · workload=${{ inputs.workload_samples }}
+run-name: Manual packaged performance · ${{ inputs.scenario }} · startup=${{ inputs.startup_samples }} · workload=${{ inputs.workload_samples }}
 
 # Deliberately manual-only. Do not add push, pull_request, schedule, release,
 # or workflow_call triggers: this benchmark is long-running diagnostic work,
@@ -7,6 +7,22 @@ run-name: Manual packaged performance · startup=${{ inputs.startup_samples }} �
 on:
   workflow_dispatch:
     inputs:
+      scenario:
+        description: "All journeys or one diagnostic scenario"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - startup
+          - sql-editor
+          - explorer-search
+          - query-result
+          - agent-transcript
+          - agent-tools
+          - long-lived-data
+          - interaction-surfaces
+          - idle-runtime
       startup_samples:
         description: "Cold/warm samples per startup state"
         required: true
@@ -71,12 +87,18 @@ jobs:
         env:
           STARTUP_SAMPLES: ${{ inputs.startup_samples }}
           WORKLOAD_SAMPLES: ${{ inputs.workload_samples }}
+          SCENARIO: ${{ inputs.scenario }}
           OUTPUT: src-tauri/benchmarks/packaged-release-${{ matrix.slug }}.json
-        run: >-
-          pnpm benchmark:packaged-release --
-          --samples "$STARTUP_SAMPLES"
-          --workload-samples "$WORKLOAD_SAMPLES"
-          --output "$OUTPUT"
+        run: |
+          args=(
+            --samples "$STARTUP_SAMPLES"
+            --workload-samples "$WORKLOAD_SAMPLES"
+            --output "$OUTPUT"
+          )
+          if [[ "$SCENARIO" != "all" ]]; then
+            args+=(--only "$SCENARIO")
+          fi
+          pnpm benchmark:packaged-release -- "${args[@]}"
 
       - name: Upload numeric performance artifact
         if: always()

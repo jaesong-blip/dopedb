@@ -7,6 +7,7 @@ export type PackagedBackendAction =
   | "query-cancel"
   | "query-export"
   | "agent-stream-10k"
+  | "agent-skill-reload"
   | "history-10k"
   | "audit-100k"
   | "local-history-50"
