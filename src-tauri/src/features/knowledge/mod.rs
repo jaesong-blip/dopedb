@@ -5,4 +5,5 @@ pub(crate) mod application;
 pub(crate) mod domain;
 pub(crate) mod extractor;
 pub(crate) mod ports;
+pub(crate) mod runtime;
 pub(crate) mod transport;

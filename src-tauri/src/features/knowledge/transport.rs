@@ -119,7 +119,7 @@ pub(crate) struct BindEnvironmentConnectionInput {
     alias: String,
 }
 
-fn selected_team_account(scope: &ActiveResourceScope) -> AppResult<AccountId> {
+pub(super) fn selected_team_account(scope: &ActiveResourceScope) -> AppResult<AccountId> {
     let value = scope.selected_account_id.as_ref().ok_or_else(|| {
         AppError::Config("Project Knowledge requires a selected workspace account".into())
     })?;
@@ -251,6 +251,7 @@ pub(crate) async fn list_knowledge_github_repositories_command(
 #[tauri::command]
 pub(crate) async fn connect_knowledge_github_source(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     input: GithubSourceInput,
 ) -> AppResult<KnowledgeSourceProjection> {
     let (scope, account) = active_remote_scope(&state).await?;
@@ -288,11 +289,15 @@ pub(crate) async fn connect_knowledge_github_source(
         )
         .await?;
     state.knowledge_store().save_snapshot(&snapshot).await?;
-    Ok(project_source(StoredKnowledgeScope {
+    let projection = project_source(StoredKnowledgeScope {
         project,
         environment,
         binding: snapshot.binding,
-    }))
+    });
+    let sync = sync_knowledge_source_inner(&state, projection.source_id).await;
+    state.knowledge_watches.start(app, projection.source_id);
+    sync?;
+    Ok(projection)
 }
 
 #[tauri::command]
@@ -361,11 +366,17 @@ pub(crate) async fn connect_knowledge_local_folder(
         let _ = state.local_knowledge_sources.revoke(&binding).await;
         return Err(error);
     }
-    Ok(Some(project_source(StoredKnowledgeScope {
+    let projection = project_source(StoredKnowledgeScope {
         project,
         environment,
         binding: snapshot.binding,
-    })))
+    });
+    let sync = sync_knowledge_source_inner(&state, projection.source_id).await;
+    state
+        .knowledge_watches
+        .start(app.clone(), projection.source_id);
+    sync?;
+    Ok(Some(projection))
 }
 
 #[tauri::command]
@@ -382,6 +393,7 @@ pub(crate) async fn revoke_knowledge_source(
     state: State<'_, AppState>,
     source_id: Uuid,
 ) -> AppResult<()> {
+    state.knowledge_watches.stop(source_id);
     let scope = state.knowledge_store().active_resource_scope().await?;
     let source = state
         .knowledge_store()
@@ -406,6 +418,13 @@ pub(crate) async fn revoke_knowledge_source(
 #[tauri::command]
 pub(crate) async fn sync_knowledge_source(
     state: State<'_, AppState>,
+    source_id: Uuid,
+) -> AppResult<KnowledgeSyncProjection> {
+    sync_knowledge_source_inner(&state, source_id).await
+}
+
+pub(super) async fn sync_knowledge_source_inner(
+    state: &AppState,
     source_id: Uuid,
 ) -> AppResult<KnowledgeSyncProjection> {
     let active_scope = state.knowledge_store().active_resource_scope().await?;

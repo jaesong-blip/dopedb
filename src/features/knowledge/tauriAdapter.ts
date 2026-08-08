@@ -1,4 +1,5 @@
 import { invoke } from "../../ipc/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   CreateKnowledgeProjectInput,
   GithubKnowledgeRepository,
@@ -6,6 +7,7 @@ import type {
   KnowledgeProject,
   KnowledgeSource,
   KnowledgeSyncResult,
+  KnowledgeSourceChanged,
   KnowledgeSearchResult,
   LocalKnowledgeSourceInput,
   EnvironmentConnection,
@@ -71,6 +73,14 @@ export function revokeKnowledgeSource(sourceId: string): Promise<void> {
 
 export function syncKnowledgeSource(sourceId: string): Promise<KnowledgeSyncResult> {
   return invoke("sync_knowledge_source", { sourceId });
+}
+
+export function onKnowledgeSourceChanged(
+  listener: (event: KnowledgeSourceChanged) => void,
+): Promise<UnlistenFn> {
+  return listen<KnowledgeSourceChanged>("knowledge-source:changed", (event) =>
+    listener(event.payload),
+  );
 }
 
 export function searchKnowledgeGraph(

@@ -8,6 +8,7 @@ use crate::error::AppResult;
 use crate::features::agents::acp::AcpRuntime;
 use crate::features::agents::runtime::AcpPluginManager;
 use crate::features::knowledge::adapters::local::LocalFolderAdapter;
+use crate::features::knowledge::runtime::KnowledgeWatchRuntime;
 use crate::features::providers;
 use crate::features::terminals::{self, TerminalsFeature};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
@@ -35,6 +36,7 @@ pub struct AppState {
     /// Process-local capability registry for Local Folder Knowledge sources.
     /// Absolute roots are restored from the OS credential store and never cross IPC.
     pub(crate) local_knowledge_sources: LocalFolderAdapter,
+    pub(crate) knowledge_watches: KnowledgeWatchRuntime,
     pub(crate) startup_trace: StartupTrace,
     store: Store,
     post_paint_recovery: PostPaintRecoveryGate,
@@ -91,6 +93,7 @@ impl AppState {
             agent_plugins,
             local_operation_approval,
             local_knowledge_sources: LocalFolderAdapter::new(),
+            knowledge_watches: KnowledgeWatchRuntime::default(),
             startup_trace,
             store,
             post_paint_recovery: PostPaintRecoveryGate::new(),
@@ -109,6 +112,7 @@ impl AppState {
         let services = self.services.clone();
         let skills = self.skills.clone();
         let agent_plugins = self.agent_plugins.clone();
+        let knowledge_watches = self.knowledge_watches.clone();
         tauri::async_runtime::spawn(async move {
             let started = trace.stage_started();
             let acp = store.recover_interrupted_agent_acp_sessions().await;
@@ -138,6 +142,15 @@ impl AppState {
                         tracing::warn!(
                             error_kind = error.kind(),
                             "Agent report replay deferred after startup"
+                        );
+                    }
+                });
+                let watch_app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = knowledge_watches.start_workspace(watch_app).await {
+                        tracing::warn!(
+                            error_kind = error.kind(),
+                            "Project Knowledge watcher recovery deferred"
                         );
                     }
                 });

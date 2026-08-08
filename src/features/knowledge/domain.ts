@@ -92,6 +92,12 @@ export type KnowledgeSyncResult = {
   edgeCount: number;
 };
 
+export type KnowledgeSourceChanged = {
+  sourceId: string;
+  state: "syncing" | "ready" | "failed";
+  errorKind: string | null;
+};
+
 export type KnowledgeNode = {
   id: string;
   kind: "file" | "module" | "type" | "function" | "route" | "table" | "column" | "migration" | "event" | "funnel" | "dashboard" | "report";

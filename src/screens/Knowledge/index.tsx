@@ -34,6 +34,7 @@ import {
   listKnowledgeEnvironmentConnections,
   listKnowledgeProjects,
   listKnowledgeSources,
+  onKnowledgeSourceChanged,
   revokeKnowledgeSource,
   revokeKnowledgeEnvironmentConnection,
   searchKnowledgeGraph,
@@ -93,6 +94,15 @@ export default function Knowledge() {
   const [view, setView] = useState<"sources" | "databases" | "explore">(
     "sources",
   );
+  const [sourceActivity, setSourceActivity] = useState(
+    new Map<
+      string,
+      {
+        state: "syncing" | "ready" | "failed";
+        errorKind: string | null;
+      }
+    >(),
+  );
   const environmentConnections = useQuery({
     queryKey: ["knowledge", "environment-connections", environmentId],
     queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
@@ -145,6 +155,32 @@ export default function Knowledge() {
     setConnectionAlias(connections.data[0].name);
   }, [connectionId, connections.data]);
 
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onKnowledgeSourceChanged((change) => {
+      if (disposed) return;
+      setSourceActivity((current) => {
+        const next = new Map(current);
+        next.set(change.sourceId, {
+          state: change.state,
+          errorKind: change.errorKind,
+        });
+        return next;
+      });
+      if (change.state === "ready") {
+        void queryClient.invalidateQueries({ queryKey: sourceKey });
+      }
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [queryClient]);
+
   const refreshInventory = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: sourceKey }),
@@ -169,7 +205,10 @@ export default function Knowledge() {
       setActionError(null);
       await refreshInventory();
     },
-    onError: (error) => setActionError(errMessage(error)),
+    onError: async (error) => {
+      setActionError(errMessage(error));
+      await queryClient.invalidateQueries({ queryKey: sourceKey });
+    },
   });
   const connectLocal = useMutation({
     mutationFn: connectKnowledgeLocalFolder,
@@ -178,7 +217,10 @@ export default function Knowledge() {
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: sourceKey });
     },
-    onError: (error) => setActionError(errMessage(error)),
+    onError: async (error) => {
+      setActionError(errMessage(error));
+      await queryClient.invalidateQueries({ queryKey: sourceKey });
+    },
   });
   const revoke = useMutation({
     mutationFn: revokeKnowledgeSource,
@@ -190,11 +232,30 @@ export default function Knowledge() {
   });
   const sync = useMutation({
     mutationFn: syncKnowledgeSource,
-    onSuccess: async () => {
+    onMutate: (sourceId) => {
+      setSourceActivity((current) => {
+        const next = new Map(current);
+        next.set(sourceId, { state: "syncing", errorKind: null });
+        return next;
+      });
+    },
+    onSuccess: async (_, sourceId) => {
+      setSourceActivity((current) => {
+        const next = new Map(current);
+        next.set(sourceId, { state: "ready", errorKind: null });
+        return next;
+      });
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: sourceKey });
     },
-    onError: (error) => setActionError(errMessage(error)),
+    onError: (error, sourceId) => {
+      setSourceActivity((current) => {
+        const next = new Map(current);
+        next.set(sourceId, { state: "failed", errorKind: "manual_sync" });
+        return next;
+      });
+      setActionError(errMessage(error));
+    },
   });
   const search = useMutation({
     mutationFn: ({ environmentId, query }: { environmentId: string; query: string }) =>
@@ -555,13 +616,15 @@ export default function Knowledge() {
         ) : (
           <div className="tw:grid tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle">
             {selectedEnvironmentSources.map((source) => {
-              const tone: StatusTone = source.health === "ready" ? "success" : source.health === "failed" ? "danger" : "warning";
+              const activity = sourceActivity.get(source.sourceId);
+              const visibleHealth = activity?.state ?? source.health;
+              const tone: StatusTone = visibleHealth === "ready" ? "success" : visibleHealth === "failed" ? "danger" : "warning";
               return (
                 <article key={source.sourceId} className="tw:grid tw:min-w-0 tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-3 tw:last:border-b-0 tw:@max-[560px]:grid-cols-1">
                   <div className="tw:grid tw:min-w-0 tw:gap-1">
                     <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
                       <strong className="tw:truncate tw:text-sm">{source.displayName}</strong>
-                      <StatusBadge tone={tone} density="compact">{source.health}</StatusBadge>
+                      <StatusBadge tone={tone} density="compact">{visibleHealth}</StatusBadge>
                       <StatusBadge density="compact">
                         {source.provider === "github" ? "GitHub" : "Local Folder"}
                       </StatusBadge>
@@ -570,10 +633,15 @@ export default function Knowledge() {
                     {source.provider === "local_folder" && !source.localCapabilityAvailable ? (
                       <span className="tw:text-xs tw:text-warning">Choose the folder again on this device to restore access.</span>
                     ) : null}
+                    {activity?.state === "failed" ? (
+                      <span className="tw:text-xs tw:text-danger">
+                        Automatic sync failed ({activity.errorKind ?? "unknown"}). The last healthy graph remains active.
+                      </span>
+                    ) : null}
                   </div>
                   <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:@max-[560px]:justify-start">
-                    <Button size="compact" disabled={sync.isPending} onClick={() => sync.mutate(source.sourceId)}>
-                      <Icon name="refresh" />{sync.isPending && sync.variables === source.sourceId ? "Syncing…" : "Sync"}
+                    <Button size="compact" disabled={sync.isPending || activity?.state === "syncing"} onClick={() => sync.mutate(source.sourceId)}>
+                      <Icon name="refresh" />{(sync.isPending && sync.variables === source.sourceId) || activity?.state === "syncing" ? "Syncing…" : activity?.state === "failed" ? "Retry" : "Sync"}
                     </Button>
                     <ConfirmButton size="compact" variant="dangerGhost" disabled={revoke.isPending || sync.isPending} onConfirm={() => revoke.mutate(source.sourceId)}>Remove</ConfirmButton>
                   </div>
