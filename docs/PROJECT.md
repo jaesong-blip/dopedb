@@ -48,6 +48,8 @@ The Rust core owns the trust boundary:
 - `operations/`: immutable exact-payload plans, approvals, claims, and lifecycle receipts
 - `features/agents/acp.rs`: official ACP adapter lifecycle, bounded replay, permission handling,
   and the session-local DopeDB tool attachment
+- `dopedb-protocol::acp_plugin`: closed Claude/Codex plugin IDs and the signed
+  adapter catalog wire shape
 - `broker/`: owner-local, versioned UDS/named-pipe control messages for the CLI
   and typed Agent bridge
 - `cli_install.rs`: immutable sidecar resolution plus explicit per-user CLI/PATH installation
@@ -82,12 +84,20 @@ as Volta's `npx`, while pinning the resolved target prevents a symlink swap.
 The Agent bridge scrubs the inherited bearer before its first await, re-verifies that
 descriptor, and uses the capability exactly once to bind its OS process id and start marker.
 The Broker atomically zeroizes the bootstrap token and changes the session to process-bound
-authentication. Package names and versions come from the protocol's fixed adapter mapping,
-not launcher arguments. Unix replaces the bridge with the adapter; Windows may retain the
-bridge as the ancestry root, but neither it nor the adapter environment retains a usable
-bearer. The Broker accepts tokenless Agent requests only from that process or a verified
-descendant. The global discovery file contains only runtime metadata. The app opens no
-Agent HTTP or TCP listener.
+authentication. The transitional package names and versions come from the private bridge's
+closed plugin-ID mapping, not launcher arguments. Unix replaces the bridge with the adapter;
+Windows may retain the bridge as the ancestry root, but neither it nor the adapter environment
+retains a usable bearer. The Broker accepts tokenless Agent requests only from that process or
+a verified descendant. The global discovery file contains only runtime metadata. The app opens
+no Agent HTTP or TCP listener.
+
+Stable builds also reconstruct a pinned Node LTS executable for each release
+target from the official archive SHA-256 and bundle only that executable, its
+license, manifest, and SPDX SBOM as a read-only Tauri resource. npm, npx, and
+provider native binaries are not part of this core runtime. The signed adapter
+installer and activation path are tracked separately; until that service
+replaces the launcher, the private bridge retains its closed transitional npx
+mapping. See the [ACP plugin runtime contract](./contracts/acp-plugin-runtime.md).
 
 The stdio server continues reading MCP notifications while one serialized database tool
 is active. Cancelling a `query_read` aborts the tool future and sends `query.cancel` with

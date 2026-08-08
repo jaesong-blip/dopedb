@@ -22,7 +22,7 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{AcpAgent, AcpAgentConfig, Agent, ConnectionTo};
 use chrono::Utc;
 use dashmap::DashMap;
-use dopedb_protocol::{AgentSessionRegisterArguments, OfficialAcpAdapter};
+use dopedb_protocol::{AcpPluginId, AgentSessionRegisterArguments};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Notify};
@@ -272,9 +272,9 @@ impl AcpRuntime {
                 .map_err(|_| {
                     AppError::Config("the ACP launcher verifier stopped unexpectedly".into())
                 })??;
-        let adapter = official_acp_adapter(provider);
+        let plugin_id = acp_plugin_id(provider);
         let registration = AgentSessionRegisterArguments {
-            adapter,
+            plugin_id,
             launcher_executable: npx
                 .to_str()
                 .ok_or_else(|| AppError::Config("the ACP launcher path is not valid UTF-8".into()))?
@@ -418,7 +418,7 @@ impl AcpRuntime {
         let broker = self.broker.clone();
         let connection_summary = connection_context(&connection.profile);
         let launch = LaunchContext {
-            adapter,
+            plugin_id,
             npx,
             launcher_resolved,
             launcher_sha256,
@@ -1018,7 +1018,7 @@ fn replay_event_bytes(event: &AcpSessionEvent) -> usize {
 }
 
 struct LaunchContext {
-    adapter: OfficialAcpAdapter,
+    plugin_id: AcpPluginId,
     npx: PathBuf,
     launcher_resolved: PathBuf,
     launcher_sha256: String,
@@ -1417,7 +1417,7 @@ fn agent_config(session: &AcpSession, launch: &mut LaunchContext) -> AcpAgentCon
     let mut config = AcpAgentConfig::new(launch.agent_bridge.clone())
         .args([
             "launch".to_owned(),
-            launch.adapter.as_str().to_owned(),
+            launch.plugin_id.as_str().to_owned(),
             launch
                 .npx
                 .to_str()
@@ -1774,10 +1774,10 @@ fn provider_name(provider: AgentProvider) -> &'static str {
     }
 }
 
-fn official_acp_adapter(provider: AgentProvider) -> OfficialAcpAdapter {
+fn acp_plugin_id(provider: AgentProvider) -> AcpPluginId {
     match provider {
-        AgentProvider::Claude => OfficialAcpAdapter::Claude,
-        AgentProvider::Codex => OfficialAcpAdapter::Codex,
+        AgentProvider::Claude => AcpPluginId::Claude,
+        AgentProvider::Codex => AcpPluginId::Codex,
     }
 }
 

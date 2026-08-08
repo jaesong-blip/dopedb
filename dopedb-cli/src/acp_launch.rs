@@ -8,19 +8,19 @@ use dopedb_cli::agent_launch_policy::{
     adapter_command, take_registration_authentication, validate_descriptor, verify_launcher,
 };
 use dopedb_protocol::{
-    AgentSessionRegisterArguments, AgentSessionRegisterCommand, EmptyArguments, OfficialAcpAdapter,
+    AcpPluginId, AgentSessionRegisterArguments, AgentSessionRegisterCommand, EmptyArguments,
 };
 
 use crate::client::{BrokerClient, ClientError};
 
 pub(crate) async fn run(
-    adapter: OfficialAcpAdapter,
+    plugin_id: AcpPluginId,
     launcher_executable: String,
     launcher_resolved_executable: String,
     launcher_sha256: String,
 ) -> Result<(), ClientError> {
     let registration = AgentSessionRegisterArguments {
-        adapter,
+        plugin_id,
         launcher_executable,
         launcher_resolved_executable,
         launcher_sha256,

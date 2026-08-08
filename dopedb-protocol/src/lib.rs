@@ -2,6 +2,7 @@
 //! This crate deliberately has no database, credential-store, Tauri, or network
 //! dependencies so adapters cannot accidentally become a second execution path.
 
+pub mod acp_plugin;
 pub mod catalog;
 pub mod catalog_command;
 pub mod command;
@@ -21,12 +22,13 @@ pub mod response;
 pub mod skill_command;
 pub mod version;
 
+pub use acp_plugin::*;
 pub use catalog::*;
 pub use catalog_command::*;
 pub use command::{
     decode_arguments, AgentSessionRegisterArguments, AgentSessionRegisterCommand, AppOpenArguments,
     AppOpenCommand, AppOpenResult, AuthenticationRequirement, CommandPayloadError, CommandSpec,
-    EmptyArguments, OfficialAcpAdapter, StatusCommand, StatusResult, VersionCommand, VersionResult,
+    EmptyArguments, StatusCommand, StatusResult, VersionCommand, VersionResult,
     MAX_AGENT_LAUNCHER_PATH_BYTES,
 };
 pub use connection::*;

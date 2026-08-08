@@ -387,9 +387,9 @@ mod tests {
 
     use super::*;
 
-    fn registration(adapter: dopedb_protocol::OfficialAcpAdapter) -> AgentSessionRegisterArguments {
+    fn registration(plugin_id: dopedb_protocol::AcpPluginId) -> AgentSessionRegisterArguments {
         AgentSessionRegisterArguments {
-            adapter,
+            plugin_id,
             launcher_executable: if cfg!(windows) {
                 r"C:\Program Files\nodejs\npx.cmd".into()
             } else {
@@ -497,7 +497,7 @@ mod tests {
         assert!(registry.authenticate(&wrong, None).is_err());
 
         let root = super::super::peer::current_process_identity_for_test().unwrap();
-        let descriptor = registration(dopedb_protocol::OfficialAcpAdapter::Claude);
+        let descriptor = registration(dopedb_protocol::AcpPluginId::Claude);
         assert!(registry
             .bind_agent_process(&authentication, root, &descriptor)
             .is_err());
@@ -518,7 +518,7 @@ mod tests {
         // normal Broker command before registration.
         assert!(registry.authenticate(&agent_authentication, None).is_err());
         let mut wrong_descriptor = descriptor.clone();
-        wrong_descriptor.adapter = dopedb_protocol::OfficialAcpAdapter::Codex;
+        wrong_descriptor.plugin_id = dopedb_protocol::AcpPluginId::Codex;
         assert!(registry
             .bind_agent_process(&agent_authentication, root, &wrong_descriptor)
             .is_err());

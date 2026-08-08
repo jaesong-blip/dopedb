@@ -8,6 +8,8 @@ if [[ -z "$target_triple" ]]; then
   target_triple="$(rustc -vV | sed -n 's/^host: //p')"
 fi
 
+node scripts/prepare-agent-runtime.mjs --target "$target_triple"
+
 if [[ -z "$target_triple" ]]; then
   echo "Could not determine Rust target triple" >&2
   exit 1

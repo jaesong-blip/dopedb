@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use dopedb_protocol::{AgentSessionRegisterArguments, SessionAuthentication};
+use dopedb_protocol::{AcpPluginId, AgentSessionRegisterArguments, SessionAuthentication};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -90,7 +90,17 @@ pub fn adapter_command(
     verify_launcher(registration)?;
     let mut command = Command::new(&registration.launcher_executable);
     command
-        .args(["-y", registration.adapter.pinned_npm_package()])
+        .args(["-y", transitional_npx_package(registration.plugin_id)])
         .env_remove("DOPEDB_SESSION_TOKEN");
     Ok(command)
+}
+
+// Removed with the npx launcher once the signed plugin installer activates a
+// verified adapter entrypoint. Keeping this mapping inside the closed bridge
+// means the registration wire can no longer smuggle an npm package name.
+fn transitional_npx_package(plugin_id: AcpPluginId) -> &'static str {
+    match plugin_id {
+        AcpPluginId::Claude => "@agentclientprotocol/claude-agent-acp@0.63.0",
+        AcpPluginId::Codex => "@agentclientprotocol/codex-acp@1.1.7",
+    }
 }

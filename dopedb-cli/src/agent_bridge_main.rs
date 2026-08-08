@@ -15,35 +15,32 @@ mod exit_code;
 use std::process::ExitCode;
 
 use client::ClientError;
-use dopedb_protocol::OfficialAcpAdapter;
+use dopedb_protocol::AcpPluginId;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let mut arguments = std::env::args().skip(1);
     let result = match arguments.next().as_deref() {
         Some("launch") => {
-            let adapter = arguments
-                .next()
-                .as_deref()
-                .and_then(OfficialAcpAdapter::parse);
+            let plugin_id = arguments.next().as_deref().and_then(AcpPluginId::parse);
             let launcher_executable = arguments.next();
             let launcher_resolved_executable = arguments.next();
             let launcher_sha256 = arguments.next();
             if let (
-                Some(adapter),
+                Some(plugin_id),
                 Some(launcher_executable),
                 Some(launcher_resolved_executable),
                 Some(launcher_sha256),
                 None,
             ) = (
-                adapter,
+                plugin_id,
                 launcher_executable,
                 launcher_resolved_executable,
                 launcher_sha256,
                 arguments.next(),
             ) {
                 acp_launch::run(
-                    adapter,
+                    plugin_id,
                     launcher_executable,
                     launcher_resolved_executable,
                     launcher_sha256,

@@ -16,6 +16,7 @@ src-tauri/target
 .DS_Store
 *.db
 src-tauri/binaries/
+src-tauri/resources/agent-runtime/node/
 src-tauri/gen/
 .vercel
 .env*.local

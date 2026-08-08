@@ -17,7 +17,7 @@ use dopedb_protocol::{
     CatalogArguments, CatalogContents, CatalogSearchArguments, CatalogSearchMatch,
     CatalogSearchMatchType, CatalogSearchResult, CatalogSnapshot, Column, CommandName,
     ConnectionSelector, DatabaseEngine, EmptyArguments, NormalizedTypeFamily, ObjectKind,
-    ObjectRef, OfficialAcpAdapter, QueryHealth, QueryPlanArguments, QueryPlanResult,
+    AcpPluginId, ObjectRef, QueryHealth, QueryPlanArguments, QueryPlanResult,
     QueryResultPage, QueryRunArguments, QueryRunResult, Relation, RequestEnvelope,
     ResponseEnvelope, RuntimeDiscovery, SchemaListResult, SchemaSummary, MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
@@ -583,7 +583,7 @@ pub(super) fn run() {
         assert_eq!(authentication.token(), Some("cd".repeat(32).as_str()));
         let arguments: AgentSessionRegisterArguments =
             serde_json::from_value(request.arguments.clone()).unwrap();
-        assert_eq!(arguments.adapter, OfficialAcpAdapter::Codex);
+        assert_eq!(arguments.plugin_id, AcpPluginId::Codex);
         assert_eq!(arguments.launcher_executable, expected_launcher);
         assert_eq!(
             arguments.launcher_resolved_executable,
@@ -596,7 +596,7 @@ pub(super) fn run() {
     let launcher_status = Command::new(env!("CARGO_BIN_EXE_dopedb-agent-bridge"))
         .args([
             "launch",
-            OfficialAcpAdapter::Codex.as_str(),
+            AcpPluginId::Codex.as_str(),
             launcher.to_str().unwrap(),
             launcher_resolved.to_str().unwrap(),
             launcher_sha256.as_str(),
@@ -617,7 +617,7 @@ pub(super) fn run() {
         inherited.lines().collect::<Vec<_>>(),
         [
             "-y",
-            OfficialAcpAdapter::Codex.pinned_npm_package(),
+            "@agentclientprotocol/codex-acp@1.1.7",
             launcher_session_id.to_string().as_str(),
         ]
     );
@@ -630,7 +630,7 @@ mod platform {
     use std::fs;
 
     use dopedb_cli::agent_launch_policy::{adapter_command, take_registration_authentication};
-    use dopedb_protocol::{AgentSessionRegisterArguments, OfficialAcpAdapter};
+    use dopedb_protocol::{AcpPluginId, AgentSessionRegisterArguments};
     use sha2::{Digest, Sha256};
     use tempfile::TempDir;
 
@@ -650,7 +650,7 @@ mod platform {
         fs::write(&launcher, b"@echo off\r\nexit /b 0\r\n").unwrap();
         let launcher_resolved = fs::canonicalize(&launcher).unwrap();
         let registration = AgentSessionRegisterArguments {
-            adapter: OfficialAcpAdapter::Claude,
+            plugin_id: AcpPluginId::Claude,
             launcher_executable: launcher.to_string_lossy().into_owned(),
             launcher_resolved_executable: launcher_resolved.to_string_lossy().into_owned(),
             launcher_sha256: hex::encode(Sha256::digest(fs::read(&launcher_resolved).unwrap())),
@@ -664,7 +664,7 @@ mod platform {
                 .collect::<Vec<_>>(),
             [
                 "-y".to_owned(),
-                OfficialAcpAdapter::Claude.pinned_npm_package().to_owned(),
+                "@agentclientprotocol/claude-agent-acp@0.63.0".to_owned(),
             ]
         );
         assert!(command
