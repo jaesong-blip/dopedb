@@ -32,7 +32,7 @@ export type SignalRuleCreate = Readonly<{
   severity: "info" | "warning" | "critical";
   recipientMemberIds: readonly string[];
   channels: readonly ("desktop" | "workspace_web" | "email")[];
-  runnerId: string;
+  runnerId: string | null;
   enabled: boolean;
   productionConfirmed: boolean;
 }>;
@@ -57,6 +57,12 @@ export type SignalEvaluationReceiptInput = Readonly<{
   errorKind: string | null;
 }>;
 
+export type SignalRunnerRegistration = Readonly<{
+  deviceId: string;
+  displayName: string;
+  backgroundAllowed: boolean;
+}>;
+
 function exactRecord(value: unknown, fields: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -79,6 +85,28 @@ function integer(value: unknown, minimum: number, maximum: number) {
 
 function unique(values: readonly string[]) {
   return new Set(values).size === values.length;
+}
+
+function safeSchedule(value: unknown) {
+  const schedule = text(value, 256);
+  if (!schedule) return null;
+  const fields = schedule.split(/\s+/u);
+  if (fields.length !== 5 || fields.some((field) => !/^[0-9*/?,\-]+$/.test(field))) return null;
+  const minute = fields[0];
+  const step = /^\*\/(\d+)$/.exec(minute);
+  if (step) return Number(step[1]) >= 5 && Number(step[1]) <= 59 ? schedule : null;
+  return /^(?:[0-9]|[1-5][0-9])$/.test(minute) ? schedule : null;
+}
+
+function safeTimezone(value: unknown) {
+  const timezone = text(value, 128);
+  if (!timezone) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+    return timezone;
+  } catch {
+    return null;
+  }
 }
 
 function parseCondition(value: unknown): Readonly<Record<string, unknown>> {
@@ -108,6 +136,17 @@ function parseCondition(value: unknown): Readonly<Record<string, unknown>> {
   throw new Error("Invalid signal condition kind");
 }
 
+export function parseSignalRunnerRegistration(value: unknown): SignalRunnerRegistration {
+  const row = exactRecord(value, ["deviceId", "displayName", "backgroundAllowed"]);
+  const deviceId = text(row?.deviceId, 256);
+  const displayName = text(row?.displayName, 256);
+  if (!row || deviceId === null || displayName === null
+    || typeof row.backgroundAllowed !== "boolean") {
+    throw new Error("Invalid signal runner registration");
+  }
+  return { deviceId, displayName, backgroundAllowed: row.backgroundAllowed };
+}
+
 export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {
   const row = exactRecord(value, [
     "id", "projectEnvironmentId", "environmentRevision", "sourceAnalysisId",
@@ -125,13 +164,15 @@ export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {
   const minimumSample = integer(row?.minimumSampleCount, 0, 1_000_000_000);
   const cooldown = integer(row?.cooldownSeconds, 0, 31_622_400);
   const rearm = integer(row?.rearmAfterNormalCount, 1, 1_000);
+  const schedule = safeSchedule(row?.schedule);
+  const timezone = safeTimezone(row?.timezone);
   if (!row || typeof row.id !== "string" || !UUID.test(row.id)
     || typeof row.projectEnvironmentId !== "string" || !UUID.test(row.projectEnvironmentId)
     || typeof row.sourceAnalysisId !== "string" || !UUID.test(row.sourceAnalysisId)
-    || typeof row.runnerId !== "string" || !UUID.test(row.runnerId)
+    || !(row.runnerId === null || (typeof row.runnerId === "string" && UUID.test(row.runnerId)))
     || environmentRevision === null || analysisRevision === null
     || text(row.sourceTileId, 64) === null || !ID.test(String(row.metricSemanticId))
-    || text(row.schedule, 256) === null || text(row.timezone, 128) === null
+    || schedule === null || timezone === null
     || evaluationWindow === null
     || (row.baselineWindowSeconds !== null && baselineWindow === null)
     || minimumSample === null || cooldown === null || rearm === null
@@ -169,8 +210,8 @@ export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {
     sourceTileId: String(row.sourceTileId).trim(),
     metricSemanticId: String(row.metricSemanticId),
     connections,
-    schedule: String(row.schedule).trim(),
-    timezone: String(row.timezone).trim(),
+    schedule,
+    timezone,
     evaluationWindowSeconds: evaluationWindow,
     condition: parseCondition(row.condition),
     baselineWindowSeconds: baselineWindow,
@@ -180,7 +221,7 @@ export function parseSignalRuleCreate(value: unknown): SignalRuleCreate {
     severity: row.severity,
     recipientMemberIds: recipientMemberIds as string[],
     channels: channels as SignalRuleCreate["channels"],
-    runnerId: row.runnerId,
+    runnerId: row.runnerId as string | null,
     enabled: row.enabled,
     productionConfirmed: row.productionConfirmed,
   };
