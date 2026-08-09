@@ -47,7 +47,7 @@ const requiredActionsByScenario = {
   "sql-editor": [
     "sql-editor-10k-type", "sql-editor-10k-cursor", "sql-editor-10k-format", "sql-editor-10k-run",
     "sql-editor-100k-type", "sql-editor-100k-cursor", "sql-editor-100k-format", "sql-editor-100k-run",
-    "sql-editor-1m-type", "sql-editor-1m-cursor", "sql-editor-1m-format", "sql-editor-1m-run",
+    "sql-editor-1m-type", "sql-editor-1m-cursor", "sql-editor-1m-format", "sql-editor-1m-run", "sql-editor-1m-scroll",
   ],
   "explorer-search": ["explorer-first-expand", "explorer-secondary-expand", "search-everywhere"],
   "query-result": ["query-first-batch", "query-grid-scroll-50k", "query-page-store-1m", "query-cancel", "query-export"],

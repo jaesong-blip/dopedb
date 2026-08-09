@@ -1251,7 +1251,7 @@ const WORKLOAD_SCENARIOS: [&str; 9] = [
 ];
 
 #[cfg(feature = "packaged-benchmark")]
-const ACTION_NAMES: [&str; 35] = [
+const ACTION_NAMES: [&str; 36] = [
     "sql-editor-10k-type",
     "sql-editor-10k-cursor",
     "sql-editor-10k-format",
@@ -1264,6 +1264,7 @@ const ACTION_NAMES: [&str; 35] = [
     "sql-editor-1m-cursor",
     "sql-editor-1m-format",
     "sql-editor-1m-run",
+    "sql-editor-1m-scroll",
     "explorer-first-expand",
     "explorer-secondary-expand",
     "search-everywhere",

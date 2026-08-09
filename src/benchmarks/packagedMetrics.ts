@@ -46,6 +46,7 @@ export type PackagedBenchmarkActionName =
   | "sql-editor-1m-cursor"
   | "sql-editor-1m-format"
   | "sql-editor-1m-run"
+  | "sql-editor-1m-scroll"
   | "explorer-first-expand"
   | "explorer-secondary-expand"
   | "search-everywhere"

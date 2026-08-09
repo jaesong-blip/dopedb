@@ -241,21 +241,47 @@ function SqlEditorScenario() {
           }),
         );
       });
+      if (label === "1m") {
+        await waitForPackagedPaint();
+        const scroller = view.scrollDOM;
+        if (scroller.scrollHeight <= scroller.clientHeight) {
+          throw new Error("SQL editor scroll surface unavailable");
+        }
+        await samples("sql-editor-1m-scroll", ACTION_SAMPLES, (index) => {
+          // The previous measured paint must not reset CodeMirror's viewport.
+          // Checking it at the next sample keeps setup out of the interaction
+          // budget while still proving repeated trackpad-style scrolling works.
+          if (index > 0 && scroller.scrollTop <= 0) {
+            throw new Error("SQL editor viewport did not preserve its scroll position");
+          }
+          scroller.scrollTop = 0;
+          scroller.scrollTop = Math.max(240, scroller.clientHeight / 2);
+          scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+          if (scroller.scrollTop <= 0) {
+            throw new Error("SQL editor viewport did not accept a scroll position");
+          }
+        });
+      }
     }
     await finishBenchmark();
   });
 
   return (
     <BenchmarkSurface title={`SQL editor · ${value.length} bytes · runs ${runCount}`}>
-      <SqlViewer
-        value={value}
-        editable
-        engine="sqlite"
-        minHeight="100%"
-        onChange={setValue}
-        onEditorReady={setView}
-        onRun={() => setRunCount((count) => count + 1)}
-      />
+      <div
+        data-workbench-scroll-owner="sql-editor"
+        className="tw:min-h-0 tw:flex-1 tw:overflow-hidden tw:bg-background tw:[&>.cm-theme-dark]:h-full tw:[&_.cm-editor]:h-full tw:[&_.cm-editor]:bg-background tw:[&_.cm-scroller]:min-h-0 tw:[&_.cm-scroller]:overflow-auto tw:[&_.cm-scroller]:overscroll-contain"
+      >
+        <SqlViewer
+          value={value}
+          editable
+          engine="sqlite"
+          minHeight="0px"
+          onChange={setValue}
+          onEditorReady={setView}
+          onRun={() => setRunCount((count) => count + 1)}
+        />
+      </div>
     </BenchmarkSurface>
   );
 }
