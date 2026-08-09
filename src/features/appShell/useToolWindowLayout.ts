@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { createFrameCoalescer } from "../../lib/frameCoalescer";
 
 const STORAGE_KEY = "dopedb:tool-window-layout:v1";
+const DEFAULT_HEIGHT_MIGRATION_KEY = "dopedb:services-default:v3";
 
 type LeftToolWindow = "databaseExplorer" | "localHistory";
 
@@ -14,15 +15,9 @@ type StoredToolWindowLayout = {
 };
 
 const DEFAULT_SERVICES_HEIGHT = 284;
+const DEFAULT_SERVICES_VIEWPORT_RATIO = 0.33;
 const MIN_SERVICES_HEIGHT = 160;
 const MAX_SERVICES_HEIGHT = 560;
-
-const DEFAULT_LAYOUT: StoredToolWindowLayout = {
-  databaseExplorerOpen: true,
-  leftToolWindow: "databaseExplorer",
-  servicesOpen: false,
-  servicesHeight: DEFAULT_SERVICES_HEIGHT,
-};
 
 function clampServicesHeight(height: number) {
   const viewportMaximum =
@@ -36,7 +31,27 @@ function clampServicesHeight(height: number) {
   );
 }
 
+function defaultServicesHeight() {
+  return clampServicesHeight(
+    typeof window === "undefined"
+      ? DEFAULT_SERVICES_HEIGHT
+      : Math.floor(window.innerHeight * DEFAULT_SERVICES_VIEWPORT_RATIO),
+  );
+}
+
+function defaultLayout(): StoredToolWindowLayout {
+  return {
+    databaseExplorerOpen: true,
+    leftToolWindow: "databaseExplorer",
+    servicesOpen: false,
+    servicesHeight: defaultServicesHeight(),
+  };
+}
+
 function readLayout(): StoredToolWindowLayout {
+  const fallback = defaultLayout();
+  const needsDefaultMigration =
+    localStorage.getItem(DEFAULT_HEIGHT_MIGRATION_KEY) !== "1";
   try {
     const parsed: unknown = JSON.parse(
       localStorage.getItem(STORAGE_KEY) ?? "null",
@@ -47,31 +62,48 @@ function readLayout(): StoredToolWindowLayout {
       "databaseExplorerOpen" in parsed &&
       typeof parsed.databaseExplorerOpen === "boolean"
     ) {
-      return {
+      const storedServicesHeight =
+        "servicesHeight" in parsed &&
+        typeof parsed.servicesHeight === "number"
+          ? parsed.servicesHeight
+          : null;
+      const migrateDefaultHeight =
+        needsDefaultMigration &&
+        (storedServicesHeight === 280 ||
+          storedServicesHeight === DEFAULT_SERVICES_HEIGHT);
+      const layout: StoredToolWindowLayout = {
         databaseExplorerOpen: parsed.databaseExplorerOpen,
         leftToolWindow:
           "leftToolWindow" in parsed &&
             parsed.leftToolWindow === "localHistory"
             ? "localHistory"
-            : DEFAULT_LAYOUT.leftToolWindow,
+            : fallback.leftToolWindow,
         servicesOpen:
           "servicesOpen" in parsed && typeof parsed.servicesOpen === "boolean"
             ? parsed.servicesOpen
-            : DEFAULT_LAYOUT.servicesOpen,
+            : fallback.servicesOpen,
         servicesHeight:
-          "servicesHeight" in parsed && typeof parsed.servicesHeight === "number"
+          storedServicesHeight !== null
             ? clampServicesHeight(
-                parsed.servicesHeight === 280
-                  ? DEFAULT_SERVICES_HEIGHT
-                  : parsed.servicesHeight,
+                migrateDefaultHeight
+                  ? defaultServicesHeight()
+                  : storedServicesHeight,
               )
-            : DEFAULT_LAYOUT.servicesHeight,
+            : fallback.servicesHeight,
       };
+      if (needsDefaultMigration) {
+        localStorage.setItem(DEFAULT_HEIGHT_MIGRATION_KEY, "1");
+        if (migrateDefaultHeight) storeLayout(layout);
+      }
+      return layout;
     }
   } catch {
     // A corrupt layout preference must never block the workbench.
   }
-  return DEFAULT_LAYOUT;
+  if (needsDefaultMigration) {
+    localStorage.setItem(DEFAULT_HEIGHT_MIGRATION_KEY, "1");
+  }
+  return fallback;
 }
 
 function storeLayout(layout: StoredToolWindowLayout) {
@@ -217,7 +249,7 @@ export function useToolWindowLayout() {
     setLayout((current) => {
       const next = {
         ...current,
-        servicesHeight: DEFAULT_SERVICES_HEIGHT,
+        servicesHeight: defaultServicesHeight(),
       };
       storeLayout(next);
       return next;

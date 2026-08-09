@@ -1,5 +1,5 @@
 /** Responsive geometry policy for the DopeDB-style AI Chat right anchor. */
-export const AGENT_DOCK_DEFAULT_WIDTH = 600;
+export const AGENT_DOCK_DEFAULT_WIDTH = 396;
 export const AGENT_DOCK_MIN_WIDTH = 360;
 export const AGENT_DOCK_MAX_WIDTH = 680;
 

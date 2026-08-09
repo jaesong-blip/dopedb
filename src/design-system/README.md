@@ -419,11 +419,16 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 - Explorer와 Local History는 같은 왼쪽 anchor를 쓰되 서로 다른 저장 폭을
   가진다. AI Chat도 오른쪽 anchor 폭을 별도로 저장해 한 tool window의 수동
   resize가 다른 종류의 기본 비율을 훼손하지 않게 한다.
-  사용자 제공 `1385×918` AI Chat 상세 참조의 약 595px surface에 맞춰 desktop
-  선호 폭은 600px이고 `agentDockWidth`에 독립 저장한다.
+  DopeDB `1152×768` 동일 상태 capture의 Explorer/center/AI Chat 3분할에 맞춰
+  Explorer와 AI Chat의 desktop 기본 폭은 396px이다. 사용자 제공
+  `1385×918` AI Chat 상세 참조처럼 약 595px까지 넓힌 값도
+  `agentDockWidth`에 독립 저장한다.
   상태는 desktop 선호 폭을 소유하고 shell projection만 현재 viewport에 맞춰
   clamp한다. 따라서 compact viewport에서 처음 mount되거나 왕복해도 저장된
   desktop 폭과 다음 desktop projection은 변경되지 않는다.
+- Services 기본 높이는 동일 상태 참조처럼 viewport의 33%로 시작하고, 사용자가
+  조절한 높이는 독립 저장한다. 이전 고정 기본값 280/284px만 새 비율로 한 번
+  이관하며 다른 수동 높이는 보존한다.
 - Local History의 현재 `Recent` view는 tool-window header가 소유한다. 실제
   revision 복원 action은 검색/필터 문맥과 같은 command row에 두고 panel
   close와 섞지 않는다. project external-change 기능이 생기기 전에는 빈 file

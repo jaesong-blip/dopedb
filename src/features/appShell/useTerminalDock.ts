@@ -6,7 +6,30 @@ import {
   normalizeAgentDockWidth,
 } from "../agents/layout";
 
-const LEGACY_DEFAULT_WIDTHS = new Set([360, 392, 396, 480]);
+const LEGACY_DEFAULT_WIDTHS = new Set([360, 384, 392, 396, 480, 600]);
+const DEFAULT_WIDTH_MIGRATION_KEY = "dopedb:agent-dock-default:v3";
+
+function readAgentDockWidth() {
+  const saved = Number(localStorage.getItem("agentDockWidth"));
+  const legacy = Number(localStorage.getItem("terminalDockWidth"));
+  const needsDefaultMigration =
+    localStorage.getItem(DEFAULT_WIDTH_MIGRATION_KEY) !== "1";
+  const requested =
+    (needsDefaultMigration && LEGACY_DEFAULT_WIDTHS.has(saved)
+      ? AGENT_DOCK_DEFAULT_WIDTH
+      : saved) ||
+    (needsDefaultMigration && LEGACY_DEFAULT_WIDTHS.has(legacy)
+      ? AGENT_DOCK_DEFAULT_WIDTH
+      : legacy || AGENT_DOCK_DEFAULT_WIDTH);
+  const width = normalizeAgentDockWidth(requested);
+  if (needsDefaultMigration) {
+    localStorage.setItem(DEFAULT_WIDTH_MIGRATION_KEY, "1");
+    if (saved || legacy) {
+      localStorage.setItem("agentDockWidth", String(width));
+    }
+  }
+  return width;
+}
 
 export function useTerminalDock() {
   const [open, setOpen] = useState(() => {
@@ -14,16 +37,7 @@ export function useTerminalDock() {
     if (saved !== null) return saved !== "0";
     return localStorage.getItem("terminalDockOpen") !== "0";
   });
-  const [width, setWidth] = useState(() => {
-    const saved = Number(localStorage.getItem("agentDockWidth"));
-    const legacy = Number(localStorage.getItem("terminalDockWidth"));
-    const requested =
-      saved ||
-      (LEGACY_DEFAULT_WIDTHS.has(legacy)
-        ? AGENT_DOCK_DEFAULT_WIDTH
-        : legacy || AGENT_DOCK_DEFAULT_WIDTH);
-    return normalizeAgentDockWidth(requested);
-  });
+  const [width, setWidth] = useState(readAgentDockWidth);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
   const show = useCallback(() => {
