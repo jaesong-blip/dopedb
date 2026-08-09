@@ -5,8 +5,9 @@
 # rebuild. macOS records the Keychain "Always Allow" grant against the app's code
 # identity — an ad-hoc identity is the per-build hash, so the grant never sticks and
 # you get the "DopeDB wants to use confidential information" prompt every launch.
-# Signing with a stable identity (the same cert across rebuilds) makes the designated
-# requirement stable, so "Always Allow" persists and the prompt stops.
+# Signing with a stable identity (the same cert and development app identifier across
+# rebuilds) makes the designated requirement stable, so "Always Allow" persists and
+# the prompt stops without making the debug process impersonate the installed app.
 #
 # Prefers your existing "Apple Development" identity; falls back to a persistent
 # self-signed cert if you have none. Runs automatically after `pnpm tauri:dev`/build
@@ -14,9 +15,19 @@
 set -euo pipefail
 
 BIN="${1:-target/debug/dopedb}"
-ENTITLEMENTS="$(cd "$(dirname "$0")" && pwd)/entitlements.plist"
+TAURI_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENTITLEMENTS="$TAURI_DIR/entitlements.plist"
+DEV_CONFIG="$TAURI_DIR/tauri.dev.conf.json"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
-IDENTIFIER="dev.dopedb.desktop"
+IDENTIFIER="$(plutil -extract identifier raw "$DEV_CONFIG")"
+
+case "$IDENTIFIER" in
+  *.dev) ;;
+  *)
+    echo "sign-dev: refusing non-development identifier from $DEV_CONFIG: $IDENTIFIER" >&2
+    exit 1
+    ;;
+esac
 
 if [ ! -f "$BIN" ]; then
   echo "sign-dev: binary not found: $BIN (build first)" >&2
@@ -49,4 +60,10 @@ fi
 codesign --force --sign "$IDENTITY" --identifier "$IDENTIFIER" \
   --entitlements "$ENTITLEMENTS" "$BIN"
 codesign --verify --strict "$BIN"
-echo "sign-dev: signed $BIN with [$IDENTITY]"
+SIGNED_IDENTIFIER="$(codesign -d --verbose=4 "$BIN" 2>&1 \
+  | sed -n 's/^Identifier=//p')"
+if [ "$SIGNED_IDENTIFIER" != "$IDENTIFIER" ]; then
+  echo "sign-dev: signed identifier mismatch: expected $IDENTIFIER, got $SIGNED_IDENTIFIER" >&2
+  exit 1
+fi
+echo "sign-dev: signed $BIN as [$IDENTIFIER] with [$IDENTITY]"
