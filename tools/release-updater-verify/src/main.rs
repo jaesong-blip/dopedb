@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use minisign_verify::{PublicKey, Signature};
+use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -17,11 +18,17 @@ const PLATFORMS: [(&str, &str, &[u8]); 3] = [
     ("darwin-x86_64", "x64.app.tar.gz", &[0x1f, 0x8b]),
     ("windows-x86_64", "x64-setup.exe", b"MZ"),
 ];
+const MACOS_DISTRIBUTIONS: [(&str, &str, &str); 2] = [
+    ("aarch64-apple-darwin", "arm64", "aarch64"),
+    ("x86_64-apple-darwin", "x64", "x64"),
+];
 
 struct Arguments {
     assets: PathBuf,
+    commit: String,
     downloads: PathBuf,
     manifest: PathBuf,
+    macos_distribution: PathBuf,
     root: PathBuf,
     tag: String,
 }
@@ -31,6 +38,58 @@ struct Asset {
     name: String,
     size: u64,
     url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MacosDistributionConfig {
+    schema_version: u32,
+    product_name: String,
+    bundle_identifier: String,
+    team_identifier: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MacosTrustReceipt {
+    schema_version: u32,
+    tag: String,
+    commit: String,
+    target: String,
+    architecture: String,
+    team_identifier: String,
+    bundle_identifier: String,
+    developer_id_authority: String,
+    app_tree_sha256: String,
+    artifacts: MacosTrustArtifacts,
+    checks: MacosTrustChecks,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MacosTrustArtifacts {
+    dmg: MacosTrustArtifact,
+    updater: MacosTrustArtifact,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MacosTrustArtifact {
+    name: String,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MacosTrustChecks {
+    codesign_strict: bool,
+    developer_id: bool,
+    hardened_runtime: bool,
+    spctl_execute: bool,
+    app_staple: bool,
+    dmg_staple: bool,
+    dmg_integrity: bool,
+    same_app_bytes: bool,
 }
 
 fn fail<T>(message: impl Into<String>) -> Result<T, String> {
@@ -61,7 +120,9 @@ fn arguments() -> Result<Arguments, String> {
     }
     let allowed = [
         "--assets",
+        "--commit",
         "--downloads",
+        "--macos-distribution",
         "--manifest",
         "--repository",
         "--root",
@@ -75,8 +136,10 @@ fn arguments() -> Result<Arguments, String> {
     }
     Ok(Arguments {
         assets: arg(&values, "--assets")?.into(),
+        commit: arg(&values, "--commit")?,
         downloads: arg(&values, "--downloads")?.into(),
         manifest: arg(&values, "--manifest")?.into(),
+        macos_distribution: arg(&values, "--macos-distribution")?.into(),
         root: arg(&values, "--root")?.into(),
         tag: arg(&values, "--tag")?,
     })
@@ -199,12 +262,25 @@ fn assets(path: &Path, version: &str, tag: &str) -> Result<HashMap<String, Asset
         .get("assets")
         .and_then(Value::as_array)
         .ok_or_else(|| "assets JSON must contain an assets array".to_owned())?;
-    let expected = PLATFORMS
+    let updater_expected = PLATFORMS
         .iter()
         .flat_map(|(_, suffix, _)| {
             let name = format!("DopeDB_{version}_{suffix}");
             [name.clone(), format!("{name}.sig")]
         })
+        .collect::<BTreeSet<_>>();
+    let macos_expected = MACOS_DISTRIBUTIONS
+        .iter()
+        .flat_map(|(_, _, suffix)| {
+            [
+                format!("DopeDB_{version}_{suffix}.dmg"),
+                format!("DopeDB_{version}_{suffix}.macos-trust.json"),
+            ]
+        })
+        .collect::<BTreeSet<_>>();
+    let expected = updater_expected
+        .union(&macos_expected)
+        .cloned()
         .collect::<BTreeSet<_>>();
     let mut urls = HashMap::new();
     let mut names = BTreeSet::new();
@@ -263,6 +339,138 @@ fn verify_latest(arguments: &Arguments, assets: &HashMap<String, Asset>) -> Resu
         || asset.digest.as_deref() != Some(actual_digest.as_str())
     {
         return fail("latest.json bytes do not match refreshed release metadata");
+    }
+    Ok(())
+}
+
+fn downloaded_asset(
+    arguments: &Arguments,
+    assets: &HashMap<String, Asset>,
+    name: &str,
+) -> Result<Vec<u8>, String> {
+    let url = canonical_url(&arguments.tag, name);
+    let asset = assets.get(&url).ok_or("missing release asset")?;
+    if asset.name != name {
+        return fail("release asset URL does not match its name");
+    }
+    let path = arguments.downloads.join(name);
+    let bytes = fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    if u64::try_from(bytes.len()).map_err(|_| "release asset length overflow")? != asset.size
+        || asset.digest.as_deref() != Some(digest(&bytes).as_str())
+    {
+        return fail("downloaded release asset does not match release metadata");
+    }
+    Ok(bytes)
+}
+
+fn valid_team_identifier(value: &str) -> bool {
+    value.len() == 10
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+}
+
+fn verify_macos_receipt_contract(
+    receipt: &MacosTrustReceipt,
+    config: &MacosDistributionConfig,
+    tag: &str,
+    commit: &str,
+    target: &str,
+    architecture: &str,
+    dmg_name: &str,
+    updater_name: &str,
+    dmg_digest: &str,
+    updater_digest: &str,
+) -> Result<(), String> {
+    if receipt.schema_version != 1
+        || receipt.tag != tag
+        || receipt.commit != commit
+        || receipt.target != target
+        || receipt.architecture != architecture
+        || receipt.team_identifier != config.team_identifier
+        || receipt.bundle_identifier != config.bundle_identifier
+    {
+        return fail("macOS trust receipt identity does not match the release");
+    }
+    if commit.len() != 40
+        || !commit
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return fail("macOS trust receipt commit is invalid");
+    }
+    if !receipt
+        .developer_id_authority
+        .starts_with("Developer ID Application: ")
+        || !receipt
+            .developer_id_authority
+            .contains(&format!("({})", config.team_identifier))
+        || !strict_digest(&receipt.app_tree_sha256)
+    {
+        return fail("macOS trust receipt has an invalid Developer ID claim");
+    }
+    if receipt.artifacts.dmg.name != dmg_name
+        || receipt.artifacts.dmg.sha256 != dmg_digest
+        || receipt.artifacts.updater.name != updater_name
+        || receipt.artifacts.updater.sha256 != updater_digest
+    {
+        return fail("macOS trust receipt artifact hashes do not match downloaded assets");
+    }
+    let checks = &receipt.checks;
+    if !checks.codesign_strict
+        || !checks.developer_id
+        || !checks.hardened_runtime
+        || !checks.spctl_execute
+        || !checks.app_staple
+        || !checks.dmg_staple
+        || !checks.dmg_integrity
+        || !checks.same_app_bytes
+    {
+        return fail("macOS trust receipt contains an incomplete verification gate");
+    }
+    Ok(())
+}
+
+fn verify_macos_distribution(
+    arguments: &Arguments,
+    version: &str,
+    assets: &HashMap<String, Asset>,
+) -> Result<(), String> {
+    let config: MacosDistributionConfig = serde_json::from_slice(
+        &fs::read(&arguments.macos_distribution)
+            .map_err(|error| format!("{}: {error}", arguments.macos_distribution.display()))?,
+    )
+    .map_err(|error| format!("invalid macOS distribution config: {error}"))?;
+    if config.schema_version != 1
+        || config.product_name != "DopeDB"
+        || config.bundle_identifier != "dev.dopedb.desktop"
+        || !valid_team_identifier(&config.team_identifier)
+    {
+        return fail("macOS distribution config does not match the stable app identity");
+    }
+    for (target, architecture, suffix) in MACOS_DISTRIBUTIONS {
+        let prefix = format!("DopeDB_{version}_{suffix}");
+        let dmg_name = format!("{prefix}.dmg");
+        let updater_name = format!("{prefix}.app.tar.gz");
+        let receipt_name = format!("{prefix}.macos-trust.json");
+        let dmg = downloaded_asset(arguments, assets, &dmg_name)?;
+        let updater = downloaded_asset(arguments, assets, &updater_name)?;
+        let receipt_bytes = downloaded_asset(arguments, assets, &receipt_name)?;
+        let receipt: MacosTrustReceipt = serde_json::from_slice(&receipt_bytes)
+            .map_err(|error| format!("{receipt_name}: invalid trust receipt: {error}"))?;
+        verify_macos_receipt_contract(
+            &receipt,
+            &config,
+            &arguments.tag,
+            &arguments.commit,
+            target,
+            architecture,
+            &dmg_name,
+            &updater_name,
+            &digest(&dmg),
+            &digest(&updater),
+        )?;
+        println!("verified macOS Developer ID and notarization receipt: {target}");
     }
     Ok(())
 }
@@ -374,7 +582,8 @@ fn run() -> Result<(), String> {
     let version = version(&arguments, &manifest)?;
     let assets = assets(&arguments.assets, &version, &arguments.tag)?;
     verify_latest(&arguments, &assets)?;
-    verify(&arguments, &manifest, &version, &assets)
+    verify(&arguments, &manifest, &version, &assets)?;
+    verify_macos_distribution(&arguments, &version, &assets)
 }
 
 fn main() {
@@ -438,6 +647,66 @@ mod tests {
         assert!(!strict_digest(
             "sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         ));
+
+        let config = MacosDistributionConfig {
+            schema_version: 1,
+            product_name: "DopeDB".into(),
+            bundle_identifier: "dev.dopedb.desktop".into(),
+            team_identifier: "B67K525D3B".into(),
+        };
+        let mut receipt: MacosTrustReceipt = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1,
+            "tag": "app-v0.2.0",
+            "commit": "0123456789abcdef0123456789abcdef01234567",
+            "target": "aarch64-apple-darwin",
+            "architecture": "arm64",
+            "teamIdentifier": "B67K525D3B",
+            "bundleIdentifier": "dev.dopedb.desktop",
+            "developerIdAuthority": "Developer ID Application: jaesong choi (B67K525D3B)",
+            "appTreeSha256": digest(b"app"),
+            "artifacts": {
+                "dmg": { "name": "DopeDB_0.2.0_aarch64.dmg", "sha256": digest(b"dmg") },
+                "updater": { "name": "DopeDB_0.2.0_aarch64.app.tar.gz", "sha256": digest(b"updater") }
+            },
+            "checks": {
+                "codesignStrict": true,
+                "developerId": true,
+                "hardenedRuntime": true,
+                "spctlExecute": true,
+                "appStaple": true,
+                "dmgStaple": true,
+                "dmgIntegrity": true,
+                "sameAppBytes": true
+            }
+        }))
+        .unwrap();
+        assert!(verify_macos_receipt_contract(
+            &receipt,
+            &config,
+            "app-v0.2.0",
+            "0123456789abcdef0123456789abcdef01234567",
+            "aarch64-apple-darwin",
+            "arm64",
+            "DopeDB_0.2.0_aarch64.dmg",
+            "DopeDB_0.2.0_aarch64.app.tar.gz",
+            &digest(b"dmg"),
+            &digest(b"updater"),
+        )
+        .is_ok());
+        receipt.checks.dmg_staple = false;
+        assert!(verify_macos_receipt_contract(
+            &receipt,
+            &config,
+            "app-v0.2.0",
+            "0123456789abcdef0123456789abcdef01234567",
+            "aarch64-apple-darwin",
+            "arm64",
+            "DopeDB_0.2.0_aarch64.dmg",
+            "DopeDB_0.2.0_aarch64.app.tar.gz",
+            &digest(b"dmg"),
+            &digest(b"updater"),
+        )
+        .is_err());
     }
 
     #[test]

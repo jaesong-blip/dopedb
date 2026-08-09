@@ -159,6 +159,9 @@ enabled control에는 실제 command와 state owner가 있어야 한다.
 - 정식 릴리스는 명시적 요청이 있을 때만 `json-choi`가 `main`에서
   `app-vX.Y.Z` 태그로 발행한다. 버전 파일과 signing secret을 임의로 다루지
   않는다.
+- macOS 정식 릴리스는 ARM64/x64 모두 Developer ID·공증·staple·Gatekeeper와
+  DMG/updater 동일 app payload 영수증을 통과해야 하며, finalizer는 그 영수증을
+  정확한 공개 asset bytes에 고정하지 못하면 실패한다.
 
 ## 릴리스 노트 준비 상태
 

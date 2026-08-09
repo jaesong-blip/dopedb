@@ -264,13 +264,40 @@ Stable release runs only on an owner-created `app-v*` tag whose commit is alread
 
 Contributors use `work/<github-login>/<topic>` branches and may manually dispatch `.github/workflows/canary.yml` from `main` for their own branch only. Canary builds publish through a per-user `canary-<github-login>` environment as unsigned prereleases without updater artifacts, updater signatures, or `latest.json`. See `CONTRIBUTING.md` for the exact commands.
 
-Required GitHub secret:
+Required repository secrets:
 
 ```txt
 TAURI_SIGNING_PRIVATE_KEY
 ```
 
 The local updater key path used during setup was `~/.tauri/dopedb-updater.key`. Do not commit private keys.
+
+The protected `stable-release` environment must additionally own these macOS
+distribution secrets. Repository contributors and AI agents do not create,
+export, read, or rotate their values.
+
+```txt
+APPLE_CERTIFICATE
+APPLE_CERTIFICATE_PASSWORD
+APPLE_API_ISSUER
+APPLE_API_KEY
+APPLE_API_PRIVATE_KEY
+```
+
+`APPLE_CERTIFICATE` is the Base64-encoded `.p12` export of the `Developer ID
+Application` identity for Team `B67K525D3B`. `APPLE_API_PRIVATE_KEY` is the
+one-time `.p8` download for the App Store Connect API key identified by
+`APPLE_API_KEY`; the checked-in public identity boundary lives in
+`.release/macos-distribution.json`.
+Follow the official [Tauri macOS signing guide](https://v2.tauri.app/distribute/sign/macos/)
+and [Apple notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+when provisioning or rotating those operator-owned credentials.
+
+Each macOS matrix job imports the identity into an ephemeral CI keychain, lets
+Tauri sign and notarize, and then verifies the app bundle, DMG, and updater
+archive independently. Stable finalization requires per-architecture trust
+receipts whose SHA-256 values match the exact release assets, and removes the
+temporary keychain and API key file even when the build fails.
 
 ## Dependency Policy
 
@@ -282,7 +309,10 @@ toolchain holds are documented in [`dependencies.md`](dependencies.md).
 
 ## macOS Distribution
 
-The app is currently distributed outside the Mac App Store. Until Developer ID signing and notarization are configured, macOS can show an unidentified developer warning. Users should only bypass the warning after confirming the file came from the official GitHub Release.
+The app is distributed outside the Mac App Store. Releases made before the first
+Developer ID-notarized stable build can show an unidentified developer warning.
+Only those legacy releases use the bypass path below, and only after confirming
+the file came from the official GitHub Release.
 
 User-facing bypass path:
 
@@ -302,7 +332,7 @@ Only document this command with the release-origin warning. It removes the macOS
 
 ## Deferred Work
 
-- Developer ID signing and notarization
+- Clean-device online/offline verification of the first Developer ID-notarized stable release (#133)
 - More structured Agent proposal types beyond SQL
 - SSH tunnel support
 - More granular Agent and plugin origin handling

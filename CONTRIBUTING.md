@@ -64,6 +64,9 @@ UI 상태와 기능 상태를 각각 갱신한다. DopeDB 자체 baseline을 승
 모든 버전 소스를 같은 값으로 맞추고 `main`의 검증된 커밋에
 `app-vX.Y.Z` 태그를 만든다. 보호된 환경, tag 규칙, signing key를 우회하거나
 노출하지 않는다.
+macOS 정식 릴리스는 ARM64/x64 모두 Developer ID·공증·staple·Gatekeeper와
+DMG/updater 동일 app payload 영수증을 통과해야 하며, finalizer는 그 영수증을
+정확한 공개 asset bytes에 고정하지 못하면 실패한다.
 
 사용자용 릴리스 노트 파이프라인은 정식 MVP 전까지 `prepared` 모드다.
 `.release-notes/config.json`이 `prepared`인 동안 production fragment를 요구하거나

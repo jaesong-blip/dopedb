@@ -91,16 +91,19 @@ jobs:
             target: aarch64-apple-darwin
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target aarch64-apple-darwin
+            mac_asset_suffix: aarch64
             sentry_sourcemaps: "1"
           - platform: macos-15
             target: x86_64-apple-darwin
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target x86_64-apple-darwin
+            mac_asset_suffix: x64
             sentry_sourcemaps: "0"
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             rust-targets: x86_64-pc-windows-msvc
             args: --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json
+            mac_asset_suffix: ""
             sentry_sourcemaps: "0"
     runs-on: ${{ matrix.platform }}
     steps:
@@ -139,6 +142,80 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Import Developer ID identity and configure notarization
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          DOPEDB_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          DOPEDB_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          DOPEDB_APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          DOPEDB_APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          DOPEDB_APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          for variable in \
+            DOPEDB_APPLE_CERTIFICATE \
+            DOPEDB_APPLE_CERTIFICATE_PASSWORD \
+            DOPEDB_APPLE_API_ISSUER \
+            DOPEDB_APPLE_API_KEY \
+            DOPEDB_APPLE_API_PRIVATE_KEY; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "Protected stable-release secret is missing: $variable" >&2
+              exit 1
+            fi
+          done
+
+          team_id="$(node -p "JSON.parse(require('fs').readFileSync('.release/macos-distribution.json', 'utf8')).teamIdentifier")"
+          if [[ ! "$team_id" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "Checked-in Apple TeamIdentifier is invalid." >&2
+            exit 1
+          fi
+
+          keychain="$RUNNER_TEMP/dopedb-developer-id.keychain-db"
+          certificate="$RUNNER_TEMP/dopedb-developer-id.p12"
+          api_key="$RUNNER_TEMP/AuthKey_${DOPEDB_APPLE_API_KEY}.p8"
+          keychain_password="$(openssl rand -hex 32)"
+          echo "::add-mask::$keychain_password"
+          {
+            echo "DOPEDB_SIGNING_KEYCHAIN=$keychain"
+            echo "DOPEDB_SIGNING_CERTIFICATE=$certificate"
+            echo "DOPEDB_SIGNING_API_KEY=$api_key"
+          } >> "$GITHUB_ENV"
+
+          printf '%s' "$DOPEDB_APPLE_CERTIFICATE" | base64 --decode > "$certificate"
+          printf '%s' "$DOPEDB_APPLE_API_PRIVATE_KEY" > "$api_key"
+          chmod 600 "$certificate" "$api_key"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security default-keychain -d user -s "$keychain"
+          security import "$certificate" \
+            -k "$keychain" \
+            -P "$DOPEDB_APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$keychain_password" \
+            "$keychain"
+
+          identities="$(security find-identity -v -p codesigning "$keychain" \
+            | sed -nE 's/.*"(Developer ID Application:.*)".*/\1/p')"
+          identity_count="$(printf '%s\n' "$identities" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [[ "$identity_count" != "1" || "$identities" != *"($team_id)"* ]]; then
+            echo "Exactly one Developer ID Application identity for the expected team is required." >&2
+            exit 1
+          fi
+
+          {
+            echo "APPLE_SIGNING_IDENTITY=$identities"
+            echo "APPLE_API_ISSUER=$DOPEDB_APPLE_API_ISSUER"
+            echo "APPLE_API_KEY=$DOPEDB_APPLE_API_KEY"
+            echo "APPLE_API_KEY_PATH=$api_key"
+          } >> "$GITHUB_ENV"
+
       - name: Build and upload Tauri release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -156,6 +233,41 @@ jobs:
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
           args: ${{ matrix.args }}
+
+      - name: Verify Developer ID, notarization, and identical app payloads
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          version="${GITHUB_REF_NAME#app-v}"
+          mkdir -p release-trust
+          receipt="release-trust/DopeDB_${version}_${{ matrix.mac_asset_suffix }}.macos-trust.json"
+          node scripts/release/capture-macos-distribution-trust.mjs \
+            --bundle-root "target/${{ matrix.target }}/release/bundle" \
+            --commit "$GITHUB_SHA" \
+            --config .release/macos-distribution.json \
+            --output "$receipt" \
+            --tag "$GITHUB_REF_NAME" \
+            --target "${{ matrix.target }}"
+          gh release upload "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            "$receipt" \
+            --clobber
+
+      - name: Remove temporary Apple signing material
+        if: runner.os == 'macOS' && always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${DOPEDB_SIGNING_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$DOPEDB_SIGNING_KEYCHAIN" || true
+          fi
+          rm -f \
+            "${DOPEDB_SIGNING_CERTIFICATE:-$RUNNER_TEMP/missing-certificate}" \
+            "${DOPEDB_SIGNING_API_KEY:-$RUNNER_TEMP/missing-api-key}"
 
   finalize-release:
     needs: publish-tauri
@@ -272,8 +384,12 @@ jobs:
           for asset in \
             "DopeDB_${version}_aarch64.app.tar.gz" \
             "DopeDB_${version}_aarch64.app.tar.gz.sig" \
+            "DopeDB_${version}_aarch64.dmg" \
+            "DopeDB_${version}_aarch64.macos-trust.json" \
             "DopeDB_${version}_x64.app.tar.gz" \
             "DopeDB_${version}_x64.app.tar.gz.sig" \
+            "DopeDB_${version}_x64.dmg" \
+            "DopeDB_${version}_x64.macos-trust.json" \
             "DopeDB_${version}_x64-setup.exe" \
             "DopeDB_${version}_x64-setup.exe.sig"; do
             gh release download "$GITHUB_REF_NAME" \
@@ -292,7 +408,9 @@ jobs:
           cargo run --locked -p release-updater-verify -- \
             --manifest release-finalize/latest.json \
             --assets release-finalize/assets.json \
+            --commit "$GITHUB_SHA" \
             --downloads release-finalize/draft-assets \
+            --macos-distribution .release/macos-distribution.json \
             --repository "$GITHUB_REPOSITORY" \
             --root "$GITHUB_WORKSPACE" \
             --tag "$GITHUB_REF_NAME"
@@ -330,10 +448,29 @@ jobs:
             --repository "$GITHUB_REPOSITORY" \
             --tag "$GITHUB_REF_NAME"
 
+          version="${GITHUB_REF_NAME#app-v}"
+          for asset in \
+            "DopeDB_${version}_aarch64.dmg" \
+            "DopeDB_${version}_aarch64.macos-trust.json" \
+            "DopeDB_${version}_x64.dmg" \
+            "DopeDB_${version}_x64.macos-trust.json"; do
+            curl \
+              --fail \
+              --location \
+              --retry 4 \
+              --retry-all-errors \
+              --silent \
+              --show-error \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$asset" \
+              --output "release-finalize/public-assets/$asset"
+          done
+
           cargo run --locked -p release-updater-verify -- \
             --manifest release-finalize/public-assets/latest.json \
             --assets release-finalize/assets.json \
+            --commit "$GITHUB_SHA" \
             --downloads release-finalize/public-assets \
+            --macos-distribution .release/macos-distribution.json \
             --repository "$GITHUB_REPOSITORY" \
             --root "$GITHUB_WORKSPACE" \
             --tag "$GITHUB_REF_NAME"
