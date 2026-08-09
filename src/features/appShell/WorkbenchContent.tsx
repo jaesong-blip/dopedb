@@ -273,7 +273,6 @@ export default function WorkbenchContent(props: Props) {
         ) : activeDocument.kind === "data" ? (
           safety ? (
             <TableData
-              key={activeDocument.id}
               connection={selected}
               table={activeDocument.table}
               safety={safety}

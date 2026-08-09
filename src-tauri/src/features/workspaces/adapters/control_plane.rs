@@ -13,6 +13,7 @@ mod signals;
 mod sync;
 
 use std::net::IpAddr;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use reqwest::{redirect::Policy, Client, Response, StatusCode, Url};
@@ -78,6 +79,8 @@ const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
 const DESKTOP_CLIENT_ID: &str = "dopedb-desktop";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const MANAGED_LEASE_CONTRACT: &str = "access-v2";
+
+static CONTROL_PLANE_CLIENT: OnceLock<Client> = OnceLock::new();
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -288,13 +291,31 @@ pub(crate) fn console_url(workspace_id: Option<Uuid>) -> AppResult<String> {
     Ok(url.into())
 }
 
-fn client() -> AppResult<Client> {
-    Client::builder()
+fn client() -> AppResult<&'static Client> {
+    if let Some(client) = CONTROL_PLANE_CLIENT.get() {
+        return Ok(client);
+    }
+
+    let client = Client::builder()
         .timeout(Duration::from_secs(15))
         .redirect(Policy::none())
         .user_agent(concat!("DopeDB/", env!("CARGO_PKG_VERSION"), " desktop"))
         .build()
-        .map_err(|error| AppError::Network(format!("could not create HTTP client: {error}")))
+        .map_err(|error| AppError::Network(format!("could not create HTTP client: {error}")))?;
+    // A request racing the first initialization may win this set. In either
+    // case every caller receives the same pooled client, while authorization
+    // headers and tokens remain scoped to each individual request.
+    let _ = CONTROL_PLANE_CLIENT.set(client);
+    CONTROL_PLANE_CLIENT
+        .get()
+        .ok_or_else(|| AppError::Network("could not initialize the shared HTTP client".into()))
+}
+
+#[cfg(test)]
+pub(crate) fn assert_shared_http_client_contract() {
+    let first = client().expect("the control-plane HTTP client is available");
+    let second = client().expect("the control-plane HTTP client remains available");
+    assert!(std::ptr::eq(first, second));
 }
 
 fn request_error(action: &str, error: reqwest::Error) -> AppError {
