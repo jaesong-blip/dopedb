@@ -19,6 +19,7 @@
     "check:ui-primitives": "node scripts/check-ui-primitives.mjs",
     "check:ui-palette": "node scripts/check-ui-palette.mjs",
     "check:test-budget": "node scripts/check-critical-test-budget.mjs",
+    "release:stable:draft": "bash scripts/release/create-stable-draft.sh",
     "release:notes:preview": "node scripts/release/generate-release-notes.mjs preview",
     "test": "node scripts/check-critical-test-budget.mjs && vitest run src/components/DataGridVirtual.test.ts src/features/providers/tauriAdapter.test.ts src/features/queries/tauriAdapter.test.ts src/features/query/runSignal.test.ts src/features/skills/setupPolicy.test.ts src/features/terminals/state.test.ts src/features/workbench/state.test.ts src/features/workspaces/authPolicy.test.ts",
     "test:smoke": "vitest run src/components/DataGridVirtual.test.ts src/features/providers/tauriAdapter.test.ts src/features/queries/tauriAdapter.test.ts src/features/query/runSignal.test.ts src/features/skills/setupPolicy.test.ts src/features/terminals/state.test.ts src/features/workbench/state.test.ts src/features/workspaces/authPolicy.test.ts",

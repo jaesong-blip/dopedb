@@ -62,8 +62,11 @@ UI 상태와 기능 상태를 각각 갱신한다. DopeDB 자체 baseline을 승
 
 정식 릴리스는 사용자가 명시적으로 요청한 경우에만 `json-choi`가 수행한다.
 모든 버전 소스를 같은 값으로 맞추고 `main`의 검증된 커밋에
-`app-vX.Y.Z` 태그를 만든다. 보호된 환경, tag 규칙, signing key를 우회하거나
-노출하지 않는다.
+`pnpm release:stable:draft -- X.Y.Z`를 실행해 annotated `app-vX.Y.Z` 태그와
+owner draft release를 함께 만든다. draft를 확인한 뒤에만 `stable-release`
+환경을 승인한다. Actions는 owner-only tag 규칙을 우회해 release를 만들지
+않으며 draft가 없으면 build 전에 실패한다. 보호된 환경, tag 규칙, signing
+key를 우회하거나 노출하지 않는다.
 macOS 정식 릴리스는 ARM64/x64 모두 Developer ID·공증·staple·Gatekeeper와
 DMG/updater 동일 app payload 영수증을 통과해야 하며, finalizer는 그 영수증을
 정확한 공개 asset bytes에 고정하지 못하면 실패한다.

@@ -109,6 +109,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Verify owner-created draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if ! release_state="$(gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease \
+            --jq '[.tagName, .isDraft, .isPrerelease] | @tsv' 2>/dev/null)"; then
+            echo "Stable builds require an owner-created draft release before environment approval." >&2
+            echo "Run: pnpm release:stable:draft -- ${GITHUB_REF_NAME#app-v}" >&2
+            exit 1
+          fi
+
+          expected_state="${GITHUB_REF_NAME}"$'\ttrue\tfalse'
+          if [[ "$release_state" != "$expected_state" ]]; then
+            echo "Stable release must be the matching non-prerelease draft: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:

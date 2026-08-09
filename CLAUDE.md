@@ -159,6 +159,11 @@ enabled control에는 실제 command와 state owner가 있어야 한다.
 - 정식 릴리스는 명시적 요청이 있을 때만 `json-choi`가 `main`에서
   `app-vX.Y.Z` 태그로 발행한다. 버전 파일과 signing secret을 임의로 다루지
   않는다.
+- 버전 정합성과 깨끗하게 push된 `main`을 확인한 뒤
+  `pnpm release:stable:draft -- X.Y.Z`로 annotated tag와 owner draft를 함께
+  만든다. draft를 확인한 뒤에만 `stable-release` 환경을 승인한다. Actions는
+  owner-only tag ruleset을 우회해 release를 만들지 않으며 draft가 없으면
+  build 전에 실패해야 한다.
 - macOS 정식 릴리스는 ARM64/x64 모두 Developer ID·공증·staple·Gatekeeper와
   DMG/updater 동일 app payload 영수증을 통과해야 하며, finalizer는 그 영수증을
   정확한 공개 asset bytes에 고정하지 못하면 실패한다.
