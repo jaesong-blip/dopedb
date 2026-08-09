@@ -386,6 +386,11 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
+    use acp_plugin_sign::sign_file;
+    use minisign::{KeyPair, SignatureBox};
+
     use super::*;
 
     const PUBLIC_KEY: &str = "untrusted comment: minisign public key E7620F1842B4E81F\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
@@ -421,21 +426,52 @@ mod tests {
     }
 
     #[test]
-    fn stale_or_unknown_updater_assets_are_detected() {
+    fn release_asset_allowlist_and_digest_are_strict() {
         assert!(looks_like_updater("DopeDB_0.1.0_x64-setup.exe.sig"));
         assert!(!is_allowed_non_updater(
             "DopeDB_0.1.0_x64-setup.exe",
             "0.2.0"
         ));
         assert!(is_allowed_non_updater("DopeDB-macos-x64.dmg", "0.2.0"));
-    }
-
-    #[test]
-    fn digest_format_and_calculation_are_strict() {
         assert!(strict_digest(&digest(b"test")));
         assert!(!strict_digest("sha256:ABC"));
         assert!(!strict_digest(
             "sha512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         ));
+    }
+
+    #[test]
+    fn acp_manifest_signing_accepts_an_empty_password_without_a_terminal() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let secret_key_path = temporary.path().join("test.key");
+        let message_path = temporary.path().join("message.txt");
+        let signature_path = temporary.path().join("message.txt.minisig");
+        let pair = KeyPair::generate_encrypted_keypair(Some(String::new())).expect("key pair");
+        fs::write(
+            &secret_key_path,
+            pair.sk.to_box(None).expect("secret key box").to_string(),
+        )
+        .expect("secret key file");
+        let message = b"signed adapter manifest";
+        fs::write(&message_path, message).expect("message file");
+
+        sign_file(
+            secret_key_path,
+            message_path,
+            signature_path.clone(),
+            String::new(),
+        )
+        .expect("non-interactive signature");
+
+        let signature = SignatureBox::from_file(signature_path).expect("signature file");
+        minisign::verify(
+            &pair.pk,
+            &signature,
+            Cursor::new(message),
+            true,
+            false,
+            false,
+        )
+        .expect("valid signature");
     }
 }
