@@ -185,7 +185,8 @@ pub(super) fn run() {
     let sql = "SELECT COUNT(*) AS total_users FROM public.users";
     let (cancel_started_tx, cancel_started_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for _ in 0..4 {
+        let mut catalog_searches = 0;
+        for _ in 0..5 {
             let (mut stream, _) = listener.accept().unwrap();
             let request = read_request(&mut stream);
             let authentication = request.authentication.as_ref().unwrap();
@@ -217,13 +218,20 @@ pub(super) fn run() {
                     );
                 }
                 CommandName::CatalogSearch => {
+                    catalog_searches += 1;
                     let arguments: CatalogSearchArguments =
                         serde_json::from_value(request.arguments.clone()).unwrap();
                     assert_eq!(arguments.connection, ConnectionSelector::Current);
                     assert_eq!(arguments.database.as_deref(), Some("app"));
-                    assert_eq!(arguments.query, "user");
                     assert_eq!(arguments.kinds, vec![ObjectKind::Table]);
-                    assert_eq!(arguments.limit, Some(20));
+                    if catalog_searches == 1 {
+                        assert_eq!(arguments.query, "user");
+                        assert_eq!(arguments.limit, Some(20));
+                    } else {
+                        assert_eq!(catalog_searches, 2);
+                        assert_eq!(arguments.query, "*");
+                        assert_eq!(arguments.limit, Some(50));
+                    }
                     let catalog = users_catalog(connection_id);
                     respond(
                         &mut stream,
@@ -241,7 +249,11 @@ pub(super) fn run() {
                                 match_type: CatalogSearchMatchType::Relation,
                                 qualified_name: "app.public.users".into(),
                                 object: catalog.relations()[0].object.clone(),
-                                matched_fields: vec!["deleted_at".into()],
+                                matched_fields: if catalog_searches == 1 {
+                                    vec!["deleted_at".into()]
+                                } else {
+                                    Vec::new()
+                                },
                             }],
                         },
                     );
@@ -372,13 +384,22 @@ pub(super) fn run() {
                 "id": 5,
                 "method": "tools/call",
                 "params": {
+                    "name": "catalog_search",
+                    "arguments": { "database": "app", "query": "", "kinds": ["table"], "limit": 500 }
+                }
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
                     "name": "query_read",
                     "arguments": { "database": "app", "sql": sql }
                 }
             }),
         ],
     );
-    assert_eq!(bridge.len(), 5);
+    assert_eq!(bridge.len(), 6);
     let response = |id: i64| {
         bridge
             .iter()
@@ -401,6 +422,19 @@ pub(super) fn run() {
         query_read_tool["inputSchema"]["properties"]["timeoutMs"]["maximum"],
         300_000,
     );
+    let catalog_search_tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "catalog_search")
+        .unwrap();
+    assert!(catalog_search_tool["inputSchema"].get("required").is_none());
+    assert_eq!(
+        catalog_search_tool["inputSchema"]["properties"]["limit"]["maximum"],
+        50,
+    );
+    assert!(catalog_search_tool["description"]
+        .as_str()
+        .unwrap()
+        .contains("Omit query"));
     let report_tool = tools
         .iter()
         .find(|tool| tool["name"] == "report_propose")
@@ -445,14 +479,20 @@ pub(super) fn run() {
     assert!(response(4)["result"]["structuredContent"]["matches"][0]
         .get("relation")
         .is_none());
-
     assert_eq!(response(5)["result"]["isError"], false);
+    assert_eq!(response(5)["result"]["structuredContent"]["query"], "*");
     assert_eq!(
-        response(5)["result"]["structuredContent"]["plan"]["planId"],
+        response(5)["result"]["structuredContent"]["matches"][0]["qualifiedName"],
+        "app.public.users"
+    );
+
+    assert_eq!(response(6)["result"]["isError"], false);
+    assert_eq!(
+        response(6)["result"]["structuredContent"]["plan"]["planId"],
         plan_id.to_string()
     );
     assert_eq!(
-        response(5)["result"]["structuredContent"]["run"]["result"]["rows"][0][0],
+        response(6)["result"]["structuredContent"]["run"]["result"]["rows"][0][0],
         42
     );
     let serialized = serde_json::to_string(&bridge).unwrap();

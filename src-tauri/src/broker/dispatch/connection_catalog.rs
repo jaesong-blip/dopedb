@@ -534,6 +534,9 @@ fn qualified_name(object: &dopedb_protocol::ObjectRef) -> String {
 }
 
 fn search_score(needle: &str, name: &str, qualified: &str, extras: &[&str]) -> Option<u8> {
+    if needle == "*" {
+        return Some(5);
+    }
     let name = name.to_lowercase();
     let qualified = qualified.to_lowercase();
     if name == needle || qualified == needle {
@@ -552,6 +555,18 @@ fn search_score(needle: &str, name: &str, qualified: &str, extras: &[&str]) -> O
         .iter()
         .any(|value| value.to_lowercase().contains(needle))
         .then_some(4)
+}
+
+#[cfg(test)]
+pub(super) fn assert_catalog_search_contract() {
+    assert_eq!(
+        search_score("*", "users", "app.public.users", &["deleted_at"]),
+        Some(5)
+    );
+    assert_eq!(
+        search_score("user", "users", "app.public.users", &["deleted_at"]),
+        Some(1)
+    );
 }
 
 fn matching_fields<'a>(needle: &'a str, fields: impl Iterator<Item = &'a str>) -> Vec<String> {

@@ -1,8 +1,10 @@
 //! Application-owned filesystem roots.
 //!
-//! Production uses the OS directories exactly as before. The packaged performance
-//! harness compiles a separate feature and must provide isolated directories below
-//! the OS temp root so it can never open the user's DopeDB store or home-owned files.
+//! Production uses the OS directories exactly as before. Debug builds use a distinct
+//! app-owned directory so DopeDB Dev cannot read or mutate the installed stable app's
+//! store, plugins, result pages, or development secret fallback. The packaged
+//! performance harness compiles a separate feature and must provide isolated
+//! directories below the OS temp root so it can never open either profile.
 
 use std::path::PathBuf;
 
@@ -14,6 +16,15 @@ use crate::error::{AppError, AppResult};
 #[cfg(feature = "packaged-benchmark")]
 const BENCHMARK_PREFIX: &str = "dopedb-packaged-benchmark-";
 
+#[cfg(not(feature = "packaged-benchmark"))]
+const fn application_data_directory(debug: bool) -> &'static str {
+    if debug {
+        "dopedb-dev"
+    } else {
+        "dopedb"
+    }
+}
+
 pub(crate) fn data_root() -> AppResult<PathBuf> {
     #[cfg(feature = "packaged-benchmark")]
     {
@@ -23,7 +34,7 @@ pub(crate) fn data_root() -> AppResult<PathBuf> {
     {
         Ok(dirs::data_dir()
             .ok_or_else(|| AppError::Config("no OS data directory is available".into()))?
-            .join("dopedb"))
+            .join(application_data_directory(cfg!(debug_assertions))))
     }
 }
 
@@ -50,7 +61,7 @@ pub(crate) fn local_data_root() -> AppResult<PathBuf> {
             .ok_or_else(|| {
                 AppError::Config("no local application-data directory is available".into())
             })?
-            .join("dopedb"))
+            .join(application_data_directory(cfg!(debug_assertions))))
     }
 }
 
@@ -122,4 +133,17 @@ fn path_has_controls(path: &Path) -> bool {
                     | '\u{feff}'
             )
     })
+}
+
+#[cfg(all(test, not(feature = "packaged-benchmark")))]
+pub(crate) fn assert_application_data_root_contract() {
+    assert_eq!(application_data_directory(false), "dopedb");
+    assert_eq!(application_data_directory(true), "dopedb-dev");
+    let expected = application_data_directory(cfg!(debug_assertions));
+    assert!(data_root()
+        .expect("application data root")
+        .ends_with(expected));
+    assert!(local_data_root()
+        .expect("local application data root")
+        .ends_with(expected));
 }

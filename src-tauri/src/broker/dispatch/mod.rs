@@ -64,6 +64,11 @@ const MAX_SQL_BYTES: usize = MAX_STRING_BYTES;
 const MAX_TABLE_SELECTOR_BYTES: usize = 512;
 const MAX_OPERATION_WAIT: Duration = Duration::from_secs(30);
 
+#[cfg(test)]
+pub(crate) fn assert_catalog_search_contract() {
+    connection_catalog::assert_catalog_search_contract();
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OperationActivityEvent {

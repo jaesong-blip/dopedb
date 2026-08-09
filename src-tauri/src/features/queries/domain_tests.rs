@@ -204,6 +204,9 @@ fn query_and_skill_security_contracts_stay_fail_closed() {
     assert!(!serialized_receipt.contains("metricValue"));
     assert!(!serialized_receipt.contains("rows"));
 
+    crate::app_paths::assert_application_data_root_contract();
+    crate::broker::assert_catalog_search_contract();
+    crate::features::agents::domain::assert_agent_event_wire_contract();
     crate::skills::assert_skill_installation_contract();
     crate::features::agents::runtime::assert_acp_plugin_runtime_contract();
     crate::features::knowledge::domain::assert_knowledge_domain_contract();

@@ -135,18 +135,24 @@ pub(crate) enum AcpSessionEventPayload {
         update: serde_json::Value,
     },
     SessionConfiguration {
+        #[serde(rename = "configOptions", alias = "config_options")]
         config_options: Vec<serde_json::Value>,
     },
     PermissionRequest {
+        #[serde(rename = "requestId", alias = "request_id")]
         request_id: String,
+        #[serde(rename = "toolCall", alias = "tool_call")]
         tool_call: serde_json::Value,
         options: Vec<AcpPermissionOption>,
     },
     PermissionResponse {
+        #[serde(rename = "requestId", alias = "request_id")]
         request_id: String,
+        #[serde(rename = "optionId", alias = "option_id")]
         option_id: Option<String>,
     },
     TurnEnd {
+        #[serde(rename = "stopReason", alias = "stop_reason")]
         stop_reason: String,
     },
     Status {
@@ -196,4 +202,50 @@ pub(crate) struct AcpPromptContext {
     pub(crate) document_name: Option<String>,
     pub(crate) document_text: Option<String>,
     pub(crate) table: Option<AcpTableContext>,
+}
+
+#[cfg(test)]
+pub(crate) fn assert_agent_event_wire_contract() {
+    let configuration = serde_json::to_value(AcpSessionEventPayload::SessionConfiguration {
+        config_options: vec![],
+    })
+    .expect("serialize ACP session configuration");
+    assert_eq!(configuration["configOptions"], serde_json::json!([]));
+    assert!(configuration.get("config_options").is_none());
+
+    let request = serde_json::to_value(AcpSessionEventPayload::PermissionRequest {
+        request_id: "permission-1".into(),
+        tool_call: serde_json::json!({ "title": "query" }),
+        options: vec![],
+    })
+    .expect("serialize ACP permission request");
+    assert_eq!(request["requestId"], "permission-1");
+    assert_eq!(request["toolCall"]["title"], "query");
+    assert!(request.get("request_id").is_none());
+    assert!(request.get("tool_call").is_none());
+
+    let response = serde_json::to_value(AcpSessionEventPayload::PermissionResponse {
+        request_id: "permission-1".into(),
+        option_id: Some("allow".into()),
+    })
+    .expect("serialize ACP permission response");
+    assert_eq!(response["requestId"], "permission-1");
+    assert_eq!(response["optionId"], "allow");
+
+    let turn_end = serde_json::to_value(AcpSessionEventPayload::TurnEnd {
+        stop_reason: "cancelled".into(),
+    })
+    .expect("serialize ACP turn end");
+    assert_eq!(turn_end["stopReason"], "cancelled");
+    assert!(turn_end.get("stop_reason").is_none());
+
+    let legacy_turn_end: AcpSessionEventPayload = serde_json::from_value(serde_json::json!({
+        "type": "turnEnd",
+        "stop_reason": "end_turn"
+    }))
+    .expect("read a pre-camelCase ACP event");
+    assert!(matches!(
+        legacy_turn_end,
+        AcpSessionEventPayload::TurnEnd { stop_reason } if stop_reason == "end_turn"
+    ));
 }
