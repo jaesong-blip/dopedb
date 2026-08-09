@@ -1,3 +1,9 @@
+import {
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import CellViewer from "../../components/CellViewer";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
@@ -17,6 +23,37 @@ import type {
   SelectedCell,
   StagedWrite,
 } from "../../features/tableData/domain";
+import { createFrameCoalescer } from "../../lib/frameCoalescer";
+
+const STORAGE_KEY = "dopedb:table-side-panel-width:v1";
+const DEFAULT_WIDTH = 360;
+const MIN_WIDTH = 320;
+const MAX_WIDTH = 480;
+const KEYBOARD_STEP = 16;
+
+function clampWidth(width: number) {
+  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(width)));
+}
+
+function readWidth() {
+  if (typeof window === "undefined") return DEFAULT_WIDTH;
+  try {
+    const stored = Number(localStorage.getItem(STORAGE_KEY));
+    return Number.isFinite(stored) && stored >= MIN_WIDTH && stored <= MAX_WIDTH
+      ? stored
+      : DEFAULT_WIDTH;
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+}
+
+function storeWidth(width: number) {
+  try {
+    localStorage.setItem(STORAGE_KEY, String(width));
+  } catch {
+    // A blocked or corrupt preference must not disable the table inspector.
+  }
+}
 
 type Props = {
   engine: Engine;
@@ -46,6 +83,7 @@ type Props = {
 
 export default function TableSidePanel(props: Props) {
   const { t } = useI18n();
+  const [width, setWidth] = useState(readWidth);
   const {
     engine,
     table,
@@ -61,8 +99,69 @@ export default function TableSidePanel(props: Props) {
     selectedCell,
   } = props;
 
+  function commitWidth(nextWidth: number) {
+    const clamped = clampWidth(nextWidth);
+    setWidth(clamped);
+    storeWidth(clamped);
+  }
+
+  function beginResize(event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    event.currentTarget.focus();
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const widthAt = (clientX: number) =>
+      clampWidth(startWidth + startX - clientX);
+    const coalescer = createFrameCoalescer<number>(setWidth);
+    const move = (next: MouseEvent) => {
+      coalescer.push(widthAt(next.clientX));
+    };
+    const up = (next: MouseEvent) => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      const nextWidth = widthAt(next.clientX);
+      coalescer.push(nextWidth);
+      coalescer.flush();
+      storeWidth(nextWidth);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
+  function resizeFromKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    let nextWidth: number | null = null;
+    if (event.key === "ArrowLeft") nextWidth = width + KEYBOARD_STEP;
+    if (event.key === "ArrowRight") nextWidth = width - KEYBOARD_STEP;
+    if (event.key === "Home") nextWidth = MIN_WIDTH;
+    if (event.key === "End") nextWidth = MAX_WIDTH;
+    if (nextWidth === null) return;
+    event.preventDefault();
+    commitWidth(nextWidth);
+  }
+
+  const inspectorStyle = {
+    "--table-side-panel-width": `${width}px`,
+  } as CSSProperties;
+
   return (
-    <aside className="tw:w-[clamp(320px,32vw,480px)] tw:max-w-[44%] tw:shrink-0 tw:overflow-auto tw:overscroll-contain tw:border-l tw:border-border-subtle tw:bg-card tw:p-3 tw:@max-[920px]:max-h-[42%] tw:@max-[920px]:w-auto tw:@max-[920px]:max-w-none tw:@max-[760px]:max-h-[44%]">
+    <aside
+      style={inspectorStyle}
+      className="tw:relative tw:w-[var(--table-side-panel-width)] tw:shrink-0 tw:overflow-auto tw:overscroll-contain tw:border-l tw:border-border-subtle tw:bg-card tw:p-3 tw:@max-[920px]:max-h-[42%] tw:@max-[920px]:w-auto tw:@max-[760px]:max-h-[44%]"
+    >
+      <div
+        className="tw:absolute tw:inset-y-0 tw:-left-[3px] tw:z-[var(--ds-z-raised)] tw:w-[7px] tw:cursor-col-resize tw:hover:bg-ring/30 tw:focus-visible:bg-ring/30 tw:focus-visible:outline-none tw:active:bg-ring/30 tw:@max-[920px]:hidden"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t("app.dragResize")}
+        aria-valuemin={MIN_WIDTH}
+        aria-valuemax={MAX_WIDTH}
+        aria-valuenow={width}
+        tabIndex={0}
+        onKeyDown={resizeFromKeyboard}
+        onMouseDown={beginResize}
+        onDoubleClick={() => commitWidth(DEFAULT_WIDTH)}
+      />
       {editor && !reviewing && (
         <RowEditor
           key={`${editor.mode}-${selected}`}
