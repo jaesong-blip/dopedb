@@ -600,7 +600,10 @@ export function DatabaseExplorer({
       <ToolWindowAction
         leading={<EngineMark engine={preset.engine ?? "postgres"} />}
         trailing={<Icon name="chevronRight" />}
-        onClick={() => onNewConnection(preset)}
+        onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          onNewConnection(preset);
+        }}
       >
         {label}
       </ToolWindowAction>
@@ -680,7 +683,10 @@ export function DatabaseExplorer({
           iconOnly
           size="xs"
           variant="ghost"
-          onClick={() => onNewConnection()}
+          onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
+            onNewConnection();
+          }}
           title={t("connections.new")}
           aria-label={t("connections.new")}
         >
@@ -691,7 +697,11 @@ export function DatabaseExplorer({
           size="xs"
           variant="ghost"
           disabled={!selectedConnection}
-          onClick={() => selectedConnection && onEdit(selectedConnection)}
+          onClick={(event) => {
+            if (!selectedConnection) return;
+            event.currentTarget.focus({ preventScroll: true });
+            onEdit(selectedConnection);
+          }}
           title={t("connections.dataSourcesAndDrivers")}
           aria-label={t("connections.dataSourcesAndDrivers")}
         >
@@ -830,7 +840,10 @@ export function DatabaseExplorer({
               <ToolWindowAction
                 leading={<Icon name="moreVertical" />}
                 trailing={<Icon name="chevronRight" />}
-                onClick={() => onNewConnection()}
+                onClick={(event) => {
+                  event.currentTarget.focus({ preventScroll: true });
+                  onNewConnection();
+                }}
               >
                 {t("connections.allDataSources")}
               </ToolWindowAction>

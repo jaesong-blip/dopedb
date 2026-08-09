@@ -190,6 +190,7 @@ export default function ToolbarMenu({
           onClick={(event) => {
             const target = event.target as HTMLElement;
             if (target.closest('button:not(:disabled), [role="menuitem"]')) {
+              triggerRef.current?.focus({ preventScroll: true });
               close();
             }
           }}

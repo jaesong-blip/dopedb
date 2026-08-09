@@ -527,7 +527,9 @@ DopeDB 관찰에서 가져온 역할 계약이다.
 - `ToolbarMenu`, `ToolbarMenuItem`: portal 기반 floating command/check surface와
   공통 command row. `triggerVariant="badge"`는 Explorer의 선택/전체 수처럼
   조밀한 범위 trigger를 소유한다. trigger가 compact 전환이나 tool-window
-  교체로 viewport 밖에 나가면 열린 portal도 함께 닫는다.
+  교체로 viewport 밖에 나가면 열린 portal도 함께 닫는다. command 선택으로
+  menu가 닫힐 때 trigger를 먼저 focus해, 이어서 열린 modal이 macOS pointer
+  경로에서도 실제 호출자를 return-focus owner로 캡처하게 한다.
 - `StatusBadge`, `StatusDot`, `StatusBarItem`, `StatusBarBreadcrumbs`,
   `StatusBarIconButton`, `LoadingLabel`, `InlineNotice`: lifecycle 상태 점,
   semantic success/warning/danger badge, IDE 하단 상태 segment, database

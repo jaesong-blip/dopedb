@@ -98,7 +98,13 @@ export default function ConnectionPicker({
         <h2 className="tw:m-0 tw:text-heading tw:leading-tight">
           {t("app.connectionPickerTitle")}
         </h2>
-        <button className="btn small" onClick={onNew}>
+        <button
+          className="btn small"
+          onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
+            onNew();
+          }}
+        >
           <Icon name="plus" />
           {t("connections.new")}
         </button>
