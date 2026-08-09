@@ -68,6 +68,7 @@ jobs:
           cargo test --package dopedb --lib
           cargo test --package dopedb-protocol --test golden
           cargo test --package dopedb-cli --test terminal_session_e2e
+          cargo test --package acp-plugin-sign
 
   provider_migration:
     name: provider-migration

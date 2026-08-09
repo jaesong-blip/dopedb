@@ -55,6 +55,7 @@ jobs:
             echo "Stable promotion requires an explicit healthy Sentry initialization review." >&2
             exit 1
           fi
+          cargo test --locked -p acp-plugin-sign
           node scripts/agent-runtime/build-acp-plugin.mjs --check-config
 
       - name: Install isolated signature verifier
