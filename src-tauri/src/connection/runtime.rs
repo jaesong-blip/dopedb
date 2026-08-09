@@ -47,6 +47,25 @@ use cache::{
 const MANAGED_RELEASE_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_TARGET_DATABASE_BYTES: usize = 255;
 
+/// A shared cache hit needs another hosted authorization only when the authority
+/// response crossed an asynchronous slot boundary. An uncontended slot is the
+/// exact hand-off boundary: repeating the same hosted request there adds one full
+/// control-plane round trip without closing a different revocation window.
+fn cached_handoff_needs_remote_refresh(
+    requires_remote_rbac: bool,
+    authority_requires_refresh: bool,
+) -> bool {
+    requires_remote_rbac && authority_requires_refresh
+}
+
+#[cfg(test)]
+pub(crate) fn assert_warm_cache_authorization_contract() {
+    assert!(!cached_handoff_needs_remote_refresh(true, false));
+    assert!(cached_handoff_needs_remote_refresh(true, true));
+    assert!(!cached_handoff_needs_remote_refresh(false, false));
+    assert!(!cached_handoff_needs_remote_refresh(false, true));
+}
+
 fn resolve_target_database(
     profile: &ConnectionProfile,
     requested: Option<&str>,
@@ -439,55 +458,83 @@ impl ConnectionContext {
                 .entry(key.clone())
                 .or_insert_with(|| Arc::new(Mutex::new(ConnectionSlot::default())))
                 .clone();
+            // `authorize_pin` completed immediately before this lookup. Preserve
+            // that fresh response only while the slot can be acquired without an
+            // await. Contention, retirement, or pool opening keeps the existing
+            // reauthorization path so revocation and generation changes remain
+            // fail-closed at the eventual hand-off.
+            let mut authority_requires_refresh = false;
 
             loop {
-                let mut state = slot.lock().await;
+                let mut state = match slot.try_lock() {
+                    Ok(state) => state,
+                    Err(_) => {
+                        authority_requires_refresh = true;
+                        slot.lock().await
+                    }
+                };
                 if let Some(entry) = state.entry.as_ref() {
                     let is_expired = cache_entry_expired(entry);
                     if !is_expired {
                         let entry = Arc::clone(entry);
                         drop(state);
-                        // `pin` authorized before potentially waiting on this slot. A
-                        // revoke can occur while another task opens the pool, so authorize
-                        // again at the exact cache-use boundary.
+                        // A contended slot may have spent meaningful time waiting
+                        // for another task to open or retire a pool. Refresh only in
+                        // that case; an immediate hit already carries the response
+                        // obtained at this hand-off boundary.
                         if self.pin.requires_remote_rbac {
-                            let refreshed = match authorize_pin(
-                                self.manager.inner.remote_authority.as_ref(),
-                                self.manager.inner.provider_local.as_ref(),
-                                &self.pin,
-                                self.access,
-                            )
-                            .await
-                            {
-                                Ok(refreshed) => refreshed,
-                                Err(error) => {
-                                    // A provider-local revocation or pin failure is a cache
-                                    // revocation, not merely a failed request. Detach before
-                                    // returning so no later caller can receive this pool.
-                                    drop(entry);
-                                    let retired = self.manager.detach_keys(vec![key.clone()]).await;
-                                    retire_entries(retired).await;
-                                    return Err(error);
-                                }
+                            let refreshed = if cached_handoff_needs_remote_refresh(
+                                true,
+                                authority_requires_refresh,
+                            ) {
+                                Some(
+                                    match authorize_pin(
+                                        self.manager.inner.remote_authority.as_ref(),
+                                        self.manager.inner.provider_local.as_ref(),
+                                        &self.pin,
+                                        self.access,
+                                    )
+                                    .await
+                                    {
+                                        Ok(refreshed) => refreshed,
+                                        Err(error) => {
+                                            // A provider-local revocation or pin failure is a cache
+                                            // revocation, not merely a failed request. Detach before
+                                            // returning so no later caller can receive this pool.
+                                            drop(entry);
+                                            let retired =
+                                                self.manager.detach_keys(vec![key.clone()]).await;
+                                            retire_entries(retired).await;
+                                            return Err(error);
+                                        }
+                                    },
+                                )
+                            } else {
+                                None
                             };
-                            if ConnectionCacheKey::new(
+                            let handoff_authorization =
+                                refreshed.as_ref().unwrap_or(&self.authorization);
+                            let cache_identity_changed = ConnectionCacheKey::new(
                                 &self.pin,
                                 self.access,
-                                refreshed.provider_local_target.as_ref(),
-                                refreshed.provider_local_pin.as_ref(),
+                                handoff_authorization.provider_local_target.as_ref(),
+                                handoff_authorization.provider_local_pin.as_ref(),
                                 &target_database,
-                            ) != key
-                            {
+                            ) != key;
+                            let target_expiry_shrank = provider_target_expiry_shrank(
+                                &entry,
+                                handoff_authorization.provider_local_target.as_ref(),
+                            )?;
+                            if cache_identity_changed {
                                 drop(entry);
                                 let retired = self.manager.detach_keys(vec![key.clone()]).await;
                                 retire_entries(retired).await;
-                                self.authorization = refreshed;
+                                if let Some(refreshed) = refreshed {
+                                    self.authorization = refreshed;
+                                }
                                 continue 'reopen;
                             }
-                            if provider_target_expiry_shrank(
-                                &entry,
-                                refreshed.provider_local_target.as_ref(),
-                            )? {
+                            if target_expiry_shrank {
                                 let retired = {
                                     let mut state = slot.lock().await;
                                     if state
@@ -504,10 +551,14 @@ impl ConnectionContext {
                                 if let Some(retired) = retired {
                                     retire_entries(vec![retired]).await;
                                 }
-                                self.authorization = refreshed;
+                                if let Some(refreshed) = refreshed {
+                                    self.authorization = refreshed;
+                                }
                                 continue 'reopen;
                             }
-                            self.authorization = refreshed;
+                            if let Some(refreshed) = refreshed {
+                                self.authorization = refreshed;
+                            }
                             self.provider_binding_fence_epoch =
                                 self.manager.provider_binding_fence_epoch();
                         }
@@ -579,6 +630,7 @@ impl ConnectionContext {
                 if expired.is_some() {
                     drop(state);
                     retire_entries(expired.into_iter().collect()).await;
+                    authority_requires_refresh = true;
                     continue;
                 }
 

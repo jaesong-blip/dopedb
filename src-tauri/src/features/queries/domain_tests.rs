@@ -211,5 +211,6 @@ fn query_and_skill_security_contracts_stay_fail_closed() {
     crate::features::agents::runtime::assert_acp_plugin_runtime_contract();
     crate::features::knowledge::domain::assert_knowledge_domain_contract();
     crate::features::workspaces::adapters::control_plane::assert_shared_http_client_contract();
+    crate::connection::assert_warm_cache_authorization_contract();
     super::adapters::assert_ephemeral_page_contract();
 }
