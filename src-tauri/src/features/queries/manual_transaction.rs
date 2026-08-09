@@ -1031,13 +1031,14 @@ where
 {
     let started = Instant::now();
     set_namespace(connection, namespace.as_deref()).await?;
-    let (columns, row_count, truncated) = match connection {
+    let (columns, row_count, truncated, first_row_ms) = match connection {
         ManualConnection::Postgres(connection) => {
-            let (columns, row_count, truncated) = executor::read::stream_batched(
+            let (columns, row_count, truncated, first_row_ms) = executor::read::stream_batched(
                 sqlx::query(AssertSqlSafe(sql)).fetch(&mut **connection),
                 max_rows as usize,
                 batch_rows,
                 executor::read::pg_value,
+                started,
                 on_batch,
             )
             .await?;
@@ -1051,14 +1052,15 @@ where
             } else {
                 columns
             };
-            (columns, row_count, truncated)
+            (columns, row_count, truncated, first_row_ms)
         }
         ManualConnection::Mysql(connection) => {
-            let (columns, row_count, truncated) = executor::read::stream_batched(
+            let (columns, row_count, truncated, first_row_ms) = executor::read::stream_batched(
                 sqlx::query(AssertSqlSafe(sql)).fetch(&mut **connection),
                 max_rows as usize,
                 batch_rows,
                 executor::read::mysql_value,
+                started,
                 on_batch,
             )
             .await?;
@@ -1072,14 +1074,15 @@ where
             } else {
                 columns
             };
-            (columns, row_count, truncated)
+            (columns, row_count, truncated, first_row_ms)
         }
         ManualConnection::Sqlite(connection) => {
-            let (columns, row_count, truncated) = executor::read::stream_batched(
+            let (columns, row_count, truncated, first_row_ms) = executor::read::stream_batched(
                 sqlx::query(AssertSqlSafe(sql)).fetch(&mut **connection),
                 max_rows as usize,
                 batch_rows,
                 executor::read::sqlite_value,
+                started,
                 on_batch,
             )
             .await?;
@@ -1093,7 +1096,7 @@ where
             } else {
                 columns
             };
-            (columns, row_count, truncated)
+            (columns, row_count, truncated, first_row_ms)
         }
     };
     if row_count == 0 {
@@ -1108,6 +1111,7 @@ where
         row_count,
         truncated,
         duration_ms: started.elapsed().as_millis() as u64,
+        first_row_ms,
     })
 }
 

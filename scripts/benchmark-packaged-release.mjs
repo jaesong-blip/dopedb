@@ -51,7 +51,7 @@ const requiredActionsByScenario = {
   ],
   "explorer-search": ["explorer-first-expand", "explorer-secondary-expand", "search-everywhere"],
   "query-result": ["query-first-batch", "query-grid-scroll-50k", "query-page-store-1m", "query-cancel", "query-export"],
-  "table-first-row": ["table-first-page"],
+  "table-first-row": ["table-first-page-cold", "table-first-page"],
   "agent-transcript": ["agent-stream-10k", "agent-manual-scroll", "agent-permission", "agent-reconnect"],
   "agent-tools": ["agent-skill-install-all", "agent-skill-reload", "agent-skill-remove-all"],
   "long-lived-data": ["history-10k", "audit-100k", "local-history-50", "dashboard-multi-tile"],
@@ -311,7 +311,7 @@ function parseArguments(args) {
     samples: null,
     workloadSamples: null,
     only: null,
-    output: "src-tauri/benchmarks/packaged-release-summary.json",
+    output: null,
   };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -344,6 +344,9 @@ function parseArguments(args) {
       throw new Error(`unknown argument: ${argument}`);
     }
   }
+  parsed.output ??= parsed.only === null
+    ? "src-tauri/benchmarks/packaged-release-summary.json"
+    : `src-tauri/benchmarks/packaged-release-${parsed.only}-diagnostic.json`;
   return parsed;
 }
 
@@ -820,6 +823,15 @@ function aggregateGroup(group) {
   };
 }
 
+function actionMetricSamples(group, samplesKey, legacyKey) {
+  return group.flatMap((action) => {
+    const samples = action[samplesKey];
+    if (Array.isArray(samples)) return samples.filter(Number.isFinite);
+    const legacy = action[legacyKey];
+    return Number.isFinite(legacy) ? [legacy] : [];
+  });
+}
+
 function aggregateActions(allSamples) {
   const grouped = new Map();
   for (const sample of allSamples) {
@@ -838,6 +850,51 @@ function aggregateActions(allSamples) {
     const ipcPayloadBytes = sum(group.map((action) => action.ipcPayloadBytes));
     const sqliteTransactions = sum(
       group.map((action) => action.sqliteTransactionCount),
+    );
+    const backendRequestToFirstRow = actionMetricSamples(
+      group,
+      "backendRequestToFirstRowSamplesMs",
+      "backendRequestToFirstRowMs",
+    );
+    const backendFirstRowToIpcBatch = actionMetricSamples(
+      group,
+      "backendFirstRowToIpcBatchSamplesMs",
+      "backendFirstRowToIpcBatchMs",
+    );
+    const ipcBatchToReactCommit = actionMetricSamples(
+      group,
+      "ipcBatchToReactCommitSamplesMs",
+      "ipcBatchToReactCommitMs",
+    );
+    const operationClaim = actionMetricSamples(
+      group,
+      "operationClaimSamplesMs",
+      "operationClaimMs",
+    );
+    const poolConnectStart = actionMetricSamples(
+      group,
+      "poolConnectStartSamplesMs",
+      "poolConnectStartMs",
+    );
+    const poolConnectReady = actionMetricSamples(
+      group,
+      "poolConnectReadySamplesMs",
+      "poolConnectReadyMs",
+    );
+    const backendExecuteStart = actionMetricSamples(
+      group,
+      "backendExecuteStartSamplesMs",
+      "backendExecuteStartMs",
+    );
+    const firstRow = actionMetricSamples(
+      group,
+      "firstRowSamplesMs",
+      "firstRowMs",
+    );
+    const firstIpcBatch = actionMetricSamples(
+      group,
+      "firstIpcBatchSamplesMs",
+      "firstIpcBatchMs",
     );
     return [name, {
       runs: group.length,
@@ -864,27 +921,75 @@ function aggregateActions(allSamples) {
       sqliteTransactionsPerSecond: rate(sqliteTransactions, elapsedMs),
       retainedBytesMax: maximum(group.map((action) => action.retainedBytes)),
       backendRequestToFirstRowP50Ms: percentile(
-        group.map((action) => action.backendRequestToFirstRowMs),
+        backendRequestToFirstRow,
         0.5,
       ),
       backendRequestToFirstRowP95Ms: percentile(
-        group.map((action) => action.backendRequestToFirstRowMs),
+        backendRequestToFirstRow,
         0.95,
       ),
       backendFirstRowToIpcBatchP50Ms: percentile(
-        group.map((action) => action.backendFirstRowToIpcBatchMs),
+        backendFirstRowToIpcBatch,
         0.5,
       ),
       backendFirstRowToIpcBatchP95Ms: percentile(
-        group.map((action) => action.backendFirstRowToIpcBatchMs),
+        backendFirstRowToIpcBatch,
         0.95,
       ),
       ipcBatchToReactCommitP50Ms: percentile(
-        group.map((action) => action.ipcBatchToReactCommitMs),
+        ipcBatchToReactCommit,
         0.5,
       ),
       ipcBatchToReactCommitP95Ms: percentile(
-        group.map((action) => action.ipcBatchToReactCommitMs),
+        ipcBatchToReactCommit,
+        0.95,
+      ),
+      operationClaimP50Ms: percentile(
+        operationClaim,
+        0.5,
+      ),
+      operationClaimP95Ms: percentile(
+        operationClaim,
+        0.95,
+      ),
+      poolConnectStartP50Ms: percentile(
+        poolConnectStart,
+        0.5,
+      ),
+      poolConnectStartP95Ms: percentile(
+        poolConnectStart,
+        0.95,
+      ),
+      poolConnectReadyP50Ms: percentile(
+        poolConnectReady,
+        0.5,
+      ),
+      poolConnectReadyP95Ms: percentile(
+        poolConnectReady,
+        0.95,
+      ),
+      backendExecuteStartP50Ms: percentile(
+        backendExecuteStart,
+        0.5,
+      ),
+      backendExecuteStartP95Ms: percentile(
+        backendExecuteStart,
+        0.95,
+      ),
+      firstRowP50Ms: percentile(
+        firstRow,
+        0.5,
+      ),
+      firstRowP95Ms: percentile(
+        firstRow,
+        0.95,
+      ),
+      firstIpcBatchP50Ms: percentile(
+        firstIpcBatch,
+        0.5,
+      ),
+      firstIpcBatchP95Ms: percentile(
+        firstIpcBatch,
         0.95,
       ),
     }];

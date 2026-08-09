@@ -55,6 +55,7 @@ export type PackagedBenchmarkActionName =
   | "query-page-store-1m"
   | "query-cancel"
   | "query-export"
+  | "table-first-page-cold"
   | "table-first-page"
   | "agent-stream-10k"
   | "agent-manual-scroll"
@@ -78,6 +79,14 @@ export type PackagedActionEvidence = {
   backendRequestToFirstRowMs?: number | null;
   backendFirstRowToIpcBatchMs?: number | null;
   ipcBatchToReactCommitMs?: number | null;
+  operationClaimMs?: number | null;
+  poolConnectStartMs?: number | null;
+  poolConnectReadyMs?: number | null;
+  backendExecuteStartMs?: number | null;
+  firstRowMs?: number | null;
+  firstIpcBatchMs?: number | null;
+  /** Renderer-clock timestamp used only to close the IPC-to-paint interval. */
+  ipcBatchAcceptedAtMs?: number | null;
 };
 
 type PackagedActionMetrics = {
@@ -96,6 +105,21 @@ type PackagedActionMetrics = {
   backendRequestToFirstRowMs: number | null;
   backendFirstRowToIpcBatchMs: number | null;
   ipcBatchToReactCommitMs: number | null;
+  backendRequestToFirstRowSamplesMs: number[];
+  backendFirstRowToIpcBatchSamplesMs: number[];
+  ipcBatchToReactCommitSamplesMs: number[];
+  operationClaimMs: number | null;
+  poolConnectStartMs: number | null;
+  poolConnectReadyMs: number | null;
+  backendExecuteStartMs: number | null;
+  firstRowMs: number | null;
+  firstIpcBatchMs: number | null;
+  operationClaimSamplesMs: number[];
+  poolConnectStartSamplesMs: number[];
+  poolConnectReadySamplesMs: number[];
+  backendExecuteStartSamplesMs: number[];
+  firstRowSamplesMs: number[];
+  firstIpcBatchSamplesMs: number[];
 };
 
 const actions = new Map<PackagedBenchmarkActionName, PackagedActionMetrics>();
@@ -206,6 +230,15 @@ function finiteMetric(value: number | null | undefined) {
   return value != null && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
+function appendMetricSample(
+  samples: number[],
+  value: number | null | undefined,
+) {
+  const metric = finiteMetric(value);
+  if (metric != null) samples.push(metric);
+  return metric;
+}
+
 export async function measurePackagedAction(
   name: PackagedBenchmarkActionName,
   action: () => void | PackagedActionEvidence | Promise<void | PackagedActionEvidence>,
@@ -216,7 +249,8 @@ export async function measurePackagedAction(
   const actionWindow: ActionWindow = { startedAt: started, endedAt: null };
   actionWindows.push(actionWindow);
   const evidence = (await action()) ?? {};
-  const ipcBatchArrivedAt = performance.now();
+  const ipcBatchArrivedAt = finiteMetric(evidence.ipcBatchAcceptedAtMs)
+    ?? performance.now();
   await waitForPackagedPaint();
   const paintedAt = performance.now();
   actionWindow.endedAt = paintedAt;
@@ -238,6 +272,21 @@ export async function measurePackagedAction(
     backendRequestToFirstRowMs: null,
     backendFirstRowToIpcBatchMs: null,
     ipcBatchToReactCommitMs: null,
+    backendRequestToFirstRowSamplesMs: [],
+    backendFirstRowToIpcBatchSamplesMs: [],
+    ipcBatchToReactCommitSamplesMs: [],
+    operationClaimMs: null,
+    poolConnectStartMs: null,
+    poolConnectReadyMs: null,
+    backendExecuteStartMs: null,
+    firstRowMs: null,
+    firstIpcBatchMs: null,
+    operationClaimSamplesMs: [],
+    poolConnectStartSamplesMs: [],
+    poolConnectReadySamplesMs: [],
+    backendExecuteStartSamplesMs: [],
+    firstRowSamplesMs: [],
+    firstIpcBatchSamplesMs: [],
   } satisfies PackagedActionMetrics;
   current.samplesMs.push(elapsed);
   current.reactCommitCount += after.reactCommitCount - before.reactCommitCount;
@@ -261,17 +310,44 @@ export async function measurePackagedAction(
     current.retainedBytes,
     Math.max(0, evidence.retainedBytes ?? 0),
   );
-  current.backendRequestToFirstRowMs = finiteMetric(
+  current.backendRequestToFirstRowMs = appendMetricSample(
+    current.backendRequestToFirstRowSamplesMs,
     evidence.backendRequestToFirstRowMs,
   );
-  current.backendFirstRowToIpcBatchMs = finiteMetric(
+  current.backendFirstRowToIpcBatchMs = appendMetricSample(
+    current.backendFirstRowToIpcBatchSamplesMs,
     evidence.backendFirstRowToIpcBatchMs,
   );
-  current.ipcBatchToReactCommitMs = finiteMetric(
+  current.ipcBatchToReactCommitMs = appendMetricSample(
+    current.ipcBatchToReactCommitSamplesMs,
     evidence.ipcBatchToReactCommitMs ??
       (evidence.backendRequestToFirstRowMs != null
         ? paintedAt - ipcBatchArrivedAt
         : null),
+  );
+  current.operationClaimMs = appendMetricSample(
+    current.operationClaimSamplesMs,
+    evidence.operationClaimMs,
+  );
+  current.poolConnectStartMs = appendMetricSample(
+    current.poolConnectStartSamplesMs,
+    evidence.poolConnectStartMs,
+  );
+  current.poolConnectReadyMs = appendMetricSample(
+    current.poolConnectReadySamplesMs,
+    evidence.poolConnectReadyMs,
+  );
+  current.backendExecuteStartMs = appendMetricSample(
+    current.backendExecuteStartSamplesMs,
+    evidence.backendExecuteStartMs,
+  );
+  current.firstRowMs = appendMetricSample(
+    current.firstRowSamplesMs,
+    evidence.firstRowMs,
+  );
+  current.firstIpcBatchMs = appendMetricSample(
+    current.firstIpcBatchSamplesMs,
+    evidence.firstIpcBatchMs,
   );
   actions.set(name, current);
   activeAction = null;

@@ -36,6 +36,11 @@ export type SqlResultExportController = {
   cancel: () => Promise<void>;
 };
 
+export type SqlReadPageObserver = {
+  onFirstBatchAccepted?: (acceptedAtMs: number) => void;
+  onComplete?: (receipt: SqlStreamReceipt) => void;
+};
+
 export function formatSqlFragment(
   sql: string,
   language: "sqlite" | "mysql" | "postgresql",
@@ -398,9 +403,11 @@ export async function runSqlReadPage(
   sql: string,
   origin?: string,
   database?: string,
+  observer?: SqlReadPageObserver,
 ): Promise<QueryResult> {
   let columns: string[] | null = null;
   const rows: unknown[][] = [];
+  let firstBatchAccepted = false;
   const controller = startSqlStream("", (batch) => {
     if (
       columns
@@ -411,6 +418,10 @@ export async function runSqlReadPage(
     }
     if (batch.rows.some((row) => row.length !== batch.columns.length)) {
       throw new Error("SQL page stream returned a row with the wrong width");
+    }
+    if (!firstBatchAccepted) {
+      firstBatchAccepted = true;
+      observer?.onFirstBatchAccepted?.(performance.now());
     }
     columns ??= [...batch.columns];
     rows.push(...batch.rows);
@@ -426,6 +437,7 @@ export async function runSqlReadPage(
     }),
   );
   const receipt = await controller.completion;
+  observer?.onComplete?.(receipt);
   if (receipt.rowCount !== rows.length) {
     throw new Error("SQL page stream receipt did not match accepted rows");
   }

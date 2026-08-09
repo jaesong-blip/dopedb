@@ -27,7 +27,7 @@ use uuid::Uuid;
 #[cfg(feature = "packaged-benchmark")]
 use futures::TryStreamExt;
 #[cfg(feature = "packaged-benchmark")]
-use sqlx::Row;
+use sqlx::{AssertSqlSafe, Connection, Row};
 #[cfg(feature = "packaged-benchmark")]
 use tauri::Manager;
 
@@ -83,6 +83,30 @@ struct ActionMetrics {
     backend_request_to_first_row_ms: Option<f64>,
     backend_first_row_to_ipc_batch_ms: Option<f64>,
     ipc_batch_to_react_commit_ms: Option<f64>,
+    #[serde(default)]
+    backend_request_to_first_row_samples_ms: Vec<f64>,
+    #[serde(default)]
+    backend_first_row_to_ipc_batch_samples_ms: Vec<f64>,
+    #[serde(default)]
+    ipc_batch_to_react_commit_samples_ms: Vec<f64>,
+    operation_claim_ms: Option<f64>,
+    pool_connect_start_ms: Option<f64>,
+    pool_connect_ready_ms: Option<f64>,
+    backend_execute_start_ms: Option<f64>,
+    first_row_ms: Option<f64>,
+    first_ipc_batch_ms: Option<f64>,
+    #[serde(default)]
+    operation_claim_samples_ms: Vec<f64>,
+    #[serde(default)]
+    pool_connect_start_samples_ms: Vec<f64>,
+    #[serde(default)]
+    pool_connect_ready_samples_ms: Vec<f64>,
+    #[serde(default)]
+    backend_execute_start_samples_ms: Vec<f64>,
+    #[serde(default)]
+    first_row_samples_ms: Vec<f64>,
+    #[serde(default)]
+    first_ipc_batch_samples_ms: Vec<f64>,
 }
 
 #[derive(Serialize)]
@@ -157,10 +181,13 @@ pub(crate) async fn packaged_benchmark_config(
 }
 
 #[tauri::command]
-pub(crate) async fn prepare_packaged_benchmark_workload(app: tauri::AppHandle) -> AppResult<()> {
+pub(crate) async fn prepare_packaged_benchmark_workload(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> AppResult<()> {
     #[cfg(not(feature = "packaged-benchmark"))]
     {
-        let _ = app;
+        let _ = (state, app);
         Err(AppError::NotFound(DISABLED.into()))
     }
     #[cfg(feature = "packaged-benchmark")]
@@ -170,6 +197,9 @@ pub(crate) async fn prepare_packaged_benchmark_workload(app: tauri::AppHandle) -
             return Err(AppError::Config(
                 "packaged benchmark workload preparation requires a workload scenario".into(),
             ));
+        }
+        if scenario == "table-first-row" {
+            relocate_table_fixture_connection(state.packaged_benchmark_store()).await?;
         }
         // The config command runs before React mounts. CI launchers can activate a
         // later process between that early call and the first rendered workload,
@@ -187,6 +217,20 @@ pub(crate) async fn prepare_packaged_benchmark_workload(app: tauri::AppHandle) -
         }
         Ok(())
     }
+}
+
+#[cfg(feature = "packaged-benchmark")]
+async fn relocate_table_fixture_connection(store: &crate::store::Store) -> AppResult<()> {
+    let connection_id = Uuid::from_u128(0xbed0_0000_0000_0000_0000_0000_0000_0001);
+    let database = crate::app_paths::data_root()?.join("fixture-00.sqlite");
+    if !database.is_file() {
+        return Err(AppError::Config(
+            "packaged table fixture database is unavailable".into(),
+        ));
+    }
+    let mut profile = store.get_connection(connection_id).await?;
+    profile.database = database.to_string_lossy().into_owned();
+    store.upsert_connection(&profile).await.map(|_| ())
 }
 
 #[tauri::command]
@@ -247,7 +291,6 @@ pub(crate) async fn run_packaged_benchmark_backend(
                     | "query-cancel"
                     | "query-export"
             ),
-            "table-first-row" => action == "table-first-page",
             "agent-transcript" => action == "agent-stream-10k",
             "agent-tools" => action == "agent-skill-reload",
             "long-lived-data" => matches!(
@@ -491,21 +534,40 @@ async fn prepare_connections(store: &crate::store::Store, count: usize) -> AppRe
 }
 
 #[cfg(feature = "packaged-benchmark")]
-async fn prepare_table_data(store: &crate::store::Store) -> AppResult<()> {
-    sqlx::query(
-        r#"WITH digits(d) AS (VALUES(0),(1),(2),(3),(4),(5),(6),(7),(8),(9)),
-           numbers(n) AS (SELECT a.d + 10*b.d FROM digits a, digits b)
-           INSERT INTO query_history
-             (id, connection_id, account_scope, sql, kind, status, row_count,
-              duration_ms, error, executed_at, origin)
-           SELECT printf('benchmark-table-page-%03d', n),
-                  'bed00000-0000-0000-0000-000000000001', 'personal',
-                  printf('SELECT %d /* table page */', n), 'read', 'ok', 1,
-                  n % 10, NULL, printf('2026-01-01T00:00:%02dZ', n % 60), 'manual'
-           FROM numbers"#,
-    )
-    .execute(store.pool())
+async fn prepare_table_data(_store: &crate::store::Store) -> AppResult<()> {
+    const COLUMN_COUNT: usize = 36;
+    let database = crate::app_paths::data_root()?.join("fixture-00.sqlite");
+    let options = sqlx::sqlite::SqliteConnectOptions::new()
+        .filename(database)
+        .create_if_missing(false);
+    let mut connection = sqlx::SqliteConnection::connect_with(&options).await?;
+    let metric_columns = (1..COLUMN_COUNT)
+        .map(|index| format!("metric_{index} INTEGER NOT NULL"))
+        .collect::<Vec<_>>();
+    // Every identifier and expression below is generated only from this closed
+    // integer range; no environment, fixture path, or user input enters SQL.
+    sqlx::query(AssertSqlSafe(format!(
+        "CREATE TABLE benchmark_table (id INTEGER PRIMARY KEY, {})",
+        metric_columns.join(", ")
+    )))
+    .execute(&mut connection)
     .await?;
+    let insert_columns = (1..COLUMN_COUNT)
+        .map(|index| format!("metric_{index}"))
+        .collect::<Vec<_>>();
+    let metric_values = (1..COLUMN_COUNT)
+        .map(|index| format!("(value * {}) % 10000", index + 1))
+        .collect::<Vec<_>>();
+    sqlx::query(AssertSqlSafe(format!(
+        "WITH RECURSIVE rows(value) AS (\
+             SELECT 0 UNION ALL SELECT value + 1 FROM rows WHERE value < 100\
+         ) INSERT INTO benchmark_table (id, {}) SELECT value, {} FROM rows",
+        insert_columns.join(", "),
+        metric_values.join(", ")
+    )))
+    .execute(&mut connection)
+    .await?;
+    connection.close().await?;
     Ok(())
 }
 
@@ -1166,12 +1228,6 @@ async fn packaged_read_receipt(
             256_u64,
             256_usize,
         ),
-        "table-first-page" => (
-            "SELECT rowid, COALESCE(duration_ms, 0), COALESCE(row_count, 0) \
-             FROM query_history ORDER BY executed_at DESC, rowid DESC LIMIT 100",
-            100_u64,
-            100_usize,
-        ),
         "history-10k" => (
             "SELECT rowid, COALESCE(duration_ms, 0), COALESCE(row_count, 0) \
              FROM query_history ORDER BY executed_at DESC, rowid DESC LIMIT 101",
@@ -1251,7 +1307,7 @@ const WORKLOAD_SCENARIOS: [&str; 9] = [
 ];
 
 #[cfg(feature = "packaged-benchmark")]
-const ACTION_NAMES: [&str; 36] = [
+const ACTION_NAMES: [&str; 37] = [
     "sql-editor-10k-type",
     "sql-editor-10k-cursor",
     "sql-editor-10k-format",
@@ -1273,6 +1329,7 @@ const ACTION_NAMES: [&str; 36] = [
     "query-page-store-1m",
     "query-cancel",
     "query-export",
+    "table-first-page-cold",
     "table-first-page",
     "agent-stream-10k",
     "agent-manual-scroll",
@@ -1292,26 +1349,44 @@ const ACTION_NAMES: [&str; 36] = [
 
 #[cfg(feature = "packaged-benchmark")]
 fn valid_action_metrics(measurement: &ActionMetrics) -> bool {
+    let valid_duration = |value: &f64| value.is_finite() && *value >= 0.0 && *value <= 600_000.0;
+    let duration_samples_valid = [
+        &measurement.backend_request_to_first_row_samples_ms,
+        &measurement.backend_first_row_to_ipc_batch_samples_ms,
+        &measurement.ipc_batch_to_react_commit_samples_ms,
+        &measurement.operation_claim_samples_ms,
+        &measurement.pool_connect_start_samples_ms,
+        &measurement.pool_connect_ready_samples_ms,
+        &measurement.backend_execute_start_samples_ms,
+        &measurement.first_row_samples_ms,
+        &measurement.first_ipc_batch_samples_ms,
+    ]
+    .iter()
+    .all(|samples| samples.len() <= 128 && samples.iter().all(&valid_duration));
     let durations_valid = measurement.samples_ms.len() <= 128
-        && measurement
-            .samples_ms
-            .iter()
-            .all(|value| value.is_finite() && *value >= 0.0 && *value <= 600_000.0)
+        && measurement.samples_ms.iter().all(&valid_duration)
+        && duration_samples_valid
         && [
             measurement.react_commit_duration_ms,
             measurement.max_frame_gap_ms,
             measurement.ipc_duration_ms,
         ]
         .iter()
-        .all(|value| value.is_finite() && *value >= 0.0 && *value <= 600_000.0)
+        .all(&valid_duration)
         && [
             measurement.backend_request_to_first_row_ms,
             measurement.backend_first_row_to_ipc_batch_ms,
             measurement.ipc_batch_to_react_commit_ms,
+            measurement.operation_claim_ms,
+            measurement.pool_connect_start_ms,
+            measurement.pool_connect_ready_ms,
+            measurement.backend_execute_start_ms,
+            measurement.first_row_ms,
+            measurement.first_ipc_batch_ms,
         ]
         .iter()
         .flatten()
-        .all(|value| value.is_finite() && *value >= 0.0 && *value <= 600_000.0);
+        .all(valid_duration);
     let counts_valid = [
         measurement.react_commit_count,
         measurement.frame_sample_count,

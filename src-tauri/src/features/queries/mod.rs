@@ -217,6 +217,8 @@ impl QueriesFeature {
         H: FnOnce(OperationId) -> Future + Send,
         Future: std::future::Future<Output = ()> + Send,
     {
+        #[cfg(feature = "packaged-benchmark")]
+        let benchmark_started = std::time::Instant::now();
         let proposal = self
             .application
             .propose_desktop_sql(request)
@@ -257,9 +259,19 @@ impl QueriesFeature {
             // though the durable plan is now safely terminal as well.
             return Err(crate::error::AppError::Safety(error.to_string()));
         }
-        self.run_desktop_sql_stream(proposal.operation_id, owner_webview, capability, emit)
+        #[cfg(feature = "packaged-benchmark")]
+        let execution_offset_ms = benchmark_started.elapsed().as_millis() as u64;
+        let receipt = self
+            .run_desktop_sql_stream(proposal.operation_id, owner_webview, capability, emit)
             .await
-            .map_err(DesktopSqlRunError::into_error)
+            .map_err(DesktopSqlRunError::into_error)?;
+        #[cfg(feature = "packaged-benchmark")]
+        let receipt = {
+            let mut receipt = receipt;
+            receipt.offset_benchmark_stages(execution_offset_ms);
+            receipt
+        };
+        Ok(receipt)
     }
 
     /// Release a proposal that never reached target execution. `Ready` can

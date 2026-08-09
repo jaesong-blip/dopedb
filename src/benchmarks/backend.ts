@@ -6,7 +6,6 @@ export type PackagedBackendAction =
   | "query-start-cancellable-export"
   | "query-cancel"
   | "query-export"
-  | "table-first-page"
   | "agent-stream-10k"
   | "agent-skill-reload"
   | "history-10k"

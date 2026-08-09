@@ -92,7 +92,40 @@ pub(crate) struct DesktopSqlStreamReceipt {
     pub(super) row_count: usize,
     pub(super) truncated: bool,
     pub(super) duration_ms: u64,
+    #[cfg(feature = "packaged-benchmark")]
+    pub(super) benchmark_stages: DesktopSqlStreamBenchmarkStages,
     pub(super) _lease: ConnectionLease,
+}
+
+/// Closed numeric stage offsets emitted only by the isolated packaged benchmark
+/// build. Ordinary Desktop builds do not expose these diagnostics on the wire.
+#[cfg(feature = "packaged-benchmark")]
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct DesktopSqlStreamBenchmarkStages {
+    pub(super) operation_claim_ms: u64,
+    pub(super) pool_connect_start_ms: u64,
+    pub(super) pool_connect_ready_ms: u64,
+    pub(super) backend_execute_start_ms: u64,
+    pub(super) first_row_ms: Option<u64>,
+    pub(super) first_ipc_batch_ms: Option<u64>,
+}
+
+#[cfg(feature = "packaged-benchmark")]
+impl DesktopSqlStreamReceipt {
+    pub(crate) fn offset_benchmark_stages(&mut self, offset_ms: u64) {
+        let stages = &mut self.benchmark_stages;
+        stages.operation_claim_ms = stages.operation_claim_ms.saturating_add(offset_ms);
+        stages.pool_connect_start_ms = stages.pool_connect_start_ms.saturating_add(offset_ms);
+        stages.pool_connect_ready_ms = stages.pool_connect_ready_ms.saturating_add(offset_ms);
+        stages.backend_execute_start_ms = stages.backend_execute_start_ms.saturating_add(offset_ms);
+        stages.first_row_ms = stages
+            .first_row_ms
+            .map(|value| value.saturating_add(offset_ms));
+        stages.first_ipc_batch_ms = stages
+            .first_ipc_batch_ms
+            .map(|value| value.saturating_add(offset_ms));
+    }
 }
 
 impl serde::Serialize for DesktopSqlStreamReceipt {
@@ -107,12 +140,16 @@ impl serde::Serialize for DesktopSqlStreamReceipt {
             row_count: usize,
             truncated: bool,
             duration_ms: u64,
+            #[cfg(feature = "packaged-benchmark")]
+            benchmark_stages: DesktopSqlStreamBenchmarkStages,
         }
         Wire {
             operation_id: self.operation_id,
             row_count: self.row_count,
             truncated: self.truncated,
             duration_ms: self.duration_ms,
+            #[cfg(feature = "packaged-benchmark")]
+            benchmark_stages: self.benchmark_stages,
         }
         .serialize(serializer)
     }

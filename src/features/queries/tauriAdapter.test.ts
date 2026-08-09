@@ -260,12 +260,22 @@ describe("query Tauri adapter", () => {
   });
 
   it("collects a bounded table page through one atomic read stream", async () => {
+    const firstBatchAccepted = vi.fn();
+    const completed = vi.fn();
     let resolveReceipt:
       | ((receipt: {
           operationId: string;
           rowCount: number;
           truncated: boolean;
           durationMs: number;
+          benchmarkStages?: {
+            operationClaimMs: number;
+            poolConnectStartMs: number;
+            poolConnectReadyMs: number;
+            backendExecuteStartMs: number;
+            firstRowMs: number | null;
+            firstIpcBatchMs: number | null;
+          };
         }) => void)
       | undefined;
     invokeMock.mockImplementation((command) => {
@@ -290,6 +300,10 @@ describe("query Tauri adapter", () => {
       "SELECT 1",
       "data-view",
       "analytics",
+      {
+        onFirstBatchAccepted: firstBatchAccepted,
+        onComplete: completed,
+      },
     );
     const capability = (invokeMock.mock.calls[0]?.[1] as { capability: string })
       .capability;
@@ -304,6 +318,14 @@ describe("query Tauri adapter", () => {
       rowCount: 1,
       truncated: false,
       durationMs: 4,
+      benchmarkStages: {
+        operationClaimMs: 1,
+        poolConnectStartMs: 2,
+        poolConnectReadyMs: 3,
+        backendExecuteStartMs: 3,
+        firstRowMs: 4,
+        firstIpcBatchMs: 5,
+      },
     });
 
     await expect(resultPromise).resolves.toEqual({
@@ -319,6 +341,11 @@ describe("query Tauri adapter", () => {
     expect(invokeMock.mock.calls.map(([command]) => command)).not.toContain(
       "run_sql",
     );
+    expect(firstBatchAccepted).toHaveBeenCalledTimes(1);
+    expect(firstBatchAccepted).toHaveBeenCalledWith(expect.any(Number));
+    expect(completed).toHaveBeenCalledWith(expect.objectContaining({
+      benchmarkStages: expect.objectContaining({ firstRowMs: 4 }),
+    }));
   });
 
   it("rejects and cancels a table page batch with the wrong row width", async () => {

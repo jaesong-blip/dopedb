@@ -57,6 +57,15 @@ export type SqlStreamReceipt = {
   rowCount: number;
   truncated: boolean;
   durationMs: number;
+  /** Present only in the isolated packaged-benchmark build. */
+  benchmarkStages?: {
+    operationClaimMs: number;
+    poolConnectStartMs: number;
+    poolConnectReadyMs: number;
+    backendExecuteStartMs: number;
+    firstRowMs: number | null;
+    firstIpcBatchMs: number | null;
+  };
 };
 
 export type ManualTransactionStatus = {

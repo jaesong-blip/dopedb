@@ -57,6 +57,8 @@ import {
   setPackagedBenchmarkCompactWindow,
   type PackagedBenchmarkFailureReason,
 } from "../features/runtime/tauriAdapter";
+import { runSqlReadPage } from "../features/queries/tauriAdapter";
+import type { SqlStreamReceipt } from "../features/queries/domain";
 import { useI18n } from "../lib/i18n";
 import { messages } from "../lib/i18n/catalog";
 import type { Lang } from "../lib/i18n/types";
@@ -460,17 +462,78 @@ function TableFirstRowScenario() {
   const [result, setResult] = useState<QueryResult>(() => queryResult(0));
 
   useScenarioRunner(true, async () => {
+    await runTablePage("table-first-page-cold");
     for (let index = 0; index < ACTION_SAMPLES; index += 1) {
-      setResult(queryResult(0));
-      await waitForPackagedPaint();
-      await measurePackagedAction("table-first-page", async () => {
-        const receipt = await runPackagedBenchmarkBackend("table-first-page");
-        setResult(receiptResult(receipt));
-        return backendEvidence(receipt);
-      });
+      await runTablePage("table-first-page");
     }
     await finishBenchmark();
   });
+
+  async function runTablePage(
+    action: "table-first-page-cold" | "table-first-page",
+  ) {
+    setResult(queryResult(0));
+    await waitForPackagedPaint();
+    await measurePackagedAction(action, async () => {
+      const observation: {
+        firstBatchAcceptedAtMs: number | null;
+        stages: NonNullable<SqlStreamReceipt["benchmarkStages"]> | null;
+      } = {
+        firstBatchAcceptedAtMs: null,
+        stages: null,
+      };
+      const pageResult = await runSqlReadPage(
+        FIXTURE_CONNECTION_ID,
+        "SELECT * FROM benchmark_table LIMIT 101 OFFSET 0",
+        "packaged-benchmark",
+        undefined,
+        {
+          onFirstBatchAccepted: (acceptedAtMs) => {
+            observation.firstBatchAcceptedAtMs = acceptedAtMs;
+          },
+          onComplete: (receipt) => {
+            observation.stages = receipt.benchmarkStages ?? null;
+          },
+        },
+      );
+      if (pageResult.columns.length !== DENSE_GRID_COLUMN_COUNT) {
+        throw new Error("Table benchmark fixture column count changed");
+      }
+      if (pageResult.rows.length !== 101) {
+        throw new Error("Table benchmark fixture page size changed");
+      }
+      const rows = pageResult.rows.slice(0, 100);
+      const visibleResult = {
+        ...pageResult,
+        rows,
+        rowCount: rows.length,
+        truncated: true,
+      };
+      const ipcPayloadBytes = new TextEncoder().encode(JSON.stringify({
+        columns: pageResult.columns,
+        rows: pageResult.rows,
+      })).byteLength;
+      const { stages } = observation;
+      setResult(visibleResult);
+      return {
+        ipcPayloadBytes,
+        retainedBytes: ipcPayloadBytes,
+        sqliteTransactionCount: 0,
+        backendRequestToFirstRowMs: stages?.firstRowMs ?? null,
+        backendFirstRowToIpcBatchMs:
+          stages?.firstRowMs != null && stages.firstIpcBatchMs != null
+            ? Math.max(0, stages.firstIpcBatchMs - stages.firstRowMs)
+            : null,
+        operationClaimMs: stages?.operationClaimMs ?? null,
+        poolConnectStartMs: stages?.poolConnectStartMs ?? null,
+        poolConnectReadyMs: stages?.poolConnectReadyMs ?? null,
+        backendExecuteStartMs: stages?.backendExecuteStartMs ?? null,
+        firstRowMs: stages?.firstRowMs ?? null,
+        firstIpcBatchMs: stages?.firstIpcBatchMs ?? null,
+        ipcBatchAcceptedAtMs: observation.firstBatchAcceptedAtMs,
+      } satisfies PackagedActionEvidence;
+    });
+  }
 
   return (
     <BenchmarkSurface title="Table data · local SQLite · first 100-row page">

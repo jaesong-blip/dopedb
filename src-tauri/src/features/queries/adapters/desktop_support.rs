@@ -15,6 +15,8 @@ use crate::safety;
 use crate::safety::PoolRef;
 use crate::store::PinnedConnection;
 
+#[cfg(feature = "packaged-benchmark")]
+use super::desktop_contracts::DesktopSqlStreamBenchmarkStages;
 use super::desktop_contracts::{
     DesktopSqlExecutionFailure, DesktopSqlRunBlocked, DesktopSqlRunError, DesktopSqlStreamReceipt,
     StoredDesktopSqlPayload, DESKTOP_SQL_PAYLOAD_SCHEMA_VERSION,
@@ -184,9 +186,10 @@ impl QueryPlatformAdapter {
             self.desktop_streams.clone(),
             operation_id,
         );
+        let operation_claim_ms = operation_started.elapsed().as_millis() as u64;
         tracing::debug!(
             phase = TRACE_OPERATION_CLAIM,
-            duration_ms = operation_started.elapsed().as_millis() as u64,
+            duration_ms = operation_claim_ms,
             "desktop query stream phase"
         );
         if cancellation.is_cancelled() || self.desktop_streams.is_cancelled(operation_id) {
@@ -203,9 +206,10 @@ impl QueryPlatformAdapter {
                 "query cancelled".into(),
             )));
         }
+        let pool_connect_start_ms = operation_started.elapsed().as_millis() as u64;
         tracing::debug!(
             phase = TRACE_POOL_CONNECT_START,
-            duration_ms = operation_started.elapsed().as_millis() as u64,
+            duration_ms = pool_connect_start_ms,
             "desktop query stream phase"
         );
         let lease = match scope
@@ -225,9 +229,10 @@ impl QueryPlatformAdapter {
                 return result;
             }
         };
+        let pool_connect_ready_ms = operation_started.elapsed().as_millis() as u64;
         tracing::debug!(
             phase = TRACE_POOL_CONNECT_READY,
-            duration_ms = operation_started.elapsed().as_millis() as u64,
+            duration_ms = pool_connect_ready_ms,
             "desktop query stream phase"
         );
         let live = match lease.live().sql() {
@@ -242,6 +247,7 @@ impl QueryPlatformAdapter {
         };
         let mut sequence = 0_u64;
         let mut first_batch_ms = None;
+        let mut first_ipc_batch_ms = None;
         let mut stream = match self.desktop_streams.begin_reserved(
             operation_id,
             &owner_webview,
@@ -263,9 +269,10 @@ impl QueryPlatformAdapter {
                 return result;
             }
         };
+        let backend_execute_start_ms = operation_started.elapsed().as_millis() as u64;
         tracing::debug!(
             phase = TRACE_BACKEND_EXECUTE_START,
-            duration_ms = operation_started.elapsed().as_millis() as u64,
+            duration_ms = backend_execute_start_ms,
             "desktop query stream phase"
         );
         let mut consume_batch = |batch: executor::read::ReadBatch| {
@@ -290,6 +297,9 @@ impl QueryPlatformAdapter {
                 .borrow()
                 .dispatch(batch_sequence, event, &mut emit)
                 .map_err(stream_sink_error);
+            if dispatched.is_ok() && first_ipc_batch_ms.is_none() {
+                first_ipc_batch_ms = Some(operation_started.elapsed().as_millis() as u64);
+            }
             tracing::debug!(
                 phase = TRACE_SERIALIZE_CHANNEL_SEND,
                 duration_ms = send_started.elapsed().as_millis() as u64,
@@ -416,6 +426,17 @@ impl QueryPlatformAdapter {
                         row_count: summary.row_count,
                         truncated: summary.truncated,
                         duration_ms: summary.duration_ms,
+                        #[cfg(feature = "packaged-benchmark")]
+                        benchmark_stages: DesktopSqlStreamBenchmarkStages {
+                            operation_claim_ms,
+                            pool_connect_start_ms,
+                            pool_connect_ready_ms,
+                            backend_execute_start_ms,
+                            first_row_ms: summary
+                                .first_row_ms
+                                .map(|value| backend_execute_start_ms.saturating_add(value)),
+                            first_ipc_batch_ms,
+                        },
                         _lease: lease,
                     });
                 }
@@ -481,6 +502,17 @@ impl QueryPlatformAdapter {
                     row_count: summary.row_count,
                     truncated: summary.truncated,
                     duration_ms: summary.duration_ms,
+                    #[cfg(feature = "packaged-benchmark")]
+                    benchmark_stages: DesktopSqlStreamBenchmarkStages {
+                        operation_claim_ms,
+                        pool_connect_start_ms,
+                        pool_connect_ready_ms,
+                        backend_execute_start_ms,
+                        first_row_ms: summary
+                            .first_row_ms
+                            .map(|value| backend_execute_start_ms.saturating_add(value)),
+                        first_ipc_batch_ms,
+                    },
                     _lease: lease,
                 })
             }

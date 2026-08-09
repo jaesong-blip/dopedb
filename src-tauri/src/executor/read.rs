@@ -58,6 +58,7 @@ pub(crate) struct StreamedRead {
     pub row_count: usize,
     pub truncated: bool,
     pub duration_ms: u64,
+    pub first_row_ms: Option<u64>,
 }
 
 /// Desktop streaming read with an application-owned bounded batch size. This is
@@ -83,7 +84,7 @@ where
     let batch_rows = batch_rows.clamp(1, 256);
     let max = max_rows as usize;
     let inner = async {
-        let (columns, row_count, truncated) = match &live.read_pool {
+        let (columns, row_count, truncated, first_row_ms) = match &live.read_pool {
             Pool::Postgres(pool) => {
                 if let Some(namespace) = namespace.as_deref() {
                     let mut transaction = pool.begin().await?;
@@ -92,11 +93,12 @@ where
                     sqlx::query(AssertSqlSafe(context))
                         .execute(&mut *transaction)
                         .await?;
-                    let (columns, row_count, truncated) = stream_batched(
+                    let (columns, row_count, truncated, first_row_ms) = stream_batched(
                         sqlx::query(AssertSqlSafe(sql)).fetch(&mut *transaction),
                         max,
                         batch_rows,
                         pg_value,
+                        started,
                         &mut on_batch,
                     )
                     .await?;
@@ -111,40 +113,58 @@ where
                         columns
                     };
                     transaction.rollback().await?;
-                    (columns, row_count, truncated)
+                    (columns, row_count, truncated, first_row_ms)
                 } else {
-                    let (columns, row_count, truncated) = stream_batched(
+                    let (columns, row_count, truncated, first_row_ms) = stream_batched(
                         sqlx::query(AssertSqlSafe(sql)).fetch(pool),
                         max,
                         batch_rows,
                         pg_value,
+                        started,
                         &mut on_batch,
                     )
                     .await?;
-                    (with_headers(columns, pool, sql).await, row_count, truncated)
+                    (
+                        with_headers(columns, pool, sql).await,
+                        row_count,
+                        truncated,
+                        first_row_ms,
+                    )
                 }
             }
             Pool::Mysql(pool) => {
-                let (columns, row_count, truncated) = stream_batched(
+                let (columns, row_count, truncated, first_row_ms) = stream_batched(
                     sqlx::query(AssertSqlSafe(sql)).fetch(pool),
                     max,
                     batch_rows,
                     mysql_value,
+                    started,
                     &mut on_batch,
                 )
                 .await?;
-                (with_headers(columns, pool, sql).await, row_count, truncated)
+                (
+                    with_headers(columns, pool, sql).await,
+                    row_count,
+                    truncated,
+                    first_row_ms,
+                )
             }
             Pool::Sqlite(pool) => {
-                let (columns, row_count, truncated) = stream_batched(
+                let (columns, row_count, truncated, first_row_ms) = stream_batched(
                     sqlx::query(AssertSqlSafe(sql)).fetch(pool),
                     max,
                     batch_rows,
                     sqlite_value,
+                    started,
                     &mut on_batch,
                 )
                 .await?;
-                (with_headers(columns, pool, sql).await, row_count, truncated)
+                (
+                    with_headers(columns, pool, sql).await,
+                    row_count,
+                    truncated,
+                    first_row_ms,
+                )
             }
         };
         // Keep zero-row metadata inside the same cancellation/timeout envelope as
@@ -157,15 +177,16 @@ where
             })
             .await?;
         }
-        Ok::<_, AppError>((columns, row_count, truncated))
+        Ok::<_, AppError>((columns, row_count, truncated, first_row_ms))
     };
-    let (columns, row_count, truncated) =
+    let (columns, row_count, truncated, first_row_ms) =
         cancel::guard_registered(cancellation, cancel::QUERY_TIMEOUT, inner).await?;
     Ok(StreamedRead {
         columns,
         row_count,
         truncated,
         duration_ms: started.elapsed().as_millis() as u64,
+        first_row_ms,
     })
 }
 
@@ -391,8 +412,9 @@ pub(crate) async fn stream_batched<S, R, F, Fut>(
     max_rows: usize,
     batch_rows: usize,
     decode: impl Fn(&R, usize) -> Value,
+    started: Instant,
     on_batch: &mut F,
-) -> AppResult<(Vec<String>, usize, bool)>
+) -> AppResult<(Vec<String>, usize, bool, Option<u64>)>
 where
     S: futures::Stream<Item = Result<R, sqlx::Error>> + Unpin,
     R: Row,
@@ -407,7 +429,9 @@ where
     let mut batch_bytes = 0_usize;
     let mut row_count = 0_usize;
     let mut truncated = false;
+    let mut first_row_ms = None;
     while let Some(row) = stream.try_next().await? {
+        first_row_ms.get_or_insert_with(|| started.elapsed().as_millis() as u64);
         if columns.is_empty() {
             columns = row
                 .columns()
@@ -459,7 +483,7 @@ where
         })
         .await?;
     }
-    Ok((columns, row_count, truncated))
+    Ok((columns, row_count, truncated, first_row_ms))
 }
 
 async fn stream_byte_capped<S, R>(

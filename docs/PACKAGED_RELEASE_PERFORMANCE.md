@@ -24,7 +24,9 @@ pnpm benchmark:packaged-release -- --samples 1 --workload-samples 1
 
 한 workload의 실행 오류를 좁힐 때만 `--only query-result`처럼 닫힌 scenario 이름을
 지정할 수 있다. 선택 실행 artifact는 `methodology.diagnosticSelection`이 채워지며
-전체 baseline으로 취급하지 않는다.
+전체 baseline으로 취급하지 않는다. `--output`을 따로 지정하지 않은 선택 실행은
+tracked baseline을 덮어쓰지 않고 gitignored
+`src-tauri/benchmarks/packaged-release-<scenario>-diagnostic.json`에 기록된다.
 
 수동 GitHub workflow도 `scenario=all`만 전체 baseline으로 취급한다. 특정 회귀만
 재검증할 때는 같은 패키지·계측 경계를 유지한 채 하나의 scenario를 골라 diagnostic
@@ -50,7 +52,7 @@ pnpm benchmark:packaged-release -- --output src-tauri/benchmarks/packaged-releas
 | SQL editor | 정확히 10 KiB/100 KiB/1 MiB 문서 | 입력, cursor 이동, format, run → 두 번째 animation frame |
 | Explorer/Search | 20 connections, 50 databases, 5,000 objects | renderer process당 실제 첫/두 번째 expand 1회, Search Everywhere → 두 번째 frame; 반복 collapse GC는 first-use 수치에서 제외 |
 | Query result | 256행 first batch, 50,000행 grid, production disk store의 1,000,000행 | first batch, scroll, page-store, 진행 중 CSV export 취소와 partial 정리, 전체 CSV export |
-| Table first row | production SQLite의 기본 100행 table page | 빈 grid에서 local page query → 첫 grid paint p50/p95와 backend/IPC/commit 단계 |
+| Table first row | 실제 connection profile이 가리키는 36-column production SQLite table의 기본 100행 + look-ahead page | 빈 grid에서 첫 process cold page와 이어지는 warm page를 각각 `run_sql_read_page_stream`으로 실행 → 첫 grid paint p50/p95와 operation/pool/backend/IPC/commit 단계 |
 | Agent | 10분 timestamp 범위의 10,000 ACP event | stream projection과 64-event SQLite batch persistence, manual scroll, permission pending, reconnect |
 | Agent tools | 격리된 clean HOME, Codex·Claude Code 두 Skill target | exact inventory fingerprint로 동시 설치, manager 재생성 뒤 revision·digest 재검사, 동시 제거 |
 | Long-lived data | history 10,000, audit 100,000, 1 MiB revision 50개, dashboard 8개 | production SQLite의 bounded page/detail 경로 |
@@ -66,7 +68,7 @@ OS file cache 자체를 강제로 비우지는 않으므로 hardware와 OS가 �
 
 - startup stage와 first-shell p50/p95
 - action → 두 번째 paint p50/p95
-- backend request → first row → IPC batch → React commit
+- table page의 operation claim → pool connect start/ready → backend execute/first row → IPC batch → React commit
 - React commit 수/시간, frame gap과 50 ms 초과 frame 수
 - IPC 호출/시간/payload, SQLite transaction, retained result/cache bytes
 - process tree RSS와 WebView가 제공할 때만 JS heap
