@@ -1,0 +1,11 @@
+[package]
+name = "acp-plugin-sign"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+minisign = "0.9.1"
+
+[dev-dependencies]
+tempfile = "3"

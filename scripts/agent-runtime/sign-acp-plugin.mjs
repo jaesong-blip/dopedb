@@ -21,7 +21,7 @@ if (!artifact.startsWith(`${input}/`) || basename(artifact) !== `${metadata.plug
   fail("ACP artifact escaped its build directory");
 }
 const artifactSignaturePath = `${artifact}.minisig`;
-await minisign(key, artifact, artifactSignaturePath);
+await sign(key, artifact, artifactSignaturePath);
 const artifactSignature = await readFile(artifactSignaturePath, "utf8");
 const manifest = {
   schemaVersion: 1,
@@ -54,7 +54,7 @@ const canonical = JSON.stringify(manifest);
 const canonicalPath = join(input, `${metadata.plugin.provider}.manifest.canonical.json`);
 await writeFile(canonicalPath, canonical);
 const signaturePath = `${canonicalPath}.minisig`;
-await minisign(key, canonicalPath, signaturePath);
+await sign(key, canonicalPath, signaturePath);
 const envelope = {
   manifest,
   manifestSha256: createHash("sha256").update(canonical).digest("hex"),
@@ -65,14 +65,27 @@ const output = join(input, `${metadata.plugin.provider}.manifest.json`);
 await writeFile(output, `${JSON.stringify(envelope, null, 2)}\n`);
 console.log(output);
 
-function minisign(secretKey, message, signature) {
+function sign(secretKey, message, signature) {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn("minisign", ["-S", "-s", secretKey, "-m", message, "-x", signature], {
+    const child = spawn("cargo", [
+      "run",
+      "--locked",
+      "--quiet",
+      "-p",
+      "acp-plugin-sign",
+      "--",
+      "--secret-key",
+      secretKey,
+      "--message",
+      message,
+      "--signature",
+      signature,
+    ], {
       stdio: ["ignore", "inherit", "inherit"],
       env: process.env,
     });
     child.on("error", rejectPromise);
-    child.on("exit", (code) => code === 0 ? resolvePromise() : rejectPromise(new Error(`minisign exited ${code}`)));
+    child.on("exit", (code) => code === 0 ? resolvePromise() : rejectPromise(new Error(`ACP signer exited ${code}`)));
   });
 }
 

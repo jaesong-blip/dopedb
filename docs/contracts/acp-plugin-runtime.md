@@ -80,6 +80,10 @@ without changing the app, CLI, or Skill version. Compatibility CI starts each
 entrypoint with bundled Node. The pin watcher opens an exact source/lock update
 PR when an official adapter changes. Stable promotion is explicitly gated and
 publishes immutable version artifacts plus the closed stable manifest alias.
+The protected job opens the Minisign key with the configured password through
+the non-interactive `acp-plugin-sign` Rust helper; it never depends on a TTY or
+prints the password. An intentionally empty key password is still passed as an
+explicit empty value so Minisign cannot fall back to an interactive prompt.
 
 At runtime, startup schedules (but does not await) a 24-hour-coalesced update
 check for installed plugins only. Download, verification, candidate promotion,

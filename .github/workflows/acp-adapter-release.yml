@@ -42,6 +42,8 @@ jobs:
         with:
           node-version: 24
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Validate promotion gate
         shell: bash
         env:
