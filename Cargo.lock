@@ -1579,7 +1579,7 @@ dependencies = [
 
 [[package]]
 name = "dopedb"
-version = "0.3.35"
+version = "0.3.36"
 dependencies = [
  "agent-client-protocol",
  "calamine",
@@ -1643,7 +1643,7 @@ dependencies = [
 
 [[package]]
 name = "dopedb-cli"
-version = "0.3.35"
+version = "0.3.36"
 dependencies = [
  "chrono",
  "clap",
