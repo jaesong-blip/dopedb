@@ -171,16 +171,18 @@ function validateCatalog(value, pinPackage) {
 }
 
 async function validateSigningPublicKey(value) {
-  const acpPublicKey = (await readFile(acpPublicKeyPath, "utf8")).trimEnd();
+  const normalizePublicKey = (key) => key.replace(/\r\n?/gu, "\n").trimEnd();
+  const acpPublicKey = normalizePublicKey(
+    await readFile(acpPublicKeyPath, "utf8"),
+  );
   const tauriConfig = JSON.parse(await readFile(tauriConfigPath, "utf8"));
   const encodedUpdaterPublicKey = tauriConfig.plugins?.updater?.pubkey;
   if (typeof encodedUpdaterPublicKey !== "string" || !encodedUpdaterPublicKey) {
     fail("the Tauri updater public key is missing");
   }
-  const updaterPublicKey = Buffer.from(
-    encodedUpdaterPublicKey,
-    "base64",
-  ).toString("utf8").trimEnd();
+  const updaterPublicKey = normalizePublicKey(
+    Buffer.from(encodedUpdaterPublicKey, "base64").toString("utf8"),
+  );
   if (acpPublicKey !== updaterPublicKey) {
     fail("the ACP plugin and protected updater signing public keys differ");
   }
