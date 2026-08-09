@@ -5,12 +5,13 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use dopedb_protocol::{AcpPluginId, SignedAcpPluginManifestV1};
 use futures::StreamExt;
 use reqwest::redirect::{Attempt, Policy};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
@@ -28,10 +29,17 @@ use super::verification::{
 };
 
 const MAX_MANIFEST_BYTES: u64 = 128 * 1024;
+const MAX_CATALOG_REFS_BYTES: u64 = 256 * 1024;
+// Request one more slot than the supported catalog so pagination can never
+// make the app silently select an old release.
+const MAX_CATALOG_REFS: usize = 99;
+const MAX_CATALOG_RELEASE_FALLBACKS: usize = 8;
 const MAX_STATE_BYTES: u64 = 1024 * 1024;
 const MAX_FAILURE_BYTES: usize = 4 * 1024;
 const MAX_QUARANTINE_RECORDS_PER_PLUGIN: usize = 16;
-const CATALOG_RELEASE: &str = "acp-bundle-stable";
+const CATALOG_REFS_URL: &str =
+    "https://api.github.com/repos/json-choi/dopedb/git/matching-refs/tags/acp-bundle-v?per_page=100";
+const CATALOG_RESOLUTION_TTL: Duration = Duration::from_secs(15 * 60);
 const UPDATE_CHECK_INTERVAL: chrono::Duration = chrono::Duration::hours(24);
 
 #[derive(Clone)]
@@ -44,6 +52,19 @@ struct Inner {
     client: reqwest::Client,
     mutation: tokio::sync::Mutex<()>,
     phases: Mutex<BTreeMap<AcpPluginId, AcpPluginInstallationState>>,
+    catalog_release: Mutex<Option<CachedCatalogRelease>>,
+}
+
+#[derive(Clone)]
+struct CachedCatalogRelease {
+    tag: String,
+    resolved_at: Instant,
+}
+
+#[derive(Deserialize)]
+struct GitHubTagRef {
+    #[serde(rename = "ref")]
+    reference: String,
 }
 
 impl AcpPluginManager {
@@ -72,6 +93,7 @@ impl AcpPluginManager {
                 client,
                 mutation: tokio::sync::Mutex::new(()),
                 phases: Mutex::new(BTreeMap::new()),
+                catalog_release: Mutex::new(None),
             }),
         })
     }
@@ -159,10 +181,7 @@ impl AcpPluginManager {
         plugin_id: AcpPluginId,
     ) -> AppResult<AcpPluginMutationReceipt> {
         let runtime = verify_bundled_node(app)?;
-        let manifest_url = manifest_url(plugin_id);
-        let manifest_bytes = self
-            .download_bounded(&manifest_url, MAX_MANIFEST_BYTES)
-            .await?;
+        let (catalog_release, manifest_bytes) = self.download_manifest(plugin_id).await?;
         let envelope: SignedAcpPluginManifestV1 = serde_json::from_slice(&manifest_bytes)
             .map_err(|_| AppError::Network("the ACP plugin manifest is invalid".into()))?;
         if envelope.manifest.plugin_id != plugin_id {
@@ -171,6 +190,11 @@ impl AcpPluginManager {
             });
         }
         verify_manifest(&envelope)?;
+        if envelope.manifest.artifact.url != artifact_url(&catalog_release, plugin_id) {
+            return Err(AppError::Blocked {
+                reason: "the ACP plugin manifest does not belong to its stable release".into(),
+            });
+        }
         verify_compatibility(&envelope.manifest, &runtime)?;
 
         let mut state = self.load_state()?;
@@ -558,17 +582,112 @@ impl AcpPluginManager {
         }
     }
 
-    async fn download_bounded(&self, url: &str, maximum: u64) -> AppResult<Vec<u8>> {
-        let response = self
-            .inner
-            .client
-            .get(url)
+    async fn download_manifest(&self, plugin_id: AcpPluginId) -> AppResult<(String, Vec<u8>)> {
+        if let Some(tag) = self.cached_catalog_release()? {
+            if let Some(bytes) = self.try_download_manifest(&tag, plugin_id).await? {
+                return Ok((tag, bytes));
+            }
+            self.clear_cached_catalog_release(&tag)?;
+        }
+
+        let refs = self
+            .download_bounded(
+                self.inner
+                    .client
+                    .get(CATALOG_REFS_URL)
+                    .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+                    .header("X-GitHub-Api-Version", "2022-11-28"),
+                MAX_CATALOG_REFS_BYTES,
+                "catalog index",
+                false,
+            )
+            .await?
+            .ok_or_else(|| AppError::Network("the ACP plugin catalog index is missing".into()))?;
+        let refs: Vec<GitHubTagRef> = serde_json::from_slice(&refs)
+            .map_err(|_| AppError::Network("the ACP plugin catalog index is invalid".into()))?;
+        if refs.len() > MAX_CATALOG_REFS {
+            return Err(AppError::Network(
+                "the ACP plugin catalog index has too many releases".into(),
+            ));
+        }
+
+        for tag in stable_catalog_tags(refs)
+            .into_iter()
+            .take(MAX_CATALOG_RELEASE_FALLBACKS)
+        {
+            if let Some(bytes) = self.try_download_manifest(&tag, plugin_id).await? {
+                self.cache_catalog_release(tag.clone())?;
+                return Ok((tag, bytes));
+            }
+        }
+        Err(AppError::Network(
+            "no published stable ACP plugin release contains this adapter".into(),
+        ))
+    }
+
+    async fn try_download_manifest(
+        &self,
+        release_tag: &str,
+        plugin_id: AcpPluginId,
+    ) -> AppResult<Option<Vec<u8>>> {
+        self.download_bounded(
+            self.inner.client.get(manifest_url(release_tag, plugin_id)),
+            MAX_MANIFEST_BYTES,
+            "manifest",
+            true,
+        )
+        .await
+    }
+
+    fn cached_catalog_release(&self) -> AppResult<Option<String>> {
+        let cached =
+            self.inner.catalog_release.lock().map_err(|_| {
+                AppError::Config("the ACP plugin catalog cache is unavailable".into())
+            })?;
+        Ok(cached
+            .as_ref()
+            .filter(|entry| entry.resolved_at.elapsed() < CATALOG_RESOLUTION_TTL)
+            .map(|entry| entry.tag.clone()))
+    }
+
+    fn cache_catalog_release(&self, tag: String) -> AppResult<()> {
+        *self.inner.catalog_release.lock().map_err(|_| {
+            AppError::Config("the ACP plugin catalog cache is unavailable".into())
+        })? = Some(CachedCatalogRelease {
+            tag,
+            resolved_at: Instant::now(),
+        });
+        Ok(())
+    }
+
+    fn clear_cached_catalog_release(&self, tag: &str) -> AppResult<()> {
+        let mut cached =
+            self.inner.catalog_release.lock().map_err(|_| {
+                AppError::Config("the ACP plugin catalog cache is unavailable".into())
+            })?;
+        if cached.as_ref().is_some_and(|entry| entry.tag == tag) {
+            *cached = None;
+        }
+        Ok(())
+    }
+
+    async fn download_bounded(
+        &self,
+        request: reqwest::RequestBuilder,
+        maximum: u64,
+        resource: &str,
+        allow_not_found: bool,
+    ) -> AppResult<Option<Vec<u8>>> {
+        let response = request
             .send()
             .await
-            .map_err(|_| AppError::Network("the ACP plugin manifest request failed".into()))?;
+            .map_err(|_| AppError::Network(format!("the ACP plugin {resource} request failed")))?;
+        if allow_not_found && response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
         if !response.status().is_success() {
             return Err(AppError::Network(format!(
-                "the ACP plugin manifest request returned HTTP {}",
+                "the ACP plugin {resource} request returned HTTP {}",
                 response.status().as_u16()
             )));
         }
@@ -576,26 +695,29 @@ impl AcpPluginManager {
             .content_length()
             .is_some_and(|length| length > maximum)
         {
-            return Err(AppError::Network(
-                "the ACP plugin manifest is too large".into(),
-            ));
+            return Err(AppError::Network(format!(
+                "the ACP plugin {resource} is too large"
+            )));
         }
         let mut bytes = Vec::new();
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk
-                .map_err(|_| AppError::Network("the ACP plugin manifest stream failed".into()))?;
+            let chunk = chunk.map_err(|_| {
+                AppError::Network(format!("the ACP plugin {resource} stream failed"))
+            })?;
             if bytes.len().saturating_add(chunk.len()) > maximum as usize {
-                return Err(AppError::Network(
-                    "the ACP plugin manifest is too large".into(),
-                ));
+                return Err(AppError::Network(format!(
+                    "the ACP plugin {resource} is too large"
+                )));
             }
             bytes.extend_from_slice(&chunk);
         }
         if bytes.is_empty() {
-            return Err(AppError::Network("the ACP plugin manifest is empty".into()));
+            return Err(AppError::Network(format!(
+                "the ACP plugin {resource} is empty"
+            )));
         }
-        Ok(bytes)
+        Ok(Some(bytes))
     }
 
     async fn download_artifact(&self, envelope: &SignedAcpPluginManifestV1) -> AppResult<PathBuf> {
@@ -769,11 +891,59 @@ impl AcpPluginManager {
     }
 }
 
-fn manifest_url(plugin_id: AcpPluginId) -> String {
+fn manifest_url(release_tag: &str, plugin_id: AcpPluginId) -> String {
     format!(
-        "https://github.com/json-choi/dopedb/releases/download/{CATALOG_RELEASE}/{}.manifest.json",
+        "https://github.com/json-choi/dopedb/releases/download/{release_tag}/{}.manifest.json",
         plugin_id.provider_slug()
     )
+}
+
+fn artifact_url(release_tag: &str, plugin_id: AcpPluginId) -> String {
+    format!(
+        "https://github.com/json-choi/dopedb/releases/download/{release_tag}/{}.tar.gz",
+        plugin_id.provider_slug()
+    )
+}
+
+fn stable_catalog_tags(refs: Vec<GitHubTagRef>) -> Vec<String> {
+    let mut releases = refs
+        .into_iter()
+        .filter_map(|reference| {
+            catalog_release_version(&reference.reference).map(|version| {
+                (
+                    version,
+                    reference.reference["refs/tags/".len()..].to_owned(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    releases.sort_by(|left, right| right.0.cmp(&left.0));
+    releases.dedup_by(|left, right| left.1 == right.1);
+    releases.into_iter().map(|(_, tag)| tag).collect()
+}
+
+fn catalog_release_version(reference: &str) -> Option<(u32, u32, u32, u32)> {
+    let value = reference.strip_prefix("refs/tags/acp-bundle-v")?;
+    let segments = value.split('.').collect::<Vec<_>>();
+    if segments.len() != 4
+        || segments[0].len() != 4
+        || segments[1].len() != 2
+        || segments[2].len() != 2
+        || segments
+            .iter()
+            .any(|segment| segment.is_empty() || !segment.bytes().all(|byte| byte.is_ascii_digit()))
+        || (segments[3].len() > 1 && segments[3].starts_with('0'))
+    {
+        return None;
+    }
+    let year = segments[0].parse().ok()?;
+    let month = segments[1].parse().ok()?;
+    let day = segments[2].parse().ok()?;
+    let sequence = segments[3].parse().ok()?;
+    if sequence == 0 || chrono::NaiveDate::from_ymd_opt(year as i32, month, day).is_none() {
+        return None;
+    }
+    Some((year, month, day, sequence))
 }
 
 fn safe_redirect(attempt: Attempt<'_>) -> reqwest::redirect::Action {
@@ -782,10 +952,45 @@ fn safe_redirect(attempt: Attempt<'_>) -> reqwest::redirect::Action {
     }
     match attempt.url().host_str() {
         Some(
-            "github.com" | "objects.githubusercontent.com" | "release-assets.githubusercontent.com",
+            "api.github.com"
+            | "github.com"
+            | "objects.githubusercontent.com"
+            | "release-assets.githubusercontent.com",
         ) => attempt.follow(),
         _ => attempt.stop(),
     }
+}
+
+#[cfg(test)]
+pub(super) fn assert_catalog_release_contract() {
+    let tags = stable_catalog_tags(vec![
+        GitHubTagRef {
+            reference: "refs/tags/acp-bundle-v2026.08.09.9".into(),
+        },
+        GitHubTagRef {
+            reference: "refs/tags/acp-bundle-v2026.08.09.10".into(),
+        },
+        GitHubTagRef {
+            reference: "refs/tags/acp-bundle-v2026.08.10.1-candidate".into(),
+        },
+        GitHubTagRef {
+            reference: "refs/tags/acp-bundle-v2026.02.30.1".into(),
+        },
+        GitHubTagRef {
+            reference: "refs/tags/app-v0.3.34".into(),
+        },
+    ]);
+    assert_eq!(
+        tags,
+        vec![
+            "acp-bundle-v2026.08.09.10".to_owned(),
+            "acp-bundle-v2026.08.09.9".to_owned(),
+        ]
+    );
+    assert_eq!(
+        artifact_url(&tags[0], AcpPluginId::Claude),
+        "https://github.com/json-choi/dopedb/releases/download/acp-bundle-v2026.08.09.10/claude.tar.gz"
+    );
 }
 
 fn emit_telemetry(

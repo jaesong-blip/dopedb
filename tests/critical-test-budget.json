@@ -93,7 +93,7 @@
     },
     "tools/release-updater-verify/src/main.rs": {
       "tests": 4,
-      "protects": "Updater digest, signature, and asset closure integrity plus non-interactive ACP manifest signing"
+      "protects": "Updater digest, signature, and asset closure integrity plus non-interactive ACP signing and draft-first immutable publication"
     }
   }
 }

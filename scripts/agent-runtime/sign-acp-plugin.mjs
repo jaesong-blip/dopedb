@@ -11,7 +11,7 @@ const input = resolve(required("--input"));
 const key = resolve(required("--secret-key"));
 const releaseTag = required("--release-tag");
 const releasedAt = required("--released-at");
-if (!/^acp-bundle-[a-z0-9.-]+$/.test(releaseTag)) fail("invalid ACP adapter release tag");
+if (!validReleaseTag(releaseTag)) fail("invalid ACP adapter release tag");
 if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(releasedAt)) fail("released-at must be UTC seconds");
 
 const metadata = JSON.parse(await readFile(join(input, "build-metadata.json"), "utf8"));
@@ -93,6 +93,16 @@ function required(name) {
   const value = args.get(name);
   if (!value) fail(`missing ${name}`);
   return value;
+}
+
+function validReleaseTag(value) {
+  const match = /^acp-bundle-v(\d{4})\.(\d{2})\.(\d{2})\.([1-9]\d*)(?:-candidate)?$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day] = match;
+  const parsed = new Date(`${year}-${month}-${day}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const normalized = parsed.toISOString().slice(0, 10);
+  return normalized === `${year}-${month}-${day}`;
 }
 
 function fail(message) {

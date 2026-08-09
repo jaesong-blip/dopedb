@@ -9,7 +9,7 @@ on:
         type: choice
         options: [claude, codex, all]
       channel:
-        description: Candidate only, or promote the signed manifest to stable
+        description: Publish a candidate, or promote its exact bundle to stable
         required: true
         type: choice
         options: [candidate, stable]
@@ -34,7 +34,7 @@ jobs:
       # Reuse the protected signing environment so the updater key and its
       # password never need to be copied into a second GitHub environment.
       name: stable-release
-      url: https://github.com/${{ github.repository }}/releases/tag/acp-bundle-stable
+      url: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v7
 
@@ -47,17 +47,56 @@ jobs:
       - name: Validate promotion gate
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel }}
+          SELECTED_PLUGIN: ${{ inputs.plugin }}
           SENTRY_HEALTHY: ${{ inputs.confirm_sentry_healthy }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF_TYPE" != "tag" || ! "$GITHUB_REF_NAME" =~ ^acp-bundle-v[0-9]+(\.[0-9]+){3}$ ]]; then
-            echo "ACP releases must run from an existing acp-bundle-vYYYY.MM.DD.N tag." >&2
+          stable_pattern='^acp-bundle-v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]*$'
+          candidate_pattern='^acp-bundle-v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]*-candidate$'
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+            echo "ACP releases must run from an existing owner-created tag." >&2
+            exit 1
+          fi
+          if [[ "$CHANNEL" == "candidate" && ! "$GITHUB_REF_NAME" =~ $candidate_pattern ]]; then
+            echo "Candidate releases require acp-bundle-vYYYY.MM.DD.N-candidate." >&2
+            exit 1
+          fi
+          if [[ "$CHANNEL" == "stable" && ! "$GITHUB_REF_NAME" =~ $stable_pattern ]]; then
+            echo "Stable releases require acp-bundle-vYYYY.MM.DD.N." >&2
+            exit 1
+          fi
+          release_version="${GITHUB_REF_NAME#acp-bundle-v}"
+          release_version="${release_version%-candidate}"
+          IFS=. read -r release_year release_month release_day _ <<< "$release_version"
+          if [[ "$(date -u -d "$release_year-$release_month-$release_day" +%Y.%m.%d 2>/dev/null || true)" != "$release_year.$release_month.$release_day" ]]; then
+            echo "ACP release tags require a real UTC calendar date." >&2
+            exit 1
+          fi
+          if [[ "$CHANNEL" == "stable" && "$SELECTED_PLUGIN" != "all" ]]; then
+            echo "A stable ACP catalog must publish Claude and Codex together." >&2
             exit 1
           fi
           if [[ "$CHANNEL" == "stable" && "$SENTRY_HEALTHY" != "true" ]]; then
             echo "Stable promotion requires an explicit healthy Sentry initialization review." >&2
             exit 1
+          fi
+          if [[ "$CHANNEL" == "stable" ]]; then
+            candidate_tag="$GITHUB_REF_NAME-candidate"
+            release_state="$(gh release view "$candidate_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,isPrerelease \
+              --jq '[.isDraft, .isPrerelease] | @tsv')"
+            if [[ "$release_state" != $'false\ttrue' ]]; then
+              echo "Stable promotion requires the published prerelease $candidate_tag." >&2
+              exit 1
+            fi
+            git fetch --no-tags origin "refs/tags/$candidate_tag:refs/tags/$candidate_tag"
+            if [[ "$(git rev-parse "$candidate_tag^{commit}")" != "$GITHUB_SHA" ]]; then
+              echo "The candidate and stable tags must resolve to the same commit." >&2
+              exit 1
+            fi
           fi
           cargo test --locked -p release-updater-verify
           node scripts/agent-runtime/build-acp-plugin.mjs --check-config
@@ -125,6 +164,32 @@ jobs:
             mv "$output/build-metadata.json" "$output/$plugin.build-metadata.json"
           done
 
+      - name: Verify stable artifacts match the candidate
+        if: inputs.channel == 'stable'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          candidate_tag="$GITHUB_REF_NAME-candidate"
+          for plugin in claude codex; do
+            output="$RUNNER_TEMP/acp-$plugin"
+            candidate="$RUNNER_TEMP/acp-candidate-$plugin"
+            mkdir -p "$candidate"
+            gh release download "$candidate_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$plugin.tar.gz" \
+              --pattern "$plugin.build-metadata.json" \
+              --dir "$candidate"
+            cmp "$output/$plugin.tar.gz" "$candidate/$plugin.tar.gz"
+            jq -S 'del(.artifact.path)' "$output/$plugin.build-metadata.json" \
+              > "$RUNNER_TEMP/$plugin-current-metadata.json"
+            jq -S 'del(.artifact.path)' "$candidate/$plugin.build-metadata.json" \
+              > "$RUNNER_TEMP/$plugin-candidate-metadata.json"
+            cmp "$RUNNER_TEMP/$plugin-current-metadata.json" \
+              "$RUNNER_TEMP/$plugin-candidate-metadata.json"
+          done
+
       - name: Publish verified bundles
         shell: bash
         env:
@@ -138,48 +203,66 @@ jobs:
             plugins=("$SELECTED_PLUGIN")
           fi
           release_tag="$GITHUB_REF_NAME"
+          assets=()
+          expected_names=()
+          for plugin in "${plugins[@]}"; do
+            output="$RUNNER_TEMP/acp-$plugin"
+            for name in \
+              "$plugin.tar.gz" \
+              "$plugin.tar.gz.minisig" \
+              "$plugin.manifest.json" \
+              "$plugin.build-metadata.json"; do
+              assets+=("$output/$name")
+              expected_names+=("$name")
+            done
+          done
 
-          if ! gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            prerelease_args=()
-            if [[ "$CHANNEL" == "candidate" ]]; then prerelease_args+=(--prerelease); fi
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [[ "$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != "true" ]]; then
+              echo "Release $release_tag is already published and immutable." >&2
+              exit 1
+            fi
+          else
             gh release create "$release_tag" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
+              --draft \
               --title "DopeDB ACP adapter bundle $release_tag" \
               --notes "Signed Claude and Codex ACP adapter bundle. The app, CLI, and Skill versions are unchanged." \
-              --latest=false \
-              "${prerelease_args[@]}"
+              --latest=false
           fi
 
-          for plugin in "${plugins[@]}"; do
-            output="$RUNNER_TEMP/acp-$plugin"
-            gh release upload "$release_tag" \
-              --repo "$GITHUB_REPOSITORY" \
-              "$output/$plugin.tar.gz" \
-              "$output/$plugin.tar.gz.minisig" \
-              "$output/$plugin.manifest.json" \
-              "$output/$plugin.build-metadata.json" \
-              --clobber
-          done
+          gh release upload "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            "${assets[@]}" \
+            --clobber
 
-          if [[ "$CHANNEL" == "stable" ]]; then
-            gh release edit "$release_tag" --repo "$GITHUB_REPOSITORY" --prerelease=false
-            if ! gh release view acp-bundle-stable --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release create acp-bundle-stable \
-                --repo "$GITHUB_REPOSITORY" \
-                --verify-tag \
-                --title "DopeDB stable ACP adapter catalog" \
-                --notes "Mutable signed catalog manifests; immutable adapter artifacts remain on versioned acp-bundle tags." \
-                --latest=false
-            fi
-            for plugin in "${plugins[@]}"; do
-              output="$RUNNER_TEMP/acp-$plugin"
-              gh release upload acp-bundle-stable \
-                --repo "$GITHUB_REPOSITORY" \
-                "$output/$plugin.manifest.json" \
-                --clobber
-            done
+          expected="$(printf '%s\n' "${expected_names[@]}" | LC_ALL=C sort)"
+          actual="$(gh release view "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets | map(.name) | sort | .[]')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Draft release asset closure does not match the selected adapters." >&2
+            exit 1
           fi
+
+          release_id="$(gh release view "$release_tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId \
+            --jq .databaseId)"
+          if [[ ! "$release_id" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Release databaseId is missing or invalid." >&2
+            exit 1
+          fi
+          prerelease=false
+          if [[ "$CHANNEL" == "candidate" ]]; then prerelease=true; fi
+          gh api --method PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false \
+            -F prerelease="$prerelease" \
+            -f make_latest=false \
+            --silent
 
       - name: Erase signing material
         if: always()

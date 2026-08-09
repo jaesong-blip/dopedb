@@ -78,11 +78,23 @@ through `CLAUDE_CODE_EXECUTABLE`; Codex uses `CODEX_PATH`.
 `acp-adapter-release.yml` builds and signs candidate or stable adapter bundles
 without changing the app, CLI, or Skill version. Compatibility CI starts each
 entrypoint with bundled Node. The pin watcher opens an exact source/lock update
-PR when an official adapter changes. Stable promotion is explicitly gated and
-publishes both providers into one pre-existing, owner-created
-`acp-bundle-vYYYY.MM.DD.N` immutable release plus the closed stable manifest
-alias. The protected workflow never creates tags, so the repository's
-owner-only tag rule remains intact.
+PR when an official adapter changes. A candidate uses the owner-created
+`acp-bundle-vYYYY.MM.DD.N-candidate` tag. Stable promotion uses the matching
+owner-created `acp-bundle-vYYYY.MM.DD.N` tag, requires both tags to resolve to
+the same commit, and compares each rebuilt archive and normalized build metadata
+with the immutable candidate before publishing both providers together.
+
+Every release remains a draft while all assets are attached and its exact asset
+closure is checked, then one publish operation makes the release immutable.
+There is no mutable `acp-bundle-stable` release: immutable release assets cannot
+serve as a replaceable alias. Desktop instead reads GitHub's bounded matching-tag
+index, ignores `-candidate` tags and malformed dates, and tries the newest eight
+stable version tags until it finds the requested signed manifest. It caches the
+resolved release for 15 minutes and requires the signed artifact URL to belong
+to that exact release tag. This preserves independent adapter updates without
+moving a release tag or weakening repository immutability. The protected
+workflow never creates tags, so the repository's owner-only tag rule remains
+intact.
 The protected job opens the Minisign key with the configured password through
 the non-interactive `acp-plugin-sign` Rust helper; it never depends on a TTY or
 prints the password. An intentionally empty key password is still passed as an

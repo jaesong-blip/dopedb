@@ -441,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn acp_manifest_signing_accepts_an_empty_password_without_a_terminal() {
+    fn acp_release_signing_and_immutable_publication_contract_hold() {
         let temporary = tempfile::tempdir().expect("temporary directory");
         let secret_key_path = temporary.path().join("test.key");
         let message_path = temporary.path().join("message.txt");
@@ -473,5 +473,16 @@ mod tests {
             false,
         )
         .expect("valid signature");
+
+        let workflow = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../.github/workflows/acp-adapter-release.yml"),
+        )
+        .expect("ACP release workflow");
+        assert!(workflow.contains("--draft"));
+        assert!(workflow.contains("-F draft=false"));
+        assert!(workflow.contains("-candidate"));
+        assert!(workflow.contains("Verify stable artifacts match the candidate"));
+        assert!(!workflow.contains("acp-bundle-stable"));
     }
 }

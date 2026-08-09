@@ -118,6 +118,11 @@ may be updated or removed automatically; repair preserves every conflicting dire
 
 Opening an AI Chat starts the official Claude Agent or Codex ACP adapter and pins the
 session to the selected workspace, account, connection revision, and database policy.
+The app discovers only numbered, immutable stable ACP bundle releases; candidate tags
+are never selected by normal clients. A signed manifest must point back to the exact
+stable release that supplied it, and a missing newest release falls back only across a
+bounded list of older stable tags. Adapter publication therefore stays independent of
+app, CLI, and Skill versions without relying on a mutable GitHub Release alias.
 The advanced Shell Terminal uses the same authority boundary through a PTY. A connection,
 account, membership, or authority change revokes either session instead of silently
 retargeting it. Child environments exclude database URLs, provider secrets, API keys,
