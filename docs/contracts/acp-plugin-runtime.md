@@ -84,6 +84,10 @@ The protected job opens the Minisign key with the configured password through
 the non-interactive `acp-plugin-sign` Rust helper; it never depends on a TTY or
 prints the password. An intentionally empty key password is still passed as an
 explicit empty value so Minisign cannot fall back to an interactive prompt.
+The ACP trust anchor is the exact public half of that protected updater signing
+key. Configuration validation compares the complete decoded updater public key
+with `acp-plugin.pub`, not only its key ID, so a drifted or mistyped key fails
+before a bundle is built.
 
 At runtime, startup schedules (but does not await) a 24-hour-coalesced update
 check for installed plugins only. Download, verification, candidate promotion,

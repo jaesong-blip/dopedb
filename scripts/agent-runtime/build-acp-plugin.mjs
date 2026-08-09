@@ -17,6 +17,11 @@ import { spawn } from "node:child_process";
 const repository = resolve(import.meta.dirname, "../..");
 const catalogPath = join(repository, "agent-runtime/plugins/catalog.json");
 const pinsPath = join(repository, "agent-runtime/plugins/package.json");
+const acpPublicKeyPath = join(
+  repository,
+  "src-tauri/resources/agent-runtime/acp-plugin.pub",
+);
+const tauriConfigPath = join(repository, "src-tauri/tauri.conf.json");
 const MAX_FILES = 10_000;
 const MAX_FILE_BYTES = 128 * 1024 * 1024;
 const MAX_UNPACKED_BYTES = 256 * 1024 * 1024;
@@ -30,6 +35,7 @@ const checkOnly = process.argv.includes("--check-config");
 const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
 const pins = JSON.parse(await readFile(pinsPath, "utf8"));
 validateCatalog(catalog, pins);
+await validateSigningPublicKey(catalog);
 if (checkOnly) {
   console.log(`verified ${catalog.plugins.length} pinned ACP adapter bundles`);
   process.exit(0);
@@ -161,6 +167,25 @@ function validateCatalog(value, pinPackage) {
     if (plugin.upstreamRepository !== `https://github.com/agentclientprotocol/${plugin.provider === "claude" ? "claude-agent-acp" : "codex-acp"}`) fail("unexpected upstream repository");
     if (plugin.upstreamTag !== `v${plugin.adapterVersion}` || !/^[0-9a-f]{40}$/.test(plugin.upstreamCommit)) fail("invalid upstream pin");
     if (!/^\d+\.\d+\.\d+$/.test(plugin.adapterBundleVersion)) fail("invalid adapter bundle version");
+  }
+}
+
+async function validateSigningPublicKey(value) {
+  const acpPublicKey = (await readFile(acpPublicKeyPath, "utf8")).trimEnd();
+  const tauriConfig = JSON.parse(await readFile(tauriConfigPath, "utf8"));
+  const encodedUpdaterPublicKey = tauriConfig.plugins?.updater?.pubkey;
+  if (typeof encodedUpdaterPublicKey !== "string" || !encodedUpdaterPublicKey) {
+    fail("the Tauri updater public key is missing");
+  }
+  const updaterPublicKey = Buffer.from(
+    encodedUpdaterPublicKey,
+    "base64",
+  ).toString("utf8").trimEnd();
+  if (acpPublicKey !== updaterPublicKey) {
+    fail("the ACP plugin and protected updater signing public keys differ");
+  }
+  if (!acpPublicKey.split(/\r?\n/u)[0]?.endsWith(value.keyId)) {
+    fail("the ACP plugin signing key ID differs from the catalog");
   }
 }
 
