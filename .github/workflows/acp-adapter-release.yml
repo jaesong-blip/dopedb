@@ -51,6 +51,10 @@ jobs:
           SENTRY_HEALTHY: ${{ inputs.confirm_sentry_healthy }}
         run: |
           set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" != "tag" || ! "$GITHUB_REF_NAME" =~ ^acp-bundle-v[0-9]+(\.[0-9]+){3}$ ]]; then
+            echo "ACP releases must run from an existing acp-bundle-vYYYY.MM.DD.N tag." >&2
+            exit 1
+          fi
           if [[ "$CHANNEL" == "stable" && "$SENTRY_HEALTHY" != "true" ]]; then
             echo "Stable promotion requires an explicit healthy Sentry initialization review." >&2
             exit 1
@@ -88,13 +92,11 @@ jobs:
             exit 1
           fi
 
-      - name: Build, sign, verify, and publish selected bundles
+      - name: Build, sign, and verify selected bundles
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
           MINISIGN_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           SELECTED_PLUGIN: ${{ inputs.plugin }}
-          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           plugins=(claude codex)
@@ -108,12 +110,10 @@ jobs:
             node scripts/agent-runtime/build-acp-plugin.mjs \
               --plugin "$plugin" \
               --output "$output"
-            bundle_version="$(node -e 'const m=require(process.argv[1]); process.stdout.write(m.plugin.adapterBundleVersion)' "$output/build-metadata.json")"
-            release_tag="acp-bundle-$plugin-$bundle_version"
             node scripts/agent-runtime/sign-acp-plugin.mjs \
               --input "$output" \
               --secret-key "$RUNNER_TEMP/acp-plugin.key" \
-              --release-tag "$release_tag" \
+              --release-tag "$GITHUB_REF_NAME" \
               --released-at "$released_at"
 
             minisign -Vm "$output/$plugin.tar.gz" \
@@ -122,44 +122,64 @@ jobs:
             minisign -Vm "$output/$plugin.manifest.canonical.json" \
               -x "$output/$plugin.manifest.canonical.json.minisig" \
               -p src-tauri/resources/agent-runtime/acp-plugin.pub
+            mv "$output/build-metadata.json" "$output/$plugin.build-metadata.json"
+          done
 
-            if ! gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              prerelease_args=()
-              if [[ "$CHANNEL" == "candidate" ]]; then prerelease_args+=(--prerelease); fi
-              gh release create "$release_tag" \
-                --repo "$GITHUB_REPOSITORY" \
-                --target "$GITHUB_SHA" \
-                --title "$plugin ACP adapter $bundle_version" \
-                --notes "Signed independent ACP adapter bundle. The app, CLI, and Skill versions are unchanged." \
-                --latest=false \
-                "${prerelease_args[@]}"
-            fi
-            if [[ "$CHANNEL" == "stable" ]]; then
-              gh release edit "$release_tag" --repo "$GITHUB_REPOSITORY" --prerelease=false
-            fi
+      - name: Publish verified bundles
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SELECTED_PLUGIN: ${{ inputs.plugin }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+          plugins=(claude codex)
+          if [[ "$SELECTED_PLUGIN" != "all" ]]; then
+            plugins=("$SELECTED_PLUGIN")
+          fi
+          release_tag="$GITHUB_REF_NAME"
+
+          if ! gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            prerelease_args=()
+            if [[ "$CHANNEL" == "candidate" ]]; then prerelease_args+=(--prerelease); fi
+            gh release create "$release_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "DopeDB ACP adapter bundle $release_tag" \
+              --notes "Signed Claude and Codex ACP adapter bundle. The app, CLI, and Skill versions are unchanged." \
+              --latest=false \
+              "${prerelease_args[@]}"
+          fi
+
+          for plugin in "${plugins[@]}"; do
+            output="$RUNNER_TEMP/acp-$plugin"
             gh release upload "$release_tag" \
               --repo "$GITHUB_REPOSITORY" \
               "$output/$plugin.tar.gz" \
               "$output/$plugin.tar.gz.minisig" \
               "$output/$plugin.manifest.json" \
-              "$output/build-metadata.json" \
+              "$output/$plugin.build-metadata.json" \
               --clobber
+          done
 
-            if [[ "$CHANNEL" == "stable" ]]; then
-              if ! gh release view acp-bundle-stable --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-                gh release create acp-bundle-stable \
-                  --repo "$GITHUB_REPOSITORY" \
-                  --target "$GITHUB_SHA" \
-                  --title "DopeDB stable ACP adapter catalog" \
-                  --notes "Mutable signed catalog manifests; immutable adapter artifacts remain on versioned acp-bundle tags." \
-                  --latest=false
-              fi
+          if [[ "$CHANNEL" == "stable" ]]; then
+            gh release edit "$release_tag" --repo "$GITHUB_REPOSITORY" --prerelease=false
+            if ! gh release view acp-bundle-stable --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release create acp-bundle-stable \
+                --repo "$GITHUB_REPOSITORY" \
+                --verify-tag \
+                --title "DopeDB stable ACP adapter catalog" \
+                --notes "Mutable signed catalog manifests; immutable adapter artifacts remain on versioned acp-bundle tags." \
+                --latest=false
+            fi
+            for plugin in "${plugins[@]}"; do
+              output="$RUNNER_TEMP/acp-$plugin"
               gh release upload acp-bundle-stable \
                 --repo "$GITHUB_REPOSITORY" \
                 "$output/$plugin.manifest.json" \
                 --clobber
-            fi
-          done
+            done
+          fi
 
       - name: Erase signing material
         if: always()

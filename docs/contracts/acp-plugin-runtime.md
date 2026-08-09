@@ -79,7 +79,10 @@ through `CLAUDE_CODE_EXECUTABLE`; Codex uses `CODEX_PATH`.
 without changing the app, CLI, or Skill version. Compatibility CI starts each
 entrypoint with bundled Node. The pin watcher opens an exact source/lock update
 PR when an official adapter changes. Stable promotion is explicitly gated and
-publishes immutable version artifacts plus the closed stable manifest alias.
+publishes both providers into one pre-existing, owner-created
+`acp-bundle-vYYYY.MM.DD.N` immutable release plus the closed stable manifest
+alias. The protected workflow never creates tags, so the repository's
+owner-only tag rule remains intact.
 The protected job opens the Minisign key with the configured password through
 the non-interactive `acp-plugin-sign` Rust helper; it never depends on a TTY or
 prints the password. An intentionally empty key password is still passed as an
