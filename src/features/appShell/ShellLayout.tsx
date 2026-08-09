@@ -61,6 +61,7 @@ type Props = {
   sidebarWidth: number;
   mainRef: RefObject<HTMLElement | null>;
   terminalButtonRef: RefObject<HTMLButtonElement | null>;
+  searchEverywhereButtonRef: RefObject<HTMLButtonElement | null>;
   mainContent: ReactNode;
   availableUpdate: Update | null;
   showTerminalDock: boolean;
@@ -104,7 +105,7 @@ type Props = {
   onNewQuery: () => void;
   onOpenAgentArchive: () => void;
   onOpenTerminal: () => void;
-  onSearchEverywhere: () => void;
+  onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
   onSelectDashboardConnection: (id: string) => void;
   onDashboardFocus: (id: string | null) => void;
   onSelectWorkspaceConnection: (id: string) => void;
@@ -249,6 +250,7 @@ function ShellLayoutContent(props: Props) {
         onToggleServices={props.onToggleServices}
         onOpenTerminal={props.onOpenTerminal}
         terminalButtonRef={props.terminalButtonRef}
+        searchEverywhereButtonRef={props.searchEverywhereButtonRef}
         onSearchEverywhere={props.onSearchEverywhere}
         onSettings={props.onSettings}
         workspace={

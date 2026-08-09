@@ -12,7 +12,7 @@ export default function Onboarding({
   connectionName?: string;
   onNewConnection: () => void;
   onNewQuery?: () => void;
-  onSearchEverywhere: () => void;
+  onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
 }) {
   const { t } = useI18n();
   const connected = Boolean(connectionName);
@@ -56,7 +56,10 @@ export default function Onboarding({
                 presentation="menuItem"
                 size="compact"
                 variant="ghost"
-                onClick={command.onClick}
+                onClick={(event) => {
+                  event.currentTarget.focus({ preventScroll: true });
+                  command.onClick(event.currentTarget);
+                }}
               >
                 <span className="tw:flex tw:w-full tw:min-w-0 tw:items-center tw:justify-between tw:gap-4">
                   <span className="tw:truncate">{command.label}</span>

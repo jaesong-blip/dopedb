@@ -53,6 +53,7 @@ export function IdeTopBar({
   onToggleServices,
   onOpenTerminal,
   terminalButtonRef,
+  searchEverywhereButtonRef,
   onSearchEverywhere,
   onSettings,
 }: {
@@ -74,7 +75,8 @@ export function IdeTopBar({
   onToggleServices: () => void;
   onOpenTerminal: () => void;
   terminalButtonRef: RefObject<HTMLButtonElement | null>;
-  onSearchEverywhere: () => void;
+  searchEverywhereButtonRef: RefObject<HTMLButtonElement | null>;
+  onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
   onSettings: () => void;
 }) {
   const { t } = useI18n();
@@ -155,8 +157,11 @@ export function IdeTopBar({
         <>
         <div className="tw:size-8 tw:shrink-0">{account}</div>
         <IdeToolbarLauncher
+          buttonRef={searchEverywhereButtonRef}
           active={searchEverywhereOpen}
-          onClick={onSearchEverywhere}
+          onClick={(event) => {
+            onSearchEverywhere(event.currentTarget);
+          }}
           title={t("ide.action.searchEverywhere")}
           aria-label={t("ide.action.searchEverywhere")}
         >

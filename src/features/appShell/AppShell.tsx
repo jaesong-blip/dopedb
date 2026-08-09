@@ -16,7 +16,9 @@ import { errMessage } from "../../ipc/types";
 import type { BackgroundTask } from "../../features/backgroundTasks/domain";
 import { useBackgroundTasks } from "../../features/backgroundTasks/useBackgroundTasks";
 import type { ConnectionProfile } from "../../features/connections/domain";
-import SearchEverywhere from "../../features/actionSearch/SearchEverywhere";
+import SearchEverywhere, {
+  type SearchEverywhereCloseReason,
+} from "../../features/actionSearch/SearchEverywhere";
 import type { SearchEverywhereItem } from "../../features/actionSearch/domain";
 import { useCachedCatalogOverviews } from "../../features/actionSearch/catalogCache";
 import {
@@ -176,6 +178,9 @@ function Shell() {
   const [creatingDemo, setCreatingDemo] = useState(false);
   const [searchEverywhereOpen, setSearchEverywhereOpen] =
     useState(false);
+  const searchEverywhereButtonRef = useRef<HTMLButtonElement | null>(null);
+  const searchEverywhereReturnFocusRef = useRef<HTMLElement | null>(null);
+  const restoreSearchEverywhereFocusRef = useRef(false);
   const lastShiftAtRef = useRef(0);
   const { legacyAuditOpen, restoredDocumentKind } = useRestoredWorkbenchState();
   const [area, setArea] = usePersistentAppArea();
@@ -204,6 +209,28 @@ function Shell() {
   const [settingsSection, setSettingsSection] = useState<
     SettingsSection | undefined
   >(undefined);
+
+  const openSearchEverywhere = useCallback(
+    (returnFocus?: HTMLElement | null) => {
+      const activeElement = document.activeElement;
+      searchEverywhereReturnFocusRef.current =
+        returnFocus ??
+        (activeElement instanceof HTMLElement &&
+        activeElement !== document.body &&
+        activeElement !== document.documentElement
+          ? activeElement
+          : searchEverywhereButtonRef.current);
+      setSearchEverywhereOpen(true);
+    },
+    [],
+  );
+  const closeSearchEverywhere = useCallback(
+    (reason: SearchEverywhereCloseReason) => {
+      restoreSearchEverywhereFocusRef.current = reason === "dismiss";
+      setSearchEverywhereOpen(false);
+    },
+    [],
+  );
   const [explorerRevealRequest, setExplorerRevealRequest] = useState(0);
   const [schemaDiffGroupKey, setSchemaDiffGroupKey] = useState<string | null>(null);
   const { availableUpdate, sync: syncAvailableUpdate } = useAvailableUpdate();
@@ -282,13 +309,32 @@ function Shell() {
   useSqlEditorPreload(selected?.id ?? null, supportsSql);
 
   useEffect(() => {
+    if (
+      searchEverywhereOpen ||
+      !restoreSearchEverywhereFocusRef.current
+    ) {
+      return;
+    }
+    restoreSearchEverywhereFocusRef.current = false;
+    const frame = window.requestAnimationFrame(() => {
+      const focusTarget =
+        searchEverywhereReturnFocusRef.current?.isConnected
+          ? searchEverywhereReturnFocusRef.current
+          : searchEverywhereButtonRef.current;
+      searchEverywhereReturnFocusRef.current = null;
+      focusTarget?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [searchEverywhereOpen]);
+
+  useEffect(() => {
     const openOnDoubleShift = (event: KeyboardEvent) => {
       if (event.key !== "Shift" || event.repeat) return;
       const now = performance.now();
       if (now - lastShiftAtRef.current < 500) {
         event.preventDefault();
         lastShiftAtRef.current = 0;
-        setSearchEverywhereOpen(true);
+        openSearchEverywhere();
       } else {
         lastShiftAtRef.current = now;
       }
@@ -296,7 +342,7 @@ function Shell() {
     window.addEventListener("keydown", openOnDoubleShift);
     return () =>
       window.removeEventListener("keydown", openOnDoubleShift);
-  }, []);
+  }, [openSearchEverywhere]);
 
   useEffect(() => {
     if (schemaDiffGroupKey && !activeSchemaGroup) setSchemaDiffGroupKey(null);
@@ -897,7 +943,7 @@ function Shell() {
       onRenameDocument={workbench.updateTitle}
       onCloseDocument={closeDocument}
       onNewQuery={() => void openQueryDocument()}
-      onSearchEverywhere={() => setSearchEverywhereOpen(true)}
+      onSearchEverywhere={openSearchEverywhere}
       onOpenActivity={() => openStableDocument("activity")}
       onDashboardFocusConsumed={consumeDashboardFocus}
       onOpenTerminal={openOrFocusTerminalDock}
@@ -960,6 +1006,7 @@ function Shell() {
       sidebarWidth={sidebarW}
       mainRef={mainRef}
       terminalButtonRef={terminalButtonRef}
+      searchEverywhereButtonRef={searchEverywhereButtonRef}
       mainContent={mainContent}
       availableUpdate={availableUpdate}
       showTerminalDock={showTerminalDock}
@@ -1086,7 +1133,7 @@ function Shell() {
       onNewQuery={() => void openQueryDocument()}
       onOpenAgentArchive={openAgentArchiveSettings}
       onOpenTerminal={openOrFocusTerminalDock}
-      onSearchEverywhere={() => setSearchEverywhereOpen(true)}
+      onSearchEverywhere={openSearchEverywhere}
       onSelectDashboardConnection={(id) => selectConnection(id, "dashboard")}
       onDashboardFocus={setDashboardFocusId}
       onSelectWorkspaceConnection={(id) => selectConnection(id, "workspace")}
@@ -1128,7 +1175,7 @@ function Shell() {
       {searchEverywhereOpen ? (
         <SearchEverywhere
           items={searchEverywhereItems}
-          onClose={() => setSearchEverywhereOpen(false)}
+          onClose={closeSearchEverywhere}
         />
       ) : null}
     </>

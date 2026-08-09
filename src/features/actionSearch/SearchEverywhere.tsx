@@ -61,8 +61,10 @@ const searchScopeTabs = [
     | "ide.search.scope.database"
     | "ide.search.scope.document"
     | "ide.search.scope.action"
-    | "ide.search.scope.setting";
+  | "ide.search.scope.setting";
 }>;
+
+export type SearchEverywhereCloseReason = "dismiss" | "selection";
 
 function belongsToScope(
   kind: SearchEverywhereKind,
@@ -80,18 +82,13 @@ export default function SearchEverywhere({
   onClose,
 }: {
   items: readonly SearchEverywhereItem[];
-  onClose: () => void;
+  onClose: (reason: SearchEverywhereCloseReason) => void;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<SearchEverywhereScope>("all");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const returnFocusRef = useRef<HTMLElement | null>(
-    document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
-  );
   const index = useMemo(
     () => indexSearchEverywhereItems(items),
     [items],
@@ -135,7 +132,6 @@ export default function SearchEverywhere({
 
   useEffect(() => {
     inputRef.current?.focus();
-    return () => returnFocusRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -146,8 +142,12 @@ export default function SearchEverywhere({
 
   async function choose(item: SearchEverywhereItem) {
     if (item.disabled) return;
-    onClose();
+    onClose("selection");
     await item.run();
+  }
+
+  function closeAndRestoreFocus() {
+    onClose("dismiss");
   }
 
   function selectScope(nextScope: SearchEverywhereScope) {
@@ -190,7 +190,7 @@ export default function SearchEverywhere({
     <div
       className="tw:fixed tw:inset-0 tw:z-[var(--ds-z-modal)] tw:flex tw:items-start tw:justify-center tw:bg-transparent tw:px-4 tw:pt-[clamp(48px,20.45dvh,190px)] tw:pb-6"
       role="presentation"
-      onMouseDown={onClose}
+      onMouseDown={closeAndRestoreFocus}
     >
       <section
         className="tw:flex tw:max-h-full tw:w-[min(672px,100%)] tw:flex-col tw:overflow-hidden tw:rounded-md tw:border tw:border-border-strong tw:bg-popover tw:text-popover-foreground tw:shadow-popover"
@@ -252,7 +252,7 @@ export default function SearchEverywhere({
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
                   event.preventDefault();
-                  onClose();
+                  closeAndRestoreFocus();
                 } else if (
                   event.key === "ArrowDown" &&
                   visibleItems.length > 0
