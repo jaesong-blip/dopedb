@@ -101,7 +101,7 @@ const pluginStateLabel: Record<AcpPluginInstallationState, I18nKey> = {
 };
 
 function pluginTone(state: AcpPluginInstallationState) {
-  if (state === "ready") return "success" as const;
+  if (state === "ready" || state === "staged") return "success" as const;
   if (state === "failed" || state === "rollback_required") return "danger" as const;
   if (state === "not_installed") return "neutral" as const;
   return "warning" as const;
@@ -428,7 +428,10 @@ export default function AgentTools() {
                   pluginStatus.lastKnownGoodVersion,
               );
               const selectable =
-                pluginStatus.state !== "ready" || Boolean(pluginStatus.failure);
+                !installed ||
+                Boolean(pluginStatus.failure) ||
+                pluginStatus.state === "update_available" ||
+                pluginStatus.state === "rollback_required";
               return (
                 <div className="tw:grid tw:gap-3 tw:py-4" key={plugin.id}>
                   <div className="tw:flex tw:items-center tw:justify-between tw:gap-4 tw:@max-[520px]:flex-col tw:@max-[520px]:items-start">
@@ -478,6 +481,11 @@ export default function AgentTools() {
                   {pluginStatus.failure ? (
                     <p className="tw:m-0 tw:text-ui tw:text-danger" role="alert">
                       {pluginStatus.failure}
+                    </p>
+                  ) : null}
+                  {pluginStatus.state === "staged" ? (
+                    <p className="tw:m-0 tw:text-ui tw:text-muted-foreground">
+                      {t("agentTools.pluginStagedDescription")}
                     </p>
                   ) : null}
                   <div className="ds-control-row tw:flex tw:flex-wrap tw:items-center tw:gap-[var(--ds-control-gap)]">

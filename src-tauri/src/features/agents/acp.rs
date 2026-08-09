@@ -26,6 +26,7 @@ use dopedb_protocol::{AcpPluginId, AgentSessionRegisterArguments};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Notify};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -47,6 +48,7 @@ const DOPEDB_MCP_SERVER_NAME: &str = "dopedb-desktop-session";
 const MAX_PROVIDER_CLI_BYTES: u64 = 512 * 1024 * 1024;
 const ACP_CAPABILITY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const ACP_START_TIMEOUT: Duration = Duration::from_secs(120);
+const ACP_START_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_ACTIVE_SESSIONS: usize = 8;
 const MAX_REPLAY_EVENTS: usize = 512;
 const MAX_REPLAY_BYTES: usize = 4 * 1024 * 1024;
@@ -520,6 +522,7 @@ impl AcpRuntime {
         *lock_unpoisoned(&session.command) = Some(command_tx);
         let (ready_tx, ready_rx) = oneshot::channel();
         let ready = Arc::new(Mutex::new(Some(ready_tx)));
+        let startup_cancel = CancellationToken::new();
         let broker = self.broker.clone();
         let connection_summary = connection_context(&connection.profile);
         let launch = LaunchContext {
@@ -540,6 +543,7 @@ impl AcpRuntime {
             token,
         };
         let worker_session = session.clone();
+        let worker_startup_cancel = startup_cancel.clone();
         tauri::async_runtime::spawn(async move {
             run_session(
                 worker_session,
@@ -549,6 +553,7 @@ impl AcpRuntime {
                 resume,
                 command_rx,
                 ready,
+                worker_startup_cancel,
             )
             .await;
         });
@@ -561,11 +566,22 @@ impl AcpRuntime {
                 provider_name(provider)
             ))),
             Err(_) => {
-                let _ = self.close(id);
-                Err(AppError::Timeout(format!(
-                    "the official {} ACP adapter did not initialize within 120 seconds",
-                    provider_name(provider)
-                )))
+                let message = startup_timeout_message(provider);
+                startup_cancel.cancel();
+                if tokio::time::timeout(
+                    ACP_START_CLEANUP_TIMEOUT,
+                    wait_for_session_termination(&session),
+                )
+                .await
+                .is_err()
+                {
+                    tracing::warn!(
+                        session_id = %id,
+                        provider = provider_name(provider),
+                        "ACP startup cancellation did not finish before fallback evaluation"
+                    );
+                }
+                Err(AppError::Timeout(message))
             }
         }
     }
@@ -731,13 +747,7 @@ impl AcpRuntime {
         }
         let wait = async {
             for (_, session) in &sessions {
-                loop {
-                    let notified = session.termination.notified();
-                    if session.terminated.load(Ordering::SeqCst) {
-                        break;
-                    }
-                    notified.await;
-                }
+                wait_for_session_termination(session).await;
             }
         };
         tokio::time::timeout(timeout, wait).await.map_err(|_| {
@@ -1239,6 +1249,7 @@ async fn run_session(
     resume: Option<ResumeContext>,
     mut commands: tokio::sync::mpsc::UnboundedReceiver<SessionCommand>,
     ready: Arc<Mutex<Option<oneshot::Sender<AppResult<()>>>>>,
+    startup_cancel: CancellationToken,
 ) {
     let plugin_id = launch.plugin_id;
     let plugin_version = launch.adapter_bundle_version.clone();
@@ -1255,7 +1266,7 @@ async fn run_session(
     let connection_session = session.clone();
     let ready_for_connection = ready.clone();
 
-    let result = agent_client_protocol::Client
+    let connection = agent_client_protocol::Client
         .builder()
         .name("DopeDB ACP client")
         .on_receive_notification(
@@ -1455,8 +1466,16 @@ async fn run_session(
                 }
             }
             Ok(())
-        })
-        .await;
+        });
+    tokio::pin!(connection);
+    let result = tokio::select! {
+        result = &mut connection => result.map_err(|error| {
+            actionable_acp_error(session.summary().provider, &error.to_string())
+        }),
+        () = startup_cancel.cancelled() => {
+            Err(startup_timeout_message(session.summary().provider))
+        }
+    };
 
     session.busy.store(false, Ordering::SeqCst);
     session.cancel_pending_permissions();
@@ -1473,8 +1492,7 @@ async fn run_session(
                 session.set_lifecycle(AcpSessionLifecycle::Closed, None);
             }
         }
-        Err(error) => {
-            let message = actionable_acp_error(session.summary().provider, &error.to_string());
+        Err(message) => {
             if plugin_candidate && !plugin_activated.load(Ordering::SeqCst) {
                 if let Err(state_error) = plugin_manager.record_initialize_failure(
                     &session.app,
@@ -2021,6 +2039,14 @@ fn provider_name(provider: AgentProvider) -> &'static str {
     }
 }
 
+fn startup_timeout_message(provider: AgentProvider) -> String {
+    format!(
+        "the official {} ACP adapter did not initialize within {} seconds",
+        provider_name(provider),
+        ACP_START_TIMEOUT.as_secs()
+    )
+}
+
 fn acp_plugin_id(provider: AgentProvider) -> AcpPluginId {
     match provider {
         AgentProvider::Claude => AcpPluginId::Claude,
@@ -2081,6 +2107,16 @@ fn complete_ready(
 ) {
     if let Some(sender) = lock_unpoisoned(ready).take() {
         let _ = sender.send(result);
+    }
+}
+
+async fn wait_for_session_termination(session: &AcpSession) {
+    loop {
+        let notified = session.termination.notified();
+        if session.terminated.load(Ordering::SeqCst) {
+            return;
+        }
+        notified.await;
     }
 }
 

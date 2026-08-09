@@ -96,7 +96,12 @@ export default function SkillStartupGate() {
     for (const target of selected) {
       const id = pluginId(target);
       const current = pluginsQ.data?.find((plugin) => plugin.pluginId === id);
-      if (current?.state === "ready" && current.enabled) continue;
+      if (
+        current?.enabled &&
+        (current.state === "ready" || current.state === "staged")
+      ) {
+        continue;
+      }
       setBusy(id);
       try {
         await installAgentAcpPlugin(id);
@@ -192,7 +197,13 @@ export default function SkillStartupGate() {
                     />
                     <div className="tw:flex tw:flex-wrap tw:justify-end tw:gap-2">
                       {status ? (
-                        <StatusBadge tone={status.state === "ready" ? "success" : "warning"}>
+                        <StatusBadge
+                          tone={
+                            status.state === "ready" || status.state === "staged"
+                              ? "success"
+                              : "warning"
+                          }
+                        >
                           {t(pluginStateLabel[status.state])}
                         </StatusBadge>
                       ) : null}

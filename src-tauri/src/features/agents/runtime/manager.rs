@@ -21,8 +21,9 @@ use crate::error::{AppError, AppResult};
 use super::archive::{checked_stage_file, extract_verified_archive, verify_content_tree};
 use super::domain::{
     AcpPluginInstallationState, AcpPluginLaunchPlan, AcpPluginMutationReceipt, AcpPluginStatus,
-    AcpPluginTelemetry, InstalledPluginMarker, InstalledPluginVersion, PersistedQuarantineState,
-    PersistedRuntimeState, QuarantinedPluginVersion, RUNTIME_STATE_SCHEMA_VERSION,
+    AcpPluginTelemetry, InstalledPluginMarker, InstalledPluginVersion, PersistedPluginRecord,
+    PersistedQuarantineState, PersistedRuntimeState, QuarantinedPluginVersion,
+    RUNTIME_STATE_SCHEMA_VERSION,
 };
 use super::verification::{
     sha256_file, verify_artifact, verify_bundled_node, verify_compatibility, verify_manifest,
@@ -108,11 +109,10 @@ impl AcpPluginManager {
 
     pub(crate) fn has_ready_fallback(&self, plugin_id: AcpPluginId) -> AppResult<bool> {
         let state = self.load_state()?;
-        Ok(state.plugins.get(&plugin_id).is_some_and(|record| {
-            record.candidate.is_none()
-                && record.failure.is_some()
-                && (record.current.is_some() || record.last_known_good.is_some())
-        }))
+        Ok(state
+            .plugins
+            .get(&plugin_id)
+            .is_some_and(record_has_ready_fallback))
     }
 
     pub(crate) async fn update_installed(&self, app: &AppHandle) {
@@ -457,25 +457,18 @@ impl AcpPluginManager {
             let record = state.plugins.get_mut(&plugin_id).ok_or_else(|| {
                 AppError::NotFound(format!("{} ACP plugin", plugin_id.provider_slug()))
             })?;
-            let Some(candidate) = record.candidate.take() else {
-                record.failure = Some(bounded_failure(reason));
-                self.write_state(&state)?;
-                let status = self.project_status(plugin_id, &state)?;
-                emit_telemetry(app, plugin_id, "session_initialize", "failed");
-                return Ok(status);
-            };
-            if candidate.version != version {
-                record.candidate = Some(candidate);
-                return Err(AppError::Blocked {
-                    reason: "the ACP plugin failure receipt changed candidate version".into(),
-                });
-            }
-            record.failure = Some(bounded_failure(reason));
-            candidate
+            take_failed_candidate(record, version, reason)?
         };
-        self.quarantine_version(plugin_id, &candidate, reason)?;
+        // Persist the candidate deactivation before touching its files. A process-exit
+        // race on Windows may delay the quarantine rename, but must never make the
+        // failed candidate launchable again or hide the last-known-good fallback.
         self.write_state(&state)?;
         let status = self.project_status(plugin_id, &state)?;
+        let Some(candidate) = candidate else {
+            emit_telemetry(app, plugin_id, "session_initialize", "failed");
+            return Ok(status);
+        };
+        self.quarantine_version(plugin_id, &candidate, reason)?;
         emit_telemetry(app, plugin_id, "candidate_initialize", "quarantined");
         Ok(status)
     }
@@ -1017,6 +1010,73 @@ fn version_matches(
         installed.version == envelope.manifest.adapter_bundle_version
             && installed.manifest_sha256 == envelope.manifest_sha256
     })
+}
+
+fn record_has_ready_fallback(record: &PersistedPluginRecord) -> bool {
+    record.candidate.is_none()
+        && record.failure.is_some()
+        && (record.current.is_some() || record.last_known_good.is_some())
+}
+
+fn take_failed_candidate(
+    record: &mut PersistedPluginRecord,
+    version: &str,
+    reason: &str,
+) -> AppResult<Option<InstalledPluginVersion>> {
+    let Some(candidate) = record.candidate.take() else {
+        record.failure = Some(bounded_failure(reason));
+        return Ok(None);
+    };
+    if candidate.version != version {
+        record.candidate = Some(candidate);
+        return Err(AppError::Blocked {
+            reason: "the ACP plugin failure receipt changed candidate version".into(),
+        });
+    }
+    record.failure = Some(bounded_failure(reason));
+    Ok(Some(candidate))
+}
+
+#[cfg(test)]
+pub(super) fn assert_candidate_fallback_contract() {
+    let stable = InstalledPluginVersion {
+        version: "1.0.0".into(),
+        manifest_sha256: "a".repeat(64),
+        entrypoint_sha256: "b".repeat(64),
+    };
+    let candidate = InstalledPluginVersion {
+        version: "1.1.0".into(),
+        manifest_sha256: "c".repeat(64),
+        entrypoint_sha256: "d".repeat(64),
+    };
+    let mut record = PersistedPluginRecord {
+        enabled: true,
+        current: Some(stable.clone()),
+        candidate: Some(candidate.clone()),
+        last_known_good: Some(stable),
+        failure: None,
+        last_checked_at: None,
+    };
+
+    let failed = take_failed_candidate(&mut record, &candidate.version, "startup timed out")
+        .expect("the active candidate can be failed")
+        .expect("the failed version remains available for quarantine");
+
+    assert_eq!(failed, candidate);
+    assert!(record.candidate.is_none());
+    assert_eq!(
+        record.current.as_ref().map(|value| value.version.as_str()),
+        Some("1.0.0")
+    );
+    assert_eq!(
+        record
+            .last_known_good
+            .as_ref()
+            .map(|value| value.version.as_str()),
+        Some("1.0.0")
+    );
+    assert_eq!(record.failure.as_deref(), Some("startup timed out"));
+    assert!(record_has_ready_fallback(&record));
 }
 
 fn validate_state(state: &PersistedRuntimeState) -> AppResult<()> {
