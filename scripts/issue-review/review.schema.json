@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary", "findings", "questions", "recommendation"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "supported_bug",
+        "supported_feature",
+        "needs_information",
+        "needs_owner_decision",
+        "direction_conflict",
+        "duplicate_candidate",
+        "not_reproducible_from_code"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1500
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "statement", "evidence_ids"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocking", "important", "note"]
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200
+          },
+          "evidence_ids": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "string",
+              "pattern": "^E[1-9][0-9]*$"
+            }
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 800
+      }
+    },
+    "recommendation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1500
+    }
+  }
+}
