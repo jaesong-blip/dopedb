@@ -375,8 +375,8 @@ pub fn run() {
 }
 
 /// macOS는 앱 번들을 제자리에서 교체해도 LaunchServices 아이콘 캐시를 버리지 않아
-/// 업데이트한 뒤에도 옛 앱 아이콘이 남는다. 번들 mtime을 올려 캐시 키를 무효화하고
-/// 다시 등록해, 사용자가 `lsregister`나 `killall Dock`을 직접 치지 않게 한다.
+/// 업데이트한 뒤에도 옛 앱 아이콘이 남는다. 번들을 강제 재등록해 사용자가
+/// `lsregister`나 `killall Dock`을 직접 치지 않게 한다.
 #[cfg(target_os = "macos")]
 fn refresh_macos_icon_cache() {
     const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister";
@@ -393,15 +393,32 @@ fn refresh_macos_icon_cache() {
     }
 
     let bundle = bundle.to_path_buf();
-    // ponytail: 마지막 실행 버전을 추적하지 않고 시작마다 재등록한다. 두 호출 모두
-    // idempotent하고 수십 ms라, 상태를 하나 더 늘리는 값이 더 비싸다.
+    // 마지막 실행 버전을 추적하지 않고 시작마다 재등록한다. `-f`는 현재 번들의
+    // 메타데이터를 다시 읽는다. 실행 중인 `.app` 디렉터리를 `touch`하면 macOS 26에서
+    // `utimensat`이 끝나지 않아 고아 프로세스를 남길 수 있으므로 mtime은 건드리지 않는다.
     std::thread::spawn(move || {
-        let _ = std::process::Command::new("/usr/bin/touch")
-            .arg(&bundle)
-            .status();
-        let _ = std::process::Command::new(LSREGISTER)
+        let Ok(mut registration) = std::process::Command::new(LSREGISTER)
             .arg("-f")
             .arg(&bundle)
-            .status();
+            .spawn()
+        else {
+            return;
+        };
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            match registration.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(25));
+                }
+                Ok(None) => {
+                    let _ = registration.kill();
+                    let _ = registration.wait();
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
     });
 }
