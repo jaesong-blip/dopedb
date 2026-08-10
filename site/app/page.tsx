@@ -36,6 +36,8 @@ const downloadUrls = {
   macIntel: `${repoUrl}/releases/latest/download/DopeDB-macos-x64.dmg`,
 };
 const siteUrl = "https://dopedb.dev";
+// Keep in sync with the required local tools in docs/PROJECT.md#development.
+const buildToolchain = "Rust 1.94+ · Node.js 24 · pnpm 11.17.0";
 
 type Lang = "en" | "ko";
 
@@ -239,6 +241,7 @@ receipt         pending human decision`,
         "Start with Personal Workspace without an account. Sign in only when you want team sharing or managed provider access.",
       primary: "Open the latest release",
       source: "Build from source",
+      sourceNote: `Building from source needs ${buildToolchain}.`,
       windows: "Windows x64",
       macApple: "macOS Apple Silicon",
       macIntel: "macOS Intel",
@@ -465,6 +468,7 @@ receipt         pending human decision`,
         "계정 없이 Personal Workspace로 시작하세요. 팀 공유나 managed provider access가 필요할 때만 로그인합니다.",
       primary: "최신 Release 열기",
       source: "소스에서 빌드",
+      sourceNote: `소스에서 빌드하려면 ${buildToolchain}이 필요합니다.`,
       windows: "Windows x64",
       macApple: "macOS Apple Silicon",
       macIntel: "macOS Intel",
@@ -1178,6 +1182,10 @@ export default async function Home({ searchParams }: HomeProps) {
                   <ArrowUpRight size={16} />
                 </MarketingButton>
               </div>
+
+              <p className="tw:mt-3 tw:text-xs tw:leading-relaxed tw:text-cream-muted">
+                {c.download.sourceNote}
+              </p>
 
               <div className="tw:mt-5 tw:grid tw:grid-cols-3 tw:gap-px tw:bg-hairline tw:max-[620px]:grid-cols-1">
                 {[
