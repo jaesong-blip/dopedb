@@ -54,17 +54,24 @@ function parseArguments(argv) {
   const options = { mode: "once", issueNumber: null, backfill: 0, dryRun: false };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
+    if (argument === "--") continue;
     if (argument === "--once") options.mode = "once";
     else if (argument === "--initialize") options.mode = "initialize";
     else if (argument === "--self-test") options.mode = "self-test";
     else if (argument === "--dry-run") options.dryRun = true;
     else if (argument === "--issue") {
-      const value = Number(argv[index += 1]);
+      do {
+        index += 1;
+      } while (argv[index] === "--");
+      const value = Number(argv[index]);
       if (!Number.isSafeInteger(value) || value <= 0) throw new Error("--issue requires a positive integer");
       options.mode = "issue";
       options.issueNumber = value;
     } else if (argument === "--backfill") {
-      const value = Number(argv[index += 1]);
+      do {
+        index += 1;
+      } while (argv[index] === "--");
+      const value = Number(argv[index]);
       if (!Number.isSafeInteger(value) || value < 1 || value > 20) {
         throw new Error("--backfill requires an integer between 1 and 20");
       }
@@ -662,6 +669,10 @@ async function runReview(options) {
 function selfTest() {
   runPolicySelfTest();
   for (const path of [querySchemaPath, reviewSchemaPath]) parseJson(readFileSync(path, "utf8"), path);
+  const argumentsProbe = parseArguments(["--issue", "--", "48", "--dry-run"]);
+  if (argumentsProbe.issueNumber !== 48 || !argumentsProbe.dryRun) {
+    throw new Error("pnpm argument separator self-test failed");
+  }
   process.stdout.write("Local issue review self-test passed.\n");
 }
 
