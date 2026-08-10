@@ -65,7 +65,7 @@
     },
     "src-tauri/src/features/queries/domain_tests.rs": {
       "tests": 1,
-      "protects": "Production guidance, namespace safety, row-free Services migration, ephemeral table-page retention, and exact fail-closed Skill installation/conflict handling"
+      "protects": "Production guidance, namespace safety, row-free Services migration, ephemeral table-page retention, exact fail-closed Skill installation/conflict handling, and credential-free cross-platform Agent CLI probing"
     },
     "src-tauri/src/operations/canonicalize.rs": {
       "tests": 3,

@@ -13,6 +13,10 @@ import {
 } from "../../design-system/components/Modal";
 import { ProgressBar } from "../../design-system/components/Progress";
 import { StatusBadge } from "../../design-system/components/Status";
+import {
+  AgentCliDetectionNotice,
+  AgentCliStatusBadges,
+} from "../agents/AgentCliStatus";
 import type {
   AcpPluginId,
   AcpPluginInstallationState,
@@ -207,15 +211,11 @@ export default function SkillStartupGate() {
                           {t(pluginStateLabel[status.state])}
                         </StatusBadge>
                       ) : null}
-                      <StatusBadge tone={cli?.authenticated ? "success" : "warning"}>
-                        {t(
-                          cli?.authenticated
-                            ? "agentTools.authenticated"
-                            : cli?.installed
-                              ? "agentTools.notAuthenticated"
-                              : "agentTools.cliMissing",
-                        )}
-                      </StatusBadge>
+                      <AgentCliStatusBadges
+                        cli={cli}
+                        detecting={agentsQ.isPending || agentsQ.isFetching}
+                        queryFailed={agentsQ.isError}
+                      />
                     </div>
                   </div>
                   {busy === id ? (
@@ -229,6 +229,13 @@ export default function SkillStartupGate() {
               );
             })}
           </div>
+
+          <AgentCliDetectionNotice
+            clis={agentsQ.data}
+            queryError={agentsQ.error}
+            onRetry={() => void agentsQ.refetch()}
+            retrying={agentsQ.isFetching}
+          />
 
           <p className="tw:mt-4 tw:mb-0 tw:text-xs tw:leading-body tw:text-muted-foreground">
             {t("agentTools.startupSafety")}

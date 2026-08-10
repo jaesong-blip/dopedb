@@ -17,7 +17,8 @@ pub(crate) fn executable_search_path(first: Option<&Path>) -> OsString {
             .map(PathBuf::from),
     );
 
-    if let Some(home) = crate::app_paths::optional_home_dir() {
+    let home = crate::app_paths::optional_home_dir();
+    if let Some(home) = home.as_ref() {
         #[cfg(not(windows))]
         for relative in [
             ".local/bin",
@@ -40,6 +41,10 @@ pub(crate) fn executable_search_path(first: Option<&Path>) -> OsString {
             directories.push(home.join("AppData/Local/pnpm"));
         }
     }
+    #[cfg(windows)]
+    directories.extend(windows_cli_runtime_directories(home.as_deref(), |key| {
+        std::env::var_os(key)
+    }));
     if let Some(path) = std::env::var_os("PATH") {
         directories.extend(std::env::split_paths(&path));
     }
@@ -106,4 +111,50 @@ fn path_key(path: &Path) -> String {
 #[cfg(not(windows))]
 fn path_key(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+#[cfg(any(windows, test))]
+fn windows_cli_runtime_directories(
+    home: Option<&Path>,
+    mut environment: impl FnMut(&str) -> Option<OsString>,
+) -> Vec<PathBuf> {
+    let mut directories = Vec::new();
+    if let Some(home) = home {
+        directories.push(home.join(".volta/bin"));
+        directories.push(home.join("AppData/Local/Programs/nodejs"));
+        directories.push(home.join("AppData/Roaming/nvm"));
+    }
+    for variable in ["NVM_SYMLINK", "NVM_HOME", "FNM_MULTISHELL_PATH"] {
+        if let Some(path) = environment(variable).filter(|value| !value.is_empty()) {
+            directories.push(PathBuf::from(path));
+        }
+    }
+    if let Some(path) = environment("VOLTA_HOME").filter(|value| !value.is_empty()) {
+        directories.push(PathBuf::from(path).join("bin"));
+    }
+    if let Some(path) = environment("LOCALAPPDATA").filter(|value| !value.is_empty()) {
+        directories.push(PathBuf::from(path).join("Programs/nodejs"));
+    }
+    for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(path) = environment(variable).filter(|value| !value.is_empty()) {
+            directories.push(PathBuf::from(path).join("nodejs"));
+        }
+    }
+    directories
+}
+
+#[cfg(test)]
+pub(crate) fn assert_cli_environment_contract() {
+    let root = Path::new("/fixture/home");
+    let directories = windows_cli_runtime_directories(Some(root), |key| match key {
+        "NVM_SYMLINK" => Some(OsString::from("/fixture/nvm-link")),
+        "VOLTA_HOME" => Some(OsString::from("/fixture/volta")),
+        "ProgramFiles" => Some(OsString::from("/fixture/program-files")),
+        _ => None,
+    });
+    assert!(directories.contains(&root.join(".volta/bin")));
+    assert!(directories.contains(&root.join("AppData/Local/Programs/nodejs")));
+    assert!(directories.contains(&PathBuf::from("/fixture/nvm-link")));
+    assert!(directories.contains(&PathBuf::from("/fixture/volta/bin")));
+    assert!(directories.contains(&PathBuf::from("/fixture/program-files/nodejs")));
 }

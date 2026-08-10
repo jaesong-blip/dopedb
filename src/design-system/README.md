@@ -303,6 +303,11 @@ Elevation은 세 단계만 허용한다.
 - `AgentProviderMark`: AI Chat과 Agent 설치 흐름에서 Claude와 Codex를 구분하는
   16px 단색 브랜드 마크. Iconify Simple Icons의 `claude`와 `openai` 정본을
   로컬 번들로 사용하고 feature별 임시 SVG나 상태색 대용 브랜드색을 만들지 않는다.
+- `AgentCliStatusBadges`, `AgentCliDetectionNotice`: 시작 모달과 Agent Tools가
+  공유하고 AI Chat도 같은 상태 어휘를 따르는 feature composition. 로컬 CLI의
+  탐지 중, probe 실패, 미설치, 로그인 필요, 준비 상태를 구분하며 실패를
+  미설치로 축약하지 않는다. probe 상세와 재시도는 같은 inline 상태 surface가
+  소유한다.
 - `ToolbarMenu menuSize="scope"`: Explorer schema scope popover의 outer
   frame을 300px로 고정한다. feature child가 popover padding과 border를
   중복 계산하지 않는다.

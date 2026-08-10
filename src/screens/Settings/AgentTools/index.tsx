@@ -17,6 +17,10 @@ import type {
   AgentProvider,
 } from "../../../features/agents/domain";
 import {
+  AgentCliDetectionNotice,
+  AgentCliStatusBadges,
+} from "../../../features/agents/AgentCliStatus";
+import {
   legacyMcpCleanupApply,
   installSkill,
   removeSkill,
@@ -534,38 +538,36 @@ export default function AgentTools() {
         <p className="tw:mt-1 tw:mb-0 tw:text-muted-foreground">
           {t("agentTools.localClisDescription")}
         </p>
-        {agentsQ.isPending ? (
-          <Skeleton lines={3} />
-        ) : (
-          <div className="tw:mt-3 tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
-            {plugins.map((plugin) => {
-              const cli = agentsQ.data?.find((item) => item.id === plugin.provider);
-              return (
-                <div
-                  className="tw:flex tw:items-start tw:justify-between tw:gap-4 tw:py-3 tw:@max-[520px]:flex-col"
-                  key={plugin.provider}
-                >
-                  <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
-                    <AgentProviderMark provider={plugin.provider} />
-                    <strong>{cli?.name ?? plugin.label}</strong>
-                  </div>
-                  <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-                    <StatusBadge tone={cli?.installed ? "success" : "warning"}>
-                      {t(cli?.installed ? "agentTools.detected" : "agentTools.cliMissing")}
-                    </StatusBadge>
-                    <StatusBadge tone={cli?.authenticated ? "success" : "warning"}>
-                      {t(
-                        cli?.authenticated
-                          ? "agentTools.authenticated"
-                          : "agentTools.notAuthenticated",
-                      )}
-                    </StatusBadge>
-                  </div>
+        <div className="tw:mt-3 tw:divide-y tw:divide-border-subtle tw:border-y tw:border-border-subtle">
+          {plugins.map((plugin) => {
+            const cli = agentsQ.data?.find((item) => item.id === plugin.provider);
+            return (
+              <div
+                className="tw:flex tw:items-start tw:justify-between tw:gap-4 tw:py-3 tw:@max-[520px]:flex-col"
+                key={plugin.provider}
+              >
+                <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-2">
+                  <AgentProviderMark provider={plugin.provider} />
+                  <strong>{cli?.name ?? plugin.label}</strong>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                  <AgentCliStatusBadges
+                    cli={cli}
+                    detecting={agentsQ.isPending || agentsQ.isFetching}
+                    queryFailed={agentsQ.isError}
+                    showDetected
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <AgentCliDetectionNotice
+          clis={agentsQ.data}
+          queryError={agentsQ.error}
+          onRetry={() => void agentsQ.refetch()}
+          retrying={agentsQ.isFetching}
+        />
       </section>
 
       <section className="tw:border-t tw:border-border-subtle tw:pt-5">
@@ -591,12 +593,6 @@ export default function AgentTools() {
           })}
         </div>
       )}
-      {agentsQ.error && (
-        <div className="tw:text-ui tw:text-danger" role="alert">
-          {t("agentTools.detectError", { error: errMessage(agentsQ.error) })}
-        </div>
-      )}
-
       {!status && statusQ.isPending ? (
         <Skeleton lines={6} />
       ) : (

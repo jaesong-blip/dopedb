@@ -24,6 +24,7 @@ pub(crate) struct AgentCliInfo {
     pub(crate) installed: bool,
     pub(crate) authenticated: bool,
     pub(crate) auth_method: Option<String>,
+    pub(crate) detection_error: Option<String>,
     pub(crate) note: String,
 }
 

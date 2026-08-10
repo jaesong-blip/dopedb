@@ -213,6 +213,9 @@ export const agentsCatalog = defineCatalog(
     "agentTools.description":
       "Optional for agents working from an external terminal: install the small DopeDB discovery Skill for Codex and Claude Code. Built-in AI Chat uses its typed MCP tools directly.",
     "agentTools.detectError": "Could not detect agent tools: {error}",
+    "agentTools.detecting": "Detecting CLI…",
+    "agentTools.detectionFailed": "CLI detection failed",
+    "agentTools.detectProviderError": "{provider}: {error}",
     "agentTools.detected": "CLI detected",
     "agentTools.error": "Could not manage Agent tools: {error}",
     "agentTools.pluginsTitle": "ACP adapter plugins",
@@ -550,6 +553,9 @@ export const agentsCatalog = defineCatalog(
     "agentTools.description":
       "외부 터미널에서 작업하는 Agent를 위한 선택 기능입니다. Codex와 Claude Code에 작은 DopeDB 탐색 Skill을 설치하며, 내장 AI Chat은 typed MCP 도구를 직접 사용합니다.",
     "agentTools.detectError": "에이전트 도구를 확인하지 못했습니다: {error}",
+    "agentTools.detecting": "CLI 확인 중…",
+    "agentTools.detectionFailed": "CLI 확인 실패",
+    "agentTools.detectProviderError": "{provider}: {error}",
     "agentTools.detected": "CLI 감지됨",
     "agentTools.error": "Agent 도구를 관리하지 못했습니다: {error}",
     "agentTools.pluginsTitle": "ACP 어댑터 플러그인",

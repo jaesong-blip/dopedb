@@ -299,6 +299,9 @@ function AcpChatPanelContent({
   const selectedCliReady =
     selectedCliStatus?.installed === true &&
     selectedCliStatus.authenticated === true;
+  const cliDetectionError = cliStatusQuery.isError
+    ? errMessage(cliStatusQuery.error)
+    : selectedCliStatus?.detectionError ?? null;
   const selectedPluginReady = enabledProviders.includes(selectedProvider);
   const prerequisitesReady = selectedCliReady && selectedPluginReady;
   const environmentScopeReady =
@@ -922,6 +925,25 @@ function AcpChatPanelContent({
             <p>{t("agent.acpPluginRequiredBody")}</p>
             <Button size="compact" variant="primary" onClick={openAgentSetup}>
               {t("agent.acpOpenSetup")}
+            </Button>
+          </AgentEmpty>
+        ) : cliDetectionError ? (
+          <AgentEmpty>
+            <Icon name="alert" />
+            <strong>{t("agentTools.detectionFailed")}</strong>
+            <p>{t("agentTools.detectError", { error: cliDetectionError })}</p>
+            <Button
+              size="compact"
+              variant="ghost"
+              disabled={cliStatusQuery.isFetching}
+              onClick={() => void cliStatusQuery.refetch()}
+            >
+              <Icon
+                name="refresh"
+                data-loading={cliStatusQuery.isFetching || undefined}
+                className="tw:data-[loading=true]:animate-spin tw:motion-reduce:animate-none"
+              />
+              {t("agentTools.checkAgain")}
             </Button>
           </AgentEmpty>
         ) : selectedCliStatus && !selectedCliReady ? (

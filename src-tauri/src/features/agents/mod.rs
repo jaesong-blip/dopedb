@@ -19,3 +19,8 @@ pub(crate) type AgentsFeature = AgentsUseCases<ProcessAgentCliProbe, SqliteRetir
 pub(crate) fn compose(store: Store) -> AgentsFeature {
     AgentsUseCases::new(ProcessAgentCliProbe, SqliteRetiredChatArchive::new(store))
 }
+
+#[cfg(test)]
+pub(crate) fn assert_agent_cli_probe_contract() {
+    adapters::assert_agent_cli_probe_contract();
+}

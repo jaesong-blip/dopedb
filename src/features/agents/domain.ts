@@ -55,6 +55,7 @@ export interface AgentCliInfo {
   installed: boolean;
   authenticated: boolean;
   authMethod: string | null;
+  detectionError: string | null;
   note: string;
 }
 

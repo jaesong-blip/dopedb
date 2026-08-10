@@ -1,6 +1,5 @@
 //! Process adapter for bounded, credential-free Agent CLI status probes.
 
-use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Output;
@@ -54,9 +53,23 @@ async fn detect_claude() -> AgentCliInfo {
             "Install Claude Code to use its Terminal profile.",
         );
     };
-    let installed = run_probe(&binary, &["--version"])
-        .await
-        .is_ok_and(|output| output.contains("Claude Code"));
+    let installed = match run_probe(&binary, &["--version"]).await {
+        Ok(output) if output.contains("Claude Code") => true,
+        Ok(_) => {
+            return probe_failed(
+                AgentProvider::Claude,
+                "Claude Code",
+                "Version probe returned an unexpected response.",
+            );
+        }
+        Err(error) => {
+            return probe_failed(
+                AgentProvider::Claude,
+                "Claude Code",
+                format!("Version probe failed: {error}"),
+            );
+        }
+    };
     let (authenticated, auth_method) = if installed {
         run_probe(&binary, &["auth", "status"])
             .await
@@ -87,6 +100,7 @@ async fn detect_claude() -> AgentCliInfo {
         installed,
         authenticated,
         auth_method,
+        detection_error: None,
         note: "Uses your Claude subscription login in a connection-pinned Terminal.".into(),
     }
 }
@@ -99,9 +113,23 @@ async fn detect_codex() -> AgentCliInfo {
             "Install Codex CLI to use its Terminal profile.",
         );
     };
-    let installed = run_probe(&binary, &["--version"])
-        .await
-        .is_ok_and(|output| output.contains("codex-cli"));
+    let installed = match run_probe(&binary, &["--version"]).await {
+        Ok(output) if output.contains("codex-cli") => true,
+        Ok(_) => {
+            return probe_failed(
+                AgentProvider::Codex,
+                "Codex CLI",
+                "Version probe returned an unexpected response.",
+            );
+        }
+        Err(error) => {
+            return probe_failed(
+                AgentProvider::Codex,
+                "Codex CLI",
+                format!("Version probe failed: {error}"),
+            );
+        }
+    };
     let authenticated = installed && run_probe(&binary, &["login", "status"]).await.is_ok();
     AgentCliInfo {
         id: AgentProvider::Codex,
@@ -109,6 +137,7 @@ async fn detect_codex() -> AgentCliInfo {
         installed,
         authenticated,
         auth_method: None,
+        detection_error: None,
         note: "Uses your ChatGPT subscription login in a connection-pinned Terminal.".into(),
     }
 }
@@ -120,7 +149,21 @@ fn unavailable(id: AgentProvider, name: &str, note: &str) -> AgentCliInfo {
         installed: false,
         authenticated: false,
         auth_method: None,
+        detection_error: None,
         note: note.into(),
+    }
+}
+
+fn probe_failed(id: AgentProvider, name: &str, error: impl Into<String>) -> AgentCliInfo {
+    AgentCliInfo {
+        id,
+        name: name.into(),
+        installed: false,
+        authenticated: false,
+        auth_method: None,
+        detection_error: Some(error.into()),
+        note: "DopeDB found this CLI but could not complete its credential-free status probe."
+            .into(),
     }
 }
 
@@ -147,17 +190,34 @@ async fn run_probe_with_timeout(
 
 fn apply_probe_environment(command: &mut std::process::Command) {
     command.env_clear();
-    let allowed = SAFE_PROBE_ENVIRONMENT
-        .iter()
-        .copied()
-        .collect::<BTreeSet<_>>();
     for (key, value) in std::env::vars_os() {
-        let key_text = key.to_string_lossy();
-        if allowed.contains(key_text.as_ref()) || key_text.starts_with("LC_") {
+        if probe_environment_key_allowed(&key, cfg!(windows)) {
             command.env(key, value);
         }
     }
     command.env("PATH", executable_search_path(None));
+}
+
+fn probe_environment_key_allowed(key: &OsStr, case_insensitive: bool) -> bool {
+    let key = key.to_string_lossy();
+    let matches = |expected: &str| {
+        if case_insensitive {
+            key.eq_ignore_ascii_case(expected)
+        } else {
+            key == expected
+        }
+    };
+    let locale_prefix = key.get(..3).is_some_and(|prefix| {
+        if case_insensitive {
+            prefix.eq_ignore_ascii_case("LC_")
+        } else {
+            prefix == "LC_"
+        }
+    });
+    SAFE_PROBE_ENVIRONMENT
+        .iter()
+        .any(|expected| matches(expected))
+        || locale_prefix
 }
 
 fn decode_output(output: Output) -> Result<String, String> {
@@ -182,7 +242,7 @@ fn quiet_command(program: impl AsRef<OsStr>) -> std::process::Command {
                 extension.eq_ignore_ascii_case("cmd") || extension.eq_ignore_ascii_case("bat")
             });
         if is_script {
-            let shell = std::env::var_os("ComSpec")
+            let shell = windows_environment_value("ComSpec")
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| "cmd.exe".into());
             let mut command = std::process::Command::new(shell);
@@ -201,4 +261,27 @@ fn quiet_command(program: impl AsRef<OsStr>) -> std::process::Command {
     {
         std::process::Command::new(program)
     }
+}
+
+#[cfg(windows)]
+fn windows_environment_value(name: &str) -> Option<std::ffi::OsString> {
+    std::env::vars_os()
+        .find(|(key, _)| key.to_string_lossy().eq_ignore_ascii_case(name))
+        .map(|(_, value)| value)
+}
+
+#[cfg(test)]
+pub(super) fn assert_agent_cli_probe_contract() {
+    assert!(probe_environment_key_allowed(OsStr::new("HOME"), false));
+    assert!(!probe_environment_key_allowed(OsStr::new("home"), false));
+    assert!(probe_environment_key_allowed(
+        OsStr::new("SYSTEMROOT"),
+        true
+    ));
+    assert!(probe_environment_key_allowed(OsStr::new("COMSPEC"), true));
+    assert!(probe_environment_key_allowed(OsStr::new("lc_all"), true));
+    assert!(!probe_environment_key_allowed(
+        OsStr::new("NODE_OPTIONS"),
+        true
+    ));
 }
