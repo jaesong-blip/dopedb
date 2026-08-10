@@ -8,7 +8,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import type { CatalogTable } from "../../ipc/types";
 import { errMessage } from "../../ipc/types";
 import {
@@ -23,6 +27,27 @@ import {
 import { SCHEMA_SCOPE_PARAMETER } from "../../features/catalogExplorer/scopeFilter";
 import { ProviderCredentialDialog } from "../../features/providers/ProviderCredentialDialog";
 import type { ProviderKind } from "../../features/providers/domain";
+import type {
+  EnvironmentConnection,
+  FunnelAnalysisArtifact,
+  KnowledgeEnvironment,
+  KnowledgeEnvironmentView,
+  KnowledgeProject,
+  KnowledgeSource,
+} from "../../features/knowledge/domain";
+import {
+  listKnowledgeEnvironmentConnections,
+  listFunnelAnalysisArtifacts,
+  listKnowledgeProjects,
+  listKnowledgeSources,
+  onKnowledgeSourceChanged,
+} from "../../features/knowledge/tauriAdapter";
+import { EnvironmentSetupDialog } from "../../features/knowledge/components/EnvironmentSetupDialog";
+import { ProjectSetupDialog } from "../../features/knowledge/components/ProjectSetupDialog";
+import {
+  knowledgeEnvironmentBadge,
+  knowledgeRevisionLabel,
+} from "../../features/knowledge/presentation";
 import { useCatalogExplorerState } from "../../features/catalogExplorer/state";
 import { useSchemaGroupDrag } from "../../features/catalogExplorer/useSchemaGroupDrag";
 import {
@@ -30,6 +55,7 @@ import {
   useCatalogScope,
 } from "../../lib/queries";
 import {
+  buildConnectionSections,
   compareCatalogs,
   defaultSchemaBaseline,
   diffCounts,
@@ -39,27 +65,48 @@ import {
 import EngineMark from "../../components/EngineMark";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
+import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
+import {
+  LoadingLabel,
+  StatusDot,
+  type StatusTone,
+} from "../../design-system/components/Status";
 import ToolbarMenu, {
   ToolbarMenuItem,
 } from "../../components/ToolbarMenu";
 import {
   ToolWindowAction,
-  ToolWindowHeader,
   ToolWindowHideButton,
   ToolWindowSearchRow,
   ToolWindowSection,
   ToolWindowSideSurface,
 } from "../../design-system/components/ToolWindow";
-import { TreeSearch } from "../../design-system/components/TreeControls";
+import {
+  TreeRowActions,
+  TreeSearch,
+  TreeSectionButton,
+} from "../../design-system/components/TreeControls";
 import WorkspaceConnectionDialog from "../../features/workspaces/components/WorkspaceConnectionDialog";
 import { deleteWorkspaceConnection } from "../../features/workspaces/tauriAdapter";
 import { useToast } from "../../components/Toast";
 import { useI18n } from "../../lib/i18n";
 import ConnectionNode from "./ConnectionNode";
 import DdlModal from "./DdlModal";
-import { catalogFromOverview } from "./catalogOverview";
 import { useCatalogTree } from "./useCatalogTree";
-import { tableKey } from "../../lib/tableRef";
+
+function knowledgeSourceTone(source: KnowledgeSource): StatusTone {
+  if (source.health === "ready") return "success";
+  if (source.health === "failed" || source.health === "revoked") return "danger";
+  return "warning";
+}
+
+function environmentDashboardTone(
+  dashboard: FunnelAnalysisArtifact,
+): StatusTone {
+  if (dashboard.state === "published") return "success";
+  if (dashboard.state === "draft") return "warning";
+  return "neutral";
+}
 
 // DopeDB-style Database Explorer: connections in the sidebar, the selected one
 // expanded to reveal its tables. Clicking a table opens its data in the main area.
@@ -77,7 +124,6 @@ export function DatabaseExplorer({
   workspaceAccount,
   workspaceHeader,
   onNewConnection,
-  onNewQuery,
   onClose,
   onCreateDemoDatabase,
   creatingDemo = false,
@@ -86,6 +132,10 @@ export function DatabaseExplorer({
   revealRequest: externalRevealRequest = 0,
   revealDatabase = null,
   revealNamespace = null,
+  activeProjectEnvironmentId = null,
+  activeProjectEnvironmentView = null,
+  activeProjectEnvironmentResourceId = null,
+  onOpenProjectEnvironment,
 }: {
   connections: ConnectionProfile[];
   selectedId: string | null;
@@ -100,7 +150,6 @@ export function DatabaseExplorer({
   workspaceAccount?: ReactNode;
   workspaceHeader?: ReactNode;
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
-  onNewQuery: () => void;
   onClose: () => void;
   onCreateDemoDatabase: () => void;
   creatingDemo?: boolean;
@@ -109,14 +158,91 @@ export function DatabaseExplorer({
   revealRequest?: number;
   revealDatabase?: string | null;
   revealNamespace?: string | null;
+  activeProjectEnvironmentId?: string | null;
+  activeProjectEnvironmentView?: KnowledgeEnvironmentView | null;
+  activeProjectEnvironmentResourceId?: string | null;
+  onOpenProjectEnvironment: (
+    environmentId: string | null,
+    view: KnowledgeEnvironmentView,
+    resourceId?: string | null,
+  ) => void;
 }) {
   const { t } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
   const catalogScope = useCatalogScope();
   const catalogScopeKeyRef = useRef(catalogScope.key);
+  const knowledgeEnabled =
+    catalogScope.ready &&
+    catalogScope.accountScope !== null;
+  const sharedKnowledgeWorkspace =
+    knowledgeEnabled && catalogScope.accountScope !== "personal";
+  const knowledgeProjects = useQuery({
+    queryKey: ["knowledge", "projects", catalogScope.key],
+    queryFn: listKnowledgeProjects,
+    enabled: knowledgeEnabled,
+    retry: false,
+  });
+  const knowledgeSources = useQuery({
+    queryKey: ["knowledge", "sources", catalogScope.key],
+    queryFn: listKnowledgeSources,
+    enabled: knowledgeEnabled,
+    retry: false,
+  });
+  const projectEnvironmentIds = useMemo(
+    () =>
+      (knowledgeProjects.data ?? []).flatMap((project) =>
+        project.environments.map((environment) => environment.id),
+      ),
+    [knowledgeProjects.data],
+  );
+  const environmentConnectionQueries = useQueries({
+    queries: projectEnvironmentIds.map((environmentId) => ({
+      queryKey: [
+        "knowledge",
+        "environment-connections",
+        environmentId,
+        catalogScope.key,
+      ],
+      queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
+      enabled: knowledgeEnabled,
+      retry: false,
+    })),
+  });
   const [globalFilter, setGlobalFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [projectSetupOpen, setProjectSetupOpen] = useState(false);
+  const [environmentSetupProjectId, setEnvironmentSetupProjectId] =
+    useState<string | null>(null);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [expandedEnvironmentIds, setExpandedEnvironmentIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [expandedResourceKeys, setExpandedResourceKeys] = useState<Set<string>>(
+    new Set(),
+  );
+  const environmentDashboardQueries = useQueries({
+    queries: projectEnvironmentIds.map((environmentId) => ({
+      queryKey: [
+        "knowledge",
+        "funnel-analysis",
+        environmentId,
+        catalogScope.key,
+      ],
+      queryFn: () => listFunnelAnalysisArtifacts(environmentId),
+      enabled:
+        sharedKnowledgeWorkspace &&
+        expandedResourceKeys.has(`${environmentId}:dashboards`),
+      retry: false,
+    })),
+  });
+  const knownKnowledgeScopeRef = useRef<{
+    key: string;
+    projectIds: Set<string>;
+    environmentIds: Set<string>;
+  } | null>(null);
   const [treeScrollElement, setTreeScrollElement] =
     useState<HTMLDivElement | null>(null);
   const [savingScopeId, setSavingScopeId] = useState<string | null>(null);
@@ -141,6 +267,103 @@ export function DatabaseExplorer({
     commands,
   } = useCatalogExplorerState(catalogScope.key);
 
+  useEffect(() => {
+    if (!knowledgeProjects.data) return;
+    const projectIds = new Set(
+      knowledgeProjects.data.map((project) => project.id),
+    );
+    const environmentIds = new Set(projectEnvironmentIds);
+    const previous =
+      knownKnowledgeScopeRef.current?.key === catalogScope.key
+        ? knownKnowledgeScopeRef.current
+        : null;
+    const newProjectIds = [...projectIds].filter(
+      (id) => !previous?.projectIds.has(id),
+    );
+    const newEnvironmentIds = [...environmentIds].filter(
+      (id) => !previous?.environmentIds.has(id),
+    );
+
+    if (previous === null) {
+      setExpandedProjectIds(projectIds);
+      setExpandedEnvironmentIds(environmentIds);
+      setExpandedResourceKeys(
+        new Set([
+          "unassigned",
+          ...projectEnvironmentIds.map(
+            (environmentId) => `${environmentId}:databases`,
+          ),
+        ]),
+      );
+    } else {
+      setExpandedProjectIds((current) =>
+        new Set([...current, ...newProjectIds]),
+      );
+      setExpandedEnvironmentIds((current) =>
+        new Set([...current, ...newEnvironmentIds]),
+      );
+      setExpandedResourceKeys(
+        (current) =>
+          new Set([
+            ...current,
+            ...newEnvironmentIds.map(
+              (environmentId) => `${environmentId}:databases`,
+            ),
+          ]),
+      );
+    }
+    knownKnowledgeScopeRef.current = {
+      key: catalogScope.key,
+      projectIds,
+      environmentIds,
+    };
+  }, [catalogScope.key, knowledgeProjects.data, projectEnvironmentIds]);
+
+  useEffect(() => {
+    if (!knowledgeEnabled) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void onKnowledgeSourceChanged(() => {
+      if (disposed) return;
+      void queryClient.invalidateQueries({ queryKey: ["knowledge", "sources"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["agentKnowledgeEnvironments"],
+      });
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [knowledgeEnabled, queryClient]);
+
+  const environmentConnectionsById = new Map<string, EnvironmentConnection[]>();
+  projectEnvironmentIds.forEach((environmentId, index) => {
+    environmentConnectionsById.set(
+      environmentId,
+      environmentConnectionQueries[index]?.data ?? [],
+    );
+  });
+  const environmentBindingsReady =
+    environmentConnectionQueries.length === projectEnvironmentIds.length &&
+    environmentConnectionQueries.every((query) => query.isSuccess);
+  const boundConnectionIds = new Set(
+    environmentBindingsReady
+      ? [...environmentConnectionsById.values()].flatMap((bindings) =>
+          bindings.flatMap((binding) =>
+            binding.connectionId ? [binding.connectionId] : [],
+          ),
+        )
+      : [],
+  );
+  const unassignedConnections =
+    knowledgeProjects.isSuccess && environmentBindingsReady
+      ? connections.filter((connection) => !boundConnectionIds.has(connection.id))
+      : connections;
+  const unassignedSections = buildConnectionSections(unassignedConnections);
+
   function openProviderCredentials(provider: ProviderKind) {
     providerReturnFocusRef.current =
       document.activeElement instanceof HTMLElement
@@ -149,7 +372,6 @@ export function DatabaseExplorer({
     setProviderCredentialsOpen(provider);
   }
   const {
-    sections,
     groupByConnectionId,
     draggingId,
     dropTarget,
@@ -177,6 +399,11 @@ export function DatabaseExplorer({
   // resubscribe an old connection in the newly active account.
   useEffect(() => {
     catalogScopeKeyRef.current = catalogScope.key;
+  }, [catalogScope.key]);
+
+  useEffect(() => {
+    setProjectSetupOpen(false);
+    setEnvironmentSetupProjectId(null);
   }, [catalogScope.key]);
 
   const wantedIds = useMemo(() => [...wanted].sort(), [wanted]);
@@ -245,6 +472,19 @@ export function DatabaseExplorer({
 
   function expandAllConnections() {
     for (const connection of connections) ensureGroupLoaded(connection.id);
+    setExpandedProjectIds(
+      new Set((knowledgeProjects.data ?? []).map((project) => project.id)),
+    );
+    setExpandedEnvironmentIds(new Set(projectEnvironmentIds));
+    setExpandedResourceKeys(
+      new Set(
+        ["unassigned", ...projectEnvironmentIds.flatMap((environmentId) => [
+          `${environmentId}:databases`,
+          `${environmentId}:sources`,
+          `${environmentId}:dashboards`,
+        ])],
+      ),
+    );
     commands.patch({
       openConnections: new Set(
         connections.map((connection) => connection.id),
@@ -254,6 +494,9 @@ export function DatabaseExplorer({
 
   function collapseAllConnections() {
     for (const id of readableWantedIds) forgetConnection(id);
+    setExpandedProjectIds(new Set());
+    setExpandedEnvironmentIds(new Set());
+    setExpandedResourceKeys(new Set());
     commands.patch({
       openConnections: new Set(),
       wanted: new Set(),
@@ -303,6 +546,39 @@ export function DatabaseExplorer({
     } finally {
       if (catalogScopeKeyRef.current === scopeKey) {
         commands.patch({ refreshingId: null });
+      }
+    }
+  }
+
+  async function refreshExplorer() {
+    const scopeKey = catalogScope.key;
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["connections", scopeKey],
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["knowledge", "projects", scopeKey],
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["knowledge", "sources", scopeKey],
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["knowledge", "environment-connections"],
+          refetchType: "active",
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["knowledge", "funnel-analysis"],
+          refetchType: "active",
+        }),
+        selectedId ? refreshSchema(selectedId) : Promise.resolve(),
+      ]);
+    } catch (error) {
+      if (catalogScopeKeyRef.current === scopeKey) {
+        toast(errMessage(error), "error");
       }
     }
   }
@@ -559,29 +835,386 @@ export function DatabaseExplorer({
     );
   }
 
+  function toggleExpandedId(
+    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+    id: string,
+  ) {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function renderUnavailableBinding(binding: EnvironmentConnection) {
+    return (
+      <button
+        key={binding.id}
+        type="button"
+        className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:w-full tw:min-w-0 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-sm tw:text-muted-foreground tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+        onClick={() =>
+          onOpenProjectEnvironment(
+            binding.projectEnvironmentId,
+            "databases",
+          )
+        }
+        title={t("connections.environmentDatabaseUnavailable")}
+      >
+        <StatusDot tone="warning" />
+        <Icon name="database" className="tw:shrink-0" />
+        <span className="tw:min-w-0 tw:flex-1 tw:truncate">
+          {binding.alias || binding.connectionName}
+        </span>
+        <Icon name="alert" className="tw:shrink-0 tw:text-warning" />
+      </button>
+    );
+  }
+
+  function renderEnvironmentResources(environment: KnowledgeEnvironment) {
+    const databaseKey = `${environment.id}:databases`;
+    const sourceKey = `${environment.id}:sources`;
+    const dashboardKey = `${environment.id}:dashboards`;
+    const environmentIndex = projectEnvironmentIds.indexOf(environment.id);
+    const bindings = environmentConnectionsById.get(environment.id) ?? [];
+    const environmentSources = (knowledgeSources.data ?? []).filter(
+      (source) => source.projectEnvironmentId === environment.id,
+    );
+    const databaseExpanded = expandedResourceKeys.has(databaseKey);
+    const sourceExpanded = expandedResourceKeys.has(sourceKey);
+    const dashboardExpanded = expandedResourceKeys.has(dashboardKey);
+    const dashboardQuery = environmentDashboardQueries[environmentIndex];
+    const environmentDashboards = dashboardQuery?.data ?? [];
+
+    return (
+      <div className="tw:grid tw:pl-3">
+        <TreeSectionButton
+          expanded={databaseExpanded}
+          icon="database"
+          selected={
+            activeProjectEnvironmentId === environment.id &&
+            activeProjectEnvironmentView === "databases"
+          }
+          actions={
+            <TreeRowActions>
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
+                title={t("connections.environmentAddDatabase")}
+                aria-label={t("connections.environmentAddDatabase")}
+                onClick={() => {
+                  onOpenProjectEnvironment(environment.id, "databases");
+                  onNewConnection();
+                }}
+              >
+                <Icon name="plus" />
+              </Button>
+            </TreeRowActions>
+          }
+          onToggle={() => {
+            toggleExpandedId(setExpandedResourceKeys, databaseKey);
+            onOpenProjectEnvironment(environment.id, "databases");
+          }}
+        >
+          {t("connections.environmentDatabases")}
+        </TreeSectionButton>
+        {databaseExpanded ? (
+          <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
+            {environmentConnectionQueries[environmentIndex]?.isPending ? (
+              <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
+                <LoadingLabel>{t("common.loading")}</LoadingLabel>
+              </div>
+            ) : bindings.length > 0 ? (
+              bindings.map((binding) => {
+                const connection = binding.connectionId
+                  ? connections.find(
+                      (candidate) => candidate.id === binding.connectionId,
+                    )
+                  : null;
+                return connection
+                  ? renderConnection(connection, true)
+                  : renderUnavailableBinding(binding);
+              })
+            ) : (
+              <button
+                type="button"
+                className="tw:min-h-control-sm tw:cursor-pointer tw:border-0 tw:bg-transparent tw:px-5 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground"
+                onClick={() =>
+                  onOpenProjectEnvironment(environment.id, "databases")
+                }
+              >
+                {t("connections.environmentAddDatabase")}
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        <TreeSectionButton
+          expanded={sourceExpanded}
+          icon="branch"
+          selected={
+            activeProjectEnvironmentId === environment.id &&
+            activeProjectEnvironmentView === "sources"
+          }
+          actions={
+            <TreeRowActions>
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
+                title={t("connections.environmentAddSource")}
+                aria-label={t("connections.environmentAddSource")}
+                onClick={() =>
+                  onOpenProjectEnvironment(environment.id, "sources")
+                }
+              >
+                <Icon name="plus" />
+              </Button>
+            </TreeRowActions>
+          }
+          onToggle={() => {
+            toggleExpandedId(setExpandedResourceKeys, sourceKey);
+            onOpenProjectEnvironment(environment.id, "sources");
+          }}
+        >
+          {t("connections.environmentDataSources")}
+        </TreeSectionButton>
+        {sourceExpanded ? (
+          <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
+            {knowledgeSources.isPending ? (
+              <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
+                <LoadingLabel>{t("common.loading")}</LoadingLabel>
+              </div>
+            ) : environmentSources.length > 0 ? (
+              environmentSources.map((source) => (
+                <button
+                  key={source.sourceId}
+                  type="button"
+                  className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:w-full tw:min-w-0 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-sm tw:text-foreground tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+                  onClick={() =>
+                    onOpenProjectEnvironment(environment.id, "sources")
+                  }
+                  title={`${source.provider === "github" ? "GitHub" : t("connections.environmentLocalFolder")} · ${knowledgeRevisionLabel(source.revision)}`}
+                >
+                  <StatusDot tone={knowledgeSourceTone(source)} />
+                  <Icon
+                    name={source.provider === "github" ? "branch" : "folder"}
+                    className="tw:shrink-0"
+                  />
+                  <span className="tw:min-w-0 tw:flex-1 tw:truncate">
+                    {source.displayName}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <button
+                type="button"
+                className="tw:min-h-control-sm tw:cursor-pointer tw:border-0 tw:bg-transparent tw:px-5 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground"
+                onClick={() =>
+                  onOpenProjectEnvironment(environment.id, "sources")
+                }
+              >
+                {t("connections.environmentAddSource")}
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        <TreeSectionButton
+          expanded={dashboardExpanded}
+          icon="chart"
+          selected={
+            activeProjectEnvironmentId === environment.id &&
+            activeProjectEnvironmentView === "dashboards"
+          }
+          onToggle={() => {
+            toggleExpandedId(setExpandedResourceKeys, dashboardKey);
+            onOpenProjectEnvironment(environment.id, "dashboards");
+          }}
+        >
+          {t("connections.environmentDashboards")}
+        </TreeSectionButton>
+        {dashboardExpanded ? (
+          <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
+            {sharedKnowledgeWorkspace && dashboardQuery?.isPending ? (
+              <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
+                <LoadingLabel>{t("common.loading")}</LoadingLabel>
+              </div>
+            ) : sharedKnowledgeWorkspace && dashboardQuery?.error ? (
+              <button
+                type="button"
+                className="tw:flex tw:min-h-control-sm tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-danger tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+                onClick={() => void dashboardQuery.refetch()}
+                title={errMessage(dashboardQuery.error)}
+              >
+                <Icon name="alert" className="tw:shrink-0" />
+                <span className="tw:min-w-0 tw:flex-1 tw:truncate">
+                  {t("connections.environmentDashboardLoadFailed")}
+                </span>
+                <span className="tw:shrink-0">{t("app.retry")}</span>
+              </button>
+            ) : environmentDashboards.length > 0 ? (
+              environmentDashboards.map((dashboard) => (
+                <button
+                  key={dashboard.id}
+                  type="button"
+                  data-selected={
+                    activeProjectEnvironmentResourceId === dashboard.id
+                  }
+                  className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:w-full tw:min-w-0 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-sm tw:text-foreground tw:data-[selected=true]:bg-selection tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+                  onClick={() =>
+                    onOpenProjectEnvironment(
+                      environment.id,
+                      "dashboards",
+                      dashboard.id,
+                    )
+                  }
+                  title={dashboard.question}
+                >
+                  <StatusDot tone={environmentDashboardTone(dashboard)} />
+                  <Icon name="chart" className="tw:shrink-0" />
+                  <span className="tw:min-w-0 tw:flex-1 tw:truncate">
+                    {dashboard.title}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <button
+                type="button"
+                className="tw:min-h-control-sm tw:cursor-pointer tw:border-0 tw:bg-transparent tw:px-5 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground"
+                onClick={() =>
+                  onOpenProjectEnvironment(environment.id, "dashboards")
+                }
+              >
+                {t("connections.environmentNoDashboards")}
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderProject(project: KnowledgeProject) {
+    const projectExpanded = expandedProjectIds.has(project.id);
+    return (
+      <div key={project.id} className="tw:grid">
+        <TreeSectionButton
+          expanded={projectExpanded}
+          icon="folder"
+          prominence="project"
+          actions={
+            <TreeRowActions>
+              <Button
+                iconOnly
+                size="xs"
+                variant="ghost"
+                title={t("connections.addEnvironment")}
+                aria-label={t("connections.addEnvironment")}
+                onClick={() => setEnvironmentSetupProjectId(project.id)}
+              >
+                <Icon name="plus" />
+              </Button>
+            </TreeRowActions>
+          }
+          onToggle={() => toggleExpandedId(setExpandedProjectIds, project.id)}
+        >
+          {project.name}
+        </TreeSectionButton>
+        {projectExpanded ? (
+          <div className="tw:grid tw:border-l tw:border-border-strong tw:pl-1">
+            {project.environments.map((environment) => {
+              const environmentExpanded = expandedEnvironmentIds.has(
+                environment.id,
+              );
+              return (
+                <div key={environment.id} className="tw:grid">
+                  <TreeSectionButton
+                    expanded={environmentExpanded}
+                    icon="folder"
+                    selected={activeProjectEnvironmentId === environment.id}
+                    trailing={
+                      <EnvironmentBadge
+                        environment={knowledgeEnvironmentBadge(
+                          environment.riskClass,
+                        )}
+                      />
+                    }
+                    onToggle={() => {
+                      toggleExpandedId(
+                        setExpandedEnvironmentIds,
+                        environment.id,
+                      );
+                      onOpenProjectEnvironment(environment.id, "databases");
+                    }}
+                  >
+                    {environment.name}
+                  </TreeSectionButton>
+                  {environmentExpanded
+                    ? renderEnvironmentResources(environment)
+                    : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function handleProjectCreated(project: KnowledgeProject) {
+    const environment = project.environments[0] ?? null;
+    setExpandedProjectIds((current) => new Set([...current, project.id]));
+    if (!environment) return;
+    setExpandedEnvironmentIds(
+      (current) => new Set([...current, environment.id]),
+    );
+    setExpandedResourceKeys(
+      (current) =>
+        new Set([
+          ...current,
+          `${environment.id}:databases`,
+        ]),
+    );
+    onOpenProjectEnvironment(environment.id, "databases");
+  }
+
+  function handleEnvironmentCreated(project: KnowledgeProject) {
+    const previousEnvironmentIds = new Set(
+      (knowledgeProjects.data ?? [])
+        .find((candidate) => candidate.id === project.id)
+        ?.environments.map((environment) => environment.id) ?? [],
+    );
+    const environment =
+      project.environments.find(
+        (candidate) => !previousEnvironmentIds.has(candidate.id),
+      ) ?? project.environments[project.environments.length - 1] ?? null;
+    setExpandedProjectIds((current) => new Set([...current, project.id]));
+    if (!environment) return;
+    setExpandedEnvironmentIds(
+      (current) => new Set([...current, environment.id]),
+    );
+    setExpandedResourceKeys(
+      (current) =>
+        new Set([...current, `${environment.id}:databases`]),
+    );
+    onOpenProjectEnvironment(environment.id, "databases");
+  }
+
+  function openEnvironmentSetup() {
+    const projects = knowledgeProjects.data ?? [];
+    const activeProject = projects.find((project) =>
+      project.environments.some(
+        (environment) => environment.id === activeProjectEnvironmentId,
+      ),
+    );
+    const projectId = activeProject?.id ?? projects[0]?.id ?? null;
+    if (projectId) setEnvironmentSetupProjectId(projectId);
+  }
+
   const selectedConnection =
     connections.find((connection) => connection.id === selectedId) ?? null;
-  const selectedSupportsSql =
-    selectedConnection !== null && selectedConnection.engine !== "mongodb";
-  const selectedCatalog = selectedId
-    ? overviews[selectedId]
-      ? catalogFromOverview(overviews[selectedId], catalogs[selectedId])
-      : catalogs[selectedId]
-    : undefined;
-  const selectedTable =
-    selectedTableKey && selectedCatalog
-      ? selectedCatalog.tables.find(
-          (table) => tableKey(table) === selectedTableKey,
-        ) ?? null
-      : null;
-  const selectedSchemaGroup = selectedId
-    ? groupByConnectionId.get(selectedId) ?? null
-    : null;
-  const selectedSchemaGroupComparable =
-    selectedSupportsSql &&
-    selectedSchemaGroup !== null &&
-    selectedSchemaGroup.connections.length > 1 &&
-    schemaGroupIsCompatible(selectedSchemaGroup);
 
   function revealEditorObject() {
     if (!selectedConnection || !selectedTableKey) return;
@@ -616,66 +1249,8 @@ export function DatabaseExplorer({
       compactOpen={compactOpen}
       id="workbench-sidebar"
     >
-      <ToolWindowHeader
-        title={t("connections.databaseExplorer")}
-        actions={
-          <>
-            <Button
-              iconOnly
-              size="xs"
-              variant="ghost"
-              disabled={!selectedTableKey}
-              onClick={revealEditorObject}
-              title={t("connections.scrollFromEditor")}
-              aria-label={t("connections.scrollFromEditor")}
-            >
-              <Icon name="target" />
-            </Button>
-            <Button
-              iconOnly
-              size="xs"
-              variant="ghost"
-              disabled={connections.length === 0}
-              onClick={expandAllConnections}
-              title={t("connections.expandAll")}
-              aria-label={t("connections.expandAll")}
-            >
-              <Icon name="chevronsRight" />
-            </Button>
-            <Button
-              iconOnly
-              size="xs"
-              variant="ghost"
-              disabled={open.size === 0}
-              onClick={collapseAllConnections}
-              title={t("connections.collapseAll")}
-              aria-label={t("connections.collapseAll")}
-            >
-              <Icon name="chevronsLeft" />
-            </Button>
-            <ToolbarMenu
-              icon="moreVertical"
-              label={t("connections.options")}
-            >
-              <ToolbarMenuItem
-                icon={showRowCounts ? "check" : "view"}
-                onClick={() =>
-                  commands.patch({ showRowCounts: !showRowCounts })
-                }
-              >
-                {t("connections.showRowCounts")}
-              </ToolbarMenuItem>
-            </ToolbarMenu>
-            <ToolWindowHideButton
-              label={t("common.close")}
-              onClick={onClose}
-            />
-          </>
-        }
-      />
-      {workspaceHeader}
       <div
-        className="tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:gap-[2px] tw:overflow-x-auto tw:border-b tw:border-border-subtle tw:bg-background tw:px-1"
+        className="tw:group tw:flex tw:min-h-control-md tw:shrink-0 tw:items-center tw:gap-[2px] tw:border-b tw:border-border-subtle tw:bg-background tw:px-1"
         role="toolbar"
         aria-label={t("connections.databaseExplorerActions")}
       >
@@ -683,12 +1258,24 @@ export function DatabaseExplorer({
           iconOnly
           size="xs"
           variant="ghost"
-          onClick={(event) => {
-            event.currentTarget.focus({ preventScroll: true });
-            onNewConnection();
-          }}
-          title={t("connections.new")}
-          aria-label={t("connections.new")}
+          disabled={knowledgeProjects.isPending}
+          onClick={() => setProjectSetupOpen(true)}
+          title={t("connections.addProject")}
+          aria-label={t("connections.addProject")}
+        >
+          <Icon name="folderPlus" />
+        </Button>
+        <Button
+          iconOnly
+          size="xs"
+          variant="ghost"
+          disabled={
+            knowledgeProjects.isPending ||
+            (knowledgeProjects.data?.length ?? 0) === 0
+          }
+          onClick={openEnvironmentSetup}
+          title={t("connections.addEnvironment")}
+          aria-label={t("connections.addEnvironment")}
         >
           <Icon name="plus" />
         </Button>
@@ -696,88 +1283,57 @@ export function DatabaseExplorer({
           iconOnly
           size="xs"
           variant="ghost"
-          disabled={!selectedConnection}
-          onClick={(event) => {
-            if (!selectedConnection) return;
-            event.currentTarget.focus({ preventScroll: true });
-            onEdit(selectedConnection);
-          }}
-          title={t("connections.dataSourcesAndDrivers")}
-          aria-label={t("connections.dataSourcesAndDrivers")}
-        >
-          <Icon name="gear" />
-        </Button>
-        <Button
-          iconOnly
-          size="xs"
-          variant="ghost"
-          disabled={!selectedId}
-          onClick={() => selectedId && void refreshSchema(selectedId)}
-          title={t("connections.refreshSchema")}
-          aria-label={t("connections.refreshSchema")}
+          disabled={
+            knowledgeProjects.isFetching ||
+            knowledgeSources.isFetching ||
+            refreshing !== null
+          }
+          onClick={() => void refreshExplorer()}
+          title={t("connections.refreshExplorer")}
+          aria-label={t("connections.refreshExplorer")}
         >
           <Icon name="refresh" />
-        </Button>
-        <Button
-          iconOnly
-          size="xs"
-          variant="ghost"
-          disabled={!selectedSupportsSql}
-          onClick={onNewQuery}
-          title={t("ide.action.newQuery")}
-          aria-label={t("ide.action.newQuery")}
-        >
-          <Icon name="play" />
-        </Button>
-        <Button
-          iconOnly
-          size="xs"
-          variant="ghost"
-          disabled={!selectedConnection || !selectedTable}
-          onClick={() =>
-            selectedConnection &&
-            selectedTable &&
-            onOpenTable(selectedConnection, selectedTable)
-          }
-          title={t("connections.editData")}
-          aria-label={t("connections.editData")}
-        >
-          <Icon name="table" />
-        </Button>
-        <Button
-          size="compact"
-          variant="ghost"
-          disabled={!selectedSupportsSql || !selectedTable}
-          onClick={() =>
-            selectedConnection &&
-            selectedTable &&
-            commands.openDdlDialog({
-              connection: selectedConnection,
-              table: selectedTable,
-            })
-          }
-          title={t("connections.showDdl")}
-          aria-label={t("connections.showDdl")}
-        >
-          DDL
-        </Button>
-        <Button
-          iconOnly
-          size="xs"
-          variant="ghost"
-          disabled={!selectedSchemaGroupComparable}
-          onClick={() =>
-            selectedSchemaGroup && onOpenSchemaDiff(selectedSchemaGroup)
-          }
-          title={t("connections.compareSchemaStructure")}
-          aria-label={t("connections.compareSchemaStructure")}
-        >
-          <Icon name="columns" />
         </Button>
         <ToolbarMenu
           icon="view"
           label={t("connections.viewOptions")}
         >
+          <ToolbarMenuItem
+            icon="target"
+            disabled={!selectedTableKey}
+            onClick={revealEditorObject}
+          >
+            {t("connections.scrollFromEditor")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
+            icon="chevronsRight"
+            disabled={
+              connections.length === 0 &&
+              (knowledgeProjects.data?.length ?? 0) === 0
+            }
+            onClick={expandAllConnections}
+          >
+            {t("connections.expandAll")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
+            icon="chevronsLeft"
+            disabled={
+              open.size === 0 &&
+              expandedProjectIds.size === 0 &&
+              expandedEnvironmentIds.size === 0 &&
+              expandedResourceKeys.size === 0
+            }
+            onClick={collapseAllConnections}
+          >
+            {t("connections.collapseAll")}
+          </ToolbarMenuItem>
+          <ToolbarMenuItem
+            icon="search"
+            disabled={connections.length === 0}
+            onClick={() => setSearchOpen(true)}
+          >
+            {t("connections.filterTables")}
+          </ToolbarMenuItem>
           <ToolbarMenuItem
             icon={showRowCounts ? "check" : "list"}
             onClick={() =>
@@ -786,14 +1342,15 @@ export function DatabaseExplorer({
           >
             {t("connections.showRowCounts")}
           </ToolbarMenuItem>
-          <ToolbarMenuItem
-            icon="search"
-            onClick={() => setSearchOpen(true)}
-          >
-            {t("connections.filterTables")}
-          </ToolbarMenuItem>
         </ToolbarMenu>
+        <span className="tw:pointer-events-none tw:ml-auto tw:opacity-0 tw:transition-opacity tw:group-hover:pointer-events-auto tw:group-hover:opacity-100 tw:group-focus-within:pointer-events-auto tw:group-focus-within:opacity-100">
+          <ToolWindowHideButton
+            label={t("common.close")}
+            onClick={onClose}
+          />
+        </span>
       </div>
+      {workspaceHeader}
       {connections.length > 0 && searchOpen ? (
         <ToolWindowSearchRow>
           <div className="tw:min-w-0 tw:flex-1">
@@ -817,7 +1374,31 @@ export function DatabaseExplorer({
         data-catalog-tree-scroll
         className="tw:min-h-0 tw:flex-1 tw:overflow-x-hidden tw:overflow-y-auto tw:p-1 tw:[container-name:db-sidebar] tw:[container-type:inline-size]"
       >
-        {connections.length === 0 ? (
+        {knowledgeEnabled && knowledgeProjects.isPending ? (
+          <div className="tw:min-h-control-md tw:px-2 tw:py-1 tw:text-xs">
+            <LoadingLabel>{t("connections.loadingProjects")}</LoadingLabel>
+          </div>
+        ) : null}
+        {knowledgeEnabled && knowledgeProjects.error ? (
+          <p
+            className="tw:m-0 tw:px-2 tw:py-1 tw:text-xs tw:text-danger"
+            role="alert"
+          >
+            {errMessage(knowledgeProjects.error)}
+          </p>
+        ) : null}
+        {knowledgeEnabled &&
+        knowledgeProjects.isSuccess &&
+        (knowledgeProjects.data?.length ?? 0) === 0 ? (
+          <div className="tw:px-2 tw:py-3">
+            <p className="tw:m-0 tw:text-xs tw:leading-relaxed tw:text-muted-foreground">
+              {t("connections.projectSetupDescription")}
+            </p>
+          </div>
+        ) : null}
+        {knowledgeProjects.data?.map(renderProject)}
+
+        {connections.length === 0 && !knowledgeEnabled ? (
           <div className="tw:grid tw:gap-5 tw:p-3">
             <ToolWindowSection title={t("connections.createDataSource")}>
               {renderLaunchButton("PostgreSQL", {
@@ -893,17 +1474,60 @@ export function DatabaseExplorer({
             </ToolWindowSection>
           </div>
         ) : null}
-        {sections.map((section) =>
-          section.kind === "group"
-            ? renderGroup(section.group)
-            : renderConnection(section.connection),
-        )}
+        {knowledgeEnabled &&
+        (knowledgeProjects.data?.length ?? 0) > 0 &&
+        unassignedSections.length > 0 ? (
+          <div className="tw:grid tw:pt-1">
+            <TreeSectionButton
+              expanded={expandedResourceKeys.has("unassigned")}
+              icon="folder"
+              onToggle={() =>
+                toggleExpandedId(setExpandedResourceKeys, "unassigned")
+              }
+            >
+              {t("connections.unassigned")}
+            </TreeSectionButton>
+            {expandedResourceKeys.has("unassigned") ? (
+              <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
+                {unassignedSections.map((section) =>
+                  section.kind === "group"
+                    ? renderGroup(section.group)
+                    : renderConnection(section.connection, true),
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : !knowledgeEnabled ? (
+          unassignedSections.map((section) =>
+            section.kind === "group"
+              ? renderGroup(section.group)
+              : renderConnection(section.connection),
+          )
+        ) : null}
       </div>
 
       {workspaceAccount ? (
         <div className="ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
           {workspaceAccount}
         </div>
+      ) : null}
+
+      {projectSetupOpen ? (
+        <ProjectSetupDialog
+          catalogScopeKey={catalogScope.key}
+          onClose={() => setProjectSetupOpen(false)}
+          onCreated={handleProjectCreated}
+        />
+      ) : null}
+
+      {environmentSetupProjectId ? (
+        <EnvironmentSetupDialog
+          projects={knowledgeProjects.data ?? []}
+          preferredProjectId={environmentSetupProjectId}
+          catalogScopeKey={catalogScope.key}
+          onClose={() => setEnvironmentSetupProjectId(null)}
+          onCreated={handleEnvironmentCreated}
+        />
       ) : null}
 
       {dragPreview &&

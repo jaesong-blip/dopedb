@@ -9,42 +9,64 @@ export function TreeSectionButton({
   expanded,
   icon,
   children,
+  trailing,
+  actions,
   onToggle,
   danger = false,
+  selected = false,
+  prominence = "default",
 }: {
   expanded: boolean;
   icon: IconName;
   children: ReactNode;
+  trailing?: ReactNode;
+  actions?: ReactNode;
   onToggle: () => void;
   danger?: boolean;
+  selected?: boolean;
+  prominence?: "default" | "project";
 }) {
   return (
     <div
+      data-selected={selected || undefined}
       className={
         danger
-          ? "tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:cursor-pointer tw:select-none tw:items-center tw:gap-1 tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:text-sm tw:font-medium tw:text-danger"
-          : "tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:cursor-pointer tw:select-none tw:items-center tw:gap-1 tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:text-sm tw:font-normal tw:text-foreground tw:hover:bg-muted"
+          ? "tw:group tw:relative tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:min-w-0 tw:select-none tw:items-stretch tw:text-sm tw:font-medium tw:text-danger tw:data-[selected=true]:bg-selection tw:data-[selected=true]:text-selection-foreground"
+          : prominence === "project"
+            ? "tw:group tw:relative tw:flex tw:min-h-control-sm tw:min-w-0 tw:select-none tw:items-stretch tw:text-sm tw:font-semibold tw:text-foreground tw:hover:bg-muted tw:data-[selected=true]:bg-selection tw:data-[selected=true]:text-selection-foreground"
+          : "tw:group tw:relative tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:min-w-0 tw:select-none tw:items-stretch tw:text-sm tw:font-normal tw:text-foreground tw:hover:bg-muted tw:data-[selected=true]:bg-selection tw:data-[selected=true]:text-selection-foreground"
       }
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      onClick={onToggle}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onToggle();
-        }
-      }}
     >
-      <span className="tw:grid tw:w-[var(--ds-icon-sm)] tw:shrink-0 tw:place-items-center tw:text-2xs">
-        <Icon name={expanded ? "chevronDown" : "chevronRight"} />
-      </span>
-      <Icon
-        name={icon}
-        className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)]"
-      />
-      <span>{children}</span>
+      <button
+        type="button"
+        className="tw:flex tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:items-center tw:gap-1 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:text-left tw:font-inherit tw:text-inherit tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <span className="tw:grid tw:w-[var(--ds-icon-sm)] tw:shrink-0 tw:place-items-center tw:text-2xs">
+          <Icon name={expanded ? "chevronDown" : "chevronRight"} />
+        </span>
+        <Icon
+          name={icon}
+          className="tw:shrink-0 tw:text-[length:var(--ds-icon-sm)]"
+        />
+        <span className="tw:min-w-0 tw:flex-1 tw:truncate">{children}</span>
+        {trailing}
+      </button>
+      {actions}
     </div>
+  );
+}
+
+export function TreeRowActions({ children }: { children: ReactNode }) {
+  return (
+    <span
+      className="tw:pointer-events-none tw:absolute tw:top-1/2 tw:right-1 tw:z-10 tw:flex tw:-translate-y-1/2 tw:items-center tw:gap-[2px] tw:rounded-sm tw:bg-inherit tw:pl-1 tw:opacity-0 tw:transition-opacity tw:group-hover:pointer-events-auto tw:group-hover:opacity-100 tw:group-focus-within:pointer-events-auto tw:group-focus-within:opacity-100"
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      {children}
+    </span>
   );
 }
 

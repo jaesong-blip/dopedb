@@ -107,22 +107,17 @@ export const agentsCatalog = defineCatalog(
     "agent.acpProvider": "Agent",
     "agent.acpEnvironment": "Project environment",
     "agent.acpEnvironmentHint":
-      "Pins code knowledge and every mapped database to one exact environment revision.",
-    "agent.acpDatabaseOnly": "Current database only",
-    "agent.acpEnvironmentScope": "DB {databases} · Source {sources}",
-    "agent.acpEnvironmentScopeChoose":
-      "Choose the exact databases this new session may use. The current database is always included.",
-    "agent.acpEnvironmentScopePinned":
-      "This session is pinned to these exact database revisions.",
-    "agent.acpEnvironmentScopeRequired": "Current database · required",
-    "agent.acpEnvironmentScopeStale": "Binding changed · reconfirm it",
-    "agent.acpEnvironmentScopeUnavailable":
-      "No local credential or managed grant on this device",
-    "agent.acpEnvironmentScopeEmpty":
-      "No usable database binding is available in this Environment.",
+      "Pins the Agent to every database and source revision in one exact Project Environment.",
+    "agent.acpEnvironmentLoadFailed": "Could not load Project Environments",
+    "agent.acpEnvironmentLoadFailedBody":
+      "The Agent scope could not be verified: {error}",
+    "agent.acpEnvironmentRequired": "Set up a Project Environment",
+    "agent.acpEnvironmentRequiredBody":
+      "In Explorer, place this database and source code inside a Project and Environment before starting the Agent.",
+    "agent.acpSelectEnvironment": "Select Project / Environment",
     "agent.acpProtocol": "ACP v1 · official Claude and Codex adapters",
     "agent.acpReadyBody":
-      "The current connection and visible editor selection will be attached as explicit ACP context blocks.",
+      "Every verified database and source revision in this Project Environment is attached as one exact ACP scope.",
     "agent.acpReadyTitle": "Ready to work",
     "agent.acpRenderFailed": "AI Chat could not be displayed",
     "agent.acpRenderFailedBody":
@@ -447,22 +442,17 @@ export const agentsCatalog = defineCatalog(
     "agent.acpProvider": "Agent",
     "agent.acpEnvironment": "프로젝트 환경",
     "agent.acpEnvironmentHint":
-      "코드 지식과 연결된 모든 DB를 정확한 환경 리비전에 고정합니다.",
-    "agent.acpDatabaseOnly": "현재 DB만",
-    "agent.acpEnvironmentScope": "DB {databases} · 소스 {sources}",
-    "agent.acpEnvironmentScopeChoose":
-      "새 세션이 사용할 정확한 DB를 선택하세요. 현재 DB는 항상 포함됩니다.",
-    "agent.acpEnvironmentScopePinned":
-      "이 세션은 아래의 정확한 DB 리비전에 고정되어 있습니다.",
-    "agent.acpEnvironmentScopeRequired": "현재 DB · 필수",
-    "agent.acpEnvironmentScopeStale": "연결이 변경됨 · 재확인 필요",
-    "agent.acpEnvironmentScopeUnavailable":
-      "이 기기에 로컬 자격증명이나 관리형 권한이 없음",
-    "agent.acpEnvironmentScopeEmpty":
-      "이 환경에 사용할 수 있는 DB 연결이 없습니다.",
+      "Agent를 하나의 정확한 프로젝트 환경에 속한 모든 DB와 소스 리비전에 고정합니다.",
+    "agent.acpEnvironmentLoadFailed": "프로젝트 환경을 불러오지 못했습니다",
+    "agent.acpEnvironmentLoadFailedBody":
+      "Agent 범위를 검증하지 못했습니다: {error}",
+    "agent.acpEnvironmentRequired": "프로젝트 환경을 먼저 설정하세요",
+    "agent.acpEnvironmentRequiredBody":
+      "Agent를 시작하기 전에 탐색기에서 이 DB와 소스 코드를 프로젝트와 환경 안에 배치하세요.",
+    "agent.acpSelectEnvironment": "프로젝트 / 환경 선택",
     "agent.acpProtocol": "ACP v1 · 공식 Claude·Codex 어댑터",
     "agent.acpReadyBody":
-      "현재 연결과 화면에서 선택한 편집기 문맥을 명시적인 ACP 컨텍스트 블록으로 첨부합니다.",
+      "이 프로젝트 환경의 검증된 모든 DB와 소스 리비전을 하나의 정확한 ACP 범위로 첨부합니다.",
     "agent.acpReadyTitle": "작업 준비 완료",
     "agent.acpRenderFailed": "AI Chat 화면을 표시하지 못했습니다",
     "agent.acpRenderFailedBody":

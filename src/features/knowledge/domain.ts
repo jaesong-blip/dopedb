@@ -5,6 +5,20 @@ export type KnowledgeEnvironment = {
   revision: number;
 };
 
+export type KnowledgeEnvironmentView =
+  | "sources"
+  | "databases"
+  | "mappings"
+  | "dashboards"
+  | "explore";
+
+export type KnowledgeEnvironmentFocus = {
+  environmentId: string | null;
+  view: KnowledgeEnvironmentView;
+  resourceId?: string | null;
+  requestId: number;
+};
+
 export type KnowledgeProject = {
   id: string;
   name: string;
@@ -64,6 +78,12 @@ export type KnowledgeSource = {
 export type CreateKnowledgeProjectInput = {
   name: string;
   environments: Array<{ name: string; riskClass: KnowledgeEnvironment["riskClass"] }>;
+};
+
+export type CreateKnowledgeEnvironmentInput = {
+  projectId: string;
+  name: string;
+  riskClass: KnowledgeEnvironment["riskClass"];
 };
 
 export type GithubKnowledgeSourceInput = {

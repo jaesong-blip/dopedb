@@ -233,6 +233,14 @@ pub(crate) struct CreateKnowledgeProjectRequest {
     pub(crate) environments: Vec<CreateKnowledgeEnvironmentRequest>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AppendKnowledgeEnvironmentRequest {
+    pub(crate) expected_project_revision: u64,
+    pub(crate) name: String,
+    pub(crate) risk_class: EnvironmentRiskClass,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreatedKnowledgeProjectResponse {
@@ -350,6 +358,46 @@ pub(crate) async fn create_knowledge_project(
     if project.revision == 0 || project.environments.is_empty() {
         return Err(AppError::Network(
             "Project Knowledge returned an invalid created scope".into(),
+        ));
+    }
+    Ok(project)
+}
+
+pub(crate) async fn create_knowledge_environment(
+    user_id: &str,
+    workspace_id: Uuid,
+    project_id: Uuid,
+    request: &AppendKnowledgeEnvironmentRequest,
+) -> AppResult<RemoteKnowledgeProject> {
+    let token = bearer(user_id)?;
+    let response = client()?
+        .post(format!(
+            "{}/api/v1/workspaces/{workspace_id}/knowledge/projects/{project_id}/environments",
+            origin()?
+        ))
+        .bearer_auth(token.as_str())
+        .json(request)
+        .send()
+        .await
+        .map_err(|error| request_error("adding a Project Environment", error))?;
+    if !response.status().is_success() {
+        return Err(oauth_error(response).await);
+    }
+    let project = response
+        .json::<CreatedKnowledgeProjectResponse>()
+        .await
+        .map_err(|error| request_error("reading the updated Project scope", error))?
+        .project;
+    if project.id != project_id
+        || project.revision != request.expected_project_revision.saturating_add(1)
+        || project.environments.is_empty()
+        || project.environments.len() > 100
+        || project.environments.iter().any(|environment| {
+            environment.name.is_empty() || environment.name.len() > 512 || environment.revision == 0
+        })
+    {
+        return Err(AppError::Network(
+            "Project Knowledge returned an invalid updated scope".into(),
         ));
     }
     Ok(project)

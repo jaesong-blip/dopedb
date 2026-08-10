@@ -1,7 +1,7 @@
 // Connection-scoped dashboard canvas. Every saved Agent query becomes one live tile;
 // definitions can synchronize through a Team workspace while result rows stay local
 // behind DopeDB's read-only execution boundary.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Dashboard,
@@ -25,12 +25,6 @@ import {
   WorkbenchEmptyState,
   WorkbenchPane,
 } from "../../design-system/components/Workbench";
-import {
-  ToolWindowHeader,
-  ToolWindowHideButton,
-  ToolWindowSearchRow,
-  ToolWindowSideSurface,
-} from "../../design-system/components/ToolWindow";
 import { dashboardTileRunQueries, dashboardsQuery, qk } from "../../lib/queries";
 import { useI18n, type I18nKey } from "../../lib/i18n";
 
@@ -71,128 +65,6 @@ const DASHBOARD_RESULT_CACHE_LIMIT = 4;
 function displayTime(value: string) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
-}
-
-export function DashboardSidebar({
-  connections,
-  selectedId,
-  focusId,
-  onSelectConnection,
-  onFocus,
-  onClose,
-  workspaceAccount,
-  workspaceHeader,
-  compact = false,
-  compactOpen = false,
-}: {
-  connections: ConnectionProfile[];
-  selectedId: string | null;
-  focusId: string | null;
-  onSelectConnection: (id: string) => void;
-  onFocus: (id: string) => void;
-  onClose: () => void;
-  workspaceAccount?: ReactNode;
-  workspaceHeader?: ReactNode;
-  compact?: boolean;
-  compactOpen?: boolean;
-}) {
-  const { t } = useI18n();
-  const selected = connections.find((connection) => connection.id === selectedId) ?? null;
-  const list = useQuery({
-    ...dashboardsQuery(selectedId ?? "__no_connection__"),
-    enabled: selectedId !== null,
-  });
-  const dashboards = list.data ?? [];
-
-  return (
-    <ToolWindowSideSurface
-      compact={compact}
-      compactOpen={compactOpen}
-      id="workbench-sidebar"
-    >
-      {workspaceHeader}
-      <ToolWindowHeader
-        title={
-          <span className="tw:inline-flex tw:min-w-0 tw:items-baseline tw:gap-2">
-            <span className="tw:truncate">{t("dashboard.library")}</span>
-            <span className="tw:font-normal tw:text-muted-foreground tw:tabular-nums">
-              {dashboards.length}
-            </span>
-          </span>
-        }
-        actions={
-          <ToolWindowHideButton
-            label={t("common.close")}
-            onClick={onClose}
-          />
-        }
-      />
-      <ToolWindowSearchRow>
-        <label className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center">
-          <span className="tw:sr-only">{t("app.thisConnection")}</span>
-          <select
-            className="tw:h-control-sm tw:w-full tw:min-w-0 tw:border-0 tw:bg-transparent tw:px-2 tw:text-sm tw:shadow-none"
-            value={selectedId ?? ""}
-            onChange={(event) => onSelectConnection(event.target.value)}
-            aria-label={t("app.thisConnection")}
-          >
-            <option value="" disabled>
-              {t("settings.selectConnectionTitle")}
-            </option>
-            {connections.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connection.name || t("app.unnamed")}
-              </option>
-            ))}
-          </select>
-        </label>
-      </ToolWindowSearchRow>
-
-      <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-hidden tw:p-1">
-        <div className="tw:grid tw:min-h-0 tw:content-start tw:gap-1 tw:overflow-y-auto tw:[&>p]:m-2 tw:[&>p]:text-sm tw:[&>p]:leading-relaxed">
-          {!selected ? (
-            <p className="tw:text-muted-foreground">
-              {t("settings.selectConnectionTitle")}
-            </p>
-          ) : list.isPending ? (
-            <Skeleton lines={4} />
-          ) : list.error ? (
-            <p className="tw:text-danger">{errMessage(list.error)}</p>
-          ) : dashboards.length === 0 ? (
-            <p className="tw:text-muted-foreground">
-              {t("dashboard.emptyTitle")}
-            </p>
-          ) : (
-            dashboards.map((dashboard) => (
-              <button
-                type="button"
-                key={dashboard.id}
-                data-active={focusId === dashboard.id}
-                className="tw:grid tw:min-h-control-xl tw:min-w-0 tw:cursor-pointer tw:grid-cols-[var(--ds-control-sm)_minmax(0,1fr)] tw:items-center tw:gap-2 tw:rounded-sm tw:border-0 tw:bg-transparent tw:p-2 tw:text-left tw:text-muted-foreground tw:data-[active=true]:bg-muted tw:data-[active=true]:text-foreground tw:data-[active=true]:shadow-[inset_var(--ds-border-width-bold)_0_0_var(--ds-accent-text)] tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-                onClick={() => onFocus(dashboard.id)}
-                title={dashboard.title}
-              >
-                <Icon name="chart" />
-                <span className="tw:grid tw:min-w-0 tw:gap-1">
-                  <strong className="tw:overflow-hidden tw:text-ellipsis tw:whitespace-nowrap">
-                    {dashboard.title}
-                  </strong>
-                  <small className="tw:overflow-hidden tw:text-muted-foreground tw:text-ellipsis tw:whitespace-nowrap">
-                    {t(KIND_LABELS[dashboard.visualization.kind])} · {t(STATE_LABELS[dashboard.state])}
-                  </small>
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-      {workspaceAccount ? (
-        <div className="ds-control-row tw:flex tw:min-w-0 tw:shrink-0 tw:items-center tw:gap-2 tw:border-t tw:border-border-subtle tw:bg-background tw:p-2">
-          {workspaceAccount}
-        </div>
-      ) : null}
-    </ToolWindowSideSurface>
-  );
 }
 
 function DashboardTile({

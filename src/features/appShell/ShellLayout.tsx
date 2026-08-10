@@ -6,6 +6,10 @@ import AcpChatPanel from "../agents/AcpChatPanel";
 import { AgentSelectionProvider } from "../agents/selectionContext";
 import type { BackgroundTask } from "../backgroundTasks/domain";
 import type { ConnectionProfile } from "../connections/domain";
+import type {
+  KnowledgeEnvironmentFocus,
+  KnowledgeEnvironmentView,
+} from "../knowledge/domain";
 import type { QueryServiceStore } from "../queryServices/store";
 import { defaultSqlNamespace } from "../queries/namespace";
 import type { WorkspaceManualTransaction } from "../queries/useWorkspaceManualTransactions";
@@ -19,10 +23,8 @@ import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
 import { tableKey } from "../../lib/tableRef";
 import { DatabaseExplorer } from "../../screens/Connections";
-import { DashboardSidebar } from "../../screens/Dashboards";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import { clampAgentDockWidth } from "../agents/layout";
-import type { EditingConnection } from "./WorkbenchContent";
 import { IdeStatusBar, IdeTopBar } from "./IdeChrome";
 import type { AppArea } from "./navigation";
 
@@ -33,8 +35,6 @@ const IS_MACOS =
 type Props = {
   area: AppArea;
   settingsOpen: boolean;
-  editing: EditingConnection;
-  activeSchemaGroup: SchemaConnectionGroup | null;
   activeSchemaGroupKey: string | null;
   connections: ConnectionProfile[];
   selected: ConnectionProfile | null;
@@ -42,7 +42,7 @@ type Props = {
   selectedTable: CatalogTable | null;
   supportsSql: boolean;
   writeEnabled: boolean;
-  dashboardFocusId: string | null;
+  knowledgeEnvironmentFocus: KnowledgeEnvironmentFocus | null;
   compact: boolean;
   mobileExplorerOpen: boolean;
   databaseExplorerOpen: boolean;
@@ -74,7 +74,11 @@ type Props = {
   onNewConnection: (preset?: ConnectionLaunchPreset) => void;
   onCreateDemoDatabase: () => void;
   onArea: (area: AppArea) => void;
-  onOpenKnowledgeAnalysis: (environmentId: string) => void;
+  onOpenProjectEnvironment: (
+    environmentId: string | null,
+    view: KnowledgeEnvironmentView,
+    resourceId?: string | null,
+  ) => void;
   onToggleDatabaseExplorer: () => void;
   onToggleLocalHistory: () => void;
   onCloseLocalHistory: () => void;
@@ -106,8 +110,6 @@ type Props = {
   onOpenAgentArchive: () => void;
   onOpenTerminal: () => void;
   onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
-  onSelectDashboardConnection: (id: string) => void;
-  onDashboardFocus: (id: string | null) => void;
   onSelectWorkspaceConnection: (id: string) => void;
   onOpenTable: (connection: ConnectionProfile, table: CatalogTable) => void;
   onOpenSchemaDiff: (group: SchemaConnectionGroup) => void;
@@ -138,8 +140,6 @@ function ShellLayoutContent(props: Props) {
   const {
     area,
     settingsOpen,
-    editing,
-    activeSchemaGroup,
     activeSchemaGroupKey,
     connections,
     selected,
@@ -147,7 +147,6 @@ function ShellLayoutContent(props: Props) {
     selectedTable,
     supportsSql,
     writeEnabled,
-    dashboardFocusId,
     compact,
     mobileExplorerOpen,
     databaseExplorerOpen,
@@ -167,7 +166,7 @@ function ShellLayoutContent(props: Props) {
     creatingDemo,
   } = props;
   const showUpdateBadge = !!availableUpdate && !settingsOpen;
-  const databaseExplorerVisible = area !== "knowledge" && databaseExplorerOpen;
+  const databaseExplorerVisible = databaseExplorerOpen;
   const localHistoryVisible = area !== "knowledge" && localHistoryOpen;
   const leftToolWindowVisible =
     databaseExplorerVisible || localHistoryVisible;
@@ -277,19 +276,6 @@ function ShellLayoutContent(props: Props) {
             compact={compact}
             compactOpen={mobileExplorerOpen}
           />
-        ) : area === "dashboard" &&
-        editing === null &&
-        !activeSchemaGroup ? (
-          <DashboardSidebar
-            connections={connections}
-            selectedId={selectedId}
-            focusId={dashboardFocusId}
-            onSelectConnection={props.onSelectDashboardConnection}
-            onFocus={props.onDashboardFocus}
-            onClose={props.onToggleDatabaseExplorer}
-            compact={compact}
-            compactOpen={mobileExplorerOpen}
-          />
         ) : (
           <DatabaseExplorer
             connections={connections}
@@ -303,7 +289,6 @@ function ShellLayoutContent(props: Props) {
             onDeleted={props.onDeletedConnection}
             onConnectionUpdated={props.onConnectionUpdated}
             onNewConnection={props.onNewConnection}
-            onNewQuery={props.onNewQuery}
             onClose={props.onToggleDatabaseExplorer}
             onCreateDemoDatabase={props.onCreateDemoDatabase}
             creatingDemo={creatingDemo}
@@ -312,6 +297,22 @@ function ShellLayoutContent(props: Props) {
             revealRequest={props.explorerRevealRequest}
             revealDatabase={selectedDatabase}
             revealNamespace={selectedNamespace}
+            activeProjectEnvironmentId={
+              area === "knowledge"
+                ? props.knowledgeEnvironmentFocus?.environmentId ?? null
+                : null
+            }
+            activeProjectEnvironmentView={
+              area === "knowledge"
+                ? props.knowledgeEnvironmentFocus?.view ?? null
+                : null
+            }
+            activeProjectEnvironmentResourceId={
+              area === "knowledge"
+                ? props.knowledgeEnvironmentFocus?.resourceId ?? null
+                : null
+            }
+            onOpenProjectEnvironment={props.onOpenProjectEnvironment}
           />
         )}
       </div>
@@ -368,7 +369,9 @@ function ShellLayoutContent(props: Props) {
           width={rightDockWidth}
           onWidthChange={props.onTerminalWidthChange}
           onOpenArchive={props.onOpenAgentArchive}
-          onOpenKnowledgeAnalysis={props.onOpenKnowledgeAnalysis}
+          onOpenKnowledgeAnalysis={(environmentId) =>
+            props.onOpenProjectEnvironment(environmentId, "dashboards")
+          }
           onClose={props.onCloseTerminal}
         />
       )}

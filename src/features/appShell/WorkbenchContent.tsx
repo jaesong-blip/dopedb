@@ -6,6 +6,7 @@ import WorkbenchDocumentStrip from "../../components/WorkbenchDocumentStrip";
 import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
+import type { KnowledgeEnvironmentFocus } from "../knowledge/domain";
 import type { QueryServiceSession } from "../queryServices/domain";
 import { effectiveSafetySettings } from "../safetySettings/policy";
 import type { SqlResolveMode } from "../queries/resolveMode";
@@ -59,7 +60,7 @@ type Props = {
   activeDocumentId: string | null;
   supportsSql: boolean;
   dashboardFocusId: string | null;
-  knowledgeAnalysisFocus: { environmentId: string; requestId: number } | null;
+  knowledgeEnvironmentFocus: KnowledgeEnvironmentFocus | null;
   initialAuditOpen: boolean;
   availableUpdate: Update | null;
   creatingDemo: boolean;
@@ -182,8 +183,9 @@ export default function WorkbenchContent(props: Props) {
     return withSettings(
       <section className="scrollbar-sleek tw:min-h-0 tw:flex-1 tw:overflow-auto tw:bg-background">
         <Knowledge
-          analysisFocus={props.knowledgeAnalysisFocus}
+          environmentFocus={props.knowledgeEnvironmentFocus}
           onOpenAgent={props.onOpenAgentTask}
+          onNewConnection={() => props.onNewConnection()}
         />
       </section>,
     );

@@ -115,13 +115,13 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
   전까지 현재 database 아래의 가짜 node로 추가하지 않는다.
 - tool window는 좌·우·하단 anchor, tab stack, resize와 persistence를 공유하는
   하나의 layout 문법으로 구현한다.
-- Database Explorer header는 전체 tree의 expand/collapse, 실제 view option,
-  hide를 소유한다. 그 아래 command row가 data source 추가, refresh, 설정,
-  query console, 선택 relation의 data/DDL, schema compare와 view option을
-  소유한다. DDL은 DopeDB처럼 generic file glyph가 아니라 조밀한 `DDL`
-  text command로 표시해 data action과 구분한다. 현재 editor 객체 동기화는
-  header action이 tree의 database, schema, object section을 실제로 펼치고
-  대상 row로 focus를 이동한다.
+- Database Explorer는 별도 제목 header나 누적 section header를 두지 않고 한 개의
+  compact command strip만 사용한다. 고정 action은 Project 추가(`folderPlus`),
+  Environment 추가(`plus`), 전체 refresh, view option이며 hide는 strip hover 또는
+  keyboard focus에서만 나타난다. expand/collapse, 검색, 현재 editor 객체 동기화,
+  row count는 view option 안에 둔다. 연결 생성·설정·query·relation data/DDL·schema
+  compare는 각각 Environment 상세, connection row/menu, 전역 workbench, relation
+  surface가 소유하며 Explorer 상단에 중복하지 않는다.
   SQL data source 행의 작은 범위 badge는 발견한 namespace 중 현재 선택 수를
   표시하고 portal `ToolbarMenu`의 실제 checklist를 연다. 이 checklist는 Data
   Sources의 Schemas 탭과 같은 저장 값을 사용하며 화면별 popup이나 별도 style
@@ -287,7 +287,7 @@ Elevation은 세 단계만 허용한다.
 - `ToolWindowHeader`: Database Explorer, Agent, provider 패널의 고정 헤더와
   우측 action 슬롯. `divider={false}`는 DopeDB AI Chat처럼 header와 본문이
   하나의 평면을 이루는 tool window에서만 하단 divider를 제거한다.
-- `ToolWindowSideSurface`: Explorer, Local History, Dashboard의 데스크톱
+- `ToolWindowSideSurface`: Explorer와 Local History의 데스크톱
   left-anchor frame과 compact full-sheet/open state. feature CSS나 부모
   selector 없이 정적 Tailwind data variant로 같은 slide 동작을 공유한다.
 - `ToolWindowHideButton`: 닫기/숨기기의 공통 minus command.
@@ -337,9 +337,17 @@ Elevation은 세 단계만 허용한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
   radiogroup, keyboard focus와 semantic selection treatment.
 - `EnvironmentBadge`: dev/staging/prod 의미색과 대문자 표기를 한곳에서 소유.
-- `TreeSectionButton`, `TreeSearch`, `VirtualTreeRows`: DopeDB 객체 트리의
+- `TreeSectionButton`, `TreeRowActions`, `TreeSearch`, `VirtualTreeRows`: DopeDB 객체 트리의
   일반 문장형 hierarchy row, keyboard toggle, dense object search와 대형 leaf
-  row windowing. `VirtualTreeRows`의 inline height/translate는 TanStack React
+  row windowing. `TreeSectionButton`의 `selected`는 현재 Project Environment나
+  resource folder를 같은 tree selection 문법으로 표시하고 `trailing`은
+  environment badge 또는 실제 command만 받는다. 연결 개수는 folder 행에
+  상시 표시하지 않는다. `TreeRowActions`는 행의
+  실제 command만 받아 hover/focus에서 표시하고 title 폭을 상시 차지하지 않는다.
+  toggle은 native button이고 interactive row action은 그 sibling이므로 nested
+  button을 만들지 않으며, action은 접근성 트리와 keyboard tab 순서에 독립 노출한다.
+  `VirtualTreeRows`의
+  inline height/translate는 TanStack React
   Virtual이 측정한 viewport geometry를 적용하는 vendor integration 예외이며,
   색상·간격·row 외형은 계속 semantic utility가 소유한다. 데이터베이스·스키마·
   객체 폴더 이름을 uppercase category heading처럼 바꾸지 않는다.
@@ -451,6 +459,29 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   semantic token과 기존 button/icon 규칙으로 조합하며 feature CSS를 만들지
   않는다. session 전용 tab action menu는 활성 session이 있을 때만 표시하며
   빈 AI Chat에 disabled kebab을 남기지 않는다.
+- Workspace Explorer는 `Project → Environment → Databases / Data sources /
+  Dashboards`를 실제 폴더 hierarchy로 표시한다. `Data sources`는 GitHub와 Local
+  Folder source binding을, `Dashboards`는 해당 Environment에 고정된 funnel
+  analysis artifact를 표시한다. 환경에 묶인 DB를 root에 중복 표시하지 않고,
+  아직 묶이지 않은 연결만 `Unassigned`에 둔다. 환경 상세는 선택한 resource
+  folder가 중앙 pane에 여는 내용이며 별도 Knowledge launcher, Dashboard 전용
+  sidebar, 중복 Project navigation을 만들지 않는다. Explorer의 단일 command
+  strip에서 Project와 Environment 생성 action을 구분하고, Project 생성 dialog는
+  기본 `main` Environment를 함께 설정한다. Project 행의 hover/focus `plus`는 해당
+  Project에 Environment를 추가하고, `Databases` folder의 `plus`는 기존 connection
+  editor를, `Data sources` folder의 `plus`는 기존 source 연결 상세를 연다. Project가 없는
+  workspace에서는 설명만 표시하고 별도 생성 row를 누적하지 않으며, 생성 직후
+  새 Environment의 `Databases` folder를 연다. resource folder와 `Unassigned` 행에는
+  연결 개수 badge를 붙이지 않는다. 중앙 환경 상세나 AI Chat 안내에
+  같은 생성 form을 중복하지 않는다.
+- 이 hierarchy의 Project prominence와 header action locality는 공개 Orca의
+  `SidebarHeader`·`ProjectHeaderActions`·`WorktreeList`를 clean-room 정보 구조
+  참고로 삼되, 행 높이, surface, icon, selection은 DopeDB tool-window와 이
+  문서의 semantic primitive가 계속 소유한다. Orca의 Agent/worktree 행은 DopeDB
+  resource tree로 가져오지 않는다.
+- AI Chat의 scope control은 `Project / Environment` 하나만 표시한다. 하위 DB
+  checkbox나 current-database-only mode를 다시 만들지 않으며, 새 ACP session은
+  해당 환경에서 검증된 전체 DB·source revision set을 immutable하게 고정한다.
 - 빈 AI Chat transcript는 제목·설명 card를 만들지 않고 실제 SQL 작업,
   스키마·선택 데이터 탐색, 명시적 변경 승인 세 줄만 표시한다. 화면에 없는
   IDE capability를 본뜨거나 steady-state onboarding 문단을 반복하지 않는다.

@@ -45,14 +45,13 @@ export function setAgentAcpPluginEnabled(
 export function startAgentAcpSession(
   connectionId: ConnectionId,
   provider: AgentProvider,
-  projectEnvironmentId?: string | null,
-  environmentConnectionIds?: string[] | null,
+  projectEnvironmentId: string,
 ): Promise<AcpSessionFocus> {
   return invoke("start_agent_acp_session", {
     connectionId,
     provider,
     projectEnvironmentId,
-    environmentConnectionIds,
+    environmentConnectionIds: null,
   });
 }
 

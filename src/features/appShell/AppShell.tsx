@@ -30,6 +30,10 @@ import {
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
 import type { Dashboard } from "../../features/dashboards/domain";
+import type {
+  KnowledgeEnvironmentFocus,
+  KnowledgeEnvironmentView,
+} from "../../features/knowledge/domain";
 import { connectionCanEnterWritePath } from "../../features/safetySettings/policy";
 import { recordStartupMark } from "../../features/runtime/tauriAdapter";
 import { useQueryServices } from "../../features/queryServices/useQueryServices";
@@ -186,10 +190,8 @@ function Shell() {
   const lastShiftAtRef = useRef(0);
   const { legacyAuditOpen, restoredDocumentKind } = useRestoredWorkbenchState();
   const [area, setArea] = usePersistentAppArea();
-  const [knowledgeAnalysisFocus, setKnowledgeAnalysisFocus] = useState<{
-    environmentId: string;
-    requestId: number;
-  } | null>(null);
+  const [knowledgeEnvironmentFocus, setKnowledgeEnvironmentFocus] =
+    useState<KnowledgeEnvironmentFocus | null>(null);
   const {
     open: terminalDockOpen,
     width: terminalDockWidth,
@@ -899,7 +901,7 @@ function Shell() {
       activeDocumentId={activeDocumentId}
       supportsSql={supportsSql}
       dashboardFocusId={dashboardFocusId}
-      knowledgeAnalysisFocus={knowledgeAnalysisFocus}
+      knowledgeEnvironmentFocus={knowledgeEnvironmentFocus}
       initialAuditOpen={legacyAuditOpen.current}
       availableUpdate={availableUpdate}
       creatingDemo={creatingDemo}
@@ -979,8 +981,6 @@ function Shell() {
       <ShellLayout
       area={area}
       settingsOpen={settingsOpen}
-      editing={editing}
-      activeSchemaGroup={activeSchemaGroup}
       activeSchemaGroupKey={schemaDiffGroupKey}
       connections={conns}
       selected={selected}
@@ -994,7 +994,7 @@ function Shell() {
             connectionCanEnterWritePath(selected),
         )
       }
-      dashboardFocusId={dashboardFocusId}
+      knowledgeEnvironmentFocus={knowledgeEnvironmentFocus}
       compact={compactShell}
       mobileExplorerOpen={mobileExplorerOpen}
       databaseExplorerOpen={databaseExplorerOpen}
@@ -1031,24 +1031,33 @@ function Shell() {
         setEditing(null);
         setSchemaDiffGroupKey(null);
         setArea(next);
-        if (!compactShell && next !== "knowledge") showDatabaseExplorer();
+        if (!compactShell) showDatabaseExplorer();
         if (next === "workspace" && selected) {
           openStableDocument("schema", false);
         }
         if (compactShell) {
           closeServices();
           closeTerminalDock();
-          if (next === "knowledge") setMobileExplorerOpen(false);
-          else if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
+          if (sameArea && mobileExplorerOpen) dismissMobileExplorer();
           else setMobileExplorerOpen(true);
         }
       }}
-      onOpenKnowledgeAnalysis={(environmentId) => {
+      onOpenProjectEnvironment={(
+        environmentId: string | null,
+        view: KnowledgeEnvironmentView,
+        resourceId: string | null = null,
+      ) => {
         setSettingsOpen(false);
         setEditing(null);
         setSchemaDiffGroupKey(null);
-        setKnowledgeAnalysisFocus({ environmentId, requestId: Date.now() });
+        setKnowledgeEnvironmentFocus({
+          environmentId,
+          view,
+          resourceId,
+          requestId: Date.now(),
+        });
         setArea("knowledge");
+        if (!compactShell) showDatabaseExplorer();
         setMobileExplorerOpen(false);
       }}
       onToggleDatabaseExplorer={() => {
@@ -1141,8 +1150,6 @@ function Shell() {
       onOpenAgentArchive={openAgentArchiveSettings}
       onOpenTerminal={openOrFocusTerminalDock}
       onSearchEverywhere={openSearchEverywhere}
-      onSelectDashboardConnection={(id) => selectConnection(id, "dashboard")}
-      onDashboardFocus={setDashboardFocusId}
       onSelectWorkspaceConnection={(id) => selectConnection(id, "workspace")}
       onOpenTable={openTableDocument}
       onOpenSchemaDiff={(group) => {

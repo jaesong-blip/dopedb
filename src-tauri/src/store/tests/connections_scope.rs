@@ -125,6 +125,49 @@ async fn assert_current_store_migration_is_write_free() {
     use dopedb_protocol::GraphBuildArtifactV1;
 
     let store = Store::from_pool_for_test(pool.clone());
+    let personal_workspace_id = Uuid::parse_str(migrations::PERSONAL_WORKSPACE_ID).unwrap();
+    let local_project = store
+        .create_knowledge_project(
+            personal_workspace_id,
+            "Personal Inventory",
+            &[("Development".into(), EnvironmentRiskClass::Development)],
+        )
+        .await
+        .unwrap();
+    let local_inventory = store
+        .knowledge_projects(personal_workspace_id)
+        .await
+        .unwrap();
+    assert_eq!(local_inventory, vec![local_project.clone()]);
+    let local_project = store
+        .create_knowledge_environment(
+            personal_workspace_id,
+            local_project.project.id,
+            "Production",
+            EnvironmentRiskClass::Production,
+        )
+        .await
+        .unwrap();
+    assert_eq!(local_project.project.revision, 2);
+    assert_eq!(local_project.environments.len(), 2);
+    assert!(store
+        .create_knowledge_environment(
+            personal_workspace_id,
+            local_project.project.id,
+            "Production",
+            EnvironmentRiskClass::Production,
+        )
+        .await
+        .is_err());
+    assert!(store
+        .create_knowledge_project(
+            personal_workspace_id,
+            "Personal Inventory",
+            &[("Production".into(), EnvironmentRiskClass::Production)],
+        )
+        .await
+        .is_err());
+
     let artifact: GraphBuildArtifactV1 = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../dopedb-protocol/tests/fixtures/graph-build-artifact-v1.json"
@@ -132,9 +175,7 @@ async fn assert_current_store_migration_is_write_free() {
     .unwrap();
     let project = Project {
         id: artifact.binding.project_id,
-        workspace_id: WorkspaceId::from(
-            Uuid::parse_str(migrations::PERSONAL_WORKSPACE_ID).unwrap(),
-        ),
+        workspace_id: WorkspaceId::from(personal_workspace_id),
         name: "DopeDB".into(),
         revision: 1,
     };

@@ -2,6 +2,7 @@ import { invoke } from "../../ipc/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   CreateKnowledgeProjectInput,
+  CreateKnowledgeEnvironmentInput,
   GithubKnowledgeRepository,
   GithubKnowledgeSourceInput,
   KnowledgeProject,
@@ -94,6 +95,12 @@ export function createKnowledgeProject(
   input: CreateKnowledgeProjectInput,
 ): Promise<KnowledgeProject> {
   return invoke("create_knowledge_project_command", { input });
+}
+
+export function createKnowledgeEnvironment(
+  input: CreateKnowledgeEnvironmentInput,
+): Promise<KnowledgeProject> {
+  return invoke("create_knowledge_environment_command", { input });
 }
 
 export function beginKnowledgeGithubInstall(): Promise<string> {

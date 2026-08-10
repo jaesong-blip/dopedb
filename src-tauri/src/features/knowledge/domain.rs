@@ -50,6 +50,12 @@ pub(crate) struct ProjectEnvironment {
     pub(crate) revision: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProjectDefinition {
+    pub(crate) project: Project,
+    pub(crate) environments: Vec<ProjectEnvironment>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum EnvironmentRiskClass {

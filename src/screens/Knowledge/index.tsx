@@ -6,6 +6,7 @@ import ConfirmButton from "../../components/ConfirmButton";
 import DashboardVisualizationView from "../../components/DashboardVisualization";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
+import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
 import {
   Field,
   SelectInput,
@@ -15,11 +16,11 @@ import {
   InlineNotice,
   LoadingLabel,
   StatusBadge,
-  StatusDot,
   type StatusTone,
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
 import { cancelQuery } from "../../ipc/commands";
+import { useCatalogScope } from "../../lib/queries";
 import { listConnections } from "../../features/connections/tauriAdapter";
 import type { ConnectionProfile } from "../../features/connections/domain";
 import {
@@ -31,14 +32,18 @@ import type {
   FunnelAnalysisArtifact,
   FunnelAnalysisRun,
   KnowledgeEnvironment,
-  KnowledgeRevision,
+  KnowledgeEnvironmentFocus,
+  KnowledgeEnvironmentView,
 } from "../../features/knowledge/domain";
+import {
+  knowledgeEnvironmentBadge,
+  knowledgeRevisionLabel,
+} from "../../features/knowledge/presentation";
 import {
   beginKnowledgeGithubInstall,
   bindKnowledgeEnvironmentConnection,
   connectKnowledgeGithubSource,
   connectKnowledgeLocalFolder,
-  createKnowledgeProject,
   decideKnowledgeMapping,
   listKnowledgeGithubRepositories,
   listFunnelAnalysisArtifacts,
@@ -55,30 +60,8 @@ import {
   syncKnowledgeSource,
 } from "../../features/knowledge/tauriAdapter";
 
-const projectKey = ["knowledge", "projects"] as const;
-const sourceKey = ["knowledge", "sources"] as const;
-const repositoryKey = ["knowledge", "github-repositories"] as const;
-const connectionsKey = ["connections"] as const;
-
-function revisionLabel(revision: KnowledgeRevision): string {
-  if (revision.kind === "github") {
-    return `${revision.refName} · ${revision.commitSha.slice(0, 8)}`;
-  }
-  if (revision.kind === "local_git") {
-    return `${revision.refName} · ${revision.commitSha.slice(0, 8)}${revision.dirty ? " · dirty" : ""}`;
-  }
-  return `Snapshot ${revision.snapshotSha256.slice(0, 8)}`;
-}
-
 function repositoryLabel(repository: GithubKnowledgeRepository): string {
   return `${repository.fullName}${repository.private ? " · Private" : ""}`;
-}
-
-function riskTone(riskClass: KnowledgeEnvironment["riskClass"]): StatusTone {
-  if (riskClass === "production") return "danger";
-  if (riskClass === "staging") return "warning";
-  if (riskClass === "development") return "success";
-  return "neutral";
 }
 
 function legacyEnvironmentMatches(
@@ -95,18 +78,33 @@ function legacyEnvironmentMatches(
 }
 
 export default function Knowledge({
-  analysisFocus,
+  environmentFocus,
   onOpenAgent,
+  onNewConnection,
 }: {
-  analysisFocus?: { environmentId: string; requestId: number } | null;
+  environmentFocus?: KnowledgeEnvironmentFocus | null;
   onOpenAgent?: (connectionId: string) => void;
+  onNewConnection?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const catalogScope = useCatalogScope();
+  const projectKey = ["knowledge", "projects", catalogScope.key] as const;
+  const sourceKey = ["knowledge", "sources", catalogScope.key] as const;
+  const repositoryKey = [
+    "knowledge",
+    "github-repositories",
+    catalogScope.key,
+  ] as const;
+  const sharedWorkspace =
+    catalogScope.accountScope !== null &&
+    catalogScope.accountScope !== "personal";
+  const connectionsKey = ["connections", catalogScope.key] as const;
   const projects = useQuery({ queryKey: projectKey, queryFn: listKnowledgeProjects });
   const sources = useQuery({ queryKey: sourceKey, queryFn: listKnowledgeSources });
   const repositories = useQuery({
     queryKey: repositoryKey,
     queryFn: listKnowledgeGithubRepositories,
+    enabled: sharedWorkspace,
     retry: false,
   });
   const connections = useQuery({ queryKey: connectionsKey, queryFn: listConnections });
@@ -116,9 +114,6 @@ export default function Knowledge({
   const [repositoryId, setRepositoryId] = useState("");
   const [refName, setRefName] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [projectName, setProjectName] = useState("");
-  const [environmentName, setEnvironmentName] = useState("Development");
-  const [riskClass, setRiskClass] = useState<KnowledgeEnvironment["riskClass"]>("development");
   const [actionError, setActionError] = useState<string | null>(null);
   const [analysisRuns, setAnalysisRuns] = useState(
     new Map<string, FunnelAnalysisRun>(),
@@ -130,9 +125,7 @@ export default function Knowledge({
   const [connectionId, setConnectionId] = useState("");
   const [connectionRole, setConnectionRole] = useState("primary");
   const [connectionAlias, setConnectionAlias] = useState("");
-  const [view, setView] = useState<"sources" | "databases" | "mappings" | "analysis" | "explore">(
-    "sources",
-  );
+  const [view, setView] = useState<KnowledgeEnvironmentView>("sources");
   const [sourceActivity, setSourceActivity] = useState(
     new Map<
       string,
@@ -143,20 +136,35 @@ export default function Knowledge({
     >(),
   );
   const environmentConnections = useQuery({
-    queryKey: ["knowledge", "environment-connections", environmentId],
+    queryKey: [
+      "knowledge",
+      "environment-connections",
+      environmentId,
+      catalogScope.key,
+    ],
     queryFn: () => listKnowledgeEnvironmentConnections(environmentId),
     enabled: Boolean(environmentId),
   });
-  const mappingsKey = ["knowledge", "mappings", environmentId] as const;
+  const mappingsKey = [
+    "knowledge",
+    "mappings",
+    environmentId,
+    catalogScope.key,
+  ] as const;
   const mappings = useQuery({
     queryKey: mappingsKey,
     queryFn: () => listKnowledgeMappings(environmentId),
-    enabled: Boolean(environmentId),
+    enabled: sharedWorkspace && Boolean(environmentId) && view === "sources",
   });
   const analyses = useQuery({
-    queryKey: ["knowledge", "funnel-analysis", environmentId],
+    queryKey: [
+      "knowledge",
+      "funnel-analysis",
+      environmentId,
+      catalogScope.key,
+    ],
     queryFn: () => listFunnelAnalysisArtifacts(environmentId),
-    enabled: Boolean(environmentId) && view === "analysis",
+    enabled: sharedWorkspace && Boolean(environmentId) && view === "dashboards",
   });
 
   const selectedProject = useMemo(
@@ -192,6 +200,14 @@ export default function Knowledge({
   ) ?? null;
 
   useEffect(() => {
+    setProjectId("");
+    setEnvironmentId("");
+    setView("sources");
+    setProvider(sharedWorkspace ? "github" : "local_folder");
+    setActionError(null);
+  }, [catalogScope.key, sharedWorkspace]);
+
+  useEffect(() => {
     if (!projects.data?.length || projectId) return;
     setProjectId(projects.data[0].id);
     setEnvironmentId(projects.data[0].environments[0]?.id ?? "");
@@ -205,17 +221,37 @@ export default function Knowledge({
   }, [environmentId, selectedProject]);
 
   useEffect(() => {
-    if (!analysisFocus || !projects.data) return;
+    if (!environmentFocus || !projects.data) return;
+    setView(environmentFocus.view);
+    if (environmentFocus.environmentId === null) return;
     const project = projects.data.find((candidate) =>
       candidate.environments.some(
-        (environment) => environment.id === analysisFocus.environmentId,
+        (environment) => environment.id === environmentFocus.environmentId,
       ),
     );
     if (!project) return;
     setProjectId(project.id);
-    setEnvironmentId(analysisFocus.environmentId);
-    setView("analysis");
-  }, [analysisFocus, projects.data]);
+    setEnvironmentId(environmentFocus.environmentId);
+  }, [environmentFocus, projects.data]);
+
+  useEffect(() => {
+    if (
+      view !== "dashboards" ||
+      !environmentFocus?.resourceId ||
+      !analyses.data?.some(
+        (analysis) => analysis.id === environmentFocus.resourceId,
+      )
+    ) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      const dashboard = document.getElementById(
+        `environment-dashboard-${environmentFocus.resourceId}`,
+      );
+      dashboard?.scrollIntoView({ block: "center", behavior: "smooth" });
+      dashboard?.focus({ preventScroll: true });
+    });
+  }, [analyses.data, environmentFocus, view]);
 
   useEffect(() => {
     if (!repositories.data?.length || repositoryId) return;
@@ -251,6 +287,9 @@ export default function Knowledge({
       });
       if (change.state === "ready") {
         void queryClient.invalidateQueries({ queryKey: sourceKey });
+        void queryClient.invalidateQueries({
+          queryKey: ["agentKnowledgeEnvironments"],
+        });
       }
     }).then((stop) => {
       if (disposed) stop();
@@ -266,20 +305,12 @@ export default function Knowledge({
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: sourceKey }),
       queryClient.invalidateQueries({ queryKey: repositoryKey }),
+      queryClient.invalidateQueries({
+        queryKey: ["agentKnowledgeEnvironments"],
+      }),
     ]);
   };
 
-  const createProject = useMutation({
-    mutationFn: createKnowledgeProject,
-    onSuccess: async (project) => {
-      setProjectName("");
-      setProjectId(project.id);
-      setEnvironmentId(project.environments[0]?.id ?? "");
-      setActionError(null);
-      await queryClient.invalidateQueries({ queryKey: projectKey });
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
   const connectGithub = useMutation({
     mutationFn: connectKnowledgeGithubSource,
     onSuccess: async () => {
@@ -297,6 +328,9 @@ export default function Knowledge({
       if (!source) return;
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: sourceKey });
+      await queryClient.invalidateQueries({
+        queryKey: ["agentKnowledgeEnvironments"],
+      });
     },
     onError: async (error) => {
       setActionError(errMessage(error));
@@ -308,6 +342,9 @@ export default function Knowledge({
     onSuccess: async () => {
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: sourceKey });
+      await queryClient.invalidateQueries({
+        queryKey: ["agentKnowledgeEnvironments"],
+      });
     },
     onError: (error) => setActionError(errMessage(error)),
   });
@@ -328,6 +365,9 @@ export default function Knowledge({
       });
       setActionError(null);
       await queryClient.invalidateQueries({ queryKey: sourceKey });
+      await queryClient.invalidateQueries({
+        queryKey: ["agentKnowledgeEnvironments"],
+      });
     },
     onError: (error, sourceId) => {
       setSourceActivity((current) => {
@@ -351,6 +391,9 @@ export default function Knowledge({
       await queryClient.invalidateQueries({
         queryKey: ["knowledge", "environment-connections", environmentId],
       });
+      await queryClient.invalidateQueries({
+        queryKey: ["agentKnowledgeEnvironments"],
+      });
     },
     onError: (error) => setActionError(errMessage(error)),
   });
@@ -361,6 +404,9 @@ export default function Knowledge({
       setActionError(null);
       await queryClient.invalidateQueries({
         queryKey: ["knowledge", "environment-connections", environmentId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["agentKnowledgeEnvironments"],
       });
     },
     onError: (error) => setActionError(errMessage(error)),
@@ -475,14 +521,50 @@ export default function Knowledge({
 
   const pending = connectGithub.isPending || connectLocal.isPending;
   const sourceLoadError = projects.error ?? sources.error;
+  const viewTitle =
+    view === "databases"
+      ? "Databases"
+      : view === "dashboards"
+        ? "Dashboards"
+        : view === "mappings"
+          ? "Mapping review"
+          : view === "explore"
+            ? "Explore"
+            : "Data sources";
 
   return (
     <div className="tw:mx-auto tw:grid tw:w-full tw:max-w-[1100px] tw:gap-5 tw:p-5 tw:@max-[720px]:p-3">
-      <header className="tw:grid tw:gap-1 tw:border-b tw:border-border-subtle tw:pb-4">
-        <h1 className="tw:m-0 tw:text-xl tw:font-semibold tw:tracking-tight">Knowledge</h1>
-        <p className="tw:m-0 tw:max-w-[720px] tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-          Connect code to one exact Project and Environment. DopeDB keeps GitHub access in the workspace and Local Folder access on this device.
-        </p>
+      <header className="tw:flex tw:min-h-control-lg tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2 tw:border-b tw:border-border-subtle tw:pb-3">
+        <Icon
+          name={
+            view === "databases"
+              ? "database"
+              : view === "dashboards"
+                ? "chart"
+                : "branch"
+          }
+          className="tw:shrink-0 tw:text-muted-foreground"
+        />
+        <h1 className="tw:m-0 tw:min-w-0 tw:truncate tw:text-base tw:font-semibold tw:tracking-tight">
+          {viewTitle}
+        </h1>
+        {selectedProject && selectedEnvironment ? (
+          <span className="tw:min-w-0 tw:truncate tw:text-xs tw:text-muted-foreground">
+            {selectedProject.name} / {selectedEnvironment.name}
+          </span>
+        ) : null}
+        {selectedEnvironment ? (
+          <EnvironmentBadge
+            environment={knowledgeEnvironmentBadge(
+              selectedEnvironment.riskClass,
+            )}
+          />
+        ) : null}
+        {selectedEnvironment ? (
+          <span className="tw:ml-auto tw:font-mono tw:text-2xs tw:text-muted-foreground">
+            r{selectedEnvironment.revision}
+          </span>
+        ) : null}
       </header>
 
       {sourceLoadError ? (
@@ -496,178 +578,39 @@ export default function Knowledge({
         </InlineNotice>
       ) : null}
 
-      {!projects.isPending && (projects.data?.length ?? 0) === 0 ? (
-        <section data-primary-flow className="tw:grid tw:gap-4 tw:border-b tw:border-border-subtle tw:pb-5">
-          <div className="tw:grid tw:gap-1">
-            <h2 className="tw:m-0 tw:text-base tw:font-semibold">Create the first Project</h2>
-            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
-              A Project Environment is the shared boundary for source revisions, database access, and Agent evidence.
-            </p>
-          </div>
-          <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[620px]:grid-cols-1">
-            <Field label="Project name">
-              <TextInput value={projectName} onChange={(event) => setProjectName(event.target.value)} />
-            </Field>
-            <Field label="Environment name">
-              <TextInput value={environmentName} onChange={(event) => setEnvironmentName(event.target.value)} />
-            </Field>
-          </div>
-          <Field label="Risk class">
-            <SelectInput value={riskClass} onChange={(event) => setRiskClass(event.target.value as KnowledgeEnvironment["riskClass"])}>
-              <option value="development">Development</option>
-              <option value="staging">Staging</option>
-              <option value="production">Production</option>
-              <option value="test">Test</option>
-              <option value="custom">Custom</option>
-            </SelectInput>
-          </Field>
-          <div>
-            <Button
-              variant="primary"
-              disabled={!projectName.trim() || !environmentName.trim() || createProject.isPending}
-              onClick={() => createProject.mutate({
-                name: projectName.trim(),
-                environments: [{ name: environmentName.trim(), riskClass }],
-              })}
-            >
-              {createProject.isPending ? "Creating…" : "Create Project"}
-            </Button>
-          </div>
-        </section>
+      {projects.isSuccess && (projects.data?.length ?? 0) === 0 ? (
+        <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
+          Create a Project from the Projects section in Explorer to organize this workspace.
+        </p>
       ) : null}
 
-      {(projects.data?.length ?? 0) > 0 ? (
-        <section className="tw:grid tw:grid-cols-[minmax(190px,260px)_minmax(0,1fr)] tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:@max-[700px]:grid-cols-1">
-          <nav
-            className="tw:grid tw:content-start tw:gap-1 tw:border-r tw:border-border-subtle tw:bg-secondary/40 tw:p-2 tw:@max-[700px]:border-r-0 tw:@max-[700px]:border-b"
-            aria-label="Project environments"
-          >
-            {projects.data?.map((project) => (
-              <div key={project.id} className="tw:grid tw:gap-0.5">
-                <div className="tw:flex tw:min-h-control-md tw:min-w-0 tw:items-center tw:gap-1.5 tw:px-1.5 tw:text-xs tw:font-semibold tw:text-foreground">
-                  <Icon name="folder" />
-                  <span className="tw:truncate">{project.name}</span>
-                </div>
-                <div className="tw:grid tw:gap-0.5 tw:pl-3">
-                  {project.environments.map((environment) => {
-                    const sourceCount = (sources.data ?? []).filter(
-                      (source) =>
-                        source.projectEnvironmentId === environment.id,
-                    ).length;
-                    return (
-                      <button
-                        key={environment.id}
-                        type="button"
-                        data-active={environment.id === environmentId}
-                        className="tw:flex tw:min-h-control-md tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-2 tw:rounded-xs tw:border-0 tw:bg-transparent tw:px-2 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:data-[active=true]:bg-selection tw:data-[active=true]:text-selection-foreground"
-                        onClick={() => {
-                          setProjectId(project.id);
-                          setEnvironmentId(environment.id);
-                        }}
-                      >
-                        <StatusDot tone={riskTone(environment.riskClass)} />
-                        <span className="tw:min-w-0 tw:flex-1 tw:truncate">
-                          {environment.name}
-                        </span>
-                        <span className="tw:shrink-0 tw:text-[11px] tw:opacity-70">
-                          {sourceCount}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </nav>
-          <div className="tw:grid tw:min-w-0 tw:content-start tw:gap-4 tw:p-4">
-            <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
-              <div className="tw:grid tw:min-w-0 tw:gap-1">
-                <span className="tw:text-xs tw:text-muted-foreground">
-                  {selectedProject?.name}
-                </span>
-                <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
-                  <h2 className="tw:m-0 tw:truncate tw:text-lg tw:font-semibold">
-                    {selectedEnvironment?.name}
-                  </h2>
-                  {selectedEnvironment ? (
-                    <StatusBadge
-                      density="compact"
-                      tone={riskTone(selectedEnvironment.riskClass)}
-                    >
-                      {selectedEnvironment.riskClass}
-                    </StatusBadge>
-                  ) : null}
-                </div>
-              </div>
-              <span className="tw:text-xs tw:text-muted-foreground">
-                revision {selectedEnvironment?.revision ?? "—"}
-              </span>
-            </div>
-            <div
-              className="tw:flex tw:min-w-0 tw:gap-1 tw:overflow-x-auto"
-              role="tablist"
-              aria-label="Environment resources"
-            >
-              {(["sources", "databases", "mappings", "analysis", "explore"] as const).map(
-                (candidate) => (
-                  <Button
-                    key={candidate}
-                    size="compact"
-                    variant={view === candidate ? "selected" : "ghost"}
-                    role="tab"
-                    aria-selected={view === candidate}
-                    onClick={() => setView(candidate)}
-                  >
-                    <Icon
-                      name={
-                        candidate === "sources"
-                          ? "branch"
-                          : candidate === "databases"
-                            ? "database"
-                            : candidate === "mappings"
-                              ? "table"
-                              : candidate === "analysis"
-                                ? "chart"
-                              : "search"
-                      }
-                    />
-                    {candidate === "sources"
-                      ? "Sources"
-                      : candidate === "databases"
-                        ? "Databases"
-                        : candidate === "mappings"
-                          ? `Mappings${mappings.data?.some((mapping) => mapping.state === "proposed") ? ` (${mappings.data.filter((mapping) => mapping.state === "proposed").length})` : ""}`
-                          : candidate === "analysis"
-                            ? "Analysis"
-                          : "Explore"}
-                  </Button>
-                ),
-              )}
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {(projects.data?.length ?? 0) > 0 && view === "analysis" ? (
+      {(projects.data?.length ?? 0) > 0 && view === "dashboards" ? (
         <section data-primary-flow className="tw:grid tw:gap-4 tw:border-b tw:border-border-subtle tw:pb-5">
           <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
             <div className="tw:grid tw:gap-1">
-              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Funnel analysis drafts</h2>
+              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Environment dashboards</h2>
               <p className="tw:m-0 tw:max-w-[760px] tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-                Agent proposals are pinned to this Environment, its source graphs, and exact database revisions. Drafts remain private until a workspace editor reviews and publishes them.
+                Agent dashboard proposals are pinned to this Environment, its data-source graphs, and exact database revisions. Drafts remain private until a workspace editor reviews and publishes them.
               </p>
             </div>
             <Button iconOnly size="compact" variant="ghost" title="Refresh analysis drafts" onClick={() => void analyses.refetch()}>
               <Icon name="refresh" />
             </Button>
           </div>
-          {analyses.isPending ? (
-            <LoadingLabel>Loading funnel analysis drafts…</LoadingLabel>
+          {!sharedWorkspace ? (
+            <div className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-secondary/30 tw:p-4">
+              <strong className="tw:text-sm">No dashboard has been proposed</strong>
+              <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
+                Dashboard proposals appear here after an Agent session runs inside an exact shared Environment grant.
+              </p>
+            </div>
+          ) : analyses.isPending ? (
+            <LoadingLabel>Loading Environment dashboards…</LoadingLabel>
           ) : analyses.error ? (
             <InlineNotice tone="danger" icon="alert">{errMessage(analyses.error)}</InlineNotice>
           ) : (analyses.data?.length ?? 0) === 0 ? (
             <div className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-secondary/30 tw:p-4">
-              <strong className="tw:text-sm">No draft has been proposed</strong>
+              <strong className="tw:text-sm">No dashboard has been proposed</strong>
               <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
                 Start an Agent session for this Environment, run and save each verified query, then ask it to propose a funnel dashboard.
               </p>
@@ -687,7 +630,12 @@ export default function Knowledge({
                   (tile) => tile.definition.kind !== "markdown" && tile.availability === "ready",
                 ).length;
                 return (
-                  <article key={analysis.id} className="tw:grid tw:min-w-0 tw:gap-4 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-4">
+                  <article
+                    id={`environment-dashboard-${analysis.id}`}
+                    key={analysis.id}
+                    tabIndex={-1}
+                    className="tw:grid tw:min-w-0 tw:gap-4 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-4 tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:motion-reduce:scroll-auto"
+                  >
                     <header className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
                       <div className="tw:grid tw:min-w-0 tw:gap-1">
                         <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
@@ -968,7 +916,9 @@ export default function Knowledge({
               </p>
             </div>
             <div className="tw:inline-flex tw:gap-1" role="group" aria-label="Source provider">
-              <Button size="compact" variant={provider === "github" ? "selected" : "ghost"} onClick={() => setProvider("github")}>GitHub</Button>
+              {sharedWorkspace ? (
+                <Button size="compact" variant={provider === "github" ? "selected" : "ghost"} onClick={() => setProvider("github")}>GitHub</Button>
+              ) : null}
               <Button size="compact" variant={provider === "local_folder" ? "selected" : "ghost"} onClick={() => setProvider("local_folder")}><Icon name="folder" />Local Folder</Button>
             </div>
           </div>
@@ -1049,7 +999,7 @@ export default function Knowledge({
         </section>
       ) : null}
 
-      {(projects.data?.length ?? 0) > 0 && view === "mappings" ? (
+      {sharedWorkspace && (projects.data?.length ?? 0) > 0 && view === "sources" ? (
         <section data-primary-flow className="tw:grid tw:gap-3 tw:border-b tw:border-border-subtle tw:pb-5">
           <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
             <div className="tw:grid tw:gap-1">
@@ -1111,11 +1061,19 @@ export default function Knowledge({
 
       {(projects.data?.length ?? 0) > 0 && view === "databases" ? (
         <section className="tw:grid tw:gap-3 tw:border-b tw:border-border-subtle tw:pb-5">
-          <div className="tw:grid tw:gap-1">
-            <h2 className="tw:m-0 tw:text-base tw:font-semibold">Environment databases</h2>
-            <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
-              Bind exact connection revisions to this Environment. A binding names a resource; it never grants credentials or wider access.
-            </p>
+          <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
+            <div className="tw:grid tw:min-w-0 tw:gap-1">
+              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Environment databases</h2>
+              <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
+                Bind exact connection revisions to this Environment. A binding names a resource; it never grants credentials or wider access.
+              </p>
+            </div>
+            {onNewConnection ? (
+              <Button size="compact" onClick={onNewConnection}>
+                <Icon name="plus" />
+                New connection
+              </Button>
+            ) : null}
           </div>
           <div className="tw:grid tw:grid-cols-[minmax(0,1.2fr)_minmax(0,.7fr)_minmax(0,1fr)_auto] tw:items-end tw:gap-2 tw:@max-[760px]:grid-cols-2 tw:@max-[520px]:grid-cols-1">
             <Field label="Database connection">
@@ -1235,7 +1193,7 @@ export default function Knowledge({
                         {source.provider === "github" ? "GitHub" : "Local Folder"}
                       </StatusBadge>
                     </div>
-                    <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{source.projectName} / {source.environmentName} · {revisionLabel(source.revision)}</span>
+                    <span className="tw:truncate tw:text-xs tw:text-muted-foreground">{source.projectName} / {source.environmentName} · {knowledgeRevisionLabel(source.revision)}</span>
                     {source.provider === "local_folder" && !source.localCapabilityAvailable ? (
                       <span className="tw:text-xs tw:text-warning">Choose the folder again on this device to restore access.</span>
                     ) : null}
