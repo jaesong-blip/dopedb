@@ -330,6 +330,23 @@ open /Applications/DopeDB.app
 
 Only document this command with the release-origin warning. It removes the macOS quarantine flag from the downloaded app and should not be presented as a general bypass for untrusted binaries.
 
+## Windows Distribution
+
+The public Windows alpha installer is currently distributed without an
+Authenticode signature. Microsoft Defender SmartScreen can therefore block the
+installer before it has established publisher reputation. This applies only to
+alpha releases published before Windows code signing is enabled.
+
+User-facing bypass path:
+
+1. Confirm the installer came from the official GitHub Release.
+2. In the SmartScreen dialog, choose More info.
+3. Confirm the displayed app is DopeDB, then choose Run anyway.
+
+Do not present this as a general bypass for untrusted executables. Windows code
+signing and a fail-closed release gate require a separate owner decision from
+the macOS Developer ID work in #133.
+
 ## Deferred Work
 
 - Clean-device online/offline verification of the first Developer ID-notarized stable release (#133)

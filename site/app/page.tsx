@@ -245,9 +245,12 @@ receipt         pending human decision`,
       windows: "Windows x64",
       macApple: "macOS Apple Silicon",
       macIntel: "macOS Intel",
-      warningTitle: "macOS may show a developer warning.",
-      warningBody:
-        "Until the app is notarized with an Apple Developer ID, confirm the file came from GitHub Releases, then use System Settings → Privacy & Security → Open Anyway.",
+      macWarningTitle: "Legacy macOS alpha releases may show a developer warning.",
+      macWarningBody:
+        "For releases published before Developer ID notarization, confirm the file came from GitHub Releases, then use System Settings → Privacy & Security → Open Anyway.",
+      windowsWarningTitle: "Windows alpha installers may show a SmartScreen warning.",
+      windowsWarningBody:
+        "The installer is not code-signed yet. Confirm the file came from GitHub Releases, then choose More info → Run anyway.",
     },
     docs: {
       eyebrow: "Product evidence",
@@ -472,9 +475,12 @@ receipt         pending human decision`,
       windows: "Windows x64",
       macApple: "macOS Apple Silicon",
       macIntel: "macOS Intel",
-      warningTitle: "macOS 개발자 확인 경고가 표시될 수 있습니다.",
-      warningBody:
-        "Apple Developer ID로 공증되기 전에는 GitHub Releases에서 받은 파일인지 확인한 뒤 System Settings → Privacy & Security → Open Anyway를 사용하세요.",
+      macWarningTitle: "이전 macOS Alpha 릴리스에는 개발자 확인 경고가 표시될 수 있습니다.",
+      macWarningBody:
+        "Developer ID 공증 전에 발행된 릴리스라면 GitHub Releases에서 받은 파일인지 확인한 뒤 System Settings → Privacy & Security → Open Anyway를 사용하세요.",
+      windowsWarningTitle: "Windows Alpha 설치본에는 SmartScreen 경고가 표시될 수 있습니다.",
+      windowsWarningBody:
+        "설치 파일에 아직 코드 서명이 없습니다. GitHub Releases에서 받은 파일인지 확인한 뒤 추가 정보 → 실행을 선택하세요.",
     },
     docs: {
       eyebrow: "제품 근거",
@@ -1218,16 +1224,32 @@ export default async function Home({ searchParams }: HomeProps) {
                 ))}
               </div>
 
-              <div className="tw:mt-5 tw:flex tw:gap-3 tw:border tw:border-warning/30 tw:bg-warning/5 tw:p-4">
-                <LockKeyhole className="tw:mt-0.5 tw:shrink-0 tw:text-warning" size={17} />
-                <div>
-                  <h3 className="tw:text-[13px] tw:font-medium tw:text-cream">
-                    {c.download.warningTitle}
-                  </h3>
-                  <p className="tw:mt-1.5 tw:text-xs tw:leading-relaxed tw:text-cream-muted">
-                    {c.download.warningBody}
-                  </p>
-                </div>
+              <div className="tw:mt-5 tw:grid tw:grid-cols-2 tw:gap-3 tw:max-[760px]:grid-cols-1">
+                {[
+                  {
+                    body: c.download.macWarningBody,
+                    title: c.download.macWarningTitle,
+                  },
+                  {
+                    body: c.download.windowsWarningBody,
+                    title: c.download.windowsWarningTitle,
+                  },
+                ].map((warning) => (
+                  <div
+                    className="tw:flex tw:gap-3 tw:border tw:border-warning/30 tw:bg-warning/5 tw:p-4"
+                    key={warning.title}
+                  >
+                    <LockKeyhole className="tw:mt-0.5 tw:shrink-0 tw:text-warning" size={17} />
+                    <div>
+                      <h3 className="tw:text-[13px] tw:font-medium tw:text-cream">
+                        {warning.title}
+                      </h3>
+                      <p className="tw:mt-1.5 tw:text-xs tw:leading-relaxed tw:text-cream-muted">
+                        {warning.body}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
