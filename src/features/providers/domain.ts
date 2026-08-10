@@ -174,7 +174,7 @@ export type ProviderProvisioningPlan = Readonly<{
   phase: ProvisioningPhase;
   operationState:
     | "planned"
-    | "pendingApproval"
+    | "pending_approval"
     | "ready"
     | "approved"
     | "rejected"
@@ -183,7 +183,7 @@ export type ProviderProvisioningPlan = Readonly<{
     | "executing"
     | "succeeded"
     | "failed"
-    | "outcomeUnknown";
+    | "outcome_unknown";
   payloadHash: string;
   confirmationPhrase: string | null;
   completedSteps: number;
@@ -447,7 +447,7 @@ const provisioningRepairValues = [
 ] as const;
 const operationStateValues = [
   "planned",
-  "pendingApproval",
+  "pending_approval",
   "ready",
   "approved",
   "rejected",
@@ -456,7 +456,7 @@ const operationStateValues = [
   "executing",
   "succeeded",
   "failed",
-  "outcomeUnknown",
+  "outcome_unknown",
 ] as const;
 
 export function parseProviderProvisioningDriverStatus(

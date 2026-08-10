@@ -446,6 +446,12 @@ impl ProvisioningCoordinator {
             &staged.target,
             driver.as_ref(),
         )?;
+        if let Some(existing) = self
+            .retry_or_project_existing_apply(&scope, &connection, &plan)
+            .await?
+        {
+            return Ok(existing);
+        }
         let operation = self.plan_operation(&connection, &plan).await?;
         let receipt = ProvisioningReceipt::ready_to_apply(
             crate::kernel::identity::WorkspaceId::from(scope.workspace_id),
@@ -655,10 +661,98 @@ impl ProvisioningCoordinator {
         projection(receipt, &operation, &plan)
     }
 
+    async fn retry_or_project_existing_apply(
+        &self,
+        scope: &ActiveResourceScope,
+        connection: &PinnedConnection,
+        plan: &ProvisioningPlan,
+    ) -> AppResult<Option<ProvisioningPlanProjection>> {
+        let Some(mut receipt) = self
+            .receipts
+            .find_for_target(
+                scope,
+                plan.target().provider().storage_key(),
+                plan.target().resource_fingerprint(),
+            )
+            .await?
+        else {
+            return Ok(None);
+        };
+        let previous_operation = self.operations.get(receipt.operation_id()).await?;
+        let previous_plan = ProvisioningPlan::from_operation_payload(
+            previous_operation.payload.clone(),
+            &previous_operation.payload_hash,
+        )?;
+        projection(&receipt, &previous_operation, &previous_plan)?;
+        if Uuid::from(receipt.connection_id()) != connection.connection_id || previous_plan != *plan
+        {
+            return Err(blocked(
+                "a different provider provisioning plan already owns this target",
+            ));
+        }
+        if receipt.state() != ProvisioningState::ReadyToApply {
+            return projection(&receipt, &previous_operation, &previous_plan).map(Some);
+        }
+
+        let now = Utc::now();
+        let current_runtime = previous_operation.runtime_id == self.operations.runtime_id();
+        let approval_current = previous_operation
+            .expires_at
+            .is_none_or(|expires_at| expires_at > now);
+        if current_runtime
+            && approval_current
+            && matches!(
+                previous_operation.state,
+                OperationState::PendingApproval | OperationState::Approved
+            )
+        {
+            return projection(&receipt, &previous_operation, &previous_plan).map(Some);
+        }
+        let may_retry = matches!(
+            previous_operation.state,
+            OperationState::Expired | OperationState::Rejected
+        ) || ((!current_runtime || !approval_current)
+            && matches!(
+                previous_operation.state,
+                OperationState::PendingApproval | OperationState::Approved
+            ));
+        if !may_retry {
+            return Err(blocked(
+                "provider provisioning approval cannot be retried from its current state",
+            ));
+        }
+
+        let operation_key = format!(
+            "provider-reapproval-{}-{}-{}",
+            receipt.id(),
+            receipt.revision(),
+            self.operations.runtime_id()
+        );
+        let operation = self
+            .plan_operation_with_key(connection, plan, &operation_key)
+            .await?;
+        let expected_revision = receipt.revision();
+        receipt.retry_approval(plan, operation.id, now)?;
+        self.receipts
+            .save(scope, &receipt, expected_revision)
+            .await?;
+        projection(&receipt, &operation, plan).map(Some)
+    }
+
     async fn plan_operation(
         &self,
         connection: &PinnedConnection,
         plan: &ProvisioningPlan,
+    ) -> AppResult<OperationRecord> {
+        self.plan_operation_with_key(connection, plan, plan.idempotency_key())
+            .await
+    }
+
+    async fn plan_operation_with_key(
+        &self,
+        connection: &PinnedConnection,
+        plan: &ProvisioningPlan,
+        operation_idempotency_key: &str,
     ) -> AppResult<OperationRecord> {
         if Uuid::from(plan.target().connection_id()) != connection.connection_id
             || (plan.intent() == ProvisioningIntent::Apply
@@ -700,7 +794,7 @@ impl ProvisioningCoordinator {
                     policy_snapshot: policy.snapshot,
                     policy_revision: policy.revision,
                     single_use: true,
-                    idempotency_key: plan.idempotency_key().into(),
+                    idempotency_key: operation_idempotency_key.into(),
                     expires_at: Some(Utc::now() + OPERATION_TTL),
                 },
                 OperationPlanDisposition::ApprovalRequired,
@@ -1409,6 +1503,38 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         }
     }
 
+    async fn seed_fixture_connection(store: &Store, plan: &ProvisioningPlan) {
+        let connection = crate::model::ConnectionProfile {
+            id: Uuid::from(plan.target().connection_id()),
+            name: "fixture-instance / app".into(),
+            engine: Engine::Postgres,
+            provider: crate::model::Provider::GcpCloudSql,
+            driver_id: None,
+            host: "127.0.0.1".into(),
+            port: 5432,
+            database: "app".into(),
+            username: "fixture".into(),
+            sslmode: "disable".into(),
+            extra_params: HashMap::new(),
+            readonly_default: true,
+            allow_writes: false,
+            secret_ref: None,
+            env: Some("dev".into()),
+            schema_group: None,
+            workspace_access: crate::model::WorkspaceConnectionAccess::Local,
+            credential_mode: crate::model::WorkspaceCredentialMode::Local,
+            provider_target: None,
+        };
+        for expected_revision in 1..=plan.target().connection_revision() {
+            store
+                .upsert_connection(&connection)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!("seed fixture connection revision {expected_revision}: {error}")
+                });
+        }
+    }
+
     async fn approved_operation(
         runtime: &OperationRuntime,
         authority: &LocalApprovalAuthority,
@@ -1704,6 +1830,90 @@ pub(crate) async fn assert_restart_resume_lifecycle() {
         "provider_verification_failed",
     )
     .await;
+
+    let retry_store = Store::in_memory_for_test()
+        .await
+        .expect("open approval retry store");
+    let retry_plan = fixture_plan(
+        ProvisioningIntent::Apply,
+        ProvisioningCapabilityManifest::new([
+            Detect, Discover, Plan, Apply, Verify, Issue, Reconcile, Destroy,
+        ]),
+    );
+    seed_fixture_connection(&retry_store, &retry_plan).await;
+    let retry_connection_id = Uuid::from(retry_plan.target().connection_id());
+    let (first_approval_runtime, _) = OperationRuntime::new(&retry_store);
+    let first_approval_coordinator = ProvisioningCoordinator::new(
+        retry_store.clone(),
+        first_approval_runtime.clone(),
+        ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver::default())),
+    );
+    let staged = first_approval_coordinator
+        .discover(LocalProvider::GcpCloudSql, retry_connection_id)
+        .await
+        .expect("stage initial provider approval target");
+    let first_approval = first_approval_coordinator
+        .prepare_apply(
+            staged[0].discovery_id,
+            retry_connection_id,
+            ProvisioningAccessMode::Read,
+        )
+        .await
+        .expect("prepare initial provider approval");
+    assert_eq!(
+        first_approval.operation_state,
+        OperationState::PendingApproval
+    );
+    assert_eq!(
+        serde_json::to_value(&first_approval).unwrap()["operationState"],
+        "pending_approval"
+    );
+
+    let (second_approval_runtime, _) = OperationRuntime::new(&retry_store);
+    let approval_recovery = second_approval_runtime
+        .recover_previous_runtimes()
+        .await
+        .expect("expire the previous runtime approval");
+    assert_eq!(approval_recovery.expired, vec![first_approval.operation_id]);
+    let second_approval_coordinator = ProvisioningCoordinator::new(
+        retry_store,
+        second_approval_runtime.clone(),
+        ProvisioningDriverRegistry::with_driver(Arc::new(MockDriver::default())),
+    );
+    let restaged = second_approval_coordinator
+        .discover(LocalProvider::GcpCloudSql, retry_connection_id)
+        .await
+        .expect("restage the exact provider approval target");
+    let retried_approval = second_approval_coordinator
+        .prepare_apply(
+            restaged[0].discovery_id,
+            retry_connection_id,
+            ProvisioningAccessMode::Read,
+        )
+        .await
+        .expect("retry the exact provider approval after restart");
+    assert_eq!(retried_approval.receipt_id, first_approval.receipt_id);
+    assert_ne!(retried_approval.operation_id, first_approval.operation_id);
+    assert_eq!(
+        retried_approval.operation_state,
+        OperationState::PendingApproval
+    );
+    assert_eq!(
+        first_approval_runtime
+            .get(first_approval.operation_id)
+            .await
+            .unwrap()
+            .state,
+        OperationState::Expired
+    );
+    assert_eq!(
+        second_approval_runtime
+            .get(retried_approval.operation_id)
+            .await
+            .unwrap()
+            .state,
+        OperationState::PendingApproval
+    );
 
     let store = Store::in_memory_for_test()
         .await

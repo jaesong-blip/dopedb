@@ -291,7 +291,7 @@ export function ManagedAccessDialog({
     setFailed(false);
     let current = plan;
     try {
-      if (current.operationState === "pendingApproval") {
+      if (current.operationState === "pending_approval") {
         setPending("approve");
         await approveOperation(
           current.operationId,
@@ -596,7 +596,7 @@ export function ManagedAccessDialog({
                       />
                     </div>
                   ) : null}
-                  {plan.confirmationPhrase && plan.operationState === "pendingApproval" ? (
+                  {plan.confirmationPhrase && plan.operationState === "pending_approval" ? (
                     <Field label={t("managedAccess.confirmation", { phrase: plan.confirmationPhrase })}>
                       <TextInput
                         density="compact"
@@ -682,7 +682,7 @@ export function ManagedAccessDialog({
             >
               {pending === "plan" ? t("managedAccess.preparing") : t("managedAccess.plan")}
             </Button>
-          ) : plan && (plan.operationState === "pendingApproval" || plan.canExecute) ? (
+          ) : plan && (plan.operationState === "pending_approval" || plan.canExecute) ? (
             <Button
               size="compact"
               variant="primary"
@@ -690,7 +690,7 @@ export function ManagedAccessDialog({
               disabled={pending !== null || !confirmationReady}
             >
               <Icon name="play" />
-              {plan.operationState === "pendingApproval"
+              {plan.operationState === "pending_approval"
                 ? t("managedAccess.approveApply")
                 : t("managedAccess.apply")}
             </Button>

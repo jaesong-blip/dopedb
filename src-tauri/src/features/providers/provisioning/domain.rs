@@ -793,6 +793,36 @@ impl ProvisioningReceipt {
         Ok(())
     }
 
+    pub(crate) fn retry_approval(
+        &mut self,
+        plan: &ProvisioningPlan,
+        operation_id: Uuid,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
+        plan.validate()?;
+        if self.state != ProvisioningState::ReadyToApply
+            || self.phase != ProvisioningPhase::Approve
+            || self.completed_steps != 0
+            || self.verification.is_some()
+            || self.repair_reason.is_some()
+            || operation_id == self.operation_id
+            || plan.intent() != ProvisioningIntent::Apply
+            || plan.payload_sha256() != self.plan_hash
+            || plan.idempotency_key() != self.idempotency_key
+            || plan.target().provider() != self.provider
+            || plan.target().resource_fingerprint() != self.target_fingerprint
+            || plan.ownership_marker() != self.ownership_marker
+            || plan.capabilities() != &self.capabilities
+        {
+            return Err(blocked(
+                "provider provisioning approval retry authority is invalid",
+            ));
+        }
+        self.operation_id = operation_id;
+        self.bump(now);
+        Ok(())
+    }
+
     pub(crate) fn checkpoint(
         &mut self,
         plan: &ProvisioningPlan,

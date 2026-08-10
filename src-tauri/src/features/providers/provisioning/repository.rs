@@ -103,12 +103,13 @@ impl ProvisioningReceiptRepository {
             return Ok(receipt.clone());
         }
         let existing = self
-            .load_for_target(
+            .find_for_target(
                 scope,
                 receipt.provider().storage_key(),
                 receipt.target_fingerprint(),
             )
-            .await?;
+            .await?
+            .ok_or_else(|| blocked("provider provisioning receipt is unavailable"))?;
         if existing.plan_hash() == receipt.plan_hash()
             && existing.idempotency_key() == receipt.idempotency_key()
             && existing.ownership_marker() == receipt.ownership_marker()
@@ -246,18 +247,18 @@ impl ProvisioningReceiptRepository {
         }
     }
 
-    async fn load_for_target(
+    pub(super) async fn find_for_target(
         &self,
         scope: &ActiveResourceScope,
         provider: &str,
         target_fingerprint: &str,
-    ) -> AppResult<ProvisioningReceipt> {
+    ) -> AppResult<Option<ProvisioningReceipt>> {
         let query = format!(
             "SELECT * FROM provider_provisioning_receipts
              WHERE workspace_id = ? AND account_scope = ? AND provider = ?
                AND target_fingerprint = ? AND {ACTIVE_SCOPE}"
         );
-        let row = sqlx::query(AssertSqlSafe(query))
+        sqlx::query(AssertSqlSafe(query))
             .bind(scope.workspace_id.to_string())
             .bind(scope.account_scope.storage_key())
             .bind(provider)
@@ -268,8 +269,9 @@ impl ProvisioningReceiptRepository {
             .bind(scope.account_scope.storage_key())
             .fetch_optional(self.store.pool())
             .await?
-            .ok_or_else(|| blocked("provider provisioning receipt is unavailable"))?;
-        decode_row(&row)
+            .as_ref()
+            .map(decode_row)
+            .transpose()
     }
 }
 

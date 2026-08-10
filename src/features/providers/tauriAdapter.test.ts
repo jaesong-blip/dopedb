@@ -330,7 +330,7 @@ describe("provider credential Tauri adapter", () => {
       production: false,
       state: "readyToApply",
       phase: "approve",
-      operationState: "pendingApproval",
+      operationState: "pending_approval",
       payloadHash: "ab".repeat(32),
       confirmationPhrase: null,
       completedSteps: 0,
@@ -350,6 +350,10 @@ describe("provider credential Tauri adapter", () => {
       ...provisioningPlan,
       payloadHash: "not-a-hash",
     })).toThrow("Invalid provider provisioning hash");
+    expect(() => parseProviderProvisioningPlan({
+      ...provisioningPlan,
+      operationState: "pendingApproval",
+    })).toThrow("Invalid provider operation state");
   });
 
   it("prohibits legacy provider identity and manual GCP trust input", async () => {
