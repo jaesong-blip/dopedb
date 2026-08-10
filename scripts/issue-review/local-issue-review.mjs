@@ -40,6 +40,12 @@ const MAX_ISSUES_PER_RUN = 5;
 const COMMAND_TIMEOUT_MS = 20 * 60 * 1_000;
 const MAX_COMMAND_OUTPUT = 24 * 1024 * 1024;
 
+class ReviewDeferredError extends Error {}
+
+function deferReview(message) {
+  throw new ReviewDeferredError(message);
+}
+
 function usage() {
   process.stdout.write(`Usage:
   node scripts/issue-review/local-issue-review.mjs --initialize
@@ -207,10 +213,10 @@ function preflightRepository() {
     throw new Error("Issue review must run from the DopeDB repository");
   }
   if (git("branch", "--show-current") !== "main") {
-    throw new Error("Issue review requires the local main branch");
+    deferReview("local checkout is not on main");
   }
   if (git("status", "--porcelain=v1")) {
-    throw new Error("Local changes exist; issue review deferred until the worktree is clean");
+    deferReview("local changes exist");
   }
   const origin = git("remote", "get-url", "origin");
   if (!/(^|[:/])json-choi\/dopedb(?:\.git)?$/.test(origin)) {
@@ -220,7 +226,14 @@ function preflightRepository() {
   const remoteLine = command("git", ["ls-remote", "--exit-code", "origin", "refs/heads/main"]).trim();
   const remoteHead = remoteLine.split(/\s+/)[0];
   if (head !== remoteHead) {
-    throw new Error("Local main is not synchronized with origin/main; issue review deferred");
+    deferReview("local main is not synchronized with origin/main");
+  }
+  const ownerCommandLock = join(
+    process.env.TMPDIR || "/tmp",
+    `dopedb-gh-owner-${process.getuid?.() ?? 0}.lock`,
+  );
+  if (existsSync(ownerCommandLock)) {
+    deferReview("an owner-scoped GitHub command is in progress; a stale lock requires pnpm gh:restore");
   }
   const activeGithubLogin = command("gh", ["api", "user", "--jq", ".login"]).trim();
   if (activeGithubLogin !== "jaesong-blip") {
@@ -684,8 +697,13 @@ async function main() {
   }
   const releaseLock = await acquireLock();
   try {
-    if (options.mode === "initialize") await initialize();
-    else await runReview(options);
+    try {
+      if (options.mode === "initialize") await initialize();
+      else await runReview(options);
+    } catch (error) {
+      if (!(error instanceof ReviewDeferredError)) throw error;
+      process.stdout.write(`Issue review deferred: ${error.message}.\n`);
+    }
   } finally {
     await releaseLock();
   }
