@@ -726,7 +726,8 @@ function AcpChatPanelContent({
     setError(null);
     try {
       await cancelAgentAcpSession(active.id);
-      applyFocus(await focusAgentAcpSession(active.id));
+      // The live ACP event stream owns the turn-end and ready transition.
+      // Replaying focus here races that stream and can merge an incomplete frame.
     } catch (reason) {
       setError(t("agent.acpCancelFailed", { error: errMessage(reason) }));
     }
