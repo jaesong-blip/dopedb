@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      macos_distribution_mode: ${{ steps.macos_distribution.outputs.mode }}
       release_body: ${{ steps.release_notes.outputs.body }}
     permissions:
       contents: read
@@ -41,6 +42,23 @@ jobs:
             echo "Stable releases must point to a commit already merged into main." >&2
             exit 1
           fi
+
+      - name: Resolve macOS distribution mode
+        id: macos_distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mode="$(node -p "JSON.parse(require('node:fs').readFileSync('.release/macos-distribution.json', 'utf8')).distributionMode")"
+          case "$mode" in
+            legacy-unsigned|developer-id) ;;
+            *)
+              echo "Unsupported macOS distribution mode: $mode" >&2
+              exit 1
+              ;;
+          esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "macOS distribution mode: $mode"
 
       - name: Prepare release notes
         id: release_notes
@@ -165,7 +183,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Import Developer ID identity and configure notarization
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.verify-release.outputs.macos_distribution_mode == 'developer-id'
         shell: bash
         env:
           DOPEDB_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -257,7 +275,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Verify Developer ID, notarization, and identical app payloads
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && needs.verify-release.outputs.macos_distribution_mode == 'developer-id'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -292,10 +310,10 @@ jobs:
             "${DOPEDB_SIGNING_API_KEY:-$RUNNER_TEMP/missing-api-key}"
 
   finalize-release:
-    needs: publish-tauri
+    needs: [verify-release, publish-tauri]
     runs-on: ubuntu-latest
-    # Full signed archives are downloaded twice (draft and anonymous public
-    # paths) before this immutable release is considered complete.
+    # Full updater archives are downloaded twice (draft and anonymous public
+    # paths). Developer ID assets join that closure only after explicit activation.
     timeout-minutes: 30
     permissions:
       contents: write
@@ -397,23 +415,30 @@ jobs:
 
       - name: Verify complete draft updater closure
         env:
+          DOPEDB_MACOS_DISTRIBUTION_MODE: ${{ needs.verify-release.outputs.macos_distribution_mode }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
           version="${GITHUB_REF_NAME#app-v}"
           mkdir -p release-finalize/draft-assets
-          for asset in \
-            "DopeDB_${version}_aarch64.app.tar.gz" \
-            "DopeDB_${version}_aarch64.app.tar.gz.sig" \
-            "DopeDB_${version}_aarch64.dmg" \
-            "DopeDB_${version}_aarch64.macos-trust.json" \
-            "DopeDB_${version}_x64.app.tar.gz" \
-            "DopeDB_${version}_x64.app.tar.gz.sig" \
-            "DopeDB_${version}_x64.dmg" \
-            "DopeDB_${version}_x64.macos-trust.json" \
-            "DopeDB_${version}_x64-setup.exe" \
-            "DopeDB_${version}_x64-setup.exe.sig"; do
+          assets=(
+            "DopeDB_${version}_aarch64.app.tar.gz"
+            "DopeDB_${version}_aarch64.app.tar.gz.sig"
+            "DopeDB_${version}_x64.app.tar.gz"
+            "DopeDB_${version}_x64.app.tar.gz.sig"
+            "DopeDB_${version}_x64-setup.exe"
+            "DopeDB_${version}_x64-setup.exe.sig"
+          )
+          if [[ "$DOPEDB_MACOS_DISTRIBUTION_MODE" == "developer-id" ]]; then
+            assets+=(
+              "DopeDB_${version}_aarch64.dmg"
+              "DopeDB_${version}_aarch64.macos-trust.json"
+              "DopeDB_${version}_x64.dmg"
+              "DopeDB_${version}_x64.macos-trust.json"
+            )
+          fi
+          for asset in "${assets[@]}"; do
             gh release download "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --pattern "$asset" \
@@ -460,6 +485,8 @@ jobs:
             --silent
 
       - name: Verify anonymous tag-specific public updater downloads
+        env:
+          DOPEDB_MACOS_DISTRIBUTION_MODE: ${{ needs.verify-release.outputs.macos_distribution_mode }}
         run: |
           set -euo pipefail
 
@@ -471,21 +498,23 @@ jobs:
             --tag "$GITHUB_REF_NAME"
 
           version="${GITHUB_REF_NAME#app-v}"
-          for asset in \
-            "DopeDB_${version}_aarch64.dmg" \
-            "DopeDB_${version}_aarch64.macos-trust.json" \
-            "DopeDB_${version}_x64.dmg" \
-            "DopeDB_${version}_x64.macos-trust.json"; do
-            curl \
-              --fail \
-              --location \
-              --retry 4 \
-              --retry-all-errors \
-              --silent \
-              --show-error \
-              "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$asset" \
-              --output "release-finalize/public-assets/$asset"
-          done
+          if [[ "$DOPEDB_MACOS_DISTRIBUTION_MODE" == "developer-id" ]]; then
+            for asset in \
+              "DopeDB_${version}_aarch64.dmg" \
+              "DopeDB_${version}_aarch64.macos-trust.json" \
+              "DopeDB_${version}_x64.dmg" \
+              "DopeDB_${version}_x64.macos-trust.json"; do
+              curl \
+                --fail \
+                --location \
+                --retry 4 \
+                --retry-all-errors \
+                --silent \
+                --show-error \
+                "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$asset" \
+                --output "release-finalize/public-assets/$asset"
+            done
+          fi
 
           cargo run --locked -p release-updater-verify -- \
             --manifest release-finalize/public-assets/latest.json \

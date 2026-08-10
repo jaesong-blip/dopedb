@@ -79,10 +79,19 @@ function distributionConfig(path) {
   const value = JSON.parse(readFileSync(path, "utf8"));
   exactObject(
     value,
-    ["schemaVersion", "productName", "bundleIdentifier", "teamIdentifier"],
+    [
+      "schemaVersion",
+      "distributionMode",
+      "productName",
+      "bundleIdentifier",
+      "teamIdentifier",
+    ],
     "macOS distribution config",
   );
-  if (value.schemaVersion !== 1) fail("unsupported macOS distribution config version");
+  if (value.schemaVersion !== 2) fail("unsupported macOS distribution config version");
+  if (value.distributionMode !== "developer-id") {
+    fail("macOS trust capture requires developer-id distribution mode");
+  }
   for (const field of ["productName", "bundleIdentifier", "teamIdentifier"]) {
     if (typeof value[field] !== "string" || value[field].length === 0) {
       fail(`macOS distribution config ${field} is missing`);

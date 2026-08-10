@@ -44,9 +44,23 @@ struct Asset {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct MacosDistributionConfig {
     schema_version: u32,
+    distribution_mode: MacosDistributionMode,
     product_name: String,
     bundle_identifier: String,
     team_identifier: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum MacosDistributionMode {
+    LegacyUnsigned,
+    DeveloperId,
+}
+
+impl MacosDistributionConfig {
+    fn developer_id_required(&self) -> bool {
+        self.distribution_mode == MacosDistributionMode::DeveloperId
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -256,7 +270,12 @@ fn looks_like_updater(name: &str) -> bool {
             || name.ends_with("-setup.exe.sig"))
 }
 
-fn assets(path: &Path, version: &str, tag: &str) -> Result<HashMap<String, Asset>, String> {
+fn assets(
+    path: &Path,
+    version: &str,
+    tag: &str,
+    macos_distribution: &MacosDistributionConfig,
+) -> Result<HashMap<String, Asset>, String> {
     let document = json(path)?;
     let values = document
         .get("assets")
@@ -269,15 +288,19 @@ fn assets(path: &Path, version: &str, tag: &str) -> Result<HashMap<String, Asset
             [name.clone(), format!("{name}.sig")]
         })
         .collect::<BTreeSet<_>>();
-    let macos_expected = MACOS_DISTRIBUTIONS
-        .iter()
-        .flat_map(|(_, _, suffix)| {
-            [
-                format!("DopeDB_{version}_{suffix}.dmg"),
-                format!("DopeDB_{version}_{suffix}.macos-trust.json"),
-            ]
-        })
-        .collect::<BTreeSet<_>>();
+    let macos_expected = if macos_distribution.developer_id_required() {
+        MACOS_DISTRIBUTIONS
+            .iter()
+            .flat_map(|(_, _, suffix)| {
+                [
+                    format!("DopeDB_{version}_{suffix}.dmg"),
+                    format!("DopeDB_{version}_{suffix}.macos-trust.json"),
+                ]
+            })
+            .collect::<BTreeSet<_>>()
+    } else {
+        BTreeSet::new()
+    };
     let expected = updater_expected
         .union(&macos_expected)
         .cloned()
@@ -370,6 +393,22 @@ fn valid_team_identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
 }
 
+fn macos_distribution_config(arguments: &Arguments) -> Result<MacosDistributionConfig, String> {
+    let config: MacosDistributionConfig = serde_json::from_slice(
+        &fs::read(&arguments.macos_distribution)
+            .map_err(|error| format!("{}: {error}", arguments.macos_distribution.display()))?,
+    )
+    .map_err(|error| format!("invalid macOS distribution config: {error}"))?;
+    if config.schema_version != 2
+        || config.product_name != "DopeDB"
+        || config.bundle_identifier != "dev.dopedb.desktop"
+        || !valid_team_identifier(&config.team_identifier)
+    {
+        return fail("macOS distribution config does not match the stable app identity");
+    }
+    Ok(config)
+}
+
 fn verify_macos_receipt_contract(
     receipt: &MacosTrustReceipt,
     config: &MacosDistributionConfig,
@@ -435,18 +474,11 @@ fn verify_macos_distribution(
     arguments: &Arguments,
     version: &str,
     assets: &HashMap<String, Asset>,
+    config: &MacosDistributionConfig,
 ) -> Result<(), String> {
-    let config: MacosDistributionConfig = serde_json::from_slice(
-        &fs::read(&arguments.macos_distribution)
-            .map_err(|error| format!("{}: {error}", arguments.macos_distribution.display()))?,
-    )
-    .map_err(|error| format!("invalid macOS distribution config: {error}"))?;
-    if config.schema_version != 1
-        || config.product_name != "DopeDB"
-        || config.bundle_identifier != "dev.dopedb.desktop"
-        || !valid_team_identifier(&config.team_identifier)
-    {
-        return fail("macOS distribution config does not match the stable app identity");
+    if !config.developer_id_required() {
+        println!("macOS Developer ID verification is inactive: legacy-unsigned mode");
+        return Ok(());
     }
     for (target, architecture, suffix) in MACOS_DISTRIBUTIONS {
         let prefix = format!("DopeDB_{version}_{suffix}");
@@ -460,7 +492,7 @@ fn verify_macos_distribution(
             .map_err(|error| format!("{receipt_name}: invalid trust receipt: {error}"))?;
         verify_macos_receipt_contract(
             &receipt,
-            &config,
+            config,
             &arguments.tag,
             &arguments.commit,
             target,
@@ -580,10 +612,16 @@ fn run() -> Result<(), String> {
     let arguments = arguments()?;
     let manifest = json(&arguments.manifest)?;
     let version = version(&arguments, &manifest)?;
-    let assets = assets(&arguments.assets, &version, &arguments.tag)?;
+    let macos_distribution = macos_distribution_config(&arguments)?;
+    let assets = assets(
+        &arguments.assets,
+        &version,
+        &arguments.tag,
+        &macos_distribution,
+    )?;
     verify_latest(&arguments, &assets)?;
     verify(&arguments, &manifest, &version, &assets)?;
-    verify_macos_distribution(&arguments, &version, &assets)
+    verify_macos_distribution(&arguments, &version, &assets, &macos_distribution)
 }
 
 fn main() {
@@ -649,7 +687,8 @@ mod tests {
         ));
 
         let config = MacosDistributionConfig {
-            schema_version: 1,
+            schema_version: 2,
+            distribution_mode: MacosDistributionMode::DeveloperId,
             product_name: "DopeDB".into(),
             bundle_identifier: "dev.dopedb.desktop".into(),
             team_identifier: "B67K525D3B".into(),
@@ -707,6 +746,16 @@ mod tests {
             &digest(b"updater"),
         )
         .is_err());
+
+        let legacy_config: MacosDistributionConfig = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2,
+            "distributionMode": "legacy-unsigned",
+            "productName": "DopeDB",
+            "bundleIdentifier": "dev.dopedb.desktop",
+            "teamIdentifier": "B67K525D3B"
+        }))
+        .unwrap();
+        assert!(!legacy_config.developer_id_required());
     }
 
     #[test]

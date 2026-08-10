@@ -272,9 +272,15 @@ TAURI_SIGNING_PRIVATE_KEY
 
 The local updater key path used during setup was `~/.tauri/dopedb-updater.key`. Do not commit private keys.
 
-The protected `stable-release` environment must additionally own these macOS
-distribution secrets. Repository contributors and AI agents do not create,
-export, read, or rotate their values.
+The checked-in `.release/macos-distribution.json` currently selects
+`legacy-unsigned`. In that mode stable releases do not read or require Apple
+credentials and must not claim Developer ID or notarization. Switching the file
+to `developer-id` requires an explicit user decision after Apple Developer
+Program enrollment.
+
+Once `developer-id` is active, the protected `stable-release` environment must
+own these macOS distribution secrets. Repository contributors and AI agents do
+not create, export, read, or rotate their values.
 
 ```txt
 APPLE_CERTIFICATE
@@ -293,11 +299,12 @@ Follow the official [Tauri macOS signing guide](https://v2.tauri.app/distribute/
 and [Apple notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
 when provisioning or rotating those operator-owned credentials.
 
-Each macOS matrix job imports the identity into an ephemeral CI keychain, lets
-Tauri sign and notarize, and then verifies the app bundle, DMG, and updater
-archive independently. Stable finalization requires per-architecture trust
-receipts whose SHA-256 values match the exact release assets, and removes the
-temporary keychain and API key file even when the build fails.
+In `developer-id` mode each macOS matrix job imports the identity into an
+ephemeral CI keychain, lets Tauri sign and notarize, and then verifies the app
+bundle, DMG, and updater archive independently. Stable finalization requires
+per-architecture trust receipts whose SHA-256 values match the exact release
+assets, and removes the temporary keychain and API key file even when the build
+fails. In `legacy-unsigned` mode those steps and receipts stay inactive.
 
 ## Dependency Policy
 
@@ -309,10 +316,11 @@ toolchain holds are documented in [`dependencies.md`](dependencies.md).
 
 ## macOS Distribution
 
-The app is distributed outside the Mac App Store. Releases made before the first
-Developer ID-notarized stable build can show an unidentified developer warning.
-Only those legacy releases use the bypass path below, and only after confirming
-the file came from the official GitHub Release.
+The app is distributed outside the Mac App Store. The current checked-in mode is
+`legacy-unsigned`, so macOS can show an unidentified developer warning. Only
+these legacy releases use the bypass path below, and only after confirming the
+file came from the official GitHub Release. After the user explicitly activates
+`developer-id`, every later stable release returns to the fail-closed trust gate.
 
 User-facing bypass path:
 
@@ -349,7 +357,7 @@ the macOS Developer ID work in #133.
 
 ## Deferred Work
 
-- Clean-device online/offline verification of the first Developer ID-notarized stable release (#133)
+- Explicit Developer ID activation and clean-device online/offline verification (#133)
 - More structured Agent proposal types beyond SQL
 - SSH tunnel support
 - More granular Agent and plugin origin handling

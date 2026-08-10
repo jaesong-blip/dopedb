@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "distributionMode": "legacy-unsigned",
   "productName": "DopeDB",
   "bundleIdentifier": "dev.dopedb.desktop",
   "teamIdentifier": "B67K525D3B"

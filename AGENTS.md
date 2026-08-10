@@ -197,9 +197,12 @@ Create the annotated tag and owner-attributed draft together with
 `stable-release` environment. The build jobs must refuse to compile when the
 matching non-prerelease draft is absent, because GitHub Actions is deliberately
 not allowed to bypass the owner-only tag ruleset and create it.
-macOS stable publication must fail closed unless both architectures produce a
-Developer ID, notarization, staple, Gatekeeper, and identical app-payload trust
-receipt that the finalizer binds to the exact DMG and updater archive bytes.
+The checked-in `distributionMode` in `.release/macos-distribution.json` owns
+macOS signing activation. Keep it `legacy-unsigned` until the user explicitly
+activates `developer-id` after enrollment; legacy mode must not require Apple
+credentials or claim notarization. Once activated, stable publication must fail
+closed unless both architectures produce a Developer ID, notarization, staple,
+Gatekeeper, and identical app-payload trust receipt bound to the exact assets.
 
 The user-facing release-note pipeline is intentionally in `prepared` mode until
 the product's formal MVP. While `.release-notes/config.json` says `prepared`, do

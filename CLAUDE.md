@@ -182,9 +182,11 @@ enabled control에는 실제 command와 state owner가 있어야 한다.
   만든다. draft를 확인한 뒤에만 `stable-release` 환경을 승인한다. Actions는
   owner-only tag ruleset을 우회해 release를 만들지 않으며 draft가 없으면
   build 전에 실패해야 한다.
-- macOS 정식 릴리스는 ARM64/x64 모두 Developer ID·공증·staple·Gatekeeper와
-  DMG/updater 동일 app payload 영수증을 통과해야 하며, finalizer는 그 영수증을
-  정확한 공개 asset bytes에 고정하지 못하면 실패한다.
+- macOS 서명 활성화는 `.release/macos-distribution.json`의 체크인된
+  `distributionMode`가 소유한다. 사용자가 가입 후 명시적으로 `developer-id`를
+  선택하기 전에는 `legacy-unsigned`를 유지하며 Apple 자격 증명이나 공증 완료를
+  요구·주장하지 않는다. 활성화한 뒤에는 ARM64/x64 모두 Developer ID·공증·
+  staple·Gatekeeper와 동일 app payload 영수증을 통과하지 못하면 실패한다.
 
 ## 릴리스 노트 준비 상태
 
