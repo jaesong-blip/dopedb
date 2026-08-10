@@ -7,6 +7,7 @@ import { WorkbenchEmptyState } from "../../design-system/components/Workbench";
 import type { ConnectionProfile } from "../connections/domain";
 import type { ConnectionLaunchPreset } from "../connections/presets";
 import type { QueryServiceSession } from "../queryServices/domain";
+import { effectiveSafetySettings } from "../safetySettings/policy";
 import type { SqlResolveMode } from "../queries/resolveMode";
 import type { SqlDocument } from "../sqlDocuments/domain";
 import type { WorkbenchDocument } from "../workbench/domain";
@@ -65,6 +66,7 @@ type Props = {
   onCloseSettings: () => void;
   onUpdateChecked: (update: Update | null) => void;
   onRefreshSafety: () => void;
+  onSafetySaved: (connectionId: string, settings: SafetySettings) => void;
   onCloseSchemaDiff: () => void;
   onConnectionSaved: (
     profile: ConnectionProfile,
@@ -121,11 +123,15 @@ export default function WorkbenchContent(props: Props) {
     initialAuditOpen,
     availableUpdate,
   } = props;
+  const effectiveSafety =
+    selected && safety ? effectiveSafetySettings(selected, safety) : null;
   const settingsDialog = settingsOpen ? (
     <Settings
       connection={selected}
       initialSection={settingsSection}
       refreshSafety={props.onRefreshSafety}
+      onSafetySaved={props.onSafetySaved}
+      onEditConnection={props.onEditConnection}
       availableUpdate={availableUpdate}
       onUpdateChecked={props.onUpdateChecked}
       onClose={props.onCloseSettings}
@@ -271,11 +277,11 @@ export default function WorkbenchContent(props: Props) {
             onSearchEverywhere={props.onSearchEverywhere}
           />
         ) : activeDocument.kind === "data" ? (
-          safety ? (
+          effectiveSafety ? (
             <TableData
               connection={selected}
               table={activeDocument.table}
-              safety={safety}
+              safety={effectiveSafety}
             />
           ) : (
             safetyFallback
@@ -292,7 +298,7 @@ export default function WorkbenchContent(props: Props) {
             key={activeDocument.id}
             connection={selected}
             documentId={activeDocument.id}
-            safety={safety ?? BLOCKED_SAFETY_SETTINGS}
+            safety={effectiveSafety ?? BLOCKED_SAFETY_SETTINGS}
             safetyReady={safety !== null}
             safetyLoadError={safetyError}
             draft={activeDocument.draft}

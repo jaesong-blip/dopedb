@@ -30,6 +30,7 @@ import {
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
 import type { Dashboard } from "../../features/dashboards/domain";
+import { connectionCanEnterWritePath } from "../../features/safetySettings/policy";
 import { recordStartupMark } from "../../features/runtime/tauriAdapter";
 import { useQueryServices } from "../../features/queryServices/useQueryServices";
 import SkillStartupGate from "../../features/skills/SkillStartupGate";
@@ -170,6 +171,7 @@ function Shell() {
     safety,
     error: safetyError,
     refresh: refreshSafety,
+    accept: acceptSafety,
     clear: clearSafety,
   } = useSafetySettings(selectedId);
   const [editing, setEditing] = useState<EditingConnection>(null);
@@ -905,6 +907,7 @@ function Shell() {
       onCloseSettings={() => setSettingsOpen(false)}
       onUpdateChecked={syncAvailableUpdate}
       onRefreshSafety={refreshSafety}
+      onSafetySaved={acceptSafety}
       onCloseSchemaDiff={() => setSchemaDiffGroupKey(null)}
       onConnectionSaved={async (profile, closeEditor) => {
         await refresh();
@@ -985,7 +988,11 @@ function Shell() {
       selectedTable={selectedTable}
       supportsSql={supportsSql}
       writeEnabled={
-        selected?.credentialMode === "local" && (safety?.allowWrites ?? false)
+        Boolean(
+          selected &&
+            safety?.allowWrites &&
+            connectionCanEnterWritePath(selected),
+        )
       }
       dashboardFocusId={dashboardFocusId}
       compact={compactShell}

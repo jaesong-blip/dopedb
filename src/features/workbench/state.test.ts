@@ -162,7 +162,30 @@ describe("workbench state ownership", () => {
       }),
     ).toBe("public");
 
-    expect(initialSqlRunPath(true)).toBe("combinedReadStream");
+    expect(initialSqlRunPath(true, "SELECT * FROM invoices")).toBe(
+      "combinedReadStream",
+    );
+    expect(
+      initialSqlRunPath(true, "-- invoice list\nSELECT * FROM invoices"),
+    ).toBe("combinedReadStream");
+    expect(
+      initialSqlRunPath(
+        true,
+        "UPDATE invoices SET state = state WHERE 1 = 0",
+      ),
+    ).toBe("plannedReadStream");
+    expect(
+      initialSqlRunPath(
+        true,
+        "WITH changed AS (DELETE FROM invoices RETURNING id) SELECT * FROM changed",
+      ),
+    ).toBe("plannedReadStream");
+    expect(
+      initialSqlRunPath(true, "SELECT * FROM invoices FOR UPDATE"),
+    ).toBe("plannedReadStream");
+    expect(initialSqlRunPath(false, "SELECT * FROM invoices")).toBe(
+      "plannedReadStream",
+    );
     expect(canFallbackFromCombinedRead("proposalRequired")).toBe(true);
     expect(canFallbackFromCombinedRead("network")).toBe(false);
 

@@ -509,7 +509,8 @@ export default function Sql({
           };
           if (
             !manualTransaction.status &&
-            initialSqlRunPath(safety.autoRunReads) === "combinedReadStream"
+            initialSqlRunPath(safety.autoRunReads, sql) ===
+              "combinedReadStream"
           ) {
             try {
               // Exactly one IPC for auto reads. Only the backend's typed,

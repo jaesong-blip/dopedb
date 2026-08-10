@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SafetySettings } from "../../ipc/types";
+import { effectiveSafetySettings } from "../safetySettings/policy";
 import { buildRunSignal } from "./runSignal";
 
 const safety: SafetySettings = {
@@ -17,6 +18,37 @@ const t = (key: string, vars?: Record<string, string | number>) =>
 
 describe("SQL run guidance", () => {
   it("warns before a write when connection writes are disabled", () => {
+    const requestedWrites = { ...safety, allowWrites: true };
+    expect(
+      effectiveSafetySettings(
+        {
+          allowWrites: false,
+          credentialMode: "local",
+          workspaceAccess: "local",
+        },
+        requestedWrites,
+      ).allowWrites,
+    ).toBe(false);
+    expect(
+      effectiveSafetySettings(
+        {
+          allowWrites: true,
+          credentialMode: "memberLocal",
+          workspaceAccess: "write",
+        },
+        requestedWrites,
+      ).allowWrites,
+    ).toBe(false);
+    expect(
+      effectiveSafetySettings(
+        {
+          allowWrites: true,
+          credentialMode: "managed",
+          workspaceAccess: "write",
+        },
+        requestedWrites,
+      ).allowWrites,
+    ).toBe(true);
     expect(buildRunSignal("UPDATE users SET active = 0", [], safety, t)).toEqual({
       tone: "warning",
       icon: "alert",

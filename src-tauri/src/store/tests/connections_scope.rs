@@ -1273,6 +1273,13 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
         .sync_remote_connections(workspace_id, &user_a.id, &[(template, 1)])
         .await
         .unwrap();
+    let member_local_safety: bool =
+        sqlx::query_scalar("SELECT allow_writes FROM connection_safety WHERE connection_id = ?1")
+            .bind(connection_id.to_string())
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert!(!member_local_safety);
     store
         .sync_remote_connections(workspace_id, &user_b.id, &[(read_only_template, 1)])
         .await

@@ -65,7 +65,9 @@ impl SafetyPlatformAdapter {
     ) -> AppResult<()> {
         let profile = self.store.get_connection(connection_id).await?;
         if profile.credential_mode != WorkspaceCredentialMode::Local {
-            settings.allow_writes = profile.allow_writes && profile.workspace_access.can_write();
+            settings.allow_writes = profile.credential_mode == WorkspaceCredentialMode::Managed
+                && profile.allow_writes
+                && profile.workspace_access.can_write();
         } else if !profile.workspace_access.can_write() {
             settings.allow_writes = false;
         }

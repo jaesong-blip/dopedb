@@ -8,6 +8,10 @@ import { useToast } from "../../../components/Toast";
 import { Button } from "../../../design-system/components/Button";
 import { SettingsGroup } from "../../../design-system/components/Settings";
 import { StatusBadge } from "../../../design-system/components/Status";
+import {
+  connectionCanEnterWritePath,
+  effectiveSafetySettings,
+} from "../../../features/safetySettings/policy";
 import { useI18n, type I18nKey } from "../../../lib/i18n";
 import type { ConnectionProfile } from "../../../features/connections/domain";
 import MonitoringAccess from "./MonitoringAccess";
@@ -25,12 +29,23 @@ const NUMBERS: { key: keyof SafetySettings; label: I18nKey; hint: I18nKey }[] = 
 
 export default function Safety({
   connection,
+  onEditConnection,
+  onSaved,
 }: {
-  connection: Pick<ConnectionProfile, "id" | "credentialMode">;
+  connection: Pick<
+    ConnectionProfile,
+    "id" | "allowWrites" | "credentialMode" | "workspaceAccess"
+  >;
+  onEditConnection: () => void;
+  onSaved: (connectionId: string, settings: SafetySettings) => void;
 }) {
   const { t } = useI18n();
   const connectionId = connection.id;
   const workspaceManaged = connection.credentialMode !== "local";
+  const connectionWriteEnabled = connectionCanEnterWritePath(connection);
+  const memberLocalReadOnly = connection.credentialMode === "memberLocal";
+  const localWritePolicyRequired =
+    connection.credentialMode === "local" && !connectionWriteEnabled;
   const [settings, setSettings] = useState<SafetySettings | null>(null);
   const [msg, setMsg] = useState<string | null>(null); // load-failure only; save feedback goes through toast
   const [busy, setBusy] = useState(false);
@@ -71,16 +86,28 @@ export default function Safety({
 
   async function save() {
     if (!settings) return;
+    const requested = effectiveSafetySettings(connection, settings);
     setBusy(true);
     try {
-      await setSafety(connectionId, settings);
+      await setSafety(connectionId, requested);
+      const persisted = await getSafety(connectionId);
+      setSettings(persisted);
+      onSaved(connectionId, persisted);
       toast(t("safety.saved"));
     } catch (e) {
+      try {
+        setSettings(await getSafety(connectionId));
+      } catch {
+        setSettings(requested);
+      }
       toast(errMessage(e), "error");
     } finally {
       setBusy(false);
     }
   }
+
+  const effectiveAllowWrites =
+    settings.allowWrites && connectionWriteEnabled;
 
   return (
     <div className="tw:flex tw:w-full tw:max-w-[880px] tw:flex-col tw:gap-4 tw:max-[640px]:max-w-none">
@@ -90,13 +117,13 @@ export default function Safety({
           <InfoTip label={t("safety.body")} />
         </div>
         <StatusBadge
-          tone={settings.allowWrites ? "warning" : "success"}
+          tone={effectiveAllowWrites ? "warning" : "success"}
         >
           {workspaceManaged
-            ? settings.allowWrites
+            ? effectiveAllowWrites
               ? t("safety.modeWorkspaceWrites")
               : t("safety.modeSharedReadOnly")
-            : settings.allowWrites
+            : effectiveAllowWrites
               ? t("safety.modeWrites")
               : t("safety.modeReadOnly")}
         </StatusBadge>
@@ -112,8 +139,15 @@ export default function Safety({
               <input
                 className="tw:m-0"
                 type="checkbox"
-                checked={settings[item.key] as boolean}
-                disabled={workspaceManaged && item.key === "allowWrites"}
+                checked={
+                  item.key === "allowWrites"
+                    ? effectiveAllowWrites
+                    : (settings[item.key] as boolean)
+                }
+                disabled={
+                  item.key === "allowWrites" &&
+                  (workspaceManaged || !connectionWriteEnabled)
+                }
                 onChange={(e) => set(item.key, e.target.checked as never)}
               />
               <span>
@@ -121,17 +155,38 @@ export default function Safety({
               </span>
               <InfoTip
                 label={t(
-                  workspaceManaged && item.key === "allowWrites"
-                    ? "safety.sharedWritesHint"
-                    : item.hint,
+                  item.key !== "allowWrites"
+                    ? item.hint
+                    : memberLocalReadOnly
+                      ? "safety.memberLocalReadOnlyHint"
+                      : workspaceManaged
+                        ? "safety.sharedWritesHint"
+                        : localWritePolicyRequired
+                          ? "safety.connectionWritePolicyRequired"
+                          : item.hint,
                 )}
               />
             </label>
           ))}
-          {workspaceManaged ? (
+          {memberLocalReadOnly ? (
+            <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
+              {t("safety.memberLocalReadOnlyHint")}
+            </p>
+          ) : workspaceManaged ? (
             <p className="tw:m-0 tw:border-t tw:border-border-subtle tw:pt-2 tw:text-sm tw:leading-body tw:text-muted-foreground">
               {t("safety.sharedWritesHint")}
             </p>
+          ) : localWritePolicyRequired ? (
+            <div className="tw:grid tw:gap-2 tw:border-t tw:border-border-subtle tw:pt-2">
+              <p className="tw:m-0 tw:text-sm tw:leading-body tw:text-muted-foreground">
+                {t("safety.connectionWritePolicyRequired")}
+              </p>
+              <div>
+                <Button size="compact" onClick={onEditConnection}>
+                  {t("safety.openConnectionOptions")}
+                </Button>
+              </div>
+            </div>
           ) : null}
         </SettingsGroup>
 

@@ -339,7 +339,9 @@ impl Store {
             sync_safety_allow_writes(
                 &mut tx,
                 profile.id,
-                profile.allow_writes && profile.workspace_access.can_write(),
+                profile.credential_mode == WorkspaceCredentialMode::Managed
+                    && profile.allow_writes
+                    && profile.workspace_access.can_write(),
             )
             .await?;
             sqlx::query(

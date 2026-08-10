@@ -23,38 +23,50 @@ async function loadSafetyBounded(id: string) {
 export function useSafetySettings(connectionId: string | null) {
   const [safety, setSafety] = useState<SafetySettings | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const requestId = useRef<string | null>(null);
+  const requestGeneration = useRef(0);
 
-  const load = useCallback((id: string) => {
-    requestId.current = id;
-    setSafety(null);
+  const load = useCallback((id: string, clearCurrent: boolean) => {
+    const generation = ++requestGeneration.current;
+    if (clearCurrent) setSafety(null);
     setError(null);
     loadSafetyBounded(id)
       .then((settings) => {
-        if (requestId.current === id) setSafety(settings);
+        if (requestGeneration.current === generation) setSafety(settings);
       })
       .catch((loadError) => {
-        if (requestId.current === id) setError(errMessage(loadError));
+        if (requestGeneration.current === generation) {
+          setError(errMessage(loadError));
+        }
       });
   }, []);
 
   useEffect(() => {
     if (connectionId) {
-      load(connectionId);
+      load(connectionId, true);
       return;
     }
-    requestId.current = null;
+    requestGeneration.current += 1;
     setSafety(null);
+    setError(null);
   }, [connectionId, load]);
 
   return {
     safety,
     error,
     refresh: useCallback(() => {
-      if (connectionId) load(connectionId);
+      if (connectionId) load(connectionId, false);
     }, [connectionId, load]),
+    accept: useCallback(
+      (id: string, settings: SafetySettings) => {
+        if (connectionId !== id) return;
+        requestGeneration.current += 1;
+        setSafety(settings);
+        setError(null);
+      },
+      [connectionId],
+    ),
     clear: useCallback(() => {
-      requestId.current = null;
+      requestGeneration.current += 1;
       setSafety(null);
       setError(null);
     }, []),

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 import type { ConnectionProfile } from "../../features/connections/domain";
+import type { SafetySettings } from "../../ipc/types";
 import { Icon } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { Button } from "../../design-system/components/Button";
@@ -39,6 +40,8 @@ type SettingsScope = "application" | "dataSource";
 export default function Settings({
   connection,
   onClose,
+  onEditConnection,
+  onSafetySaved,
   refreshSafety,
   initialSection,
   availableUpdate,
@@ -46,6 +49,8 @@ export default function Settings({
 }: {
   connection: ConnectionProfile | null;
   onClose: () => void;
+  onEditConnection: (connection: ConnectionProfile) => void;
+  onSafetySaved: (connectionId: string, settings: SafetySettings) => void;
   // Re-loads the App's per-connection safety so Safety edits apply without reselecting.
   refreshSafety: () => void;
   initialSection?: SettingsSection;
@@ -304,7 +309,11 @@ export default function Settings({
                 )}
                 {section === "safety" &&
                   (connection ? (
-                    <Safety connection={connection} />
+                    <Safety
+                      connection={connection}
+                      onEditConnection={() => onEditConnection(connection)}
+                      onSaved={onSafetySaved}
+                    />
                   ) : (
                     <div className="tw:text-muted-foreground">
                       {t("settings.selectConnection")}

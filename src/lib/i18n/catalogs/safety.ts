@@ -10,6 +10,8 @@ export const safetyCatalog = defineCatalog(
       "Run read-only SELECTs without a manual approve.",
     "safety.body":
       "This connection's database policy. Reads can move quickly; writes stay visible and gated.",
+    "safety.connectionWritePolicyRequired":
+      "This data source's write policy is off. Enable Allow write operations under Data Source Options before opening the local safety gate.",
     "safety.execPreviewRowLimit": "Exec-preview row limit",
     "safety.execPreviewRowLimitHint":
       "Skip execute-preview above this estimate (L3 gate).",
@@ -20,6 +22,8 @@ export const safetyCatalog = defineCatalog(
     "safety.loading": "Loading safety settings...",
     "safety.maxRows": "Max rows",
     "safety.maxRowsHint": "Row cap applied to read result sets.",
+    "safety.memberLocalReadOnlyHint":
+      "Member-local credentials are read-only. Workspace writes require a managed connection and an administrator-enabled write policy.",
     "safety.modeReadOnly": "Agent-safe read mode",
     "safety.modeSharedReadOnly": "Workspace read-only",
     "safety.modeWorkspaceWrites": "Workspace writes allowed",
@@ -55,6 +59,7 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringTitle": "Agent monitoring access",
     "safety.monitoringUser": "Database user",
     "safety.monitoringWorking": "Applying...",
+    "safety.openConnectionOptions": "Open Data Source Options",
     "safety.saved": "Safety settings saved",
     "safety.sharedWritesHint":
       "A workspace administrator controls this DB policy. When enabled, it remains effective for members with an Editor, Admin, or Owner role and a use grant; short-lived credentials rotate automatically.",
@@ -67,6 +72,8 @@ export const safetyCatalog = defineCatalog(
     "safety.autoRunReadsHint": "읽기 전용 SELECT를 수동 승인 없이 실행합니다.",
     "safety.body":
       "이 연결의 데이터베이스 정책입니다. 읽기는 빠르게 흐르게 두고, 쓰기는 보이는 승인 흐름 뒤에 둡니다.",
+    "safety.connectionWritePolicyRequired":
+      "이 데이터 소스의 쓰기 정책이 꺼져 있습니다. 로컬 안전 게이트를 열기 전에 데이터 소스 옵션에서 ‘쓰기 작업 허용’을 켜세요.",
     "safety.execPreviewRowLimit": "실행 미리보기 행 제한",
     "safety.execPreviewRowLimitHint":
       "예상 행 수가 이 값을 넘으면 실행 미리보기를 건너뜁니다 (L3 게이트).",
@@ -77,6 +84,8 @@ export const safetyCatalog = defineCatalog(
     "safety.loading": "안전 설정을 불러오는 중...",
     "safety.maxRows": "최대 행 수",
     "safety.maxRowsHint": "읽기 결과 집합에 적용되는 행 수 제한입니다.",
+    "safety.memberLocalReadOnlyHint":
+      "구성원 로컬 자격 증명 연결은 읽기 전용입니다. 워크스페이스 쓰기는 관리형 연결과 관리자가 활성화한 쓰기 정책이 필요합니다.",
     "safety.modeReadOnly": "에이전트 안전 읽기 모드",
     "safety.modeSharedReadOnly": "워크스페이스 읽기 전용",
     "safety.modeWorkspaceWrites": "워크스페이스 쓰기 허용",
@@ -112,6 +121,7 @@ export const safetyCatalog = defineCatalog(
     "safety.monitoringTitle": "Agent 모니터링 접근",
     "safety.monitoringUser": "DB 사용자",
     "safety.monitoringWorking": "적용 중...",
+    "safety.openConnectionOptions": "데이터 소스 옵션 열기",
     "safety.saved": "안전 설정이 저장되었습니다",
     "safety.sharedWritesHint":
       "이 DB 정책은 워크스페이스 관리자가 정합니다. 쓰기를 허용하면 사용 권한이 있는 에디터·관리자·소유자에게 역할이 유지되는 동안 적용되고 단기 자격증명은 자동 회전합니다.",
