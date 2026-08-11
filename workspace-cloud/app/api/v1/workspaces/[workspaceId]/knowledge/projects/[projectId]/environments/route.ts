@@ -1,5 +1,3 @@
-import { and, eq } from "drizzle-orm";
-import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import {
   boundedJsonBody,
@@ -9,20 +7,20 @@ import {
   mutationAllowed,
   privateJson,
 } from "@/lib/http";
-import { knowledgeProject, knowledgeProjectEnvironment } from "@/lib/schema";
+import {
+  appendKnowledgeEnvironment,
+  KNOWLEDGE_RISK_CLASSES,
+  type KnowledgeRiskClass,
+} from "@/lib/knowledge/project-store";
 import { authorizeWorkspace } from "@/lib/workspace-authorization";
+import {
+  databaseErrorCode,
+  logKnowledgeMutationFailure,
+} from "@/lib/workspace-server-log";
 
 type RouteContext = {
   params: Promise<{ workspaceId: string; projectId: string }>;
 };
-
-const RISK_CLASSES = [
-  "production",
-  "staging",
-  "development",
-  "test",
-  "custom",
-] as const;
 
 export async function POST(request: Request, context: RouteContext) {
   if (!mutationAllowed(request, env.appOrigin())) {
@@ -47,54 +45,34 @@ export async function POST(request: Request, context: RouteContext) {
     || typeof body.name !== "string"
     || !isSafeDisplayText(body.name.trim(), 512)
     || typeof body.riskClass !== "string"
-    || !RISK_CLASSES.includes(body.riskClass as (typeof RISK_CLASSES)[number])
+    || !KNOWLEDGE_RISK_CLASSES.includes(body.riskClass as KnowledgeRiskClass)
   ) {
     return jsonError("Invalid Environment", 400);
   }
 
   const expectedProjectRevision = body.expectedProjectRevision;
   const environmentName = body.name.trim();
-  const riskClass = body.riskClass as (typeof RISK_CLASSES)[number];
+  const riskClass = body.riskClass as KnowledgeRiskClass;
   try {
-    const project = await db.transaction(async (transaction) => {
-      const updatedProjects = await transaction.update(knowledgeProject).set({
-        revision: expectedProjectRevision + 1,
-        updatedAt: new Date(),
-      }).where(and(
-        eq(knowledgeProject.organizationId, workspaceId),
-        eq(knowledgeProject.id, projectId),
-        eq(knowledgeProject.revision, expectedProjectRevision),
-      )).returning({
-        id: knowledgeProject.id,
-        name: knowledgeProject.name,
-        revision: knowledgeProject.revision,
-      });
-      if (updatedProjects.length !== 1) {
-        throw new Error("project-revision-changed");
-      }
-      await transaction.insert(knowledgeProjectEnvironment).values({
-        organizationId: workspaceId,
-        projectId,
-        name: environmentName,
-        production: riskClass === "production",
-        riskClass,
-      });
-      const environments = await transaction.select({
-        id: knowledgeProjectEnvironment.id,
-        name: knowledgeProjectEnvironment.name,
-        riskClass: knowledgeProjectEnvironment.riskClass,
-        revision: knowledgeProjectEnvironment.revision,
-      }).from(knowledgeProjectEnvironment).where(and(
-        eq(knowledgeProjectEnvironment.organizationId, workspaceId),
-        eq(knowledgeProjectEnvironment.projectId, projectId),
-      ));
-      return { ...updatedProjects[0], environments };
+    const project = await appendKnowledgeEnvironment({
+      organizationId: workspaceId,
+      projectId,
+      expectedProjectRevision,
+      name: environmentName,
+      riskClass,
     });
+    if (!project) {
+      return jsonError(
+        "Project revision changed or Environment name is already in use",
+        409,
+      );
+    }
     return privateJson({ project }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "project-revision-changed") {
-      return jsonError("Project revision changed", 409);
-    }
-    return jsonError("Environment name is already in use", 409);
+    logKnowledgeMutationFailure({
+      operation: "environment_create",
+      databaseCode: databaseErrorCode(error),
+    });
+    return jsonError("Environment could not be created", 500);
   }
 }

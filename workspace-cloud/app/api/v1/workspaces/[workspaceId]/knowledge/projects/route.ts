@@ -9,8 +9,17 @@ import {
   mutationAllowed,
   privateJson,
 } from "@/lib/http";
+import {
+  insertKnowledgeProject,
+  KNOWLEDGE_RISK_CLASSES,
+  type KnowledgeRiskClass,
+} from "@/lib/knowledge/project-store";
 import { knowledgeProject, knowledgeProjectEnvironment } from "@/lib/schema";
 import { authorizeWorkspace } from "@/lib/workspace-authorization";
+import {
+  databaseErrorCode,
+  logKnowledgeMutationFailure,
+} from "@/lib/workspace-server-log";
 
 type RouteContext = { params: Promise<{ workspaceId: string }> };
 
@@ -64,47 +73,46 @@ export async function POST(request: Request, context: RouteContext) {
         && typeof environment.name === "string"
         && isSafeDisplayText(environment.name.trim(), 512)
         && typeof environment.riskClass === "string"
-        && ["production", "staging", "development", "test", "custom"]
-          .includes(environment.riskClass);
+        && KNOWLEDGE_RISK_CLASSES.includes(
+          environment.riskClass as KnowledgeRiskClass,
+        );
     })
-    || new Set(environments.map((value) =>
-      (value as Record<string, unknown>).name as string
-    )).size !== environments.length
   ) {
     return jsonError("Invalid Project Knowledge scope", 400);
   }
   const projectName = body.name.trim();
+  const normalizedEnvironments = environments.map((value) => {
+    const environment = value as {
+      name: string;
+      riskClass: KnowledgeRiskClass;
+    };
+    return {
+      name: environment.name.trim(),
+      riskClass: environment.riskClass,
+    };
+  });
+  if (
+    new Set(normalizedEnvironments.map((environment) => environment.name)).size !==
+    normalizedEnvironments.length
+  ) {
+    return jsonError("Environment names must be unique", 400);
+  }
   try {
-    const created = await db.transaction(async (transaction) => {
-      const [project] = await transaction.insert(knowledgeProject).values({
-        organizationId: workspaceId,
-        name: projectName,
-      }).returning({ id: knowledgeProject.id, revision: knowledgeProject.revision });
-      const createdEnvironments = await transaction.insert(knowledgeProjectEnvironment).values(
-        environments.map((value) => {
-          const environment = value as {
-            name: string;
-            riskClass: "production" | "staging" | "development" | "test" | "custom";
-          };
-          return {
-            organizationId: workspaceId,
-            projectId: project.id,
-            name: environment.name.trim(),
-            production: environment.riskClass === "production",
-            riskClass: environment.riskClass,
-          };
-        }),
-      ).returning({
-        id: knowledgeProjectEnvironment.id,
-        name: knowledgeProjectEnvironment.name,
-        riskClass: knowledgeProjectEnvironment.riskClass,
-        revision: knowledgeProjectEnvironment.revision,
-      });
-      return { ...project, name: projectName, environments: createdEnvironments };
+    const created = await insertKnowledgeProject({
+      organizationId: workspaceId,
+      name: projectName,
+      environments: normalizedEnvironments,
     });
+    if (!created) {
+      return jsonError("Project name is already in use", 409);
+    }
     return privateJson({ project: created }, { status: 201 });
-  } catch {
-    return jsonError("Project or Environment name is already in use", 409);
+  } catch (error) {
+    logKnowledgeMutationFailure({
+      operation: "project_create",
+      databaseCode: databaseErrorCode(error),
+    });
+    return jsonError("Project could not be created", 500);
   }
 }
 

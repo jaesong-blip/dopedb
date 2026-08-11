@@ -322,7 +322,7 @@ describe("provider credential Tauri adapter", () => {
       operationId: "44444444-4444-4444-8444-444444444444",
       connectionId: "55555555-5555-4555-8555-555555555555",
       provider: "gcpCloudSql",
-      targetDisplayName: "mirai-db-dev / app",
+      targetDisplayName: "sample-db-dev / app",
       targetDetail: "campfire-460003 · asia-northeast3",
       engine: "postgres",
       intent: "apply",

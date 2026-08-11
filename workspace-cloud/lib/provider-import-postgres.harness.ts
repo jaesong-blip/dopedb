@@ -53,6 +53,8 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         AND to_regclass('workspace_control.workspace_deletion_receipt') IS NOT NULL
         AND to_regclass('workspace_control.workspace_sync_head') IS NOT NULL
         AND to_regclass('workspace_control.workspace_sync_event') IS NOT NULL
+        AND to_regclass('workspace_control.knowledge_project') IS NOT NULL
+        AND to_regclass('workspace_control.knowledge_project_environment') IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema = 'workspace_control'
@@ -104,6 +106,12 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
     }
 
     const neonSql = {
+      query: async (
+        query: string,
+        parameters: Parameters<typeof sql.unsafe>[1] = [],
+      ) => (
+        sql.unsafe(query, parameters)
+      ),
       transaction: async (factory: (tx: unknown) => Promise<unknown>[]) => (
         sql.begin(async (tx) => {
           const queries = factory(tx);
@@ -163,6 +171,12 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         kind: "secret-value",
         status: 999,
       });
+      serverLog.logKnowledgeMutationFailure({
+        operation: "credential-value",
+        databaseCode: "password-value",
+      });
+      expect(serverLog.databaseErrorCode({ cause: { code: "23505" } })).toBe("23505");
+      expect(serverLog.databaseErrorCode({ cause: { code: "password-value" } })).toBeNull();
       expect(logSpy.mock.calls).toEqual([
         ["provider_connection_failed", {
           provider: "other",
@@ -195,6 +209,10 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           operation: "other",
           kind: "other",
           status: 0,
+        }],
+        ["knowledge_mutation_failed", {
+          operation: "other",
+          databaseKind: null,
         }],
       ]);
     } finally {
@@ -231,7 +249,10 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
     parsedPlaintext.fill(0);
     syntheticPlaintext.fill(0);
     syntheticWrapped.fill(0);
-    const { importProviderReceipt } = await import("./provider-import-store");
+    const [{ importProviderReceipt }, projectStore] = await Promise.all([
+      import("./provider-import-store"),
+      import("./knowledge/project-store"),
+    ]);
 
     const suffix = randomUUID();
     const organizationId = `harness-org-${suffix}`;
@@ -326,6 +347,59 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           )
         `;
       });
+      const projectName = `Harness Project ${suffix}`;
+      const createdProject = await projectStore.insertKnowledgeProject({
+        organizationId,
+        name: projectName,
+        environments: [
+          { name: "Prod", riskClass: "production" },
+          { name: "Dev", riskClass: "development" },
+        ],
+      });
+      expect(createdProject).toMatchObject({
+        name: projectName,
+        revision: 1,
+        environments: [
+          { name: "Dev", riskClass: "development", revision: 1 },
+          { name: "Prod", riskClass: "production", revision: 1 },
+        ],
+      });
+      if (!createdProject) throw new Error("Project Knowledge creation failed");
+      await expect(projectStore.insertKnowledgeProject({
+        organizationId,
+        name: projectName,
+        environments: [{ name: "Main", riskClass: "custom" }],
+      })).resolves.toBeNull();
+      const appendedProject = await projectStore.appendKnowledgeEnvironment({
+        organizationId,
+        projectId: createdProject.id,
+        expectedProjectRevision: 1,
+        name: "Stage",
+        riskClass: "staging",
+      });
+      expect(appendedProject).toMatchObject({
+        id: createdProject.id,
+        revision: 2,
+        environments: [
+          { name: "Dev", riskClass: "development", revision: 1 },
+          { name: "Prod", riskClass: "production", revision: 1 },
+          { name: "Stage", riskClass: "staging", revision: 1 },
+        ],
+      });
+      await expect(projectStore.appendKnowledgeEnvironment({
+        organizationId,
+        projectId: createdProject.id,
+        expectedProjectRevision: 1,
+        name: "Test",
+        riskClass: "test",
+      })).resolves.toBeNull();
+      await expect(projectStore.appendKnowledgeEnvironment({
+        organizationId,
+        projectId: createdProject.id,
+        expectedProjectRevision: 2,
+        name: "Prod",
+        riskClass: "production",
+      })).resolves.toBeNull();
       await insertReceipt(receiptId);
 
       const input = {

@@ -71,7 +71,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.projectSetupDescription":
       "Create a Project first, then organize database access, source code, and dashboards by Environment.",
     "connections.projectName": "Project name",
-    "connections.projectNamePlaceholder": "e.g. Mirai",
+    "connections.projectNamePlaceholder": "e.g. Customer portal",
     "connections.firstEnvironment": "First Environment",
     "connections.environmentName": "Environment name",
     "connections.environmentNamePlaceholder": "e.g. main or prod",
@@ -381,7 +381,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.projectSetupDescription":
       "프로젝트를 먼저 만든 다음 환경별로 데이터베이스 접근, 소스 코드, 대시보드를 정리합니다.",
     "connections.projectName": "프로젝트 이름",
-    "connections.projectNamePlaceholder": "예: Mirai",
+    "connections.projectNamePlaceholder": "예: 고객 포털",
     "connections.firstEnvironment": "첫 환경",
     "connections.environmentName": "환경 이름",
     "connections.environmentNamePlaceholder": "예: main 또는 prod",

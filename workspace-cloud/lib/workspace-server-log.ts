@@ -71,6 +71,10 @@ const WORKSPACE_KMS_FAILURE_KINDS = new Set([
   "unavailable",
   "unexpected",
 ]);
+const KNOWLEDGE_MUTATIONS = new Set([
+  "project_create",
+  "environment_create",
+]);
 
 type SafeLogScalar = string | number | boolean | null;
 
@@ -94,6 +98,17 @@ function databaseFailureKind(value: unknown) {
   if (DATABASE_SCHEMA_ERROR_CODES.has(value)) return "database_schema";
   if (value.startsWith("08")) return "database_unavailable";
   return "other";
+}
+
+export function databaseErrorCode(error: unknown) {
+  let current = error;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!current || typeof current !== "object") return null;
+    const code = "code" in current ? current.code : null;
+    if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return code;
+    current = "cause" in current ? current.cause : null;
+  }
+  return null;
 }
 
 function emitServerFailure(
@@ -171,5 +186,15 @@ export function logWorkspaceKmsFailure(input: {
     operation: category(input.operation, WORKSPACE_KMS_OPERATIONS),
     kind: category(input.kind, WORKSPACE_KMS_FAILURE_KINDS),
     status: safeStatus(input.status),
+  });
+}
+
+export function logKnowledgeMutationFailure(input: {
+  operation: unknown;
+  databaseCode: unknown;
+}) {
+  emitServerFailure("knowledge_mutation_failed", {
+    operation: category(input.operation, KNOWLEDGE_MUTATIONS),
+    databaseKind: databaseFailureKind(input.databaseCode),
   });
 }
