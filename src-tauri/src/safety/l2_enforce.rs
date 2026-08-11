@@ -20,7 +20,9 @@ use tokio::time::timeout;
 
 use crate::error::{AppError, AppResult};
 use crate::executor::cancel::{self, CancelHandle};
-use crate::executor::read::{describe_cols, mysql_value, pg_value, sqlite_value, stream_capped};
+use crate::executor::read::{
+    describe_cols, mysql_value, pg_value, sqlite_value, stream_byte_capped, stream_capped,
+};
 use crate::model::{Engine, QueryResult};
 
 use super::{PoolRef, STATEMENT_TIMEOUT_MS};
@@ -30,6 +32,7 @@ use super::{PoolRef, STATEMENT_TIMEOUT_MS};
 /// flagged) instead of buffering the whole result. Decoding reuses the executor's
 /// per-engine mappers so this path and the desktop path render cells identically.
 /// Any write the model slipped through is rejected by the DB → [`AppError::Blocked`].
+#[cfg(test)]
 pub async fn run_read_only(pool: PoolRef<'_>, sql: &str, max_rows: u64) -> AppResult<QueryResult> {
     run_read_only_cancellable(pool, sql, max_rows, None).await
 }
@@ -48,6 +51,148 @@ pub(crate) async fn run_read_only_cancellable(
         run_read_only_inner(pool, sql, max_rows),
     )
     .await
+}
+
+/// Analysis Article read path. It retains L2's database-enforced read-only
+/// transaction while stopping row decoding at both the definition's row cap and
+/// byte cap. The byte cap is enforced during streaming, not after materializing a
+/// potentially unbounded cell value collection.
+pub(crate) async fn run_read_only_byte_capped_cancellable(
+    pool: PoolRef<'_>,
+    sql: &str,
+    max_rows: u64,
+    max_bytes: usize,
+    cancellation: Option<&CancelHandle>,
+) -> AppResult<QueryResult> {
+    cancel::guard_registered(
+        cancellation,
+        cancel::QUERY_TIMEOUT,
+        run_read_only_byte_capped_inner(pool, sql, max_rows, max_bytes),
+    )
+    .await
+}
+
+async fn run_read_only_byte_capped_inner(
+    pool: PoolRef<'_>,
+    sql: &str,
+    max_rows: u64,
+    max_bytes: usize,
+) -> AppResult<QueryResult> {
+    let max = max_rows as usize;
+    let started = Instant::now();
+    let engine = pool.engine();
+    let (columns, rows, truncated) = match pool {
+        PoolRef::Postgres(pool) => {
+            let mut connection = pool.acquire().await?;
+            let result = async {
+                sqlx::query("BEGIN").execute(&mut *connection).await?;
+                sqlx::query("SET TRANSACTION READ ONLY")
+                    .execute(&mut *connection)
+                    .await?;
+                let _ = sqlx::query(AssertSqlSafe(format!(
+                    "SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"
+                )))
+                .execute(&mut *connection)
+                .await;
+                guarded_app(stream_byte_capped(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(&mut *connection),
+                    max,
+                    max_bytes,
+                    pg_value,
+                ))
+                .await
+            }
+            .await;
+            let _ = sqlx::query("ROLLBACK").execute(&mut *connection).await;
+            let (columns, rows, truncated) =
+                result.map_err(|error| map_readonly_app(engine, error))?;
+            let columns = if columns.is_empty() {
+                (&mut *connection)
+                    .describe(AssertSqlSafe(sql).into_sql_str())
+                    .await
+                    .ok()
+                    .map(describe_cols)
+                    .unwrap_or_default()
+            } else {
+                columns
+            };
+            (columns, rows, truncated)
+        }
+        PoolRef::Mysql(pool) => {
+            let mut connection = pool.acquire().await?;
+            let result = async {
+                let _ = sqlx::query(AssertSqlSafe(format!(
+                    "SET SESSION max_execution_time = {STATEMENT_TIMEOUT_MS}"
+                )))
+                .execute(&mut *connection)
+                .await;
+                sqlx::query("START TRANSACTION READ ONLY")
+                    .execute(&mut *connection)
+                    .await?;
+                guarded_app(stream_byte_capped(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(&mut *connection),
+                    max,
+                    max_bytes,
+                    mysql_value,
+                ))
+                .await
+            }
+            .await;
+            let _ = sqlx::query("ROLLBACK").execute(&mut *connection).await;
+            let (columns, rows, truncated) =
+                result.map_err(|error| map_readonly_app(engine, error))?;
+            let columns = if columns.is_empty() {
+                (&mut *connection)
+                    .describe(AssertSqlSafe(sql).into_sql_str())
+                    .await
+                    .ok()
+                    .map(describe_cols)
+                    .unwrap_or_default()
+            } else {
+                columns
+            };
+            (columns, rows, truncated)
+        }
+        PoolRef::Sqlite(pool) => {
+            let mut connection = pool.acquire().await?;
+            let result = async {
+                sqlx::query("PRAGMA query_only = ON")
+                    .execute(&mut *connection)
+                    .await?;
+                guarded_app(stream_byte_capped(
+                    sqlx::query(AssertSqlSafe(sql)).fetch(&mut *connection),
+                    max,
+                    max_bytes,
+                    sqlite_value,
+                ))
+                .await
+            }
+            .await;
+            let _ = sqlx::query("PRAGMA query_only = OFF")
+                .execute(&mut *connection)
+                .await;
+            let (columns, rows, truncated) =
+                result.map_err(|error| map_readonly_app(engine, error))?;
+            let columns = if columns.is_empty() {
+                (&mut *connection)
+                    .describe(AssertSqlSafe(sql).into_sql_str())
+                    .await
+                    .ok()
+                    .map(describe_cols)
+                    .unwrap_or_default()
+            } else {
+                columns
+            };
+            (columns, rows, truncated)
+        }
+    };
+    Ok(QueryResult {
+        row_count: rows.len(),
+        columns,
+        rows,
+        truncated,
+        duration_ms: started.elapsed().as_millis() as u64,
+    })
 }
 
 async fn run_read_only_inner(
@@ -183,6 +328,20 @@ async fn guarded<T>(
     match timeout(Duration::from_millis(STATEMENT_TIMEOUT_MS + 2_000), fut).await {
         Ok(r) => r,
         Err(_) => Err(sqlx::Error::PoolTimedOut),
+    }
+}
+
+async fn guarded_app<T>(fut: impl std::future::Future<Output = AppResult<T>>) -> AppResult<T> {
+    match timeout(Duration::from_millis(STATEMENT_TIMEOUT_MS + 2_000), fut).await {
+        Ok(result) => result,
+        Err(_) => Err(AppError::Db(sqlx::Error::PoolTimedOut)),
+    }
+}
+
+fn map_readonly_app(engine: Engine, error: AppError) -> AppError {
+    match error {
+        AppError::Db(error) => map_readonly(engine, error),
+        error => error,
     }
 }
 

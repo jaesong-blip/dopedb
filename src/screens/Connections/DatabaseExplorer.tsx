@@ -29,7 +29,6 @@ import { ProviderCredentialDialog } from "../../features/providers/ProviderCrede
 import type { ProviderKind } from "../../features/providers/domain";
 import type {
   EnvironmentConnection,
-  FunnelAnalysisArtifact,
   KnowledgeEnvironment,
   KnowledgeEnvironmentView,
   KnowledgeProject,
@@ -37,11 +36,12 @@ import type {
 } from "../../features/knowledge/domain";
 import {
   listKnowledgeEnvironmentConnections,
-  listFunnelAnalysisArtifacts,
   listKnowledgeProjects,
   listKnowledgeSources,
   onKnowledgeSourceChanged,
 } from "../../features/knowledge/tauriAdapter";
+import type { AnalysisArticleRecord } from "../../features/analysisArticles/domain";
+import { listAnalysisArticles } from "../../features/analysisArticles/tauriAdapter";
 import { EnvironmentSetupDialog } from "../../features/knowledge/components/EnvironmentSetupDialog";
 import { ProjectSetupDialog } from "../../features/knowledge/components/ProjectSetupDialog";
 import {
@@ -100,11 +100,11 @@ function knowledgeSourceTone(source: KnowledgeSource): StatusTone {
   return "warning";
 }
 
-function environmentDashboardTone(
-  dashboard: FunnelAnalysisArtifact,
+function environmentAnalysisTone(
+  article: AnalysisArticleRecord,
 ): StatusTone {
-  if (dashboard.state === "published") return "success";
-  if (dashboard.state === "draft") return "warning";
+  if (article.state === "live") return "success";
+  if (article.state === "review") return "warning";
   return "neutral";
 }
 
@@ -223,18 +223,16 @@ export function DatabaseExplorer({
   const [expandedResourceKeys, setExpandedResourceKeys] = useState<Set<string>>(
     new Set(),
   );
-  const environmentDashboardQueries = useQueries({
+  const environmentAnalysisQueries = useQueries({
     queries: projectEnvironmentIds.map((environmentId) => ({
       queryKey: [
-        "knowledge",
-        "funnel-analysis",
+        "analysis-articles",
         environmentId,
-        catalogScope.key,
       ],
-      queryFn: () => listFunnelAnalysisArtifacts(environmentId),
+      queryFn: () => listAnalysisArticles(environmentId),
       enabled:
         sharedKnowledgeWorkspace &&
-        expandedResourceKeys.has(`${environmentId}:dashboards`),
+        expandedResourceKeys.has(`${environmentId}:analyses`),
       retry: false,
     })),
   });
@@ -481,7 +479,7 @@ export function DatabaseExplorer({
         ["unassigned", ...projectEnvironmentIds.flatMap((environmentId) => [
           `${environmentId}:databases`,
           `${environmentId}:sources`,
-          `${environmentId}:dashboards`,
+          `${environmentId}:analyses`,
         ])],
       ),
     );
@@ -571,7 +569,7 @@ export function DatabaseExplorer({
           refetchType: "active",
         }),
         queryClient.invalidateQueries({
-          queryKey: ["knowledge", "funnel-analysis"],
+          queryKey: ["analysis-articles"],
           refetchType: "active",
         }),
         selectedId ? refreshSchema(selectedId) : Promise.resolve(),
@@ -874,7 +872,7 @@ export function DatabaseExplorer({
   function renderEnvironmentResources(environment: KnowledgeEnvironment) {
     const databaseKey = `${environment.id}:databases`;
     const sourceKey = `${environment.id}:sources`;
-    const dashboardKey = `${environment.id}:dashboards`;
+    const analysisKey = `${environment.id}:analyses`;
     const environmentIndex = projectEnvironmentIds.indexOf(environment.id);
     const bindings = environmentConnectionsById.get(environment.id) ?? [];
     const environmentSources = (knowledgeSources.data ?? []).filter(
@@ -882,11 +880,11 @@ export function DatabaseExplorer({
     );
     const databaseExpanded = expandedResourceKeys.has(databaseKey);
     const sourceExpanded = expandedResourceKeys.has(sourceKey);
-    const dashboardExpanded = expandedResourceKeys.has(dashboardKey);
-    const dashboardQuery = environmentDashboardQueries[environmentIndex];
-    const environmentDashboards = dashboardQuery?.data ?? [];
-    const activeDashboardIsVisible = environmentDashboards.some(
-      (dashboard) => dashboard.id === activeProjectEnvironmentResourceId,
+    const analysisExpanded = expandedResourceKeys.has(analysisKey);
+    const analysisQuery = environmentAnalysisQueries[environmentIndex];
+    const environmentAnalyses = analysisQuery?.data ?? [];
+    const activeAnalysisIsVisible = environmentAnalyses.some(
+      (article) => article.id === activeProjectEnvironmentResourceId,
     );
 
     return (
@@ -1025,61 +1023,61 @@ export function DatabaseExplorer({
         ) : null}
 
         <TreeSectionButton
-          expanded={dashboardExpanded}
+          expanded={analysisExpanded}
           icon="chart"
           selected={
             activeProjectEnvironmentId === environment.id &&
-            activeProjectEnvironmentView === "dashboards" &&
-            !activeDashboardIsVisible
+            activeProjectEnvironmentView === "analyses" &&
+            !activeAnalysisIsVisible
           }
           onToggle={() => {
-            toggleExpandedId(setExpandedResourceKeys, dashboardKey);
-            onOpenProjectEnvironment(environment.id, "dashboards");
+            toggleExpandedId(setExpandedResourceKeys, analysisKey);
+            onOpenProjectEnvironment(environment.id, "analyses");
           }}
         >
-          {t("connections.environmentDashboards")}
+          {t("connections.environmentAnalyses")}
         </TreeSectionButton>
-        {dashboardExpanded ? (
+        {analysisExpanded ? (
           <div className="tw:grid tw:border-l tw:border-border-subtle tw:pl-1">
-            {sharedKnowledgeWorkspace && dashboardQuery?.isPending ? (
+            {sharedKnowledgeWorkspace && analysisQuery?.isPending ? (
               <div className="tw:min-h-control-sm tw:px-2 tw:py-1 tw:text-xs">
                 <LoadingLabel>{t("common.loading")}</LoadingLabel>
               </div>
-            ) : sharedKnowledgeWorkspace && dashboardQuery?.error ? (
+            ) : sharedKnowledgeWorkspace && analysisQuery?.error ? (
               <button
                 type="button"
                 className="tw:flex tw:min-h-control-sm tw:w-full tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-2 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-danger tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
-                onClick={() => void dashboardQuery.refetch()}
-                title={errMessage(dashboardQuery.error)}
+                onClick={() => void analysisQuery.refetch()}
+                title={errMessage(analysisQuery.error)}
               >
                 <Icon name="alert" className="tw:shrink-0" />
                 <span className="tw:min-w-0 tw:flex-1 tw:truncate">
-                  {t("connections.environmentDashboardLoadFailed")}
+                  {t("connections.environmentAnalysisLoadFailed")}
                 </span>
                 <span className="tw:shrink-0">{t("app.retry")}</span>
               </button>
-            ) : environmentDashboards.length > 0 ? (
-              environmentDashboards.map((dashboard) => (
+            ) : environmentAnalyses.length > 0 ? (
+              environmentAnalyses.map((article) => (
                 <button
-                  key={dashboard.id}
+                  key={article.id}
                   type="button"
                   data-selected={
-                    activeProjectEnvironmentResourceId === dashboard.id
+                    activeProjectEnvironmentResourceId === article.id
                   }
                   className="tw:flex tw:min-h-[var(--ds-tree-row-height)] tw:w-full tw:min-w-0 tw:items-center tw:gap-1.5 tw:border-0 tw:bg-transparent tw:px-1 tw:py-[var(--ds-tree-row-padding-block)] tw:pl-5 tw:text-left tw:font-sans tw:text-sm tw:text-foreground tw:data-[selected=true]:bg-selection tw:hover:bg-muted tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring"
                   onClick={() =>
                     onOpenProjectEnvironment(
                       environment.id,
-                      "dashboards",
-                      dashboard.id,
+                      "analyses",
+                      article.id,
                     )
                   }
-                  title={dashboard.question}
+                  title={article.definition.question}
                 >
-                  <StatusDot tone={environmentDashboardTone(dashboard)} />
+                  <StatusDot tone={environmentAnalysisTone(article)} />
                   <Icon name="chart" className="tw:shrink-0" />
                   <span className="tw:min-w-0 tw:flex-1 tw:truncate">
-                    {dashboard.title}
+                    {article.definition.title}
                   </span>
                 </button>
               ))
@@ -1088,10 +1086,10 @@ export function DatabaseExplorer({
                 type="button"
                 className="tw:min-h-control-sm tw:cursor-pointer tw:border-0 tw:bg-transparent tw:px-5 tw:py-1 tw:text-left tw:font-sans tw:text-xs tw:text-muted-foreground tw:hover:bg-muted tw:hover:text-foreground"
                 onClick={() =>
-                  onOpenProjectEnvironment(environment.id, "dashboards")
+                  onOpenProjectEnvironment(environment.id, "analyses")
                 }
               >
-                {t("connections.environmentNoDashboards")}
+                {t("connections.environmentNoAnalyses")}
               </button>
             )}
           </div>

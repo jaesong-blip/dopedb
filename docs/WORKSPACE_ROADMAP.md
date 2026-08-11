@@ -8,7 +8,11 @@ metadata backup, resumable key rotation, reversible Owner workspace deletion, an
 account-scoped ordered pull cursor are implemented in the control plane. Production uses a dedicated Vercel OIDC principal,
 GCP Workload Identity Federation provider, service account, and single-key KMS grant;
 packaged recovery evidence remains open. General provider inventory, full sync, and per-connection-grant
-exit criteria stay open below.
+exit criteria stay open below. The 2026-08-12 DQ-40 decision supersedes separate
+Dashboard, Funnel Analysis, Agent Report, and Signal product surfaces with one
+Analysis Article domain. Milestone 8 implementation and one-way removal are complete;
+packaged two-member, live hosted migration, scheduler, email, and public-publication
+evidence remain deployment validation gates rather than a second implementation path.
 
 This roadmap owns how DopeDB completes and hardens its team workspace without
 turning the workspace service into a database proxy or weakening the local
@@ -30,7 +34,8 @@ Prioritize the workspace in this order:
 1. Reliably share one connection and give each member individual access.
 2. Complete provider discovery, issuance, expiry, revoke, and drift handling.
 3. Enforce and recover every connection-pinned Agent operation at exact authority.
-4. Add shared dashboards and durable Agent reports on top of that boundary.
+4. Add versioned Analysis Articles, bounded live team results, metric signals, and
+   fixed public publications on top of that boundary.
 
 Driver breadth and general client convenience are not workspace exit criteria.
 
@@ -47,8 +52,9 @@ Use a local-execution, hosted-control-plane architecture:
   Only `workspace-cloud` receives its database URL; the desktop app never connects to
   the control-plane database directly.
 
-- The workspace service synchronizes membership, connection templates, dashboards,
-  analysis reports, revisions, and collaboration audit events.
+- The workspace service synchronizes membership, connection templates, Analysis
+  Article definitions, bounded reviewed result fragments, revisions, publications,
+  signal receipts, and collaboration audit events.
 - Member-local mode keeps database credentials in that member's OS credential store.
 - Optional managed mode encrypts reusable workspace-owned provider authorization at the
   control plane (or uses keyless cloud federation) and uses it only to create
@@ -59,10 +65,13 @@ Use a local-execution, hosted-control-plane architecture:
   RBAC, resource scope, audit, and short-lived DB credential issuance. A third-party
   authentication broker is not a runtime dependency and requires a separate product
   decision before introduction.
-- Queries continue to run from the desktop app through the existing Rust safety,
-  monitoring, audit, read path, and explicit write-approval path.
-- Query result rows are not synchronized by default. Publishing a bounded result
-  snapshot is a separate, explicit action with masking and retention controls.
+- Queries continue to run from an exact-grant Desktop runner through the existing
+  Rust safety, monitoring, audit, read path, and explicit write-approval path. The
+  hosted service does not open a database connection.
+- Query result rows are not synchronized by default. A reviewed live Analysis
+  Article may publish only bounded, masked result fragments with independent
+  authorization and retention; a public article is a separate immutable snapshot
+  selected from one successful run.
 - Workspace membership never grants target-database write access or `pg_monitor`.
   Those remain database-side privileges of the credential used on each device.
 - Database drivers and provider control-plane adapters remain separate. A driver
@@ -74,7 +83,7 @@ flowchart LR
     A["Member A · DopeDB"] <-->|"authenticated HTTPS metadata sync"| W["Workspace control plane"]
     B["Member B · DopeDB"] <-->|"authenticated HTTPS metadata sync"| W
     W --> M["members · roles · invitations"]
-    W --> R["connection templates · dashboards · reports"]
+    W --> R["connection templates · analysis articles · publications"]
     W --> P["provider resources · permissions · approvals"]
     W --> V["revisions · collaboration audit"]
     A --> KA["A's OS credential store · local mode"]
@@ -138,9 +147,11 @@ database work remains in the Tauri app.
   import only resources that both the provider and workspace authorize.
 - Apply workspace roles, resource grants, provider-token scopes, environment policy,
   and local safety checks as narrowing layers rather than interchangeable authority.
-- Share and version dashboard definitions across members and devices.
-- Save agent analysis as a durable report containing the question, conclusion,
-  supporting queries, and the warnings observed before execution.
+- Share and version complete Analysis Articles across members and devices, including
+  narrative, exact-source analysis graph, metrics, layout, evidence, and signals.
+- Keep internal articles current through an explicit Desktop runner and share only
+  reviewed bounded result fragments; publish external values only as an approved
+  immutable web snapshot.
 - Keep offline access to already-synchronized workspace resources.
 - Record both database execution activity and collaboration changes without mixing
   their trust guarantees.
@@ -158,7 +169,9 @@ database work remains in the Tauri app.
 - Treating provider project, branch, compute, backup, credential, or deployment APIs
   as database-driver responsibilities.
 - Persisting every query result or agent conversation to the workspace.
-- Public, unauthenticated dashboard links.
+- Public live-query links or any public route that can reach a database, private
+  evidence, hidden SQL, or a workspace credential. Approved fixed Analysis Article
+  snapshots are explicitly in scope under ADR 0007.
 - Real-time co-editing of SQL or reports.
 - Replacing target-database audit logs with workspace events.
 
@@ -169,8 +182,8 @@ database work remains in the Tauri app.
 | Connection | engine, host, port, database, SSL, environment, safety policy, credential mode, redacted provider selector | member-local username/password, token, certificate, connection URL, advanced parameters, local `secret_ref`, live pool |
 | Provider integration | provider kind, external account id, encrypted OAuth envelope, verified scope, status, workspace policy | plaintext OAuth token, deployment encryption key, one-time DB credentials |
 | Provider operation | redacted request, approval state, provider operation id, outcome | unredacted secret responses and local transport diagnostics |
-| Dashboard | title, description, SQL, visualization definition, revision | current result rows |
-| Analysis report | question, narrative, query provenance, warnings, selected visualization | unpublished intermediate results |
+| Analysis Article | title, narrative, exact source/transform/metric/block definition, revision, freshness policy, bounded reviewed result fragments | raw source artifacts, unreviewed intermediate results, credential, Agent transcript |
+| Public article | immutable approved block/result snapshot, masking receipt, publication revision | database grant, hidden SQL, private evidence, refresh command |
 | Monitoring | desired coverage and policy hints | current load snapshot and credential-specific `pg_monitor` status |
 | Project integration | optional repository-relative configuration | absolute `project_dir` on each device |
 | Agent Terminal/CLI | workspace-scoped connection identifiers and policy | ephemeral Terminal capability, client session, single-use query plans |
@@ -187,7 +200,7 @@ must not imply production database access.
 
 | Capability | Viewer | Analyst | Editor | Admin | Owner |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| View published dashboards and reports | yes | yes | yes | yes | yes |
+| View published Analysis Articles | yes | yes | yes | yes | yes |
 | Run an allowed shared read query | no | yes | yes | yes | yes |
 | Create analysis drafts | no | yes | yes | yes | yes |
 | Edit and publish shared resources | no | no | yes | yes | yes |
@@ -294,15 +307,21 @@ boundary.
   scoped to an integration or individual provider resource.
 - `provider_operation_requests`: requested action, redacted arguments, risk class,
   approvals, stable idempotency key, provider operation id, and terminal status.
-- `dashboards`: workspace-scoped dashboard definition and current revision.
-- `analysis_reports`: title, question, summary, draft/published/archive state.
-- `analysis_report_blocks`: ordered Markdown, metric, chart, and table blocks.
-- `analysis_report_queries`: connection, SQL, query-run provenance, warnings, row count,
-  duration, schema fingerprint, and optional result snapshot reference.
+- `analysis_articles`: Project Environment-scoped identity, ownership, lifecycle,
+  current draft revision, and current live revision.
+- `analysis_article_revisions`: immutable source query, typed transform graph,
+  semantic metric, article block/layout, refresh, and publication policy definition.
+- `analysis_article_runs`: runner, exact authority, source/graph/schema revisions,
+  freshness, duration, terminal state, and immutable receipt identity.
+- `analysis_article_result_fragments`: separately encrypted, integrity-bound,
+  masked and bounded block results with explicit retention.
+- `analysis_article_publications`: immutable approved public block/result snapshot,
+  slug lifecycle, masking confirmation, and publisher receipt.
+- `analysis_article_signals`: deterministic condition and notification policy bound
+  to an exact live article revision and metric semantic id.
 - `resource_revisions`: immutable revision metadata for conflict detection and rollback.
 - `workspace_audit_events`: actor, device, action, resource, before/after revision,
   timestamp, and a redacted change summary.
-- `result_snapshots`: optional encrypted, bounded, masked objects with expiry.
 
 ### Desktop store
 
@@ -320,25 +339,29 @@ boundary.
   hash-chained execution audit local by default.
 
 Existing local UUIDs should remain stable. On migration, create a local Personal
-Workspace and assign every existing connection, dashboard, and snippet to it. Signing
-in must not be required to keep using that personal workspace.
+Workspace, assign every existing connection and snippet to it, and convert each
+Dashboard, Funnel Analysis, and Agent Report into one Analysis Article. Signing in
+must not be required to keep using that personal workspace.
 
-## Analysis Report Contract
+## Analysis Article Contract
 
-An analysis report is distinct from a dashboard:
+ADR 0007 owns the complete contract. In summary:
 
-- A dashboard stores a reusable query and renders current data after a local rerun.
-- A report stores a question, a versioned conclusion, and the exact queries used as
-  evidence.
-- Each evidence query records its Agent CLI preflight decision, monitoring coverage,
-  warnings, execution timestamp, row count, duration, and query-run identifier.
-- Result rows remain local unless an editor explicitly publishes a snapshot.
-- Publishing a snapshot requires a row and byte cap, column selection or masking,
-  a sensitivity confirmation, a retention deadline, and an audit event.
-- A report rerun creates new evidence rather than silently replacing old evidence.
-
-This gives readers both a durable historical conclusion and a safe way to refresh it
-against current data.
+- One immutable revision stores the reusable exact-source queries, bounded
+  parameters, approved cross-source mappings, typed transforms, semantic metrics,
+  narrative, blocks, layout, and refresh policy.
+- Each run records its exact grant and source revisions. A failed or partial run
+  never replaces the latest compatible successful run.
+- Every visible metric can open its source query, transform, mapping, run receipt,
+  and execution timestamp.
+- A Desktop runner, not the hosted service, performs scheduled reads. Missing or
+  unhealthy runners are shown as stale rather than implied to be monitoring.
+- Internal live sharing uploads only explicitly reviewed, masked, bounded result
+  fragments. Raw source artifacts and arbitrary query results remain local.
+- Public publication freezes selected blocks from one successful run; the public
+  route cannot execute, refresh, or reach private evidence.
+- Agent proposals remain drafts. Humans approve mappings, live revisions,
+  production schedules, shared fragments, public snapshots, and ownership.
 
 ## Synchronization Contract
 
@@ -348,12 +371,13 @@ same PostgreSQL transaction. Credential-lease and web-only backup/key lifecycle 
 remain in the audit log without expanding the projection cursor. The cursor response carries only changed collection categories and
 tombstone presence—never resource ids, actors, summaries, SQL, credentials, or result
 data. The desktop serializes one workspace/account replay, re-fetches connections and
-dashboards through their independently authorized collection routes, and advances its
+Analysis Articles through their independently authorized collection routes, and advances its
 account-scoped SQLite checkpoint only after every selected projection commits. A new
 client bootstraps from a full authorized snapshot; a server restore or long-offline
-cursor compaction explicitly rebases the cursor and also forces a full snapshot. Report proposals/evidence use their strict
-ordered outbound outbox, while report reading remains web-authoritative by design
-rather than creating a second desktop report projection.
+cursor compaction explicitly rebases the cursor and also forces a full snapshot.
+Article draft proposals, run receipts, and result-fragment publications use one strict
+ordered outbound outbox; the hosted article revision remains authoritative while the
+Desktop keeps only its authorized projection and local source artifacts.
 
 - The service is authoritative for workspace membership, permissions, and the latest
   shared resource revision.
@@ -362,7 +386,7 @@ rather than creating a second desktop report projection.
 - Local mutations enter an outbox before network transmission.
 - Pushes use optimistic concurrency with the resource revision as a precondition.
 - Pulls use an ordered cursor and include tombstones for deletions.
-- SQL, connection policy, and report conflicts are never silently merged. Preserve
+- SQL, connection policy, and Analysis Article conflicts are never silently merged. Preserve
   both versions and require an explicit choice or a new merged revision.
 - Retry operations are idempotent through stable operation identifiers.
 - Provider mutations are never accepted from an offline outbox without a fresh
@@ -386,7 +410,8 @@ Keep explicit ledgers with distinct trust boundaries:
 1. The local execution audit answers which credential executed which database
    statement and whether it was blocked, approved, or completed.
 2. The workspace collaboration audit answers who invited a member, shared a
-   connection, changed a policy, edited a dashboard, or published a report.
+   connection, changed a policy, edited an Analysis Article, published a live
+   revision, or published/revoked a public snapshot.
 3. Provider operation events answer who requested and approved an external action,
    which resource and idempotency key were used, and which redacted provider outcome
    was observed. In member-local credential mode, this is an application receipt and
@@ -493,7 +518,7 @@ synchronized template with Credentials Required state and bind their own
 username/password locally. Template updates preserve that member-local overlay, and
 template deletion removes the synchronized local cache and its credential reference. Cached
 role authority is enforced in manual queries, scripts, previews, schema introspection,
-dashboards, monitoring grants, and Agent CLI reads. Analyst is read-only; Editor can enter the
+Analysis Article runs, signal runner grants, and Agent CLI reads. Analyst is read-only; Editor can enter the
 existing write/approval path when an Admin/Owner has enabled the DB policy; Admin/Owner can
 manage membership and DB write policy. Credential references,
 RBAC snapshots, schema caches, query history, and Agent threads are keyed by the exact local
@@ -596,6 +621,10 @@ Exit criteria:
 
 ## Milestone 4 — Shared Dashboards
 
+Migration status: the implemented revision, ownership, outbox, conflict, and local
+read-run contracts are inputs to Milestone 8. Dashboard is not a terminal product
+domain after the 2026-08-12 DQ-40 decision.
+
 Implementation snapshot (2026-08-06): team-workspace dashboard definitions synchronize
 through an explicit outbox and hosted projection while Personal Workspace dashboards
 remain local. The sync contract contains title, description, SQL, visualization, state,
@@ -637,6 +666,10 @@ form the first team-product MVP with read-only provider discovery, role-gated ma
 database access, and shared dashboards.
 
 ## Milestone 5 — Saved Agent Analysis Reports
+
+Migration status: the implemented evidence, proposal, immutable revision, human
+publication, and ordered replay contracts are inputs to Milestone 8. Agent Report is
+not a separate product surface after the 2026-08-12 DQ-40 decision.
 
 Implementation snapshot (2026-08-06): the Agent can propose a complete draft and
 append new immutable evidence only from successful, connection-pinned read runs. The
@@ -703,13 +736,10 @@ Exit criteria:
 - Provider-native audit identifiers are retained so administrators can reconcile
   DopeDB events with the provider's own audit history.
 
-## Milestone 7 — Optional Result Snapshots and Enterprise Controls
+## Milestone 7 — Deferred Enterprise Controls
 
 Deliverables:
 
-- Add explicit masked result snapshot publishing with row, byte, and retention limits.
-- Store snapshot objects separately from workspace metadata with independent keys and
-  deletion jobs.
 - Add SSO/domain policy, SCIM, configurable retention, and export controls as demand
   requires.
 - Evaluate a shared-secret vault integration for teams that cannot issue individual
@@ -718,12 +748,78 @@ Deliverables:
 
 Exit criteria:
 
-- Snapshot access is authorized and audited independently from dashboard access.
-- Expired or deleted snapshots are removed from primary storage and scheduled backups
-  according to a documented retention policy.
 - Shared vault credentials are never returned to the UI or agent and can be revoked
   centrally.
 - Enterprise controls do not weaken the default local-credential model.
+
+This milestone remains deferred by DQ-32. Analysis Article result fragments and
+public snapshots are not enterprise shared-secret features and are owned by the
+narrower ADR 0007 contract below.
+
+## Milestone 8 — Comprehensive Analysis Article BI Archive
+
+This milestone is complete only when Dashboard, Funnel Analysis, Agent Report, and
+their standalone product surfaces no longer exist. Partial aliases, compatibility
+readers, duplicate menus, and disabled placeholders do not satisfy the migration.
+
+Implementation status: complete on 2026-08-12. The canonical local, protocol, Desktop,
+ACP, hosted, authenticated web, and immutable public paths below are connected, and the
+legacy product paths were removed after one-way archival migration. A clean/live hosted
+PostgreSQL migration and packaged multi-member production lifecycle remain explicit
+deployment validation because the development machine has no safe test PostgreSQL;
+they do not authorize a legacy fallback.
+
+Deliverables:
+
+- Add the canonical Analysis Article identity, immutable definition revision,
+  exact source binding, typed transform DAG, semantic metric, ordered block/layout,
+  refresh policy, and lifecycle contracts.
+- Support narrative, metric, time-series, bar, area, scatter, table, funnel, cohort,
+  retention heatmap, date-range, comparison, and allowlisted segment blocks through
+  one closed versioned registry. Reject arbitrary executable content.
+- Execute each database source independently through the exact Environment and
+  connection revision grant. Push down filters and aggregation, then combine only
+  bounded typed results with project/filter/sort/limit/union/group/aggregate,
+  approved inner/left join, window/lag, ratio/difference/rate, cohort, and retention
+  transforms.
+- Add a cancellable Rust transform runtime and immutable run receipts. Bind every
+  value to source query, mapping, transform, schema, graph, runner, and timestamp.
+- Add member/device Desktop runner registration, short leases, schedule claims,
+  freshness targets, production approval, load bounds, heartbeats, and last-good
+  preservation. Never describe an offline runner as current monitoring.
+- Publish only reviewed masked bounded result fragments for team reading. Encrypt
+  fragments separately, integrity-bind them to the run, authorize them independently,
+  and enforce row, byte, cell, and retention deletion limits on both client and server.
+- Add the Analysis library, article author/review/live/archive flow, responsive
+  document layout, current/stale/partial runner state, lineage inspector, revision
+  history, conflict recovery, manual refresh, cancellation, and metric signal controls
+  to Desktop and workspace web.
+- Add immutable public publication preview, sensitivity confirmation, selected block
+  snapshot, public slug, caching, accessibility, rate limiting, revocation, and
+  version replacement. The public route must have no query or private evidence path.
+- Convert Dashboard, Funnel Analysis, Agent Report, and Signal data in one-way local
+  and hosted migrations. Preserve invalid records as non-executable migration
+  failures, then remove all old schema, API, protocol, screen, navigation, setting,
+  translation, and fallback code.
+
+Exit criteria:
+
+- Two members see the same latest compatible successful article result without
+  sharing a credential, and the UI states exactly which Desktop runner produced it.
+- A two-database daily retention article can be defined, reviewed, scheduled,
+  refreshed, inspected to source lineage, and rendered as KPI, time series, heatmap,
+  table, and narrative from one artifact.
+- An unapproved join, sensitive column, stale schema/mapping/grant, oversized result,
+  offline runner, cross-workspace id, or stale revision fails closed without replacing
+  the last successful result.
+- Every internal fragment can be independently authorized, integrity checked,
+  expired, revoked, and deleted without granting database execution.
+- A public article displays exactly one approved immutable snapshot, cannot refresh or
+  enumerate workspace resources, and becomes unavailable immediately after revoke.
+- Agent-created content remains draft until a human approves mappings, live revision,
+  production schedule, internal result publication, and public publication.
+- Repository search finds no live Dashboard, Funnel Analysis, or Agent Report product
+  route, table, command, screen, menu, translation, or compatibility reader.
 
 ## Cross-cutting Validation
 
@@ -753,7 +849,8 @@ Every milestone must include:
 - The initial production and destructive-operation approval matrix.
 - Workspace billing and ownership transfer rules.
 - Whether connection usernames are shared defaults or always local overrides.
-- Initial report snapshot limits and retention duration.
+- Initial Analysis Article result-fragment and public-publication byte, row, and
+  retention limits within ADR 0007's fixed safety boundary.
 - Data residency requirements beyond the initial US-East deployment.
 - Whether Personal Workspace resources can remain permanently local or optionally sync
   across the owner's devices.

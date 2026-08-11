@@ -2,10 +2,8 @@
 // renders only that concern's command surface and never creates nested settings.
 import { ConnectionAccessPanel } from "./ConnectionAccessPanel";
 import { CloudAccountPanel } from "./CloudAccountPanel";
-import { DashboardManagementPanel } from "./DashboardManagementPanel";
+import { AnalysisManagementPanel } from "./AnalysisManagementPanel";
 import { KnowledgeAccessPanel } from "./KnowledgeAccessPanel";
-import { ReportManagementPanel } from "./ReportManagementPanel";
-import { SignalMonitoringPanel } from "./SignalMonitoringPanel";
 import { SharedDatabasePanel } from "./SharedDatabasePanel";
 import { WorkspaceAccessPanel } from "./WorkspaceAccessPanel";
 import { WorkspaceLifecyclePanel } from "./WorkspaceLifecyclePanel";
@@ -16,9 +14,7 @@ export type WorkspaceManagementArea =
   | "cloud-accounts"
   | "databases"
   | "database-access"
-  | "dashboards"
-  | "reports"
-  | "monitoring"
+  | "analyses"
   | "members"
   | "lifecycle";
 
@@ -33,11 +29,9 @@ export function localizedWorkspaceManagementAreas(locale: WorkspaceLocale): Arra
     { id: "cloud-accounts", index: "02", ...areas.cloudAccounts },
     { id: "databases", index: "03", ...areas.databases },
     { id: "database-access", index: "04", ...areas.databaseAccess },
-    { id: "dashboards", index: "05", ...areas.dashboards },
-    { id: "reports", index: "06", ...areas.reports },
-    { id: "monitoring", index: "07", ...areas.monitoring },
-    { id: "members", index: "08", ...areas.members },
-    { id: "lifecycle", index: "09", ...areas.lifecycle },
+    { id: "analyses", index: "05", ...areas.analyses },
+    { id: "members", index: "06", ...areas.members },
+    { id: "lifecycle", index: "07", ...areas.lifecycle },
   ];
 }
 
@@ -47,7 +41,8 @@ export function WorkspaceManagementPanel({
   workspaceSlug,
   gcpSetupId,
   initialIntegrationId,
-  initialDashboardId,
+  initialArticleId,
+  initialBlockId,
   area,
   canEditWorkspace,
   locale,
@@ -57,7 +52,8 @@ export function WorkspaceManagementPanel({
   workspaceSlug: string;
   gcpSetupId: string | null;
   initialIntegrationId: string | null;
-  initialDashboardId: string | null;
+  initialArticleId: string | null;
+  initialBlockId: string | null;
   area: WorkspaceManagementArea;
   canEditWorkspace: boolean;
   locale: WorkspaceLocale;
@@ -116,22 +112,12 @@ export function WorkspaceManagementPanel({
             initialIntegrationId={initialIntegrationId}
           />
         ) : null}
-        {area === "dashboards" ? (
-          <DashboardManagementPanel
+        {area === "analyses" ? (
+          <AnalysisManagementPanel
             workspaceId={workspaceId}
-            initialDashboardId={initialDashboardId}
-          />
-        ) : null}
-        {area === "reports" ? (
-          <ReportManagementPanel
-            workspaceId={workspaceId}
-            canEditWorkspace={canEditWorkspace}
-          />
-        ) : null}
-        {area === "monitoring" ? (
-          <SignalMonitoringPanel
-            workspaceId={workspaceId}
-            canEditWorkspace={canEditWorkspace}
+            initialArticleId={initialArticleId}
+            initialBlockId={initialBlockId}
+            canEdit={canEditWorkspace}
           />
         ) : null}
         {area === "lifecycle" ? (

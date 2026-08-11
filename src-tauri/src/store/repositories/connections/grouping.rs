@@ -19,7 +19,7 @@ impl Store {
         for id in ids {
             let result = sqlx::query(
                 "UPDATE connections SET schema_group = ?2, updated_at = ?3,
-                        revision = revision + 1, sync_status = 'dirty'
+                        revision = revision + 1, sync_status = 'local'
                  WHERE id = ?1 AND workspace_id = ?4 AND deleted_at IS NULL",
             )
             .bind(id.to_string())
@@ -31,12 +31,6 @@ impl Store {
             if result.rows_affected() != 1 {
                 return Err(AppError::NotFound(format!("connection {id}")));
             }
-            let revision: i64 =
-                sqlx::query_scalar("SELECT revision FROM connections WHERE id = ?1")
-                    .bind(id.to_string())
-                    .fetch_one(&mut *tx)
-                    .await?;
-            enqueue_outbox(&mut tx, workspace_id, "connection", *id, "upsert", revision).await?;
         }
         tx.commit().await?;
         Ok(())
@@ -51,7 +45,7 @@ impl Store {
         let mut tx = self.pool.begin().await?;
         let result = sqlx::query(
             "UPDATE connections SET deleted_at = ?2, updated_at = ?2,
-                    revision = revision + 1, sync_status = 'dirty'
+                    revision = revision + 1, sync_status = 'local'
              WHERE id = ?1 AND workspace_id = ?3 AND deleted_at IS NULL",
         )
         .bind(id.to_string())
@@ -62,11 +56,6 @@ impl Store {
         if result.rows_affected() != 1 {
             return Err(AppError::NotFound(format!("connection {id}")));
         }
-        let revision: i64 = sqlx::query_scalar("SELECT revision FROM connections WHERE id = ?1")
-            .bind(id.to_string())
-            .fetch_one(&mut *tx)
-            .await?;
-        enqueue_outbox(&mut tx, workspace_id, "connection", id, "delete", revision).await?;
         tx.commit().await?;
         Ok(())
     }

@@ -6,18 +6,18 @@
     {
       "path": "SKILL.md",
       "sourcePath": "skills/dopedb-cli/SKILL.md",
-      "size": 5424,
+      "size": 5570,
       "executable": false,
-      "sha256": "3d965c70ec5c1557e1896f99d38baa7d2417784fba61e2bf3cadef5f1a5fe7ae",
-      "normalizedTextSha256": "3d965c70ec5c1557e1896f99d38baa7d2417784fba61e2bf3cadef5f1a5fe7ae"
+      "sha256": "913a86d864b0fed3034a726135c4719a205a06ed21253abed8ba858e50915828",
+      "normalizedTextSha256": "913a86d864b0fed3034a726135c4719a205a06ed21253abed8ba858e50915828"
     },
     {
-      "path": "references/dashboards.md",
-      "sourcePath": "skills/dopedb-cli/references/dashboards.md",
-      "size": 1039,
+      "path": "references/analyses.md",
+      "sourcePath": "skills/dopedb-cli/references/analyses.md",
+      "size": 1718,
       "executable": false,
-      "sha256": "c63443b205b0afb881982f617087e6868127f0aa7c253319a0913f543d283840",
-      "normalizedTextSha256": "c63443b205b0afb881982f617087e6868127f0aa7c253319a0913f543d283840"
+      "sha256": "40c606805a45beddad4ef8e490b661597adb6248d11f66e50b02e275beb84b6a",
+      "normalizedTextSha256": "40c606805a45beddad4ef8e490b661597adb6248d11f66e50b02e275beb84b6a"
     },
     {
       "path": "references/documents.md",
@@ -63,7 +63,7 @@
       "content": "---\nname: dopedb-cli\ndescription: Use the local DopeDB Desktop runtime safely through the version-matched dopedb CLI.\n---\n\nWhen DopeDB supplies the `dopedb-desktop-session` MCP server, use its typed tools and do not run the public CLI or fetch this guide.\n\nOutside DopeDB AI Chat, before using the CLI, run:\ndopedb skills get dopedb-cli\n"
     }
   ],
-  "releaseRevision": 19,
+  "releaseRevision": 20,
   "appVersion": "0.3.43",
-  "packageDigest": "8eed00aca4aaab167cab4be9da971f8419fcf62660690b2aed133001fa6a7b29"
+  "packageDigest": "1bb911248554280a0472be9876588b04c05d19984b877a0a045fd31ba8ce9c4c"
 }

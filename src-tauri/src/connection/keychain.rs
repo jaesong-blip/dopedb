@@ -28,6 +28,7 @@ use crate::kernel::sync::lock_unpoisoned;
 #[cfg(not(feature = "packaged-benchmark"))]
 const SERVICE: &str = "dev.dopedb.desktop";
 const LEGACY_WORKSPACE_SESSION_ACCOUNT: &str = "workspace-session";
+const ANALYSIS_RESULT_CACHE_KEY_ACCOUNT: &str = "analysis-result-cache-key:v1";
 static SESSION_CACHE: LazyLock<Mutex<HashMap<String, Zeroizing<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -213,6 +214,28 @@ pub(crate) fn fetch_legacy_workspace_session() -> AppResult<Option<String>> {
 
 pub(crate) fn delete_legacy_workspace_session() -> AppResult<()> {
     delete_workspace_session_account(LEGACY_WORKSPACE_SESSION_ACCOUNT)
+}
+
+/// Device-bound key for encrypted, local-only Analysis Article result recovery.
+/// The key never enters SQLite, IPC, workspace sync, logs, or an Agent process.
+pub(crate) fn analysis_result_cache_key() -> AppResult<Zeroizing<[u8; 32]>> {
+    let secret = match fetch_workspace_session_account(ANALYSIS_RESULT_CACHE_KEY_ACCOUNT)? {
+        Some(secret) => secret,
+        None => {
+            let mut generated = Zeroizing::new([0_u8; 32]);
+            getrandom::fill(generated.as_mut()).map_err(|_| {
+                AppError::Config("operating system random source is unavailable".into())
+            })?;
+            let secret = hex::encode(generated.as_ref());
+            store_workspace_session_account(ANALYSIS_RESULT_CACHE_KEY_ACCOUNT, &secret)?;
+            secret
+        }
+    };
+    let mut key = Zeroizing::new([0_u8; 32]);
+    hex::decode_to_slice(secret, key.as_mut()).map_err(|_| {
+        AppError::Config("stored Analysis Article result cache key is invalid".into())
+    })?;
+    Ok(key)
 }
 
 fn knowledge_source_root_account(source_id: Uuid) -> String {

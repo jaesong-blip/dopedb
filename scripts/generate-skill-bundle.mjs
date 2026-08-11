@@ -233,7 +233,7 @@ function assertVersionsMatch() {
 function sourceRecords() {
   return [
     "SKILL.md",
-    "references/dashboards.md",
+    "references/analyses.md",
     "references/documents.md",
     "references/operations.md",
     "references/queries.md",

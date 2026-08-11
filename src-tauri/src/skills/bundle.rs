@@ -17,8 +17,7 @@ const SAFETY_REFERENCE: &str = include_str!("../../../skills/dopedb-cli/referenc
 const QUERIES_REFERENCE: &str = include_str!("../../../skills/dopedb-cli/references/queries.md");
 const DOCUMENTS_REFERENCE: &str =
     include_str!("../../../skills/dopedb-cli/references/documents.md");
-const DASHBOARDS_REFERENCE: &str =
-    include_str!("../../../skills/dopedb-cli/references/dashboards.md");
+const ANALYSES_REFERENCE: &str = include_str!("../../../skills/dopedb-cli/references/analyses.md");
 const OPERATIONS_REFERENCE: &str =
     include_str!("../../../skills/dopedb-cli/references/operations.md");
 
@@ -216,8 +215,8 @@ impl SkillBundle {
                         content: DOCUMENTS_REFERENCE.into(),
                     },
                     SkillGuideFile {
-                        path: "references/dashboards.md".into(),
-                        content: DASHBOARDS_REFERENCE.into(),
+                        path: "references/analyses.md".into(),
+                        content: ANALYSES_REFERENCE.into(),
                     },
                     SkillGuideFile {
                         path: "references/operations.md".into(),
@@ -269,7 +268,7 @@ fn validate_current_manifest(manifest: &CurrentManifest) -> AppResult<()> {
     }
     let embedded_sources = BTreeMap::from([
         ("SKILL.md", GUIDE.as_bytes()),
-        ("references/dashboards.md", DASHBOARDS_REFERENCE.as_bytes()),
+        ("references/analyses.md", ANALYSES_REFERENCE.as_bytes()),
         ("references/documents.md", DOCUMENTS_REFERENCE.as_bytes()),
         ("references/operations.md", OPERATIONS_REFERENCE.as_bytes()),
         ("references/queries.md", QUERIES_REFERENCE.as_bytes()),

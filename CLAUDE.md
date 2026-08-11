@@ -59,7 +59,10 @@ DopeDB에는 세 개의 제품 축이 있다. 기능을 넣을지는 DopeDB이�
 
 **1. workspace가 공유 접근을 소유하고 구성원이 자격 증명을 소유한다.** 제품의
 단위는 한 사람의 컴퓨터가 아니라 팀 workspace다. 연결 정체성, provider resource,
-environment 정책, grant, 대시보드, report는 그 안에서 공유되기 위해 존재한다.
+environment 정책, grant, Analysis Article은 그 안에서 공유되기 위해 존재한다.
+Analysis Article은 versioned narrative, exact-source 분석 graph, bounded live
+result, evidence, metric signal을 소유하는 유일한 BI resource이며 Dashboard,
+Funnel Analysis, Agent Report를 별도 제품 domain으로 유지하지 않는다.
 장기 비밀값은 공유 레코드를 따라가지 않는다. member-local 접근은 각자의 OS
 credential store에 남고, managed 접근은 최소 권한의 구성원별 단기 자격 증명을
 프로세스 메모리에만 발급한다. 접근을 안전하게 공유 가능하게 만드는 기능은 로컬
@@ -107,6 +110,13 @@ identity와 권한을 검증하는 ACP session 안에서만 존재할 수 있다
 
 Agent가 정확히 판단하려면 실제 스키마를 정확히 봐야 한다. introspection의
 범위와 깊이는 시각 기능보다 우선한다.
+
+팀 BI는
+[`docs/adr/0007-analysis-article-bi-domain.md`](docs/adr/0007-analysis-article-bi-domain.md)를
+따른다. 내부 article은 exact-grant Desktop runner가 만든 검토·제한·masking된
+result fragment만 공유하고, public article은 승인된 immutable snapshot으로만
+발행하며 query를 실행하지 않는다. 임의 executable block, hosted DB proxy,
+추측한 cross-database join은 금지한다.
 
 각 기능의 결정 상태는 `docs/DopeDB_VISUAL_REFERENCE_SPEC.md`의 기능 범위
 결정 표가 소유한다. `AI가 대체`와 `범위 밖`으로 정한 기능은 트래커의

@@ -54,7 +54,7 @@ const requiredActionsByScenario = {
   "table-first-row": ["table-first-page-cold", "table-first-page"],
   "agent-transcript": ["agent-stream-10k", "agent-manual-scroll", "agent-permission", "agent-reconnect"],
   "agent-tools": ["agent-skill-install-all", "agent-skill-reload", "agent-skill-remove-all"],
-  "long-lived-data": ["history-10k", "audit-100k", "local-history-50", "dashboard-multi-tile"],
+  "long-lived-data": ["history-10k", "audit-100k", "local-history-50", "analysis-article-multi-block"],
   "interaction-surfaces": [
     "erd-drag-1k",
     "grid-and-pane-resize",
@@ -70,7 +70,7 @@ const nonVisualNativeActions = new Set([
   "history-10k",
   "audit-100k",
   "local-history-50",
-  "dashboard-multi-tile",
+  "analysis-article-multi-block",
 ]);
 const options = parseArguments(process.argv.slice(2));
 const budgets = JSON.parse(
@@ -263,7 +263,7 @@ try {
           targets: 2,
           lifecycle: ["install", "app-exit", "app-restart", "reload", "remove"],
         },
-        longLived: { history: 10_000, audit: 100_000, revisions: 50, dashboardTiles: 8 },
+        longLived: { history: 10_000, audit: 100_000, revisions: 50, analysisBlocks: 8 },
         erdNodes: 1_000,
       },
       coldDefinition:

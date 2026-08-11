@@ -153,6 +153,6 @@ export type HistoryEntry = { id: string, connectionId: string, sql: string, kind
  */
 status: string, rowCount: number | null, durationMs: number | null, error: string | null, executedAt: string,
 /**
- * "agent" | "manual" | "dashboard" | "migration".
+ * "agent" | "manual" | "analysis_article" | "migration" | surface id.
  */
 origin: string, };

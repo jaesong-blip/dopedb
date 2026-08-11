@@ -29,7 +29,6 @@ import {
   demoSqliteConnection,
   type ConnectionLaunchPreset,
 } from "../../features/connections/presets";
-import type { Dashboard } from "../../features/dashboards/domain";
 import type {
   KnowledgeEnvironmentFocus,
   KnowledgeEnvironmentView,
@@ -91,7 +90,6 @@ import { useToolWindowLayout } from "./useToolWindowLayout";
 import {
   preloadSqlEditor,
   useActivitySeen,
-  useDashboardCreation,
   usePersistentAppArea,
   usePersistentSelectedConnection,
   useRestoredWorkbenchState,
@@ -238,19 +236,6 @@ function Shell() {
   const [explorerRevealRequest, setExplorerRevealRequest] = useState(0);
   const [schemaDiffGroupKey, setSchemaDiffGroupKey] = useState<string | null>(null);
   const { availableUpdate, sync: syncAvailableUpdate } = useAvailableUpdate();
-  const openDashboard = useCallback((dashboard: Dashboard) => {
-    setSelectedId(dashboard.connectionId);
-    setEditing(null);
-    setSettingsOpen(false);
-    setSchemaDiffGroupKey(null);
-    setArea("dashboard");
-  }, []);
-  const {
-    focusId: dashboardFocusId,
-    setFocusId: setDashboardFocusId,
-    consumeFocus: consumeDashboardFocus,
-  } = useDashboardCreation(openDashboard);
-
   const selected = conns.find((c) => c.id === selectedId) ?? null;
   useEffect(() => {
     if (!connectionsLoaded || selectionRestoreMarked.current) return;
@@ -358,7 +343,6 @@ function Shell() {
     setEditing(null);
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
-    setDashboardFocusId(null);
     clearSafety();
     clearConnections();
     await refresh();
@@ -474,7 +458,6 @@ function Shell() {
     setEditing(null);
     setSettingsOpen(false);
     setSchemaDiffGroupKey(null);
-    setDashboardFocusId(null);
     setMobileExplorerOpen(false);
     setArea(nextArea);
     focusMainAfterMobileSelection();
@@ -668,19 +651,6 @@ function Shell() {
         label: t("services.title"),
         keywords: ["tool window", "output", "result", "session"],
         run: toggleServices,
-      },
-      {
-        id: "action:dashboards",
-        kind: "action",
-        label: t("tabs.dashboard"),
-        keywords: ["chart", "visualization", "대시보드"],
-        run: () => {
-          setSettingsOpen(false);
-          setEditing(null);
-          setSchemaDiffGroupKey(null);
-          setArea("dashboard");
-          if (!compactShell) showDatabaseExplorer();
-        },
       },
       {
         id: "action:ai-chat",
@@ -900,7 +870,6 @@ function Shell() {
       activeDocument={activeDocument}
       activeDocumentId={activeDocumentId}
       supportsSql={supportsSql}
-      dashboardFocusId={dashboardFocusId}
       knowledgeEnvironmentFocus={knowledgeEnvironmentFocus}
       initialAuditOpen={legacyAuditOpen.current}
       availableUpdate={availableUpdate}
@@ -950,7 +919,6 @@ function Shell() {
       onNewQuery={() => void openQueryDocument()}
       onSearchEverywhere={openSearchEverywhere}
       onOpenActivity={() => openStableDocument("activity")}
-      onDashboardFocusConsumed={consumeDashboardFocus}
       onOpenTerminal={openOrFocusTerminalDock}
       onOpenAgentTask={openAgentTask}
       onSetQueryTitle={setActiveQueryTitle}

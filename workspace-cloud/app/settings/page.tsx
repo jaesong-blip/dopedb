@@ -42,7 +42,8 @@ export default async function SettingsPage({
     status?: string | string[];
     gcpSetup?: string | string[];
     integration?: string | string[];
-    dashboard?: string | string[];
+    article?: string | string[];
+    block?: string | string[];
     section?: string | string[];
   }>;
 }) {
@@ -68,12 +69,16 @@ export default async function SettingsPage({
       .test(params.integration)
       ? params.integration
       : null;
-  const requestedDashboardId =
-    typeof params.dashboard === "string"
+  const requestedArticleId =
+    typeof params.article === "string"
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      .test(params.dashboard)
-      ? params.dashboard
+      .test(params.article)
+      ? params.article
       : null;
+  const requestedBlockId = typeof params.block === "string"
+    && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(params.block)
+    ? params.block
+    : null;
   const requestHeaders = await headers();
   const session = await auth.api.getSession({ headers: requestHeaders });
   const encodedWorkspaceId = requestedWorkspaceId
@@ -157,9 +162,7 @@ export default async function SettingsPage({
     || activeSection === "database-access"
     || activeSection === "cloud-accounts"
     || activeSection === "databases"
-    || activeSection === "dashboards"
-    || activeSection === "reports"
-    || activeSection === "monitoring"
+    || activeSection === "analyses"
     || activeSection === "lifecycle"
       ? activeSection
       : null;
@@ -175,7 +178,7 @@ export default async function SettingsPage({
     ? workspaceManagementAreas.find((item) => item.id === activeManagementArea)
     : null;
   const pageIndex = activeSection === "account"
-    ? "10"
+    ? "08"
     : activeSection === "workspaces"
       ? "01"
       : activeManagementDetails?.index ?? "01";
@@ -223,7 +226,6 @@ export default async function SettingsPage({
           workspaceId={activeWorkspaceId}
           gcpSetupId={requestedGcpSetupId}
           canManageWorkspace={canManageActiveWorkspace}
-          canEditWorkspace={canEditActiveWorkspace}
           canDeleteWorkspace={canDeleteActiveWorkspace}
           workspaceDeletionPending={workspaceDeletionPending}
           locale={locale}
@@ -320,7 +322,7 @@ export default async function SettingsPage({
                             : ["admin", "owner"].includes(workspaceRoles.get(workspace.id) ?? "")
                             ? "members"
                             : workspaceRoles.get(workspace.id) === "editor"
-                              ? "dashboards"
+                              ? "analyses"
                               : "workspaces"
                         }`,
                         locale,
@@ -376,12 +378,8 @@ export default async function SettingsPage({
         && activeWorkspace
         && (activeManagementArea === "lifecycle"
           ? canDeleteActiveWorkspace
-          : activeManagementArea === "dashboards"
-          ? canEditActiveWorkspace
-          : activeManagementArea === "reports"
+          : activeManagementArea === "analyses"
             ? true
-            : activeManagementArea === "monitoring"
-              ? true
             : canManageActiveWorkspace) ? (
           <section
             className="tw:scroll-mt-32 tw:pt-[clamp(56px,7vw,88px)]"
@@ -399,7 +397,8 @@ export default async function SettingsPage({
               workspaceSlug={activeWorkspace.slug}
               gcpSetupId={requestedGcpSetupId}
               initialIntegrationId={requestedIntegrationId}
-              initialDashboardId={requestedDashboardId}
+              initialArticleId={requestedArticleId}
+              initialBlockId={requestedBlockId}
               area={activeManagementArea}
               canEditWorkspace={canEditActiveWorkspace}
               locale={locale}

@@ -5,7 +5,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { AGENT_WORKSPACE_QUERY_ROOTS } from "../features/agents/queryKeys";
-import type { Dashboard } from "../features/dashboards/domain";
 import type { JobChangedEvent } from "../features/jobs/domain";
 import type {
   ManualTransactionChangedEvent,
@@ -27,8 +26,6 @@ const WORKSPACE_RESOURCE_QUERY_ROOTS = new Set([
   "monitoring",
   "manualTransaction",
   "manualTransactions",
-  "dashboards",
-  "dashboardRun",
   "tableRows",
   "tableCount",
   "documentRows",
@@ -49,7 +46,6 @@ const CONNECTION_RESOURCE_QUERY_ROOTS = new Set([
   "audit",
   "monitoring",
   "manualTransaction",
-  "dashboards",
   "tableRows",
   "tableCount",
   "documentRows",
@@ -114,11 +110,6 @@ function CacheInvalidation({ children }: { children: ReactNode }) {
         if (!connectionId) return;
         void queryClient.invalidateQueries({ queryKey: qk.history(connectionId) });
         void queryClient.invalidateQueries({ queryKey: qk.audit(connectionId) });
-      }),
-      listen<Dashboard>("dashboard:created", (event) => {
-        void queryClient.invalidateQueries({
-          queryKey: qk.dashboards(event.payload.connectionId),
-        });
       }),
       listen<JobChangedEvent>("job:changed", (event) => {
         void queryClient.invalidateQueries({

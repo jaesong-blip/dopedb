@@ -407,146 +407,43 @@ async fn assert_current_store_migration_is_write_free() {
             .graph_revision_id,
         artifact.graph_revision_id
     );
-
-    let now = Utc::now();
-    let funnel = dopedb_protocol::FunnelAnalysisArtifactRecord {
-        id: Uuid::from_u128(0x1300),
-        project_environment_id: environment.id,
-        environment_revision: environment.revision,
-        knowledge_grant_id: Uuid::from_u128(0x1301),
-        published_from_knowledge_grant_id: None,
-        graph_revision_ids: active_set
-            .iter()
-            .map(|candidate| candidate.graph_revision_id)
-            .collect(),
-        source_agent: dopedb_protocol::AcpPluginId::Codex,
-        title: "Activation funnel".into(),
-        question: "Where do users stop?".into(),
-        purpose: "Review activation conversion.".into(),
-        timezone: "Asia/Seoul".into(),
-        time_range: "Last 30 days".into(),
-        segment_filters: vec!["All signed-in accounts".into()],
-        conversion_window_seconds: 86_400,
-        denominator_semantics: "Distinct accounts".into(),
-        numerator_semantics: "Distinct completed accounts".into(),
-        deduplication_policy: "First step event".into(),
-        late_event_policy: "Recompute the open window".into(),
-        steps: vec![dopedb_protocol::FunnelStepDefinition {
-            id: "signup".into(),
-            label: "Signed up".into(),
-            meaning: "An account was created.".into(),
-            connection_role: "primary".into(),
-            entity_key: "account_id".into(),
-            timestamp_field: "created_at".into(),
-            ordering_rule: "First event per account".into(),
-            mapping_state: dopedb_protocol::FunnelMappingState::Inferred,
-            mapping_proposal_id: None,
-            graph_node_ids: vec![artifact.nodes[0].id.clone()],
-            evidence_ids: vec![artifact.evidence[0].id.clone()],
-        }],
-        tiles: vec![dopedb_protocol::FunnelDashboardTileRecord {
-            definition: dopedb_protocol::FunnelTileDefinition {
-                id: "summary".into(),
-                title: "Definition".into(),
-                kind: dopedb_protocol::FunnelTileKind::Markdown,
-                dashboard_id: None,
-                expected_dashboard_revision: None,
-                query_run_id: None,
-                composition: None,
-                step_ids: vec!["signup".into()],
-                markdown: Some("Review this inferred mapping before publish.".into()),
-            },
-            dashboard: None,
-            connection_revision: None,
-            availability: dopedb_protocol::FunnelTileAvailability::Ready,
-            unavailable_reason: None,
-        }],
-        warnings: vec!["Contains an inferred mapping.".into()],
-        freshness: dopedb_protocol::FunnelAnalysisFreshness::Current,
-        state: "draft".into(),
-        revision: 1,
-        created_at: now,
-        updated_at: now,
-    };
+    let runner_device = store.automation_runner_device_id().await.unwrap();
+    assert_eq!(
+        store.automation_runner_device_id().await.unwrap(),
+        runner_device
+    );
     store
-        .save_funnel_analysis_draft(
-            Uuid::from(project.workspace_id),
-            "knowledge-member",
-            &funnel,
-        )
+        .set_automation_runner_background_allowed(true)
         .await
         .unwrap();
-    assert_eq!(
-        store
-            .list_funnel_analysis_for_scope(
-                Uuid::from(project.workspace_id),
-                "knowledge-member",
-                environment.id,
-                environment.revision,
-                funnel.knowledge_grant_id,
-                &funnel.graph_revision_ids,
-            )
-            .await
-            .unwrap(),
-        vec![funnel.clone()]
-    );
-    assert!(store
-        .list_funnel_analysis_for_scope(
-            Uuid::from(project.workspace_id),
-            "other-member",
-            environment.id,
-            environment.revision,
-            funnel.knowledge_grant_id,
-            &funnel.graph_revision_ids,
-        )
-        .await
-        .unwrap()
-        .is_empty());
-    let funnel_columns: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM pragma_table_info('funnel_analysis_artifacts') ORDER BY cid",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    for forbidden in ["row", "credential", "transcript", "password", "token"] {
-        assert!(!funnel_columns
-            .iter()
-            .any(|column| column.to_ascii_lowercase().contains(forbidden)));
-    }
-
-    let signal_device = store.signal_runner_device_id().await.unwrap();
-    assert_eq!(
-        store.signal_runner_device_id().await.unwrap(),
-        signal_device
-    );
-    assert!(!store.signal_runner_background_allowed().await.unwrap());
+    assert!(store.automation_runner_background_allowed().await.unwrap());
     store
-        .set_signal_runner_background_allowed(true)
+        .set_automation_runner_background_allowed(false)
         .await
         .unwrap();
-    assert!(store.signal_runner_background_allowed().await.unwrap());
-    let signal_rule = Uuid::new_v4();
+    assert!(!store.automation_runner_background_allowed().await.unwrap());
+    let signal_id = Uuid::new_v4();
     let signal_time = Utc::now();
     store
-        .record_signal_metric_sample(
+        .record_analysis_signal_metric_sample(
             Uuid::from(project.workspace_id),
             "knowledge-member",
-            signal_rule,
+            signal_id,
             1,
             signal_time,
             signal_time,
             Some(42.0),
             100,
-            dopedb_protocol::SignalEvaluationState::Normal,
+            crate::store::LocalAnalysisSignalState::Normal,
             &"a".repeat(64),
         )
         .await
         .unwrap();
     let signal_samples = store
-        .recent_signal_metric_samples(
+        .recent_analysis_signal_metric_samples(
             Uuid::from(project.workspace_id),
             "knowledge-member",
-            signal_rule,
+            signal_id,
             1,
             10,
         )
@@ -554,11 +451,16 @@ async fn assert_current_store_migration_is_write_free() {
         .unwrap();
     assert_eq!(signal_samples.len(), 1);
     assert_eq!(signal_samples[0].metric_value, Some(42.0));
+    assert_eq!(signal_samples[0].sample_count, 100);
+    assert_eq!(
+        signal_samples[0].observed_state,
+        crate::store::LocalAnalysisSignalState::Normal
+    );
     assert!(store
-        .recent_signal_metric_samples(
+        .recent_analysis_signal_metric_samples(
             Uuid::from(project.workspace_id),
             "other-member",
-            signal_rule,
+            signal_id,
             1,
             10,
         )
@@ -566,7 +468,7 @@ async fn assert_current_store_migration_is_write_free() {
         .unwrap()
         .is_empty());
     let signal_columns: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM pragma_table_info('signal_metric_samples') ORDER BY cid",
+        "SELECT name FROM pragma_table_info('analysis_signal_metric_samples') ORDER BY cid",
     )
     .fetch_all(&pool)
     .await
@@ -620,6 +522,141 @@ async fn assert_current_store_migration_is_write_free() {
     assert!(!waiter.is_finished());
     gate.finish(true);
     waiter.await.unwrap().unwrap();
+}
+
+async fn assert_retired_operation_kind_migrates_without_losing_provenance() {
+    let pool = memory_pool().await;
+    sqlx::raw_sql(
+        r#"
+        CREATE TABLE operations (
+            id TEXT PRIMARY KEY,
+            runtime_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            account_scope TEXT NOT NULL,
+            connection_id TEXT NOT NULL,
+            connection_revision INTEGER NOT NULL,
+            terminal_session_id TEXT,
+            actor_kind TEXT NOT NULL,
+            actor_id TEXT NOT NULL,
+            actor_provenance_json TEXT NOT NULL,
+            operation_kind TEXT NOT NULL CHECK(operation_kind IN (
+                'read_query', 'document_read', 'write_sql', 'ddl', 'privilege',
+                'sql_script', 'table_data_change', 'schema_change', 'import',
+                'export', 'migration', 'dashboard_create', 'plugin_action',
+                'provider_action'
+            )),
+            payload_schema_version INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            payload_hash TEXT NOT NULL,
+            schema_fingerprint TEXT,
+            risk_level TEXT NOT NULL,
+            preview_json TEXT NOT NULL,
+            policy_snapshot_json TEXT NOT NULL,
+            policy_revision TEXT NOT NULL,
+            state TEXT NOT NULL,
+            single_use INTEGER NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            expires_at TEXT,
+            started_at TEXT,
+            finished_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE operation_approvals (
+            id TEXT PRIMARY KEY,
+            operation_id TEXT NOT NULL REFERENCES operations(id),
+            payload_hash TEXT NOT NULL,
+            approver_kind TEXT NOT NULL,
+            approver_id TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            reason TEXT,
+            policy_revision TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT
+        );
+        CREATE TABLE operation_events (
+            id TEXT PRIMARY KEY,
+            operation_id TEXT NOT NULL REFERENCES operations(id),
+            sequence INTEGER NOT NULL,
+            event_kind TEXT NOT NULL,
+            state TEXT NOT NULL,
+            event_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            prev_hash TEXT,
+            hash TEXT NOT NULL,
+            UNIQUE(operation_id, sequence)
+        );
+        INSERT INTO operations (
+            id, runtime_id, workspace_id, account_scope, connection_id,
+            connection_revision, terminal_session_id, actor_kind, actor_id,
+            actor_provenance_json, operation_kind, payload_schema_version,
+            payload_json, payload_hash, schema_fingerprint, risk_level,
+            preview_json, policy_snapshot_json, policy_revision, state,
+            single_use, idempotency_key, expires_at, started_at, finished_at,
+            created_at, updated_at
+        ) VALUES (
+            'operation-1', 'runtime-1', 'workspace-1', 'account-1', 'connection-1',
+            1, NULL, 'local_user', 'member-1', '{"originSurface":"retired"}',
+            'dashboard_create', 1, '{}',
+            '0000000000000000000000000000000000000000000000000000000000000000',
+            NULL, 'low', '{}', '{}', 'policy-1', 'succeeded', 1,
+            'retired-operation-1', NULL, '2026-08-01T00:00:00Z',
+            '2026-08-01T00:00:01Z', '2026-08-01T00:00:00Z',
+            '2026-08-01T00:00:01Z'
+        );
+        INSERT INTO operation_approvals VALUES (
+            'approval-1', 'operation-1',
+            '0000000000000000000000000000000000000000000000000000000000000000',
+            'local_user', 'member-1', 'approved', NULL, 'policy-1',
+            '2026-08-01T00:00:00Z', NULL
+        );
+        INSERT INTO operation_events VALUES (
+            'event-1', 'operation-1', 1, 'succeeded', 'succeeded', '{}',
+            '2026-08-01T00:00:01Z', NULL,
+            '1111111111111111111111111111111111111111111111111111111111111111'
+        );
+        PRAGMA user_version = 18;
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert!(super::super::bootstrap::migrate_local_store(&pool)
+        .await
+        .unwrap());
+    let operation_kind: String =
+        sqlx::query_scalar("SELECT operation_kind FROM operations WHERE id = 'operation-1'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(operation_kind, "retired_artifact");
+    let approvals: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM operation_approvals WHERE operation_id = 'operation-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let events: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM operation_events WHERE operation_id = 'operation-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((approvals, events), (1, 1));
+    let violations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(violations, 0);
+    let definition: String = sqlx::query_scalar(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'operations'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(definition.contains("retired_artifact"));
+    assert!(!definition.contains("dashboard_create"));
 }
 
 async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: Uuid) {
@@ -729,6 +766,7 @@ async fn assert_agent_acp_batch_replay_is_bounded(store: &Store, connection_id: 
 async fn remote_template_sync_preserves_member_local_credential_binding() {
     assert_legacy_sql_document_database_scope_migrates().await;
     assert_legacy_agent_acp_provider_migrates().await;
+    assert_retired_operation_kind_migrates_without_losing_provenance().await;
     assert_current_store_migration_is_write_free().await;
     let pool = memory_pool().await;
     sqlx::raw_sql(migrations::SCHEMA)
@@ -751,11 +789,9 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         has_more: false,
         reset: false,
         refresh_connections: true,
-        refresh_dashboards: true,
-        refresh_reports: true,
+        refresh_analyses: true,
         connection_tombstone: false,
-        dashboard_tombstone: false,
-        report_tombstone: false,
+        analysis_tombstone: false,
     };
     assert_eq!(
         store
@@ -902,263 +938,6 @@ async fn remote_template_sync_preserves_member_local_credential_binding() {
         crate::model::WorkspaceConnectionAccess::Read
     );
     assert!(!loaded.allow_writes);
-
-    let dashboard_pin = store.pin_connection_for_dashboard(id).await.unwrap();
-    let saved_dashboard = store
-        .save_dashboard_if_current(
-            &dashboard_pin,
-            &crate::features::dashboards::DashboardDraft {
-                connection_id: id.into(),
-                title: "Current users".into(),
-                description: "Shared definition, local result".into(),
-                sql: "SELECT count(*) AS users FROM users".into(),
-                visualization: crate::features::dashboards::DashboardVisualization {
-                    version: 1,
-                    kind: crate::features::dashboards::DashboardKind::Metric,
-                    x_column: None,
-                    y_columns: vec!["users".into()],
-                },
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        saved_dashboard.sync_status,
-        crate::features::dashboards::DashboardSyncStatus::Dirty
-    );
-    let outbox_projection: (Option<String>, String, i64) = sqlx::query_as(
-        "SELECT payload_json, operation, revision FROM sync_outbox
-         WHERE workspace_id = ?1 AND resource_type = 'dashboard' AND resource_id = ?2",
-    )
-    .bind(workspace_id.to_string())
-    .bind(saved_dashboard.id.to_string())
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    assert_eq!(outbox_projection, (None, "upsert".into(), 1));
-    let pending = store
-        .pending_dashboard_mutations(workspace_id, user.id.as_str())
-        .await
-        .unwrap();
-    assert_eq!(pending.len(), 1);
-    assert!(store
-        .pending_dashboard_mutations(workspace_id, other_user.id.as_str())
-        .await
-        .unwrap()
-        .is_empty());
-    let now = Utc::now();
-    let mut remote_dashboard = crate::features::workspaces::RemoteDashboard {
-        id: saved_dashboard.id.into(),
-        connection_id: id,
-        title: saved_dashboard.title.clone(),
-        description: saved_dashboard.description.clone(),
-        sql: saved_dashboard.sql.clone(),
-        visualization_json: serde_json::to_string(&saved_dashboard.visualization).unwrap(),
-        state: crate::features::workspaces::WorkspaceDashboardState::Published,
-        owner_member_id: "31313131-3131-4131-8131-313131313131".into(),
-        updated_by_member_id: "31313131-3131-4131-8131-313131313131".into(),
-        revision: 1,
-        created_at: now,
-        updated_at: now,
-    };
-    store
-        .acknowledge_dashboard_mutation(workspace_id, &pending[0], Some(&remote_dashboard))
-        .await
-        .unwrap();
-    let shared = store
-        .list_dashboards_if_current(&dashboard_pin)
-        .await
-        .unwrap();
-    assert_eq!(shared.len(), 1);
-    assert_eq!(
-        shared[0].state,
-        crate::features::dashboards::DashboardState::Published
-    );
-    assert_eq!(
-        shared[0].sync_status,
-        crate::features::dashboards::DashboardSyncStatus::Synced
-    );
-    assert_eq!(shared[0].remote_revision, Some(1));
-
-    remote_dashboard.title = "Remote revision".into();
-    remote_dashboard.revision = 2;
-    remote_dashboard.updated_at = Utc::now();
-    store
-        .sync_remote_dashboards(workspace_id, user.id.as_str(), &[remote_dashboard.clone()])
-        .await
-        .unwrap();
-    assert_eq!(
-        store
-            .list_dashboards_if_current(&dashboard_pin)
-            .await
-            .unwrap()[0]
-            .title,
-        "Remote revision"
-    );
-    let dashboard_delete_pin = store
-        .pin_dashboard_for_view(saved_dashboard.id)
-        .await
-        .unwrap();
-    store
-        .delete_dashboard_if_current(&dashboard_delete_pin)
-        .await
-        .unwrap();
-    let pending_delete = store
-        .pending_dashboard_mutations(workspace_id, user.id.as_str())
-        .await
-        .unwrap();
-    assert_eq!(pending_delete.len(), 1);
-    assert_eq!(
-        pending_delete[0].operation,
-        crate::features::workspaces::DashboardOutboxOperation::Delete
-    );
-    store
-        .mark_dashboard_conflict(workspace_id, &pending_delete[0])
-        .await
-        .unwrap();
-    store
-        .sync_remote_dashboards(workspace_id, user.id.as_str(), &[remote_dashboard])
-        .await
-        .unwrap();
-    let preserved_conflict: (String, String, i64, Option<String>) = sqlx::query_as(
-        "SELECT title, sync_status, revision, pending_account_user_id
-             FROM dashboards WHERE id = ?1",
-    )
-    .bind(saved_dashboard.id.to_string())
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    assert_eq!(
-        preserved_conflict,
-        (
-            "Remote revision".into(),
-            "conflict".into(),
-            3,
-            Some(user.id.to_string()),
-        )
-    );
-    let dashboard_outbox_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM sync_outbox
-         WHERE workspace_id = ?1 AND resource_type = 'dashboard'",
-    )
-    .bind(workspace_id.to_string())
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    assert_eq!(dashboard_outbox_count, 0);
-
-    let report_id = Uuid::new_v4();
-    let first_run_id = crate::kernel::identity::QueryRunId::from(Uuid::new_v4());
-    let first_evidence_id = Uuid::new_v4();
-    let first_claim_id = Uuid::new_v4();
-    let report_authority = crate::features::reports::StoredReportMutationAuthority {
-        account_user_id: user.id.to_string(),
-        connection_revision: dashboard_pin.connection_revision,
-        binding_revision: dashboard_pin.binding_revision,
-        binding_updated_at: dashboard_pin.binding_updated_at.clone(),
-    };
-    let report_create = crate::features::reports::StoredReportMutation {
-        schema_version: crate::features::reports::STORED_REPORT_MUTATION_SCHEMA_VERSION,
-        authority: report_authority.clone(),
-        mutation: crate::features::reports::StoredReportMutationKind::Propose {
-            draft: crate::features::reports::HostedReportDraft {
-                id: report_id,
-                connection_id: id.into(),
-                title: "Current users report".into(),
-                question: "How many users are active?".into(),
-                conclusion: "One current snapshot is available.".into(),
-                preflight_warnings: vec![],
-                claims: vec![crate::features::reports::ReportClaimDraft {
-                    id: first_claim_id,
-                    statement: "The query produced one count.".into(),
-                    evidence_ids: vec![first_evidence_id],
-                }],
-                evidence: vec![crate::features::reports::ReportEvidenceDraft {
-                    id: first_evidence_id,
-                    query_run_id: first_run_id,
-                    sql: "SELECT count(*) AS users FROM users".into(),
-                    executed_at: Utc::now(),
-                }],
-            },
-            query_run_ids: vec![first_run_id],
-        },
-    };
-    let create_outbox_id = store
-        .enqueue_report_mutation_if_current(&dashboard_pin, &report_create)
-        .await
-        .unwrap();
-    let second_run_id = crate::kernel::identity::QueryRunId::from(Uuid::new_v4());
-    let second_evidence_id = Uuid::new_v4();
-    let report_append = crate::features::reports::StoredReportMutation {
-        schema_version: crate::features::reports::STORED_REPORT_MUTATION_SCHEMA_VERSION,
-        authority: report_authority,
-        mutation: crate::features::reports::StoredReportMutationKind::AppendEvidence {
-            draft: crate::features::reports::HostedReportEvidenceAppend {
-                report_id,
-                expected_revision: 1,
-                connection_id: id.into(),
-                claims: vec![crate::features::reports::ReportClaimDraft {
-                    id: Uuid::new_v4(),
-                    statement: "The rerun confirmed the count.".into(),
-                    evidence_ids: vec![second_evidence_id],
-                }],
-                evidence: vec![crate::features::reports::ReportEvidenceDraft {
-                    id: second_evidence_id,
-                    query_run_id: second_run_id,
-                    sql: "SELECT count(*) AS users FROM users /* rerun */".into(),
-                    executed_at: Utc::now(),
-                }],
-            },
-            query_run_ids: vec![second_run_id],
-        },
-    };
-    let append_outbox_id = store
-        .enqueue_report_mutation_if_current(&dashboard_pin, &report_append)
-        .await
-        .unwrap();
-    let report_pending = store
-        .pending_report_mutations_for_active_scope()
-        .await
-        .unwrap();
-    assert_eq!(
-        report_pending
-            .iter()
-            .map(|item| item.outbox_id)
-            .collect::<Vec<_>>(),
-        vec![create_outbox_id, append_outbox_id]
-    );
-    assert!(store
-        .is_report_mutation_authority_current(&report_pending[0])
-        .await
-        .unwrap());
-    store
-        .record_report_mutation_failure(
-            &report_pending[0],
-            &AppError::Network("sensitive hosted response must not persist".into()),
-        )
-        .await
-        .unwrap();
-    let stored_failure: String =
-        sqlx::query_scalar("SELECT last_error FROM sync_outbox WHERE id = ?1")
-            .bind(create_outbox_id.to_string())
-            .fetch_one(store.pool())
-            .await
-            .unwrap();
-    assert_eq!(stored_failure, "network");
-    store
-        .acknowledge_report_mutation(&report_pending[0])
-        .await
-        .unwrap();
-    let report_pending = store
-        .pending_report_mutations_for_active_scope()
-        .await
-        .unwrap();
-    assert_eq!(report_pending.len(), 1);
-    assert_eq!(report_pending[0].outbox_id, append_outbox_id);
-    store
-        .acknowledge_report_mutation(&report_pending[0])
-        .await
-        .unwrap();
 
     assert_agent_acp_batch_replay_is_bounded(&store, id).await;
 
@@ -1418,7 +1197,7 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
             agent_prompt: None,
             sql: audit_sql.clone(),
             kind: QueryKind::Read,
-            action: "dashboard:run".into(),
+            action: "analysis_article:run".into(),
             approved_by: None,
             affected_estimate: Some(1),
             error: None,
@@ -1587,99 +1366,6 @@ async fn shared_connection_bindings_are_isolated_per_signed_in_account() {
     assert_eq!(
         store
             .list_retired_chat_archive_threads()
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
-
-    let shared_dashboard = crate::features::workspaces::RemoteDashboard {
-        id: Uuid::new_v4(),
-        connection_id,
-        title: "Account-scoped dashboard".into(),
-        description: "Visible only after this account pulls it".into(),
-        sql: "SELECT count(*) AS total FROM users".into(),
-        visualization_json: serde_json::json!({
-            "version": 1,
-            "kind": "metric",
-            "xColumn": null,
-            "yColumns": ["total"]
-        })
-        .to_string(),
-        state: crate::features::workspaces::WorkspaceDashboardState::Published,
-        owner_member_id: "31313131-3131-4131-8131-313131313131".into(),
-        updated_by_member_id: "31313131-3131-4131-8131-313131313131".into(),
-        revision: 1,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-    for user in [&user_a, &user_b] {
-        store
-            .sync_remote_dashboards(workspace_id, user.id.as_str(), &[shared_dashboard.clone()])
-            .await
-            .unwrap();
-    }
-    sqlx::query(
-        "UPDATE dashboards
-         SET title = 'Alpha pending edit', sync_status = 'dirty',
-             pending_account_user_id = ?1
-         WHERE id = ?2",
-    )
-    .bind(user_a.id.as_str())
-    .bind(shared_dashboard.id.to_string())
-    .execute(store.pool())
-    .await
-    .unwrap();
-    let dashboard_pin_a = store
-        .pin_connection_for_dashboard(connection_id)
-        .await
-        .unwrap();
-    assert_eq!(
-        store
-            .list_dashboards_if_current(&dashboard_pin_a)
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
-    store
-        .activate_workspace(workspace_id, Some(&user_b.id))
-        .await
-        .unwrap();
-    let dashboard_pin_b = store
-        .pin_connection_for_dashboard(connection_id)
-        .await
-        .unwrap();
-    assert!(store
-        .list_dashboards_if_current(&dashboard_pin_b)
-        .await
-        .unwrap()
-        .is_empty());
-    store
-        .sync_remote_dashboards(workspace_id, user_b.id.as_str(), &[])
-        .await
-        .unwrap();
-    let user_b_visibility: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM workspace_dashboard_visibility
-         WHERE dashboard_id = ?1 AND account_user_id = ?2",
-    )
-    .bind(shared_dashboard.id.to_string())
-    .bind(user_b.id.as_str())
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    assert_eq!(user_b_visibility, 0);
-    store
-        .activate_workspace(workspace_id, Some(&user_a.id))
-        .await
-        .unwrap();
-    let refreshed_dashboard_pin_a = store
-        .pin_connection_for_dashboard(connection_id)
-        .await
-        .unwrap();
-    assert_eq!(
-        store
-            .list_dashboards_if_current(&refreshed_dashboard_pin_a)
             .await
             .unwrap()
             .len(),

@@ -280,7 +280,7 @@ pub(crate) struct DesktopSqlProposalRequest {
 }
 
 /// One bounded desktop-only page of a read result. It is intentionally not a
-/// model contract: CLI, Broker, dashboards, and bounded execution retain their
+/// model contract: CLI, Broker, Analysis Articles, and bounded execution retain their
 /// materialized bounded receipt wire.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

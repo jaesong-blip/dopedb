@@ -116,7 +116,7 @@ function lockAndRevalidate(tx: TransactionSql, input: {
       FROM receipt_scope
       JOIN branch_lock ON TRUE
     ), target_scope AS MATERIALIZED (
-      -- Replacing a shared template preserves its UUID and every dashboard/grant
+      -- Replacing a shared template preserves its UUID and every Analysis/grant
       -- reference. The target is locked after the canonical provider resource so
       -- concurrent imports and ordinary connection mutations have one order.
       SELECT connection."id"

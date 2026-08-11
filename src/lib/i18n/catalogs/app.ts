@@ -131,10 +131,10 @@ export const appCatalog = defineCatalog(
     "settings.advancedBody":
       "Application-level controls for background monitoring, troubleshooting, and diagnostics.",
     "settings.debugging": "Debugging",
-    "settings.monitoring": "Monitoring",
-    "settings.backgroundMonitoring": "Keep local signal monitoring running in the background",
+    "settings.monitoring": "Automation",
+    "settings.backgroundMonitoring": "Run scheduled analyses and signals in the background",
     "settings.backgroundMonitoringBody":
-      "Keeps DopeDB running after the main window closes and starts it at sign-in. Only rules assigned to this device run, using this member's exact read-only grants and local credentials.",
+      "Keeps DopeDB running after the main window closes and starts it at sign-in. Only work assigned to this device runs, using this member's exact read-only grants and local credentials.",
     "settings.launchAtLoginEnabled": "Launch at sign-in: enabled",
     "settings.launchAtLoginDisabled": "Launch at sign-in: disabled",
     "settings.agentDebugDetails": "Show Agent debugging details",
@@ -157,7 +157,6 @@ export const appCatalog = defineCatalog(
     "settings.updates": "Updates",
     "tabs.activity": "Activity",
     "tabs.agent": "Agent",
-    "tabs.dashboard": "Dashboards",
     "tabs.data": "Data",
     "tabs.documents": "Documents",
     "tabs.openDocuments": "Open documents",
@@ -293,10 +292,10 @@ export const appCatalog = defineCatalog(
     "settings.advancedBody":
       "백그라운드 모니터링, 문제 해결과 진단을 위한 애플리케이션 전역 설정입니다.",
     "settings.debugging": "디버깅",
-    "settings.monitoring": "모니터링",
-    "settings.backgroundMonitoring": "로컬 신호 감시를 백그라운드에서 계속 실행",
+    "settings.monitoring": "자동화",
+    "settings.backgroundMonitoring": "예약 분석과 신호를 백그라운드에서 실행",
     "settings.backgroundMonitoringBody":
-      "기본 창을 닫아도 DopeDB를 실행 상태로 유지하고 로그인할 때 시작합니다. 이 기기에 배정된 규칙만 현재 멤버의 정확한 읽기 전용 권한과 로컬 자격증명으로 실행합니다.",
+      "기본 창을 닫아도 DopeDB를 실행 상태로 유지하고 로그인할 때 시작합니다. 이 기기에 배정된 작업만 현재 멤버의 정확한 읽기 전용 권한과 로컬 자격증명으로 실행합니다.",
     "settings.launchAtLoginEnabled": "로그인 시 시작: 켜짐",
     "settings.launchAtLoginDisabled": "로그인 시 시작: 꺼짐",
     "settings.agentDebugDetails": "Agent 디버깅 세부 정보 표시",
@@ -319,7 +318,6 @@ export const appCatalog = defineCatalog(
     "settings.updates": "업데이트",
     "tabs.activity": "활동",
     "tabs.agent": "Agent",
-    "tabs.dashboard": "대시보드",
     "tabs.data": "데이터",
     "tabs.documents": "문서",
     "tabs.openDocuments": "열린 문서",

@@ -3,7 +3,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import ConfirmButton from "../../components/ConfirmButton";
-import DashboardVisualizationView from "../../components/DashboardVisualization";
 import { Icon } from "../../components/Icon";
 import { Button } from "../../design-system/components/Button";
 import { EnvironmentBadge } from "../../design-system/components/EnvironmentBadge";
@@ -19,17 +18,10 @@ import {
   type StatusTone,
 } from "../../design-system/components/Status";
 import { errMessage } from "../../ipc/types";
-import { cancelQuery } from "../../ipc/commands";
 import { useCatalogScope } from "../../lib/queries";
 import { listConnections } from "../../features/connections/tauriAdapter";
-import {
-  getActiveWorkspace,
-  workspaceConsoleUrl,
-} from "../../features/workspaces/tauriAdapter";
 import type {
   GithubKnowledgeRepository,
-  FunnelAnalysisArtifact,
-  FunnelAnalysisRun,
   KnowledgeEnvironmentFocus,
   KnowledgeEnvironmentView,
 } from "../../features/knowledge/domain";
@@ -44,19 +36,17 @@ import {
   connectKnowledgeLocalFolder,
   decideKnowledgeMapping,
   listKnowledgeGithubRepositories,
-  listFunnelAnalysisArtifacts,
   listKnowledgeMappings,
   listKnowledgeEnvironmentConnections,
   listKnowledgeProjects,
   listKnowledgeSources,
   onKnowledgeSourceChanged,
-  publishFunnelAnalysisArtifact,
-  runFunnelAnalysisArtifact,
   revokeKnowledgeSource,
   revokeKnowledgeEnvironmentConnection,
   searchKnowledgeGraph,
   syncKnowledgeSource,
 } from "../../features/knowledge/tauriAdapter";
+import AnalysisArticles from "./AnalysisArticles";
 
 function repositoryLabel(repository: GithubKnowledgeRepository): string {
   return `${repository.fullName}${repository.private ? " · Private" : ""}`;
@@ -100,12 +90,6 @@ export default function Knowledge({
   const [refName, setRefName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [analysisRuns, setAnalysisRuns] = useState(
-    new Map<string, FunnelAnalysisRun>(),
-  );
-  const [analysisRunQueries, setAnalysisRunQueries] = useState(
-    new Map<string, Map<string, string>>(),
-  );
   const [searchQuery, setSearchQuery] = useState("");
   const [connectionId, setConnectionId] = useState("");
   const [connectionRole, setConnectionRole] = useState("primary");
@@ -152,17 +136,6 @@ export default function Knowledge({
       view === "sources" &&
       hasSelectedEnvironmentSource,
   });
-  const analyses = useQuery({
-    queryKey: [
-      "knowledge",
-      "funnel-analysis",
-      environmentId,
-      catalogScope.key,
-    ],
-    queryFn: () => listFunnelAnalysisArtifacts(environmentId),
-    enabled: sharedWorkspace && Boolean(environmentId) && view === "dashboards",
-  });
-
   const selectedProject = useMemo(
     () => projects.data?.find((project) => project.id === projectId) ?? null,
     [projectId, projects.data],
@@ -229,25 +202,6 @@ export default function Knowledge({
     setProjectId(project.id);
     setEnvironmentId(environmentFocus.environmentId);
   }, [environmentFocus, projects.data]);
-
-  useEffect(() => {
-    if (
-      view !== "dashboards" ||
-      !environmentFocus?.resourceId ||
-      !analyses.data?.some(
-        (analysis) => analysis.id === environmentFocus.resourceId,
-      )
-    ) {
-      return;
-    }
-    window.requestAnimationFrame(() => {
-      const dashboard = document.getElementById(
-        `environment-dashboard-${environmentFocus.resourceId}`,
-      );
-      dashboard?.scrollIntoView({ block: "center", behavior: "smooth" });
-      dashboard?.focus({ preventScroll: true });
-    });
-  }, [analyses.data, environmentFocus, view]);
 
   useEffect(() => {
     if (!repositories.data?.length || repositoryId) return;
@@ -491,100 +445,25 @@ export default function Knowledge({
     },
     onError: (error) => setActionError(errMessage(error)),
   });
-  const publishAnalysis = useMutation({
-    mutationFn: ({ artifactId, productionConfirmed }: { artifactId: string; productionConfirmed: boolean }) =>
-      publishFunnelAnalysisArtifact(environmentId, artifactId, productionConfirmed),
-    onSuccess: async () => {
-      setActionError(null);
-      await queryClient.invalidateQueries({
-        queryKey: ["knowledge", "funnel-analysis", environmentId],
-      });
-    },
-    onError: (error) => setActionError(errMessage(error)),
-  });
-  const runAnalysis = useMutation({
-    mutationFn: ({
-      artifactId,
-      tileRequests,
-    }: {
-      artifactId: string;
-      tileRequests: Array<{ tileId: string; queryId: string }>;
-    }) => runFunnelAnalysisArtifact(environmentId, artifactId, tileRequests),
-    onMutate: ({ artifactId, tileRequests }) => {
-      setActionError(null);
-      setAnalysisRuns((current) => {
-        const next = new Map(current);
-        next.delete(artifactId);
-        return next;
-      });
-      setAnalysisRunQueries((current) => {
-        const next = new Map(current);
-        next.set(
-          artifactId,
-          new Map(tileRequests.map((request) => [request.tileId, request.queryId])),
-        );
-        return next;
-      });
-    },
-    onSuccess: (run, { artifactId }) => {
-      setAnalysisRuns((current) => new Map(current).set(artifactId, run));
-      setAnalysisRunQueries((current) => {
-        const next = new Map(current);
-        next.delete(artifactId);
-        return next;
-      });
-    },
-    onError: (error, { artifactId }) => {
-      setActionError(errMessage(error));
-      setAnalysisRunQueries((current) => {
-        const next = new Map(current);
-        next.delete(artifactId);
-        return next;
-      });
-    },
-  });
-
-  function executeAnalysis(analysis: FunnelAnalysisArtifact) {
-    const tileRequests = analysis.tiles
-      .filter((tile) => Boolean(tile.dashboard))
-      .map((tile) => ({ tileId: tile.definition.id, queryId: crypto.randomUUID() }));
-    if (tileRequests.length === 0) return;
-    runAnalysis.mutate({ artifactId: analysis.id, tileRequests });
-  }
-
-  function cancelAnalysis(artifactId: string) {
-    const queryIds = analysisRunQueries.get(artifactId)?.values() ?? [];
-    void Promise.all(Array.from(queryIds, (queryId) => cancelQuery(queryId)));
-  }
-
-  function cancelAnalysisTile(artifactId: string, tileId: string) {
-    const queryId = analysisRunQueries.get(artifactId)?.get(tileId);
-    if (queryId) void cancelQuery(queryId);
-  }
-
-  async function openSignalCreator(analysisId: string, tileId: string) {
-    setActionError(null);
-    try {
-      const workspace = await getActiveWorkspace();
-      const url = new URL(await workspaceConsoleUrl(workspace.id));
-      url.searchParams.set("section", "monitoring");
-      url.searchParams.set("create", "1");
-      url.searchParams.set("analysis", analysisId);
-      url.searchParams.set("tile", tileId);
-      await openUrl(url.toString());
-    } catch (error) {
-      setActionError(errMessage(error));
-    }
-  }
-
   const pending = connectGithub.isPending || connectLocal.isPending;
   const sourceLoadError = projects.error ?? sources.error;
+  if (view === "analyses" && selectedProject && selectedEnvironment) {
+    return (
+      <AnalysisArticles
+        projectName={selectedProject.name}
+        environment={selectedEnvironment}
+        bindings={environmentConnections.data ?? []}
+        sharedWorkspace={sharedWorkspace}
+        focusId={environmentFocus?.resourceId}
+        onOpenAgent={onOpenAgent}
+        onNewConnection={onNewConnection}
+      />
+    );
+  }
   const viewTitle =
     view === "databases"
       ? "Databases"
-      : view === "dashboards"
-        ? "Dashboards"
-        : view === "mappings"
+      : view === "mappings"
           ? "Mapping review"
           : view === "explore"
             ? "Explore"
@@ -597,9 +476,7 @@ export default function Knowledge({
           name={
             view === "databases"
               ? "database"
-              : view === "dashboards"
-                ? "chart"
-                : "branch"
+              : "branch"
           }
           className="tw:shrink-0 tw:text-muted-foreground"
         />
@@ -640,328 +517,6 @@ export default function Knowledge({
         <p className="tw:m-0 tw:text-sm tw:text-muted-foreground">
           Create a Project from the Projects section in Explorer to organize this workspace.
         </p>
-      ) : null}
-
-      {(projects.data?.length ?? 0) > 0 && view === "dashboards" ? (
-        <section data-primary-flow className="tw:grid tw:gap-4 tw:border-b tw:border-border-subtle tw:pb-5">
-          <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
-            <div className="tw:grid tw:gap-1">
-              <h2 className="tw:m-0 tw:text-base tw:font-semibold">Environment dashboards</h2>
-              <p className="tw:m-0 tw:max-w-[760px] tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-                Agent dashboard proposals are pinned to this Environment, its data-source graphs, and exact database revisions. Drafts remain private until a workspace editor reviews and publishes them.
-              </p>
-            </div>
-            <Button iconOnly size="compact" variant="ghost" title="Refresh analysis drafts" onClick={() => void analyses.refetch()}>
-              <Icon name="refresh" />
-            </Button>
-          </div>
-          {!sharedWorkspace ? (
-            <div className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-secondary/30 tw:p-4">
-              <strong className="tw:text-sm">No dashboard has been proposed</strong>
-              <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-                Dashboard proposals appear here after an Agent session runs inside an exact shared Environment grant.
-              </p>
-            </div>
-          ) : analyses.isPending ? (
-            <LoadingLabel>Loading Environment dashboards…</LoadingLabel>
-          ) : analyses.error ? (
-            <InlineNotice tone="danger" icon="alert">{errMessage(analyses.error)}</InlineNotice>
-          ) : (analyses.data?.length ?? 0) === 0 ? (
-            <div className="tw:grid tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:bg-secondary/30 tw:p-4">
-              <strong className="tw:text-sm">No dashboard has been proposed</strong>
-              <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">
-                Start an Agent session for this Environment, run and save each verified query, then ask it to propose a funnel dashboard.
-              </p>
-            </div>
-          ) : (
-            <div className="tw:grid tw:gap-4">
-              {analyses.data?.map((analysis) => {
-                const connectionCount = new Set(
-                  analysis.tiles.flatMap((tile) => tile.dashboard?.connectionId ? [tile.dashboard.connectionId] : []),
-                ).size;
-                const currentRun = analysisRuns.get(analysis.id);
-                const running = analysisRunQueries.has(analysis.id);
-                const executableTileCount = analysis.tiles.filter(
-                  (tile) => tile.definition.kind !== "markdown",
-                ).length;
-                const readyTileCount = analysis.tiles.filter(
-                  (tile) => tile.definition.kind !== "markdown" && tile.availability === "ready",
-                ).length;
-                return (
-                  <article
-                    id={`environment-dashboard-${analysis.id}`}
-                    key={analysis.id}
-                    tabIndex={-1}
-                    className="tw:grid tw:min-w-0 tw:gap-4 tw:rounded-md tw:border tw:border-border-subtle tw:bg-card tw:p-4 tw:focus-visible:outline-none tw:focus-visible:ring-2 tw:focus-visible:ring-ring tw:motion-reduce:scroll-auto"
-                  >
-                    <header className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
-                      <div className="tw:grid tw:min-w-0 tw:gap-1">
-                        <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2">
-                          <h3 className="tw:m-0 tw:text-base tw:font-semibold">{analysis.title}</h3>
-                          <StatusBadge density="compact">
-                            {analysis.sourceAgent === "dopedb.acp.claude" ? "Claude" : "Codex"}
-                          </StatusBadge>
-                          <StatusBadge density="compact">{analysis.state}</StatusBadge>
-                          <StatusBadge
-                            density="compact"
-                            tone={analysis.freshness === "current" ? "success" : "warning"}
-                          >
-                            {analysis.freshness.replace(/_/g, " ")}
-                          </StatusBadge>
-                          <StatusBadge
-                            density="compact"
-                            tone={readyTileCount === executableTileCount ? "success" : "warning"}
-                          >
-                            {readyTileCount}/{executableTileCount} runnable
-                          </StatusBadge>
-                          {analysis.warnings.length > 0 ? <StatusBadge density="compact" tone="warning">Review required</StatusBadge> : null}
-                        </div>
-                        <strong className="tw:text-sm tw:font-medium">{analysis.question}</strong>
-                        <p className="tw:m-0 tw:text-sm tw:leading-relaxed tw:text-muted-foreground">{analysis.purpose}</p>
-                      </div>
-                      <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2">
-                        <span className="tw:font-mono tw:text-[11px] tw:text-muted-foreground">r{analysis.revision} · {analysis.id.slice(0, 8)}</span>
-                        {currentRun ? (
-                          <span className="tw:text-[11px] tw:text-muted-foreground">
-                            Local run {new Date(currentRun.completedAt).toLocaleString()}
-                          </span>
-                        ) : null}
-                        {running ? (
-                          <Button size="compact" variant="danger" onClick={() => cancelAnalysis(analysis.id)}>
-                            Cancel run
-                          </Button>
-                        ) : (
-                          <Button
-                            size="compact"
-                            variant="ghost"
-                            disabled={
-                              analysis.freshness === "graph_drift"
-                              || analysis.freshness === "schema_drift"
-                              || executableTileCount === 0
-                            }
-                            onClick={() => executeAnalysis(analysis)}
-                          >
-                            <Icon name="refresh" />
-                            Run current data
-                          </Button>
-                        )}
-                        {analysis.state === "draft" && selectedEnvironment?.riskClass === "production" ? (
-                          <ConfirmButton
-                            size="compact"
-                            variant="primary"
-                            confirmLabel="Publish this Production analysis?"
-                            disabled={publishAnalysis.isPending}
-                            onConfirm={() => publishAnalysis.mutate({ artifactId: analysis.id, productionConfirmed: true })}
-                          >
-                            Publish
-                          </ConfirmButton>
-                        ) : analysis.state === "draft" ? (
-                          <Button
-                            size="compact"
-                            variant="primary"
-                            disabled={publishAnalysis.isPending}
-                            onClick={() => publishAnalysis.mutate({ artifactId: analysis.id, productionConfirmed: false })}
-                          >
-                            {publishAnalysis.isPending ? "Publishing…" : "Publish"}
-                          </Button>
-                        ) : null}
-                      </span>
-                    </header>
-
-                    <dl className="tw:grid tw:grid-cols-4 tw:gap-px tw:overflow-hidden tw:rounded-md tw:border tw:border-border-subtle tw:bg-border-subtle tw:@max-[720px]:grid-cols-2 tw:@max-[430px]:grid-cols-1">
-                      {[
-                        ["Environment", `revision ${analysis.environmentRevision}`],
-                        ["Databases", String(connectionCount)],
-                        ["Source graphs", String(analysis.graphRevisionIds.length)],
-                        ["Time range", `${analysis.timeRange} · ${analysis.timezone}`],
-                      ].map(([label, value]) => (
-                        <div key={label} className="tw:grid tw:gap-0.5 tw:bg-card tw:px-3 tw:py-2">
-                          <dt className="tw:text-[11px] tw:text-muted-foreground">{label}</dt>
-                          <dd className="tw:m-0 tw:truncate tw:text-xs tw:font-medium">{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-
-                    <div className="tw:grid tw:gap-2">
-                      <span className="tw:text-xs tw:font-semibold tw:text-foreground">Funnel steps</span>
-                      <ol className="tw:m-0 tw:grid tw:list-none tw:gap-2 tw:p-0">
-                        {analysis.steps.map((step, index) => (
-                          <li key={step.id} className="tw:grid tw:grid-cols-[24px_minmax(0,1fr)_auto] tw:items-start tw:gap-2 tw:rounded-sm tw:bg-secondary/35 tw:px-3 tw:py-2 tw:@max-[520px]:grid-cols-[24px_minmax(0,1fr)]">
-                            <span className="tw:flex tw:size-6 tw:items-center tw:justify-center tw:rounded-full tw:bg-primary tw:text-[11px] tw:font-semibold tw:text-primary-foreground">{index + 1}</span>
-                            <span className="tw:grid tw:min-w-0 tw:gap-0.5">
-                              <strong className="tw:truncate tw:text-xs">{step.label}</strong>
-                              <span className="tw:text-xs tw:leading-relaxed tw:text-muted-foreground">{step.meaning}</span>
-                              <code className="tw:truncate tw:text-[11px] tw:text-muted-foreground">{step.entityKey} · {step.timestampField}</code>
-                            </span>
-                            <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-1 tw:@max-[520px]:col-start-2 tw:@max-[520px]:justify-start">
-                              <StatusBadge density="compact">{step.connectionRole}</StatusBadge>
-                              <StatusBadge density="compact" tone={step.mappingState === "confirmed" ? "success" : "warning"}>{step.mappingState}</StatusBadge>
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-
-                    <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[680px]:grid-cols-1">
-                      <div className="tw:grid tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
-                        <span className="tw:text-[11px] tw:font-semibold tw:text-muted-foreground">DENOMINATOR</span>
-                        <p className="tw:m-0 tw:text-xs tw:leading-relaxed">{analysis.denominatorSemantics}</p>
-                      </div>
-                      <div className="tw:grid tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
-                        <span className="tw:text-[11px] tw:font-semibold tw:text-muted-foreground">NUMERATOR</span>
-                        <p className="tw:m-0 tw:text-xs tw:leading-relaxed">{analysis.numeratorSemantics}</p>
-                      </div>
-                    </div>
-
-                    <div className="tw:grid tw:gap-1 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
-                      <span className="tw:text-[11px] tw:font-semibold tw:text-muted-foreground">SEGMENTS & WINDOW</span>
-                      <p className="tw:m-0 tw:text-xs tw:leading-relaxed">
-                        {analysis.segmentFilters.length > 0
-                          ? analysis.segmentFilters.join(" · ")
-                          : "All records"}
-                        {` · conversion window ${analysis.conversionWindowSeconds.toLocaleString()}s`}
-                      </p>
-                    </div>
-
-                    {analysis.warnings.map((warning) => (
-                      <InlineNotice key={warning} tone="warning" icon="alert">{warning}</InlineNotice>
-                    ))}
-
-                    <div className="tw:grid tw:grid-cols-2 tw:gap-3 tw:@max-[680px]:grid-cols-1">
-                      {analysis.tiles.map((tile) => (
-                        <section key={tile.definition.id} className="tw:grid tw:min-w-0 tw:content-start tw:gap-2 tw:rounded-md tw:border tw:border-border-subtle tw:p-3">
-                          <div className="tw:flex tw:min-w-0 tw:items-start tw:justify-between tw:gap-2">
-                            <strong className="tw:truncate tw:text-sm">{tile.definition.title}</strong>
-                            <span className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-1">
-                              {analysis.state === "published"
-                                && tile.definition.kind === "metric"
-                                && tile.availability === "ready" ? (
-                                  <Button
-                                    size="xs"
-                                    variant="ghost"
-                                    onClick={() => void openSignalCreator(
-                                      analysis.id,
-                                      tile.definition.id,
-                                    )}
-                                  >
-                                    Create signal
-                                  </Button>
-                                ) : null}
-                              {analysis.state === "published" && tile.dashboard && onOpenAgent ? (
-                                <Button
-                                  size="xs"
-                                  variant="ghost"
-                                  onClick={() => onOpenAgent(tile.dashboard!.connectionId)}
-                                >
-                                  Analyze
-                                </Button>
-                              ) : null}
-                              <StatusBadge
-                                density="compact"
-                                tone={tile.availability === "ready" ? "success" : "warning"}
-                              >
-                                {tile.availability.replace(/_/g, " ")}
-                              </StatusBadge>
-                              <StatusBadge density="compact">{tile.definition.kind}</StatusBadge>
-                            </span>
-                          </div>
-                          {tile.definition.markdown ? (
-                            <p className="tw:m-0 tw:text-xs tw:leading-relaxed tw:text-muted-foreground">{tile.definition.markdown}</p>
-                          ) : tile.definition.composition ? (
-                            <span className="tw:text-xs tw:leading-relaxed tw:text-muted-foreground">
-                              {tile.definition.composition.operation} of {tile.definition.composition.inputs.map((input) => input.label).join(" → ")}
-                            </span>
-                          ) : tile.dashboard ? (
-                            <>
-                              <span className="tw:truncate tw:text-xs tw:text-muted-foreground">
-                                DB {tile.dashboard.connectionId.slice(0, 8)} · connection r{tile.connectionRevision} · dashboard r{tile.dashboard.revision}
-                              </span>
-                              {tile.definition.queryRunId ? (
-                                <span className="tw:truncate tw:font-mono tw:text-[11px] tw:text-muted-foreground">
-                                  Verified run {tile.definition.queryRunId}
-                                </span>
-                              ) : null}
-                              <details className="tw:min-w-0 tw:text-xs">
-                                <summary className="tw:cursor-pointer tw:text-muted-foreground">Review query</summary>
-                                <pre className="tw:mt-2 tw:max-h-48 tw:overflow-auto tw:whitespace-pre-wrap tw:break-words tw:rounded-sm tw:bg-secondary tw:p-2 tw:font-mono tw:text-[11px]">{tile.dashboard.sql}</pre>
-                              </details>
-                            </>
-                          ) : (
-                            <InlineNotice tone="warning" icon="alert">
-                              {tile.unavailableReason ?? "This tile is unavailable under the current member grant."}
-                            </InlineNotice>
-                          )}
-                          {tile.availability !== "ready" && (tile.dashboard || tile.definition.composition) ? (
-                            <InlineNotice tone="warning" icon="alert">
-                              {tile.unavailableReason ?? "This tile cannot run with the current member grant."}
-                            </InlineNotice>
-                          ) : null}
-                          {running && tile.dashboard ? (
-                            <div className="tw:flex tw:min-w-0 tw:items-center tw:justify-between tw:gap-2">
-                              <LoadingLabel>Running with your current grant…</LoadingLabel>
-                              <Button
-                                size="xs"
-                                variant="dangerGhost"
-                                onClick={() => cancelAnalysisTile(analysis.id, tile.definition.id)}
-                              >
-                                Cancel tile
-                              </Button>
-                            </div>
-                          ) : running && tile.definition.composition ? (
-                            <LoadingLabel>Calculating from current inputs…</LoadingLabel>
-                          ) : (() => {
-                            const tileRun = currentRun?.tiles.find(
-                              (candidate) => candidate.tileId === tile.definition.id,
-                            );
-                            if (!tileRun) {
-                              return tile.definition.kind === "markdown" ? null : (
-                                <span className="tw:text-xs tw:text-muted-foreground">
-                                  No current result. Run this analysis to query with your own grant.
-                                </span>
-                              );
-                            }
-                            if (tileRun.status !== "ok" || !tileRun.result) {
-                              return (
-                                <InlineNotice tone="warning" icon="alert">
-                                  {tileRun.error ?? `Tile run ended as ${tileRun.status.replace(/_/g, " ")}.`}
-                                </InlineNotice>
-                              );
-                            }
-                            const visualization = tile.dashboard
-                              ? {
-                                  version: 1 as const,
-                                  kind: tile.dashboard.visualization.kind,
-                                  xColumn: tile.dashboard.visualization.xColumn ?? null,
-                                  yColumns: tile.dashboard.visualization.yColumns,
-                                }
-                              : tile.definition.composition
-                                ? {
-                                    version: 1 as const,
-                                    kind: tile.definition.composition.operation === "funnel" ? "table" as const : "metric" as const,
-                                    xColumn: null,
-                                    yColumns: [],
-                                  }
-                                : null;
-                            if (!visualization) return null;
-                            return (
-                              <div className="tw:min-w-0 tw:overflow-hidden tw:border-t tw:border-border-subtle tw:pt-3">
-                                <DashboardVisualizationView
-                                  compact
-                                  result={tileRun.result}
-                                  visualization={visualization}
-                                />
-                              </div>
-                            );
-                          })()}
-                        </section>
-                      ))}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
       ) : null}
 
       {(projects.data?.length ?? 0) > 0 && view === "sources" ? (

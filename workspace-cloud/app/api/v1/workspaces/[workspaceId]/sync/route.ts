@@ -85,11 +85,9 @@ export async function GET(request: Request, context: RouteContext) {
   const bootstrap = cursor === null || reset;
   let nextCursor = bootstrap ? head : cursor;
   let refreshConnections = bootstrap;
-  let refreshDashboards = bootstrap;
-  let refreshReports = bootstrap;
+  let refreshAnalyses = bootstrap;
   let connectionTombstone = false;
-  let dashboardTombstone = false;
-  let reportTombstone = false;
+  let analysisTombstone = false;
 
   if (!bootstrap) {
     for (const row of result.rows) {
@@ -101,20 +99,16 @@ export async function GET(request: Request, context: RouteContext) {
       nextCursor = sequence;
       if (row.resourceType === "connection") {
         refreshConnections = true;
-        refreshDashboards = true;
+        refreshAnalyses = true;
         connectionTombstone ||= row.tombstone === true;
-      } else if (row.resourceType === "dashboard") {
-        refreshDashboards = true;
-        dashboardTombstone ||= row.tombstone === true;
-      } else if (row.resourceType === "report") {
-        refreshReports = true;
-        reportTombstone ||= row.tombstone === true;
+      } else if (row.resourceType === "analysis_article") {
+        refreshAnalyses = true;
+        analysisTombstone ||= row.tombstone === true;
       } else {
         // Membership, workspace, and provider authority changes can narrow any
         // projection. Reconcile all secret-free collections rather than guessing.
         refreshConnections = true;
-        refreshDashboards = true;
-        refreshReports = true;
+        refreshAnalyses = true;
       }
     }
   }
@@ -127,13 +121,11 @@ export async function GET(request: Request, context: RouteContext) {
     reset,
     refresh: {
       connections: refreshConnections,
-      dashboards: refreshDashboards,
-      reports: refreshReports,
+      analyses: refreshAnalyses,
     },
     tombstones: {
       connections: connectionTombstone,
-      dashboards: dashboardTombstone,
-      reports: reportTombstone,
+      analyses: analysisTombstone,
     },
   });
 }

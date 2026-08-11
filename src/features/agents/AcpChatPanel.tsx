@@ -127,7 +127,7 @@ type AcpChatPanelProps = {
   width: number;
   onWidthChange: (width: number) => void;
   onOpenArchive: () => void;
-  onOpenKnowledgeAnalysis: (environmentId: string) => void;
+  onOpenKnowledgeAnalysis: (environmentId: string, articleId?: string) => void;
   onClose: () => void;
 };
 
@@ -1554,7 +1554,7 @@ const TranscriptItemView = memo(function TranscriptItemView({
   pendingPermissionId: string | null;
   permissionSubmitting: string | null;
   onPermission: (requestId: string, optionId: string | null) => void;
-  onOpenKnowledgeAnalysis: (environmentId: string) => void;
+  onOpenKnowledgeAnalysis: (environmentId: string, articleId?: string) => void;
 }) {
   const { t } = useI18n();
   if (item.kind === "user") {
@@ -1749,7 +1749,7 @@ function ToolCallCard({
 }: {
   data: Record<string, unknown>;
   debugDetails: boolean;
-  onOpenKnowledgeAnalysis: (environmentId: string) => void;
+  onOpenKnowledgeAnalysis: (environmentId: string, articleId?: string) => void;
 }) {
   const { t } = useI18n();
   const status = recordString(data, "status") ?? "pending";
@@ -1760,7 +1760,7 @@ function ToolCallCard({
   const content = toolContentText(data.content);
   const rawOutput = data.rawOutput;
   const rawInput = data.rawInput;
-  const funnelArtifact = findFunnelAnalysisArtifact(rawOutput ?? data.content);
+  const article = findAnalysisArticle(rawOutput ?? data.content);
   if (!debugDetails) {
     return (
       <div className="tw:grid tw:gap-2">
@@ -1769,14 +1769,14 @@ function ToolCallCard({
           status={toolStatusLabel(status, t)}
           tone={toolStatusTone(status)}
         />
-        {funnelArtifact ? (
+        {article ? (
           <Button
             size="compact"
             variant="primary"
-            onClick={() => onOpenKnowledgeAnalysis(funnelArtifact.projectEnvironmentId)}
+            onClick={() => onOpenKnowledgeAnalysis(article.projectEnvironmentId, article.id)}
           >
             <Icon name="chart" />
-            {t("agent.acpReviewFunnelDraft")}
+            {t("agent.acpReviewArticleDraft")}
           </Button>
         ) : null}
       </div>
@@ -1812,14 +1812,14 @@ function ToolCallCard({
           </details>
         ) : null}
         <AcpStructuredResult value={rawOutput ?? data.content} />
-        {funnelArtifact ? (
+        {article ? (
           <Button
             size="compact"
             variant="primary"
-            onClick={() => onOpenKnowledgeAnalysis(funnelArtifact.projectEnvironmentId)}
+            onClick={() => onOpenKnowledgeAnalysis(article.projectEnvironmentId, article.id)}
           >
             <Icon name="chart" />
-            {t("agent.acpReviewFunnelDraft")}
+            {t("agent.acpReviewArticleDraft")}
           </Button>
         ) : null}
       </div>
@@ -1827,30 +1827,30 @@ function ToolCallCard({
   );
 }
 
-function findFunnelAnalysisArtifact(
+function findAnalysisArticle(
   value: unknown,
   depth = 0,
 ): { id: string; projectEnvironmentId: string } | null {
   if (depth > 5 || value == null) return null;
   if (typeof value === "string") {
     try {
-      return findFunnelAnalysisArtifact(JSON.parse(value), depth + 1);
+      return findAnalysisArticle(JSON.parse(value), depth + 1);
     } catch {
       return null;
     }
   }
   if (Array.isArray(value)) {
     for (const entry of value) {
-      const found = findFunnelAnalysisArtifact(entry, depth + 1);
+      const found = findAnalysisArticle(entry, depth + 1);
       if (found) return found;
     }
     return null;
   }
   if (typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const artifact = record.artifact;
-  if (artifact && typeof artifact === "object" && !Array.isArray(artifact)) {
-    const candidate = artifact as Record<string, unknown>;
+  const article = record.article;
+  if (article && typeof article === "object" && !Array.isArray(article)) {
+    const candidate = article as Record<string, unknown>;
     if (
       typeof candidate.id === "string"
       && typeof candidate.projectEnvironmentId === "string"
@@ -1864,7 +1864,7 @@ function findFunnelAnalysisArtifact(
     }
   }
   for (const key of ["result", "data", "output", "rawOutput", "content", "text"] as const) {
-    const found = findFunnelAnalysisArtifact(record[key], depth + 1);
+    const found = findAnalysisArticle(record[key], depth + 1);
     if (found) return found;
   }
   return null;
@@ -2050,7 +2050,7 @@ function progressActivityLabel(
 ) {
   const normalized = text.toLocaleLowerCase();
   if (/(dashboard|chart|visuali[sz]|대시보드|차트|시각화)/.test(normalized)) {
-    return t("agent.acpActivityDashboard");
+    return t("agent.acpActivityAnalysisArticle");
   }
   if (/(connection|connect|database status|연결 상태|연결 확인)/.test(normalized)) {
     return t("agent.acpActivityConnection");
@@ -2098,7 +2098,7 @@ function toolActivityLabel(
     return t("agent.acpActivityToolSearch");
   }
   if (/dashboard|chart|visuali[sz]/.test(identifier)) {
-    return t("agent.acpActivityDashboard");
+    return t("agent.acpActivityAnalysisArticle");
   }
   if (
     /table_describe|catalog|schema|describe|introspect|column|relation/.test(

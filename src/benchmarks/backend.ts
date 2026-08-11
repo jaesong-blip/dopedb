@@ -11,7 +11,7 @@ export type PackagedBackendAction =
   | "history-10k"
   | "audit-100k"
   | "local-history-50"
-  | "dashboard-multi-tile";
+  | "analysis-article-multi-block";
 
 export type PackagedBackendReceipt = {
   action: PackagedBackendAction;

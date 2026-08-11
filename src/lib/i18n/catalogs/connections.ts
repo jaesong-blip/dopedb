@@ -69,7 +69,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.creatingProject": "Creating…",
     "connections.projectSetupTitle": "Create Project",
     "connections.projectSetupDescription":
-      "Create a Project first, then organize database access, source code, and dashboards by Environment.",
+      "Create a Project first, then organize database access, source code, and Analysis Articles by Environment.",
     "connections.projectName": "Project name",
     "connections.projectNamePlaceholder": "e.g. Customer portal",
     "connections.firstEnvironment": "First Environment",
@@ -90,15 +90,15 @@ export const connectionsCatalog = defineCatalog(
       "After creation, add databases and source code inside this Environment.",
     "connections.environmentAddDatabase": "Add database…",
     "connections.environmentAddSource": "Add data source…",
-    "connections.environmentDashboardLoadFailed":
-      "Could not load dashboards",
-    "connections.environmentDashboards": "Dashboards",
+    "connections.environmentAnalysisLoadFailed":
+      "Could not load analyses",
+    "connections.environmentAnalyses": "Analyses",
     "connections.environmentDatabases": "Databases",
     "connections.environmentDatabaseUnavailable":
       "This workspace database is not available on this device",
     "connections.environmentLocalFolder": "Local folder",
     "connections.environmentDataSources": "Data sources",
-    "connections.environmentNoDashboards": "No dashboards yet",
+    "connections.environmentNoAnalyses": "No analyses yet",
     "connections.loadingProjects": "Loading Projects…",
     "connections.unassigned": "Unassigned",
     "connections.dataSourceCatalogNavigation":
@@ -379,7 +379,7 @@ export const connectionsCatalog = defineCatalog(
     "connections.creatingProject": "만드는 중…",
     "connections.projectSetupTitle": "프로젝트 만들기",
     "connections.projectSetupDescription":
-      "프로젝트를 먼저 만든 다음 환경별로 데이터베이스 접근, 소스 코드, 대시보드를 정리합니다.",
+      "프로젝트를 먼저 만든 다음 환경별로 데이터베이스 접근, 소스 코드, 분석 아티클을 정리합니다.",
     "connections.projectName": "프로젝트 이름",
     "connections.projectNamePlaceholder": "예: 고객 포털",
     "connections.firstEnvironment": "첫 환경",
@@ -400,15 +400,15 @@ export const connectionsCatalog = defineCatalog(
       "만든 다음 이 환경 안에 데이터베이스와 소스 코드를 추가합니다.",
     "connections.environmentAddDatabase": "데이터베이스 추가…",
     "connections.environmentAddSource": "데이터 소스 추가…",
-    "connections.environmentDashboardLoadFailed":
-      "대시보드를 불러오지 못했습니다",
-    "connections.environmentDashboards": "대시보드",
+    "connections.environmentAnalysisLoadFailed":
+      "분석을 불러오지 못했습니다",
+    "connections.environmentAnalyses": "분석",
     "connections.environmentDatabases": "데이터베이스",
     "connections.environmentDatabaseUnavailable":
       "이 워크스페이스 데이터베이스를 현재 기기에서 사용할 수 없습니다",
     "connections.environmentLocalFolder": "로컬 폴더",
     "connections.environmentDataSources": "데이터 소스",
-    "connections.environmentNoDashboards": "아직 대시보드가 없습니다",
+    "connections.environmentNoAnalyses": "아직 분석 아티클이 없습니다",
     "connections.loadingProjects": "프로젝트 불러오는 중…",
     "connections.unassigned": "미분류",
     "connections.dataSourceCatalogNavigation":

@@ -34,7 +34,7 @@ const scopedContracts = [
     prefix: "--ds-chart-",
     owners: new Set([
       "src/design-system/scoped-palettes.css",
-      "src/components/DashboardVisualization.tsx",
+      "src/features/analysisArticles/AnalysisArticleVisualization.tsx",
     ]),
   },
   {

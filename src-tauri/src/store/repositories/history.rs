@@ -1,4 +1,4 @@
-//! Scope-pinned query history persistence and dashboard provenance reads.
+//! Scope-pinned query history persistence and Analysis Article provenance reads.
 
 use super::super::*;
 
@@ -207,99 +207,6 @@ impl Store {
         .await?
         .ok_or_else(|| AppError::NotFound(format!("query history {history_id}")))?;
         row_to_history(&row)
-    }
-
-    /// Resolve the initial query provenance and active generation in one SQLite
-    /// snapshot. Callers inspect eligibility before doing any connection pin work.
-    pub(crate) async fn resolve_history_for_shared_artifact_prepare(
-        &self,
-        id: Uuid,
-    ) -> AppResult<ResolvedQueryHistory> {
-        let row = sqlx::query(
-            "SELECT h.*,
-                    active.workspace_id AS pinned_workspace_id,
-                    active.workspace_kind AS pinned_workspace_kind,
-                    active.selected_account_id AS pinned_selected_account_id,
-                    active.account_scope AS pinned_account_scope,
-                    active.scope_generation AS pinned_scope_generation
-             FROM (
-                 SELECT w.id AS workspace_id,
-                        w.kind AS workspace_kind,
-                        account.value AS selected_account_id,
-                        CASE WHEN w.kind = 'personal'
-                             THEN 'personal' ELSE account.value END AS account_scope,
-                        generation.value AS scope_generation
-                 FROM app_settings workspace
-                 JOIN workspaces w
-                   ON workspace.key = 'active_workspace_id'
-                  AND workspace.value = w.id
-                  AND w.lifecycle_state = 'active'
-                 LEFT JOIN app_settings account
-                   ON account.key = 'active_workspace_account_id'
-                 JOIN app_settings generation
-                   ON generation.key = 'active_scope_generation'
-             ) active
-             JOIN connections c
-               ON c.workspace_id = active.workspace_id
-              AND c.deleted_at IS NULL
-             JOIN query_history h
-               ON h.connection_id = c.id
-              AND h.account_scope = active.account_scope
-             WHERE h.id = ?1
-               AND (active.workspace_kind = 'personal'
-                    OR active.selected_account_id IS NOT NULL)
-               AND (active.workspace_kind = 'personal'
-                    OR EXISTS(
-                        SELECT 1 FROM workspace_members m
-                        WHERE m.workspace_id = active.workspace_id
-                          AND m.user_id = active.selected_account_id
-                          AND m.status = 'active'
-                    ))
-               AND (active.workspace_kind = 'personal'
-                    OR c.remote_id IS NOT NULL
-                    OR c.account_user_id = active.selected_account_id)",
-        )
-        .bind(id.to_string())
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("query history {id}")))?;
-        Ok(ResolvedQueryHistory {
-            history: row_to_history(&row)?,
-            scope: row_to_active_resource_scope(&row)?,
-        })
-    }
-
-    /// Re-read query provenance from the same SQLite snapshot that proves the
-    /// retained connection authority is current. The captured initial scope defeats
-    /// cross-process A → B → A changes before pinning.
-    pub(crate) async fn get_history_if_current(
-        &self,
-        pin: &PinnedConnection,
-        resolved: &ResolvedQueryHistory,
-    ) -> AppResult<HistoryEntry> {
-        if resolved.scope != pin.scope || resolved.history.connection_id != pin.connection_id {
-            return Err(dashboard_scope_changed());
-        }
-        let mut tx = self.pool.begin().await?;
-        if !Self::is_pin_current_with_access(&mut *tx, pin, true).await? {
-            return Err(dashboard_scope_changed());
-        }
-        let row = sqlx::query(
-            "SELECT h.* FROM query_history h
-             JOIN connections c ON c.id = h.connection_id
-             WHERE h.id = ?1 AND h.connection_id = ?2 AND h.account_scope = ?3
-               AND c.workspace_id = ?4 AND c.deleted_at IS NULL",
-        )
-        .bind(resolved.history.id.to_string())
-        .bind(pin.connection_id.to_string())
-        .bind(pin.scope.account_scope.storage_key())
-        .bind(pin.scope.workspace_id.to_string())
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("query history {}", resolved.history.id)))?;
-        let history = row_to_history(&row)?;
-        tx.commit().await?;
-        Ok(history)
     }
 }
 

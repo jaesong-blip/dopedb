@@ -2,7 +2,7 @@
 
 use std::future::Future;
 
-use crate::kernel::identity::{OperationId, QueryRunId, TerminalSessionId};
+use crate::kernel::identity::OperationId;
 use crate::kernel::TerminalAuthority;
 
 use super::domain::{
@@ -69,29 +69,4 @@ pub(crate) trait DesktopQueryPort: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<Self::StreamReceipt, Self::RunError>> + Send
     where
         F: FnMut(DesktopSqlStreamReady) -> Result<(), DesktopSqlStreamSinkError> + Send;
-}
-
-/// Minimal capability a dashboard needs to authorize a Terminal query-run source.
-pub(crate) trait QueryRunAuthorizationPort: Send + Sync + 'static {
-    fn authorize(
-        &self,
-        query_run_id: QueryRunId,
-        authority: &TerminalAuthority,
-    ) -> Result<(), QueryRunAuthorizationError>;
-}
-
-/// Producer-only capability that records a successfully completed Terminal query run.
-pub(crate) trait QueryRunProvenancePort: Send + Sync + 'static {
-    fn register(
-        &self,
-        query_run_id: QueryRunId,
-        terminal_session_id: TerminalSessionId,
-        connection_id: crate::kernel::identity::ConnectionId,
-    );
-}
-
-/// Pure authorization outcome for an in-memory query-run capability lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum QueryRunAuthorizationError {
-    NotAuthorized,
 }

@@ -200,7 +200,7 @@ pub(super) const fn operation_kind_str(value: OperationKind) -> &'static str {
         OperationKind::Import => "import",
         OperationKind::Export => "export",
         OperationKind::Migration => "migration",
-        OperationKind::DashboardCreate => "dashboard_create",
+        OperationKind::RetiredArtifact => "retired_artifact",
         OperationKind::PluginAction => "plugin_action",
         OperationKind::ProviderAction => "provider_action",
     }
@@ -219,7 +219,7 @@ pub(super) fn parse_operation_kind(value: &str) -> Option<OperationKind> {
         "import" => Some(OperationKind::Import),
         "export" => Some(OperationKind::Export),
         "migration" => Some(OperationKind::Migration),
-        "dashboard_create" => Some(OperationKind::DashboardCreate),
+        "retired_artifact" => Some(OperationKind::RetiredArtifact),
         "plugin_action" => Some(OperationKind::PluginAction),
         "provider_action" => Some(OperationKind::ProviderAction),
         _ => None,

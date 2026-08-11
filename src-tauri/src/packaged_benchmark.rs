@@ -295,7 +295,7 @@ pub(crate) async fn run_packaged_benchmark_backend(
             "agent-tools" => action == "agent-skill-reload",
             "long-lived-data" => matches!(
                 action.as_str(),
-                "history-10k" | "audit-100k" | "local-history-50" | "dashboard-multi-tile"
+                "history-10k" | "audit-100k" | "local-history-50" | "analysis-article-multi-block"
             ),
             _ => false,
         };
@@ -647,20 +647,19 @@ async fn prepare_long_lived_data(store: &crate::store::Store) -> AppResult<()> {
         .execute(&mut *transaction)
         .await?;
     }
-    for tile in 0_i64..8 {
+    for block in 0_i64..8 {
         sqlx::query(
-            r#"INSERT INTO dashboards
-              (id, connection_id, title, description, sql, visualization_json,
-               workspace_id, revision, sync_status, state, created_at, updated_at)
-             VALUES (?1, ?2, ?3, '', ?4, ?5, ?6, 1, 'local', 'published', ?7, ?7)"#,
+            r#"INSERT INTO analysis_article_local_results
+              (workspace_id, account_scope, article_id, article_revision, run_id,
+               result_hash, nonce, ciphertext, created_at, expires_at)
+             VALUES (?1, 'benchmark-account', ?2, 1, ?3, ?4, zeroblob(24),
+                     zeroblob(65536), ?5, '2027-01-01T00:00:00Z')"#,
         )
-        .bind(format!("bed00000-0000-0000-0000-00000000da{tile:02}"))
-        .bind(CONNECTION_ID)
-        .bind(format!("Benchmark tile {tile}"))
-        .bind(format!("SELECT {tile}"))
-        .bind(r#"{"schemaVersion":1,"kind":"table","xColumn":null,"yColumns":[]}"#)
         .bind(WORKSPACE_ID)
-        .bind(format!("2026-01-01T00:01:{tile:02}Z"))
+        .bind(format!("bed00000-0000-0000-0000-00000000aa{block:02}"))
+        .bind(format!("bed00000-0000-0000-0000-00000000ab{block:02}"))
+        .bind(format!("{:064x}", block + 1))
+        .bind(format!("2026-01-01T00:01:{block:02}Z"))
         .execute(&mut *transaction)
         .await?;
     }
@@ -1246,9 +1245,9 @@ async fn packaged_read_receipt(
             50,
             21,
         ),
-        "dashboard-multi-tile" => (
-            "SELECT revision, length(sql), length(visualization_json) \
-             FROM dashboards WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 8",
+        "analysis-article-multi-block" => (
+            "SELECT article_revision, length(ciphertext), length(result_hash) \
+             FROM analysis_article_local_results ORDER BY created_at DESC LIMIT 8",
             8,
             8,
         ),
@@ -1341,7 +1340,7 @@ const ACTION_NAMES: [&str; 37] = [
     "history-10k",
     "audit-100k",
     "local-history-50",
-    "dashboard-multi-tile",
+    "analysis-article-multi-block",
     "erd-drag-1k",
     "grid-and-pane-resize",
     "workbench-scroll-continuity",

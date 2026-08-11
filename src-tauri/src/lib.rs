@@ -34,6 +34,8 @@ pub use error::{AppError, AppResult};
 use std::time::Duration;
 
 use tauri::{Emitter, Manager};
+#[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+use tauri_plugin_autostart::ManagerExt;
 
 pub fn run() {
     #[cfg(feature = "packaged-benchmark")]
@@ -57,7 +59,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
         if !args
             .iter()
-            .any(|argument| argument == "--signal-runner-background")
+            .any(|argument| features::automation_runner::is_background_launch_argument(argument))
         {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -68,7 +70,7 @@ pub fn run() {
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_autostart::init(
         tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-        Some(vec!["--signal-runner-background"]),
+        Some(vec![features::automation_runner::BACKGROUND_ARGUMENT]),
     ));
     builder
         .plugin(tauri_plugin_dialog::init())
@@ -79,9 +81,13 @@ pub fn run() {
         .manage(state)
         .setup(|app| {
             let state = app.state::<state::AppState>();
-            if std::env::args().any(|argument| argument == "--signal-runner-background")
-                && state.signal_runner.background_allowed()
-            {
+            let background_launch = std::env::args().any(|argument| {
+                features::automation_runner::is_background_launch_argument(&argument)
+            });
+            if background_launch && state.analysis_runner.background_allowed() {
+                if let Err(error) = app.autolaunch().enable() {
+                    tracing::warn!(%error, "could not migrate background automation registration");
+                }
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.hide();
                 }
@@ -148,8 +154,8 @@ pub fn run() {
             features::agents::transport::list_retired_chat_archive_threads,
             features::agents::transport::get_retired_chat_archive_messages,
             features::workspaces::transport::workspace_feature_state,
-            features::signals::transport::signal_runner_settings,
-            features::signals::transport::set_signal_runner_background_allowed,
+            features::automation_runner::transport::automation_runner_settings,
+            features::automation_runner::transport::set_automation_runner_background_allowed,
             commands::cli_installation_status,
             commands::install_cli,
             commands::skill_status,
@@ -204,9 +210,6 @@ pub fn run() {
             features::knowledge::transport::revoke_knowledge_source,
             features::knowledge::transport::sync_knowledge_source,
             features::knowledge::transport::search_knowledge_graph,
-            features::knowledge::transport::list_funnel_analysis_artifacts,
-            features::knowledge::transport::publish_funnel_analysis_artifact,
-            features::knowledge::transport::run_funnel_analysis_artifact,
             features::knowledge::transport::find_knowledge_graph_path,
             features::knowledge::transport::list_knowledge_mappings,
             features::knowledge::transport::decide_knowledge_mapping,
@@ -237,9 +240,38 @@ pub fn run() {
             features::connections::transport::delete_connection,
             features::connections::transport::test_connection,
             features::connections::transport::test_connection_profile,
-            features::dashboards::transport::list_dashboards,
-            features::dashboards::transport::delete_dashboard,
-            features::dashboards::transport::run_dashboard,
+            features::analysis_articles::transport::run_analysis_article_definition,
+            features::analysis_articles::transport::cancel_analysis_article_definition_run,
+            features::analysis_articles::transport::list_analysis_articles_command,
+            features::analysis_articles::transport::get_analysis_article_command,
+            features::analysis_articles::transport::create_analysis_article_command,
+            features::analysis_articles::transport::update_analysis_article_command,
+            features::analysis_articles::transport::transition_analysis_article_command,
+            features::analysis_articles::transport::transfer_analysis_article_command,
+            features::analysis_articles::transport::restore_analysis_article_revision_command,
+            features::analysis_articles::transport::delete_analysis_article_command,
+            features::analysis_articles::transport::get_local_analysis_article_result_command,
+            features::analysis_articles::transport::list_analysis_article_revisions_command,
+            features::analysis_articles::transport::list_analysis_runners_command,
+            features::analysis_articles::transport::revoke_analysis_runner_command,
+            features::analysis_articles::transport::list_analysis_publications_command,
+            features::analysis_articles::transport::preview_analysis_publication_command,
+            features::analysis_articles::transport::create_analysis_publication_command,
+            features::analysis_articles::transport::revoke_analysis_publication_command,
+            features::analysis_articles::transport::analysis_publication_url_command,
+            features::analysis_articles::transport::list_analysis_collaborators_command,
+            features::analysis_articles::transport::list_analysis_signals_command,
+            features::analysis_articles::transport::create_analysis_signal_command,
+            features::analysis_articles::transport::update_analysis_signal_command,
+            features::analysis_articles::transport::set_analysis_signal_enabled_command,
+            features::analysis_articles::transport::delete_analysis_signal_command,
+            features::analysis_articles::transport::list_analysis_signal_receipts_command,
+            features::analysis_articles::transport::list_analysis_notifications_command,
+            features::analysis_articles::transport::mark_analysis_notifications_read_command,
+            features::analysis_articles::transport::list_analysis_article_runs_command,
+            features::analysis_articles::transport::get_analysis_article_result_command,
+            features::analysis_articles::transport::run_analysis_article_command,
+            features::analysis_articles::transport::cancel_analysis_article_run,
             features::catalog::transport::get_schema,
             features::catalog::transport::refresh_schema,
             features::catalog::transport::get_catalog_snapshot,
@@ -317,7 +349,7 @@ pub fn run() {
                 && matches!(event, tauri::WindowEvent::CloseRequested { .. })
                 && window
                     .state::<state::AppState>()
-                    .signal_runner
+                    .analysis_runner
                     .background_allowed()
             {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {

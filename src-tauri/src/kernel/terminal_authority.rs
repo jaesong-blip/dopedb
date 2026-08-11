@@ -1,7 +1,7 @@
 //! Immutable authority captured by one in-app Terminal session.
 //!
 //! The capability belongs to the kernel rather than a feature service because query,
-//! document, dashboard, operation, and connection slices all validate the same pin.
+//! document, Analysis Article, operation, and connection slices all validate the same pin.
 
 use crate::kernel::identity::{AccountScopeId, ConnectionId, TerminalSessionId, WorkspaceId};
 

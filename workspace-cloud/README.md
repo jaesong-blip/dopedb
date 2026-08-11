@@ -187,7 +187,7 @@ from that machine; the connector cannot create VPC reachability.
 
 When an admin selects an existing member-local shared connection during a receipt-bound
 provider import, the service converts that connection in place instead of creating a
-second template. Its connection UUID, grants, dashboards, and history references remain
+second template. Its connection UUID, grants, Analysis Articles, and history references remain
 stable; the content and authority revisions advance atomically, and the next desktop
 sync removes obsolete member-local credential references from that device. Personal
 workspaces do not issue managed credentials. Local GCP ADC is created by Google tooling
@@ -221,31 +221,30 @@ are intentionally not leased. A workspace admin must reconnect and re-import the
 instance so current discovery supplies the exact path; the server does not guess a path
 for legacy records.
 
-## Shared dashboard definitions
+## Analysis Articles
 
-Team-workspace dashboards synchronize as secret-free definitions. The hosted contract
-contains the workspace connection id, title, description, SQL, visualization, lifecycle
-state, owner/updater membership ids, and an optimistic revision. It intentionally has
-no result-row, parameter-value, credential, connection URL, or local query-history
-field. Results are always obtained by DopeDB Desktop through the member's current local
-credential binding or short-lived managed lease and stay on that device.
+An Analysis Article is the one shared BI resource for a Project Environment. Its
+immutable definition revisions pin connection and Environment revisions, bounded
+read-only query nodes, typed transforms, semantic metrics, responsive document blocks,
+review evidence, refresh policy, and ownership. Dashboard, Funnel Analysis, and Agent
+Report are migration-only source kinds and have no live route, command, or table.
 
-The collection endpoint is
-`/api/v1/workspaces/:workspaceId/dashboards`; item and immutable revision endpoints are
-under `/:dashboardId` and `/:dashboardId/revisions`. Creates require `If-Match: "0"`;
-updates, publish/archive, restore, ownership transfer, and deletion require the exact
-quoted current revision. Every mutation atomically rechecks the live session,
-membership role, source-connection grant, tenant boundary, and revision before writing
-the current projection, an immutable history row, and a redacted audit event. A stale
-definition update creates a separately owned conflict-copy draft instead of overwriting
-either version. Infrastructure failures remain server errors and are never reported as
-ordinary revision conflicts.
+Database execution remains on a member-owned Desktop runner inside exact current grants.
+The control plane stores only reviewed, bounded, independently encrypted result
+fragments whose declared column sensitivity and masking permit workspace sharing. Team
+readers see the latest successful compatible live result; a failed refresh leaves the
+last successful result visible with explicit freshness and runner health.
 
-The web management surface can inspect definitions and history, publish or archive,
-restore a previous definition as a new draft revision, and transfer ownership to a
-current Editor/Admin/Owner. It does not execute SQL. Desktop synchronizes connections
-before dashboards, keeps local dirty/conflict state, refuses to run archived
-definitions, and reuses the existing read-only dashboard safety boundary for execution.
+The collection endpoint is `/api/v1/workspaces/:workspaceId/analyses`; item, immutable
+revision, run/result, runner/lease, Signal, notification, and publication endpoints are
+nested below it. Every mutation uses optimistic authority checks. A person reviews and
+makes revisions live, enables production scheduling, approves mappings, and publishes
+fixed external snapshots. Public `/analyses/:slug` pages read only immutable snapshot
+payloads and cannot reach a workspace session, SQL, credentials, or refresh commands.
+
+Invalid legacy BI records are preserved in the non-executable migration-failure archive
+for explicit recovery. The one-way migration then drops the legacy projections so a
+second BI model cannot continue accumulating.
 
 ## Trust boundary
 

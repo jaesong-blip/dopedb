@@ -2,7 +2,6 @@ pub(crate) mod app;
 pub(crate) mod catalog;
 pub(crate) mod completion;
 pub(crate) mod connection;
-pub(crate) mod dashboard;
 pub(crate) mod document;
 pub(crate) mod input;
 pub(crate) mod operation;

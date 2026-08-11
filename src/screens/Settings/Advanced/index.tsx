@@ -7,9 +7,9 @@ import {
 } from "../../../features/agents/displayPreferences";
 import { useI18n } from "../../../lib/i18n";
 import {
-  getSignalRunnerSettings,
-  setSignalRunnerBackgroundAllowed,
-} from "../../../features/signals/settings";
+  getAutomationRunnerSettings,
+  setAutomationRunnerBackgroundAllowed,
+} from "../../../features/automationRunner/settings";
 
 export default function AdvancedSettings() {
   const { t } = useI18n();
@@ -20,7 +20,7 @@ export default function AdvancedSettings() {
   const [monitoringError, setMonitoringError] = useState("");
 
   useEffect(() => {
-    void getSignalRunnerSettings().then((settings) => {
+    void getAutomationRunnerSettings().then((settings) => {
       setBackgroundAllowed(settings.backgroundAllowed);
       setLaunchAtLogin(settings.launchAtLogin);
       setMonitoringBusy(false);
@@ -34,7 +34,7 @@ export default function AdvancedSettings() {
     setMonitoringBusy(true);
     setMonitoringError("");
     try {
-      const settings = await setSignalRunnerBackgroundAllowed(allowed);
+      const settings = await setAutomationRunnerBackgroundAllowed(allowed);
       setBackgroundAllowed(settings.backgroundAllowed);
       setLaunchAtLogin(settings.launchAtLogin);
     } catch (error) {

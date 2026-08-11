@@ -43,7 +43,6 @@ uuid_identity!(ConnectionId);
 uuid_identity!(SqlDocumentId);
 uuid_identity!(ErdLayoutId);
 uuid_identity!(ErdVirtualRelationId);
-uuid_identity!(DashboardId);
 uuid_identity!(QueryRunId);
 uuid_identity!(QueryExecutionId);
 uuid_identity!(TerminalSessionId);

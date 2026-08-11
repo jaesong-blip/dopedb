@@ -181,7 +181,7 @@ const glyphs = {
       <path d="M8 8H3V3M16 8h5V3M8 16H3v5M16 16h5v5" />
     </>
   ),
-  dashboard: (
+  grid: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1" />
       <rect x="14" y="3" width="7" height="4" rx="1" />

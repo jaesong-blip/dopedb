@@ -21,9 +21,8 @@ import {
   invitation,
   member,
   user,
+  workspaceAnalysisArticle,
   workspaceAuditEvent,
-  workspaceDashboard,
-  workspaceReport,
 } from "../../../../../../lib/schema";
 import { authorizeWorkspace } from "../../../../../../lib/workspace-authorization";
 
@@ -177,28 +176,18 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
   const canOwnSharedContent = body.role === "editor" || body.role === "admin";
   if (!canOwnSharedContent) {
-    const [ownedDashboard, ownedReport] = await Promise.all([
-      db.query.workspaceDashboard.findFirst({
-        where: and(
-          eq(workspaceDashboard.organizationId, workspaceId),
-          eq(workspaceDashboard.ownerMemberId, existing.id),
-          isNull(workspaceDashboard.deletedAt),
-        ),
-        columns: { id: true },
-      }),
-      db.query.workspaceReport.findFirst({
-        where: and(
-          eq(workspaceReport.organizationId, workspaceId),
-          eq(workspaceReport.ownerMemberId, existing.id),
-          isNull(workspaceReport.deletedAt),
-        ),
-        columns: { id: true },
-      }),
-    ]);
-    if (ownedDashboard || ownedReport) {
+    const ownedArticle = await db.query.workspaceAnalysisArticle.findFirst({
+      where: and(
+        eq(workspaceAnalysisArticle.organizationId, workspaceId),
+        eq(workspaceAnalysisArticle.ownerMemberId, existing.id),
+        isNull(workspaceAnalysisArticle.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (ownedArticle) {
       await abandonMemberClaim(claim);
       return jsonError(
-        "Transfer this member's active dashboards and reports before changing their role",
+        "Transfer this member's active Analysis Articles before changing their role",
         409,
       );
     }
@@ -284,16 +273,10 @@ export async function PATCH(request: Request, context: RouteContext) {
           ${canOwnSharedContent}
           OR (
             NOT EXISTS (
-              SELECT 1 FROM ${workspaceDashboard} AS owned_dashboard
-              WHERE owned_dashboard."organization_id" = target."organization_id"
-                AND owned_dashboard."owner_member_id" = target."id"
-                AND owned_dashboard."deleted_at" IS NULL
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM ${workspaceReport} AS owned_report
-              WHERE owned_report."organization_id" = target."organization_id"
-                AND owned_report."owner_member_id" = target."id"
-                AND owned_report."deleted_at" IS NULL
+              SELECT 1 FROM ${workspaceAnalysisArticle} AS owned_article
+              WHERE owned_article."organization_id" = target."organization_id"
+                AND owned_article."owner_member_id" = target."id"
+                AND owned_article."deleted_at" IS NULL
             )
           )
         )
@@ -402,28 +385,18 @@ export async function DELETE(request: Request, context: RouteContext) {
       ).catch(() => false);
       return jsonError("Owner cannot be removed", 403);
     }
-    const [ownedDashboard, ownedReport] = await Promise.all([
-      db.query.workspaceDashboard.findFirst({
-        where: and(
-          eq(workspaceDashboard.organizationId, workspaceId),
-          eq(workspaceDashboard.ownerMemberId, existing.id),
-          isNull(workspaceDashboard.deletedAt),
-        ),
-        columns: { id: true },
-      }),
-      db.query.workspaceReport.findFirst({
-        where: and(
-          eq(workspaceReport.organizationId, workspaceId),
-          eq(workspaceReport.ownerMemberId, existing.id),
-          isNull(workspaceReport.deletedAt),
-        ),
-        columns: { id: true },
-      }),
-    ]);
-    if (ownedDashboard || ownedReport) {
+    const ownedArticle = await db.query.workspaceAnalysisArticle.findFirst({
+      where: and(
+        eq(workspaceAnalysisArticle.organizationId, workspaceId),
+        eq(workspaceAnalysisArticle.ownerMemberId, existing.id),
+        isNull(workspaceAnalysisArticle.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (ownedArticle) {
       await abandonMemberClaim(claim);
       return jsonError(
-        "Transfer this member's active dashboards and reports before removing them",
+        "Transfer this member's active Analysis Articles before removing them",
         409,
       );
     }
@@ -493,16 +466,10 @@ export async function DELETE(request: Request, context: RouteContext) {
           AND target."role" <> 'owner'
           AND target."revocation_claim_id" = ${renewedClaim.claimId}::uuid
           AND NOT EXISTS (
-            SELECT 1 FROM ${workspaceDashboard} AS owned_dashboard
-            WHERE owned_dashboard."organization_id" = target."organization_id"
-              AND owned_dashboard."owner_member_id" = target."id"
-              AND owned_dashboard."deleted_at" IS NULL
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM ${workspaceReport} AS owned_report
-            WHERE owned_report."organization_id" = target."organization_id"
-              AND owned_report."owner_member_id" = target."id"
-              AND owned_report."deleted_at" IS NULL
+            SELECT 1 FROM ${workspaceAnalysisArticle} AS owned_article
+            WHERE owned_article."organization_id" = target."organization_id"
+              AND owned_article."owner_member_id" = target."id"
+              AND owned_article."deleted_at" IS NULL
           )
         RETURNING target."id", target."organization_id", target."role"
       ),

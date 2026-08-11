@@ -987,7 +987,7 @@ function LongLivedDataScenario() {
       "history-10k",
       "audit-100k",
       "local-history-50",
-      "dashboard-multi-tile",
+      "analysis-article-multi-block",
     ] as const satisfies readonly PackagedBackendAction[]) {
       await samples(action, ACTION_SAMPLES, async () => {
         const receipt = await runPackagedBenchmarkBackend(action);

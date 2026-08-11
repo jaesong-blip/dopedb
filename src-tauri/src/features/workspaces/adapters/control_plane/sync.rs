@@ -18,16 +18,14 @@ struct RemoteWorkspacePullPage {
 #[serde(deny_unknown_fields)]
 struct RemoteWorkspaceRefresh {
     connections: bool,
-    dashboards: bool,
-    reports: bool,
+    analyses: bool,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RemoteWorkspaceTombstones {
     connections: bool,
-    dashboards: bool,
-    reports: bool,
+    analyses: bool,
 }
 
 pub(super) async fn workspace_pull_page(
@@ -80,11 +78,10 @@ pub(super) async fn workspace_pull_page(
         || (body.reset && (!cursor.is_some_and(|value| body.next_cursor != value) || body.has_more))
         || (cursor.is_none() && (body.reset || body.has_more))
         || ((cursor.is_none() || body.reset)
-            && (!body.refresh.connections || !body.refresh.dashboards || !body.refresh.reports))
+            && (!body.refresh.connections || !body.refresh.analyses))
         || (body.has_more && cursor.is_some_and(|value| body.next_cursor <= value))
         || (body.tombstones.connections && !body.refresh.connections)
-        || (body.tombstones.dashboards && !body.refresh.dashboards)
-        || (body.tombstones.reports && !body.refresh.reports)
+        || (body.tombstones.analyses && !body.refresh.analyses)
     {
         return Err(AppError::Network(
             "workspace sync page violated its ordered contract".into(),
@@ -95,10 +92,8 @@ pub(super) async fn workspace_pull_page(
         has_more: body.has_more,
         reset: body.reset,
         refresh_connections: body.refresh.connections,
-        refresh_dashboards: body.refresh.dashboards,
-        refresh_reports: body.refresh.reports,
+        refresh_analyses: body.refresh.analyses,
         connection_tombstone: body.tombstones.connections,
-        dashboard_tombstone: body.tombstones.dashboards,
-        report_tombstone: body.tombstones.reports,
+        analysis_tombstone: body.tombstones.analyses,
     }))
 }

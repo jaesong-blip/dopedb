@@ -281,6 +281,83 @@
       "when": 1786437194437,
       "tag": "0039_funny_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786463972086,
+      "tag": "0040_public_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786464149698,
+      "tag": "0041_amazing_robin_chapel",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786464202866,
+      "tag": "0042_simple_rocket_racer",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786464595474,
+      "tag": "0043_salty_archangel",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786464971782,
+      "tag": "0044_tough_prodigy",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786465433976,
+      "tag": "0045_tiresome_wither",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786465731926,
+      "tag": "0046_fluffy_squirrel_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786466229604,
+      "tag": "0047_tranquil_adam_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786469362329,
+      "tag": "0048_narrow_purifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786472168095,
+      "tag": "0049_sharp_strong_guy",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786472699679,
+      "tag": "0050_jazzy_nehzno",
+      "breakpoints": true
     }
   ]
 }

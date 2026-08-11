@@ -136,9 +136,6 @@ pub enum KnowledgeNodeKind {
     Column,
     Migration,
     Event,
-    Funnel,
-    Dashboard,
-    Report,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

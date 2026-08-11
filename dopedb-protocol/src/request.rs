@@ -7,7 +7,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// Version-12 command catalog. Any addition, removal, or meaning change requires a
+/// Version-14 command catalog. Any addition, removal, or meaning change requires a
 /// command-schema version bump and an explicitly negotiated compatibility range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CommandName {
@@ -55,12 +55,14 @@ pub enum CommandName {
     QueryRun,
     #[serde(rename = "query.cancel")]
     QueryCancel,
-    #[serde(rename = "dashboard.create")]
-    DashboardCreate,
-    #[serde(rename = "report.propose")]
-    ReportPropose,
-    #[serde(rename = "report.append_evidence")]
-    ReportAppendEvidence,
+    #[serde(rename = "analysis_article.propose")]
+    AnalysisArticlePropose,
+    #[serde(rename = "analysis_article.update_draft")]
+    AnalysisArticleUpdateDraft,
+    #[serde(rename = "analysis_article.draft_run")]
+    AnalysisArticleDraftRun,
+    #[serde(rename = "analysis_article.list")]
+    AnalysisArticleList,
     #[serde(rename = "sql.propose")]
     SqlPropose,
     #[serde(rename = "operation.show")]
@@ -83,10 +85,6 @@ pub enum CommandName {
     KnowledgeDiff,
     #[serde(rename = "funnel.trace")]
     FunnelTrace,
-    #[serde(rename = "funnel.dashboard.propose")]
-    FunnelDashboardPropose,
-    #[serde(rename = "funnel.dashboard.list")]
-    FunnelDashboardList,
     #[serde(rename = "environment.context")]
     EnvironmentContext,
     #[serde(rename = "knowledge.mapping.propose")]
@@ -98,7 +96,7 @@ pub enum CommandName {
 }
 
 impl CommandName {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 39] = [
         Self::Version,
         Self::Status,
         Self::AppOpen,
@@ -121,9 +119,10 @@ impl CommandName {
         Self::QueryPlan,
         Self::QueryRun,
         Self::QueryCancel,
-        Self::DashboardCreate,
-        Self::ReportPropose,
-        Self::ReportAppendEvidence,
+        Self::AnalysisArticlePropose,
+        Self::AnalysisArticleUpdateDraft,
+        Self::AnalysisArticleDraftRun,
+        Self::AnalysisArticleList,
         Self::SqlPropose,
         Self::OperationShow,
         Self::OperationWait,
@@ -135,8 +134,6 @@ impl CommandName {
         Self::KnowledgeEvidence,
         Self::KnowledgeDiff,
         Self::FunnelTrace,
-        Self::FunnelDashboardPropose,
-        Self::FunnelDashboardList,
         Self::EnvironmentContext,
         Self::KnowledgeMappingPropose,
     ];
@@ -165,9 +162,10 @@ impl CommandName {
             Self::QueryPlan => "query.plan",
             Self::QueryRun => "query.run",
             Self::QueryCancel => "query.cancel",
-            Self::DashboardCreate => "dashboard.create",
-            Self::ReportPropose => "report.propose",
-            Self::ReportAppendEvidence => "report.append_evidence",
+            Self::AnalysisArticlePropose => "analysis_article.propose",
+            Self::AnalysisArticleUpdateDraft => "analysis_article.update_draft",
+            Self::AnalysisArticleDraftRun => "analysis_article.draft_run",
+            Self::AnalysisArticleList => "analysis_article.list",
             Self::SqlPropose => "sql.propose",
             Self::OperationShow => "operation.show",
             Self::OperationWait => "operation.wait",
@@ -179,8 +177,6 @@ impl CommandName {
             Self::KnowledgeEvidence => "knowledge.evidence",
             Self::KnowledgeDiff => "knowledge.diff",
             Self::FunnelTrace => "funnel.trace",
-            Self::FunnelDashboardPropose => "funnel.dashboard.propose",
-            Self::FunnelDashboardList => "funnel.dashboard.list",
             Self::EnvironmentContext => "environment.context",
             Self::KnowledgeMappingPropose => "knowledge.mapping.propose",
             Self::Unknown => "unknown",

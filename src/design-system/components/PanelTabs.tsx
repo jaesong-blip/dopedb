@@ -1,6 +1,6 @@
 // Dense tabs for settings and database-property panels. The active state is
 // expressed with ARIA so one canonical class contract serves every consumer.
-import type { ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
 
 export type PanelTab<T extends string> = {
   id: T;
@@ -19,14 +19,46 @@ export function PanelTabs<T extends string>({
   onChange: (tab: T) => void;
   label: string;
 }) {
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const activeTabRef = useRef<HTMLButtonElement>(null);
+  const revealActiveTab = useCallback(() => {
+    const tabList = tabListRef.current;
+    const activeTab = activeTabRef.current;
+    if (!tabList || !activeTab) return;
+
+    const tabLeft = activeTab.offsetLeft;
+    const tabRight = tabLeft + activeTab.offsetWidth;
+    const visibleLeft = tabList.scrollLeft;
+    const visibleRight = visibleLeft + tabList.clientWidth;
+    if (tabLeft < visibleLeft) {
+      tabList.scrollTo({ left: tabLeft, behavior: "auto" });
+    } else if (tabRight > visibleRight) {
+      tabList.scrollTo({
+        left: Math.max(0, tabRight - tabList.clientWidth),
+        behavior: "auto",
+      });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    revealActiveTab();
+    const tabList = tabListRef.current;
+    if (!tabList || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(revealActiveTab);
+    observer.observe(tabList);
+    return () => observer.disconnect();
+  }, [active, revealActiveTab]);
+
   return (
     <div
+      ref={tabListRef}
       className="tw:flex tw:min-w-0 tw:shrink-0 tw:items-end tw:gap-1 tw:overflow-x-auto tw:border-b tw:border-border-subtle tw:bg-card tw:px-3"
       role="tablist"
       aria-label={label}
     >
       {tabs.map((tab) => (
         <button
+          ref={active === tab.id ? activeTabRef : undefined}
           key={tab.id}
           type="button"
           role="tab"

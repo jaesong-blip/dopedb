@@ -403,7 +403,7 @@ pub struct HistoryEntry {
     pub duration_ms: Option<i64>,
     pub error: Option<String>,
     pub executed_at: DateTime<Utc>,
-    /// "agent" | "manual" | "dashboard" | "migration".
+    /// "agent" | "manual" | "analysis_article" | "migration" | surface id.
     pub origin: String,
 }
 

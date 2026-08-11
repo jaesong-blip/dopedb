@@ -11,7 +11,6 @@ import {
 import {
   auditVerify,
   cliInstallationStatus,
-  cancelQuery,
   getCatalog,
   getDatabaseCatalog,
   getDatabaseCatalogOverview,
@@ -41,14 +40,6 @@ import type {
 import { errMessage } from "../ipc/types";
 import { listDrivers } from "../features/connections/tauriAdapter";
 import { connectionId as asConnectionId } from "../features/connections/domain";
-import {
-  dashboardId as asDashboardId,
-  queryExecutionId as asQueryExecutionId,
-} from "../features/dashboards/domain";
-import {
-  listDashboards,
-  runDashboard,
-} from "../features/dashboards/tauriAdapter";
 import { listErdLayouts } from "../features/erd/tauriAdapter";
 import { jobConnectionId } from "../features/jobs/domain";
 import { listJobs } from "../features/jobs/tauriAdapter";
@@ -229,8 +220,6 @@ export const qk = {
   manualTransaction: (connectionId: string) =>
     ["manualTransaction", connectionId] as const,
   manualTransactions: () => ["manualTransactions"] as const,
-  dashboards: (connectionId: string) => ["dashboards", connectionId] as const,
-  dashboardRun: (dashboardId: string) => ["dashboardRun", dashboardId] as const,
   drivers: () => ["drivers"] as const,
   cliInstallation: () => ["cliInstallation"] as const,
   skillStatus: () => ["skillStatus"] as const,
@@ -536,48 +525,6 @@ export function auditEntryQuery(
     gcTime: LOG_GC_MS,
     queryFn: () => getAuditEntry(connectionId, entryId ?? ""),
   });
-}
-
-export function dashboardsQuery(connectionId: string) {
-  return queryOptions({
-    queryKey: qk.dashboards(connectionId),
-    staleTime: LOG_STALE_MS,
-    queryFn: () => listDashboards(asConnectionId(connectionId)),
-  });
-}
-
-// A dashboard rerun is a read against the live database, so it is cached until the user
-// asks for a fresh run. The AbortSignal is wired to the backend's cancel_query so a
-// superseded or explicitly cancelled run stops server-side instead of finishing unseen.
-export function dashboardRunQuery(dashboardId: string | null) {
-  return queryOptions({
-    queryKey: qk.dashboardRun(dashboardId ?? ""),
-    enabled: dashboardId !== null,
-    staleTime: Infinity,
-    gcTime: 60_000,
-    queryFn: ({ signal }) => {
-      const queryId = window.crypto.randomUUID();
-      signal.addEventListener("abort", () => void cancelQuery(queryId), { once: true });
-      return runDashboard(
-        asDashboardId(dashboardId!),
-        asQueryExecutionId(queryId),
-      );
-    },
-  });
-}
-
-// Dashboard tiles subscribe to cached results so already-run previews repaint instantly,
-// but only the explicitly selected tile may touch the live database. Keeping the
-// selection rule here makes it difficult for a canvas refactor to accidentally turn a
-// dashboard overview into an unbounded batch of SQL queries again.
-export function dashboardTileRunQueries(
-  dashboardIds: readonly string[],
-  selectedDashboardId: string | null,
-) {
-  return dashboardIds.map((dashboardId) => ({
-    ...dashboardRunQuery(dashboardId),
-    enabled: dashboardId === selectedDashboardId,
-  }));
 }
 
 // One page of documents — the MongoDB sibling of tableRowsQuery's page half. The exact

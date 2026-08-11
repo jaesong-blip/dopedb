@@ -1,7 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
-
-import type { Dashboard } from "../dashboards/domain";
+import { useEffect, useRef, useState } from "react";
 import type { WorkbenchDocument } from "../workbench/domain";
 import type { AppArea } from "./navigation";
 
@@ -26,13 +23,11 @@ export function useSqlEditorPreload(
 
 export function usePersistentAppArea() {
   const [area, setArea] = useState<AppArea>(() => {
-    const saved = localStorage.getItem("appArea");
-    if (saved === "dashboard") return saved;
-    return localStorage.getItem("tab") === "dashboard" ? "dashboard" : "workspace";
+    return "workspace";
   });
   useEffect(() => {
     localStorage.setItem("appArea", area === "knowledge" ? "workspace" : area);
-    localStorage.setItem("tab", area === "dashboard" ? "dashboard" : "data");
+    localStorage.setItem("tab", "data");
   }, [area]);
   return [area, setArea] as const;
 }
@@ -66,24 +61,6 @@ export function useRestoredWorkbenchState() {
     })(),
   ).current;
   return { legacyAuditOpen, restoredDocumentKind };
-}
-
-export function useDashboardCreation(onCreated: (dashboard: Dashboard) => void) {
-  const [focusId, setFocusId] = useState<string | null>(null);
-  useEffect(() => {
-    const pending = listen<Dashboard>("dashboard:created", (event) => {
-      setFocusId(event.payload.id);
-      onCreated(event.payload);
-    }).catch((error) => console.error("dashboard event listen failed:", error));
-    return () => {
-      void pending.then((unlisten) => unlisten && unlisten());
-    };
-  }, [onCreated]);
-  return {
-    focusId,
-    setFocusId,
-    consumeFocus: useCallback(() => setFocusId(null), []),
-  };
 }
 
 export function useActivitySeen(

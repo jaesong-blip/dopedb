@@ -7,10 +7,10 @@ use crate::connection::ConnectionManager;
 use crate::error::AppResult;
 use crate::features::agents::acp::AcpRuntime;
 use crate::features::agents::runtime::AcpPluginManager;
+use crate::features::analysis_articles::runtime::AnalysisRunnerRuntime;
 use crate::features::knowledge::adapters::local::LocalFolderAdapter;
 use crate::features::knowledge::runtime::KnowledgeWatchRuntime;
 use crate::features::providers;
-use crate::features::signals::runtime::SignalRunnerRuntime;
 use crate::features::terminals::{self, TerminalsFeature};
 use crate::operations::{LocalApprovalAuthority, OperationRuntime};
 use crate::services::ApplicationServices;
@@ -38,7 +38,7 @@ pub struct AppState {
     /// Absolute roots are restored from the OS credential store and never cross IPC.
     pub(crate) local_knowledge_sources: LocalFolderAdapter,
     pub(crate) knowledge_watches: KnowledgeWatchRuntime,
-    pub(crate) signal_runner: SignalRunnerRuntime,
+    pub(crate) analysis_runner: AnalysisRunnerRuntime,
     pub(crate) startup_trace: StartupTrace,
     store: Store,
     post_paint_recovery: PostPaintRecoveryGate,
@@ -50,7 +50,7 @@ impl AppState {
         let store = Store::open().await;
         startup_trace.finish("store_ready", "critical", started, store.is_ok());
         let store = store?;
-        let signal_background_allowed = store.signal_runner_background_allowed().await?;
+        let automation_background_allowed = store.automation_runner_background_allowed().await?;
         let (operation, local_operation_approval) = OperationRuntime::new(&store);
         let providers = providers::compose(store.clone(), operation.clone());
         let connections = ConnectionManager::with_authorities(
@@ -97,7 +97,7 @@ impl AppState {
             local_operation_approval,
             local_knowledge_sources: LocalFolderAdapter::new(),
             knowledge_watches: KnowledgeWatchRuntime::default(),
-            signal_runner: SignalRunnerRuntime::new(signal_background_allowed),
+            analysis_runner: AnalysisRunnerRuntime::new(automation_background_allowed),
             startup_trace,
             store,
             post_paint_recovery: PostPaintRecoveryGate::new(),
@@ -117,7 +117,7 @@ impl AppState {
         let skills = self.skills.clone();
         let agent_plugins = self.agent_plugins.clone();
         let knowledge_watches = self.knowledge_watches.clone();
-        let signal_runner = self.signal_runner.clone();
+        let analysis_runner = self.analysis_runner.clone();
         tauri::async_runtime::spawn(async move {
             let started = trace.stage_started();
             let acp = store.recover_interrupted_agent_acp_sessions().await;
@@ -132,24 +132,15 @@ impl AppState {
             if let Err(error) = &jobs {
                 tracing::error!(%error, "post-paint Job recovery failed");
             }
-            signal_runner.start(app.clone());
+            analysis_runner.start(app.clone());
             let succeeded = acp.is_ok() && jobs.is_ok();
             if succeeded {
                 let started = trace.stage_started();
-                let reports = services.report.clone();
                 crate::broker::start(broker, services, Some(skills), app.clone());
                 trace.finish("broker_start", "post_paint", started, true);
                 let update_app = app.clone();
                 tauri::async_runtime::spawn(async move {
                     agent_plugins.update_installed(&update_app).await;
-                });
-                tauri::async_runtime::spawn(async move {
-                    if let Err(error) = reports.replay_pending_active().await {
-                        tracing::warn!(
-                            error_kind = error.kind(),
-                            "Agent report replay deferred after startup"
-                        );
-                    }
                 });
                 let watch_app = app.clone();
                 tauri::async_runtime::spawn(async move {

@@ -1,6 +1,6 @@
 # DopeDB Product Positioning
 
-Status: accepted product decision, 2026-08-05.
+Status: accepted product decision, updated 2026-08-12.
 
 This document owns DopeDB's market category, competitive boundary, and public
 message. Architecture documents prove how the promise is enforced; the landing
@@ -14,9 +14,11 @@ It is not positioned as a universal desktop database client, a text-to-SQL
 assistant, or a general-purpose MCP server. The desktop client is the local
 execution and approval console. The hosted workspace is the control plane for
 shared connection identity, membership, policy, provider resources, revisions,
-and collaboration audit. Database traffic continues to run locally.
+bounded Analysis Article result fragments, and collaboration audit. Database
+traffic continues to run through an exact-grant Desktop runner; the hosted
+service does not become a database proxy.
 
-The product promise has four parts:
+The product promise has five parts:
 
 1. A team shares a secretless connection definition, not a database password.
 2. Each member uses an individual local credential or receives a least-privilege,
@@ -25,6 +27,9 @@ The product promise has four parts:
    account, connection revision, and policy boundary.
 4. Risky execution is observable, approvable, stoppable, and recoverable, with an
    immutable operation and receipt trail.
+5. A team can keep one versioned Analysis Article current from several exact
+   database grants, inspect the lineage of every metric, and publish only an
+   explicitly reviewed fixed snapshot outside the workspace.
 
 ## Audience and job
 
@@ -67,6 +72,14 @@ system:
 | Query confirmation | Immutable proposal, exact approval, run claim, outcome receipt |
 | Local activity log | Local execution audit plus scoped collaboration audit |
 | Generic cloud connection | Provider-native discovery, issuance, revoke, drift, and lifecycle |
+| Generic dashboard builder | Versioned Analysis Article with exact-source lineage, bounded live results, human publication, and deterministic blocks |
+
+Analysis Article is the only BI collaboration domain. Dashboard, Funnel Analysis,
+and Agent Report are migration sources, not separate product categories. Signal
+rules attach to a published article metric. Flexibility comes from the closed,
+versioned block and transform registries in
+[`adr/0007-analysis-article-bi-domain.md`](adr/0007-analysis-article-bi-domain.md),
+not arbitrary executable widgets or hosted cross-database SQL federation.
 
 Do not chase a competitor's driver count or general database-management feature
 list. A new engine or provider is justified only by verified user demand after the
@@ -117,9 +130,11 @@ open roadmap work is complete:
 - general provider inventory/import and all revoke/drift reconciliation;
 - full bidirectional resource sync, KMS wrapping, backup/restore, or self-service
   workspace deletion;
-- shared dashboard and Agent report publishing;
-- GitHub/Local Folder Project Knowledge, environment-scoped multi-database Agent
-  analysis, funnel dashboards, or local signal monitoring;
+- packaged two-member production validation of the completed Analysis Article
+  migration, scheduled Desktop runner, shared bounded results, and fixed public
+  publication flow;
+- the remaining GitHub/Local Folder Project Knowledge and exact Environment source
+  scope gates required by Analysis Articles;
 - bundled Node and independently installed first-party ACP adapter distribution;
 - arbitrary cloud providers, database engines, or provider branching abstractions.
 
@@ -132,8 +147,9 @@ When work competes for time, use this order:
 3. Strengthen the exact Agent authority, approval, stop, result, and recovery loop.
 4. Bind GitHub and Local Folder evidence to an immutable Project Knowledge graph,
    then make Project Environment the exact multi-database and source revision scope.
-5. Complete shared dashboards, durable Agent reports, funnel publication, and local
-   signal monitoring only on top of that environment boundary.
+5. Complete the Analysis Article archive, exact-source multi-database transforms,
+   Desktop refresh runner, bounded team results, fixed public publications, and
+   article metric signals only on top of that environment boundary.
 6. Deepen schema introspection where it improves Agent judgment.
 
 General local-client convenience, driver breadth, visual object authoring, built-in

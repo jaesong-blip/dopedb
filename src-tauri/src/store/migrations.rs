@@ -298,7 +298,7 @@ CREATE TABLE IF NOT EXISTS query_history (
     duration_ms   INTEGER,
     error         TEXT,
     executed_at   TEXT NOT NULL,
-    origin        TEXT NOT NULL            -- agent|manual|dashboard|migration
+    origin        TEXT NOT NULL            -- agent|manual|analysis_article|migration|surface id
 );
 CREATE INDEX IF NOT EXISTS idx_history_conn ON query_history(connection_id, executed_at);
 
@@ -359,7 +359,7 @@ CREATE TABLE IF NOT EXISTS operations (
                                  'read_query', 'document_read', 'write_sql', 'ddl',
                                  'privilege', 'sql_script', 'table_data_change',
                                  'schema_change', 'import', 'export', 'migration',
-                                 'dashboard_create', 'plugin_action', 'provider_action'
+                                 'retired_artifact', 'plugin_action', 'provider_action'
                              )),
     payload_schema_version   INTEGER NOT NULL CHECK(payload_schema_version > 0),
     payload_json             TEXT NOT NULL CHECK(json_valid(payload_json)),
@@ -570,102 +570,57 @@ CREATE TABLE IF NOT EXISTS sql_document_revisions (
 CREATE INDEX IF NOT EXISTS idx_sql_document_revisions_recent
     ON sql_document_revisions(document_id, local_revision DESC);
 
-CREATE TABLE IF NOT EXISTS dashboards (
-    id                 TEXT PRIMARY KEY,
-    connection_id      TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
-    title              TEXT NOT NULL,
-    description        TEXT NOT NULL DEFAULT '',
-    sql                TEXT NOT NULL,
-    visualization_json TEXT NOT NULL,
-    workspace_id       TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
-                       REFERENCES workspaces(id),
-    remote_id          TEXT,
-    remote_revision    INTEGER,
-    revision           INTEGER NOT NULL DEFAULT 1,
-    sync_status        TEXT NOT NULL DEFAULT 'local',
-    state              TEXT NOT NULL DEFAULT 'draft'
-                       CHECK(state IN ('draft', 'published', 'archived')),
-    owner_member_id    TEXT,
-    updated_by_member_id TEXT,
-    pending_account_user_id TEXT,                 -- exact local author for outbox replay
-    deleted_at         TEXT,
-    created_at         TEXT NOT NULL,
-    updated_at         TEXT NOT NULL,
-    CHECK(remote_revision IS NULL OR remote_revision > 0)
+-- Local recovery for privacy-minimized Analysis Article block fragments. The
+-- content is authenticated-encrypted with a device key held by the OS credential
+-- store; only authority metadata, nonce, ciphertext, and retention timestamps are
+-- representable here. This table never participates in workspace sync.
+CREATE TABLE IF NOT EXISTS analysis_article_local_results (
+    workspace_id     TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    account_scope    TEXT NOT NULL CHECK(account_scope <> ''),
+    article_id       TEXT NOT NULL,
+    article_revision INTEGER NOT NULL CHECK(article_revision > 0),
+    run_id           TEXT NOT NULL,
+    result_hash      TEXT NOT NULL
+                     CHECK(length(result_hash) = 64
+                       AND result_hash NOT GLOB '*[^0-9a-f]*'),
+    nonce            BLOB NOT NULL CHECK(length(nonce) = 24),
+    ciphertext       BLOB NOT NULL
+                     CHECK(length(ciphertext) > 16 AND length(ciphertext) <= 17825792),
+    created_at       TEXT NOT NULL,
+    expires_at       TEXT NOT NULL,
+    PRIMARY KEY (workspace_id, account_scope, article_id, run_id)
 );
-CREATE INDEX IF NOT EXISTS idx_dashboards_conn_updated
-    ON dashboards(connection_id, updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_dashboards_workspace_sync
-    ON dashboards(workspace_id, sync_status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analysis_article_local_result_latest
+    ON analysis_article_local_results(
+        workspace_id, account_scope, article_id, created_at DESC
+    );
+CREATE INDEX IF NOT EXISTS idx_analysis_article_local_result_expiry
+    ON analysis_article_local_results(expires_at);
 
--- One shared dashboard definition can be cached for several signed-in accounts,
--- while each account can see a different subset due to its role and connection
--- grants. This payload-free map prevents one account's pull from erasing or exposing
--- another account's authorized offline projection.
-CREATE TABLE IF NOT EXISTS workspace_dashboard_visibility (
-    dashboard_id   TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
-    account_user_id TEXT NOT NULL CHECK(account_user_id <> ''),
-    last_seen_at   TEXT NOT NULL,
-    PRIMARY KEY (dashboard_id, account_user_id)
+-- Device-local baseline samples for live Analysis Article signals. Values are
+-- deliberately absent from workspace synchronization and hosted receipts.
+CREATE TABLE IF NOT EXISTS analysis_signal_metric_samples (
+    workspace_id      TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    account_user_id   TEXT NOT NULL CHECK(account_user_id <> ''),
+    signal_id         TEXT NOT NULL,
+    signal_revision   INTEGER NOT NULL CHECK(signal_revision > 0),
+    scheduled_at      TEXT NOT NULL,
+    evaluated_at      TEXT NOT NULL,
+    metric_value      REAL,
+    sample_count      INTEGER NOT NULL CHECK(sample_count >= 0),
+    observed_state    TEXT NOT NULL
+                      CHECK(observed_state IN ('normal', 'firing', 'no_data', 'error', 'stale')),
+    schema_fingerprint TEXT NOT NULL
+                      CHECK(length(schema_fingerprint) = 64
+                        AND schema_fingerprint NOT GLOB '*[^0-9a-f]*'),
+    PRIMARY KEY (
+        workspace_id, account_user_id, signal_id, signal_revision, scheduled_at
+    )
 );
-CREATE INDEX IF NOT EXISTS idx_workspace_dashboard_visibility_account
-    ON workspace_dashboard_visibility(account_user_id, dashboard_id);
-
--- Environment-wide funnel analysis stores only a bounded, secret-free definition.
--- Result rows, credentials, ACP transcripts, and local provider handles have no
--- representable column. The copied tile definitions retain exact dashboard and
--- connection revisions so schema or grant drift fails visibly on rerun.
-CREATE TABLE IF NOT EXISTS funnel_analysis_artifacts (
-    id                     TEXT NOT NULL,
-    workspace_id           TEXT NOT NULL REFERENCES workspaces(id),
-    account_user_id        TEXT NOT NULL CHECK(account_user_id <> ''),
-    project_environment_id TEXT NOT NULL,
-    environment_revision   INTEGER NOT NULL CHECK(environment_revision > 0),
-    knowledge_grant_id     TEXT NOT NULL,
-    graph_revision_ids     TEXT NOT NULL CHECK(json_valid(graph_revision_ids)),
-    definition_json        TEXT NOT NULL
-                               CHECK(json_valid(definition_json)
-                                 AND length(definition_json) <= 1048576),
-    state                  TEXT NOT NULL DEFAULT 'draft'
-                               CHECK(state IN ('draft', 'published', 'archived')),
-    revision               INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
-    remote_id              TEXT,
-    remote_revision        INTEGER CHECK(remote_revision IS NULL OR remote_revision > 0),
-    sync_status            TEXT NOT NULL DEFAULT 'local'
-                               CHECK(sync_status IN ('local', 'dirty', 'synced', 'conflict')),
-    deleted_at             TEXT,
-    created_at             TEXT NOT NULL,
-    updated_at             TEXT NOT NULL,
-    PRIMARY KEY (id, account_user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_funnel_analysis_environment_updated
-    ON funnel_analysis_artifacts(
-        workspace_id, account_user_id, project_environment_id, updated_at DESC
-    ) WHERE deleted_at IS NULL;
-
-CREATE TABLE IF NOT EXISTS sync_outbox (
-    id            TEXT PRIMARY KEY,
-    workspace_id  TEXT NOT NULL REFERENCES workspaces(id),
-    resource_type TEXT NOT NULL,
-    resource_id   TEXT NOT NULL,
-    operation     TEXT NOT NULL,       -- upsert|delete
-    revision      INTEGER NOT NULL,
-    payload_json  TEXT,                -- NULL for projected resources; bounded for report replay
-    created_at    TEXT NOT NULL,
-    attempts      INTEGER NOT NULL DEFAULT 0,
-    last_error    TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_sync_outbox_workspace_created
-    ON sync_outbox(workspace_id, created_at);
-
-CREATE TABLE IF NOT EXISTS sync_state (
-    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),
-    pull_cursor  TEXT,
-    last_pulled_at TEXT,
-    last_pushed_at TEXT
-);
-INSERT OR IGNORE INTO sync_state (workspace_id)
-VALUES ('00000000-0000-0000-0000-000000000001');
+CREATE INDEX IF NOT EXISTS idx_analysis_signal_samples_recent
+    ON analysis_signal_metric_samples(
+        workspace_id, account_user_id, signal_id, signal_revision, evaluated_at DESC
+    );
 
 -- Hosted pull checkpoints are account-scoped. Two accounts in the same team
 -- workspace can have different grants and must never share a cursor merely because

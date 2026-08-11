@@ -16,7 +16,9 @@ pub enum OperationKind {
     Import,
     Export,
     Migration,
-    DashboardCreate,
+    /// Non-executable audit identity retained after a removed product artifact is
+    /// migrated out of the active command and storage model.
+    RetiredArtifact,
     PluginAction,
     ProviderAction,
 }

@@ -44,7 +44,7 @@ pub(super) fn document_operation_risk(
 }
 
 /// Terminal CLI audit and history behavior. History is deliberately best-effort for
-/// document reads and keeps the dashboard-compatible `"agent"` origin.
+/// document reads and keeps the shared `"agent"` history origin.
 pub(super) async fn record_agent_execution(
     store: &Store,
     pin: &PinnedConnection,

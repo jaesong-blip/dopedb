@@ -82,14 +82,6 @@ impl Store {
         self.pin_connection_with_access(id, false).await
     }
 
-    /// Dashboard metadata uses the generic view-capable connection pin.
-    pub(crate) async fn pin_connection_for_dashboard(
-        &self,
-        id: Uuid,
-    ) -> AppResult<PinnedConnection> {
-        self.pin_connection_for_view(id).await
-    }
-
     async fn pin_connection_with_access(
         &self,
         id: Uuid,

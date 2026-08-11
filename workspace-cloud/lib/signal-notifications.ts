@@ -2,7 +2,7 @@
 
 import "server-only";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "./db";
 import { env } from "./env";
@@ -10,118 +10,98 @@ import {
   member,
   organization,
   user,
-  workspaceSignalEvaluationReceipt,
-  workspaceSignalNotification,
-  workspaceSignalRule,
-  workspaceAuditEvent,
+  workspaceAnalysisArticle,
+  workspaceAnalysisSignal,
+  workspaceAnalysisSignalNotification,
+  workspaceAnalysisSignalReceipt,
 } from "./schema";
 
-export async function deliverSignalEmailNotifications(
-  organizationId: string,
-  receiptId: string,
-) {
+export async function deliverAnalysisSignalEmailNotifications(limit = 50) {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.WORKSPACE_SIGNAL_FROM?.trim()
     || process.env.WORKSPACE_INVITATION_FROM?.trim();
-  if (!apiKey || !from) return;
+  if (!apiKey || !from) return 0;
   const rows = await db.select({
-    id: workspaceSignalNotification.id,
+    id: workspaceAnalysisSignalNotification.id,
+    organizationId: workspaceAnalysisSignalNotification.organizationId,
     email: user.email,
     workspaceName: organization.name,
-    ruleId: workspaceSignalRule.id,
-    metricSemanticId: workspaceSignalRule.metricSemanticId,
-    severity: workspaceSignalRule.definition,
-    state: workspaceSignalEvaluationReceipt.state,
-    evaluatedAt: workspaceSignalEvaluationReceipt.evaluatedAt,
-  }).from(workspaceSignalNotification)
-    .innerJoin(workspaceSignalEvaluationReceipt, and(
-      eq(workspaceSignalEvaluationReceipt.organizationId, workspaceSignalNotification.organizationId),
-      eq(workspaceSignalEvaluationReceipt.id, workspaceSignalNotification.receiptId),
+    articleId: workspaceAnalysisArticle.id,
+    articleDefinition: workspaceAnalysisArticle.definition,
+    blockId: workspaceAnalysisSignal.blockId,
+    signalDefinition: workspaceAnalysisSignal.definition,
+    state: workspaceAnalysisSignalReceipt.state,
+    evaluatedAt: workspaceAnalysisSignalReceipt.evaluatedAt,
+  }).from(workspaceAnalysisSignalNotification)
+    .innerJoin(workspaceAnalysisSignalReceipt, and(
+      eq(workspaceAnalysisSignalReceipt.organizationId, workspaceAnalysisSignalNotification.organizationId),
+      eq(workspaceAnalysisSignalReceipt.id, workspaceAnalysisSignalNotification.receiptId),
     ))
-    .innerJoin(workspaceSignalRule, and(
-      eq(workspaceSignalRule.organizationId, workspaceSignalEvaluationReceipt.organizationId),
-      eq(workspaceSignalRule.id, workspaceSignalEvaluationReceipt.ruleId),
+    .innerJoin(workspaceAnalysisSignal, and(
+      eq(workspaceAnalysisSignal.organizationId, workspaceAnalysisSignalReceipt.organizationId),
+      eq(workspaceAnalysisSignal.id, workspaceAnalysisSignalReceipt.signalId),
+    ))
+    .innerJoin(workspaceAnalysisArticle, and(
+      eq(workspaceAnalysisArticle.organizationId, workspaceAnalysisSignal.organizationId),
+      eq(workspaceAnalysisArticle.id, workspaceAnalysisSignal.articleId),
     ))
     .innerJoin(member, and(
-      eq(member.organizationId, workspaceSignalNotification.organizationId),
-      eq(member.id, workspaceSignalNotification.recipientMemberId),
+      eq(member.organizationId, workspaceAnalysisSignalNotification.organizationId),
+      eq(member.id, workspaceAnalysisSignalNotification.recipientMemberId),
     ))
     .innerJoin(user, eq(user.id, member.userId))
-    .innerJoin(organization, eq(organization.id, workspaceSignalNotification.organizationId))
+    .innerJoin(organization, eq(organization.id, workspaceAnalysisSignalNotification.organizationId))
     .where(and(
-      eq(workspaceSignalNotification.organizationId, organizationId),
-      eq(workspaceSignalNotification.receiptId, receiptId),
-      eq(workspaceSignalNotification.channel, "email"),
-      eq(workspaceSignalNotification.state, "pending"),
-    ));
+      eq(workspaceAnalysisSignalNotification.channel, "email"),
+      eq(workspaceAnalysisSignalNotification.state, "pending"),
+    )).limit(Math.max(1, Math.min(limit, 100)));
   for (const row of rows) {
-    const definition = row.severity && typeof row.severity === "object"
-      && !Array.isArray(row.severity) ? row.severity as Record<string, unknown> : {};
-    const severity = typeof definition.severity === "string" ? definition.severity : "warning";
+    const articleDefinition = row.articleDefinition && typeof row.articleDefinition === "object"
+      && !Array.isArray(row.articleDefinition)
+      ? row.articleDefinition as Record<string, unknown> : {};
+    const signalDefinition = row.signalDefinition && typeof row.signalDefinition === "object"
+      && !Array.isArray(row.signalDefinition)
+      ? row.signalDefinition as Record<string, unknown> : {};
+    const articleTitle = typeof articleDefinition.title === "string"
+      ? articleDefinition.title : "Analysis Article";
+    const severity = typeof signalDefinition.severity === "string"
+      ? signalDefinition.severity : "warning";
     const link = `${env.appOrigin()}/settings?workspace=${encodeURIComponent(
-      organizationId,
-    )}&section=monitoring&signal=${encodeURIComponent(row.ruleId)}`;
+      row.organizationId,
+    )}&section=analyses&article=${encodeURIComponent(row.articleId)}&block=${encodeURIComponent(row.blockId)}`;
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         authorization: `Bearer ${apiKey}`,
         "content-type": "application/json",
-        "idempotency-key": `dopedb-signal-${row.id}`,
+        "idempotency-key": `dopedb-analysis-signal-${row.id}`,
       },
       body: JSON.stringify({
         from,
         to: [row.email],
-        subject: `[${severity}] ${row.metricSemanticId} · ${row.state}`,
+        subject: `[${severity}] ${articleTitle} · ${row.state}`,
         text: [
-          `${row.workspaceName} / ${row.metricSemanticId}`,
+          `${row.workspaceName} / ${articleTitle}`,
+          `Block: ${row.blockId}`,
           `State: ${row.state}`,
           `Evaluated: ${row.evaluatedAt.toISOString()}`,
           "",
-          "Metric values and result rows remain on the selected DopeDB Desktop runner.",
+          "Metric values and database rows are intentionally absent from this notification.",
           link,
         ].join("\n"),
       }),
       signal: AbortSignal.timeout(10_000),
     }).catch(() => null);
-    await db.update(workspaceSignalNotification).set({
+    await db.update(workspaceAnalysisSignalNotification).set({
       state: response?.ok ? "delivered" : "failed",
       deliveryAttempt: 1,
       deliveredAt: response?.ok ? new Date() : null,
       errorKind: response?.ok ? null : "transport_failed",
     }).where(and(
-      eq(workspaceSignalNotification.organizationId, organizationId),
-      eq(workspaceSignalNotification.id, row.id),
-      eq(workspaceSignalNotification.state, "pending"),
+      eq(workspaceAnalysisSignalNotification.organizationId, row.organizationId),
+      eq(workspaceAnalysisSignalNotification.id, row.id),
+      eq(workspaceAnalysisSignalNotification.state, "pending"),
     ));
   }
-}
-
-export async function markSignalNotificationsRead(input: {
-  organizationId: string;
-  memberId: string;
-  userId: string;
-  notificationIds: readonly string[];
-}) {
-  if (input.notificationIds.length === 0) return 0;
-  return db.transaction(async (tx) => {
-    const updated = await tx.update(workspaceSignalNotification).set({
-      readAt: new Date(),
-    }).where(and(
-      eq(workspaceSignalNotification.organizationId, input.organizationId),
-      eq(workspaceSignalNotification.recipientMemberId, input.memberId),
-      inArray(workspaceSignalNotification.id, [...input.notificationIds]),
-    )).returning({ id: workspaceSignalNotification.id });
-    if (updated.length > 0) {
-      await tx.insert(workspaceAuditEvent).values({
-        organizationId: input.organizationId,
-        actorUserId: input.userId,
-        action: "signal.notifications.read",
-        resourceType: "signal_notification",
-        resourceId: input.memberId,
-        redactedSummary: { count: updated.length },
-        requestId: crypto.randomUUID(),
-      });
-    }
-    return updated.length;
-  });
+  return rows.length;
 }

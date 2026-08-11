@@ -84,20 +84,20 @@ impl Store {
                 AppError::Config("team-local connections require an active account".into())
             })?),
         };
-        let revision: Option<i64> = sqlx::query_scalar(
+        let persisted_revision: Option<i64> = sqlx::query_scalar(
             r#"INSERT INTO connections
                 (id, name, engine, provider, driver_id, host, port, db_name, username, sslmode,
                  extra_params, secret_ref, readonly_default, allow_writes,
                  created_at, updated_at, env, schema_group, workspace_id, account_user_id,
                  revision, sync_status, workspace_access, credential_mode, deleted_at)
                VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?15,?16,?17,
-                       ?18,?19,1,'dirty',?20,?21,NULL)
+                       ?18,?19,1,'local',?20,?21,NULL)
                ON CONFLICT(id) DO UPDATE SET
                  name=?2, engine=?3, provider=?4, driver_id=?5, host=?6, port=?7,
                  db_name=?8, username=?9, sslmode=?10, extra_params=?11, secret_ref=?12,
                  readonly_default=?13, allow_writes=?14, updated_at=?15,
                  env=?16, schema_group=?17, revision=connections.revision + 1,
-                 sync_status='dirty', workspace_access=?20, credential_mode=?21,
+                 sync_status='local', workspace_access=?20, credential_mode=?21,
                  deleted_at=NULL
                WHERE connections.workspace_id = ?18
                  AND connections.account_user_id IS ?19
@@ -127,21 +127,11 @@ impl Store {
         .bind(credential_mode_str(p.credential_mode))
         .fetch_optional(&mut *tx)
         .await?;
-        let revision =
-            revision.ok_or_else(|| AppError::NotFound(format!("connection {}", p.id)))?;
+        persisted_revision.ok_or_else(|| AppError::NotFound(format!("connection {}", p.id)))?;
 
         // Guarantee a safety row for the connection (defaults on first insert).
         ensure_safety_row(&mut tx, p.id).await?;
 
-        enqueue_outbox(
-            &mut tx,
-            workspace_id,
-            "connection",
-            p.id,
-            "upsert",
-            revision,
-        )
-        .await?;
         tx.commit().await?;
 
         Ok(p.clone())

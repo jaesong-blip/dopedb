@@ -90,7 +90,7 @@ export function IdeTopBar({
       launchers={
         <>
         <IdeToolbarLauncher
-          active={area !== "dashboard" && databaseExplorerOpen}
+          active={databaseExplorerOpen}
           onClick={() => {
             if (area === "workspace" || area === "knowledge") {
               onToggleDatabaseExplorer();
@@ -125,12 +125,6 @@ export function IdeTopBar({
           icon="moreHorizontal"
           label={t("ide.action.more")}
         >
-          <ToolbarMenuItem
-            icon="dashboard"
-            onClick={() => onArea("dashboard")}
-          >
-            {t("tabs.dashboard")}
-          </ToolbarMenuItem>
           <ToolbarMenuItem
             icon={localHistoryOpen ? "check" : "history"}
             disabled={!selected || !supportsSql}

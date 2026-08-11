@@ -6,9 +6,10 @@
 
 pub(crate) mod activity;
 pub(crate) mod agents;
+pub(crate) mod analysis_articles;
+pub(crate) mod automation_runner;
 pub(crate) mod catalog;
 pub(crate) mod connections;
-pub(crate) mod dashboards;
 pub(crate) mod documents;
 pub(crate) mod erd;
 pub(crate) mod jobs;
@@ -17,11 +18,9 @@ pub(crate) mod monitoring;
 pub(crate) mod operation_control;
 pub(crate) mod providers;
 pub(crate) mod queries;
-pub(crate) mod reports;
 pub(crate) mod safety_settings;
 pub(crate) mod schema_editor;
 pub(crate) mod scripts;
-pub(crate) mod signals;
 pub(crate) mod sql_documents;
 pub(crate) mod terminals;
 pub(crate) mod workspaces;

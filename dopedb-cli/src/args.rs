@@ -42,8 +42,6 @@ pub(crate) enum Command {
     Document(DocumentArguments),
     /// Plan, execute, or cancel a read-only query.
     Query(QueryArguments),
-    /// Save an exact successful query run as a dashboard.
-    Dashboard(DashboardArguments),
     /// Create an exact SQL operation proposal. This never approves it.
     Sql(SqlArguments),
     /// Inspect, wait for, or cancel a Terminal-owned operation.
@@ -302,54 +300,6 @@ pub(crate) enum QueryCommand {
         #[command(flatten)]
         output: OutputArguments,
     },
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct DashboardArguments {
-    #[command(subcommand)]
-    pub(crate) command: DashboardCommand,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum DashboardCommand {
-    /// Save one successful query run from this Terminal session.
-    Create {
-        #[arg(long)]
-        query_run: String,
-        #[arg(long)]
-        title: String,
-        #[arg(long, default_value = "")]
-        description: String,
-        #[arg(long, value_enum, default_value = "auto")]
-        kind: DashboardKindArgument,
-        #[arg(long)]
-        x_column: Option<String>,
-        #[arg(long)]
-        y_column: Vec<String>,
-        #[command(flatten)]
-        output: OutputArguments,
-    },
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub(crate) enum DashboardKindArgument {
-    Auto,
-    Metric,
-    Line,
-    Bar,
-    Table,
-}
-
-impl From<DashboardKindArgument> for dopedb_protocol::DashboardKind {
-    fn from(value: DashboardKindArgument) -> Self {
-        match value {
-            DashboardKindArgument::Auto => Self::Auto,
-            DashboardKindArgument::Metric => Self::Metric,
-            DashboardKindArgument::Line => Self::Line,
-            DashboardKindArgument::Bar => Self::Bar,
-            DashboardKindArgument::Table => Self::Table,
-        }
-    }
 }
 
 #[derive(Debug, Args)]

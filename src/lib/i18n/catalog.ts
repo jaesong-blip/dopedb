@@ -6,7 +6,6 @@ import { appCatalog } from "./catalogs/app";
 import { approvalCatalog } from "./catalogs/approval";
 import { cliCatalog } from "./catalogs/cli";
 import { connectionsCatalog } from "./catalogs/connections";
-import { dashboardCatalog } from "./catalogs/dashboard";
 import { documentsCatalog } from "./catalogs/documents";
 import { jobsCatalog } from "./catalogs/jobs";
 import { localHistoryCatalog } from "./catalogs/localHistory";
@@ -31,7 +30,6 @@ export const catalogParts = [
   approvalCatalog,
   cliCatalog,
   connectionsCatalog,
-  dashboardCatalog,
   documentsCatalog,
   jobsCatalog,
   localHistoryCatalog,

@@ -13,7 +13,7 @@ export type {
   SqlOperationProposal,
 } from "./generated/contracts";
 
-// Desktop-only channel payload. Broker, CLI, dashboard, and legacy run receipts
+// Desktop-only channel payload. Broker, CLI, and bounded Analysis Article receipts
 // deliberately keep their bounded materialized contract.
 export type SqlStreamBatchWire = {
   operationId: string;

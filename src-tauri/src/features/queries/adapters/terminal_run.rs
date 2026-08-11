@@ -6,7 +6,7 @@ use crate::connection::{
 use crate::error::AppError;
 use crate::executor;
 use crate::kernel::agent_policy::MAX_AGENT_ROWS;
-use crate::kernel::identity::{ConnectionId, OperationId, TerminalSessionId};
+use crate::kernel::identity::{ConnectionId, OperationId};
 use crate::kernel::TerminalAuthority;
 use crate::operations::{
     ensure_operation_scope, ClaimedOperation, OperationActorKind, OperationKind, OperationRuntime,
@@ -17,7 +17,6 @@ use crate::store::{PinnedConnection, Store};
 use uuid::Uuid;
 
 use super::super::domain::{AgentQueryRun, AgentQueryRunEventContext};
-use super::super::ports::QueryRunProvenancePort;
 use super::super::ManualExecutionTarget;
 use super::errors::{
     AgentQueryExecutionFailure, AgentQueryProvenanceFailure, AgentQueryRunError,
@@ -40,7 +39,6 @@ pub(crate) struct PreparedAgentQueryRun {
     decision: String,
     max_rows: u64,
     origin: super::super::domain::AgentQueryInvocationOrigin,
-    terminal_runs: super::provenance::TerminalQueryRunRegistry,
     cancellation: executor::cancel::CancelHandle,
     manual_transactions: crate::features::queries::ManualTransactionRuntime,
 }
@@ -69,7 +67,6 @@ impl PreparedAgentQueryRun {
             decision,
             max_rows,
             origin,
-            terminal_runs,
             cancellation,
             manual_transactions,
         } = self;
@@ -237,14 +234,6 @@ impl PreparedAgentQueryRun {
                 AgentQueryProvenanceFailure::new(error, lease),
             ));
         }
-        if let Some(terminal_session_id) = claimed.record().terminal_session_id {
-            QueryRunProvenancePort::register(
-                &terminal_runs,
-                query_run_id,
-                TerminalSessionId::from(terminal_session_id),
-                ConnectionId::from(operation_pin.connection_id),
-            );
-        }
         Ok(AgentQueryRunReceipt {
             run: AgentQueryRun {
                 connection_id: event_context.connection_id,
@@ -395,7 +384,6 @@ impl QueryPlatformAdapter {
             decision: payload.decision,
             max_rows: payload.max_rows.min(settings.max_rows).min(MAX_AGENT_ROWS),
             origin: payload.origin,
-            terminal_runs: self.terminal_runs.clone(),
             cancellation,
             manual_transactions: self.manual_transactions.clone(),
         })

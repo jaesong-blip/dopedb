@@ -486,7 +486,7 @@ where
     Ok((columns, row_count, truncated, first_row_ms))
 }
 
-async fn stream_byte_capped<S, R>(
+pub(crate) async fn stream_byte_capped<S, R>(
     mut stream: S,
     max_rows: usize,
     max_bytes: usize,

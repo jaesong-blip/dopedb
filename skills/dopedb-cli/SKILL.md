@@ -82,18 +82,19 @@ Use only `find`, `aggregate`, or `count`. The typed classifier rejects write
 stages such as `$out` and `$merge`. Review truncation and operation receipts just
 as you would for SQL results.
 
-## Save a dashboard
+## Build an Analysis Article
 
-Save a result only when the user asks for a shared/recurring dashboard or the
-request clearly includes preserving the result. Do not interrupt every read
-with a dashboard offer. After explicit agreement, use the returned `queryRunId`
-from the same Terminal:
+Analysis Articles are created only inside a Desktop-launched, Environment-pinned
+ACP session. The app-managed `dopedb-desktop-session` server supplies typed
+`analysis_article_draft_run`, `analysis_article_propose`,
+`analysis_article_update_draft`, and `analysis_article_list` tools there. Do not
+try to reproduce that authority with the public CLI, a saved query-run id, or a
+general MCP server.
 
-`dopedb dashboard create --query-run <query-run-id> --title '<title>' --kind auto --json`
-
-Do not substitute SQL, a connection selector, or a query-run identifier from
-another session. Dashboard creation stores the exact successful query provenance;
-it does not run a target-database mutation.
+Outside DopeDB AI Chat, explain that the user must open the target Project /
+Environment in Desktop and ask its Agent to draft the Article. The Agent may
+verify and propose a draft, but a person reviews the result, makes it live,
+enables production refresh, and publishes any external snapshot.
 
 ## Mutations
 
@@ -134,5 +135,5 @@ Read the bundled references when the task needs more detail:
 - `references/safety.md`
 - `references/queries.md`
 - `references/documents.md`
-- `references/dashboards.md`
+- `references/analyses.md`
 - `references/operations.md`

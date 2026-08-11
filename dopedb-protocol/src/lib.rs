@@ -3,30 +3,30 @@
 //! dependencies so adapters cannot accidentally become a second execution path.
 
 pub mod acp_plugin;
+pub mod analysis_article;
+pub mod analysis_article_command;
 pub mod catalog;
 pub mod catalog_command;
 pub mod command;
 pub mod connection;
-pub mod dashboard_command;
 pub mod ddl;
 pub mod discovery;
 pub mod document_command;
 pub mod error;
 pub mod frame;
-pub mod funnel_dashboard_command;
 pub mod knowledge;
 pub mod knowledge_command;
 pub mod operation;
 pub mod operation_command;
 pub mod query_command;
-pub mod report_command;
 pub mod request;
 pub mod response;
-pub mod signal;
 pub mod skill_command;
 pub mod version;
 
 pub use acp_plugin::*;
+pub use analysis_article::*;
+pub use analysis_article_command::*;
 pub use catalog::*;
 pub use catalog_command::*;
 pub use command::{
@@ -36,7 +36,6 @@ pub use command::{
     MAX_AGENT_LAUNCHER_PATH_BYTES,
 };
 pub use connection::*;
-pub use dashboard_command::*;
 pub use ddl::*;
 pub use discovery::{
     RuntimeDiscovery, RuntimeDiscoveryError, RUNTIME_DIRECTORY_NAME, RUNTIME_FILE_NAME,
@@ -45,7 +44,6 @@ pub use discovery::{
 pub use document_command::*;
 pub use error::{ErrorCode, ProtocolError};
 pub use frame::{decode_frame, encode_frame, parse_frame_length, FrameError, FramePayload};
-pub use funnel_dashboard_command::*;
 pub use knowledge::*;
 pub use knowledge_command::*;
 pub use operation::{
@@ -53,10 +51,8 @@ pub use operation::{
 };
 pub use operation_command::*;
 pub use query_command::*;
-pub use report_command::*;
 pub use request::{CommandName, RequestEnvelope, SessionAuthentication};
 pub use response::ResponseEnvelope;
-pub use signal::*;
 pub use skill_command::*;
 pub use version::{
     negotiate_protocol, ProtocolVersionMismatch, COMMAND_SCHEMA_VERSION, PROTOCOL_MAX, PROTOCOL_MIN,

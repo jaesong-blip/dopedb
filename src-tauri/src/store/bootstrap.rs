@@ -1,14 +1,11 @@
-//! Store bootstrap, compatibility migration, and sync-outbox primitives.
+//! Store bootstrap and compatibility migrations.
 
 use super::*;
+use sqlx::Acquire;
 
 /// Version 1 introduced ordered local migrations. Version 2 adds bounded Activity
-/// paging indexes; version 3 adds the server revision and publication metadata
-/// needed to synchronize dashboard definitions without synchronizing result rows.
-/// Version 4 makes Personal dashboards explicitly local and removes historical
-/// outbox rows that could never have a hosted destination. Version 5 replaces the
-/// workspace-only hosted pull checkpoint with an account-scoped cursor table.
-/// Version 6 partitions the shared dashboard cache and pending author by account.
+/// paging indexes. Version 5 replaces the workspace-only hosted pull checkpoint
+/// with an account-scoped cursor table.
 /// Version 7 adds immutable Project Knowledge revisions and an atomically selected
 /// last-good head. Version 8 stores only a bounded source manifest so incremental
 /// extraction can compare content hashes; roots, credentials, and source bodies
@@ -19,9 +16,13 @@ use super::*;
 /// Version 12 persists the exact Knowledge scope of resumable ACP sessions.
 /// Version 13 adds the session's immutable Environment connection allowlist.
 /// Version 14 persists the exact member KnowledgeGrant used by a resumable session.
-/// Version 15 adds bounded Environment funnel analysis definitions without rows.
-/// Version 16 adds local-only Signal metric samples and a stable runner identity.
-pub(super) const LOCAL_SCHEMA_VERSION: i64 = 16;
+/// Versions 15–16 hosted retired Funnel/Signal prototypes. Version 17 removes
+/// every executable local BI projection. Version 18 adds the device-local sample
+/// store used by the Analysis Article runner; definitions remain control-plane
+/// authoritative and result recovery remains encrypted. Version 19 replaces the
+/// final retired Dashboard operation vocabulary while preserving its immutable
+/// approval and event provenance.
+pub(super) const LOCAL_SCHEMA_VERSION: i64 = 19;
 
 pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
     let version: i64 = sqlx::query_scalar("PRAGMA user_version")
@@ -62,12 +63,10 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         migrated = true;
     }
     if version < 3 {
-        add_dashboard_sync_columns(pool).await?;
         set_local_schema_version(pool, 3).await?;
         migrated = true;
     }
     if version < 4 {
-        normalize_personal_dashboard_sync(pool).await?;
         set_local_schema_version(pool, 4).await?;
         migrated = true;
     }
@@ -77,7 +76,6 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         migrated = true;
     }
     if version < 6 {
-        ensure_dashboard_account_scope(pool).await?;
         set_local_schema_version(pool, 6).await?;
         migrated = true;
     }
@@ -122,25 +120,225 @@ pub(super) async fn migrate_local_store(pool: &SqlitePool) -> AppResult<bool> {
         migrated = true;
     }
     if version < 15 {
-        ensure_funnel_analysis_schema(pool).await?;
         set_local_schema_version(pool, 15).await?;
         migrated = true;
     }
     if version < 16 {
-        ensure_signal_runner_schema(pool).await?;
         set_local_schema_version(pool, 16).await?;
+        migrated = true;
+    }
+    if version < 17 {
+        remove_retired_bi_schema(pool).await?;
+        set_local_schema_version(pool, 17).await?;
+        migrated = true;
+    }
+    if version < 18 {
+        ensure_analysis_signal_runtime_schema(pool).await?;
+        set_local_schema_version(pool, 18).await?;
+        migrated = true;
+    }
+    if version < 19 {
+        migrate_retired_operation_kind(pool).await?;
+        set_local_schema_version(pool, 19).await?;
         migrated = true;
     }
     Ok(migrated)
 }
 
-async fn ensure_signal_runner_schema(pool: &SqlitePool) -> AppResult<()> {
+/// Rebuild the immutable parent table once so a removed Dashboard command does not
+/// remain part of the public Operation vocabulary. Approval and event children keep
+/// their original operation ids and hashes; only the retired parent's descriptive
+/// kind is normalized. Foreign-key enforcement is disabled on the one acquired
+/// startup connection only for the parent-table swap and is verified before return.
+async fn migrate_retired_operation_kind(pool: &SqlitePool) -> AppResult<()> {
+    let definition: Option<String> = sqlx::query_scalar(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'operations'",
+    )
+    .fetch_optional(pool)
+    .await?;
+    if !definition
+        .as_deref()
+        .is_some_and(|sql| sql.contains("dashboard_create"))
+    {
+        return Ok(());
+    }
+
+    let mut connection = pool.acquire().await?;
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *connection)
+        .await?;
+    let mut transaction = connection.begin().await?;
+    let rebuild = sqlx::raw_sql(
+        r#"
+        CREATE TABLE operations_retired_kind_migration (
+            id                       TEXT PRIMARY KEY,
+            runtime_id               TEXT NOT NULL,
+            workspace_id             TEXT NOT NULL,
+            account_scope            TEXT NOT NULL,
+            connection_id            TEXT NOT NULL,
+            connection_revision      INTEGER NOT NULL,
+            terminal_session_id      TEXT,
+            actor_kind               TEXT NOT NULL
+                                     CHECK(actor_kind IN (
+                                         'local_user', 'workspace_user', 'agent', 'plugin', 'system'
+                                     )),
+            actor_id                 TEXT NOT NULL CHECK(actor_id <> ''),
+            actor_provenance_json    TEXT NOT NULL CHECK(json_valid(actor_provenance_json)),
+            operation_kind           TEXT NOT NULL
+                                     CHECK(operation_kind IN (
+                                         'read_query', 'document_read', 'write_sql', 'ddl',
+                                         'privilege', 'sql_script', 'table_data_change',
+                                         'schema_change', 'import', 'export', 'migration',
+                                         'retired_artifact', 'plugin_action', 'provider_action'
+                                     )),
+            payload_schema_version   INTEGER NOT NULL CHECK(payload_schema_version > 0),
+            payload_json             TEXT NOT NULL CHECK(json_valid(payload_json)),
+            payload_hash             TEXT NOT NULL
+                                     CHECK(length(payload_hash) = 64
+                                       AND payload_hash NOT GLOB '*[^0-9a-f]*'),
+            schema_fingerprint       TEXT
+                                     CHECK(schema_fingerprint IS NULL OR (
+                                         length(schema_fingerprint) = 64
+                                         AND schema_fingerprint NOT GLOB '*[^0-9a-f]*'
+                                     )),
+            risk_level               TEXT NOT NULL
+                                     CHECK(risk_level IN ('low', 'medium', 'high', 'critical')),
+            preview_json             TEXT NOT NULL CHECK(json_valid(preview_json)),
+            policy_snapshot_json     TEXT NOT NULL CHECK(json_valid(policy_snapshot_json)),
+            policy_revision          TEXT NOT NULL CHECK(policy_revision <> ''),
+            state                    TEXT NOT NULL
+                                     CHECK(state IN (
+                                         'planned', 'pending_approval', 'ready', 'approved',
+                                         'rejected', 'expired', 'cancelled', 'executing',
+                                         'succeeded', 'failed', 'outcome_unknown'
+                                     )),
+            single_use               INTEGER NOT NULL CHECK(single_use IN (0, 1)),
+            idempotency_key          TEXT NOT NULL CHECK(idempotency_key <> ''),
+            expires_at               TEXT,
+            started_at               TEXT,
+            finished_at              TEXT,
+            created_at               TEXT NOT NULL,
+            updated_at               TEXT NOT NULL
+        );
+        INSERT INTO operations_retired_kind_migration (
+            id, runtime_id, workspace_id, account_scope, connection_id,
+            connection_revision, terminal_session_id, actor_kind, actor_id,
+            actor_provenance_json, operation_kind, payload_schema_version,
+            payload_json, payload_hash, schema_fingerprint, risk_level,
+            preview_json, policy_snapshot_json, policy_revision, state,
+            single_use, idempotency_key, expires_at, started_at, finished_at,
+            created_at, updated_at
+        )
+        SELECT
+            id, runtime_id, workspace_id, account_scope, connection_id,
+            connection_revision, terminal_session_id, actor_kind, actor_id,
+            actor_provenance_json,
+            CASE operation_kind
+                WHEN 'dashboard_create' THEN 'retired_artifact'
+                ELSE operation_kind
+            END,
+            payload_schema_version, payload_json, payload_hash, schema_fingerprint,
+            risk_level, preview_json, policy_snapshot_json, policy_revision, state,
+            single_use, idempotency_key, expires_at, started_at, finished_at,
+            created_at, updated_at
+        FROM operations;
+
+        DROP TABLE operations;
+        ALTER TABLE operations_retired_kind_migration RENAME TO operations;
+        CREATE UNIQUE INDEX idx_operations_idempotency
+            ON operations(workspace_id, actor_kind, actor_id, idempotency_key);
+        CREATE INDEX idx_operations_state_expiry
+            ON operations(state, expires_at);
+        CREATE INDEX idx_operations_connection_created
+            ON operations(connection_id, created_at DESC);
+        CREATE INDEX idx_operations_runtime_state
+            ON operations(runtime_id, state);
+
+        CREATE TRIGGER operations_reject_immutable_update
+        BEFORE UPDATE ON operations
+        WHEN OLD.workspace_id IS NOT NEW.workspace_id
+          OR OLD.account_scope IS NOT NEW.account_scope
+          OR OLD.connection_id IS NOT NEW.connection_id
+          OR OLD.connection_revision IS NOT NEW.connection_revision
+          OR OLD.terminal_session_id IS NOT NEW.terminal_session_id
+          OR OLD.actor_kind IS NOT NEW.actor_kind
+          OR OLD.actor_id IS NOT NEW.actor_id
+          OR OLD.actor_provenance_json IS NOT NEW.actor_provenance_json
+          OR OLD.operation_kind IS NOT NEW.operation_kind
+          OR OLD.payload_schema_version IS NOT NEW.payload_schema_version
+          OR OLD.payload_json IS NOT NEW.payload_json
+          OR OLD.payload_hash IS NOT NEW.payload_hash
+          OR OLD.schema_fingerprint IS NOT NEW.schema_fingerprint
+          OR OLD.risk_level IS NOT NEW.risk_level
+          OR OLD.preview_json IS NOT NEW.preview_json
+          OR OLD.policy_snapshot_json IS NOT NEW.policy_snapshot_json
+          OR OLD.policy_revision IS NOT NEW.policy_revision
+          OR OLD.single_use IS NOT NEW.single_use
+          OR OLD.idempotency_key IS NOT NEW.idempotency_key
+          OR OLD.expires_at IS NOT NEW.expires_at
+          OR OLD.created_at IS NOT NEW.created_at
+        BEGIN
+            SELECT RAISE(ABORT, 'operation immutable fields cannot be changed');
+        END;
+        CREATE TRIGGER operations_reject_delete
+        BEFORE DELETE ON operations
+        BEGIN
+            SELECT RAISE(ABORT, 'operation provenance cannot be deleted');
+        END;
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await;
+    let migration = match rebuild {
+        Ok(_) => transaction.commit().await.map_err(AppError::from),
+        Err(error) => {
+            let _ = transaction.rollback().await;
+            Err(AppError::from(error))
+        }
+    };
+    let foreign_keys_restored = sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&mut *connection)
+        .await
+        .map(|_| ())
+        .map_err(AppError::from);
+    migration?;
+    foreign_keys_restored?;
+
+    let violations: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+        .fetch_one(&mut *connection)
+        .await?;
+    if violations != 0 {
+        return Err(AppError::Config(format!(
+            "retired operation migration left {violations} foreign-key violation(s)"
+        )));
+    }
+    Ok(())
+}
+
+async fn remove_retired_bi_schema(pool: &SqlitePool) -> AppResult<()> {
+    let mut tx = pool.begin().await?;
     sqlx::raw_sql(
-        "CREATE TABLE IF NOT EXISTS signal_metric_samples (
-             workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+        "DROP TABLE IF EXISTS workspace_dashboard_visibility;
+         DROP TABLE IF EXISTS funnel_analysis_artifacts;
+         DROP TABLE IF EXISTS signal_metric_samples;
+         DROP TABLE IF EXISTS signal_runner_identity;
+         DROP TABLE IF EXISTS dashboards;
+         DROP TABLE IF EXISTS sync_outbox;
+         DROP TABLE IF EXISTS sync_state;",
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn ensure_analysis_signal_runtime_schema(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::raw_sql(
+        "CREATE TABLE IF NOT EXISTS analysis_signal_metric_samples (
+             workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
              account_user_id TEXT NOT NULL CHECK(account_user_id <> ''),
-             rule_id TEXT NOT NULL,
-             rule_revision INTEGER NOT NULL CHECK(rule_revision > 0),
+             signal_id TEXT NOT NULL,
+             signal_revision INTEGER NOT NULL CHECK(signal_revision > 0),
              scheduled_at TEXT NOT NULL,
              evaluated_at TEXT NOT NULL,
              metric_value REAL,
@@ -151,47 +349,25 @@ async fn ensure_signal_runner_schema(pool: &SqlitePool) -> AppResult<()> {
                  CHECK(length(schema_fingerprint) = 64
                    AND schema_fingerprint NOT GLOB '*[^0-9a-f]*'),
              PRIMARY KEY (
-               workspace_id, account_user_id, rule_id, rule_revision, scheduled_at
+               workspace_id, account_user_id, signal_id, signal_revision, scheduled_at
              )
          );
-         CREATE INDEX IF NOT EXISTS idx_signal_metric_samples_recent
-           ON signal_metric_samples(
-             workspace_id, account_user_id, rule_id, rule_revision, evaluated_at DESC
-           );",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-async fn ensure_funnel_analysis_schema(pool: &SqlitePool) -> AppResult<()> {
-    sqlx::raw_sql(
-        "CREATE TABLE IF NOT EXISTS funnel_analysis_artifacts (
-             id TEXT NOT NULL,
-             workspace_id TEXT NOT NULL REFERENCES workspaces(id),
-             account_user_id TEXT NOT NULL CHECK(account_user_id <> ''),
-             project_environment_id TEXT NOT NULL,
-             environment_revision INTEGER NOT NULL CHECK(environment_revision > 0),
-             knowledge_grant_id TEXT NOT NULL,
-             graph_revision_ids TEXT NOT NULL CHECK(json_valid(graph_revision_ids)),
-             definition_json TEXT NOT NULL
-                 CHECK(json_valid(definition_json) AND length(definition_json) <= 1048576),
-             state TEXT NOT NULL DEFAULT 'draft'
-                 CHECK(state IN ('draft', 'published', 'archived')),
-             revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
-             remote_id TEXT,
-             remote_revision INTEGER CHECK(remote_revision IS NULL OR remote_revision > 0),
-             sync_status TEXT NOT NULL DEFAULT 'local'
-                 CHECK(sync_status IN ('local', 'dirty', 'synced', 'conflict')),
-             deleted_at TEXT,
-             created_at TEXT NOT NULL,
-             updated_at TEXT NOT NULL,
-             PRIMARY KEY (id, account_user_id)
-         );
-         CREATE INDEX IF NOT EXISTS idx_funnel_analysis_environment_updated
-           ON funnel_analysis_artifacts(
-             workspace_id, account_user_id, project_environment_id, updated_at DESC
-           ) WHERE deleted_at IS NULL;",
+         CREATE INDEX IF NOT EXISTS idx_analysis_signal_samples_recent
+           ON analysis_signal_metric_samples(
+             workspace_id, account_user_id, signal_id, signal_revision, evaluated_at DESC
+           );
+         INSERT INTO app_settings (key, value)
+           SELECT 'analysis_runner_device_id', value
+           FROM app_settings
+           WHERE key = 'signal_runner_device_id'
+           ON CONFLICT(key) DO NOTHING;
+         INSERT INTO app_settings (key, value)
+           SELECT 'analysis_runner_background_allowed', value
+           FROM app_settings
+           WHERE key = 'signal_runner_background_allowed'
+           ON CONFLICT(key) DO NOTHING;
+         DELETE FROM app_settings
+           WHERE key IN ('signal_runner_device_id', 'signal_runner_background_allowed');",
     )
     .execute(pool)
     .await?;
@@ -382,80 +558,6 @@ async fn ensure_project_knowledge_schema(pool: &SqlitePool) -> AppResult<()> {
     Ok(())
 }
 
-async fn ensure_dashboard_account_scope(pool: &SqlitePool) -> AppResult<()> {
-    add_column_if_missing(
-        pool,
-        "dashboards",
-        "pending_account_user_id",
-        "ALTER TABLE dashboards ADD COLUMN pending_account_user_id TEXT",
-    )
-    .await?;
-    let mut tx = pool.begin().await?;
-    sqlx::raw_sql(
-        "CREATE TABLE IF NOT EXISTS workspace_dashboard_visibility (
-             dashboard_id    TEXT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
-             account_user_id TEXT NOT NULL CHECK(account_user_id <> ''),
-             last_seen_at    TEXT NOT NULL,
-             PRIMARY KEY (dashboard_id, account_user_id)
-         );
-         CREATE INDEX IF NOT EXISTS idx_workspace_dashboard_visibility_account
-             ON workspace_dashboard_visibility(account_user_id, dashboard_id);",
-    )
-    .execute(&mut *tx)
-    .await?;
-    // Older dashboard outbox rows did not retain the author account. Never replay
-    // such a mutation under whichever account happens to be active after upgrade.
-    sqlx::query(
-        "UPDATE dashboards SET sync_status = 'conflict'
-         WHERE workspace_id IN (SELECT id FROM workspaces WHERE kind = 'team')
-           AND id IN (
-             SELECT resource_id FROM sync_outbox
-             WHERE resource_type = 'dashboard'
-           )
-           AND pending_account_user_id IS NULL",
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "DELETE FROM sync_outbox
-         WHERE resource_type = 'dashboard'
-           AND resource_id IN (
-             SELECT id FROM dashboards
-             WHERE pending_account_user_id IS NULL AND sync_status = 'conflict'
-           )",
-    )
-    .execute(&mut *tx)
-    .await?;
-    // Rebuild only visibility implied by a current active membership and exact
-    // connection binding. Read-only roles receive published definitions only.
-    sqlx::query(
-        "INSERT OR IGNORE INTO workspace_dashboard_visibility
-            (dashboard_id, account_user_id, last_seen_at)
-         SELECT dashboard.id, member.user_id, CURRENT_TIMESTAMP
-         FROM dashboards dashboard
-         JOIN workspace_members member
-           ON member.workspace_id = dashboard.workspace_id
-          AND member.user_id IS NOT NULL
-          AND member.status = 'active'
-         JOIN workspace_connection_bindings binding
-           ON binding.connection_id = dashboard.connection_id
-          AND binding.account_user_id = member.user_id
-         JOIN workspaces workspace
-           ON workspace.id = dashboard.workspace_id AND workspace.kind = 'team'
-         WHERE dashboard.deleted_at IS NULL
-           AND NOT (
-             dashboard.sync_status IN ('dirty', 'conflict')
-             AND dashboard.pending_account_user_id IS NULL
-           )
-           AND (member.role IN ('editor', 'admin', 'owner')
-                OR dashboard.state = 'published')",
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    Ok(())
-}
-
 async fn ensure_workspace_sync_state(pool: &SqlitePool) -> AppResult<()> {
     sqlx::raw_sql(
         "CREATE TABLE IF NOT EXISTS workspace_sync_state (
@@ -465,58 +567,6 @@ async fn ensure_workspace_sync_state(pool: &SqlitePool) -> AppResult<()> {
              last_pulled_at TEXT NOT NULL,
              PRIMARY KEY (workspace_id, account_scope)
          );",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-async fn normalize_personal_dashboard_sync(pool: &SqlitePool) -> AppResult<()> {
-    let mut tx = pool.begin().await?;
-    sqlx::query(
-        "DELETE FROM sync_outbox
-         WHERE resource_type = 'dashboard'
-           AND workspace_id IN (SELECT id FROM workspaces WHERE kind = 'personal')",
-    )
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "UPDATE dashboards
-         SET remote_id = NULL, remote_revision = NULL, sync_status = 'local',
-             owner_member_id = NULL, updated_by_member_id = NULL
-         WHERE workspace_id IN (SELECT id FROM workspaces WHERE kind = 'personal')",
-    )
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    Ok(())
-}
-
-async fn add_dashboard_sync_columns(pool: &SqlitePool) -> AppResult<()> {
-    let columns = [
-        (
-            "remote_revision",
-            "ALTER TABLE dashboards ADD COLUMN remote_revision INTEGER CHECK(remote_revision IS NULL OR remote_revision > 0)",
-        ),
-        (
-            "state",
-            "ALTER TABLE dashboards ADD COLUMN state TEXT NOT NULL DEFAULT 'draft' CHECK(state IN ('draft', 'published', 'archived'))",
-        ),
-        (
-            "owner_member_id",
-            "ALTER TABLE dashboards ADD COLUMN owner_member_id TEXT",
-        ),
-        (
-            "updated_by_member_id",
-            "ALTER TABLE dashboards ADD COLUMN updated_by_member_id TEXT",
-        ),
-    ];
-    for (column, statement) in columns {
-        add_column_if_missing(pool, "dashboards", column, statement).await?;
-    }
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_dashboards_workspace_sync
-         ON dashboards(workspace_id, sync_status, updated_at DESC)",
     )
     .execute(pool)
     .await?;
@@ -662,11 +712,6 @@ pub(super) async fn add_workspace_columns(pool: &SqlitePool) -> AppResult<()> {
         "ALTER TABLE connections ADD COLUMN revision INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE connections ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'local'",
         "ALTER TABLE connections ADD COLUMN deleted_at TEXT",
-        "ALTER TABLE dashboards ADD COLUMN workspace_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'",
-        "ALTER TABLE dashboards ADD COLUMN remote_id TEXT",
-        "ALTER TABLE dashboards ADD COLUMN revision INTEGER NOT NULL DEFAULT 1",
-        "ALTER TABLE dashboards ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'local'",
-        "ALTER TABLE dashboards ADD COLUMN deleted_at TEXT",
         "ALTER TABLE snippets ADD COLUMN workspace_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'",
         "ALTER TABLE snippets ADD COLUMN remote_id TEXT",
         "ALTER TABLE snippets ADD COLUMN revision INTEGER NOT NULL DEFAULT 1",
@@ -965,7 +1010,7 @@ pub(super) async fn ensure_schema_cache_v2(pool: &SqlitePool) -> AppResult<()> {
 pub(super) async fn migrate_workspace_foundation(pool: &SqlitePool) -> AppResult<()> {
     let personal = migrations::PERSONAL_WORKSPACE_ID;
     let mut tx = pool.begin().await?;
-    for table in ["connections", "dashboards", "snippets"] {
+    for table in ["connections", "snippets"] {
         let sql = format!(
             "UPDATE {table} SET workspace_id = ?1 WHERE workspace_id IS NULL OR workspace_id = ''"
         );
@@ -985,39 +1030,7 @@ pub(super) async fn migrate_workspace_foundation(pool: &SqlitePool) -> AppResult
     if repaired_scope.rows_affected() > 0 {
         bump_active_scope_generation(&mut tx).await?;
     }
-    sqlx::query("INSERT OR IGNORE INTO sync_state (workspace_id) VALUES (?1)")
-        .bind(personal)
-        .execute(&mut *tx)
-        .await?;
     tx.commit().await?;
-    Ok(())
-}
-
-/// Queue mutation identity and revision for projected resources. Evidence-bound
-/// reports use a separate strict serializer because they have no desktop projection;
-/// every other caller keeps `payload_json` NULL and can never serialize `secret_ref`.
-pub(super) async fn enqueue_outbox(
-    tx: &mut Transaction<'_, Sqlite>,
-    workspace_id: Uuid,
-    resource_type: &str,
-    resource_id: Uuid,
-    operation: &str,
-    revision: i64,
-) -> AppResult<()> {
-    sqlx::query(
-        "INSERT INTO sync_outbox
-         (id, workspace_id, resource_type, resource_id, operation, revision, payload_json, created_at)
-         VALUES (?1,?2,?3,?4,?5,?6,NULL,?7)",
-    )
-    .bind(Uuid::new_v4().to_string())
-    .bind(workspace_id.to_string())
-    .bind(resource_type)
-    .bind(resource_id.to_string())
-    .bind(operation)
-    .bind(revision)
-    .bind(Utc::now())
-    .execute(&mut **tx)
-    .await?;
     Ok(())
 }
 
@@ -1071,10 +1084,4 @@ pub(super) async fn migrate_audit_no_cascade(pool: &SqlitePool) -> AppResult<()>
     .execute(pool)
     .await?;
     Ok(())
-}
-
-pub(super) fn dashboard_scope_changed() -> AppError {
-    AppError::Blocked {
-        reason: "workspace, connection, or dashboard changed; retry the operation".into(),
-    }
 }

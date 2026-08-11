@@ -21,9 +21,8 @@ pub(crate) use application::{
     WorkspaceCredentialBindingRequest, WorkspaceUseCases,
 };
 pub(crate) use domain::{
-    DashboardOutboxOperation, DashboardPushResult, PendingDashboardMutation, RemoteDashboard,
     RemoteWorkspace, Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount,
-    WorkspaceAuthState, WorkspaceAuthUser, WorkspaceAuthorityFingerprint, WorkspaceDashboardState,
+    WorkspaceAuthState, WorkspaceAuthUser, WorkspaceAuthorityFingerprint,
     WorkspaceDeviceAuthorization, WorkspaceFeatureState, WorkspaceKind, WorkspaceLifecycleState,
     WorkspaceLoginPoll, WorkspaceLoginPollStatus, WorkspacePullPage, WorkspaceRole,
 };

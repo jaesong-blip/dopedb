@@ -17,7 +17,6 @@ import { useI18n } from "../../lib/i18n";
 import type { SchemaConnectionGroup } from "../../lib/schemaDiff";
 import Activity from "../../screens/Activity";
 import { ConnectionForm } from "../../screens/Connections";
-import Dashboards from "../../screens/Dashboards";
 import Documents from "../../screens/Documents";
 import Onboarding from "../../screens/Onboarding";
 import Knowledge from "../../screens/Knowledge";
@@ -59,7 +58,6 @@ type Props = {
   activeDocument: WorkbenchDocument | null;
   activeDocumentId: string | null;
   supportsSql: boolean;
-  dashboardFocusId: string | null;
   knowledgeEnvironmentFocus: KnowledgeEnvironmentFocus | null;
   initialAuditOpen: boolean;
   availableUpdate: Update | null;
@@ -86,7 +84,6 @@ type Props = {
   onNewQuery: () => void;
   onSearchEverywhere: (returnFocus?: HTMLElement | null) => void;
   onOpenActivity: () => void;
-  onDashboardFocusConsumed: () => void;
   onOpenTerminal: () => void;
   onOpenAgentTask: (connectionId: string) => void;
   onSetQueryTitle: (value: string) => void;
@@ -120,7 +117,6 @@ export default function WorkbenchContent(props: Props) {
     activeDocument,
     activeDocumentId,
     supportsSql,
-    dashboardFocusId,
     initialAuditOpen,
     availableUpdate,
   } = props;
@@ -253,13 +249,6 @@ export default function WorkbenchContent(props: Props) {
             connections={connections}
             onSelect={props.onSelectConnection}
             onNew={props.onNewConnection}
-          />
-        ) : area === "dashboard" ? (
-          <Dashboards
-            connection={selected}
-            focusId={dashboardFocusId}
-            onFocusConsumed={props.onDashboardFocusConsumed}
-            onOpenAgent={props.onOpenTerminal}
           />
         ) : !activeDocument ? (
           <WorkbenchEmptyState icon={supportsSql ? "play" : "list"}>

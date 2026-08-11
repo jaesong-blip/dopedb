@@ -11,7 +11,11 @@ pub(super) async fn handle(
         CommandName::DocumentRun => BrokerCapability::DocumentRead,
         CommandName::QueryPlan => BrokerCapability::QueryPlan,
         CommandName::QueryRun => BrokerCapability::QueryRun,
-        CommandName::QueryCancel => BrokerCapability::OperationCancel,
+        CommandName::QueryCancel | CommandName::OperationCancel => {
+            BrokerCapability::OperationCancel
+        }
+        CommandName::SqlPropose => BrokerCapability::SqlPropose,
+        CommandName::OperationShow | CommandName::OperationWait => BrokerCapability::OperationRead,
         _ => return failure(request_id, ErrorCode::InvalidRequest, false),
     };
     let session = match dispatcher.authenticate(request, capability) {
@@ -72,11 +76,160 @@ pub(super) async fn handle(
                     .await,
             )
         }
+        CommandName::SqlPropose => {
+            let arguments = match decode_arguments::<SqlProposeCommand>(request) {
+                Ok(arguments) => arguments,
+                Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            respond(
+                request_id,
+                dispatcher
+                    .sql_propose(&session, arguments, client_protocol_version)
+                    .await,
+            )
+        }
+        CommandName::OperationShow => {
+            let arguments = match decode_arguments::<OperationShowCommand>(request) {
+                Ok(arguments) => arguments,
+                Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            respond(
+                request_id,
+                dispatcher
+                    .show_operation(&session, arguments.operation_id, client_protocol_version)
+                    .await,
+            )
+        }
+        CommandName::OperationWait => {
+            let arguments = match decode_arguments::<OperationWaitCommand>(request) {
+                Ok(arguments) => arguments,
+                Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            respond(
+                request_id,
+                dispatcher
+                    .wait_operation(&session, arguments, client_protocol_version)
+                    .await,
+            )
+        }
+        CommandName::OperationCancel => {
+            let arguments = match decode_arguments::<OperationCancelCommand>(request) {
+                Ok(arguments) => arguments,
+                Err(_) => return failure(request_id, ErrorCode::InvalidRequest, false),
+            };
+            respond(
+                request_id,
+                dispatcher
+                    .cancel_operation(
+                        &session,
+                        arguments.operation_id,
+                        None,
+                        client_protocol_version,
+                    )
+                    .await,
+            )
+        }
         _ => unreachable!(),
     }
 }
 
 impl BrokerDispatcher {
+    async fn sql_propose(
+        &self,
+        session: &AuthenticatedSession,
+        arguments: SqlProposeArguments,
+        client_protocol_version: u16,
+    ) -> Result<OperationSummary, ErrorCode> {
+        validate_sql(&arguments.sql)?;
+        let connection = self
+            .resolve_connection(session, &arguments.connection, client_protocol_version)
+            .await?;
+        let authority = terminal_authority_for_selector(
+            session,
+            &arguments.connection,
+            client_protocol_version,
+        )?;
+        let receipt = self
+            .services()?
+            .queries
+            .propose_terminal_sql(TerminalSqlProposalRequest {
+                connection_id: connection.id.into(),
+                sql: arguments.sql,
+                database: arguments.database,
+                authority: authority.clone(),
+            })
+            .await
+            .map_err(|error| map_application_error(error.into_error()))?;
+        self.services()?
+            .operation
+            .show_terminal(&authority, receipt.operation_id.into())
+            .await
+            .map_err(map_operation_error)
+    }
+
+    async fn show_operation(
+        &self,
+        session: &AuthenticatedSession,
+        operation_id: Uuid,
+        client_protocol_version: u16,
+    ) -> Result<OperationSummary, ErrorCode> {
+        self.services()?
+            .operation
+            .show_terminal(
+                &terminal_authority(session, client_protocol_version),
+                operation_id,
+            )
+            .await
+            .map_err(map_operation_error)
+    }
+
+    async fn wait_operation(
+        &self,
+        session: &AuthenticatedSession,
+        arguments: OperationWaitArguments,
+        client_protocol_version: u16,
+    ) -> Result<OperationSummary, ErrorCode> {
+        let timeout = Duration::from_millis(arguments.timeout_ms);
+        if timeout.is_zero() || timeout > MAX_OPERATION_WAIT {
+            return Err(ErrorCode::InvalidRequest);
+        }
+        self.services()?
+            .operation
+            .wait_terminal(
+                &terminal_authority(session, client_protocol_version),
+                arguments.operation_id,
+                timeout,
+            )
+            .await
+            .map_err(|error| {
+                if matches!(error, AppError::Safety(_)) {
+                    ErrorCode::Timeout
+                } else {
+                    map_operation_error(error)
+                }
+            })
+    }
+
+    pub(super) async fn cancel_operation(
+        &self,
+        session: &AuthenticatedSession,
+        operation_id: Uuid,
+        connection: Option<&ConnectionSelector>,
+        client_protocol_version: u16,
+    ) -> Result<OperationSummary, ErrorCode> {
+        let authority = match connection {
+            Some(connection) => {
+                terminal_authority_for_selector(session, connection, client_protocol_version)?
+            }
+            None => terminal_authority(session, client_protocol_version),
+        };
+        self.services()?
+            .operation
+            .cancel_terminal(&authority, operation_id)
+            .await
+            .map_err(map_operation_error)
+    }
+
     async fn document_run(
         &self,
         session: &AuthenticatedSession,

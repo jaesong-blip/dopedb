@@ -9,9 +9,9 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use args::{
-    AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, DashboardCommand, DatabaseCommand,
-    DocumentCommand, OperationCommand, QueryCommand, SchemaCommand, SkillCommand, SkillsCommand,
-    SqlCommand, TableCommand,
+    AppCommand, CatalogCommand, Cli, Command, ConnectionCommand, DatabaseCommand, DocumentCommand,
+    OperationCommand, QueryCommand, SchemaCommand, SkillCommand, SkillsCommand, SqlCommand,
+    TableCommand,
 };
 use output::OutputMode;
 
@@ -160,28 +160,6 @@ async fn main() -> ExitCode {
             } => {
                 commands::query::cancel(&operation_id, OutputMode::from_json_flag(output.json))
                     .await
-            }
-        },
-        Command::Dashboard(arguments) => match arguments.command {
-            DashboardCommand::Create {
-                query_run,
-                title,
-                description,
-                kind,
-                x_column,
-                y_column,
-                output,
-            } => {
-                commands::dashboard::create(
-                    &query_run,
-                    title,
-                    description,
-                    kind.into(),
-                    x_column,
-                    y_column,
-                    OutputMode::from_json_flag(output.json),
-                )
-                .await
             }
         },
         Command::Sql(arguments) => match arguments.command {

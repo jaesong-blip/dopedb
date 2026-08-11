@@ -375,8 +375,8 @@ function ShellLayoutContent(props: Props) {
           width={rightDockWidth}
           onWidthChange={props.onTerminalWidthChange}
           onOpenArchive={props.onOpenAgentArchive}
-          onOpenKnowledgeAnalysis={(environmentId) =>
-            props.onOpenProjectEnvironment(environmentId, "dashboards")
+          onOpenKnowledgeAnalysis={(environmentId, articleId) =>
+            props.onOpenProjectEnvironment(environmentId, "analyses", articleId)
           }
           onClose={props.onCloseTerminal}
         />

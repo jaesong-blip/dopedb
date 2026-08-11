@@ -1,6 +1,6 @@
 //! The local application store: a WAL SQLite DB at
 //! the application-owned data root's `app.db` holding connections, safety settings,
-//! query history, the audit log, saved dashboards, snippets, and the schema cache.
+//! query history, the audit log, snippets, and the schema cache.
 //!
 //! Secrets are NEVER stored here — connections carry only a `secret_ref` that
 //! points at an OS credential-store item. Row⇄model mapping is manual (`sqlx::query`,
@@ -29,7 +29,9 @@ use workspace_codec::{
 
 use bootstrap::*;
 use projections::*;
-pub(crate) use repositories::LocalSignalMetricSample;
+pub(crate) use repositories::analysis_signal_samples::{
+    LocalAnalysisSignalMetricSample, LocalAnalysisSignalState,
+};
 use repositories::*;
 
 pub(crate) use projections::{
@@ -49,16 +51,11 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::features::dashboards::{
-    validate_visualization, Dashboard, DashboardDraft, DashboardState, DashboardSyncStatus,
-};
-use crate::features::reports::{PendingReportMutation, StoredReportMutation};
 use crate::features::workspaces::{
-    DashboardOutboxOperation, PendingDashboardMutation, RemoteDashboard, Workspace,
-    WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceKind,
+    Workspace, WorkspaceAccountMembership, WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceKind,
     WorkspaceRole,
 };
-use crate::kernel::identity::{AccountId, ConnectionId, DashboardId, WorkspaceId};
+use crate::kernel::identity::{AccountId, WorkspaceId};
 use crate::model::{
     ConnectionProfile, Engine, HistoryCursor, HistoryEntry, HistoryEntrySummary, HistoryPage,
     Provider, QueryKind, SafetySettings, WorkspaceConnectionAccess, WorkspaceCredentialMode,
@@ -124,25 +121,6 @@ pub(crate) struct PinnedConnection {
     pub profile: ConnectionProfile,
     pub requires_remote_rbac: bool,
     pub catalog_cache_policy: CatalogCachePolicy,
-}
-
-/// Minimal immutable identity required to tombstone a saved dashboard. Keeping
-/// presentation JSON out of this pin lets users delete malformed legacy rows.
-#[derive(Clone)]
-pub(crate) struct PinnedDashboard {
-    pub dashboard_id: DashboardId,
-    pub connection_id: Uuid,
-    pub dashboard_revision: i64,
-    pub connection: PinnedConnection,
-}
-
-/// History row plus the exact active scope in which its provenance was first
-/// resolved. Shared-artifact preparation validates eligibility before pinning, then
-/// passes this token back for an ABA-safe same-scope re-read.
-#[derive(Clone)]
-pub(crate) struct ResolvedQueryHistory {
-    pub history: HistoryEntry,
-    scope: ActiveResourceScope,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -74,8 +74,8 @@ utility 계층이다. 기존 CSS는 기능 단위로 제거하며 vendor widget�
 - title toolbar 중앙에는 현재 주요 tool window의 직접 launcher만 둔다.
   보조 tool window와 document 생성 action은 끝단의 실제 `ToolbarMenu`에
   배치하고, 구현되지 않은 Files/VCS를 모양만 있는 launcher로 만들지 않는다.
-  DopeDB 기준 위치에 없는 DopeDB 전용 Dashboard도 직접 launcher로 승격하지
-  않고 More menu가 소유한다.
+  DopeDB 기준 위치에 없는 DopeDB 전용 Analysis Article도 직접 launcher로
+  승격하지 않고 Environment의 `Analyses` folder와 More menu가 소유한다.
 - generic `새 연결` 진입은 특정 engine form을 임의 선택하지 않고 검색 가능한
   provider/driver `CommandMenu`를 즉시 연다. engine/provider preset이 명시된
   진입만 해당 속성 form을 바로 표시한다. 실제 생성하지 않는 demo나 지원하지
@@ -184,7 +184,7 @@ color를 거부한다.
 | 범위 | 정본 | 허용 소비자 | fallback과 경계 |
 | --- | --- | --- | --- |
 | core chrome | `tokens.css`의 surface/foreground/selection/focus/status 역할 | 모든 제품 화면과 공용 primitive | neutral surface가 기본이며 다른 palette의 색을 navigation·button·panel에 사용하지 않음 |
-| dashboard chart | `scoped-palettes.css`의 `--ds-chart-*` | `DashboardVisualization` | 네 번째 이후 series는 muted foreground로 수렴하며 core status 색을 series에 사용하지 않음 |
+| analysis chart | `scoped-palettes.css`의 `--ds-chart-*` | `AnalysisArticleVisualization` | 네 번째 이후 series는 muted foreground로 수렴하며 core status 색을 series에 사용하지 않음 |
 | terminal ANSI | `scoped-palettes.css`의 `--ds-terminal-*` | `resolvePtyTheme` | xterm host의 background/foreground/selection은 core 역할을 별도 주입하고 ANSI 색은 terminal 밖에서 사용하지 않음 |
 | Agent syntax | `scoped-palettes.css`의 `--ds-syntax-*` | `agentSyntax`의 완료된 code fence | grammar/highlighter가 없으면 색 없는 escaped code를 표시하며 terminal ANSI 역할을 빌리지 않음 |
 | provider/engine brand | `src/assets/db-icons/`와 `AgentProviderMark`의 로컬 정본 SVG | `EngineMark`, `AgentProviderMark` | asset이 없으면 accessible text/neutral glyph를 사용하고 brand pigment를 chrome 상태색으로 승격하지 않음 |
@@ -331,7 +331,9 @@ Elevation은 세 단계만 허용한다.
   SQL/session 설정처럼 여러 줄인 값은 화면별 textarea class를 만들지 않고
   monospace `TextAreaInput`을 사용한다. 계층 checklist의 parent는
   `CheckboxField`의 native `indeterminate` 상태로 부분 선택을 표현한다.
-- `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation.
+- `PanelTabs`: 데이터소스 속성·설정 패널의 ARIA tab navigation. 좁은 폭에서는
+  가로로 스크롤하며 선택 변경과 viewport resize 뒤에도 active tab을 자동으로
+  노출한다.
 - `IconRailTabs`: desktop dialog의 42px 세로 category navigation. icon-only
   tab의 selection, tooltip, roving arrow/Home/End keyboard focus를 소유한다.
 - `SegmentedControl`: 속성 편집기의 소수 상호 배타 선택을 위한 compact
@@ -460,20 +462,22 @@ DopeDB 관찰에서 가져온 역할 계약이다.
   않는다. session 전용 tab action menu는 활성 session이 있을 때만 표시하며
   빈 AI Chat에 disabled kebab을 남기지 않는다.
 - Workspace Explorer는 `Project → Environment → Databases / Data sources /
-  Dashboards`를 실제 폴더 hierarchy로 표시한다. `Data sources`는 GitHub와 Local
-  Folder source binding을, `Dashboards`는 해당 Environment에 고정된 funnel
-  analysis artifact를 표시한다. 환경에 묶인 DB를 root에 중복 표시하지 않고,
+  Analyses`를 실제 폴더 hierarchy로 표시한다. `Data sources`는 GitHub와 Local
+  Folder source binding을, `Analyses`는 해당 Environment에 고정된 종합
+  Analysis Article을 표시한다. 환경에 묶인 DB를 root에 중복 표시하지 않고,
   아직 묶이지 않은 연결만 `Unassigned`에 둔다. 환경 상세는 선택한 resource
   folder가 중앙 pane에 여는 내용이며 별도 Knowledge launcher, Dashboard 전용
   sidebar, 중복 Project navigation을 만들지 않는다. Explorer의 단일 command
   strip에서 Project와 Environment 생성 action을 구분하고, Project 생성 dialog는
   기본 `main` Environment를 함께 설정한다. Project 행의 hover/focus `plus`는 해당
   Project에 Environment를 추가하고, `Databases` folder의 `plus`는 기존 connection
-  editor를, `Data sources` folder의 `plus`는 기존 source 연결 상세를 연다. Project가 없는
+  editor를, `Data sources` folder의 `plus`는 기존 source 연결 상세를,
+  `Analyses` folder의 `plus`는 새 Article draft를 연다. Project가 없는
   workspace에서는 설명만 표시하고 별도 생성 row를 누적하지 않으며, 생성 직후
   새 Environment의 `Databases` folder를 연다. resource folder와 `Unassigned` 행에는
   연결 개수 badge를 붙이지 않는다. 중앙 환경 상세나 AI Chat 안내에
-  같은 생성 form을 중복하지 않는다.
+  같은 생성 form을 중복하지 않는다. Dashboard, Funnel Analysis, Agent Report는
+  별도 navigation이나 screen을 갖지 않는다.
 - 이 hierarchy의 Project prominence와 header action locality는 공개 Orca의
   `SidebarHeader`·`ProjectHeaderActions`·`WorktreeList`를 clean-room 정보 구조
   참고로 삼되, 행 높이, surface, icon, selection은 DopeDB tool-window와 이

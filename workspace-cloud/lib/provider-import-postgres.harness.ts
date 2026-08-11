@@ -55,6 +55,8 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         AND to_regclass('workspace_control.workspace_sync_event') IS NOT NULL
         AND to_regclass('workspace_control.knowledge_project') IS NOT NULL
         AND to_regclass('workspace_control.knowledge_project_environment') IS NOT NULL
+        AND to_regclass('workspace_control.workspace_analysis_article') IS NOT NULL
+        AND to_regclass('workspace_control.workspace_analysis_article_revision') IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema = 'workspace_control'
@@ -90,6 +92,12 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           SELECT 1 FROM pg_trigger
           WHERE tgrelid = 'workspace_control.workspace_audit_event'::regclass
             AND tgname = 'workspace_audit_append_sync_event'
+            AND NOT tgisinternal
+        )
+        AND EXISTS (
+          SELECT 1 FROM pg_trigger
+          WHERE tgrelid = 'workspace_control.workspace_analysis_article_revision'::regclass
+            AND tgname = 'workspace_analysis_article_revision_immutable_update'
             AND NOT tgisinternal
         )
         AND EXISTS (
@@ -455,160 +463,176 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         consumedReceipts: 1,
       });
 
-      const [{ commitReportCreate, commitReportMutation }, reportContract] = await Promise.all([
-        import("./workspace-report-store"),
-        import("./workspace-reports"),
-      ]);
-      const reportId = randomUUID();
-      const firstEvidenceId = randomUUID();
-      const firstQueryRunId = randomUUID();
-      const firstClaimId = randomUUID();
-      const firstExecutedAt = new Date().toISOString();
-      const reportInput = reportContract.parseSharedReportCreate({
-        id: reportId,
-        connectionId: left.connection.id,
-        title: "Harness analysis",
-        question: "How many active rows exist?",
-        conclusion: "The durable read observed one bounded aggregate.",
-        preflightWarnings: ["Harness evidence only"],
-        claims: [{
-          id: firstClaimId,
-          statement: "The aggregate read completed successfully.",
-          evidenceIds: [firstEvidenceId],
+      const developmentEnvironment = createdProject.environments.find(
+        (environment) => environment.name === "Dev",
+      );
+      if (!developmentEnvironment) throw new Error("Development Environment is missing");
+      await sql`
+        INSERT INTO "workspace_control"."knowledge_environment_connection"
+          ("organization_id", "project_environment_id", "environment_revision",
+           "connection_id", "connection_revision", "role", "alias")
+        VALUES (${organizationId}, ${developmentEnvironment.id}::uuid,
+          ${developmentEnvironment.revision}, ${left.connection.id}::uuid,
+          ${left.connection.contentRevision}, 'primary', 'Harness')
+      `;
+
+      const [{ commitAnalysisArticleCreate, commitAnalysisArticleMutation }, articleContract]
+        = await Promise.all([
+          import("./workspace-analysis-article-store"),
+          import("./workspace-analysis-articles"),
+        ]);
+      const articleId = randomUUID();
+      const articleInput = articleContract.parseSharedAnalysisArticleCreate({
+        id: articleId,
+        projectEnvironmentId: developmentEnvironment.id,
+        environmentRevision: developmentEnvironment.revision,
+        sourceKnowledgeGrantId: null,
+        graphRevisionIds: [],
+        connections: [{
+          connectionId: left.connection.id,
+          connectionRevision: left.connection.contentRevision,
+          role: "primary",
+          alias: "Harness",
         }],
-        evidence: [{
-          id: firstEvidenceId,
-          queryRunId: firstQueryRunId,
-          sql: "SELECT count(*) AS active_rows FROM users WHERE active = TRUE",
-          executedAt: firstExecutedAt,
-        }],
+        definition: {
+          version: 1,
+          source: "human",
+          title: "Harness analysis",
+          question: "How many active rows exist?",
+          summary: "A bounded aggregate with an exact result contract.",
+          timezone: "UTC",
+          parameters: [],
+          queries: [{
+            id: "active_rows",
+            title: "Active rows",
+            connectionRole: "primary",
+            sql: "SELECT count(*) AS active_rows FROM users WHERE active = TRUE",
+            parameterIds: [],
+            maxRows: 1,
+            maxBytes: 16_384,
+            cacheTtlSeconds: 0,
+            columns: [{
+              name: "active_rows",
+              type: "number",
+              nullable: false,
+              role: "measure",
+              sensitivity: "internal",
+              masking: "none",
+            }],
+          }],
+          transforms: [],
+          metrics: [{
+            id: "active_rows",
+            label: "Active rows",
+            description: "Current active row count",
+            sourceNodeId: "active_rows",
+            valueColumn: "active_rows",
+            unit: "rows",
+            lowerIsBetter: null,
+            format: { style: "number", decimals: 0, currency: null },
+          }],
+          blocks: [{
+            id: "active_rows_metric",
+            kind: "metric",
+            title: "Active rows",
+            sourceNodeId: "active_rows",
+            width: 4,
+            config: {
+              metricId: "active_rows",
+              comparisonColumn: null,
+              sparklineColumn: null,
+              sampleCountColumn: null,
+            },
+          }],
+          claims: [],
+          refresh: {
+            mode: "manual",
+            cron: null,
+            timezone: "UTC",
+            runnerId: null,
+            maxStalenessSeconds: 86_400,
+            resultRetentionDays: 30,
+            shareReviewedResults: true,
+          },
+          warnings: ["Harness definition only"],
+        },
       });
-      const createdReport = await commitReportCreate({
+      const createdArticle = await commitAnalysisArticleCreate({
         organizationId,
-        report: reportInput,
-        source: "agent_proposal",
+        article: articleInput,
         authority,
       });
-      expect(createdReport).toMatchObject({
-        id: reportId,
-        connectionId: left.connection.id,
+      expect(createdArticle).toMatchObject({
+        id: articleId,
+        projectEnvironmentId: developmentEnvironment.id,
         state: "draft",
-        source: "agent_proposal",
         revision: 1,
-        evidenceCount: 1,
       });
 
-      const secondEvidenceId = randomUUID();
-      const secondQueryRunId = randomUUID();
-      const secondClaimId = randomUUID();
-      const secondEvidence = reportContract.parseSharedReportEvidenceList([{
-        id: secondEvidenceId,
-        queryRunId: secondQueryRunId,
-        sql: "SELECT count(*) AS active_rows FROM users WHERE active = TRUE AND deleted_at IS NULL",
-        executedAt: new Date().toISOString(),
-      }]);
-      const rerunDefinition = reportContract.parseSharedReportDefinition({
-        title: reportInput.title,
-        question: reportInput.question,
-        conclusion: "Two immutable reads support the reviewed aggregate.",
-        preflightWarnings: reportInput.preflightWarnings,
-        claims: [
-          ...reportInput.claims,
-          {
-            id: secondClaimId,
-            statement: "The rerun excluded deleted rows.",
-            evidenceIds: [secondEvidenceId],
-          },
-        ],
+      const revisedArticle = articleContract.parseSharedAnalysisArticleCreate({
+        ...articleInput,
+        definition: {
+          ...articleInput.definition,
+          summary: "A reviewed bounded aggregate with an exact result contract.",
+        },
       });
-      const rerunReport = await commitReportMutation({
+      const updatedArticle = await commitAnalysisArticleMutation({
         organizationId,
-        reportId,
-        connectionId: left.connection.id,
+        article: revisedArticle,
         expectedRevision: 1,
-        definition: rerunDefinition,
         state: "draft",
-        source: "agent_proposal",
         ownerMemberId: memberId,
         authority,
-        operation: "append_evidence",
-        evidence: secondEvidence,
+        operation: "update",
       });
-      expect(rerunReport).toMatchObject({ revision: 2, evidenceCount: 2, state: "draft" });
-      await expect(commitReportMutation({
+      expect(updatedArticle).toMatchObject({ revision: 2, state: "draft" });
+      await expect(commitAnalysisArticleMutation({
         organizationId,
-        reportId,
-        connectionId: left.connection.id,
+        article: revisedArticle,
         expectedRevision: 1,
-        definition: reportInput,
         state: "draft",
-        source: "agent_proposal",
         ownerMemberId: memberId,
         authority,
         operation: "update",
       })).resolves.toBeNull();
-      const reviewReport = await commitReportMutation({
+      const reviewArticle = await commitAnalysisArticleMutation({
         organizationId,
-        reportId,
-        connectionId: left.connection.id,
+        article: revisedArticle,
         expectedRevision: 2,
-        definition: rerunDefinition,
         state: "review",
-        source: "agent_proposal",
         ownerMemberId: memberId,
         authority,
         operation: "submit_review",
       });
-      expect(reviewReport).toMatchObject({ revision: 3, evidenceCount: 2, state: "review" });
-      const publishedReport = await commitReportMutation({
-        organizationId,
-        reportId,
-        connectionId: left.connection.id,
-        expectedRevision: 3,
-        definition: rerunDefinition,
-        state: "published",
-        source: "agent_proposal",
-        ownerMemberId: memberId,
-        authority,
-        operation: "publish",
-      });
-      expect(publishedReport).toMatchObject({
-        revision: 4,
-        evidenceCount: 2,
-        state: "published",
-      });
+      expect(reviewArticle).toMatchObject({ revision: 3, state: "review" });
       await expect(sql`
-        UPDATE "workspace_control"."workspace_report_evidence"
-        SET "sql" = 'SELECT 0'
+        UPDATE "workspace_control"."workspace_analysis_article_revision"
+        SET "payload_hash" = ${"0".repeat(64)}
         WHERE "organization_id" = ${organizationId}
-          AND "report_id" = ${reportId}::uuid
-          AND "id" = ${firstEvidenceId}::uuid
+          AND "article_id" = ${articleId}::uuid
+          AND "revision" = 1
       `).rejects.toThrow(/immutable/);
-      const reportDurability = await sql<{
-        evidence: number;
+      const articleDurability = await sql<{
         revisions: number;
-        resultColumns: number;
+        plainResultColumns: number;
       }[]>`
         SELECT
           (SELECT count(*)::int
-           FROM "workspace_control"."workspace_report_evidence"
+           FROM "workspace_control"."workspace_analysis_article_revision"
            WHERE "organization_id" = ${organizationId}
-             AND "report_id" = ${reportId}::uuid) AS "evidence",
-          (SELECT count(*)::int
-           FROM "workspace_control"."workspace_report_revision"
-           WHERE "organization_id" = ${organizationId}
-             AND "report_id" = ${reportId}::uuid) AS "revisions",
+             AND "article_id" = ${articleId}::uuid) AS "revisions",
           (SELECT count(*)::int
            FROM information_schema.columns
            WHERE table_schema = 'workspace_control'
              AND table_name IN (
-               'workspace_report',
-               'workspace_report_evidence',
-               'workspace_report_revision'
+               'workspace_analysis_article',
+               'workspace_analysis_article_revision',
+               'workspace_analysis_result_fragment'
              )
-             AND column_name ~ '(result|artifact|credential|transcript)') AS "resultColumns"
+             AND column_name ~ '(^result$|rows_json|plaintext_payload|credential|transcript)')
+            AS "plainResultColumns"
       `;
-      expect(reportDurability[0]).toEqual({ evidence: 2, revisions: 4, resultColumns: 0 });
+      expect(articleDurability[0]).toEqual({ revisions: 3, plainResultColumns: 0 });
 
       const syncJournal = await sql<{
         head: number;
@@ -670,7 +694,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           INSERT INTO "workspace_control"."workspace_audit_event"
             ("organization_id", "actor_user_id", "action", "resource_type",
              "resource_id", "redacted_summary", "request_id")
-          VALUES (${organizationId}, ${userId}, 'report.rollback_probe', 'report',
+          VALUES (${organizationId}, ${userId}, 'analysis_article.rollback_probe', 'analysis_article',
                   NULL, '{}'::jsonb, ${randomUUID()}::uuid)
         `;
         throw new Error("rollback sync probe");
@@ -694,7 +718,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
           INSERT INTO "workspace_control"."workspace_audit_event"
             ("organization_id", "actor_user_id", "action", "resource_type",
              "resource_id", "redacted_summary", "request_id")
-          VALUES (${organizationId}, ${userId}, 'dashboard.archive', 'dashboard',
+          VALUES (${organizationId}, ${userId}, 'analysis_article.archive', 'analysis_article',
                   NULL, '{}'::jsonb, ${randomUUID()}::uuid)
         `,
       ]);
@@ -715,7 +739,7 @@ describe.runIf(enabled)("provider import PostgreSQL concurrency harness", () => 
         headBeforeRollback + 2,
       ]);
       expect(new Set(concurrentSync.map((event) => event.resourceType))).toEqual(
-        new Set(["connection", "dashboard"]),
+        new Set(["connection", "analysis_article"]),
       );
       expect(concurrentSync.every((event) => event.tombstone)).toBe(true);
       const [workspaceAudit] = await sql<{ id: string }[]>`

@@ -6,9 +6,9 @@
 use crate::connection::ConnectionManager;
 use crate::features::activity::{self, ActivityFeature};
 use crate::features::agents::{self, AgentsFeature};
+use crate::features::analysis_articles::{self, AnalysisArticlesFeature};
 use crate::features::catalog::{self, CatalogFeature};
 use crate::features::connections::{self as connection_feature, ConnectionsFeature};
-use crate::features::dashboards::{self, ErasedDashboardsFeature};
 use crate::features::documents::{self, DocumentFeature};
 use crate::features::erd::{self, ErdFeature};
 use crate::features::jobs::{self, JobsFeature};
@@ -16,8 +16,6 @@ use crate::features::monitoring::{self, MonitoringFeature};
 use crate::features::operation_control::{self, OperationControlFeature};
 use crate::features::providers::ProvidersFeature;
 use crate::features::queries::QueriesFeature;
-use crate::features::queries::QueryRunAuthorizationPort;
-use crate::features::reports::{self, ReportsFeature};
 use crate::features::safety_settings::{self, SafetySettingsFeature};
 use crate::features::schema_editor::{self, SchemaEditorFeature};
 use crate::features::scripts::{self, ScriptFeature};
@@ -25,7 +23,6 @@ use crate::features::sql_documents::{self, SqlDocumentsFeature};
 use crate::features::workspaces::{self, WorkspacesFeature};
 use crate::operations::OperationRuntime;
 use crate::store::Store;
-use std::sync::Arc;
 
 /// Cloneable application-service facade. Every clone retains the same local store and
 /// scope-aware connection runtime, so every service method uses one authority boundary.
@@ -33,9 +30,9 @@ use std::sync::Arc;
 pub(crate) struct ApplicationServices {
     pub(crate) activity: ActivityFeature,
     pub(crate) agents: AgentsFeature,
+    pub(crate) analysis_article: AnalysisArticlesFeature,
     pub(crate) connections: ConnectionsFeature,
     pub(crate) catalog: CatalogFeature,
-    pub(crate) dashboard: ErasedDashboardsFeature,
     pub(crate) document: DocumentFeature,
     pub(crate) erd: ErdFeature,
     pub(crate) job: JobsFeature,
@@ -44,7 +41,6 @@ pub(crate) struct ApplicationServices {
     pub(crate) operation: OperationControlFeature,
     pub(crate) providers: ProvidersFeature,
     pub(crate) queries: QueriesFeature,
-    pub(crate) report: ReportsFeature,
     pub(crate) safety: SafetySettingsFeature,
     pub(crate) schema: SchemaEditorFeature,
     pub(crate) script: ScriptFeature,
@@ -90,19 +86,12 @@ impl ApplicationServices {
             catalog.clone(),
             operation.clone(),
         );
-        let query_provenance: Arc<dyn QueryRunAuthorizationPort> = Arc::new(queries.provenance());
-        let dashboard = dashboards::compose_erased(
-            store.clone(),
-            connections.clone(),
-            Arc::clone(&query_provenance),
-        );
-        let report = reports::compose(store.clone(), connections.clone(), query_provenance);
         Self {
             activity: activity::compose(store.clone()),
             agents: agents::compose(store.clone()),
+            analysis_article: analysis_articles::compose(store.clone(), connections.clone()),
             connections: connection_feature,
             catalog,
-            dashboard,
             document: documents::compose(store.clone(), connections.clone(), operation.clone()),
             erd,
             job,
@@ -111,7 +100,6 @@ impl ApplicationServices {
             operation: operation_service,
             providers,
             queries,
-            report,
             safety: safety_settings::compose(store.clone(), connections.clone()),
             schema,
             script,

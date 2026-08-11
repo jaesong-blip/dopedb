@@ -1,6 +1,6 @@
 // Shared results table. Renders whatever rows it's handed (callers window/cap first).
 // Sticky header + row numbers + null styling. All interactivity is opt-in via callbacks
-// so the plain read-only callers (SQL, document, and dashboard results) render unchanged:
+// so plain read-only callers (SQL, document, and Analysis Article results) render unchanged:
 //   - onSort     → clickable headers that cycle asc/desc/none (arrow on the sorted col)
 //   - onFilter   → DopeDB-style value/count popup from a header filter action
 //   - onSelectRow/onCellClick → row highlight + click-to-open a cell in the side viewer

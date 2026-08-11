@@ -173,45 +173,6 @@ pub(super) fn document_page(page: &DocumentPage) -> ProtocolDocumentPage {
     }
 }
 
-pub(super) const fn dashboard_kind_from_protocol(kind: ProtocolDashboardKind) -> DashboardKind {
-    match kind {
-        ProtocolDashboardKind::Auto => DashboardKind::Auto,
-        ProtocolDashboardKind::Metric => DashboardKind::Metric,
-        ProtocolDashboardKind::Line => DashboardKind::Line,
-        ProtocolDashboardKind::Bar => DashboardKind::Bar,
-        ProtocolDashboardKind::Table => DashboardKind::Table,
-    }
-}
-
-pub(super) const fn dashboard_kind_to_protocol(kind: DashboardKind) -> ProtocolDashboardKind {
-    match kind {
-        DashboardKind::Auto => ProtocolDashboardKind::Auto,
-        DashboardKind::Metric => ProtocolDashboardKind::Metric,
-        DashboardKind::Line => ProtocolDashboardKind::Line,
-        DashboardKind::Bar => ProtocolDashboardKind::Bar,
-        DashboardKind::Table => ProtocolDashboardKind::Table,
-    }
-}
-
-pub(super) fn dashboard_record(dashboard: &Dashboard) -> DashboardRecord {
-    DashboardRecord {
-        id: dashboard.id.into(),
-        connection_id: dashboard.connection_id.into(),
-        revision: dashboard.revision,
-        title: dashboard.title.clone(),
-        description: dashboard.description.clone(),
-        sql: dashboard.sql.clone(),
-        visualization: DashboardVisualization {
-            version: dashboard.visualization.version,
-            kind: dashboard_kind_to_protocol(dashboard.visualization.kind),
-            x_column: dashboard.visualization.x_column.clone(),
-            y_columns: dashboard.visualization.y_columns.clone(),
-        },
-        created_at: dashboard.created_at,
-        updated_at: dashboard.updated_at,
-    }
-}
-
 pub(super) fn namespace_name(namespace: &Option<String>) -> String {
     namespace.clone().unwrap_or_else(|| "default".into())
 }
@@ -254,43 +215,6 @@ pub(super) fn map_document_error(error: AgentDocumentReadError) -> ErrorCode {
         }
         AgentDocumentReadError::Application(error) => map_application_error(error),
         AgentDocumentReadError::Execution(failure) => map_target_error(failure.into_error()),
-    }
-}
-
-pub(super) fn map_dashboard_create_error(error: AgentDashboardCreateError) -> ErrorCode {
-    match error {
-        AgentDashboardCreateError::QueryRunNotFound
-        | AgentDashboardCreateError::QueryRunIneligible => ErrorCode::InvalidRequest,
-        AgentDashboardCreateError::InvalidDraft(error)
-        | AgentDashboardCreateError::Application(error)
-        | AgentDashboardCreateError::Persistence(error) => map_application_error(error),
-    }
-}
-
-pub(super) fn report_record(report: &AgentReportProposal) -> ReportRecord {
-    ReportRecord {
-        id: report.id,
-        connection_id: report.connection_id.into(),
-        title: report.title.clone(),
-        question: report.question.clone(),
-        conclusion: report.conclusion.clone(),
-        state: report.state.clone(),
-        source: report.source.clone(),
-        revision: report.revision,
-        evidence_count: report.evidence_count,
-        created_at: report.created_at,
-        updated_at: report.updated_at,
-    }
-}
-
-pub(super) fn map_report_propose_error(error: AgentReportProposeError) -> ErrorCode {
-    match error {
-        AgentReportProposeError::QueryRunNotFound
-        | AgentReportProposeError::QueryRunIneligible
-        | AgentReportProposeError::MixedConnections => ErrorCode::InvalidRequest,
-        AgentReportProposeError::WorkspaceRequired => ErrorCode::ScopeDenied,
-        AgentReportProposeError::InvalidPresentation(error)
-        | AgentReportProposeError::Application(error) => map_application_error(error),
     }
 }
 

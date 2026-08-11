@@ -73,6 +73,9 @@
   --ds-warning: #9c6b18;
   --ds-danger: #b84a3d;
   --ds-danger-emphasis: #8f342b;
+  --ds-chart-series-1: var(--ds-accent);
+  --ds-chart-series-2: color-mix(in srgb, var(--ds-accent) 65%, var(--ds-text-muted));
+  --ds-chart-series-3: color-mix(in srgb, var(--ds-accent) 38%, var(--ds-text-muted));
   --ds-selection: color-mix(in srgb, var(--ds-accent) 12%, var(--ds-surface));
   --ds-selection-foreground: #173f2a;
   --ds-ring: #36734e;

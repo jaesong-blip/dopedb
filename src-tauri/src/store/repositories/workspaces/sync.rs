@@ -41,10 +41,9 @@ impl Store {
             || (page.reset && !expected_cursor.is_some_and(|cursor| page.next_cursor != cursor))
             || (page.has_more && !expected_cursor.is_some_and(|cursor| page.next_cursor > cursor))
             || ((expected_cursor.is_none() || page.reset)
-                && (!page.refresh_connections || !page.refresh_dashboards || !page.refresh_reports))
+                && (!page.refresh_connections || !page.refresh_analyses))
             || (page.connection_tombstone && !page.refresh_connections)
-            || (page.dashboard_tombstone && !page.refresh_dashboards)
-            || (page.report_tombstone && !page.refresh_reports)
+            || (page.analysis_tombstone && !page.refresh_analyses)
         {
             return Err(AppError::Network(
                 "workspace sync cursor moved outside its ordered contract".into(),

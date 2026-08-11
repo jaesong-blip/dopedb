@@ -121,7 +121,7 @@ const history = measureRetained(() => page(historyStatement, ["connection", "acc
 const auditPage = measureRetained(() => page(auditStatement, ["connection", AUDIT_PAGE_SIZE + 1], AUDIT_PAGE_SIZE));
 const revisions = measureRetained(() => page(revisionStatement, ["document", "workspace", "account", "connection", REVISION_PAGE_SIZE + 1], REVISION_PAGE_SIZE));
 const auditVerification = measureAuditVerification();
-const dashboard = measureDashboards();
+const analysisArticle = measureAnalysisArticles();
 
 const report = {
   schemaVersion: 1,
@@ -133,21 +133,21 @@ const report = {
     node: process.version,
   },
   methodology:
-    "In-memory SQLite uses the production cursor-list SELECT shapes and production page/preview limits. IPC bytes are JSON UTF-8 bytes for one retained page. Heap is the non-negative V8 heap delta after forced GC while retaining only that page or the four-entry dashboard LRU. Open latency is p50/p95 over 20 synchronous first-page reads after seeding. Audit full verification iterates genesis-to-tail without collecting rows. Dashboard values model the production kind row caps, exact JSON byte caps, 60s gcTime, and four-result LRU. This excludes Tauri serialization overhead, React DOM, provider/network latency, and packaged-WebView baseline memory.",
+    "In-memory SQLite uses the production cursor-list SELECT shapes and production page/preview limits. IPC bytes are JSON UTF-8 bytes for one retained page. Heap is the non-negative V8 heap delta after forced GC while retaining only that page or the four-entry Analysis Article result LRU. Open latency is p50/p95 over 20 synchronous first-page reads after seeding. Audit full verification iterates genesis-to-tail without collecting rows. Analysis values model the production block row caps, exact JSON byte caps, 60s gcTime, and four-result LRU. This excludes Tauri serialization overhead, React DOM, provider/network latency, and packaged-WebView baseline memory.",
   fixtures: {
     historyRows: HISTORY_ROWS,
     auditRows: AUDIT_ROWS,
     largeRevisions: REVISION_ROWS,
     revisionBytesEach: Buffer.byteLength(largeRevisionContent()),
-    dashboardInputRows: 100_000,
-    dashboardTilesRun: 8,
+    analysisInputRows: 100_000,
+    analysisBlocksRun: 8,
   },
   surfaces: {
     history: history,
     auditPage,
     auditFullVerification: auditVerification,
     localHistory: revisions,
-    dashboards: dashboard,
+    analysisArticles: analysisArticle,
   },
 };
 
@@ -282,7 +282,7 @@ function measureAuditVerification() {
   };
 }
 
-function measureDashboards() {
+function measureAnalysisArticles() {
   const sourceRow = ["2026-01-01", "x".repeat(192), 42];
   const inputRows = Array.from({ length: 100_000 }, () => sourceRow);
   const definitions = [

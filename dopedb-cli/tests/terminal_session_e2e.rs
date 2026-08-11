@@ -435,31 +435,44 @@ pub(super) fn run() {
         .as_str()
         .unwrap()
         .contains("Omit query"));
-    let report_tool = tools
+    let article_tool = tools
         .iter()
-        .find(|tool| tool["name"] == "report_propose")
-        .expect("the app-managed MCP bridge must expose report proposals");
-    assert_eq!(report_tool["annotations"]["destructiveHint"], false);
-    assert_eq!(report_tool["annotations"]["idempotentHint"], false);
-    assert_eq!(report_tool["inputSchema"]["additionalProperties"], false);
-    assert_eq!(report_tool["inputSchema"]["properties"]["claims"]["maxItems"], 32);
-    assert!(report_tool["description"]
+        .find(|tool| tool["name"] == "analysis_article_propose")
+        .expect("the app-managed MCP bridge must expose Analysis Article proposals");
+    assert_eq!(article_tool["annotations"]["destructiveHint"], false);
+    assert_eq!(article_tool["annotations"]["idempotentHint"], false);
+    assert_eq!(article_tool["inputSchema"]["additionalProperties"], false);
+    assert_eq!(
+        article_tool["inputSchema"]["properties"]["definition"]["properties"]["queries"]
+            ["maxItems"],
+        32,
+    );
+    assert!(article_tool["description"]
         .as_str()
         .unwrap()
-        .contains("never reruns SQL"));
-    let append_tool = tools
+        .contains("cannot submit review"));
+    let update_tool = tools
         .iter()
-        .find(|tool| tool["name"] == "report_append_evidence")
-        .expect("the app-managed MCP bridge must expose immutable evidence append");
-    assert_eq!(append_tool["inputSchema"]["additionalProperties"], false);
+        .find(|tool| tool["name"] == "analysis_article_update_draft")
+        .expect("the app-managed MCP bridge must expose exact draft updates");
+    assert_eq!(update_tool["inputSchema"]["additionalProperties"], false);
     assert_eq!(
-        append_tool["inputSchema"]["properties"]["expectedRevision"]["minimum"],
+        update_tool["inputSchema"]["properties"]["expectedRevision"]["minimum"],
         1,
     );
-    assert!(append_tool["description"]
+    assert!(update_tool["description"]
         .as_str()
         .unwrap()
-        .contains("never edits historical evidence"));
+        .contains("cross-Environment"));
+    let draft_run_tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "analysis_article_draft_run")
+        .expect("the app-managed MCP bridge must expose bounded draft verification");
+    assert_eq!(draft_run_tool["annotations"]["readOnlyHint"], true);
+    assert_eq!(
+        draft_run_tool["inputSchema"]["properties"]["parameterValues"]["maxProperties"],
+        64,
+    );
     assert!(!tools.iter().any(|tool| tool["name"] == "run"));
 
     assert_eq!(response(3)["result"]["isError"], false);

@@ -17,7 +17,6 @@ use crate::store::Store;
 pub(crate) use adapters::QueryPlatformAdapter;
 #[cfg(not(test))]
 use adapters::QueryPlatformAdapter;
-pub(crate) use adapters::TerminalQueryRunRegistry;
 #[cfg(feature = "packaged-benchmark")]
 pub(crate) use adapters::{run_packaged_result_store_benchmark, PackagedResultStoreMetric};
 pub(crate) use adapters::{AgentQueryPlanError, AgentQueryRunError, AgentQueryRunPrepareError};
@@ -40,7 +39,6 @@ pub(crate) use domain::{
 pub(crate) use manual_transaction::{
     ManualExecutionTarget, ManualScriptRequest, ManualTransactionRuntime, ManualTransactionStatus,
 };
-pub(crate) use ports::{QueryRunAuthorizationError, QueryRunAuthorizationPort};
 
 #[cfg(test)]
 mod domain_tests;
@@ -52,7 +50,6 @@ type ComposedQueryApplication = QueryUseCases<QueryPlatformAdapter>;
 pub(crate) struct QueriesFeature {
     application: ComposedQueryApplication,
     operation: OperationRuntime,
-    provenance: TerminalQueryRunRegistry,
     desktop_streams: DesktopSqlStreamRegistry,
     desktop_stream_cleanup: DesktopStreamCleanupRuntime,
     _desktop_stream_cleanup_owner: DesktopStreamCleanupOwner,
@@ -332,10 +329,6 @@ impl QueriesFeature {
             .await
     }
 
-    pub(crate) fn provenance(&self) -> TerminalQueryRunRegistry {
-        self.provenance.clone()
-    }
-
     /// Feature-owned ACK gate for one desktop result-stream operation.
     pub(crate) fn acknowledge_desktop_sql_stream(
         &self,
@@ -512,7 +505,6 @@ pub(crate) fn compose(
     connections: ConnectionManager,
     operation: OperationRuntime,
 ) -> QueriesFeature {
-    let provenance = TerminalQueryRunRegistry::default();
     let desktop_streams = DesktopSqlStreamRegistry::default();
     let desktop_stream_cleanup = DesktopStreamCleanupRuntime::default();
     let desktop_stream_cleanup_owner = desktop_stream_cleanup.composition_owner();
@@ -527,7 +519,6 @@ pub(crate) fn compose(
         store.clone(),
         connections,
         operation.clone(),
-        provenance.clone(),
         desktop_streams.clone(),
         desktop_stream_cleanup.clone(),
         manual_transactions.clone(),
@@ -535,7 +526,6 @@ pub(crate) fn compose(
     QueriesFeature {
         application: QueryUseCases::new(adapter),
         operation,
-        provenance,
         desktop_streams,
         desktop_stream_cleanup,
         _desktop_stream_cleanup_owner: desktop_stream_cleanup_owner,

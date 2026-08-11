@@ -2,14 +2,11 @@
 //! and credential persistence stay in Rust so Bearer sessions never cross into the
 //! webview, logs, local SQLite, or frontend query caches.
 
+mod analysis_articles;
 mod authentication;
 mod connections;
-mod dashboards;
-mod funnel_analyses;
 mod knowledge;
 mod provider_local_target;
-mod reports;
-mod signals;
 mod sync;
 
 use std::net::IpAddr;
@@ -36,8 +33,7 @@ use crate::connection::{
 use crate::error::{AppError, AppResult};
 use crate::features::workspaces::{
     domain::{parse_workspace_role, valid_device_code},
-    DashboardPushResult, PendingDashboardMutation, RemoteDashboard, RemoteWorkspace,
-    WorkspaceAuthUser, WorkspaceDashboardState, WorkspaceDeviceAuthorization, WorkspaceLoginPoll,
+    RemoteWorkspace, WorkspaceAuthUser, WorkspaceDeviceAuthorization, WorkspaceLoginPoll,
     WorkspaceLoginPollStatus, WorkspacePullPage,
 };
 use crate::kernel::identity::{AccountId, ConnectionId, ProviderIntegrationId, WorkspaceId};
@@ -47,6 +43,25 @@ use crate::model::{
 };
 
 use super::super::ports::WorkspaceControlPlanePort;
+pub(crate) use analysis_articles::{
+    analysis_publication_url, analysis_refresh_lease_is_active, cancel_analysis_run,
+    claim_analysis_refresh_lease, complete_analysis_run, create_analysis_article,
+    create_analysis_publication, create_analysis_signal, delete_analysis_article,
+    delete_analysis_signal, get_analysis_article, get_analysis_result, get_analysis_run,
+    list_analysis_article_revisions, list_analysis_articles, list_analysis_collaborators,
+    list_analysis_notifications, list_analysis_publications, list_analysis_runners,
+    list_analysis_runs, list_analysis_signal_receipts, list_analysis_signals,
+    mark_analysis_notifications_read, mutate_analysis_article, preview_analysis_publication,
+    register_analysis_runner, release_analysis_refresh_lease, revoke_analysis_publication,
+    revoke_analysis_runner, set_analysis_signal_enabled, start_analysis_run,
+    submit_analysis_signal_receipt, update_analysis_signal, AnalysisArticleMutation,
+    AnalysisCollaboratorDirectory, AnalysisPublicationRequest, AnalysisRunnerRevocation,
+    AnalysisSignalChannel, AnalysisSignalCondition, AnalysisSignalCreateRequest,
+    AnalysisSignalObservedState, AnalysisSignalReceiptRequest, RemoteAnalysisArticleRevision,
+    RemoteAnalysisLease, RemoteAnalysisNotification, RemoteAnalysisPublicSnapshot,
+    RemoteAnalysisPublication, RemoteAnalysisResult, RemoteAnalysisRun, RemoteAnalysisRunner,
+    RemoteAnalysisSignal, RemoteAnalysisSignalHistoryReceipt,
+};
 use authentication::{
     auth_user, begin_login, migrate_legacy_session, poll_login, remote_workspaces, sign_out,
 };
@@ -54,8 +69,6 @@ use connections::{
     authorize_connection, delete_connection, issue_managed_connection_lease,
     release_managed_connection_lease, remote_connections, share_connection, update_connection,
 };
-use dashboards::{delete_dashboard, remote_dashboards, upsert_dashboard};
-pub(crate) use funnel_analyses::{publish_funnel_analysis, remote_funnel_analyses};
 pub(crate) use knowledge::{
     begin_knowledge_github_install, bind_environment_connection, create_knowledge_environment,
     create_knowledge_project, create_knowledge_source, decide_remote_knowledge_mapping,
@@ -68,11 +81,6 @@ pub(crate) use knowledge::{
     RemoteKnowledgeEnvironment, RemoteKnowledgeProject, RemoteKnowledgeSource,
 };
 use provider_local_target::provider_local_target;
-pub(crate) use reports::{append_report_evidence, propose_report};
-pub(crate) use signals::{
-    claim_signal_lease, register_signal_runner, signal_lease_is_active, submit_signal_receipt,
-    RemoteSignalLease,
-};
 use sync::workspace_pull_page;
 
 const DEFAULT_CONTROL_PLANE_ORIGIN: &str = "https://app.dopedb.dev";
@@ -503,32 +511,6 @@ impl WorkspaceControlPlanePort for HostedWorkspaceControlPlane {
             expected_revision,
         )
         .await
-    }
-
-    async fn remote_dashboards(
-        &self,
-        account_id: &AccountId,
-        workspace_id: WorkspaceId,
-    ) -> AppResult<Option<Vec<RemoteDashboard>>> {
-        remote_dashboards(account_id.as_str(), workspace_id.into()).await
-    }
-
-    async fn upsert_dashboard(
-        &self,
-        account_id: &AccountId,
-        workspace_id: WorkspaceId,
-        mutation: &PendingDashboardMutation,
-    ) -> AppResult<DashboardPushResult> {
-        upsert_dashboard(account_id.as_str(), workspace_id.into(), mutation).await
-    }
-
-    async fn delete_dashboard(
-        &self,
-        account_id: &AccountId,
-        workspace_id: WorkspaceId,
-        mutation: &PendingDashboardMutation,
-    ) -> AppResult<DashboardPushResult> {
-        delete_dashboard(account_id.as_str(), workspace_id.into(), mutation).await
     }
 
     fn console_url(&self, workspace_id: Option<WorkspaceId>) -> AppResult<String> {

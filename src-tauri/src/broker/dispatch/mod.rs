@@ -1,11 +1,10 @@
 //! Broker envelope validation, authentication sequencing, and feature-handler routing.
+mod analysis_article_operation;
 mod connection_catalog;
-mod dashboard_operation;
 mod knowledge;
 mod projection;
 mod public_skill;
 mod query_document;
-mod report_operation;
 
 use projection::*;
 
@@ -13,16 +12,10 @@ use super::session::{AuthenticatedSession, BrokerCapability, BrokerSessionRegist
 use crate::error::AppError;
 use crate::features::catalog::CatalogReadPolicy;
 use crate::features::connections::{AgentConnectionSummary, CliConnectionResolutionError};
-use crate::features::dashboards::{
-    AgentDashboardCreateError, AgentDashboardPresentation, Dashboard, DashboardKind,
-};
 use crate::features::documents::{AgentDocumentReadError, TerminalDocumentReadRequest};
 use crate::features::queries::TerminalSqlProposalRequest;
 use crate::features::queries::{AgentQueryPlanError, TerminalQueryPlanRequest};
-use crate::features::reports::{
-    AgentReportClaim, AgentReportPresentation, AgentReportProposal, AgentReportProposeError,
-};
-use crate::kernel::identity::{ConnectionId, QueryRunId, RuntimeId, TerminalSessionId};
+use crate::kernel::identity::{ConnectionId, RuntimeId, TerminalSessionId};
 use crate::kernel::TerminalAuthority;
 use crate::model::{DocumentPage, DocumentQuery, Engine, QueryResult};
 use crate::monitoring::HealthSnapshot;
@@ -34,25 +27,20 @@ use dopedb_protocol::{
     CatalogSearchMatchType, CatalogSearchResult, CatalogShowCommand, CatalogSnapshot, CommandName,
     CommandSpec, ConnectionListCommand, ConnectionListResult, ConnectionSelector,
     ConnectionSelectorArguments, ConnectionShowCommand, ConnectionSummary, ConnectionTestCommand,
-    ConnectionTestResult, DashboardCreateArguments, DashboardCreateCommand, DashboardCreateResult,
-    DashboardKind as ProtocolDashboardKind, DashboardRecord, DashboardVisualization,
-    DatabaseEngine, DatabaseListCommand, DatabaseListResult,
+    ConnectionTestResult, DatabaseEngine, DatabaseListCommand, DatabaseListResult,
     DatabaseSummary as ProtocolDatabaseSummary, DocumentPage as ProtocolDocumentPage,
     DocumentQuery as ProtocolDocumentQuery, DocumentRunArguments, DocumentRunCommand,
     DocumentRunResult, EmptyArguments, ErrorCode, OperationCancelCommand, OperationShowCommand,
     OperationSummary, OperationWaitArguments, OperationWaitCommand, ProtocolError,
     QueryCancelCommand, QueryHealth, QueryPlanArguments, QueryPlanCommand, QueryPlanResult,
-    QueryResultPage, QueryRunArguments, QueryRunCommand, QueryRunResult,
-    ReportAppendEvidenceArguments, ReportAppendEvidenceCommand, ReportAppendEvidenceResult,
-    ReportClaimInput, ReportProposeArguments, ReportProposeCommand, ReportProposeResult,
-    ReportRecord, RequestEnvelope, ResponseEnvelope, SchemaListCommand, SchemaListResult,
-    SchemaSummary, SkillInstallCommand, SkillMutationArguments, SkillRemoveCommand,
-    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand,
-    SqlProposeArguments, SqlProposeCommand, StatusCommand, StatusResult, TableDescribeArguments,
-    TableDescribeCommand, TableDescribeResult, VersionCommand, VersionResult,
-    COMMAND_SCHEMA_VERSION, MAX_CATALOG_SEARCH_KINDS, MAX_CATALOG_SEARCH_MATCHES,
-    MAX_CATALOG_SEARCH_QUERY_BYTES, MAX_RESPONSE_BYTES, MAX_STRING_BYTES, PROTOCOL_MAX,
-    PROTOCOL_MIN,
+    QueryResultPage, QueryRunArguments, QueryRunCommand, QueryRunResult, RequestEnvelope,
+    ResponseEnvelope, SchemaListCommand, SchemaListResult, SchemaSummary, SkillInstallCommand,
+    SkillMutationArguments, SkillRemoveCommand, SkillRepairCommand, SkillStatusCommand,
+    SkillsGetCommand, SkillsListCommand, SqlProposeArguments, SqlProposeCommand, StatusCommand,
+    StatusResult, TableDescribeArguments, TableDescribeCommand, TableDescribeResult,
+    VersionCommand, VersionResult, COMMAND_SCHEMA_VERSION, MAX_CATALOG_SEARCH_KINDS,
+    MAX_CATALOG_SEARCH_MATCHES, MAX_CATALOG_SEARCH_QUERY_BYTES, MAX_RESPONSE_BYTES,
+    MAX_STRING_BYTES, PROTOCOL_MAX, PROTOCOL_MIN,
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -214,13 +202,15 @@ impl BrokerDispatcher {
             | CommandName::QueryPlan
             | CommandName::QueryRun
             | CommandName::QueryCancel => query_document::handle(self, &request).await,
-            CommandName::DashboardCreate
-            | CommandName::SqlPropose
+            CommandName::SqlPropose
             | CommandName::OperationShow
             | CommandName::OperationWait
-            | CommandName::OperationCancel => dashboard_operation::handle(self, &request).await,
-            CommandName::ReportPropose | CommandName::ReportAppendEvidence => {
-                report_operation::handle(self, &request).await
+            | CommandName::OperationCancel => query_document::handle(self, &request).await,
+            CommandName::AnalysisArticlePropose
+            | CommandName::AnalysisArticleUpdateDraft
+            | CommandName::AnalysisArticleDraftRun
+            | CommandName::AnalysisArticleList => {
+                analysis_article_operation::handle(self, &request).await
             }
             CommandName::KnowledgeSearch
             | CommandName::KnowledgeExplain
@@ -229,8 +219,6 @@ impl BrokerDispatcher {
             | CommandName::KnowledgeEvidence
             | CommandName::KnowledgeDiff
             | CommandName::FunnelTrace
-            | CommandName::FunnelDashboardPropose
-            | CommandName::FunnelDashboardList
             | CommandName::EnvironmentContext
             | CommandName::KnowledgeMappingPropose => knowledge::handle(self, &request).await,
             CommandName::Unknown => failure(request_id, ErrorCode::InvalidRequest, false),

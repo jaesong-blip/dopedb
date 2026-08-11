@@ -15,11 +15,9 @@ const workspaceSections: Array<{
   { id: "cloud-accounts", index: "02" },
   { id: "databases", index: "03" },
   { id: "database-access", index: "04" },
-  { id: "dashboards", index: "05" },
-  { id: "reports", index: "06" },
-  { id: "monitoring", index: "07" },
-  { id: "members", index: "08" },
-  { id: "lifecycle", index: "09" },
+  { id: "analyses", index: "05" },
+  { id: "members", index: "06" },
+  { id: "lifecycle", index: "07" },
 ];
 
 export function settingsSection(value: unknown): SettingsSection {
@@ -35,7 +33,6 @@ export function SettingsNavigation({
   workspaceId,
   gcpSetupId,
   canManageWorkspace,
-  canEditWorkspace,
   canDeleteWorkspace,
   workspaceDeletionPending,
   locale,
@@ -44,7 +41,6 @@ export function SettingsNavigation({
   workspaceId: string | null;
   gcpSetupId: string | null;
   canManageWorkspace: boolean;
-  canEditWorkspace: boolean;
   canDeleteWorkspace: boolean;
   workspaceDeletionPending: boolean;
   locale: WorkspaceLocale;
@@ -65,13 +61,10 @@ export function SettingsNavigation({
           && item.id !== "workspaces"
           && item.id !== "lifecycle"
         ) return null;
-        if (item.id === "dashboards" && !canEditWorkspace) return null;
         if (item.id === "lifecycle" && !canDeleteWorkspace) return null;
         if (
           item.id !== "workspaces"
-          && item.id !== "dashboards"
-          && item.id !== "reports"
-          && item.id !== "monitoring"
+          && item.id !== "analyses"
           && item.id !== "lifecycle"
           && !canManageWorkspace
         ) {
@@ -88,12 +81,8 @@ export function SettingsNavigation({
               ? copy.settings.areas.databases.label
               : item.id === "database-access"
                 ? copy.settings.areas.databaseAccess.label
-                : item.id === "dashboards"
-                  ? copy.settings.areas.dashboards.label
-                  : item.id === "reports"
-                    ? copy.settings.areas.reports.label
-                    : item.id === "monitoring"
-                      ? copy.settings.areas.monitoring.label
+                : item.id === "analyses"
+                  ? copy.settings.areas.analyses.label
                     : item.id === "members"
                       ? copy.settings.areas.members.label
                       : copy.settings.areas.lifecycle.label;
@@ -122,7 +111,7 @@ export function SettingsNavigation({
         aria-current={activeSection === "account" ? "page" : undefined}
       >
         <span className="tw:mr-2.5 tw:font-mono tw:text-2xs tw:text-signal">
-          10
+          08
         </span>
         {copy.settings.accountTitle}
       </a>

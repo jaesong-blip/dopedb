@@ -113,28 +113,6 @@ pub(super) fn row_to_history(r: &sqlx::sqlite::SqliteRow) -> AppResult<HistoryEn
     })
 }
 
-pub(super) fn row_to_dashboard(r: &sqlx::sqlite::SqliteRow) -> AppResult<Dashboard> {
-    let visualization_json: String = r.try_get("visualization_json")?;
-    let visualization = serde_json::from_str(&visualization_json)?;
-    validate_visualization(&visualization)?;
-    Ok(Dashboard {
-        id: DashboardId::from(parse_uuid(r.try_get("id")?)?),
-        connection_id: ConnectionId::from(parse_uuid(r.try_get("connection_id")?)?),
-        title: r.try_get("title")?,
-        description: r.try_get("description")?,
-        sql: r.try_get("sql")?,
-        visualization,
-        state: DashboardState::parse(r.try_get("state")?)?,
-        sync_status: DashboardSyncStatus::parse(r.try_get("sync_status")?)?,
-        owner_member_id: r.try_get("owner_member_id")?,
-        updated_by_member_id: r.try_get("updated_by_member_id")?,
-        revision: r.try_get("revision")?,
-        remote_revision: r.try_get("remote_revision")?,
-        created_at: r.try_get("created_at")?,
-        updated_at: r.try_get("updated_at")?,
-    })
-}
-
 // ── enum ⇄ text (kept in sync with model.rs serde `camelCase`) ──────────────
 
 pub(crate) fn engine_str(e: Engine) -> &'static str {

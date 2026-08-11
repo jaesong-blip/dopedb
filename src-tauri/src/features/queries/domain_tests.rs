@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use dopedb_protocol::{SignalEvaluationReceiptV1, SignalRuleDefinitionV1};
 use uuid::Uuid;
 
 use super::domain::{
@@ -142,67 +141,6 @@ fn query_and_skill_security_contracts_stay_fail_closed() {
     assert!(!serde_json::to_string(&cancelled)
         .unwrap()
         .contains("row-secret"));
-
-    let environment_id = Uuid::new_v4();
-    let analysis_id = Uuid::new_v4();
-    let signal_connection_id = Uuid::new_v4();
-    let rule: SignalRuleDefinitionV1 = serde_json::from_value(serde_json::json!({
-        "schemaVersion": 1,
-        "ruleId": Uuid::new_v4(),
-        "projectEnvironmentId": environment_id,
-        "environmentRevision": 2,
-        "sourceAnalysisId": analysis_id,
-        "sourceAnalysisRevision": 1,
-        "sourceTileId": "conversion",
-        "metricSemanticId": "signup.conversion",
-        "connectionIds": [signal_connection_id],
-        "schedule": "0 * * * *",
-        "timezone": "Asia/Seoul",
-        "evaluationWindowSeconds": 3600,
-        "condition": {"kind": "threshold_below", "value": 0.7},
-        "baselineWindowSeconds": null,
-        "minimumSampleCount": 100,
-        "cooldownSeconds": 3600,
-        "rearmAfterNormalCount": 2,
-        "severity": "warning",
-        "recipientMemberIds": ["member-1"],
-        "channels": ["desktop", "workspace_web", "email"],
-        "enabled": true,
-        "revision": 1,
-        "productionApprovedByMemberId": null,
-        "productionApprovedAt": null
-    }))
-    .unwrap();
-    assert!(rule.validate());
-    let serialized_rule = serde_json::to_string(&rule).unwrap();
-    assert!(!serialized_rule.contains("sql"));
-    assert!(!serialized_rule.contains("credential"));
-    assert!(!serialized_rule.contains("resultRow"));
-
-    let receipt: SignalEvaluationReceiptV1 = serde_json::from_value(serde_json::json!({
-        "receiptId": Uuid::new_v4(),
-        "ruleId": rule.rule_id,
-        "ruleRevision": rule.revision,
-        "projectEnvironmentId": environment_id,
-        "environmentRevision": 2,
-        "runnerDeviceId": "device-1",
-        "scheduledAt": "2026-08-08T00:00:00Z",
-        "evaluatedAt": "2026-08-08T00:00:01Z",
-        "state": "firing",
-        "queryRunIds": [Uuid::new_v4()],
-        "connectionIds": [signal_connection_id],
-        "durationMs": 1000,
-        "rowCountCategory": "one",
-        "schemaFingerprint": "a".repeat(64),
-        "dedupeKey": "rule-1:revision-1:sequence-1",
-        "transitionSequence": 1,
-        "errorKind": null
-    }))
-    .unwrap();
-    assert!(receipt.validate());
-    let serialized_receipt = serde_json::to_string(&receipt).unwrap();
-    assert!(!serialized_receipt.contains("metricValue"));
-    assert!(!serialized_receipt.contains("rows"));
 
     crate::app_paths::assert_application_data_root_contract();
     crate::broker::assert_catalog_search_contract();

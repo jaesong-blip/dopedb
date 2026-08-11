@@ -55,9 +55,9 @@
       "tests": 4,
       "protects": "Capability scope, expiry, redaction, and revocation"
     },
-    "src-tauri/src/features/dashboards/validation.rs": {
+    "src-tauri/src/store/repositories/analysis_articles.rs": {
       "tests": 3,
-      "protects": "Dashboard SQL safety and bounded input validation"
+      "protects": "Analysis Article result-cache encryption, exact-authority binding, tamper rejection, and invalid-envelope denial"
     },
     "src-tauri/src/features/providers/adapters/authority_tests.rs": {
       "tests": 6,

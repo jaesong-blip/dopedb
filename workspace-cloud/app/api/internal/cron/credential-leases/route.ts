@@ -6,8 +6,8 @@ import { privateJson } from "../../../../../lib/http";
 import { cleanupProviderDiscoveryReceipts } from "../../../../../lib/provider-discovery-receipt-store";
 import { cleanupExpiredManagedLeases } from "../../../../../lib/provider-integrations";
 import { cleanupWorkspaceRetention } from "../../../../../lib/workspace-lifecycle";
-import { deliverSignalEmailNotifications } from "../../../../../lib/signal-notifications";
-import { recordOfflineSignalTransitions } from "../../../../../lib/workspace-signal-store";
+import { deliverAnalysisSignalEmailNotifications } from "../../../../../lib/signal-notifications";
+import { cleanupExpiredAnalysisResults } from "../../../../../lib/workspace-analysis-retention";
 
 export const maxDuration = 60;
 
@@ -23,13 +23,12 @@ export async function GET(request: Request) {
   if (!authorized(request)) {
     return privateJson({ error: "Unauthorized" }, { status: 401 });
   }
-  const [result, discoveryReceiptsDeleted, offlineTransitions] = await Promise.all([
+  const [result, discoveryReceiptsDeleted, analysisResults, analysisEmails] = await Promise.all([
     cleanupExpiredManagedLeases({ limit: 10 }),
     cleanupProviderDiscoveryReceipts(),
-    recordOfflineSignalTransitions(10),
+    cleanupExpiredAnalysisResults(),
+    deliverAnalysisSignalEmailNotifications(),
   ]);
-  await Promise.all(offlineTransitions.map((transition) =>
-    deliverSignalEmailNotifications(transition.organizationId, transition.receiptId)));
   // Run retention after lease cleanup. A due workspace remains deferred until
   // every provider credential is durably revoked, then succeeds on a later tick.
   const retention = await cleanupWorkspaceRetention();
@@ -38,7 +37,8 @@ export async function GET(request: Request) {
       ok: result.deferred === 0 && retention.workspacesDeferred === 0,
       ...result,
       discoveryReceiptsDeleted,
-      offlineTransitions: offlineTransitions.length,
+      analysisResults,
+      analysisEmails,
       retention,
     },
     { status: result.deferred === 0 && retention.workspacesDeferred === 0 ? 200 : 503 },

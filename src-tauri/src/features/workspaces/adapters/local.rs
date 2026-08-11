@@ -11,9 +11,8 @@ use crate::model::ConnectionProfile;
 use crate::store::Store;
 
 use super::super::domain::{
-    workspace_feature_enabled, PendingDashboardMutation, RemoteDashboard, Workspace,
-    WorkspaceAuthAccount, WorkspaceAuthUser, WorkspaceAuthorityFingerprint, WorkspacePullPage,
-    WorkspaceRole,
+    workspace_feature_enabled, Workspace, WorkspaceAuthAccount, WorkspaceAuthUser,
+    WorkspaceAuthorityFingerprint, WorkspacePullPage, WorkspaceRole,
 };
 use super::super::ports::{
     WorkspaceConfigurationPort, WorkspaceConnectionMutationPort, WorkspaceRepositoryPort,
@@ -116,48 +115,6 @@ impl WorkspaceRepositoryPort for SqliteWorkspaceRepository {
     ) -> AppResult<()> {
         self.store
             .purge_remote_connection_cache(workspace_id.into(), connection_id.into())
-            .await
-    }
-
-    async fn pending_dashboard_mutations(
-        &self,
-        workspace_id: WorkspaceId,
-        account_id: &AccountId,
-    ) -> AppResult<Vec<PendingDashboardMutation>> {
-        self.store
-            .pending_dashboard_mutations(workspace_id.into(), account_id.as_str())
-            .await
-    }
-
-    async fn acknowledge_dashboard_mutation(
-        &self,
-        workspace_id: WorkspaceId,
-        mutation: &PendingDashboardMutation,
-        remote: Option<&RemoteDashboard>,
-    ) -> AppResult<()> {
-        self.store
-            .acknowledge_dashboard_mutation(workspace_id.into(), mutation, remote)
-            .await
-    }
-
-    async fn mark_dashboard_conflict(
-        &self,
-        workspace_id: WorkspaceId,
-        mutation: &PendingDashboardMutation,
-    ) -> AppResult<()> {
-        self.store
-            .mark_dashboard_conflict(workspace_id.into(), mutation)
-            .await
-    }
-
-    async fn sync_remote_dashboards(
-        &self,
-        workspace_id: WorkspaceId,
-        account_id: &AccountId,
-        dashboards: &[RemoteDashboard],
-    ) -> AppResult<()> {
-        self.store
-            .sync_remote_dashboards(workspace_id.into(), account_id.as_str(), dashboards)
             .await
     }
 

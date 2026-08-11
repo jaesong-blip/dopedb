@@ -3,15 +3,13 @@ use dopedb_protocol::{
     AcpPluginId, AcpPluginLicense, AcpPluginManifestV1, AcpPluginProvider, AcpPluginUpstream,
     AgentSessionRegisterArguments, AppOpenCommand, AppOpenResult, AuthenticationRequirement,
     CatalogSearchCommand, CatalogShowCommand, CommandName, CommandSpec, ConnectionListCommand,
-    ConnectionShowCommand, ConnectionTestCommand, DashboardCreateCommand, DatabaseListCommand,
-    DocumentRunCommand, ErrorCode, FunnelDashboardListCommand, FunnelDashboardProposeCommand,
-    GraphBuildArtifactV1, OperationCancelCommand, OperationShowCommand, OperationWaitCommand,
-    ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand,
-    ReportAppendEvidenceCommand, ReportProposeCommand, RequestEnvelope, ResponseEnvelope,
-    RuntimeDiscovery, SchemaListCommand, SessionAuthentication, SignalEvaluationReceiptV1,
-    SignalRuleDefinitionV1, SignedAcpPluginManifestV1, SkillInstallCommand, SkillRemoveCommand,
-    SkillRepairCommand, SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand,
-    StatusCommand, StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
+    ConnectionShowCommand, ConnectionTestCommand, DatabaseListCommand, DocumentRunCommand,
+    ErrorCode, GraphBuildArtifactV1, OperationCancelCommand, OperationShowCommand,
+    OperationWaitCommand, ProtocolError, QueryCancelCommand, QueryPlanCommand, QueryRunCommand,
+    RequestEnvelope, ResponseEnvelope, RuntimeDiscovery, SchemaListCommand, SessionAuthentication,
+    SignedAcpPluginManifestV1, SkillInstallCommand, SkillRemoveCommand, SkillRepairCommand,
+    SkillStatusCommand, SkillsGetCommand, SkillsListCommand, SqlProposeCommand, StatusCommand,
+    StatusResult, TableDescribeCommand, VersionCommand, VersionResult,
     ACP_PLUGIN_MANIFEST_SCHEMA_VERSION, COMMAND_SCHEMA_VERSION,
     GRAPH_BUILD_ARTIFACT_SCHEMA_VERSION, PROTOCOL_MAX,
 };
@@ -90,10 +88,6 @@ fn resolve_result_fixture(contract: &CliCommandContract) -> Value {
             })
         }
         Some("operation-summary") => operation_summary_fixture(),
-        Some("funnel-analysis") => json!({
-            "artifact": funnel_analysis_fixture()
-        }),
-        Some("funnel-analysis-list") => json!([funnel_analysis_fixture()]),
         Some("skills-list") => json!({
             "skills": [skill_summary_fixture()]
         }),
@@ -115,70 +109,6 @@ fn resolve_result_fixture(contract: &CliCommandContract) -> Value {
         }),
         fixture => panic!("unknown result fixture {fixture:?}"),
     }
-}
-
-fn funnel_analysis_fixture() -> Value {
-    json!({
-        "id": "00000000-0000-0000-0000-000000000130",
-        "projectEnvironmentId": "00000000-0000-0000-0000-000000000129",
-        "environmentRevision": 3,
-        "knowledgeGrantId": "00000000-0000-0000-0000-000000000126",
-        "graphRevisionIds": ["00000000-0000-0000-0000-000000000127"],
-        "sourceAgent": "dopedb.acp.codex",
-        "title": "Activation funnel",
-        "question": "Where do new accounts stop?",
-        "purpose": "Track verified activation conversion.",
-        "timezone": "Asia/Seoul",
-        "timeRange": "Last 7 days",
-        "segmentFilters": ["All new accounts"],
-        "conversionWindowSeconds": 604800,
-        "denominatorSemantics": "Distinct accounts created in the window.",
-        "numeratorSemantics": "Distinct accounts completing the next ordered step.",
-        "deduplicationPolicy": "Keep the first event for each account and step.",
-        "lateEventPolicy": "Recompute the open conversion window.",
-        "steps": [{
-            "id": "signup",
-            "label": "Signed up",
-            "meaning": "An account was created.",
-            "connectionRole": "identity",
-            "entityKey": "account_id",
-            "timestampField": "created_at",
-            "orderingRule": "First event per account.",
-            "mappingState": "inferred",
-            "graphNodeIds": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-            "evidenceIds": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
-        }],
-        "tiles": [{
-            "definition": {
-                "id": "signup-metric",
-                "title": "Signups",
-                "kind": "metric",
-                "dashboardId": "00000000-0000-0000-0000-000000000006",
-                "expectedDashboardRevision": 1,
-                "queryRunId": "00000000-0000-0000-0000-000000000007",
-                "stepIds": ["signup"]
-            },
-            "dashboard": {
-                "id": "00000000-0000-0000-0000-000000000006",
-                "connectionId": "00000000-0000-0000-0000-000000000001",
-                "revision": 1,
-                "title": "Active users",
-                "description": "Current active-user view",
-                "sql": "SELECT id, email FROM public.users",
-                "visualization": { "version": 1, "kind": "auto", "yColumns": [] },
-                "createdAt": "2026-07-24T00:00:00Z",
-                "updatedAt": "2026-07-24T00:00:00Z"
-            },
-            "connectionRevision": 2,
-            "availability": "ready"
-        }],
-        "warnings": ["Contains inferred mappings that require human review before publish."],
-        "freshness": "current",
-        "state": "draft",
-        "revision": 1,
-        "createdAt": "2026-07-24T00:00:00Z",
-        "updatedAt": "2026-07-24T00:00:00Z"
-    })
 }
 
 fn skill_summary_fixture() -> Value {
@@ -237,19 +167,6 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
         CommandName::QueryPlan => typed_cli_contract::<QueryPlanCommand>(request, result),
         CommandName::QueryRun => typed_cli_contract::<QueryRunCommand>(request, result),
         CommandName::QueryCancel => typed_cli_contract::<QueryCancelCommand>(request, result),
-        CommandName::DashboardCreate => {
-            typed_cli_contract::<DashboardCreateCommand>(request, result)
-        }
-        CommandName::FunnelDashboardPropose => {
-            typed_cli_contract::<FunnelDashboardProposeCommand>(request, result)
-        }
-        CommandName::FunnelDashboardList => {
-            typed_cli_contract::<FunnelDashboardListCommand>(request, result)
-        }
-        CommandName::ReportPropose => typed_cli_contract::<ReportProposeCommand>(request, result),
-        CommandName::ReportAppendEvidence => {
-            typed_cli_contract::<ReportAppendEvidenceCommand>(request, result)
-        }
         CommandName::SqlPropose => typed_cli_contract::<SqlProposeCommand>(request, result),
         CommandName::OperationShow => typed_cli_contract::<OperationShowCommand>(request, result),
         CommandName::OperationWait => typed_cli_contract::<OperationWaitCommand>(request, result),
@@ -267,7 +184,7 @@ fn assert_cli_command_types(command: CommandName, request: &RequestEnvelope, res
 }
 
 #[test]
-fn query_plan_request_matches_v12_command_schema_and_pinned_agent_registration() {
+fn query_plan_request_matches_v14_command_schema_and_pinned_agent_registration() {
     let source = include_str!("fixtures/query-plan-request.json");
     let request: RequestEnvelope =
         serde_json::from_str(source).expect("request fixture must decode");
@@ -397,75 +314,12 @@ fn query_plan_request_matches_v12_command_schema_and_pinned_agent_registration()
     unsafe_graph["evidence"][0]["filePath"] = json!("../secrets.env");
     let unsafe_graph: GraphBuildArtifactV1 = serde_json::from_value(unsafe_graph).unwrap();
     assert!(!unsafe_graph.validate());
-
-    let signal_rule: SignalRuleDefinitionV1 = serde_json::from_value(json!({
-        "schemaVersion": 1,
-        "ruleId": "00000000-0000-0000-0000-000000000131",
-        "projectEnvironmentId": "00000000-0000-0000-0000-000000000129",
-        "environmentRevision": 3,
-        "sourceAnalysisId": "00000000-0000-0000-0000-000000000130",
-        "sourceAnalysisRevision": 1,
-        "sourceTileId": "signup-metric",
-        "metricSemanticId": "signup_count",
-        "connectionIds": ["00000000-0000-0000-0000-000000000001"],
-        "schedule": "*/15 * * * *",
-        "timezone": "Asia/Seoul",
-        "evaluationWindowSeconds": 3600,
-        "condition": {"kind": "percentage_change", "percentage": 20.0},
-        "baselineWindowSeconds": 86400,
-        "minimumSampleCount": 10,
-        "cooldownSeconds": 3600,
-        "rearmAfterNormalCount": 2,
-        "severity": "warning",
-        "recipientMemberIds": ["member-1"],
-        "channels": ["desktop", "workspace_web", "email"],
-        "enabled": true,
-        "revision": 1,
-        "productionApprovedByMemberId": null,
-        "productionApprovedAt": null
-    }))
-    .expect("Signal rule fixture must decode");
-    assert!(signal_rule.validate());
-    let mut invalid_rule = signal_rule.clone();
-    invalid_rule.baseline_window_seconds = None;
-    assert!(!invalid_rule.validate());
-    let serialized_rule = serde_json::to_string(&signal_rule).unwrap();
-    for forbidden in ["password", "credential", "hostname", "sql", "resultRows"] {
-        assert!(!serialized_rule
-            .to_ascii_lowercase()
-            .contains(&forbidden.to_ascii_lowercase()));
-    }
-
-    let receipt: SignalEvaluationReceiptV1 = serde_json::from_value(json!({
-        "receiptId": "00000000-0000-0000-0000-000000000132",
-        "ruleId": "00000000-0000-0000-0000-000000000131",
-        "ruleRevision": 1,
-        "projectEnvironmentId": "00000000-0000-0000-0000-000000000129",
-        "environmentRevision": 3,
-        "runnerDeviceId": "device-1",
-        "scheduledAt": "2026-08-08T00:00:00Z",
-        "evaluatedAt": "2026-08-08T00:00:01Z",
-        "state": "firing",
-        "queryRunIds": ["00000000-0000-0000-0000-000000000133"],
-        "connectionIds": ["00000000-0000-0000-0000-000000000001"],
-        "durationMs": 1000,
-        "rowCountCategory": "one",
-        "schemaFingerprint": "ab".repeat(32),
-        "dedupeKey": "rule-1:revision-1:schedule-1",
-        "transitionSequence": 1,
-        "errorKind": null
-    }))
-    .expect("Signal receipt fixture must decode");
-    assert!(receipt.validate());
-    let mut unsafe_receipt = serde_json::to_value(receipt).unwrap();
-    unsafe_receipt["resultRows"] = json!([[42]]);
-    assert!(serde_json::from_value::<SignalEvaluationReceiptV1>(unsafe_receipt).is_err());
 }
 
 #[test]
 fn every_phase_six_cli_command_has_request_success_error_and_redaction_goldens() {
     let contracts: Vec<CliCommandContract> =
-        serde_json::from_str(include_str!("fixtures/cli-command-contract-v3.json"))
+        serde_json::from_str(include_str!("fixtures/cli-command-contract-v14.json"))
             .expect("CLI command manifest must decode");
     let expected = [
         CommandName::ConnectionList,
@@ -479,11 +333,6 @@ fn every_phase_six_cli_command_has_request_success_error_and_redaction_goldens()
         CommandName::QueryPlan,
         CommandName::QueryRun,
         CommandName::QueryCancel,
-        CommandName::DashboardCreate,
-        CommandName::FunnelDashboardPropose,
-        CommandName::FunnelDashboardList,
-        CommandName::ReportPropose,
-        CommandName::ReportAppendEvidence,
         CommandName::SqlPropose,
         CommandName::OperationShow,
         CommandName::OperationWait,
@@ -738,13 +587,13 @@ fn unknown_envelope_and_active_command_fields_fail_closed() {
 }
 
 #[test]
-fn command_names_match_the_v12_catalog() {
+fn command_names_match_the_v14_catalog() {
     let actual = dopedb_protocol::CommandName::ALL
         .into_iter()
         .map(|command| command.as_str())
         .collect::<Vec<_>>();
     let expected: Vec<String> =
-        serde_json::from_str(include_str!("fixtures/command-catalog-v12.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/command-catalog-v14.json")).unwrap();
     assert_eq!(actual, expected);
 
     let request: RequestEnvelope = serde_json::from_value(json!({
