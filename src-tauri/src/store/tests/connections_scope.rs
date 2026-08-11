@@ -150,6 +150,15 @@ async fn assert_current_store_migration_is_write_free() {
         .unwrap();
     assert_eq!(local_project.project.revision, 2);
     assert_eq!(local_project.environments.len(), 2);
+    let local_environment_id = local_project.environments[0].id;
+    assert!(store
+        .knowledge_environment_exists(personal_workspace_id, local_environment_id)
+        .await
+        .unwrap());
+    assert!(!store
+        .knowledge_environment_exists(Uuid::from_u128(0xdead), local_environment_id)
+        .await
+        .unwrap());
     assert!(store
         .create_knowledge_environment(
             personal_workspace_id,

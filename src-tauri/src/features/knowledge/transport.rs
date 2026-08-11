@@ -382,6 +382,12 @@ pub(crate) async fn list_knowledge_projects_command(
 pub(crate) async fn sync_current_knowledge_access(state: &AppState) -> AppResult<()> {
     let (scope, account) = active_remote_scope(state).await?;
     let projects = list_knowledge_projects(account.as_str(), scope.workspace_id).await?;
+    for project in &projects {
+        state
+            .knowledge_store()
+            .save_knowledge_project(&project_definition(scope.workspace_id, project))
+            .await?;
+    }
     sync_current_knowledge_access_with_projects(state, &scope, &account, &projects).await
 }
 
@@ -872,10 +878,8 @@ async fn active_workspace_graphs(
     let active_scope = state.knowledge_store().active_resource_scope().await?;
     let allowed = state
         .knowledge_store()
-        .scopes(active_scope.workspace_id)
-        .await?
-        .into_iter()
-        .any(|scope| scope.environment.id == project_environment_id);
+        .knowledge_environment_exists(active_scope.workspace_id, project_environment_id)
+        .await?;
     if !allowed {
         return Err(AppError::NotFound(
             "the active workspace Project Environment".into(),

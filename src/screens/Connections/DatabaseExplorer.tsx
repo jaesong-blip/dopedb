@@ -885,6 +885,9 @@ export function DatabaseExplorer({
     const dashboardExpanded = expandedResourceKeys.has(dashboardKey);
     const dashboardQuery = environmentDashboardQueries[environmentIndex];
     const environmentDashboards = dashboardQuery?.data ?? [];
+    const activeDashboardIsVisible = environmentDashboards.some(
+      (dashboard) => dashboard.id === activeProjectEnvironmentResourceId,
+    );
 
     return (
       <div className="tw:grid tw:pl-3">
@@ -1026,7 +1029,8 @@ export function DatabaseExplorer({
           icon="chart"
           selected={
             activeProjectEnvironmentId === environment.id &&
-            activeProjectEnvironmentView === "dashboards"
+            activeProjectEnvironmentView === "dashboards" &&
+            !activeDashboardIsVisible
           }
           onToggle={() => {
             toggleExpandedId(setExpandedResourceKeys, dashboardKey);
@@ -1098,12 +1102,16 @@ export function DatabaseExplorer({
 
   function renderProject(project: KnowledgeProject) {
     const projectExpanded = expandedProjectIds.has(project.id);
+    const activeEnvironmentBelongsToProject = project.environments.some(
+      (environment) => environment.id === activeProjectEnvironmentId,
+    );
     return (
       <div key={project.id} className="tw:grid">
         <TreeSectionButton
           expanded={projectExpanded}
           icon="folder"
           prominence="project"
+          selected={activeEnvironmentBelongsToProject && !projectExpanded}
           actions={
             <TreeRowActions>
               <Button
@@ -1133,7 +1141,10 @@ export function DatabaseExplorer({
                   <TreeSectionButton
                     expanded={environmentExpanded}
                     icon="folder"
-                    selected={activeProjectEnvironmentId === environment.id}
+                    selected={
+                      activeProjectEnvironmentId === environment.id &&
+                      !environmentExpanded
+                    }
                     trailing={
                       <EnvironmentBadge
                         environment={knowledgeEnvironmentBadge(

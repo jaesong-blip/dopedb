@@ -120,6 +120,12 @@ export default function Knowledge({
       }
     >(),
   );
+  const hasSelectedEnvironmentSource = Boolean(
+    environmentId &&
+    sources.data?.some(
+      (source) => source.projectEnvironmentId === environmentId,
+    ),
+  );
   const environmentConnections = useQuery({
     queryKey: [
       "knowledge",
@@ -139,7 +145,11 @@ export default function Knowledge({
   const mappings = useQuery({
     queryKey: mappingsKey,
     queryFn: () => listKnowledgeMappings(environmentId),
-    enabled: sharedWorkspace && Boolean(environmentId) && view === "sources",
+    enabled:
+      sharedWorkspace &&
+      Boolean(environmentId) &&
+      view === "sources" &&
+      hasSelectedEnvironmentSource,
   });
   const analyses = useQuery({
     queryKey: [
@@ -984,7 +994,10 @@ export default function Knowledge({
         </section>
       ) : null}
 
-      {sharedWorkspace && (projects.data?.length ?? 0) > 0 && view === "sources" ? (
+      {sharedWorkspace &&
+      (projects.data?.length ?? 0) > 0 &&
+      view === "sources" &&
+      selectedEnvironmentSources.length > 0 ? (
         <section data-primary-flow className="tw:grid tw:gap-3 tw:border-b tw:border-border-subtle tw:pb-5">
           <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
             <div className="tw:grid tw:gap-1">

@@ -279,9 +279,15 @@ function ShellLayoutContent(props: Props) {
         ) : (
           <DatabaseExplorer
             connections={connections}
-            selectedId={selectedId}
-            selectedTableKey={selectedTable ? tableKey(selectedTable) : null}
-            activeSchemaGroupKey={activeSchemaGroupKey}
+            selectedId={area === "workspace" ? selectedId : null}
+            selectedTableKey={
+              area === "workspace" && selectedTable
+                ? tableKey(selectedTable)
+                : null
+            }
+            activeSchemaGroupKey={
+              area === "workspace" ? activeSchemaGroupKey : null
+            }
             onSelectConn={props.onSelectWorkspaceConnection}
             onOpenTable={props.onOpenTable}
             onOpenSchemaDiff={props.onOpenSchemaDiff}
