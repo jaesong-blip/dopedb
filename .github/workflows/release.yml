@@ -385,13 +385,36 @@ jobs:
           set -euo pipefail
 
           mkdir -p release-finalize
-          gh release download "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern latest.json \
-            --dir release-finalize
-          gh release view "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json assets > release-finalize/assets.json
+
+          download_release_snapshot() {
+            local manifest="release-finalize/latest.json"
+            local assets="release-finalize/assets.json"
+            local assets_candidate="${assets}.candidate"
+
+            for attempt in 1 2 3 4 5 6; do
+              rm -f "$manifest" "$assets" "$assets_candidate"
+              if gh release view "$GITHUB_REF_NAME" \
+                --repo "$GITHUB_REPOSITORY" \
+                --json assets > "$assets_candidate" && \
+                gh release download "$GITHUB_REF_NAME" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --pattern latest.json \
+                  --dir release-finalize && \
+                [[ -s "$manifest" ]] && [[ -s "$assets_candidate" ]]; then
+                mv "$assets_candidate" "$assets"
+                return 0
+              fi
+
+              if [[ "$attempt" -eq 6 ]]; then
+                rm -f "$manifest" "$assets" "$assets_candidate"
+                echo "Draft release snapshot did not become available: $GITHUB_REF_NAME" >&2
+                return 1
+              fi
+              sleep $((attempt * 2))
+            done
+          }
+
+          download_release_snapshot
 
           node scripts/release/finalize-updater-json.mjs \
             --manifest release-finalize/latest.json \
