@@ -22,7 +22,6 @@ import { errMessage } from "../../ipc/types";
 import { cancelQuery } from "../../ipc/commands";
 import { useCatalogScope } from "../../lib/queries";
 import { listConnections } from "../../features/connections/tauriAdapter";
-import type { ConnectionProfile } from "../../features/connections/domain";
 import {
   getActiveWorkspace,
   workspaceConsoleUrl,
@@ -31,7 +30,6 @@ import type {
   GithubKnowledgeRepository,
   FunnelAnalysisArtifact,
   FunnelAnalysisRun,
-  KnowledgeEnvironment,
   KnowledgeEnvironmentFocus,
   KnowledgeEnvironmentView,
 } from "../../features/knowledge/domain";
@@ -62,19 +60,6 @@ import {
 
 function repositoryLabel(repository: GithubKnowledgeRepository): string {
   return `${repository.fullName}${repository.private ? " · Private" : ""}`;
-}
-
-function legacyEnvironmentMatches(
-  connection: Pick<ConnectionProfile, "env">,
-  environment: KnowledgeEnvironment | null,
-): boolean {
-  return Boolean(
-    connection.env
-    && environment
-    && connection.env.trim().localeCompare(environment.name.trim(), undefined, {
-      sensitivity: "accent",
-    }) === 0,
-  );
 }
 
 export default function Knowledge({
@@ -1111,24 +1096,15 @@ export default function Knowledge({
               <div className="tw:grid tw:gap-1 tw:border-b tw:border-border-subtle tw:bg-surface-subtle tw:px-3 tw:py-2">
                 <strong className="tw:text-sm">Connections not assigned to this Environment</strong>
                 <span className="tw:text-xs tw:text-muted-foreground">
-                  Legacy environment labels are suggestions only. Selecting one never changes its scope until you bind it above.
+                  Select a connection to review it, then create an exact Environment binding above.
                 </span>
               </div>
-              {assignableConnections.map((connection) => {
-                const suggestedHere = legacyEnvironmentMatches(connection, selectedEnvironment);
-                return (
+              {assignableConnections.map((connection) => (
                   <div key={connection.id} className="tw:grid tw:grid-cols-[minmax(0,1fr)_auto] tw:items-center tw:gap-3 tw:border-b tw:border-border-subtle tw:px-3 tw:py-2 tw:last:border-b-0 tw:@max-[560px]:grid-cols-1">
                     <span className="tw:grid tw:min-w-0 tw:gap-1">
                       <strong className="tw:truncate tw:text-sm">{connection.name}</strong>
-                      <span className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-2 tw:text-xs tw:text-muted-foreground">
-                        <span className="tw:truncate">{connection.engine} · {connection.database}</span>
-                        {suggestedHere ? (
-                          <StatusBadge tone="success" density="compact">Suggested here</StatusBadge>
-                        ) : connection.env ? (
-                          <StatusBadge tone="warning" density="compact">Legacy: {connection.env}</StatusBadge>
-                        ) : (
-                          <StatusBadge density="compact">No legacy environment</StatusBadge>
-                        )}
+                      <span className="tw:truncate tw:text-xs tw:text-muted-foreground">
+                        {connection.engine} · {connection.database}
                       </span>
                     </span>
                     <Button
@@ -1142,8 +1118,7 @@ export default function Knowledge({
                       {connection.id === connectionId ? "Selected" : "Review binding"}
                     </Button>
                   </div>
-                );
-              })}
+                ))}
             </div>
           ) : null}
           {environmentConnections.isPending ? (
